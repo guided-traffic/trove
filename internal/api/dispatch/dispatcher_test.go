@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
@@ -335,4 +336,48 @@ func TestNewRefusesADispatcherWithoutItsParts(t *testing.T) {
 			t.Errorf("a dispatcher without %s", name)
 		}
 	}
+}
+
+// fakeCeiling answers the fingerprint and the view the dispatcher hands a format.
+type fakeCeiling struct{ view *authz.ExposureView }
+
+func (fakeCeiling) ExposureFingerprint(_ *authz.Index, endpoint, repoKey string) string {
+	return "sha256:" + endpoint + "/" + repoKey
+}
+
+func (c fakeCeiling) View(*authz.Index, string, string) *authz.ExposureView { return c.view }
+
+// TestR_EP_018_TheEndpointFactsCarryTheView: the view and the fingerprint a format
+// receives come from the same ceiling and the same index; an endpoint that does not
+// restrict hands no view, never a nil pointer in a non-nil interface.
+func TestR_EP_018_TheEndpointFactsCarryTheView(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/probe/local/x", nil)
+	access := func(t *testing.T, endpoint string) *edge.Access {
+		t.Helper()
+		a, err := edge.Resolve(req.Context(), &fakeDecider{}, authz.Subject{Name: "bot", Endpoint: endpoint}, "local")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return a
+	}
+	t.Run("R-EP-018 a restricting endpoint: the view and the fingerprint of the addressed repository", func(t *testing.T) {
+		v := &authz.ExposureView{}
+		d := &Dispatcher{o: Options{Ceiling: fakeCeiling{view: v}}}
+		facts := d.endpointFacts(req, access(t, "customers"), "local")
+		if facts.Exposure != formats.ExposureView(v) || facts.ExposureFingerprint != "sha256:customers/local" || facts.Name != "customers" {
+			t.Fatalf("facts %+v", facts)
+		}
+	})
+	t.Run("R-EP-018 mode all: no view", func(t *testing.T) {
+		d := &Dispatcher{o: Options{Ceiling: fakeCeiling{}}}
+		if facts := d.endpointFacts(req, access(t, "default"), "local"); facts.Exposure != nil {
+			t.Fatalf("a view in mode all: %#v", facts.Exposure)
+		}
+	})
+	t.Run("R-EP-018 no endpoint (a job's subject): no view and no fingerprint", func(t *testing.T) {
+		d := &Dispatcher{o: Options{Ceiling: fakeCeiling{view: &authz.ExposureView{}}}}
+		if facts := d.endpointFacts(req, access(t, ""), "local"); facts.Exposure != nil || facts.ExposureFingerprint != "" {
+			t.Fatalf("facts %+v", facts)
+		}
+	})
 }

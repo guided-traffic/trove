@@ -323,6 +323,11 @@ type EndpointFacts struct {
 	// ExposureFingerprint is "" in mode all; rendition keys and ETags include it
 	// (R-EP-018).
 	ExposureFingerprint string
+	// Exposure is what the endpoint exposes of the addressed repository, the view
+	// FilterDocument takes; nil exactly when the endpoint does not restrict (mode
+	// all, or no endpoint). It is read from rq.Index, like ExposureFingerprint, so a
+	// document is filtered by the rules its validator names (R-EP-018).
+	Exposure ExposureView
 }
 
 // Target is what a format asks the decision point inside the addressed

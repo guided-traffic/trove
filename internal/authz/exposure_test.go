@@ -415,6 +415,71 @@ func TestR_EP_013_ExposureCeiling(t *testing.T) {
 	t.Logf("%d exposure cases", n)
 }
 
+// TestR_EP_018_ExposureView: the view a format filters a document with answers from
+// the same compiled rules as the ceiling, on the fixture of R-EP-012 (the example
+// rule, with tags), and fails closed where the ceiling does.
+func TestR_EP_018_ExposureView(t *testing.T) {
+	f := exposureFixture()
+	f.repo("npm-fixture", "local", "npm", "").repo("nuget-local", "local", "nuget", "")
+	f.exposure(ruleDef{endpoint: "customers", name: "acme-sdk", repo: "npm-fixture", dims: ruleDims{
+		Packages: PatternLists{Include: []string{"@acme/sdk", "@acme/sdk-*"}, Exclude: []string{"@acme/sdk-internal"}},
+		Versions: VersionLists{Exclude: []string{"2.0.1"}, Range: ptr(">=2.0.0")},
+		DistTags: PatternLists{Include: []string{"latest", "lts"}},
+	}})
+	f.exposure(ruleDef{endpoint: "customers", name: "nuget", repo: "nuget-local", dims: ruleDims{}})
+	e := newTestEngine(t, f, func(o *Options) { o.Ceiling = exposureCeiling() })
+	cl, x := exposureCeiling(), e.Index()
+	v := cl.View(x, "customers", "npm-fixture")
+	if v == nil {
+		t.Fatal("no view on an endpoint with rules")
+	}
+	t.Run("R-EP-018 R-EP-012 the versions of the fixture", func(t *testing.T) {
+		want := map[string]bool{"1.9.0": false, "2.0.0": true, "2.0.1": false, "2.1.0-rc.1": false, "2.1.0": true}
+		for ver, exposed := range want {
+			if got := v.Version("@acme/sdk", ver); got != exposed {
+				t.Errorf("@acme/sdk@%s exposed %v, want %v", ver, got, exposed)
+			}
+			c := Coordinate{Repository: "npm-fixture", Package: "@acme/sdk", Version: ver, Kind: KindArtifact, Actions: []Action{Read}}
+			if d := e.Decide(t.Context(), onEP(botSub, "customers"), c); d.Allowed() != exposed {
+				t.Errorf("the ceiling decides @acme/sdk@%s %v, the view %v", ver, d.Allowed(), exposed)
+			}
+		}
+		if !v.Package("@acme/sdk") || v.Package("@acme/sdk-internal") || v.Package("@acme/billing") {
+			t.Fatal("package dimension")
+		}
+	})
+	t.Run("R-EP-012 a tag stays when its name is admitted and its version exposed", func(t *testing.T) {
+		cases := []struct {
+			tag, version string
+			want         bool
+		}{
+			{"latest", "2.1.0", true}, {"lts", "2.0.0", true}, {"next", "2.1.0", false}, {"lts", "1.9.0", false}, {"latest", "2.1.0-rc.1", false},
+		}
+		for _, c := range cases {
+			if got := v.Tag("@acme/sdk", c.tag, c.version); got != c.want {
+				t.Errorf("tag %s -> %s: %v, want %v", c.tag, c.version, got, c.want)
+			}
+		}
+	})
+	t.Run("R-EP-018 no view where the endpoint does not restrict", func(t *testing.T) {
+		if cl.View(x, "default", "npm-fixture") != nil || cl.View(x, "", "npm-fixture") != nil {
+			t.Fatal("a view in mode all or without an endpoint")
+		}
+	})
+	t.Run("R-EP-018 fail closed: an unknown repository, a format that is not exposable, an unconfigured endpoint", func(t *testing.T) {
+		for _, c := range []struct{ endpoint, repo string }{{"customers", "ghost"}, {"customers", "nuget-local"}, {"nowhere", "npm-fixture"}, {"customers", "generic-auth"}} {
+			w := cl.View(x, c.endpoint, c.repo)
+			if w == nil || w.Package("@acme/sdk") || w.Version("@acme/sdk", "2.1.0") || w.Tag("@acme/sdk", "latest", "2.1.0") {
+				t.Errorf("%s on %s exposes something", c.repo, c.endpoint)
+			}
+		}
+		var zero ExposureView
+		if zero.Package("x") || zero.Version("x", "1.0.0") {
+			t.Fatal("the zero view exposes something")
+		}
+	})
+}
+
 func TestR_EP_013_CeilingPerformance(t *testing.T) {
 	// 1,000 rules on one endpoint for one repository, none of which admits the
 	// item: the worst case of the ceiling (R-EP-013 "Performance").

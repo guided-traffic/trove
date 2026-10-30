@@ -46,6 +46,14 @@ type Options struct {
 	// themselves).
 	Signals Signals
 	Metrics prometheus.Registerer
+	// >>> WP2.9 exposure
+	// FillRefused counts an upstream contact the endpoint's cache-fill policy
+	// prevented (trove_endpoint_cache_fill_refused_total, R-EP-019): the remote
+	// engine owns the family and counts the contacts it refuses itself; the virtual
+	// engine counts the remote members it does not ask for an artifact. Nil counts
+	// nothing.
+	FillRefused func(endpoint string)
+	// <<< WP2.9 exposure
 	// Now overrides the clock, for tests.
 	Now func() time.Time
 	Log *slog.Logger

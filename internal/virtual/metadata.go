@@ -28,7 +28,10 @@ const (
 // visible on every replica as soon as its commit has returned, with or without a notification
 // (R-ARCH-015). A merge that left a remote member out because it could not be asked is partial and
 // never cached.
-func (r *Resolver) Metadata(ctx context.Context, c Caller, p *Plan, m Merger) (*Merged, error) {
+func (r *Resolver) Metadata(ctx context.Context, c Caller, p *Plan, m Merger) (_ *Merged, err error) {
+	// >>> WP2.9 exposure
+	defer func() { err = c.asAddressed(p, err) }()
+	// <<< WP2.9 exposure
 	repo, d := p.Virtual.Key, p.Descriptor
 	if !p.Admitted {
 		r.m.resolved(repo, sourceNone)
@@ -57,7 +60,6 @@ func (r *Resolver) Metadata(ctx context.Context, c Caller, p *Plan, m Merger) (*
 	}
 	build := func(ctx context.Context) (*mergedEntry, error) { return r.build(ctx, c, p, m, ttl) }
 	var e *mergedEntry
-	var err error
 	if cacheable {
 		e, err = r.merged.Load(ctx, key, build)
 	} else {

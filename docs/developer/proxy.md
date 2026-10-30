@@ -370,6 +370,9 @@ and the area `virtual-engine` takes it ([wire_virtual_engine.go](../../internal/
 request for the member (the format's adapter, the kind from the format's classification of the path) with a populate check that answers the
 `MayFill` the virtual engine decided; `Engine.Peek` supplies `Negative`, `Offline` and `CircuitOpenFor` of the explanation. A fill made for a
 virtual request records its allowed populate event with the grant reason of the caller (the call carries no grant index to name sources).
+`Engine.FillRefused(endpoint)` is bound to `virtual.Options.FillRefused`: the virtual engine counts in the engine's
+`trove_endpoint_cache_fill_refused_total` the remote members it does not ask for an artifact because the endpoint does not fill caches
+(R-EP-019, Q-EP-58); the engine counts its own refusals in `mayFill`.
 
 ### Tests
 
@@ -377,7 +380,9 @@ virtual request records its allowed populate event with the grant reason of the 
 |---|---|---|
 | unit | [proxy_test.go](../../internal/proxy/proxy_test.go) | the URL builder (`%2e%2e`, `a b`), the `Cache-Status` forms, digest policies, the withheld tail, the size limit, the idle timeout, slot shares, the classification table, the negative readers, `withStatus` |
 | unit | [remote_test.go](../../internal/formathost/remote_test.go) | mode, settings member, currency of the bridge |
+| unit | [fillrefused_test.go](../../internal/proxy/fillrefused_test.go) | `FillRefused` counts per endpoint (R-EP-019) |
 | integration | [test/integration/proxy](../../test/integration/proxy/) | R-REPO-025 order and download order (R-ARCH-013); R-REPO-026 on two replicas (100 requests, killed and cancelled holders, draining, polling without messages, foreign locks, duplicate fills); R-REPO-027 to R-REPO-032; R-REPO-040 to R-REPO-043; R-REPO-047, R-OPS-011; R-AUTHZ-008 and R-EP-019 at the engine |
+| integration | [cachefill_test.go](../../test/integration/endpoints/cachefill_test.go) | R-EP-019 through the whole request path (dispatcher, Host populate check, engine) on a replica with a further endpoint and a counting upstream |
 
 The variants that need the real outage (Valkey stopped, `SIGKILL` of a pod, `kubectl drain`, S3 stopped, `FLUSHALL`) are end-to-end tests: here Valkey
 is unavailable through a client whose Sentinels do not answer, the holder is a second client that is closed, and the object store fails through a

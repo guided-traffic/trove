@@ -216,9 +216,15 @@ consult only the members the caller can read, which is safe, but would not refus
 
 `Artifact(ctx, caller, plan, tiers, w)`: local members in order, then the caches of the remote members, then the upstreams of the
 remote members with `MayFill`. The first hit is served with `Trove-Resolved-From: <member>` (never on an endpoint with rules). A member
-the caller may not fill is not consulted in the third tier. Nothing found: 404 if every consulted member said "not found" (or refused to
+the caller may not fill is not consulted in the third tier; when the reason is the endpoint's `cache_fill: false`
+(`Subject.Endpoint != "" && !Subject.CacheFill`), `Options.FillRefused` counts it in `trove_endpoint_cache_fill_refused_total`, the remote
+engine's family (`proxy.Engine.FillRefused`, Q-EP-58). Nothing found: 404 if every consulted member said "not found" (or refused to
 populate, which counts as a miss), else the failure of the first member that failed transiently. A failure after the first byte ends the
 request.
+
+On an endpoint with rules (`Caller.Rules`) no answer names a member (R-EP-018, Q-EP-56): `Artifact` and `Metadata` pass every error through
+`Caller.asAddressed`, which keeps kind, code, `Retry-After` and headers, writes a detail that names the virtual repository, keeps the
+member's error as the logged cause, and turns a `NotFound` into the engine's one `404`.
 
 `Metadata(ctx, caller, plan, merger)`: by `merger.Strategy`. `FirstMatch` serves the document of the first member that has it (local members,
 then remote members) and caches nothing. `Merge` and `Newest` (resolved as `Merge`; revalidating the remote members first, R-REPO-036, waits
@@ -343,6 +349,7 @@ The management API already takes the engine (`Options.Resolution`, set in `start
 | [metadata_test.go](../../internal/virtual/metadata_test.go) | R-REPO-020 (different readable members, shared entries, the rev_seq check without any signal, partial merges, the fingerprint of D-7, expiry, early eviction, the areas), R-ARCH-015 across two engines |
 | [shadow_test.go](../../internal/virtual/shadow_test.go) | R-REPO-048: every outcome row, one probe per remote repository, no negative entry, concurrent probes |
 | [explain_test.go](../../internal/virtual/explain_test.go) | R-REPO-019 decisions, hidden members, `decidedBy` |
+| [exposure_test.go](../../internal/virtual/exposure_test.go) | R-EP-018: a member's failure of an artifact and of a document names only the addressed repository on an endpoint with rules and keeps code and `Retry-After`, a missing item is the one 404, the member stays visible elsewhere; R-EP-019: the members skipped on an endpoint without cache fill are counted, a subject's missing populate right is not |
 | [virtual_test.go (formathost)](../../internal/formathost/virtual_test.go) | the bridge: caller, descriptor, tiers on a request of the member, merger, deploy target, shadow outcome |
 | [resolution_api_test.go](../../internal/api/v1/resolution_api_test.go) | the operation: declared permission, descriptor, 400, 404, 503, answers validated against the document |
 | [virtual_test.go (integration)](../../test/integration/virtual/virtual_test.go) | three replicas on PostgreSQL without Valkey: publish on A visible on B and C at once (50 iterations), claims reaching the merged entries, the explanation against the real routing, the shadowing check against the real exposure set and with no transaction open while a probe runs |

@@ -53,6 +53,9 @@ func (a *App) wireVirtualEngine(ctx context.Context, in infra, v virtualArea, az
 		Router: v.routing, Decider: az.engine, Locals: formathost.NewVirtualLocals(pkgs, store),
 		Remotes: remotes, Caches: in.caches, CacheBytes: int64(a.cfg.Proxy.MergedMetadataCacheBytes),
 		Metrics: a.tele.metrics.Registry(), Log: a.log.With("component", "virtual"),
+		// >>> WP2.9 exposure
+		FillRefused: px.engine.FillRefused,
+		// <<< WP2.9 exposure
 	}
 	if in.signals != nil { // a nil *cluster.Signals in the interface would not be nil
 		o.Signals = in.signals

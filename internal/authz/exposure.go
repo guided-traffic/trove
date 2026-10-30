@@ -437,6 +437,59 @@ func (e *ExposureCeiling) ExposureFingerprint(x *Index, endpoint, repoKey string
 	return fingerprint(mode, rules)
 }
 
+// ExposureView is what one endpoint exposes of one addressed repository, read from
+// the compiled rules of one index: the view a format filters a document with
+// (R-EP-018, formats.ExposureView). It answers from memory, like the ceiling, and
+// with the same matching, so a version a filtered document lists is one the ceiling
+// lets the same caller download. The zero value exposes nothing.
+type ExposureView struct {
+	rules []*compiledRule
+	v     catalog.Versioning
+}
+
+// View returns the exposure of an endpoint for an addressed repository on the index
+// the request decides on, or nil when the endpoint does not restrict: no endpoint (a
+// job, a command) or mode all. A repository the index does not know, one of a
+// format that is not exposable and one without an enabled rule get a view that
+// exposes nothing (fail closed). The view and ExposureFingerprint read the same
+// index, so a document is never filtered by other rules than its validator names.
+func (e *ExposureCeiling) View(x *Index, endpoint, repoKey string) *ExposureView {
+	if endpoint == "" || e.Mode(endpoint) == ExposureModeAll {
+		return nil
+	}
+	r := x.repo(repoKey)
+	if r == nil {
+		return &ExposureView{}
+	}
+	f := e.exposure(r.Format)
+	if !f.Exposable {
+		return &ExposureView{}
+	}
+	var rules []*compiledRule
+	if ee := x.exposure[endpoint]; ee != nil {
+		rules = ee.byRepo[r.ID]
+	}
+	return &ExposureView{rules: rules, v: f.Versioning}
+}
+
+// Package reports whether a rule admits the package: a document of it may be served,
+// with its versions filtered.
+func (v *ExposureView) Package(name string) bool {
+	return admitsItem(v.rules, exposureItem{pkg: name}, v.v)
+}
+
+// Version reports whether a version of the package is exposed.
+func (v *ExposureView) Version(name, version string) bool {
+	return admitsItem(v.rules, exposureItem{pkg: name, version: version}, v.v)
+}
+
+// Tag reports whether a tag stays in a filtered document: a rule that admits the
+// package admits the tag name, and the version the tag points to is exposed
+// (R-EP-012). A format that re-points a tag (npm's latest) does not ask.
+func (v *ExposureView) Tag(name, tag, version string) bool {
+	return admitsItem(v.rules, exposureItem{pkg: name, tag: tag}, v.v) && v.Version(name, version)
+}
+
 // exposedRules counts the enabled rules of an endpoint in the index, for the
 // gauge trove_exposure_rules.
 func (x *Index) exposedRules(endpoint string) int {

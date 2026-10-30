@@ -1036,7 +1036,11 @@ Priority: **MVP** · Covers: trove-only
   `/admin/endpoints/{endpoint}/rules/new` and `/admin/endpoints/{endpoint}/rules/{name}`.
 - **Rule editor.** One page like the policy editor ([api-and-ui.md](api-and-ui.md) R-UI-027, Q-UI-4):
   a repository picker of keys, include and exclude lists with syntax help, the version range checked
-  through the API, the pre-release switch, tag lists only for formats with tags, and `enabled`. A
+  through the API, the pre-release switch, tag lists only for formats with tags, and `enabled`. For
+  npm the range's help text says that a rule's range is evaluated with pre-releases included and the
+  pre-release switch decides them, so it is wider for pre-releases than the same text in
+  `npm install` (`>=2.0.0 <4` contains `2.1.0-beta`; [formats/npm.md](formats/npm.md) R-NPM-048,
+  Q-NPM-16), and that a range is checked in npm's strict syntax. A
   preview panel fed by `check-exposure` (debounced 500 ms) shows, for a package typed into the
   tester, its exposed and hidden versions with their reasons. Saving shows a diff against the loaded
   revision and sends `PUT` with `If-Match`; recent authentication follows R-UI-042.
@@ -1092,9 +1096,20 @@ type ExposureView interface {
   refusing, `FilterDocument` the identity), so its repositories are exposed through paths alone
   (R-EP-014).
 
-  A format without the adapter is not exposable: on an endpoint with `exposure: rules` every one of
-  its routes answers `404`, and rules for its repositories are refused with `422`
-  `format_not_exposable` (fail closed). npm and NuGet implement it
+  The view is the request's, never the format's: the dispatcher reads it with the exposure
+  fingerprint from the index the request decides on, so a document is filtered by the rules its
+  validator names, and hands it to the format in the request's endpoint facts
+  (`formats.EndpointFacts.Exposure`, nil where the endpoint does not restrict; an endpoint with
+  rules whose view cannot be read exposes nothing). It answers with the matching of the ceiling
+  (`authz.ExposureView`): `Package` and `Version` as `Admits` would, and `Tag` true when a rule that
+  admits the package admits the tag name and the version is exposed
+  ([Q-EP-55](#q-ep-55--where-a-format-gets-the-exposure-view-of-a-request)).
+
+  A format without the adapter is not exposable: on an endpoint with `exposure: rules` every read
+  route answers the `404` of a missing resource and every write the `403` `endpoint_read_only` of
+  R-EP-013, the order of Q-EP-21
+  ([Q-EP-57](#q-ep-57--a-write-to-a-format-that-cannot-be-exposed)), and rules for its repositories
+  are refused with `422` `format_not_exposable` (fail closed). npm and NuGet implement it
   ([formats/npm.md](formats/npm.md) R-NPM-048, [formats/nuget.md](formats/nuget.md) R-NUGET-034);
   a later format page states its filter before its repositories can be exposed.
 - **What is filtered.** Every document that lists versions, files or tags: package documents,
@@ -1110,7 +1125,10 @@ type ExposureView interface {
   R-REPO-043).
 - **Only the addressed repository is named.** On an endpoint with `exposure: rules`, responses carry
   no `Trove-Resolved-From` (R-REPO-019), and no problem body names a repository other than the
-  addressed one: a member's failure is reported as the addressed repository's.
+  addressed one: a member's failure is reported as the addressed repository's. The virtual engine
+  keeps the failure's kind, code, `Retry-After` and headers and replaces its detail by one that
+  names the addressed repository and the code's title; a missing item is the engine's one `404`
+  ([Q-EP-56](#q-ep-56--how-a-members-failure-is-reported-on-an-endpoint-with-rules)).
 - **Cache keys and validators.**
   - The keys of the rendition cache ([architecture.md](architecture.md) R-ARCH-018) and of the
     merged-metadata cache (R-REPO-020) include the endpoint name, because the endpoint's cache-fill
@@ -1132,8 +1150,9 @@ Acceptance criteria (fixture of R-EP-012):
 - The package document's `ETag` on `customers` differs from the one on `default`. After a rule
   update that hides 2.0.0, a conditional request with the earlier `ETag` answers `200` with a
   document without 2.0.0, on every replica.
-- A test format without the adapter answers `404` on every route on `customers`, and a rule for its
-  repository answers `422` `format_not_exposable`.
+- A test format without the adapter answers `404` on every read route on `customers` (and `403`
+  `endpoint_read_only` on a write, Q-EP-57), and a rule for its repository answers `422`
+  `format_not_exposable`.
 - No response body or header captured on `customers` during the e2e run contains `trove.example.com`
   or the key of a member of `npm-customers`.
 
@@ -1156,7 +1175,10 @@ Priority: **MVP** · Covers: trove-only
   cache-only search.
 - With `cache_fill: true`, the subject's populate check decides, as on the default endpoint.
 - A refused upstream contact increments `trove_endpoint_cache_fill_refused_total{endpoint}` and
-  writes no negative entry (R-REPO-025 step 9).
+  writes no negative entry (R-REPO-025 step 9). The remote engine counts the fills it refuses; the
+  virtual engine counts each remote member it does not ask for an artifact because the endpoint
+  does not fill caches, since that member is never handed to the remote engine
+  ([Q-EP-58](#q-ep-58--who-counts-a-refused-upstream-contact-of-a-virtual-repository)).
 
 Acceptance criteria:
 
@@ -1852,6 +1874,101 @@ E1.14 variant that needs an endpoint without `api`, which would be (b).
 
 **Applied in the spec:** none; [deploy/dev/values-dev.yaml](../../deploy/dev/values-dev.yaml) and
 [../developer/local-profile.md](../developer/local-profile.md#the-second-endpoint).
+
+### Q-EP-55 · Where a format gets the exposure view of a request
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `FilterDocument` takes an `ExposureView`, and R-EP-018 says the view answers from the compiled rules of one endpoint and
+one addressed repository. A format imports neither `authz` nor the index (R-ARCH-008), and the exposure fingerprint that keys the
+rendition and the validator is already computed by the dispatcher from the request's index (`EndpointFacts.ExposureFingerprint`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The dispatcher puts the view into `EndpointFacts` | `Ceiling.View(index, endpoint, repoKey)` next to `ExposureFingerprint`, from the same index | The view and the fingerprint cannot disagree: a cached rendition and its ETag name exactly the rules it was filtered by; nothing to call, nothing to forget; no new `Host` method | One more field in the request facts |
+| (b) A `Host.Exposure(rq)` method | The format asks the host when it filters | The host is where a format reaches the core | The host would read the index a second time per call; a format could filter with another request's facts; one more method on every Host implementation and the kit |
+| (c) The format filters through `Host.Authorize` per version | Every version of a document becomes a decision | No new type | Thousands of decisions per document, each audited on refusal; tags and `latest` cannot be expressed as decisions |
+
+**Choice:** (a). `authz.ExposureCeiling.View` returns nil in mode `all` and without an endpoint, and a view that exposes nothing for a
+repository the index does not know, a format that is not exposable or an endpoint without rules for it; the dispatcher leaves the
+interface nil for a nil view and gives an endpoint with rules a view that exposes nothing when its ceiling cannot be read.
+
+**Rationale:** The one property that matters is that a filtered document and its validator come from one set of rules; (a) makes it
+structural. The view uses the matching of the ceiling (`admitsItem`), so every version a document lists is one the ceiling lets the
+same caller download. The development agent would revisit this if a format needs the view outside a request (a job that renders
+filtered documents), which would need the endpoint on the job's subject first (H-166).
+
+**Applied in the spec:** R-EP-018 (the view in the endpoint facts). Code: `authz.ExposureCeiling.View`, `authz.ExposureView`,
+`formats.EndpointFacts.Exposure`, `dispatch.Dispatcher.endpointFacts`.
+
+### Q-EP-56 · How a member's failure is reported on an endpoint with rules
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-EP-018 forbids a problem body that names a repository other than the addressed one. The remote engine's failures name
+the remote repository ("The upstream of npm-remote did not answer in time."), and the virtual engine returns a member's transient
+failure when no other member had the item (R-REPO-019 step 7) or a member's document (R-REPO-020).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep kind, code, `Retry-After` and headers; replace the detail | `<addressed key> could not answer the request: <code title>.`; the member's error stays the cause, logged and never rendered | The client and the operator keep everything they act on: the status, the code of the problem catalog, when to retry, `Cache-Status`; one rule in one place | The code still tells that something upstream failed (H-294) |
+| (b) Collapse every member failure into one `502 upstream_failed` | One answer for every failure | Reveals the least | Loses `Retry-After` of a `503 upstream_assumed_offline` and the timeout status, so clients retry at the wrong pace |
+| (c) Remove member keys from the detail by text replacement | Keep the detail, cut the names | Most detail kept | Misses a key that appears in another form (a URL, a host) and mangles words that contain a key; a string filter is not a boundary |
+
+**Choice:** (a), applied by the virtual engine at the exit of `Artifact` and `Metadata` when `Caller.Rules` is set; a `NotFound` of a
+member is the engine's one `404`, so a hidden and a missing item stay byte-identical (R-EP-013). On an endpoint without rules the error
+is unchanged, because there the members are the caller's to see (R-REPO-019).
+
+**Rationale:** The boundary is the engine that combines members, so the rule is applied once, where every member error passes, and not
+in each format. The development agent would revisit this if customers need to tell an upstream failure from a trove failure on a
+rules endpoint, which the code still does, or if the code itself becomes sensitive (then (b)).
+
+**Applied in the spec:** R-EP-018 ("Only the addressed repository is named"). Code: `virtual.Caller.asAddressed`.
+
+### Q-EP-57 · A write to a format that cannot be exposed
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-EP-018 said every route of a format without the exposure adapter answers `404` on an endpoint with rules; R-EP-013 says a
+write on such an endpoint answers `403 endpoint_read_only` whether or not its target exists, and Q-EP-21 orders the read-only refusal
+before the hidden one.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The order of Q-EP-21: writes `403 endpoint_read_only`, reads `404` | The ceiling answers before it looks at the repository's format | One rule for every write on the endpoint: the answer does not depend on the repository, so it reveals neither existence nor format | The literal "every route 404" of R-EP-018 becomes "every read route" |
+| (b) `404` for every route of such a format | Writes look the repository up first | The literal text | A write's answer would depend on the repository's format, which tells a client that a key exists and what it holds; the ceiling would need the repository before the read-only rule |
+
+**Choice:** (a).
+
+**Rationale:** The read-only refusal is the one answer that tells nothing about the target, which is the reason Q-EP-21 put it first; (b)
+would make the format of a repository observable through the endpoint. The development agent would revisit this if writes through an
+endpoint with rules are ever allowed (Q-EP-9), when a format without the adapter would need its own write answer.
+
+**Applied in the spec:** R-EP-018 (the format without the adapter, its acceptance criterion).
+
+### Q-EP-58 · Who counts a refused upstream contact of a virtual repository
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-EP-019 counts every upstream contact the endpoint's policy prevents in `trove_endpoint_cache_fill_refused_total{endpoint}`.
+The remote engine counts where its populate check refuses a fill. For an artifact through a virtual repository, the virtual engine does
+not hand a remote member the caller may not fill to the remote engine at all (R-AUTHZ-009 rule 3), so that contact was never counted.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The virtual engine counts the members it skips because the endpoint does not fill, through the remote engine's counter | `virtual.Options.FillRefused`, bound to `proxy.Engine.FillRefused`; one family, one owner | Every prevented contact is counted once, through any path; a skip for the caller's missing populate right is not the endpoint's and is not counted | A second caller of the family |
+| (b) The virtual engine asks the remote engine anyway and lets it refuse | No new seam | The engine would look the entry up and run the populate check per member, and record a `populate_not_permitted` decision for a member the caller never addressed |
+| (c) Count only in the remote engine | Nothing to change | The metric under-reports exactly the case R-EP-019's acceptance criterion describes (a virtual repository with a remote member) |
+
+**Choice:** (a). The count is made only when the subject's endpoint does not fill (`Endpoint != "" && !CacheFill`), the condition of
+the remote engine.
+
+**Rationale:** The metric answers "how often did this endpoint's policy keep trove from an upstream"; (a) is the only option that
+answers it for both paths without adding work or audit events. The development agent would revisit this if the virtual engine starts
+to ask remote members for artifacts in another way (then the count moves with the call).
+
+**Applied in the spec:** R-EP-019 (who counts). Code: `virtual.Options.FillRefused`, `proxy.Engine.FillRefused`,
+[wire_virtual_engine.go](../../internal/app/wire_virtual_engine.go).
 
 ## What this does not cover
 

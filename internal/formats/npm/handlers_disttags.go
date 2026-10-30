@@ -33,6 +33,21 @@ func (f *Format) handleDistTags(ctx context.Context, rq *formats.Request, w http
 	if err != nil {
 		return err
 	}
+	// >>> WP2.9 exposure
+	// The filtered tags need the exposed versions, to know where latest moves
+	// (R-NPM-048): they come from the rows of the whole document.
+	if view := viewOf(rq); view != nil {
+		p, found, err := st.LocalDocument(ctx, rq.RepoRef().ID, n.String())
+		if err != nil {
+			return err
+		}
+		if !found || !exposeRows(view, n.String(), &p) {
+			return notFound()
+		}
+		w.Header().Set("Cache-Control", "private, no-cache")
+		return writeJSON(w, http.StatusOK, p.Tags)
+	}
+	// <<< WP2.9 exposure
 	tags, found, err := st.DistTags(ctx, rq.RepoRef().ID, n.String())
 	if err != nil {
 		return err

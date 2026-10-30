@@ -2,7 +2,9 @@ package virtual
 
 import (
 	"context"
+	"maps"
 	"net/http"
+	"strings"
 
 	"github.com/guided-traffic/trove/internal/errs"
 )
@@ -18,7 +20,10 @@ const ResolvedFromHeader = "Trove-Resolved-From"
 // answers 404 if every consulted member said "not found" and otherwise with the failure of the first
 // member that failed transiently, because "not found" would be a false statement about an item that
 // may exist (step 7).
-func (r *Resolver) Artifact(ctx context.Context, c Caller, p *Plan, t Tiers, w http.ResponseWriter) error {
+func (r *Resolver) Artifact(ctx context.Context, c Caller, p *Plan, t Tiers, w http.ResponseWriter) (err error) {
+	// >>> WP2.9 exposure
+	defer func() { err = c.asAddressed(p, err) }()
+	// <<< WP2.9 exposure
 	repo, d := p.Virtual.Key, p.Descriptor
 	if !p.Admitted {
 		r.m.resolved(repo, sourceNone)
@@ -54,6 +59,11 @@ func (r *Resolver) Artifact(ctx context.Context, c Caller, p *Plan, t Tiers, w h
 	for _, m := range remotes {
 		if !m.MayFill {
 			// A member the caller may not fill counts as a miss (R-AUTHZ-009 rule 3).
+			// >>> WP2.9 exposure
+			if sub := c.Subject; sub.Endpoint != "" && !sub.CacheFill && r.o.FillRefused != nil {
+				r.o.FillRefused(sub.Endpoint) // R-EP-019: the endpoint prevented the contact
+			}
+			// <<< WP2.9 exposure
 			continue
 		}
 		tw := &trackWriter{ResponseWriter: w}
@@ -106,6 +116,38 @@ func (t *trackWriter) Write(b []byte) (int, error) {
 
 // Unwrap lets http.ResponseController reach the underlying writer.
 func (t *trackWriter) Unwrap() http.ResponseWriter { return t.ResponseWriter }
+
+// >>> WP2.9 exposure
+
+// asAddressed reports a failure as the addressed repository's on an endpoint with exposure rules
+// (R-EP-018): no problem body there names a repository other than the addressed one, and a member's
+// failure names its member ("The upstream of npm-remote did not answer in time."). The kind, the
+// code, Retry-After and the headers of the answer stay, so a client acts on it as before; the
+// detail names the virtual repository and the code's title; the member's error stays the cause,
+// which is logged and never rendered. A missing item is the engine's one 404 (R-EP-013). On any
+// other endpoint the error is unchanged: there the members are the caller's to see (R-REPO-019).
+func (c Caller) asAddressed(p *Plan, err error) error {
+	if !c.Rules || err == nil {
+		return err
+	}
+	e, ok := errs.As(err)
+	if !ok {
+		return err // rendered as an internal error, with the generic detail
+	}
+	if e.Kind == errs.NotFound {
+		return notFound()
+	}
+	title := http.StatusText(e.Status())
+	if info, found := errs.Lookup(e.Code); found {
+		title = info.Title
+	}
+	out := errs.E(e.Kind, e.Code, p.Virtual.Key+" could not answer the request: "+strings.ToLower(title)+".",
+		errs.WithCause(err), errs.WithRetryAfter(e.RetryAfter))
+	out.Headers = maps.Clone(e.Headers)
+	return out
+}
+
+// <<< WP2.9 exposure
 
 // isMiss reports whether an error from a remote member says "the member does not have it": a
 // 404, or the refusal to populate, which a virtual repository counts as a miss (R-AUTHZ-008).

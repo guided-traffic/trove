@@ -3,8 +3,9 @@
 The npm registry format ([spec/formats/npm.md](../spec/formats/npm.md)). This page grows with the format: each work package adds
 its section. Built today: the format itself (routes, classification, error shape, setup snippets), the local repository end to end
 (publish, the package documents and their validators, tarball downloads, dist-tags, unpublish, whoami and ping, the serve-time check and the
-removal hooks), the data port and its PostgreSQL implementation, and the leaf libraries every part builds on. Planned and not built:
-deprecate (R-NPM-018, `PUT` without an attachment answers 501), the remote and virtual classes, merge and exposure.
+removal hooks), the data port and its PostgreSQL implementation, the leaf libraries every part builds on, and the exposure adapter with the
+filter of local documents on endpoints with rules (R-NPM-048). Planned and not built: deprecate (R-NPM-018, `PUT` without an attachment
+answers 501), the remote and virtual classes and merge (which call the exposure filter on their documents).
 
 ## Package layout
 
@@ -26,6 +27,7 @@ internal/formats/npm/
 ├── handlers_identity.go  whoami and ping
 ├── handlers_deprecate.go the metadata PUT; answers 501 until deprecate is built (R-NPM-018)
 ├── tags.go          the dist-tag rules of R-NPM-016 on the SemVer order
+├── exposure.go      the exposure adapter (ranges, pre-releases, dimensions) and the filter of rows and documents (R-NPM-048)
 ├── store.go         the data port (Store), with marked blocks for the work packages that add to it
 ├── bind.go          Format.Bind: the settings and the metrics of one replica, kept per Host
 ├── rev.go           Rev: the _rev of a document and the rev of a write (R-NPM-009)
@@ -143,7 +145,8 @@ flowchart TD
 | Which form? | `document.Negotiate(Accept)`: abbreviated when `application/vnd.npm.install-v1+json` has a higher q than `application/json` (a wildcard counts for `application/json`); `?write=true` is the full form whatever Accept says |
 | What is in the ETag? | `document.Inputs.ETag()`: repository, package, `rev_seq`, variant, base URL, endpoint, exposure fingerprint, `config_version` and `npm.abbreviated_time`, and `document.RenderVersion` (npmRenderVersion), length-prefixed and hashed; weak. No input is per replica |
 | What must I do when I change the bytes a rendering produces? | Increment `document.RenderVersion` in the same change, or a replica of the old release and one of the new share a validator for different bytes |
-| Where are the links? | In the cached bytes. `Options.TarballPrefix` is `Links(rq).Path(name + "/-") + "/"`, built from the response base URL, which is in the key and the ETag (WP2.9 adds endpoint and exposure to the same key; they are in it already) |
+| Where are the links? | In the cached bytes. `Options.TarballPrefix` is `Links(rq).Path(name + "/-") + "/"`, built from the response base URL, which is in the key and the ETag, as are the endpoint and its exposure fingerprint |
+| And on an endpoint with exposure rules? | The rows are filtered between the read and the rendering ([Exposure](#exposure)); the rendition is cached under the key that holds the endpoint and the fingerprint, so a rule change misses it and fails every earlier ETag |
 | What is cached? | The identity form; the gzip form is made from it once. Each entry starts with the 8 bytes of `time.modified`, so `Last-Modified` needs no query |
 | Why is `If-Modified-Since` ignored? | A date can validate bytes that differ (R-NPM-013); the handler never reads it |
 | What does `?write=true` do? | Reads the rows in the request, renders the full document with its `_rev`, never caches it, no ETag, `Cache-Control: no-store` |
@@ -194,6 +197,36 @@ sequenceDiagram
 that is stored and tombstoned (withheld, R-NPM-047) loses its row and keeps its tombstone. The route calls `removeVersions` itself for a version whose files were not there. `OnItemsRestored` clears the
 tombstone of a version that is stored again with the integrity the tombstone holds, and gives a package without `latest` the highest version (the trash can is P1; the kit drives it).
 
+## Exposure
+
+R-NPM-048, R-EP-018; decisions Q-NPM-38 to Q-NPM-40 and Q-NPM-16. [exposure.go](../../internal/formats/npm/exposure.go) is the adapter
+`Format.Exposure()` returns and the filter the handlers call. The view is `rq.Endpoint.Exposure`, which the dispatcher reads from the
+request's index ([endpoints.md](endpoints.md#package-formats-on-an-endpoint-r-ep-018-r-ep-019)); `viewOf(rq)` returns it, nil on an
+endpoint without rules, and a view that exposes nothing for an endpoint with rules that has none.
+
+| Part | Does |
+|---|---|
+| `ValidateRange` | `semver.ParseForExposure`: node-semver's strict syntax, accepted with and without `includePrerelease`, at most 4096 bytes; the message is a field error of the rule API |
+| `Prerelease`, `InRange` | `semver.ParseNode(v, false)` (the grammar of document versions, Q-NPM-15); a range is evaluated with `includePrerelease`, so the rule's `prereleases` flag decides pre-releases. Parsed ranges are kept in a memo of the format (at most 4,096, cleared when full): the decision point asks `InRange` per version and rule |
+| `exposedVersions`, `exposedTags` | The one decision: the versions the view exposes; the tags that stay (name admitted, version exposed, never moved); `latest` kept when exposed, else the highest exposed release, else the highest exposed pre-release; a missing `latest` computed the same way |
+| `exposeRows` | The filter of a local document's rows before rendering: versions, tags, and the README of a moved `latest` cleared (Q-NPM-39). `time`, `maintainers` and the top-level fields are then rendered from what remains |
+| `FilterDocument` | The filter of a merged or rewritten document (`{name}` full or abbreviated, `{name}/{version}`): members read like `JSON.parse` (a repeated member takes its last value at its first place), `versions`, `time`, `dist-tags` and `maintainers` filtered, the top-level fields of a moved `latest` taken from its entry or removed, other members kept (Q-NPM-40); another path is an internal error, never an unfiltered answer |
+| `readOnly` | `?write=true` on an endpoint with rules: decided as `read` plus `deploy`, which the ceiling refuses with `403 endpoint_read_only` and audits |
+
+What the handlers do on an endpoint with rules, each in a block marked `>>> WP2.9 exposure`:
+
+| Handler | On an endpoint with rules |
+|---|---|
+| `handleDocument` | `?write=true` is `readOnly` |
+| `serveRendering` | `exposeRows` between `rd.read` and `rd.render`; nothing exposed is `notFound()`; the key and the ETag are unchanged, they held the endpoint and the fingerprint already |
+| `handleVersion` | a hidden version is `notFound()` before any lookup; a tag reads the whole document, filters it and takes the tag's version from the filtered tags (`latest` is the moved one) |
+| `handleDistTags` | the tags of the filtered rows of the whole document (the moved `latest` needs the exposed versions) |
+| `handleTarball` | after `Authorize` (whose ceiling decides the version), the view repeats the decision before the item lookup |
+
+For the remote and virtual handlers (not built): call `f.Exposure().FilterDocument(ctx, p, doc, viewOf(rq))` on the merged or rewritten
+package document before compression, read the dist-tag map and the version of a tag from the filtered document, and key the rendition
+and the ETag with `rq.Endpoint.Name` and `rq.Endpoint.ExposureFingerprint`. Nothing filters for them until they do (H-295).
+
 ## Identity
 
 `handleWhoami` answers `{"username": principalName(rq)}` (`sa:<name>`, `ci:<name>` for those kinds), `handlePing` answers `{}`; both are 401 for a subject without a name (anonymous, or a token the chain no longer
@@ -229,11 +262,12 @@ cleaned for the columns (valid UTF-8, no NUL, 64 KiB) in `Publish`.
 |---|---|---|
 | Unit, handlers | [handlers_test.go](../../internal/formats/npm/handlers_test.go), [conditional_test.go](../../internal/formats/npm/conditional_test.go), [mutations_test.go](../../internal/formats/npm/mutations_test.go), [identity_test.go](../../internal/formats/npm/identity_test.go) | the handlers over the kit's in-memory Host and the twin: the document (`TestR_NPM_010_*`, `TestR_NPM_011_*`), the write-read (`TestR_NPM_009_*`), validators and cache headers (`TestR_NPM_013_*`), the rendition cache (`TestR_ARCH_012_RenditionCache`), tarballs (`TestR_NPM_015_*`), `ServeCheck` (`TestR_NPM_047_*`), tags (`TestR_NPM_016_*`), unpublish (`TestR_NPM_017_*`), restore (`TestR_NPM_008_*`), whoami and ping (`TestR_NPM_019_*`) |
 | Unit, rendering | [document](../../internal/formats/npm/document/) | the three renderings, the order, the ETag inputs, negotiation, the benchmark for 1,000 versions |
+| Unit, exposure | [exposure_test.go](../../internal/formats/npm/exposure_test.go) | the ranges of rules (`TestR_NPM_048_RangesOfRules`: strict syntax, `includePrerelease`, the catalog facts, the bounded memo); the rows of the R-EP-012 fixture (`TestR_NPM_048_TheFilterOfALocalDocument`, with the bytes filter of the rendered document compared to the rendering of the filtered rows); upstream-shaped documents with duplicate members, unpublished times, e-mails and a moved `latest` (`TestR_NPM_048_TheFilterOfAMergedOrRewrittenDocument`); the handlers on the kit's Host with endpoint facts (`TestR_NPM_048_HandlersOnAnEndpointWithRules`) |
 | Unit | [internal/formats/npm](../../internal/formats/npm/) `*_test.go` | the route table and every status (`TestR_NPM_001_RouteTable`, `TestR_NPM_043_UnimplementedEndpointsAnswerPredictably`), classification (`TestR_NPM_003_Classification`), the error shape over all routes and all statuses (R-NPM-005), no `otp` (R-NPM-004), the access-log fields and the metrics, the hook's order and refusals with a fake writer, the dist-tag rules, the snippet lint (R-NPM-041) |
 | Conformance | `TestR_ARCH_010_Conformance` | the ten checks of the kit; check 7 over every document, tarball, tag and identity route (a subject is set in `HostOptions.Subject`), check 9 over a change case for publish, tag set and remove, the unpublish `PUT` and `DELETE` and the removal hook; checks 4 and 5 are skipped with a reason until the remote and virtual classes exist, and the kit refuses the skip then |
 | Scanner | [publish](../../internal/formats/npm/publish/) | the body rules, the 96 MiB streaming bound, `FuzzPublishScanner` |
 | Fuzz | `FuzzMatch` (own, escaped-path properties), `FuzzR_ARCH_028_Match`, `FuzzR_ARCH_028_Inspect`, `FuzzPublishScanner` | no panic, canonical names, classified errors |
-| Integration | [test/integration/npm](../../test/integration/npm/) | against PostgreSQL and the object store, with replicas started through `app.New` (`testenv.NewStack`, `Start`, `Do`): publish rows and item, tags and the latest guard, immutability, the retry on another replica and after an edge reset, concurrent publishes of two versions, of one new name and of look-alike names, ownership races, auto claim, archive rules, limits, a slow 200 MiB publish (no connection idle in a transaction, bounded heap), the route contract over the real chain, the access log, metrics and the store's writes; [documents_test.go](../../test/integration/npm/documents_test.go): publish then view on another of three replicas 100 times with Valkey reachable and unreachable, 50 iterations of publish, tag and unpublish, validators and `304` on every replica, the clock rules, 1,000 versions; [mutations_test.go](../../test/integration/npm/mutations_test.go): the tarball, tag writes, the unpublish sequence with its tombstone and journal entry, stale revisions and the retry, a raw delete, withheld versions, concurrent writes of all kinds, whoami and ping |
+| Integration | [test/integration/npm](../../test/integration/npm/) | against PostgreSQL and the object store, with replicas started through `app.New` (`testenv.NewStack`, `Start`, `Do`): publish rows and item, tags and the latest guard, immutability, the retry on another replica and after an edge reset, concurrent publishes of two versions, of one new name and of look-alike names, ownership races, auto claim, archive rules, limits, a slow 200 MiB publish (no connection idle in a transaction, bounded heap), the route contract over the real chain, the access log, metrics and the store's writes; [documents_test.go](../../test/integration/npm/documents_test.go): publish then view on another of three replicas 100 times with Valkey reachable and unreachable, 50 iterations of publish, tag and unpublish, validators and `304` on every replica, the clock rules, 1,000 versions; [mutations_test.go](../../test/integration/npm/mutations_test.go): the tarball, tag writes, the unpublish sequence with its tombstone and journal entry, stale revisions and the retry, a raw delete, withheld versions, concurrent writes of all kinds, whoami and ping; [exposure_test.go](../../test/integration/npm/exposure_test.go): R-NPM-048 and R-EP-018 on a second endpoint `customers` with the rule of R-EP-012 (see [endpoints.md](endpoints.md#tests)) |
 
 ```sh
 go test ./internal/formats/npm/...
@@ -303,7 +337,7 @@ Which entry point to use (Q-NPM-15):
 | A version from an upstream document or a tarball file name | `ParseNode(s, false)`: what `new SemVer(s)` accepts (trim, leading `v`) |
 | A client's loose text (none today) | `ParseNode(s, true)` |
 | A dist-tag name | `ValidateTag`: 1 to 128 characters, starts with a letter or digit, and not a strict-valid range (`1.x`, `v1.4`, `x`, `1.2.3`) |
-| The version bound of an exposure rule | `ParseForExposure` (R-NPM-048, Q-NPM-16); the adapter's `ValidateRange` is `Validate` or `ParseForExposure` and discards the range |
+| The version bound of an exposure rule | `ParseForExposure` (R-NPM-048, Q-NPM-16); the adapter's `ValidateRange` calls it and discards the range, its `InRange` keeps the parsed range in the format's memo ([Exposure](#exposure)) |
 | The highest of a document's versions | `MaxSatisfying` / `MaxSatisfyingStrings`, or `Sort` + the last element; ties of equal precedence keep the first, as node-semver does |
 
 Ranges are a port of node-semver 7.8.5, not a reimplementation of its documentation: the same token grammar, the same

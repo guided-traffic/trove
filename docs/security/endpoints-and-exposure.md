@@ -1,9 +1,10 @@
 # Endpoints and exposure
 
 Status: implemented in M1 for the credential rules of an endpoint, endpoint-bound tokens, exposure rules as the ceiling of
-the decision point, the rate-limit class of an endpoint and the operations that manage exposure rules. Metadata filtering
-and the cache-fill policy of the package formats arrive with npm (M2); the replay of journaled exposure changes with the
-restore (M5).
+the decision point, the rate-limit class of an endpoint and the operations that manage exposure rules. M2 adds the package
+formats on an endpoint: the filter of npm's local documents, member names in the virtual engine and the cache-fill policy in
+the remote and virtual engines; npm's remote and virtual documents are filtered once those classes exist (H-295). The replay
+of journaled exposure changes arrives with the restore (M5).
 
 This page says what an audience that reaches a further endpoint can present, what it can retrieve, what a refusal tells it,
 and how fast a change of what it may retrieve takes effect. The listener, host and surface rules that decide which endpoint a
@@ -49,6 +50,37 @@ choose another endpoint's ceiling and a decision on a detached context keeps it 
   [repositories_api.go](../../internal/api/v1/repositories_api.go) `visibleKeys`): on such an endpoint it lists the exposed
   repositories only, and `GET /api/v1/repositories/{key}` of another one answers the `404` of a missing one, decided before the
   lookup (R-EP-014; `TestR_EP_014_ExposedBindsConfigurationReaders`, `TestR_EP_014_ConfigurationReadersAreBoundByTheCeiling`).
+
+## What a package document reveals
+
+The ceiling decides a request; a package document lists many versions in one answer, so the format filters it with the
+same rules (R-EP-018, [developer/endpoints.md](../developer/endpoints.md#package-formats-on-an-endpoint-r-ep-018-r-ep-019)).
+
+- **One set of rules per answer.** The dispatcher reads the exposure view and the exposure fingerprint from the index the
+  request decides on, and the view matches as the ceiling does (`ExposureView` in [exposure.go](../../internal/authz/exposure.go)),
+  so a version a filtered document lists is one the ceiling lets the same caller download, and a hidden version is refused as
+  an artifact. The rendition and the validator are keyed by the endpoint and the fingerprint: a rule change misses every cached
+  rendition, and a `304` never confirms a copy that lists a version hidden since (`TestR_EP_018_ARuleChangeFailsTheEarlierValidatorOnEveryReplica`).
+- **npm** (R-NPM-048): `versions`, `time`, the dist-tags, `maintainers` and the top-level fields follow the exposed versions;
+  `latest` moves to the highest exposed release, and the README of a hidden former `latest` is not shown (Q-NPM-39). A hidden
+  version, a dropped tag, a hidden tarball and a package without an exposed version answer the `404` of a missing one, decided
+  for a version before any lookup. `?write=true`, which returns the unfiltered document a write starts from, answers `403
+  endpoint_read_only`. A merged or rewritten document is read the way `JSON.parse` reads it, so a member repeated in an upstream
+  document cannot carry an unfiltered copy past the filter (Q-NPM-40). What stays visible: `time.created`, `time.modified` and
+  `Last-Modified` (H-60).
+- **Member names.** On an endpoint with rules no answer carries `Trove-Resolved-From`, and a member's failure is reported as the
+  addressed repository's, with its code and `Retry-After` (Q-EP-56; H-294).
+- **A format without a filter is not served.** A format without the exposure adapter answers every read on an endpoint with rules
+  with the `404` of a missing resource and every write with `403 endpoint_read_only`, and its repositories take no rule (Q-EP-57).
+
+## Upstream contact from an endpoint
+
+With `cache_fill: false`, the default of a further endpoint, no request on the endpoint makes trove contact an upstream
+(R-EP-019): the subject carries the flag from the listener, the populate check refuses every subject, the remote engine serves
+what its cache holds and answers an uncached item `403 populate_not_permitted` without a negative entry, and the virtual engine
+treats such a member as a miss. A customer can therefore neither fill trove's cache with packages of its choosing nor make
+trove's upstream traffic depend on its requests. Every prevented contact is counted in `trove_endpoint_cache_fill_refused_total`
+(`TestR_EP_019_TheCacheFillPolicyOfAnEndpoint`).
 
 ## How long a change takes
 
@@ -109,3 +141,27 @@ the main Deployment does, but each replica divides the budget by the replicas of
 is computed without them and the cluster admits more than the class's budget during the outage, at most by the ratio of all
 serving replicas to the main Deployment's. Subject: the protection of an external endpoint against one token's load. What
 makes it real: a pool value without an endpoint, during a Valkey outage.
+
+### H-294 · The code of a member's failure tells that the addressed repository reaches an upstream
+
+Stage: the answer of the virtual engine on an endpoint with rules when a remote member fails and nothing else has the item
+(`Caller.asAddressed`, Q-EP-56).
+
+Dormant: live once a virtual repository with a remote member is addressed through an endpoint with rules (npm's virtual class).
+The detail names only the addressed repository, but the kind and the code stay (`502 upstream_error`, `504 upstream_timeout`, `503
+upstream_assumed_offline` with `Retry-After`), so a consumer learns that the repository it was given resolves through an upstream
+and when that upstream is failing. It learns no member name, no upstream host and nothing of the content. Subject: the topology of
+the addressed virtual repository. What makes it real: a deployment whose consumers must not know that a repository proxies a public
+registry.
+
+### H-295 · A merged or rewritten document is filtered only where its handler calls the filter
+
+Stage: the npm handlers of the remote and virtual classes, and every later format's document handlers (R-EP-018).
+
+Dormant: npm's remote and virtual classes are not built; the local handlers filter (`exposeRows`, tested on every route), and
+generic has no documents. The filter is the format's call: nothing in the core stops a handler that serves a merged or rewritten
+document on an endpoint with rules without calling `FilterDocument` with `rq.Endpoint.Exposure`, and the ceiling, which decided the
+package, would let every version of that document through to the listing. Downloads stay bound by the ceiling. Subject: the version
+list of every exposed package of such a class. What makes it real: a remote or virtual document handler without the call; the
+checklist in [developer/endpoints.md](../developer/endpoints.md#extension-checklists) and a test on the R-EP-012 fixture per class
+are the guard.

@@ -109,6 +109,9 @@ type worldOpts struct {
 	signals    bool
 	grants     []vt.Grant
 	repos      []vt.RepoSpec
+	// >>> WP2.9 exposure
+	fillRefused func(endpoint string)
+	// <<< WP2.9 exposure
 }
 
 func newWorld(t *testing.T, mods ...func(*worldOpts)) *world {
@@ -145,6 +148,9 @@ func newWorld(t *testing.T, mods ...func(*worldOpts)) *world {
 	opts := virtual.Options{
 		Router: w.router, Decider: w.authz, Locals: w.rows, Remotes: w.remote, Caches: w.caches, CacheBytes: o.cacheBytes,
 		Metrics: w.reg, Now: func() time.Time { w.mu.Lock(); defer w.mu.Unlock(); return w.now },
+		// >>> WP2.9 exposure
+		FillRefused: o.fillRefused,
+		// <<< WP2.9 exposure
 	}
 	if o.signals {
 		w.sig = &signals{}

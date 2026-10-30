@@ -31,10 +31,12 @@ import (
 )
 
 // Ceiling is the part of the endpoint exposure the dispatcher reads: the
-// fingerprint of the exposure rules of an endpoint for a repository (R-EP-018).
-// *authz.ExposureCeiling implements it.
+// fingerprint of the exposure rules of an endpoint for a repository and the view a
+// format filters its documents with (R-EP-018). *authz.ExposureCeiling implements
+// it.
 type Ceiling interface {
 	ExposureFingerprint(x *authz.Index, endpoint, repoKey string) string
+	View(x *authz.Index, endpoint, repoKey string) *authz.ExposureView
 }
 
 // Options configure [New].
@@ -253,6 +255,16 @@ func (d *Dispatcher) endpointFacts(r *http.Request, acc *edge.Access, key string
 	}
 	if d.o.Ceiling != nil && facts.Name != "" {
 		facts.ExposureFingerprint = d.o.Ceiling.ExposureFingerprint(acc.Index(), facts.Name, key)
+		// The view and the fingerprint come from one index: a filtered document and
+		// its validator name the same rules. A nil view stays a nil interface.
+		if v := d.o.Ceiling.View(acc.Index(), facts.Name, key); v != nil {
+			facts.Exposure = v
+		}
+	}
+	if facts.Rules && facts.Exposure == nil {
+		// An endpoint with rules whose rules this dispatcher cannot read exposes
+		// nothing (fail closed, R-EP-012).
+		facts.Exposure = &authz.ExposureView{}
 	}
 	return facts
 }

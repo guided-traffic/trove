@@ -4,11 +4,13 @@ Several client listeners ("endpoints") on one binary: the default endpoint on `:
 ones, each with its own port, hosts, certificates, surface and chain. Requirements: R-EP-001 to R-EP-006,
 R-EP-008 and R-EP-009 of [spec/endpoints.md](../spec/endpoints.md) (M0), and R-EP-010 to R-EP-016 with the API side
 of R-EP-017 (M1, WP1.9): the credential rules per endpoint, endpoint-bound tokens, exposure rules as the ceiling of the
-decision point, the rate-limit class, and the endpoint and exposure-rule operations. Not built yet: the endpoint screen
-(the UI wave), metadata filtering and the cache-fill refusal of package formats (R-EP-018, R-EP-019, with npm in M2;
-`cache_fill` travels in the subject and the populate check of the decision point refuses on it, but no remote engine asks
-the check yet), and the replay of the journaled exposure changes (R-EP-020, M5; the events carry their
-journal entries from now on). The security view is [security/endpoints-and-exposure.md](../security/endpoints-and-exposure.md).
+decision point, the rate-limit class, and the endpoint and exposure-rule operations. M2 (WP2.9) adds the package formats
+on an endpoint ([R-EP-018, R-EP-019](#package-formats-on-an-endpoint-r-ep-018-r-ep-019)): the exposure view in the request's
+endpoint facts, npm's exposure adapter and the filter of its local documents, member names on endpoints with rules, and
+the cache-fill refusal in the remote and the virtual engine. Not built yet: the endpoint screen (the UI wave), the filter of
+npm's remote and virtual documents (they call `FilterDocument` when those classes are built), the stored versions in the dry
+run, and the replay of the journaled exposure changes (R-EP-020, M5; the events carry their journal entries from now on).
+The security view is [security/endpoints-and-exposure.md](../security/endpoints-and-exposure.md).
 
 ## What to have in your head
 
@@ -67,7 +69,7 @@ server:
       surface: [packages]              # default for a further endpoint; ui is refused
       auth: {token_types: [sat], bound_tokens_only: true, anonymous: false}   # default for a further endpoint (R-EP-010)
       exposure: rules                  # default for a further endpoint: rules | all (R-EP-012)
-      cache_fill: false                # default for a further endpoint; refused by the populate check (R-EP-019), no engine asks it yet
+      cache_fill: false                # default for a further endpoint; the remote and virtual engines contact no upstream (R-EP-019)
       rate_limit_class: external       # default for a further endpoint; "" = no class (R-EP-015)
       replica_header: never            # default for a further endpoint: authenticated | always | never
     default:                           # optional; hosts, wildcard_host, host_roots, wildcard_root, surface, auth,
@@ -107,7 +109,10 @@ The effective TLS block of a further endpoint is `server.tls` with the endpoint'
 | [internal/app/wire_exposure.go](../../internal/app/wire_exposure.go) | `exposureCeiling` (the modes for the decision point), `wireEndpoints` (rule service, inert-rule warning, rate-limit classes), `endpointStage` (stage 7 per endpoint), `credentialRefused` (metric and `token.rejected`), `endpointServices`, `Authorizer` |
 | [internal/auth/auth.go](../../internal/auth/auth.go), [stage.go](../../internal/auth/stage.go) | `EndpointRules` with `Refused`, `Refusal`; the stage applies type, binding and anonymous rules and reports each refusal |
 | [internal/authz/ceiling.go](../../internal/authz/ceiling.go) | `Ceiling` (evaluated on the request's index, for the endpoint of the subject), `ExposureFilter`, `Exposed`/`ExposedOn` |
-| [internal/authz/exposure.go](../../internal/authz/exposure.go) | The rule model, compilation into the index, matching, the explanation of the dry run, the fingerprint, `ExposureCeiling` (the modes, and the format facts `catalog.Exposure` and `catalog.Versioning` it reads from the catalog) |
+| [internal/authz/exposure.go](../../internal/authz/exposure.go) | The rule model, compilation into the index, matching, the explanation of the dry run, the fingerprint, `ExposureCeiling` (the modes, and the format facts `catalog.Exposure` and `catalog.Versioning` it reads from the catalog), `ExposureCeiling.View` and `ExposureView` (what a format filters with, R-EP-018) |
+| [internal/api/dispatch/dispatcher.go](../../internal/api/dispatch/dispatcher.go) | `endpointFacts`: the name, `Rules`, `CacheFill`, the exposure fingerprint and the view of a format request, from the listener and the request's index |
+| [internal/formats/npm/exposure.go](../../internal/formats/npm/exposure.go) | npm's exposure adapter (ranges, pre-releases, dimensions), the filter of rows and of documents, `viewOf`, the read-for-write refusal (R-NPM-048) |
+| [internal/virtual/artifact.go](../../internal/virtual/artifact.go) | `Caller.asAddressed`: a member's failure as the addressed repository's on an endpoint with rules; the refused member counted through `Options.FillRefused` |
 | [internal/api/edge/subject.go](../../internal/api/edge/subject.go) | `SubjectFrom`, `SubjectOf`: the one conversion that builds an `authz.Subject`, with the listener's endpoint; `ActorFrom` |
 | [internal/authz/exposure_service.go](../../internal/authz/exposure_service.go) | `ExposureService`: validation, create in the caller's transaction, replace, delete, get, list, counts, `Check`; the `endpoint.exposure.*` events with their journal entries |
 | [internal/audit/events_endpoints.go](../../internal/audit/events_endpoints.go) | The three event types; updated and deleted carry the revocation-journal flag |
@@ -188,19 +193,49 @@ request ─► edge.SubjectFrom (Subject.Endpoint) ─► DecideOn / ReadableOn 
   `catalog.Versioning` is refused (fail closed). Package patterns are folded with the format's name rule
   (`catalog.Names`), like the grants and the token scopes.
 - **Formats.** What a rule may narrow is the format's `catalog.Exposure` ([catalog.go](../../internal/formats/catalog/catalog.go)),
-  declared in its `formats.Descriptor` and read from the catalog by `ExposureCeiling`: generic repositories are exposable
-  through `paths` alone; a format that declares nothing, and a format the catalog does not know, is not exposable (`422
-  format_not_exposable`) until its page states its filter and it declares package names, versions, tags and a
-  `catalog.Versioning` (R-EP-018, M2).
+  which `formats.Register` derives from the format's `Exposure()` adapter and `ExposureCeiling` reads from the catalog: generic
+  repositories are exposable through `paths` alone; npm narrows packages, versions (node-semver ranges, R-NPM-048) and
+  dist-tags; a format without an adapter, and a format the catalog does not know, is not exposable (`422
+  format_not_exposable` for a rule, the `404` of a missing resource for a read on an endpoint with rules, `403
+  endpoint_read_only` for a write, Q-EP-57).
 - **Listings.** `Readable` drops a repository without an enabled rule on the subject's endpoint and counts it in
   `trove_exposure_hidden_total{kind="item"}`; a refused `Decide` counts `kind="request"`. `trove_exposure_rules{endpoint}`
   is set from every installed index.
-- **The fingerprint** (`ExposureCeiling.ExposureFingerprint`) is computed from the index without a query, for the
-  validators of filtered documents in M2; the dry run computes the same value from the stored rows.
+- **The fingerprint** (`ExposureCeiling.ExposureFingerprint`) is computed from the index without a query; it keys the
+  rendition and the validator of a filtered document (below); the dry run computes the same value from the stored rows.
 - **Deletion of a repository.** A repository in `lifecycle = 'deleting'` drops out of the build query at once; its rows go
   with the repository's row through the foreign key, and the delete hook of the repository service (`authz.ExposureHook`) records
   one `endpoint.exposure.deleted` per rule with the cause `repository_deleted` and its journal entry in the same transaction
   (Q-EP-25).
+
+## Package formats on an endpoint (R-EP-018, R-EP-019)
+
+```text
+dispatcher ─► endpointFacts: Name, Rules, CacheFill, ExposureFingerprint ─┐ one index (rq.Index)
+                             Exposure = Ceiling.View(index, endpoint, key) ┘
+format handler ─► authorize (ceiling: versions, tarballs) ─► read rows ─► exposeRows(view) ─► render ─► rendition cache
+                                                                         (key: endpoint + fingerprint; ETag the same inputs)
+remote / virtual handler ─► merge or rewrite ─► Exposure().FilterDocument(view) ─► compress
+```
+
+- **The view** (Q-EP-55). `formats.EndpointFacts.Exposure` is `authz.ExposureView`, read by the dispatcher with
+  `ExposureCeiling.View` from the index the request decides on, the same index that gave `ExposureFingerprint`; nil in mode
+  `all` and for a subject without an endpoint. `Package`, `Version` and `Tag` use the matching of the ceiling, so every
+  version a filtered document lists is one the ceiling lets the same caller download. An endpoint with rules whose ceiling
+  cannot be read gets a view that exposes nothing, and npm's `viewOf` does the same for a request without one.
+- **npm** ([npm.md](npm.md#exposure)): local documents are filtered on their rows before rendering, dist-tags and tag
+  references on the filtered document, hidden versions and tarballs are the `404` of a missing one, `?write=true` is `403
+  endpoint_read_only`; the rendition key and the ETag held the endpoint and the fingerprint before (Q-NPM-26), so a rule
+  change misses every cached rendition and fails every earlier validator.
+- **Member names** (Q-EP-56). On an endpoint with rules the virtual engine sets no `Trove-Resolved-From` and reports a
+  member's failure as the addressed repository's: `Caller.asAddressed` keeps kind, code, `Retry-After` and headers and
+  rewrites the detail; a member's `NotFound` is the engine's one `404`.
+- **Cache fill** (R-EP-019). `Subject.CacheFill` is false on an endpoint with `cache_fill: false`; the populate check
+  (`MayPopulateOn`, `PopulateOn`, `MemberUsableOn`) refuses every subject there. The remote engine then serves what its cache
+  holds, answers an uncached item `403 populate_not_permitted` and writes no negative entry; the virtual engine treats such a
+  member as a miss. Each prevented contact is counted in `trove_endpoint_cache_fill_refused_total{endpoint}`: by the remote
+  engine where it refuses a fill, and by the virtual engine for each remote member it does not ask for an artifact
+  (`virtual.Options.FillRefused`, bound to `proxy.Engine.FillRefused`, Q-EP-58).
 
 ## Rate-limit class (R-EP-015)
 
@@ -295,9 +330,7 @@ readiness check covers every endpoint listener. Rotation and the failed-rotation
 | `trove_exposure_rules` | enabled rules per configured endpoint in the installed grant index; aggregate with `max` |
 | `trove_ratelimit_decisions_total`, `trove_ratelimit_fallback` | the limiter `endpoint_<class>` of each class (R-ARCH-034) |
 | audit | the column `endpoint` of every event recorded during a request: `authz.denied` (reason `deny.exposure`, `deny.endpoint_read_only`), `token.rejected` (reason `endpoint_not_accepted`), `endpoint.exposure.*` |
-
-`trove_endpoint_cache_fill_refused_total` belongs to the cache-fill policy of the package formats (R-EP-019, M2) and does
-not exist yet.
+| `trove_endpoint_cache_fill_refused_total` | per `endpoint`: upstream contacts the endpoint's `cache_fill: false` prevented (R-EP-019); registered by the remote engine ([metrics.go](../../internal/proxy/metrics.go)), counted there and by the virtual engine through `FillRefused` |
 
 ## Chart
 
@@ -317,6 +350,9 @@ See [helm-chart.md](helm-chart.md#endpoints).
 | unit | [endpoint_rules_test.go](../../internal/auth/endpoint_rules_test.go), [exposure_test.go](../../internal/app/exposure_test.go), [endpoints_auth_test.go](../../internal/config/endpoints_auth_test.go) | type refusal without a lookup, binding refusals after one, the refusal hook, the cookie without `ui`; the rules from the configuration; stage 7 keeps the request path and leaves the endpoint to the subject; an empty `token_types` stops start-up |
 | unit | [endpoint_ratelimit_test.go](../../internal/api/v1/endpoint_ratelimit_test.go) | the limiter name, 429 with the class fields, separate budgets per token and endpoint, key `address`, the fallback share |
 | integration | [test/integration/endpoints](../../test/integration/endpoints) | E1.14 with three in-process replicas behind a dispatcher, Valkey running and unreachable: a PAT refused while `api_token` is locked (no query), a bound SAT on `customers` and 401 on default, R-EP-005 with a credential, a rule created, narrowed and deleted through the API on every replica within the bound and at once with `Trove-Authz-Min-Epoch`, hidden equal to missing, the bound administrator, the audit events with their journal rows, 1,000 requests of one token; the convention suite (`RunContract`) on the rules, the endpoint list with an inert name, filters, validation, the dry run with a draft, an auditor, every answer validated against the document |
+| unit | [exposure_test.go](../../internal/authz/exposure_test.go), [dispatcher_test.go](../../internal/api/dispatch/dispatcher_test.go), [exposure_test.go](../../internal/virtual/exposure_test.go), [fillrefused_test.go](../../internal/proxy/fillrefused_test.go) | the view on the R-EP-012 fixture against the ceiling's decisions and its fail-closed cases (`TestR_EP_018_ExposureView`); the facts carry the view and the fingerprint of one ceiling (`TestR_EP_018_TheEndpointFactsCarryTheView`); a member's failure names only the addressed repository (`TestR_EP_018_AFailureNamesOnlyTheAddressedRepository`); the members the virtual engine does not ask are counted for the endpoint and not for a subject's missing right (`TestR_EP_019_TheVirtualEngineCountsTheMembersItDoesNotAsk`, `TestR_EP_019_FillRefusedCountsTheEndpoint`) |
+| integration | [formats_test.go](../../test/integration/endpoints/formats_test.go), [cachefill_test.go](../../test/integration/endpoints/cachefill_test.go) | R-EP-018 with a test format without the adapter (`opaque`): 404 on `customers` byte-identical to a missing repository for a bound SAT and a bound administrator, 403 on a write, 422 `format_not_exposable` for a rule; npm's rules accepted, its strict range check, the dry run on npm versions. R-EP-019 through the dispatcher, the Host's populate check and the remote engine with a counting upstream and a test format with a remote class (`relay`): no upstream request and `403 populate_not_permitted` on `customers`, counted; the fill through default; `customers` served from the cache; a fill on an endpoint with `cache_fill: true` |
+| integration | [test/integration/npm/exposure_test.go](../../test/integration/npm/exposure_test.go) | R-NPM-048 on the R-EP-012 fixture (a local `npm-customers`): the versions and tags of the full and abbreviated document on `customers` and on default, every URL on the endpoint's host and no trace of the default endpoint's, the ETag per endpoint, hidden versions, tags, tarballs and packages byte-identical to missing ones, `latest` moved to a hidden version on default, the read of a write and the writes refused; a rule change answers a conditional request with the earlier ETag with `200` and the new list on each of three replicas, which shared the validator before |
 
 The `/files/` routes belong to the files area; the integration tests register a stand-in route through `app.Options.Extra`
 that decides exactly as the contract says (`edge.SubjectFrom`, `Decide`, `authz.NotFound` for a
@@ -341,8 +377,17 @@ request's index once (`edge.Begin`, [access.go](../../internal/api/edge/access.g
 addressed repository into `Coordinate.Addressed` when deciding a member of a virtual repository, the version into
 `Coordinate.Version`; answer a missing item with `authz.NotFound()`; list with `Readable`.
 
-**A format that can be served under exposure rules.** Give its `formats.Descriptor` a `catalog.Exposure` (package names,
-versions, tags, a `catalog.Versioning` for its ranges and pre-releases); `formats.Register` puts it into the catalog, which
-`NewExposureCeiling` and `ExposureServiceOptions.Ceiling` read (`exposureCeiling` in
-[wire_exposure.go](../../internal/app/wire_exposure.go)). Filter its documents with the rules of the index (R-EP-018), and list
-a package's stored versions in the dry run.
+**A format that can be served under exposure rules.**
+1. Return an `ExposureAdapter` from `Exposure()` ([exposure.go](../../internal/formats/exposure.go)): `Dimensions`, the
+   `catalog.Versioning` of its ranges and pre-releases, and `FilterDocument`; `formats.Register` puts the facts into the
+   catalog, which `NewExposureCeiling` and `ExposureServiceOptions.Ceiling` read (`exposureCeiling` in
+   [wire_exposure.go](../../internal/app/wire_exposure.go)). The adapter is the format's own value; a memo it keeps is a field
+   of the format, never a package variable (archtest state rule).
+2. Filter every document that lists versions, files or tags with `rq.Endpoint.Exposure` (nil: nothing to filter; an endpoint
+   with `Rules` and no view exposes nothing), after the merge and the rewrite, before compression, and answer "nothing
+   exposed" with the format's `404` of a missing resource.
+3. Key every rendition and validator of a filtered document with `rq.Endpoint.Name` and `rq.Endpoint.ExposureFingerprint`.
+4. Decide a hidden version before any lookup, refuse a read that prepares a write with `403 endpoint_read_only`, and name no
+   member in a header or a body where `rq.Endpoint.Rules` is set.
+5. Test it on the R-EP-012 fixture in its integration area ([npm's](../../test/integration/npm/exposure_test.go) is the model).
+   Still open for every format: listing a package's stored versions in the dry run (R-EP-016).

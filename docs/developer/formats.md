@@ -99,8 +99,13 @@ chain 1-7 (recovery, trace, log, in-flight, address and host, authentication, ra
      6  coarse DecideOn: the route's action on the repository, kind from the route; the exposure ceiling first
      7  Repos.ByKey; deleting or another format -> 404 repository_not_found; disabled -> 404 repository_disabled
      8  a class the route does not serve -> a virtual write goes to Resolver().DeployTarget, else 405 with Allow
-     9  formats.Request built, formathost.Prepare; formats.ServeRoute (content headers, recovery, WriteError); formathost.Finish closes the spools
+     9  formats.Request built (rq.Endpoint: name, Rules, CacheFill, exposure fingerprint and view, from the listener and the index),
+        formathost.Prepare; formats.ServeRoute (content headers, recovery, WriteError); formathost.Finish closes the spools
 ```
+
+`rq.Endpoint` is what a format knows of the endpoint ([endpoints.md](endpoints.md#package-formats-on-an-endpoint-r-ep-018-r-ep-019)):
+`Exposure` is the view `FilterDocument` takes, read with `ExposureFingerprint` from the request's index, nil where the endpoint does not
+restrict; `Rules` forbids member names in answers; `CacheFill` is folded into every populate decision by the core.
 
 Every error of steps 1 to 8 is rendered by the format's `WriteError`. The chain's own refusals (401, 421, 429, 503) on the prefix are rendered by
 it too: [errors.go](../../internal/api/dispatch/errors.go) registers it with `Router.HandleErrorShape`, and `httpserver.Problem` consults the table by path

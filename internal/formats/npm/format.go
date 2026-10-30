@@ -41,6 +41,9 @@ type Format struct {
 	formats.Base
 	routes   []formats.Route
 	replicas replicas
+	// >>> WP2.9 exposure
+	exposure *exposure
+	// <<< WP2.9 exposure
 }
 
 var _ formats.Format = (*Format)(nil)
@@ -49,6 +52,9 @@ var _ formats.Format = (*Format)(nil)
 func New() *Format {
 	f := &Format{}
 	f.routes = f.buildRoutes()
+	// >>> WP2.9 exposure
+	f.exposure = newExposure()
+	// <<< WP2.9 exposure
 	return f
 }
 

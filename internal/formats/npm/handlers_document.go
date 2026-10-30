@@ -46,6 +46,13 @@ func (f *Format) handleDocument(ctx context.Context, rq *formats.Request, w http
 	}
 	repo := rq.RepoRef()
 	if rq.URL.Query().Get("write") == "true" {
+		// >>> WP2.9 exposure
+		// The unfiltered document a write starts from is not served where nothing is
+		// written: 403 endpoint_read_only (R-NPM-048, R-EP-013).
+		if rq.Endpoint.Rules {
+			return readOnly(ctx, rq, n.String())
+		}
+		// <<< WP2.9 exposure
 		return f.serveForWrite(ctx, rq, w, n)
 	}
 	v := document.Negotiate(rq.Header.Get("Accept"))
@@ -75,13 +82,36 @@ func (f *Format) handleVersion(ctx context.Context, rq *formats.Request, w http.
 	if v, ok := canonicalVersion(ref); ok {
 		version, tag = v, ""
 	}
-	return f.serveRendering(ctx, rq, w, n, rendering{
+	rd := rendering{
 		variant: "version/" + ref, contentType: "application/json",
 		read: func(ctx context.Context, st Store) (rows.LocalPackage, bool, error) {
 			return st.LocalVersion(ctx, repo.ID, n.String(), version, tag)
 		},
 		render: document.VersionDocument,
-	})
+	}
+	// >>> WP2.9 exposure
+	if view := viewOf(rq); view != nil {
+		// A hidden version is a missing one, decided before any lookup (R-NPM-048,
+		// R-EP-013).
+		if version != "" && !view.Version(n.String(), version) {
+			return notFound()
+		}
+		// A tag names the version of the filtered document: latest moves to the
+		// highest exposed release, a tag the rules drop is missing.
+		if tag != "" {
+			rd.read = func(ctx context.Context, st Store) (rows.LocalPackage, bool, error) {
+				p, found, err := st.LocalDocument(ctx, repo.ID, n.String())
+				if err != nil || !found || !exposeRows(view, n.String(), &p) {
+					return rows.LocalPackage{}, false, err
+				}
+				v, ok := p.Tags[tag]
+				p.Versions = keepIf(p.Versions, func(lv rows.LocalVersion) bool { return lv.Version == v })
+				return p, ok && len(p.Versions) == 1, nil
+			}
+		}
+	}
+	// <<< WP2.9 exposure
+	return f.serveRendering(ctx, rq, w, n, rd)
 }
 
 // authorizeRead decides the read of a package and finds its row. A package that does
@@ -162,6 +192,15 @@ func (f *Format) serveRendering(ctx context.Context, rq *formats.Request, w http
 		if !found {
 			return notFound()
 		}
+		// >>> WP2.9 exposure
+		// On an endpoint with exposure rules the rows are filtered before they are
+		// rendered; the key and the validator carry the endpoint and its exposure
+		// fingerprint already (R-NPM-048, Q-NPM-38). Nothing exposed is a missing
+		// package.
+		if view := viewOf(rq); view != nil && !exposeRows(view, n.String(), &p) {
+			return notFound()
+		}
+		// <<< WP2.9 exposure
 		// The rows carry the revision they were read at, which may be newer than the
 		// lookup above when a write raced it: the rendering is keyed and validated by
 		// the revision of its own rows.

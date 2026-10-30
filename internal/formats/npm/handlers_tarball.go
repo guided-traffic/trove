@@ -30,6 +30,14 @@ func (f *Format) handleTarball(ctx context.Context, rq *formats.Request, w http.
 	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: n.String(), Version: version, Actions: []formats.Action{formats.ActionRead}}); err != nil {
 		return err
 	}
+	// >>> WP2.9 exposure
+	// The ceiling decided the version above; the view repeats it from the same rules,
+	// so a tarball is served exactly when a filtered document lists its version, and
+	// a hidden one is missing without an item lookup (R-NPM-048, R-EP-013).
+	if view := viewOf(rq); view != nil && !view.Version(n.String(), version) {
+		return notFound()
+	}
+	// <<< WP2.9 exposure
 	it, found, err := rq.Host.Items().Stat(ctx, rq.RepoRef(), formats.Path{Path: TarballPath(n, version)})
 	if err != nil {
 		return err

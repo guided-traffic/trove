@@ -2364,16 +2364,28 @@ document and before compression:
   an unknown package. `time.created` and `time.modified` keep the values of the unfiltered document,
   because `modified` must never move backwards for a downstream proxy (R-NPM-012); what that reveals
   is [endpoints.md](../endpoints.md) H-60.
+- **Where.** A local document is filtered on its rows, after they are read and before it is
+  rendered; a merged or rewritten document is filtered on its bytes (`FilterDocument`). One
+  decision serves both, so a document lists the same versions and tags whatever class served it
+  ([Q-NPM-38](#q-npm-38--where-a-document-is-filtered)). `FilterDocument` filters the package
+  document (`{name}`, full and abbreviated) and the single-version document of a version
+  (`{name}/{version}`); the dist-tag map and the version a tag names are read from the filtered
+  package document, and any other document is refused rather than served unfiltered.
 - **Dist-tags.** A tag other than `latest` is kept when the rules admit its name and the version it
   points to is exposed, and dropped otherwise; it is never moved to another version. `latest` is not
   subject to `distTags`: it keeps its version when that version is exposed, and otherwise moves to
   the highest exposed version that is not a pre-release, or to the highest exposed version when all
-  are pre-releases, the rule of R-NPM-016.
+  are pre-releases, the rule of R-NPM-016. A document without `latest` gets one by the same rule
+  ([Q-NPM-40](#q-npm-40--how-the-filter-reads-a-document-it-did-not-render)).
 - **Top-level fields** (`description`, `readme`, `keywords`, `license`, `homepage`, `repository`,
-  `bugs`, `author`) come from the version the filtered `latest` points to (R-NPM-010);
-  `maintainers` lists only the publishers of exposed versions.
+  `bugs`, `author`) come from the version the filtered `latest` points to (R-NPM-010): when the
+  filter moves `latest`, a field the new `latest` does not carry is removed, and the README is the
+  one that version's entry carries, else none
+  ([Q-NPM-39](#q-npm-39--the-readme-when-the-filter-moves-latest)); `maintainers` lists only the
+  publishers of exposed versions, by name.
 - **Other documents.** `GET -/package/{name}/dist-tags` returns the filtered tags. The
-  single-version document (R-NPM-014, P1) answers 404 for a hidden version or a dropped tag. Search
+  single-version document (R-NPM-014, P1) answers 404 for a hidden version or a dropped tag, and a
+  tag names the version of the filtered tags, so `{name}/latest` is the moved `latest`. Search
   (R-NPM-037, P1) returns only exposed packages, with the filtered `latest` as their version.
 - **Tarballs** of hidden versions answer the 404 of R-EP-013; the version is the one R-NPM-015
   parses from the file name.
@@ -3513,6 +3525,81 @@ member, whatever the stored manifest says.
 The development agent would revisit the README rule if a client is found that reads it from the version objects.
 
 **Applied in the spec:** R-NPM-010, R-NPM-011, R-NPM-014. Code: `internal/formats/npm/document/`.
+
+### Q-NPM-38 · Where a document is filtered
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NPM-048 filters a document after the merge of a virtual repository and the rewrite of a remote document, and the exposure
+adapter of R-EP-018 filters bytes (`FilterDocument`). A local document is rendered from rows (Q-NPM-26), and its rendition is cached
+under a key that holds the endpoint and the exposure fingerprint already.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Rows for local documents, bytes for merged and rewritten ones, one decision | `exposeRows` filters the rows between the read and the rendering; `FilterDocument` filters the bytes of the other classes; both call `exposedVersions` and `exposedTags` | The local renderer stays the one place that writes `time`, `maintainers` and the top-level fields, so a filtered and an unfiltered local document follow the same rules; the README of the moved `latest` can come from its rows; no second parse of a local document | Two applications of the rule (a unit test renders the rows both ways and compares) |
+| (b) Bytes for every class | Render, then `FilterDocument` | One application | Parses and re-encodes every local miss on a rules endpoint; the top-level fields of a moved `latest` can only come from what the rendered version object carries |
+| (c) Rows everywhere | Merge and rewrite produce rows | One application | Merged and rewritten documents are bytes by design (D-8, Q-NPM-5); the remote and virtual classes would need a second representation |
+
+**Choice:** (a). `FilterDocument` filters the package document and the single-version document of a version; the dist-tag map and the
+version a tag names are read from the filtered package document, because only it knows where `latest` moved; any other path is refused
+with an internal error rather than served unfiltered. A single-version request for a hidden version is answered before any lookup; a
+tag request on a rules endpoint reads the whole document, filters it and takes the tag's version from the filtered tags.
+
+**Rationale:** (a) keeps one renderer and one decision, and the test that renders the fixture's rows through both paths and compares
+the parsed documents holds the two applications together. The development agent would revisit this if the remote or virtual handlers
+need a filter of the rows as well (then (c) for them), or if profiling shows the extra parse of (b) is negligible and the README of a
+moved `latest` is dropped anyway.
+
+**Applied in the spec:** R-NPM-048 ("Where", "Other documents"). Code: `exposeRows`, `FilterDocument`, `exposedVersions`,
+`exposedTags` in [exposure.go](../../../internal/formats/npm/exposure.go); the marked blocks of the document, dist-tag and tarball
+handlers.
+
+### Q-NPM-39 · The README when the filter moves latest
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NPM-010 takes the README of a package from the version `latest` points to, and the local document reads it from the column
+of that one version only (Q-NPM-31: no README per version). When the filter moves `latest` to another version, the row holds the
+README of a version the endpoint may hide; a merged or rewritten document carries one top-level README only.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The README the new `latest`'s entry carries, else none | The README of the former `latest` is never shown; a local document shows one only when the moved `latest`'s manifest has one | Nothing of a hidden version is shown; no new query; one rule for every class | `npm view` on the endpoint shows no README until the stored `latest` is exposed again |
+| (b) Read the README of the new `latest` from its row | An indexed lookup of one column when the filter moved `latest` | The README is the right one for local documents | A query and a store method for a cosmetic field; remote and virtual documents still have none for the moved `latest` |
+| (c) Keep the former `latest`'s README | Nothing changes | Simplest | Shows the text of a version the rules hide, which is exactly what exposure exists to prevent |
+
+**Choice:** (a). The same holds for every top-level field of R-NPM-010: a field the moved `latest` lacks is removed.
+
+**Rationale:** The README is presentation, never what an install reads; (c) leaks and (b) buys presentation with a query on the hot
+path. The development agent would revisit this if customers rely on the README of an endpoint in a registry browser, then (b) for
+local documents.
+
+**Applied in the spec:** R-NPM-048 ("Top-level fields"). Code: `exposeRows` clears the row's README when `latest` moved;
+`filterPackageDocument` replaces or removes the fields.
+
+### Q-NPM-40 · How the filter reads a document it did not render
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `FilterDocument` runs on merged and rewritten documents whose bytes come from an upstream. JSON allows a member twice, and npm
+clients parse with `JSON.parse`, which takes the last value; upstream documents carry members trove does not render (`users`,
+`contributors`), `time` entries of unpublished versions and an `unpublished` record, and may lack `latest` or carry a tag that is not a
+string.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Read like the client, filter what names versions, keep the rest | A repeated member counts with its last value at the place of its first; `versions`, `time` (all keys except `created` and `modified` are versions) and `dist-tags` are filtered; a tag whose value is no string is dropped; a missing `latest` is computed; members the filter does not know stay | No duplicate can carry an unfiltered copy past the filter; nothing a client installs from is dropped | A member the filter does not know is passed on as it came |
+| (b) Refuse a document with a duplicate member | 500 for such a document | Strict | A remote's document becomes unservable on a rules endpoint for a JSON detail the client accepts |
+| (c) Decode into a generic tree and re-encode | One decoder | Simple | Member order and number formatting change; the bytes of a 30 MB document are held twice as a tree (D-8) |
+
+**Choice:** (a).
+
+**Rationale:** The filter must see the document the client will see; `JSON.parse` semantics make that true for duplicates. Unknown
+members are package-level, not version-level, in every document form of the registry API; the development agent would revisit this
+when an upstream is found whose package-level member names versions, which would then be filtered too.
+
+**Applied in the spec:** R-NPM-048 ("Dist-tags"). Code: `readMembers`, `filterPackageDocument` in
+[exposure.go](../../../internal/formats/npm/exposure.go).
 
 ### Q-NPM-41 · Where the test upstream gets its packages
 
