@@ -3553,8 +3553,8 @@ Latencies are measured at the replica.
 | P-10 | Concurrency | ≥ 5,000 open connections and ≥ 500 concurrent transfers per replica; ≤ 256 KiB memory per transfer |
 | P-11 | Upload finish after the last byte arrives | ≤ 1 s + size ÷ 150 MiB/s |
 | P-12 | Collapsing | N concurrent identical misses → 1 upstream request in the cluster while Valkey is available; at most 1 per replica while it is not |
-| P-13 | Propagation of changes in change areas (R-ARCH-018), from the return of the writer's `COMMIT` until another replica no longer serves the old value (Q-ARCH-220) | p99 ≤ 100 ms while Valkey is available; p99 ≤ `cluster.epoch_poll_interval` + 1 s while it is not |
-| P-14 | Job pick-up after enqueue | p99 ≤ 1 s while Valkey is available; p99 ≤ `jobs.poll_interval` + 1 s while it is not |
+| P-13 | Propagation of changes in change areas (R-ARCH-018), from the return of the writer's `COMMIT` until another replica no longer serves the old value (Q-ARCH-220) | p99 ≤ 100 ms while Valkey is available; enforced by the nightly performance run, per change p50 ≤ 20 ms and delivery (Q-ARCH-220); p99 ≤ `cluster.epoch_poll_interval` + 1 s while it is not |
+| P-14 | Job pick-up after enqueue | p99 ≤ 1 s while Valkey is available; enforced by the nightly performance run, per change p50 ≤ 100 ms (Q-ARCH-220); p99 ≤ `jobs.poll_interval` + 1 s while it is not |
 | P-15 | Process start to ready (10,000 repositories, 50,000 policy grants) | ≤ 15 s |
 | P-16 | Scale-out: throughput of P-7 and P-8 with 6 `web` replicas compared with 3 | ≥ 1.8 × at the same p99 |
 | P-17 | Latency added by a Valkey outage, after the breaker has opened | p99 of P-1 and P-3 within 5 % of the baseline |
@@ -5807,36 +5807,43 @@ PostgreSQL 18 leaves support (2030-11-14, as R-HA-013 records).
 `PGDATA`); `tools/versions.env` (`INTEGRATION_POSTGRES_IMAGE`, `DEV_CNPG_POSTGRES_IMAGE`); the three assertions; the pages of
 [developer](../developer/build-and-test.md) and [local profile](../developer/local-profile.md) name 18.
 
-### Q-ARCH-220 · P-13 starts its clock at the commit, and the per-change integration gate stays
+### Q-ARCH-220 · P-13 starts its clock at the commit, and its p99 is enforced in the nightly performance run
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the owner on 2026-10-30** — option (c), after the development agent's own choice (b) failed in CI; the owner keeps the CPU limit of the runner pods.
 
-Context: `TestChangePropagation` failed on the self-hosted runner with `n=200 p50=2.762ms p99=112.515ms` (Actions run 41061536927). The
-test started its clock before the writer's transaction and read it after the cache of the second replica had evicted the key, so
-the sample held the writer's own statements and `COMMIT` on PostgreSQL. Stamping each stage showed where the tail sits (integration
-stack, host load average 15 to 40; the repeated runs are the evidence, not a single one): the two statements of `Notify` and the `COMMIT`
-took p50 3.0 ms and p99 9 to 120 ms of a sample, while the leg P-13 names (from the return of `COMMIT` until the eviction on the other
-replica) took p50 1.27 ms and p99 5 to 33 ms. Inside that leg the queue wait before `PUBLISH` was 30 to 180 µs, the delivery from the
-subscription's reader to the cache 3 to 30 µs, and the rest the `PUBLISH` round trip of valkey-go, whose message reaches the
-subscriber at the moment the reply reaches the publisher. There is no flush window, batch or timer in the path: change messages bypass
-the coalescer, and `MaxFlushDelay` of the client is 0. With 24 CPU burners on 20 cores the same leg showed p50 4 to 9 ms and a tail of
-20 to 80 ms in the `PUBLISH` round trip with everything else unchanged; that is scheduling, and it is not a fixed delay of trove.
+Context: `TestChangePropagation` failed on the self-hosted runners with `n=200 p50=2.762ms p99=112.515ms` (Actions run 41061536927). The
+test started its clock before the writer's transaction, so each sample held the writer's two statements and the `COMMIT`. Stamping
+each stage (integration stack, host load average 15 to 40) showed the transaction at p50 3.0 ms and p99 9 to 120 ms, and the leg
+P-13 names (from the return of `COMMIT` until the eviction on the other replica) at p50 1.2 to 1.3 ms and p99 3.5 to 33 ms, with
+no window, batch or timer in it: change messages bypass the coalescer, the queue wait before `PUBLISH` is 30 to 180 µs, the delivery
+from the subscriber's reader to the cache 3 to 30 µs, and `MaxFlushDelay` of the client is 0. With 24 CPU burners on 20 cores
+the leg showed p50 4 to 9 ms and single `PUBLISH` round trips of 20 to 80 ms with every other stage unchanged. Option (b) below
+(clock at the commit, p99 bound kept per change) shipped and failed again on the runners: propagation with Valkey `n=200 p50=1.532ms
+p99=122.489ms` (equal to the maximum), pick-up with Valkey p99 97.6 ms in the same run, an earlier run p99 112.5 ms. Tails of 100 to
+120 ms fit the throttling period of the Linux CFS bandwidth controller (100 ms) under the CPU limit of the runner pods, not a delay
+in the message path. The owner keeps that limit because the cluster is shared.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Keep the clock before the transaction | The sample holds the writer's transaction | Simple | It bounds PostgreSQL commit latency on a shared runner, which P-1 and the database budget bound, not P-13; a loaded host fails it with no fault in the propagation |
-| (b) Clock at the return of `COMMIT`; the p99 bound, the 200 samples and the per-change gate stay (chosen) | An After hook, registered before `Notify`, stamps the commit; the sample ends at the eviction | Measures what P-13 states, bound and sample unchanged; still a gate on every change, so a message path that falls back to the poll fails it at once | Still sensitive to a runner that starves the process for 100 ms in a burst |
-| (c) Move the bound to the performance run; the integration test asserts delivery only | The per-change test checks that the message, not the poll, delivered | No flake from the runner | The per-change tier no longer notices a regression of the message path below the poll interval; the performance run exists once per phase |
+| (a) Keep the clock before the transaction | The sample holds the writer's transaction | Simple | It bounds PostgreSQL commit latency, which P-1 and the database budget bound, not P-13 |
+| (b) Clock at the return of `COMMIT`; the p99 bound stays per change | An After hook stamps the commit | Measures the leg P-13 states | Failed in CI again: a throttled runner stalls the process for a period of 100 ms and the p99 of 200 samples is the second largest |
+| (c) Per change: delivery and p50; the p99 bound in a nightly performance run (chosen) | The integration test asserts that every change reaches replica B and that the p50 stays within 20 ms; the p99 bound of 100 ms is enforced when `TROVE_PERF_GATE=1`, which the workflow Performance (nightly) sets | The per-change tier stays free of a tail that the runner's CPU limit makes; the bound is enforced exactly as before, where it is a statement about the system; the p50 and delivery still fail a message path that is lost, polled or slow | A regression of the tail alone shows up the next night, not on the change |
+| (d) Remove the CPU limit from the runner pods | The p99 stays per change | Strictest | The cluster is shared; the owner keeps the limit |
 
-**Choice:** (b), in `test/integration/coordination/latency_test.go` and the e2e driver (`driver load`), which made the same error.
+**Choice:** (c). `TestChangePropagation` (P-13 with Valkey) and `TestJobPickup` (P-14 with Valkey) always log p50, p99 and the maximum.
+Per change they fail when a change does not reach replica B within 10 s, when the p50 of the propagation exceeds 20 ms or the p50 of the
+pick-up exceeds 100 ms. The p99 bounds (100 ms and 1 s) fail the test only with `TROVE_PERF_GATE=1`; without it a p99 above the bound is
+logged. The bounds without Valkey (`epoch_poll_interval` + 1 s, `jobs.poll_interval` + 1 s) are not tail-sensitive and stay per change.
 
-**Rationale:** The leg after the commit has no delay of its own, so the cause of the failure was the measurement and not the code, and the
-bound of P-13 is kept as written. Option (c) would weaken the one test that notices a change message that goes missing or late by less than a poll
-interval. The development agent would revisit the choice when the corrected test fails on a runner whose p50 of the leg stays under 5 ms:
-then the leg has a delay that these measurements did not show, and the fix goes into the code; or when the self-hosted runners are
-shared so heavily that the leg alone fails more than once in twenty runs, then (c) is decided with the owner.
+**Rationale:** The numbers come from the measurements above. With the poll at 2 s (propagation) and 5 s (pick-up) a p50 of a few
+milliseconds can only be explained by the message, so the p50 bound keeps the per-change test able to notice a lost or late message. 20 ms
+is 15 times the quiet p50 of 1.3 ms and more than twice the highest p50 seen at host load 30 and with 24 CPU burners (9 ms); 100 ms for the
+pick-up is 20 times its p50 of 5 ms. The bounds P-13 and P-14 state are unchanged and are enforced in the nightly job
+(`.github/workflows/performance.yml`, `make test-performance`). The development agent would revisit the choice when the runners
+that run the nightly job have no CPU limit (dedicated performance runners): then the p99 returns to every change, as in (b).
 
-**Applied in the spec:** the P-13 row of R-ARCH-027; [docs/developer/coordination.md](../developer/coordination.md) ("Bounds P-13 and P-14").
+**Applied in the spec:** the P-13 and P-14 rows of R-ARCH-027; [docs/developer/coordination.md](../developer/coordination.md) ("Bounds P-13
+and P-14"); [docs/developer/releasing.md](../developer/releasing.md) ("Performance (nightly)"); [docs/developer/build-and-test.md](../developer/build-and-test.md).
 
 ## What this does not cover
 

@@ -1,0 +1,88 @@
+# Performance (nightly): the p99 bounds of P-13 (change propagation) and P-14 (job pick-up) with Valkey
+# available, enforced against the integration stack (R-ARCH-027, Q-ARCH-220). The per-change integration
+# tier asserts delivery and the p50 only, because the runner pods keep a CPU limit and a throttled
+# process stalls for 100 ms or more at a time. What the job runs and how to reproduce it:
+# docs/developer/releasing.md#performance-nightly.
+#
+# Every job runs on the organisation's self-hosted runners (runs-on: self-hosted).
+name: Performance (nightly)
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  latency:
+    name: P-13 and P-14 latency (Valkey 9.1)
+    runs-on: self-hosted
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Load the tool pins
+        uses: ./.github/actions/load-pins
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Install the Docker Compose plugin (the integration stack)
+        run: |
+          set -euo pipefail
+          docker compose version >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y docker-compose-v2; }
+          docker compose version
+
+      - name: Log in to Docker Hub (stack image pulls)
+        uses: docker/login-action@v4
+        with:
+          username: guidedtraffic
+          password: ${{ secrets.DOCKERHUB_PAT }}
+
+      - name: make integration-up
+        run: make integration-up
+
+      - name: make test-performance
+        run: make test-performance
+
+      - name: Upload the go test -json report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-performance
+          path: .out/test-performance.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Container logs (failure only)
+        if: failure()
+        run: |
+          docker compose -f test/integration/compose.yaml ps -a || true
+          for c in $(docker ps -a --filter "name=trove-it-" --format '{{.Names}}'); do
+            echo "::group::logs of $c"
+            docker logs --timestamps "$c" 2>&1 | tail -n 300 || true
+            echo "::endgroup::"
+          done
+
+      - name: make integration-down
+        if: always()
+        run: make integration-down

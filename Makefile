@@ -239,6 +239,16 @@ test-integration: ## Integration tests against the running stack (make integrati
 	    -coverprofile=$(COVERAGE_DIR)/integration-$${TROVE_TEST_VALKEY_LINE:-9.1}.out \
 	    -json ./test/integration/... | tee .out/test-integration.json | $(TESTLOG)
 
+# The latency bounds of P-13 and P-14 with Valkey, tail included (Q-ARCH-220): the per-change tier asserts
+# delivery and the p50; the p99 bound is enforced here, by the nightly Performance workflow.
+.PHONY: test-performance
+test-performance: ## P-13 and P-14 latency tests with the p99 bounds enforced (make integration-up); .out/test-performance.json
+	@test -f $(INTEGRATION_ENV) || { echo "$(INTEGRATION_ENV) is missing: run 'make integration-up' first"; exit 1; }
+	@mkdir -p .out
+	@set -o pipefail; set -a; . $(INTEGRATION_ENV); set +a; \
+	  TROVE_PERF_GATE=1 go test -count=1 -p 1 -tags integration -run 'TestChangePropagation|TestJobPickup' \
+	    -json ./test/integration/coordination/... | tee .out/test-performance.json | $(TESTLOG)
+
 # S3 conformance against MinIO, the leg that used to run nightly: MinIO is built from source at
 # MINIO_COMMIT and served over TLS only (INV-20). The tests are the same as against any store.
 .PHONY: minio-up

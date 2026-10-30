@@ -264,16 +264,27 @@ delete rows stale for 24 h. The HTTP layer converts `cluster.ReplicaInfo` to its
 
 ## Bounds P-13 and P-14
 
-| Bound | Spec | Test | Measured (this machine, `-race`) |
-|---|---|---|---|
-| Change propagation with Valkey p99 ≤ 100 ms | P-13 | `TestChangePropagation`, with poll 2 s, so only the message can explain it | p50 1.3 ms, p99 4 to 33 ms (host load 15 to 40) |
-| Change propagation without Valkey p99 ≤ `epoch_poll_interval` + 1 s | P-13 | same, Sentinel address that does not answer, poll 1 s | p99 about 1.0 s |
-| Job pick-up with Valkey p99 ≤ 1 s | P-14 | `TestJobPickup`, with `jobs.poll_interval` 5 s | p99 29 ms |
-| Job pick-up without Valkey p99 ≤ `poll_interval` + 1 s | P-14 | same, poll 1 s | p99 1.02 s |
+| Bound | Spec | Test | Per change | With `TROVE_PERF_GATE=1` (nightly) | Measured (this machine, `-race`) |
+|---|---|---|---|---|---|
+| Change propagation with Valkey | P-13 | `TestChangePropagation`, with poll 2 s, so only the message can explain it | every change reaches B; p50 ≤ 20 ms | p99 ≤ 100 ms | p50 1.2 to 9 ms, p99 4 to 88 ms (host load 15 to 40) |
+| Change propagation without Valkey | P-13 | same, Sentinel address that does not answer, poll 1 s | p99 ≤ `epoch_poll_interval` + 1 s | same | p99 about 1.0 s |
+| Job pick-up with Valkey | P-14 | `TestJobPickup`, with `jobs.poll_interval` 5 s | p50 ≤ 100 ms | p99 ≤ 1 s | p50 5 ms, p99 13 to 52 ms |
+| Job pick-up without Valkey | P-14 | same, poll 1 s | p99 ≤ `poll_interval` + 1 s | same | p99 1.0 s |
 
-P-13 runs from the return of the writer's `COMMIT` ([Q-ARCH-220](../spec/architecture.md#q-arch-220--p-13-starts-its-clock-at-the-commit-and-the-per-change-integration-gate-stays)): the test registers an After hook before `Notify`, which stamps the commit and runs before the change is queued for publication. The writer's own statements and `COMMIT` are PostgreSQL latency (p99 up to 120 ms on a loaded host) and are not part of the bound. After the commit the path has no window or timer: `Changes` queues the message, one goroutine publishes it, and the subscriber's reader hands it to the cache. To find a delay, stamp the commit, the queue exit, the end of `PUBLISH` and the arrival at the subscriber; at present the `PUBLISH` round trip is the whole tail, and it follows the host's CPU scheduling.
+The p99 bounds with Valkey are tail-sensitive: the runner pods keep a CPU limit, and the throttling of the Linux scheduler stalls a
+process for periods of 100 ms ([Q-ARCH-220](../spec/architecture.md#q-arch-220--p-13-starts-its-clock-at-the-commit-and-its-p99-is-enforced-in-the-nightly-performance-run)),
+which CI showed as p99 100 to 122 ms with p50 1.5 ms. Without the switch the tests log a p99 above the bound and pass; the switch is set by
+`make test-performance`, which the workflow "Performance (nightly)" runs ([releasing.md](releasing.md#performance-nightly)):
 
-"Valkey unavailable" is a client with a Sentinel address that refuses connections: it constructs degraded and `Available()` is false, as at a real outage. With fewer than 100 samples p99 is the maximum.
+```
+make integration-up test-performance integration-down
+```
+
+All four always log p50, p99 and the maximum.
+
+P-13 runs from the return of the writer's `COMMIT` ([Q-ARCH-220](../spec/architecture.md#q-arch-220--p-13-starts-its-clock-at-the-commit-and-its-p99-is-enforced-in-the-nightly-performance-run)): the test registers an After hook before `Notify`, which stamps the commit and runs before the change is queued for publication. The writer's own statements and `COMMIT` are PostgreSQL latency (p99 up to 120 ms on a loaded host) and are not part of the bound. After the commit the path has no window or timer: `Changes` queues the message, one goroutine publishes it, and the subscriber's reader hands it to the cache. To find a delay, stamp the commit, the queue exit, the end of `PUBLISH` and the arrival at the subscriber; at present the `PUBLISH` round trip is the whole tail, and it follows the host's CPU scheduling.
+
+"Valkey unavailable" is a client with a Sentinel address that refuses connections: it constructs degraded and `Available()` is false, as at a real outage. With fewer than 100 samples p99 is the maximum; the propagation test takes 200 so that its p99 is the second largest.
 
 ## Tests
 

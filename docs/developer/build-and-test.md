@@ -42,6 +42,7 @@ with their pins and fails on a difference; a tool that is not installed is not a
 | `test` | `go test -race ./...` with a coverage profile of the unit tier (`.out/coverage/unit.out`); the `go test -json` stream goes to `.out/test-unit.json`, which the coverage generator reads |
 | `integration-up`, `integration-down` | start and stop the integration stack, see below |
 | `test-integration` | `go test -tags integration ./test/integration/...` with the environment of `.dev/integration/env`; the JSON stream goes to `.out/test-integration.json`, the profile to `.out/coverage/integration-<line>.out` |
+| `test-performance` | the P-13 and P-14 latency tests of the integration tier with `TROVE_PERF_GATE=1`, which enforces their p99 bounds with Valkey (`test-integration` logs them only); the JSON stream goes to `.out/test-performance.json`. Run by the nightly workflow ([releasing.md](releasing.md#performance-nightly)) |
 | `minio-up`, `minio-down`, `s3-conformance` | MinIO built at `MINIO_COMMIT`, served over TLS, and the conformance tests against it ([test/integration/minio.sh](../../test/integration/minio.sh)) |
 | `coverage-report` | merges `.out/coverage` into `coverage.txt`, `summary.md` and the badge `coverage.json` ([test/coverage/report.sh](../../test/coverage/report.sh)) |
 | `test-release-tooling` | `npm ci`, `npm audit signatures`, and [hack/verify-release-tooling.mjs](../../hack/verify-release-tooling.mjs) |
@@ -64,6 +65,7 @@ on a checkout with an installed `node_modules` therefore picks them up; use `mak
 | Unit | `*_test.go` next to the code | nothing | `make test` |
 | Architecture | [internal/archtest](../../internal/archtest) | `go` on `PATH` (it runs `go list -deps -json ./...` and loads the packages with type information) | part of `make test` |
 | Integration | [test/integration](../../test/integration), build tag `integration` | the stack below | `make integration-up && make test-integration` |
+| Performance (nightly) | the latency tests of [test/integration/coordination](../../test/integration/coordination) | the stack below | `make integration-up && make test-performance` |
 | End to end | `deploy/dev`, `test/e2e` | a kind cluster | `make dev-up && make e2e`; `SET=access` runs the access-core scenarios (`test/e2e/e1_*`, `m1_env_test.go`). `make dev-valkey-stop` and `make dev-valkey-start` hold a Valkey outage across a criterion of unknown length |
 
 A test that verifies a requirement carries the requirement ID in a subtest name, for example

@@ -106,6 +106,16 @@ make image VERSION=dev && make dev-up && make e2e SET=push && make dev-down
 reasons unrelated to generation. `make dev-up` needs an amd64 host or the emulator of
 the arm64 note of [local-profile.md](local-profile.md).
 
+### Performance (nightly)
+
+[`performance.yml`](../../.github/workflows/performance.yml) ("Performance (nightly)") runs every night at 02:17 UTC and on demand
+(`workflow_dispatch`), on the self-hosted runners. It brings up the integration stack (`make integration-up`), runs
+`make test-performance` and stops the stack. That target runs `TestChangePropagation` and `TestJobPickup` with `TROVE_PERF_GATE=1`, which
+enforces the p99 bounds of P-13 (100 ms) and P-14 (1 s) with Valkey available; the per-change integration job asserts delivery and the p50 only
+([Q-ARCH-220](../spec/architecture.md#q-arch-220--p-13-starts-its-clock-at-the-commit-and-its-p99-is-enforced-in-the-nightly-performance-run)).
+The report `test-performance` is kept for 30 days. A failed night is not wired to an issue or a notification: look at the Actions list.
+The other targets of R-ARCH-027 (`perf/`) are not part of this workflow.
+
 ### Renovate
 
 [`renovate.yml`](../../.github/workflows/renovate.yml) runs self-hosted Renovate every day at 02:00
