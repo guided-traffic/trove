@@ -29,6 +29,13 @@ or delete of a path outside them answers `404` as if it did not exist. The match
 built and cannot fail at request time; a stored list that does not compile marks the repository disabled (below).
 Patterns are not permissions: a path that the patterns admit is still subject to the grants of the caller.
 
+The patterns of a format with package names are name patterns, and `/files/` and the items API match them against the package
+the format gives a raw path, not against the path: `@x/*` hides `@x/y/-/y-1.0.0.tgz` as it hides `@x/y` on the npm protocol
+([files/formats.go](../../internal/files/formats.go), `admits`; Q-AUTHZ-160; `TestR_REPO_005_NameExcludeOfAnNpmRepositoryUnderFiles`).
+The items API is the one road that deletes outside the patterns, and in a disabled repository, and only for a holder of
+`content:bypass`, the administrator's cleanup of items stored before a pattern change; every other caller deletes there as
+through `/files/` (Q-AUTHZ-162).
+
 ## The snapshot and the configuration document
 
 The snapshot ([reader.go](../../internal/repository/reader.go)) holds, per repository, the settings that request paths
@@ -97,7 +104,7 @@ The routing above is the same for everybody; the engine ([virtual.md](../develop
   is on an endpoint with `cache_fill: false`, never receives the entry of one who may. The entry validates itself against the
   `rev_seq` of the local members on every hit and lives in the replica's memory only.
 - **A caller who may not fill a mirror is offered only what it can download.** The engine marks the part `Restricted`; honouring it is the
-  format's merge (H-283).
+  format's merge, which npm's does (H-283 names the formats to come).
 - **The explanation names no member the caller cannot read.** Such members are a count, the claimants of `decidedBy` are filtered by `read`, and
   the keys appear only for a holder of `repositories:read-config`. The claim or pin pattern itself is shown (H-7 names the same disclosure).
 - **The shadowing check fails closed.** An upstream that cannot be asked, a stored-state read that fails and a replica without the remote engine
@@ -110,12 +117,16 @@ The routing above is the same for everybody; the engine ([virtual.md](../develop
 ### H-283 · Honouring `Restricted` is up to the format's merge
 
 Component: `VirtualAdapter.Merge` of a format ([virtual.md](../developer/virtual.md) "The contract of a format's merge"). Subject: the versions
-a caller who may not fill a remote member is offered. Dormant: no format has a virtual adapter yet. The engine decides the populate right per
-member, keeps merges of different rights apart (Q-REPO-110) and marks the part `Restricted`, but only the format can drop the versions of its own
-document; a merge that ignores the flag lists versions of an upstream that the caller cannot download (a read-only caller of a frozen mirror
-then sees 404 for a version the document announced) and, for a caller on an endpoint with `cache_fill: false`, reveals what the mirror's upstream
-publishes. Nothing is stolen and nothing is stored, but R-EP-018 ("every version a filtered document lists is downloadable") is broken. What makes
-it real: the first format with a virtual class, until its tests pin the two callers of Q-REPO-113 in both orders (check 5 of the conformance kit does not cover `Restricted`).
+a caller who may not fill a remote member is offered. The engine decides the populate right per member, keeps merges of different rights apart
+(Q-REPO-110) and marks the part `Restricted`, but only the format can drop the versions of its own document. npm, the one format with a virtual
+class, does: a part the caller may not fill supplies only the versions whose tarball is cached ([merge.go](../../internal/formats/npm/merge/merge.go),
+`member.eligible`; `TestR_AUTHZ_008_AMergeListsOnlyTheCachedVersionsOfAMemberTheCallerMayNotFill`,
+`TestR_AUTHZ_008_ACallerWhoMayNotFillSeesOnlyTheCachedVersionsOfARemoteMember`). What stays open is the next format: check 5 of the
+conformance kit does not cover `Restricted`, so a merge that ignores the flag passes the kit, lists versions of an upstream that the caller
+cannot download (a read-only caller of a frozen mirror then sees 404 for a version the document announced) and, for a caller on an endpoint
+with `cache_fill: false`, reveals what the mirror's upstream publishes. Nothing is stolen and nothing is stored, but R-EP-018 ("every version
+a filtered document lists is downloadable") is broken. Dormant: live with the second format that gets a virtual class (NuGet), unless its tests
+pin the two callers of Q-REPO-113 in both orders as npm's do.
 
 ### H-274 · A stored claim that does not parse protects nothing
 

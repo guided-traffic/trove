@@ -1466,11 +1466,16 @@ export interface paths {
         /**
          * Delete a file or folder
          * @description Removes a file, or a folder with its whole subtree (R-STOR-018). Needs `delete` on the path and
-         *     on every item of the subtree, decided completely before anything is removed (`403` and nothing
-         *     changes otherwise). A subtree of at most `storage.delete.max_sync_items` items is removed at
-         *     once (`204`); a larger one by a background job (`202` with the job to poll). Items are deleted
-         *     permanently; their blobs are collected later. The root of the repository cannot be deleted
-         *     here (`400 invalid_path`): delete the repository.
+         *     on every item of the subtree, each on the coordinate its format gives it (package and version
+         *     for npm, R-EP-014), decided completely before anything is removed (`403` and nothing changes
+         *     otherwise). In a local repository of a package format the ownership of every package whose
+         *     files are removed is checked in the removing transaction (`403 package_owned_by_other_owner`,
+         *     R-AUTHZ-018). A path outside the repository's include and exclude patterns and a disabled
+         *     repository answer `404` as under `/files/`, except for a holder of `content:bypass`, who
+         *     removes such items (R-REPO-005). A subtree of at most `storage.delete.max_sync_items` items is
+         *     removed at once (`204`); a larger one by a background job (`202` with the job to poll). Items
+         *     are deleted permanently; their blobs are collected later. The root of the repository cannot be
+         *     deleted here (`400 invalid_path`): delete the repository.
          */
         delete: operations["deleteItem"];
         options?: never;
@@ -1569,6 +1574,8 @@ export interface paths {
          *     file with different bytes needs `overwrite` as well (`403` without it, and the first content
          *     is still served); an identical re-upload needs `deploy` only and answers `200`. A path
          *     outside the repository's include and exclude patterns is `403 not_admitted` for every caller.
+         *     A repository whose format has a protocol of its own (npm) takes no file and no folder here:
+         *     `409 conflict`, naming that protocol's address, before the body is read (R-STOR-007).
          *     `If-None-Match: *` makes the deploy create-only (`412` when the path exists). A trailing
          *     slash with an empty body creates an explicit folder and its missing parents (`201`, `200` for
          *     an existing folder). A path names a file or a folder, never both (`409 path_conflict`). The
@@ -1580,8 +1587,9 @@ export interface paths {
         /**
          * Delete a file or folder
          * @description The same operation as `DELETE /api/v1/repositories/{repoKey}/items` on the path (R-STOR-018):
-         *     `204`, or `202` with the job of a large subtree. A path outside the repository's include and
-         *     exclude patterns answers `404`.
+         *     `204`, or `202` with the job of a large subtree, the ownership of the packages it removes
+         *     checked as there. A path outside the repository's include and exclude patterns answers `404`
+         *     for every caller.
          */
         delete: operations["deleteFile"];
         options?: never;

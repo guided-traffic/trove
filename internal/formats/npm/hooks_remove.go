@@ -31,8 +31,11 @@ type removed struct {
 // the revision and the audit event with the journal entry of Q-NPM-12. The removal of
 // a bundle alone changes the package without removing a version.
 //
-// The ownership of the name was decided before: by the unpublish route under the
-// package row lock, and by the generic layer for /files/. The writer of this hook is
+// The ownership of the name was decided before, in the same transaction: by the
+// unpublish route under the package row lock, and for a delete through /files/ or
+// the items API by the generic layer, which asks the format seam
+// (formathost.FilesSeam.CheckRemoval) for every package of the removed files under
+// the same lock before the first row goes (Q-AUTHZ-161). The writer of this hook is
 // bound to no request and decides none.
 func (f *Format) OnItemsRemoved(ctx context.Context, tx formats.Tx, e formats.ItemsEvent) error {
 	if e.Repo.Class != formats.Local {

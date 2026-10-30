@@ -110,6 +110,9 @@ func TestR_EP_018_ACustomersEndpointOnAVirtualRepositoryWithARemoteMember(t *tes
 					t.Fatalf("header %s names a member or the default endpoint: %s", k, h)
 				}
 			}
+			if cs := a.Header.Get("Cache-Status"); cs != "" {
+				t.Fatalf("%s: Cache-Status = %q on an endpoint with rules (Q-EP-60)", accept, cs)
+			}
 		}
 		tags := onCustomers("-/package/" + p.Name + "/dist-tags")
 		if tags.Status != 200 || strings.Contains(string(tags.Body), hidden) {
@@ -131,8 +134,8 @@ func TestR_EP_018_ACustomersEndpointOnAVirtualRepositoryWithARemoteMember(t *tes
 		if got.Status != 200 || integrityOf(got.Body) != p.Versions[p.Find(shown)].Dist.Integrity {
 			t.Fatalf("exposed cached version: %d", got.Status)
 		}
-		if got.Header.Get("Trove-Resolved-From") != "" {
-			t.Errorf("Trove-Resolved-From = %q on an endpoint with rules", got.Header.Get("Trove-Resolved-From"))
+		if got.Header.Get("Trove-Resolved-From") != "" || got.Header.Get("Cache-Status") != "" {
+			t.Errorf("Trove-Resolved-From = %q, Cache-Status = %q on an endpoint with rules", got.Header.Get("Trove-Resolved-From"), got.Header.Get("Cache-Status"))
 		}
 		for _, v := range []string{hidden, other} {
 			if a := onCustomers(file(v)); a.Status != 404 {

@@ -376,8 +376,13 @@ func TestR_GENERIC_007_Patterns(t *testing.T) {
 		if res := a.do("maint", "DELETE", base+"releases/1.0/x.bin", nil); res.status != 404 {
 			t.Errorf("DELETE through /files/: %d", res.status)
 		}
-		if res := a.do("maint", "DELETE", "/api/v1/repositories/generic-local/items?path=releases/1.0/x.bin", nil); res.status != 204 {
-			t.Errorf("DELETE through the items API: %d", res.status)
+		// The items API deletes outside the patterns for the administrator's cleanup only
+		// (content:bypass, Q-AUTHZ-162); every other caller deletes as through /files/.
+		if res := a.do("maint", "DELETE", "/api/v1/repositories/generic-local/items?path=releases/1.0/x.bin", nil); res.status != 404 {
+			t.Errorf("DELETE through the items API without content:bypass: %d", res.status)
+		}
+		if res := a.do("admin", "DELETE", "/api/v1/repositories/generic-local/items?path=releases/1.0/x.bin", nil); res.status != 204 {
+			t.Errorf("DELETE through the items API with content:bypass: %d", res.status)
 		}
 		if n := te.number("SELECT count(*) FROM items WHERE kind = 'file'"); n != 0 {
 			t.Errorf("%d files", n)

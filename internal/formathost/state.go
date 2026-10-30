@@ -2,6 +2,7 @@ package formathost
 
 import (
 	"context"
+	"slices"
 	"sync"
 
 	"github.com/guided-traffic/trove/internal/authz"
@@ -78,6 +79,55 @@ func (st *requestState) track(s *spooled) {
 	st.mu.Lock()
 	st.spools = append(st.spools, s)
 	st.mu.Unlock()
+}
+
+// recheck is the commit-time re-check of R-AUTHZ-015 for a format's write: every
+// write decision the request was allowed is decided again on the index of this
+// moment, before the transaction of the write opens (a stale index makes a
+// decision wait, R-ARCH-019), and the request decides on that index from then on,
+// so the ownership check and the auto claim inside the transaction see it too. A
+// body may have taken minutes; a grant removed meanwhile stops the write, as it
+// stops a deploy through /files/ (Q-ARCH-225). A refusal is the decision's error;
+// the decisions recorded in the transaction are the new ones.
+func (h *Host) recheck(ctx context.Context, rq *formats.Request) error {
+	st := stateOf(rq)
+	if st == nil {
+		return errs.E(errs.Internal, errs.CodeInternal, "The request was not prepared by the format dispatcher.")
+	}
+	st.mu.Lock()
+	allowed := append([]allowedWrite(nil), st.allowed...)
+	st.mu.Unlock()
+	if len(allowed) == 0 {
+		return nil
+	}
+	var keys []string
+	for _, a := range allowed {
+		if !slices.Contains(keys, a.c.Repository) {
+			keys = append(keys, a.c.Repository)
+		}
+	}
+	idx, err := h.o.Decider.Begin(ctx, rq.Subject, keys...)
+	if err != nil {
+		return err
+	}
+	for i, a := range allowed {
+		d := h.o.Decider.DecideOn(ctx, idx, rq.Subject, a.c)
+		if !d.Allowed() {
+			return d.Err()
+		}
+		allowed[i].d = d
+	}
+	st.mu.Lock()
+	for _, a := range allowed {
+		for j := range st.allowed {
+			if sameCoordinate(st.allowed[j].c, a.c) {
+				st.allowed[j].d = a.d
+			}
+		}
+	}
+	st.mu.Unlock()
+	rq.Index = idx
+	return nil
 }
 
 // record writes the allowed write decisions of the request into the transaction

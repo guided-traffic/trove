@@ -20,24 +20,25 @@ type Resolved struct {
 }
 
 // Stat resolves a GET or HEAD of /files/ (R-ARCH-011 steps 4 to 6): `read` on the
-// path is decided before the repository or the item is looked up, a path that
-// the repository's patterns do not admit is a missing path (R-GENERIC-007), and a
-// blob whose object is missing or damaged is refused (R-STOR-012). A folder is
-// returned as a folder; the caller renders its index. The root of the repository
-// is a folder.
+// coordinate the format gives the path (R-EP-014) is decided before the item is
+// looked up, a path that the repository's patterns do not admit is a missing path
+// (R-GENERIC-007, R-REPO-005), and a blob whose object is missing or damaged is
+// refused (R-STOR-012). A folder is returned as a folder; the caller renders its
+// index. The root of the repository is a folder.
 func (s *Service) Stat(ctx context.Context, c Caller, repoKey string, p repository.Cleaned) (Resolved, error) {
 	kind := authz.KindArtifact
 	if p.Folder {
 		kind = authz.KindMetadata
 	}
-	if _, err := c.decide(ctx, repoKey, p.Path, kind, authz.Read); err != nil {
+	t := s.locate(ctx, repoKey, p.Path, p.Folder)
+	if _, err := c.decide(ctx, repoKey, p.Path, t.class, kind, authz.Read); err != nil {
 		return Resolved{}, err
 	}
-	repo, err := s.resolve(ctx, repoKey, true)
+	repo, err := t.resolved(true)
 	if err != nil {
 		return Resolved{}, err
 	}
-	if !repo.Admits(p.Path, p.Folder) {
+	if !admits(repo, p.Path, p.Folder, t.class) {
 		return Resolved{}, notFound()
 	}
 	if p.Path == "" {

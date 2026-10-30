@@ -47,7 +47,7 @@ func TestR_AUTHZ_015_OneIndexPerRequest(t *testing.T) {
 		if got, err := e.ReadableOn(t.Context(), idx, aliceSub, []string{"npm-internal"}); err != nil || !slices.Equal(got, []string{"npm-internal"}) {
 			t.Fatalf("ReadableOn = %v, %v", got, err)
 		}
-		if got, err := e.PathsAllowedOn(t.Context(), idx, aliceSub, read("npm-internal", "", ""), Read, []string{"a"}); err != nil || !slices.Equal(got, []bool{true}) {
+		if got, err := e.PathsAllowedOn(t.Context(), idx, aliceSub, read("npm-internal", "", ""), Read, []string{"a"}, nil); err != nil || !slices.Equal(got, []bool{true}) {
 			t.Fatalf("PathsAllowedOn = %v, %v", got, err)
 		}
 		if got, err := e.CheckOn(idx, aliceSub, []CheckItem{{Repository: "npm-internal", Action: Read}}); err != nil || !slices.Equal(got, []bool{true}) {
@@ -92,8 +92,8 @@ func TestR_AUTHZ_015_OneIndexPerRequest(t *testing.T) {
 			if xb := e.ExposedOn(idx, sub, keys); !slices.Equal(xa, xb) {
 				t.Errorf("%s: Exposed %v, ExposedOn %v", sub.Name, xa, xb)
 			}
-			pa, _ := e.PathsAllowed(ctx, sub, c, Read, []string{"releases/a", "internal/x"})
-			pb, _ := e.PathsAllowedOn(ctx, idx, sub, c, Read, []string{"releases/a", "internal/x"})
+			pa, _ := e.PathsAllowed(ctx, sub, c, Read, []string{"releases/a", "internal/x"}, nil)
+			pb, _ := e.PathsAllowedOn(ctx, idx, sub, c, Read, []string{"releases/a", "internal/x"}, nil)
 			if !slices.Equal(pa, pb) {
 				t.Errorf("%s: PathsAllowed %v, PathsAllowedOn %v", sub.Name, pa, pb)
 			}
@@ -206,7 +206,7 @@ func TestR_EP_013_ADecisionOnADetachedContextKeepsTheCeiling(t *testing.T) {
 		if got, _ := e.ReadableOn(ctx, idx, onEP(adminSub, "customers"), keys); slices.Contains(got, "generic-other") {
 			t.Errorf("ReadableOn lists a repository the endpoint does not expose: %v", got)
 		}
-		if got, _ := e.PathsAllowedOn(ctx, idx, onEP(botSub, "customers"), read("generic-local", "", ""), Read, []string{"releases/a", "internal/x"}); !slices.Equal(got, []bool{true, false}) {
+		if got, _ := e.PathsAllowedOn(ctx, idx, onEP(botSub, "customers"), read("generic-local", "", ""), Read, []string{"releases/a", "internal/x"}, nil); !slices.Equal(got, []bool{true, false}) {
 			t.Errorf("PathsAllowedOn = %v", got)
 		}
 		if got, _ := e.CheckOn(idx, onEP(botSub, "customers"), []CheckItem{{Repository: "generic-local", Path: "internal/x", Action: Read}}); !slices.Equal(got, []bool{false}) {

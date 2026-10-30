@@ -66,7 +66,8 @@ prefix `TROVE_CAC_`, so `TROVE_DATABASE_PASSWORD` and the files of the key ring 
 
 The plaintext lives in the replica that sends a request: in the client's credential object for as long as the client is cached, and in
 the `Authorization` header of the request in flight. The credential policy of the client removes every `Authorization` header and sets it
-again only for the hosts of [egress.md](egress.md#which-hosts-receive-credentials). A rotated reference reaches a replica within 10 s
+again only for the hosts of [egress.md](egress.md#which-hosts-receive-credentials), and over `https` only while the upstream itself is
+`https`; a URL in the upstream's metadata cannot move a fetch to `http` (Q-ARCH-224). A rotated reference reaches a replica within 10 s
 without a new client; a rotated inline value moves the repository's `config_version`, which replaces the client.
 
 ## The stored-secret key ring

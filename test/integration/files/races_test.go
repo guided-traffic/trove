@@ -221,11 +221,11 @@ func (a probeAccess) Decide(ctx context.Context, c authz.Coordinate) authz.Decis
 	return a.Access.Decide(ctx, c)
 }
 
-func (a probeAccess) PathsAllowed(ctx context.Context, base authz.Coordinate, act authz.Action, paths []string) ([]bool, error) {
+func (a probeAccess) PathsAllowed(ctx context.Context, base authz.Coordinate, act authz.Action, paths []string, classify authz.Classifier) ([]bool, error) {
 	if a.probe.inCommit.Load() {
 		a.probe.inside.Add(1)
 	}
-	return a.Access.PathsAllowed(ctx, base, act, paths)
+	return a.Access.PathsAllowed(ctx, base, act, paths, classify)
 }
 
 // TestR_STOR_007_NoDecisionWaitsInsideTheCommitTransaction: a concurrent upload

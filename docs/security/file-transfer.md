@@ -43,7 +43,27 @@ segment right after the key (`/files/<key>//x`). The `path` parameter of the ite
 decoded, the backslash and the 4096-byte and 255-byte limits included, and an oversized path is refused by its length before
 anything else looks at it (`CheckItemPath`). The patterns of a
 repository are routing rules for every caller: a deploy outside them is `403 not_admitted` for an administrator too, a read or a
-delete of such a path is a `404` through `/files/` while the management items operations still show it.
+delete of such a path is a `404` through `/files/` while the management items operations still show it; their delete removes it
+for a holder of `content:bypass` only (Q-AUTHZ-162).
+
+## Raw paths of a package format
+
+`/files/` is the raw view of every repository, npm's included, and the generic layer decides a path of such a repository on the
+coordinate the format gives it: the package and the version of `@acme/ui/-/ui-1.0.0.tgz` ([files.go](../../internal/files/files.go)
+`locate`, [formats.go](../../internal/files/formats.go); Q-AUTHZ-160). The repository is looked up in the replica's snapshot for
+it, before the decision, and the outcome of that lookup is answered only once the decision allowed the request; no item is
+looked up before it. A listing and a subtree are decided per entry with the same classification (`authz.Classifier`), and the
+items operations' shared authorization step decides the same coordinate. So a grant's name patterns, a token scope's and an
+exposure rule's apply to a tarball as to its package, and a repository's name patterns hide a package under `/files/` as on the
+npm protocol (`TestR_AUTHZ_005_FilesDecideNpmItemsOnTheirPackage`, `TestR_REPO_005_NameExcludeOfAnNpmRepositoryUnderFiles`).
+
+A deploy through `/files/` into a repository whose format has a protocol of its own (npm) is refused with `409 conflict`, file or
+folder alike, after the decision and before the body is read (`FilesSeam.RawDeploy`, Q-ARCH-223): nothing reaches such a repository
+beside its publish, so no raw folder can block the path of a version's tarball and no file can sit where no document lists it
+(`TestR_STOR_007_NoRawDeployIntoAnNpmRepository`). A delete of such content is a change of every package whose files it removes:
+the generic layer hands the removed files to `FilesSeam.CheckRemoval` in the transaction that removes them or queues their job, and
+the package ownership of R-AUTHZ-018 is asked for each package under its row lock; one refusal refuses the whole delete
+(Q-AUTHZ-161, see [permissions.md](permissions.md)).
 
 ## The order of the checks on a write
 
@@ -106,12 +126,15 @@ still arriving leaves nothing behind (the spool file is removed); one whose body
 ### H-154 · An insert that was in flight when the delete was checked is removed without a decision
 
 Component: the job `items-delete` (R-STOR-018, Q-STOR-143). Subject: `delete` on a subtree larger than `storage.delete.max_sync_items`.
-Live with milestone M1, narrowed from "any item added during the job". The request decides `delete` for every item of the subtree and
+Live with milestone M1, narrowed from "any item added during the job". The request decides `delete` for every item of the subtree, and
+for a package format the ownership of every package whose files it saw (Q-AUTHZ-161), and
 enqueues the job with the highest item id it saw; the job removes only items up to that id, so a file that a holder of `deploy` adds
 afterwards stays, and so do the folders above it. What stays open: an item whose id lies below that maximum and whose transaction
 commits after the check read the subtree (an insert in flight at that instant) is removed although the caller of the delete had no
-`delete` grant on it. A subtree up to the synchronous limit is checked and removed in one transaction and has no such window. What
-makes it real: a deploy into the folder that commits within the few milliseconds between the check's read and the enqueue. The job
+`delete` grant on it; in an npm repository such an insert is a publish, and a first version of a new package in the subtree is then
+unpublished without its ownership having been asked. A subtree up to the synchronous limit is checked and removed in one
+transaction and has no such window. What makes it real: a deploy or a publish into the folder that commits within the few
+milliseconds between the check's read and the enqueue. The job
 does not decide again, so a grant removed after the request does not stop it either. The trash can (R-STOR-022, P1) makes it
 recoverable.
 

@@ -93,6 +93,11 @@ func (i ingestor) Commit(ctx context.Context, rq *formats.Request, sp formats.Sp
 	if st == nil {
 		return formats.Committed{}, errs.E(errs.Internal, errs.CodeInternal, "The request was not prepared by the format dispatcher.")
 	}
+	// The body has arrived: the write is decided again on the index of this moment
+	// (R-AUTHZ-015, Q-ARCH-225).
+	if err := i.h.recheck(ctx, rq); err != nil {
+		return formats.Committed{}, err
+	}
 	res, err := i.h.o.Items.Commit(ctx, items.CommitSpec{
 		Repo: *rq.Repo, Path: c.Path, Spooled: s.s, MediaType: c.MediaType, Declared: s.expect,
 		Origin: items.OriginUpload, CreateOnly: c.CreateOnly, MayOverwrite: c.MayOverwrite,

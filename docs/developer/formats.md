@@ -66,7 +66,7 @@ their own sections below: [Conformance kit](#conformance-kit) and [Untrusted con
 | [internal/formathost](../../internal/formathost/) | The `Host` ([host.go](../../internal/formathost/host.go)), the item-store adapters ([ingest.go](../../internal/formathost/ingest.go)), the `PackageWriter` adapter and the ownership seams ([writer.go](../../internal/formathost/writer.go)), the storage hooks and the files seam ([hooks.go](../../internal/formathost/hooks.go)), the data-port bindings ([bind.go](../../internal/formathost/bind.go)), links, renditions, per-request state, the stubs of the engines that do not exist yet, and the bridge from the virtual engine to `formats.Resolver` ([virtual.go](../../internal/formathost/virtual.go), [virtual.md](virtual.md)) |
 | [internal/api/dispatch](../../internal/api/dispatch/) | The dispatcher: [dispatcher.go](../../internal/api/dispatch/dispatcher.go) (routing and the request path), [errors.go](../../internal/api/dispatch/errors.go) (the error shape of a prefix) |
 | [internal/app/wire_formats.go](../../internal/app/wire_formats.go) | The wiring: hooks and files seam at step 8, Host and dispatcher at step 9, the data-port bindings, the catalog freeze |
-| [internal/files/formats.go](../../internal/files/formats.go) | `files.Formats`, the seam the generic layer asks a format through (`ServeCheck` is called in `Stat`; `Classify` is declared for the exposure coordinate of R-EP-014) |
+| [internal/files/formats.go](../../internal/files/formats.go) | `files.Formats`, the seam the generic layer asks a format through: `Classify` for the coordinate of every decision and the patterns (R-EP-014), `ServeCheck` in `Stat`, `RawDeploy` in `Deploy`, `CheckRemoval` in the transaction of a delete |
 
 ## The package view
 
@@ -126,7 +126,10 @@ prefix ([router.go](../../internal/httpserver/router.go), [context.go](../../int
 The handler decides on the concrete package or path with `Host.Authorize(ctx, rq, Target{...})`: the host completes the coordinate (repository, class, format, the
 request kind of the route), decides on `rq.Index`, then applies the repository's include and exclude patterns to the package name or the path (404 for a read,
 403 `not_admitted` for a write). An allowed write decision is remembered with the request and recorded in the transaction of the write
-(`Ingest().Commit` and `Host.Write`), where the generic layer records its own (R-AUTHZ-029).
+(`Ingest().Commit` and `Host.Write`), where the generic layer records its own (R-AUTHZ-029). Before that transaction opens, the host decides
+every remembered write again on a new index (`Host.recheck`, the commit-time re-check of R-AUTHZ-015, Q-ARCH-225): a grant removed while a
+body was arriving refuses the write, the new decisions are the ones recorded, and the request decides on the new index from then on, so
+`Claim` and `AutoClaim` in the transaction see it too.
 
 ## The storage hooks
 
@@ -145,7 +148,11 @@ The writer is bound to the request when the commit came through `Host.Ingest().C
 refuse there. The sync delete and every batch of the delete job run the removal hook, which is how a delete of an npm folder through `/files/` raises `rev_seq`.
 
 `files.Formats` ([formats.go](../../internal/files/formats.go)) is the generic layer's seam: `FilesSeam` in [hooks.go](../../internal/formathost/hooks.go) implements it over the
-registry. For generic both calls are no-ops, so `/files/` behaves as before; a format that tombstones a version makes the `/files/` GET of its tarball a 404.
+registry. `Classify` gives `/files/` and the items API the coordinate of a path (package and version, and whether the repository's patterns match names,
+Q-AUTHZ-160); `ServeCheck` makes the `/files/` GET of a tombstoned tarball a 404; `RawDeploy` lets `/files/` deploy only into a format whose
+`ProtocolBasePath` is `/files/{key}/` (409 for every other format, before the body, Q-ARCH-223); `CheckRemoval` asks the ownership of every
+package whose files a delete removes, in the removing transaction (Q-AUTHZ-161). For generic, classification, the check and the raw deploy
+change nothing.
 
 ## Content headers and error shapes
 
@@ -153,6 +160,8 @@ registry. For generic both calls are no-ops, so `/files/` behaves as before; a f
 `Content-Disposition`), `Metadata` and `Computed` (the same set without it); a route of any other kind is not wrapped and must return no package-derived bytes
 (kit check 7). It recovers a panic (log with format and route, 500 through `WriteError`, `http.ErrAbortHandler` passes), renders an error returned before the status
 line through `WriteError` without `Content-Disposition`, and aborts the connection for an error after it. `sameOrigin` is true when a session cookie authenticated the request.
+On an endpoint with exposure rules (`rq.Endpoint.Rules`) its writer removes `Cache-Status` when the status line goes out, from a handler, an engine or an
+error's headers alike (`trackWriter.scrub`, Q-EP-60; `TestR_EP_018_NoCacheStatusOnAnEndpointWithRules`).
 
 ## Wiring
 
@@ -352,6 +361,5 @@ test of its own).
 
 - The kit does not run the dispatcher, the authorization decision or the real item store: it runs the format against an in-memory `Host`. That the production host
   behaves like the in-memory one is tested by the integration tests of `test/integration/files`, not by the kit.
-- The remote engine, package ownership and the namespace auto claim: the contract has their types and the host their seams; the engines
-  and rules are built with the first format that needs them. The virtual engine exists ([virtual.md](virtual.md)) and the Host takes it as `Options.Resolver`
+- The remote engine, package ownership and the namespace auto claim are built and bound by the composition root ([wire_formats.go](../../internal/app/wire_formats.go)). The virtual engine exists ([virtual.md](virtual.md)) and the Host takes it as `Options.Resolver`
   through `formathost.NewResolver`; `MemberDocument.Restricted` and `ShadowOutcome.Refusal`/`Shadowed` are the two fields it added to the contract.

@@ -129,9 +129,10 @@ func (a *Access) Exposed(keys []string) []string {
 	return a.D.ExposedOn(a.Index(), a.Subject, keys)
 }
 
-// PathsAllowed decides one action for many paths of one repository.
-func (a *Access) PathsAllowed(ctx context.Context, base authz.Coordinate, act authz.Action, paths []string) ([]bool, error) {
-	return a.D.PathsAllowedOn(ctx, a.Index(), a.Subject, base, act, paths)
+// PathsAllowed decides one action for many paths of one repository, each on the
+// coordinate classify gives it.
+func (a *Access) PathsAllowed(ctx context.Context, base authz.Coordinate, act authz.Action, paths []string, classify authz.Classifier) ([]bool, error) {
+	return a.D.PathsAllowedOn(ctx, a.Index(), a.Subject, base, act, paths, classify)
 }
 
 // Require checks a system capability for a management operation.

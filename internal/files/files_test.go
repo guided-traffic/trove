@@ -47,6 +47,10 @@ type access struct {
 	decides   []authz.Coordinate
 	paths     []string
 	recorded  []authz.Coordinate
+	// classified are the paths PathsAllowed was asked about, as
+	// "path=package@version" by the classifier it was handed.
+	classified []string
+	idx        *authz.Index
 }
 
 func (a *access) Decide(_ context.Context, c authz.Coordinate) authz.Decision {
@@ -57,14 +61,20 @@ func (a *access) Decide(_ context.Context, c authz.Coordinate) authz.Decision {
 	return authz.Decision{Outcome: authz.Allow}
 }
 
-func (a *access) PathsAllowed(_ context.Context, base authz.Coordinate, act authz.Action, paths []string) ([]bool, error) {
+func (a *access) PathsAllowed(_ context.Context, base authz.Coordinate, act authz.Action, paths []string, classify authz.Classifier) ([]bool, error) {
 	a.paths = append(a.paths, string(act)+":"+base.Repository)
 	out := make([]bool, len(paths))
-	for i := range out {
+	for i, p := range paths {
 		out[i] = act != authz.Overwrite || a.overwrite
+		if classify != nil {
+			pkg, version := classify(p)
+			a.classified = append(a.classified, p+"="+pkg+"@"+version)
+		}
 	}
 	return out, nil
 }
+
+func (a *access) Index() *authz.Index { return a.idx }
 
 func (a *access) RecordAllowed(_ context.Context, _ meta.Tx, c authz.Coordinate, _ authz.Decision) error {
 	a.recorded = append(a.recorded, c)
@@ -146,7 +156,7 @@ func (s *store) Delete(ctx context.Context, spec items.DeleteSpec) (items.Delete
 		}
 	}
 	if spec.Extra != nil {
-		if err := spec.Extra(ctx, nil); err != nil {
+		if err := spec.Extra(ctx, nil, []string{spec.Path + "/x", spec.Path + "/y"}); err != nil {
 			return items.DeleteResult{}, err
 		}
 	}
@@ -312,7 +322,7 @@ type readAccess struct {
 	hide string
 }
 
-func (r *readAccess) PathsAllowed(_ context.Context, _ authz.Coordinate, _ authz.Action, paths []string) ([]bool, error) {
+func (r *readAccess) PathsAllowed(_ context.Context, _ authz.Coordinate, _ authz.Action, paths []string, _ authz.Classifier) ([]bool, error) {
 	out := make([]bool, len(paths))
 	for i, p := range paths {
 		out[i] = !strings.HasPrefix(p, r.hide)
@@ -323,6 +333,6 @@ func (r *readAccess) PathsAllowed(_ context.Context, _ authz.Coordinate, _ authz
 // denyDelete refuses delete on every path.
 type denyDelete struct{ *access }
 
-func (d *denyDelete) PathsAllowed(_ context.Context, _ authz.Coordinate, _ authz.Action, paths []string) ([]bool, error) {
+func (d *denyDelete) PathsAllowed(_ context.Context, _ authz.Coordinate, _ authz.Action, paths []string, _ authz.Classifier) ([]bool, error) {
 	return make([]bool, len(paths)), nil
 }

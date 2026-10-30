@@ -70,6 +70,10 @@ func withCertAllowed(ctx context.Context, allowed bool) context.Context {
 // hop. Any other host receives them only on a redirect hop and only with
 // ForwardOnRedirect. The first request to a host that is neither the origin nor
 // a SendCredentials host (an extra host the format may visit) never carries them.
+//
+// Credentials travel encrypted: a hop that is not https receives none, unless the
+// origin itself is http, where the operator chose a cleartext upstream and every
+// hop the rules above admit carries them (R-REPO-033, Q-ARCH-224).
 type CredentialPolicy struct {
 	// Origin is the upstream URL of the repository.
 	Origin *url.URL
@@ -86,6 +90,9 @@ type CredentialPolicy struct {
 
 // allowed reports whether the host of u may receive credentials at hop.
 func (p *CredentialPolicy) allowed(u *url.URL, hop int) bool {
+	if !isHTTPS(u) && (p.Origin == nil || isHTTPS(p.Origin)) {
+		return false
+	}
 	if p.Origin != nil && sameOrigin(p.Origin, u) {
 		return true
 	}
@@ -122,6 +129,8 @@ func (p *CredentialPolicy) Decorate(req *http.Request, hop int) {
 func (p *CredentialPolicy) AllowClientCertificate(req *http.Request, hop int) bool {
 	return p.allowed(req.URL, hop)
 }
+
+func isHTTPS(u *url.URL) bool { return strings.EqualFold(u.Scheme, "https") }
 
 func sameOrigin(a, b *url.URL) bool {
 	return strings.EqualFold(a.Scheme, b.Scheme) && strings.EqualFold(a.Hostname(), b.Hostname()) && portOf(a) == portOf(b)

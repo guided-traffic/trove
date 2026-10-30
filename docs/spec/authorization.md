@@ -298,6 +298,12 @@ Each dimension has an `include` and an `exclude` list. Matching rules:
   at least one include pattern and no exclude pattern. A coordinate without a package name (a raw
   file outside any package, a repository-level operation) therefore never matches a resource set
   whose `packages.include` is non-empty.
+- On a format with package names, a coordinate that is not repository-level and carries no package
+  name (a path the format places in no package, such as an npm scope folder) does not match a
+  `packages` dimension that holds any pattern, include or exclude: nothing shows that it lies outside
+  the excluded names (Q-AUTHZ-160). A raw path under `/files/` and in the items API carries the
+  package and the version its format gives it, so an npm tarball is decided on its package
+  ([endpoints.md](endpoints.md) R-EP-014).
 - Both dimensions MUST match. Exclude beats include within one resource set and nowhere else
   (R-AUTHZ-001).
 - Repository-level coordinates (search, NuGet service index, repository listing) match every grant
@@ -345,6 +351,8 @@ Preconditions on coordinates:
 | packages include `Acme.*` | NuGet `AcmeCore` | no |
 | paths include `releases/**` | generic `releases/1.0/app.zip` | yes |
 | packages include `@acme/*` | raw file `/files/npm-internal/readme.txt` (no package name) | no |
+| packages exclude `@secret/*` | raw file `/files/npm-internal/@secret/x/-/x-1.0.0.tgz` (package `@secret/x`) | no |
+| packages exclude `@secret/*` | raw folder `/files/npm-internal/@acme/` (no package name, Q-AUTHZ-160) | no |
 | packages include `a\*b` (a rendered CI template) | npm `a*b` / `ab` | yes / no |
 | no include lists | anything in the selected repositories | yes |
 
@@ -1003,7 +1011,9 @@ func MayPopulate(sub Subject, idx *Index, m Repo, mc Coordinate) bool {
   that the committing replica holds at that moment (R-AUTHZ-028) and the ownership rows read in
   the commit transaction. A refusal at commit discards the upload and answers 403. The re-check
   waits for a stale index like any decision; it never holds the commit transaction open while it
-  waits (R-ARCH-019).
+  waits (R-ARCH-019). `/files/` decides a deploy again after its body (Q-ARCH-208); a format's
+  writes are decided again by the host before their transaction opens, and the ownership check in
+  that transaction decides on the new index ([architecture.md](architecture.md) Q-ARCH-225).
 - Every request is decided on its own, on whichever replica receives it, and no decision is kept
   in a replica's memory for a later request (INV-18). In a protocol that spans several requests
   (chunked or resumable uploads, P1, [storage.md](storage.md) R-STOR-011), each request is
@@ -1171,6 +1181,11 @@ When ownership is checked:
 - Ownership applies only to coordinates with a package name. A write to a coordinate without one
   (a raw file outside any package, a repository of a format without package names) passes the
   ownership check, also under a `bind_project` grant.
+- A delete through `/files/` or the items API ([storage.md](storage.md) R-STOR-018) is a mutating
+  operation on every package whose files it removes: a file, a package folder or a whole scope. The
+  question is asked for each of those packages, in name order under its package row lock, in the
+  transaction that removes the files or that queues the job removing them, before anything is
+  removed; one refusal refuses the whole delete (Q-AUTHZ-161).
 - Ownership is recorded per ownership domain and normalized package name. In the MVP the domain is
   the repository (`repo:<repositories.id>`); P1 adds shared domains (R-AUTHZ-020), and until then
   `ownershipDomain` is refused with 422 `not_applicable` rather than ignored (Q-AUTHZ-155). Remote
@@ -3558,6 +3573,98 @@ its principal ID, with the journal entry of R-AUTHZ-031 (domain, format, normali
 agent would revisit this if the recorder starts returning event IDs for another reason.
 
 **Applied in the spec:** R-AUTHZ-018 (the data model), R-AUTHZ-029 ("Ownership events").
+
+### Q-AUTHZ-160 · A raw path of a format with package names is decided on its package, and a path without one fails a name set
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `/files/` and the items API decided an npm item on its path alone: the coordinate of
+`@secret/x/-/x-1.0.0.tgz` carried no package, so a grant with `packages.exclude: ["@secret/*"]` read, listed and deleted
+it (an empty include list passes a coordinate without a value), a version rule of an exposure could not see the version,
+and a name pattern of the repository (`@x/*`) never matched the path `@x/y/-/…`, so excluded content was served
+(R-REPO-005). The format's classification existed (`FilesSeam.Classify`) and nothing called it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Classify before the decision, and fail closed without a package | The generic layer looks the repository up in the snapshot (the one lookup before a decision, R-ARCH-011 step 2), asks the format for the package and version of the path and decides on them; a listing and a subtree are decided per path with a classifier handed to `PathsAllowedOn`; the items operations' shared step completes its coordinate the same way; the repository's name patterns are matched against the package. A package dimension with any pattern does not match a non-repository coordinate of a format with package names that carries no package | One coordinate for a path whichever road reaches it; a path the format could not place is refused, not admitted | A scope folder (`@acme/`) names no package and is closed to a grant that narrows names |
+| (b) Classify only | As (a) without the rule for a coordinate without a package | Scope folders stay listable under an exclude-only grant | A path a classifier misses (a future layout, a file stored before a rule) passes every exclude-only grant again |
+| (c) A coarse check, then a fine one | Decide repository-level first, resolve, classify, decide again | No lookup before the first decision | Two decisions per request, two audit events of a refused write, and a 403 that names the repository instead of the coordinate |
+
+**Choice:** (a). `files.Service.locate` reads the repository from the snapshot and keeps the outcome of the lookup until the
+decision allowed the request, so a missing repository and a hidden one answer alike; the coordinate carries `Package` and
+`Version` from `Formats.Classify`; `authz.Classifier` completes each path of `PathsAllowedOn`; `files.Service.Classified`
+completes the coordinate the shared step of `getItem`, `deleteItem`, `listChildren` and `getItemStats` decides on; and the
+patterns of a format whose subject is `name` are matched against the package, a path without one being package-less and
+admitted (R-REPO-005). In `globSet.match`, a dimension with a name rule (a format with package names) and any pattern fails a
+coordinate without a value; paths, versions and tags keep the rule of R-AUTHZ-005, and so does a generic repository.
+
+**Rationale:** the ownership, the exposure and the patterns of a package format all act on names; a road that hands the
+decision point a path alone makes every one of them blind, and a rule that fails closed keeps the next such road from
+reopening it. The price is the listing of a scope folder for a grant that narrows names, which an include list already paid;
+packages stay reachable by their own folders and paths. The development agent would revisit this if a format gains paths
+that hold content of several packages, or if browsing scope folders under an exclude-only grant becomes a need (then the
+format would classify a scope as a name prefix).
+
+**Applied in the spec:** R-AUTHZ-005 (a coordinate without a package of a format with package names; the order of R-AUTHZ-016,
+whose one lookup before a decision is the repository's, is kept), [endpoints.md](endpoints.md) R-EP-014, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-005. Code:
+`internal/authz/{pattern.go,paths.go}`, `internal/files/{files.go,formats.go,download.go,children.go,delete.go,deploy.go}`,
+`internal/formathost/hooks.go` (`FilesSeam.Classify`), `internal/api/v1/authorize.go` (`Server.classified`).
+
+### Q-AUTHZ-161 · A removal of format content through `/files/` and the items API asks the ownership question
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the npm routes that change a package ask the ownership question under the package row lock; a delete through
+`/files/` or the items API removed a tarball, a package folder or a whole scope (through the job `items-delete` above
+`storage.delete.max_sync_items`), and the removal hook that unpublishes the versions runs with a writer bound to no request,
+which cannot ask. A holder of `delete` who owns nothing could unpublish another team's versions for good.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A format seam in the removing transaction | `files.Formats.CheckRemoval` gets the files the removal takes away, with the request's index and subject; the host classifies them, locks every package row in name order and asks `Ownership.EnforceTx` with `delete`, in the transaction that removes the files or queues their job, before anything goes | Every road of a removal asks once, where the rows are; the job carries what the request decided, as it carries the `delete` decisions | One package lock and one ownership read per package of the subtree |
+| (b) Ask in the removal hook | Bind the hook's writer to the request | The question sits next to the unpublish | The job's batches run with no request; the hook runs after rows are gone |
+| (c) The job path needs `manage` or `content:bypass` | Decide on the index alone for a large subtree | No row read for the job | An owner cannot remove a large package of its own through `/files/`; two rules for one question |
+
+**Choice:** (a). `items.DeleteSpec.Extra` receives the paths of the files of the subtree (those `Check` saw, up to `MaxID` for
+a job); the generic layer records the allowed write and calls `CheckRemoval`; `formathost.FilesSeam.CheckRemoval` asks for a
+local repository of a format with package names, one question per package in name order under `EnsureLocked`, with
+`OwnershipWrite{}` (a removal is no publish and no first version), and refuses when no ownership rule is bound or no index
+is given. A folder that holds a package of another owner is refused whole (`403 package_owned_by_other_owner`), and a
+refused job is never queued. A file the format places in no package, and a folder alone, ask nothing.
+
+**Rationale:** (a) keeps the rule of R-AUTHZ-018 ("in the writer's commit transaction, under the package row lock") for every
+road that removes content, without a second rule for large subtrees. The job decides nothing, so what the request asked
+holds for it, with the window of H-154 for an insert in flight. The development agent would revisit this when the trash can
+(R-STOR-022) turns a delete into a recoverable move, or if the cost of very large scopes in one transaction is measured.
+
+**Applied in the spec:** R-AUTHZ-018 ("Which writes are checked"), [storage.md](storage.md) R-STOR-018,
+[formats/npm.md](formats/npm.md) R-NPM-017. Code: `internal/items/delete.go`, `internal/files/{formats.go,delete.go}`,
+`internal/formathost/hooks.go`, `internal/formats/npm/hooks_remove.go`.
+
+### Q-AUTHZ-162 · The items API deletes outside the patterns and in a disabled repository for `content:bypass` only
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `DELETE /api/v1/repositories/{key}/items` ignored the repository's include and exclude patterns and its disabled
+flag for every caller, so every holder of `delete` had a road past the routing rules that `/files/` applies; R-REPO-005 says
+the management API shows *administrators* items outside the patterns so they can be removed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Strict for every caller but `content:bypass` | The patterns and the disabled flag apply as under `/files/`; a holder of `content:bypass` deletes outside them | One rule for every road a non-administrator takes; the cleanup R-REPO-005 names stays | An operator with `delete` and without the role cleans up through an administrator |
+| (b) Strict for everyone | No exception | Simplest | The items stored before a pattern change cannot be removed without changing the patterns back |
+| (c) As before | Non-strict for everyone | — | The road around the routing rules stays |
+
+**Choice:** (a). The handler asks `HoldsOn(content:bypass)` on the request's index and passes `Strict` to the files service
+otherwise. Reads of the items API stay as they are: they show items outside the patterns to whoever may read them. Package
+ownership applies to every caller; `content:bypass` passes it as it passes every ownership check.
+
+**Rationale:** the patterns are routing rules for every caller (R-REPO-005), and the exception exists for one task, which is
+an administrator's. The development agent would revisit this if a capability for maintenance work below `admin` is
+introduced.
+
+**Applied in the spec:** [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-005, [storage.md](storage.md) R-STOR-018.
+Code: `internal/api/v1/items_api.go` (`DeleteItem`), `internal/files/delete.go`.
 
 ## What this does not cover
 

@@ -19,6 +19,11 @@ quotas are P1.
   [Service](../../internal/files/files.go) asks the request's `Access` first (`Decide`, or `PathsAllowed` for many paths) and
   answers a refusal with the error of the decision, so a hidden item is `authz.NotFound()`, the same bytes as a missing one. The
   item store ([items.md](items.md)) is called only after that and decides nothing. A handler never decides on its own.
+- **A path is decided on its format's coordinate.** Before the decision the service looks the repository up in the replica's
+  snapshot (`locate`, the one lookup R-ARCH-011 step 2 puts before a decision) and asks the format seam what the path is
+  (`Formats.Classify`): an npm tarball is decided on its package and version, a generic path on the path alone (R-EP-014,
+  Q-AUTHZ-160). The outcome of the lookup is answered only after the decision allowed the request (`target.resolved`), so a
+  missing repository and a hidden one answer alike.
 - **One index per request.** The entry point begins the request's index once (`edge.Resolve`: `rawfiles`, and the shared step of
   the items operations) and hands the service an `edge.Access` in `Caller.Access`; the service never begins one. The one
   exception is deliberate: a deploy decides again after its body arrived on a new holder (`Caller.Recheck`, Q-ARCH-208), because
@@ -35,11 +40,12 @@ quotas are P1.
 
 | File | Responsibility |
 |---|---|
-| [files/files.go](../../internal/files/files.go) | `Service`, `Options`, `Caller` (`Access`, `Subject`, `Actor`, `Source`, `Recheck`), the `Access` and `Items` interfaces, `decide`, `recorder` (the `Extra` that records the allowed write), `resolve` |
+| [files/files.go](../../internal/files/files.go) | `Service`, `Options`, `Caller` (`Access`, `Subject`, `Actor`, `Source`, `Recheck`), the `Access` and `Items` interfaces, `decide` and `coordinate` (with the format's package and version), `recorder` (the `Extra` that records the allowed write), `locate` and `target.resolved` |
+| [files/formats.go](../../internal/files/formats.go) | the seam to the formats: `PathClass`, `Removal`, `Formats` (`Classify`, `ServeCheck`, `RawDeploy`, `CheckRemoval`); `classify`, `classifier` (the `authz.Classifier` of a listing), `admits` (the patterns on the package for a format whose patterns match names), `Classified` (the coordinate of the items operations' shared step) |
 | [files/deploy.go](../../internal/files/deploy.go) | `Deploy`: the coarse check, admission, spool, the fine check (`overwrite`), the commit through `items.Store.Commit`, folder creation |
 | [files/download.go](../../internal/files/download.go) | `Stat` (PostgreSQL only), `Open`, `Served` |
 | [files/children.go](../../internal/files/children.go) | `ItemInfo`, `Stats`, `Children` (the per-entry decision is the store's `Visibility` callback) |
-| [files/delete.go](../../internal/files/delete.go) | `Delete`: the decisions, then `items.Store.Delete` with the subtree check as its callback |
+| [files/delete.go](../../internal/files/delete.go) | `Delete`: the decisions, then `items.Store.Delete` with the subtree check as its callback and, in its `Extra`, the recorded write and the format's `CheckRemoval` |
 | [items/](../../internal/items/) | the store; see [items.md](items.md) |
 | [api/edge/content.go](../../internal/api/edge/content.go) | `ServeItem`: ETag, `Last-Modified`, the conditional rules, `Range`, `Content-Length`, the content headers, the aborted body |
 | [api/edge/conditional.go](../../internal/api/edge/conditional.go) | `If-Match`, `If-None-Match`, `If-(Un)Modified-Since`, `Range`, `If-Range` of RFC 9110 |
@@ -50,7 +56,8 @@ quotas are P1.
 | [rawfiles/index.go](../../internal/api/rawfiles/index.go) | the directory index, HTML and JSON |
 | [httpserver/content.go](../../internal/httpserver/content.go) | `ContentWriter`, `ContentWriterFor`: the content headers of R-ARCH-007, `same-origin` for a request the session cookie authenticated (Q-ARCH-86) |
 | [httpserver/router.go](../../internal/httpserver/router.go) | `Router.HandleUncleaned`: paths `ServeMux` would redirect reach the handler |
-| [api/v1/items_api.go](../../internal/api/v1/items_api.go) | `GetItem`, `DeleteItem`, `ListChildren`, `GetItemStats`; `filesCaller` |
+| [api/v1/items_api.go](../../internal/api/v1/items_api.go) | `GetItem`, `DeleteItem` (strict for every caller without `content:bypass`, Q-AUTHZ-162), `ListChildren`, `GetItemStats`; `filesCaller`, `filesAccess` |
+| [formathost/hooks.go](../../internal/formathost/hooks.go) | `FilesSeam`, the `Formats` of the composition root: `Classify` over the registry, `ServeCheck`, `RawDeploy` (`/files/` deploys only into a format whose protocol is `/files/`, Q-ARCH-223), `CheckRemoval` (the ownership of the packages a delete removes, Q-AUTHZ-161) |
 | [app/wire_files.go](../../internal/app/wire_files.go) | `wireFiles` (the store, then the service), `filesComponent` (flush loops, `Flusher`), `registerFiles`, `registerFilesJobs`, `filesDecider`, `repositoryAPI` |
 | [audit/events_files.go](../../internal/audit/events_files.go) | `artifact.deployed`, `artifact.deleted` (transactional), `artifact.downloaded` (asynchronous) |
 
@@ -62,9 +69,11 @@ quotas are P1.
   repository.CleanPath(rest)            400 invalid_path, before any authorization (R-GENERIC-002)
   Handler.caller(r, key)                 edge.Resolve: the request's index, begun once, with the key made known
                                          (R-ARCH-011 step 2, R-API-052); 503 authz_stale / 412 authz_epoch_unknown
-  Service.decide -> Access.Decide        401 / 404 hidden / 403 / 503 / 412  (R-AUTHZ-016), on that index, the endpoint's
-                                         ceiling from the subject (R-EP-013)
-  repository lookup, lifecycle, disabled (404 repository_disabled), class (405), include/exclude patterns
+  Service.locate                         the repository from the snapshot, the format's class of the path (package, version)
+  Service.decide -> Access.Decide        401 / 404 hidden / 403 / 503 / 412  (R-AUTHZ-016), on that index, on the classified
+                                         coordinate, the endpoint's ceiling from the subject (R-EP-013, R-EP-014)
+  target.resolved: lookup outcome, lifecycle, disabled (404 repository_disabled), class (405), the format's raw deploy (409),
+  include/exclude patterns (on the package for a format whose patterns match names)
   GET/HEAD: Stat -> edge.ServeItem (ETag, conditionals, Range, Open, copy)      PUT: Deploy      DELETE: Delete
 ```
 
@@ -83,8 +92,9 @@ leading slash; the stored media type is the request's `Content-Type` parsed with
 `Deploy` is [R-ARCH-014](../spec/architecture.md) in code:
 
 1. `deploy` on the path is decided before the body is read (a refused PUT reads nothing and sends no `100 Continue`).
-2. The repository must be a local one (else 405), not disabled (404), and its patterns must admit the path (403 `not_admitted`, for
-   every caller).
+2. The repository must be a local one (else 405), not disabled (404), of a format whose protocol is `/files/` itself (else 409
+   `conflict` naming the format's protocol address, `Formats.RawDeploy`, Q-ARCH-223: an npm repository takes neither a file nor a
+   folder here), and its patterns must admit the path (403 `not_admitted`, for every caller).
 3. `Store.Spool` spools the body (declared length, `storage.upload.max_size` and `config.storage.maxUploadSize`, the digests of
    `Repr-Digest`: 400 for a length mismatch, 409 for a digest mismatch, nothing stored). The repository's own limit is validated
    as a non-negative integer when the configuration is written (`validByteLimit`, 422 at `/storage/maxUploadSize`); a stored value
@@ -138,14 +148,19 @@ percent-encoded name.
 ## Delete
 
 `Delete` decides `delete` on the path, then hands the subtree to `items.Store.Delete` with the decision on every item as its
-`Check` callback and the recorded write as `Extra`. Up to `storage.delete.max_sync_items` items the store lists the subtree in a
+`Check` callback (each path on the coordinate its format gives it) and, as `Extra`, the recorded write followed by the format's
+`CheckRemoval` with the paths of the files the removal takes away: for npm, `FilesSeam.CheckRemoval` locks the row of every
+package of those files in name order and asks `Ownership.EnforceTx` with `delete` (Q-AUTHZ-161), so one package of another
+owner refuses the whole delete. Up to `storage.delete.max_sync_items` items the store lists the subtree in a
 transaction, asks the check about every item (403 and nothing changes if one is refused; the message names the path the caller
 sent), deletes the files by id, tells the storage hook, writes one `artifact.deleted` per file, removes the folders deepest first
 (each only if it is empty then) and the empty implicit folders above. A larger subtree is checked in full at the request and
 removed by the job `items-delete` (the store's `RunDeleteJob`, which decides nothing) in batches of `storage.delete.batch_size` (files first, then the folders), answered `202` with
 the job. The job carries the highest item id the check saw (`DeleteArgs.MaxID`) and removes only items up to it, so a file that is
 deployed into the subtree afterwards stays (Q-STOR-143). A virtual repository holds no items: a delete there is `405`, as a deploy
-is. Items are deleted for good: the trash can is P1 (Q-STOR-19).
+is. Items are deleted for good: the trash can is P1 (Q-STOR-19). The `Extra` of a job runs in the transaction that queues it, with
+the files the check saw, so an ownership refusal queues nothing. The items API deletes with `Strict` (patterns and the disabled flag,
+as `/files/`) for every caller who does not hold `content:bypass` (Q-AUTHZ-162).
 
 ## Listings and statistics
 
@@ -166,7 +181,8 @@ The service takes the request's `edge.Access` through the three-method interface
 | Method | Why |
 |---|---|
 | `Decide(ctx, coordinate)` | every file and listing decision; the endpoint ceiling of R-EP-013 applies inside it, from the subject |
-| `PathsAllowed(ctx, base, action, paths)` | the entries of a listing, the items of a subtree and the `overwrite` question, on the request's index, without an audit event per refused entry |
+| `PathsAllowed(ctx, base, action, paths, classify)` | the entries of a listing, the items of a subtree and the `overwrite` question, on the request's index, without an audit event per refused entry; `classify` gives each path its format's package and version |
+| `Index()` | the index a format's rule in a write transaction is decided on: the ownership question of `CheckRemoval` |
 | `RecordAllowed(ctx, tx, coordinate, decision)` | the audit row of an allowed write, in the item store's transaction |
 
 A key the grant index does not hold yet (a repository created through another replica) is made known when the entry point begins

@@ -314,7 +314,7 @@ type Request struct {
 type EndpointFacts struct {
 	Name string
 	// Rules is true for an endpoint with exposure: rules. Its responses carry no
-	// Trove-Resolved-From and no member names (R-EP-018).
+	// Trove-Resolved-From, no Cache-Status and no member names (R-EP-018).
 	Rules bool
 	// CacheFill says whether the endpoint may make trove contact an upstream
 	// (R-EP-019). The core folds it into every populate decision; a format only

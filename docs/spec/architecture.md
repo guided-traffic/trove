@@ -5989,6 +5989,84 @@ Context: `ResealSecrets` advanced its cursor and its counters inside the closure
 
 **Applied in the spec:** R-ARCH-021 (rotation step 3).
 
+### Q-ARCH-223 · `/files/` deploys only into a format whose protocol it is
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the generic layer had no say of the format for a folder, and npm's `OnCommit` refused files only after their body was
+spooled. `PUT /files/npm-local/@acme/ui/-/ui-2.0.0.tgz/` created a folder at the path of a tarball the owner had not published
+yet, so the owner's publish of 2.0.0 failed with a path conflict, repeatably and without any ownership question
+([formats/npm.md](formats/npm.md) Q-NPM-24, R-AUTHZ-018).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Refuse every deploy, file and folder, into a format whose protocol is not `/files/`, before the body | `files.Formats.RawDeploy` answers from the format's `ProtocolBasePath`: `/files/{key}/` (the generic format) takes deploys, every other format is `409 conflict` naming its protocol address, after the decision and before the body is read | Nothing reaches an npm repository beside its publish; no body is spooled and no `100 Continue` sent for a refusal; one rule from a fact the formats already declare | R-NPM-036 (P1) will need a descriptor fact of its own |
+| (b) A folder hook in the format contract | `OnFolder` for every format | The format decides per path | A contract change for a refusal that has no exception today; files still spooled before `OnCommit` refuses them |
+| (c) `405 method_not_allowed` | As (a) with the status of a class that takes no deploy | The status of a remote repository | R-STOR-007 and R-NPM-036 name `409` for "a format rule refuses the path"; `Allow` would have to list `DELETE` for a format but not for a class |
+
+**Choice:** (a), with the generic code `conflict` and a detail that names the repository and the format's protocol address
+("The repository npm-local takes content only through the npm protocol under /api/npm/npm-local/; /files/ does not deploy into
+it."). A format this replica does not know takes nothing.
+
+**Rationale:** a format with a protocol of its own builds its documents from what that protocol receives; a raw file or folder
+beside them is content no document lists, or a path that blocks the protocol's next write. Deciding it before the body costs
+nothing and closes both. The development agent would revisit this with R-NPM-036, which turns a raw `.tgz` into a publish and
+then needs a descriptor fact ("takes raw deploys") instead of the protocol path.
+
+**Applied in the spec:** [storage.md](storage.md) R-STOR-007, [api-and-ui.md](api-and-ui.md) R-API-025 (by reference),
+[formats/npm.md](formats/npm.md) R-NPM-036. Code: `internal/files/{formats.go,deploy.go}`, `internal/formathost/hooks.go`
+(`FilesSeam.RawDeploy`).
+
+### Q-ARCH-224 · Upstream credentials travel over https only, and an https upstream is never left for http
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the hop policy of a remote repository sent the credentials, the client certificate and the custom headers to every hop
+of a `sendCredentials` host and, with `forwardAuthOnRedirect`, to every redirect hop, whatever its scheme; and `Client.Allowed`
+accepted an `http` tarball URL on the host of an `https` upstream ("the same host over the other default port"). A document of
+the upstream could so send a fetch, and with a `sendCredentials` extra host the credential, onto cleartext.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) No credential on a hop that is not `https` unless the origin is `http`; `Allowed` refuses `https` → `http` | `CredentialPolicy.allowed` refuses a cleartext hop when the origin is `https` (or unknown); `Client.Allowed` answers `502 insecure_redirect` for an `http` URL of an `https` upstream | Credentials stay encrypted wherever the operator chose encryption; the URL rule is the redirect rule of R-REPO-039 | An `https` upstream whose documents name `http` mirrors stops working for those files |
+| (b) Credentials only | (a) without the URL rule | Old documents keep working | Content of an `https` upstream is fetched in cleartext and can be read or swapped on the way (npm verifies integrity, a format without announced digests does not) |
+| (c) Refuse `http` upstreams entirely | — | Simplest | An operator's internal cleartext registry is a valid choice the spec allows |
+
+**Choice:** (a). An `http` upstream keeps every rule as written: its own hops, its `sendCredentials` hosts and its forwarded
+redirects carry the credential the operator configured for cleartext, and its documents may move to `https`. The description of
+`insecure_redirect` names both causes, a redirect and a URL in metadata.
+
+**Rationale:** the operator's choice of scheme is the upstream URL; nothing the upstream sends should weaken it. The development
+agent would revisit this if an ecosystem's public registry serves `http` download URLs from `https` metadata.
+
+**Applied in the spec:** [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-033, R-REPO-039, R-REPO-043. Code:
+`internal/outbound/hop.go` (`CredentialPolicy.allowed`), `internal/proxy/upstream/client.go` (`Client.Allowed`),
+`internal/errs/codes.go`.
+
+### Q-ARCH-225 · A format's write is decided again when it commits
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-AUTHZ-015 wants writes evaluated again at commit, on the index the committing replica holds then. `/files/` does it
+(Q-ARCH-208); npm's publish decided its write on the index the request began with, before a body of up to `npm.publish.max_tarball_size`
+arrived, and its ownership check in the commit transaction used the same index (H-104).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The host re-checks every write a request was allowed, before the transaction opens | `formathost.Host.recheck` takes a new index (`Decider.Begin`), decides every allowed write coordinate of the request again, records the new decisions, and moves the request to that index; `Ingest().Commit` and `Host.Write` call it | Every format, every write road (publish, dist-tags, unpublish), no change in a format; the ownership check and the auto claim in the transaction decide on the new index | One index lookup and one decision per write coordinate more per write |
+| (b) Each format calls a re-check | A contract method the format calls after its body | The format chooses the moment | Every format must remember it; npm's publish is one place among several |
+| (c) Re-decide inside the transaction | — | Closest to the commit | A stale index would make the decision wait with the transaction open (R-ARCH-019) |
+
+**Choice:** (a). A request that was allowed no write takes no new index. A refusal is the decision's error, `403` for a removed
+grant.
+
+**Rationale:** the host already holds the request's allowed writes, for the audit row of the transaction; deciding them again where
+they are recorded is the one place every format passes. The development agent would revisit this if a format needs to decide a
+write that it did not ask the host about before (none does).
+
+**Applied in the spec:** [authorization.md](authorization.md) R-AUTHZ-015 (the commit-time re-check). Code:
+`internal/formathost/{state.go,ingest.go,host.go}`.
+
 ## What this does not cover
 
 

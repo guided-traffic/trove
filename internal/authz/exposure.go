@@ -249,11 +249,17 @@ func reasonOfStage(s int) string {
 // evaluate runs one rule on an item as if the rule were enabled and returns the
 // stage at which the item failed, or stageExposed. A repository-level item (no
 // package, no path) passes every pattern: listed items are filtered per item
-// (R-EP-012). An item with a version needs the format's versioning; without it
-// the version cannot be judged and the rule refuses (fail closed).
+// (R-EP-012). A path of a format with package names that names no package is a
+// path the format placed in no package: no rule can say which versions of what it
+// would expose, so it is not exposed (fail closed, R-EP-014, Q-EP-59). An item
+// with a version needs the format's versioning; without it the version cannot be
+// judged and the rule refuses (fail closed).
 func (r *compiledRule) evaluate(it exposureItem, v catalog.Versioning) int {
 	if it.pkg == "" && it.path == "" {
 		return stageExposed
+	}
+	if it.pkg == "" && r.packages.names != nil {
+		return stagePackage
 	}
 	if !r.packages.match(it.pkg, it.pkg != "") {
 		return stagePackage

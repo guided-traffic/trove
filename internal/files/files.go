@@ -7,14 +7,18 @@
 // of the management API (internal/api/v1) apply the rules once.
 //
 // Every operation asks the decision point first, with the action of R-AUTHZ-006
-// and the coordinate it concerns (R-AUTHZ-016: authorization runs before any
-// lookup of the repository or the item), on the index the request began with
+// and the coordinate it concerns, on the index the request began with
 // (R-AUTHZ-015; [Caller.Access]), and answers a refusal with the error of the
-// decision, so that a hidden item is the same 404 as a missing one. The checks
-// that must run in the item store's transactions are handed to it as callbacks;
-// the store itself calls no decision point. The package reaches the object store
-// and the items tables only through the store: the architecture test refuses an
-// import of internal/blob or internal/meta/postgres here.
+// decision, so that a hidden item is the same 404 as a missing one. The
+// coordinate is the one the repository's format gives the path (R-EP-014:
+// package name and version for npm), so the one lookup before the decision is
+// the repository's in the replica's snapshot (R-ARCH-011 step 2); its outcome is
+// answered only once the decision allowed the request, and no item is looked up
+// before it (R-AUTHZ-016). The checks that must run in the item store's
+// transactions are handed to it as callbacks; the store itself calls no decision
+// point. The package reaches the object store and the items tables only through
+// the store: the architecture test refuses an import of internal/blob or
+// internal/meta/postgres here.
 //
 // Nothing here keeps state between requests (R-ARCH-032).
 package files
@@ -58,11 +62,15 @@ type Access interface {
 	// PathsAllowed decides one action for many paths of a repository without an
 	// audit event per refused entry: a listing omits what the caller may not read,
 	// and a folder delete needs `delete` on every item of the subtree (R-STOR-017,
-	// R-STOR-018).
-	PathsAllowed(ctx context.Context, base authz.Coordinate, a authz.Action, paths []string) ([]bool, error)
+	// R-STOR-018). classify gives each path the coordinate of its format.
+	PathsAllowed(ctx context.Context, base authz.Coordinate, a authz.Action, paths []string, classify authz.Classifier) ([]bool, error)
 	// RecordAllowed records an allowed write in the transaction of the change
 	// (R-AUTHZ-029).
 	RecordAllowed(ctx context.Context, tx meta.Tx, c authz.Coordinate, d authz.Decision) error
+	// Index is the index the decisions are made on: a format's rule that is
+	// decided in a write transaction (package ownership, R-AUTHZ-018) is decided
+	// on it too.
+	Index() *authz.Index
 }
 
 // Options configure [New].
@@ -129,49 +137,76 @@ func (c Caller) afterBody(ctx context.Context, key string) (Caller, error) {
 	return c, nil
 }
 
-// decide asks the decision point for the actions on a path and returns the
-// decision for the caller to keep (RecordAllowed) or the error of its refusal.
+// decide asks the decision point for the actions on a path, on the coordinate
+// its format gives it, and returns the decision for the caller to keep
+// (RecordAllowed) or the error of its refusal.
 //
 // A key the grant index does not hold yet was made known when the request began
 // its index (authz.Decider.Begin, R-ARCH-011 step 2, R-API-052).
-func (c Caller) decide(ctx context.Context, repo, path string, kind authz.RequestKind, actions ...authz.Action) (authz.Decision, error) {
-	d := c.Access.Decide(ctx, coordinate(repo, path, kind, actions...))
+func (c Caller) decide(ctx context.Context, repo, path string, pc PathClass, kind authz.RequestKind, actions ...authz.Action) (authz.Decision, error) {
+	d := c.Access.Decide(ctx, coordinate(repo, path, pc, kind, actions...))
 	if !d.Allowed() {
 		return d, d.Err()
 	}
 	return d, nil
 }
 
-func coordinate(repo, path string, kind authz.RequestKind, actions ...authz.Action) authz.Coordinate {
-	return authz.Coordinate{Repository: repo, Path: path, Kind: kind, Actions: actions}
+// coordinate is the coordinate of a path of a repository with the package and
+// the version its format gives it (R-EP-014).
+func coordinate(repo, path string, pc PathClass, kind authz.RequestKind, actions ...authz.Action) authz.Coordinate {
+	return authz.Coordinate{Repository: repo, Path: path, Package: pc.Package, Version: pc.Version, Kind: kind, Actions: actions}
 }
 
 // recorder returns the callback that records an allowed write in the item
 // store's transaction (R-AUTHZ-029).
-func (c Caller) recorder(repo, path string, d authz.Decision, actions ...authz.Action) func(context.Context, meta.Tx) error {
+func (c Caller) recorder(repo, path string, pc PathClass, d authz.Decision, actions ...authz.Action) func(context.Context, meta.Tx) error {
 	return func(ctx context.Context, tx meta.Tx) error {
-		return c.Access.RecordAllowed(ctx, tx, coordinate(repo, path, authz.KindWrite, actions...), d)
+		return c.Access.RecordAllowed(ctx, tx, coordinate(repo, path, pc, authz.KindWrite, actions...), d)
 	}
 }
 
 // notFound is the one answer for a missing and for a hidden resource.
 func notFound() error { return authz.NotFound() }
 
-// resolve looks the repository up after the decision allowed the request
-// (R-ARCH-011 step 2). A repository being deleted is not addressable. A disabled
-// one is refused for /files (strict) and served to the management API.
-func (s *Service) resolve(ctx context.Context, key string, strict bool) (repository.Repository, error) {
+// target is what a request names before it is decided: the repository as the
+// replica's snapshot holds it, the outcome of that lookup, and the class the
+// repository's format gives the path.
+type target struct {
+	repo  repository.Repository
+	err   error
+	class PathClass
+}
+
+// locate looks up the repository a request names and classifies the path in it,
+// so that the request is decided on the coordinate the format gives the path
+// (R-EP-014). The lookup reads the replica's snapshot, the one lookup that
+// precedes a decision (R-ARCH-011 step 2, R-AUTHZ-016); its outcome is answered
+// by [target.resolved] once the decision allowed the request, so a missing
+// repository and a hidden one answer alike. A repository the snapshot does not
+// hold gets the class of no format, and the decision refuses it.
+func (s *Service) locate(ctx context.Context, key, path string, folder bool) target {
 	r, err := s.repos.ByKey(ctx, key)
-	if err != nil {
-		return repository.Repository{}, err
+	t := target{repo: r, err: err}
+	if err == nil {
+		t.class = s.classify(r, path, folder)
 	}
-	if r.Lifecycle == repository.Deleting {
+	return t
+}
+
+// resolved answers the lookup after the decision allowed the request. A
+// repository being deleted is not addressable. A disabled one is refused for
+// /files (strict) and served to the management API.
+func (t target) resolved(strict bool) (repository.Repository, error) {
+	if t.err != nil {
+		return repository.Repository{}, t.err
+	}
+	if t.repo.Lifecycle == repository.Deleting {
 		return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "No repository has the requested key.")
 	}
-	if r.Disabled && strict {
+	if t.repo.Disabled && strict {
 		return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryDisabled, "The repository is disabled.")
 	}
-	return r, nil
+	return t.repo, nil
 }
 
 // errForbidden is the 403 of an action the caller does not hold on a path.

@@ -291,7 +291,7 @@ func (s *Server) decide(r *http.Request, q Requirement) error {
 		if !ok {
 			return refuse()
 		}
-		return aa.RequireAction(ctx, coordinateOf(r, q))
+		return aa.RequireAction(ctx, s.classified(ctx, coordinateOf(r, q)))
 	}
 	return errs.E(errs.Forbidden, errs.CodeForbidden, "The operation is not permitted.")
 }
@@ -308,6 +308,22 @@ func coordinateOf(r *http.Request, q Requirement) authz.Coordinate {
 		c.Kind = authz.KindMetadata
 	}
 	return c
+}
+
+// classified completes a coordinate that names an item path with the package and
+// the version the repository's format gives it, so the shared step decides an
+// items operation on the coordinate the files service decides it on (R-EP-014,
+// R-AUTHZ-005): a path of a format with package names decided without its
+// package fails every grant that narrows names (Q-AUTHZ-160). A path that is not
+// canonical stays as it is; the handler refuses it with 400.
+func (s *Server) classified(ctx context.Context, c authz.Coordinate) authz.Coordinate {
+	if s.o.Files == nil || c.Path == "" || c.Package != "" {
+		return c
+	}
+	if _, err := CheckItemPath(c.Path, PathOptions{}); err != nil {
+		return c
+	}
+	return s.o.Files.Classified(ctx, c)
 }
 
 // valueOf reads a value expression: "query.<name>" or "path.<name>".

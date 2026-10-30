@@ -2,7 +2,11 @@ package formathost
 
 import (
 	"context"
+	"sort"
+	"strings"
 
+	"github.com/guided-traffic/trove/internal/authz"
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/files"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/items"
@@ -118,7 +122,93 @@ func (s *FilesSeam) Classify(repo repository.Repository, p repository.Cleaned) f
 		return files.PathClass{}
 	}
 	info := f.Classify(p)
-	return files.PathClass{Kind: info.Kind.RequestKind(), Package: info.Package, Version: info.Version}
+	return files.PathClass{
+		Kind: info.Kind.RequestKind(), Package: info.Package, Version: info.Version,
+		ByName: f.Descriptor().PatternSubject == formats.SubjectName,
+	}
+}
+
+// rawProtocol is the protocol base path of a format whose protocol is /files/
+// itself (the generic format, R-GENERIC-002).
+const rawProtocol = "/files/{key}/"
+
+// RawDeploy implements [files.Formats]: /files/ deploys into a repository whose
+// format has /files/ as its protocol. A format with a protocol of its own builds
+// its documents from what that protocol receives, so a raw file or folder beside
+// them would be content no document lists, or a path that blocks the protocol's
+// next write; /files/ takes nothing into its repositories (R-STOR-007, R-API-025,
+// Q-ARCH-223). A format this replica does not know takes nothing either.
+func (s *FilesSeam) RawDeploy(repo repository.Repository) error {
+	f, ok := s.d.lookup(repo.Format)
+	if ok && f.Descriptor().ProtocolBasePath == rawProtocol {
+		return nil
+	}
+	way := "the protocol of its format " + repo.Format
+	if ok {
+		d := f.Descriptor()
+		way = "the " + d.DisplayName + " protocol under " + strings.ReplaceAll(d.ProtocolBasePath, "{key}", repo.Key)
+	}
+	return errs.E(errs.Conflict, errs.CodeConflict,
+		"The repository "+repo.Key+" takes content only through "+way+"; /files/ does not deploy into it.")
+}
+
+// CheckRemoval implements [files.Formats]: the ownership of R-AUTHZ-018 for every
+// package the removed files belong to, under the package row lock and in the
+// transaction of the removal, as the format's own routes ask it (npm's unpublish,
+// Q-AUTHZ-161). Ownership is checked in a local repository of a format with
+// package names; a file the format places in no package asks nothing. A removal
+// that needs the question and cannot have it asked (no ownership rule bound on
+// this replica, no index of a request) is refused: a removal that cannot be
+// checked is not allowed.
+func (s *FilesSeam) CheckRemoval(ctx context.Context, tx meta.Tx, rm files.Removal) error {
+	if rm.Repo.Class != repository.Local {
+		return nil
+	}
+	f, ok := s.d.lookup(rm.Repo.Format)
+	if !ok || !f.Descriptor().PackageNames {
+		return nil
+	}
+	seen := map[string]bool{}
+	var names []string
+	for _, p := range rm.Files {
+		if n := f.Classify(formats.Path{Path: p}).Package; n != "" && !seen[n] {
+			seen[n] = true
+			names = append(names, n)
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	switch {
+	case s.d.Ownership == nil:
+		return errs.E(errs.Internal, errs.CodeInternal, "Package ownership is not wired on this replica; the removal is refused.")
+	case rm.Index == nil:
+		return errs.E(errs.Internal, errs.CodeInternal, "Package ownership is decided for a request; this removal has none.")
+	}
+	// One lock order for every removal, so two removals of overlapping packages
+	// wait for each other instead of deadlocking.
+	sort.Strings(names)
+	pw, err := packages.NewWriter(tx, f.Descriptor().PropertyPrefix)
+	if err != nil {
+		return err
+	}
+	ref := repoRef(rm.Repo)
+	for _, n := range names {
+		if _, _, err := pw.EnsureLocked(ctx, ref.ID, n, n); err != nil {
+			return err
+		}
+		err := s.d.Ownership.EnforceTx(ctx, tx, OwnershipCheck{
+			Index: rm.Index, Subject: rm.Subject,
+			Coordinate: authz.Coordinate{
+				Repository: rm.Repo.Key, Class: rm.Repo.Class, Format: rm.Repo.Format, Kind: authz.KindWrite,
+				Package: n, Actions: []authz.Action{authz.Delete},
+			},
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ServeCheck implements [files.Formats]: the format's check, for the stored marks only

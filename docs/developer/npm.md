@@ -119,7 +119,7 @@ flowchart TD
   its original reaches the commit with identical bytes: the item store reports an identical commit, the hook does not run, and the handler decides again from the committed facts.
 - **The ownership helper.** `f.claim(ctx, writer, op, package, version, firstVersion)` is the one place a write of npm asks the ownership question: `opPublish` (claims a first version), `opDistTag`, `opDeprecate`
   (deploy) and `opUnpublish` (delete). The handlers of dist-tags, unpublish and deprecation call it under the package row lock.
-- **What is deliberately not done:** a provenance bundle is stored, linked and not read; a refused publish stores nothing except a bundle-less version when the second commit fails (Q-NPM-22); an upload through `/files/` to an npm repository is refused (Q-NPM-24).
+- **What is deliberately not done:** a provenance bundle is stored, linked and not read; a refused publish stores nothing except a bundle-less version when the second commit fails (Q-NPM-22); an upload through `/files/` to an npm repository, file or folder, is refused with `409` before its body is read (Q-ARCH-223; `OnCommit` refuses one that reached it by another road, Q-NPM-24).
 
 ## Documents
 
@@ -195,7 +195,10 @@ sequenceDiagram
     C->>H: DELETE name/-/file.tgz/-rev/rev: 200, nothing changes
 ```
 
-`OnItemsRemoved` ([hooks_remove.go](../../internal/formats/npm/hooks_remove.go)) is the whole unpublish; the route only decides and removes the files. It therefore also serves a raw delete through `/files/`.
+`OnItemsRemoved` ([hooks_remove.go](../../internal/formats/npm/hooks_remove.go)) is the whole unpublish; the route only decides and removes the files. It therefore also serves a raw delete through `/files/`
+and the items API. Its writer is bound to no request and asks no ownership question: for a raw delete the generic layer asked it before, in the same transaction, through
+`FilesSeam.CheckRemoval` (every package of the removed files, in name order under `EnsureLocked`, `delete`, Q-AUTHZ-161; `TestR_AUTHZ_018_RawRemovalsAskOwnership`). A raw path
+of an npm repository is decided on the package and the version `Classify` gives it, and the repository's name patterns are matched against that package (Q-AUTHZ-160).
 `removeVersions` takes versions out of a locked package: tags first (the format holds the SemVer order), then `Store.Tombstone` for the versions the document holds, then `TrashOrDeleteVersion`. A version
 that is stored and tombstoned (withheld, R-NPM-047) loses its row and keeps its tombstone. The route calls `removeVersions` itself for a version whose files were not there. `OnItemsRestored` clears the
 tombstone of a version that is stored again with the integrity the tombstone holds, and gives a package without `latest` the highest version (the trash can is P1; the kit drives it).

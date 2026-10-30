@@ -2,8 +2,11 @@
 
 Status: implemented in M1 for the decision engine, the compiled grant index and its propagation, the token scope as a
 ceiling, system roles, the epochs of `Trove-Authz-Min-Epoch` and the decision audit. M2 adds the populate check and package
-ownership in the decision point; no remote engine and no format writer calls them yet, and the shadowing check, CI inline
-grants and projects do not exist yet. Both are named in [What this does not cover](#what-this-does-not-cover).
+ownership in the decision point, and their callers: npm's writers ask the ownership question for a publish, a provenance
+bundle, a dist-tag write and an unpublish, the generic layer asks it for every delete of npm content through `/files/` and the
+items API (Q-AUTHZ-161), the remote engine asks the populate check before a fill, the virtual engine asks `MemberUsableOn` per
+member and the shadowing check before a first version, and the host decides a format's write again when it commits
+(Q-ARCH-225). CI inline grants and projects do not exist yet.
 
 This page says what keeps a request from doing more than it was granted, how long a removed grant can still work, and what
 an attacker who controls one of the inputs gains. The mechanics are in
@@ -37,7 +40,8 @@ an attacker who controls one of the inputs gains. The mechanics are in
 | Endpoint ceiling | Consulted first for every action and every subject, `content:bypass` included; nil is none | [ceiling.go](../../internal/authz/ceiling.go) |
 | Virtual repositories | `read` on the virtual repository is a gate, not a source of content rights; anonymous passes only if it reads every member | `evaluate` |
 | Populate check | Bringing new content into a remote cache needs `read` plus the repository's `cacheFillAction`; the session cookie never populates, so a link or an image in another site cannot make an administrator's browser fill a frozen mirror; an endpoint with `cache_fill: false` refuses every subject, the setting travelling in the subject so a collapsed or fanned-out decision keeps it | [populate.go](../../internal/authz/populate.go) |
-| Package ownership | On an enforcing repository a name is changed by its owners, `manage` holders and `content:bypass` only, however wide a `deploy` grant's patterns are; an imported name with versions and no owner needs `manage`; the claim of a first publish is decided by the primary key in the commit transaction, so two replicas cannot both claim | [ownership.go](../../internal/authz/ownership.go) |
+| Package ownership | On an enforcing repository a name is changed by its owners, `manage` holders and `content:bypass` only, however wide a `deploy` grant's patterns are; an imported name with versions and no owner needs `manage`; the claim of a first publish is decided by the primary key in the commit transaction, so two replicas cannot both claim. A delete through `/files/` or the items API is a change of every package whose files it removes, asked under each package's row lock in the transaction that removes them or queues their job; one refusal refuses the whole delete (`TestR_AUTHZ_018_RawRemovalsAskOwnership`, `TestR_STOR_018_ARawRemovalAboveTheSyncLimitAsksOwnershipBeforeItsJob`) | [ownership.go](../../internal/authz/ownership.go), [hooks.go](../../internal/formathost/hooks.go) (`FilesSeam.CheckRemoval`) |
+| Raw paths of package formats | `/files/` and the items API decide a path of an npm repository on the package and the version the format gives it, so a grant's name patterns, a token scope's and an exposure rule's apply to the tarball as to the package; a path the format places in no package does not match a name set with any pattern (Q-AUTHZ-160, `TestR_AUTHZ_005_FilesDecideNpmItemsOnTheirPackage`) | [files.go](../../internal/files/files.go) (`locate`), [paths.go](../../internal/authz/paths.go), [pattern.go](../../internal/authz/pattern.go) |
 
 Principals are referenced by their immutable ID in `authz_policy_entry` and `authz_role_binding`, so a deleted and
 re-created user, group or service account of the same name inherits nothing, and a repository deleted and re-created under
@@ -191,24 +195,11 @@ virtual repository, a copy) must call `Engine.Begin` once and `DecideOn` per coo
 calls `Decide` repeatedly can see two indexes if a build installs in between. Dormant: no caller in M1 decides more than one
 coordinate per request; it becomes live with virtual resolution (M2) if that code does not use `Begin`.
 
-### H-103 · Package ownership and the populate check have no callers yet, the shadowing check does not exist
-
-The ownership check and claim (`Ownership.EnforceTx`) and the populate check (`MayPopulateOn`, `PopulateOn`,
-`MemberUsableOn`) exist in the decision point and are tested on PostgreSQL, but no format writer calls the first and no remote
-or virtual engine the second. The owner operations of R-AUTHZ-019 and the deletion hook are wired
-([wire_ownership.go](../../internal/app/wire_ownership.go)). The shadowing check of R-REPO-048 exists in the virtual engine
-(`Resolver.ShadowCheck`, [virtual.md](../developer/virtual.md)) and reaches the formats through `Host.Resolver()`; the virtual
-resolution of reads asks `MemberUsableOn` per member and has callers in its tests only. Dormant: the only format is `generic`, which
-has no package names. It becomes live with the first package format writer, the remote engine and the binding of the engine to the Host
-(M2): a writer that does not call `EnforceTx` lets a `deploy` grant alone publish any name inside its patterns, including a name another
-team owns; a remote engine that fetches without `PopulateOn` lets a session cookie or a `cache_fill: false` endpoint fill a cache; and a
-writer that does not call `ShadowCheck` lets a virtual repository's deploy target shadow a remote package.
-
 ### H-104 · The commit-time re-check decides on the grants, not on the credential
 
-R-AUTHZ-015's re-check runs for every deploy of `/files/`: after the body has arrived and before the commit transaction
-opens, the write is decided again on the committing replica's index, for a new file and an identical re-upload as for an
-overwrite, and the recorded decision is that one ([deploy.go](../../internal/files/deploy.go), on a new holder begun after the body arrived, Q-ARCH-208;
+R-AUTHZ-015's re-check runs for every deploy of `/files/` and every write of a format: after the body has arrived and before
+the commit transaction opens, the write is decided again on the committing replica's index, for a new file and an identical
+re-upload as for an overwrite, and the recorded decision is that one ([deploy.go](../../internal/files/deploy.go), on a new holder begun after the body arrived, Q-ARCH-208;
 `TestR_AUTHZ_015_ADeployIsDecidedAgainWhenItCommits` removes the grant while the body is arriving). Two things remain.
 
 The credential is not authenticated again: a token revoked, or a session ended, while its upload runs still commits that
@@ -217,7 +208,10 @@ it real is a stolen token whose holder starts a large upload before the revocati
 within the bound of R-AUTH-023.
 
 The re-check and the commit are two steps: a grant removed in the milliseconds between them does not stop the write. The
-format writers (M2) have no re-check yet; each needs its own call when it ships.
+same holds for a format's write: the host decides every write the request was allowed again on the index of the moment before
+the transaction opens, and the ownership check in it decides on that index (Q-ARCH-225,
+`TestR_AUTHZ_015_APublishIsDecidedAgainWhenItCommits` removes the grant of an npm publish while its body is arriving); a grant
+removed between that decision and the commit does not stop it, and the credential is not authenticated again either.
 
 ### H-105 · The revocation journal is written and not replayed
 
@@ -233,17 +227,6 @@ not refused (Q-AUTHZ-70, option c). Live whenever an administrator group is sync
 break-glass administrator is disabled; what makes it real is a change of the group at the identity provider, by mistake or by
 someone who administers the provider but not trove. R-HA-054 reports an installation without an administrator; recovery is
 the break-glass administrator or `trove admin`.
-
-### H-290 · A raw delete of an npm tarball through `/files/` asks no ownership question
-
-The npm routes that change a package ask the ownership question (R-AUTHZ-018) under the package row lock: publish, dist-tag writes and the unpublish
-requests ([npm.md](../developer/npm.md)). A `DELETE /files/<npm local>/<name>/-/<file>.tgz` is decided by the generic layer on the action `delete` and the repository's
-patterns, and the removal hook that unpublishes the version runs with a writer bound to no request, which cannot ask (`Claim` answers `errs.Internal`). A principal that holds `delete`
-on the package's coordinates but is not an owner of the name, and holds neither `manage` nor `content:bypass`, can therefore unpublish a version through `/files/` that the route
-would refuse with 403 `package_owned_by_other_owner` (`TestR_NPM_017_RawDeleteUnpublishes`, subtest H-290). The tombstone, the tags, the revision and the audit event are written as for the
-route, so the removal is recorded and cannot be repeated with other bytes; the bytes of the version are gone. Live today on every npm local repository with ownership enforced, for
-principals that hold `delete` without owning the name; what makes it real is a `delete` grant on a name another team owns, which the ownership rule exists to make safe. Closing it needs the
-generic layer to ask `Ownership.EnforceTx` for a coordinate with a package name, in the transaction of the removal.
 
 ### H-299 · The cost of a package list for a caller with row-level grants depends on versions the caller cannot read
 

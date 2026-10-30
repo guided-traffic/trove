@@ -21,13 +21,17 @@ type (
 func (lowerNames) Normalize(name string) (string, bool) { return strings.ToLower(name), name != "" }
 func (exactNames) Normalize(name string) (string, bool) { return name, name != "" }
 
-// integrationFormats is the catalog of these tests: the registered generic format
-// and, for the package-name rules the grants of the suite exercise, stand-ins for
-// a format with case-sensitive names (npm) and one with case-insensitive names
-// (nuget). The decision point learns a format's name rule from the catalog only.
+// integrationFormats is the catalog of these tests: the registered formats and,
+// for the package-name rules the grants of the suite exercise, stand-ins for a
+// format with case-sensitive names (npm) and one with case-insensitive names
+// (nuget), which take the place of a registered format of the same ID. The
+// decision point learns a format's name rule from the catalog only.
 func integrationFormats() *catalog.Registry {
 	r := catalog.NewRegistry()
 	for _, e := range catalog.Default().List() {
+		if e.ID == "npm" || e.ID == "nuget" {
+			continue
+		}
 		r.Register(e)
 	}
 	all := []catalog.Class{catalog.Local, catalog.Remote, catalog.Virtual}
@@ -66,7 +70,8 @@ func TestR_AUTHZ_004_FormatSelectorComesFromTheFormatRegistry(t *testing.T) {
 	if _, _, err := svc.Create(t.Context(), admin, in("@any-local:generic")); err != nil {
 		t.Fatalf("a registered format: %v", err)
 	}
-	_, _, err := svc.Create(t.Context(), admin, in("@any-local:not-a-format"))
+	// npm is a registered format since M2; a name the registry does not hold is the case.
+	_, _, err := svc.Create(t.Context(), admin, in("@any-local:nosuchformat"))
 	ee, ok := errs.As(err)
 	if !ok || ee.Status() != 422 || ee.Code != errs.CodeValidation || len(ee.Fields) != 1 || ee.Fields[0].Code != errs.CodeUnknownFormat {
 		t.Fatalf("err = %v", err)

@@ -2,8 +2,9 @@
 
 Status: implemented in M0 for the outbound HTTP clients of the process: an address check at connect time for every purpose except
 the object store, a deny list and an allow list, and the refusal of zoned IPv6 addresses. In M2 the upstream clients of remote
-repositories use it and the upstream test reports a refusal as `egress_denied`; the proxy engine that maps a refusal of a fetch to
-`502` is not built yet.
+repositories use it: the proxy engine ([internal/proxy](../../internal/proxy)) answers a refused fetch `502 egress_denied`, counts it in
+`trove_remote_egress_denied_total{repo}` and records the security event `proxy.egress_denied`, and the upstream test reports a
+refusal as `egress_denied`. Credentials of a remote repository travel over `https` only, unless its upstream itself is `http`.
 
 This page says which connections trove opens to addresses that other parties name, which check applies to each, and where
 the check does not reach. It describes the code of [internal/outbound](../../internal/outbound).
@@ -40,8 +41,8 @@ The order of the rules in `check` ([policy.go](../../internal/outbound/policy.go
    32 bits (`64:ff9b::a9fe:a9fe` is checked as `169.254.169.254`).
 
 Everything else is permitted. A refusal is an `EgressDeniedError` that names the address and the rule, and it counts in
-`trove_outbound_egress_denied_total{kind}`. The error type is the one the proxy engine maps to `502 egress_denied`; that engine is
-not built yet.
+`trove_outbound_egress_denied_total{kind}`. The proxy engine maps it to `502 egress_denied` ([classify.go](../../internal/proxy/classify.go)),
+without naming the address in the answer.
 
 ## The default deny list
 
@@ -92,6 +93,11 @@ not by the caller:
 | redirect to any other origin, `forwardAuthOnRedirect: false` | removed | not presented |
 | redirect to any other origin, `forwardAuthOnRedirect: true` | sent | presented |
 | first request to any other host | removed, whatever the flag says | not presented |
+| any hop that is not `https` while the origin is `https` | removed, whatever the rows above say | not presented |
+
+The last row is checked first (`CredentialPolicy.allowed`, Q-ARCH-224): an `https` upstream's credential never travels in cleartext,
+not to its own host over `http`, not to a `sendCredentials` host, not along a forwarded redirect. An `http` upstream is the operator's
+choice of cleartext, and its hops keep the rows above.
 
 `net/http` copies the headers of the first request to every redirect and strips only a few of them on a change of domain; the
 policy removes `Authorization` and every credential or custom header it knows on every hop and sets them again only where the
@@ -107,7 +113,8 @@ trust store, the source network, the redirect limit and the credential policy ap
 `error.code` `egress_denied` with the address and the rule, and counts in `trove_outbound_egress_denied_total{kind="remote"}`. The
 operation needs `repositories:write-config`. A repository in offline mode, and every repository while `proxy.global_offline` is on, is not
 contacted. `Client.Allowed` ([client.go](../../internal/proxy/upstream/client.go)) refuses a URL taken from upstream metadata whose host is
-neither the upstream's nor in `extraHosts` (`502 foreign_host_denied`) before any address is resolved.
+neither the upstream's nor in `extraHosts` (`502 foreign_host_denied`), and one that leaves an `https` upstream for `http` (`502
+insecure_redirect`, as a redirect to `http` is refused), before any address is resolved (Q-ARCH-224).
 
 ## What this does not cover
 

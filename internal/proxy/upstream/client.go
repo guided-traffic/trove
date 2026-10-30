@@ -47,10 +47,17 @@ func (c *Client) Close() { c.http.CloseIdleConnections() }
 
 // Allowed reports whether a request to u may be sent for this repository: its
 // host is the upstream's, or matches an entry of extraHosts (R-REPO-043). The
-// answer is 502 foreign_host_denied otherwise, and no request goes out. It
-// guards the URLs that come out of upstream metadata; redirects have their own
-// rule (R-REPO-039) in the client.
+// answer is 502 foreign_host_denied otherwise, and no request goes out. A URL
+// that leaves an https upstream for http is refused as a redirect to http is,
+// 502 insecure_redirect: upstream metadata cannot steer a fetch, or a credential
+// of an extraHosts entry with sendCredentials, onto cleartext (R-REPO-039,
+// Q-ARCH-224). It guards the URLs that come out of upstream metadata; redirects
+// have their own rule (R-REPO-039) in the client.
 func (c *Client) Allowed(u *url.URL) error {
+	if strings.EqualFold(c.origin.Scheme, "https") && !strings.EqualFold(u.Scheme, "https") {
+		return errs.E(errs.UpstreamFailed, errs.CodeInsecureRedirect,
+			"The upstream document of the repository "+c.key+" points to "+u.Scheme+"://"+u.Host+"; an https upstream is never left for cleartext.")
+	}
 	if sameHost(c.origin, u) {
 		return nil
 	}
@@ -65,8 +72,9 @@ func (c *Client) Allowed(u *url.URL) error {
 }
 
 // sameHost compares the host names and the effective ports. A port that is the
-// default of its scheme equals the other default, so that an upstream document may
-// move from http to https on the same host.
+// default of its scheme equals the other default, so that an upstream document of
+// an http upstream may move to https on the same host; the way back is refused
+// before (Allowed).
 func sameHost(a, b *url.URL) bool {
 	if !strings.EqualFold(a.Hostname(), b.Hostname()) {
 		return false

@@ -323,6 +323,10 @@ func TestR_EP_013_ExposureCeiling(t *testing.T) {
 		{"R-EP-013 a coordinate without an endpoint has no ceiling (a job)", botSub, read("generic-local", "", "internal/x.bin"), Allow, ReasonAllowGrant, ""},
 		{"R-EP-018 a version of an npm-like format is decided by the rule's range", onEP(botSub, "customers"), Coordinate{Repository: "npm-customers", Package: "@acme/sdk", Version: "2.1.0", Kind: KindArtifact, Actions: []Action{Read}}, Allow, "", ""},
 		{"R-EP-018 a version below the range is hidden", onEP(botSub, "customers"), Coordinate{Repository: "npm-customers", Package: "@acme/sdk", Version: "1.9.0", Kind: KindArtifact, Actions: []Action{Read}}, DenyHidden, ReasonExposure, Read},
+		{"R-EP-014 Q-EP-59 a raw file of the npm-like format is decided on the package and version the format gives it", onEP(botSub, "customers"), Coordinate{Repository: "npm-customers", Path: "@acme/sdk/-/sdk-2.1.0.tgz", Package: "@acme/sdk", Version: "2.1.0", Kind: KindArtifact, Actions: []Action{Read}}, Allow, "", ""},
+		{"R-EP-014 Q-EP-59 a raw file of a version the rule hides is hidden", onEP(botSub, "customers"), Coordinate{Repository: "npm-customers", Path: "@acme/sdk/-/sdk-1.9.0.tgz", Package: "@acme/sdk", Version: "1.9.0", Kind: KindArtifact, Actions: []Action{Read}}, DenyHidden, ReasonExposure, Read},
+		{"R-EP-014 Q-EP-59 a path of a format with package names that names no package is hidden", onEP(botSub, "customers"), read("npm-customers", "", "@acme/sdk/-/sdk-2.1.0.tgz"), DenyHidden, ReasonExposure, Read},
+		{"R-EP-014 Q-EP-59 a generic path without a package is decided by the paths as before", onEP(botSub, "customers"), read("generic-local", "", "releases/x"), Allow, ReasonAllowGrant, ""},
 	}, &n)
 	runAuthzCases(t, on, []authzCase{
 		{"R-EP-013 an anonymous read the rules admit passes on an anonymous endpoint", onEP(anonSub, "customers"), read("generic-local", "", "releases/a"), Allow, "", ""},

@@ -1348,9 +1348,14 @@ API conventions that apply on top:
 
 - A remote repository's items answer from the cache only; the metadata routes never trigger an
   upstream fetch.
-- npm and NuGet repositories refuse raw deploys (the format answers with a reason pointing to
-  `npm publish` or `dotnet nuget push`), because a raw upload would bypass their metadata
-  generation.
+- npm and NuGet repositories refuse raw deploys of files and folders (`409` `conflict` before the body
+  is read, with a reason naming the format's protocol address, where `npm publish` or `dotnet nuget push`
+  sends), because a raw upload would bypass their metadata generation
+  ([architecture.md](architecture.md) Q-ARCH-223).
+- The items operations decide a path of a package format on the package and the version the format gives
+  it, as `/files/` does ([authorization.md](authorization.md) Q-AUTHZ-160); the delete asks the ownership
+  question of every package whose files it removes (Q-AUTHZ-161) and applies the repository's patterns and
+  disabled flag to every caller but a holder of `content:bypass` (Q-AUTHZ-162).
 
 Acceptance criteria:
 
@@ -1581,7 +1586,9 @@ on:
 - The credential mode, the package and the quoting are the API's, not the template's (Q-API-168): the template
   spells the token as `${TROVE_TOKEN}` and the package as `<package>` and receives the functions `shell` and `xml`.
   A `package`, `version` or `scope` above 256 bytes, with a control character or in the shape of a token is
-  refused with `400`. The operation answers `503` while no base URL is configured for the endpoint, because
+  refused with `400`, and so is a `package` or `version` that starts with `-` (a client reads it as an option,
+  quoted or not) and a `package` that the format's name rule does not take; the snippet holds the normalized
+  name ([formats/npm.md](formats/npm.md) Q-NPM-50). The operation answers `503` while no base URL is configured for the endpoint, because
   an address built from the `Host` of the request would end in a file the user copies. The publish snippets and
   `publishTarget` need `deploy` on the repository that receives the publish: the repository itself when local, the
   deployment target of a virtual one, none for a remote one. Whether the snippets send the credential before
@@ -1592,7 +1599,8 @@ on:
   a caller without `deploy` on the target gets no publish snippets either.
 - Values substituted into shell commands (package names, versions, repository keys) MUST be
   single-quoted, with embedded single quotes escaped, unless they match
-  `^[A-Za-z0-9@/._+:=-]+$`; values substituted into XML snippets MUST be XML-escaped. Legacy npm
+  `^[A-Za-z0-9@/._+:=][A-Za-z0-9@/._+:=-]*$` (a value that starts with `-` is quoted); values
+  substituted into XML snippets MUST be XML-escaped. Legacy npm
   names served through remote repositories may contain `'`, `(`, `)`, `!` and `*`, which a shell
   interprets when a user pastes the command.
 

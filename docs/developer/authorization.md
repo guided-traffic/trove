@@ -54,7 +54,8 @@ security view is [permissions.md](../security/permissions.md).
 | [source.go](../../internal/authz/source.go) | `Source` and its PostgreSQL implementation: the `REPEATABLE READ READ ONLY` build and the epoch read |
 | [roles.go](../../internal/authz/roles.go) | The five system roles and the capability table of R-AUTHZ-010 |
 | [action.go](../../internal/authz/action.go), [ref.go](../../internal/authz/ref.go) | Action sets and presets; principal references and the IDs of the built-in principals |
-| [pattern.go](../../internal/authz/pattern.go), [selector.go](../../internal/authz/selector.go) | The limits, the folding of names and patterns with the format's catalog rule (`fold`, `namesIn`) and the include and exclude semantics of R-AUTHZ-005 on top of `repository.CompilePattern`, the one compiler of the syntax (Q-AUTHZ-25); repository selectors (R-AUTHZ-004) |
+| [pattern.go](../../internal/authz/pattern.go), [selector.go](../../internal/authz/selector.go) | The limits, the folding of names and patterns with the format's catalog rule (`fold`, `namesIn`) and the include and exclude semantics of R-AUTHZ-005 on top of `repository.CompilePattern`, the one compiler of the syntax (Q-AUTHZ-25); a package dimension with a name rule and any pattern fails a coordinate without a package (`globSet.match`, Q-AUTHZ-160); repository selectors (R-AUTHZ-004) |
+| [paths.go](../../internal/authz/paths.go) | `PathsAllowed`/`PathsAllowedOn`, the listing form of `Decide`, with the `Classifier` that gives each path the package and version of its format (R-EP-014) |
 | [errors.go](../../internal/authz/errors.go) | `Decision.Err` (the table of R-AUTHZ-016), `NotFound`, `ParseMinEpoch`, the reason codes |
 | [ceiling.go](../../internal/authz/ceiling.go), [exposure.go](../../internal/authz/exposure.go), [exposure_service.go](../../internal/authz/exposure_service.go) | `Ceiling` (evaluated on the request's index, for the endpoint of the subject); the endpoint exposure of R-EP-013 compiled into the index (`ExposureCeiling`) and its rule service; see [endpoints.md](endpoints.md#exposure-r-ep-012-to-r-ep-014) |
 | [validate.go](../../internal/authz/validate.go), [store.go](../../internal/authz/store.go), [bindings.go](../../internal/authz/bindings.go), [policy.go](../../internal/authz/policy.go) | `Service`: validate, create (`CreateIn` on the caller's transaction), update, delete and read policies; bind and unbind roles |
@@ -240,7 +241,10 @@ Every operation in `api/openapi.yaml` carries `x-trove-permission`. `parseRequir
 | `role: <role>` | `Access.Require(ctx, "role:<role>")`: the subject holds the role and its credential exercises roles |
 | `action: deploy`, `repository: query.repository` [, `package: …`] [, `path: query.path`] | `ActionAccess.RequireAction` with a coordinate built from the request; sources are `query.<name>` and `path.<name>` |
 
-A source the request lacks is the empty string and names no repository, so the request is refused before the handler.
+A source the request lacks is the empty string and names no repository, so the request is refused before the handler. A
+declaration with a `path` (the items operations) is decided on the coordinate the repository's format gives the path: the step
+completes it with `files.Service.Classified` (package and version from the format's `Classify`) when the path is canonical, so a
+path of an npm repository is decided on its package as the files service decides it (`Server.classified`, Q-AUTHZ-160).
 Decisions that depend on the request body are the handler's, using the request's `edge.Access` (or `authz.Authorizer` in
 a job). For a capability, a role or an action declaration the step takes the request's index before it checks the declaration
 (`Server.begin`, `v1.Beginner`) and stores the holder in the context, so the check and every question of the handler are answered
@@ -339,10 +343,17 @@ carries `Location` of the owners view, on which a GET shows the new owner.
 **Deletion.** `OwnershipHook` (`repository.Hooks`) deletes the rows of `repo:<id>` in the transaction that removes the
 repository row; the owners follow by foreign key (Q-AUTHZ-156).
 
+**Who asks.** npm's writers ask through `PackageWriter.Claim` (publish, provenance bundle, dist-tag writes, unpublish), under the
+package row lock of their transaction, on the index the host moved the request to when it decided the write again before the
+transaction (`Host.recheck`, Q-ARCH-225). A delete through `/files/` or the items API asks through the format seam: the generic
+layer hands the files it removes to `files.Formats.CheckRemoval` in the transaction that removes them or queues their job, and
+`formathost.FilesSeam.CheckRemoval` locks every package of those files in name order and calls `EnforceTx` with `delete` and
+`OwnershipWrite{}` (Q-AUTHZ-161). Both refuse when no ownership rule is bound.
+
 **Wiring.** [wire_ownership.go](../../internal/app/wire_ownership.go): `ownershipService` builds `authz.NewOwnership` over the
 engine of step 8 and the database (the engine's recorder records the events); `authzServices` hands it to the handlers as
-`AuthzServices.Owners`. `ownershipHook` is the last entry of the hook list in `wireRepository`. Until a format writer calls
-`EnforceTx`, nothing claims a name.
+`AuthzServices.Owners`, and `wireFormats` binds it as `formathost.Deps.Ownership` (`ownershipSeam`), which the package writer and
+the files seam share. `ownershipHook` is the last entry of the hook list in `wireRepository`.
 
 ## Configuration
 

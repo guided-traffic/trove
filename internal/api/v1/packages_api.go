@@ -454,15 +454,12 @@ func (s *Server) GetClientSetup(w http.ResponseWriter, r *http.Request, repoKey 
 // maxSetupValue bounds a value the snippets embed.
 const maxSetupValue = 256
 
-func (s *Server) clientSetup(r *http.Request, ps PackageServices, repoKey string, p gen.GetClientSetupParams) (gen.ClientSetup, error) {
-	ctx := r.Context()
-	creds := credPlaceholder
-	if p.Credentials != nil {
-		creds = string(*p.Credentials)
-	}
-	if !slices.Contains([]string{credPlaceholder, credEnv, credNone}, creds) {
-		return gen.ClientSetup{}, badParam("credentials", "must be placeholder, env or none")
-	}
+// setupValues collects the values of the client setup that end up in a snippet and
+// refuses one above maxSetupValue, with a control character, in the shape of a
+// token, or, for the package and the version, starting with "-": a client reads
+// such an argument as an option, quoted or not, and "--registry=…" would point a
+// pasted install elsewhere (Q-NPM-50).
+func setupValues(p gen.GetClientSetupParams) (map[string]string, error) {
 	values := map[string]string{"client": p.Client}
 	if p.Package != nil {
 		values["package"] = *p.Package
@@ -476,10 +473,28 @@ func (s *Server) clientSetup(r *http.Request, ps PackageServices, repoKey string
 	for name, v := range values {
 		switch {
 		case len(v) > maxSetupValue || strings.ContainsFunc(v, func(r rune) bool { return r < 0x20 || r == 0x7f }):
-			return gen.ClientSetup{}, badParam(name, "is too long or holds a control character")
+			return nil, badParam(name, "is too long or holds a control character")
 		case holdsTokenShape(v):
-			return gen.ClientSetup{}, badParam(name, "must not hold a token")
+			return nil, badParam(name, "must not hold a token")
+		case (name == "package" || name == "version") && strings.HasPrefix(v, "-"):
+			return nil, badParam(name, "must not start with \"-\"")
 		}
+	}
+	return values, nil
+}
+
+func (s *Server) clientSetup(r *http.Request, ps PackageServices, repoKey string, p gen.GetClientSetupParams) (gen.ClientSetup, error) {
+	ctx := r.Context()
+	creds := credPlaceholder
+	if p.Credentials != nil {
+		creds = string(*p.Credentials)
+	}
+	if !slices.Contains([]string{credPlaceholder, credEnv, credNone}, creds) {
+		return gen.ClientSetup{}, badParam("credentials", "must be placeholder, env or none")
+	}
+	values, err := setupValues(p)
+	if err != nil {
+		return gen.ClientSetup{}, err
 	}
 	var scopeName string
 	if sc := values["scope"]; sc != "" {
@@ -500,6 +515,18 @@ func (s *Server) clientSetup(r *http.Request, ps PackageServices, repoKey string
 	templates := f.SetupTemplates()
 	if !slices.Contains(setupClients(templates), p.Client) {
 		return gen.ClientSetup{}, badParam("client", "is not one of "+strings.Join(setupClients(templates), ", "))
+	}
+	if pkg := values["package"]; pkg != "" {
+		// The package is a name of the format, validated and normalized by the
+		// format's one name rule (R-AUTHZ-005), before it reaches a snippet.
+		norm, ok := "", false
+		if names := f.Descriptor().Names; names != nil {
+			norm, ok = names.Normalize(pkg)
+		}
+		if !ok {
+			return gen.ClientSetup{}, badParam("package", "is not a package name of the format "+repo.Format)
+		}
+		values["package"] = norm
 	}
 
 	// The addresses come from the configured base URL of the endpoint, never from the

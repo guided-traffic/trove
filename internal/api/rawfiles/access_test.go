@@ -54,7 +54,7 @@ func (d *decider) DecideOn(_ context.Context, idx *authz.Index, _ authz.Subject,
 	return authz.Decision{Outcome: authz.Allow}
 }
 
-func (d *decider) PathsAllowedOn(_ context.Context, idx *authz.Index, _ authz.Subject, _ authz.Coordinate, _ authz.Action, paths []string) ([]bool, error) {
+func (d *decider) PathsAllowedOn(_ context.Context, idx *authz.Index, _ authz.Subject, _ authz.Coordinate, _ authz.Action, paths []string, _ authz.Classifier) ([]bool, error) {
 	d.ask(idx)
 	return make([]bool, len(paths)), nil
 }

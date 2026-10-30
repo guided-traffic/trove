@@ -306,8 +306,13 @@ Priority: **MVP** · Covers: REPO-011, RMT-034
   (refused with 403 `not_admitted`); copy and move targets ([storage.md](storage.md)).
 - Patterns MUST apply to every caller on package-protocol and `/files/` requests, administrators
   included: they are routing rules, and an administrator's build must not fetch an internal name
-  from a public upstream either. The management item API shows administrators items outside the
-  patterns (stored before a pattern change, for example) so they can be removed.
+  from a public upstream either. Under `/files/` and in the items API the name patterns of a format
+  with package names are matched against the package the format gives the path; a path it places in
+  no package is package-less and admitted ([authorization.md](authorization.md) Q-AUTHZ-160). The
+  management item API shows items outside the patterns (stored before a pattern change, for example)
+  so they can be removed; its delete removes them, and deletes in a disabled repository, for a holder
+  of `content:bypass` only, and applies the patterns and the disabled flag as `/files/` does for every
+  other caller (Q-AUTHZ-162).
 - Changing patterns MUST NOT delete stored items.
 - Limits: at most 100 patterns per list, each at most 1024 characters; violations answer 422
   `invalid_pattern`.
@@ -2115,7 +2120,9 @@ Priority: **MVP** · Covers: RMT-005, RMT-006, IAM-045
   belong to the format plug-in; format-specific rules (which username the public npm registry
   expects) are on the format pages.
 - Credentials go only to the upstream origin and to `extraHosts` entries with `sendCredentials:
-  true`; redirects follow R-REPO-039. A format page MAY forbid more; neither MVP format does
+  true`; redirects follow R-REPO-039. They travel over `https` only: a hop that is not `https` gets
+  none, unless the upstream origin itself is `http` ([architecture.md](architecture.md) Q-ARCH-224).
+  A format page MAY forbid more; neither MVP format does
   ([formats/npm.md](formats/npm.md) R-NPM-023 restates this rule, and the NuGet format proposes
   its `*.nuget.org` extra host with `sendCredentials: false`).
 - **Secret fields** (`password`, sensitive header values, client-certificate private keys, outbound
@@ -2424,14 +2431,16 @@ Priority: **MVP** · Covers: RMT-012
 
 - Redirects (301, 302, 303, 307, 308; [RFC 9110, section 15.4](https://www.rfc-editor.org/rfc/rfc9110#section-15.4))
   MUST be followed up to `proxy.max_redirects` hops; more answer 502 `too_many_redirects`.
-- A redirect from `https` to `http` MUST be refused with 502 `insecure_redirect`.
+- A redirect from `https` to `http` MUST be refused with 502 `insecure_redirect`; so is a URL in
+  the metadata of an `https` upstream that points to `http` (R-REPO-043).
 - Every hop passes the egress rules (R-REPO-038) and TLS verification (R-REPO-035). A format page MAY
   restrict redirect targets further (npm: only hosts it accepts for tarballs).
 - Credentials, the client certificate and custom headers MUST be sent only to the upstream origin and
   to `extraHosts` with `sendCredentials: true`. With `forwardAuthOnRedirect: true` they also go to the
-  other origins of the redirect chain. The default matters: many registries redirect downloads to
-  pre-signed object-storage URLs, which reject an extra `Authorization` header and must not receive
-  the credential anyway.
+  other origins of the redirect chain. A hop that is not `https` gets none of them, unless the
+  upstream origin itself is `http` (Q-ARCH-224). The default matters: many registries redirect
+  downloads to pre-signed object-storage URLs, which reject an extra `Authorization` header and must
+  not receive the credential anyway.
 - The client certificate follows the same rule as the credentials: it is presented only on connections to
   those hosts. The first request to a host that is neither the upstream origin nor a `sendCredentials`
   host never carries credentials, also with `forwardAuthOnRedirect`, which widens redirect hops only
@@ -2602,7 +2611,9 @@ Priority: **MVP** · Covers: trove-only
   package. A document of package A can therefore neither create nor replace the mapping of an
   artifact of package B.
 - A recorded URL on a host that is neither the upstream origin nor in `extraHosts` MUST be refused
-  with 502 `foreign_host_denied` without a request. `remote.extraHosts` is the only host list;
+  with 502 `foreign_host_denied` without a request. A recorded URL that leaves an `https` upstream
+  for `http` is refused with 502 `insecure_redirect`, as a redirect to `http` is (R-REPO-039,
+  [architecture.md](architecture.md) Q-ARCH-224). `remote.extraHosts` is the only host list;
   formats have none of their own and may only narrow it (Q-REPO-5).
 - The ETag of a rewritten document is derived from the stored document's digest and the serving
   address, so client conditional requests work.
@@ -2854,7 +2865,9 @@ stub upstream):
 Priority: **MVP** · Covers: trove-only
 
 - Every response of a remote or virtual repository MUST carry a `Cache-Status` header
-  ([RFC 9211](https://www.rfc-editor.org/rfc/rfc9211)) with the cache name `trove`:
+  ([RFC 9211](https://www.rfc-editor.org/rfc/rfc9211)) with the cache name `trove`, except on an
+  endpoint with exposure rules, where no answer carries it ([endpoints.md](endpoints.md) R-EP-018,
+  Q-EP-60):
 
 | Situation | Header value |
 |---|---|

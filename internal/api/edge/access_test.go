@@ -62,7 +62,7 @@ func (f *fakeDecider) ExposedOn(idx *authz.Index, sub authz.Subject, keys []stri
 	return keys
 }
 
-func (f *fakeDecider) PathsAllowedOn(_ context.Context, idx *authz.Index, sub authz.Subject, _ authz.Coordinate, _ authz.Action, paths []string) ([]bool, error) {
+func (f *fakeDecider) PathsAllowedOn(_ context.Context, idx *authz.Index, sub authz.Subject, _ authz.Coordinate, _ authz.Action, paths []string, _ authz.Classifier) ([]bool, error) {
 	f.record(idx, sub)
 	return make([]bool, len(paths)), nil
 }
@@ -106,7 +106,7 @@ func TestR_AUTHZ_015_TheHolderAsksEveryQuestionOnOneIndex(t *testing.T) {
 	a.Decide(ctx, authz.Coordinate{Repository: "generic-local"})
 	_, _ = a.Readable(ctx, []string{"generic-local"})
 	a.Exposed([]string{"generic-local"})
-	_, _ = a.PathsAllowed(ctx, authz.Coordinate{Repository: "generic-local"}, authz.Read, []string{"x"})
+	_, _ = a.PathsAllowed(ctx, authz.Coordinate{Repository: "generic-local"}, authz.Read, []string{"x"}, nil)
 	_ = a.Require(ctx, "policies:read")
 	a.Holds("policies:read")
 	_, _ = a.Check(nil)

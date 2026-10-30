@@ -61,8 +61,12 @@ type DeleteSpec struct {
 	// store does not know why a path may not be deleted.
 	Check func(ctx context.Context, paths []string) error
 	// Extra runs in the transaction of the removal, or of queuing the job, after
-	// Check; the generic layer records the allowed write with it.
-	Extra func(ctx context.Context, tx meta.Tx) error
+	// Check and before anything is removed, with the canonical paths of the files
+	// the removal takes away (those Check saw, in path order); an error stops the
+	// delete with nothing changed. The generic layer records the allowed write with
+	// it and asks the format about the files (R-AUTHZ-018: the ownership of the
+	// packages they belong to).
+	Extra func(ctx context.Context, tx meta.Tx, files []string) error
 }
 
 // DeleteResult is the outcome of a delete: Done when the subtree was removed,
@@ -113,7 +117,7 @@ func (s *Store) Delete(ctx context.Context, spec DeleteSpec) (DeleteResult, erro
 			return err
 		}
 		if spec.Extra != nil {
-			if err := spec.Extra(ctx, tx); err != nil {
+			if err := spec.Extra(ctx, tx, filePaths(rows)); err != nil {
 				return err
 			}
 		}
@@ -165,6 +169,17 @@ func subtree(ctx context.Context, qs *q.Queries, rid int64, path string, filesOn
 		}
 		after = rows[len(rows)-1].Path
 	}
+}
+
+// filePaths are the paths of the files among the rows, in their order.
+func filePaths(rows []subtreeRow) []string {
+	var out []string
+	for _, r := range rows {
+		if r.Kind == KindFile {
+			out = append(out, r.Path)
+		}
+	}
+	return out
 }
 
 // checkRows asks the caller's check about every item of the subtree, 1,000 paths
@@ -282,6 +297,7 @@ func (s *Store) enqueueDelete(ctx context.Context, repo RepoRef, spec DeleteSpec
 		return DeleteResult{}, errs.E(errs.Unavailable, errs.CodeUnavailable, "A subtree this large is deleted by a job, and this replica has no job queue.")
 	}
 	var maxID int64
+	var files []string
 	err := s.read(ctx, func(qs *q.Queries) error {
 		rows, err := subtree(ctx, qs, repo.ID, spec.Path, false)
 		if err != nil {
@@ -291,6 +307,7 @@ func (s *Store) enqueueDelete(ctx context.Context, repo RepoRef, spec DeleteSpec
 		for _, r := range rows {
 			maxID = max(maxID, r.ID)
 		}
+		files = filePaths(rows)
 		return checkRows(ctx, spec.Check, rows)
 	})
 	if err != nil {
@@ -298,8 +315,10 @@ func (s *Store) enqueueDelete(ctx context.Context, repo RepoRef, spec DeleteSpec
 	}
 	var res DeleteResult
 	err = s.run.InTx(ctx, func(tx meta.Tx) error {
+		// The job removes only items up to MaxID, so what is asked of the files here
+		// covers the removal that follows (but for the insert in flight of H-154).
 		if spec.Extra != nil {
-			if err := spec.Extra(ctx, tx); err != nil {
+			if err := spec.Extra(ctx, tx, files); err != nil {
 				return err
 			}
 		}

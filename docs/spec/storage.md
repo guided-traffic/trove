@@ -736,7 +736,12 @@ Response sketch:
 
 Format repositories accept raw deploys only where the format plug-in allows them (an npm
 repository accepts tarballs only through `npm publish`); the plug-in answers `409` with a
-reason otherwise.
+reason otherwise. In this build a format accepts them exactly when its protocol is `/files/`
+itself (the generic format): a deploy of a file or of a folder into a repository of any other
+format answers `409` `conflict`, naming the format's protocol address, after the decision and
+before the body is read, so no body is spooled and no `100 Continue` is sent
+([architecture.md](architecture.md) Q-ARCH-223). A folder is refused as a file is: an empty folder
+at a path the format writes (a version's tarball path) would block its next write there.
 
 Acceptance criteria:
 
@@ -1343,8 +1348,16 @@ Priority: **MVP** · Covers: ART-034, STOR-002
   trash can enabled, R-STOR-022) or deleted; blobs stay until garbage collection (R-STOR-024).
 - The format plug-in's `OnItemsRemoved` hook runs in the same transaction, so format indexes
   never list removed content.
-- Permission: `delete` on every item of the subtree. The check completes before anything is
-  removed; if any item is not deletable the answer is `403` and nothing changes.
+- Permission: `delete` on every item of the subtree, each on the coordinate its format gives it
+  (package name and version for npm, [endpoints.md](endpoints.md) R-EP-014). The check completes
+  before anything is removed; if any item is not deletable the answer is `403` and nothing changes.
+  Removing files of a package format is a mutating operation on their packages: the ownership question
+  of [authorization.md](authorization.md) R-AUTHZ-018 is asked for every package whose files the
+  delete removes, in the transaction that removes them or queues their job (`403
+  package_owned_by_other_owner`, Q-AUTHZ-161).
+- The items API deletes as `/files/` does, the repository's patterns and its disabled flag included,
+  except for a holder of `content:bypass`, whose cleanup removes items outside the patterns and in a
+  disabled repository ([authorization.md](authorization.md) Q-AUTHZ-162).
 - A subtree larger than `storage.delete.max_sync_items` is removed by a background job
   (`202 Accepted` with the job URL, job API per [architecture.md](architecture.md)); the
   permission check still completes before the first removal. The job removes in transactions of
@@ -1371,6 +1384,11 @@ Acceptance criteria:
   `npm view @acme/widget versions --registry …` no longer lists 1.4.0.
 - Deleting a folder that contains one file the caller may not delete answers `403` and removes
   nothing.
+- In an npm repository with `packageOwnership: enforce`, `DELETE /files/npm-local/@acme/` by a
+  holder of `delete` who does not own one of the scope's packages answers `403`
+  `package_owned_by_other_owner` and removes nothing, through the job path as well
+  (`TestR_AUTHZ_018_RawRemovalsAskOwnership`,
+  `TestR_STOR_018_ARawRemovalAboveTheSyncLimitAsksOwnershipBeforeItsJob`).
 
 ### R-STOR-019 · Copy and move
 Priority: **P1** · Covers: ART-032, ART-033, STOR-002

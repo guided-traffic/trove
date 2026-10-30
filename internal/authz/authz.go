@@ -223,8 +223,10 @@ type Decider interface {
 	// for read, whatever the subject's grants (R-EP-014, Q-EP-12).
 	ExposedOn(idx *Index, sub Subject, keys []string) []string
 	// PathsAllowedOn decides one action for many paths of one repository, the
-	// listing form of DecideOn; it writes no audit event.
-	PathsAllowedOn(ctx context.Context, idx *Index, sub Subject, base Coordinate, a Action, paths []string) ([]bool, error)
+	// listing form of DecideOn; it writes no audit event. classify completes the
+	// coordinate of each path with what the repository's format makes of it
+	// (R-EP-014); nil leaves the paths without a package.
+	PathsAllowedOn(ctx context.Context, idx *Index, sub Subject, base Coordinate, a Action, paths []string, classify Classifier) ([]bool, error)
 	// RequireOn checks a system capability for a management operation (R-API-008):
 	// 401 for an anonymous subject, 403 otherwise; it runs before any lookup.
 	RequireOn(ctx context.Context, idx *Index, sub Subject, permission string) error

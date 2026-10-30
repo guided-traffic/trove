@@ -22,6 +22,9 @@ func (shaped) WriteError(w http.ResponseWriter, _ *http.Request, err error) {
 	status := http.StatusInternalServerError
 	if e, ok := errs.As(err); ok {
 		status = e.Status()
+		for k, v := range e.Headers {
+			w.Header().Set(k, v)
+		}
 	}
 	w.WriteHeader(status)
 	_, _ = io.WriteString(w, "native error")
@@ -29,13 +32,19 @@ func (shaped) WriteError(w http.ResponseWriter, _ *http.Request, err error) {
 
 func serve(t *testing.T, kind RouteKind, h HandlerFunc, sameOrigin bool) *httptest.ResponseRecorder {
 	t.Helper()
+	return serveOn(t, EndpointFacts{}, kind, h, sameOrigin)
+}
+
+func serveOn(t *testing.T, ep EndpointFacts, kind RouteKind, h HandlerFunc, sameOrigin bool) *httptest.ResponseRecorder {
+	t.Helper()
 	rec := httptest.NewRecorder()
 	rq := &Request{
-		Request: httptest.NewRequest(http.MethodGet, "/api/probe/key/left-pad/-/left-pad-1.0.0.tgz", nil),
-		Repo:    &repository.Repository{Key: "key", Format: "probe"},
-		Route:   &Route{Name: "probe.get", Kind: kind, Handler: h},
-		Path:    Path{Path: "left-pad/-/left-pad-1.0.0.tgz"},
-		Log:     slog.New(slog.DiscardHandler),
+		Request:  httptest.NewRequest(http.MethodGet, "/api/probe/key/left-pad/-/left-pad-1.0.0.tgz", nil),
+		Repo:     &repository.Repository{Key: "key", Format: "probe"},
+		Route:    &Route{Name: "probe.get", Kind: kind, Handler: h},
+		Path:     Path{Path: "left-pad/-/left-pad-1.0.0.tgz"},
+		Log:      slog.New(slog.DiscardHandler),
+		Endpoint: ep,
 	}
 	ServeRoute(shaped{fake{d: valid("probe")}}, rec, rq, sameOrigin)
 	return rec
@@ -168,4 +177,40 @@ func TestTemplate(t *testing.T) {
 		}()
 		Template("/{name}.json")
 	})
+}
+
+// TestR_EP_018_NoCacheStatusOnAnEndpointWithRules: on an endpoint with exposure rules no
+// answer of a format route carries Cache-Status, set by the handler, by an engine before
+// a body or in an error's headers; on any other endpoint it is kept (R-REPO-047, Q-EP-60).
+func TestR_EP_018_NoCacheStatusOnAnEndpointWithRules(t *testing.T) {
+	const status = "trove; fwd=miss; stored"
+	routes := map[string]HandlerFunc{
+		"a document": func(_ context.Context, _ *Request, w http.ResponseWriter) error {
+			w.Header().Set("Cache-Status", status)
+			_, err := io.WriteString(w, "{}")
+			return err
+		},
+		"a 304": func(_ context.Context, _ *Request, w http.ResponseWriter) error {
+			w.Header().Set("Cache-Status", status)
+			w.WriteHeader(http.StatusNotModified)
+			return nil
+		},
+		"an error": func(context.Context, *Request, http.ResponseWriter) error {
+			return errs.E(errs.NotFound, errs.CodeNotFound, "missing", errs.WithHeader("Cache-Status", status))
+		},
+	}
+	for name, h := range routes {
+		for _, k := range []RouteKind{Download, Metadata, Admin} {
+			t.Run("R-EP-018 "+name+" of a "+k.String()+" route on an endpoint with rules", func(t *testing.T) {
+				if got := serveOn(t, EndpointFacts{Name: "customers", Rules: true}, k, h, false).Header().Get("Cache-Status"); got != "" {
+					t.Fatalf("Cache-Status = %q", got)
+				}
+			})
+			t.Run("R-REPO-047 "+name+" of a "+k.String()+" route on an endpoint without rules", func(t *testing.T) {
+				if got := serveOn(t, EndpointFacts{Name: "default"}, k, h, false).Header().Get("Cache-Status"); got != status {
+					t.Fatalf("Cache-Status = %q", got)
+				}
+			})
+		}
+	}
 }

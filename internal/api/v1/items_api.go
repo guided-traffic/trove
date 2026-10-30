@@ -6,6 +6,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/files"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/items"
@@ -25,18 +26,25 @@ import (
 // behind it, whose endpoint is the ceiling of every decision (R-EP-013); and the
 // actor and source of the audit events.
 func (s *Server) filesCaller(r *http.Request, repoKey string) (files.Caller, error) {
+	c, _, err := s.filesAccess(r, repoKey)
+	return c, err
+}
+
+// filesAccess is filesCaller with the holder of the request, for an operation
+// that asks it more than the files service does.
+func (s *Server) filesAccess(r *http.Request, repoKey string) (files.Caller, *edge.Access, error) {
 	ctx := r.Context()
 	if _, ok := edge.AccessFrom(ctx); !ok && s.o.FilesDecider == nil {
-		return files.Caller{}, unavailable("The files service")
+		return files.Caller{}, nil, unavailable("The files service")
 	}
 	acc, err := edge.Resolve(ctx, s.o.FilesDecider, edge.SubjectFrom(r), repoKey)
 	if err != nil {
-		return files.Caller{}, err
+		return files.Caller{}, nil, err
 	}
 	return files.Caller{
 		Access: acc, Subject: acc.Subject,
 		Actor: edge.ActorFrom(httpserver.PrincipalFrom(ctx)), Source: auditSource(r),
-	}, nil
+	}, acc, nil
 }
 
 // WriteDeleteResult answers a delete of the files service: 204, or 202 with the
@@ -91,6 +99,11 @@ func (s *Server) GetItem(w http.ResponseWriter, r *http.Request, repoKey string,
 }
 
 // DeleteItem implements DELETE /api/v1/repositories/{repoKey}/items (R-STOR-018).
+// It deletes as DELETE /files/ does, the repository's patterns and its disabled
+// flag included, for every caller but a holder of content:bypass, whose cleanup
+// removes items stored before a pattern change and items of a disabled
+// repository (R-REPO-005, Q-AUTHZ-162). Package ownership applies to every caller
+// alike; content:bypass passes it as it passes every ownership check.
 func (s *Server) DeleteItem(w http.ResponseWriter, r *http.Request, repoKey string, params gen.DeleteItemParams) {
 	svc, err := s.filesService()
 	var path string
@@ -100,8 +113,10 @@ func (s *Server) DeleteItem(w http.ResponseWriter, r *http.Request, repoKey stri
 	var res items.DeleteResult
 	if err == nil {
 		var c files.Caller
-		if c, err = s.filesCaller(r, repoKey); err == nil {
-			res, err = svc.Delete(r.Context(), c, files.DeleteRequest{Repo: repoKey, Path: path})
+		var acc *edge.Access
+		if c, acc, err = s.filesAccess(r, repoKey); err == nil {
+			cleanup := acc.Holds(string(authz.ContentBypass))
+			res, err = svc.Delete(r.Context(), c, files.DeleteRequest{Repo: repoKey, Path: path, Strict: !cleanup})
 		}
 	}
 	if err != nil {

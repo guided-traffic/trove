@@ -66,11 +66,12 @@ func newFormatsFixture(t *testing.T) *formatsFixture {
 	e.user("nobody")
 	e.grant(f.r, "probe-w", []string{"probe-local", "gen-local"}, authz.PatternLists{}, map[string][]string{"user:writer": {"read", "deploy", "delete"}})
 	e.grant(f.r, "probe-r", []string{"probe-local"}, authz.PatternLists{}, map[string][]string{"user:reader": {"read"}})
-	// Wait for the policies, with a file the hooks of the format ignore.
+	// Wait for the policies: /files/ deploys into the generic repository only (Q-ARCH-223),
+	// and the reader's grant shows in the listing of the probe repository's root.
 	waitFor(t, "the policies", 10*time.Second, func() bool {
-		return f.r.put("writer", "/files/probe-local/.wait", "x").status/100 == 2 && f.r.get("reader", "/files/probe-local/.wait").status == 200
+		return f.r.put("writer", "/files/gen-local/.wait", "x").status/100 == 2 && f.r.get("reader", "/files/probe-local/").status == 200
 	})
-	if res := f.r.do("writer", http.MethodDelete, "/files/probe-local/.wait", nil); res.status != 204 {
+	if res := f.r.do("writer", http.MethodDelete, "/files/gen-local/.wait", nil); res.status != 204 {
 		t.Fatalf("remove the probe: %d %s", res.status, res.body)
 	}
 	probeReset()

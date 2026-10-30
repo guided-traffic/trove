@@ -233,8 +233,13 @@ func writes(as []formats.Action) bool {
 }
 
 // Write implements [formats.Host]. The allowed write decisions of the request are
-// recorded in the transaction, as the generic layer records them (R-AUTHZ-029).
+// decided again on the index of this moment before the transaction opens
+// (R-AUTHZ-015, Q-ARCH-225) and recorded in the transaction, as the generic layer
+// records them (R-AUTHZ-029).
 func (h *Host) Write(ctx context.Context, rq *formats.Request, fn func(tx formats.Tx, w formats.PackageWriter) error) error {
+	if err := h.recheck(ctx, rq); err != nil {
+		return err
+	}
 	return h.o.Runner.InTx(ctx, func(tx meta.Tx) error {
 		w, err := h.o.writerFor(tx, rq, rq.Repo.Format)
 		if err != nil {

@@ -443,7 +443,7 @@ var registry = []CodeInfo{
 	{CodeUpstreamContentTypeBlocked, UpstreamFailed, "Upstream content type blocked", "The upstream answered with a media type that integrity.blockUnexpectedContentTypes refuses, usually an HTML error page or a captive portal in place of a package."},
 	{CodeTLSUntrusted, UpstreamFailed, "Upstream certificate not trusted", "The upstream's certificate is not signed by a CA in proxy.outbound.tls or does not match the host name. A security event is written; the circuit is not counted."},
 	{CodeTooManyRedirects, UpstreamFailed, "Too many redirects", "The upstream redirected more often than proxy.max_redirects allows."},
-	{CodeInsecureRedirect, UpstreamFailed, "Insecure redirect", "The upstream redirected from https to http, which trove refuses."},
+	{CodeInsecureRedirect, UpstreamFailed, "Insecure redirect", "The upstream sent a request from https to http, by a redirect or by a URL in its metadata, which trove refuses."},
 	{CodeFetchQueueTimeout, Unavailable, "Fetch queue timeout", "All upstream fetch slots (proxy.max_concurrent_fetches, limits.maxConcurrentFetches) stayed busy for proxy.queue_timeout_seconds. Retry-After is 5 s."},
 	{CodeNotCachedOnlyIfCached, UpstreamTimeout, "Not cached", "The request carried Cache-Control: only-if-cached and the path is not in the cache (RFC 9111 section 5.2.1.7)."},
 	// <<< M2 proxy

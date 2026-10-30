@@ -190,8 +190,13 @@ request ─► edge.SubjectFrom (Subject.Endpoint) ─► DecideOn / ReadableOn 
   requires authentication give the same `404`, for every subject, `content:bypass` included.
 - **Matching** (`compiledRule.evaluate`): package, path, version globs, range, pre-release and tag, in that order; a
   repository-level coordinate passes any enabled rule; an exclude wins inside a rule only; a version without the format's
-  `catalog.Versioning` is refused (fail closed). Package patterns are folded with the format's name rule
-  (`catalog.Names`), like the grants and the token scopes.
+  `catalog.Versioning` is refused (fail closed); a path of a format with package names that carries no package is refused
+  as `package_excluded` (Q-EP-59). Package patterns are folded with the format's name rule (`catalog.Names`), like the
+  grants and the token scopes.
+- **Raw paths** (R-EP-014). `/files/` and the items API hand the ceiling the package and the version the format gives a path
+  (`files.Service.locate`, a listing through the `authz.Classifier` of `PathsAllowedOn`, the items operations' shared step
+  through `files.Service.Classified`), so an npm tarball is decided by the rule's packages, versions, range and pre-release
+  setting (`TestR_EP_014_FilesOnAnEndpointWithRules`).
 - **Formats.** What a rule may narrow is the format's `catalog.Exposure` ([catalog.go](../../internal/formats/catalog/catalog.go)),
   which `formats.Register` derives from the format's `Exposure()` adapter and `ExposureCeiling` reads from the catalog: generic
   repositories are exposable through `paths` alone; npm narrows packages, versions (node-semver ranges, R-NPM-048) and
@@ -230,6 +235,8 @@ remote / virtual handler ─► merge or rewrite ─► Exposure().FilterDocumen
 - **Member names** (Q-EP-56). On an endpoint with rules the virtual engine sets no `Trove-Resolved-From` and reports a
   member's failure as the addressed repository's: `Caller.asAddressed` keeps kind, code, `Retry-After` and headers and
   rewrites the detail; a member's `NotFound` is the engine's one `404`.
+- **Cache state** (Q-EP-60). `formats.ServeRoute` removes `Cache-Status` from every answer of a format route on an endpoint
+  with rules when the status line goes out, whoever set it.
 - **Cache fill** (R-EP-019). `Subject.CacheFill` is false on an endpoint with `cache_fill: false`; the populate check
   (`MayPopulateOn`, `PopulateOn`, `MemberUsableOn`) refuses every subject there. The remote engine then serves what its cache
   holds, answers an uncached item `403 populate_not_permitted` and writes no negative entry; the virtual engine treats such a

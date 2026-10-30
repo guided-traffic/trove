@@ -194,7 +194,15 @@ func TestR_API_030_ClientSetupRefusesWhatItCannotAnswer(t *testing.T) {
 		"client=npm&package=" + url.QueryEscape("a\nb"):  "npm-local",
 		"client=npm&package=" + strings.Repeat("x", 257): "npm-local",
 		"client=npm&scope=%40a%2Fb":                      "npm-local",
-		"client=npm":                                     "files", // the generic format has no setup templates
+		// Q-NPM-50: a package or version a client would read as an option, and a package
+		// that is no npm name.
+		"client=npm&package=" + url.QueryEscape("--registry=https://evil.example"): "npm-local",
+		"client=npm&package=-g":                               "npm-local",
+		"client=npm&package=x&version=--ignore-scripts=false": "npm-local",
+		"client=npm&package=" + url.QueryEscape("a/b"):        "npm-local",
+		"client=npm&package=" + url.QueryEscape("@scope"):     "npm-local",
+		"client=npm&package=" + url.QueryEscape("a%2fb"):      "npm-local",
+		"client=npm": "files", // the generic format has no setup templates
 	} {
 		w := get(h, "/api/v1/repositories/"+repo+"/client-setup?"+q)
 		if w.Code != 400 {

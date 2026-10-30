@@ -188,12 +188,15 @@ func substitutePackage(content, lang, pkg, version string) string {
 	return strings.ReplaceAll(content, formats.SetupPackageRef, spec)
 }
 
-var shellSafe = regexp.MustCompile(`^[A-Za-z0-9@/._+:=-]+$`)
+var shellSafe = regexp.MustCompile(`^[A-Za-z0-9@/._+:=][A-Za-z0-9@/._+:=-]*$`)
 
 // shellQuote quotes a value for a POSIX shell command (R-API-030): a value of safe
 // characters stays as it is, every other value is single-quoted with an embedded
 // single quote written as '\”. Legacy npm names can hold ', (, ) , ! and *, which a
-// shell interprets when a user pastes the command.
+// shell interprets when a user pastes the command. A value that starts with "-" is
+// quoted as well, so it never reads as a bare option in a snippet; that the client
+// does not take it for one is the caller's to ensure (the package and the version
+// of the client setup are refused, Q-NPM-50).
 func shellQuote(s string) string {
 	if shellSafe.MatchString(s) {
 		return s

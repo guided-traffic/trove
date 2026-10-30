@@ -44,6 +44,10 @@ choose another endpoint's ceiling and a decision on a detached context keeps it 
   `deny.exposure` and the endpoint's name.
 - A write on an endpoint with exposure rules answers `403 endpoint_read_only` whether or not its target exists, so the
   refusal reveals nothing either.
+- A raw path of an npm repository under `/files/`, and an item of the items API, passes the ceiling with the package and the
+  version the format gives it, so a rule's versions, range and pre-release setting hold for a tarball as for the npm route, and a
+  listing of `<package>/-/` shows the exposed versions only. A path the format places in no package (a scope folder) is not
+  exposed (R-EP-014, Q-EP-59; `TestR_EP_014_FilesOnAnEndpointWithRules`).
 - A listing on such an endpoint holds only the repositories with an enabled rule (`Readable`). A holder of
   `repositories:read-config`, who needs no read grant to list or read a repository's configuration, is bound by the
   exposure alone (`Decider.ExposedOn` in [ceiling.go](../../internal/authz/ceiling.go), through `edge.Access.Exposed`, used by
@@ -70,6 +74,10 @@ same rules (R-EP-018, [developer/endpoints.md](../developer/endpoints.md#package
   `Last-Modified` (H-60).
 - **Member names.** On an endpoint with rules no answer carries `Trove-Resolved-From`, and a member's failure is reported as the
   addressed repository's, with its code and `Retry-After` (Q-EP-56; H-294).
+- **Cache state.** On an endpoint with rules no answer of a format route carries `Cache-Status`: `formats.ServeRoute` removes it
+  when the status line goes out, whoever set it, the npm handlers, the remote engine, the virtual merge or the headers of an error
+  ([serve.go](../../internal/formats/serve.go), Q-EP-60). It would tell that the repository proxies an upstream, when an item was
+  fetched, and a negative entry's `404` from a hidden item's (`TestR_EP_018_NoCacheStatusOnAnEndpointWithRules`).
 - **A format without a filter is not served.** A format without the exposure adapter answers every read on an endpoint with rules
   with the `404` of a missing resource and every write with `403 endpoint_read_only`, and its repositories take no rule (Q-EP-57).
 
@@ -147,10 +155,11 @@ makes it real: a pool value without an endpoint, during a Valkey outage.
 Stage: the answer of the virtual engine on an endpoint with rules when a remote member fails and nothing else has the item
 (`Caller.asAddressed`, Q-EP-56).
 
-Dormant: live once a virtual repository with a remote member is addressed through an endpoint with rules (npm's virtual class).
-The detail names only the addressed repository, but the kind and the code stay (`502 upstream_error`, `504 upstream_timeout`, `503
+Live wherever an npm virtual repository with a remote member is addressed through an endpoint with rules. The detail names only
+the addressed repository, but the kind and the code stay (`502 upstream_error`, `504 upstream_timeout`, `503
 upstream_assumed_offline` with `Retry-After`), so a consumer learns that the repository it was given resolves through an upstream
-and when that upstream is failing. It learns no member name, no upstream host and nothing of the content. Subject: the topology of
+and when that upstream is failing. It learns no member name, no upstream host and nothing of the content; the `Cache-Status` of
+the answer, which told the same and more, is removed on such an endpoint (Q-EP-60). Subject: the topology of
 the addressed virtual repository. What makes it real: a deployment whose consumers must not know that a repository proxies a public
 registry.
 

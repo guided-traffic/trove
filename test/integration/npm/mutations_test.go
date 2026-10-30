@@ -415,17 +415,25 @@ func TestR_NPM_017_RawDeleteUnpublishes(t *testing.T) {
 	if ans := e.publish(a, "npm-local", e.tokA, pkg{Name: "rawdel", Version: "1.1.0"}); ans.Status != 409 || code(t, ans) != "npm_version_unpublished" {
 		t.Fatalf("%d %s", ans.Status, ans.Body)
 	}
-	t.Run("H-290 a deleter who does not own the name unpublishes through /files/ all the same", func(t *testing.T) {
-		// The unpublish route asks the ownership question under the lock (R-NPM-017); the generic
-		// layer decides none for a raw delete, and the removal hook has no request. When the gap is
-		// closed this subtest turns into the 403 the route gives.
+	t.Run("R-AUTHZ-018 a deleter who does not own the name gets the route's 403 through /files/ and the items API", func(t *testing.T) {
+		// The generic layer asks the format seam the ownership question for the packages of
+		// the removed files, under the package row lock, before the first row goes (Q-AUTHZ-161).
 		e.mustPublish(a, "npm-local", e.tokA, pkg{Name: "rawdel2", Version: "1.0.0"})
 		e.mustPublish(a, "npm-local", e.tokA, pkg{Name: "rawdel2", Version: "1.1.0"})
-		if ans := e.st.Do(b, "DELETE", "/files/npm-local/rawdel2/-/rawdel2-1.1.0.tgz", e.tokB, nil); ans.Status/100 != 2 {
-			t.Fatalf("%d %s", ans.Status, ans.Body)
+		for _, path := range []string{"/files/npm-local/rawdel2/-/rawdel2-1.1.0.tgz", "/api/v1/repositories/npm-local/items?path=rawdel2/-/rawdel2-1.1.0.tgz"} {
+			ans := e.st.Do(b, "DELETE", path, e.tokB, nil)
+			if ans.Status != 403 || problemCode(t, ans) != "package_owned_by_other_owner" {
+				t.Fatalf("%s: %d %s", path, ans.Status, ans.Body)
+			}
 		}
-		if e.tombstones("npm-local", "rawdel2") != 1 {
-			t.Fatal("the version is not tombstoned")
+		if e.tombstones("npm-local", "rawdel2") != 0 || e.versions("npm-local", "rawdel2") != 2 || e.itemCount("npm-local", "rawdel2/-/rawdel2-1.1.0.tgz") != 1 {
+			t.Fatal("a refused delete removed something")
+		}
+		if ans := e.st.Do(b, "DELETE", "/api/v1/repositories/npm-local/items?path=rawdel2/-/rawdel2-1.1.0.tgz", e.tokA, nil); ans.Status != 204 {
+			t.Fatalf("the owner through the items API: %d %s", ans.Status, ans.Body)
+		}
+		if e.tombstones("npm-local", "rawdel2") != 1 || e.versions("npm-local", "rawdel2") != 1 {
+			t.Fatal("the items API did not unpublish the version")
 		}
 	})
 }

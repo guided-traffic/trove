@@ -124,6 +124,10 @@ func TestR_API_030_ShellValuesAreQuoted(t *testing.T) {
 		"":                      "''",
 		"a\nb":                  "'a\nb'",
 		"x@1.0.0-beta.1+build5": "x@1.0.0-beta.1+build5",
+		// Q-NPM-50: a value that starts with "-" never stands bare in a command.
+		"-g":                        "'-g'",
+		"--registry=https://x.test": "'--registry=https://x.test'",
+		"a-b":                       "a-b",
 	} {
 		if got := shellQuote(in); got != want {
 			t.Errorf("shellQuote(%q) = %q, want %q", in, got, want)

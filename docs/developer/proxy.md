@@ -43,7 +43,7 @@ to `outbound.Factory.Client(PurposeRemote, …)`:
 
 The credential reaches the wire only through `CredentialPolicy.Headers`, which reads the current secret on every request. Nothing that builds
 a request for an upstream sets `Authorization`: the policy removes any header of that name from every hop and adds the credential where the
-rule allows (R-REPO-033, R-REPO-039). The client's transport is wrapped in `guard`, which fails a request with `502 upstream_secret_unavailable`
+rule allows (R-REPO-033, R-REPO-039), never on a hop that is not `https` while the origin is `https` (Q-ARCH-224). The client's transport is wrapped in `guard`, which fails a request with `502 upstream_secret_unavailable`
 before it is sent when the credential cannot be resolved, so a vanished secret file never becomes an anonymous request that the upstream
 answers with 401.
 
@@ -72,10 +72,11 @@ new key.
 
 ### `Allowed`
 
-`Client.Allowed(u)` is the foreign-host check of R-REPO-043: the host of `u` must be the upstream's (same host name and effective port, with
-the default ports of the two schemes treated as equal) or match an `extraHosts` pattern (`path.Match` over the lower-case host); otherwise the
-answer is `502 foreign_host_denied` and the engine sends no request. It is for URLs that come out of upstream metadata; redirects are decided
-by the hop policy and the egress rules.
+`Client.Allowed(u)` is the foreign-host check of R-REPO-043: a URL that leaves an `https` upstream for `http` is `502 insecure_redirect` first
+(Q-ARCH-224); then the host of `u` must be the upstream's (same host name and effective port, with the default ports of the two schemes treated
+as equal, so an `http` upstream's document may move to `https`) or match an `extraHosts` pattern (`path.Match` over the lower-case host);
+otherwise the answer is `502 foreign_host_denied` and the engine sends no request. It is for URLs that come out of upstream metadata; redirects
+are decided by the hop policy and the egress rules.
 
 ### The upstream test
 

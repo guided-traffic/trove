@@ -133,10 +133,19 @@ func compileSet(dim dimension, include, exclude []string, names catalog.Names) (
 // dimension unrestricted (a coordinate without a value passes it, unless the
 // value matches an exclude); a non-empty one requires a value that matches an
 // include and no exclude.
+//
+// The package dimension of a format with package names (names set) fails closed
+// for a coordinate without a name once it holds any pattern: such a coordinate is
+// a path the format placed in no package, and nothing shows that it lies outside
+// the excluded names (Q-AUTHZ-160). Paths, versions and tags have no names and
+// keep the rule as written.
 func (g globSet) match(v string, present bool) bool {
 	v = fold(g.names, v)
 	if len(g.include) == 0 {
-		return !present || !g.excluded(v)
+		if !present {
+			return g.names == nil || len(g.exclude) == 0
+		}
+		return !g.excluded(v)
 	}
 	return present && g.included(v) && !g.excluded(v)
 }

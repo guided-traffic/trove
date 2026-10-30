@@ -41,8 +41,16 @@ const (
 //   - An error the handler returns before the status line is rendered by
 //     [Format.WriteError], in the protocol's own shape. One it returns after the
 //     status line cannot be reported any more and aborts the connection.
+//   - On an endpoint with exposure rules no answer carries Cache-Status, whoever
+//     set it (the format, the remote or the virtual engine, an error's headers):
+//     it tells whether the addressed repository proxies an upstream and whether
+//     the item was fetched lately, which the endpoint's consumers are not to see,
+//     as they do not see Trove-Resolved-From (R-EP-018, Q-EP-60).
 func ServeRoute(f Format, w http.ResponseWriter, rq *Request, sameOrigin bool) {
 	tw := &trackWriter{ResponseWriter: w}
+	if rq.Endpoint.Rules {
+		tw.hide = []string{"Cache-Status"}
+	}
 	var out http.ResponseWriter = tw
 	if rq.Route.Kind.ServesContent() {
 		kind := content.Document
@@ -88,13 +96,23 @@ func renderError(f Format, w http.ResponseWriter, rq *Request, err error) {
 	f.WriteError(w, rq.Request, err)
 }
 
-// trackWriter remembers that the status line is out.
+// trackWriter remembers that the status line is out, and removes the headers the
+// answer must not carry when it goes out.
 type trackWriter struct {
 	http.ResponseWriter
 	wrote bool
+	hide  []string
+}
+
+// scrub removes the hidden headers; the status line follows.
+func (w *trackWriter) scrub() {
+	for _, h := range w.hide {
+		w.ResponseWriter.Header().Del(h)
+	}
 }
 
 func (w *trackWriter) WriteHeader(code int) {
+	w.scrub()
 	if code >= 200 {
 		w.wrote = true
 	}
@@ -102,11 +120,17 @@ func (w *trackWriter) WriteHeader(code int) {
 }
 
 func (w *trackWriter) Write(p []byte) (int, error) {
+	if !w.wrote {
+		w.scrub()
+	}
 	w.wrote = true
 	return w.ResponseWriter.Write(p)
 }
 
 func (w *trackWriter) Flush() {
+	if !w.wrote {
+		w.scrub()
+	}
 	w.wrote = true
 	_ = http.NewResponseController(w.ResponseWriter).Flush()
 }

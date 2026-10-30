@@ -616,7 +616,6 @@ func TestAllowed(t *testing.T) {
 	for raw, want := range map[string]bool{
 		"https://registry.example.org/left-pad/-/left-pad-1.0.0.tgz": true,
 		"https://REGISTRY.example.org:443/x":                         true,
-		"http://registry.example.org/x":                              true, // the same host over the other default port
 		"https://registry.example.org:8443/x":                        false,
 		"https://eu.cdn.example.org/x":                               true,
 		"https://cdn.example.org/x":                                  false,
@@ -637,6 +636,27 @@ func TestAllowed(t *testing.T) {
 			}
 		}
 	}
+
+	t.Run("R-REPO-039 R-REPO-043 Q-ARCH-224 an https upstream's document cannot send a fetch to http, on its own host or an extra one", func(t *testing.T) {
+		for _, raw := range []string{"http://registry.example.org/x", "http://registry.example.org:443/x", "http://tarballs.example.net/x", "http://eu.cdn.example.org/x"} {
+			u, _ := url.Parse(raw)
+			if e, ok := errs.As(cl.Allowed(u)); !ok || e.Code != errs.CodeInsecureRedirect || e.Status() != 502 {
+				t.Errorf("Allowed(%s) = %v", raw, e)
+			}
+		}
+	})
+	t.Run("R-REPO-043 an http upstream's document may move to https on the same host", func(t *testing.T) {
+		plain, err := f.clients.For(t.Context(), repo(62, "npm-plain", 1), settings("http://registry.example.org/", repository.AuthNone))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, raw := range []string{"http://registry.example.org/x", "https://registry.example.org/x"} {
+			u, _ := url.Parse(raw)
+			if err := plain.Allowed(u); err != nil {
+				t.Errorf("Allowed(%s) = %v", raw, err)
+			}
+		}
+	})
 }
 
 func TestClientCache(t *testing.T) {

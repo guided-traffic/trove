@@ -913,7 +913,11 @@ Priority: **MVP** · Covers: trove-only
 - **Raw files.** On an endpoint with `files`, `/files/<repoKey>/<path>` passes the ceiling with the
   coordinate the format plug-in gives the file: package name and version for npm and NuGet
   repositories, the path alone for generic ones. A folder listing (R-STOR-017, P1) lists only
-  exposed entries, and a folder without an exposed entry answers `404`.
+  exposed entries, and a folder without an exposed entry answers `404`. A path of a format with
+  package names that the format places in no package (an npm scope folder such as `@acme/`) is
+  not exposed: no rule can say which versions of what it would show
+  ([Q-EP-59](#q-ep-59--raw-paths-of-a-format-with-package-names-on-an-endpoint-with-rules)). The
+  items operations of the management API decide their paths the same way.
 - **Generic repositories** are exposed through `paths`; a rule with a non-empty `packages`,
   `versions` or `distTags` for one answers `422` `dimension_not_supported`.
 - **Management API.** On an endpoint with `api`, every listing, search result, count and item read
@@ -935,6 +939,11 @@ Acceptance criteria:
   `generic-local`, and `GET /api/v1/packages?repository=npm-customers` lists `@acme/sdk` with the
   versions 2.0.0 and 2.1.0 only.
 - A rule with `packages.include` on `generic-local` answers `422` `dimension_not_supported`.
+- With `files` on `customers` and the rule `acme-sdk` of R-EP-012, `GET
+  /files/npm-customers/@acme/sdk/-/sdk-1.9.0.tgz` answers a `404` byte-identical to a missing file
+  (apart from the request's instance and ID), `…/sdk-2.1.0.tgz` answers `200`, and the listing of
+  `/files/npm-customers/@acme/sdk/-/` holds `sdk-2.0.0.tgz` and `sdk-2.1.0.tgz` only
+  (`TestR_EP_014_FilesOnAnEndpointWithRules`).
 
 ### R-EP-015 · Rate-limit class per endpoint
 Priority: **MVP** · Covers: BEYOND-030
@@ -1129,6 +1138,10 @@ type ExposureView interface {
   keeps the failure's kind, code, `Retry-After` and headers and replaces its detail by one that
   names the addressed repository and the code's title; a missing item is the engine's one `404`
   ([Q-EP-56](#q-ep-56--how-a-members-failure-is-reported-on-an-endpoint-with-rules)).
+- **No cache state.** On an endpoint with `exposure: rules` no answer of a format route carries
+  `Cache-Status` ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-047), whoever set it:
+  the format, the remote or the virtual engine, or the headers of an error
+  ([Q-EP-60](#q-ep-60--no-cache-status-on-an-endpoint-with-rules)).
 - **Cache keys and validators.**
   - The keys of the rendition cache ([architecture.md](architecture.md) R-ARCH-018) and of the
     merged-metadata cache (R-REPO-020) include the endpoint name, because the endpoint's cache-fill
@@ -1917,7 +1930,8 @@ failure when no other member had the item (R-REPO-019 step 7) or a member's docu
 
 **Choice:** (a), applied by the virtual engine at the exit of `Artifact` and `Metadata` when `Caller.Rules` is set; a `NotFound` of a
 member is the engine's one `404`, so a hidden and a missing item stay byte-identical (R-EP-013). On an endpoint without rules the error
-is unchanged, because there the members are the caller's to see (R-REPO-019).
+is unchanged, because there the members are the caller's to see (R-REPO-019). The headers kept no longer include `Cache-Status`,
+which the format boundary drops on an endpoint with rules (Q-EP-60).
 
 **Rationale:** The boundary is the engine that combines members, so the rule is applied once, where every member error passes, and not
 in each format. The development agent would revisit this if customers need to tell an upstream failure from a trove failure on a
@@ -1969,6 +1983,58 @@ to ask remote members for artifacts in another way (then the count moves with th
 
 **Applied in the spec:** R-EP-019 (who counts). Code: `virtual.Options.FillRefused`, `proxy.Engine.FillRefused`,
 [wire_virtual_engine.go](../../internal/app/wire_virtual_engine.go).
+
+### Q-EP-59 · Raw paths of a format with package names on an endpoint with rules
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-EP-014 decides `/files/` on "the coordinate the format plug-in gives the file". The generic layer handed the ceiling
+the path alone, so a rule without `packages.include` admitted every tarball of an npm repository on an endpoint with `files`,
+hidden ranges, excluded versions and pre-releases included, and a listing of `<package>/-/` showed every version (the
+test of R-EP-014 used a generic repository only).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The format's coordinate, and no exposure without a package | `/files/` and the items API pass the ceiling with the package and the version the format gives each path, listings per entry ([authorization.md](authorization.md) Q-AUTHZ-160); a rule hides a path of a format with package names that carries no package | Version rules hold on every road; a path a classifier misses is hidden, not shown | An npm scope folder is not listed on such an endpoint, also when packages below it are exposed |
+| (b) The format's coordinate only | As (a), a path without a package judged by the path dimensions | Scope folders stay listable | A rule without `packages.include` exposes any path the format cannot place |
+| (c) No `/files/` for package formats on a rules endpoint | Hide every raw path of npm there | Simplest | R-EP-014 promises the raw view with the coordinate |
+
+**Choice:** (a). `compiledRule.evaluate` answers `package_excluded` for an item with a path and without a package when the rule
+belongs to a format with package names, so the ceiling, the view a document is filtered with and the explanation of
+check-exposure agree. A repository-level coordinate (the root) still passes every pattern, and its entries are decided one by
+one.
+
+**Rationale:** the rules of a package format are written in packages and versions; a path that names neither cannot be judged
+by them, and an endpoint with rules exists to show no more than they say. The development agent would revisit this if
+customers browse npm repositories through `/files/` on such an endpoint, by letting the format classify a scope as a name prefix.
+
+**Applied in the spec:** R-EP-014 ("Raw files"), R-EP-012. Code: `internal/authz/exposure.go` (`compiledRule.evaluate`),
+`internal/files/` (the classified coordinate).
+
+### Q-EP-60 · No `Cache-Status` on an endpoint with rules
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-047 puts `Cache-Status` on every answer of a remote or virtual repository. On an endpoint with rules the header
+tells a consumer that the repository it was given proxies an upstream (`fwd=uri-miss`, `fwd-status`), and whether an item was
+fetched lately by someone else (`hit; ttl=…`); a negative entry's `404` carried it while a hidden item's `404` did not, which
+told the two apart. Q-EP-56 kept the header in a member's failure.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Drop it at the format boundary | `formats.ServeRoute` removes `Cache-Status` when the status line goes out, for a request on an endpoint with rules, whoever set it | One place for every format, every engine and the headers of errors; a later handler cannot forget it | The header is not available to a customer's debugging on that endpoint |
+| (b) Drop it in each handler and engine | Where `Trove-Resolved-From` is dropped | Close to the code that sets it | Five places today (two npm handlers, a negative `404`, the virtual merge, the remote engine's artifact and error headers) and one more per format |
+| (c) Keep it | — | Debugging | The topology of the addressed repository stays visible (H-294) |
+
+**Choice:** (a). The answer of Q-EP-56 keeps the kind, the code and `Retry-After` of a member's failure; its `Cache-Status`
+goes with this rule. On the default endpoint and every endpoint in mode `all` nothing changes.
+
+**Rationale:** the boundary every answer of a format passes is the one place that cannot be bypassed by a new handler or a new
+engine; the header is diagnostic and has no client that depends on it. The development agent would revisit this if a client
+of a rules endpoint needs cache state, then with a value that names no upstream.
+
+**Applied in the spec:** R-EP-018 ("No cache state"), [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-047.
+Code: `internal/formats/serve.go` (`ServeRoute`, `trackWriter.scrub`).
 
 ## What this does not cover
 

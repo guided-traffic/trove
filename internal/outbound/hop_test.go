@@ -231,6 +231,47 @@ func clientCert(t *testing.T) tls.Certificate {
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
 }
 
+// TestR_REPO_033_CredentialsTravelEncrypted: a hop that is not https gets neither the
+// credentials nor the client certificate when the origin is https, whatever host it
+// names; an http origin is the operator's choice, and its hops keep the rules of
+// R-REPO-033 and R-REPO-039 (Q-ARCH-224).
+func TestR_REPO_033_CredentialsTravelEncrypted(t *testing.T) {
+	origin, _ := url.Parse("https://registry.example.org/")
+	plain, _ := url.Parse("http://registry.example.org/")
+	for _, tc := range []struct {
+		name   string
+		origin *url.URL
+		target string
+		hop    int
+		want   bool
+	}{
+		{"the https origin", origin, "https://registry.example.org/x", 0, true},
+		{"the origin's host over http", origin, "http://registry.example.org/x", 0, false},
+		{"a sendCredentials host over https", origin, "https://tarballs.example.net/x", 0, true},
+		{"a sendCredentials host over http", origin, "http://tarballs.example.net/x", 0, false},
+		{"a redirect hop forwarded over https", origin, "https://blobs.example.com/x", 1, true},
+		{"a redirect hop forwarded over http", origin, "http://blobs.example.com/x", 1, false},
+		{"an http origin's own hop", plain, "http://registry.example.org/x", 0, true},
+		{"an http origin's sendCredentials host over http", plain, "http://tarballs.example.net/x", 0, true},
+		{"a policy without an origin over http", nil, "http://tarballs.example.net/x", 1, false},
+	} {
+		t.Run("R-REPO-033 R-REPO-039 "+tc.name, func(t *testing.T) {
+			p := &CredentialPolicy{Origin: tc.origin, SendCredentials: []string{"tarballs.example.net"}, ForwardOnRedirect: true, Headers: creds}
+			req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, tc.target, nil)
+			p.Decorate(req, tc.hop)
+			if got := req.Header.Get("Authorization") != ""; got != tc.want {
+				t.Fatalf("credentials sent %v, want %v", got, tc.want)
+			}
+			if got := req.Header.Get("X-Api-Key") != ""; got != tc.want {
+				t.Fatalf("custom header sent %v, want %v", got, tc.want)
+			}
+			if got := p.AllowClientCertificate(req, tc.hop); got != tc.want {
+				t.Fatalf("client certificate %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestHopPolicyClientCertificate(t *testing.T) {
 	var mu sync.Mutex
 	certs := map[string]int{}

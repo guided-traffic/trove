@@ -49,6 +49,12 @@ type exposureEnv struct {
 
 // newExposureEnv seeds the fixture, starts n replicas and creates the rule.
 func newExposureEnv(t *testing.T, n int) *exposureEnv {
+	return newExposureEnvOn(t, n, customersEndpoint)
+}
+
+// newExposureEnvOn is newExposureEnv with server.endpoints of its own: the surfaces of
+// customers are the test's.
+func newExposureEnvOn(t *testing.T, n int, endpoints string) *exposureEnv {
 	t.Helper()
 	x := &exposureEnv{env: newEnv(t)}
 	st := x.st
@@ -60,7 +66,7 @@ func newExposureEnv(t *testing.T, n int) *exposureEnv {
 	x.opsPAT = st.Token(ops, scope.Scope{Inherit: true, Admin: true})
 	x.acmeSAT = st.Token(acme, scope.Scope{Inherit: true, Endpoints: []string{"customers"}})
 	for i := range n {
-		x.reps = append(x.reps, st.Start(t, testenv.ReplicaOptions{Name: fmt.Sprintf("web-%c", 'a'+i), Endpoints: customersEndpoint}))
+		x.reps = append(x.reps, st.Start(t, testenv.ReplicaOptions{Name: fmt.Sprintf("web-%c", 'a'+i), Endpoints: endpoints}))
 	}
 	r := x.reps[0]
 	for _, v := range []string{"1.9.0", "2.0.0", "2.0.1", "2.1.0"} {

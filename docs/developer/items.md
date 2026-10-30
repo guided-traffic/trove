@@ -127,9 +127,11 @@ hook and the audit row do not.
 ### Removal
 
 `Store.Delete` counts the subtree. At most `storage.delete.max_sync_items` items are checked (`DeleteSpec.Check`, in batches of 1,000
-paths, on the rows that are about to be removed), `DeleteSpec.Extra` runs, the files go by id, `Hooks.OnItemsRemoved` is told per
-statement of at most 5,000 files, one `artifact.deleted` per file is written, then the folders deepest first. A larger subtree is
-checked in full before the job `items-delete` is queued (the highest id the check saw is `DeleteArgs.MaxID`, Q-STOR-143), and the job
+paths, on the rows that are about to be removed), `DeleteSpec.Extra` runs with the paths of the files among those rows (the generic
+layer records the allowed write and asks the format's `CheckRemoval`, the ownership of their packages, Q-AUTHZ-161), the files go by id,
+`Hooks.OnItemsRemoved` is told per statement of at most 5,000 files, one `artifact.deleted` per file is written, then the folders
+deepest first. A larger subtree is checked in full before the job `items-delete` is queued (the highest id the check saw is
+`DeleteArgs.MaxID`, Q-STOR-143), `Extra` runs in the transaction that queues it with the files the check saw, and the job
 removes files in batches of `storage.delete.batch_size`, each batch in its own transaction with its own hook call, then the folders.
 The job decides nothing. A hook that fails stops the batch, rolls it back, and the job is retried.
 

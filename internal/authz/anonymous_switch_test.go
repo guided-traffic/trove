@@ -38,7 +38,7 @@ func TestR_AUTH_037_AnonymousSwitchIsReadOncePerRequest(t *testing.T) {
 			t.Fatalf("reads = %d, request context seen = %v", reads, sawRequestContext)
 		}
 		reads = 0
-		if got, err := e.PathsAllowed(ctx, anonSub, read("a-repo", "", ""), Read, []string{"a", "b", "c"}); err != nil || len(got) != 3 || reads != 1 {
+		if got, err := e.PathsAllowed(ctx, anonSub, read("a-repo", "", ""), Read, []string{"a", "b", "c"}, nil); err != nil || len(got) != 3 || reads != 1 {
 			t.Fatalf("paths %v err %v reads %d", got, err, reads)
 		}
 	})
