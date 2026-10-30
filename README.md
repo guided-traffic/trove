@@ -5,10 +5,10 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/guided-traffic/trove)](https://goreportcard.com/report/github.com/guided-traffic/trove)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-> **Status: pre-release, foundation milestone (M0): platform only, no package format yet.** The binary, its configuration,
-> the PostgreSQL and Valkey connections, replica coordination, the S3 blob layer, the TLS of every connection, the endpoints,
-> the system API, the ops endpoints and the Helm chart are built and tested. There is no login, no repository, no package
-> protocol and no backup yet. Everything else is the target design in [docs/spec/](docs/spec/README.md). `v0.1.0` is the
+> **Status: pre-release, access core milestone (M1) built: login, tokens, permission policies, endpoints and exposure rules, generic repositories with raw transfer, audit and the admin UI.** The platform of M0 (the binary, its configuration,
+> the PostgreSQL and Valkey connections, replica coordination, the S3 blob layer, the TLS of every connection, the system API,
+> the ops endpoints and the Helm chart) is built and tested. Not built yet: the npm and NuGet protocols, GitLab CI federation,
+> the pull-through proxy and backup and restore. Everything else is the target design in [docs/spec/](docs/spec/README.md). `v0.1.0` is the
 > last release made before the switch to the organisation's CI and release standard; it was published to `ghcr.io`. Releases
 > from now on are cut by Semantic Release from the conventional commits on `main`, and published to Docker Hub and to the chart
 > repository ([releasing](docs/developer/releasing.md)).
@@ -67,9 +67,21 @@ Built (M0):
 - ⎈ **Helm chart.** Separate `web` and `worker` Deployments, a migration hook Job, Services, Ingress with backend TLS, NetworkPolicies, PodDisruptionBudgets and a fail-fast values check. See [HA and Helm](docs/spec/ha-and-helm.md).
 - 🧪 **Local HA profile on kind.** PostgreSQL with a standby, Valkey with a replica and three Sentinels, SeaweedFS, and failure scripts. See [local profile](docs/developer/local-profile.md).
 
-Planned, not built (see the [roadmap](docs/coverage/roadmap.md)): npm and NuGet v3 with local, remote and virtual repositories;
-OIDC login, trove's own tokens and permission policies; GitLab CI OIDC federation; the pull-through proxy; backup and restore; the
-UI screens beyond the placeholder page.
+Built (M1, access core):
+
+- 🔐 **OIDC login with PKCE.** Providers under `auth.oidc.providers`, the authorization-code flow with PKCE, a server-side session per browser login, CSRF protection and logout. See [login](docs/developer/login.md) and [login and sessions](docs/security/login-and-sessions.md).
+- 🆘 **Break-glass administrator.** One local account whose password comes from a file: a plaintext password of at least 20 characters or an Argon2id hash; lockout and a rotation hold. See [login](docs/developer/login.md).
+- 🎟️ **Own tokens.** Personal (`trv_pat_`) and service-account (`trv_sat_`) tokens with lifetimes, rotation, revocation, a per-address failed-credential throttle. See [identity](docs/developer/identity.md) and [tokens and credentials](docs/security/tokens-and-credentials.md).
+- 🛂 **Permission policies.** Deny by default; allow-only policies over repository and package-name patterns, five system roles and role bindings; a grant index per replica that is consistent through an epoch. See [authorization](docs/developer/authorization.md) and [permissions](docs/security/permissions.md).
+- 🚪 **Endpoints and exposure rules.** Further endpoints on their own listeners and hosts; exposure rules are a ceiling on what each endpoint serves. See [endpoints](docs/developer/endpoints.md) and [endpoints and exposure](docs/security/endpoints-and-exposure.md).
+- 📦 **Generic repositories.** Local repositories with flat paths; raw transfer under `/files/{repoKey}/{path}` with `PUT`, `GET` (with `Range`), `HEAD` and `DELETE`; folders and the items API. See [files](docs/developer/files.md) and [repository model](docs/security/repository-model.md).
+- 🧾 **Audit.** An event registry, transactional and asynchronous recording, a PostgreSQL journal with partitions and retention, and the query and export API. See [audit](docs/developer/audit.md) and [audit trail](docs/security/audit.md).
+- 🧭 **Management API.** Under `/api/v1/`, described by [api/openapi.yaml](api/openapi.yaml): problem+json errors, cursor paging, ETags with `If-Match`, idempotency keys, and a permission declared on every operation. See [API families](#management-api).
+- 🖥️ **Admin UI.** The Angular application, embedded in the binary: sign-in, the file tree, repositories, users, groups, service accounts, tokens, policies, endpoints, audit and the system status. See [web UI](docs/developer/web-ui.md).
+
+Planned, not built (see the [roadmap](docs/coverage/roadmap.md)): the npm and NuGet protocols with local, remote and virtual repositories;
+remote and virtual repositories for the generic format; GitLab CI OIDC federation; the pull-through proxy; backup and restore; the UI
+screens of packages, search, trash, builds, setup, webhooks, CI identity and projects.
 
 ## 📛 Naming conventions
 
@@ -95,7 +107,11 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 | `/api/v1/openapi.json`, `/api/v1/openapi.yaml` | GET | yes, from [api/openapi.yaml](api/openapi.yaml) |
 | `/api/v1/problems/{code}` | GET | yes; the `type` of every problem is this path |
 | `/healthz`, `/readyz`, `/metrics` | GET, ops listener | yes (`/metrics` unless `metrics.enabled: false`) |
-| `/api/<format>/<repoKey>/…`, `/files/<repoKey>/<path>`, `/auth/…`, `/ui/{locale}/…` | — | planned ([INV-6](docs/spec/README.md)) |
+| `/files/{repoKey}/{path}` | GET, HEAD, PUT, DELETE | yes (M1; [files](docs/developer/files.md)) |
+| `/auth/oidc/{providerId}/start`, `/auth/oidc/{providerId}/callback` | GET | yes (M1; [login](docs/developer/login.md)) |
+| `/auth/local/login`, `/auth/logout` | POST | yes (M1; the break-glass login and logout) |
+| `/api/v1/…` (the management API) | see the [API families](#management-api) | yes (M1; [api/openapi.yaml](api/openapi.yaml)) |
+| `/api/<format>/<repoKey>/…`, `/ui/{locale}/…` | — | planned ([INV-6](docs/spec/README.md)) |
 
 ### Headers
 
@@ -104,7 +120,24 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 | `X-Request-Id` | every response; the same value is `requestId` in problem bodies and the trace ID of the request | yes (`internal/httpserver/chain.go`) |
 | `X-Trove-Replica` | the instance name, on responses where `server.replica_header` allows it (default `authenticated`) | yes (`internal/httpserver/chain.go`) |
 | `X-Forwarded-For` or `Forwarded` | the family the edge rewrites: exactly one, chosen by `server.forwarded_header`; the other is never read | yes (`internal/httpserver/clientaddr.go`) |
-| `Authorization` | a presented credential. M0 has no credentials, so any presented value answers `401` | yes (`internal/app/access.go`) |
+| `Authorization` | `Bearer <token>` with a `trv_pat_` or `trv_sat_` value (`trv_cit_` is reserved until the CI exchange). The status code of a refused value is not restated here | yes (`internal/auth/stage.go`) |
+| `X-CSRF-Token` | the value of the `__Host-trv_csrf` cookie, on a state-changing request that the session cookie authenticates; with a same-origin `Origin` or `Sec-Fetch-Site`. Failure: `403 csrf_failed` | yes (`internal/auth/session`) |
+| `Idempotency-Key` | on a create: a replay answers the stored outcome; the same key with another body answers `422 idempotency_key_reused`, a concurrent duplicate `409 idempotency_in_progress` | yes (`internal/api/v1/idempotency.go`) |
+| `If-Match`, `If-None-Match` | the ETag of a resource on `PUT` and `PATCH`; `If-Match` is required there, and `If-Match: *` is the explicit blind write. `If-None-Match: *` on `/files/` makes a deploy create-only | yes (`internal/api/v1`, `internal/api/rawfiles/conditional.go`) |
+| `ETag` of a repository read | `"<config_version>.<µs>"`; the consumer view has a tag of its own | yes (`internal/api/v1/repositories_api.go`) |
+| `Trove-Authz-Epoch` | the authorization epoch a write produced, on the answer of the write | yes (`internal/authz/errors.go`) |
+| `Trove-Authz-Min-Epoch` | a decimal integer from 1: the replica waits until its grant index has reached that epoch; an epoch the database has not reached answers `412 authz_epoch_unknown` | yes (`internal/authz/wait.go`) |
+
+### Cookies and credential prefixes
+
+| Name | Value | Built |
+|---|---|---|
+| Session cookie | `__Host-trv_session` (`internal/auth/session/cookie.go`); a browser login, `Secure`, `Path=/`, no `Domain` | yes |
+| CSRF cookie | `__Host-trv_csrf`, readable by the UI; its value goes into `X-CSRF-Token` | yes |
+| Login-flow binding cookie | `__Host-trv_oidc_binding`, `Path=/`, `HttpOnly`, about 10 minutes; it binds a callback to the browser that started the login (Q-AUTH-2) | yes |
+| Personal token prefix | `trv_pat_` (`internal/auth/token/token.go`, `TypePAT`) | yes |
+| Service-account token prefix | `trv_sat_` | yes |
+| CI token prefix | `trv_cit_` (`TypeCIT`); reserved, no route issues it before the GitLab CI exchange | planned ([GitLab CI OIDC](docs/spec/gitlab-ci-oidc.md)) |
 
 ### Environment variables
 
@@ -117,6 +150,7 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 | Pool name | `TROVE_POOL_NAME`, set by the chart on the pool of an endpoint (empty on the main `web` Deployment) | yes (`deploy/helm/trove/templates/_deployment.tpl`) |
 | Object-store settings from a Secret | `TROVE_STORAGE_S3_BUCKET`, `TROVE_STORAGE_S3_ENDPOINT`, `TROVE_STORAGE_S3_REGION`, each read from a key of `secrets.s3` when that key is set | yes (`deploy/helm/trove/templates/_endpoints.tpl`) |
 | Dev profile | `TROVE_DEV_HTTP_PORT` (edge port, default `8080`), `TROVE_PROFILE` (`default` or `scatter`) | yes (`deploy/dev/`) |
+| M1 settings | `TROVE_<SECTION>_<KEY>` for `auth`, `authz`, `api`, `repositories`, with nested keys joined by `_`: `TROVE_AUTH_BREAK_GLASS_PASSWORD_FILE`, `TROVE_API_RATE_LIMITS_EXEMPT_ADMINS` (the rule of the configuration override above) | yes |
 
 ### TLS material
 
@@ -144,7 +178,9 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 | Health probe | `trove:<ks>:probe:v1:<instance>`, expires after 30 s | yes (`internal/cluster/valkey.go`) |
 | Change channel | `trove:<ks>:inv:v1` | yes (`internal/cluster/changelog*.go`) |
 | Client names | `trove:<instance>:pubsub` (Pub/Sub), `trove:<instance>:probe` (Sentinel probe) | yes (`internal/cluster/valkey_pubsub.go`, `valkey_sentinel.go`) |
-| Negative cache, flight locks, rate limits, throttle markers | `…:neg:v1:…`, `…:lock:fetch:v1:…`, `…:rl:v1:…`, `…:tokseen:v1:…` | planned (R-ARCH-030) |
+| Rate limits | `<key_prefix><keyspace>:rl:v1:<…>`, family `rl` with a 24 h expiry (`internal/cluster/valkey_keys.go`, `valkey_ratelimit.go`) | yes |
+| Token-seen markers | `<key_prefix><keyspace>:tokseen:v1:<…>`, family `tokseen`, expiry bounded by `MaxTokenSeenWindow` (`valkey_keys.go`) | yes |
+| Negative cache, flight locks | `…:neg:v1:…`, `…:lock:fetch:v1:…` | planned (R-ARCH-030); not registered in `valkey_keys.go` |
 
 ### Object storage
 
@@ -159,9 +195,20 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 |---|---|---|
 | Schema | `trove` (`database.schema`) | yes |
 | Migration records | `schema_migration`, `schema_state` (the runtime login may only read them) | yes (`internal/meta/postgres/migrations/`) |
-| Job kinds | `gc`, `gc-full`, `repository-delete` (one job per repository deletion, dedup key per repository) | yes (`internal/jobs`, `internal/repository`) |
+| Job kinds | `gc`, `gc-full`, `repository-delete`, `items-delete` (one job per deletion), `token-cleanup`, `token-expiry-notice`, `session-cleanup`, `audit-retention`, `idempotency-cleanup`, `secrets-reencrypt` (manual only), `cluster-change-prune`, `replica-registry-prune`, `system.probe`. The list of the registrations is in the [job kinds](#job-kinds-and-tasks) reference | yes (`internal/app/wire_*.go`, `internal/jobs`) |
 | Advisory-lock categories | two-`int4` form: `1` lease, `2` fetch (retired, never reused), `3` migration, `4` configuration | yes (`internal/cluster/locks.go`) |
 | Roles and `application_name` | `trove_owner`, `trove_app`, `trove:<replica>:<class>` | planned ([R-HA-014](docs/spec/ha-and-helm.md)) for the role names; the `application_name` is built |
+
+### Change-log areas
+
+Names of the areas of the PostgreSQL change log ([internal/cluster/areas.go](internal/cluster/areas.go)). A replica polls the log; a Valkey message only evicts early.
+
+| Area | What it invalidates | Built |
+|---|---|---|
+| `auth` | the principal, session, token and settings caches (payload kinds: Q-AUTH-22) | yes |
+| `authz` | the compiled grant index and its epochs | yes |
+| `repo_config` | the repository snapshot and the repository configuration | yes |
+| `jobs`, `cache` | the job queue and the in-process caches of M0 | yes |
 
 ### Metrics
 
@@ -185,6 +232,15 @@ Built families, all with the `trove_` prefix:
 | `trove_storage_s3_requests_total`, `trove_storage_s3_request_duration_seconds` | `operation`, `outcome` |
 | `trove_metrics_label_overflow_total` | `family`, `label` |
 | `trove_tracing_spans_dropped_total` | none |
+| `trove_auth_attempts_total`, `trove_auth_ratelimited_total`, `trove_auth_throttle_exempt_total`, `trove_auth_cache_bypassed_total`, `trove_auth_cache_invalidations_total`, `trove_auth_group_claim_missing_total` | the labels of `internal/auth/principal/gate.go` | yes |
+| `trove_auth_session_touch_failures_total`, `trove_auth_csrf_failures_total` | the labels of `internal/auth/session/metrics.go` | yes |
+| `trove_authz_decisions_total`, `trove_authz_evaluation_seconds`, `trove_authz_epoch`, `trove_authz_min_epoch_total`, `trove_authz_stale_waits_total`, `trove_authz_index_rebuilds_total`, `trove_authz_index_rebuild_seconds`, `trove_authz_index_staleness_seconds`, `trove_authz_index_builds_discarded_total`, `trove_exposure_rules`, `trove_exposure_hidden_total` | the labels of `internal/authz/metrics.go` | yes |
+| `trove_api_rate_limited_total`, `trove_ratelimit_decisions_total` | the labels of `internal/api/v1/ratelimit.go` and `internal/cluster/limiter.go` | yes |
+| `trove_jobs_claimed_total`, `trove_jobs_completed_total`, `trove_jobs_running`, `trove_jobs_duration_seconds`, `trove_jobs_claim_errors_total` | the labels of `internal/jobs/metrics.go` | yes |
+| `trove_cache_requests_total`, `trove_cache_entries`, `trove_cache_bytes` | the labels of `internal/cache/metrics.go` | yes |
+| `trove_lease_held`, `trove_lease_lost_total` | the labels of `internal/cluster/lease_manager.go` | yes |
+
+The label sets of the M1 families are not restated per family in this pass; read the file named in each row.
 
 ### Kubernetes and Helm
 
@@ -202,12 +258,72 @@ Built families, all with the `trove_` prefix:
 | Network policies | `<fullname>-web`, `<fullname>-worker`, `<fullname>-migrate` | yes |
 | Backup CronJob, restore Job | `<fullname>-backup`, `<fullname>-restore` | planned (M5) |
 
+### Audit event types
+
+The names of the event registry ([internal/audit](internal/audit/)). Each event carries an actor and a source; the registry says which types the journal always keeps. The list is read from the `events_*.go` files, not from the running system.
+
+<details>
+<summary>Event types by area (M1)</summary>
+
+| Area | Event types |
+|---|---|
+| Login | `auth.login.succeeded`, `auth.login.failed`, `auth.breakglass.login`, `auth.breakglass.locked`, `auth.breakglass.unlocked`, `auth.logout`, `auth.session.ended`, `auth.csrf_failed`, `auth.credential.rejected` |
+| Authorization | `authz.denied`, `authz.read.allowed`, `authz.write.allowed`, `authz.policy.created`, `authz.policy.updated`, `authz.policy.deleted`, `authz.role.bound`, `authz.role.unbound`, `authz.settings.changed` |
+| Tokens | `token.created`, `token.rotated`, `token.revoked`, `token.expiring`, `token.rejected` |
+| Users | `user.created`, `user.updated`, `user.renamed`, `user.rename_conflict`, `user.disabled`, `user.enabled`, `user.deleted`, `user.dormancy_warning`, `user.groups.synced`, `user.groups.claim_missing` |
+| Groups and service accounts | `group.created`, `group.updated`, `group.deleted`, `group.members.changed`, `serviceaccount.created`, `serviceaccount.updated`, `serviceaccount.disabled`, `serviceaccount.deleted` |
+| Settings | `settings.auth.changed` |
+| Repositories and endpoints | `repository.created`, `repository.updated`, `repository.deleted`, `endpoint.exposure.created`, `endpoint.exposure.updated`, `endpoint.exposure.deleted` |
+| Files | `artifact.deployed`, `artifact.deleted`, `artifact.downloaded` |
+| System and audit | `system.task_triggered`, `system.job.cancelled`, `audit.exported` |
+
+</details>
+
+### Error codes
+
+The code registry is [internal/errs/codes.go](internal/errs/codes.go). Every problem answer carries one of these values as `code`. The HTTP status of each code is in the registry.
+
+<details>
+<summary>Error codes (M1 registry, 211 entries in the file, grouped as the file groups them)</summary>
+
+- General: `internal`, `malformed_request`, `validation_failed`, `unauthenticated`, `forbidden`, `not_found`, `method_not_allowed`, `conflict`, `precondition_failed`, `payload_too_large`, `unsupported_media_type`, `rate_limited`, `insufficient_storage`, `unavailable`, `upstream_failed`, `upstream_timeout`, `repository_not_found`, `database_unavailable`, `egress_denied`, `key_ring_incompatible`, `object_store_unavailable`, `shutting_down`, `server_busy`, `database_timeout`, `misdirected_request`, `invalid_cursor`, `invalid_header`, `already_exists`, `idempotency_in_progress`, `idempotency_key_reused`, `precondition_required`, `reserved_name`, `managed_by_config`
+- Tokens: `invalid_token`, `credentials_required`, `invalid_credentials`, `principal_disabled`, `invalid_scope`, `invalid_ttl`, `ttl_exceeds_maximum`, `default_above_maximum`, `exceeds_ceiling`, `non_expiring_not_allowed`, `non_expiring_restricted`, `pat_not_allowed`, `ci_token_restricted`, `token_already_issued`, `token_limit_reached`, `derivation_exceeds_parent`, `description_required`, `not_a_token`
+- Identities and login: `managed_by_scim`, `last_admin`, `anonymous_not_allowed`, `auto_join_admin_conflict`, `username_invalid`, `session_expired`, `reauthentication_required`, `csrf_failed`, `browser_mismatch`, `flow_expired`, `provider_unavailable`, `break_glass_restricted`, `break_glass_immutable`, `break_glass_rotating`, `local_login_disabled`, `break_glass_locked`, `too_many_pending_logins`
+- Authorization: `authz_stale`, `authz_epoch_unknown`, `role_not_allowed`, `unknown_role`, `authenticated_write_action`, `anonymous_write_action`, `anonymous_dynamic_selector`, `action_not_allowed`, `invalid_action`, `invalid_pattern`, `unknown_principal`, `unknown_repository`, `unknown_format`, `duplicate_principal`, `virtual_action_not_applicable`
+- Repositories and formats: `repository_disabled`, `repository_referenced`, `invalid_key`, `invalid_member`, `invalid_document`, `not_applicable`, `unsupported_class`, `unsupported_layout`, `batch_too_large`, `not_a_package`, `no_deploy_target`
+- Files: `invalid_path`, `not_admitted`, `path_conflict`, `content_unavailable`, `range_not_satisfiable`
+- Endpoints and exposure: `endpoint_read_only`, `invalid_version_range`, `dimension_not_supported`, `format_not_exposable`, `endpoint_not_configured`, `exposure_rule_limit_reached`
+
+</details>
+
+### Job kinds and tasks
+
+Registrations at start-up, in `internal/app/wire_*.go` and in the packages that own a kind. A task is a kind with a cron schedule in UTC; the `maintenance.tasks` key of the configuration sets its schedule and whether it runs.
+
+<details>
+<summary>Kinds and tasks (M1)</summary>
+
+| Kind or task | Registered by | Schedule or trigger |
+|---|---|---|
+| `gc`, `gc-full` | `internal/app/wire_jobs.go` (blob GC) | tasks: `*/30 * * * *`, `0 2 * * 0` |
+| `repository-delete` | `internal/repository/delete.go` | one job per repository deletion, exclusive |
+| `items-delete` | `internal/files/delete.go` | one job per delete of a large subtree, exclusive |
+| `token-cleanup`, `token-expiry-notice` | `internal/app/wire_identity.go`, `internal/auth/token/tasks.go` | tasks (`maintenance` queue, 3 attempts) |
+| `session-cleanup` | `internal/auth/session/cleanup.go` | task |
+| `audit-retention` | `internal/app/wire_audit.go` | task |
+| `idempotency-cleanup` | `internal/api/v1/cleanup.go` | task, `13 * * * *` |
+| `secrets-reencrypt` | `internal/app/wire_api.go` | manual only (`POST /api/v1/system/tasks/{name}/run`) |
+| `cluster-change-prune`, `replica-registry-prune` | `internal/jobs/builtin.go` | tasks, `*/10 * * * *` |
+| `system.probe` | `internal/jobs/probe.go` | probe kind |
+
+</details>
+
 ## 📚 Documentation
 
 | Document | What it holds |
 |---|---|
-| [docs/developer/](docs/developer/README.md) | Contributor entry point: repository layout, architecture, build and test, CI, configuration, the subsystem pages, endpoints, TLS, the local profile |
-| [docs/security/](docs/security/README.md) | Security architecture, one page per perspective, with the open gaps of each page: trust boundaries, transport encryption, data and secret flow, privilege footprint, isolation and coordination, egress |
+| [docs/developer/](docs/developer/README.md) | Contributor entry point; the M1 pages: [login](docs/developer/login.md), [identity](docs/developer/identity.md), [authorization](docs/developer/authorization.md), [files](docs/developer/files.md), [m1-contracts](docs/developer/m1-contracts.md), [audit](docs/developer/audit.md), [repositories](docs/developer/repositories.md) |
+| [docs/security/](docs/security/README.md) | Security architecture, one page per perspective, with the open gaps of each page: trust boundaries, transport encryption, data and secret flow, privilege footprint, isolation and coordination, egress, login and sessions, tokens and credentials, permissions, endpoints and exposure, repository model, file transfer, audit |
 | [SECURITY.md](SECURITY.md) | How to report a vulnerability, the supported versions and the pointer to the known gaps |
 | [docs/spec/](docs/spec/README.md) | Target design: owner constraints, invariants `INV-1` to `INV-20`, requirements `R-<AREA>-nnn`, open gaps `H-<n>` |
 | [docs/coverage/](docs/coverage/README.md) | Which catalog entries the spec covers, and which requirements have passing tests |
@@ -272,6 +388,54 @@ curl -s http://localhost:8080/api/v1/system/replicas                            
 Pending: the same two requests over `https://localhost:<port>` with `curl --cacert .dev/<dev CA file>` once the edge serves TLS.
 The exact path of the CA file is set when the dev profile switches; it is not in `local-profile.md` yet.
 
+**First sign-in, first repository, first file (M1).** These steps use a release install with the login values below. The
+password and the client secret are files of existing Secrets; the chart never creates them.
+
+```yaml
+config:
+  server:
+    base_url: https://trove.example.com   # example; the redirect URI at the provider is <base_url>/auth/oidc/corp/callback
+  auth:
+    oidc:
+      providers:
+        corp:                             # example: the provider ID
+          display_name: Corporate sign-in # example
+          issuer: https://id.example.com  # example
+          client_id: trove                # example
+secrets:
+  breakGlass:
+    existingSecret: trove-break-glass     # example; the key `password`: plaintext of at least 20 characters or an Argon2id PHC hash
+    key: password                         # default
+  oidc:
+    - providerId: corp                    # example: must be a key of config.auth.oidc.providers
+      existingSecret: trove-oidc-corp     # example
+      key: client-secret                  # default
+```
+
+Sign in as the break-glass administrator with a cookie jar, create a generic repository, mint a personal token, then upload
+and download a file. The `__Host-trv_csrf` cookie goes back as `X-CSRF-Token` on each change, with a same-origin `Origin`:
+
+```shell
+curl -s -c jar.txt -b jar.txt -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"<the password>"}' https://trove.example.com/auth/local/login       # example
+CSRF=$(awk '$6 == "__Host-trv_csrf" {print $7}' jar.txt)
+curl -s -b jar.txt -H "X-CSRF-Token: $CSRF" -H 'Origin: https://trove.example.com' -H 'Content-Type: application/json' \
+  -d '{"key":"generic-local","class":"local","format":"generic"}' https://trove.example.com/api/v1/repositories   # example
+curl -s -b jar.txt -H "X-CSRF-Token: $CSRF" -H 'Origin: https://trove.example.com' -H 'Content-Type: application/json' \
+  -d '{"description":"laptop","ttlSeconds":2592000,"scope":{"inherit":true}}' https://trove.example.com/api/v1/tokens  # example
+TOKEN=trv_pat_...                                     # example: the value the token answer carries once
+curl -s -H "Authorization: Bearer $TOKEN" -H 'If-None-Match: *' --data-binary @hello.txt \
+  https://trove.example.com/files/generic-local/docs/hello.txt                                             # example
+curl -s -H "Authorization: Bearer $TOKEN" https://trove.example.com/files/generic-local/docs/hello.txt     # example
+```
+
+Verify the session and the principal: `curl -s -b jar.txt https://trove.example.com/api/v1/auth/whoami` answers the
+principal, and its `principal.kind` is `break_glass` for this account (the kinds are listed in Q-AUTH-44 of [the identity spec](docs/spec/identity-and-authentication.md#q-auth-44--the-shape-of-whoami)).
+
+Not verified in this pass: no stack was started for these steps. The request shapes come from the OpenAPI document and the
+login code. The dev profile still serves plain HTTP, and the `__Host-` cookies need HTTPS. Whether a break-glass session may
+mint a personal token is not checked against its code path.
+
 **3. Run the integration tests** against their own stack (PostgreSQL, PgBouncer, Valkey with Sentinel, SeaweedFS), not
 against the dev profile. The stack runs its connections over TLS, verified against one test CA; the tests that check the refusal
 of plaintext keep their own settings on purpose:
@@ -294,8 +458,8 @@ make integration-up && make test-integration
 
 ## 📖 Full reference
 
-Every public interface of M0 is listed once here: the command line, every configuration key of `internal/config`, the system
-API and the ops endpoints, and the Helm values. The configuration keys are generated from the struct tags in
+Every public interface of M1 is listed once here: the command line, every configuration key of `internal/config`, the
+management API by family, the system API and the ops endpoints, and the Helm values. The configuration keys are generated from the struct tags in
 [internal/config](internal/config/); [schema.json](internal/config/schema.json) is the generated JSON Schema. A value marked
 `# default` is the default of its struct tag or of the code path that applies it; a value marked `# example` is illustrative.
 
@@ -310,6 +474,10 @@ API and the ops endpoints, and the Helm values. The configuration keys are gener
 | `trove admin config validate` | `--format table\|json` (default `table`), `--config <file>`, `--log-level <level>` | Validates the file and the environment and prints the effective configuration with each value's source. Secrets are redacted. A map or a list prints as one JSON value, such as `server.endpoints`. |
 | `trove version`, `trove --version` | none | Version, commit and build date |
 | `trove help`, `-h`, `--help` | none | Usage |
+| `trove admin break-glass …` | `status`, `unlock`, `end-sessions`; `--user`, `--all` for ending sessions | Recovery of the break-glass account (R-AUTH-015). Source: [cmd/trove/admin_login.go](cmd/trove/admin_login.go). The nesting of the subcommands is read from that file, not restated here. |
+| `trove admin service-account …` | `create` with `--description`, `--admin` (bind the admin role); `revoke` | Bootstrap and recovery of service accounts. Source: [cmd/trove/admin_identity.go](cmd/trove/admin_identity.go). |
+| `trove admin token …` | `--service-account`, `--ttl` (default 15m, at most the SAT maximum), `--scope-file`, `--id`, `--value-stdin` | Flags of the token command; the subcommand names are in the source. Source: [cmd/trove/admin_identity.go](cmd/trove/admin_identity.go). |
+| `trove admin user …` | `--keep-tokens` | Keeps the user's tokens when the user is disabled; they then fail with `principal_disabled`. Source: [cmd/trove/admin_identity.go](cmd/trove/admin_identity.go). |
 | `trove backup …` | none | Reserved. Returns "not implemented yet" (planned for M5). |
 
 Exit status: `0` success, `1` failed command, `2` usage error.
@@ -750,6 +918,103 @@ serve). The chart sets the secret-file paths and `storage.spool.dir` of the pods
 
 </details>
 
+<details>
+<summary>M1 sections: auth, authz, api, repositories</summary>
+
+The keys come from the struct tags of [internal/config/m1.go](internal/config/m1.go), [login.go](internal/config/login.go),
+[auth_identity.go](internal/config/auth_identity.go) and [authz.go](internal/config/authz.go). A value marked `# default` is the
+`default` tag of the field; a field without one is marked as such. Ranges are the `validate` tags.
+
+```yaml
+auth:
+  revocation_bound: 2s                  # default; 500ms to 10s; at least 2 times cluster.epoch_poll_interval
+  tokens:
+    cache_ttl: 15s                      # default; 1s to 60s
+    retention_after_end: 2160h          # default; at least 1h: token-cleanup deletes a row this long after expiry or revocation
+    expiry_notice: 168h                 # default; at least 1h; one token.expiring event per token in this period
+    pat:
+      default_ttl: 2160h                # default; at least 1m
+      max_ttl: 8760h                    # default
+      allowed_groups: []                # default: empty = every user may create personal tokens
+    sat:
+      default_ttl: 2160h                # default
+      max_ttl: 8760h                    # default
+      allow_non_expiring: false         # default: an administrator may create a non-expiring service-account token only when true
+    cit:
+      max_ttl: 6h                       # default; 1m to 6h; hard ceiling
+    max_active_per_principal:
+      pat: 50                           # default
+      sat: 20                           # default
+  anonymous:
+    allowed: true                       # default: the ceiling of the runtime switch anonymousAccess
+  clients:
+    basic:
+      enabled: true                     # default; off breaks NuGet restore and _auth users
+    nuget_api_key_header: true          # default; read on the NuGet API-key endpoints (their milestone is M2)
+  rate_limit:
+    failures_per_address: 300           # default; rejected credentials per minute and client address, cluster-wide
+    starts_per_address: 30              # default; requests to the unauthenticated row-creating endpoints per minute and address
+    device_code_failures: 5             # default; wrong device user codes per user within auth.cli_login.ttl
+    recent_token_window: 10m            # default; 1s to 1h
+    max_pending_flows: 100000           # default
+    exempt_cidrs: []                    # default; example: ["10.42.0.0/24"]
+  login_page:
+    auto_redirect: true                 # default: redirect to the provider when exactly one is configured
+  oidc:
+    providers: {}                       # default; a map keyed by the provider ID (example: corp)
+    # per provider (no default in the tags; the doc of the field names R-AUTH-004, R-AUTH-007 and R-AUTH-008):
+    #   display_name, issuer, client_id, client_secret_file (file only; the chart renders it), client_secret_env,
+    #   client_auth_method, scopes, extra_auth_params, allowed_signing_algs, trusted_audiences, clock_skew,
+    #   max_id_token_age, use_user_info, discovery_refresh, rp_initiated_logout, claims {username, email, display_name, groups},
+    #   username_prefix, sync_username, jit, require_verified_email, login_requires_groups, public_issuer,
+    #   order (sorts the login page), group_sync {enabled, on_missing_claim, create_groups,
+    #   rules [{match | match_regex, group}]}
+  sessions:
+    idle_timeout: 1h                    # default; 5m to 24h
+    absolute_timeout: 12h               # default; 5m to 168h
+    max_per_user: 20                    # default; 1 to 1000; one more ends the oldest
+    recent_auth_window: 1h              # default; 1m to 24h: credential-minting actions need an interactive login this recent
+  break_glass:
+    enabled: true                       # default; the account is unusable without password_file (Q-AUTH-33)
+    username: admin                     # default
+    password_file: ""                   # default; file only; the chart renders /var/run/secrets/trove/break-glass/password
+    show_on_login_page: false           # default
+    idle_timeout: 15m                   # default; 1m to 24h
+    absolute_timeout: 1h                # default; 1m to 168h
+    rotation_hold: 2m                   # default; 0 to 1h: local login refused this long after a rotation is noticed
+    max_concurrent_verifications: 2     # default; 1 to 64
+    lockout:
+      threshold: 5                      # default; 1 to 1000
+      window: 15m                       # default; 1m to 24h
+      duration: 15m                     # default; 1m to 24h
+    check_interval: 10s                 # default; 1s to 5m: how often a web replica looks at the password file
+authz:
+  hide_existence: true                  # default: a refused read answers 404, as for a missing resource
+  cache:
+    max_staleness: 10s                  # default; at least 1s: no decision on an index unconfirmed for longer
+    safety_ttl: 10m                     # default; at least 10s: a full rebuild of the grant index, jittered by 10 percent
+  audit:
+    reads: denied                       # default: none | denied | all
+api:
+  page_size_default: 50                 # default: the limit of a list request that sends none
+  page_size_max: 500                    # default; a larger limit is clamped to it
+  idempotency_retention: 24h            # default; at least 1m
+  max_request_body_bytes: 1MiB          # default; at least 1KiB; larger answers 413
+  max_configuration_body_bytes: 4MiB    # default; at least 1KiB
+  cors:
+    allowed_origins: []                 # default: CORS is off; example: ["https://ui.example.com"]; exact origins, no wildcard
+  rate_limits:
+    enabled: true                       # default
+    exempt_admins: false                # default: callers who hold the admin capability bypass the limits
+    read: {requests_per_second: 50, burst: 200}        # default (safe methods)
+    write: {requests_per_second: 10, burst: 50}        # default (unsafe methods)
+    anonymous: {requests_per_second: 5, burst: 20}     # default (requests without credentials, per address)
+repositories:
+  lookup_wait: 5s                       # default; at least 100ms: wait for the change-log poll on a key the snapshot does not know
+```
+
+</details>
+
 ### Security-relevant settings
 
 | Setting | Default | What changes | Decision |
@@ -766,6 +1031,210 @@ serve). The chart sets the secret-file paths and `storage.spool.dir` of the pods
 | `storage.s3.credentials.source` | `default` | `default` uses the SDK's chain, which can reach node metadata; `static` and `webIdentity` read files. | [H-74](docs/security/privilege-footprint.md) |
 | `proxy.outbound.address_policy` | loopback, link-local, metadata, multicast denied; private ranges allowed | Upstream clients refuse denied addresses after DNS resolution; zoned IPv6 always; the object store and span export are not checked. | [egress](docs/security/egress.md), [H-6](docs/spec/repositories-and-proxy.md) |
 | `secrets.encryption_key_files` | empty (required) | Keys are read once at start-up; a rotated key file takes effect after a restart. | [H-55](docs/spec/architecture.md), [data and secret flow](docs/security/data-and-secret-flow.md) |
+| `auth.break_glass.enabled`, `auth.break_glass.password_file` | `true`, empty | Without a password file the account is unusable, not open. With `secrets.breakGlass` it is the local administrator that holds system administration without a role binding. The password is a file, never inline. | [login](docs/developer/login.md), [Q-AUTH-33](docs/spec/identity-and-authentication.md#q-auth-33--an-enabled-break-glass-account-without-a-password-file) |
+| `auth.clients.basic.enabled` | `true` | Basic authentication for NuGet restore and the `_auth` users. Off breaks those clients; a Basic request with a password is refused either way. | [identity](docs/developer/identity.md) |
+| `auth.anonymous.allowed` | `true` | The operator's ceiling for the runtime `anonymousAccess` switch. `false` refuses anonymous access whatever the runtime setting says. | [identity](docs/developer/identity.md), [Q-AUTH-19](docs/spec/identity-and-authentication.md#q-auth-19--which-unauthenticated-requests-the-stage-lets-through) |
+| `authz.hide_existence` | `true` | A refused read answers 404, indistinguishable from a missing resource. `false` answers 403 for a resource that exists, for troubleshooting only. A repository's `hideExistence` overrides it. | [permissions](docs/security/permissions.md) |
+| `api.rate_limits.exempt_admins` | `false` | Callers who hold the admin capability bypass the rate limits. | [API edge](docs/security/api-edge.md) |
+| `server.endpoints.<name>.auth`, `…exposure` | further endpoints: `token_types: [sat]`, `bound_tokens_only: true`, `anonymous: false`; `exposure: rules` | Which credentials an endpoint accepts, and the ceiling on what it serves (exposure rules are a ceiling, never a grant). | [endpoints and exposure](docs/security/endpoints-and-exposure.md), [ADR-128](docs/decisions.md#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling) |
+
+### Management API
+
+The operations below are the paths of [api/openapi.yaml](api/openapi.yaml), grouped by family, as M1 declares them. The
+document is the source: `GET /api/v1/openapi.json` serves it, and the operations declare their capability in an
+`x-trove-permission` block; `Document.CheckRoutes` checks the routes against the document at start-up. The table lists every operation with its
+`x-trove-permission` and whether it requires a recent sign-in (`x-trove-recent-auth`, R-API-007).
+
+<details>
+<summary>Every operation with its permission (generated from api/openapi.yaml)</summary>
+
+**system**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/system/ping` | `getPing` | public |
+| `GET /api/v1/system/version` | `getVersion` | authenticated, public with `system.public_version` |
+| `GET /api/v1/system/info` | `getSystemInfo` | `settings:read` |
+| `GET /api/v1/system/replicas` | `listReplicas` | `settings:read` |
+| `GET /api/v1/system/encryption` | `getEncryptionStatus` | `settings:read` |
+
+**meta**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/openapi.json` | `getOpenApiJson` | public |
+| `GET /api/v1/openapi.yaml` | `getOpenApiYaml` | public |
+| `GET /api/v1/problems/{code}` | `getProblemType` | public |
+
+**audit**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/audit/events` | `listAuditEvents` | `audit:read` |
+| `GET /api/v1/audit/events/export` | `exportAuditEvents` | `audit:read` |
+| `GET /api/v1/audit/events/{id}` | `getAuditEvent` | `audit:read` |
+
+**jobs**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/system/jobs` | `listJobs` | authenticated |
+| `GET /api/v1/system/jobs/{id}` | `getJob` | authenticated |
+| `POST /api/v1/system/jobs/{id}/cancel` | `cancelJob` | authenticated |
+| `GET /api/v1/system/tasks` | `listTasks` | `settings:read` |
+| `POST /api/v1/system/tasks/{name}/run` | `runTask` | `settings:write` |
+
+**users**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/users` | `listUsers` | `identities:read` |
+| `POST /api/v1/users` | `createUser` | `identities:write` |
+| `GET /api/v1/users/me` | `getCurrentUser` | authenticated |
+| `GET /api/v1/users/{username}` | `getUser` | `identities:read` |
+| `PATCH /api/v1/users/{username}` | `updateUser` | `identities:write` |
+| `DELETE /api/v1/users/{username}` | `deleteUser` | `identities:write` |
+| `POST /api/v1/users/{username}/disable` | `disableUser` | `identities:write` |
+| `POST /api/v1/users/{username}/enable` | `enableUser` | `identities:write` |
+| `PATCH /api/v1/users/{username}/groups` | `patchUserGroups` | `identities:write` |
+| `POST /api/v1/users/{username}/unlock` | `unlockBreakGlass` | role `admin` |
+
+**groups**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/groups` | `listGroups` | `identities:read` |
+| `POST /api/v1/groups` | `createGroup` | `identities:write` |
+| `GET /api/v1/groups/{name}` | `getGroup` | `identities:read` |
+| `PATCH /api/v1/groups/{name}` | `updateGroup` | `identities:write` |
+| `DELETE /api/v1/groups/{name}` | `deleteGroup` | `identities:write` |
+| `GET /api/v1/groups/{name}/members` | `listGroupMembers` | `identities:read` |
+| `PATCH /api/v1/groups/{name}/members` | `patchGroupMembers` | `identities:write` |
+
+**service-accounts**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/service-accounts` | `listServiceAccounts` | `identities:read` |
+| `POST /api/v1/service-accounts` | `createServiceAccount` | `identities:write` |
+| `GET /api/v1/service-accounts/{name}` | `getServiceAccount` | `identities:read` |
+| `PATCH /api/v1/service-accounts/{name}` | `updateServiceAccount` | `identities:write` |
+| `DELETE /api/v1/service-accounts/{name}` | `deleteServiceAccount` | `identities:write` |
+| `POST /api/v1/service-accounts/{name}/disable` | `disableServiceAccount` | `identities:write` |
+| `POST /api/v1/service-accounts/{name}/enable` | `enableServiceAccount` | `identities:write` |
+
+**tokens**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `POST /api/v1/tokens` | `createToken` | authenticated · recent sign-in |
+| `GET /api/v1/tokens` | `listTokens` | authenticated |
+| `GET /api/v1/tokens/current` | `getCurrentToken` | authenticated |
+| `DELETE /api/v1/tokens/current` | `revokeCurrentToken` | authenticated |
+| `POST /api/v1/tokens/current/rotate` | `rotateCurrentToken` | authenticated |
+| `POST /api/v1/tokens/revoke` | `revokeTokenByValue` | public |
+| `GET /api/v1/tokens/{id}` | `getToken` | authenticated |
+| `DELETE /api/v1/tokens/{id}` | `revokeToken` | authenticated |
+| `POST /api/v1/tokens/{id}/rotate` | `rotateToken` | authenticated · recent sign-in |
+| `DELETE /api/v1/users/me/tokens` | `revokeOwnTokens` | authenticated |
+| `DELETE /api/v1/users/{username}/tokens` | `revokeUserTokens` | `tokens:revoke` |
+| `POST /api/v1/service-accounts/{name}/tokens` | `createServiceAccountToken` | authenticated · recent sign-in |
+| `DELETE /api/v1/service-accounts/{name}/tokens` | `revokeServiceAccountTokens` | `tokens:revoke` |
+
+**auth-settings**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/settings/auth` | `getAuthSettings` | `settings:read` |
+| `PATCH /api/v1/settings/auth` | `updateAuthSettings` | `settings:write` · recent sign-in |
+
+**auth**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/auth/login-options` | `getLoginOptions` | public |
+| `GET /api/v1/auth/whoami` | `getWhoami` | authenticated |
+
+**sessions**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/users/me/sessions` | `listOwnSessions` | authenticated |
+| `DELETE /api/v1/users/me/sessions` | `endOwnSessions` | authenticated |
+| `DELETE /api/v1/users/me/sessions/{id}` | `endOwnSession` | authenticated |
+| `GET /api/v1/users/{username}/sessions` | `listUserSessions` | `identities:read` |
+| `DELETE /api/v1/users/{username}/sessions` | `endUserSessions` | `identities:write` |
+
+**preferences**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/users/me/preferences` | `getPreferences` | authenticated |
+| `PATCH /api/v1/users/me/preferences` | `updatePreferences` | authenticated |
+
+**permissions**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/permission-policies` | `listPermissionPolicies` | `policies:read` |
+| `POST /api/v1/permission-policies` | `createPermissionPolicy` | `policies:write` · recent sign-in |
+| `GET /api/v1/permission-policies/{name}` | `getPermissionPolicy` | `policies:read` |
+| `PUT /api/v1/permission-policies/{name}` | `replacePermissionPolicy` | `policies:write` · recent sign-in |
+| `PATCH /api/v1/permission-policies/{name}` | `patchPermissionPolicy` | `policies:write` · recent sign-in |
+| `DELETE /api/v1/permission-policies/{name}` | `deletePermissionPolicy` | `policies:write` · recent sign-in |
+| `POST /api/v1/authz/validate-policy` | `validatePermissionPolicy` | `policies:read` |
+| `GET /api/v1/roles` | `listRoles` | authenticated |
+| `GET /api/v1/role-bindings` | `listRoleBindings` | `roles:read` |
+| `PUT /api/v1/role-bindings/{role}/{principalRef}` | `bindRole` | `roles:write` · recent sign-in |
+| `DELETE /api/v1/role-bindings/{role}/{principalRef}` | `unbindRole` | `roles:write` · recent sign-in |
+| `GET /api/v1/authz/me` | `getAuthzMe` | authenticated |
+| `POST /api/v1/authz/check` | `checkPermissions` | authenticated |
+
+**repositories**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/formats` | `listFormats` | public |
+| `GET /api/v1/repositories` | `listRepositories` | public |
+| `POST /api/v1/repositories` | `createRepository` | `repositories:write-config` |
+| `GET /api/v1/repositories/{key}` | `getRepository` | public |
+| `PUT /api/v1/repositories/{key}` | `replaceRepository` | `repositories:write-config` |
+| `PATCH /api/v1/repositories/{key}` | `updateRepository` | `repositories:write-config` |
+| `DELETE /api/v1/repositories/{key}` | `deleteRepository` | `repositories:write-config` · recent sign-in |
+
+**items**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/repositories/{repoKey}/items` | `getItem` | action `read` on `path.repoKey` |
+| `DELETE /api/v1/repositories/{repoKey}/items` | `deleteItem` | action `delete` on `path.repoKey` |
+| `GET /api/v1/repositories/{repoKey}/children` | `listChildren` | action `read` on `path.repoKey` |
+| `GET /api/v1/repositories/{repoKey}/stats` | `getItemStats` | action `read` on `path.repoKey` |
+
+**files**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /files/{repoKey}/{path}` | `downloadFile` | action `read` on `path.repoKey` |
+| `HEAD /files/{repoKey}/{path}` | `headFile` | action `read` on `path.repoKey` |
+| `PUT /files/{repoKey}/{path}` | `deployFile` | action `deploy` on `path.repoKey` |
+| `DELETE /files/{repoKey}/{path}` | `deleteFile` | action `delete` on `path.repoKey` |
+
+**endpoints**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/endpoints` | `listEndpoints` | `endpoints:read` |
+| `GET /api/v1/endpoints/{endpoint}` | `getEndpoint` | `endpoints:read` |
+| `GET /api/v1/endpoints/{endpoint}/exposure-rules` | `listExposureRules` | `endpoints:read` |
+| `POST /api/v1/endpoints/{endpoint}/exposure-rules` | `createExposureRule` | `endpoints:write` · recent sign-in |
+| `GET /api/v1/endpoints/{endpoint}/exposure-rules/{name}` | `getExposureRule` | `endpoints:read` |
+| `PUT /api/v1/endpoints/{endpoint}/exposure-rules/{name}` | `replaceExposureRule` | `endpoints:write` · recent sign-in |
+| `PATCH /api/v1/endpoints/{endpoint}/exposure-rules/{name}` | `patchExposureRule` | `endpoints:write` · recent sign-in |
+| `DELETE /api/v1/endpoints/{endpoint}/exposure-rules/{name}` | `deleteExposureRule` | `endpoints:write` · recent sign-in |
+| `POST /api/v1/endpoints/{endpoint}/check-exposure` | `checkExposure` | `endpoints:read` |
+
+</details>
 
 ### System API
 
@@ -1005,7 +1474,7 @@ helm upgrade --install trove trove/trove -n trove -f values.yaml --set secrets.b
 kubectl -n trove get secret trove-break-glass -o jsonpath='{.data.password}' | base64 -d; echo
 ```
 
-Open `/ui/login?local=1` on the installation's base URL and sign in as `admin` (`auth.break_glass.username`, default `admin`) with that
+Open `/ui/login?local=1` on the installation's base URL (trove redirects it to the negotiated locale, `/ui/<locale>/login?local=1`) and sign in as `admin` (`auth.break_glass.username`, default `admin`) with that
 password. Without the operator, `kubectl create secret generic trove-break-glass --from-literal=password="$(head -c 24 /dev/urandom | base64)"`
 does the same once.
 
@@ -1144,7 +1613,8 @@ requirement of the chart is [HA and Helm](docs/spec/ha-and-helm.md).
 | `make chart-lint`, `make chart-test` | Helm lint over every value set; render assertions (`chart` build tag) |
 | `make integration-up`, `make test-integration`, `make integration-down` | Integration stack and tests (`integration` build tag, `test/integration/<area>`) |
 | `make coverage` | Regenerates the requirement checklist in `docs/coverage/` |
-| `make dev-up`, `make dev-down`, `make e2e` | Local profile, its teardown, and the end-to-end suite (`e2e` build tag) |
+| `make dev-up`, `make dev-down`, `make e2e` | Local profile, its teardown, and the end-to-end suite (`e2e` build tag; `SET=access` runs the access-core tests) |
+| `make dev-valkey-stop`, `make dev-valkey-start` | Stops Valkey and the Sentinels until the start target; the test holds the outage for a criterion of unknown length |
 
 ## 🛠 Development
 

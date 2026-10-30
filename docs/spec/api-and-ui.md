@@ -4397,6 +4397,11 @@ in R-API-009's generic table; `server_busy` and `database_timeout` are named by 
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
+**Superseded in M1** by [Q-AUTHZ-16](authorization.md#q-authz-16--the-dev-profile-bridge-systembootstrap_anonymous_read-in-the-new-engine)
+and [Q-AUTHZ-71](authorization.md#q-authz-71--the-bootstrap-bridge-opens-two-operations-not-a-capability): the switch was not removed
+with authentication; it stays a development-profile bridge in front of the authorization engine and opens only the system
+information and the replica list to anonymous callers on the default endpoint.
+
 | Option | What it means | For | Against |
 |---|---|---|---|
 | (a) No anonymous read; the development profile reads the replica list with a credential | No credential can be valid before M1 | No exposure | The development profile and its load test have no credential to read with |

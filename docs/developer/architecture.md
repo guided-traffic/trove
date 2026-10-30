@@ -27,8 +27,8 @@ stops. Requirements: [R-ARCH-001](../spec/architecture.md), [R-ARCH-005](../spec
 | [wire_observability.go](../../internal/app/wire_observability.go), [wire_postgres.go](../../internal/app/wire_postgres.go), [wire_valkey.go](../../internal/app/wire_valkey.go) | One file per infrastructure client; `WIRING POINT` comments in `bootstrap` mark what later work packages add |
 | [wire_tls.go](../../internal/app/wire_tls.go) | `startTLS`: one `ListenerTLS` per listener of the role (every endpoint listener included), the `tls` first-readiness check |
 | [wire_endpoints.go](../../internal/app/wire_endpoints.go) | The endpoints this process serves, their TLS, chain and listener; see [endpoints.md](endpoints.md) |
-| [access.go](../../internal/app/access.go) | M0 stand-ins for authentication and authorization (see below) |
-| [facts.go](../../internal/app/facts.go) | System information from the configuration; the replica list (this replica only until the registry exists) |
+| [access.go](../../internal/app/access.go) | `bridgeAccess`: the bridge of the M1 decision point. It opens `settings:read` for anonymous callers under `system.bootstrap_anonymous_read` and the two bootstrap operations (Q-AUTHZ-16, Q-AUTHZ-71); every other check asks `internal/authz` |
+| [facts.go](../../internal/app/facts.go) | System information from the configuration; the replica list from the replica registry |
 | [fixture_on.go](../../internal/app/fixture_on.go) / [fixture_off.go](../../internal/app/fixture_off.go) | The `drainfixture` test build |
 
 ## What runs where
@@ -54,8 +54,9 @@ net/http server ── track (stall deadlines, active-request registry for the s
            └─ 3 request log + metrics   observability.RequestLog               [injected]
               └─ 4 in-flight limit      503 server_busy + Retry-After: 1
                  └─ 5 client address    Resolver: peer, trusted proxies, base URL; Annotate hook; per endpoint: effective host, host check (421), binding
-                    └─ 6 authentication principal or anonymous; invalid credential -> 401; X-Trove-Replica for authenticated callers
-                       └─ 7 rate limits [injected, none in M0]
+                    └─ preflight  CORS preflight of an allowed origin, answered before authentication (Q-API-138)
+                       └─ 6 authentication principal or anonymous (bearer token or session cookie); invalid credential -> 401; X-Trove-Replica for authenticated callers
+                       └─ 7 rate limits: api_read, api_write, api_anonymous classes (cluster-wide in Valkey, per-replica share as fallback; ADR-102)
                           └─ 8 Router (ServeMux): API operations, /ui/, ... ; unmatched -> 404 problem, wrong method -> 405 + Allow
 ```
 
@@ -133,7 +134,7 @@ reach PostgreSQL stays alive and unready.
 | 5 key ring; `outbound.New` with its `Err()` as a first-readiness check | `bootstrap` |
 | 6 object store: wait while `outbound.Err()` reports a problem (a CA file of `proxy.outbound.tls.ca_files` that loads later clears it without a restart), `s3.NewFromFactory` (a `storage.s3.ca_file` that does not load is a configuration error), `blob.NewGuard`, `blob.New`, `blob.AwaitStartupCheck` (a transient failure keeps the replica unready, a configuration error ends the process), the `objectStore` check (`first = !health.require_object_store`), the garbage collector on `worker` and `all` | `startBlob` ([wire_blob.go](../../internal/app/wire_blob.go)) |
 | 7 Valkey in the background with `cluster.WithKeyspaceID`; signals; change log and cache registry (`invalidation` check); replica registry; on `worker` and `all` the lease manager and the job worker (worker first, then leases), on `web` only the `jobs.Queue` | `valkeyComponent`, `startCoordination` ([wire_coordination.go](../../internal/app/wire_coordination.go)) |
-| 8 snapshots and caches of the domain packages | `WIRING POINT` (register on `App.Caches()`) |
+| 8 the M1 areas, each inside its own `>>> M1 <area>` marker: the repository snapshot (`wireRepository`), the identity components (`wireIdentity`), the sessions and the login (`wireSessions`, `wireLogin`), the API conventions with the key-ring canary (`wireAPI`, `verifyKeyRingCanaries`), the grant index (`wireAuthz`), the raw files (`wireFiles`) and the endpoints' exposure (`wireEndpoints`); the marker comment at step 8 says the order | [app.go](../../internal/app/app.go), [wire_repository.go](../../internal/app/wire_repository.go), [wire_identity.go](../../internal/app/wire_identity.go), [wire_login.go](../../internal/app/wire_login.go), [wire_api.go](../../internal/app/wire_api.go), [wire_authz.go](../../internal/app/wire_authz.go), [wire_files.go](../../internal/app/wire_files.go), [wire_exposure.go](../../internal/app/wire_exposure.go) |
 | 9 client listeners (`web`, `all`): one per endpoint of the process, all bound before the replica can be ready | `startClient`, [wire_endpoints.go](../../internal/app/wire_endpoints.go) |
 | 10 `startup` check passes | `bootstrap` sets the flag and refreshes the checks |
 
@@ -239,8 +240,8 @@ compiles it and sends a real `SIGTERM` while a request is in flight. No release 
 
 ## Known gaps
 
-- The key-ring canary and the cache snapshots (step 8) are `WIRING POINT`s in
-  `bootstrap`; their packages do not exist yet. The trash purge and the upload-session expiry that R-STOR-025 puts at the
-  start of a collection run are not part of the `gc` handler yet.
+- The `WIRING POINT` of step 8 in `bootstrap` ([app.go](../../internal/app/app.go)) still names the cache registry; the M1 areas are wired into it, but the
+  registration of each cache on `App.Caches()` is not checked here. The trash purge and the upload-session expiry that
+  R-STOR-025 puts at the start of a collection run are not part of the `gc` handler yet.
 - A shell started without infrastructure (`SkipInfrastructure`, the drain fixture) lists only itself as replica.
 - The UI locales are constants in [misc.go](../../internal/app/misc.go) until a `ui` configuration section exists.

@@ -49,7 +49,7 @@ with their pins and fails on a difference; a tool that is not installed is not a
 | `image` | builds the release image for `linux/<arch>` (`IMAGE`, default `guidedtraffic/trove:dev`) with the [Containerfile](../../Containerfile): the Angular build, the Go build and the distroless base, no Node.js on the host. The binary's version is `VERSION`: the number of a `v0.*` tag on `HEAD` (the `v` stripped), else `dev`, else what the caller passes (CI passes `VERSION=dev`). A commit hash is never a version: the binary would not become ready |
 | `coverage` | `go run ./internal/tools/coverage`, see [coverage.md](coverage.md) |
 | `chart-lint`, `chart-test` | call `test/chart/lint.sh` and `test/chart/test.sh`; provided by the chart work package |
-| `dev-up`, `dev-down`, `dev-failover`, `dev-valkey-failover`, `dev-valkey-kill`, `dev-valkey-outage` (`DURATION=60s`), `dev-drain`, `e2e` | call `deploy/dev/<name>.sh` (`up`, `down`, `failover`, `valkey-failover`, `valkey-kill`, `valkey-outage`, `drain`, `e2e`); provided by the chart and dev-profile work packages, not implemented in this repository state unless the script exists |
+| `dev-up`, `dev-down`, `dev-failover`, `dev-valkey-failover`, `dev-valkey-kill`, `dev-valkey-outage` (`DURATION=60s`), `dev-drain`, `dev-valkey-stop`, `dev-valkey-start`, `e2e` | call `deploy/dev/<name>.sh` (`up`, `down`, `failover`, `valkey-failover`, `valkey-kill`, `valkey-outage`, `valkey-stop`, `valkey-start`, `drain`, `e2e`); the Valkey scripts are in [deploy/dev/](../../deploy/dev/); the other scripts of the list were not checked in this pass |
 
 Go commands exclude `web/` from `./...` through the `PKGS` variable: npm packages in
 `web/node_modules` can ship Go files, which `./...` would otherwise compile. Plain `go test ./...`
@@ -62,7 +62,7 @@ on a checkout with an installed `node_modules` therefore picks them up; use `mak
 | Unit | `*_test.go` next to the code | nothing | `make test` |
 | Architecture | [internal/archtest](../../internal/archtest) | `go` on `PATH` (it runs `go list -deps -json ./...` and loads the packages with type information) | part of `make test` |
 | Integration | [test/integration](../../test/integration), build tag `integration` | the stack below | `make integration-up && make test-integration` |
-| End to end | `deploy/dev`, `test/e2e` | a kind cluster | `make dev-up && make e2e` (not yet built) |
+| End to end | `deploy/dev`, `test/e2e` | a kind cluster | `make dev-up && make e2e`; `SET=access` runs the access-core scenarios (`test/e2e/e1_*`, `m1_env_test.go`). `make dev-valkey-stop` and `make dev-valkey-start` hold a Valkey outage across a criterion of unknown length |
 
 A test that verifies a requirement carries the requirement ID in a subtest name, for example
 `t.Run("R-ARCH-002 forbidden import names the edge", …)`. The coverage generator reads the IDs from the

@@ -1,10 +1,13 @@
 # Developer documentation
 
-Status: the foundation milestone (M0) is built. The repository holds the Go binary, its configuration
-and database and cache layers, the S3 blob layer, the system API, the ops endpoints, the Angular
-workspace with a placeholder page, the Helm chart skeleton, the local development profile on kind, the
-integration and chart tests, and the CI workflows. No package format, login, repository or backup exists
-yet. Everything marked *planned* below is the target design in [docs/spec/](../spec/README.md).
+Status: the access core (M1) is built on top of the foundation (M0). The repository holds the Go binary,
+its configuration, the database and cache layers, the S3 blob layer, the system and management APIs, the ops
+endpoints, the OIDC login and the break-glass account, the tokens, the permission policies and the grant index,
+the endpoints and exposure rules, the generic repository format with raw transfer under `/files/`, the audit
+trail, the Angular admin UI, the Helm chart, the local development profile on kind, the integration, end-to-end
+and chart tests, and the CI workflows. No package format beyond the generic format, no GitLab CI federation,
+no pull-through proxy and no backup exists yet. Everything marked *planned* below is the target design in
+[docs/spec/](../spec/README.md).
 
 ## What to have in your head first
 
@@ -15,7 +18,7 @@ yet. Everything marked *planned* below is the target design in [docs/spec/](../s
 - **Owner constraints are fixed.** Go 1.27.3, Angular 22, PostgreSQL, S3-compatible storage, Helm, OIDC
   login, own tokens, detailed permissions, GitLab CI OIDC, pull-through proxying, npm and NuGet first, and
   the high-availability and scale constraints of 2026-10-28 ([spec/README.md](../spec/README.md#owner-constraints)).
-- **Invariants `INV-1` to `INV-19` bind every spec page.** A page may refine an invariant but must not
+- **Invariants `INV-1` to `INV-20` bind every spec page.** A page may refine an invariant but must not
   contradict it ([spec/README.md](../spec/README.md#design-invariants)).
 - **Roles, one binary** ([R-ARCH-001](../spec/architecture.md)). `web` answers HTTP and never claims a job or
   holds a lease. `worker` claims jobs, holds leases and serves only the ops listener. `all` combines both
@@ -84,6 +87,17 @@ One fact per line; each links to the page that explains it.
 - **Blobs:** content-addressed keys under `<prefix>/sha256/…`; the S3 client sits behind an outbound factory
   ([blob-store.md](blob-store.md)).
 - **Health:** readiness checks, watched loops and the liveness watchdog ([observability.md](observability.md)).
+- **Login:** `GET /auth/oidc/{providerId}/start` writes a flow row and sets `__Host-trv_oidc_binding`; the callback
+  checks the binding, exchanges the code with PKCE, verifies the ID token, provisions the principal and creates the
+  session in a second transaction ([login.md](login.md), Q-AUTH-32).
+- **Break-glass login:** `POST /auth/local/login` reserves an attempt before it verifies the password, and refuses while
+  the lockout or the rotation hold applies ([login.md](login.md), Q-AUTH-171 and Q-AUTH-14).
+- **Token request:** a `Bearer` value `trv_pat_…` or `trv_sat_…` is hashed and looked up; the auth caches answer
+  while the change log is fresh; the scope is intersected with the subject's permissions ([identity.md](identity.md)).
+- **Decision:** the endpoint and the action go to `authz`, which denies by default; the grant index is per replica and
+  a request may name the epoch it must see with `Trove-Authz-Min-Epoch` ([authorization.md](authorization.md)).
+- **Raw upload:** `PUT /files/{repoKey}/{path}` is decided before the body is read; the body is spooled and digested,
+  then the commit writes the item ([files.md](files.md)).
 
 ## Repository layout
 
@@ -136,9 +150,11 @@ trove/
 │   ├── helm/trove/           # the chart: templates/, values.yaml, values.schema.json, ci/ value sets
 │   └── dev/                  # the local profile: kind, HAProxy Ingress, cert-manager, CloudNativePG, valkey-operator, internal-secrets-operator, SeaweedFS, scripts
 ├── test/
-│   ├── integration/          # build tag `integration`: area folders blob/, coordination/, postgres/, valkey/, server/
+│   ├── integration/          # build tag `integration`: area folders with an env_test.go: api/, audit/, authz/, endpoints/, files/,
+│   │                         # identity/, login/, repository/, tls/, coordination/, postgres/, server/ (each creates its own database)
 │   ├── chart/                # build tag `chart`: render assertions and the lint script
-│   └── e2e/                  # build tag `e2e`: scenarios against the dev cluster, with a k6 load script
+│   └── e2e/                  # build tag `e2e`: M0 scenarios (e03 to e16, e99), the M1 access-core scenarios (e1_01 login,
+│                             # e1_08 rate limits, e1_11 scatter, e1_13 transfer, e1_14 exposure), m1_env_test.go; k6 load script
 ├── .github/
 │   ├── workflows/            # release.yml (Test and Release), build.yml (Release Docker & Helm), renovate.yml
 │   ├── actionlint.yaml       # actionlint's configuration (the App token inputs of the pinned version)
@@ -149,9 +165,9 @@ trove/
 └── docs/                     # README.md, decisions.md, developer/, spec/, security/, coverage/, features/
 ```
 
-M1 contract skeletons ([m1-contracts.md](m1-contracts.md)): `internal/audit/` (event registry, recorder interface),
-`internal/auth/` with `principal/`, `token/`, `session/` and `oidc/`, `internal/authz/` and `internal/repository/`
-hold the shared types and interfaces; their implementations arrive with the M1 work packages. The `Principal` the
+M1 ([m1-contracts.md](m1-contracts.md)): the shared types and interfaces of `internal/audit/` (event registry, recorder),
+`internal/auth/` with `principal/`, `token/`, `session/` and `oidc/`, `internal/authz/` and `internal/repository/` are
+implemented; `internal/api/rawfiles/` and `internal/files/` carry the raw transfer. The `Principal` the
 chain stores is in [internal/httpserver/principal.go](../../internal/httpserver/principal.go).
 
 Planned, from [R-ARCH-003](../spec/architecture.md): the package formats (`internal/formats/npm`, `nuget`) and the
