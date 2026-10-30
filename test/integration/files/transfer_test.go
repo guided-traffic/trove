@@ -248,7 +248,7 @@ func TestR_ARCH_024_ADownloadCutAtTheShutdownDeadlineResumesOnAnotherReplica(t *
 	rerr := <-done
 	// A cut ends the connection with a reset where the platform supports it, so the
 	// client learns of it at once (Q-ARCH-187); elsewhere it sees the body end early.
-	if rerr == nil || !(errors.Is(rerr, io.ErrUnexpectedEOF) || errors.Is(rerr, syscall.ECONNRESET)) {
+	if rerr == nil || (!errors.Is(rerr, io.ErrUnexpectedEOF) && !errors.Is(rerr, syscall.ECONNRESET)) {
 		t.Fatalf("the client must see an incomplete response, got %v after %d bytes", rerr, len(first))
 	}
 	if len(first) == 0 || len(first) >= size {
