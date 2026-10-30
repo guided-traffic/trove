@@ -133,8 +133,13 @@ func TestChangePropagation(t *testing.T) {
 				key := "k" + time.Now().Format("150405.000000") + string(rune('a'+i%26))
 				cfg.Set(key, "old")
 				time.Sleep(time.Duration(rand.Int64N(int64(mode.spread))))
-				t0 := time.Now()
+				// P-13 runs from the commit: the writer's own transaction (its statements
+				// and the COMMIT on PostgreSQL) is not part of it. The stamp is the first
+				// After hook, so it is taken once the commit returned and before the
+				// change is published.
+				var t0 time.Time
 				err := a.db.InTx(context.Background(), func(tx meta.Tx) error {
+					tx.After(func() { t0 = time.Now() })
 					return a.changes.Notify(tx, "cache", 1, map[string]string{"key": key})
 				})
 				if err != nil {

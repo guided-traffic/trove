@@ -126,9 +126,12 @@ func runLoad(ctx context.Context, cfg *config.Config, a, b *peer, caches *cache.
 		key := fmt.Sprintf("e2e-%d-%d", time.Now().UnixNano(), n)
 		followed.Set(key, "old")
 		startValkey := a.vk.Available() && b.vk.Available()
-		t0 := time.Now()
+		// P-13 runs from the commit, not from the start of the writer's transaction;
+		// the first After hook stamps it before the change is published.
+		var t0 time.Time
 		wctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		err := a.db.Tx(wctx, func(tx meta.Tx) error {
+			tx.After(func() { t0 = time.Now() })
 			return a.changes.Notify(tx, cluster.AreaCache, 1, map[string]string{"key": key})
 		})
 		cancel()

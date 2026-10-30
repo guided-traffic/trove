@@ -266,10 +266,12 @@ delete rows stale for 24 h. The HTTP layer converts `cluster.ReplicaInfo` to its
 
 | Bound | Spec | Test | Measured (this machine, `-race`) |
 |---|---|---|---|
-| Change propagation with Valkey p99 ≤ 100 ms | P-13 | `TestChangePropagation`, with poll 2 s, so only the message can explain it | p99 7 to 14 ms; one run under load 76 ms |
+| Change propagation with Valkey p99 ≤ 100 ms | P-13 | `TestChangePropagation`, with poll 2 s, so only the message can explain it | p50 1.3 ms, p99 4 to 33 ms (host load 15 to 40) |
 | Change propagation without Valkey p99 ≤ `epoch_poll_interval` + 1 s | P-13 | same, Sentinel address that does not answer, poll 1 s | p99 about 1.0 s |
 | Job pick-up with Valkey p99 ≤ 1 s | P-14 | `TestJobPickup`, with `jobs.poll_interval` 5 s | p99 29 ms |
 | Job pick-up without Valkey p99 ≤ `poll_interval` + 1 s | P-14 | same, poll 1 s | p99 1.02 s |
+
+P-13 runs from the return of the writer's `COMMIT` ([Q-ARCH-220](../spec/architecture.md#q-arch-220--p-13-starts-its-clock-at-the-commit-and-the-per-change-integration-gate-stays)): the test registers an After hook before `Notify`, which stamps the commit and runs before the change is queued for publication. The writer's own statements and `COMMIT` are PostgreSQL latency (p99 up to 120 ms on a loaded host) and are not part of the bound. After the commit the path has no window or timer: `Changes` queues the message, one goroutine publishes it, and the subscriber's reader hands it to the cache. To find a delay, stamp the commit, the queue exit, the end of `PUBLISH` and the arrival at the subscriber; at present the `PUBLISH` round trip is the whole tail, and it follows the host's CPU scheduling.
 
 "Valkey unavailable" is a client with a Sentinel address that refuses connections: it constructs degraded and `Available()` is false, as at a real outage. With fewer than 100 samples p99 is the maximum.
 
