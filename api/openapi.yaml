@@ -5321,6 +5321,113 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
+  /api/v1/repositories/{key}/upstream-test:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        description: The repository key (R-REPO-002).
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+          x-trove-reserved-names: [batch-create, batch-update, batch-get, batch-delete, quick-setup]
+    post:
+      operationId: testRepositoryUpstream
+      tags: [repositories]
+      summary: Test the saved upstream of a remote repository
+      description: |
+        Sends one request to the format's probe resource (npm: `-/ping`; a format whose URL is its
+        service index: the URL itself) through the client, the egress address rules, the source
+        network and the credentials that real fetches use (R-REPO-024). The answer is always `200`:
+        an upstream that cannot be reached is a result with `reachable: false` and the reason in
+        `error` (`dns_error`, `connection_refused`, `timeout`, `tls_untrusted`, `egress_denied`,
+        `source_network_unavailable`, `upstream_secret_unavailable`, `too_many_redirects`,
+        `insecure_redirect`, `request_failed`). A repository in offline mode, and any repository while
+        `proxy.global_offline` is on, is not contacted (`offline`). The test reads and writes no
+        circuit state (R-REPO-029) and is answered by the replica that received it: with a
+        `sourceNetwork`, `sourceAddress` is the address that replica bound. A repository that is not
+        remote answers `400 not_applicable`.
+      x-trove-permission:
+        permission: repositories:write-config
+      responses:
+        "200":
+          description: The result of the probe.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpstreamTestResult"
+              example:
+                reachable: true
+                httpStatus: 200
+                authenticated: true
+                durationMs: 184
+                tls: {peerSubject: CN=registry.npmjs.org, notAfter: "2027-03-01T00:00:00Z"}
+                outboundProxy: null
+                sourceAddress: null
+                error: null
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/upstream-tests:
+    post:
+      operationId: testUpstream
+      tags: [repositories]
+      summary: Test an upstream configuration that is not saved
+      description: |
+        Probes a `remote` section like the one of a create, with the defaults of the format applied
+        and every rule of R-REPO-008 checked (`422` lists the violations). Secret values in the body
+        are used for this probe and stored nowhere; `{"set": true}` refers to a stored value and has
+        nothing to refer to here. The result is that of `testRepositoryUpstream`.
+      x-trove-permission:
+        permission: repositories:write-config
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpstreamTestRequest"
+            example:
+              format: npm
+              remote:
+                url: https://registry.npmjs.org/
+      responses:
+        "200":
+          description: The result of the probe.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpstreamTestResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
   # <<< M2 proxy
   #
   # >>> M2 virtual
@@ -7588,8 +7695,7 @@ components:
           type: object
           additionalProperties: true
         remote:
-          type: object
-          additionalProperties: true
+          $ref: "#/components/schemas/RemoteSettings"
         virtual:
           type: object
           additionalProperties: true
@@ -8198,6 +8304,287 @@ components:
             $ref: "#/components/schemas/CacheEntry"
         nextCursor:
           type: [string, "null"]
+    RemoteSettings:
+      type: object
+      additionalProperties: false
+      description: |
+        The `remote` section of a remote repository (R-REPO-024). Every member is returned, the
+        defaults of the format applied. Omitted members of a request take their defaults. The password
+        is a secret field: it is never returned (R-REPO-033).
+      properties:
+        url:
+          type: string
+          maxLength: 2048
+          description: |
+            The upstream base URL (NuGet: the service index URL): absolute `http` or `https`, without user
+            information and without a fragment. Stored normalized: scheme and host in lower case, the
+            default port removed, an empty path as `/`. Required unless the format proposes an upstream.
+            A plain `http` URL is saved with the warning `plain_http_upstream`.
+        extraHosts:
+          type: array
+          maxItems: 20
+          description: |
+            Further hosts that upstream metadata or redirects may point to (R-REPO-043). The format
+            proposes entries for its well-known upstream only.
+          items:
+            $ref: "#/components/schemas/RemoteExtraHost"
+        authMode:
+          type: string
+          enum: [none, basic, bearer]
+          default: none
+        username:
+          type: string
+          maxLength: 256
+          default: ""
+          description: Sent with `basic`; ignored with `bearer`. It must not contain a colon.
+        password:
+          oneOf:
+            - $ref: "#/components/schemas/SecretField"
+            - type: "null"
+          description: The password, or the token with `bearer`. Needed with `bearer`; `basic` needs a username or a password.
+        clientCertificate:
+          type: [string, "null"]
+          description: A named client certificate (R-REPO-034, P1). A value is refused with `not_applicable` until it is built.
+        headers:
+          type: array
+          maxItems: 32
+          description: Custom request headers (R-REPO-036, P1). A non-empty list is refused with `not_applicable` until it is built.
+          items:
+            type: object
+            additionalProperties: true
+        forwardAuthOnRedirect:
+          type: boolean
+          default: false
+          description: |
+            Also send the credentials to the other origins of a redirect chain (R-REPO-039). The first
+            request to a host that is neither the upstream nor an `extraHosts` entry with
+            `sendCredentials` never carries them.
+        outboundProxy:
+          type: object
+          additionalProperties: false
+          description: "`named` is refused with `not_applicable` until named proxies are built (R-REPO-037, P1)."
+          properties:
+            mode:
+              type: string
+              enum: [default, direct, named]
+              default: default
+            name:
+              type: string
+        connectTimeoutMs:
+          type: integer
+          minimum: 1000
+          maximum: 120000
+          default: 10000
+        readTimeoutMs:
+          type: integer
+          minimum: 1000
+          maximum: 600000
+          default: 15000
+        sourceNetwork:
+          type: [string, "null"]
+          description: |
+            An IPv4 or IPv6 CIDR prefix; each replica binds its upstream connections to the first of its
+            own interface addresses inside it (Q-REPO-9). Stored as the network. A prefix that holds a
+            single address is saved with the warning `source_network_single_address`; a value that is not
+            a prefix is `422 invalid_source_network`.
+        cacheFillAction:
+          type: string
+          enum: [read, deploy]
+          default: read
+        cache:
+          type: object
+          additionalProperties: false
+          properties:
+            storeArtifacts:
+              type: boolean
+              default: true
+              description: "`false` is pass-through (R-REPO-044, P1) and is refused with `not_applicable` until it is built."
+            metadataTtlSeconds:
+              type: integer
+              minimum: 0
+              maximum: 2592000
+              description: The format's default (npm 7200, NuGet 300).
+            metadataRefreshTimeoutSeconds:
+              type: integer
+              minimum: 1
+              maximum: 600
+              default: 60
+            notFoundTtlSeconds:
+              type: integer
+              minimum: 0
+              maximum: 86400
+              description: The format's default (npm and NuGet 1800).
+            maxStaleSeconds:
+              type: integer
+              minimum: 0
+              maximum: 31536000
+              default: 0
+            unusedRetentionHours:
+              type: integer
+              minimum: 0
+              maximum: 87600
+              default: 0
+              description: A value above 0 is refused with `not_applicable` until the cleanup is built (R-REPO-046, P1).
+        integrity:
+          type: object
+          additionalProperties: false
+          properties:
+            checksumPolicy:
+              type: string
+              enum: [verify-if-available, require, ignore, pass-through]
+              default: verify-if-available
+            blockUnexpectedContentTypes:
+              type: boolean
+              default: true
+            allowedContentTypes:
+              type: array
+              maxItems: 20
+              items:
+                type: string
+        availability:
+          type: object
+          additionalProperties: false
+          properties:
+            mode:
+              type: string
+              enum: [online, offline]
+              default: online
+            failureThreshold:
+              type: integer
+              minimum: 1
+              maximum: 100
+              default: 5
+            circuitOpenSeconds:
+              type: integer
+              minimum: 0
+              maximum: 86400
+              default: 300
+        limits:
+          type: object
+          additionalProperties: false
+          properties:
+            maxArtifactBytes:
+              type: [integer, "null"]
+              format: int64
+              minimum: 1
+              description: "`null` is the system value `proxy.max_artifact_bytes`."
+            maxMetadataBytes:
+              type: [integer, "null"]
+              format: int64
+              minimum: 1
+              description: "`null` is the system value `proxy.max_metadata_bytes`."
+            maxConcurrentFetches:
+              type: integer
+              minimum: 1
+              maximum: 4096
+              default: 64
+    RemoteExtraHost:
+      type: object
+      additionalProperties: false
+      required: [pattern]
+      properties:
+        pattern:
+          type: string
+          maxLength: 253
+          description: A host name pattern in lower case with the wildcards `*` and `?`, for example `*.nuget.org`. No port, no path.
+        sendCredentials:
+          type: boolean
+          default: false
+          description: Send the upstream credentials to hosts that match (R-REPO-033).
+    SecretField:
+      type: object
+      additionalProperties: false
+      description: |
+        A secret member of a document (R-REPO-033). A request sends `value`, which is sealed at once, or
+        `secretRef`, or `set: true`, which keeps the stored value; a document that was read can therefore
+        be sent back without blanking or leaking the secret. A read shows `{"set": true}` for a sealed
+        value and the reference itself for a reference. The value is never returned. `value` and
+        `secretRef` together, an empty value, a reference outside the rules of R-OPS-029 (a file directly
+        under `config_as_code.secrets_dir`; a variable named `TROVE_CAC_<NAME>`) and `set: false` are
+        `422 invalid_secret`.
+      properties:
+        value:
+          type: string
+          writeOnly: true
+          minLength: 1
+          maxLength: 8192
+        secretRef:
+          $ref: "#/components/schemas/SecretReference"
+        set:
+          type: boolean
+          enum: [true]
+    SecretReference:
+      type: object
+      additionalProperties: false
+      description: Exactly one of `file` and `env`.
+      properties:
+        file:
+          type: string
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$"
+        env:
+          type: string
+          pattern: "^TROVE_CAC_[A-Z0-9_]{1,200}$"
+    UpstreamTestRequest:
+      type: object
+      additionalProperties: false
+      required: [format, remote]
+      properties:
+        format:
+          type: string
+          description: The format of the repository the section is for; its defaults and probe resource apply.
+        remote:
+          $ref: "#/components/schemas/RemoteSettings"
+    UpstreamTestResult:
+      type: object
+      required: [reachable, httpStatus, authenticated, durationMs, tls, outboundProxy, sourceAddress, error]
+      properties:
+        reachable:
+          type: boolean
+          description: The upstream answered with an HTTP response, whatever its status.
+        httpStatus:
+          type: [integer, "null"]
+        authenticated:
+          type: [boolean, "null"]
+          description: "`false` for `401` and `403`; `null` when there was no response."
+        durationMs:
+          type: integer
+          format: int64
+        tls:
+          type: [object, "null"]
+          description: The leaf certificate of the host that answered; `null` over plain `http`.
+          required: [peerSubject, notAfter]
+          properties:
+            peerSubject:
+              type: string
+            notAfter:
+              type: string
+              format: date-time
+        outboundProxy:
+          type: [string, "null"]
+          description: The named proxy the request went through; `null` until named proxies exist.
+        sourceAddress:
+          type: [string, "null"]
+          description: The local address the probing replica bound, when the repository has a `sourceNetwork`.
+        error:
+          type: [object, "null"]
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum:
+                - dns_error
+                - connection_refused
+                - timeout
+                - tls_untrusted
+                - egress_denied
+                - source_network_unavailable
+                - upstream_secret_unavailable
+                - offline
+                - too_many_redirects
+                - insecure_redirect
+                - request_failed
+            message:
+              type: string
     # <<< M2 proxy
     #
     # >>> M2 virtual

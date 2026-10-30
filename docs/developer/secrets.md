@@ -83,6 +83,15 @@ the composition root calls before it serves.
 5. Add the table to the backup registry with the class that matches (the value is sealed, so `Data` is fine).
 6. Hold the plaintext in an `observability.Secret` in memory and never log it.
 
+## Columns in use
+
+| Column | Primary key | Owner | Re-sealing |
+|---|---|---|---|
+| `repository_secrets.sealed` ([secret_columns.go](../../internal/repository/secret_columns.go)) | `repo_id,field` | the remote settings of a repository: the password of the upstream credential (R-REPO-033) | `repository.ResealSecrets` ([secrets_store.go](../../internal/repository/secrets_store.go)): the walk over the column in batches of one transaction each; a value that does not open is counted as failed and left alone. The task handler `secrets-reencrypt` in [wire_api.go](../../internal/app/wire_api.go) still refuses a registered column and has to call it |
+
+The row key is `secrets.Row(<repository id as text>, <JSON pointer of the field>)`. `repository.SealSecret` and
+`repository.OpenSecret` are the only callers of `Seal` and `Open` for this column, so the row key is built in one place.
+
 ## Rotation
 
 Every replica must be able to open with a key before any replica seals with it. Two roll-outs, then

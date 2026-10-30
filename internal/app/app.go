@@ -335,6 +335,14 @@ func (a *App) bootstrap(ctx context.Context) error {
 	}
 	// <<< M1 repository
 	//
+	// >>> M2 proxy
+	if infra && a.sub.MainPool {
+		if err := a.wireProxy(); err != nil {
+			return err
+		}
+	}
+	// <<< M2 proxy
+	//
 	// >>> M1 login
 	// The session store comes before identity, whose stage validates the session
 	// cookie with it; the OIDC and break-glass login comes after identity, whose

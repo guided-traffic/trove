@@ -86,6 +86,11 @@ type Facts struct {
 	// may fetch from by default (R-REPO-024).
 	DefaultUpstreamURL string
 	DefaultExtraHosts  []string
+	// ProbePath is the resource the upstream test of a remote repository requests
+	// (R-REPO-024), relative to the upstream URL: "-/ping" for npm. Empty: the
+	// upstream URL itself, which is the probe for a format whose URL names the
+	// service index.
+	ProbePath string
 	// DefaultMetadataTTLSeconds and DefaultNotFoundTTLSeconds are the format's
 	// cache periods of a remote repository (R-REPO-024). Nil: the period does not
 	// exist for the format.

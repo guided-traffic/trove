@@ -12,7 +12,7 @@ specified in [operations-and-observability.md](../spec/operations-and-observabil
 |---|---|
 | [config.go](../../internal/config/config.go) | the root struct `Config`, one field per section; the `go:generate` line |
 | [process.go](../../internal/config/process.go), [server.go](../../internal/config/server.go) with [tls.go](../../internal/config/tls.go) (`server.tls`, `server.ops_tls`), [database.go](../../internal/config/database.go), [migrate.go](../../internal/config/migrate.go), [runtime.go](../../internal/config/runtime.go), [valkey.go](../../internal/config/valkey.go), [storage.go](../../internal/config/storage.go), [jobs.go](../../internal/config/jobs.go), [cluster.go](../../internal/config/cluster.go), [cache.go](../../internal/config/cache.go), [secrets.go](../../internal/config/secrets.go), [system.go](../../internal/config/system.go), [health.go](../../internal/config/health.go), [log.go](../../internal/config/log.go), [metrics.go](../../internal/config/metrics.go), [trace.go](../../internal/config/trace.go), [audit.go](../../internal/config/audit.go), [maintenance.go](../../internal/config/maintenance.go), [outbound.go](../../internal/config/outbound.go) | one section each (`Process`, `Server`, `Database`, `Migrate`, `Runtime`, `Valkey`, `Storage`, `Jobs`, `Cluster`, `Cache`, `Secrets`, `System`, `Health`, `Log`, `Metrics`, `Tracing`, `Audit`, `Maintenance`, `Proxy` with `Outbound`); the owner of a subsystem edits only its file |
-| [outbound.go](../../internal/config/outbound.go), [npm.go](../../internal/config/npm.go) | the sections of M2: `proxy.*` (inside the `>>> M2 proxy` markers of `Proxy`) and `npm`, see [M2 keys](#m2-keys) |
+| [outbound.go](../../internal/config/outbound.go), [npm.go](../../internal/config/npm.go), [config_as_code.go](../../internal/config/config_as_code.go) | the sections of M2: `proxy.*` (inside the `>>> M2 proxy` markers of `Proxy`), `npm` and `config_as_code.secrets_dir`, see [M2 keys](#m2-keys) |
 | [schema.go](../../internal/config/schema.go) | `Describe`: flattens the tree into `Key`s, checks tags, derives environment names |
 | [load.go](../../internal/config/load.go) | `Load`: defaults, file, environment, flags; strict matching; secret resolution; validation |
 | [m1.go](../../internal/config/m1.go), [login.go](../../internal/config/login.go) | the sections of the M1 areas; in `auth` the login keys `auth.oidc`, `auth.login_page`, `auth.sessions`, `auth.break_glass` ([login.md](login.md#configuration)). `auth.oidc.providers` is a map of nested structs whose keys left out are filled by `AuthOIDCProvider.Defaulted`, not by `default` tags |
@@ -23,7 +23,7 @@ specified in [operations-and-observability.md](../spec/operations-and-observabil
 
 Sections that exist in the specification but have no owner yet are not in the tree: `backup`, `retention`,
 `ci`, `proxy` (apart from the keys listed under [M2 keys](#m2-keys)), `nuget`, `api`, `ui`, `support`,
-`config_as_code`, `webhooks`, `mail`, `content_types`. Strict validation rejects a file that sets them
+`config_as_code` (apart from `secrets_dir`), `webhooks`, `mail`, `content_types`. Strict validation rejects a file that sets them
 until their owner adds the section. The chart must render only keys the tree knows.
 
 ## Tags
@@ -188,6 +188,8 @@ npm:
     retry_window: 10m                # default; 0s to 24h, 0s turns the acknowledged retry off
   abbreviated_time: true             # default (R-NPM-011)
   document_max_age: 0s               # default; 0s to 24h (R-NPM-013)
+config_as_code:
+  secrets_dir: /etc/trove/cac-secrets  # default; where a secretRef {"file": name} is read (R-REPO-033, R-OPS-029)
 ```
 
 The three keys that carry a unit in their name (`lock_poll_interval_ms`, `fetch_wait_timeout_seconds`,
@@ -196,5 +198,7 @@ The three keys that carry a unit in their name (`lock_poll_interval_ms`, `fetch_
 `time.Duration`, every size a `ByteSize` (a plain integer is bytes). Not in the tree yet, because their requirements are
 P1 or later: `npm.trusted_publishing` and the `npm.audit` forwarding. `proxy.global_offline` is only the configuration side of
 R-REPO-031; the runtime switch and its table (`proxy_offline_switch`) are not built.
+`config_as_code` has only `secrets_dir` so far: the secret references of remote repositories need it, and the keys of the
+document mechanism (`files`, `mode`, `lock_managed_objects`, R-OPS-029, P1) arrive with it.
 The unit tests are in [m2_test.go](../../internal/config/m2_test.go).
 

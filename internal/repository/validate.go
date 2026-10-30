@@ -112,6 +112,9 @@ func validateSections(v *validation, info catalog.Entry, d *Document) {
 			na("/priorityMember", fmt.Sprintf("the %s format has no priority members", info.ID))
 		}
 	}
+	if d.Class == Remote {
+		validateRemote(v, info, d)
+	}
 	if d.Local != nil {
 		validateLocal(v, info, d, na)
 	}

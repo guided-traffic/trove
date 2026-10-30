@@ -71,6 +71,14 @@ func toRepository(r q.Repository, cat *catalog.Registry) (Repository, error) {
 		return out, err
 	}
 	out.adm = adm
+	if Class(r.Class) == Remote && len(s.Remote) > 0 {
+		rs, err := parseStoredRemote(s.Remote)
+		if err != nil {
+			out.Disabled = true
+			return out, err
+		}
+		out.remote = rs
+	}
 	return out, nil
 }
 
@@ -81,6 +89,16 @@ func toDocument(r q.Repository, cat *catalog.Registry) (Document, error) {
 		return Document{}, err
 	}
 	d.normalize()
+	if Class(r.Class) == Remote && len(d.Remote) > 0 {
+		// PostgreSQL keeps the section as jsonb, which has its own member order and
+		// spacing: render it from the settings, as the validation does, so that a
+		// document that is read and sent back is byte-equal to what is stored.
+		if rs, err := parseStoredRemote(d.Remote); err == nil {
+			if b, err := json.Marshal(rs); err == nil {
+				d.Remote = b
+			}
+		}
+	}
 	if info, ok := cat.Lookup(r.Format); ok {
 		d.Layout = info.Layout
 	}

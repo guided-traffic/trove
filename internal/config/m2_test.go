@@ -162,6 +162,19 @@ func TestNPMRanges(t *testing.T) {
 	}
 }
 
+func TestConfigAsCodeSecretsDir(t *testing.T) {
+	t.Run("R-REPO-033 config_as_code.secrets_dir default and environment name", func(t *testing.T) {
+		l := mustLoad(t, Options{Environ: servableEnv(), Command: CommandServe})
+		if got := l.Config.ConfigAsCode.SecretsDir; got != "/etc/trove/cac-secrets" {
+			t.Errorf("secrets_dir = %q", got)
+		}
+		l = mustLoad(t, Options{Environ: servableEnv("TROVE_CONFIG_AS_CODE_SECRETS_DIR=/run/cac"), Command: CommandServe})
+		if got := l.Config.ConfigAsCode.SecretsDir; got != "/run/cac" || l.Sources["config_as_code.secrets_dir"].Kind != "env" {
+			t.Errorf("secrets_dir = %q, source = %+v", got, l.Sources["config_as_code.secrets_dir"])
+		}
+	})
+}
+
 func TestM2KeysHaveEnvironmentNames(t *testing.T) {
 	t.Run("R-ARCH-020 an M2 key is set by its environment variable", func(t *testing.T) {
 		l := mustLoad(t, Options{Environ: servableEnv("TROVE_PROXY_MAX_REDIRECTS=7", "TROVE_PROXY_CLAIMS_REMOTE_REFUSAL=false", "TROVE_NPM_PUBLISH_MAX_TAR_ENTRIES=5"), Command: CommandServe})

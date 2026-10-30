@@ -246,16 +246,16 @@ func (e EndpointConfigurationSurface) Valid() bool {
 
 // Defines values for EndpointConfigurationWildcardRoot.
 const (
-	Label EndpointConfigurationWildcardRoot = "label"
-	None  EndpointConfigurationWildcardRoot = "none"
+	EndpointConfigurationWildcardRootLabel EndpointConfigurationWildcardRoot = "label"
+	EndpointConfigurationWildcardRootNone  EndpointConfigurationWildcardRoot = "none"
 )
 
 // Valid indicates whether the value is a known member of the EndpointConfigurationWildcardRoot enum.
 func (e EndpointConfigurationWildcardRoot) Valid() bool {
 	switch e {
-	case Label:
+	case EndpointConfigurationWildcardRootLabel:
 		return true
-	case None:
+	case EndpointConfigurationWildcardRootNone:
 		return true
 	default:
 		return false
@@ -544,6 +544,108 @@ func (e PermissionPolicyInputResourceType) Valid() bool {
 	}
 }
 
+// Defines values for RemoteSettingsAuthMode.
+const (
+	RemoteSettingsAuthModeBasic  RemoteSettingsAuthMode = "basic"
+	RemoteSettingsAuthModeBearer RemoteSettingsAuthMode = "bearer"
+	RemoteSettingsAuthModeNone   RemoteSettingsAuthMode = "none"
+)
+
+// Valid indicates whether the value is a known member of the RemoteSettingsAuthMode enum.
+func (e RemoteSettingsAuthMode) Valid() bool {
+	switch e {
+	case RemoteSettingsAuthModeBasic:
+		return true
+	case RemoteSettingsAuthModeBearer:
+		return true
+	case RemoteSettingsAuthModeNone:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RemoteSettingsAvailabilityMode.
+const (
+	RemoteSettingsAvailabilityModeOffline RemoteSettingsAvailabilityMode = "offline"
+	RemoteSettingsAvailabilityModeOnline  RemoteSettingsAvailabilityMode = "online"
+)
+
+// Valid indicates whether the value is a known member of the RemoteSettingsAvailabilityMode enum.
+func (e RemoteSettingsAvailabilityMode) Valid() bool {
+	switch e {
+	case RemoteSettingsAvailabilityModeOffline:
+		return true
+	case RemoteSettingsAvailabilityModeOnline:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RemoteSettingsCacheFillAction.
+const (
+	RemoteSettingsCacheFillActionDeploy RemoteSettingsCacheFillAction = "deploy"
+	RemoteSettingsCacheFillActionRead   RemoteSettingsCacheFillAction = "read"
+)
+
+// Valid indicates whether the value is a known member of the RemoteSettingsCacheFillAction enum.
+func (e RemoteSettingsCacheFillAction) Valid() bool {
+	switch e {
+	case RemoteSettingsCacheFillActionDeploy:
+		return true
+	case RemoteSettingsCacheFillActionRead:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RemoteSettingsIntegrityChecksumPolicy.
+const (
+	Ignore            RemoteSettingsIntegrityChecksumPolicy = "ignore"
+	PassThrough       RemoteSettingsIntegrityChecksumPolicy = "pass-through"
+	Require           RemoteSettingsIntegrityChecksumPolicy = "require"
+	VerifyIfAvailable RemoteSettingsIntegrityChecksumPolicy = "verify-if-available"
+)
+
+// Valid indicates whether the value is a known member of the RemoteSettingsIntegrityChecksumPolicy enum.
+func (e RemoteSettingsIntegrityChecksumPolicy) Valid() bool {
+	switch e {
+	case Ignore:
+		return true
+	case PassThrough:
+		return true
+	case Require:
+		return true
+	case VerifyIfAvailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RemoteSettingsOutboundProxyMode.
+const (
+	Default RemoteSettingsOutboundProxyMode = "default"
+	Direct  RemoteSettingsOutboundProxyMode = "direct"
+	Named   RemoteSettingsOutboundProxyMode = "named"
+)
+
+// Valid indicates whether the value is a known member of the RemoteSettingsOutboundProxyMode enum.
+func (e RemoteSettingsOutboundProxyMode) Valid() bool {
+	switch e {
+	case Default:
+		return true
+	case Direct:
+		return true
+	case Named:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ReplicaRoles.
 const (
 	ReplicaRolesAll    ReplicaRoles = "all"
@@ -736,6 +838,21 @@ func (e RoleName) Valid() bool {
 	}
 }
 
+// Defines values for SecretFieldSet.
+const (
+	SecretFieldSetTrue SecretFieldSet = true
+)
+
+// Valid indicates whether the value is a known member of the SecretFieldSet enum.
+func (e SecretFieldSet) Valid() bool {
+	switch e {
+	case SecretFieldSetTrue:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ServiceAccountStatus.
 const (
 	ServiceAccountStatusActive   ServiceAccountStatus = "active"
@@ -916,6 +1033,51 @@ func (e TokenScopeGrantActions) Valid() bool {
 	case TokenScopeGrantActionsOverwrite:
 		return true
 	case TokenScopeGrantActionsRead:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UpstreamTestResultErrorCode.
+const (
+	UpstreamTestResultErrorCodeConnectionRefused         UpstreamTestResultErrorCode = "connection_refused"
+	UpstreamTestResultErrorCodeDnsError                  UpstreamTestResultErrorCode = "dns_error"
+	UpstreamTestResultErrorCodeEgressDenied              UpstreamTestResultErrorCode = "egress_denied"
+	UpstreamTestResultErrorCodeInsecureRedirect          UpstreamTestResultErrorCode = "insecure_redirect"
+	UpstreamTestResultErrorCodeOffline                   UpstreamTestResultErrorCode = "offline"
+	UpstreamTestResultErrorCodeRequestFailed             UpstreamTestResultErrorCode = "request_failed"
+	UpstreamTestResultErrorCodeSourceNetworkUnavailable  UpstreamTestResultErrorCode = "source_network_unavailable"
+	UpstreamTestResultErrorCodeTimeout                   UpstreamTestResultErrorCode = "timeout"
+	UpstreamTestResultErrorCodeTlsUntrusted              UpstreamTestResultErrorCode = "tls_untrusted"
+	UpstreamTestResultErrorCodeTooManyRedirects          UpstreamTestResultErrorCode = "too_many_redirects"
+	UpstreamTestResultErrorCodeUpstreamSecretUnavailable UpstreamTestResultErrorCode = "upstream_secret_unavailable"
+)
+
+// Valid indicates whether the value is a known member of the UpstreamTestResultErrorCode enum.
+func (e UpstreamTestResultErrorCode) Valid() bool {
+	switch e {
+	case UpstreamTestResultErrorCodeConnectionRefused:
+		return true
+	case UpstreamTestResultErrorCodeDnsError:
+		return true
+	case UpstreamTestResultErrorCodeEgressDenied:
+		return true
+	case UpstreamTestResultErrorCodeInsecureRedirect:
+		return true
+	case UpstreamTestResultErrorCodeOffline:
+		return true
+	case UpstreamTestResultErrorCodeRequestFailed:
+		return true
+	case UpstreamTestResultErrorCodeSourceNetworkUnavailable:
+		return true
+	case UpstreamTestResultErrorCodeTimeout:
+		return true
+	case UpstreamTestResultErrorCodeTlsUntrusted:
+		return true
+	case UpstreamTestResultErrorCodeTooManyRedirects:
+		return true
+	case UpstreamTestResultErrorCodeUpstreamSecretUnavailable:
 		return true
 	default:
 		return false
@@ -2386,6 +2548,113 @@ type ProblemType struct {
 	Title       string `json:"title"`
 }
 
+// RemoteExtraHost defines model for RemoteExtraHost.
+type RemoteExtraHost struct {
+	// Pattern A host name pattern in lower case with the wildcards `*` and `?`, for example `*.nuget.org`. No port, no path.
+	Pattern string `json:"pattern"`
+
+	// SendCredentials Send the upstream credentials to hosts that match (R-REPO-033).
+	SendCredentials *bool `json:"sendCredentials,omitempty"`
+}
+
+// RemoteSettings The `remote` section of a remote repository (R-REPO-024). Every member is returned, the
+// defaults of the format applied. Omitted members of a request take their defaults. The password
+// is a secret field: it is never returned (R-REPO-033).
+type RemoteSettings struct {
+	AuthMode     *RemoteSettingsAuthMode `json:"authMode,omitempty"`
+	Availability *struct {
+		CircuitOpenSeconds *int                            `json:"circuitOpenSeconds,omitempty"`
+		FailureThreshold   *int                            `json:"failureThreshold,omitempty"`
+		Mode               *RemoteSettingsAvailabilityMode `json:"mode,omitempty"`
+	} `json:"availability,omitempty"`
+	Cache *struct {
+		MaxStaleSeconds               *int `json:"maxStaleSeconds,omitempty"`
+		MetadataRefreshTimeoutSeconds *int `json:"metadataRefreshTimeoutSeconds,omitempty"`
+
+		// MetadataTtlSeconds The format's default (npm 7200, NuGet 300).
+		MetadataTtlSeconds *int `json:"metadataTtlSeconds,omitempty"`
+
+		// NotFoundTtlSeconds The format's default (npm and NuGet 1800).
+		NotFoundTtlSeconds *int `json:"notFoundTtlSeconds,omitempty"`
+
+		// StoreArtifacts `false` is pass-through (R-REPO-044, P1) and is refused with `not_applicable` until it is built.
+		StoreArtifacts *bool `json:"storeArtifacts,omitempty"`
+
+		// UnusedRetentionHours A value above 0 is refused with `not_applicable` until the cleanup is built (R-REPO-046, P1).
+		UnusedRetentionHours *int `json:"unusedRetentionHours,omitempty"`
+	} `json:"cache,omitempty"`
+	CacheFillAction *RemoteSettingsCacheFillAction `json:"cacheFillAction,omitempty"`
+
+	// ClientCertificate A named client certificate (R-REPO-034, P1). A value is refused with `not_applicable` until it is built.
+	ClientCertificate *string `json:"clientCertificate,omitempty"`
+	ConnectTimeoutMs  *int    `json:"connectTimeoutMs,omitempty"`
+
+	// ExtraHosts Further hosts that upstream metadata or redirects may point to (R-REPO-043). The format
+	// proposes entries for its well-known upstream only.
+	ExtraHosts *[]RemoteExtraHost `json:"extraHosts,omitempty"`
+
+	// ForwardAuthOnRedirect Also send the credentials to the other origins of a redirect chain (R-REPO-039). The first
+	// request to a host that is neither the upstream nor an `extraHosts` entry with
+	// `sendCredentials` never carries them.
+	ForwardAuthOnRedirect *bool `json:"forwardAuthOnRedirect,omitempty"`
+
+	// Headers Custom request headers (R-REPO-036, P1). A non-empty list is refused with `not_applicable` until it is built.
+	Headers   *[]map[string]interface{} `json:"headers,omitempty"`
+	Integrity *struct {
+		AllowedContentTypes         *[]string                              `json:"allowedContentTypes,omitempty"`
+		BlockUnexpectedContentTypes *bool                                  `json:"blockUnexpectedContentTypes,omitempty"`
+		ChecksumPolicy              *RemoteSettingsIntegrityChecksumPolicy `json:"checksumPolicy,omitempty"`
+	} `json:"integrity,omitempty"`
+	Limits *struct {
+		// MaxArtifactBytes `null` is the system value `proxy.max_artifact_bytes`.
+		MaxArtifactBytes     *int64 `json:"maxArtifactBytes,omitempty"`
+		MaxConcurrentFetches *int   `json:"maxConcurrentFetches,omitempty"`
+
+		// MaxMetadataBytes `null` is the system value `proxy.max_metadata_bytes`.
+		MaxMetadataBytes *int64 `json:"maxMetadataBytes,omitempty"`
+	} `json:"limits,omitempty"`
+
+	// OutboundProxy `named` is refused with `not_applicable` until named proxies are built (R-REPO-037, P1).
+	OutboundProxy *struct {
+		Mode *RemoteSettingsOutboundProxyMode `json:"mode,omitempty"`
+		Name *string                          `json:"name,omitempty"`
+	} `json:"outboundProxy,omitempty"`
+
+	// Password The password, or the token with `bearer`. Needed with `bearer`; `basic` needs a username or a password.
+	Password      *SecretField `json:"password,omitempty"`
+	ReadTimeoutMs *int         `json:"readTimeoutMs,omitempty"`
+
+	// SourceNetwork An IPv4 or IPv6 CIDR prefix; each replica binds its upstream connections to the first of its
+	// own interface addresses inside it (Q-REPO-9). Stored as the network. A prefix that holds a
+	// single address is saved with the warning `source_network_single_address`; a value that is not
+	// a prefix is `422 invalid_source_network`.
+	SourceNetwork *string `json:"sourceNetwork,omitempty"`
+
+	// Url The upstream base URL (NuGet: the service index URL): absolute `http` or `https`, without user
+	// information and without a fragment. Stored normalized: scheme and host in lower case, the
+	// default port removed, an empty path as `/`. Required unless the format proposes an upstream.
+	// A plain `http` URL is saved with the warning `plain_http_upstream`.
+	Url *string `json:"url,omitempty"`
+
+	// Username Sent with `basic`; ignored with `bearer`. It must not contain a colon.
+	Username *string `json:"username,omitempty"`
+}
+
+// RemoteSettingsAuthMode defines model for RemoteSettings.AuthMode.
+type RemoteSettingsAuthMode string
+
+// RemoteSettingsAvailabilityMode defines model for RemoteSettings.Availability.Mode.
+type RemoteSettingsAvailabilityMode string
+
+// RemoteSettingsCacheFillAction defines model for RemoteSettings.CacheFillAction.
+type RemoteSettingsCacheFillAction string
+
+// RemoteSettingsIntegrityChecksumPolicy defines model for RemoteSettings.Integrity.ChecksumPolicy.
+type RemoteSettingsIntegrityChecksumPolicy string
+
+// RemoteSettingsOutboundProxyMode defines model for RemoteSettings.OutboundProxy.Mode.
+type RemoteSettingsOutboundProxyMode string
+
 // Replica defines model for Replica.
 type Replica struct {
 	// Checks The last result of every readiness check, gating and reported.
@@ -2466,12 +2735,16 @@ type Repository struct {
 	Key string `json:"key"`
 
 	// LastActivityAt The latest upload or download as the replicas flushed it (at most a minute late).
-	LastActivityAt        *time.Time              `json:"lastActivityAt,omitempty"`
-	Layout                *string                 `json:"layout,omitempty"`
-	Lifecycle             *RepositoryLifecycle    `json:"lifecycle,omitempty"`
-	Local                 *map[string]interface{} `json:"local,omitempty"`
-	PriorityMember        *bool                   `json:"priorityMember,omitempty"`
-	Remote                *map[string]interface{} `json:"remote,omitempty"`
+	LastActivityAt *time.Time              `json:"lastActivityAt,omitempty"`
+	Layout         *string                 `json:"layout,omitempty"`
+	Lifecycle      *RepositoryLifecycle    `json:"lifecycle,omitempty"`
+	Local          *map[string]interface{} `json:"local,omitempty"`
+	PriorityMember *bool                   `json:"priorityMember,omitempty"`
+
+	// Remote The `remote` section of a remote repository (R-REPO-024). Every member is returned, the
+	// defaults of the format applied. Omitted members of a request take their defaults. The password
+	// is a secret field: it is never returned (R-REPO-033).
+	Remote                *RemoteSettings         `json:"remote,omitempty"`
 	RequireAuthentication *bool                   `json:"requireAuthentication,omitempty"`
 	Storage               *map[string]interface{} `json:"storage,omitempty"`
 	UpdatedAt             *time.Time              `json:"updatedAt,omitempty"`
@@ -2626,6 +2899,29 @@ type ScopeSummary struct {
 	// Inherit The credential has no repository ceiling.
 	Inherit bool     `json:"inherit"`
 	System  []string `json:"system"`
+}
+
+// SecretField A secret member of a document (R-REPO-033). A request sends `value`, which is sealed at once, or
+// `secretRef`, or `set: true`, which keeps the stored value; a document that was read can therefore
+// be sent back without blanking or leaking the secret. A read shows `{"set": true}` for a sealed
+// value and the reference itself for a reference. The value is never returned. `value` and
+// `secretRef` together, an empty value, a reference outside the rules of R-OPS-029 (a file directly
+// under `config_as_code.secrets_dir`; a variable named `TROVE_CAC_<NAME>`) and `set: false` are
+// `422 invalid_secret`.
+type SecretField struct {
+	// SecretRef Exactly one of `file` and `env`.
+	SecretRef *SecretReference `json:"secretRef,omitempty"`
+	Set       *SecretFieldSet  `json:"set,omitempty"`
+	Value     *string          `json:"value,omitempty"`
+}
+
+// SecretFieldSet defines model for SecretField.Set.
+type SecretFieldSet bool
+
+// SecretReference Exactly one of `file` and `env`.
+type SecretReference struct {
+	Env  *string `json:"env,omitempty"`
+	File *string `json:"file,omitempty"`
 }
 
 // ServiceAccount A service account (R-AUTH-020).
@@ -2893,6 +3189,47 @@ type TokenScopePatterns struct {
 	Exclude *[]string `json:"exclude,omitempty"`
 	Include *[]string `json:"include,omitempty"`
 }
+
+// UpstreamTestRequest defines model for UpstreamTestRequest.
+type UpstreamTestRequest struct {
+	// Format The format of the repository the section is for; its defaults and probe resource apply.
+	Format string `json:"format"`
+
+	// Remote The `remote` section of a remote repository (R-REPO-024). Every member is returned, the
+	// defaults of the format applied. Omitted members of a request take their defaults. The password
+	// is a secret field: it is never returned (R-REPO-033).
+	Remote RemoteSettings `json:"remote"`
+}
+
+// UpstreamTestResult defines model for UpstreamTestResult.
+type UpstreamTestResult struct {
+	// Authenticated `false` for `401` and `403`; `null` when there was no response.
+	Authenticated *bool `json:"authenticated"`
+	DurationMs    int64 `json:"durationMs"`
+	Error         *struct {
+		Code    UpstreamTestResultErrorCode `json:"code"`
+		Message string                      `json:"message"`
+	} `json:"error"`
+	HttpStatus *int `json:"httpStatus"`
+
+	// OutboundProxy The named proxy the request went through; `null` until named proxies exist.
+	OutboundProxy *string `json:"outboundProxy"`
+
+	// Reachable The upstream answered with an HTTP response, whatever its status.
+	Reachable bool `json:"reachable"`
+
+	// SourceAddress The local address the probing replica bound, when the repository has a `sourceNetwork`.
+	SourceAddress *string `json:"sourceAddress"`
+
+	// Tls The leaf certificate of the host that answered; `null` over plain `http`.
+	Tls *struct {
+		NotAfter    time.Time `json:"notAfter"`
+		PeerSubject string    `json:"peerSubject"`
+	} `json:"tls"`
+}
+
+// UpstreamTestResultErrorCode defines model for UpstreamTestResult.Error.Code.
+type UpstreamTestResultErrorCode string
 
 // User A user (R-AUTH-016). `isAdmin`, `adminVia` and `lockedUntil` are derived and read only.
 type User struct {
@@ -3752,6 +4089,9 @@ type RevokeTokenByValueJSONRequestBody = RevokeByValueRequest
 // RotateTokenJSONRequestBody defines body for RotateToken for application/json ContentType.
 type RotateTokenJSONRequestBody = RotateRequest
 
+// TestUpstreamJSONRequestBody defines body for TestUpstream for application/json ContentType.
+type TestUpstreamJSONRequestBody = UpstreamTestRequest
+
 // CreateUserJSONRequestBody defines body for CreateUser for application/json ContentType.
 type CreateUserJSONRequestBody = NewUser
 
@@ -4013,6 +4353,9 @@ type ServerInterface interface {
 	// ReplaceRepository Replace a repository configuration
 	// (PUT /api/v1/repositories/{key})
 	ReplaceRepository(w http.ResponseWriter, r *http.Request, key string, params ReplaceRepositoryParams)
+	// TestRepositoryUpstream Test the saved upstream of a remote repository
+	// (POST /api/v1/repositories/{key}/upstream-test)
+	TestRepositoryUpstream(w http.ResponseWriter, r *http.Request, key string)
 	// ListCacheEntries List the cache entries of a remote repository
 	// (GET /api/v1/repositories/{repoKey}/cache/entries)
 	ListCacheEntries(w http.ResponseWriter, r *http.Request, repoKey string, params ListCacheEntriesParams)
@@ -4133,6 +4476,9 @@ type ServerInterface interface {
 	// RotateToken Rotate a token
 	// (POST /api/v1/tokens/{id}/rotate)
 	RotateToken(w http.ResponseWriter, r *http.Request, id string, params RotateTokenParams)
+	// TestUpstream Test an upstream configuration that is not saved
+	// (POST /api/v1/upstream-tests)
+	TestUpstream(w http.ResponseWriter, r *http.Request)
 	// ListUsers List users
 	// (GET /api/v1/users)
 	ListUsers(w http.ResponseWriter, r *http.Request, params ListUsersParams)
@@ -6281,6 +6627,32 @@ func (siw *ServerInterfaceWrapper) ReplaceRepository(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// TestRepositoryUpstream operation middleware
+func (siw *ServerInterfaceWrapper) TestRepositoryUpstream(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "key" -------------
+	var key string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TestRepositoryUpstream(w, r, key)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListCacheEntries operation middleware
 func (siw *ServerInterfaceWrapper) ListCacheEntries(w http.ResponseWriter, r *http.Request) {
 
@@ -7860,6 +8232,20 @@ func (siw *ServerInterfaceWrapper) RotateToken(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// TestUpstream operation middleware
+func (siw *ServerInterfaceWrapper) TestUpstream(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TestUpstream(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListUsers operation middleware
 func (siw *ServerInterfaceWrapper) ListUsers(w http.ResponseWriter, r *http.Request) {
 
@@ -8743,6 +9129,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/endpoints/{endpoint}/check-exposure", wrapper.CheckExposure)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/cache/invalidate", wrapper.InvalidateRepositoryCache)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/cache/entries", wrapper.ListCacheEntries)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories/{key}/upstream-test", wrapper.TestRepositoryUpstream)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/upstream-tests", wrapper.TestUpstream)
 
 	return m
 }

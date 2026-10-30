@@ -69,6 +69,8 @@ type Repository struct {
 	// adm is the compiled include and exclude lists of Config. The snapshot and
 	// the store fill it; a Repository built by hand admits everything.
 	adm *Admission
+	// remote is the parsed remote section of a remote repository (Remote).
+	remote *RemoteSettings
 }
 
 // Admits reports whether a canonical path is admitted by the repository's

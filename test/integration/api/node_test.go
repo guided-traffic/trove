@@ -80,6 +80,9 @@ type nodeOpts struct {
 	// deadValkey gives the replica a Valkey client that never connects (a Sentinel
 	// that does not answer, Q-HA-13).
 	deadValkey bool
+	// repos builds the services of the repository operations once the replica's
+	// database exists; nil serves none (those operations answer 503).
+	repos func(n *node) v1.RepositoryServices
 }
 
 // node is one replica: pools of its own, a job registry and queue, and for the
@@ -288,9 +291,13 @@ func (n *node) serve(o nodeOpts, ring *secrets.KeyRing) {
 		}},
 		KeyRing: ring, Sealed: listq.SealedCounter{DB: n.db.Main()}, Rings: ringSource{n},
 	}
+	var repos v1.RepositoryServices
+	if o.repos != nil {
+		repos = o.repos(n)
+	}
 	n.api = v1.New(v1.Options{
 		Document: doc, Identity: v1.Identity{Replica: n.name, Role: n.role}, Ready: func() bool { return true },
-		Access: testAccess{}, Replicas: replicaLister{n}, Facts: noFacts{}, API: svc,
+		Access: testAccess{}, Replicas: replicaLister{n}, Facts: noFacts{}, API: svc, Repositories: repos,
 	})
 	router := httpserver.NewClientRouter()
 	n.api.Register(router)

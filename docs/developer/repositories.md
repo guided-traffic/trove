@@ -9,8 +9,9 @@ and the first format, [formats/generic.md](../spec/formats/generic.md)), the sta
 over the functions below, in [repositories_api.go](../../internal/api/v1/repositories_api.go) (see "HTTP operations"); the
 `x-trove-permission` declaration, the ETag/`If-Match` headers, the cursor and the idempotency key are the API layer's, everything
 else is decided in the domain.
-Milestone M1 implements the local class of the generic format only; remote and virtual repositories are specified
-(R-REPO-017 to R-REPO-049, R-GENERIC-009, R-GENERIC-010) and not built.
+Milestone M1 implements the local class of the generic format only; the remote settings (R-REPO-024, R-REPO-033), their
+secrets and the upstream test are built for any format that registers the remote class (see "Remote settings"); the pull-through
+engine, the virtual class and the rest of R-REPO-017 to R-REPO-049 are specified and not built.
 
 ## Files
 
@@ -27,12 +28,18 @@ Milestone M1 implements the local class of the generic format only; remote and v
 | [activity.go](../../internal/repository/activity.go) | `Activity`: the in-memory buffer of `last_activity_at` (R-REPO-012), flushed once a minute and at shutdown |
 | [reader.go](../../internal/repository/reader.go) | `SnapshotReader` (the `Reader` implementation): the snapshot, the negative cache of unknown keys, the lookup of R-ARCH-011 step 2 |
 | [codes.go](../../internal/repository/codes.go) | codes of other areas that the validation names as strings |
+| [remote.go](../../internal/repository/remote.go) | `RemoteSettings` and its parts, `SecretField`, `SecretRef`, the strict request form (`remoteInput`, `checkRemoteShape`), `Repository.Remote()`, `upstreamIdentityChanged` |
+| [validate_remote.go](../../internal/repository/validate_remote.go) | `validateRemote`: defaults from the catalog, ranges, `normalizeUpstreamURL`, the warnings, the refusal of the P1 members, the secret fields into `pendingSecret`s |
+| [secrets_store.go](../../internal/repository/secrets_store.go) | `SealSecret`, `OpenSecret`, `SecretStore` (rows for the clients), `RemoteDeps` and `Service.Bind`, `writeSecrets`, `ResealSecrets` |
+| [upstream.go](../../internal/repository/upstream.go) | `UpstreamProber`, `UpstreamTestResult`, `Service.UpstreamTest`, `Service.UpstreamTestUnsaved` |
 | [formats/catalog/catalog.go](../../internal/formats/catalog/catalog.go) | the format catalog (a leaf): `Facts`, `Names`, `Exposure`, `Entry`, `Registry`, `Default` |
 | [formats/formats.go](../../internal/formats/formats.go) | `Descriptor` (the catalog's `Facts` plus the name rule and the exposure facts), `Format`, `RequestDescriptor`, `Register` (fills the catalog), `Lookup`, `Descriptors`, and the aliases of the catalog's types |
 | [formats/generic/generic.go](../../internal/formats/generic/generic.go) | the generic format: descriptor and request classification |
 | [formats/all/all.go](../../internal/formats/all/all.go) | registers every format; the composition root imports it |
 | [audit/events_repository.go](../../internal/audit/events_repository.go) | `repository.created`, `.updated`, `.deleted` |
 | [app/wire_repository.go](../../internal/app/wire_repository.go) | `wireRepository` (reader and service, both on `catalog.Default()`), the job kind registration |
+| [app/wire_proxy.go](../../internal/app/wire_proxy.go) | `wireProxy`: the upstream clients, and `Service.Bind` with the key ring and the prober |
+| [queries/remote_settings.sql](../../internal/meta/postgres/queries/remote_settings.sql) | the statements on `repository_secrets` |
 
 ## Request path: reader
 
@@ -96,6 +103,40 @@ registered in `app.jobRegistry` through `registerRepositoryJobs`; its handler fi
 registry is built and frozen before the repository component is wired. A virtual repository has no content and is
 removed in the first transaction. `detach` has nothing to detach until virtual membership exists (R-REPO-017).
 
+## Remote settings
+
+The `remote` section of a remote repository (R-REPO-024) is validated in the same pass as the rest of the document and stored in
+`repositories.config` in a canonical form; the sealed values live in `repository_secrets`.
+
+- **Decode.** `DecodeDocument` keeps `remote` as raw JSON and checks its shape strictly (`checkRemoteShape`): an unknown or duplicate
+  member, or a wrong type, is `400 malformed_request`. A merge patch reaches the same check, because the service reads the patched
+  document like a PUT body.
+- **Validate.** `validate` calls `validateRemote` for the class remote. It reads the section into `remoteInput` (every member a pointer,
+  so an omitted member takes its default), applies the defaults of the format's catalog entry (`DefaultUpstreamURL`,
+  `DefaultExtraHosts` for that upstream only, `DefaultMetadataTTLSeconds`, `DefaultNotFoundTTLSeconds`), checks every range and
+  enumeration, and **replaces `d.Remote` with the canonical section**: every member present, the URL normalized, the secret fields
+  reduced to `{"set": true}` or their reference. The plaintext of a request goes into `Settings.pending` and never into a JSON form
+  (`SecretField.MarshalJSON` cannot write it). The warnings (`plain_http_upstream`, `source_network_single_address`) go to
+  `validation.warnings` and come back on the write.
+- **Store.** After the row is written, `Service.writeSecrets` runs in the same transaction: it seals a new value under the row key
+  `(repository id, field)`, stores a reference, checks that a `{"set": true}` has a sealed row to keep, and deletes the rows of the
+  fields the document no longer has. `update` treats a pending value or reference as a change even when the section reads the same,
+  so `config_version` moves and the client cache (keyed by it) rebuilds (Q-REPO-88). `toDocument` renders the section from the typed
+  settings again, because PostgreSQL's `jsonb` reorders members and a document that is sent back must be byte-equal to the stored one.
+- **Read model.** `toRepository` parses the stored section into `Repository.remote`; `Repository.Remote()` returns it. A section that
+  does not load disables the repository, like an undecodable `config`.
+- **Seams.** `Service.Bind(RemoteDeps{Ring, Prober, OnUpstreamChanged})` is called by `wireProxy`. Without `Ring` an inline secret
+  answers 503; without `Prober` the upstream test does. `OnUpstreamChanged` runs in the update's transaction when `url`, `extraHosts`,
+  `authMode`, `username`, `clientCertificate`, `headers` or a secret changed (R-REPO-011); the cache invalidation of R-REPO-045 is to
+  bind it to record an invalidation of scope `all`.
+- **Upstream test.** `UpstreamTest(ctx, key)` reads the saved repository from PostgreSQL and hands it to the prober;
+  `UpstreamTestUnsaved(ctx, body)` runs the whole validation for `{format, remote}` and hands the result, with the inline password
+  apart, to the prober. The prober is `upstream.Clients` ([proxy.md](proxy.md)).
+
+How to add a setting to the section: add the member to `RemoteSettings` and to `remoteInput`, give it its default and its range in
+`validateRemote`, add it to the OpenAPI schema `RemoteSettings` (inside the `M2 proxy` markers), and a row to the table of R-REPO-024. A
+secret member also needs a field pointer, a `pendingSecret` and a row key in `secrets_store.go`.
+
 ## HTTP operations
 
 | Operation | Handler | Declaration | Notes |
@@ -106,6 +147,8 @@ removed in the first transaction. `detach` has nothing to detach until virtual m
 | `GET /api/v1/repositories/{key}` | `GetRepository` | `public` | the capability holder passes the exposure ceiling of the endpoint (`visibleKeys`) and reads from PostgreSQL; the others pass the decision first (`edge.Access.Decide`; the unknown key is looked up and the index caught up when the holder begins with the key, Q-ARCH-40) and get the consumer view; hidden and missing are `authz.NotFound()` |
 | `PUT`, `PATCH /api/v1/repositories/{key}` | `ReplaceRepository`, `UpdateRepository` | `repositories:write-config`, `x-trove-if-match: required` | 428 before the body is read; the domain applies the merge patch and returns `*StaleVersion`, which becomes 412 with `currentEtag` |
 | `DELETE /api/v1/repositories/{key}` | `DeleteRepository` | `repositories:write-config` | optional `If-Match` and `Idempotency-Key`; 202 with the job reference or 204 |
+| `POST /api/v1/repositories/{key}/upstream-test` | `TestRepositoryUpstream` | `repositories:write-config` | [upstream_api.go](../../internal/api/v1/upstream_api.go); `Service.UpstreamTest`; always 200 with a result for a remote repository, 404, 400 `not_applicable` |
+| `POST /api/v1/upstream-tests` | `TestUpstream` | `repositories:write-config` | `Service.UpstreamTestUnsaved`; the body is `{format, remote}`; 422 with every violation, 400 for a misspelt member |
 
 The representation ([repositoryRep](../../internal/api/v1/repositories_api.go)) is the `repository.Document` plus `lifecycle`,
 `createdAt`, `updatedAt`, `lastActivityAt` and, on a write, `warnings`. The input drops those members before the strict decode, so a
@@ -169,9 +212,10 @@ a repository, compiled once when the snapshot is built; `Repository.Admits(path,
 
 | Tier | Where | Proves |
 |---|---|---|
-| unit | [internal/repository](../../internal/repository/) | path canonicalisation, keys, patterns and admission, document decoding, merge patch (RFC 7396 examples), validation (R-REPO-002, -005, -006, -008, R-GENERIC-001, -002, -007, -008) |
+| unit | [internal/repository](../../internal/repository/) | path canonicalisation, keys, patterns and admission, document decoding, merge patch (RFC 7396 examples), validation (R-REPO-002, -005, -006, -008, R-GENERIC-001, -002, -007, -008); `remote_test.go`: the defaults, ranges, URL normalization, warnings, refusals and secret forms of the remote section (R-REPO-024, R-REPO-033) |
 | unit | [internal/formats](../../internal/formats/) and below | registry rules; the generic descriptor and classification (R-GENERIC-001, -003) |
-| integration | [test/integration/repository](../../test/integration/repository/) | create, read, update, list, delete against PostgreSQL with audit and change-log rows; the snapshot, the lookup and the poll bound on two replicas without Valkey (R-REPO-009 to -013, R-REPO-049, R-ARCH-011) |
+| integration | [test/integration/repository](../../test/integration/repository/) | create, read, update, list, delete against PostgreSQL with audit and change-log rows; the snapshot, the lookup and the poll bound on two replicas without Valkey (R-REPO-009 to -013, R-REPO-049, R-ARCH-011); `remote_test.go`: the remote settings, the sealed secrets (nothing in any table, a copied value, a rotation), the upstream test and the invalidation hook, against a TLS test upstream (R-REPO-024, R-REPO-033, R-REPO-038) |
+| integration | [test/integration/api](../../test/integration/api/) (`upstream_test.go`) | both upstream-test operations over HTTP on a real database, every answer validated against the OpenAPI document |
 | integration | [test/integration/files](../../test/integration/files/) (`repository_api_test.go`) | the repository API over HTTP on two replicas: the contract suite of E1.6 (`apitest.RunContract`: cursor walk, ETag with If-Match, merge patch, idempotency keys), validation, permissions, the consumer view, list visibility, the delete job on a worker, an idempotent create replayed through the other replica |
 
 Run the integration area from the checkout root with the environment of the shared stack:
@@ -179,4 +223,4 @@ Run the integration area from the checkout root with the environment of the shar
 
 ## Decisions
 
-[Q-REPO-12 to Q-REPO-23](../spec/repositories-and-proxy.md#decisions) and [Q-GENERIC-1 to Q-GENERIC-5](../spec/formats/generic.md#decisions).
+[Q-REPO-12 to Q-REPO-23](../spec/repositories-and-proxy.md#decisions), [Q-REPO-88 to Q-REPO-91](../spec/repositories-and-proxy.md#q-repo-88--a-secret-field-reads-set-true-and-keeps-its-value-in-repository_secrets) (the remote settings and their secrets) and [Q-GENERIC-1 to Q-GENERIC-5](../spec/formats/generic.md#decisions).

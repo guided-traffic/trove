@@ -1,11 +1,104 @@
 # The pull-through proxy
 
-Status: this page starts with the cache invalidation of remote repositories (package
-[`internal/proxy/invalidation`](../../internal/proxy/invalidation)). The engine that answers a request for
-a remote repository adds its sections here when it is built; until then the invalidation is a library
-and an API that nothing in the request path consults yet. The requirements are
-[R-REPO-045](../spec/repositories-and-proxy.md), [R-REPO-032](../spec/repositories-and-proxy.md),
-[R-OPS-021](../spec/operations-and-observability.md) and [R-API-024](../spec/api-and-ui.md).
+The remote class of [R-REPO-024 to R-REPO-049](../spec/repositories-and-proxy.md). This page has one section per part that is
+built: the upstream clients and the cache invalidation of remote repositories. The engine that answers a request for a remote
+repository (the request path, the flights, the circuit) adds its sections when it is built; until then the invalidation is a
+library and an API that nothing in the request path consults yet. Code: [internal/proxy](../../internal/proxy/).
+
+## The upstream clients
+
+Package [internal/proxy/upstream](../../internal/proxy/upstream/): the HTTP client of each remote repository, the credentials it
+sends, the cache that keeps it, and the upstream test. It sits in the domain layer: it imports `internal/outbound` (the factory,
+the only place that builds an HTTP client, R-ARCH-002), `internal/repository` (the settings) and `internal/secrets`.
+
+### Files
+
+| File | Responsibility |
+|---|---|
+| [clients.go](../../internal/proxy/upstream/clients.go) | `Clients`, `New`, `For` (cached per repository and `config_version`), `Ephemeral` (uncached, for the unsaved test), the build of an outbound client from the settings, the registered cache `proxy_upstream_clients` |
+| [client.go](../../internal/proxy/upstream/client.go) | `Client` (`HTTP`, `Settings`, `Origin`, `Allowed`, `Close`), the `guard` transport that fails a request whose credential cannot be resolved |
+| [secret.go](../../internal/proxy/upstream/secret.go) | the credential: `secretValue` (fixed, or a reference read again after `RefreshInterval`), `resolver` (file under `config_as_code.secrets_dir`, `TROVE_CAC_` variable), the `Authorization` header, `secretUnavailable` |
+| [probe.go](../../internal/proxy/upstream/probe.go) | `TestSaved`, `TestUnsaved`, the probe request, `Classify` and the codes of the result |
+
+### How a client is built
+
+`Clients.For(ctx, repository, settings)` returns the client of a repository in its current `config_version`, building it on a miss. Concurrent
+misses of one key share one build; the build belongs to every caller and does not end with the first one's request. `build` applies the settings
+to `outbound.Factory.Client(PurposeRemote, …)`:
+
+| Setting | Option |
+|---|---|
+| `connectTimeoutMs`, `readTimeoutMs` | `WithConnectTimeout`, `WithResponseHeaderTimeout` |
+| `proxy.max_redirects` | `WithMaxRedirects` |
+| `sourceNetwork` | `WithLocalPrefix(prefix, nil)`: the replica's first interface address inside the prefix, re-enumerated every 60 s; none: `outbound.ErrSourceNetworkUnavailable`, no fallback |
+| `outboundProxy.mode: direct` | `WithDirect` |
+| `url`, `extraHosts[].sendCredentials`, `forwardAuthOnRedirect`, the credential | `WithHopPolicy(&outbound.CredentialPolicy{Origin, SendCredentials, ForwardOnRedirect, Headers})` |
+| the repository key | `WithLogAttrs(repo)` |
+
+The credential reaches the wire only through `CredentialPolicy.Headers`, which reads the current secret on every request. Nothing that builds
+a request for an upstream sets `Authorization`: the policy removes any header of that name from every hop and adds the credential where the
+rule allows (R-REPO-033, R-REPO-039). The client's transport is wrapped in `guard`, which fails a request with `502 upstream_secret_unavailable`
+before it is sent when the credential cannot be resolved, so a vanished secret file never becomes an anonymous request that the upstream
+answers with 401.
+
+### Secrets
+
+`authMode: none` reads nothing. Otherwise `buildSaved` reads the repository's rows (`repository.SecretStore`, the field `/remote/password`):
+
+- a sealed value is opened with `repository.OpenSecret` under the row key `(repository id, field)`; a value that was moved, sealed under a key
+  the ring lacks or damaged fails;
+- a reference is read again by `secretValue.get` when its last read is `RefreshInterval` (10 s) old, `RetryInterval` (1 s) after a failure,
+  so a rotated file reaches the next request on every replica without a new client (Q-REPO-89). The rules of R-OPS-029 are checked again when
+  the reference is read, so a row written around the API cannot make the client read a file outside `secrets_dir` or a variable outside
+  `TROVE_CAC_`.
+
+A failure is `502 upstream_secret_unavailable` (`errs.CodeUpstreamSecretUnavailable`), logged once when the build fails with the cause (the log
+line names the repository and the field, never the value); the text for the client names the repository only. `Clients` remembers the refusal
+for 5 s. The `Ephemeral` client of the unsaved test takes the inline value or a reference from the request and reads no row.
+
+### The cache
+
+`proxy_upstream_clients` is a registered cache (R-ARCH-018, R-ARCH-032, R-REPO-049) in the area `repo_config`, keyed by `(repository id,
+config_version)`, bounded to 2,048 entries, with `cache.snapshot_safety_ttl` as its `SafetyTTL`. A `repo_config` change evicts the clients of
+that repository (the payload is `{id, key, op}`); an unreadable payload flushes the cache. When a newer version of a repository is built, the
+idle connections of the older one are closed. A change of a secret value moves `config_version` (Q-REPO-88), so a rotated sealed value is a
+new key.
+
+### `Allowed`
+
+`Client.Allowed(u)` is the foreign-host check of R-REPO-043: the host of `u` must be the upstream's (same host name and effective port, with
+the default ports of the two schemes treated as equal) or match an `extraHosts` pattern (`path.Match` over the lower-case host); otherwise the
+answer is `502 foreign_host_denied` and the engine sends no request. It is for URLs that come out of upstream metadata; redirects are decided
+by the hop policy and the egress rules.
+
+### The upstream test
+
+`Clients` implements `repository.UpstreamProber`. `TestSaved` and `TestUnsaved` return a `repository.UpstreamTestResult`; every failure is in
+the result. The probe is one GET of the format's `ProbePath` below the upstream URL (the URL itself when the path is empty), through the same
+client, with `outbound.Call{Repo, FlightRole: "probe"}` for the upstream log. The local address of the connection (`httptrace.GotConn`) is the
+`sourceAddress`, reported only when the repository has a `sourceNetwork`. `Classify(err)` maps an error to the stable code (`egress_denied`,
+`source_network_unavailable`, `dns_error`, `tls_untrusted`, `connection_refused`, `timeout`, `too_many_redirects`, `insecure_redirect`,
+`upstream_secret_unavailable`, `request_failed`); the engine uses it too. The messages are built from the code and the host, never from the
+error text of the request, which repeats the URL. An offline repository and `proxy.global_offline` are not contacted. The test touches no
+circuit state: this package has no handle on it.
+
+### Wiring
+
+[wire_proxy.go](../../internal/app/wire_proxy.go) builds `Clients` (the outbound factory, `repository.NewSecretStore`, the key ring, the cache
+registry, `config_as_code.secrets_dir`) inside the `M2 upstream` marker and binds it to the repository service with `Service.Bind`. The step
+is called from the `M2 proxy` marker of the bootstrap, after the repository component.
+
+### Tests
+
+| Tier | Where | Proves |
+|---|---|---|
+| unit | [upstream_test.go](../../internal/proxy/upstream/upstream_test.go) | Basic and Bearer arrive at a TLS test upstream, references (file, variable, rotation, vanishing, escape attempts), sealed values (copied, moved, damaged, unknown key), the hop policy on a redirect, `Allowed`, the cache and its eviction, the source network with an injected lister, the upstream test (reachable, 401, DNS error, `egress_denied`, untrusted certificate, refused, timeout, offline), `Classify` |
+| integration | [test/integration/repository/remote_test.go](../../test/integration/repository/remote_test.go) | the same against PostgreSQL: nothing of a secret in any table or audit event, a copied sealed value, a rotation and `ResealSecrets`, the upstream test leaving the circuit alone |
+| integration | [test/integration/api/upstream_test.go](../../test/integration/api/upstream_test.go) | both operations over HTTP with the contract validator |
+
+### Decisions
+
+[Q-REPO-88 to Q-REPO-91](../spec/repositories-and-proxy.md#q-repo-88--a-secret-field-reads-set-true-and-keeps-its-value-in-repository_secrets).
 
 ## Cache invalidation
 

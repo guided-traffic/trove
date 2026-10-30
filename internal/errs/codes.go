@@ -187,6 +187,18 @@ const (
 )
 
 // <<< M1 endpoints
+//
+// >>> M2 upstream
+
+// Codes of the upstream clients of remote repositories (R-REPO-024, R-REPO-033,
+// R-REPO-043). The engine of the pull-through proxy adds its own beside them.
+const (
+	CodeUpstreamSecretUnavailable = "upstream_secret_unavailable" //nolint:gosec // G101: an error code, not a credential
+	CodeSourceNetworkUnavailable  = "source_network_unavailable"
+	CodeForeignHostDenied         = "foreign_host_denied"
+)
+
+// <<< M2 upstream
 
 // CodeInfo documents one code for the problem catalog.
 type CodeInfo struct {
@@ -328,6 +340,12 @@ var registry = []CodeInfo{
 	{CodeEndpointNotConfigured, Conflict, "Endpoint not configured", "The endpoint is not in the configuration; its exposure rules can be read and deleted, not created or replaced."},
 	{CodeExposureRuleLimit, Conflict, "Exposure rule limit reached", "The endpoint holds 1,000 exposure rules, the most it may hold; delete a rule first."},
 	// <<< M1 endpoints
+	//
+	// >>> M2 upstream
+	{CodeUpstreamSecretUnavailable, UpstreamFailed, "Upstream secret unavailable", "A secret of the remote repository's upstream configuration cannot be unsealed or resolved on this replica, for example a reference to a file that is missing or a sealed value that was copied from another row. Other repositories are unaffected; the repository's administrator re-enters the secret or fixes the reference."},
+	{CodeSourceNetworkUnavailable, UpstreamFailed, "Source network unavailable", "This replica has no interface address inside the remote repository's sourceNetwork, so it does not connect to the upstream. The failure does not count toward the circuit; another replica may have such an address."},
+	{CodeForeignHostDenied, UpstreamFailed, "Foreign host denied", "The upstream document points to a host that is neither the upstream origin nor an entry of the remote repository's extraHosts; trove did not send a request."},
+	// <<< M2 upstream
 }
 
 // Codes returns a copy of the registry in declaration order.

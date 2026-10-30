@@ -41,14 +41,20 @@ type Settings struct {
 	// HideExistence is "inherit", "true" or "false".
 	HideExistence string         `json:"hideExistence"`
 	Local         *LocalSettings `json:"local,omitempty"`
-	// Remote and Virtual are the class sections of R-REPO-024 and R-REPO-017. They
-	// are carried as written until a format supports the class; the generic format
-	// supports only local, so a repository never holds one in milestone M1.
+	// Remote and Virtual are the class sections of R-REPO-024 and R-REPO-017. The
+	// remote section is validated and rewritten in its canonical form by
+	// validateRemote (remote.go); the virtual section is carried as written until
+	// its owner reads it.
 	Remote  json.RawMessage `json:"remote,omitempty"`
 	Virtual json.RawMessage `json:"virtual,omitempty"`
 	// Storage is the member owned by storage.md (upload size, quota, presigned
 	// downloads, checksum policy). The model keeps it as an opaque JSON object.
 	Storage json.RawMessage `json:"storage,omitempty"`
+
+	// pending are the secret fields of the validated document that still have to
+	// be written to repository_secrets. They carry the plaintext of a request, so
+	// they stay out of the JSON form (validateRemote, Service.writeSecrets).
+	pending []pendingSecret
 }
 
 // LocalSettings is the `local` section of a document. Which members apply
@@ -174,6 +180,9 @@ func DecodeDocument(raw []byte) (Document, error) {
 		return Document{}, err
 	}
 	d.normalize()
+	if err := checkRemoteShape(d.Remote); err != nil {
+		return Document{}, err
+	}
 	return d, nil
 }
 

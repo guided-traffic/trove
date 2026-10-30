@@ -688,6 +688,18 @@
       },
       "type": "object"
     },
+    "config_as_code": {
+      "additionalProperties": false,
+      "properties": {
+        "secrets_dir": {
+          "default": "/etc/trove/cac-secrets",
+          "description": "Directory of the files that a secretRef {\"file\": name} names; a name is a file directly under it (R-REPO-033, R-OPS-029).",
+          "type": "string",
+          "x-trove-env": "TROVE_CONFIG_AS_CODE_SECRETS_DIR"
+        }
+      },
+      "type": "object"
+    },
     "database": {
       "additionalProperties": false,
       "properties": {

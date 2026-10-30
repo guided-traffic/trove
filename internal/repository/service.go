@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth/principal"
@@ -95,6 +96,9 @@ type Options struct {
 	// DeleteBatch is the number of items one transaction of the deletion job
 	// removes (storage.delete.batch_size, R-STOR-018); zero means 5000.
 	DeleteBatch int
+	// Remote holds the key ring and the upstream prober of remote repositories
+	// (secrets_store.go); the composition root may bind them later (Bind).
+	Remote RemoteDeps
 }
 
 // Service is the write and management-read side of the repository model:
@@ -112,6 +116,8 @@ type Service struct {
 	hooks Hooks
 	log   *slog.Logger
 	batch int
+	// remote is set once by Bind or NewService, read by every request.
+	remote atomic.Pointer[RemoteDeps]
 }
 
 // NewService creates the service.
@@ -131,10 +137,12 @@ func NewService(o Options) (*Service, error) {
 	if o.DeleteBatch <= 0 {
 		o.DeleteBatch = 5000
 	}
-	return &Service{
+	s := &Service{
 		run: o.Runner, cat: catalog.Or(o.Catalog), rec: o.Recorder, notif: o.Notifier, jobs: o.Jobs,
 		hooks: o.Hooks, log: o.Log, batch: o.DeleteBatch,
-	}, nil
+	}
+	s.Bind(o.Remote)
+	return s, nil
 }
 
 // Caller is who acts and from where; it goes into the audit event and, as the
@@ -222,6 +230,11 @@ func (s *Service) CreateTx(ctx context.Context, tx meta.Tx, c Caller, body []byt
 	if len(rows) == 0 {
 		return Stored{}, errs.E(errs.Conflict, errs.CodeAlreadyExists,
 			"A repository with the key "+strconv.Quote(d.Key)+" exists or is still being deleted; a key stays taken until the deletion job completes.")
+	}
+	if d.Class == Remote {
+		if err := s.writeSecrets(ctx, tx, rows[0].ID, d.pending); err != nil {
+			return Stored{}, err
+		}
 	}
 	out, err := s.stored(rows[0], v.warnings)
 	if err != nil {
@@ -327,6 +340,13 @@ func (s *Service) update(ctx context.Context, c Caller, key string, pre Precondi
 			return err
 		}
 		changes := changedMembers(oldCfg, newCfg)
+		if hasSecretWrites(nd.pending) && !slices.Contains(changes, "remote") {
+			// A new secret value reads like the old one ({"set": true}); it is still a
+			// change, and it moves config_version so that the clients built with the
+			// old value are replaced.
+			changes = append(changes, "remote")
+			sort.Strings(changes)
+		}
 		if len(changes) == 0 {
 			out, err = s.stored(row, v.warnings) // nothing to write: same version, no event
 			return err
@@ -339,6 +359,14 @@ func (s *Service) update(ctx context.Context, c Caller, key string, pre Precondi
 		}
 		if len(updated) == 0 {
 			return errors.New("repository: the update matched no row although the row was locked")
+		}
+		if nd.Class == Remote {
+			if err := s.writeSecrets(ctx, tx, row.ID, nd.pending); err != nil {
+				return err
+			}
+			if err := s.upstreamChanged(ctx, tx, cur, nd, out.Repository); err != nil {
+				return err
+			}
 		}
 		out, err = s.stored(updated[0], v.warnings)
 		if err != nil {

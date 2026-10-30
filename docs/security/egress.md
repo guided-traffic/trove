@@ -1,8 +1,9 @@
 # Egress
 
 Status: implemented in M0 for the outbound HTTP clients of the process: an address check at connect time for every purpose except
-the object store, a deny list and an allow list, and the refusal of zoned IPv6 addresses. Remote repositories, the proxy engine
-and the callers that map a refusal to `502` are not built yet. The address check is the code the upstream fetches of M2 will use.
+the object store, a deny list and an allow list, and the refusal of zoned IPv6 addresses. In M2 the upstream clients of remote
+repositories use it and the upstream test reports a refusal as `egress_denied`; the proxy engine that maps a refusal of a fetch to
+`502` is not built yet.
 
 This page says which connections trove opens to addresses that other parties name, which check applies to each, and where
 the check does not reach. It describes the code of [internal/outbound](../../internal/outbound).
@@ -15,7 +16,7 @@ The address policy is on for every purpose except `objectstore`:
 | Purpose | Address policy | Why |
 |---|---|---|
 | `oidc_discovery`, `jwks`, `webhook` | on | addresses an operator or a provider names |
-| `remote` (M2) | on | addresses that a repository's upstream names |
+| `remote` | on | addresses that a repository's upstream, its redirects and its upstream metadata name; the clients are built in [proxy/upstream](../../internal/proxy/upstream/clients.go) |
 | `objectstore` | **off** ([factory.go](../../internal/outbound/factory.go), `clientSettings`) | the endpoint is operator configuration and, in development, a local service; see [H-56](../spec/architecture.md#h-56--the-object-store-endpoint-skips-the-egress-address-policy) |
 
 The OTLP span export does not use the factory at all; it uses the SDK's transport ([H-53](../spec/operations-and-observability.md#h-53--span-export-bypasses-the-egress-address-policy)).
@@ -98,6 +99,16 @@ table allows, so a header that is not one of the standard sensitive ones does no
 handshake from the decision stored in the request context ([factory.go](../../internal/outbound/factory.go), `certGetter`).
 Pre-signed object-storage redirects therefore receive nothing by default.
 
+## The upstream test
+
+`POST /api/v1/repositories/{key}/upstream-test` and `POST /api/v1/upstream-tests` send one request through a remote repository's client
+([proxy/upstream/probe.go](../../internal/proxy/upstream/probe.go)). The client is the one real fetches use, so the address check, the
+trust store, the source network, the redirect limit and the credential policy apply unchanged; a refusal is reported as the result's
+`error.code` `egress_denied` with the address and the rule, and counts in `trove_outbound_egress_denied_total{kind="remote"}`. The
+operation needs `repositories:write-config`. A repository in offline mode, and every repository while `proxy.global_offline` is on, is not
+contacted. `Client.Allowed` ([client.go](../../internal/proxy/upstream/client.go)) refuses a URL taken from upstream metadata whose host is
+neither the upstream's nor in `extraHosts` (`502 foreign_host_denied`) before any address is resolved.
+
 ## What this does not cover
 
 ### H-78 · The NAT64 check knows only the well-known prefix
@@ -110,3 +121,19 @@ and permits it. Subject: the metadata and internal addresses that the deny list 
 
 What makes it real: a network-specific NAT64 prefix in the cluster's DNS64 setup, together with an upstream name that resolves to
 an internal IPv4 address through it. The fix is a configuration key for the prefix, which does not exist yet.
+
+### H-282 · The upstream test tells a holder of `repositories:write-config` what it sees of an address
+
+Stage: the result of the upstream test ([repository/upstream.go](../../internal/repository/upstream.go), `UpstreamTestResult`).
+
+Live: the address check refuses the denied ranges, but the private ranges are reachable by default
+([H-6](../spec/repositories-and-proxy.md#h-6--remote-repositories-reach-private-networks)). For a URL the holder names, the result reports the
+HTTP status, the subject and expiry of the certificate, the duration and a code that tells a refused connection from a timeout and an
+unknown name. Subject: hosts and ports of the internal networks that the pods can reach, probed one request at a time by a principal who
+may already configure a remote repository.
+
+What makes it real: a principal with the capability and an installation without the egress `NetworkPolicy` of
+[H-41](../spec/operations-and-observability.md#h-41--egress-is-unrestricted-and-ingress-enforcement-is-verified-on-one-cni-only). The body of
+the response is never returned, at most 64 KiB are read and dropped, and the messages never repeat the URL; the status and the timing are
+the channel.
+

@@ -163,7 +163,8 @@ Priority: **MVP** · Covers: REPO-006
 
 - Each format plug-in ([architecture.md](architecture.md)) MUST register: name; supported classes;
   layout name (R-REPO-006); protocol base path; default upstream URL and the `extraHosts` entries
-  it proposes for that upstream (R-REPO-024); default metadata and not-found cache periods; the
+  it proposes for that upstream (R-REPO-024); the probe resource of the upstream test (R-REPO-024;
+  npm: `-/ping`, empty for a format whose URL is the service index); default metadata and not-found cache periods; the
   subject of include and exclude patterns (`name` or `path`, R-REPO-005); whether it supports
   priority members (R-REPO-022), pin rules and namespace claims (R-REPO-023), and repository caps
   (R-REPO-007); its package-name normalization; and, for formats with package names, the
@@ -1307,7 +1308,7 @@ ahead of time (INV-11). Clients cannot deploy into it. Every setting below is a 
 | Member (`remote.…`) | Meaning | Default (proposed) | Range | Catalog | Spec |
 |---|---|---|---|---|---|
 | `url` | Upstream base URL (NuGet: the service index URL) | — (required) | absolute `http`/`https`, no user info, no fragment | RMT-004 | here |
-| `extraHosts` | Further hosts that upstream metadata or redirects may point to: `[{"pattern": "*.nuget.org", "sendCredentials": false}]` | `[]`; formats propose entries for well-known upstreams | ≤ 20 | — | R-REPO-043 |
+| `extraHosts` | Further hosts that upstream metadata or redirects may point to: `[{"pattern": "*.nuget.org", "sendCredentials": false}]` | `[]`; a format proposes entries for its well-known upstream, applied when `url` is omitted or equals it (Q-REPO-91) | ≤ 20 | — | R-REPO-043 |
 | `authMode` | `none`, `basic`, `bearer` | `none` | | RMT-005, RMT-006 | R-REPO-033 |
 | `username` | Upstream account | `""` | ≤ 256 | RMT-005 | R-REPO-033 |
 | `password` | Password or token; secret field | unset | ≤ 8 KiB | RMT-005 | R-REPO-033 |
@@ -1337,9 +1338,21 @@ ahead of time (INV-11). Clients cannot deploy into it. Every setting below is a 
 
 </details>
 
-- `url` is stored normalized (scheme and host lower case, default port removed). The upstream request
-  for a canonical path is derived from it by the format plug-in. A plain `http` URL is accepted with
-  the warning `plain_http_upstream`.
+- `url` is stored normalized (scheme and host lower case, default port removed, an empty path as
+  `/`). An omitted `url` takes the format's default upstream; a format without one makes it required
+  (422 `invalid_upstream_url`). The upstream request for a canonical path is derived from it by the
+  format plug-in. A plain `http` URL is accepted with the warning `plain_http_upstream`. A URL that
+  points at a denied address is accepted too: the refusal is `egress_denied` at the first request
+  (R-REPO-038).
+- The stored section is canonical: every member of the table is present, with the default where the
+  request omitted it, and a read returns exactly that. `password` reads `null`, `{"set": true}` or its
+  reference (R-REPO-033); `sourceNetwork` reads as the network (`10.99.0.77/24` is stored as
+  `10.99.0.0/24`).
+- Until their requirements are built, `clientCertificate` (R-REPO-034), `headers` (R-REPO-036),
+  `outboundProxy.mode: named` (R-REPO-037), `cache.storeArtifacts: false` (R-REPO-044) and a
+  `cache.unusedRetentionHours` above 0 (R-REPO-046) are refused with 422 `not_applicable`: a setting
+  that is accepted and not enforced would leave the operator believing it is in effect.
+  `outboundProxy.mode: direct` is built and means no proxy (Q-REPO-91).
 - `sourceNetwork` names a prefix, never a single address: replicas are interchangeable, and every
   pod has its own address ([Kubernetes network model](https://kubernetes.io/docs/concepts/services-networking/):
   "Each pod in a cluster gets its own unique cluster-wide IP address"), so one stored address could
@@ -1391,7 +1404,28 @@ API, besides R-REPO-009 to R-REPO-013:
 
 The probe requests the format's probe resource (npm: the registry ping; NuGet: the service index,
 whose required resources [formats/nuget.md](formats/nuget.md) checks) through the same client,
-egress rules, proxy and credentials that real fetches use.
+egress rules, proxy and credentials that real fetches use (Q-REPO-90).
+
+- The answer is always 200 for a repository that can be tested: an upstream that fails is a result
+  with `reachable: false` and the reason in `error`. `reachable` is true when the upstream answered
+  with an HTTP response, whatever its status; `authenticated` is false for 401 and 403 and `null`
+  when there was no response; `tls` describes the leaf certificate of the host that answered and is
+  `null` over plain `http`; `outboundProxy` is `null` until named proxies exist.
+- `error` is `null` or `{"code", "message"}` with one of `dns_error`, `connection_refused`,
+  `timeout`, `tls_untrusted`, `egress_denied`, `source_network_unavailable`,
+  `upstream_secret_unavailable`, `offline`, `too_many_redirects`, `insecure_redirect` and
+  `request_failed`. The message names the host and never repeats the URL, whose query may carry a
+  token, or a secret.
+- A repository in `availability.mode: offline` and every repository while `proxy.global_offline` is on
+  are not contacted: the result is `reachable: false` with `offline` (R-REPO-030, R-REPO-031).
+- The test reads and writes no circuit state, counts nothing toward it and leaves cache entries
+  alone (R-REPO-029). It runs on the replica that received it; with a `sourceNetwork`,
+  `sourceAddress` is the address that replica bound.
+- `POST /api/v1/repositories/{key}/upstream-test` answers 404 `repository_not_found` for a missing key
+  and 400 `not_applicable` for a local or virtual repository. `POST /api/v1/upstream-tests` checks
+  the section like a create (422 with every violation, 400 for a misspelt member); a secret value in
+  it is used for the probe and stored nowhere; `{"set": true}` is 422 `invalid_secret`, because it
+  refers to a stored value.
 
 Acceptance criteria:
 
@@ -1405,6 +1439,10 @@ Acceptance criteria:
   `source_network_unavailable`, and the circuit stays closed on all three.
 - `"sourceNetwork": "10.99.0.11"` returns 422 `invalid_source_network`; `"10.99.0.11/32"` is stored
   with the warning `source_network_single_address`.
+- A create with `"url": "http://registry.internal.example/"` is saved with the warning
+  `plain_http_upstream`; `"clientCertificate": "mtls"` returns 422 `not_applicable`.
+- The upstream test of a repository in offline mode sends no request and reports `offline`; the test
+  of a local repository returns 400 `not_applicable`.
 
 ### R-REPO-025 · Remote request path
 Priority: **MVP** · Covers: RMT-001, RMT-033
@@ -2028,10 +2066,16 @@ Priority: **MVP** · Covers: RMT-005, RMT-006, IAM-045
   - `{"secretRef": {"file": "<name>"}}` or `{"secretRef": {"env": "TROVE_CAC_<NAME>"}}`: resolved
     on every replica at use time under the rules of R-OPS-029 (a file directly under
     `config_as_code.secrets_dir`, only variables with the `TROVE_CAC_` prefix), so trove's own
-    secrets can never be routed to an upstream. A changed file takes effect within 60 s.
+    secrets can never be routed to an upstream. A changed file takes effect on each replica within
+    10 s of the change, which keeps R-REPO-033's bound of 60 s (Q-REPO-89). The file content has its
+    trailing line break removed and holds at most 8 KiB.
 - Secret values MUST never be returned by any API, log line, audit event or error message. Reads show
   `{"set": true}` for sealed values and the reference itself for references. Clients that re-submit a
-  document they read therefore cannot blank or leak a secret.
+  document they read therefore cannot blank or leak a secret: `{"set": true}` keeps the stored value,
+  an omitted or `null` secret removes it, and `{"set": true}` for a repository that has no stored
+  value is 422 `invalid_secret` (Q-REPO-88). A new value reads like the old one, so a write that
+  carries one moves `config_version` all the same: the clients built with the old value are replaced
+  and the `ETag` changes.
 - **Sealing** (Q-REPO-1). Inline values MUST be sealed with the one stored-secret mechanism of
   [architecture.md](architecture.md) R-ARCH-021 (IAM-045; the chart side is
   [ha-and-helm.md](ha-and-helm.md) R-HA-027). This page defines no key, format or rotation of its
@@ -2041,7 +2085,11 @@ Priority: **MVP** · Covers: RMT-005, RMT-006, IAM-045
   copied into another row or field does not decrypt; a key identifier in the sealed form, so keys
   rotate by re-sealing (the `secrets-reencrypt` task) while old keys still decrypt.
 - A secret that cannot be unsealed or resolved makes fetches of that repository fail with 502
-  `upstream_secret_unavailable` and is reported at startup; other repositories are unaffected.
+  `upstream_secret_unavailable`, before any request is sent, and is logged when the repository's
+  client is built; other repositories are unaffected. A replica does not check every repository at
+  start-up ([H-280](../security/data-and-secret-flow.md#h-280--a-secret-that-cannot-be-resolved-is-found-at-its-first-use)); the upstream
+  test reports it at any time.
+- The walk of the task `secrets-reencrypt` over this column reseals each value under the active key with the same row key, and counts a value that does not open as failed without touching it (`repository.ResealSecrets`).
 - URLs in logs and audit events are written without user info and with query values redacted.
 
 Data model:
@@ -2068,6 +2116,12 @@ Acceptance criteria:
   repository makes that repository's fetches fail with 502 `upstream_secret_unavailable`.
 - `{"secretRef": {"env": "TROVE_DATABASE_PASSWORD"}}` is refused with 422 `invalid_secret`.
 - With `authMode: bearer`, the stub records `Authorization: Bearer <token>` and no Basic header.
+- `PATCH` with `{"remote": {"password": {"value": "new"}}}` moves `config_version` and the next
+  request, on every replica, carries the new token; `{"remote": {"password": null}}` removes the
+  row; sending back a document that was read changes nothing.
+- A `secretRef` file that disappears after the client was built fails the repository's next fetches
+  with 502 `upstream_secret_unavailable` and sends no request; it works again within the refresh
+  interval after the file is back.
 
 ### R-REPO-034 · Client TLS certificates for upstreams
 Priority: **P1** · Covers: RMT-007
@@ -2659,6 +2713,7 @@ it behaves in each of these cases. A new kind needs a row here, and in
 | State | Where | Across replicas | Valkey unavailable | Valkey lost its data | Drain or crash of the replica |
 |---|---|---|---|---|---|
 | Repository snapshot, claims and pin rules, gone packages, circuit state, global offline switch, cache invalidations (R-REPO-008 to R-REPO-023, R-REPO-029, R-REPO-031, R-REPO-045) | In-process copies of PostgreSQL rows | Change areas `repo_config`, `claims`, `upstream_state`, `cache_invalidation` of R-ARCH-018: within 2 s of the commit | Within `cluster.epoch_poll_interval` | As unavailable | Nothing to hand over |
+| Upstream clients with their connection pools (R-REPO-024, R-REPO-033) | In-process cache `proxy_upstream_clients`, one client per repository id and `config_version` (Q-REPO-89) | Change area `repo_config` evicts the repository's clients; a changed configuration or secret is a new key, so a stale client is not reached | Within `cluster.epoch_poll_interval` | As unavailable | Ends with the process; `secretRef` files are read by each replica itself, 10 s apart |
 | Cache entries, gone marks, URL mappings, stale copies (R-REPO-025, R-REPO-029, R-REPO-043) | PostgreSQL and S3 | One copy, read by every replica | Unaffected | Unaffected | Unaffected |
 | Negative entries (R-REPO-028) | Valkey, plus a bounded L1 per replica | Shared through Valkey | L1 only: one upstream request per replica, path and period | One more upstream request per path | L1 ends with the process |
 | Flights (R-REPO-026) | In-process single-flight, lock in Valkey | One upstream fetch per entry; waiters re-check entry, circuit and negative entry before they fetch | One fetch per replica and entry | A duplicate fetch | Leads no new flight once draining; releases with `failed` 5 s before the shutdown deadline; after a crash the lock expires within `cluster.flight_lock_ttl` |
@@ -3636,6 +3691,78 @@ Context: R-REPO-045 keeps a row of scope `negative` or `all` for 86,405 s, and d
 **Rationale:** The page's own rule, that a replica never drops a row the database still holds before its fold, needs the flag. The development agent would revisit this if folds become resumable inside one row (then a cursor column joins it).
 
 **Applied in the spec:** the data model and the fold bullet of R-REPO-045.
+
+### Q-REPO-88 · A secret field reads {"set": true} and keeps its value in repository_secrets
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-033 stores a secret field's sealed value or reference in `repository_secrets` and says reads show `{"set": true}` for sealed values and the reference itself for references, so that a client re-submitting what it read neither blanks nor leaks the secret. The merge patch of R-REPO-011 is applied to the document that was read, so what the document holds for a secret decides what a patch can express. A new value reads exactly like the old one.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The marker and the reference stay in `repositories.config`; the rows hold the values | `password` is `{"set": true}` or `{"secretRef": …}` in the stored section; a request `{"value": …}` is sealed into the row and the marker written; `{"set": true}` keeps the row; absent or `null` removes it | One source for every read, the snapshot and the diff; a re-submitted document is byte-equal and writes nothing; a merge patch needs no special case | The reference exists in two places (the document and the row), written in one transaction; a secret change must move `config_version` by itself, because the marker does not change |
+| (b) The document carries nothing; reads join the rows | The stored section has no `password`; every read adds it from `repository_secrets` | One place per reference | Every read, the snapshot and the diff need a second query; a re-submitted document without `password` would delete the secret, the leak-proof round trip the page asks for is lost |
+| (c) A revision number of the secret in the document | `password: {"set": true, "revision": 3}` | The change is visible in the document | A member the spec does not name; a re-submitted document must carry the number or reset it |
+
+**Choice:** (a). A write that carries a new value or a reference counts as a change even when the stored section reads the same, adds `remote` to the recorded changes and moves `config_version` (so the `ETag` changes and the clients are rebuilt). A `{"set": true}` next to a `value` or `secretRef`, which is what a merge patch of a read document produces, is the marker overridden by the new form; `value` and `secretRef` together are 422 `invalid_secret`.
+
+**Rationale:** The page asks that a document which was read can be sent back, and that works only if the read form is a complete, stable form of the stored one. The development agent would revisit this when a second secret field is built (the sensitive header values of R-REPO-036, the client-certificate key): the same shape then applies per field pointer, and a revision member becomes worth it only if clients need to see a rotation in the document.
+
+**Applied in the spec:** R-REPO-024 (the canonical section), R-REPO-033 (the bullet on re-submitted documents and the version).
+
+### Q-REPO-89 · Upstream clients are cached per repository and version; secret files are read at use
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a remote repository's HTTP client owns a connection pool and is built from the settings, the unsealed password and the hop policy. It is per-replica state (R-ARCH-032, R-REPO-049) and needs a row in both tables. R-REPO-033 says a changed `secretRef` file takes effect within 60 s. The plan keyed the client by `(repository id, config_version, secret-file fingerprint)`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Key by repository id and `config_version`; the credential reads references at use | The client holds a secret object that reads the file or the variable again when its value is 10 s old (1 s after a failure) and fails the request with 502 `upstream_secret_unavailable` when it cannot | A rotated file changes nothing in the pool; no fingerprint to compute per request; the key is the one the ETag already is | Each replica opens the file at most every 10 s per repository |
+| (b) Add a file fingerprint to the key | Every lookup stats the referenced files; a changed file builds a new client | The client is immutable | A stat per lookup; a rotation throws the connection pool away; a variable has no fingerprint |
+| (c) Build a client per request | No cache | No state | A TLS handshake per request |
+
+**Choice:** (a). The cache `proxy_upstream_clients` is registered in the area `repo_config`, bounded to 2,048 clients, with `cache.snapshot_safety_ttl` as its `SafetyTTL`; a change of the repository evicts its entries, and the idle connections of the client a newer version replaced are closed. A refusal to resolve a secret is remembered for 5 s, so a flood of requests for a repository with a missing file costs one resolution per interval.
+
+**Rationale:** The version key makes a stale client unreachable even if an eviction is missed, and the use-time read gives R-REPO-033's bound without touching the pool. The development agent would revisit this if reading a mounted file every 10 s shows up in a profile; the interval is a constant (`upstream.RefreshInterval`).
+
+**Applied in the spec:** R-REPO-033 (the bound of 10 s), R-REPO-049 (the row), [architecture.md](architecture.md) R-ARCH-032 (the cache).
+
+### Q-REPO-90 · The upstream test is a probe of the format's resource that answers 200 with a result
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-024 defines two operations and the shape of a result, and leaves open what the probe requests, what counts as "reachable" and "authenticated", how an unreachable upstream is answered, and what the test does for a repository that must not contact its upstream.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One GET of the format's probe resource through the repository's own client; every outcome is a 200 with a result | `reachable` is true for any HTTP response, `authenticated` is false for 401 and 403, `error` carries a stable code for a failure; offline repositories are not contacted | The test exercises exactly what a fetch does (credentials, egress rules, source network, redirects); an administrator reads one shape | A 500 from the upstream is "reachable" |
+| (b) A transport failure is a 502 | The test answers like a fetch | Familiar status | The UI cannot tell "the test failed" from "the upstream is down"; the DNS case of the acceptance criterion is a result, not an error |
+| (c) The test ignores offline | It always sends the request | Works while preparing to go online | The page says offline MUST stop all upstream traffic of the repository |
+
+**Choice:** (a). The probe resource is a facts entry of the format catalog (`ProbePath`: npm `-/ping`; empty means the URL itself), requested with GET under the path of the upstream URL; at most 64 KiB of the body are read. A test of a repository with `availability.mode: offline`, or while `proxy.global_offline` is on, reports `offline` and sends nothing. The operation needs `repositories:write-config`, answers 404 for a missing key and 400 `not_applicable` for a repository that is not remote, and reads and writes no circuit state.
+
+**Rationale:** A probe that shares the fetch path cannot report a configuration that fetches do not use. The development agent would revisit the offline rule if administrators need to test before switching a repository on; a separate `force` member would then be the way, not a silent exception.
+
+**Applied in the spec:** R-REPO-003 (the registration), R-REPO-024 (the result, its codes and the criteria).
+
+### Q-REPO-91 · What an omitted remote member takes, and which members are refused until they are built
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-024 lists a default for every member but says formats "propose entries for well-known upstreams" for `extraHosts`, and a URL "required"; three members, the client certificate, the headers and the named proxy, belong to P1 requirements, and two more members (pass-through, unused cleanup) to P1 behavior.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Proposals only for the well-known upstream; a P1 member is refused with `not_applicable` until it is built | `extraHosts` takes the format's entries when `url` is omitted or equals the format's upstream; `clientCertificate`, `headers`, `outboundProxy.mode: named`, `cache.storeArtifacts: false`, `cache.unusedRetentionHours` above 0 are 422 `not_applicable`; `outboundProxy.mode: direct` works | No host is trusted for a private upstream that was never meant to reach it; no accepted setting is silently ignored | An operator who sets a P1 member gets a refusal now instead of a no-op |
+| (b) Always propose the format's hosts | `extraHosts` defaults to the proposal whatever the URL | Simpler default | A private NuGet feed would allow `*.nuget.org` redirects it never asked for |
+| (c) Accept P1 members and ignore them | Stored, not enforced | Documents are portable to a later version | A header or a certificate that is not sent looks configured |
+
+**Choice:** (a). The same rule makes `url` required for a format without a default upstream, normalizes an empty path to `/`, and, for the cache periods of a format that has none (no metadata documents), takes 0. The update path calls a hook, `RemoteDeps.OnUpstreamChanged`, in its transaction when `url`, `extraHosts`, `authMode`, `username`, `password`, `clientCertificate` or `headers` changed, where R-REPO-011 asks for the invalidation of R-REPO-045; the hook is bound by the cache invalidation.
+
+**Rationale:** Refusing is the only behavior that keeps the stored document and the enforced behavior equal. The development agent would revisit it when the P1 requirements are built; each refusal is one line in `validateRemote` and goes with its requirement.
+
+**Applied in the spec:** R-REPO-024 (the `extraHosts` row and the bullets on `url` and the refusals).
 
 ### Q-REPO-100 · The prefix of an invalidation is whole segments, validated up front
 
