@@ -1,0 +1,5 @@
+#!/bin/sh
+# The `npm` that pnpm 10 runs for whoami, view and the upload of publish (it delegates those commands to an npm on
+# its PATH). The image has no npm of its own (Dockerfile), so pnpm10 puts this directory on its PATH and gets the
+# npm 11 row: the generation bundled with the one Node.js of the image (Q-NPM-45). Only bin/pnpm10 uses it.
+exec /usr/local/bin/npm11 "$@"

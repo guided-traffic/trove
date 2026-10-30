@@ -94,7 +94,9 @@ format is not npm, answers 404 with the npm error body (R-NPM-005).
   `DELETE`, and **501** for `POST`. npm's fetch layer retries `GET` and `PUT` on any 5xx and never
   retries `POST` ([make-fetch-happen](https://github.com/npm/make-fetch-happen/blob/main/lib/remote.js)),
   so a 5xx on a `GET` would cost the user retries, while 501 on a `POST` costs nothing and says
-  what it means.
+  what it means. This holds for npm. pnpm 10, 11 and 12 retry a 501 answer to their audit `POST` after
+  10 seconds and after a minute (measured, Q-NPM-49), and a metadata `PUT` that is not built answers
+  404 for the same reason as any other `PUT`.
 
 <details>
 <summary>Endpoint map</summary>
@@ -1050,6 +1052,9 @@ as `PUT {name}` without a `.tgz` attachment, with `versions[v].deprecated` set
 - Permission per R-AUTHZ-007: `deploy` and ownership (Q-NPM-9). Virtual repositories route
   to the deployment target; remote repositories answer 405.
 - The message appears in full, abbreviated and single-version documents.
+- Until deprecation is built, such a `PUT` answers 404 `not_found` as R-NPM-043 prescribes for an
+  unimplemented `PUT`, so `npm deprecate` fails at once; a 501 would be retried by npm's fetch layer
+  for 70 seconds (Q-NPM-49).
 
 Acceptance criteria:
 
@@ -1920,7 +1925,8 @@ npm install lodash
 npm publish
 ```
 
-pnpm: the same `.npmrc` lines; in `pnpm-workspace.yaml`, for pnpm versions that know the settings:
+pnpm: the same lines in the user-level `~/.npmrc`, because pnpm 11 and 12 ignore a credential with an
+environment variable in a project `.npmrc` (Q-NPM-47); in `pnpm-workspace.yaml`, for pnpm versions that know the settings:
 
 ```yaml
 registrySupportsTimeField: true
@@ -2061,9 +2067,10 @@ answers 404.
 
 Acceptance criteria:
 
-- `npm token list`, `npm profile get`, `npm owner ls @acme/ui`, `npm org ls acme`, `npm access get
+- `npm token list`, `npm profile get`, `npm owner add someone @acme/ui`, `npm org ls acme`, `npm access get
   status @acme/ui` against `npm-all` fail within one second each, without retries in npm's
-  verbose log.
+  verbose log. (`npm owner ls` is not on the list: it reads the maintainers of the package document
+  and succeeds, Q-NPM-49.)
 
 ### R-NPM-044 · npm audit events and metrics
 Priority: **MVP** · Covers: trove-only
@@ -2111,7 +2118,8 @@ clients against the Helm chart with its role split (three `web` and two `worker`
 reference topology of R-HA-056, an S3-compatible store and a deterministic test upstream registry.
 The edge runs in the `scatter` profile of [architecture.md](../architecture.md) R-ARCH-032, so
 consecutive requests of one client reach different `web` replicas (INV-18). A green full run of
-Test and Release on the commit that closes the phase repeats the scenario list with Valkey stopped (R-NPM-046); the node-drain run of R-HA-059 carries npm load
+Test and Release on the commit that closes the phase repeats the scenario list with Valkey stopped (R-NPM-046); that run is the
+workflow dispatched with `closing=true` on that commit (Q-NPM-46). The node-drain run of R-HA-059 carries npm load
 of its own.
 
 The gate rows follow a rule, so the gate tracks what users run (Q-NPM-4):
@@ -3880,6 +3888,130 @@ revisit this if a scenario fails on a row only on Node 24 and passes on the Node
 with; that row then gets its own image tag and its own pin.
 
 **Applied in the spec:** R-NPM-045 (the Node.js of the clients).
+
+### Q-NPM-46 · What marks the run that closes the phase
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the roadmap (M2, E2.1, E2.2, E2.6) and R-NPM-045 reserve three things for "the full run of Test
+and Release on the commit that closes the phase": the scenario list and the cold-cache install with Valkey
+stopped, the read-only subset against `https://registry.npmjs.org`, and a fuzz run of `Match` and
+`Inspect` of at least 30 minutes. The workflow ran on `push` to `main`, on pull requests and on
+`workflow_dispatch` without inputs; nothing told a run on the closing commit from any other.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A dispatch input `closing` | `workflow_dispatch` with the boolean input `closing`; the extra legs run only when it is true; the ref of the run is the closing commit | Explicit and chosen by a person; the run is a full run (every job of the workflow runs on a dispatch); no commit or tag convention to keep; the public registry and 30 minutes of fuzzing never run by accident | Someone has to start it; a run on `push` never carries the legs |
+| (b) Every push to `main` | The legs run on each push | Nothing to remember | 30 minutes of fuzzing and a dependency on the public registry on every change; the Valkey-stopped leg doubles the e2e time of every change |
+| (c) A tag or branch naming the phase | A `phase-*` tag starts the legs | Visible in the history | A second trigger in the workflow, a naming rule, and a tag that must be pushed before the run exists |
+| (d) A marker in the commit message | The legs run when the head commit says so | In the history | A commit message that decides what CI runs; squash merges lose it; a pull request run could carry it by accident |
+
+**Choice:** (a). The jobs are `e2e-npm` (its matrix gains the leg `npm-closing`) and `fuzz-npm` (three legs of 30
+minutes: `FuzzR_ARCH_028_Match`, `FuzzR_ARCH_028_Inspect`, `FuzzMatch`), both in
+[release.yml](../../../.github/workflows/release.yml); the legs are the make targets
+`make e2e SET=npm-closing` and `make fuzz-npm`. A dispatch does not release (Semantic Release runs on `push`
+only), so the closing run is a pure verification of the commit.
+
+**Rationale:** The closing run is a decision about a commit, and a person makes it. The development
+agent would revisit this if the owner wants the closing run to start itself when the last work package
+of a phase merges; the trigger is then a `workflow_run` or a label, and the legs stay as they are.
+
+**Applied in the spec:** R-NPM-045 (the closing run), roadmap M2 (E2.1, E2.6). Code:
+[release.yml](../../../.github/workflows/release.yml), [e2e.sh](../../../deploy/dev/e2e.sh) (sets `npm`, `npm-closing`).
+
+### Q-NPM-47 · Where the matrix puts the snippets and what it adds through the environment
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: E2.8 requires the configure step to use the snippets of R-NPM-041 as they are. The clients
+need more than the snippets give: a cache directory of their own, no telemetry, Yarn 4's release-age
+quarantine (`npmMinimalAgeGate`, which refuses a package published a moment ago), and a place for the
+file. The first run showed that pnpm 11 and 12 ignore a credential with an environment variable in a
+project `.npmrc` (their warning: "environment variables are not expanded in registry credentials that
+come from a project .npmrc"), and that pnpm 10 runs an `npm` from its `PATH` for `whoami`, `view` and the
+upload of `publish`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Snippet verbatim at the place its client reads it; everything else through the environment | The matrix renders the template of `SetupTemplates`, writes it to the file the template names (`~/.npmrc` for pnpm), and sets `HOME`, cache directories, `YARN_NPM_MINIMAL_AGE_GATE=0` and the like as environment variables of the command; pnpm 10 gets the npm 11 row as its `npm` | The snippet users paste is what is tested, byte for byte; a client setting that a snippet should carry shows up as a failing scenario, not as a hidden edit | The environment is a second place that configures the clients (small, in one function) |
+| (b) Edit the snippets until every client works | Append settings to the files | Fewer environment variables | The matrix would test a configuration no user is told to write |
+| (c) Skip the pnpm rows' credential | Run pnpm anonymously | Nothing to place | The repository requires authentication (the realistic case); the row would test nothing |
+
+**Choice:** (a). The pnpm snippet therefore names `~/.npmrc` (`internal/formats/npm/setup.go`, test
+`TestR_NPM_041_PnpmCredentialsLiveInTheUserFile`), the clients image has the shim
+`test/e2e/clients/shim/npm` that only `bin/pnpm10` puts on its `PATH`, and the scenario of Yarn 4's
+publish installs its package directory first because `yarn npm publish` needs the package in the lockfile
+of its project.
+
+**Rationale:** (a) keeps the snippet the unit under test. The development agent would revisit the `~/.npmrc`
+choice if pnpm accepts an environment variable in a project file again, and the shim if the pnpm 10 row
+leaves the rule of R-NPM-045.
+
+**Applied in the spec:** R-NPM-041 (the pnpm line), R-NPM-045 (scenario table).
+
+### Q-NPM-48 · How the suite pins a client to a replica and what a waiting scenario does
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: E2.2, E2.3, E2.9 and E2.10 name the replica a client talks to; the scatter profile otherwise
+spreads requests. The client pods run the forwarder `fwd` on the base URL's port, so the clients cannot
+tell where their bytes go. Remote and virtual npm repositories (WP2.5) and the exposure adapter (WP2.9)
+arrive in other work packages than the harness.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A target file in the forwarder | `fwd -target-file /tmp/target`: while the file holds `host:port` the forwarder relays there instead of the edge; the test writes the pod IP of a web replica and empties the file afterwards | No pod restart, no second base URL, the certificate is the replica's (it names `localhost`); one pod serves any replica | Changes the forwarder (a few lines, unit-tested) |
+| (b) One pod per replica started by the script | The target is fixed at pod creation | No forwarder change | Pod IPs change whenever the web pods do; the pods would have to be recreated for each test |
+| (c) The clients talk to a port-forward on the host | `kubectl port-forward` per replica | No pod changes | The clients run in pods, not on the host |
+
+And for a scenario that needs a class the repository API refuses today (`unsupported_class`), the
+options are: (i) skip it, (ii) fail it, (iii) fail it unless an environment switch reports it as
+pending with the work package that unblocks it.
+
+**Choice:** (a) and (iii). `npmPending` fails the test with `PENDING WP2.5: …` unless
+`TROVE_E2E_NPM_ALLOW_PENDING=1`, which reports a skip that names the package and counts it as `pending` in the
+matrix report (`.out/e2e/npm-<run>.json`); CI never sets the switch, so a change cannot go green with a scenario
+that cannot run. A scenario a client cannot run is `not applicable`, with the reason in the log line, in the
+report and in [e2e.md](../../developer/e2e.md#the-matrix-and-what-is-not-applicable).
+
+**Rationale:** A pending scenario is a known hole; it must not look like a pass or like noise. The
+development agent would revisit (iii) when WP2.5 and WP2.9 have landed: the switch and the probes in
+`npmFixture` can then be removed.
+
+**Applied in the spec:** R-NPM-045 (a scenario that waits is reported, never silently skipped).
+
+### Q-NPM-49 · What the P1 scenarios assert, and what the first run changed
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the scenario list has login, audit, search and deprecate, which are P1: their endpoints answer
+as R-NPM-043 prescribes. The first run against the built image found four places where the registry or the
+page did not match what the clients do:
+
+1. `npm deprecate` waited 70 seconds: the metadata `PUT` of a deprecation answered 501, which npm's fetch
+   layer retries for a `PUT` (R-NPM-001 says exactly that).
+2. `pnpm audit` (pnpm 10, 11 and 12) retries a 501 answer to its audit `POST` after 10 seconds and again
+   after a minute; the premise of R-NPM-001 that a 501 on a `POST` "costs nothing" holds for npm only.
+3. `npm owner ls` succeeds (it reads the maintainers of the document), so it cannot be a command that
+   "fails within one second" as the criterion of R-NPM-043 says; `npm owner add` is the command that fails.
+4. A client that logs in anonymously (pnpm, Yarn 4, Yarn 1) gets the 401 of the authentication gate at a
+   repository that requires authentication, where npm, which sends its credential, gets the 404 or 501 of the
+   endpoint.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Fix 1, document 2 to 4 | The deprecating `PUT` answers 404 `not_found`; the scenarios assert the answer each client can produce (404, 501, or the 401 of the gate), and for `pnpm audit` only the 501 it reports; the criterion names `npm owner add` | The registry follows its own rule where it can; the suite states what clients do | `pnpm audit` keeps its 70 seconds until audit is built (P1) |
+| (b) Assert the spec text as written | Every P1 command must fail within seconds without a retry | One rule | Fails on facts about the clients that trove does not control |
+| (c) Skip the P1 scenarios | Not run | Fast | The criteria R-NPM-043 and E2.1 name them |
+
+**Choice:** (a).
+
+**Rationale:** A `PUT` that is not implemented is the 404 the page already prescribes; a 5xx there
+cost a user 70 seconds. The client behaviors are facts to record, not to hide. The development agent would
+revisit 2 when audit is built (R-NPM-038): the 501 then no longer occurs.
+
+**Applied in the spec:** R-NPM-018 (the answer until it is built), R-NPM-001 (the 501 note), R-NPM-043 (the
+criterion). Code: `internal/formats/npm/handlers_deprecate.go`, `TestR_NPM_043_DeprecateIsRefusedWithoutRetries`.
 
 ## What this does not cover
 

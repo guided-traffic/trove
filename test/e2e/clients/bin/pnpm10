@@ -1,3 +1,6 @@
 #!/bin/sh
-# Gate row pnpm10 of R-NPM-045 (test/e2e/clients/package.json).
+# Gate row pnpm10 of R-NPM-045 (test/e2e/clients/package.json). pnpm 10 delegates whoami, view and the upload of
+# publish to an `npm` on its PATH; the image has none, so shim/npm (the npm11 row) is put in front.
+PATH="/clients/shim:$PATH"
+export PATH
 exec node /clients/node_modules/pnpm10/bin/pnpm.cjs "$@"

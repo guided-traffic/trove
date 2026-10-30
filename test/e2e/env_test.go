@@ -162,6 +162,7 @@ func script(t testing.TB, name string, args ...string) string {
 
 type pod struct {
 	Name, Node, Phase, UID string
+	IP                     string // the pod address, for a forwarder that pins a client to the replica
 	Ready, Deleting        bool
 	Restarts               int
 	Created                time.Time
@@ -186,6 +187,7 @@ func podsOf(t testing.TB, selector string) []pod {
 			Spec   struct{ NodeName string }
 			Status struct {
 				Phase             string
+				PodIP             string `json:"podIP"`
 				ContainerStatuses []struct {
 					Ready        bool
 					RestartCount int
@@ -198,7 +200,7 @@ func podsOf(t testing.TB, selector string) []pod {
 	}
 	var out []pod
 	for _, i := range l.Items {
-		p := pod{Name: i.Metadata.Name, UID: i.Metadata.UID, Node: i.Spec.NodeName, Phase: i.Status.Phase, Deleting: i.Metadata.DeletionTimestamp != nil, Created: i.Metadata.CreationTimestamp}
+		p := pod{Name: i.Metadata.Name, UID: i.Metadata.UID, Node: i.Spec.NodeName, Phase: i.Status.Phase, IP: i.Status.PodIP, Deleting: i.Metadata.DeletionTimestamp != nil, Created: i.Metadata.CreationTimestamp}
 		p.Ready = len(i.Status.ContainerStatuses) > 0
 		for _, c := range i.Status.ContainerStatuses {
 			p.Ready = p.Ready && c.Ready

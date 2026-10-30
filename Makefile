@@ -341,7 +341,7 @@ dev-drain: ## Drain a node under k6 load with cursor-persisting jobs; fails on a
 	deploy/dev/drain.sh
 
 .PHONY: e2e
-e2e: ## End-to-end tests on the dev cluster (deploy/dev/e2e.sh); SET=push|failover|access|full|drain|<go test -run regexp>, default: all but the profile switch
+e2e: ## End-to-end tests on the dev cluster (deploy/dev/e2e.sh); SET=push|failover|access|full|drain|npm|npm-closing|<go test -run regexp>, default: all but the profile switch
 	deploy/dev/e2e.sh '$(SET)'
 
 # >>> M2 npm-clients
@@ -349,6 +349,18 @@ e2e: ## End-to-end tests on the dev cluster (deploy/dev/e2e.sh); SET=push|failov
 npm-clients-image: ## Build the image of the npm client matrix (R-NPM-045: npm 10-12, pnpm 10-12, Yarn 4, Yarn 1) into the local Docker; NPM_CLIENTS_IMAGE, default trove-e2e-clients:dev
 	test/e2e/clients/build.sh $(or $(NPM_CLIENTS_IMAGE),trove-e2e-clients:dev)
 # <<< M2 npm-clients
+
+# >>> M2 npm-fuzz
+# The fuzz run of the closing phase (roadmap M2, E2.6): npm's Match and Inspect with the R-ARCH-028 limits checked on
+# every input. The workflow runs three legs (FUZZ=FuzzR_ARCH_028_Match, FuzzR_ARCH_028_Inspect, FuzzMatch) for 30 minutes
+# each when it is dispatched with closing=true (Q-NPM-46). Locally: make fuzz-npm FUZZ=FuzzMatch FUZZTIME=1m.
+FUZZ ?= FuzzR_ARCH_028_Match
+FUZZTIME ?= 30m
+
+.PHONY: fuzz-npm
+fuzz-npm: ## Fuzz one npm target (FUZZ, default FuzzR_ARCH_028_Match) for FUZZTIME (default 30m); a failing input stays in internal/formats/npm/testdata/fuzz
+	go test ./internal/formats/npm -run '^$$' -fuzz '^$(FUZZ)$$' -fuzztime $(FUZZTIME)
+# <<< M2 npm-fuzz
 
 # >>> M2 npm-stub
 # The counting test upstream of the npm tests (test/npmstub, docs/developer/e2e.md) and the reference

@@ -114,3 +114,19 @@ func TestR_NPM_041_SnippetLint(t *testing.T) {
 		}
 	})
 }
+
+// TestR_NPM_041_PnpmCredentialsLiveInTheUserFile: pnpm 11 and 12 ignore a credential with an environment variable
+// in a project .npmrc (their warning: "environment variables are not expanded in registry credentials that come
+// from a project .npmrc"; seen by the client matrix, E2.1), so the pnpm snippet names the user-level file. The
+// other clients read the file of the project.
+func TestR_NPM_041_PnpmCredentialsLiveInTheUserFile(t *testing.T) {
+	want := map[string]string{"npm": ".npmrc", "pnpm": "~/.npmrc", "yarn": ".yarnrc.yml", "yarn-classic": ".npmrc"}
+	for _, tpl := range New().SetupTemplates() {
+		if tpl.Section != "configure" {
+			continue
+		}
+		if tpl.File != want[tpl.Client] {
+			t.Errorf("%s configure snippet targets %q, want %q", tpl.Client, tpl.File, want[tpl.Client])
+		}
+	}
+}

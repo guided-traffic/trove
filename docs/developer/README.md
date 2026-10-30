@@ -54,7 +54,7 @@ no pull-through proxy and no backup exists yet. Everything marked *planned* belo
 | [http-api.md](http-api.md) | Listeners, the middleware chain, the system API and the problem format |
 | [helm-chart.md](helm-chart.md) | The chart: values, rendered objects, validation and the chart tests |
 | [local-profile.md](local-profile.md) | The HA-shaped dev profile on kind, its scripts and its pins |
-| [e2e.md](e2e.md) | The end-to-end suite on the dev cluster: harness, driver, k6 load, tests and open findings; the counting npm test upstream and its corpus |
+| [e2e.md](e2e.md) | The end-to-end suite on the dev cluster: harness, driver, k6 load, tests and open findings; the npm client matrix and its tests (E2.1 to E2.12), the counting npm test upstream and its corpus, the closing run |
 | [audit.md](audit.md) | Audit trail: registry, recorder, journal row, query, partitions, how to add an event type |
 | [repositories.md](repositories.md) | The repository model: service, snapshot and unknown-key lookup, validation, patterns, deletion job, the format registry and the generic format |
 | [proxy.md](proxy.md) | The pull-through proxy: the upstream clients of remote repositories (settings applied to the outbound client, credentials, secret references, the client cache, the foreign-host check, the upstream test); the engine adds its sections |

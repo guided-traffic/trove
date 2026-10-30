@@ -34,6 +34,8 @@ Node.js from `web/.nvmrc`, and the pinned helm, kubectl, kind and Docker Buildx.
 | Container Scan (Trivy, built image) | `make image IMAGE=trove:scan`, then Trivy | Trivy (pinned `TRIVY_VERSION`) on the built image: fixed OS and library vulnerabilities of CRITICAL or HIGH, secrets and misconfigurations; SARIF uploaded as `trivy-container-report` |
 | integration (Valkey 9.1) | `make integration-up`, `make test-integration`, `make integration-down` | the integration tier against the compose stack on TLS, on Valkey 9.1 only (no older line is guaranteed while trove is in development); uploads `test-integration` and `profile-integration` |
 | S3 conformance (MinIO) | `make minio-up`, `make s3-conformance`, `make minio-down` | the conformance tests of R-STOR-035 against MinIO, built from source at `MINIO_COMMIT` and served over TLS only; the server log is uploaded on failure |
+| e2e-npm on kind (npm) | `make image VERSION=dev`, `make dev-up`, `make e2e SET=npm`, `make dev-down` | the npm acceptance matrix (eight real clients, [R-NPM-045](../spec/formats/npm.md#r-npm-045--client-acceptance-matrix)) and E2.2 to E2.12 on the scatter profile with the counting test upstream; gates every change, own cluster name and edge port (8082). A dispatch with `closing=true` adds the leg `npm-closing` (port 8083): the matrix and the cold install with Valkey stopped, and the read-only subset against the public registry ([Q-NPM-46](../spec/formats/npm.md#q-npm-46--what-marks-the-run-that-closes-the-phase)); uploads `e2e-npm-report-<set>`, `e2e-npm-artifacts-<set>` and on failure the cluster state |
+| fuzz npm (closing run only) | `make fuzz-npm FUZZ=<target> FUZZTIME=30m` | three legs (`FuzzR_ARCH_028_Match`, `FuzzR_ARCH_028_Inspect`, `FuzzMatch`) of 30 minutes each; runs only on a dispatch with `closing=true`; uploads the failing input |
 | e2e on kind (push, failover) | `make image VERSION=dev`, `make dev-up`, `make e2e SET=<set>`, `make dev-down` | the dev profile on a kind cluster, one leg per set: `push` (every change) and `failover` (E0.13, E0.4, E0.6); each leg has its own cluster name and edge port; uploads the reports, `e2e-artifacts-<set>`, and on failure the cluster state |
 | workflow files (actionlint) | `actionlint` (pinned `ACTIONLINT_VERSION`) | every file of `.github/workflows`, with [.github/actionlint.yaml](../../.github/actionlint.yaml) |
 | coverage generator (links and rules) | `go run ./internal/tools/coverage -check`, then `-links` | the generated pages match their rules; every relative link and anchor resolves |
@@ -100,7 +102,20 @@ make coverage-report                    # merges .out/coverage
 make test-release-tooling               # npm ci, npm audit signatures, the release notes check
 go run ./internal/tools/coverage -check -links
 make image VERSION=dev && make dev-up && make e2e SET=push && make dev-down
+make image VERSION=dev && make dev-up && make e2e SET=npm && make dev-down   # TROVE_DEV_HTTP_PORT=8080 is the port of the committed reference lockfile; any port works
+make fuzz-npm FUZZ=FuzzMatch FUZZTIME=1m
 ```
+
+### The run that closes a phase
+
+The roadmap reserves a few checks for "the full run of Test and Release on the commit that closes the phase"
+(M2: the npm scenario list and the cold-cache install with Valkey stopped, the read-only subset against the public registry,
+the 30-minute fuzz run of npm's `Match` and `Inspect`). Nothing in a push or a pull request marks that commit, so a person starts
+the run ([Q-NPM-46](../spec/formats/npm.md#q-npm-46--what-marks-the-run-that-closes-the-phase)):
+*Actions, Test and Release, Run workflow*, the closing commit as the ref, `closing` ticked; or
+`gh workflow run release.yml --ref main -f closing=true`. Every job of the workflow runs, plus the legs `e2e-npm (npm-closing)` and
+the three `fuzz npm` legs. A dispatch does not release (Semantic Release runs on `push`), and a failed closing leg means the phase
+is not closed.
 
 `make generate-check` runs `git diff --exit-code`, so it fails on a tree with uncommitted changes for
 reasons unrelated to generation. `make dev-up` needs an amd64 host or the emulator of

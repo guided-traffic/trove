@@ -504,3 +504,19 @@ func TestR_NPM_008_RestoreBringsBackTheOriginalBytes(t *testing.T) {
 		}
 	})
 }
+
+// TestR_NPM_043_DeprecateIsRefusedWithoutRetries: npm deprecate sends the document back as a PUT without an
+// attachment (R-NPM-018, P1). Until it is built the answer is the 404 of an unimplemented PUT, never a 5xx:
+// npm's fetch layer retries a PUT on any 5xx, which made the command wait 70 seconds in the client matrix.
+func TestR_NPM_043_DeprecateIsRefusedWithoutRetries(t *testing.T) {
+	rf := newRepo(t)
+	rf.publish("lodash", "4.17.21")
+	body := `{"_id":"lodash","name":"lodash","versions":{"4.17.21":{"name":"lodash","version":"4.17.21","deprecated":"use something else"}}}`
+	r := rf.do(http.MethodPut, "lodash", body)
+	if r.Code != 404 {
+		t.Fatalf("a deprecating PUT answered %d %s, want 404", r.Code, r.Body.String())
+	}
+	if m := jsonOf(t, r); m["code"] != "not_found" {
+		t.Fatalf("code %v in %s", m["code"], r.Body.String())
+	}
+}

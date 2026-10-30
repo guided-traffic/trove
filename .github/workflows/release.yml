@@ -16,6 +16,14 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      closing:
+        description: >-
+          The full run on the commit that closes a phase (Q-NPM-46): adds the legs the roadmap reserves for it, the npm
+          scenario list and cold-cache install with Valkey stopped, the read-only subset against the public registry and
+          the 30-minute fuzz run of npm's Match and Inspect. Choose the closing commit as the ref of the run.
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -915,6 +923,187 @@ jobs:
         if: always()
         run: make dev-down
 
+  # The npm acceptance matrix (R-NPM-045, roadmap M2 E2.1 to E2.12): eight real clients against the scatter profile and the
+  # counting test upstream, docs/developer/e2e.md#the-npm-client-matrix. It gates every change. A dispatch with
+  # closing=true (Q-NPM-46) adds the leg that belongs to the commit that closes the phase: the scenario list and the
+  # cold-cache install with Valkey stopped, and the read-only subset against the public registry. The ports differ from
+  # the e2e job's (8080, 8081) so that the jobs can share a runner host.
+  e2e-npm:
+    name: e2e-npm on kind (${{ matrix.set }})
+    runs-on: self-hosted
+    needs: [chart, image]
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.closing && '[{"set":"npm","port":"8082"},{"set":"npm-closing","port":"8083"}]' || '[{"set":"npm","port":"8082"}]') }}
+    env:
+      TROVE_IMAGE: guidedtraffic/trove:dev
+      TROVE_DEV_CLUSTER: trove-${{ matrix.set }}-${{ github.run_id }}
+      TROVE_DEV_HTTP_PORT: ${{ matrix.port }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Load the tool pins
+        uses: ./.github/actions/load-pins
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential jq
+
+      - name: Install the pinned helm
+        uses: azure/setup-helm@v5
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install the pinned kubectl
+        uses: azure/setup-kubectl@v5
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: Install the pinned kind
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"
+          GOBIN="$RUNNER_TEMP/bin" go install "sigs.k8s.io/kind@${KIND_VERSION}"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      # The clients run inside the clients image (its own Node.js, test/e2e/clients/Dockerfile), so this job needs no
+      # Node.js on the runner and none of the libraries the pinned Node.js loads (Q-ARCH-218).
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
+      - name: Log in to Docker Hub (the dev profile's images)
+        uses: docker/login-action@v4
+        with:
+          username: guidedtraffic
+          password: ${{ secrets.DOCKERHUB_PAT }}
+
+      - name: The dev profile's dependency pins and the runner architecture
+        run: |
+          set -euo pipefail
+          [ "$(uname -m)" = "x86_64" ] || { echo "::error::the dev profile needs an amd64 runner (or qemu), got $(uname -m)"; exit 1; }
+          echo "kind $KIND_VERSION, kubectl $KUBECTL_VERSION, helm $HELM_VERSION, clients Node image $E2E_CLIENTS_NODE_IMAGE"
+          kind version
+          kubectl version --client
+          helm version --short
+          for u in https://haproxy-ingress.github.io/charts https://charts.jetstack.io https://guided-traffic.github.io/valkey-operator https://guided-traffic.github.io/internal-secrets-operator https://cloudnative-pg.github.io/charts; do
+            curl -fsSL --retry 3 -o /dev/null "$u/index.yaml" || { echo "::error::chart repository $u is not reachable"; exit 1; }
+          done
+
+      - name: make image
+        run: make image IMAGE="$TROVE_IMAGE" VERSION=dev
+
+      - name: make dev-up
+        timeout-minutes: 25
+        run: make dev-up
+
+      - name: make e2e SET=${{ matrix.set }}
+        timeout-minutes: 60
+        run: make e2e SET=${{ matrix.set }}
+
+      - name: Upload the go test -json report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-npm-report-${{ matrix.set }}
+          path: .out/test-e2e.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload the matrix report, the client logs and the test upstream's counters
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-npm-artifacts-${{ matrix.set }}
+          path: .out/e2e/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Cluster state (failure only)
+        if: failure()
+        run: |
+          set -u
+          ctx="kind-${TROVE_DEV_CLUSTER}"
+          mkdir -p .out/cluster-state
+          for ns in trove ingress-controller cert-manager valkey-operator-system internal-secrets-operator-system cnpg-system kube-system; do
+            kubectl --context "$ctx" -n "$ns" get pods -o wide > ".out/cluster-state/pods-$ns.txt" 2>&1 || true
+            kubectl --context "$ctx" -n "$ns" describe pods > ".out/cluster-state/describe-$ns.txt" 2>&1 || true
+            kubectl --context "$ctx" -n "$ns" get events --sort-by=.lastTimestamp > ".out/cluster-state/events-$ns.txt" 2>&1 || true
+          done
+          for p in $(kubectl --context "$ctx" -n trove get pods -o name 2>/dev/null); do
+            kubectl --context "$ctx" -n trove logs "$p" --all-containers --tail=500 > ".out/cluster-state/log-${p#pod/}.txt" 2>&1 || true
+          done
+          kubectl --context "$ctx" get nodes -o wide > .out/cluster-state/nodes.txt 2>&1 || true
+          helm --kube-context "$ctx" -n trove status trove > .out/cluster-state/helm-status.txt 2>&1 || true
+          docker ps -a > .out/cluster-state/docker-ps.txt 2>&1 || true
+          cp -r .dev/logs .out/cluster-state/dev-logs 2>/dev/null || true
+
+      - name: Upload the cluster state (failure only)
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-npm-cluster-state-${{ matrix.set }}
+          path: .out/cluster-state/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: make dev-down
+        if: always()
+        run: make dev-down
+
+  # The 30-minute fuzz run of npm's Match and Inspect (roadmap M2, E2.6), in the full run on the commit that closes the
+  # phase only (dispatch with closing=true, Q-NPM-46). Three legs: Match and Inspect with the R-ARCH-028 limits checked
+  # on every input, and the classifier's own Match fuzz. A crash fails the leg and uploads the input.
+  fuzz-npm:
+    name: fuzz npm ${{ matrix.target }} (30 min)
+    if: github.event_name == 'workflow_dispatch' && inputs.closing
+    runs-on: self-hosted
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [FuzzR_ARCH_028_Match, FuzzR_ARCH_028_Inspect, FuzzMatch]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: make fuzz-npm
+        run: make fuzz-npm FUZZ=${{ matrix.target }} FUZZTIME=30m
+
+      - name: Upload the failing input
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-npm-${{ matrix.target }}
+          path: internal/formats/npm/testdata/fuzz/
+          if-no-files-found: ignore
+          retention-days: 14
+
   workflows:
     name: workflow files (actionlint)
     runs-on: self-hosted
@@ -1097,7 +1286,7 @@ jobs:
   semantic-release:
     name: Semantic Release
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [versions, lint, gosec, govulncheck, cyclomatic-complexity, generate, build-no-node, unit, web, malware-scan, chart, image, container-scan, integration, s3-conformance, e2e, workflows, coverage, coverage-evidence, coverage-report, release-tooling]
+    needs: [versions, lint, gosec, govulncheck, cyclomatic-complexity, generate, build-no-node, unit, web, malware-scan, chart, image, container-scan, integration, s3-conformance, e2e, e2e-npm, workflows, coverage, coverage-evidence, coverage-report, release-tooling]
     runs-on: self-hosted
     timeout-minutes: 30
     steps:

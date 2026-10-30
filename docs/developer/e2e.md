@@ -64,7 +64,14 @@ test/e2e/                   the Go tests, build tag `e2e`, package e2e
   cmd/driver/               the driver (main.go: connections, probe and job commands; load.go: the load loop)
   Dockerfile                the driver image: a static binary on the release image's base
   npm_clients_test.go       the smoke test of the npm client pods (R-NPM-045), and npmClientExec, the helper the matrix builds on
-  clients/                  the npm client matrix image (below): package.json + package-lock.json, bin/ wrappers, fwd/ forwarder,
+  npm_env_test.go           the npm harness: fixture (repositories, publisher, token), the control API of the test upstream,
+                            npmClient (a gate row in a pod: exec, files, pseudo-terminal), pinning to a replica, the matrix report
+  npm_matrix_test.go        E2.1: the scenario table and the eight rows (TestNPMMatrix); the snippets are rendered from SetupTemplates
+  npm_replicas_test.go      E2.3 and E2.10: publish on A, view on B; validators; unpublish across replicas; FLUSHALL and Sentinel failover
+  npm_upstream_test.go      E2.2, E2.4, E2.5, E2.9: what the counting upstream recorded (TestNPMCollapse, TestNPMUpstream)
+  npm_endpoint_test.go      E2.12: npm on the endpoint `customers`
+  npm_closing_test.go       the closing run: the matrix and the cold install with Valkey stopped, the public-registry subset
+  clients/                  the npm client matrix image (below): package.json + package-lock.json, bin/ wrappers, shim/npm, fwd/ forwarder,
                             Dockerfile, build.sh, check-pins.mjs
 web/e2e/                    the Playwright journeys of R-UI-047 (TypeScript, in the web workspace's lockfile)
   playwright.config.ts      Chromium, one worker, no retries, the edge URL and the IdP mapping from the environment
@@ -86,7 +93,10 @@ make e2e SET=drain           # E0.14 only (with the transfer loop of E1.13)
 make e2e SET='^TestE06'      # any go test -run expression
 make e2e SET=clients         # build the npm clients image, start the client pods, run the smoke test (the pods stay up)
 make e2e SET=clients-down    # remove the client pods
+make e2e SET=npm             # the npm acceptance matrix and E2.2 to E2.12 (CI job e2e-npm, every change); three client pods
+make e2e SET=npm-closing     # the additions of the closing run (below); fails unless TROVE_E2E_NPM_CLOSING=1, which the set exports
 make npm-clients-image       # only build the image into the local Docker
+make fuzz-npm FUZZ=FuzzMatch FUZZTIME=1m   # npm's fuzz targets (CI: 30 minutes, closing run only)
 ```
 
 Needs Docker, kind, kubectl, Helm (pinned, checked by `up.sh`), `jq` and Go. k6 is a container: `K6_IMAGE`
@@ -115,6 +125,8 @@ pod watch and the events of the drain, the logs of the drained pods, and the res
 | `TROVE_E2E_TIMEOUT` | `90m` | go test timeout |
 | `TROVE_E2E_DRIVER_BIN` | unset | a prebuilt linux driver binary instead of `go build` |
 | `TROVE_E2E_SCATTER_RETURN` | `1` | `0` leaves the cluster in the `scatter` profile after E0.11 |
+| `TROVE_E2E_RUN` | unset | replaces the `go test -run` expression of any set (`TROVE_E2E_RUN='TestNPMMatrix/rows/E2.1_npm11' deploy/dev/e2e.sh npm`) |
+| `TROVE_E2E_NPM_ALLOW_PENDING` | unset | `1` reports a scenario that waits for another work package as a skip that names it; unset, it fails ([Pending](#pending)) |
 
 The suite runs over TLS by default: the scheme, the CA and the probe scheme are parameters (the defaults above),
 and nothing in the suite hard-codes `http`. What the move to TLS changed is listed in
@@ -589,19 +601,22 @@ test/e2e/clients/
   launcher with the native binary of its platform package, so the Dockerfile runs `npm rebuild pnpm12` (all other scripts
   stay off); with the script skipped the launcher falls back to Node.js and may download a binary at first use.
   Verified: `<row> --version` prints the pinned version for all eight rows in the built image (2026-10-30, Node.js 26.13.0),
-  and `pnpm12` also runs with no `node` on `PATH`. Not verified yet: the full scenario list of each row on Node.js 26; the matrix tests show it.
+  and `pnpm12` also runs with no `node` on `PATH`. The scenario list of every row runs on Node.js 26.13.0 ([the matrix](#the-matrix-and-what-is-not-applicable)); pnpm 10 runs an
+  `npm` from its `PATH` for `whoami`, `view` and the upload of `publish`, which the image does not have, so `bin/pnpm10`
+  puts `shim/npm` (the npm11 row) in front.
 - **The base URL is the real one.** Each client pod runs `fwd -listen 127.0.0.1:<edge port> -to <target>` as its only
   process. The clients therefore use `https://localhost:<edge port>` exactly as the setup snippets
   ([R-NPM-041](../spec/formats/npm.md#r-npm-041--client-setup-instructions)) print it, and TLS verifies `localhost`
   against the dev CA (the certificates of the edge and the listener both carry `localhost`,
   [deploy/dev/pki.yaml](../../deploy/dev/pki.yaml)). `fwd` relays bytes and terminates nothing. Its default target is
-  the in-cluster HAProxy Ingress HTTPS port (`TROVE_E2E_NPM_CLIENTS_TARGET`); a later test that pins a client to one `web`
-  pod starts its pod with that pod's address instead.
+  the in-cluster HAProxy Ingress HTTPS port, `haproxy-ingress.ingress-controller.svc.cluster.local:443`
+  (`TROVE_E2E_NPM_CLIENTS_TARGET`; verified on the 0.16.3 chart: the smoke test and the matrix reach the cluster through it).
+  `fwd -target-file /tmp/target` makes a test pin the client to one `web` pod
+  ([Pinning a client to a replica](#pinning-a-client-to-a-replica)).
 - **The CA is mounted, not baked.** `deploy/dev/e2e.sh` writes the dev CA into the ConfigMap `trove-e2e-npm-ca`, the pod
   mounts it at `/etc/trove-ca/ca.crt` and sets `NODE_EXTRA_CA_CERTS`, which Node.js itself reads (npm, pnpm 10 and 11,
-  both Yarn lines). Open, not verified: whether the native pnpm 12 reads that variable; if it does not, its scenarios pass
-  the CA through pnpm's `ca`/`cafile` setting. Neither has been run against trove yet; the second smoke subtest below
-  proves the path with plain Node.js. The pod follows the restricted Pod Security profile
+  both Yarn lines). Verified: the native pnpm 12 verifies the dev CA's certificate with that variable alone; none of its
+  scenarios needs pnpm's `ca`/`cafile` setting. The pod follows the restricted Pod Security profile
   (non-root, read-only root filesystem, `/work` as `HOME`, `/tmp`, both emptyDir, no service account token) and runs on
   the control-plane node like the driver.
 - **Running a client.** `kubectl -n trove exec trove-e2e-npm-0 -- npm12 --version`. The Go side is
@@ -610,6 +625,102 @@ test/e2e/clients/
 - **The smoke test.** `TestNPMClients` has two subtests: `R-NPM-045 every gate row runs --version` compares every
   wrapper's output with the version in `package.json`, and `R-NPM-045 the base URL reaches the cluster with a verified
   certificate` requests `/api/v1/system/ping` from the pod through the forwarder with a plain Node.js `https.get`.
+
+## The npm tests
+
+`make e2e SET=npm` (CI job `e2e-npm`, every change) runs the eight clients and the criteria E2.1 to E2.12 of the
+[roadmap](../coverage/roadmap.md) that need a cluster; `make e2e SET=npm-closing` adds what the run that closes a phase adds
+([Q-NPM-46](../spec/formats/npm.md#q-npm-46--what-marks-the-run-that-closes-the-phase), [releasing.md](releasing.md#the-run-that-closes-a-phase)).
+`e2e.sh` builds the clients image, starts three client pods and the counting upstream, and the tests switch the cluster to the
+`scatter` profile once ([useScatter](../../test/e2e/m1_env_test.go)). Decisions: Q-NPM-46 to Q-NPM-49 in [npm.md](../spec/formats/npm.md).
+
+| Test | Criterion | What it does |
+|---|---|---|
+| `TestNPMClients` | R-NPM-045 | the smoke test: every wrapper prints its pinned version, the base URL reaches the cluster with a verified certificate |
+| `TestNPMMatrix` | E2.1, E2.7, E2.8, R-NPM-040, R-NPM-042, R-NPM-043 | the scenario table below for each of the eight rows, rows side by side |
+| `TestNPMReplicas` | E2.3, E2.10 | publish on replica A and `npm view` on replica B (20 rounds); a validator answered 304 by every replica and invalid after a publish elsewhere; `npm unpublish` whose requests reach different replicas (read from the replicas' logs); the scenario list of one row during `FLUSHALL` every 1.5 s, and during a Sentinel failover; an unpublish whose answer the edge drops; a cache invalidation in force on every replica within `epoch_poll_interval` plus 1 s |
+| `TestNPMCollapse` | E2.2, E2.9 | three `npm ci` at once against three replicas from the reference lockfile of [perf/npm](../../perf/npm) through a fresh virtual repository over `npm-local` and a fresh remote on the counting upstream (the lockfile's registry key is the only thing rewritten): exactly one tarball request each, at most one document request each; 100 concurrent misses on two replicas with `pg_stat_activity` and `pg_locks` sampled; Valkey stopped; a killed holder |
+| `TestNPMUpstream` | E2.4, E2.5 | an install on a warm cache with the upstream down and the metadata expired; the negative cache; a claimed namespace never requested from the upstream; the shadowing check of R-REPO-048 with a `deploy` holder, a `manage` holder and the upstream down |
+| `TestNPMEndpoint` | E2.12 | every row lists and installs only the exposed versions of `@acme<run>/sdk` through the endpoint `customers` with a bound token, the hidden version is a 404, tarball URLs and bodies name only the endpoint, a narrowed rule invalidates the ETag on every replica, an uncached remote version is a 404 with no upstream request and the same install through `default` fills the cache |
+| `TestNPMClosing` | E2.1, E2.2, R-NPM-045 | closing run only: the matrix and the cold install with Valkey stopped (every replica ready and degraded), and a read-only subset against `https://registry.npmjs.org` for every row |
+
+### The matrix and what is not applicable
+
+[npm_matrix_test.go](../../test/e2e/npm_matrix_test.go) holds one table of scenarios (`npmScenarios`); the rows are `npmGateRows`. A cell has one of
+four outcomes, in the log line of the subtest, in the table of counts that `TestNPMMatrix` logs per row, and in `.out/e2e/npm-matrix.json`:
+**passed**, **failed**, **not applicable** (the client cannot run the scenario; the reason is in the log and below) and **pending** (it waits for another work
+package; see [Pending](#pending)). Nothing is skipped silently.
+
+The client sees nothing but the snippet: [setupSnippet](../../test/e2e/npm_matrix_test.go) renders the `configure` template of npm's
+`SetupTemplates` with the data the setup API gives it (the edge's registry URL, the keyed credential line, always-auth because `npm-local` requires
+authentication) and writes it to the file the template names. Everything else the clients need goes through the environment of the command
+(`npmClient.environment`): `HOME`, the caches, no telemetry, `YARN_NPM_MINIMAL_AGE_GATE=0` ([Q-NPM-47](../spec/formats/npm.md#q-npm-47--where-the-matrix-puts-the-snippets-and-what-it-adds-through-the-environment)).
+The registry is `npm-all` when the build serves the virtual class and `npm-local` until then (`npmFixture.registry`); the scenarios do not change.
+
+| Scenario | npm 10, 11, 12 | pnpm 10, 11, 12 | Yarn 4 | Yarn 1.22 |
+|---|---|---|---|---|
+| `configure` (E2.8) | `npm config get registry` | `pnpm config get registry` | `yarn config get npmRegistryServer` | `yarn config list` |
+| `whoami` | `npm whoami` | `pnpm whoami` | `yarn npm whoami` | n/a: no such command |
+| `ping` (E2.7) | `npm ping` | `pnpm ping` | n/a: no such command | n/a: no such command |
+| `publish`, scoped and unscoped | `npm publish` | `pnpm publish --no-git-checks` | `yarn npm publish` | `yarn publish --new-version` |
+| `install-local` | `npm install` | `pnpm add` | `yarn add` | `yarn add` |
+| `install-remote` | pending WP2.5 | pending WP2.5 | pending WP2.5 | pending WP2.5 |
+| `dist-tag` add, list, remove | `npm dist-tag` | `pnpm dist-tag` | `yarn npm tag` | `yarn tag` |
+| `deprecate` (P1, 404) | `npm deprecate` | `pnpm deprecate` | n/a: no such command | n/a: no such command |
+| `unpublish` | `npm unpublish` | `pnpm unpublish --force` | n/a: no such command | n/a: no such command |
+| `login` (P1) | `npm login` (501) and `--auth-type=legacy` (404) under a pseudo-terminal | `pnpm login` under a pseudo-terminal | `yarn npm login` under a pseudo-terminal | n/a: `yarn login` only stores the name and e-mail locally and sends no request |
+| `audit` (P1, 501) | `npm audit` | `pnpm audit` (retries, see below) | `yarn npm audit` | n/a: `yarn audit` goes to registry.yarnpkg.com whatever `.npmrc` says |
+| `search` (P1, 404) | `npm search` | `pnpm search` | n/a: no such command | n/a: no such command |
+| `deferred-endpoints` (R-NPM-043) | `token list`, `profile get`, `org ls`, `access get status`, `owner add` | n/a: npm's commands | n/a | n/a |
+| `lockfile-reinstall` | `npm ci` | `pnpm install --frozen-lockfile` | `yarn install --immutable` | `yarn install --frozen-lockfile` |
+| `yarn4-lockfile` (R-NPM-042) | n/a | n/a | `yarn.lock` holds no URL of the registry | n/a |
+| `yarn4-switch-registry` (R-NPM-042) | n/a | n/a | pending WP2.5 | n/a |
+| `pnpm-workspace` (R-NPM-040) | n/a | pending WP2.5 (3 internal and 300 corpus packages) | n/a | n/a |
+
+The logins ask for a user name and a password only at a terminal; `npmClient.execPTY` runs them under `script` with typed answers. The status a
+client reports depends on whether it sends its credential to the login endpoint: npm does and gets the 501 of the `POST` and the 404 of the `PUT`;
+pnpm, Yarn 4 and Yarn 1 log in anonymously and, at a repository that requires authentication, get the 401 of the authentication gate first.
+
+### Pending
+
+`npmPending` ends a scenario that cannot pass yet as `PENDING WP2.5: …` (the repository API still answers `unsupported_class` for a remote or virtual npm
+repository) or `PENDING WP2.9: …` (the rule API refuses an npm repository). By default that is a failure. `TROVE_E2E_NPM_ALLOW_PENDING=1` turns it into a skip that
+names the package, which is how a work package that precedes WP2.5 runs the suite; CI never sets it. When WP2.5 and WP2.9 have landed, the probes in `npmFixture`
+and `npmPending` go away with the switch.
+
+### Pinning a client to a replica
+
+`fwd -target-file /tmp/target` ([test/e2e/clients/fwd](../../test/e2e/clients/fwd)) relays to the address in the file while the file holds one, to the edge otherwise.
+`pinClient(t, pod, webPodIP)` writes `<pod IP>:8080` and `unpinClient` empties it. The client still connects to `https://localhost:<port>` and verifies the
+certificate for `localhost`, which the web pods' listener carries. `pinnedClient` checks the file after writing it. The tests that pin (E2.2, E2.3, validators, E2.12)
+restore the edge target with a `defer`.
+
+### The closing run
+
+`SET=npm-closing` exports `TROVE_E2E_NPM_CLOSING=1` and runs `TestNPMClosing`; without the variable the test fails, so it cannot be absent from the closing run. The
+workflow adds this leg, and the three 30-minute fuzz legs of `make fuzz-npm`, when it is dispatched with `closing=true`.
+
+### Findings of the npm tests
+
+Found while building the matrix, in the order they were found; the first is fixed, the rest are recorded in the spec (Q-NPM-47, Q-NPM-49).
+
+- **`npm deprecate` waited 70 seconds.** The metadata `PUT` of a deprecation answered 501, npm retries a `PUT` on any 5xx. The answer is now the 404 of R-NPM-043
+  (`TestR_NPM_043_DeprecateIsRefusedWithoutRetries`).
+- **pnpm 11 and 12 ignore a credential with an environment variable in a project `.npmrc`.** The pnpm snippet now names `~/.npmrc`.
+- **pnpm 10 shells out to `npm`** for `whoami`, `view` and the upload of `publish`; the image has no npm, so it has a shim (the npm11 row) on pnpm 10's `PATH` only.
+- **Yarn 4 quarantines a version younger than `npmMinimalAgeGate`**; the matrix sets the gate to 0 in the environment, not in the snippet.
+- **`yarn npm publish` needs an installed project**: the package directory is installed once (no dependencies, no request) before it publishes.
+- **`pnpm audit` retries a 501 `POST`** (10 seconds, then a minute) on pnpm 10, 11 and 12, which contradicts the premise of R-NPM-001 that a 501 on a `POST` costs nothing. The
+  scenario asserts the 501 the registry gave; the row takes about two minutes for it until audit is built (R-NPM-038).
+- **`yarn audit` ignores `.npmrc` and goes to registry.yarnpkg.com**; **`yarn login` sends no request**; **Yarn 4 has no unpublish, deprecate or search**. All are `not applicable` with those reasons.
+- **`npm owner ls` succeeds** (it reads the maintainers); the criterion of R-NPM-043 names `npm owner add`.
+
+### Not covered by the npm tests
+
+- A test build of the plug-in with a higher `npmRenderVersion` next to the current one (R-NPM-046): `document.RenderVersion` is a constant hashed into the validator (`Inputs.ETag`), so the criterion needs a second image with another constant next to the first; this suite builds one image and has no test for it. Open: a build-tag or ldflags variant of the constant in WP2.8's harness.
+- The pooler profile (R-HA-058, from M5) and the 200 MiB upload over a throttled link (R-NPM-007, covered by `test/integration/npm/big_test.go`).
+- E2.8's package list and the sanitized README render in the package UI (WP2.7), not in this suite.
+- E2.11 (drain and failover under npm load) is WP2.8's.
 
 ## The counting npm test upstream
 

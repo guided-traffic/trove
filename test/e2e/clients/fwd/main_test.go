@@ -4,9 +4,36 @@ import (
 	"context"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
+
+// The target file replaces the default while it holds an address; the default returns when the file
+// is missing or empty.
+func TestFileTarget(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "target")
+	target := fileTarget("edge:443", file)
+	if got := target(); got != "edge:443" {
+		t.Fatalf("no file: %q, want the default", got)
+	}
+	if err := os.WriteFile(file, []byte("10.0.0.7:8080\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := target(); got != "10.0.0.7:8080" {
+		t.Fatalf("file: %q, want the pinned address", got)
+	}
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := target(); got != "edge:443" {
+		t.Fatalf("empty file: %q, want the default", got)
+	}
+	if got := fileTarget("edge:443", "")(); got != "edge:443" {
+		t.Fatalf("no file configured: %q, want the default", got)
+	}
+}
 
 // The forwarder relays bytes in both directions and passes a half-close on: the echo server answers
 // only after the client has finished writing.

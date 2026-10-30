@@ -48,9 +48,18 @@ case "$set_name" in
   # >>> M2 npm-clients
   clients) run='^TestNPMClients$'; NPM_CLIENTS=1 ;;
   clients-down) NPM_CLIENTS=down ;;
+  # The npm acceptance matrix and the criteria E2.1 to E2.12 (test/e2e/npm_*_test.go): the counting test upstream,
+  # three client pods (one per web replica), the scatter profile. CI runs it as the job e2e-npm on every change.
+  npm) run='^TestNPM(Clients|Matrix|Replicas|Collapse|Upstream|Endpoint)'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
+  # The additions of the run that closes the phase: the matrix again with Valkey stopped, the read-only subset against
+  # the public registry. Started by the workflow only when it is dispatched with closing=true (Q-NPM-46).
+  npm-closing) run='^TestNPMClosing'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NPM_CLOSING=1 ;;
   # <<< M2 npm-clients
   *) run="$set_name" ;;
 esac
+
+# TROVE_E2E_RUN replaces the expression of any set (a single subtest while developing: TROVE_E2E_RUN='^TestNPMMatrix/rows/R-NPM-045_E2.1_npm11').
+run="${TROVE_E2E_RUN:-${run:-}}"
 
 EDGE_PORT="$(docker port "${CLUSTER}-control-plane" 30443/tcp 2>/dev/null | head -1 | sed 's/.*://' || true)"
 EDGE_PORT="${EDGE_PORT:-$DEV_HTTP_PORT}"
@@ -158,7 +167,7 @@ export TROVE_E2E_REPO="$REPO_ROOT" TROVE_E2E_CONTEXT="$CTX" TROVE_E2E_NAMESPACE=
 NPM_CLIENTS_IMAGE="trove-e2e-clients:dev"
 NPM_CLIENTS_LABEL="app.kubernetes.io/component=e2e-npm-client"
 NPM_CLIENTS_PREFIX="trove-e2e-npm-"
-NPM_CLIENTS_COUNT="${TROVE_E2E_NPM_CLIENTS_PODS:-1}"
+NPM_CLIENTS_COUNT="${TROVE_E2E_NPM_CLIENTS_PODS:-${NPM_CLIENTS_DEFAULT_PODS:-1}}"
 
 npm_clients_down() {
   kn delete pod -l "$NPM_CLIENTS_LABEL" --ignore-not-found --wait=true >/dev/null
@@ -191,10 +200,12 @@ npm_clients_up() {
           nodeSelector: { "node-role.kubernetes.io/control-plane": "" },
           tolerations: [{ key: "node-role.kubernetes.io/control-plane", operator: "Exists", effect: "NoSchedule" }],
           automountServiceAccountToken: false,
+          # the host of the customers endpoint (values-dev.yaml) is the forwarder too: E2.12 uses its registry URLs unchanged
+          hostAliases: [{ ip: "127.0.0.1", hostnames: ["packages.trove.localhost"] }],
           securityContext: { runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: { type: "RuntimeDefault" } },
           containers: [{
             name: "clients", image: $image, imagePullPolicy: "IfNotPresent",
-            args: ["-listen", $listen, "-to", $target],
+            args: ["-listen", $listen, "-to", $target, "-target-file", "/tmp/target"],
             env: [{ name: "NODE_EXTRA_CA_CERTS", value: "/etc/trove-ca/ca.crt" }],
             securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } },
             volumeMounts: [

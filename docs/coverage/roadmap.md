@@ -610,10 +610,11 @@ pooler-profile criterion runs from M5 (R-HA-058); R-REPO-049's NuGet criterion r
   `shadows_remote_package`, a `manage` holder's succeeds and is audited, and while the upstream
   cannot be asked a `deploy` holder gets `503` `shadow_check_unavailable`. Its NuGet criterion runs
   from M3 on.
-- **E2.6** npm passes checks 1 to 8 of the conformance kit (R-ARCH-010). A Go fuzz run, in the full run of Test and Release on the commit that closes the phase, of
+- **E2.6** npm passes checks 1 to 8 of the conformance kit (R-ARCH-010). A Go fuzz run, in the full run of Test and Release on the commit that closes the phase (dispatched with `closing=true`, Q-NPM-46), of
   npm's `Match` and `Inspect`, lasting at least 30 minutes, finds no crash and no breach of the
   R-ARCH-028 limits.
-- **E2.7** `npm ping --registry http://localhost:8080/api/npm/npm-all/` succeeds on the dev profile.
+- **E2.7** `npm ping --registry https://localhost:8080/api/npm/npm-all/` succeeds on the dev profile
+  (which serves TLS only, R-ARCH-035).
   This is the remaining criterion of R-HA-051.
 - **E2.8** The version published in E2.3 appears in the packages list, its README renders
   sanitized, and E2.1's configure step uses the snippets from the client setup dialog verbatim.

@@ -377,7 +377,10 @@ pod of another namespace reaches `:8080` and not `:8081`), the failing migration
 connection names and the start-up cases, the Valkey failover, kill and outage under load, the `scatter` profile on
 HAProxy Ingress, the PostgreSQL failovers under load, the node drain, plaintext refused on trove and the object store,
 the renewal of trove's certificate by cert-manager under load, and the second endpoint. [e2e.md](e2e.md) has the
-numbers.
+numbers. The pins of 2026-10-30 came up unchanged on a fresh cluster, `make dev-up` in 2 min 39 s: Helm 4.3.1 (the host
+had 3.21.3; the pinned binary was put first on `PATH`), kubectl v1.37.2, kind v0.33.0 with node image
+`kindest/node:v1.37.0`, HAProxy Ingress chart and image 0.16.3, CloudNativePG operator 1.30.1 with PostgreSQL 18.6
+(`trove-db-1` and `-2` ready), aws-cli 2.39.2 (the bucket Job completed). The same cluster served the npm acceptance matrix.
 
 Not verified here, or not configured:
 

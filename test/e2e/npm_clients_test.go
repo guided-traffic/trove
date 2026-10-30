@@ -35,6 +35,16 @@ func npmClientPod(t testing.TB, i int) string {
 	return prefix + strconv.Itoa(i)
 }
 
+// npmClientCount is the number of client pods `deploy/dev/e2e.sh` started.
+func npmClientCount(t testing.TB) int {
+	t.Helper()
+	n, err := strconv.Atoi(os.Getenv("TROVE_E2E_NPM_CLIENTS_PODS"))
+	if err != nil || n < 1 {
+		t.Fatal("TROVE_E2E_NPM_CLIENTS_PODS is not set; run `deploy/dev/e2e.sh npm`")
+	}
+	return n
+}
+
 // npmClientExec runs a command in clients pod i and returns its standard output.
 func npmClientExec(t testing.TB, i int, argv ...string) string {
 	t.Helper()

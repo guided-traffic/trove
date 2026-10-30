@@ -25,6 +25,8 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack 
  && mkdir /work && chown 1000:1000 /work
 COPY --from=install /clients/node_modules /clients/node_modules
 COPY bin/ /usr/local/bin/
+# The one `npm` there is, on pnpm 10's PATH only (bin/pnpm10): pnpm 10 shells out to npm for whoami, view and publish.
+COPY shim/ /clients/shim/
 COPY --from=fwd fwd-linux-${TARGETARCH} /usr/local/bin/fwd
 USER 1000:1000
 WORKDIR /work

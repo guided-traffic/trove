@@ -30,7 +30,7 @@ func (f *Format) SetupTemplates() []formats.SetupTemplate {
 {{end}}`
 	return []formats.SetupTemplate{
 		{ID: "npm.npmrc.configure", Client: "npm", Section: "configure", Lang: "ini", File: ".npmrc", Template: npmrc},
-		{ID: "pnpm.npmrc.configure", Client: "pnpm", Section: "configure", Lang: "ini", File: ".npmrc", Template: npmrc},
+		{ID: "pnpm.npmrc.configure", Client: "pnpm", Section: "configure", Lang: "ini", File: "~/.npmrc", Template: npmrc},
 		{ID: "yarn.yarnrc.configure", Client: "yarn", Section: "configure", Lang: "yaml", File: ".yarnrc.yml", Template: yarn},
 		{ID: "yarn-classic.npmrc.configure", Client: "yarn-classic", Section: "configure", Lang: "ini", File: ".npmrc", Template: yarnClassic},
 		{ID: "npm.install", Client: "npm", Section: "install", Lang: "shell", Template: "npm install <package>\n"},
