@@ -25,7 +25,7 @@ completes. The beta release is the release that closes phase 7.
 |---|---|---|---|
 | [0 · Specification](#phase-0--specification) | Feature catalog, specification, decisions | — | 🟢 |
 | [1 · Foundation](#phase-1--foundation-m0) | Skeleton, HA-shaped local stack, roles, drain-safe shutdown, TLS everywhere, endpoint foundation | `v0.1.0` | 🟢 |
-| [2 · Access core](#phase-2--access-core-m1) | Login, tokens, permissions, repositories, admin UI | — | 🟢 |
+| [2 · Access core](#phase-2--access-core-m1) | Login, tokens, permissions, repositories, admin UI | `v0.3.0` | 🟢 |
 | [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | — | ⚪ |
 | [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual | — | ⚪ |
 | [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | — | ⚪ |
@@ -135,7 +135,7 @@ Details: [roadmap M1](../coverage/roadmap.md#m1--access-core)
 - 🟢 E2E tests: browser journeys across replicas with random distribution (Playwright with axe), and the exit checks E1.1, E1.8, E1.11, E1.13 and E1.14 on the kind cluster
 
 **Release**
-- ⚪ the release that closes the phase (cut by Semantic Release; the version goes into the table)
+- 🟢 `v0.3.0`
 
 ## Phase 3 · npm registry (M2)
 
