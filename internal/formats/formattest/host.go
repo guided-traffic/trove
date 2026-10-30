@@ -53,6 +53,8 @@ type HostOptions struct {
 	Allow func(formats.Target) error
 	// Claim decides PackageWriter.Claim; nil allows.
 	Claim func(formats.Target, formats.OwnershipWrite) error
+	// Precheck decides Host.CheckOwnership, the read-only early form of Claim; nil allows.
+	Precheck func(formats.Target, formats.OwnershipWrite) error
 	// Remote and Resolver are the engines; nil answers "not supported", as the
 	// production Host does until an engine is bound.
 	Remote   formats.RemoteFetcher
@@ -88,6 +90,7 @@ type Host struct {
 	renders   map[formats.RenditionKey][]byte
 	authz     []AuthorizeCall
 	claims    []ClaimCall
+	prechecks []ClaimCall
 	notified  []Notification
 	jobs      []formats.JobSpec
 	routes    []string // names of the routes served
@@ -227,6 +230,24 @@ func (h *Host) Authorize(_ context.Context, rq *formats.Request, t formats.Targe
 		return h.opts.Allow(t)
 	}
 	return nil
+}
+
+// CheckOwnership implements formats.Host: it records the call and asks Precheck.
+func (h *Host) CheckOwnership(_ context.Context, _ *formats.Request, t formats.Target, w formats.OwnershipWrite) error {
+	h.mu.Lock()
+	h.prechecks = append(h.prechecks, ClaimCall{Target: t, Write: w})
+	h.mu.Unlock()
+	if h.opts.Precheck != nil {
+		return h.opts.Precheck(t, w)
+	}
+	return nil
+}
+
+// OwnershipChecks returns the calls of CheckOwnership so far.
+func (h *Host) OwnershipChecks() []ClaimCall {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]ClaimCall(nil), h.prechecks...)
 }
 
 // Ingest implements formats.Host.

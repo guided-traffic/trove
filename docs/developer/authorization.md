@@ -61,7 +61,7 @@ security view is [permissions.md](../security/permissions.md).
 | [policy_list.go](../../internal/authz/policy_list.go) | The filters of the policy list (`principal`, `expandGroups`, `repository`) and the warnings of a page |
 | [settings.go](../../internal/authz/settings.go) | `SettingsHook`, the `repository.Hooks` that records `authz.settings.changed` in the transaction of a repository update (R-AUTHZ-031) |
 | [populate.go](../../internal/authz/populate.go) | The populate check of R-AUTHZ-008 (`MayPopulateOn`, `PopulateOn`) and `MemberUsableOn` of R-AUTHZ-015 |
-| [ownership.go](../../internal/authz/ownership.go) | Package ownership: `Ownership` with `CheckTx`, `ClaimTx`, `EnforceTx` for writers, the owner operations `Owners`, `AddOwner`, `RemoveOwner`, `OwnedBy`, and `OwnershipHook` for the repository deletion |
+| [ownership.go](../../internal/authz/ownership.go) | Package ownership: `Ownership` with `CheckTx`, `ClaimTx`, `EnforceTx` for writers, `PrecheckWrite` (the same rule read-only, in a transaction of its own, for a writer that decides before it reads a body; Q-ARCH-226), the owner operations `Owners`, `AddOwner`, `RemoveOwner`, `OwnedBy`, and `OwnershipHook` for the repository deletion |
 | [ownership.sql](../../internal/meta/postgres/queries/ownership.sql) | The statements of ownership: the locked read of a claim, the claim (`INSERT … ON CONFLICT DO NOTHING`), owners, release, the deletion of a domain, the list by owner |
 | [audit.go](../../internal/authz/audit.go), [events_authz.go](../../internal/audit/events_authz.go) | The decision audit, the event registry entries |
 | [metrics.go](../../internal/authz/metrics.go) | The `trove_authz_*` families |

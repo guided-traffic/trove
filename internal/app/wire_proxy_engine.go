@@ -40,7 +40,7 @@ func (a *App) wireProxyEngine(ctx context.Context, in infra, px proxyArea, inv i
 	})
 	opts := proxy.Options{
 		Runner: in.db, Items: fa.items, Blobs: in.blobs, Flights: flights, Negatives: cluster.NewNegativeStore(in.vk),
-		Changes: in.changes, Signals: in.signals, Clients: px.clients, Invalid: inv.set, Caches: in.caches,
+		Changes: in.changes, Clients: px.clients, Invalid: inv.set, Caches: in.caches,
 		Replicas: lim.replicas.Get, Audit: in.rec, Config: a.cfg.Proxy, SafetyTTL: a.cfg.Cache.SnapshotSafetyTTL,
 		Metrics: a.tele.metrics.Registry(), Log: a.log.With("component", "proxy"),
 	}

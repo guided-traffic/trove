@@ -557,7 +557,37 @@ func TestRemoteSecrets(t *testing.T) {
 		if res, err := onlyNew.svc.UpstreamTest(ctx, "npm-partner"); err != nil || !res.Reachable || stub.last(t) != "Bearer rotated-again" {
 			t.Fatalf("%+v %q %v", res, stub.last(t), err)
 		}
+		// A later rotation, and a batch whose transaction is repeated (a deadlock, a serialization failure) is walked
+		// once: the cursor and the counts of the rolled-back attempt do not survive it.
+		next := writeKeyring(t, "2027-10", "2027-04", "2027-10")
+		retried, err := repository.ResealSecrets(ctx, repeatingRunner{r.db}, next, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if retried.Resealed != 1 || retried.Failed != 1 || retried.Current != 0 {
+			t.Fatalf("a repeated transaction changed the walk: %+v", retried)
+		}
+		if e.scalar(`SELECT count(*) FROM repository_secrets WHERE sealed LIKE 'v1:2027-10:%'`) != 1 {
+			t.Fatal("the value is not under the newest key")
+		}
 	})
+}
+
+// repeatingRunner runs every transaction twice, the first attempt rolled back after it ran to
+// its end, as the runner does after a serialization failure.
+type repeatingRunner struct{ r meta.Runner }
+
+func (p repeatingRunner) InTx(ctx context.Context, fn func(meta.Tx) error) error {
+	rolledBack := errors.New("rolled back")
+	if err := p.r.InTx(ctx, func(tx meta.Tx) error {
+		if err := fn(tx); err != nil {
+			return err
+		}
+		return rolledBack
+	}); !errors.Is(err, rolledBack) {
+		return err
+	}
+	return p.r.InTx(ctx, fn)
 }
 
 func TestUpstreamChangeHook(t *testing.T) {

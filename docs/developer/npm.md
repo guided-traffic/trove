@@ -104,6 +104,9 @@ flowchart TD
     U --> V[201 with the rev]
 ```
 
+- **The order before the body.** `handlePublish` authorizes the name, asks the ownership rule read-only through `Host.CheckOwnership` (`precheckOwnership`: a change of the package, never a claim; `FirstVersion` from the live versions; Q-NPM-56, Q-ARCH-226), and checks `Content-Length` against `bodyLimit`. A caller who may not write the package costs no spool and no validation. The commit decides again.
+- **The body cap** is `bodyLimit`: the base64 form of `max_tarball_size` plus `bodySlack`, which is the scanner's metadata budget (768 KiB) plus the base64 form of a 256 KiB bundle, 1,110 KiB in all (Q-NPM-53); `TestR_NPM_007_BodyLimitHoldsEveryPartAtItsLimit` pins the sum.
+- **The shadowing check and the commit.** `shadowCheck` reports `skipped` when the repository held a live version. `publishCommit.shadowSkipped` makes `commitVersion` refuse a first version with 503 `shadow_check_unavailable` and `Retry-After`: an unpublish took the last version in between, and R-REPO-048 has not been asked (Q-REPO-118).
 - **The body is a stream.** [publish/scan.go](../../internal/formats/npm/publish/scan.go) reads the JSON byte by byte for the metadata (budget 768 KiB, depth 64, a duplicate member or data after
   the document is an error) and pipes the `data` string through a base64 decoder into `Ingestor.Spool`; the spool hashes in one pass. `FuzzPublishScanner` and the 96 MiB streaming test
   pin the memory bound. The sink for a second `.tgz`, an unknown suffix or an oversize attachment answers before the rest is read.
@@ -493,6 +496,10 @@ walker looks at each header and reads content only for `package.json` (1 MiB) an
 (64 KiB). Everything else is skipped by the tar reader, which still inflates it, so the inflation cap is what
 bounds the cost of a bomb. After the last entry the rest of the inflated stream must be zero padding, the gzip
 trailer is verified, and nothing may follow the gzip member.
+
+Two more rules sit beside the per-entry limits. The inflating reader caps the whole archive at `MaxTotalRatio` (100) times the compressed bytes the inflater has consumed plus 8 MiB, so a publish that costs gigabytes of inflation
+pays for them in upload (Q-NPM-54). The walker keeps the link entries, and `linkChains` runs after the last entry: a link target that passes through another link before its last component is refused, because the lexical check
+resolves `sub/l2/../..` as if `l2` were a folder (Q-NPM-55).
 
 What a walk records: `Facts.Files` (install paths of regular files, for `binding.gyp`, `*.gyp` and
 `directories.bin`), file count and unpacked size (`dist.fileCount`, `dist.unpackedSize`), `HasShrinkwrap`, the

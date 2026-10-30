@@ -213,7 +213,15 @@ func TestR_ARCH_009_AuthorizeCompletesTheCoordinate(t *testing.T) {
 	})
 }
 
-type fakeOwnership struct{ got []OwnershipCheck }
+type fakeOwnership struct {
+	got     []OwnershipCheck
+	prechck []OwnershipCheck
+}
+
+func (o *fakeOwnership) Precheck(_ context.Context, c OwnershipCheck) error {
+	o.prechck = append(o.prechck, c)
+	return errs.E(errs.Forbidden, "package_owned_by_other_owner", "owned")
+}
 
 func (o *fakeOwnership) EnforceTx(_ context.Context, _ meta.Tx, c OwnershipCheck) error {
 	o.got = append(o.got, c)
@@ -258,6 +266,26 @@ func TestR_AUTHZ_018_ClaimFailsClosed(t *testing.T) {
 			t.Fatalf("check = %+v", c)
 		}
 	})
+}
+
+// TestR_AUTHZ_018_CheckOwnershipFailsClosed: the early check asks the bound rule with the
+// request's index, subject and coordinate, and a host with no rule refuses.
+func TestR_AUTHZ_018_CheckOwnershipFailsClosed(t *testing.T) {
+	tg := formats.Target{Package: "left-pad", Actions: []formats.Action{formats.ActionDeploy}}
+	rq := testRequest(formats.Upload)
+	if err := (&Host{}).CheckOwnership(context.Background(), rq, tg, formats.OwnershipWrite{}); errs.KindOf(err) != errs.Internal {
+		t.Fatalf("no rule bound: %v", err)
+	}
+	own := &fakeOwnership{}
+	h := &Host{o: Options{Ownership: own}}
+	err := h.CheckOwnership(context.Background(), rq, tg, formats.OwnershipWrite{FirstVersion: true})
+	if errs.KindOf(err) != errs.Forbidden || len(own.prechck) != 1 || len(own.got) != 0 {
+		t.Fatalf("the refusal must reach the caller, and nothing may be enforced: %v %d %d", err, len(own.prechck), len(own.got))
+	}
+	c := own.prechck[0]
+	if !c.Write.FirstVersion || c.Coordinate.Package != "left-pad" || c.Coordinate.Repository != "key" || c.Subject.Endpoint != "default" {
+		t.Fatalf("check = %+v", c)
+	}
 }
 
 func TestR_ARCH_009_PackageWriterNotifyAndEnqueueNeedTheirSeams(t *testing.T) {

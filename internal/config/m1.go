@@ -99,6 +99,11 @@ type APIRateLimits struct {
 	Read         APIRateLimitRead      `yaml:"read"`
 	Write        APIRateLimitWrite     `yaml:"write"`
 	Anonymous    APIRateLimitAnonymous `yaml:"anonymous"`
+	// The classes of the package protocols under /api/<format>/ (R-API-016), with buckets of
+	// their own.
+	PackageRead      APIRateLimitPackageRead      `yaml:"package_read"`
+	PackageWrite     APIRateLimitPackageWrite     `yaml:"package_write"`
+	PackageAnonymous APIRateLimitPackageAnonymous `yaml:"package_anonymous"`
 }
 
 // APIRateLimitRead is the class of safe methods (R-API-016, limiter api_read).
@@ -118,6 +123,27 @@ type APIRateLimitWrite struct {
 type APIRateLimitAnonymous struct {
 	RequestsPerSecond float64 `yaml:"requests_per_second" default:"5" validate:"min=0.001"`
 	Burst             int     `yaml:"burst" default:"20" validate:"min=1"`
+}
+
+// APIRateLimitPackageRead is the class of safe methods on the package protocols
+// (R-API-016, limiter api_package_read): a lockfile install asks for every tarball.
+type APIRateLimitPackageRead struct {
+	RequestsPerSecond float64 `yaml:"requests_per_second" default:"200" validate:"min=0.001" doc:"Sustained rate; the window is burst divided by this, at least 1s."`
+	Burst             int     `yaml:"burst" default:"1000" validate:"min=1" doc:"Most requests one window admits."`
+}
+
+// APIRateLimitPackageWrite is the class of unsafe methods on the package protocols
+// (R-API-016, limiter api_package_write): publish, unpublish, dist-tags.
+type APIRateLimitPackageWrite struct {
+	RequestsPerSecond float64 `yaml:"requests_per_second" default:"10" validate:"min=0.001"`
+	Burst             int     `yaml:"burst" default:"50" validate:"min=1"`
+}
+
+// APIRateLimitPackageAnonymous is the class of package-protocol requests without
+// credentials, keyed by client address (R-API-016, limiter api_package_anonymous).
+type APIRateLimitPackageAnonymous struct {
+	RequestsPerSecond float64 `yaml:"requests_per_second" default:"20" validate:"min=0.001"`
+	Burst             int     `yaml:"burst" default:"100" validate:"min=1"`
 }
 
 // Repositories is the repositories section (R-REPO-009 to R-REPO-015): batch

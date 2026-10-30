@@ -58,12 +58,6 @@ type Notifier interface {
 	Notify(tx meta.Tx, area string, version int, payload any) error
 }
 
-// Signaler attaches a signal to the transaction, published after the commit;
-// *cluster.Signals implements it.
-type Signaler interface {
-	Notify(tx meta.Tx, area, payload string)
-}
-
 // Options configure [New].
 type Options struct {
 	Runner meta.Runner
@@ -77,7 +71,6 @@ type Options struct {
 	// Lookups counts a negative entry the reader refused; *cluster.Valkey. Optional.
 	Lookups LookupCounter
 	Changes Notifier
-	Signals Signaler
 	Clients Clients
 	// Invalid answers whether an invalidation covers an entry (R-REPO-045); nil
 	// treats every entry as valid.

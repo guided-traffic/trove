@@ -404,10 +404,18 @@ Processing:
    shadowing check of [repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-048
    (403 `shadows_remote_package`, 503 `shadow_check_unavailable`); the canonical path it checks
    and probes is the package document `<name>`, npm's registered package-document path (R-NPM-003).
+   The ownership rule of R-AUTHZ-018 is asked here too, before a byte of the body is read, as a
+   read-only question that claims nothing (Q-NPM-56); the commit transaction decides again under
+   the claim row lock, and that decision is the one that counts. A publish that finds a live
+   version at the shadowing check and a first version at the commit, because an unpublish took
+   the last version in between, answers 503 `shadow_check_unavailable` and the client retries
+   (Q-REPO-118).
 2. Stream the body through the upload pipeline ([storage.md](../storage.md) R-STOR-004): the
    attachment's base64 MUST be decoded straight into the spool while all digests are computed;
    the decoded tarball MUST NOT be held in memory. `npm.publish.max_tarball_size` caps the tarball,
-   the body is capped at 4/3 of it plus 1 MiB; beyond: 413. From P1, admission also refuses a
+   the body is capped at the base64 form of it plus the metadata budget of the scanner (768 KiB)
+   and the base64 form of the largest provenance bundle (256 KiB, 342 KiB encoded), 1,110 KiB in
+   all (Q-NPM-53); beyond: 413. From P1, admission also refuses a
    publish over the system capacity limit or the target repository's quota with 507
    `quota_exceeded` ([storage.md](../storage.md) R-STOR-029, R-NPM-005).
 3. Validate (400 unless noted):
@@ -451,8 +459,9 @@ Processing:
      the tar archive ends in nothing but zero padding; an entry is a regular file, a directory, a
      symbolic link or a hard link (no device, FIFO, sparse file or PAX global header); a name is
      valid UTF-8 without control characters; a symbolic link has a relative target that stays
-     inside the package, a hard link names another entry below the same first component, and no
-     entry lies below a link; no entry lies below a regular file, and no regular file has the
+     inside the package, a hard link names another entry below the same first component, no
+     entry lies below a link, and no link target passes through another link of the archive
+     (a link may name another link as the last component of its target; Q-NPM-55); no entry lies below a regular file, and no regular file has the
      install path of a folder; no top-level entry differs from `package.json` only in letter case
      (a case-insensitive file system would install it over the manifest);
    - reading stops at `npm.publish.max_unpacked_size` or `npm.publish.max_tar_entries` (413). Both
@@ -463,7 +472,9 @@ Processing:
      1,024 bytes, and a gzip header of more than 64 KiB. `package.json` is read into memory only
      within the limits of [architecture.md](../architecture.md) R-ARCH-028: 1 MiB (413 when the
      header declares more, before a byte is read), a JSON nesting depth of 64, and a compression
-     ratio of 100:1 (413). The README is read up to 64 KiB, the rest is skipped;
+     ratio of 100:1 (413). The whole archive may inflate to at most 100 times the compressed
+     bytes the inflater has consumed plus 8 MiB (413; Q-NPM-54). The README is read up to 64 KiB,
+     the rest is skipped;
    - manifest consistency (`npm.publish.manifest_consistency`, Q-NPM-6): `dependencies`,
      `optionalDependencies`, `peerDependencies`, `peerDependenciesMeta`, `bundleDependencies`,
      `bin`, `os`, `cpu`, `engines` and the scripts `preinstall`, `install`, `postinstall` MUST be
@@ -1283,7 +1294,7 @@ exceptions. This requirement fixes what an npm remote fetches and how it is chec
 - **One stored document, one set of records, also under duplicate fills.** Two fills of one
   document run at once whenever the cross-replica lock was lost in a Valkey failover or Valkey is
   unavailable (R-ARCH-033), and the fill that commits last may carry the older document. The
-  records above and the removal marks of R-NPM-026 are therefore written in the transaction that
+  records above (the `remote_url_map` rows included, Q-REPO-119) and the removal marks of R-NPM-026 are therefore written in the transaction that
   upserts the cache entry (R-REPO-026 step 5), after it has created (`INSERT … ON CONFLICT DO
   NOTHING`) and locked the package's `npm_remote_packages` row, and only when that upsert replaces
   the stored document. The stale-copy rule above is evaluated in that same transaction, under that
@@ -1372,7 +1383,8 @@ Priority: **MVP** · Covers: PKG-NPM-038, PKG-NPM-062, RMT-022
   check is one more indexed row in the lookup that serves the tarball, on any replica, and costs at
   most one conditional upstream request per package and metadata period.
 - Expected digests handed to the integrity check (R-REPO-041): the `sha512` entries of
-  `dist.integrity`, else `dist.shasum` (SHA-1). With the default `verify-if-available` policy a
+  `dist.integrity`, else `dist.shasum` (SHA-1): only when the document announces no `sha512`, so a
+  legacy or wrong `shasum` next to a valid `sha512` refuses nothing. With the default `verify-if-available` policy a
   mismatch refuses the tarball with 502 `upstream_integrity_mismatch`; `ignore` and `pass-through`
   SHOULD NOT be used on npm remotes, because clients would then fail with `EINTEGRITY` on bytes
   trove had cached for good.
@@ -3269,8 +3281,9 @@ verified**, and pnpm and Yarn build their own bodies.
 - The scanner is strict where two JSON readers could differ: a member twice, data after the document, a control
   character inside a string, an escape other than the ones a base64 string can carry (`\/` and `\u00XX`).
 - The bounds: the body outside the attachment data is at most 768 KiB (the manifest with its README, the
-  descriptors and the dist-tags; with a provenance bundle of at most 256 KiB, whose base64 form is 342 KiB, the sum
-  stays below the 1 MiB that R-NPM-007 step 2 adds to the base64 of the tarball), nesting at most 64 levels, a member name at
+  descriptors and the dist-tags), and a provenance bundle of at most 256 KiB adds 342 KiB of base64 outside that
+  budget, so that R-NPM-007 step 2 adds 1,110 KiB to the base64 of the tarball (Q-NPM-53; the sum was
+  once written as "below 1 MiB", which 768 KiB and 342 KiB do not give), nesting at most 64 levels, a member name at
   most 1,024 bytes, at most 4 attachments. A README that does not fit the budget makes the publish a 413.
 - The tarball is spooled first and validated from the spool (`Inspect`'s way, the pass of `tarball.Validate` reading the
   spool), not validated while it streams: the digests a client announces may follow the data, and the contract's
@@ -4013,7 +4026,80 @@ revisit 2 when audit is built (R-NPM-038): the 501 then no longer occurs.
 **Applied in the spec:** R-NPM-018 (the answer until it is built), R-NPM-001 (the 501 note), R-NPM-043 (the
 criterion). Code: `internal/formats/npm/handlers_deprecate.go`, `TestR_NPM_043_DeprecateIsRefusedWithoutRetries`.
 
+### Q-NPM-53 · The publish body cap is the sum of the limits of its parts
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NPM-007 step 2 capped the body at the base64 form of the tarball limit plus 1 MiB, and Q-NPM-20 said that 768 KiB of metadata plus the base64 form of a 256 KiB provenance bundle (342 KiB) stay below that MiB. The sum is 1,110 KiB. A tarball within about 85 KiB of `max_tarball_size`, published with a full-size bundle and a large manifest, was cut by the body reader and answered 413 although each part was within its own limit.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The slack is derived from the two limits: `DefaultMaxMetadataBytes` plus the base64 form of `maxSigstoreBytes` | The cap is the sum of what the parts may hold | Cannot drift from the limits; the unit test pins the sum | The documented slack is 1,110 KiB, not a round number |
+| (b) Lower the metadata budget to about 680 KiB | The round 1 MiB holds | Spec text stays | Refuses manifests with READMEs that Q-NPM-20 chose to accept |
+| (c) Raise the slack to a round 2 MiB | Room to spare | Simple | A cap that says nothing about its parts |
+
+**Choice:** (a). `bodySlack` in `internal/formats/npm/publish.go` is the metadata budget plus the base64 form of the bundle limit; the spec sentence of Q-NPM-20 and R-NPM-007 step 2 state 1,110 KiB.
+
+**Rationale:** a cap that is smaller than the sum of its limits refuses valid requests, and one that is larger admits bytes no limit allows. The development agent would revisit the choice if the metadata budget or the bundle limit becomes configurable: the slack then follows the configured values.
+
+**Applied in the spec:** R-NPM-007 step 2, Q-NPM-20 (the bounds).
+
+### Q-NPM-54 · The whole archive has an inflation ratio cap
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the validation pass bounded the inflated bytes by `max_unpacked_size` (2 GiB by default) and the ratio of `package.json` only. A publish of about 2 MiB of compressed zeros made the server inflate and hash 2 GiB, and it could be repeated without limit (S-4).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A cap of 100:1 over all inflated bytes against the compressed bytes consumed, with 8 MiB of slack | The attacker pays 1 MiB of upload for every 100 MiB of inflation, and a small archive is never judged by its ratio | Needs no configuration, `Limits.MaxTotalRatio` lets a caller tighten or lift it, the pass already counts both | A package of more than 100:1 (a large zero-filled file) is refused with 413 |
+| (b) 1,000:1 | Admits nearly everything deflate can express | Refuses nothing legitimate | A DEFLATE stream cannot exceed about 1,032:1, so it limits nothing |
+| (c) A configuration key | The operator chooses | Flexible | A security limit that an operator can weaken per installation; one more key to document |
+
+**Choice:** (a). The check is in the inflating reader of `internal/formats/npm/tarball`: output bytes against 100 times the compressed bytes the inflater has consumed, plus 8 MiB. The streaming memory test lifts the cap explicitly, because it feeds 64 MiB of zeros.
+
+**Rationale:** the inflater has consumed at least n/1,032 compressed bytes for n output bytes, so the check is sound for every byte it reports. The development agent would revisit the choice when a legitimate package is refused: the answer is a measured default, or a key, not a removal.
+
+**Applied in the spec:** R-NPM-007 step 3 (the resource bounds).
+
+### Q-NPM-55 · A link target may not pass through another link
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the link check cleaned a symbolic link target lexically against the entry's folder. `package/sub/l2 -> ..` stays inside the package, and `package/l1 -> sub/l2/../..` cleans to the package folder, but a file system follows `l2` first and ends two levels above it (S-6). A hard link whose name passes through a symbolic link is the same case.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) After the walk, refuse a link whose target passes through a link entry before its last component | Every resolution step is a folder of the archive | No chain can leave the package; a link to a link stays valid | Needs the whole archive, so it runs at the end of the pass |
+| (b) Refuse every link | Nothing to check | Simplest | pacote skips link entries anyway, but other extractors and existing packages use them |
+| (c) Resolve chains and compare | Exact | Accepts more | A resolver of its own to get wrong |
+
+**Choice:** (a). `walker.linkChains` in `internal/formats/npm/tarball/tarball.go` walks each target component by component against the kinds of the archive's entries. The bookkeeping of the targets counts against `MaxPathBytes`.
+
+**Rationale:** the rule is local to the archive, and a target that passes through a link has no lexical meaning. The development agent would revisit the choice if a real package is refused for a chain of links that stays inside the package.
+
+**Applied in the spec:** R-NPM-007 step 3 (the further archive rules).
+
+### Q-NPM-56 · The ownership rule is asked before the body is read
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a publish was authorized on the name before the body, but the ownership rule of R-AUTHZ-018 ran only in the commit transaction, after the body was spooled, scanned and validated. A caller who holds `deploy` and does not own the name could make the server do that work without end (S-4).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A read-only question to the host before the body: `Host.CheckOwnership`; the commit decides again | A refusal costs no spool; nothing is locked or claimed early | The commit stays the decision that counts; the rule is one function | A second read of the claim rows per publish |
+| (b) Take the claim lock before the body | The decision is final early | One question | A lock held while a body streams (R-NPM-046) |
+| (c) Rate limit only | The classes of R-API-016 | Nothing to build | A caller within the limit still costs a full validation per request |
+
+**Choice:** (a). The question is asked as a change of the package, not as a claim (`Publish` false): a claim needs a designated owner that only the commit can know, so the early answer never refuses what the commit would allow. `FirstVersion` comes from the live versions read just before.
+
+**Rationale:** the early answer is advisory by construction. The development agent would revisit the choice if the extra read shows in the cost of a publish.
+
+**Applied in the spec:** R-NPM-007 step 1.
+
 ## What this does not cover
+
 
 ### H-31 · Trusted publishing widens the set of credentials that can publish
 

@@ -436,6 +436,52 @@ func TestR_AUTHZ_018_UnclaimedNameWithVersionsNeedsManage(t *testing.T) {
 	}
 }
 
+// TestR_AUTHZ_018_PrecheckIsReadOnly: the early form of the check refuses the caller the commit would
+// refuse, claims nothing, holds no lock, and passes the caller the commit would allow.
+func TestR_AUTHZ_018_PrecheckIsReadOnly(t *testing.T) {
+	w := newOwnWorld(t)
+	ctx := t.Context()
+	precheck := func(r *replica, s authz.Subject, name string, ow authz.OwnershipWrite) error {
+		idx := w.begin(t, r, s, "npm-internal")
+		return w.ownership(r).PrecheckWrite(ctx, idx, s, write("npm-internal", name, "", authz.Deploy), ow)
+	}
+	claims := func() int64 { return w.e.number("SELECT count(*) FROM package_ownership") }
+
+	t.Run("R-AUTHZ-018 a first version passes and claims nothing", func(t *testing.T) {
+		before := claims()
+		if err := precheck(w.a, w.alice, "@acme/early", authz.OwnershipWrite{FirstVersion: true}); err != nil {
+			t.Fatal(err)
+		}
+		if claims() != before {
+			t.Fatal("the precheck claimed the name")
+		}
+	})
+	t.Run("R-AUTHZ-018 a name with versions and no owner is refused to a deploy holder and passes the manage holder", func(t *testing.T) {
+		w.importVersion("npm-internal", "@acme/imported", "1.0.0")
+		if err := precheck(w.a, w.alice, "@acme/imported", authz.OwnershipWrite{}); codeOf(err) != errs.CodePackageOwnedByOtherOwner || statusOf(err) != 403 {
+			t.Fatalf("a deploy holder: %v", err)
+		}
+		if err := precheck(w.b, w.lead, "@acme/imported", authz.OwnershipWrite{}); err != nil {
+			t.Fatalf("the manage holder: %v", err)
+		}
+	})
+	t.Run("R-AUTHZ-018 a name another owner holds is refused, and the refusal is audited like the commit's", func(t *testing.T) {
+		if err := w.publish(t, w.a, w.alice, "npm-internal", "@acme/held", firstVersion, nil); err != nil {
+			t.Fatal(err)
+		}
+		before := len(w.b.rec.ofType(authz.EventDenied))
+		if err := precheck(w.b, w.mallory, "@acme/held", authz.OwnershipWrite{}); codeOf(err) != errs.CodePackageOwnedByOtherOwner {
+			t.Fatalf("%v", err)
+		}
+		if got := w.b.rec.ofType(authz.EventDenied); len(got) != before+1 || got[len(got)-1].Reason != authz.ReasonOwnership {
+			t.Fatalf("denials %+v", got)
+		}
+		if err := precheck(w.a, w.alice, "@acme/held", authz.OwnershipWrite{}); err != nil {
+			t.Fatalf("the owner: %v", err)
+		}
+	})
+}
+
 // TestR_AUTHZ_019_OwnerOperations: pre-assignment, adding and removing owners,
 // last_owner and release, the CI restriction, and the answers of refused callers.
 func TestR_AUTHZ_019_OwnerOperations(t *testing.T) {

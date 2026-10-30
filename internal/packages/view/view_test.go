@@ -164,7 +164,7 @@ func TestR_API_029_LatestIsTheHighestStableVersion(t *testing.T) {
 
 func TestR_API_029_CursorKeysFollowTheSort(t *testing.T) {
 	at := time.Date(2026, 10, 20, 9, 12, 44, 512000000, time.UTC)
-	p := Package{Name: "@team-a/ui", Format: "npm", CreatedAt: at, UpdatedAt: at.Add(time.Hour)}
+	p := Package{Name: "@Team-A/UI", Key: "@team-a/ui", Format: "npm", CreatedAt: at, UpdatedAt: at.Add(time.Hour)}
 	for _, tc := range []struct {
 		order Order
 		want  []string

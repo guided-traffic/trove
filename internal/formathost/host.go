@@ -201,6 +201,16 @@ func (h *Host) Authorize(ctx context.Context, rq *formats.Request, t formats.Tar
 	return nil
 }
 
+// CheckOwnership implements [formats.Host]: the ownership rule on the request's index and
+// subject, read-only and before the body. A host with no ownership rule bound refuses, as the
+// claim in the commit does.
+func (h *Host) CheckOwnership(ctx context.Context, rq *formats.Request, t formats.Target, w formats.OwnershipWrite) error {
+	if h.o.Ownership == nil {
+		return errs.E(errs.Internal, errs.CodeInternal, "Package ownership is not wired on this replica; the write is refused.")
+	}
+	return h.o.Ownership.Precheck(ctx, OwnershipCheck{Index: rq.Index, Subject: rq.Subject, Coordinate: coordinate(rq, t), Write: w})
+}
+
 // patternSubject returns what the repository's patterns are matched against for a
 // target: the package name when the format's patterns match names, else the path.
 // Nothing to match is a repository-level target.

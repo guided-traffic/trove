@@ -70,9 +70,12 @@ type Find struct {
 // Package is a package as the caller sees it: every member is computed from the
 // versions the caller may read.
 type Package struct {
-	ID            string
-	Format        string
+	ID     string
+	Format string
+	// Name is the display name; Key the normalized name the list statement sorts on and the
+	// cursor carries (R-API-029).
 	Name          string
+	Key           string
 	Description   *string
 	LatestVersion string
 	Keywords      []string

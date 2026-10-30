@@ -785,13 +785,22 @@ token validation and token revocation are R-AUTH-038 in
 [identity-and-authentication.md](identity-and-authentication.md); those of the CI exchange are
 R-CI-021 in [gitlab-ci-oidc.md](gitlab-ci-oidc.md); the class a further endpoint applies to every
 request on it, package protocols included, is R-EP-015 in [endpoints.md](endpoints.md). This
-requirement adds the general classes for `/api/v1/` and `/files/`:
+requirement adds the general classes for `/api/v1/`, `/files/` and the package protocols under
+`/api/<format>/`:
 
 | Class | Applies to | Bucket key | Limiter name |
 |---|---|---|---|
 | `read` | Safe methods | Principal (token ID, or session user) | `api_read` |
 | `write` | Unsafe methods | Principal | `api_write` |
 | `anonymous` | Requests without credentials | Client address (R-ARCH-006, R-OPS-005) | `api_anonymous` |
+| `package_read` | Safe methods on `/api/<format>/` | Principal | `api_package_read` |
+| `package_write` | Unsafe methods on `/api/<format>/` | Principal | `api_package_write` |
+| `package_anonymous` | Requests without credentials on `/api/<format>/` | Client address | `api_package_anonymous` |
+
+The package classes have buckets of their own, so a lockfile install does not use up the budget
+of the same token's management API and a flood on a package protocol cannot starve it; the
+default endpoint, which has no endpoint class, is limited by them as well (Q-API-169). A refused
+package request has the error shape of the format (R-ARCH-023).
 
 - **Limiter.** Each class is a limiter of R-ARCH-034 ([architecture.md](architecture.md)) with
   scope `cluster`: a sliding-window counter in Valkey with the window `W = burst ÷ rate`, which
@@ -837,6 +846,9 @@ api:
     read:      {requests_per_second: 50, burst: 200}     # default (proposed)
     write:     {requests_per_second: 10, burst: 50}      # default (proposed)
     anonymous: {requests_per_second: 5,  burst: 20}      # default (proposed)
+    package_read:      {requests_per_second: 200, burst: 1000}   # default (proposed)
+    package_write:     {requests_per_second: 10,  burst: 50}     # default (proposed)
+    package_anonymous: {requests_per_second: 20,  burst: 100}    # default (proposed)
 ```
 
 Acceptance criteria:
@@ -853,6 +865,9 @@ Acceptance criteria:
   and `trove_ratelimit_fallback{limiter="api_read"}` is 1 on every replica.
 - With the defaults, a `200` answer of `GET /api/v1/repositories` carries
   `RateLimit-Policy: "read";q=200;w=4`.
+- A loop of 1,100 `GET /api/npm/<repository>/<name>` with one token receives 429 answers after the
+  burst of 1,000, each with `Retry-After` and `RateLimit-Policy: "package_read";q=1000;w=5`;
+  `GET /api/v1/repositories` with the same token is still admitted.
 
 ### R-API-017 · Request limits, timeouts and response headers
 Priority: **MVP** · Covers: trove-only
@@ -1474,7 +1489,8 @@ remain as their owners define them.)
   opaque to clients, no secret and no capability. `lookup` resolves a name by the format's name rule; a name the
   rule refuses is a `404`. A sort or a filter the document does not list answers `400`; a cursor of another sort
   or filter answers `400 invalid_cursor` (R-API-010). Package names order bytewise, so the order and the keyset of
-  a cursor do not depend on the locale of the database. Remote repositories contribute their cached versions only,
+  a cursor do not depend on the locale of the database. The order and the cursor use the normalized name, the key
+  the statement compares, never the display name of a format that keeps the case of a name (Q-API-170). Remote repositories contribute their cached versions only,
   and a version the format withholds (npm: a tombstoned one, R-NPM-047) is not counted anywhere.
 - What the generic rows do not hold - description, keywords, licenses, the README and the `metadata` - comes from
   the format's view adapter over its data port (Q-API-166); the order of versions and the pre-release rule are the
@@ -5756,7 +5772,43 @@ their own.
 
 **Applied in the spec:** none (R-API-018 already requires the preflight to be answered).
 
+### Q-API-169 · The package protocols have rate-limit classes of their own
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the general classes of R-API-016 limited `/api/v1/` and `/files/` only, and the class an endpoint applies (R-EP-015) is empty on the default endpoint. A caller with a token could therefore send unlimited package requests to the default endpoint: one upstream request per invented name through a remote repository, and full publish attempts that cost a spool and a validation each (S-4).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Three more classes for `/api/<format>/`, with buckets and budgets of their own | `package_read` 200/s burst 1000, `package_write` 10/s burst 50, `package_anonymous` 20/s burst 100 | A lockfile install does not use up the management budget of its token; the same stage and fields as the other classes; no endpoint needs configuring | Three more keys |
+| (b) The existing classes for the package protocols | Same buckets | No new keys | One `npm ci` of a few hundred tarballs exhausts the token's management API; the read budget of 50/s is too small for installs |
+| (c) Give the default endpoint a default endpoint class | R-EP-015 limits the whole endpoint | No new classes | The UI and the management API of the default endpoint share that budget; a default of `""` is what R-EP-001 documents |
+
+**Choice:** (a). `isPackagePath` (`/api/` below which `/api/v1/` is not) selects the classes in `internal/api/v1/ratelimit.go`; the configuration is `api.rate_limits.package_read`, `package_write` and `package_anonymous`.
+
+**Rationale:** the limit is for fairness and for the cost of a request, and a package request costs more than a management read. The read budget admits 1,000 requests in a burst because an install asks for every tarball of its lockfile at once; npm retries a 429 with `Retry-After` in any case. The development agent would revisit the budgets with the measurements of the performance run, and the path rule when host-root bindings (R-EP-006) serve package routes at `/`: the classification must then follow the route, not the prefix.
+
+**Applied in the spec:** R-API-016 (the classes, the configuration, the acceptance criterion).
+
+### Q-API-170 · The package list cursor carries the normalized name
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the list statement sorts and compares keyset positions on the normalized name, and the cursor carried the display name. For a format whose display name differs from its normalized name (a case-preserving format), `Newtonsoft.Json` was compared bytewise with `newtonsoft.json`; because `N` is below `n`, an ascending page repeated rows and a descending page skipped rows. npm passes `name, name` today, so the fault was dormant.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `view.Package.Key` holds the normalized name, and the cursor is built from it | The cursor carries what the statement compares | Correct for every format; one field | The view model has a field the API does not show |
+| (b) The statement compares the display name | The cursor stays | No new field | The order would no longer be bytewise on the name the format normalizes, and the unique key of a package is the normalized name |
+
+**Choice:** (a).
+
+**Rationale:** the keyset must be taken from the same column the order is. The development agent would revisit the choice only if a sort by display name is wanted by users.
+
+**Applied in the spec:** R-API-029 (the order and the cursor).
+
 ## What this does not cover
+
 
 ### H-43 · General API rate limits are per replica
 

@@ -215,7 +215,9 @@ the coarse check of the request decided both through `DecideOn` before the forma
 consult only the members the caller can read, which is safe, but would not refuse.
 
 `Artifact(ctx, caller, plan, tiers, w)`: local members in order, then the caches of the remote members, then the upstreams of the
-remote members with `MayFill`. The first hit is served with `Trove-Resolved-From: <member>` (never on an endpoint with rules). A member
+remote members with `MayFill`. A stored item that the member's format withholds (`ServeCheck` answers not found: a tombstoned
+version) is a miss of its tier in the bridge's tiers ([virtual.go](../../internal/formathost/virtual.go), `tiers.servable`; Q-REPO-117).
+The first hit is served with `Trove-Resolved-From: <member>` (never on an endpoint with rules). A member
 the caller may not fill is not consulted in the third tier; when the reason is the endpoint's `cache_fill: false`
 (`Subject.Endpoint != "" && !Subject.CacheFill`), `Options.FillRefused` counts it in `trove_endpoint_cache_fill_refused_total`, the remote
 engine's family (`proxy.Engine.FillRefused`, Q-EP-58). Nothing found: 404 if every consulted member said "not found" (or refused to

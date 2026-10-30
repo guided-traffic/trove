@@ -210,7 +210,12 @@ func (a remoteAdapter) BeforeArtifact(ctx context.Context, h formats.Host, rq *f
 	if !facts.Known {
 		return formats.Digests{}, errs.E(errs.NotFound, errs.CodeNotFound, "The resource does not exist.")
 	}
-	return formats.Digests{SHA512: remote.SHA512(facts.Integrity), SHA1: remote.SHA1(facts.Shasum)}, nil
+	// The sha512 of dist.integrity decides; dist.shasum (SHA-1) only when the document has none
+	// (R-NPM-025). A tarball is not refused for a legacy shasum a stronger digest outvotes.
+	if sum := remote.SHA512(facts.Integrity); sum != nil {
+		return formats.Digests{SHA512: sum}, nil
+	}
+	return formats.Digests{SHA1: remote.SHA1(facts.Shasum)}, nil
 }
 
 // refuseRemoved is the rule of R-NPM-026: with serveRemovedVersions off, a version the

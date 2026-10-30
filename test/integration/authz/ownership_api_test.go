@@ -210,9 +210,12 @@ func TestR_AUTHZ_019_OwnershipOperationsOverHTTP(t *testing.T) {
 		want(t, api.do(t, api.a, "lead", "DELETE", mapped+"/ci:gitlab-internal%2Facme-publish", ""), 204, "")
 	})
 	t.Run("R-AUTHZ-019 a dot-dot inside the encoded name stays one name, never a path", func(t *testing.T) {
+		// The registered npm format refuses "@acme/../x" as a name, so the answer is
+		// the 404 of a name that does not exist; it never describes another package
+		// that a cleaned path would address.
 		got := api.do(t, api.a, "lead", "GET", ownersOf+"@acme%2F..%2Fx/owners", "")
-		want(t, got, 200, "")
-		if !strings.Contains(string(got.body), `"package":"@acme/../x"`) {
+		want(t, got, 404, errs.CodeNotFound)
+		if strings.Contains(string(got.body), `"package":`) {
 			t.Fatalf("%s", got.body)
 		}
 	})

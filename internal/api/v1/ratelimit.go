@@ -13,23 +13,33 @@ import (
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
 
-// The general rate-limit classes of /api/v1/ and /files/ (R-API-016). Each class
-// is a cluster-scoped limiter of R-ARCH-034, so a bucket admits the same budget
-// whichever replica a request reaches.
+// The general rate-limit classes of /api/v1/, /files/ and the package protocols
+// under /api/<format>/ (R-API-016). Each class is a cluster-scoped limiter of
+// R-ARCH-034, so a bucket admits the same budget whichever replica a request
+// reaches.
 //
 //	read       safe methods                       bucket: the principal (token ID, or session user)
 //	write      unsafe methods                     bucket: the principal
 //	anonymous  requests without credentials       bucket: the client address
 //
+// The package protocols have the same three classes with budgets and buckets of
+// their own (package_read, package_write, package_anonymous), so an install that
+// fetches a thousand tarballs does not use up the budget of the same token's
+// management API, and a flood of package requests cannot starve it.
+//
 // The stage is the chain's stage 7 (R-ARCH-005): it runs after authentication,
-// so the principal is known. Package-protocol paths are not limited here; the
-// class an endpoint applies to them is R-EP-015.
+// so the principal is known. The class an endpoint applies on top of these is
+// R-EP-015.
 
 // Names of the limiters and values of the class label.
 const (
 	LimiterRead      = "api_read"
 	LimiterWrite     = "api_write"
 	LimiterAnonymous = "api_anonymous"
+
+	LimiterPackageRead      = "api_package_read"
+	LimiterPackageWrite     = "api_package_write"
+	LimiterPackageAnonymous = "api_package_anonymous"
 )
 
 func classOf(name string) string { return strings.TrimPrefix(name, "api_") }
@@ -79,6 +89,10 @@ func NewRateLimit(o RateLimitOptions) (func(http.Handler) http.Handler, error) {
 		LimiterRead:      mk(LimiterRead, o.Config.Read.RequestsPerSecond, o.Config.Read.Burst),
 		LimiterWrite:     mk(LimiterWrite, o.Config.Write.RequestsPerSecond, o.Config.Write.Burst),
 		LimiterAnonymous: mk(LimiterAnonymous, o.Config.Anonymous.RequestsPerSecond, o.Config.Anonymous.Burst),
+
+		LimiterPackageRead:      mk(LimiterPackageRead, o.Config.PackageRead.RequestsPerSecond, o.Config.PackageRead.Burst),
+		LimiterPackageWrite:     mk(LimiterPackageWrite, o.Config.PackageWrite.RequestsPerSecond, o.Config.PackageWrite.Burst),
+		LimiterPackageAnonymous: mk(LimiterPackageAnonymous, o.Config.PackageAnonymous.RequestsPerSecond, o.Config.PackageAnonymous.Burst),
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -101,17 +115,29 @@ func NewRateLimit(o RateLimitOptions) (func(http.Handler) http.Handler, error) {
 	}, nil
 }
 
-func limitedPath(p string) bool { return isAPIPath(p) || strings.HasPrefix(p, "/files/") }
+func limitedPath(p string) bool {
+	return isAPIPath(p) || strings.HasPrefix(p, "/files/") || isPackagePath(p)
+}
+
+// isPackagePath is a request on a package protocol: /api/<format>/<repository>/….
+func isPackagePath(p string) bool { return strings.HasPrefix(p, "/api/") && !isAPIPath(p) }
 
 // classify picks the limiter and the bucket of a request.
 func classify(r *http.Request) (limiter, bucket string) {
 	p := httpserver.PrincipalFrom(r.Context())
+	packages := isPackagePath(r.URL.Path)
 	if p.Anonymous {
+		if packages {
+			return LimiterPackageAnonymous, httpserver.InfoFrom(r.Context()).Client.String()
+		}
 		return LimiterAnonymous, httpserver.InfoFrom(r.Context()).Client.String()
 	}
 	limiter = LimiterWrite
 	if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
 		limiter = LimiterRead
+	}
+	if packages {
+		limiter = "api_package_" + classOf(limiter)
 	}
 	switch {
 	case p.Credential.TokenID != "":

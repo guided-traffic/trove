@@ -97,6 +97,10 @@ func (s ownershipSeam) EnforceTx(ctx context.Context, tx meta.Tx, chk formathost
 	return err
 }
 
+func (s ownershipSeam) Precheck(ctx context.Context, chk formathost.OwnershipCheck) error {
+	return s.o.PrecheckWrite(ctx, chk.Index, chk.Subject, chk.Coordinate, authz.OwnershipWrite(chk.Write))
+}
+
 // autoClaimSeam binds the routing's namespace auto claim (R-REPO-023) to the seam of
 // the package writer, which hands the publish what it did.
 type autoClaimSeam struct{ r *repository.Routing }

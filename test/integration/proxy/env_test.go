@@ -227,6 +227,19 @@ func (e *env) number(sql string, args ...any) int64 {
 	return v
 }
 
+// text reads the first column of the first row, "" when there is none.
+func (e *env) text(sql string, args ...any) string {
+	e.t.Helper()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var v string
+	err := e.admin.QueryRow(context.Background(), sql, args...).Scan(&v)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		e.t.Fatalf("%s: %v", sql, err)
+	}
+	return v
+}
+
 // upstream starts a counting upstream that the replicas of this test trust.
 func (e *env) upstream() *proxytest.Upstream {
 	u := proxytest.NewUpstream(e.t)

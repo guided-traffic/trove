@@ -20,17 +20,22 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/npm/tarball"
 )
 
-// bodySlack is what R-NPM-007 step 2 adds to the base64 form of the tarball for
-// the rest of the request: the manifest, the descriptors and the provenance bundle.
-const bodySlack = 1 << 20
-
 // maxSigstoreBytes bounds a provenance bundle: a Sigstore bundle is a few
 // kilobytes, and one is held in the spool next to the tarball.
 const maxSigstoreBytes = 256 << 10
 
-// bodyLimit is the cap of a publish request: 4/3 of the tarball limit, the size
-// of its base64 form, plus 1 MiB (R-NPM-007 step 2).
-func bodyLimit(maxTarball int64) int64 { return (maxTarball+2)/3*4 + bodySlack }
+// base64Len is the length of the base64 form of n bytes.
+func base64Len(n int64) int64 { return (n + 2) / 3 * 4 }
+
+// bodySlack is what R-NPM-007 step 2 adds to the base64 form of the tarball for the rest of
+// the request: the metadata budget of the scanner (the manifest, the descriptors and the
+// dist-tags) and the base64 form of the largest provenance bundle, whose data is outside that
+// budget. Each part is within its own limit, so the sum of the limits is the cap.
+const bodySlack = publish.DefaultMaxMetadataBytes + (maxSigstoreBytes+2)/3*4
+
+// bodyLimit is the cap of a publish request: the base64 form of the tarball limit plus
+// the slack (R-NPM-007 step 2).
+func bodyLimit(maxTarball int64) int64 { return base64Len(maxTarball) + bodySlack }
 
 // handlePublish is PUT {name} (R-NPM-007, flow F1). The body is read once, as a
 // stream: the tarball goes decoded into the spool while its digests are computed,
@@ -48,6 +53,11 @@ func (f *Format) handlePublish(ctx context.Context, rq *formats.Request, w http.
 	// The name decides before a byte of the body is read; the version, which the body
 	// names, decides again once it is known.
 	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: n.String(), Actions: []formats.Action{formats.ActionDeploy}}); err != nil {
+		return err
+	}
+	// The ownership rule decides before the body is read too (S-4, R-AUTHZ-018): a caller who
+	// could not commit costs no spool and no validation.
+	if err := f.precheckOwnership(ctx, rq, n.String()); err != nil {
 		return err
 	}
 	limit := bodyLimit(int64(cfg.MaxTarballSize))
@@ -128,7 +138,7 @@ func (f *Format) handlePublish(ctx context.Context, rq *formats.Request, w http.
 	if done, err := f.versionTaken(ctx, rq, w, rep, st, req, facts, integrity, sigSpool); done || err != nil {
 		return err
 	}
-	shadow, err := f.shadowCheck(ctx, rq, n.String())
+	shadow, shadowSkipped, err := f.shadowCheck(ctx, rq, n.String())
 	if err != nil {
 		return err
 	}
@@ -139,7 +149,7 @@ func (f *Format) handlePublish(ctx context.Context, rq *formats.Request, w http.
 	}
 	pc := &publishCommit{
 		name: n, version: version, tag: req.Tag, res: res, principal: rq.Subject.ID, audit: audit,
-		installScript: manifest.HasInstallScript(res.Manifest, res.Facts), shadowing: shadow,
+		installScript: manifest.HasInstallScript(res.Manifest, res.Facts), shadowing: shadow, shadowSkipped: shadowSkipped,
 	}
 	pc.stored = manifest.Stored(req.Manifest, manifest.ServerFields{
 		Name: n.String(), Version: version, Principal: principalName(rq), Integrity: integrity, Shasum: res.SHA1Hex(),
@@ -361,24 +371,42 @@ func (f *Format) commitError(ctx context.Context, rq *formats.Request, w http.Re
 // It runs with no transaction open. A refusal is the 403 or 503 the check built, which
 // names the package and the virtual repositories the caller can read and no remote
 // member; a write that proceeds hands the commit what the check found, for the audit
-// events of the transaction.
-func (f *Format) shadowCheck(ctx context.Context, rq *formats.Request, pkg string) (rows.Shadowing, error) {
+// events of the transaction. skipped says that the repository held a live version, so
+// that nothing was asked: the commit must not find the publish to be the first one then.
+func (f *Format) shadowCheck(ctx context.Context, rq *formats.Request, pkg string) (found rows.Shadowing, skipped bool, err error) {
 	live, _, err := rq.Host.Packages().Versions(ctx, rq.RepoRef(), pkg)
-	if err != nil || len(live) > 0 {
-		return rows.Shadowing{}, err
+	if err != nil {
+		return rows.Shadowing{}, false, err
+	}
+	if len(live) > 0 {
+		return rows.Shadowing{}, true, nil
 	}
 	out, err := rq.Host.Resolver().ShadowCheck(ctx, rq, pkg)
 	if err != nil {
-		return rows.Shadowing{}, err
+		return rows.Shadowing{}, false, err
 	}
 	if !out.Proceed {
 		if out.Refusal != nil {
-			return rows.Shadowing{}, out.Refusal
+			return rows.Shadowing{}, false, out.Refusal
 		}
-		return rows.Shadowing{}, errs.E(errs.Unavailable, errs.CodeShadowCheckUnavailable,
+		return rows.Shadowing{}, false, errs.E(errs.Unavailable, errs.CodeShadowCheckUnavailable,
 			"Whether the name is served by a remote repository could not be determined; try again.", errs.WithRetryAfter(out.RetryAfter))
 	}
-	return shadowing(out), nil
+	return shadowing(out), false, nil
+}
+
+// precheckOwnership asks the ownership rule of R-AUTHZ-018 before the body is read: a caller who
+// may not write the package is refused before a byte is spooled or validated. It reads the rows
+// and writes nothing; the commit decides again under the claim row lock and claims. The write is
+// asked as a change of the package, not as a claim, so that the early answer never refuses what
+// the commit would allow (a claim needs a designated owner, which only the commit can know).
+func (f *Format) precheckOwnership(ctx context.Context, rq *formats.Request, pkg string) error {
+	live, _, err := rq.Host.Packages().Versions(ctx, rq.RepoRef(), pkg)
+	if err != nil {
+		return err
+	}
+	return rq.Host.CheckOwnership(ctx, rq, formats.Target{Package: pkg, Actions: []formats.Action{formats.ActionDeploy}},
+		formats.OwnershipWrite{FirstVersion: len(live) == 0})
 }
 
 // writePublished answers a publish: 201 and the body npm ignores.

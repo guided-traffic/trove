@@ -74,7 +74,8 @@ func memberRef(m virtual.Member) formats.RepoRef {
 
 // Artifact implements [formats.Resolver].
 func (r *resolver) Artifact(ctx context.Context, rq *formats.Request, p formats.Path, info formats.PathInfo, w http.ResponseWriter) error {
-	if _, _, err := r.adapter(rq); err != nil {
+	f, _, err := r.adapter(rq)
+	if err != nil {
 		return err
 	}
 	c := callerOf(rq)
@@ -82,7 +83,7 @@ func (r *resolver) Artifact(ctx context.Context, rq *formats.Request, p formats.
 	if err != nil {
 		return err
 	}
-	return r.e.Artifact(ctx, c, plan, tiers{rq: rq, p: p}, w)
+	return r.e.Artifact(ctx, c, plan, tiers{rq: rq, p: p, f: f}, w)
 }
 
 // Metadata implements [formats.Resolver].
@@ -151,6 +152,7 @@ func (r *resolver) ShadowCheck(ctx context.Context, rq *formats.Request, name st
 type tiers struct {
 	rq *formats.Request
 	p  formats.Path
+	f  formats.Format
 }
 
 var _ virtual.Tiers = tiers{}
@@ -167,9 +169,23 @@ func (t tiers) serve(ctx context.Context, it formats.Item) virtual.Hit {
 	}
 }
 
+// servable asks the format whether it serves the stored item of a member: a refusal that is a
+// missing resource (a tombstoned or withdrawn version) is a miss of the tier, so that the walk goes
+// on to the next member that has the file (R-REPO-019, R-NPM-047). Any other refusal ends it.
+func (t tiers) servable(ctx context.Context, it formats.Item) (bool, error) {
+	err := t.f.ServeCheck(ctx, t.rq.Host, it.Ref.Repo, it.Ref, formats.ServeStored)
+	if e, ok := errs.As(err); ok && e.Kind == errs.NotFound {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 func (t tiers) Local(ctx context.Context, m virtual.Member, _ virtual.Descriptor) (virtual.Hit, bool, error) {
 	it, ok, err := t.rq.Host.Items().Stat(ctx, memberRef(m), t.p)
 	if err != nil || !ok || it.Folder {
+		return nil, false, err
+	}
+	if ok, err := t.servable(ctx, it); !ok || err != nil {
 		return nil, false, err
 	}
 	return t.serve(ctx, it), true, nil
@@ -189,6 +205,9 @@ func (t tiers) RemoteCached(ctx context.Context, m virtual.Member, _ virtual.Des
 		if err := g.Gate(ctx, member, t.p); err != nil {
 			return nil, false, err
 		}
+	}
+	if ok, err := t.servable(ctx, it); !ok || err != nil {
+		return nil, false, err
 	}
 	return t.serve(ctx, it), true, nil
 }

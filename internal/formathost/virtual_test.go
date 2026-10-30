@@ -43,6 +43,12 @@ func (a *virtAdapter) LocalDocument(_ context.Context, _ *formats.Request, m for
 type virtFormat struct {
 	formats.Base
 	a *virtAdapter
+	// refuse is the answer of ServeCheck per repository key.
+	refuse map[string]error
+}
+
+func (f virtFormat) ServeCheck(_ context.Context, _ formats.Host, _ formats.RepoRef, it formats.ItemRef, _ formats.ServeMode) error {
+	return f.refuse[it.Repo.Key]
 }
 
 func (virtFormat) Descriptor() formats.Descriptor {
@@ -190,7 +196,7 @@ type bridge struct {
 func newBridge(t *testing.T) *bridge {
 	t.Helper()
 	ad := &virtAdapter{strategy: formats.Merge}
-	f := virtFormat{a: ad}
+	f := virtFormat{a: ad, refuse: map[string]error{}}
 	eng := &fakeEngine{}
 	r, err := NewResolver(eng, func(id string) (formats.Format, bool) { return f, id == "virtfmt" })
 	if err != nil {
@@ -258,6 +264,40 @@ func TestR_ARCH_015_BridgeArtifact(t *testing.T) {
 			t.Fatalf("request repo = %s", b.rq.Repo.Key)
 		}
 	})
+}
+
+// A stored item the format withholds (an unpublished version) is a miss of its tier, so the
+// walk goes on to the next member that has the file (R-REPO-019, R-NPM-047).
+func TestR_REPO_019_AWithheldItemIsAMissOfItsTier(t *testing.T) {
+	b := newBridge(t)
+	p := formats.Path{Path: "left-pad/-/1.0.0.tgz"}
+	if err := b.r.Artifact(t.Context(), b.rq, p, b.format.Classify(p), httptest.NewRecorder()); err != nil {
+		t.Fatal(err)
+	}
+	d := b.eng.plan
+	local := virtual.Member{Repo: vt.LocalRepo(1, "member-local"), ID: 1}
+	remote := virtual.Member{Repo: vt.RemoteRepo(2, "member-remote"), ID: 2}
+	gone := errs.E(errs.NotFound, errs.CodeNotFound, "The version was unpublished.")
+
+	b.format.refuse["member-local"], b.format.refuse["member-remote"] = gone, gone
+	if _, ok, err := b.eng.tiers.Local(t.Context(), local, d); ok || err != nil {
+		t.Errorf("local: ok %v err %v, want a miss", ok, err)
+	}
+	if _, ok, err := b.eng.tiers.RemoteCached(t.Context(), remote, d); ok || err != nil {
+		t.Errorf("cached: ok %v err %v, want a miss", ok, err)
+	}
+
+	// Any other refusal ends the walk.
+	broken := errs.E(errs.Internal, errs.CodeInternal, "The marks cannot be read.")
+	b.format.refuse["member-local"] = broken
+	if _, ok, err := b.eng.tiers.Local(t.Context(), local, d); ok || err == nil {
+		t.Errorf("local: ok %v err %v, want the error", ok, err)
+	}
+
+	delete(b.format.refuse, "member-local")
+	if _, ok, err := b.eng.tiers.Local(t.Context(), local, d); !ok || err != nil {
+		t.Errorf("local: ok %v err %v, want a hit", ok, err)
+	}
 }
 
 func TestR_ARCH_015_BridgeMetadata(t *testing.T) {

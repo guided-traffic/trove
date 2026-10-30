@@ -48,6 +48,11 @@ type Limits struct {
 	MaxManifestDepth int
 	// MaxRatio is the compression ratio an entry read into memory may show.
 	MaxRatio int
+	// MaxTotalRatio is the ratio of all inflated bytes to the compressed bytes the
+	// inflater consumed that the whole archive may show, beyond TotalRatioSlack: a
+	// publish that costs the server gigabytes of inflation pays for them in upload
+	// (S-4).
+	MaxTotalRatio int
 	// MaxNameBytes caps the length of one entry name and one link target.
 	MaxNameBytes int
 	// MaxPathBytes caps the bookkeeping of entry names the pass keeps.
@@ -62,6 +67,7 @@ const (
 	DefaultMaxUnpackedBytes   = 2 << 30
 	DefaultMaxEntries         = 100000
 	DefaultMaxRatio           = 100
+	DefaultMaxTotalRatio      = 100
 	DefaultMaxNameBytes       = 1024
 	DefaultMaxPathBytes       = 32 << 20
 	DefaultMaxReadmeBytes     = 64 << 10
@@ -69,6 +75,9 @@ const (
 	// ratioSlack is added to the allowance of the ratio check: the inflater
 	// reads ahead, so a small entry may have been paid for before its header.
 	ratioSlack = 128 << 10
+	// totalRatioSlack is added to the allowance of the overall ratio check, so that a
+	// small archive of repetitive files is never judged by its ratio.
+	totalRatioSlack = 8 << 20
 	// maxGzipHeaderBytes bounds the optional name, comment and extra fields.
 	maxGzipHeaderBytes = 64 << 10
 	// entryOverhead is what the decompressed-bytes cap allows per entry beyond
@@ -98,6 +107,9 @@ func (l Limits) WithDefaults() Limits {
 	}
 	if l.MaxRatio <= 0 {
 		l.MaxRatio = DefaultMaxRatio
+	}
+	if l.MaxTotalRatio <= 0 {
+		l.MaxTotalRatio = DefaultMaxTotalRatio
 	}
 	if l.MaxNameBytes <= 0 {
 		l.MaxNameBytes = DefaultMaxNameBytes
@@ -214,12 +226,16 @@ func (c *countReader) ReadByte() (byte, error) {
 }
 
 // inflatedReader caps the decompressed bytes: a stream that expands beyond the
-// cap ends in 413 however it is built (R-ARCH-028).
+// cap ends in 413 however it is built (R-ARCH-028). With a ratio set it also
+// caps the expansion against the compressed bytes the inflater consumed so far.
 type inflatedReader struct {
 	r     io.Reader
 	st    *state
 	n     int64
 	limit int64
+
+	cr    *countReader
+	ratio int64
 }
 
 func (i *inflatedReader) Read(p []byte) (int, error) {
@@ -234,7 +250,19 @@ func (i *inflatedReader) Read(p []byte) (int, error) {
 	if i.n > i.limit {
 		return 0, i.st.fail(manifest.TooLarge(fmt.Sprintf("the tarball expands beyond %d bytes", i.limit)))
 	}
+	// The inflater has consumed at least n/1032 compressed bytes for n output bytes, so the
+	// check holds for every byte it reports, whatever the stream does.
+	if i.cr != nil && i.n > i.ratio*i.cr.n+totalRatioSlack {
+		return 0, i.st.fail(manifest.TooLarge(fmt.Sprintf("the tarball expands by more than %d:1", i.ratio)))
+	}
 	return n, err
+}
+
+// linkEntry is a link of the archive: a symbolic link at install, or a hard link
+// (hard) to the install path target, which names no folder of its own.
+type linkEntry struct {
+	install, target string
+	hard            bool
 }
 
 // kind is what an install path is known to be.
@@ -266,7 +294,7 @@ func Validate(ctx context.Context, r io.Reader, lim Limits) (*Result, error) {
 	cr.guard = 0
 	zr.Multistream(false)
 	inflateCap := lim.MaxUnpackedBytes + int64(lim.MaxEntries)*entryOverhead + 1<<20
-	inflated := &inflatedReader{r: zr, st: st, limit: inflateCap}
+	inflated := &inflatedReader{r: zr, st: st, limit: inflateCap, cr: cr, ratio: int64(lim.MaxTotalRatio)}
 	tr := tar.NewReader(inflated)
 
 	w := &walker{lim: lim, tr: tr, cr: cr, kinds: map[string]kind{}}
@@ -345,6 +373,9 @@ type walker struct {
 	entries   int
 	declared  int64
 
+	// links are the link entries, whose targets are checked against every link of the
+	// archive once the walk has seen them all (S-6).
+	links       []linkEntry
 	files       []string
 	fileCount   int64
 	unpacked    int64
@@ -492,7 +523,7 @@ func (w *walker) checkLink(hdr *tar.Header, install string) error {
 		if err != nil || first != w.first || rest == "" {
 			return bad("hard link %q points outside the package", shorten(hdr.Name))
 		}
-		return nil
+		return w.keepLink(linkEntry{install: install, target: rest, hard: true})
 	}
 	if strings.HasPrefix(target, "/") {
 		return bad("symbolic link %q has an absolute target", shorten(hdr.Name))
@@ -501,6 +532,45 @@ func (w *walker) checkLink(hdr *tar.Header, install string) error {
 	resolved := path.Join(path.Dir(install), target) //nolint:gosec // G305 matches the join, not an extraction
 	if resolved == ".." || strings.HasPrefix(resolved, "../") {
 		return bad("symbolic link %q points outside the package", shorten(hdr.Name))
+	}
+	return w.keepLink(linkEntry{install: install, target: target})
+}
+
+// keepLink remembers a link for the check of linkChains, within the bookkeeping cap of the
+// entry names.
+func (w *walker) keepLink(l linkEntry) error {
+	w.pathBytes += int64(len(l.target)) + 48
+	if w.pathBytes > w.lim.MaxPathBytes {
+		return manifest.TooLarge("the entry names of the tarball take too much memory")
+	}
+	w.links = append(w.links, l)
+	return nil
+}
+
+// linkChains refuses a link whose target passes through another link of the archive. The lexical
+// check of checkLink cleans a target such as sub/l2/../.. as if l2 were a folder; a file system
+// follows l2 first, and a chain of links can lead out of the package that way. A target may
+// name a link as its last component, which stops there (S-6). It runs after the walk because a
+// link may come before the entries it passes through.
+func (w *walker) linkChains() error {
+	for _, l := range w.links {
+		cur := path.Dir(l.install)
+		if l.hard {
+			cur = "."
+		}
+		comps := strings.FieldsFunc(l.target, func(r rune) bool { return r == '/' })
+		for i, c := range comps {
+			switch c {
+			case ".":
+			case "..":
+				cur = path.Dir(cur)
+			default:
+				cur = path.Join(cur, c)
+				if i < len(comps)-1 && w.kinds[cur] == kindLink {
+					return bad("link %q passes through another link", shorten(l.install))
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -603,6 +673,9 @@ func (w *walker) finish() (*Result, error) {
 	}
 	if !w.pkgJSONSeen {
 		return nil, bad("the tarball holds no %s/package.json", shorten(w.first))
+	}
+	if err := w.linkChains(); err != nil {
+		return nil, err
 	}
 	m, err := manifest.Parse(w.pkgJSON, manifest.Limits{MaxBytes: w.lim.MaxManifestBytes, MaxDepth: w.lim.MaxManifestDepth})
 	if err != nil {

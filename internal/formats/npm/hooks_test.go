@@ -211,6 +211,28 @@ func TestR_NPM_007_OnCommitRefusals(t *testing.T) {
 			t.Fatalf("%v", err)
 		}
 	})
+	t.Run("R-REPO-048 a first version whose shadowing check was skipped is refused and the client retries", func(t *testing.T) {
+		// The check found a live version and asked nothing; an unpublish removed it before the commit.
+		w := &fakeWriter{}
+		st := &fakeStore{}
+		pc := newPublish(t, "p", "2.0.0", "latest")
+		pc.shadowSkipped = true
+		err := f.OnCommit(context.Background(), nil, publishEvent(t, w, st, pc))
+		e, _ := errs.As(err)
+		if e == nil || e.Code != errs.CodeShadowCheckUnavailable || e.Kind != errs.Unavailable || e.RetryAfter <= 0 {
+			t.Fatalf("%v", err)
+		}
+		if len(w.inserts) != 0 || len(st.published) != 0 || strings.Contains(strings.Join(w.calls, " "), "Claim") {
+			t.Fatalf("calls %v", w.calls)
+		}
+		// A later version after a skipped check is the ordinary case.
+		w = &fakeWriter{live: []formats.VersionRow{{ID: 1, Version: "1.0.0"}}}
+		pc = newPublish(t, "p", "2.0.0", "latest")
+		pc.shadowSkipped = true
+		if err := f.OnCommit(context.Background(), nil, publishEvent(t, w, &fakeStore{}, pc)); err != nil {
+			t.Fatal(err)
+		}
+	})
 	t.Run("R-AUTHZ-018 a refused ownership stops the publish before any row", func(t *testing.T) {
 		w := &fakeWriter{claim: errs.E(errs.Forbidden, errs.CodePackageOwnedByOtherOwner, "owned")}
 		st := &fakeStore{}

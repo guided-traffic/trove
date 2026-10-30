@@ -31,10 +31,12 @@ func integrationFormats() *catalog.Registry {
 		r.Register(e)
 	}
 	all := []catalog.Class{catalog.Local, catalog.Remote, catalog.Virtual}
-	r.Register(catalog.Entry{
-		Facts: catalog.Facts{ID: "npm", Classes: all, Layout: "npm", PatternSubject: catalog.SubjectName, PackageNames: true},
-		Names: exactNames{},
-	})
+	if _, ok := r.Lookup("npm"); !ok { // the registered npm format has the same case-sensitive names
+		r.Register(catalog.Entry{
+			Facts: catalog.Facts{ID: "npm", Classes: all, Layout: "npm", PatternSubject: catalog.SubjectName, PackageNames: true},
+			Names: exactNames{},
+		})
+	}
 	r.Register(catalog.Entry{
 		Facts: catalog.Facts{ID: "nuget", Classes: all, Layout: "nuget", PatternSubject: catalog.SubjectName, PackageNames: true},
 		Names: lowerNames{},
@@ -64,7 +66,7 @@ func TestR_AUTHZ_004_FormatSelectorComesFromTheFormatRegistry(t *testing.T) {
 	if _, _, err := svc.Create(t.Context(), admin, in("@any-local:generic")); err != nil {
 		t.Fatalf("a registered format: %v", err)
 	}
-	_, _, err := svc.Create(t.Context(), admin, in("@any-local:npm"))
+	_, _, err := svc.Create(t.Context(), admin, in("@any-local:not-a-format"))
 	ee, ok := errs.As(err)
 	if !ok || ee.Status() != 422 || ee.Code != errs.CodeValidation || len(ee.Fields) != 1 || ee.Fields[0].Code != errs.CodeUnknownFormat {
 		t.Fatalf("err = %v", err)

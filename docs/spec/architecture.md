@@ -697,8 +697,8 @@ Middleware, outermost first:
    reaches the handler unauthenticated
    ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-001).
 7. The endpoint's rate-limit class, on every route of a further endpoint
-   ([endpoints.md](endpoints.md) R-EP-015), then the rate limits on `/api/v1/`, `/files/` and
-   `/auth/` ([api-and-ui.md](api-and-ui.md)). Their
+   ([endpoints.md](endpoints.md) R-EP-015), then the rate limits on `/api/v1/`, `/files/`, the
+   package protocols under `/api/<format>/` and `/auth/` ([api-and-ui.md](api-and-ui.md)). Their
    counters are cluster-wide in Valkey wherever the owning page gives a class cluster scope, and
    fall back to per-replica buckets while Valkey is unavailable (R-ARCH-034). The check never waits
    longer than `valkey.command_timeout`.
@@ -1247,6 +1247,9 @@ type Host interface {
 	// refusal of R-AUTHZ-016, or nil. The host completes the coordinate and applies the repository's
 	// include and exclude patterns (R-REPO-005) to the package name or the path.
 	Authorize(ctx context.Context, rq *Request, t Target) error
+	// CheckOwnership asks the ownership rule of R-AUTHZ-018 before a body is read, read-only: nothing is
+	// locked or claimed, and the commit decides again (Q-ARCH-226).
+	CheckOwnership(ctx context.Context, rq *Request, t Target, w OwnershipWrite) error
 	// Write runs fn in one transaction (R-ARCH-019) with the PackageWriter bound to rq. The allowed
 	// write decisions of the request are recorded in it (R-AUTHZ-029).
 	Write(ctx context.Context, rq *Request, fn func(tx Tx, w PackageWriter) error) error
@@ -3043,7 +3046,9 @@ before they are written. Examples are remote upstream credentials and webhook se
   3. Start the manual task `secrets-reencrypt` (R-ARCH-016) with
      `POST /api/v1/system/tasks/secrets-reencrypt/run` (system administrator).
      - The job reseals every value of the sealed-column registry that is not under the active key.
-       It is idempotent.
+       It is idempotent. It works in batches of one transaction each, and a batch whose transaction
+       is run again (a deadlock, a serialization failure, a failover) neither skips its rows nor
+       counts them twice (Q-ARCH-227).
      - The trigger answers `409` with code `key_ring_incompatible` while the rings are
        incompatible, that is, while a live replica's ring lacks a key ID that is active anywhere or
        that a sealed value references. Running then would seal values that replica cannot open.
@@ -5949,7 +5954,43 @@ that run the nightly job have no CPU limit (dedicated performance runners): then
 **Applied in the spec:** the P-13 and P-14 rows of R-ARCH-027; [docs/developer/coordination.md](../developer/coordination.md) ("Bounds P-13
 and P-14"); [docs/developer/releasing.md](../developer/releasing.md) ("Performance (nightly)"); [docs/developer/build-and-test.md](../developer/build-and-test.md).
 
+### Q-ARCH-226 · The host answers an early, read-only ownership question
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: C-14 lets a format ask the ownership rule only through `PackageWriter.Claim`, inside the commit transaction. A publish therefore read, spooled and validated a body before the rule could refuse it (S-4 of the security review).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Host.CheckOwnership(ctx, rq, target, write)`: the same rule on the same facts in a transaction of its own that locks and writes nothing; the commit decides again | A format refuses before the body | The rule stays one function (`authz.Ownership.PrecheckWrite`); the contract gains one method | A method on the contract; a second read of the claim rows |
+| (b) A format calls `Host.Write` with a function that claims and rolls back | No contract change | A write transaction and a row lock for a question | A rolled-back insert per first publish, and a lock a flood can queue on |
+| (c) Move the rule before the body in the dispatcher | Every format is covered | One place | The dispatcher does not know the write a route is, nor whether it is the first version |
+
+**Choice:** (a). `formats.Host.CheckOwnership`, `formathost.Ownership.Precheck` and `authz.Ownership.PrecheckWrite` carry it; a refusal is counted and audited like the commit's. A host with no ownership rule bound refuses, as `Claim` does. The in-memory host of `formattest` has an option `Precheck` for it.
+
+**Rationale:** the early answer cannot be final, since a claim is decided under the claim row lock, so it takes no lock and claims nothing. The development agent would revisit the choice when a second format writes: the dispatcher could then ask it for routes that declare their write.
+
+**Applied in the spec:** R-ARCH-009 (the `Host` listing); [formats/npm.md](formats/npm.md) R-NPM-007 step 1 (Q-NPM-56).
+
+### Q-ARCH-227 · The reseal walk keeps its cursor and counts per attempt
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `ResealSecrets` advanced its cursor and its counters inside the closure of the batch transaction. `InTx` runs the closure again after a serialization failure or a deadlock, and the second attempt started after the last row the failed attempt had read, so the batch's values stayed under the old key, and the counts included rows that were rolled back. The task reported success with an inflated count, and only the status check of rotation step 4 would have shown the values left behind.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The attempt works on copies of the cursor and the counts, which are taken over after `InTx` returned | A retried batch starts where the batch started | Exact counts; no new state | Two more variables |
+| (b) Re-read the cursor from the database | No in-memory state | Needs no copy | A column for the cursor; the walk is stateless by design |
+
+**Choice:** (a). `TestRemoteSecrets` of `test/integration/repository` runs the walk through a runner that rolls back every first attempt and checks the counts and the rows.
+
+**Rationale:** the rule is that nothing outside a transaction closure changes inside it. The development agent would revisit the choice if another walk of the sealed-column registry needs the same discipline: a helper then holds it.
+
+**Applied in the spec:** R-ARCH-021 (rotation step 3).
+
 ## What this does not cover
+
 
 ### H-1 · Format code runs in-process without isolation
 

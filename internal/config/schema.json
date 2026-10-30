@@ -96,6 +96,62 @@
               "type": "boolean",
               "x-trove-env": "TROVE_API_RATE_LIMITS_EXEMPT_ADMINS"
             },
+            "package_anonymous": {
+              "additionalProperties": false,
+              "properties": {
+                "burst": {
+                  "default": 100,
+                  "minimum": 1,
+                  "type": "integer",
+                  "x-trove-env": "TROVE_API_RATE_LIMITS_PACKAGE_ANONYMOUS_BURST"
+                },
+                "requests_per_second": {
+                  "default": 20,
+                  "minimum": 0.001,
+                  "type": "number",
+                  "x-trove-env": "TROVE_API_RATE_LIMITS_PACKAGE_ANONYMOUS_REQUESTS_PER_SECOND"
+                }
+              },
+              "type": "object"
+            },
+            "package_read": {
+              "additionalProperties": false,
+              "properties": {
+                "burst": {
+                  "default": 1000,
+                  "description": "Most requests one window admits.",
+                  "minimum": 1,
+                  "type": "integer",
+                  "x-trove-env": "TROVE_API_RATE_LIMITS_PACKAGE_READ_BURST"
+                },
+                "requests_per_second": {
+                  "default": 200,
+                  "description": "Sustained rate; the window is burst divided by this, at least 1s.",
+                  "minimum": 0.001,
+                  "type": "number",
+                  "x-trove-env": "TROVE_API_RATE_LIMITS_PACKAGE_READ_REQUESTS_PER_SECOND"
+                }
+              },
+              "type": "object"
+            },
+            "package_write": {
+              "additionalProperties": false,
+              "properties": {
+                "burst": {
+                  "default": 50,
+                  "minimum": 1,
+                  "type": "integer",
+                  "x-trove-env": "TROVE_API_RATE_LIMITS_PACKAGE_WRITE_BURST"
+                },
+                "requests_per_second": {
+                  "default": 10,
+                  "minimum": 0.001,
+                  "type": "number",
+                  "x-trove-env": "TROVE_API_RATE_LIMITS_PACKAGE_WRITE_REQUESTS_PER_SECOND"
+                }
+              },
+              "type": "object"
+            },
             "read": {
               "additionalProperties": false,
               "properties": {

@@ -257,6 +257,30 @@ func TestLinks(t *testing.T) {
 			}
 		})
 	}
+	t.Run("S-6 a link whose target passes through another link is refused, in either order", func(t *testing.T) {
+		// package/sub/l2 -> .. stays in the package; package/l1 -> sub/l2/../.. cleans to the
+		// package folder lexically and resolves two levels above it on a file system.
+		l2 := ent{name: "package/sub/l2", typ: tar.TypeSymlink, link: ".."}
+		l1 := ent{name: "package/l1", typ: tar.TypeSymlink, link: "sub/l2/../.."}
+		wantBad(t, build(t, append(goodEntries(), l2, l1)...), Limits{})
+		wantBad(t, build(t, append(goodEntries(), l1, l2)...), Limits{})
+		// The same through a hard link: package/h names a path below the link.
+		wantBad(t, build(t, append(goodEntries(), l2, ent{name: "package/h", typ: tar.TypeLink, link: "package/sub/l2/index.js"})...), Limits{})
+		// A target below a link is no way around it, whatever the depth.
+		deep := ent{name: "package/a/b/l3", typ: tar.TypeSymlink, link: "../../sub/l2/x"}
+		wantBad(t, build(t, append(goodEntries(), l2, deep)...), Limits{})
+	})
+	t.Run("S-6 a link to a link, or through a folder, is accepted", func(t *testing.T) {
+		l2 := ent{name: "package/sub/l2", typ: tar.TypeSymlink, link: ".."}
+		for name, es := range map[string][]ent{
+			"a link that names another link last": {l2, {name: "package/l1", typ: tar.TypeSymlink, link: "sub/l2"}},
+			"a target through a folder":           {{name: "package/lib/", typ: tar.TypeDir}, {name: "package/lib/x.js", body: "x"}, {name: "package/l", typ: tar.TypeSymlink, link: "lib/../lib/x.js"}},
+		} {
+			if _, err := validate(t, build(t, append(goodEntries(), es...)...), Limits{}); err != nil {
+				t.Errorf("%s: %v", name, err)
+			}
+		}
+	})
 	t.Run("R-NPM-007 nothing may be written through a link", func(t *testing.T) {
 		wantBad(t, build(t, append(goodEntries(), ent{name: "package/l", typ: tar.TypeSymlink, link: "lib"}, ent{name: "package/l/evil.js", body: "x"})...), Limits{})
 	})
@@ -354,6 +378,23 @@ func TestResourceLimits(t *testing.T) {
 		wantTooLarge(t, bomb, Limits{MaxUnpackedBytes: 1 << 20, MaxEntries: 10})
 	})
 
+	t.Run("S-4 an archive that expands by more than the overall ratio is refused whatever its size", func(t *testing.T) {
+		zeros := func(n int) []byte {
+			return build(t, ent{name: "package/package.json", body: pkgJSON}, ent{name: "package/blob.bin", body: string(make([]byte, n))})
+		}
+		// 64 MiB of zeros is about 64 KiB compressed: a ratio of 1000:1.
+		wantTooLarge(t, zeros(64<<20), Limits{})
+		// A small archive is never judged by its ratio.
+		if _, err := validate(t, zeros(4<<20), Limits{}); err != nil {
+			t.Fatalf("4 MiB of zeros: %v", err)
+		}
+		// The cap is the caller's to tighten or lift.
+		if _, err := validate(t, zeros(64<<20), Limits{MaxTotalRatio: 1 << 20}); err != nil {
+			t.Fatalf("with the cap lifted: %v", err)
+		}
+		wantTooLarge(t, zeros(16<<20), Limits{MaxTotalRatio: 10})
+	})
+
 	t.Run("R-ARCH-028 padding after the archive is read, not trusted, and bounded", func(t *testing.T) {
 		raw := buildTar(t, goodEntries()...)
 		padded := gz(t, append(raw, make([]byte, 8<<20)...))
@@ -384,7 +425,8 @@ func TestResourceLimits(t *testing.T) {
 		var before, after runtime.MemStats
 		runtime.GC()
 		runtime.ReadMemStats(&before)
-		res, err := validate(t, data, Limits{})
+		// 64 MiB of zeros is a ratio of about 1000:1, which the overall cap refuses by default.
+		res, err := validate(t, data, Limits{MaxTotalRatio: 1 << 20})
 		runtime.ReadMemStats(&after)
 		if err != nil {
 			t.Fatal(err)

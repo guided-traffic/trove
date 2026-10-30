@@ -6,12 +6,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"sync/atomic"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/blob"
-	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/meta"
@@ -438,11 +436,14 @@ func (f *fetcher) fillLink(resp *http.Response, sp *items.Spooled, prepared Prep
 				return err
 			}
 		}
-		if err := f.recordMappings(ctx, qs, prepared); err != nil {
-			return err
-		}
-		if e.o.Signals != nil {
-			e.o.Signals.Notify(tx, cluster.AreaMetadataChanged, strconv.FormatInt(rem.id, 10))
+		// The map follows the document that is stored: a fill that renewed the stored one, or lost
+		// to a newer row, leaves the URLs of that document alone (R-NPM-024, R-REPO-043). The
+		// early eviction of merged documents is the format's: OnFill signals the package it
+		// stored, and a signal of the engine would carry no package (R-REPO-020).
+		if !renewed && !out.keptNewer {
+			if err := f.recordMappings(ctx, qs, prepared); err != nil {
+				return err
+			}
 		}
 		if rq.Populate != nil {
 			return rq.Populate.Record(ctx, tx)

@@ -262,15 +262,16 @@ type After struct {
 }
 
 // Key returns the sort-key values of a package in the order the statement compares
-// them, for the cursor.
+// them, for the cursor. The statement compares the normalized name, which the display
+// name of a case-preserving format does not equal.
 func (o Order) Key(p Package) []string {
 	switch o.Sort {
 	case "createdAt":
-		return []string{p.CreatedAt.UTC().Format(time.RFC3339Nano), p.Name, p.Format}
+		return []string{p.CreatedAt.UTC().Format(time.RFC3339Nano), p.Key, p.Format}
 	case "updatedAt":
-		return []string{p.UpdatedAt.UTC().Format(time.RFC3339Nano), p.Name, p.Format}
+		return []string{p.UpdatedAt.UTC().Format(time.RFC3339Nano), p.Key, p.Format}
 	}
-	return []string{p.Name, p.Format}
+	return []string{p.Key, p.Format}
 }
 
 // ParseAfter reads the cursor values of [Order.Key].
@@ -440,7 +441,7 @@ func (s *Service) packages(ctx context.Context, sc Scope, p q.PackageViewListPar
 	keys := make([]string, len(rows))
 	for i, r := range rows {
 		pkgs[i] = Package{
-			ID: ID(r.Format, r.Name), Format: r.Format, Name: r.DisplayName,
+			ID: ID(r.Format, r.Name), Format: r.Format, Name: r.DisplayName, Key: r.Name,
 			CreatedAt: r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
 			VersionCount: r.VersionCount, DownloadCount: r.Downloads,
 		}

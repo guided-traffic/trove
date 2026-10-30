@@ -270,6 +270,32 @@ describe('Client setup', () => {
       expect(storedText()).not.toContain(third);
     });
 
+    it('R-UI-042 R-UI-043 a token created for one repository never fills the snippets of another, and is revoked', async () => {
+      const r = await open();
+      await choose(r, 'credentials', 'create');
+      // The answer is held back until the repository has changed.
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      const create = r.tokens.create.bind(r.tokens);
+      r.tokens.create = async (request, key) => {
+        await gate;
+        return create(request, key);
+      };
+      button(r.root, 'Create token').click();
+      await settle(r.fixture);
+
+      r.fixture.componentRef.setInput('repository', 'npm-local');
+      await settle(r.fixture);
+      release();
+      await settle(r.fixture);
+
+      expect(r.root.querySelector('.token-value')).toBeNull();
+      const held = r.fixture.componentInstance as unknown as { token: () => string | null };
+      expect(held.token()).toBeNull();
+      expect(r.tokens.calls.filter((c) => c.startsWith('revoke '))).toHaveLength(1);
+      expect(r.tokens.lastRequest?.scope?.repositories?.[0]?.repositories).toEqual(['npm-all']);
+    });
+
     it('R-UI-016 a failed creation (recent sign-in needed, no right) is shown and no token appears', async () => {
       const r = await open();
       await choose(r, 'credentials', 'create');

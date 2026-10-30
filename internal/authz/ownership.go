@@ -413,6 +413,45 @@ func (o *Ownership) CheckTx(ctx context.Context, tx meta.Tx, idx *Index, sub Sub
 	return chk, nil
 }
 
+// PrecheckWrite is the early form of [Ownership.CheckTx]: the same rule on the same facts, read
+// in a transaction of its own that locks and writes nothing, for a writer that decides before it
+// reads a body (R-AUTHZ-018). It claims nothing and holds no lock, so the commit decides again
+// under the claim row lock and stays the decision that counts; a refusal is returned, counted and
+// audited like the commit's. A write that ownership does not apply to passes.
+func (o *Ownership) PrecheckWrite(ctx context.Context, idx *Index, sub Subject, c Coordinate, w OwnershipWrite) error {
+	k, applies, err := o.keyOf(idx, c)
+	if err != nil || !applies {
+		return err
+	}
+	if o.db == nil {
+		return errors.New("authz: the ownership precheck needs a transaction runner")
+	}
+	var chk OwnershipCheck
+	err = o.db.InTx(ctx, func(tx meta.Tx) error {
+		qs, err := queriesOf(tx)
+		if err != nil {
+			return err
+		}
+		state, owners, err := readOwnership(ctx, qs, k, false)
+		if err != nil {
+			return err
+		}
+		chk = o.decide(OwnershipCheck{
+			Applies: true, State: state, Owners: owners,
+			key: k, write: w, facts: o.factsOf(idx, sub, k, c), sub: sub, c: c, epoch: idx.Epoch(),
+		})
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if chk.Decision.Outcome != Allow {
+		o.refused(ctx, chk)
+		return chk.Decision.Err()
+	}
+	return nil
+}
+
 // refused counts and audits a refused ownership check like a refused write.
 func (o *Ownership) refused(ctx context.Context, chk OwnershipCheck) {
 	c := chk.c

@@ -21,6 +21,12 @@ type Host interface {
 	// target's package or path (R-REPO-005): a read answers 404, a write 403
 	// not_admitted.
 	Authorize(ctx context.Context, rq *Request, t Target) error
+	// CheckOwnership is the ownership rule of R-AUTHZ-018 asked before a body is read: the
+	// early, read-only form of what [PackageWriter.Claim] decides in the commit transaction. It
+	// locks and claims nothing and refuses a caller who is not allowed to write the package, so
+	// that a request nobody could commit is not read, spooled and validated first. The commit
+	// decides again and is the decision that counts.
+	CheckOwnership(ctx context.Context, rq *Request, t Target, w OwnershipWrite) error
 	// Write runs fn in one transaction (meta.Runner.InTx, R-ARCH-019) with the
 	// package writer bound to rq. The audit event and the notifications commit
 	// with it. fn may run again after a serialization failure.

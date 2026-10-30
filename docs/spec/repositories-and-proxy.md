@@ -857,7 +857,10 @@ For a request to virtual repository V with descriptor d (R-REPO-003) by caller c
 6. Resolve by kind:
    - `artifact`, in three tiers, first hit wins: (a) local members; (b) remote members' caches,
      without contacting any upstream; (c) remote members' upstreams through the remote request path
-     (R-REPO-025), only for members on which c passes the cache-fill check. A latest-version request
+     (R-REPO-025), only for members on which c passes the cache-fill check. A stored item that the
+     member's format withholds (a version that was unpublished and is stored and tombstoned, a
+     version a remote document stopped listing) is a miss of its tier, not the answer: the walk
+     goes on to the next member that has the file (Q-REPO-117). A latest-version request
      (format-defined: a request whose answer is "the newest version") is the exception: all members,
      upstreams included, are consulted and the newest version wins (REPO-036).
    - `metadata`: collect the document from every remaining member that knows the package (remote
@@ -950,7 +953,9 @@ Priority: **MVP** · Covers: REPO-037
   covers the first local publish of a name that so far came only from a remote member.
 - **Early eviction.** A change of a member's metadata (publish, delete, restore, remote refresh
   with new content) also signals the area `metadata_changed` with repository id and package-name
-  hash, which drops the affected merged entries on all replicas. It is a signal area of
+  hash, which drops the affected merged entries on all replicas. The format sends it, from the
+  hook that stored the change, because only the format knows the package name; the proxy engine
+  sends none of its own, and a fill that stored nothing sends none (Q-REPO-116). It is a signal area of
   [architecture.md](architecture.md) R-ARCH-018: the signal leaves through the replica's post-commit
   coalescer to Valkey Pub/Sub (Q-ARCH-8), at most once, and not at all while Valkey is unavailable.
   It only evicts early. Visibility of local changes never depends on it (the `rev_seq` check above),
@@ -2588,6 +2593,9 @@ Priority: **MVP** · Covers: trove-only
   format derives from `url` and the canonical path, nothing is recorded; otherwise the mapping is
   recorded in `remote_url_map` when the document is parsed. The server MUST NOT derive an upstream
   host from a client request path: no client can choose the host trove fetches from.
+- The map follows the stored document: a fill that kept the stored document, or whose upsert
+  lost to a newer one (R-REPO-026), records no mapping, so the map and the document always
+  describe one document (Q-REPO-119, R-NPM-024).
 - A document MUST record mappings only for canonical paths of its own package. The format builds
   the path from the package identity the document was fetched for (name or ID, version, file name),
   never from the path of the upstream URL, and ignores and counts an entry that names another
@@ -4267,6 +4275,77 @@ Context: R-REPO-048 fixes the outcomes. It leaves open how several virtual repos
 **Rationale:** the spec says an unreachable upstream must not be a way around the check and that a value read from outside may only make trove refuse; (a) extends that to the engine's own failures. The development agent would revisit the approach to read errors if the database fault window of a publish turns out to be a support cost.
 
 **Applied in the spec:** R-REPO-048 (the fail-closed bullet), R-REPO-047 (the metric).
+
+### Q-REPO-116 · The format signals a refresh, and the engine does not
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the fill transaction of a remote repository attached a `metadata_changed` signal whose payload was the bare repository id, and the npm hook `OnFill` attached the signal with the repository id and the package-name hash. The virtual engine parses the second form; a payload it cannot read drops every merged entry (R-REPO-020), so every fill of every remote repository emptied the merged-metadata cache of every replica and raised its generation, which also discarded the merges being built at that moment.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The engine sends none; the format's `OnFill` signals the package it stored | One signal per stored change, with the payload that names the package | The package name is the format's knowledge; a fill that kept the stored document sends nothing | A format that forgets the signal evicts late, until the entry expires (never later than the remote entries) |
+| (b) The engine sends `virtual.PackageChanged(repo, package)` when the fill replaced the document | The engine owns the signal | A format cannot forget it | The engine would know a package name for every format (an ID for NuGet registrations), and two signals for one change |
+| (c) Keep the bare id and make the consumer drop the entries of the repository | Coarser than the whole cache | Simple | Every refresh still empties the merged entries of every package of the repository |
+
+**Choice:** (a). `Options.Signals` of the proxy engine is removed. `TestR_REPO_020_EarlyEviction` (internal/virtual) pins that a payload of one package drops only that package's merges, and `TestR_NPM_024_OnFillRecordsAFillAndKeepsTheNewerDocument` pins the payload the hook sends.
+
+**Rationale:** the signal only evicts early; correctness never depended on it, so the damage was the cache's effectiveness, and a format that omits it is late, not wrong. The development agent would revisit the choice when a second remote format exists and both send the same payload: the engine could then own it through a method of the adapter.
+
+**Applied in the spec:** R-REPO-020 (early eviction).
+
+### Q-REPO-117 · A stored item the format withholds is a miss of its tier
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a local member can store the item of a version and have it tombstoned (a version withheld by a restore's replay, R-NPM-047). The merged document lists the version from a remote member, because the local document leaves out tombstoned versions. A tarball request found the stored item in tier (a); serving it ended in the format's 404, and the walk did not try the remote tiers, so the document advertised a version whose tarball was 404 through the same virtual repository.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The tiers ask the format's serve check; a not-found refusal is a miss of the tier | The walk continues with the next member | The document and the tarball agree (R-NPM-030); the check is the one the serve path runs anyway | One more indexed lookup per stored hit (the serve path repeats it) |
+| (b) The format hides tombstoned items from `Stat` | The tier never sees the item | No second lookup | `Stat` is generic and also serves /files/ and the cache view, which must see the item |
+| (c) Leave it | 404 | Nothing to build | A document that lists a version it cannot serve |
+
+**Choice:** (a), in `internal/formathost/virtual.go` for the local tier and the remote cache tier. Any other refusal, such as an error of the mark lookup, ends the walk.
+
+**Rationale:** the refusal is the format's decision about its own marks, and the tier walk is the generic rule of R-REPO-019. The development agent would revisit the choice if the lookup shows in a profile of virtual artifact requests; the check can then move into the `Stat` handle.
+
+**Applied in the spec:** R-REPO-019 (artifact tiers).
+
+### Q-REPO-118 · A first version that the shadowing check skipped is refused at the commit
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the shadowing check of R-REPO-048 asks nothing when the repository holds a live version of the name. An unpublish that removes that version between the check and the commit makes the publish the first version of the name in the commit transaction, which then claimed the name and recorded no shadowing decision, so a remote member's package could be shadowed without the R-REPO-048 decision.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The commit refuses with 503 `shadow_check_unavailable` and `Retry-After`; the retry runs the check | Fail closed, the client's retry is the repair | No check inside a transaction, which would hold a connection during upstream requests (R-NPM-046); narrow case | One failed publish in a rare race |
+| (b) Run the check inside the commit | Never fails | No retry | Upstream requests inside a transaction |
+| (c) Always run the check, also when a version is live | Never skipped | No race | A probe per publish of every version, against "once for a first version" of R-REPO-048 |
+
+**Choice:** (a). The check reports that it was skipped and the hook of the commit refuses a first version in that case.
+
+**Rationale:** the situation needs a concurrent unpublish of the last version of the name, and the answer 503 is the one a client already retries. The development agent would revisit the choice if the retry shows in the audit log of a deployment that unpublishes and republishes names in loops.
+
+**Applied in the spec:** R-NPM-007 step 1 (the paragraph on the shadowing check).
+
+### Q-REPO-119 · The URL map follows the stored document
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the fill transaction recorded the URL mappings of the fetched document on every pass, also when the format kept the stored document (a superseded or stale copy) or the upsert kept a newer row. Two concurrent fills could then leave the map of the older document next to the newer stored document.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Record only when this fill's document was stored | The map and the document describe one document | Matches R-NPM-024; the order of the statements does not matter | The record must wait for the upsert's answer (it already does) |
+| (b) Record always and repair on the next fill | Simple | Self-healing | A tarball fetched from the older document's URL in between |
+
+**Choice:** (a): a fill that renewed the stored entry, or whose upsert returned no row, records no mapping.
+
+**Rationale:** the digest check still refused a wrong byte stream, so the exposure was an avoidable 502; the map is cheap to keep right. The development agent would revisit the choice if a format stores more than one document per package.
+
+**Applied in the spec:** R-REPO-043 (the bullet on the map).
 
 ## What this does not cover
 

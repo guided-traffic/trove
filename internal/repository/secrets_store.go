@@ -220,7 +220,12 @@ func ResealSecrets(ctx context.Context, run meta.Runner, ring *secrets.KeyRing, 
 	var afterField string
 	for {
 		var n int
+		var step ResealResult
+		cursorRepo, cursorField := afterRepo, afterField
+		// InTx runs the closure again after a serialization failure or a deadlock: the cursor and
+		// the counts of an attempt are local to it, and only the attempt that commits is kept.
 		err := run.InTx(ctx, func(tx meta.Tx) error {
+			cursorRepo, cursorField, step = afterRepo, afterField, ResealResult{}
 			qs, err := queries(tx)
 			if err != nil {
 				return err
@@ -233,18 +238,18 @@ func ResealSecrets(ctx context.Context, run meta.Runner, ring *secrets.KeyRing, 
 			}
 			n = len(rows)
 			for _, r := range rows {
-				afterRepo, afterField = r.RepoID, r.Field
+				cursorRepo, cursorField = r.RepoID, r.Field
 				sealed, changed, err := ring.Reseal(RepositorySecrets, secretRow(r.RepoID, r.Field), r.Sealed)
 				switch {
 				case err != nil:
-					res.Failed++
+					step.Failed++
 				case !changed:
-					res.Current++
+					step.Current++
 				default:
 					if err := qs.UpdateSealedRepositorySecret(ctx, q.UpdateSealedRepositorySecretParams{RepoID: r.RepoID, Field: r.Field, Sealed: sealed}); err != nil {
 						return err
 					}
-					res.Resealed++
+					step.Resealed++
 				}
 			}
 			return nil
@@ -252,6 +257,10 @@ func ResealSecrets(ctx context.Context, run meta.Runner, ring *secrets.KeyRing, 
 		if err != nil {
 			return res, err
 		}
+		afterRepo, afterField = cursorRepo, cursorField
+		res.Resealed += step.Resealed
+		res.Current += step.Current
+		res.Failed += step.Failed
 		if n < batch {
 			return res, nil
 		}

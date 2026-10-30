@@ -44,6 +44,9 @@ type OwnershipCheck struct {
 // cannot be checked is not allowed (fail closed).
 type Ownership interface {
 	EnforceTx(ctx context.Context, tx meta.Tx, chk OwnershipCheck) error
+	// Precheck is the early, read-only form for a writer that decides before it reads a body:
+	// it locks and claims nothing, and the commit decides again (authz.Ownership.PrecheckWrite).
+	Precheck(ctx context.Context, chk OwnershipCheck) error
 }
 
 // AutoClaimer is the seam to the namespace auto claim of R-REPO-023 (C-15): it

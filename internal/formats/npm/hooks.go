@@ -3,6 +3,7 @@ package npm
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
@@ -35,6 +36,9 @@ type publishCommit struct {
 	audit     rows.Audit
 	// shadowing is what the shadowing check found of a first version (R-REPO-048).
 	shadowing rows.Shadowing
+	// shadowSkipped says that the shadowing check asked nothing because the repository held a
+	// live version when it ran.
+	shadowSkipped bool
 
 	// Filled by the hook.
 	pkg    formats.PackageID
@@ -104,6 +108,13 @@ func (f *Format) commitVersion(ctx context.Context, tx formats.Tx, c formats.Com
 		}
 	}
 	first := len(live) == 0
+	if first && p.shadowSkipped {
+		// The last version went away (an unpublish) between the shadowing check and this commit:
+		// the publish gives the repository its first version of the name, and R-REPO-048 has not
+		// been asked. The client retries, and the check then runs.
+		return errs.E(errs.Unavailable, errs.CodeShadowCheckUnavailable,
+			pkgName+" lost its last version while this publish ran; try again.", errs.WithRetryAfter(time.Second))
+	}
 	if err := f.claim(ctx, c.Packages, opPublish, pkgName, p.version, first); err != nil {
 		return err
 	}

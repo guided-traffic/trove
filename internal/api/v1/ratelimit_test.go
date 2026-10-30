@@ -39,6 +39,10 @@ func tightLimits() config.APIRateLimits {
 		Read:      config.APIRateLimitRead{RequestsPerSecond: 1, Burst: 3},
 		Write:     config.APIRateLimitWrite{RequestsPerSecond: 1, Burst: 2},
 		Anonymous: config.APIRateLimitAnonymous{RequestsPerSecond: 1, Burst: 2},
+
+		PackageRead:      config.APIRateLimitPackageRead{RequestsPerSecond: 1, Burst: 4},
+		PackageWrite:     config.APIRateLimitPackageWrite{RequestsPerSecond: 1, Burst: 2},
+		PackageAnonymous: config.APIRateLimitPackageAnonymous{RequestsPerSecond: 1, Burst: 3},
 	}
 }
 
@@ -95,6 +99,10 @@ func TestRateLimitStage(t *testing.T) {
 			Read:      config.APIRateLimitRead{RequestsPerSecond: 50, Burst: 200},
 			Write:     config.APIRateLimitWrite{RequestsPerSecond: 10, Burst: 50},
 			Anonymous: config.APIRateLimitAnonymous{RequestsPerSecond: 5, Burst: 20},
+
+			PackageRead:      config.APIRateLimitPackageRead{RequestsPerSecond: 200, Burst: 1000},
+			PackageWrite:     config.APIRateLimitPackageWrite{RequestsPerSecond: 10, Burst: 50},
+			PackageAnonymous: config.APIRateLimitPackageAnonymous{RequestsPerSecond: 20, Burst: 100},
 		}
 		h, _ := limitedChain(t, cfg)
 		// The default policy is announced as the cluster policy; the limiter without
@@ -143,7 +151,47 @@ func TestRateLimitStage(t *testing.T) {
 		}
 	})
 
-	t.Run("R-API-016 only /api/v1/ and /files/ are limited here", func(t *testing.T) {
+	t.Run("R-API-016 the package protocols have their own classes and buckets", func(t *testing.T) {
+		h, _ := limitedChain(t, tightLimits())
+		var last *httptest.ResponseRecorder
+		for range 5 {
+			last = do(h, "GET", "/api/npm/main/left-pad", token("a"))
+		}
+		if last.Code != 429 || last.Header().Get("Retry-After") == "" || !strings.HasPrefix(last.Header().Get("RateLimit-Policy"), `"package_read";q=4;`) {
+			t.Fatalf("5th request: %d %v", last.Code, last.Header())
+		}
+		// The management API of the same token has its own budget, and so has the next token.
+		if do(h, "GET", "/api/v1/repositories", token("a")).Code != 200 {
+			t.Fatal("the package protocol used up the budget of the management API")
+		}
+		if do(h, "GET", "/api/npm/main/left-pad", token("b")).Code != 200 {
+			t.Fatal("a second token was slowed down")
+		}
+		// Unsafe methods are the write class.
+		var put *httptest.ResponseRecorder
+		for range 3 {
+			put = do(h, "PUT", "/api/npm/main/left-pad", token("w"))
+		}
+		if put.Code != 429 || !strings.HasPrefix(put.Header().Get("RateLimit-Policy"), `"package_write";q=2;`) {
+			t.Fatalf("3rd publish: %d %v", put.Code, put.Header())
+		}
+	})
+
+	t.Run("R-API-016 an anonymous package request is limited per client address in its own class", func(t *testing.T) {
+		h, _ := limitedChain(t, tightLimits())
+		var last *httptest.ResponseRecorder
+		for range 4 {
+			last = do(h, "GET", "/api/npm/main/left-pad", httpserver.AnonymousPrincipal())
+		}
+		if last.Code != 429 || !strings.HasPrefix(last.Header().Get("RateLimit-Policy"), `"package_anonymous";q=3;`) {
+			t.Fatalf("%d %v", last.Code, last.Header())
+		}
+		if do(h, "GET", "/api/v1/system/ping", httpserver.AnonymousPrincipal()).Code != 200 {
+			t.Fatal("the package protocol used up the anonymous budget of the management API")
+		}
+	})
+
+	t.Run("R-API-016 only /api/v1/, /files/ and the package protocols are limited here", func(t *testing.T) {
 		h, _ := limitedChain(t, tightLimits())
 		for range 10 {
 			if rec := do(h, "GET", "/ui/index.html", token("a")); rec.Code != 200 || rec.Header().Get("RateLimit") != "" {

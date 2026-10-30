@@ -80,6 +80,7 @@ export class ClientSetupPage {
   protected readonly creating = signal(false);
   protected readonly createFailure = signal<ApiError | null>(null);
   private idempotencyKey = newIdempotencyKey();
+  private generation = 0;
 
   protected readonly formatOptions = computed(() =>
     (valueOf(this.formats) ?? []).filter((f) => f.name in FORMAT_CLIENTS),
@@ -246,12 +247,20 @@ export class ClientSetupPage {
       scope: { repositories: grants },
       selfRotatable: false,
     };
+    // forgetToken() counts a generation: an answer that arrives after the repository or the way
+    // of signing in changed belongs to a setup the page no longer shows (R-UI-042, R-UI-043).
+    const generation = this.generation;
     try {
       const made = await this.createOnce(request);
+      if (generation !== this.generation) {
+        // Nobody can copy this token any more: it must not stay alive.
+        await this.tokens.revoke(made.id).catch(() => undefined);
+        return;
+      }
       this.token.set(made.token);
       this.created.set(true);
     } catch (e) {
-      this.createFailure.set(asApiError(e));
+      if (generation === this.generation) this.createFailure.set(asApiError(e));
     } finally {
       this.creating.set(false);
     }
@@ -272,6 +281,7 @@ export class ClientSetupPage {
   }
 
   protected forgetToken(): void {
+    this.generation++;
     this.token.set(null);
     this.created.set(false);
     this.pasted.set('');

@@ -3,8 +3,10 @@ package npm
 import (
 	"bytes"
 	"context"
+	"crypto/sha1" //nolint:gosec // dist.shasum is a SHA-1
 	"crypto/sha512"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -47,6 +49,11 @@ func remoteHost(t *testing.T, eng formats.RemoteFetcher) (*formattest.Host, *npm
 	twin := npmtest.New()
 	h := formattest.NewHost(f, formattest.HostOptions{Class: formats.Remote, Data: twin, Remote: eng})
 	return h, twin, f
+}
+
+func shasumOf(s string) string {
+	sum := sha1.Sum([]byte(s)) //nolint:gosec // dist.shasum is a SHA-1
+	return hex.EncodeToString(sum[:])
 }
 
 func sriOf(s string) string {
@@ -109,7 +116,7 @@ func upstreamBody(name string, modified string, versions ...string) []byte {
 		times["modified"] = modified
 	}
 	for _, v := range versions {
-		vs[v] = map[string]any{"name": name, "version": v, "dist": map[string]any{"tarball": "https://registry.example.org/" + name + "/-/" + name + "-" + v + ".tgz", "integrity": sriOf(name + v)}}
+		vs[v] = map[string]any{"name": name, "version": v, "dist": map[string]any{"tarball": "https://registry.example.org/" + name + "/-/" + name + "-" + v + ".tgz", "integrity": sriOf(name + v), "shasum": shasumOf(name + v)}}
 	}
 	b, _ := json.Marshal(map[string]any{"name": name, "versions": vs, "time": times})
 	return b
@@ -173,8 +180,9 @@ func TestR_NPM_024_OnFillRecordsAFillAndKeepsTheNewerDocument(t *testing.T) {
 	if len(twin.Fills) != 1 || len(twin.Fills[0].Versions) != 2 {
 		t.Fatalf("fills = %+v", twin.Fills)
 	}
-	if len(w.notes) != 1 {
-		t.Errorf("the refresh with new content is signalled %d times, want once", len(w.notes))
+	// R-REPO-020: the signal names the package, so the merged documents of other packages stay.
+	if want := "metadata_changed:" + formats.PackageChanged(9, "react"); len(w.notes) != 1 || w.notes[0] != want {
+		t.Errorf("the refresh with new content signals %v, want once %q", w.notes, want)
 	}
 
 	// The newer document replaces it, and the version the older one lacked is recorded.
@@ -265,6 +273,9 @@ func TestR_NPM_025_TheGateRevalidatesAStaleDocumentAndAppliesTheMarks(t *testing
 		}
 		if !bytes.Equal(d.SHA512[:8], mustDigest(sriOf("evil1.0.1"))[:8]) {
 			t.Errorf("the announced digest is not the document's: %x", d.SHA512)
+		}
+		if d.SHA1 != nil {
+			t.Errorf("R-NPM-025: the shasum is announced next to the sha512: %x", d.SHA1)
 		}
 	})
 	t.Run("a current document is not asked again", func(t *testing.T) {

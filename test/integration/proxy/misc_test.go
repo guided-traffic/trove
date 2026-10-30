@@ -98,6 +98,40 @@ func TestURLMap(t *testing.T) {
 	})
 }
 
+// TestURLMapFollowsTheStoredDocument is R-NPM-024 and R-REPO-043 at the engine: a fill that
+// renews the stored document and keeps it leaves the recorded URLs alone.
+func TestURLMapFollowsTheStoredDocument(t *testing.T) {
+	e := newEnv(t)
+	up, cdn := e.upstream(), e.upstream()
+	up.Set("/pkg/keep", proxytest.Route{Type: "application/json", Body: []byte("{}\nmap pkg/keep/-/keep-1.tgz " + cdn.URL + "/old.tgz\n")})
+	rem := e.remote("urlmapkeep", up, func(s *repository.RemoteSettings) { s.Cache.MetadataTTLSeconds = 1 })
+	r := e.newReplica("a", replicaOpts{ups: []*proxytest.Upstream{cdn}})
+	mapped := func() string {
+		return e.text("SELECT upstream_url FROM remote_url_map WHERE path = 'pkg/keep/-/keep-1.tgz'")
+	}
+
+	if s := r.metadata(rem, "pkg/keep"); s.status != 200 {
+		t.Fatalf("%d", s.status)
+	}
+	if got := mapped(); got != cdn.URL+"/old.tgz" {
+		t.Fatalf("recorded %q", got)
+	}
+	t.Run("R-NPM-024 a fill the format keeps the stored document for does not rewrite the URL map", func(t *testing.T) {
+		time.Sleep(1200 * time.Millisecond) // the document is expired and fetched again
+		up.Set("/pkg/keep", proxytest.Route{Type: "application/json", Body: []byte("{}\nmap pkg/keep/-/keep-1.tgz " + cdn.URL + "/new.tgz\n")})
+		keep := &proxytest.Adapter{Keep: true}
+		if s := r.metadata(rem, "pkg/keep", func(rq *proxy.Request) { rq.Adapter = keep }); s.status != 200 {
+			t.Fatalf("%d", s.status)
+		}
+		if keep.Fills() != 1 {
+			t.Fatalf("fills = %d, the document was not fetched again", keep.Fills())
+		}
+		if got := mapped(); got != cdn.URL+"/old.tgz" {
+			t.Fatalf("the URL map follows a document that was not stored: %q", got)
+		}
+	})
+}
+
 // TestOfflineAndCacheView is R-REPO-030 and R-REPO-032: offline mode, the cache view
 // and only-if-cached.
 func TestOfflineAndCacheView(t *testing.T) {

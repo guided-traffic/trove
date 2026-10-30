@@ -20,7 +20,10 @@ func TestAPISection(t *testing.T) {
 		if !rl.Enabled || rl.ExemptAdmins ||
 			rl.Read.RequestsPerSecond != 50 || rl.Read.Burst != 200 ||
 			rl.Write.RequestsPerSecond != 10 || rl.Write.Burst != 50 ||
-			rl.Anonymous.RequestsPerSecond != 5 || rl.Anonymous.Burst != 20 {
+			rl.Anonymous.RequestsPerSecond != 5 || rl.Anonymous.Burst != 20 ||
+			rl.PackageRead.RequestsPerSecond != 200 || rl.PackageRead.Burst != 1000 ||
+			rl.PackageWrite.RequestsPerSecond != 10 || rl.PackageWrite.Burst != 50 ||
+			rl.PackageAnonymous.RequestsPerSecond != 20 || rl.PackageAnonymous.Burst != 100 {
 			t.Fatalf("%+v", rl)
 		}
 	})

@@ -360,8 +360,9 @@ lets through. The stream is the request's, not the flight's: `detach` ends its s
 ### The fill
 
 A metadata document: `PrepareFill` (outside any transaction), then `blob.Commit` with a link function that locks the entry, runs
-`OnFill`, upserts the entry (the newer `fetched_at` wins), records the URL map, attaches the `metadata_changed` signal and writes the
-populate event. An artifact: `items.Commit` (origin `fill`, `MayOverwrite`) with an `Extra` that locks the entry, refuses another digest
+`OnFill`, upserts the entry (the newer `fetched_at` wins), records the URL map only when this fill's document was stored (Q-REPO-119)
+and writes the populate event. The engine sends no `metadata_changed` signal: the format's `OnFill` does, with the package it stored
+(Q-REPO-116). An artifact: `items.Commit` (origin `fill`, `MayOverwrite`) with an `Extra` that locks the entry, refuses another digest
 (`proxy.upstream_digest_changed`), inserts the entry and writes the populate and `artifact.cached` events. No transaction is open during a
 transfer, a wait or an extension.
 

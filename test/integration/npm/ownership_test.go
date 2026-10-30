@@ -48,6 +48,18 @@ func TestR_AUTHZ_018_OwnershipAtPublish(t *testing.T) {
 			t.Fatalf("items: %d", items)
 		}
 	})
+	t.Run("S-4 R-AUTHZ-018 a second principal is refused before the body is read: a body that is no publish is a 403, not a 400", func(t *testing.T) {
+		for _, r := range []*testenv.Replica{a, b} {
+			ans := e.st.Do(r, "PUT", pubPath("npm-local", "@acme/owned"), e.tokB, []byte("this is not a publish document"))
+			if ans.Status != 403 || code(t, ans) != "package_owned_by_other_owner" {
+				t.Fatalf("%s: %d %s", r.Name, ans.Status, ans.Body)
+			}
+		}
+		// The owner's garbage is the 400 of the scanner: the question passed and the body was read.
+		if ans := e.st.Do(a, "PUT", pubPath("npm-local", "@acme/owned"), e.tokA, []byte("this is not a publish document")); ans.Status != 400 {
+			t.Fatalf("the owner: %d %s", ans.Status, ans.Body)
+		}
+	})
 	t.Run("R-AUTHZ-018 the owner publishes on, whichever replica", func(t *testing.T) {
 		e.mustPublish(b, "npm-local", e.tokA, pkg{Name: "@acme/owned", Version: "1.0.1"})
 		if e.versions("npm-local", "@acme/owned") != 2 {

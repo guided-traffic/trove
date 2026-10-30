@@ -164,7 +164,7 @@ line through `WriteError` without `Content-Disposition`, and aborts the connecti
 | `formatHost`, `buildFormatHost` | first use | builds the package store, the rendition cache (`cache.rendition_bytes`), the `Host` and the dispatcher, once |
 | `registerFormats` | step 9, from `startClient` | mounts the prefix of every format with routes on each endpoint's router, with its error shape |
 
-The composition root binds `formathost.Ownership` (over `authz.Ownership.EnforceTx`) and `formathost.AutoClaimer` (over `repository.Routing.AutoClaim`, which gets the caller of the
+The composition root binds `formathost.Ownership` (over `authz.Ownership.EnforceTx`, and `PrecheckWrite` for `Host.CheckOwnership`, the read-only question a writer asks before it reads a body, Q-ARCH-226; the in-memory host takes it from `HostOptions.Precheck`) and `formathost.AutoClaimer` (over `repository.Routing.AutoClaim`, which gets the caller of the
 request and returns its `AutoClaimResult`) with two small adapters. It does **not** bind the remote engine and the resolver yet (`Host.Remote()` and `Host.Resolver()` answer an internal
 error that says so; a virtual `DeployTarget` answers `405 no_deploy_target`; the stub's `ShadowCheck` lets a first publish proceed, because without the engine no remote member serves a name).
 Each is a field of `formathost.Options` or `Deps`.
