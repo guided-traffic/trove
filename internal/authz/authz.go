@@ -97,6 +97,13 @@ type Subject struct {
 	// may not. Empty only for a subject no request carries (a job, a command, a
 	// test), which has no ceiling. Nothing reads it from request data.
 	Endpoint string
+	// CacheFill is the cache_fill setting of that endpoint (R-EP-019), set by the
+	// same conversion from the same endpoint: with Endpoint set and CacheFill
+	// false no subject passes the populate check (R-AUTHZ-008), so a request on
+	// an endpoint that does not fill caches never makes trove contact an
+	// upstream, also in a collapsed or fanned-out decision (Q-AUTHZ-153). A
+	// subject without an endpoint has no such ceiling.
+	CacheFill bool
 	// TokenID and SessionID identify the credential for audit.
 	TokenID   string
 	SessionID string
@@ -227,6 +234,24 @@ type Decider interface {
 	// CheckOn evaluates the subject's own rights for up to MaxChecks coordinates
 	// (R-AUTHZ-023); it audits nothing.
 	CheckOn(idx *Index, sub Subject, items []CheckItem) ([]bool, error)
+	// MayPopulateOn asks the populate check of R-AUTHZ-008 for a coordinate of a
+	// remote repository: read, the repository's cacheFillAction, not the session
+	// cookie, and an endpoint that fills caches (R-EP-019). It is a question:
+	// nothing is audited, so the caller that serves what the cache holds instead
+	// asks it. A refused read comes back as that refusal (404 stays 404).
+	MayPopulateOn(ctx context.Context, idx *Index, sub Subject, c Coordinate) Decision
+	// PopulateOn is the populate check as a request's refusal: the decision of
+	// MayPopulateOn, counted and, when refused, audited as authz.denied with
+	// deny.populate (403 populate_not_permitted). The caller that has nothing to
+	// serve without a fetch asks it; the allowed populate is recorded with
+	// RecordAllowed in the fill transaction.
+	PopulateOn(ctx context.Context, idx *Index, sub Subject, c Coordinate) Decision
+	// MemberUsableOn is MemberUsable of R-AUTHZ-015 for a member of the virtual
+	// repository the coordinate addresses: read says the resolver may consult the
+	// member, fill that it may also populate the member's cache (a remote member
+	// only). Whether the member needs its upstream for the coordinate is the
+	// resolver's to know; a member it may not use is skipped silently.
+	MemberUsableOn(ctx context.Context, idx *Index, sub Subject, member string, c Coordinate) (read, fill bool)
 	// RecordAllowed records an allowed write or populate in the transaction of the
 	// change (R-AUTHZ-029), with the decision the writer acted on.
 	RecordAllowed(ctx context.Context, tx meta.Tx, sub Subject, c Coordinate, d Decision) error

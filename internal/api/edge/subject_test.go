@@ -17,10 +17,12 @@ import (
 // handler made of the request.
 func serve(t *testing.T, endpoint string, p httpserver.Principal, handler func(*http.Request)) {
 	t.Helper()
+	fills := true
 	s := config.Server{
 		Listen: ":8080", OpsListen: ":8081", BaseURL: "https://trove.example.com", MaxInFlight: 4096,
 		Endpoints: map[string]config.Endpoint{
 			"customers": {Listen: ":8443", BaseURL: "https://packages.example.com"},
+			"partners":  {Listen: ":8444", BaseURL: "https://partners.example.com", CacheFill: &fills},
 		},
 	}
 	var e *httpserver.Endpoint
@@ -47,8 +49,11 @@ func serve(t *testing.T, endpoint string, p httpserver.Principal, handler func(*
 	}.Handler()
 	req := httptest.NewRequest("GET", "/api/npm/npm-all/x", nil)
 	req.Host, req.RemoteAddr = "packages.example.com", "192.0.2.9:4000"
-	if endpoint == "default" {
+	switch endpoint {
+	case "default":
 		req.Host = "trove.example.com"
+	case "partners":
+		req.Host = "partners.example.com"
 	}
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -115,6 +120,31 @@ func TestR_EP_013_TheSubjectCarriesTheListenersEndpoint(t *testing.T) {
 	t.Run("R-EP-013 a context outside a request carries no endpoint, so a job's subject has no ceiling", func(t *testing.T) {
 		if ep := SubjectOf(httpserver.WithPrincipal(context.Background(), httpserver.Principal{Kind: httpserver.KindUser, ID: "u1"})).Endpoint; ep != "" {
 			t.Fatalf("endpoint %q", ep)
+		}
+	})
+}
+
+// TestR_EP_019_TheSubjectCarriesTheEndpointsCacheFill: the conversion that names the
+// endpoint also carries its cache_fill setting, so the populate check reads it from the
+// subject and from nowhere else (Q-AUTHZ-153): the default endpoint fills, a further
+// endpoint does not unless its configuration says so.
+func TestR_EP_019_TheSubjectCarriesTheEndpointsCacheFill(t *testing.T) {
+	alice := httpserver.Principal{Kind: httpserver.KindUser, ID: "u1", Name: "alice"}
+	for _, tc := range []struct {
+		endpoint string
+		fills    bool
+	}{{"default", true}, {"customers", false}, {"partners", true}} {
+		t.Run("R-EP-019 R-AUTHZ-008 "+tc.endpoint, func(t *testing.T) {
+			var s authz.Subject
+			serve(t, tc.endpoint, alice, func(r *http.Request) { s = SubjectFrom(r) })
+			if s.Endpoint != tc.endpoint || s.CacheFill != tc.fills {
+				t.Fatalf("endpoint %q cache fill %v, want %q %v", s.Endpoint, s.CacheFill, tc.endpoint, tc.fills)
+			}
+		})
+	}
+	t.Run("R-EP-019 a context outside a request carries no endpoint and no cache-fill flag", func(t *testing.T) {
+		if s := SubjectOf(context.Background()); s.Endpoint != "" || s.CacheFill {
+			t.Fatalf("subject = %+v", s)
 		}
 	})
 }

@@ -55,4 +55,21 @@ func init() {
 		Schema: `{"type":"object","properties":{"repository":{"type":"string"},"repositoryId":{"type":"string"},` +
 			`"before":{"type":"object"},"after":{"type":"object"},"epoch":{"type":"integer"}}}`,
 	})
+	// >>> M2 ownership
+	// Package ownership (R-AUTHZ-018, R-AUTHZ-019, R-AUTHZ-029), written in the
+	// transaction of the change: the claim of a first publish, an owner added
+	// through the API (a pre-assignment included), an owner removed and the
+	// release of a name with its last owner. Removing and releasing take access
+	// away, so they carry the journal entry of R-AUTHZ-031 (domain, format, name,
+	// the owner by ID). claim is the ID stored in package_ownership.claim_event.
+	ownership := `{"type":"object","properties":{` +
+		`"repository":{"type":"string"},"domain":{"type":"string"},"format":{"type":"string"},` +
+		`"package":{"type":"string"},"claim":{"type":"string"},"reason":{"type":"string"},` +
+		`"owner":{"type":"string"},"ownerId":{"type":"string"},` +
+		`"owners":{"type":"array","maxItems":1000,"items":{"type":"string"}}}}`
+	Register(EventType{Name: "authz.ownership.claimed", Category: CategoryAuthz, Mode: Transactional, Schema: ownership})
+	Register(EventType{Name: "authz.ownership.added", Category: CategoryAuthz, Mode: Transactional, Schema: ownership})
+	Register(EventType{Name: "authz.ownership.removed", Category: CategoryAuthz, Mode: Transactional, Journal: JournalRevocation, Schema: ownership})
+	Register(EventType{Name: "authz.ownership.released", Category: CategoryAuthz, Mode: Transactional, Journal: JournalRevocation, Schema: ownership})
+	// <<< M2 ownership
 }

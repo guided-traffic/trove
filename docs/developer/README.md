@@ -63,7 +63,7 @@ no pull-through proxy and no backup exists yet. Everything marked *planned* belo
 | [proxy.md](proxy.md) | The pull-through proxy: the cache invalidation of remote repositories (rows, the per-replica matcher the engine asks, the invalidate and entry-list operations, the fold task); the engine sections are added as it is built |
 | [login.md](login.md) | The OIDC login, the server-side session, CSRF, logout and the break-glass account: files, flows, seams to the identity, api and audit areas, configuration, tests |
 | [identity.md](identity.md) | Principals, groups, service accounts, tokens, the authentication stage, caches and revocation propagation, the failed-credential throttle |
-| [authorization.md](authorization.md) | Permission policies, roles, the evaluation, the compiled grant index and its invalidation, epochs and `Trove-Authz-Min-Epoch`, how an operation declares its permission |
+| [authorization.md](authorization.md) | Permission policies, roles, the evaluation, the compiled grant index and its invalidation, epochs and `Trove-Authz-Min-Epoch`, how an operation declares its permission, the populate check and `MemberUsable`, package ownership |
 | [files.md](files.md) | Raw transfer under `/files/`: the generic layer over the item store, deploy, download with Range, folders, the items API, deletes, activity and download statistics |
 | [items.md](items.md) | The item store: the one commit and its order, the storage hooks, spool, read, listing rows, subtree delete and the `items-delete` job |
 | [m1-contracts.md](m1-contracts.md) | The M1 package map, shared Go contracts, marked sections in shared files, error codes, Valkey and audit names, API path prefixes per work package |

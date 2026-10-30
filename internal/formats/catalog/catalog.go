@@ -108,7 +108,18 @@ type Facts struct {
 	PriorityMembers bool
 	PinsAndClaims   bool
 	Caps            bool
+	// OwnershipDefault is the packageOwnership a local repository of the format
+	// holds while its document does not set one (R-AUTHZ-018, Q-AUTHZ-2): enforce
+	// or off. Empty for a format without package names, where ownership does not
+	// apply (Q-AUTHZ-155).
+	OwnershipDefault string
 }
+
+// The values of OwnershipDefault (R-AUTHZ-018 packageOwnership).
+const (
+	OwnershipEnforce = "enforce"
+	OwnershipOff     = "off"
+)
 
 // Supports reports whether the format accepts the class.
 func (f Facts) Supports(c Class) bool {
@@ -238,6 +249,10 @@ func check(e Entry) error {
 		return fmt.Errorf("%q has package names and no name rule", e.ID)
 	case !e.PackageNames && e.Names != nil:
 		return fmt.Errorf("%q has a name rule and no package names", e.ID)
+	case e.OwnershipDefault != "" && e.OwnershipDefault != OwnershipEnforce && e.OwnershipDefault != OwnershipOff:
+		return fmt.Errorf("%q has the ownership default %q", e.ID, e.OwnershipDefault)
+	case e.OwnershipDefault != "" && !e.PackageNames:
+		return fmt.Errorf("%q has an ownership default and no package names", e.ID)
 	case e.Exposure.Versions && e.Exposure.Versioning == nil:
 		return fmt.Errorf("%q exposes versions and has no versioning", e.ID)
 	case !e.Exposure.Exposable && (e.Exposure.Packages || e.Exposure.Versions || e.Exposure.Tags):

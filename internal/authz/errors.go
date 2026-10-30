@@ -22,6 +22,11 @@ const (
 	ReasonExposure                = "deny.exposure"
 	ReasonEndpointReadOnly        = "deny.endpoint_read_only"
 	ReasonEpochUnknown            = "deny.epoch-unknown"
+	// ReasonPopulate: the caller may read the remote repository but not populate
+	// it (R-AUTHZ-008); ReasonOwnership: the action is allowed, ownership is not
+	// (R-AUTHZ-018).
+	ReasonPopulate  = "deny.populate"
+	ReasonOwnership = "deny.ownership"
 )
 
 // codeEndpointReadOnly is registered by the endpoints area (R-EP-013); authz
@@ -58,7 +63,9 @@ func Unauthenticated() *errs.Error {
 //	DenyHidden           404, byte-identical to a missing resource (NotFound)
 //	DenyVisible          403, naming the missing action and the coordinate the
 //	                     caller sent; 403 endpoint_read_only for a write on an
-//	                     endpoint that exposes rules
+//	                     endpoint that exposes rules, populate_not_permitted for
+//	                     a refused populate, package_owned_by_other_owner for a
+//	                     refused ownership check
 func (d Decision) Err() error {
 	switch d.Outcome {
 	case Allow:
@@ -74,8 +81,14 @@ func (d Decision) Err() error {
 	case DenyHidden:
 		return NotFound()
 	case DenyVisible:
-		if d.Reason == ReasonEndpointReadOnly {
+		switch d.Reason {
+		case ReasonEndpointReadOnly:
 			return errs.E(errs.Forbidden, codeEndpointReadOnly, "This endpoint is read-only.")
+		case ReasonPopulate:
+			// The caller may read the repository, so 403 reveals nothing (R-AUTHZ-016).
+			return errs.E(errs.Forbidden, errs.CodePopulateNotPermitted, "The content is not cached, and this request may not fetch it from the upstream.")
+		case ReasonOwnership:
+			return errs.E(errs.Forbidden, errs.CodePackageOwnedByOtherOwner, d.ownedText())
 		}
 		return errs.E(errs.Forbidden, errs.CodeForbidden, d.forbiddenText())
 	}
@@ -90,6 +103,15 @@ func (d Decision) forbiddenText() string {
 		return fmt.Sprintf("The action %s is not permitted.", d.Missing)
 	}
 	return "The operation is not permitted."
+}
+
+// ownedText names the coordinate the caller sent and never an owner: who owns a
+// name is for those who may read the owners (R-AUTHZ-019).
+func (d Decision) ownedText() string {
+	if d.Target != "" {
+		return fmt.Sprintf("%s is owned by another owner; an owner or a holder of manage can add you.", d.Target)
+	}
+	return "The package is owned by another owner; an owner or a holder of manage can add you."
 }
 
 // Status returns the HTTP status of the decision, 200 for Allow.

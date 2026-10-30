@@ -336,7 +336,7 @@ func TestR_AUTHZ_021_ListFilters(t *testing.T) {
 func TestR_API_010_PermissionPoliciesContract(t *testing.T) {
 	f := newAPI(t, stack.Options{})
 	apitest.RunContract(t, apitest.Resource{
-		Name: "permission-policies", Collection: "http://cluster" + policies, Do: f.cl.Transport(f.admin.Name),
+		Name: "permission-policies", Collection: "http://cluster" + policies, Do: f.cl.Transport(f.admin.Name), //nolint:bodyclose // the contract tests close the bodies
 		Create: func(n int) map[string]any {
 			return policyBody(fmt.Sprintf("contract-%s-%d", stack.RandHex(3), n), entry("group:team-web", "read"))
 		},

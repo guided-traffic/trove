@@ -507,6 +507,14 @@ the remote request path (R-REPO-025, step 9) is this setting.
   `anonymous_populates_remote` (R-AUTHZ-021). Once anonymous access is on, every caller on the
   network can make trove download arbitrary upstream packages, and the warning makes that visible
   when the grant is made.
+- **One check, asked two ways.** The check is `MayPopulate` of R-AUTHZ-015: the session cookie and
+  an endpoint with `cache_fill: false` ([endpoints.md](endpoints.md) R-EP-019) refuse first, then
+  `read` and the action of `cacheFillAction`; a `cacheFillAction` that names neither refuses. The
+  endpoint's setting travels in the subject with the endpoint's name (Q-AUTHZ-153). Where a refusal
+  is answered from the cache (an expired document served stale, a virtual member counted as a
+  miss) the check is a question and nothing is audited; where the request has nothing to serve,
+  the refusal is 403 `populate_not_permitted` and is audited like a refused write (`deny.populate`,
+  R-AUTHZ-029), whatever `authz.audit.reads` says.
 
 Reasoning (decided in Q-AUTHZ-4): the default is `read`. Requiring a write-type action for every
 fetch is the most frequent reason why one developer gets a package and another gets 404 from the
@@ -890,9 +898,30 @@ func DecideOn(ctx context.Context, idx *Index, sub Subject, c Coordinate) Decisi
             return Deny(reasonFor(sub, idx, a, c))                  // no grant, scope, cap, or user bound
         }
     }
-    if c.MutatesPackage && !sub.Capabilities().Has(ContentBypass) &&
-        (c.Repo.PackageOwnership == Enforce || bindsProject(sub, idx, c)) {
-        return OwnershipCheck(sub, idx, c)                          // R-AUTHZ-018, repeated at commit
+    // Ownership (R-AUTHZ-018) reads rows, so it is not decided here: the writer runs
+    // OwnershipCheckTx in its commit transaction (Q-AUTHZ-154).
+    return Allow()
+}
+
+// OwnershipCheckTx runs in the writer's commit transaction, after DecideOn allowed the actions and
+// under the writer's package row lock; w says whether the write publishes a version and whether
+// the package held one before (R-AUTHZ-018 rules 1 to 3, 5 and 6; Q-AUTHZ-154).
+func OwnershipCheckTx(tx Tx, sub Subject, idx *Index, c Coordinate, w Write) Decision {
+    r := c.Repo.WriteTarget()                                       // a virtual repository's deploy target
+    if r.Class != Local || !c.HasName || !(r.PackageOwnership == Enforce || bindsProject(sub, idx, c)) {
+        return Allow()
+    }
+    state, owners := tx.LockClaim(r.Domain(), c.PackageName)        // FOR UPDATE; no row is "unclaimed"
+    switch {
+    case sub.Capabilities().Has(ContentBypass):
+    case len(owners) > 0 && (sub.OwnsAny(owners) || Allowed(sub, idx, Manage, c)):
+    case len(owners) == 0 && state != Claimed && w.FirstVersion:   // rule 1: free to the holder of the action
+    case len(owners) == 0 && Allowed(sub, idx, Manage, c):         // rules 3 and 6
+    default:
+        return Deny(ReasonOwnership)                                // 403 package_owned_by_other_owner
+    }
+    if w.Publish && len(owners) == 0 {
+        return tx.Claim(r.Domain(), c.PackageName, ClaimOwners(sub, idx, c)) // rules 2 and 5
     }
     return Allow()
 }
@@ -953,10 +982,20 @@ func MemberUsable(sub Subject, idx *Index, m Repo, c Coordinate) bool {
         return false                                                // skipped silently
     }
     if m.Class == Remote && m.NeedsUpstream(mc) {                   // uncached, or expired metadata
-        return sub.Endpoint.CacheFill &&                            // the cache-fill policy of the subject's endpoint, endpoints.md R-EP-019
-            Allowed(sub, idx, m.PopulateAction, mc)                 // otherwise the cache only
+        return MayPopulate(sub, idx, m, mc)                         // otherwise the cache only
     }
     return true
+}
+
+// MayPopulate is the populate check of R-AUTHZ-008 (Q-AUTHZ-153).
+func MayPopulate(sub Subject, idx *Index, m Repo, mc Coordinate) bool {
+    if sub.Credential == SessionCookie {                            // never through the session cookie
+        return false
+    }
+    if sub.Endpoint != "" && !sub.CacheFill {                       // the endpoint's cache_fill, endpoints.md R-EP-019
+        return false
+    }
+    return Allowed(sub, idx, Read, mc) && Allowed(sub, idx, m.PopulateAction, mc)
 }
 ```
 
@@ -976,7 +1015,8 @@ func MemberUsable(sub Subject, idx *Index, m Repo, c Coordinate) bool {
   `deny.triggering-user` when only the triggering-user bound refuses, and `deny.no-grant`
   otherwise.
 - The subject carries the endpoint the request arrived on (`Subject.Endpoint`, set by the one
-  conversion from the listener's endpoint, never by a caller; [endpoints.md](endpoints.md) Q-EP-20) and
+  conversion from the listener's endpoint, never by a caller; [endpoints.md](endpoints.md) Q-EP-20),
+  with that endpoint's `cache_fill` (`Subject.CacheFill`, Q-AUTHZ-153), and
   the coordinate the addressed repository, the one the client named; `WithRepo` changes neither,
   so exposure is decided on the addressed repository while grants are decided per member
   ([endpoints.md](endpoints.md) Q-EP-11). A decision keeps its endpoint's ceiling on whatever
@@ -1121,7 +1161,10 @@ When ownership is checked:
 - Every local repository whose format has package names carries `packageOwnership`: `enforce` or
   `off` (a field of the repository in [repositories-and-proxy.md](repositories-and-proxy.md)). A
   new npm or NuGet local repository MUST get `enforce` when the create request does not set the
-  field (Q-AUTHZ-2); `off` is an explicit choice per repository.
+  field (Q-AUTHZ-2); `off` is an explicit choice per repository. The default is a fact of the format
+  in the format catalog, and it is stored with the document: a replace that omits the field, or a
+  merge patch that sets it to `null`, reverts it to the default like every omitted setting
+  (R-REPO-011, Q-AUTHZ-155).
 - Independently of that setting, ownership is checked for every write that a CI inline grant with
   `ownership: bind_project` allows (R-CI-015). Writing inline grants carry `bind_project` unless
   they say otherwise (R-AUTHZ-014, Q-AUTHZ-6).
@@ -1129,8 +1172,14 @@ When ownership is checked:
   (a raw file outside any package, a repository of a format without package names) passes the
   ownership check, also under a `bind_project` grant.
 - Ownership is recorded per ownership domain and normalized package name. In the MVP the domain is
-  the repository; P1 adds shared domains (R-AUTHZ-020). Remote and virtual repositories have no
-  ownership; writes through a virtual repository are checked on its deploy target.
+  the repository (`repo:<repositories.id>`); P1 adds shared domains (R-AUTHZ-020), and until then
+  `ownershipDomain` is refused with 422 `not_applicable` rather than ignored (Q-AUTHZ-155). Remote
+  and virtual repositories have no ownership; writes through a virtual repository are checked on
+  its deploy target.
+- The check reads rows, so it runs in the writer's commit transaction, after the actions were
+  decided and under the writer's package row lock, never in the decision of the actions
+  (R-AUTHZ-015 `OwnershipCheckTx`, Q-AUTHZ-154). The writer states whether the operation publishes
+  a version and whether the package held a stored version before it.
 
 Owner identities:
 
@@ -1148,7 +1197,8 @@ Rules:
 
 1. **Mutating operations** (those marked "Ownership" in R-AUTHZ-007) on a package name in a
    checked domain require, besides the action, one of:
-   - the name is unclaimed and has no stored version: the operation claims it (rule 2);
+   - the name is unclaimed (no claim, or released) and has no stored version; a publish claims it
+     (rule 2), any other operation leaves it unclaimed (Q-AUTHZ-154);
    - one of the subject's owner identities is an owner of the name;
    - the subject holds `manage` on the coordinate;
    - the subject holds `content:bypass`.
@@ -1183,27 +1233,36 @@ Rules:
    guarded by the primary key. Of two concurrent first publishes, on one replica or on two, one
    commits the claim; the other then sees an owned name, is checked by rule 1 and is refused unless
    it is an owner. The claim runs as `INSERT … ON CONFLICT DO NOTHING`, followed by a read of the
-   owners in the same transaction. Under `READ COMMITTED` the insert waits for the concurrent claim
+   owners in the same transaction. The check reads the claim row with `FOR UPDATE` first, so the
+   check and the claim of one write and every owner change of the name (R-AUTHZ-019) run one after
+   the other; a name without a row has nothing to lock, and the primary key decides
+   (Q-AUTHZ-154). Under `READ COMMITTED` the insert waits for the concurrent claim
    and then does nothing, and the following read sees that claim, because each statement takes a
    new snapshot ([transaction isolation](https://www.postgresql.org/docs/current/transaction-iso.html#XACT-READ-COMMITTED)).
    The publish therefore needs no retry. No advisory lock, no Valkey lock and no session state is
    needed, so the claim works through a transaction-mode pooler
    ([architecture.md](architecture.md) R-ARCH-019).
 6. **Principal deletion** removes the principal's owner entries. A name whose last owner
-   disappears this way falls under rule 3.
+   disappears this way stays claimed and falls under rule 3, whether or not it holds versions: every
+   mutating operation needs `manage`, and a publish by a `manage` holder claims it again
+   (R-AUTHZ-031 "Released names stay closed").
 7. **Display.** CI project owners keep `project_path` as a display value, updated on every publish
    (R-CI-015).
+8. **Repository deletion** removes the ownership rows of the repository's domain in the transaction
+   that deletes the repository row ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-013,
+   Q-AUTHZ-156); the domain is text and carries no foreign key.
 
 Data model:
 
 ```sql
 CREATE TABLE package_ownership (
-  domain        text NOT NULL,            -- 'repo:<repositories.id>' or 'domain:<name>' (R-AUTHZ-020)
+  domain        text NOT NULL             -- 'repo:<repositories.id>' or 'domain:<name>' (R-AUTHZ-020);
+    CHECK (domain ~ '^(repo:[0-9]+|domain:.+)$'),  -- no foreign key: rule 8 removes a repository's rows
   format        text NOT NULL,
   package_name  text NOT NULL,            -- normalized name (R-AUTHZ-005)
   state         text NOT NULL CHECK (state IN ('claimed', 'released')),
   claimed_at    timestamptz NOT NULL DEFAULT now(),
-  claim_event   uuid NULL,                -- audit event of the claim (R-AUTHZ-029)
+  claim_event   uuid NULL,                -- the claim's ID, carried by its audit event (R-AUTHZ-029, Q-AUTHZ-158)
   PRIMARY KEY (domain, format, package_name)
 );
 
@@ -1214,7 +1273,9 @@ CREATE TABLE package_owner (
   package_name  text NOT NULL,
   owner_kind    text NOT NULL CHECK (owner_kind IN ('principal', 'ci_project')),
   principal_id  uuid NULL REFERENCES principal (id) ON DELETE CASCADE,  -- user, group, sa, ci_mapping
-  ci_issuer_id  uuid NULL REFERENCES ci_issuers (id) ON DELETE CASCADE, -- ci_project only
+  ci_issuer_id  uuid NULL,                                            -- ci_project only; the foreign key to
+                                                                      -- ci_issuers (ON DELETE CASCADE) is added
+                                                                      -- NOT VALID and validated in M4 (Q-ARCH-191)
   ci_project_id text NULL CHECK (length(ci_project_id) <= 64),         -- ci_project only
   display       text NOT NULL,            -- name, or project_path of the latest publish
   reason        text NOT NULL CHECK (reason IN ('first-publish', 'added', 'pre-assigned')),
@@ -1228,6 +1289,8 @@ CREATE TABLE package_owner (
 CREATE UNIQUE INDEX package_owner_unique ON package_owner
   (domain, format, package_name,
    coalesce(principal_id::text, ci_issuer_id::text || ':' || ci_project_id));
+CREATE INDEX package_owner_principal ON package_owner (principal_id) WHERE principal_id IS NOT NULL;
+CREATE INDEX package_owner_added_by  ON package_owner (added_by) WHERE added_by IS NOT NULL;
 ```
 
 Acceptance criteria:
@@ -1262,9 +1325,9 @@ an encoded `/` in that segment.
 | Method and path | Purpose | Status | Required |
 |---|---|---|---|
 | `GET /api/v1/repositories/{repoKey}/packages/{packageName}/owners` | Read state and owners | 200; 404 per R-AUTHZ-016 | `read` on the coordinate |
-| `POST /api/v1/repositories/{repoKey}/packages/{packageName}/owners` | Add an owner. On a name that is unclaimed and has no version, this pre-assigns it: the name is claimed for the given owner before anything is published. | 201; 409 already an owner; 422 `unknown_principal` | an owner, `manage` on the coordinate, or `content:bypass`; pre-assigning needs `manage` or `content:bypass` |
-| `DELETE /api/v1/repositories/{repoKey}/packages/{packageName}/owners/{owner}` | Remove an owner | 204; 404; 409 `last_owner` unless `?release=true` | as for adding; `release=true` needs `manage` or `content:bypass` |
-| `GET /api/v1/package-owners?owner={owner}&repository={repoKey}` | Names owned by an identity, for offboarding and transfers | 200, cursor paging per [api-and-ui.md](api-and-ui.md) | `policies:read`, or the caller is that owner (directly or as group member) |
+| `POST /api/v1/repositories/{repoKey}/packages/{packageName}/owners` | Add an owner. On a name that is unclaimed and has no version, this pre-assigns it: the name is claimed for the given owner before anything is published. | 201; 403; 409 `already_exists` (already an owner); 422 `unknown_principal` | an owner, `manage` on the coordinate, or `content:bypass`; pre-assigning needs `manage` or `content:bypass` |
+| `DELETE /api/v1/repositories/{repoKey}/packages/{packageName}/owners/{owner}` | Remove an owner | 204; 403; 404; 409 `last_owner` unless `?release=true` | as for adding; `release=true` needs `manage` or `content:bypass` |
+| `GET /api/v1/package-owners?owner={owner}&repository={repoKey}` | Names owned by an identity, for offboarding and transfers: the entries that name the identity itself, not those of its groups | 200, cursor paging per [api-and-ui.md](api-and-ui.md) | `policies:read`, or the caller is that owner (directly or as group member); such a caller sees only names of repositories it may read (R-AUTHZ-016) |
 
 ```json
 {
@@ -1287,7 +1350,25 @@ an encoded `/` in that segment.
 
 - Add request: `{"owner": "group:team-web"}` or `{"owner": "ci:gitlab-internal:project:4712"}`.
 - An owner may hand a package over (add the new owner, then remove itself). Removing the last owner
-  without `release=true` is refused.
+  without `release=true` is refused. With `release=true` the name is `released`: it is unclaimed
+  again, so rule 1 and rule 3 of R-AUTHZ-018 decide its next publish. The owners are read under the
+  claim row's lock, so two removals of the last two owners, on one replica or on two, run one after
+  the other and the second answers 409 `last_owner`.
+- A name with no owner left to ask (unclaimed, released, or claimed after its last owner was
+  deleted) takes an owner only from `manage` or `content:bypass`; on an unclaimed name with
+  versions this claims it with the reason `added`, without versions with `pre-assigned`.
+- The owner identities that can be added are those of R-AUTHZ-018's table: `user:`, `group:`,
+  `sa:`, `ci:<issuer>/<mapping>`, and from M4 `ci:<issuer>:project:<id>` (R-CI-015); every other
+  reference, `anonymous` and `authenticated` included, is 422 `unknown_principal` (Q-AUTHZ-157).
+  The permission is decided before the reference is looked up.
+- Adding and removing are writes: a caller who may not change the owners gets 403 whether or not the
+  repository or the name exists (R-AUTHZ-016). Through a session they need recent authentication
+  ([api-and-ui.md](api-and-ui.md) R-API-007), like a policy change: adding an owner widens who may
+  publish a name. An added owner answers 201 with `Location` of the name's owners, the resource a GET
+  then shows it in. Where ownership does not exist (a remote or virtual
+  repository, a format without package names) a caller holding `manage` gets 404. Reading the owners
+  is a read: 404 for a caller without `read`, byte-identical to a missing name; an unclaimed name
+  reads back `"state": "unclaimed"` with no owners.
 - CI tokens never change owners. Adding, removing and releasing answer 403 `ci_token_restricted`
   for a CI token, also when its project identity is an owner. A pipeline runs the install scripts
   of its dependencies, so a CI token must not be able to hand a package to another project; a
@@ -2088,6 +2169,15 @@ Fields of `authz.decision`:
 | `deny.capability` | Management operation without the required capability |
 | `deny.stale` | Grant index not confirmed current within the wait of R-AUTHZ-028 |
 
+- **Refused populates and ownership.** A refused populate that is answered 403
+  (`deny.populate`) and a refused ownership check (`deny.ownership`) are recorded like refused
+  writes, whatever `authz.audit.reads` says: both refuse a change. A populate refusal that is
+  answered from the cache, and a member that virtual resolution skips, are not refusals and record
+  nothing (R-AUTHZ-008, R-AUTHZ-009 rule 2).
+- **Ownership events.** `authz.ownership.claimed` names the owners the claim recorded and the claim
+  ID stored in `package_ownership.claim_event`; `.added` names the owner and its reason
+  (`added`, `pre-assigned`); `.removed` and `.released` carry the journal entry of R-AUTHZ-031
+  (Q-AUTHZ-158).
 - **Allowed populates.** The populate event belongs to the request that fetches from the upstream
   and is written in its cache-fill transaction. A request that joins a collapsed fetch, in its own
   replica or on another one through the Valkey flight lock (INV-11,
@@ -3303,6 +3393,171 @@ if a request fans out so widely that a shared holder becomes contended, or if `A
 
 **Applied in the spec:** R-AUTHZ-015 (the pseudo-code begins once and decides with `DecideOn`); Q-AUTHZ-133 (its revisit
 condition, the request-scoped handle, is met).
+
+### Q-AUTHZ-153 · The endpoint's cache-fill setting travels in the subject, and the populate check is one function asked two ways
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `MemberUsable` of R-AUTHZ-015 read `sub.Endpoint.CacheFill`, but `Subject.Endpoint` is the endpoint's name
+(Q-EP-20). The populate check of R-AUTHZ-008 is asked by the remote engine, which answers a refusal from the cache or with
+403, and by the virtual resolver, for which a refused member is a miss; both decide in collapsed flights and fanned-out
+goroutines on contexts the request does not own.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A parameter of the question | `MayPopulate(idx, sub, c, endpointCacheFill)`, filled by every caller from the request | No change to the subject | Every caller carries the flag next to the subject; one that passes `true` by mistake contacts the upstream from an endpoint that must not |
+| (b) A field of the subject, set by the conversion that sets the endpoint | `Subject.CacheFill`, set by `edge.SubjectOf` from the same `httpserver.Endpoint`; only `internal/authz` and `internal/api/edge` build a subject (archtest R-EP-013) | One source; it travels into every goroutine with the subject, as the exposure ceiling does; the zero value refuses | One more field on the subject |
+| (c) The engine looks the setting up by name | An `Options` member holding the configured endpoints | No subject field | A second copy of the endpoint configuration; an unwired option fills everywhere or nowhere |
+
+**Choice:** (b). The check is one function asked two ways: `Decider.MayPopulateOn` is a question that audits nothing (the
+stale path, `MemberUsableOn`), `Decider.PopulateOn` counts a refusal and audits it as a refused write with `deny.populate`
+(403 `populate_not_permitted`). The session cookie is recognised by the session ID or the credential method, and refuses
+before any grant is looked at. A subject without an endpoint (a job, a command) has no cache-fill ceiling, as it has no
+exposure ceiling.
+
+**Rationale:** Q-EP-20 put the endpoint into the subject because decisions run on contexts the request does not own; the
+endpoint's cache-fill setting has the same problem and travels the same way. The development agent would revisit this when
+authorization needs a third property of the endpoint (the subject should then carry an endpoint value instead of fields), or
+when endpoint settings change at runtime, which a long-lived flight would not see.
+
+**Applied in the spec:** R-AUTHZ-008 ("One check, asked two ways"); R-AUTHZ-015 (`MayPopulate`, the subject paragraph);
+R-AUTHZ-029 (refused populates); [endpoints.md](endpoints.md) R-EP-019.
+
+### Q-AUTHZ-154 · Ownership is decided in the commit transaction, on facts the writer states
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the pseudo-code of R-AUTHZ-015 ran an ownership check inside `DecideOn`, which reads memory only, while R-AUTHZ-018
+reads the rows inside the write transaction. Rule 1 needs to know whether the name holds a stored version, rules 2 and 3 who
+claims; the formats contract wraps the check for a writer that holds the commit transaction and the package row lock (C-14 of
+the M2 plan).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An early check in `DecideOn` and the commit check | Read the rows outside a transaction before the upload, then again at commit | Refuses before the body arrives | `DecideOn` would query PostgreSQL, which R-AUTHZ-015 forbids in the steady state; the early answer can be wrong and is repeated anyway |
+| (b) Only in the commit transaction | `Ownership.CheckTx` and `ClaimTx` (`EnforceTx` runs both), after `DecideOn` and under the writer's package row lock; the writer states `OwnershipWrite{Publish, FirstVersion}` | Decided on the rows the commit writes against; npm spools and validates the body before it decides anyway (R-NPM-007), so (a) saves no upload | A non-owner's upload is refused after it arrived |
+| (c) The check counts the versions itself | A query of `package_versions` inside the check | No input from the writer | The answer depends on whether the writer inserted the new version before it asked |
+
+**Choice:** (b), with these rules: the claim row is read `FOR UPDATE`, no row is unclaimed and `released` counts as unclaimed;
+only a publish claims, so a dist-tag or an unpublish on an unclaimed name without versions passes rule 1 and leaves the name
+unclaimed (a holder of `delete` alone would designate no owner by rule 2 and close the name); a name claimed without owners
+needs `manage` whatever its versions (rule 6, R-AUTHZ-031); a publish that would claim but whose grants designate no owner is
+refused instead of recording an empty claim; a claim that loses the insert race re-reads under the lock and is decided again,
+at most three times. A refusal is 403 `package_owned_by_other_owner`, audited as `authz.denied` with `deny.ownership`.
+`ClaimTx` takes only the check, so the claim is made on the subject and index the check decided on.
+
+**Rationale:** the decision point stays in memory, and the decision that can block a write is made on the rows the write
+commits against, as R-AUTHZ-015 already demands for the re-check at commit. The development agent would revisit this when a
+format accepts a large body it does not need to decide (chunked uploads of R-STOR-011, P1): an advisory early check outside a
+transaction could then save the transfer, and would never replace the commit check.
+
+**Applied in the spec:** R-AUTHZ-015 (`OwnershipCheckTx` replaces the check in `DecideOn`); R-AUTHZ-018 (the bullet on where
+the check runs, rule 1, the lock in rule 5, rule 6).
+
+### Q-AUTHZ-155 · The ownership settings of a repository: the format's default whenever the member is absent, no shared domain before R-AUTHZ-020
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-AUTHZ-2 makes `enforce` the default of new npm and NuGet local repositories, and R-AUTHZ-018 reads it back from the
+document. The repository model must not name a format (R-ARCH-008), and the decision point reads the setting from its index.
+`ownershipDomain` (R-AUTHZ-020) is P1, but the M1 validation accepted it for every format with package names.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The default at create only | The create stores `enforce` when the body omits it | The literal wording of Q-AUTHZ-2 | A replace without the member (R-REPO-011: omitted settings revert to defaults) or a merge patch with `null` stores none, which the check reads as `off`: enforcement ends without anyone choosing `off` |
+| (b) A catalog fact, stored whenever the member is absent | `catalog.Facts.OwnershipDefault`; the validation of every create and update stores it when the document sets none | `off` is always explicit; the stored document says what is in force, and `authz.settings.changed` journals every change of it | An update of a document stored without the member writes it (none exist: no format with package names was registered before) |
+| (c) The check reads an absent member as the default | No stored value | No write | The read-back fails; two places know the default |
+
+For `ownershipDomain`: (i) ignore it, every repository is its own domain; (ii) build shared domains now, without the
+conflict check of a join (409 `ownership_conflict`); (iii) refuse it with 422 `not_applicable` until R-AUTHZ-020 is built.
+
+**Choice:** (b) and (iii). An unreadable repository document makes the index read the setting as `enforce`, failing closed as
+`requireAuthentication` does.
+
+**Rationale:** (a) and (i) both leave an operator believing something is in force that is not, which is the argument of
+R-REPO-008 against silently dropped settings; (ii) would let a join hand names to the domain's owners without anyone deciding
+it. The development agent would revisit (iii) when R-AUTHZ-020 is built, and (b) if a format needs a default that depends on
+more than the format.
+
+**Applied in the spec:** R-AUTHZ-018 ("When ownership is checked"); [repositories-and-proxy.md](repositories-and-proxy.md)
+R-REPO-003 (the fact) and the settings table of R-REPO-004.
+
+### Q-AUTHZ-156 · The ownership rows of a deleted repository go in the transaction that deletes its row
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `package_ownership.domain` is text (`repo:<id>` or `domain:<name>`), so no foreign key removes the rows of a deleted
+repository.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An authorization hook on the repository deletion | `authz.OwnershipHook.OnDelete` deletes the rows of `repo:<id>` in the transaction that removes the row (the last step of the deletion job, or the immediate removal of a virtual repository) | One transaction; the pattern of `PolicyHook` and `ExposureHook` (Q-AUTHZ-132) | The composition root must wire one more hook |
+| (b) Leave the rows | Repository IDs are never reused | Nothing to build | Tables and backups keep growing with rows nothing can reach |
+| (c) A periodic cleanup task | A worker task deletes the rows of missing repositories | Decoupled from the deletion | A second mechanism with a window |
+
+**Choice:** (a). No audit event per row: `repository.deleted` covers them.
+
+**Rationale:** IDs come from an identity column and are never handed out again, so this is hygiene and backup size, not an
+access fix. The development agent would revisit this with R-AUTHZ-020: a shared domain must not go with one of its
+repositories.
+
+**Applied in the spec:** R-AUTHZ-018 (rule 8, the data model); [repositories-and-proxy.md](repositories-and-proxy.md)
+R-REPO-013.
+
+### Q-AUTHZ-157 · The owner operations: who may change owners, which identities can own, what the answers reveal
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-AUTHZ-019 names the permissions and the statuses, but leaves open the code of "409 already an owner", the answer to
+a refused change on a repository or name that does not exist, references that name no owner identity, CI project owners
+before the CI issuers of M4 exist, and what the list by owner shows to a caller without `policies:read`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Read first | Every operation decides `read` first and answers every refusal 404 | One rule for all four operations | A refused write would be 404 for a missing repository and 403 for an existing one, against R-AUTHZ-016 |
+| (b) Writes answer as writes, reads as reads | Adding and removing: 401 for anonymous, 403 `ci_token_restricted` for a CI token, both before any lookup; 403 naming `manage` for a caller who may not change the owners, the same for a missing repository or name; 404 only for a caller holding `manage` where ownership does not exist. Reading: `read`, else 404 | Neither status depends on existence for a refused caller | Two rules |
+
+**Choice:** (b). Further: 409 is `already_exists`, the code of a create of an existing resource (R-API-004); the permission
+is decided before the owner reference is resolved, so a refused caller learns nothing about principals; `anonymous`,
+`authenticated` and, until M4, `ci:<issuer>:project:<id>` are 422 `unknown_principal`; releasing the last owner sets the state
+`released`; the list by owner shows the entries that name the identity itself, all of them to a holder of `policies:read` and
+only those of readable repositories to the identity or a member of the group. Adding and removing need recent authentication
+through a session (R-API-007), because adding an owner widens who may publish a name as a policy entry does; an added owner
+answers 201 with `Location` of the name's owners, the URL on which a GET shows it (R-API-004), since R-AUTHZ-019 has no read
+of one owner. The declarations of the four operations decide what they can before the handler (a repository-level `read`
+for the owners view, an authenticated caller for the rest) and the handler decides the name, normalized with the format's
+name rule, on the request's index.
+
+**Rationale:** R-AUTHZ-016 fixes the answers of reads and writes, and these operations are one of each. The development agent
+would revisit the list when offboarding needs the names a principal owns through its groups, and the CI project owners when
+the CI issuers of M4 exist.
+
+**Applied in the spec:** R-AUTHZ-019 (the table and the rules below it); [api-and-ui.md](api-and-ui.md) R-API-007 (the row
+"Package ownership").
+
+### Q-AUTHZ-158 · The audit of ownership changes and the claim's event ID
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-AUTHZ-029 names `authz.ownership.claimed`, `.added`, `.removed` and `.released`, R-AUTHZ-031 the journal entries of
+the last two. `package_ownership.claim_event` is "the audit event of the claim", but the audit recorder assigns the ID of an
+event itself and returns none.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A claim ID in both places | The claim gets its own UUIDv7, stored in `claim_event` and carried as `claim` in the event's details | No change to the audit contract; the row and the event join on it | The column holds a claim ID, not the event's row ID |
+| (b) The recorder returns the event ID | `RecordTx` answers the ID it assigned | The column holds what its name says | A contract change for every producer of every area |
+| (c) Leave `claim_event` empty | — | Nothing to build | The claim cannot be traced to its event |
+
+**Choice:** (a). The details: `claimed` names the repository, domain, format, package, the claim ID, the reason and the
+owners; `added` the owner, its principal ID and the reason (`added` or `pre-assigned`); `removed` and `released` the owner and
+its principal ID, with the journal entry of R-AUTHZ-031 (domain, format, normalized name, principal ID). A refusal is
+`authz.denied` with `deny.ownership`.
+
+**Rationale:** the link is what an investigation needs, and (a) gives it without touching the audit contract. The development
+agent would revisit this if the recorder starts returning event IDs for another reason.
+
+**Applied in the spec:** R-AUTHZ-018 (the data model), R-AUTHZ-029 ("Ownership events").
 
 ## What this does not cover
 

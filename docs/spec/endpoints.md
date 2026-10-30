@@ -1136,7 +1136,10 @@ Priority: **MVP** · Covers: trove-only
   repository `403` `populate_not_permitted`, and through a virtual repository a miss
   ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-025 step 9, R-REPO-019). npm's
   rule for cached tarballs whose document is stale applies as for such a caller
-  ([formats/npm.md](formats/npm.md) R-NPM-025).
+  ([formats/npm.md](formats/npm.md) R-NPM-025). The setting travels in the subject with the
+  endpoint's name (`Subject.CacheFill`, set by the one conversion from the listener's endpoint), so
+  a collapsed fetch or a fanned-out member decision keeps it ([authorization.md](authorization.md)
+  Q-AUTHZ-153).
 - Forwarded search (R-NUGET-016) is not forwarded on such an endpoint; the remote answers with its
   cache-only search.
 - With `cache_fill: true`, the subject's populate check decides, as on the default endpoint.

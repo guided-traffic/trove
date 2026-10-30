@@ -200,6 +200,20 @@ const (
 
 // <<< M2 upstream
 
+// >>> M2 ownership
+
+// Codes of package ownership and of the populate check (R-AUTHZ-008,
+// R-AUTHZ-016, R-AUTHZ-018, R-AUTHZ-019). ci_token_restricted (identity) and
+// already_exists (api) are registered above; the ownership operations answer
+// with them as well.
+const (
+	CodePackageOwnedByOtherOwner = "package_owned_by_other_owner"
+	CodeLastOwner                = "last_owner"
+	CodePopulateNotPermitted     = "populate_not_permitted"
+)
+
+// <<< M2 ownership
+
 // CodeInfo documents one code for the problem catalog.
 type CodeInfo struct {
 	Code   string
@@ -346,6 +360,11 @@ var registry = []CodeInfo{
 	{CodeSourceNetworkUnavailable, UpstreamFailed, "Source network unavailable", "This replica has no interface address inside the remote repository's sourceNetwork, so it does not connect to the upstream. The failure does not count toward the circuit; another replica may have such an address."},
 	{CodeForeignHostDenied, UpstreamFailed, "Foreign host denied", "The upstream document points to a host that is neither the upstream origin nor an entry of the remote repository's extraHosts; trove did not send a request."},
 	// <<< M2 upstream
+	// >>> M2 ownership
+	{CodePackageOwnedByOtherOwner, Forbidden, "Package owned by another owner", "The action is granted, but the package name is owned and the caller is none of its owners and holds no manage on it; an owner or a holder of manage adds the caller as an owner."},
+	{CodeLastOwner, Conflict, "Last owner", "Removing the only owner of a package would leave it without one; add the new owner first, or release the name with release=true (needs manage)."},
+	{CodePopulateNotPermitted, Forbidden, "Populate not permitted", "The caller may read the remote repository but not bring new content into its cache: the repository's cacheFillAction is not granted, the request came with the session cookie, or the endpoint does not fill caches. What the cache holds is still served."},
+	// <<< M2 ownership
 }
 
 // Codes returns a copy of the registry in declaration order.

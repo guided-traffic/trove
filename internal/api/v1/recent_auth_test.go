@@ -40,9 +40,9 @@ func tokenCaller(*http.Request) (httpserver.Principal, error) {
 // in this build. The command-line login, CI identity and configuration-as-code
 // rows join when those operations do.
 var recentAuthOperations = []string{
-	"bindRole", "createExposureRule", "createPermissionPolicy", "createServiceAccountToken", "createToken",
+	"addPackageOwner", "bindRole", "createExposureRule", "createPermissionPolicy", "createServiceAccountToken", "createToken",
 	"deleteExposureRule", "deletePermissionPolicy", "deleteRepository", "patchExposureRule", "patchPermissionPolicy",
-	"replaceExposureRule", "replacePermissionPolicy", "rotateToken", "unbindRole", "updateAuthSettings",
+	"removePackageOwner", "replaceExposureRule", "replacePermissionPolicy", "rotateToken", "unbindRole", "updateAuthSettings",
 }
 
 func TestR_API_007_DocumentDeclaresRecentAuth(t *testing.T) {

@@ -1895,6 +1895,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/repositories/{repoKey}/packages/{packageName}/owners": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repoKey: string;
+                /**
+                 * @description The package name as one path segment, percent-encoded (`@acme%2Ffrontend`, R-AUTHZ-019); it is
+                 *     normalized with the name rule of the repository's format.
+                 */
+                packageName: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Read the owners of a package name
+         * @description The state of the name in its ownership domain (`claimed`, `released` or `unclaimed`) and its
+         *     owners (R-AUTHZ-019). Needs `read` on the package: a caller who may not read it gets `404`, like
+         *     for a missing name, and so does a repository without ownership (remote, virtual, a format
+         *     without package names) and a string that is no name of the format. An unclaimed name answers
+         *     `200` with `state: unclaimed` and no owners. The state is read from PostgreSQL on every call.
+         */
+        get: operations["getPackageOwners"];
+        put?: never;
+        /**
+         * Add an owner, or pre-assign a name nobody has published
+         * @description Adds an owner identity (`user:`, `group:`, `sa:`, `ci:<issuer>/<mapping>`) to the name
+         *     (R-AUTHZ-019). Allowed to an owner, a holder of `manage` on the package and `content:bypass`;
+         *     a name without an owner to ask (unclaimed, released, or claimed after its last owner was
+         *     deleted) takes an owner only from `manage` or `content:bypass`, and on an unclaimed name without
+         *     versions this pre-assigns it. A caller who may not is refused with `403`, whether or not the
+         *     repository or the name exists; a CI token always gets `403 ci_token_restricted`. An owner
+         *     reference that names no owner identity answers `422 unknown_principal`; one that owns the name
+         *     already answers `409 already_exists`. `Location` is the owners of the name. The change and
+         *     its audit event `authz.ownership.added` commit together.
+         */
+        post: operations["addPackageOwner"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/repositories/{repoKey}/packages/{packageName}/owners/{owner}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repoKey: string;
+                /**
+                 * @description The package name as one path segment, percent-encoded (`@acme%2Ffrontend`, R-AUTHZ-019); it is
+                 *     normalized with the name rule of the repository's format.
+                 */
+                packageName: string;
+                /** @description The owner identity, percent-encoded as one path segment (`ci:gitlab-internal%2Facme-publish`). */
+                owner: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove an owner, or release the name with its last owner
+         * @description Removes an owner of the name (R-AUTHZ-019), allowed as adding one is. Removing the only owner
+         *     answers `409 last_owner` unless `release=true`, which releases the name: it is unclaimed again,
+         *     so its next publish is decided by rules 1 and 3 of R-AUTHZ-018. `release=true` needs `manage`
+         *     on the package or `content:bypass`. A caller who may not is refused with `403`, whether or not
+         *     the repository, the name or the owner exists; a CI token always gets `403 ci_token_restricted`.
+         *     An owner the name does not have answers `404`. The removal and its audit event
+         *     (`authz.ownership.removed`, or `.released` for the last owner, both journaled) commit together.
+         */
+        delete: operations["removePackageOwner"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/package-owners": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the names an identity owns
+         * @description The names whose owner entries name the identity itself (not those of its groups), for
+         *     offboarding and transfers (R-AUTHZ-019), in key order with cursor pagination (R-API-010).
+         *     Needs `policies:read`, or the identity is the caller itself or one of its groups; such a caller
+         *     sees only names of repositories it may read, so a page may hold fewer items than `limit` while a
+         *     `nextCursor` exists. `repository` narrows the list to one repository. An owner reference that
+         *     names no owner identity answers `422 unknown_principal`.
+         */
+        get: operations["listOwnedPackages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3764,6 +3867,51 @@ export interface components {
             }[];
             /** @description Patterns of automatic claims to remove. Automatic claims not listed here stay. */
             removeAuto?: string[];
+        };
+        /** @description The ownership of one package name in one repository (R-AUTHZ-019). */
+        PackageOwners: {
+            repository: string;
+            /** @description The ownership domain; the repository key while every repository is its own domain (R-AUTHZ-020 is P1). */
+            domain: string;
+            format: string;
+            /** @description The normalized package name. */
+            package: string;
+            /** @enum {string} */
+            state: "claimed" | "released" | "unclaimed";
+            owners: components["schemas"]["PackageOwner"][];
+        };
+        /** @description One owner of a name. */
+        PackageOwner: {
+            /** @description The owner identity. */
+            owner: string;
+            /** @description The name when the owner was recorded, or the project path of a CI project owner. */
+            display: string;
+            /** @enum {string} */
+            reason: "first-publish" | "added" | "pre-assigned";
+            /** Format: date-time */
+            addedAt: string;
+            /** @description Who added the owner; null for a claim by publish. */
+            addedBy: string | null;
+        };
+        PackageOwnerInput: {
+            /** @description The owner identity to add. */
+            owner: string;
+        };
+        /** @description One name an identity owns. */
+        OwnedPackage: {
+            repository: string;
+            format: string;
+            package: string;
+            /** @enum {string} */
+            state: "claimed" | "released";
+            /** @enum {string} */
+            reason: "first-publish" | "added" | "pre-assigned";
+            /** Format: date-time */
+            addedAt: string;
+        };
+        OwnedPackageList: {
+            items: components["schemas"]["OwnedPackage"][];
+            nextCursor: string | null;
         };
     };
     responses: {
@@ -8373,6 +8521,208 @@ export interface operations {
             415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["Unprocessable"];
             428: components["responses"]["PreconditionRequired"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getPackageOwners: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repoKey: string;
+                /**
+                 * @description The package name as one path segment, percent-encoded (`@acme%2Ffrontend`, R-AUTHZ-019); it is
+                 *     normalized with the name rule of the repository's format.
+                 */
+                packageName: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The ownership of the name. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "repository": "npm-internal",
+                     *       "domain": "npm-internal",
+                     *       "format": "npm",
+                     *       "package": "@acme/frontend",
+                     *       "state": "claimed",
+                     *       "owners": [
+                     *         {
+                     *           "owner": "group:team-web",
+                     *           "display": "team-web",
+                     *           "reason": "first-publish",
+                     *           "addedAt": "2026-10-28T09:12:44Z",
+                     *           "addedBy": null
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["PackageOwners"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    addPackageOwner: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                repoKey: string;
+                /**
+                 * @description The package name as one path segment, percent-encoded (`@acme%2Ffrontend`, R-AUTHZ-019); it is
+                 *     normalized with the name rule of the repository's format.
+                 */
+                packageName: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "owner": "group:team-web"
+                 *     }
+                 */
+                "application/json": components["schemas"]["PackageOwnerInput"];
+            };
+        };
+        responses: {
+            /** @description The owner was added. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "owner": "group:team-web",
+                     *       "display": "team-web",
+                     *       "reason": "pre-assigned",
+                     *       "addedAt": "2026-10-28T09:12:44Z",
+                     *       "addedBy": "user:lead-web"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["PackageOwner"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    removePackageOwner: {
+        parameters: {
+            query?: {
+                /** @description Release the name when the owner is its last one. */
+                release?: boolean;
+            };
+            header?: never;
+            path: {
+                repoKey: string;
+                /**
+                 * @description The package name as one path segment, percent-encoded (`@acme%2Ffrontend`, R-AUTHZ-019); it is
+                 *     normalized with the name rule of the repository's format.
+                 */
+                packageName: string;
+                /** @description The owner identity, percent-encoded as one path segment (`ci:gitlab-internal%2Facme-publish`). */
+                owner: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The owner was removed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listOwnedPackages: {
+        parameters: {
+            query: {
+                /** @description The owner identity (`user:alice`, `group:team-web`, `sa:ci-bot`, `ci:<issuer>/<mapping>`). */
+                owner: string;
+                /** @description A repository key. */
+                repository?: string;
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of names. */
+            200: {
+                headers: {
+                    Link: components["headers"]["Link"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "repository": "npm-internal",
+                     *           "format": "npm",
+                     *           "package": "@acme/frontend",
+                     *           "state": "claimed",
+                     *           "reason": "first-publish",
+                     *           "addedAt": "2026-10-28T09:12:44Z"
+                     *         }
+                     *       ],
+                     *       "nextCursor": null
+                     *     }
+                     */
+                    "application/json": components["schemas"]["OwnedPackageList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];

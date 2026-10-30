@@ -44,8 +44,9 @@ func (a *App) wireRepository() error {
 		MaxVirtualMembers: a.cfg.Repositories.MaxVirtualMembers,
 		// The authorization area records authz.settings.changed in the transaction of an update
 		// (R-AUTHZ-031) and endpoint.exposure.deleted for the rules a deletion takes with it (H-164);
-		// the policy hook moves the epoch and the policy versions the deletion changes (R-AUTHZ-028).
-		Hooks: repository.MultiHooks(authz.NewSettingsHook(rec), authz.NewExposureHook(a.exposureService()), authz.NewPolicyHook(changes)),
+		// the policy hook moves the epoch and the policy versions the deletion changes (R-AUTHZ-028);
+		// the ownership hook removes the ownership rows of the deleted repository (wire_ownership.go).
+		Hooks: repository.MultiHooks(authz.NewSettingsHook(rec), authz.NewExposureHook(a.exposureService()), authz.NewPolicyHook(changes), ownershipHook()),
 	}
 	if queue != nil { // a nil *jobs.Queue in the interface would not be nil
 		opts.Jobs = queue

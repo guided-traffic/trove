@@ -27,6 +27,9 @@ type AuthzServices struct {
 	Policies *authz.Service
 	// Engine answers the checks of the caller.
 	Engine *authz.Engine
+	// Owners is the package ownership service behind the ownership operations
+	// (ownership_api.go, R-AUTHZ-019); they decide on Engine.
+	Owners *authz.Ownership
 }
 
 func (s *Server) policies() (*authz.Service, error) {

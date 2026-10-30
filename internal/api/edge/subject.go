@@ -58,7 +58,9 @@ func SubjectOf(ctx context.Context) authz.Subject {
 		s.Groups = append(s.Groups, principal.GroupRef{ID: g.ID, Name: g.Name})
 	}
 	if ep := httpserver.EndpointFrom(ctx); ep != nil {
-		s.Endpoint = ep.Name()
+		// The endpoint's cache-fill policy travels with its name, so the populate
+		// check reads one source (R-EP-019, Q-AUTHZ-153).
+		s.Endpoint, s.CacheFill = ep.Name(), ep.CacheFill()
 	}
 	return s
 }

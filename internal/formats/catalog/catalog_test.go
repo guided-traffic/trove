@@ -41,6 +41,9 @@ func TestR_REPO_003_RegisterRefusesAMalformedEntry(t *testing.T) {
 		"a rule, no package names":  {Facts: Facts{ID: "norule2", Classes: []Class{Local}, Layout: "x", PatternSubject: SubjectPath}, Names: lower{}},
 		"versions, no versioning":   {Facts: Facts{ID: "nover", Classes: []Class{Local}, Layout: "x", PatternSubject: SubjectPath}, Exposure: Exposure{Exposable: true, Versions: true}},
 		"dimensions, not exposable": {Facts: Facts{ID: "nodim", Classes: []Class{Local}, Layout: "x", PatternSubject: SubjectPath}, Exposure: Exposure{Tags: true}},
+		// R-AUTHZ-018: an ownership default needs package names and is enforce or off.
+		"an ownership default without package names": {Facts: Facts{ID: "noown", Classes: []Class{Local}, Layout: "x", PatternSubject: SubjectPath, OwnershipDefault: OwnershipEnforce}},
+		"an ownership default out of the set":        {Facts: Facts{ID: "badown", Classes: []Class{Local}, Layout: "x", PatternSubject: SubjectName, PackageNames: true, OwnershipDefault: "sometimes"}, Names: lower{}},
 	}
 	for name, e := range bad {
 		t.Run("R-REPO-003 Register panics on "+name, func(t *testing.T) {

@@ -484,6 +484,87 @@ func (e JobState) Valid() bool {
 	}
 }
 
+// Defines values for OwnedPackageReason.
+const (
+	OwnedPackageReasonAdded        OwnedPackageReason = "added"
+	OwnedPackageReasonFirstPublish OwnedPackageReason = "first-publish"
+	OwnedPackageReasonPreAssigned  OwnedPackageReason = "pre-assigned"
+)
+
+// Valid indicates whether the value is a known member of the OwnedPackageReason enum.
+func (e OwnedPackageReason) Valid() bool {
+	switch e {
+	case OwnedPackageReasonAdded:
+		return true
+	case OwnedPackageReasonFirstPublish:
+		return true
+	case OwnedPackageReasonPreAssigned:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OwnedPackageState.
+const (
+	OwnedPackageStateClaimed  OwnedPackageState = "claimed"
+	OwnedPackageStateReleased OwnedPackageState = "released"
+)
+
+// Valid indicates whether the value is a known member of the OwnedPackageState enum.
+func (e OwnedPackageState) Valid() bool {
+	switch e {
+	case OwnedPackageStateClaimed:
+		return true
+	case OwnedPackageStateReleased:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PackageOwnerReason.
+const (
+	PackageOwnerReasonAdded        PackageOwnerReason = "added"
+	PackageOwnerReasonFirstPublish PackageOwnerReason = "first-publish"
+	PackageOwnerReasonPreAssigned  PackageOwnerReason = "pre-assigned"
+)
+
+// Valid indicates whether the value is a known member of the PackageOwnerReason enum.
+func (e PackageOwnerReason) Valid() bool {
+	switch e {
+	case PackageOwnerReasonAdded:
+		return true
+	case PackageOwnerReasonFirstPublish:
+		return true
+	case PackageOwnerReasonPreAssigned:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PackageOwnersState.
+const (
+	PackageOwnersStateClaimed   PackageOwnersState = "claimed"
+	PackageOwnersStateReleased  PackageOwnersState = "released"
+	PackageOwnersStateUnclaimed PackageOwnersState = "unclaimed"
+)
+
+// Valid indicates whether the value is a known member of the PackageOwnersState enum.
+func (e PackageOwnersState) Valid() bool {
+	switch e {
+	case PackageOwnersStateClaimed:
+		return true
+	case PackageOwnersStateReleased:
+		return true
+	case PackageOwnersStateUnclaimed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PermissionCheckItemAction.
 const (
 	PermissionCheckItemActionAnnotate  PermissionCheckItemAction = "annotate"
@@ -2399,6 +2480,68 @@ type ObjectStoreFacts struct {
 	Prefix           string `json:"prefix"`
 }
 
+// OwnedPackage One name an identity owns.
+type OwnedPackage struct {
+	AddedAt    time.Time          `json:"addedAt"`
+	Format     string             `json:"format"`
+	Package    string             `json:"package"`
+	Reason     OwnedPackageReason `json:"reason"`
+	Repository string             `json:"repository"`
+	State      OwnedPackageState  `json:"state"`
+}
+
+// OwnedPackageReason defines model for OwnedPackage.Reason.
+type OwnedPackageReason string
+
+// OwnedPackageState defines model for OwnedPackage.State.
+type OwnedPackageState string
+
+// OwnedPackageList defines model for OwnedPackageList.
+type OwnedPackageList struct {
+	Items      []OwnedPackage `json:"items"`
+	NextCursor *string        `json:"nextCursor"`
+}
+
+// PackageOwner One owner of a name.
+type PackageOwner struct {
+	AddedAt time.Time `json:"addedAt"`
+
+	// AddedBy Who added the owner; null for a claim by publish.
+	AddedBy *string `json:"addedBy"`
+
+	// Display The name when the owner was recorded, or the project path of a CI project owner.
+	Display string `json:"display"`
+
+	// Owner The owner identity.
+	Owner  string             `json:"owner"`
+	Reason PackageOwnerReason `json:"reason"`
+}
+
+// PackageOwnerReason defines model for PackageOwner.Reason.
+type PackageOwnerReason string
+
+// PackageOwnerInput defines model for PackageOwnerInput.
+type PackageOwnerInput struct {
+	// Owner The owner identity to add.
+	Owner string `json:"owner"`
+}
+
+// PackageOwners The ownership of one package name in one repository (R-AUTHZ-019).
+type PackageOwners struct {
+	// Domain The ownership domain; the repository key while every repository is its own domain (R-AUTHZ-020 is P1).
+	Domain string         `json:"domain"`
+	Format string         `json:"format"`
+	Owners []PackageOwner `json:"owners"`
+
+	// Package The normalized package name.
+	Package    string             `json:"package"`
+	Repository string             `json:"repository"`
+	State      PackageOwnersState `json:"state"`
+}
+
+// PackageOwnersState defines model for PackageOwners.State.
+type PackageOwnersState string
+
 // PatternLists The include and exclude globs of one dimension of a resource set (R-AUTHZ-005). An empty include list is unrestricted.
 type PatternLists struct {
 	Exclude *[]string `json:"exclude,omitempty"`
@@ -3762,6 +3905,21 @@ type ListGroupMembersParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// ListOwnedPackagesParams defines parameters for ListOwnedPackages.
+type ListOwnedPackagesParams struct {
+	// Owner The owner identity (`user:alice`, `group:team-web`, `sa:ci-bot`, `ci:<issuer>/<mapping>`).
+	Owner string `form:"owner" json:"owner"`
+
+	// Repository A repository key.
+	Repository *string `form:"repository,omitempty" json:"repository,omitempty"`
+
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // ListPermissionPoliciesParams defines parameters for ListPermissionPolicies.
 type ListPermissionPoliciesParams struct {
 	// Principal A principal reference.
@@ -3935,6 +4093,18 @@ type GetItemParams struct {
 	// Path The canonical path of a file or folder, without a leading or trailing slash; empty or
 	// absent is the root of the repository.
 	Path *string `form:"path,omitempty" json:"path,omitempty"`
+}
+
+// AddPackageOwnerParams defines parameters for AddPackageOwner.
+type AddPackageOwnerParams struct {
+	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// RemovePackageOwnerParams defines parameters for RemovePackageOwner.
+type RemovePackageOwnerParams struct {
+	// Release Release the name when the owner is its last one.
+	Release *bool `form:"release,omitempty" json:"release,omitempty"`
 }
 
 // GetItemStatsParams defines parameters for GetItemStats.
@@ -4199,6 +4369,9 @@ type InvalidateRepositoryCacheJSONRequestBody = CacheInvalidateRequest
 // PutRepositoryClaimsJSONRequestBody defines body for PutRepositoryClaims for application/json ContentType.
 type PutRepositoryClaimsJSONRequestBody = RepositoryClaimsInput
 
+// AddPackageOwnerJSONRequestBody defines body for AddPackageOwner for application/json ContentType.
+type AddPackageOwnerJSONRequestBody = PackageOwnerInput
+
 // CreateServiceAccountJSONRequestBody defines body for CreateServiceAccount for application/json ContentType.
 type CreateServiceAccountJSONRequestBody = NewServiceAccount
 
@@ -4454,6 +4627,9 @@ type ServerInterface interface {
 	// GetOpenApiYaml This document as YAML
 	// (GET /api/v1/openapi.yaml)
 	GetOpenApiYaml(w http.ResponseWriter, r *http.Request)
+	// ListOwnedPackages List the names an identity owns
+	// (GET /api/v1/package-owners)
+	ListOwnedPackages(w http.ResponseWriter, r *http.Request, params ListOwnedPackagesParams)
 	// ListPermissionPolicies List permission policies
 	// (GET /api/v1/permission-policies)
 	ListPermissionPolicies(w http.ResponseWriter, r *http.Request, params ListPermissionPoliciesParams)
@@ -4517,6 +4693,15 @@ type ServerInterface interface {
 	// GetItem Describe a file or folder
 	// (GET /api/v1/repositories/{repoKey}/items)
 	GetItem(w http.ResponseWriter, r *http.Request, repoKey string, params GetItemParams)
+	// GetPackageOwners Read the owners of a package name
+	// (GET /api/v1/repositories/{repoKey}/packages/{packageName}/owners)
+	GetPackageOwners(w http.ResponseWriter, r *http.Request, repoKey string, packageName string)
+	// AddPackageOwner Add an owner, or pre-assign a name nobody has published
+	// (POST /api/v1/repositories/{repoKey}/packages/{packageName}/owners)
+	AddPackageOwner(w http.ResponseWriter, r *http.Request, repoKey string, packageName string, params AddPackageOwnerParams)
+	// RemovePackageOwner Remove an owner, or release the name with its last owner
+	// (DELETE /api/v1/repositories/{repoKey}/packages/{packageName}/owners/{owner})
+	RemovePackageOwner(w http.ResponseWriter, r *http.Request, repoKey string, packageName string, owner string, params RemovePackageOwnerParams)
 	// GetItemStats Read the download statistics of a file
 	// (GET /api/v1/repositories/{repoKey}/stats)
 	GetItemStats(w http.ResponseWriter, r *http.Request, repoKey string, params GetItemStatsParams)
@@ -6019,6 +6204,78 @@ func (siw *ServerInterfaceWrapper) GetOpenApiYaml(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// ListOwnedPackages operation middleware
+func (siw *ServerInterfaceWrapper) ListOwnedPackages(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListOwnedPackagesParams
+
+	// ------------- Required query parameter "owner" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "owner", r.URL.Query(), &params.Owner, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "owner"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "owner", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "repository" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "repository", r.URL.Query(), &params.Repository, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "repository"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repository", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListOwnedPackages(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListPermissionPolicies operation middleware
 func (siw *ServerInterfaceWrapper) ListPermissionPolicies(w http.ResponseWriter, r *http.Request) {
 
@@ -7192,6 +7449,160 @@ func (siw *ServerInterfaceWrapper) GetItem(w http.ResponseWriter, r *http.Reques
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetItem(w, r, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPackageOwners operation middleware
+func (siw *ServerInterfaceWrapper) GetPackageOwners(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "packageName" -------------
+	var packageName string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "packageName", r.PathValue("packageName"), &packageName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packageName", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPackageOwners(w, r, repoKey, packageName)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AddPackageOwner operation middleware
+func (siw *ServerInterfaceWrapper) AddPackageOwner(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "packageName" -------------
+	var packageName string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "packageName", r.PathValue("packageName"), &packageName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packageName", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AddPackageOwnerParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddPackageOwner(w, r, repoKey, packageName, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemovePackageOwner operation middleware
+func (siw *ServerInterfaceWrapper) RemovePackageOwner(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "packageName" -------------
+	var packageName string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "packageName", r.PathValue("packageName"), &packageName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "packageName", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "owner" -------------
+	var owner string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "owner", r.PathValue("owner"), &owner, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "owner", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RemovePackageOwnerParams
+
+	// ------------- Optional query parameter "release" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "release", r.URL.Query(), &params.Release, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "release"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "release", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemovePackageOwner(w, r, repoKey, packageName, owner, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -9383,6 +9794,10 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/upstream-tests", wrapper.TestUpstream)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/claims", wrapper.GetRepositoryClaims)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/claims", wrapper.PutRepositoryClaims)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/packages/{packageName}/owners", wrapper.GetPackageOwners)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/packages/{packageName}/owners", wrapper.AddPackageOwner)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/packages/{packageName}/owners/{owner}", wrapper.RemovePackageOwner)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/package-owners", wrapper.ListOwnedPackages)
 
 	return m
 }

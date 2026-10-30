@@ -108,6 +108,15 @@ export function describeProblem(error: ApiError): ProblemText {
     case 'key_ring_incompatible':
       return known($localize`:@@problem.key_ring_incompatible:The replicas do not hold the same key IDs, so the secrets cannot be re-encrypted yet.`);
     // <<< M1 ui-a
+    //
+    // >>> M2 ownership
+    case 'package_owned_by_other_owner':
+      return known($localize`:@@problem.package_owned_by_other_owner:This package name belongs to other owners. Ask one of them, or someone who manages the repository, to add you.`);
+    case 'last_owner':
+      return known($localize`:@@problem.last_owner:This is the only owner of the package. Add the new owner first, or release the name.`);
+    case 'populate_not_permitted':
+      return known($localize`:@@problem.populate_not_permitted:This content is not in the cache, and you may not fetch it from the upstream.`);
+    // <<< M2 ownership
     default:
       // >>> M1 ui-b
       return accessProblem(error) ?? fallback(error);

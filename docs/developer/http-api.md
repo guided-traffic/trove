@@ -81,7 +81,9 @@ management API (`/api/v1/`), `Document.FileOperations()` the `/files/` ones, and
 with both (the multi-segment wildcard `{path...}` of the router is the parameter `{path}` of the document). The step of
 [authorize.go](../../internal/api/v1/authorize.go) does not run for them: the files service decides every request itself, because it decides per
 coordinate and after the body is read (Q-API-33). `apitest.Validator` looks the route of a `/files/` answer up with a single
-segment path, so the answers of the files handler are validated like every other. The bridge between the two packages in the
+segment path, so the answers of the files handler are validated like every other, and it keeps an encoded `/` inside its
+segment (a package name such as `@acme%2Ffrontend`, R-AUTHZ-019) the way the router matches it, escaped segment by segment
+(`TestR_AUTHZ_019_AnEncodedSlashStaysInItsSegment`). The bridge between the two packages in the
 unit tests: `TestRoutesAgreeWithTheDocument` in [internal/api/rawfiles](../../internal/api/rawfiles/rawfiles_test.go).
 
 ## Endpoints

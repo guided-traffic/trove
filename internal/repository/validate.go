@@ -126,6 +126,7 @@ func validateSections(v *validation, info catalog.Entry, d *Document) {
 	if d.Local != nil {
 		validateLocal(v, info, d, na)
 	}
+	applyOwnershipDefault(info, d)
 	if len(d.Storage) > 0 {
 		trimmed := bytes.TrimSpace(d.Storage)
 		var probe map[string]json.RawMessage
@@ -160,14 +161,39 @@ func validateLocal(v *validation, info catalog.Entry, d *Document, na func(point
 			v.add("/local/packageOwnership", codeInvalidValue, `must be "enforce" or "off"`)
 		}
 	}
-	if l.OwnershipDomain != nil && !info.PackageNames {
+	switch {
+	case l.OwnershipDomain != nil && !info.PackageNames:
 		na("/local/ownershipDomain", own)
+	case l.OwnershipDomain != nil:
+		// Refused rather than ignored (R-REPO-008): a shared domain the check did not
+		// apply would leave the operator believing a name is protected in both
+		// repositories (Q-AUTHZ-155).
+		na("/local/ownershipDomain", "shared ownership domains arrive with R-AUTHZ-020 (P1); until then every repository is its own ownership domain")
 	}
 	if l.AutoClaim != nil && (!info.PackageNames || !info.PinsAndClaims) {
 		na("/local/autoClaim", own)
 	}
 	if len(l.Caps) > 0 && !info.Caps {
 		na("/local/caps", fmt.Sprintf("the %s format has no version groups, so caps have nothing to count", info.ID))
+	}
+}
+
+// applyOwnershipDefault gives a local repository of a format with an ownership
+// default that default while its document sets no packageOwnership (R-AUTHZ-018,
+// Q-AUTHZ-2): on a create that omits it, and on a replace or a merge patch that
+// removes it, which reverts it to the default as every omitted setting does
+// (R-REPO-011). off is therefore always an explicit choice, and the stored
+// document always says which value is in force (Q-AUTHZ-155).
+func applyOwnershipDefault(info catalog.Entry, d *Document) {
+	if d.Class != Local || info.OwnershipDefault == "" {
+		return
+	}
+	if d.Local == nil {
+		d.Local = &LocalSettings{}
+	}
+	if d.Local.PackageOwnership == nil {
+		v := info.OwnershipDefault
+		d.Local.PackageOwnership = &v
 	}
 }
 

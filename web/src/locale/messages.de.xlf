@@ -1893,6 +1893,33 @@
         <target>Die Replikate halten nicht dieselben Schlüssel-IDs, daher lassen sich die Geheimnisse noch nicht neu verschlüsseln.</target>
       </segment>
     </unit>
+    <unit id="problem.package_owned_by_other_owner">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages.ts:114</note>
+      </notes>
+      <segment>
+        <source>This package name belongs to other owners. Ask one of them, or someone who manages the repository, to add you.</source>
+        <target>Dieser Paketname gehört anderen Eigentümern. Bitten Sie einen von ihnen oder jemanden, der das Repository verwaltet, Sie hinzuzufügen.</target>
+      </segment>
+    </unit>
+    <unit id="problem.last_owner">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages.ts:116</note>
+      </notes>
+      <segment>
+        <source>This is the only owner of the package. Add the new owner first, or release the name.</source>
+        <target>Dies ist der einzige Eigentümer des Pakets. Fügen Sie zuerst den neuen Eigentümer hinzu oder geben Sie den Namen zurück.</target>
+      </segment>
+    </unit>
+    <unit id="problem.populate_not_permitted">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages.ts:118</note>
+      </notes>
+      <segment>
+        <source>This content is not in the cache, and you may not fetch it from the upstream.</source>
+        <target>Dieser Inhalt liegt nicht im Cache, und Sie dürfen ihn nicht vom Upstream abrufen.</target>
+      </segment>
+    </unit>
     <unit id="audit.action.artifact.deleted">
       <notes>
         <note category="location">src/app/features/audit/audit-labels.ts:5</note>

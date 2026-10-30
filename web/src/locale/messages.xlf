@@ -91,7 +91,8 @@
     </unit>
     <unit id="shell.search.label">
       <notes>
-        <note category="location">src/app/app.html:24,26</note>
+        <note category="location">src/app/app.html:26,27</note>
+        <note category="location">src/app/app.html:30,32</note>
       </notes>
       <segment>
         <source>Find a repository</source>
@@ -99,7 +100,7 @@
     </unit>
     <unit id="shell.search.placeholder">
       <notes>
-        <note category="location">src/app/app.html:33,35</note>
+        <note category="location">src/app/app.html:39,41</note>
       </notes>
       <segment>
         <source>Find a repository</source>
@@ -107,7 +108,7 @@
     </unit>
     <unit id="shell.user-menu">
       <notes>
-        <note category="location">src/app/app.html:51,52</note>
+        <note category="location">src/app/app.html:57,58</note>
       </notes>
       <segment>
         <source>User menu</source>
@@ -115,7 +116,7 @@
     </unit>
     <unit id="shell.sign-in">
       <notes>
-        <note category="location">src/app/app.html:55,58</note>
+        <note category="location">src/app/app.html:61,64</note>
       </notes>
       <segment>
         <source>Sign in</source>
@@ -123,7 +124,7 @@
     </unit>
     <unit id="shell.menu.profile">
       <notes>
-        <note category="location">src/app/app.html:61,64</note>
+        <note category="location">src/app/app.html:67,70</note>
       </notes>
       <segment>
         <source>Profile and tokens</source>
@@ -131,7 +132,7 @@
     </unit>
     <unit id="shell.menu.language">
       <notes>
-        <note category="location">src/app/app.html:68,70</note>
+        <note category="location">src/app/app.html:74,76</note>
       </notes>
       <segment>
         <source> Language </source>
@@ -139,7 +140,7 @@
     </unit>
     <unit id="shell.menu.theme">
       <notes>
-        <note category="location">src/app/app.html:71,73</note>
+        <note category="location">src/app/app.html:77,79</note>
       </notes>
       <segment>
         <source> Theme </source>
@@ -147,7 +148,7 @@
     </unit>
     <unit id="shell.menu.sign-out">
       <notes>
-        <note category="location">src/app/app.html:74,78</note>
+        <note category="location">src/app/app.html:80,84</note>
       </notes>
       <segment>
         <source> Sign out </source>
@@ -155,7 +156,7 @@
     </unit>
     <unit id="shell.theme.system">
       <notes>
-        <note category="location">src/app/app.html:85,87</note>
+        <note category="location">src/app/app.html:91,93</note>
       </notes>
       <segment>
         <source> Follow the system </source>
@@ -163,7 +164,7 @@
     </unit>
     <unit id="shell.theme.light">
       <notes>
-        <note category="location">src/app/app.html:88,90</note>
+        <note category="location">src/app/app.html:94,96</note>
       </notes>
       <segment>
         <source> Light </source>
@@ -171,7 +172,7 @@
     </unit>
     <unit id="shell.theme.dark">
       <notes>
-        <note category="location">src/app/app.html:91,95</note>
+        <note category="location">src/app/app.html:97,101</note>
       </notes>
       <segment>
         <source> Dark </source>
@@ -179,7 +180,7 @@
     </unit>
     <unit id="shell.nav">
       <notes>
-        <note category="location">src/app/app.html:105,106</note>
+        <note category="location">src/app/app.html:111,112</note>
       </notes>
       <segment>
         <source>Main navigation</source>
@@ -187,7 +188,7 @@
     </unit>
     <unit id="shell.rail">
       <notes>
-        <note category="location">src/app/app.html:170,171</note>
+        <note category="location">src/app/app.html:176,177</note>
       </notes>
       <segment>
         <source>Compact navigation</source>
@@ -195,7 +196,7 @@
     </unit>
     <unit id="shell.breadcrumbs">
       <notes>
-        <note category="location">src/app/app.html:181,183</note>
+        <note category="location">src/app/app.html:187,189</note>
       </notes>
       <segment>
         <source>Breadcrumb</source>
@@ -203,7 +204,7 @@
     </unit>
     <unit id="nav.group.content">
       <notes>
-        <note category="location">src/app/app.routes.ts:7</note>
+        <note category="location">src/app/app.routes.ts:10</note>
         <note category="location">src/app/core/navigation.ts:40</note>
       </notes>
       <segment>
@@ -212,7 +213,7 @@
     </unit>
     <unit id="nav.group.admin">
       <notes>
-        <note category="location">src/app/app.routes.ts:8</note>
+        <note category="location">src/app/app.routes.ts:11</note>
         <note category="location">src/app/core/navigation.ts:45</note>
       </notes>
       <segment>
@@ -221,7 +222,7 @@
     </unit>
     <unit id="route.login.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:20</note>
+        <note category="location">src/app/app.routes.ts:23</note>
       </notes>
       <segment>
         <source>Sign in</source>
@@ -229,7 +230,7 @@
     </unit>
     <unit id="route.logged-out.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:28</note>
+        <note category="location">src/app/app.routes.ts:31</note>
       </notes>
       <segment>
         <source>Signed out</source>
@@ -237,7 +238,7 @@
     </unit>
     <unit id="nav.browse">
       <notes>
-        <note category="location">src/app/app.routes.ts:42</note>
+        <note category="location">src/app/app.routes.ts:45</note>
         <note category="location">src/app/core/navigation.ts:41</note>
       </notes>
       <segment>
@@ -246,16 +247,115 @@
     </unit>
     <unit id="route.profile.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:47</note>
+        <note category="location">src/app/app.routes.ts:50</note>
         <note category="location">src/app/features/profile/profile.routes.ts:7</note>
       </notes>
       <segment>
         <source>Profile</source>
       </segment>
     </unit>
+    <unit id="route.repositories.title">
+      <notes>
+        <note category="location">src/app/app.routes.ts:60</note>
+        <note category="location">src/app/features/repositories/repositories.routes.ts:8</note>
+      </notes>
+      <segment>
+        <source>Repositories</source>
+      </segment>
+    </unit>
+    <unit id="route.users.title">
+      <notes>
+        <note category="location">src/app/app.routes.ts:66</note>
+        <note category="location">src/app/features/users/users.routes.ts:7</note>
+      </notes>
+      <segment>
+        <source>Users</source>
+      </segment>
+    </unit>
+    <unit id="route.groups.title">
+      <notes>
+        <note category="location">src/app/app.routes.ts:71</note>
+        <note category="location">src/app/features/groups/groups.routes.ts:7</note>
+      </notes>
+      <segment>
+        <source>Groups</source>
+      </segment>
+    </unit>
+    <unit id="route.service-accounts.title">
+      <notes>
+        <note category="location">src/app/app.routes.ts:76</note>
+        <note category="location">src/app/features/service-accounts/service-accounts.routes.ts:7</note>
+      </notes>
+      <segment>
+        <source>Service accounts</source>
+      </segment>
+    </unit>
+    <unit id="route.permissions.title">
+      <notes>
+        <note category="location">src/app/app.routes.ts:84</note>
+        <note category="location">src/app/features/permissions/permissions.routes.ts:7</note>
+      </notes>
+      <segment>
+        <source>Permission policies</source>
+      </segment>
+    </unit>
+    <unit id="route.roles.title">
+      <notes>
+        <note category="location">src/app/app.routes.ts:90</note>
+        <note category="location">src/app/features/roles/roles.routes.ts:7</note>
+      </notes>
+      <segment>
+        <source>System roles</source>
+      </segment>
+    </unit>
+    <unit id="route.tokens.title">
+      <notes>
+        <note category="location">src/app/app.routes.ts:95</note>
+        <note category="location">src/app/features/tokens/tokens.routes.ts:7</note>
+      </notes>
+      <segment>
+        <source>Token administration</source>
+      </segment>
+    </unit>
+    <unit id="route.endpoints.title">
+      <notes>
+        <note category="location">src/app/app.routes.ts:100</note>
+        <note category="location">src/app/features/endpoints/endpoints.routes.ts:8</note>
+      </notes>
+      <segment>
+        <source>Endpoints</source>
+      </segment>
+    </unit>
+    <unit id="route.audit.title">
+      <notes>
+        <note category="location">src/app/app.routes.ts:106</note>
+        <note category="location">src/app/features/audit/audit.routes.ts:7</note>
+      </notes>
+      <segment>
+        <source>Audit log</source>
+      </segment>
+    </unit>
+    <unit id="route.system.title">
+      <notes>
+        <note category="location">src/app/app.routes.ts:111</note>
+        <note category="location">src/app/features/system/system.routes.ts:8</note>
+      </notes>
+      <segment>
+        <source>System status</source>
+      </segment>
+    </unit>
+    <unit id="nav.settings">
+      <notes>
+        <note category="location">src/app/app.routes.ts:116</note>
+        <note category="location">src/app/core/navigation.ts:79</note>
+      </notes>
+      <segment>
+        <source>Settings</source>
+      </segment>
+    </unit>
     <unit id="route.notfound.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:112</note>
+        <note category="location">src/app/app.routes.ts:126</note>
       </notes>
       <segment>
         <source>Page not found</source>
@@ -917,9 +1017,33 @@
         <source>The replicas do not hold the same key IDs, so the secrets cannot be re-encrypted yet.</source>
       </segment>
     </unit>
+    <unit id="problem.package_owned_by_other_owner">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages.ts:114</note>
+      </notes>
+      <segment>
+        <source>This package name belongs to other owners. Ask one of them, or someone who manages the repository, to add you.</source>
+      </segment>
+    </unit>
+    <unit id="problem.last_owner">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages.ts:116</note>
+      </notes>
+      <segment>
+        <source>This is the only owner of the package. Add the new owner first, or release the name.</source>
+      </segment>
+    </unit>
+    <unit id="problem.populate_not_permitted">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages.ts:118</note>
+      </notes>
+      <segment>
+        <source>This content is not in the cache, and you may not fetch it from the upstream.</source>
+      </segment>
+    </unit>
     <unit id="problem.rate_limited">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:127</note>
+        <note category="location">src/app/core/http/problem-messages.ts:136</note>
       </notes>
       <segment>
         <source>Too many requests. Wait a moment and try again.</source>
@@ -927,7 +1051,7 @@
     </unit>
     <unit id="problem.rate_limited_wait">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:128</note>
+        <note category="location">src/app/core/http/problem-messages.ts:137</note>
       </notes>
       <segment>
         <source>Too many requests. Try again in <ph id="0" equiv="seconds" disp="seconds"/> seconds.</source>
@@ -935,7 +1059,7 @@
     </unit>
     <unit id="problem.network">
       <notes>
-        <note category="location">src/app/core/http/problem-messages.ts:134</note>
+        <note category="location">src/app/core/http/problem-messages.ts:143</note>
       </notes>
       <segment>
         <source>The server could not be reached. Check your connection and try again.</source>
@@ -1043,14 +1167,6 @@
       </notes>
       <segment>
         <source>Audit log</source>
-      </segment>
-    </unit>
-    <unit id="nav.settings">
-      <notes>
-        <note category="location">src/app/core/navigation.ts:79</note>
-      </notes>
-      <segment>
-        <source>Settings</source>
       </segment>
     </unit>
     <unit id="audit.action.artifact.deleted">
@@ -1891,7 +2007,7 @@
       <notes>
         <note category="location">src/app/features/audit/audit-log.ts:82</note>
         <note category="location">src/app/features/browse/browse.html:63,66</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:114</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:113</note>
         <note category="location">src/app/features/system/jobs-page.ts:80,83</note>
       </notes>
       <segment>
@@ -1946,14 +2062,6 @@
         <source>Copy the trace ID</source>
       </segment>
     </unit>
-    <unit id="route.audit.title">
-      <notes>
-        <note category="location">src/app/features/audit/audit.routes.ts:7</note>
-      </notes>
-      <segment>
-        <source>Audit log</source>
-      </segment>
-    </unit>
     <unit id="browse.tree.heading">
       <notes>
         <note category="location">src/app/features/browse/browse.html:8,11</note>
@@ -1978,7 +2086,7 @@
         <note category="location">src/app/features/repositories/repository-detail.html:52,53</note>
         <note category="location">src/app/features/repositories/repository-list.html:138</note>
         <note category="location">src/app/features/repositories/repository-list.html:143</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:121</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:120</note>
         <note category="location">src/app/features/repositories/repository-wizard.html:151,152</note>
       </notes>
       <segment>
@@ -1993,7 +2101,7 @@
         <note category="location">src/app/features/repositories/repository-detail.html:54,55</note>
         <note category="location">src/app/features/repositories/repository-list.html:151</note>
         <note category="location">src/app/features/repositories/repository-list.html:156</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:118</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:117</note>
         <note category="location">src/app/features/repositories/repository-wizard.html:153,154</note>
       </notes>
       <segment>
@@ -2138,7 +2246,7 @@
         <note category="location">src/app/features/repositories/repository-detail.html:28,29</note>
         <note category="location">src/app/features/repositories/repository-fields.ts:18,20</note>
         <note category="location">src/app/features/repositories/repository-wizard.html:155,156</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:293</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:295</note>
       </notes>
       <segment>
         <source>Description</source>
@@ -2332,7 +2440,7 @@
     <unit id="repo.class.local">
       <notes>
         <note category="location">src/app/features/browse/browse.ts:213</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:54</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:55</note>
       </notes>
       <segment>
         <source>Local</source>
@@ -2341,7 +2449,7 @@
     <unit id="repo.class.remote">
       <notes>
         <note category="location">src/app/features/browse/browse.ts:215</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:56</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:57</note>
       </notes>
       <segment>
         <source>Remote</source>
@@ -2350,7 +2458,7 @@
     <unit id="repo.class.virtual">
       <notes>
         <note category="location">src/app/features/browse/browse.ts:217</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:58</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:59</note>
       </notes>
       <segment>
         <source>Virtual</source>
@@ -2917,7 +3025,7 @@
     <unit id="repo.col.actions">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:103,105</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:135</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:134</note>
         <note category="location">src/app/features/system/job-table.ts:32,34</note>
         <note category="location">src/app/features/system/tasks-card.ts:48,50</note>
       </notes>
@@ -3151,14 +3259,6 @@
       </notes>
       <segment>
         <source>Rules (enabled)</source>
-      </segment>
-    </unit>
-    <unit id="route.endpoints.title">
-      <notes>
-        <note category="location">src/app/features/endpoints/endpoints.routes.ts:8</note>
-      </notes>
-      <segment>
-        <source>Endpoints</source>
       </segment>
     </unit>
     <unit id="route.endpoints.detail.title">
@@ -4348,14 +4448,6 @@
         <source>Any</source>
       </segment>
     </unit>
-    <unit id="route.groups.title">
-      <notes>
-        <note category="location">src/app/features/groups/groups.routes.ts:7</note>
-      </notes>
-      <segment>
-        <source>Groups</source>
-      </segment>
-    </unit>
     <unit id="route.groups.detail.title">
       <notes>
         <note category="location">src/app/features/groups/groups.routes.ts:12</note>
@@ -4506,14 +4598,6 @@
       </notes>
       <segment>
         <source>Back to the start page</source>
-      </segment>
-    </unit>
-    <unit id="route.permissions.title">
-      <notes>
-        <note category="location">src/app/features/permissions/permissions.routes.ts:7</note>
-      </notes>
-      <segment>
-        <source>Permission policies</source>
       </segment>
     </unit>
     <unit id="route.permissions.new.title">
@@ -5984,14 +6068,6 @@
         <source>Preferences saved.</source>
       </segment>
     </unit>
-    <unit id="route.repositories.title">
-      <notes>
-        <note category="location">src/app/features/repositories/repositories.routes.ts:8</note>
-      </notes>
-      <segment>
-        <source>Repositories</source>
-      </segment>
-    </unit>
     <unit id="route.repositories.new.title">
       <notes>
         <note category="location">src/app/features/repositories/repositories.routes.ts:13</note>
@@ -6045,7 +6121,7 @@
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.html:30,32</note>
         <note category="location">src/app/features/repositories/repository-detail.html:59,61</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:127</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:126</note>
       </notes>
       <segment>
         <source>Client address</source>
@@ -6078,7 +6154,7 @@
     <unit id="repo.col.activity">
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.html:78,80</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:132</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:131</note>
       </notes>
       <segment>
         <source>Last activity</source>
@@ -6126,8 +6202,8 @@
     </unit>
     <unit id="repo.edit.saved">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:198</note>
-        <note category="location">src/app/features/repositories/repository-detail.ts:225</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:201</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:228</note>
       </notes>
       <segment>
         <source>Repository saved.</source>
@@ -6135,8 +6211,8 @@
     </unit>
     <unit id="repo.delete.title">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:250</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:173</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:253</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:172</note>
       </notes>
       <segment>
         <source>Delete repository <ph id="0" equiv="key" disp="this.key()"/>?</source>
@@ -6144,8 +6220,8 @@
     </unit>
     <unit id="repo.delete.text">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:252</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:175</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:255</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:174</note>
       </notes>
       <segment>
         <source>The repository and everything in it are deleted for good. Deletion runs as a background job; the key stays taken until it has finished.</source>
@@ -6153,8 +6229,8 @@
     </unit>
     <unit id="repo.delete.confirm">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:254</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:177</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:257</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:176</note>
       </notes>
       <segment>
         <source>Delete repository</source>
@@ -6162,8 +6238,8 @@
     </unit>
     <unit id="repo.delete.failed">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:271</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:219</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:274</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:218</note>
       </notes>
       <segment>
         <source>Deleting repository <ph id="0" equiv="key" disp="this.key()"/> failed. Its row is kept; try again.</source>
@@ -6171,8 +6247,8 @@
     </unit>
     <unit id="repo.delete.done">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:276</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:209</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:279</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:208</note>
       </notes>
       <segment>
         <source>Repository <ph id="0" equiv="key" disp="this.key()"/> deleted.</source>
@@ -6180,8 +6256,8 @@
     </unit>
     <unit id="repo.delete.progress">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:281</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:142</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:284</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:141</note>
       </notes>
       <segment>
         <source>Repository deletion</source>
@@ -6189,8 +6265,8 @@
     </unit>
     <unit id="repo.copy-address">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:282</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:141</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:285</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:140</note>
       </notes>
       <segment>
         <source>Copy client address</source>
@@ -6198,7 +6274,7 @@
     </unit>
     <unit id="repo.tab.general">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:283</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:286</note>
       </notes>
       <segment>
         <source>General</source>
@@ -6206,7 +6282,7 @@
     </unit>
     <unit id="repo.tab.access">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:284</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:287</note>
       </notes>
       <segment>
         <source>Access</source>
@@ -6214,7 +6290,7 @@
     </unit>
     <unit id="repo.tab.api">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:285</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:288</note>
       </notes>
       <segment>
         <source>API</source>
@@ -6231,7 +6307,7 @@
     <unit id="repo.field.notes">
       <notes>
         <note category="location">src/app/features/repositories/repository-fields.ts:39,41</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:295</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:297</note>
       </notes>
       <segment>
         <source>Administrator notes</source>
@@ -6249,7 +6325,7 @@
       <notes>
         <note category="location">src/app/features/repositories/repository-fields.ts:62,64</note>
         <note category="location">src/app/features/repositories/repository-wizard.html:159,160</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:297</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:299</note>
       </notes>
       <segment>
         <source>Include patterns</source>
@@ -6259,7 +6335,7 @@
       <notes>
         <note category="location">src/app/features/repositories/repository-fields.ts:80,82</note>
         <note category="location">src/app/features/repositories/repository-wizard.html:161,162</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:299</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:301</note>
       </notes>
       <segment>
         <source>Exclude patterns</source>
@@ -6332,7 +6408,7 @@
     <unit id="repo.field.hide">
       <notes>
         <note category="location">src/app/features/repositories/repository-fields.ts:149,151</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:301</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:303</note>
       </notes>
       <segment>
         <source>Hide existence from callers without access</source>
@@ -6421,7 +6497,7 @@
     </unit>
     <unit id="repo.list.caption">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:111</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:110</note>
       </notes>
       <segment>
         <source>Repositories</source>
@@ -6429,7 +6505,7 @@
     </unit>
     <unit id="repo.list.empty">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:112</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:111</note>
       </notes>
       <segment>
         <source>There is no repository yet.</source>
@@ -6437,7 +6513,7 @@
     </unit>
     <unit id="repo.list.empty-filtered">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:113</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:112</note>
       </notes>
       <segment>
         <source>No repository matches the filters.</source>
@@ -6445,7 +6521,7 @@
     </unit>
     <unit id="repo.col.key">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:117</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:116</note>
       </notes>
       <segment>
         <source>Key</source>
@@ -6453,7 +6529,7 @@
     </unit>
     <unit id="repo.help.class">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:122</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:121</note>
       </notes>
       <segment>
         <source>Local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.</source>
@@ -6461,7 +6537,7 @@
     </unit>
     <unit id="repo.col.description">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:124</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:123</note>
       </notes>
       <segment>
         <source>Description</source>
@@ -6469,7 +6545,7 @@
     </unit>
     <unit id="repo.help.address">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:128</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:127</note>
       </notes>
       <segment>
         <source>The address that package managers and download tools use for this repository.</source>
@@ -6477,7 +6553,7 @@
     </unit>
     <unit id="repo.help.activity">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:133</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:132</note>
       </notes>
       <segment>
         <source>The last time a client read from or wrote to the repository. A dash means nothing has been recorded yet.</source>
@@ -6485,7 +6561,7 @@
     </unit>
     <unit id="repo.delete.detach">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:180</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:179</note>
       </notes>
       <segment>
         <source>Also remove it from the virtual repositories that include it</source>
@@ -6551,7 +6627,7 @@
       <notes>
         <note category="location">src/app/features/repositories/repository-wizard.html:83,85</note>
         <note category="location">src/app/features/repositories/repository-wizard.html:150</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:291</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:293</note>
       </notes>
       <segment>
         <source>Key</source>
@@ -6711,7 +6787,7 @@
     </unit>
     <unit id="repo.class.local.help">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:67</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:68</note>
       </notes>
       <segment>
         <source>Holds content that is deployed to trove.</source>
@@ -6719,7 +6795,7 @@
     </unit>
     <unit id="repo.class.remote.help">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:69</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:70</note>
       </notes>
       <segment>
         <source>Caches content from an upstream registry.</source>
@@ -6727,7 +6803,7 @@
     </unit>
     <unit id="repo.class.virtual.help">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:71</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:72</note>
       </notes>
       <segment>
         <source>Presents several repositories under one address.</source>
@@ -6735,7 +6811,7 @@
     </unit>
     <unit id="repo.wizard.step.class">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:115</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:117</note>
       </notes>
       <segment>
         <source>Class</source>
@@ -6743,7 +6819,7 @@
     </unit>
     <unit id="repo.wizard.step.format">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:116</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:118</note>
       </notes>
       <segment>
         <source>Format</source>
@@ -6751,7 +6827,7 @@
     </unit>
     <unit id="repo.wizard.step.basic">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:117</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:119</note>
       </notes>
       <segment>
         <source>Basic settings</source>
@@ -6759,7 +6835,7 @@
     </unit>
     <unit id="repo.wizard.step.access">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:118</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:120</note>
       </notes>
       <segment>
         <source>Access settings</source>
@@ -6767,7 +6843,7 @@
     </unit>
     <unit id="repo.wizard.step.review">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:119</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:121</note>
       </notes>
       <segment>
         <source>Review</source>
@@ -6775,7 +6851,7 @@
     </unit>
     <unit id="repo.wizard.created">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:266</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:268</note>
       </notes>
       <segment>
         <source>Repository <ph id="0" equiv="key" disp="created.value.key"/> created.</source>
@@ -6940,14 +7016,6 @@
       </notes>
       <segment>
         <source>Role unbound.</source>
-      </segment>
-    </unit>
-    <unit id="route.roles.title">
-      <notes>
-        <note category="location">src/app/features/roles/roles.routes.ts:7</note>
-      </notes>
-      <segment>
-        <source>System roles</source>
       </segment>
     </unit>
     <unit id="sa.heading">
@@ -7309,14 +7377,6 @@
       </notes>
       <segment>
         <source>Status</source>
-      </segment>
-    </unit>
-    <unit id="route.service-accounts.title">
-      <notes>
-        <note category="location">src/app/features/service-accounts/service-accounts.routes.ts:7</note>
-      </notes>
-      <segment>
-        <source>Service accounts</source>
       </segment>
     </unit>
     <unit id="route.service-accounts.detail.title">
@@ -8556,14 +8616,6 @@
         <source>Valkey: no request fails, but remote fetches are collapsed per replica only, the negative cache is per replica, rate limits fall back to per-replica shares, and changes arrive through the change-log poll.</source>
       </segment>
     </unit>
-    <unit id="route.system.title">
-      <notes>
-        <note category="location">src/app/features/system/system.routes.ts:8</note>
-      </notes>
-      <segment>
-        <source>System status</source>
-      </segment>
-    </unit>
     <unit id="route.system.jobs.title">
       <notes>
         <note category="location">src/app/features/system/system.routes.ts:13</note>
@@ -9104,14 +9156,6 @@
       </notes>
       <segment>
         <source>All tokens revoked.</source>
-      </segment>
-    </unit>
-    <unit id="route.tokens.title">
-      <notes>
-        <note category="location">src/app/features/tokens/tokens.routes.ts:7</note>
-      </notes>
-      <segment>
-        <source>Token administration</source>
       </segment>
     </unit>
     <unit id="user-create.title">
@@ -9983,14 +10027,6 @@
       </notes>
       <segment>
         <source>Not administrators</source>
-      </segment>
-    </unit>
-    <unit id="route.users.title">
-      <notes>
-        <note category="location">src/app/features/users/users.routes.ts:7</note>
-      </notes>
-      <segment>
-        <source>Users</source>
       </segment>
     </unit>
     <unit id="route.users.detail.title">

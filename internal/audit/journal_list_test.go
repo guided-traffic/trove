@@ -12,14 +12,12 @@ import (
 // stay on it, and every event the table names must be either registered with the
 // flag or on it.
 var journalPending = map[string]string{
-	"ci.token.revoked":         "CI identity (M4, R-CI-017)",
-	"authz.ownership.removed":  "package ownership (R-AUTHZ-019)",
-	"authz.ownership.released": "package ownership (R-AUTHZ-019)",
-	"npm.unpublish":            "npm format (M2, R-NPM-017)",
-	"package.published":        "NuGet format (M2, R-NUGET-033)",
-	"package.deleted":          "NuGet format (M2, R-NUGET-033)",
-	"ci.issuer.*":              "CI identity (M4)",
-	"ci.mapping.*":             "CI identity (M4)",
+	"ci.token.revoked":  "CI identity (M4, R-CI-017)",
+	"npm.unpublish":     "npm format (M2, R-NPM-017)",
+	"package.published": "NuGet format (M2, R-NUGET-033)",
+	"package.deleted":   "NuGet format (M2, R-NUGET-033)",
+	"ci.issuer.*":       "CI identity (M4)",
+	"ci.mapping.*":      "CI identity (M4)",
 }
 
 // r054Events reads the event names of the first column of the table of

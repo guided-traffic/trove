@@ -41,3 +41,6 @@ before using a new term in a German text.
 | pre-release | Vorabversion |
 | include / exclude pattern | Einschluss- / Ausschlussmuster |
 | load more | Mehr laden |
+| package, package name, owner (of a package) | Paket, Paketname, Eigentümer |
+| release (a package name) | zurückgeben (not "freigeben", which renders exposure) |
+| cache, upstream (of a remote repository) | Cache, Upstream |

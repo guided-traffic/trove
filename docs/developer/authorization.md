@@ -2,10 +2,13 @@
 
 Status: implemented in M1 (WP1.3): the decision engine, the compiled grant index with its invalidation, the policy and
 role-binding store, the token-scope ceiling, the epochs of `Trove-Authz-Min-Epoch` and the decision audit, and the
-management operations over them (policies, role bindings, the checks of the caller; [below](#management-operations)). Not
-built yet: CI inline grants, package ownership and the shadowing
-check, projects and delegated management, and the effective-permissions and explain operations of R-AUTHZ-024, which are P1
-(Q-AUTHZ-27).
+management operations over them (policies, role bindings, the checks of the caller; [below](#management-operations)). M2
+adds the populate check and `MemberUsable` ([below](#the-populate-check-and-memberusable)) and package ownership: the check
+and the claim in a writer's commit transaction, the owner operations of R-AUTHZ-019 with their HTTP operations, the
+deletion hook ([below](#package-ownership)). Not built yet: the callers of the populate check (the remote and virtual
+engines) and of the ownership check (the format writers), CI inline grants and the CI project owner, the
+shadowing check, projects and delegated management, and the effective-permissions and explain operations of R-AUTHZ-024,
+which are P1 (Q-AUTHZ-27).
 
 The specification is [authorization.md](../spec/authorization.md); this page says where each rule lives in the code. The
 security view is [permissions.md](../security/permissions.md).
@@ -18,9 +21,9 @@ security view is [permissions.md](../security/permissions.md).
   coordinate, and `Require` (`RequireOn`) for a capability of a management operation. All are methods of `*authz.Engine`.
 - **A request takes its index once.** `authz.Decider` is the per-request contract: `Begin` returns the index, every other
   question has an `…On` form that is answered on it (`DecideOn`, `ReadableOn`, `ExposedOn`, `PathsAllowedOn`, `RequireOn`,
-  `HoldsOn`, `CheckOn`), `Know` advances it when the request learns a repository key (Q-AUTHZ-159). The edge holds the index
-  with the subject in `edge.Access`. `Authorizer` (`Decide`, `Readable`, `Require`) is the same questions with a fresh index
-  per call, for a job or a command.
+  `HoldsOn`, `CheckOn`, `MayPopulateOn`, `PopulateOn`, `MemberUsableOn`), `Know` advances it when the request learns a
+  repository key (Q-AUTHZ-159). The edge holds the index with the subject in `edge.Access`. `Authorizer` (`Decide`,
+  `Readable`, `Require`) is the same questions with a fresh index per call, for a job or a command.
 - **The subject carries the endpoint.** `Subject.Endpoint` selects the exposure ceiling of every decision, whatever the
   context; only `internal/authz` and `internal/api/edge` build a `Subject` (Q-EP-20).
 - **A format's name rule comes from the catalog.** Names and patterns of grants, token scopes and exposure rules are folded
@@ -32,12 +35,18 @@ security view is [permissions.md](../security/permissions.md).
   `cluster.Changes`; a Valkey message only starts a check earlier. Everything here works with Valkey stopped.
 - **The answer is made before the lookup.** A refused read is `DenyHidden` (404), identical to a missing resource, because
   authorization runs before any existence check (R-AUTHZ-016).
+- **Populating is a question of its own.** Bringing new content into a remote cache needs `read` plus the repository's
+  `cacheFillAction`, never through the session cookie and never on an endpoint with `cache_fill: false`; the subject carries
+  that endpoint setting (`Subject.CacheFill`, Q-AUTHZ-153).
+- **Ownership is decided where the rows are.** `DecideOn` decides the actions in memory; whether the subject may change a
+  package name, and whether its publish claims it, is decided by `Ownership.CheckTx`/`ClaimTx` in the writer's commit
+  transaction, on the claim row read `FOR UPDATE` (R-AUTHZ-018, Q-AUTHZ-154).
 
 ## Pages and files
 
 | File | Responsibility |
 |---|---|
-| [authz.go](../../internal/authz/authz.go) | The contract: `Decider`, `Authorizer`, `Prober`, `Subject` (with `Endpoint` and the `*scope.Scope` ceiling), `Coordinate`, `Decision`, `Outcome`, `Action`, `Capability`; `RequestKind` is the catalog's |
+| [authz.go](../../internal/authz/authz.go) | The contract: `Decider`, `Authorizer`, `Prober`, `Subject` (with `Endpoint`, the endpoint's `CacheFill` and the `*scope.Scope` ceiling), `Coordinate`, `Decision`, `Outcome`, `Action`, `Capability`; `RequestKind` is the catalog's |
 | [decide.go](../../internal/authz/decide.go) | `Decide`, `Begin`/`Know`/`DecideOn`, `Require`/`RequireOn`, `Holds`/`HoldsOn`, `Readable`/`ReadableOn`, `Check`/`CheckOn`, `Effective`; the evaluation of R-AUTHZ-015; token scope as a ceiling; the pattern cache for scopes |
 | [engine.go](../../internal/authz/engine.go) | `Engine`, `Options`: the index lifecycle, the build loop, the watcher, the `cluster.Listener`, the coalesced epoch read |
 | [wait.go](../../internal/authz/wait.go) | `forRequest`: confirmation, the stale wait, `Trove-Authz-Min-Epoch` |
@@ -51,12 +60,17 @@ security view is [permissions.md](../security/permissions.md).
 | [validate.go](../../internal/authz/validate.go), [store.go](../../internal/authz/store.go), [bindings.go](../../internal/authz/bindings.go), [policy.go](../../internal/authz/policy.go) | `Service`: validate, create (`CreateIn` on the caller's transaction), update, delete and read policies; bind and unbind roles |
 | [policy_list.go](../../internal/authz/policy_list.go) | The filters of the policy list (`principal`, `expandGroups`, `repository`) and the warnings of a page |
 | [settings.go](../../internal/authz/settings.go) | `SettingsHook`, the `repository.Hooks` that records `authz.settings.changed` in the transaction of a repository update (R-AUTHZ-031) |
+| [populate.go](../../internal/authz/populate.go) | The populate check of R-AUTHZ-008 (`MayPopulateOn`, `PopulateOn`) and `MemberUsableOn` of R-AUTHZ-015 |
+| [ownership.go](../../internal/authz/ownership.go) | Package ownership: `Ownership` with `CheckTx`, `ClaimTx`, `EnforceTx` for writers, the owner operations `Owners`, `AddOwner`, `RemoveOwner`, `OwnedBy`, and `OwnershipHook` for the repository deletion |
+| [ownership.sql](../../internal/meta/postgres/queries/ownership.sql) | The statements of ownership: the locked read of a claim, the claim (`INSERT … ON CONFLICT DO NOTHING`), owners, release, the deletion of a domain, the list by owner |
 | [audit.go](../../internal/authz/audit.go), [events_authz.go](../../internal/audit/events_authz.go) | The decision audit, the event registry entries |
 | [metrics.go](../../internal/authz/metrics.go) | The `trove_authz_*` families |
 | [authz.sql](../../internal/meta/postgres/queries/authz.sql) | Every statement (sqlc); identifiers travel as text, instants as microseconds |
 | [wire_authz.go](../../internal/app/wire_authz.go), [access.go](../../internal/app/access.go) | The composition root: the engine at step 8, the header wrapper, the dev-profile bridge |
+| [wire_ownership.go](../../internal/app/wire_ownership.go) | The ownership service for the API (through `authzServices`) and the ownership hook in the repository hook list |
 | [authorize.go](../../internal/api/v1/authorize.go), [access.go](../../internal/api/v1/access.go), [subject.go](../../internal/api/v1/subject.go) | The declaration forms of `x-trove-permission` and the step that begins the request's index for them; `NewAccess` over the `Decider` and `requestHolder` for a handler that decides; the conversion `Principal` to `Subject` |
 | [authz_api.go](../../internal/api/v1/authz_api.go) | The handlers of the permission operations, thin over `Service` and `Engine` |
+| [ownership_api.go](../../internal/api/v1/ownership_api.go) | The handlers of the ownership operations, thin over `Ownership` on the request's holder |
 
 ## The model
 
@@ -81,7 +95,9 @@ Subject (who, groups, credential scope, MinEpoch)  +  Coordinate (repository, pa
   `DenyVisible` (403), `DenyStale` (503 `authz_stale`), `DenyEpochUnknown` (412 `authz_epoch_unknown`). `Decision.Err()`
   returns the `*errs.Error`; `Decision.Reason` carries the code of R-AUTHZ-029 (`deny.no-grant`, `deny.scope`,
   `deny.virtual-gate`, `deny.anonymous-partial-virtual`, `deny.exposure`, `deny.endpoint_read_only`, `deny.stale`,
-  `deny.capability`, `deny.unauthenticated`, `allow.grant`, `allow.role`).
+  `deny.capability`, `deny.unauthenticated`, `deny.populate`, `deny.ownership`, `allow.grant`, `allow.role`).
+  `Decision.Err()` answers `deny.populate` with 403 `populate_not_permitted` and `deny.ownership` with 403
+  `package_owned_by_other_owner`, which names only the coordinate the caller sent.
 - **Which refusal is which** (`Engine.refusal`): endpoint-read-only is 403; exposure is 404 for every subject; an anonymous
   subject is always 401 (reads and writes alike); a read-type request (kinds `artifact`, `metadata`, `search`, or a request
   that asks for nothing but `read`) refused on `read` is 404 unless hiding is off for the repository; everything else is 403
@@ -99,8 +115,8 @@ Subject (who, groups, credential scope, MinEpoch)  +  Coordinate (repository, pa
 - **Virtual repositories** (R-AUTHZ-009, as far as `Decide` is concerned): `read` on the virtual repository is the gate
   (refusal: `deny.virtual-gate`); anonymous callers pass only if anonymous reads the repository and every member,
   recursively; a request for a content-changing action is decided on the deploy target; grants other than `read` and
-  `manage` on a virtual repository are masked away when the index is built. Member checks of resolution
-  (`MemberUsable`) are the repository area's, which calls `DecideOn` per member.
+  `manage` on a virtual repository are masked away when the index is built. The member checks of resolution are
+  `MemberUsableOn` ([below](#the-populate-check-and-memberusable)), which the virtual resolver asks per member.
 
 ## The grant index
 
@@ -233,6 +249,101 @@ Q-API-158; [http-api.md](http-api.md) "One index per request").
 
 The existing operations of M0 declare `settings:read` (formerly `system.read`).
 
+## The populate check and `MemberUsable`
+
+[populate.go](../../internal/authz/populate.go) answers R-AUTHZ-008 for a coordinate of a remote repository, in this order:
+
+| Step | Refuses with |
+|---|---|
+| `read` on the coordinate (the ceiling, the grants, the scope) | the read's own refusal: 404, 401 or 503, never 403 for a caller who may not read |
+| a session cookie (`Subject.SessionID` or `AuthMethod == "session"`) | `deny.populate` |
+| an endpoint with `cache_fill: false` (`Subject.Endpoint != ""` and `!Subject.CacheFill`) | `deny.populate` |
+| not a remote repository, or a `cacheFillAction` that names neither `read` nor `deploy` | `deny.populate` |
+| the action of `cacheFillAction` (`read` by default, `deploy` for a frozen mirror) | `deny.populate`, `Missing` the action |
+
+`MayPopulateOn` is the question form: nothing is counted or audited. The remote engine asks it where a refusal is served
+from the cache (an expired document served stale); `MemberUsableOn` asks it for a remote member. `PopulateOn` is the form
+for a request that has nothing to serve without a fetch: the refusal is counted and recorded as `authz.denied` with
+`deny.populate` like a refused write (also with `authz.audit.reads: none`), while a refused read stays a read. An allowed
+populate is recorded by the fetching request in its fill transaction with `RecordAllowed` and the decision's `Sources` (the
+grants that allowed `read` and the populate action).
+
+`MemberUsableOn(ctx, idx, sub, member, c)` returns `(read, fill)`: `read` on the member for the request's coordinate, with
+the exposure ceiling kept on the repository the client addressed (`Coordinate.Addressed`, Q-EP-11), and for a remote member
+the populate check. Whether the member needs its upstream (nothing cached, an expired document) is the resolver's to know;
+nothing is audited, because a member the subject may not use is skipped silently (R-AUTHZ-009 rule 2).
+
+`Subject.CacheFill` is set by `edge.SubjectOf` from the same `httpserver.Endpoint` that names `Subject.Endpoint`; a subject
+without an endpoint (a job, a command) has no cache-fill ceiling. The policy warning `anonymous_populates_remote` (M1,
+`warningsFor` in [validate.go](../../internal/authz/validate.go)) is unchanged: it flags an `anonymous` read entry on a remote
+repository that fills on read, whatever the anonymous switch says.
+
+## Package ownership
+
+The rules are R-AUTHZ-018 and R-AUTHZ-019; the decisions behind the code are Q-AUTHZ-154 to Q-AUTHZ-158.
+
+**Where it applies.** `CheckTx` checks a coordinate whose repository, or a virtual repository's deploy target, is local, has
+a format with package names (`catalog.Names`), carries a package name, and whose `packageOwnership` in the index is
+`enforce`. The index reads `local.packageOwnership` from the repository document (`repoInfo.ownership`); an unreadable
+document is read as `enforce`. The domain is `repo:<repositories.id>`; `ownershipDomain` is refused by the repository
+validation until R-AUTHZ-020. The default of a format is `catalog.Facts.OwnershipDefault`, which the repository validation
+stores whenever a local repository's document sets none (Q-AUTHZ-155,
+[repositories.md](repositories.md#formats)).
+
+**States.** No row is `unclaimed`; `released` counts as unclaimed; `claimed` with owners is owned; `claimed` without owners
+(its last owner was a deleted principal, rule 6) needs `manage`.
+
+| The name | A holder of the action may | `manage` may | A publish claims |
+|---|---|---|---|
+| owned, the subject is an owner (user, group, service account, CI mapping by principal ID) | change it | change it | — |
+| owned by others | — (403 `package_owned_by_other_owner`) | change it | — |
+| unclaimed or released, no stored version (`FirstVersion`) | change it | change it | yes, for the grants' principals |
+| unclaimed or released, with versions | — | change it | yes |
+| claimed without owners | — | change it | yes |
+
+`content:bypass` passes every row and claims for the subject itself. Only a publish (`OwnershipWrite.Publish`) claims; the
+owners of a claim are the principals of every grant that allowed `deploy` on the coordinate (`factsOf`), so a group grant
+makes the group the owner. A publish that would claim with no such principal is refused rather than recording an empty
+claim.
+
+**In the writer's transaction.** A writer decides the actions with `DecideOn` first, takes its package row lock, and then
+calls `EnforceTx(ctx, tx, idx, sub, c, OwnershipWrite{Publish, FirstVersion})` (or `CheckTx`, then `ClaimTx(ctx, tx, chk)`)
+with the coordinate it decided on and the request's index. `CheckTx` reads the claim row `FOR UPDATE` and the owners in the
+next statement; a refusal is returned as the error and recorded as `authz.denied` with `deny.ownership`. `ClaimTx` inserts the
+claim with `ON CONFLICT DO NOTHING`; when another transaction claimed first, the insert waits for it, returns no row, and
+`ClaimTx` reads again and decides again (rule 5), so of two first publishes on two replicas exactly one wins without a retry,
+an advisory lock or Valkey. A released name or a claimed one without owners is claimed again with an `UPDATE` of the locked
+row. The formats contract wraps `EnforceTx` as `PackageWriter.Claim` (C-14).
+
+**Owner operations.** `Owners`, `AddOwner`, `RemoveOwner` and `OwnedBy` take the request's index and subject and run their own
+transaction; `AddOwnerTx` and `RemoveOwnerTx` run in the caller's (the management API runs `AddOwnerTx` in the transaction of
+an `Idempotency-Key`). Adding and removing answer 401 for an anonymous caller and 403 `ci_token_restricted` for a CI token before any
+lookup; the permission (an owner, `manage`, `content:bypass`; `manage` or `content:bypass` when no owner is left or for
+`release`) is decided on the owners read under the row lock, before the owner reference is resolved, and a refusal is 403
+naming `manage` whether or not the repository or name exists. `AddOwner` on an unclaimed or released name creates the claim
+(`pre-assigned` without versions, `added` with); 409 `already_exists` for an existing owner; 422 `unknown_principal` for an
+unknown reference, `anonymous`, `authenticated` and, until M4, a CI project. `RemoveOwner` of the last owner is 409
+`last_owner` unless `release`, which sets the state `released`. `OwnedBy` lists the entries naming one principal by key
+order with an `OwnedCursor`; a caller without `policies:read` (the identity or a member of the group) sees only names of
+repositories it may read. It reads one row more than the page, and the cursor is the key of the last row read for the page,
+shown or not, so a page may be short and still have a next one.
+
+**HTTP.** The declarations decide only what they can, because the permission depends on the owners: `getPackageOwners` a
+repository-level `read` on `path.repoKey` (the action form passes a path value unnormalized, while the service normalizes the
+name with the format's rule before it decides `read` on it), the writes and `listOwnedPackages` an authenticated caller;
+both writes need recent authentication through a session (R-API-007). The handlers take the holder with `requestHolder` and
+ask `AuthzServices.Owners` on it. The package name and an owner reference with a `/` (`ci:<issuer>/<mapping>`) are one
+percent-encoded path segment; the router matches segments escaped, so `@acme%2Ffrontend` arrives as `@acme/frontend`. A 201
+carries `Location` of the owners view, on which a GET shows the new owner.
+
+**Deletion.** `OwnershipHook` (`repository.Hooks`) deletes the rows of `repo:<id>` in the transaction that removes the
+repository row; the owners follow by foreign key (Q-AUTHZ-156).
+
+**Wiring.** [wire_ownership.go](../../internal/app/wire_ownership.go): `ownershipService` builds `authz.NewOwnership` over the
+engine of step 8 and the database (the engine's recorder records the events); `authzServices` hands it to the handlers as
+`AuthzServices.Owners`. `ownershipHook` is the last entry of the hook list in `wireRepository`. Until a format writer calls
+`EnforceTx`, nothing claims a name.
+
 ## Configuration
 
 | Key | Default | Meaning |
@@ -252,6 +363,10 @@ The existing operations of M0 declare `settings:read` (formerly `system.read`).
 | `authz.write.allowed` | transactional | the writer calls `Engine.RecordAllowed(ctx, tx, sub, coordinate, decision)` in the transaction of the change |
 | `authz.policy.created`, `.updated`, `.deleted`; `authz.role.bound`, `.unbound` | transactional | the writes of `Service`; updated, deleted and unbound are journaled |
 | `authz.settings.changed` | transactional, journaled | `SettingsHook`, called by the repository update when `requireAuthentication`, `hideExistence`, `cacheFillAction` or `packageOwnership` changed; the event and its journal entry name the changed settings, before and after |
+| `authz.denied` with `deny.populate` or `deny.ownership` | async | `PopulateOn` and `CheckTx`/`ClaimTx`; recorded like a refused write, whatever `authz.audit.reads` says |
+| `authz.ownership.claimed` | transactional | `ClaimTx`: the owners and the claim ID that `package_ownership.claim_event` stores (Q-AUTHZ-158) |
+| `authz.ownership.added` | transactional | `AddOwner`: the owner, its principal ID, the reason (`added`, `pre-assigned`) |
+| `authz.ownership.removed`, `.released` | transactional, journaled | `RemoveOwner`; the journal entry names domain, format, package and the owner's principal ID (R-AUTHZ-031) |
 
 **The engine does not deduplicate** (Q-AUTHZ-24). It records every refusal with `Repository`, `Path` (the path, else the package
 name), `details.required_action` (the actions joined by a comma, or the capability of a management operation) and the actor's
@@ -323,6 +438,10 @@ idempotent policy create answers the epoch of the first answer (`Outcome.Finish`
 | `unbindRole` | `DELETE /role-bindings/{role}/{principalRef}` | `roles:write` | `204`; `404`; `409 last_admin` |
 | `getAuthzMe` | `GET /authz/me` | any authenticated caller | roles, capabilities, principals, scope summary, epoch |
 | `checkPermissions` | `POST /authz/check` | any authenticated caller | up to 100 checks, one index; nothing is audited |
+| `getPackageOwners` | `GET /repositories/{repoKey}/packages/{packageName}/owners` | action `read` on the repository; `read` on the package in the handler | `state` `claimed`, `released` or `unclaimed`; 404 for a caller without `read` and where ownership does not exist |
+| `addPackageOwner` | `POST /repositories/{repoKey}/packages/{packageName}/owners` | authenticated; an owner, `manage` or `content:bypass` | `Idempotency-Key` optional; `201` with `Location`; pre-assigns an unclaimed name; `403` (also `ci_token_restricted`), `409 already_exists`, `422 unknown_principal`; recent sign-in |
+| `removePackageOwner` | `DELETE /repositories/{repoKey}/packages/{packageName}/owners/{owner}` | authenticated; as adding, `release=true` needs `manage` | `204`; `403`; `404`; `409 last_owner`; recent sign-in |
+| `listOwnedPackages` | `GET /package-owners` | authenticated; `policies:read` or the caller's own identity or group | `owner` required, `repository`; cursor paging; `422 unknown_principal` |
 
 The handlers ([authz_api.go](../../internal/api/v1/authz_api.go)) do only what the conventions need: strict decoding into
 `authz.Policy` (so a body obtained by GET can be sent back), `If-Match` into an expected version, the cursor over a sorted list,
@@ -343,6 +462,14 @@ name, the actions; the endpoint is the subject's), take the subject from `edge.S
 endpoint), call `edge.Begin` once and decide each coordinate with the holder (`DecideOn`), and answer `decision.Err()`. For a
 missing resource build the answer from `authz.NotFound()`.
 
+**Protect a mutating operation on a package name** (the "Ownership" column of R-AUTHZ-007):
+
+1. Decide the actions with `DecideOn` on the request's index, as above.
+2. Open the commit transaction and take the package row lock; read whether the package holds a live version.
+3. Call `Ownership.EnforceTx(ctx, tx, idx, sub, c, authz.OwnershipWrite{Publish: <stores a version>, FirstVersion: <held none>})`
+   with the same coordinate and index; return its error, which is the 403 to answer.
+4. Write the rows. The claim and its audit event commit with them.
+
 **Add an audit event.** Register it in [events_authz.go](../../internal/audit/events_authz.go) with its delivery, flag a
 type that removes access or updates an access-bearing object with `Journal: audit.JournalRevocation` and pass
 `Event.Journal` from the transaction that makes the change.
@@ -360,6 +487,9 @@ the anonymous gate and before the repository lookup, on the index the request de
 | Unit | [internal/authz](../../internal/authz) | `TestE1_3_AuthorizationCases` (284 cases against the compiled engine), patterns and selectors, the engine's change-log behaviour on fakes, the 422 rules, the audit, `Decision.Err`; names carry the requirement IDs |
 | Unit | [internal/api/v1/authorize_test.go](../../internal/api/v1/authorize_test.go), [internal/config/authz_test.go](../../internal/config/authz_test.go) | the declaration forms, the staleness floor |
 | Integration | [test/integration/authz](../../test/integration/authz) | E1.3 against PostgreSQL, the policy and role store, the reused epoch, the consistent build, E1.12 with three replicas, Valkey stopped and propagation slowed to 30 s |
+| Unit | [populate_test.go](../../internal/authz/populate_test.go), [ownership_test.go](../../internal/authz/ownership_test.go) | `TestR_AUTHZ_008_PopulateCheck` (session cookie, frozen mirror, endpoint cache fill, anonymous), `TestR_AUTHZ_015_MemberUsable` (the table), `TestR_AUTHZ_018_OwnershipRules` (rules 1, 2, 3, 6 on the read state), `TestR_AUTHZ_018_WhenOwnershipIsChecked`, `TestR_AUTHZ_018_ClaimOwners` |
+| Integration | [ownership_test.go](../../test/integration/authz/ownership_test.go) | `TestR_AUTHZ_018_TwoReplicasClaimOneNewName` (a held claim on replica a, replica b's insert waiting on it, exactly one wins; a rolled-back claim; 20 pairs started at once), group owner, unclaimed with versions needs `manage`, the owner operations of R-AUTHZ-019 (pre-assignment, 409 `last_owner`, release, concurrent removals, `ci_token_restricted`, 403 for refused writes), the deletion hook through the real deletion job, the populate check and the `anonymous_populates_remote` warning on PostgreSQL |
+| Integration, HTTP | [ownership_api_test.go](../../test/integration/authz/ownership_api_test.go) | `TestR_AUTHZ_019_OwnershipOperationsOverHTTP`: the four operations on two replicas through `idapi.Handler` with the replicas' engines, every answer validated against the document (the encoded name, `Location`, 409 and an `Idempotency-Key` replay, 403 whatever exists, `ci_token_restricted`, 422, `last_owner` and release, the list with its cursor) |
 | Integration, HTTP | [api_test.go](../../test/integration/authz/api_test.go) on the stack of [test/integration/stack](../../test/integration/stack) (its handler is `idapi.Handler` of [test/integration/idapi](../../test/integration/idapi) with the header stand-in for authentication and the replica's own engine, so the identity, login, authorization and audit tests drive one chain) | the policy lifecycle with `ETag` and `If-Match`, merge patch, idempotent create with the epoch replayed, the 422 codes, `validate-policy`, the filters of the list, `apitest.RunContract` on `/permission-policies` over three replicas, roles and bindings with `last_admin` and a limit=1 walk, `authz/check` and `authz/me` including the `authenticated` cases of E1.3, E1.12 through HTTP (twenty parallel requests with `Trove-Authz-Min-Epoch` on two replicas, a grant and its removal, Valkey stopped), and a validator that checks every answer of every operation against the document |
 
 Run the integration area with the shared stack:

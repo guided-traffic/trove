@@ -72,6 +72,9 @@ type repoInfo struct {
 	deployTarget string
 	// cacheFill is the cacheFillAction of a remote repository.
 	cacheFill string
+	// ownership is the packageOwnership of a local repository, "" when the
+	// document has none (R-AUTHZ-018).
+	ownership string
 }
 
 // grant is one entry of a policy seen from the evaluator: the actions the
@@ -115,6 +118,9 @@ func parseRepoConfig(raw []byte) (c struct {
 	Remote                struct {
 		CacheFillAction string `json:"cacheFillAction"`
 	} `json:"remote"`
+	Local struct {
+		PackageOwnership string `json:"packageOwnership"`
+	} `json:"local"`
 }, ok bool,
 ) {
 	if len(raw) == 0 {
@@ -213,10 +219,13 @@ func (b *builder) addRepositories(rows []q.AuthzBuildRepositoriesRow, members []
 			repoView:    repoView{ID: r.ID, Key: r.Key, Class: repository.Class(r.Class), Format: r.Format},
 			requireAuth: cfg.RequireAuthentication || !ok, // an unreadable document fails closed
 			hide:        cfg.HideExistence, members: memberKeys[r.ID], deployTarget: targetKey[r.ID],
-			cacheFill: cfg.Remote.CacheFillAction,
+			cacheFill: cfg.Remote.CacheFillAction, ownership: cfg.Local.PackageOwnership,
 		}
 		if info.hide == "" {
 			info.hide = "inherit"
+		}
+		if !ok {
+			info.ownership = OwnershipEnforce // fails closed like requireAuth
 		}
 		b.x.repos[r.Key] = info
 		b.byID[r.ID] = info

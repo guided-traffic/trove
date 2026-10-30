@@ -167,7 +167,10 @@ Priority: **MVP** · Covers: REPO-006
   npm: `-/ping`, empty for a format whose URL is the service index); default metadata and not-found cache periods; the
   subject of include and exclude patterns (`name` or `path`, R-REPO-005); whether it supports
   priority members (R-REPO-022), pin rules and namespace claims (R-REPO-023), and repository caps
-  (R-REPO-007); its package-name normalization; and, for formats with package names, the
+  (R-REPO-007); its package-name normalization; for formats with package names, the
+  `packageOwnership` its local repositories hold while their document sets none
+  ([authorization.md](authorization.md) R-AUTHZ-018, Q-AUTHZ-2, Q-AUTHZ-155: `enforce` for npm and
+  NuGet); and, for formats with package names, the
   canonical path of a package's package document, the document whose existence upstream stands for
   the package's existence (npm: the package document `n`; NuGet: the version list
   `{lower_id}/index.json`). R-REPO-029 and R-REPO-048 use that path.
@@ -237,7 +240,7 @@ read (R-REPO-010) and the object body of configuration as code
 | `hideExistence` | `inherit`, `true`, `false` | `inherit` | [R-AUTHZ-017](authorization.md) |
 | `layout` | R-REPO-006, read-only | the format's layout | this page |
 | `project` | Project key, read-only; assigned through the project API | `null` | [R-AUTHZ-026](authorization.md) |
-| `local` | `packageOwnership`, `ownershipDomain` ([R-AUTHZ-018](authorization.md), [R-AUTHZ-020](authorization.md)); `autoClaim` (R-REPO-023); `caps` (R-REPO-007) | see owners | mixed |
+| `local` | `packageOwnership`, `ownershipDomain` ([R-AUTHZ-018](authorization.md), [R-AUTHZ-020](authorization.md)); `autoClaim` (R-REPO-023); `caps` (R-REPO-007). An omitted `packageOwnership` is the format's default, stored with the document; `ownershipDomain` answers `not_applicable` until R-AUTHZ-020 (P1) is built (Q-AUTHZ-155) | see owners | mixed |
 | `remote` | R-REPO-024; `cacheFillAction` within it is [R-AUTHZ-008](authorization.md) | — | this page |
 | `virtual` | R-REPO-017 | — | this page |
 | `storage` | Upload size, quota, presigned downloads, client checksum policy | see owner | [storage.md](storage.md) |
@@ -625,7 +628,9 @@ Priority: **MVP** · Covers: REPO-063, RMT-002, API-063
   keys carry the repository id, which an identity column never hands out again (R-REPO-028). The job
   runs on the `worker` role and is resumable after a replica restart. The repository row goes last,
   which frees the key; that transaction calls `cluster.Notify("repo_config", …)`, because the row
-  is an input of the grant index (Repository management API above).
+  is an input of the grant index (Repository management API above), and removes the package
+  ownership rows of the repository's ownership domain, which carry no foreign key to the row
+  ([authorization.md](authorization.md) R-AUTHZ-018, Q-AUTHZ-156).
 - Job progress (items total and removed, errors) is read from the job resource.
 
 Acceptance criteria:

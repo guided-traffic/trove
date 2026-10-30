@@ -85,7 +85,8 @@ func (a *App) wireAuthz(ctx context.Context) error {
 // authzServices are the services the permission operations of the management API
 // use; a member is nil while the authz wiring has not run.
 func (a *App) authzServices() v1.AuthzServices {
+	owners := a.ownershipService() // before the lock, which it takes itself (wire_ownership.go)
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return v1.AuthzServices{Policies: a.m1.authzService, Engine: a.m1.authzEngine}
+	return v1.AuthzServices{Policies: a.m1.authzService, Engine: a.m1.authzEngine, Owners: owners}
 }

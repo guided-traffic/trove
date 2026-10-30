@@ -20,6 +20,16 @@ describe('describeProblem', () => {
   });
   // <<< M1 ui-b
 
+  // >>> M2 ownership
+  it('R-UI-042 R-AUTHZ-019 the codes of package ownership and of the populate check are translated and known', () => {
+    for (const code of ['package_owned_by_other_owner', 'last_owner', 'populate_not_permitted']) {
+      const p = describeProblem(new ApiError(403, { code, detail: 'English detail' }, 'rid-1'));
+      expect(p.known, code).toBe(true);
+      expect(p.text, code).not.toBe('English detail');
+    }
+  });
+  // <<< M2 ownership
+
   it('R-UI-042 a lost connection and a rate limit with a wait time are described', () => {
     expect(describeProblem(new ApiError(0, null, null)).text).toContain('could not be reached');
     expect(describeProblem(new ApiError(429, { code: 'rate_limited' }, null, 7)).text).toContain('7');

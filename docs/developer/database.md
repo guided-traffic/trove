@@ -349,11 +349,14 @@ Rules that hold for them:
   may go (unpublish, permanent removal, trash retention) and the tombstone stays (R-NPM-008).
 - **One look-alike per repository.** `UNIQUE (repo_id, name_fold)` on `npm_packages` is what decides the race of two
   concurrent first publishes of `acme-ui` and `acme_ui` (R-NPM-007): the loser's insert fails with `23505`.
-- **One owner entry.** `package_owner_unique` makes a second insert of the same principal or CI project for a name fail
-  with `23505`, so two replicas that claim a new name concurrently cannot both end up as first publisher (R-AUTHZ-018).
-  `ci_issuer_id` has no foreign key until M4 adds it `NOT VALID` and validates it (Q-ARCH-191).
-- **Ownership of a deleted repository.** `package_ownership.domain = 'repo:<id>'` carries no foreign key: the repository
-  delete job removes the rows (R-AUTHZ-018). Repository ids come from an identity column and are never reused.
+- **One claim, one owner entry.** The primary key of `package_ownership` decides the race of two first publishes of a
+  name: the claim is an `INSERT … ON CONFLICT DO NOTHING`, and the loser's insert waits for the winner and returns no row
+  (R-AUTHZ-018 rule 5, [authorization.md](authorization.md#package-ownership)). `package_owner_unique` keeps one entry per
+  principal or CI project and name (an owner added twice is 409 `already_exists`). `ci_issuer_id` has no foreign key until
+  M4 adds it `NOT VALID` and validates it (Q-ARCH-191).
+- **Ownership of a deleted repository.** `package_ownership.domain = 'repo:<id>'` carries no foreign key: the hook
+  `authz.OwnershipHook` removes the rows in the transaction of the deletion job that removes the repository row
+  (R-AUTHZ-018, Q-AUTHZ-156). Repository ids come from an identity column and are never reused.
 - **Revision columns.** `repositories.claims_version` is the ETag of the claims resource (R-REPO-023). The claims service takes
   the row lock (`LockRepositoryByKey`), compares the version and bumps it with `BumpClaimsVersion` in the same transaction;
   the auto claim of a first publish bumps it with the same statement ([virtual.md](virtual.md)).

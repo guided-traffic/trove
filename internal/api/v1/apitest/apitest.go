@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -103,17 +104,30 @@ func (v *Validator) Check(req *http.Request, status int, header http.Header, bod
 	return id, nil
 }
 
-// routeRequest maps a request below /files/ to the template of the document: its
-// path holds slashes that a path parameter of the document cannot match, so the
-// router sees a request for /files/<key>/<one segment>. Only the route is looked up
-// with it; the answer is validated as it is.
+// routeRequest maps a request to the template of the document the way the
+// server's router matches it. A path below /files/ holds slashes that a path
+// parameter of the document cannot match, so the router sees a request for
+// /files/<key>/<one segment>. An encoded "/" inside one segment (a package name
+// such as @acme%2Ffrontend, R-AUTHZ-019) stays in its segment: the server matches
+// the escaped path segment by segment, while this router matches the decoded
+// path, which would split it. Only the route is looked up with the mapped
+// request; the answer is validated as it is.
 func routeRequest(req *http.Request) *http.Request {
-	if !strings.HasPrefix(req.URL.EscapedPath(), "/files/") {
-		return req
+	esc := req.URL.EscapedPath()
+	switch {
+	case strings.HasPrefix(esc, "/files/"):
+		c := req.Clone(req.Context())
+		c.URL.Path, c.URL.RawPath = "/files/k/p", ""
+		return c
+	case strings.Contains(esc, "%2F") || strings.Contains(esc, "%2f"):
+		c := req.Clone(req.Context())
+		kept := strings.NewReplacer("%2F", "~", "%2f", "~").Replace(esc)
+		if p, err := url.PathUnescape(kept); err == nil {
+			c.URL.Path, c.URL.RawPath = p, ""
+		}
+		return c
 	}
-	c := req.Clone(req.Context())
-	c.URL.Path, c.URL.RawPath = "/files/k/p", ""
-	return c
+	return req
 }
 
 // Handler wraps next: every answer is validated, and a violation fails t. The

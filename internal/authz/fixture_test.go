@@ -60,9 +60,9 @@ func (f *fixture) repo(key, class, format, cfg string) *fixture {
 			DeployTarget string   `json:"deployTarget"`
 		} `json:"virtual"`
 	}
-	if err := json.Unmarshal([]byte(cfg), &doc); err != nil {
-		panic(err)
-	}
+	// A test may store a document that does not parse (an unreadable
+	// configuration); it has no rows to split off.
+	_ = json.Unmarshal([]byte(cfg), &doc)
 	for _, m := range doc.Virtual.Members {
 		f.s.VirtualMembers = append(f.s.VirtualMembers, q.AuthzBuildVirtualMembersRow{VirtualID: f.next, MemberKey: m})
 	}

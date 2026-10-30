@@ -263,12 +263,12 @@ The label sets of the M1 families are not restated per family in this pass; read
 The names of the event registry ([internal/audit](internal/audit/)). Each event carries an actor and a source; the registry says which types the journal always keeps. The list is read from the `events_*.go` files, not from the running system.
 
 <details>
-<summary>Event types by area (M1)</summary>
+<summary>Event types by area</summary>
 
 | Area | Event types |
 |---|---|
 | Login | `auth.login.succeeded`, `auth.login.failed`, `auth.breakglass.login`, `auth.breakglass.locked`, `auth.breakglass.unlocked`, `auth.logout`, `auth.session.ended`, `auth.csrf_failed`, `auth.credential.rejected` |
-| Authorization | `authz.denied`, `authz.read.allowed`, `authz.write.allowed`, `authz.policy.created`, `authz.policy.updated`, `authz.policy.deleted`, `authz.role.bound`, `authz.role.unbound`, `authz.settings.changed` |
+| Authorization | `authz.denied`, `authz.read.allowed`, `authz.write.allowed`, `authz.policy.created`, `authz.policy.updated`, `authz.policy.deleted`, `authz.role.bound`, `authz.role.unbound`, `authz.settings.changed`, `authz.ownership.claimed`, `authz.ownership.added`, `authz.ownership.removed`, `authz.ownership.released` |
 | Tokens | `token.created`, `token.rotated`, `token.revoked`, `token.expiring`, `token.rejected` |
 | Users | `user.created`, `user.updated`, `user.renamed`, `user.rename_conflict`, `user.disabled`, `user.enabled`, `user.deleted`, `user.dormancy_warning`, `user.groups.synced`, `user.groups.claim_missing` |
 | Groups and service accounts | `group.created`, `group.updated`, `group.deleted`, `group.members.changed`, `serviceaccount.created`, `serviceaccount.updated`, `serviceaccount.disabled`, `serviceaccount.deleted` |
@@ -284,7 +284,7 @@ The names of the event registry ([internal/audit](internal/audit/)). Each event 
 The code registry is [internal/errs/codes.go](internal/errs/codes.go). Every problem answer carries one of these values as `code`. The HTTP status of each code is in the registry.
 
 <details>
-<summary>Error codes (M1 registry, 211 entries in the file, grouped as the file groups them)</summary>
+<summary>Error codes (109 codes in the registry, grouped as the file groups them)</summary>
 
 - General: `internal`, `malformed_request`, `validation_failed`, `unauthenticated`, `forbidden`, `not_found`, `method_not_allowed`, `conflict`, `precondition_failed`, `payload_too_large`, `unsupported_media_type`, `rate_limited`, `insufficient_storage`, `unavailable`, `upstream_failed`, `upstream_timeout`, `repository_not_found`, `database_unavailable`, `egress_denied`, `key_ring_incompatible`, `object_store_unavailable`, `shutting_down`, `server_busy`, `database_timeout`, `misdirected_request`, `invalid_cursor`, `invalid_header`, `already_exists`, `idempotency_in_progress`, `idempotency_key_reused`, `precondition_required`, `reserved_name`, `managed_by_config`
 - Tokens: `invalid_token`, `credentials_required`, `invalid_credentials`, `principal_disabled`, `invalid_scope`, `invalid_ttl`, `ttl_exceeds_maximum`, `default_above_maximum`, `exceeds_ceiling`, `non_expiring_not_allowed`, `non_expiring_restricted`, `pat_not_allowed`, `ci_token_restricted`, `token_already_issued`, `token_limit_reached`, `derivation_exceeds_parent`, `description_required`, `not_a_token`
@@ -293,6 +293,7 @@ The code registry is [internal/errs/codes.go](internal/errs/codes.go). Every pro
 - Repositories and formats: `repository_disabled`, `repository_referenced`, `invalid_key`, `invalid_member`, `invalid_document`, `not_applicable`, `unsupported_class`, `unsupported_layout`, `batch_too_large`, `not_a_package`, `no_deploy_target`
 - Files: `invalid_path`, `not_admitted`, `path_conflict`, `content_unavailable`, `range_not_satisfiable`
 - Endpoints and exposure: `endpoint_read_only`, `invalid_version_range`, `dimension_not_supported`, `format_not_exposable`, `endpoint_not_configured`, `exposure_rule_limit_reached`
+- Package ownership and populating (M2): `package_owned_by_other_owner`, `last_owner`, `populate_not_permitted`
 
 </details>
 
@@ -1233,6 +1234,15 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 | `PATCH /api/v1/endpoints/{endpoint}/exposure-rules/{name}` | `patchExposureRule` | `endpoints:write` · recent sign-in |
 | `DELETE /api/v1/endpoints/{endpoint}/exposure-rules/{name}` | `deleteExposureRule` | `endpoints:write` · recent sign-in |
 | `POST /api/v1/endpoints/{endpoint}/check-exposure` | `checkExposure` | `endpoints:read` |
+
+**ownership**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/repositories/{repoKey}/packages/{packageName}/owners` | `getPackageOwners` | action `read` on `path.repoKey`; `read` on the package in the handler |
+| `POST /api/v1/repositories/{repoKey}/packages/{packageName}/owners` | `addPackageOwner` | authenticated; an owner, `manage` or `content:bypass` in the handler · recent sign-in |
+| `DELETE /api/v1/repositories/{repoKey}/packages/{packageName}/owners/{owner}` | `removePackageOwner` | authenticated; as adding, `release=true` needs `manage` · recent sign-in |
+| `GET /api/v1/package-owners` | `listOwnedPackages` | authenticated; `policies:read`, or the caller's own identity or group |
 
 </details>
 

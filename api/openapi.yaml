@@ -91,6 +91,12 @@ tags:
   # <<< M2 npm
   #
   # >>> M2 ownership
+  - name: ownership
+    description: |
+      Package ownership (R-AUTHZ-018, R-AUTHZ-019): who may change a package name in a local repository
+      whose `packageOwnership` is `enforce`. The first publish claims a name for the owners its grant
+      designates; these operations read the owners, add and remove them, pre-assign a name nobody has
+      published, and list the names an identity owns.
   # <<< M2 ownership
 security:
   - bearerAuth: []
@@ -5558,6 +5564,256 @@ paths:
   # <<< M2 npm
   #
   # >>> M2 ownership
+  /api/v1/repositories/{repoKey}/packages/{packageName}/owners:
+    parameters:
+      - name: repoKey
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: packageName
+        in: path
+        required: true
+        description: |
+          The package name as one path segment, percent-encoded (`@acme%2Ffrontend`, R-AUTHZ-019); it is
+          normalized with the name rule of the repository's format.
+        schema:
+          type: string
+    get:
+      operationId: getPackageOwners
+      tags: [ownership]
+      summary: Read the owners of a package name
+      description: |
+        The state of the name in its ownership domain (`claimed`, `released` or `unclaimed`) and its
+        owners (R-AUTHZ-019). Needs `read` on the package: a caller who may not read it gets `404`, like
+        for a missing name, and so does a repository without ownership (remote, virtual, a format
+        without package names) and a string that is no name of the format. An unclaimed name answers
+        `200` with `state: unclaimed` and no owners. The state is read from PostgreSQL on every call.
+      x-trove-permission:
+        action: read
+        repository: path.repoKey
+      responses:
+        "200":
+          description: The ownership of the name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageOwners"
+              example:
+                repository: npm-internal
+                domain: npm-internal
+                format: npm
+                package: "@acme/frontend"
+                state: claimed
+                owners:
+                  - owner: "group:team-web"
+                    display: team-web
+                    reason: first-publish
+                    addedAt: "2026-10-28T09:12:44Z"
+                    addedBy: null
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      operationId: addPackageOwner
+      tags: [ownership]
+      summary: Add an owner, or pre-assign a name nobody has published
+      description: |
+        Adds an owner identity (`user:`, `group:`, `sa:`, `ci:<issuer>/<mapping>`) to the name
+        (R-AUTHZ-019). Allowed to an owner, a holder of `manage` on the package and `content:bypass`;
+        a name without an owner to ask (unclaimed, released, or claimed after its last owner was
+        deleted) takes an owner only from `manage` or `content:bypass`, and on an unclaimed name without
+        versions this pre-assigns it. A caller who may not is refused with `403`, whether or not the
+        repository or the name exists; a CI token always gets `403 ci_token_restricted`. An owner
+        reference that names no owner identity answers `422 unknown_principal`; one that owns the name
+        already answers `409 already_exists`. `Location` is the owners of the name. The change and
+        its audit event `authz.ownership.added` commit together.
+      x-trove-recent-auth: true
+      x-trove-permission:
+        authenticated: true
+      x-trove-idempotency-key: optional
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PackageOwnerInput"
+            example:
+              owner: "group:team-web"
+      responses:
+        "201":
+          description: The owner was added.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PackageOwner"
+              example:
+                owner: "group:team-web"
+                display: team-web
+                reason: pre-assigned
+                addedAt: "2026-10-28T09:12:44Z"
+                addedBy: "user:lead-web"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/repositories/{repoKey}/packages/{packageName}/owners/{owner}:
+    parameters:
+      - name: repoKey
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: packageName
+        in: path
+        required: true
+        description: |
+          The package name as one path segment, percent-encoded (`@acme%2Ffrontend`, R-AUTHZ-019); it is
+          normalized with the name rule of the repository's format.
+        schema:
+          type: string
+      - name: owner
+        in: path
+        required: true
+        description: The owner identity, percent-encoded as one path segment (`ci:gitlab-internal%2Facme-publish`).
+        schema:
+          type: string
+    delete:
+      operationId: removePackageOwner
+      tags: [ownership]
+      summary: Remove an owner, or release the name with its last owner
+      description: |
+        Removes an owner of the name (R-AUTHZ-019), allowed as adding one is. Removing the only owner
+        answers `409 last_owner` unless `release=true`, which releases the name: it is unclaimed again,
+        so its next publish is decided by rules 1 and 3 of R-AUTHZ-018. `release=true` needs `manage`
+        on the package or `content:bypass`. A caller who may not is refused with `403`, whether or not
+        the repository, the name or the owner exists; a CI token always gets `403 ci_token_restricted`.
+        An owner the name does not have answers `404`. The removal and its audit event
+        (`authz.ownership.removed`, or `.released` for the last owner, both journaled) commit together.
+      x-trove-recent-auth: true
+      x-trove-permission:
+        authenticated: true
+      parameters:
+        - name: release
+          in: query
+          description: Release the name when the owner is its last one.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "204":
+          description: The owner was removed.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/package-owners:
+    get:
+      operationId: listOwnedPackages
+      tags: [ownership]
+      summary: List the names an identity owns
+      description: |
+        The names whose owner entries name the identity itself (not those of its groups), for
+        offboarding and transfers (R-AUTHZ-019), in key order with cursor pagination (R-API-010).
+        Needs `policies:read`, or the identity is the caller itself or one of its groups; such a caller
+        sees only names of repositories it may read, so a page may hold fewer items than `limit` while a
+        `nextCursor` exists. `repository` narrows the list to one repository. An owner reference that
+        names no owner identity answers `422 unknown_principal`.
+      x-trove-permission:
+        authenticated: true
+      parameters:
+        - name: owner
+          in: query
+          required: true
+          description: The owner identity (`user:alice`, `group:team-web`, `sa:ci-bot`, `ci:<issuer>/<mapping>`).
+          schema:
+            type: string
+        - name: repository
+          in: query
+          description: A repository key.
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of names.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OwnedPackageList"
+              example:
+                items:
+                  - repository: npm-internal
+                    format: npm
+                    package: "@acme/frontend"
+                    state: claimed
+                    reason: first-publish
+                    addedAt: "2026-10-28T09:12:44Z"
+                nextCursor: null
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
   # <<< M2 ownership
 components:
   securitySchemes:
@@ -8823,4 +9079,89 @@ components:
     # <<< M2 npm
     #
     # >>> M2 ownership
+    PackageOwners:
+      type: object
+      description: The ownership of one package name in one repository (R-AUTHZ-019).
+      additionalProperties: false
+      required: [repository, domain, format, package, state, owners]
+      properties:
+        repository:
+          type: string
+        domain:
+          type: string
+          description: The ownership domain; the repository key while every repository is its own domain (R-AUTHZ-020 is P1).
+        format:
+          type: string
+        package:
+          type: string
+          description: The normalized package name.
+        state:
+          type: string
+          enum: [claimed, released, unclaimed]
+        owners:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/PackageOwner"
+    PackageOwner:
+      type: object
+      description: One owner of a name.
+      additionalProperties: false
+      required: [owner, display, reason, addedAt, addedBy]
+      properties:
+        owner:
+          type: string
+          description: The owner identity.
+        display:
+          type: string
+          description: The name when the owner was recorded, or the project path of a CI project owner.
+        reason:
+          type: string
+          enum: [first-publish, added, pre-assigned]
+        addedAt:
+          type: string
+          format: date-time
+        addedBy:
+          type: [string, "null"]
+          description: Who added the owner; null for a claim by publish.
+    PackageOwnerInput:
+      type: object
+      additionalProperties: false
+      required: [owner]
+      properties:
+        owner:
+          type: string
+          description: The owner identity to add.
+    OwnedPackage:
+      type: object
+      description: One name an identity owns.
+      additionalProperties: false
+      required: [repository, format, package, state, reason, addedAt]
+      properties:
+        repository:
+          type: string
+        format:
+          type: string
+        package:
+          type: string
+        state:
+          type: string
+          enum: [claimed, released]
+        reason:
+          type: string
+          enum: [first-publish, added, pre-assigned]
+        addedAt:
+          type: string
+          format: date-time
+    OwnedPackageList:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OwnedPackage"
+        nextCursor:
+          type: [string, "null"]
     # <<< M2 ownership

@@ -1,9 +1,9 @@
 # Permissions
 
 Status: implemented in M1 for the decision engine, the compiled grant index and its propagation, the token scope as a
-ceiling, system roles, the epochs of `Trove-Authz-Min-Epoch` and the decision audit. Package ownership, the cache-fill and
-shadowing checks, CI inline grants and projects do not exist yet; they are named in
-[What this does not cover](#what-this-does-not-cover).
+ceiling, system roles, the epochs of `Trove-Authz-Min-Epoch` and the decision audit. M2 adds the populate check and package
+ownership in the decision point; no remote engine and no format writer calls them yet, and the shadowing check, CI inline
+grants and projects do not exist yet. Both are named in [What this does not cover](#what-this-does-not-cover).
 
 This page says what keeps a request from doing more than it was granted, how long a removed grant can still work, and what
 an attacker who controls one of the inputs gains. The mechanics are in
@@ -36,6 +36,8 @@ an attacker who controls one of the inputs gains. The mechanics are in
 | `authenticated` and `anonymous` | Entries hold `read` only; `anonymous` entries select repositories by key only; neither holds a role; a service account and a CI token are never `authenticated` | `Service.entryRules`, `Index.principalIDs` |
 | Endpoint ceiling | Consulted first for every action and every subject, `content:bypass` included; nil is none | [ceiling.go](../../internal/authz/ceiling.go) |
 | Virtual repositories | `read` on the virtual repository is a gate, not a source of content rights; anonymous passes only if it reads every member | `evaluate` |
+| Populate check | Bringing new content into a remote cache needs `read` plus the repository's `cacheFillAction`; the session cookie never populates, so a link or an image in another site cannot make an administrator's browser fill a frozen mirror; an endpoint with `cache_fill: false` refuses every subject, the setting travelling in the subject so a collapsed or fanned-out decision keeps it | [populate.go](../../internal/authz/populate.go) |
+| Package ownership | On an enforcing repository a name is changed by its owners, `manage` holders and `content:bypass` only, however wide a `deploy` grant's patterns are; an imported name with versions and no owner needs `manage`; the claim of a first publish is decided by the primary key in the commit transaction, so two replicas cannot both claim | [ownership.go](../../internal/authz/ownership.go) |
 
 Principals are referenced by their immutable ID in `authz_policy_entry` and `authz_role_binding`, so a deleted and
 re-created user, group or service account of the same name inherits nothing, and a repository deleted and re-created under
@@ -49,6 +51,13 @@ the same key is not covered by the old key selector (the policy reports `inert`)
 - An anonymous caller is always 401 (reads, writes, a partially readable virtual repository), so the status does not depend
   on what exists.
 - A management operation is checked before any lookup (`Require`), so its 403 does not depend on the object.
+- A refused populate is 403 `populate_not_permitted` only after `read` was allowed; a caller who may not read gets the read's
+  404. A refused ownership check is 403 `package_owned_by_other_owner` naming only the coordinate the caller sent, never an
+  owner.
+- The owner operations decide like the rest: adding or removing an owner is 403 for a caller who may not, whether or not the
+  repository or the name exists, and decided before the owner reference is resolved, so a refused caller cannot probe for
+  principals; reading the owners is a read (404). A CI token never changes owners (403 `ci_token_restricted`, before any
+  lookup): a pipeline runs its dependencies' install scripts, which must not be able to hand a package to another project.
 - `authz.hide_existence: false` (R-AUTHZ-017) turns the refusal of a read of an existing repository into 403. It is a
   troubleshooting switch; the endpoint-exposure 404 and the anonymous 401 do not change.
 
@@ -109,6 +118,12 @@ exists without its audit record, and the events that remove access (`authz.polic
 `authz.role.unbound`, and `authz.settings.changed` when a repository update tightens or loosens an authorization setting) carry
 the journal entry that a restore replays (R-AUTHZ-031). Token values, hashes and claims are never part of an event.
 
+Ownership changes are recorded in the transaction of the change: `authz.ownership.claimed` with the owners and the claim ID
+the claim row stores, `.added`, and `.removed` and `.released` with the journal entry (domain, format, name, the owner's
+principal ID). A refused populate that is answered 403 and a refused ownership check are recorded as `authz.denied`
+(`deny.populate`, `deny.ownership`) like refused writes, also with `authz.audit.reads: none`; a populate refusal that is
+answered from the cache is not a refusal and records nothing.
+
 ## The policy and role operations
 
 Reading policies and bindings needs `policies:read` and `roles:read`, writing them `policies:write` and `roles:write` (the
@@ -138,10 +153,23 @@ binding rows first and counts in a statement of its own afterwards, so two of th
 other (`TestR_AUTHZ_022_ConcurrentUnbindsLeaveAnAdministrator`, `TestR_AUTHZ_022_LastAdministratorAcrossTheIdentityOperations`).
 The guard steps aside while the break-glass administrator is enabled.
 
+## The ownership operations
+
+Who may change the owners of a name is decided on the owners the transaction reads under the claim row's lock, so a refused
+caller cannot change them in a race, and two removals of the last two owners cannot both pass (`last_owner`,
+`TestR_AUTHZ_019_OwnerOperations`). The declarations admit an authenticated caller (or a repository-level `read` for the
+owners view) and the handler decides the rest; an anonymous caller is 401 and a CI token 403 `ci_token_restricted` before
+anything is looked up. Adding and removing owners need recent authentication through a session (R-API-007), because an added
+owner may publish the name. `GET /api/v1/package-owners` shows a caller without `policies:read` only names of repositories it
+may read. The package name and an owner reference are single path segments with an encoded `/`; the router matches escaped
+segments, so `@acme%2F..%2Fx` is one name and never a path (`TestR_AUTHZ_019_OwnershipOperationsOverHTTP`).
+
 ## Database footprint
 
 The engine's statements read `authz_policy*`, `authz_role_binding`, `repositories`, `principal` and `cluster_epoch`; the
-service writes the five `authz_*` tables and, through `cluster.Changes`, `cluster_epoch` and `cluster_change`. The build runs
+service writes the five `authz_*` tables and, through `cluster.Changes`, `cluster_epoch` and `cluster_change`. Ownership reads
+and writes `package_ownership` and `package_owner` and reads `packages` and `package_versions` (whether an unclaimed name holds
+a version); it locks the claim row of a name `FOR UPDATE` in the writer's transaction and takes no advisory lock. The build runs
 as a read-only transaction on the request pool, never on the control connection, so a slow build cannot delay the poll or the
 heartbeats. See [privilege-footprint.md](privilege-footprint.md) for the grants of the runtime role.
 
@@ -154,13 +182,17 @@ virtual repository, a copy) must call `Engine.Begin` once and `DecideOn` per coo
 calls `Decide` repeatedly can see two indexes if a build installs in between. Dormant: no caller in M1 decides more than one
 coordinate per request; it becomes live with virtual resolution (M2) if that code does not use `Begin`.
 
-### H-103 · Package ownership, the shadowing check and the cache-fill check are not part of `Decide`
+### H-103 · Package ownership and the populate check have no callers yet, the shadowing check does not exist
 
-R-AUTHZ-018 (ownership), the shadowing check of R-REPO-048 and the populate check of R-AUTHZ-008 are not implemented. In M1
-the only format is `generic`, which has no package names, so ownership does not apply and remote repositories cannot be
-created. Dormant; it becomes live with the first package format (M2): from then on a `deploy` grant alone would let its holder
-publish any name inside its patterns, including a name another team publishes, and would let a virtual repository's deploy
-target shadow a remote package.
+The ownership check and claim (`Ownership.EnforceTx`) and the populate check (`MayPopulateOn`, `PopulateOn`,
+`MemberUsableOn`) exist in the decision point and are tested on PostgreSQL, but no format writer calls the first and no remote
+or virtual engine the second. The owner operations of R-AUTHZ-019 and the deletion hook are wired
+([wire_ownership.go](../../internal/app/wire_ownership.go)). The shadowing check of R-REPO-048 is not implemented. Dormant: the only
+format is `generic`, which has no package names, and no remote repository can be created. It becomes live with the first
+package format writer and the remote engine (M2): a writer that does not call `EnforceTx` lets a `deploy` grant alone publish
+any name inside its patterns, including a name another team owns; a remote engine that fetches without `PopulateOn` lets a
+session cookie or a `cache_fill: false` endpoint fill a cache; and without the shadowing check a virtual repository's deploy
+target can shadow a remote package.
 
 ### H-104 · The commit-time re-check decides on the grants, not on the credential
 

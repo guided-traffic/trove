@@ -171,7 +171,11 @@ mirror of the facts in this package or in the composition root. The model valida
 some formats have (`PackageNames`, `PriorityMembers`, `PinsAndClaims`, `Caps`) against the entry. The decision point reads
 the same entry for the package-name rule and the exposure facts (`catalog.Names`, `catalog.Exposure`). The generic format sets none
 of them, so `priorityMember`, `local.packageOwnership`, `ownershipDomain`, `autoClaim` and `local.caps` answer
-`not_applicable` (R-GENERIC-008).
+`not_applicable` (R-GENERIC-008). `OwnershipDefault` is the `packageOwnership` of a format's local repositories while their
+document sets none (npm and NuGet: `enforce`): `applyOwnershipDefault` in [validate.go](../../internal/repository/validate.go)
+stores it on every create and update, so a replace or a merge patch that drops the member reverts it to the default and `off`
+is always explicit (R-AUTHZ-018, Q-AUTHZ-155). `ownershipDomain` answers `not_applicable` for every format until shared
+ownership domains (R-AUTHZ-020, P1) exist.
 
 `formats.Format` is a skeleton: `Descriptor()` and `Describe(method, path, folder)`, the request descriptor of R-REPO-003.
 The routes, storage hooks, remote and virtual adapters and the conformance kit of R-ARCH-008 and R-ARCH-010 join it with

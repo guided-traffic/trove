@@ -6,7 +6,8 @@ R-EP-008 and R-EP-009 of [spec/endpoints.md](../spec/endpoints.md) (M0), and R-E
 of R-EP-017 (M1, WP1.9): the credential rules per endpoint, endpoint-bound tokens, exposure rules as the ceiling of the
 decision point, the rate-limit class, and the endpoint and exposure-rule operations. Not built yet: the endpoint screen
 (the UI wave), metadata filtering and the cache-fill refusal of package formats (R-EP-018, R-EP-019, with npm in M2;
-`cache_fill` is carried only), and the replay of the journaled exposure changes (R-EP-020, M5; the events carry their
+`cache_fill` travels in the subject and the populate check of the decision point refuses on it, but no remote engine asks
+the check yet), and the replay of the journaled exposure changes (R-EP-020, M5; the events carry their
 journal entries from now on). The security view is [security/endpoints-and-exposure.md](../security/endpoints-and-exposure.md).
 
 ## What to have in your head
@@ -26,7 +27,8 @@ journal entries from now on). The security view is [security/endpoints-and-expos
 - **The surface is applied when routes are registered.** A path of a family the endpoint does not serve falls
   through to the catch-all `404`, byte-identical to an unknown path.
 - **The endpoint reaches the decision point in the subject.** The chain stores the listener's endpoint in the request
-  context at step 1; `edge.SubjectFrom(r)` (`edge.SubjectOf(ctx)`) copies its name into `authz.Subject.Endpoint`, and every
+  context at step 1; `edge.SubjectFrom(r)` (`edge.SubjectOf(ctx)`) copies its name into `authz.Subject.Endpoint` and its
+  `cache_fill` into `authz.Subject.CacheFill` (the populate check of R-AUTHZ-008, Q-AUTHZ-153), and every
   decision (`Decide`, `DecideOn`, `Readable`, `Exposed`, `PathsAllowed`, `Check`, and the audit event) reads the ceiling from
   the subject it is given. A decision on a detached context, a single-flight leader or a fan-out probe therefore keeps the
   ceiling, and a content route cannot forget it or pick another endpoint's. A subject without an endpoint (a job, a command)
@@ -65,7 +67,7 @@ server:
       surface: [packages]              # default for a further endpoint; ui is refused
       auth: {token_types: [sat], bound_tokens_only: true, anonymous: false}   # default for a further endpoint (R-EP-010)
       exposure: rules                  # default for a further endpoint: rules | all (R-EP-012)
-      cache_fill: false                # default for a further endpoint; carried, not enforced yet (R-EP-019, M2)
+      cache_fill: false                # default for a further endpoint; refused by the populate check (R-EP-019), no engine asks it yet
       rate_limit_class: external       # default for a further endpoint; "" = no class (R-EP-015)
       replica_header: never            # default for a further endpoint: authenticated | always | never
     default:                           # optional; hosts, wildcard_host, host_roots, wildcard_root, surface, auth,
