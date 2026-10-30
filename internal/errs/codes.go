@@ -200,6 +200,14 @@ const (
 
 // <<< M2 upstream
 
+// >>> M2 untrusted
+
+// Code of package content whose structure the bounded readers refuse: ambiguous
+// or forbidden (R-ARCH-028). A crossed bound answers too_large instead.
+const CodeContentRefused = "content_refused"
+
+// <<< M2 untrusted
+
 // >>> M2 ownership
 
 // Codes of package ownership and of the populate check (R-AUTHZ-008,
@@ -360,6 +368,9 @@ var registry = []CodeInfo{
 	{CodeSourceNetworkUnavailable, UpstreamFailed, "Source network unavailable", "This replica has no interface address inside the remote repository's sourceNetwork, so it does not connect to the upstream. The failure does not count toward the circuit; another replica may have such an address."},
 	{CodeForeignHostDenied, UpstreamFailed, "Foreign host denied", "The upstream document points to a host that is neither the upstream origin nor an entry of the remote repository's extraHosts; trove did not send a request."},
 	// <<< M2 upstream
+	// >>> M2 untrusted
+	{CodeContentRefused, Unprocessable, "Content refused", "The package content has a structure trove does not read: duplicate names, link entries, a document type declaration, names two readers would resolve differently, or a document that is not well-formed."},
+	// <<< M2 untrusted
 	// >>> M2 ownership
 	{CodePackageOwnedByOtherOwner, Forbidden, "Package owned by another owner", "The action is granted, but the package name is owned and the caller is none of its owners and holds no manage on it; an owner or a holder of manage adds the caller as an owner."},
 	{CodeLastOwner, Conflict, "Last owner", "Removing the only owner of a package would leave it without one; add the new owner first, or release the name with release=true (needs manage)."},

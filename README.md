@@ -294,6 +294,8 @@ The code registry is [internal/errs/codes.go](internal/errs/codes.go). Every pro
 - Files: `invalid_path`, `not_admitted`, `path_conflict`, `content_unavailable`, `range_not_satisfiable`
 - Endpoints and exposure: `endpoint_read_only`, `invalid_version_range`, `dimension_not_supported`, `format_not_exposable`, `endpoint_not_configured`, `exposure_rule_limit_reached`
 - Package ownership and populating (M2): `package_owned_by_other_owner`, `last_owner`, `populate_not_permitted`
+- Remote repositories (M2): `upstream_secret_unavailable`, `source_network_unavailable`, `foreign_host_denied`
+- Package content (M2): `content_refused`
 
 </details>
 

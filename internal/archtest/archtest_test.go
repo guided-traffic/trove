@@ -174,6 +174,31 @@ func TestFormatImportAllowlist(t *testing.T) {
 			pkg("internal/formats/npm", "internal/newthing"),
 			[]string{"internal/newthing"},
 		},
+		{
+			"the conformance kit importing the production host, the dispatcher or a concrete format is named: it runs against its own in-memory host",
+			pkg("internal/formats/formattest", "internal/formathost", "internal/api/dispatch", "internal/formats/npm", "internal/formats/generic", "internal/formats/all"),
+			[]string{"internal/formathost", "internal/api/dispatch", "internal/formats/npm", "internal/formats/generic", "internal/formats/all"},
+		},
+		{
+			"the conformance kit importing storage, the item store, the job queue, the cache registry or the HTTP shell is named",
+			pkg("internal/formats/formattest", "internal/blob", "internal/items", "internal/packages", "internal/jobs", "internal/cache", "internal/httpserver", "internal/meta/postgres"),
+			[]string{"internal/blob", "internal/items", "internal/packages", "internal/jobs", "internal/cache", "internal/httpserver", "internal/meta/postgres"},
+		},
+		{
+			"the kit's test format importing a concrete format is named",
+			pkg("internal/formats/formattest/testformat", "internal/formats/npm", "internal/formats/formattest"),
+			[]string{"internal/formats/npm"},
+		},
+		{
+			"a format importing the conformance kit from production code is named: the kit belongs to tests",
+			pkg("internal/formats/npm", "internal/formats/formattest", "internal/formats/formattest/crafted"),
+			[]string{"internal/formats/formattest", "internal/formats/formattest/crafted"},
+		},
+		{
+			"the contract package importing the conformance kit is named",
+			pkg("internal/formats", "internal/formats/formattest"),
+			[]string{"internal/formats/formattest"},
+		},
 	}
 	for _, c := range cases {
 		t.Run("R-ARCH-008 "+c.name, func(t *testing.T) {
@@ -194,6 +219,23 @@ func TestFormatImportAllowlist(t *testing.T) {
 			pkg("internal/formats", "internal/errs", "internal/config"),
 			pkg("internal/proxy", "internal/blob", "internal/jobs", "internal/meta"),
 		}))
+	})
+	t.Run("R-ARCH-010 the kit, its generators and its test format import the contract, the core types the contract spells, the untrusted-content helpers and each other", func(t *testing.T) {
+		wantClean(t, CheckModuleImportBans(mod, []Package{
+			pkg("internal/formats/formattest", "internal/formats", "internal/formats/catalog", "internal/formats/untrusted", "internal/formats/formattest/crafted",
+				"internal/authz", "internal/repository", "internal/meta", "internal/httpserver/content", "internal/errs", "net/http/httptest", "runtime/metrics"),
+			pkg("internal/formats/formattest/crafted", "archive/zip", "compress/flate"),
+			pkg("internal/formats/formattest/testformat", "internal/formats", "internal/formats/catalog", "internal/formats/untrusted", "internal/formats/formattest", "internal/errs"),
+			pkg("internal/formats/untrusted", "internal/errs"),
+		}))
+	})
+	t.Run("R-ARCH-010 the kit's generators sit in the kit's tree and are subject to its allowlist, not the format's", func(t *testing.T) {
+		vs := CheckModuleImportBans(mod, []Package{pkg("internal/formats/formattest/crafted", "internal/blob", "internal/formats/npm")})
+		wantEdge(t, vs, "R-ARCH-008", "internal/formats/formattest/crafted", "internal/blob")
+		wantEdge(t, vs, "R-ARCH-008", "internal/formats/formattest/crafted", "internal/formats/npm")
+		// the contract's types are a legal import there, which a format package may not do
+		wantClean(t, CheckModuleImportBans(mod, []Package{pkg("internal/formats/formattest/crafted", "internal/authz")}))
+		wantEdge(t, CheckModuleImportBans(mod, []Package{pkg("internal/formats/npm", "internal/authz")}), "R-ARCH-008", "internal/formats/npm", "internal/authz")
 	})
 	t.Run("R-ARCH-010 the registration package imports formats and nothing else", func(t *testing.T) {
 		wantClean(t, CheckModuleImportBans(mod, []Package{

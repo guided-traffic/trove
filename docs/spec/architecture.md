@@ -476,7 +476,9 @@ trove/
 │   │   ├── all/                 # imports and registers every format
 │   │   ├── catalog/             # the format catalog: facts, name rule, exposure (leaf layer, Q-ARCH-188)
 │   │   ├── untrusted/           # resource limits and bounded readers for untrusted content (R-ARCH-028)
-│   │   ├── formattest/          # conformance kit, in-memory Host
+│   │   ├── formattest/          # conformance kit, in-memory Host (Q-ARCH-216)
+│   │   │   ├── crafted/         # generators of the hostile inputs of check 6 (standard library only)
+│   │   │   └── testformat/      # the kit's own test format and its defects
 │   │   ├── generic/
 │   │   ├── npm/
 │   │   └── nuget/
@@ -1360,15 +1362,20 @@ Priority: **MVP** · Covers: FMT-001, FMT-002, FMT-003
 
 The conformance kit (`internal/formats/formattest`) is table-driven. Every format runs it in its
 own tests:
-1. Every route matches its documented examples, and no other route matches them.
-2. `Match` rejects `..`, `%2e%2e`, NUL, control characters and paths longer than 4 KiB.
+1. Every route matches its documented examples through the format's own `Match`, and no other route
+   matches them. The kit also runs what `Register` runs (`formats.Validate` and the catalog's rules).
+2. `Match` rejects `..`, `%2e%2e`, NUL, control characters and paths longer than 4 KiB. The kit runs its
+   traversal inputs, and every route example mutated with them, through `Match`; it runs them for a
+   format without routes as well.
 3. `Classify` returns a kind for every route example. No `Content` path is `Metadata`.
 4. `Rewrite` is deterministic and idempotent. No upstream host remains in a download link of a
    rewritten document.
 5. `Merge` is deterministic and follows the per-version source rule of
    [repositories-and-proxy.md](repositories-and-proxy.md): the version entry comes from the member
    that tier resolution would choose for that version's file.
-6. `Inspect` enforces the limits of R-ARCH-028 against crafted inputs that the kit ships.
+6. `Inspect` enforces the limits of R-ARCH-028 against crafted inputs that the kit ships
+   (`formattest/crafted`): it answers `413` or `422` within 5 s, and the heap, sampled with
+   `runtime/metrics`, stays within 512 MiB of its baseline.
 7. Responses of `Download`, `Metadata` and `Computed` routes carry the content headers of
    R-ARCH-007, including when the handler tries to remove them. No route of another kind returns a
    body taken from package content.
@@ -1382,7 +1389,26 @@ own tests:
 
 A check that cannot apply to a format is skipped in the format's test with a stated reason (generic
 has no routes, no clients and no package names); a skip without a reason fails the check, so a
-later class cannot pass a check vacuously.
+later class cannot pass a check vacuously. The kit also refuses a skip that the format contradicts:
+checks 1, 3 and 7 on a format that has routes, check 4 on one with a remote adapter, check 5 with a
+virtual adapter, check 8 with clients or setup templates, check 10 with package names. Check 2 is
+never skipped. A check with nothing to run over (an empty fixture) fails unless it is skipped.
+
+A format runs the kit as `formattest.Run(t, format, formattest.Fixture{…})` in its own test; one
+subtest per check is named `R-ARCH-010 check N <name>`. The fixture holds what the format alone can
+state: extra paths for checks 2 and 3, upstream documents for 4, member documents for 5, the crafted
+uploads for 6 (`InspectTarGz`, `InspectZip`, `InspectJSON` and `InspectXML` give the standard ones),
+requests for 7, changes for 9 and sample names for 10. The kit derives the rest from the format. It
+requires a content case for every `Download`, `Metadata`, `Computed` and `Volatile` route, and a
+change case, or a reasoned `NoRevision` entry, for every `Upload`, `Delete` and `Admin` route.
+`formattest.Evaluate` returns the same results without a `testing.T`; the kit's own tests use it to
+assert that a defective format fails the check the acceptance criteria name (`formattest/testformat`
+carries one named defect per check). Check 7 runs `formats.ServeRoute` with a handler that deletes
+the content headers before and while it writes, and reads the headers at the status line. Check 9
+runs each change against the in-memory `Host`, whose package writer raises `rev_seq` once per package
+per transaction as `internal/packages` does, and compares the revision before and after. The fuzz
+helpers `FuzzMatch` and `FuzzInspect` take a format and use its route examples and the kit's inputs
+as seeds.
 
 End-to-end, every listed client runs its tested versions against a local, a remote and a virtual
 repository in `test/e2e` (FMT-002, FMT-003). The versions are fixed on the format pages.
@@ -3567,6 +3593,16 @@ Priority: **MVP** · Covers: trove-only
   - a compression ratio of 100:1 per entry;
   - 1 MiB per manifest entry;
   - a 30 s context deadline.
+- The bounds the list leaves open have defaults of their own, which a format can only tighten
+  (Q-ARCH-217): JSON nesting of 64 levels and 2,000,000 values per document, XML nesting of 64
+  elements, and 2 GiB of inflated bytes for a pass that keeps nothing.
+- `internal/formats/untrusted` holds the helpers that enforce these bounds, and formats read
+  untrusted bytes through them: `Limit` and `ReadAll` (a byte cap that fails instead of cutting),
+  `DecodeJSON` and `DecodeXML` (byte cap, then a scan for depth and values or for declarations, then
+  the decoder), `NewTarGz` and `NewZip` (entry count, declared and read bytes, ratio, duplicate
+  names, links, and for zip the names of the central directory against those of the local headers)
+  and `CountTarGz` (the streaming pass). A bound that is crossed answers `413`; a structure the
+  helpers refuse answers `422`. A format maps both to the codes of its own protocol.
 - These limits bind entries whose content is read into memory. A format MAY add a streaming pass
   that only counts entries and sums their sizes without keeping content, for example to record
   npm's `dist.unpackedSize`. That pass uses the format's own finite limits, declared on its spec
@@ -5664,6 +5700,54 @@ written against it.
 has no binding, allowing costs a hole nobody sees. The development agent would revisit this when the ownership package lands: the binding replaces the refusal.
 
 **Applied in the spec:** R-ARCH-009 sketch (`Claim`, `AutoClaim`).
+
+### Q-ARCH-216 · The conformance kit imports what the contract imports
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: check 7 of R-ARCH-010 asserts the content headers of a route's response, and R-ARCH-007 says the core, not the handler, sets them.
+The kit's in-memory `Host` also holds a subject, a request and an opaque transaction. The archtest allowlist of a format package refuses
+`internal/authz`, `internal/repository`, `internal/meta` and `internal/httpserver/content`; the contract package imports them.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The kit may import what the contract imports (chosen) | `formattest` runs the real `formats.ServeRoute` and reads the expected headers from `content.Headers`; it builds a `formats.Request` with a `repository.Repository` | The kit tests the code that runs in production; a header set changed in one place is changed for the kit as well | The kit sees core types a format does not; its allowlist is the contract's |
+| (b) The kit stays on the format allowlist | It re-implements the header wrapper and the request | A narrower kit | A mirror of production code: the kit would pass while production fails, which is the failure the check exists to catch |
+| (c) The kit imports the production host | It runs against `internal/formathost` over the stores | Nothing mirrored | Needs PostgreSQL and the object store; `go test ./internal/formats/...` could no longer run alone (R-ARCH-009 acceptance) |
+
+**Choice:** (a). The allowlist test (`internal/archtest`, `TestFormatAllowlistSplit` and the kit cases of `TestFormatImportAllowlist`) names an
+edge from the kit to `internal/formathost`, to the dispatcher, to storage, to the item store, to `internal/packages` or to a concrete format.
+The kit's subpackages `crafted` (standard library only) and `testformat` (the contract, the kit and `untrusted`) sit in the same tree.
+
+**Rationale:** the check is only worth something when the thing it asserts about is the thing production runs. The in-memory `Host` is the
+one place that mirrors production (the package writer's revision rule), and it is tested against the writer's documented rules in its own
+tests. The development agent would revisit this when the contract package splits the header wrapper out of `ServeRoute`, which would let the
+kit import the wrapper alone.
+
+**Applied in the spec:** R-ARCH-010 (the kit's shape), the repository tree.
+
+### Q-ARCH-217 · The bounds R-ARCH-028 leaves without a number
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-ARCH-028 demands depth limits for JSON and XML and a bounded pass over archives that are only counted, and gives numbers for
+entries, bytes, ratio, manifest entry and deadline. The readers need a number for each of the others; a format may only tighten them.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) JSON depth 64, 2,000,000 values, XML depth 64, 2 GiB for a pass that keeps nothing (chosen) | Four defaults in `untrusted.DefaultLimits`; `Tighten` lowers them | the package documents of npm and NuGet nest far below 64 levels, and a document of 20 MB is estimated (not measured) to hold under one million values; 2 GiB is the bound of npm's `dist.unpackedSize` pass (R-NPM-007) | A document with more values is refused until a format page argues for a higher number |
+| (b) JSON depth 256, no value count | Closer to `encoding/json`'s own 10,000 | Fewer refusals | A document of a few megabytes with millions of values costs hundreds of megabytes of tree; the byte cap alone does not bound that |
+| (c) Per-format bounds only | The helpers take no default | Each format fits its documents | A format that forgets one is unbounded; the failure is silent |
+
+**Choice:** (a). A depth or value count that is crossed is `TooLarge` (413), like every other field of `Limits`; a document that does not
+decode, a document type declaration and every ambiguous archive are `Unprocessable` (422). An unset field of the `Limits` a reader receives
+takes the default, so a zero `Limits` is never unbounded.
+
+**Rationale:** the byte cap bounds the text and the scan bounds the tree built from it; the two are different resources. 64 and 2,000,000
+are the smallest round numbers above real documents; both are far below what makes a decoder recurse deeply or hold a gigabyte. The
+development agent would revisit the value count when a format page shows a legitimate document above 2,000,000 values.
+
+**Applied in the spec:** R-ARCH-028 (the default list and the helpers).
 
 ### Q-ARCH-218 · Node.js 26 is the one Node.js of the repository
 
