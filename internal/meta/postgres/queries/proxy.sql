@@ -66,7 +66,9 @@ SELECT count(*)::bigint AS total,
 -- name: ProxyMetadataUpsert :many
 -- The entry of a fetched document. A row that is already newer (fetched_at) is kept:
 -- the statement then returns no row and the caller serves what is stored
--- (R-REPO-026: the upsert keeps the newer fetched_at). validated_at is the database
+-- (R-REPO-026: the upsert keeps the newer fetched_at), unless force is set: the format
+-- recorded the document as the newer one by an order of its own (npm: time.modified), so
+-- the entry follows its records whatever fetch time it has. validated_at is the database
 -- clock now, expires_at is that plus the period. A gone mark is cleared by a 2xx.
 INSERT INTO remote_cache_entries
        (repo_id, path, variant, kind, blob_sha256, upstream_url, upstream_etag, upstream_last_modified,
@@ -86,7 +88,7 @@ ON CONFLICT (repo_id, path, variant) DO UPDATE
        fetched_at = EXCLUDED.fetched_at, validated_at = EXCLUDED.validated_at, expires_at = EXCLUDED.expires_at,
        upstream_gone_at = NULL
  WHERE remote_cache_entries.kind = 'metadata'
-   AND remote_cache_entries.fetched_at <= EXCLUDED.fetched_at
+   AND (sqlc.arg(force)::boolean OR remote_cache_entries.fetched_at <= EXCLUDED.fetched_at)
 RETURNING (extract(epoch FROM validated_at) * 1000000)::bigint AS validated_us,
           (extract(epoch FROM expires_at) * 1000000)::bigint AS expires_us;
 

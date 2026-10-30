@@ -109,12 +109,15 @@ func (a *Adapter) PrepareFill(_ context.Context, path, _ string, body io.ReaderA
 }
 
 // OnFill records the event.
-func (a *Adapter) OnFill(_ context.Context, _ meta.Tx, f proxy.FillEvent) (bool, error) {
+func (a *Adapter) OnFill(_ context.Context, _ meta.Tx, f proxy.FillEvent) (proxy.FillDecision, error) {
 	a.fills.Add(1)
 	a.mu.Lock()
 	a.events = append(a.events, f)
 	a.mu.Unlock()
-	return a.Keep && f.Replaces, nil
+	if a.Keep && f.Replaces {
+		return proxy.FillKeepStored, nil
+	}
+	return proxy.FillByFetchTime, nil
 }
 
 // TracksVersionRemoval returns Removal.

@@ -101,8 +101,8 @@ func (relayRemote) PrepareFill(context.Context, formats.RemoteContext, formats.P
 	return formats.Prepared{}, nil
 }
 
-func (relayRemote) OnFill(context.Context, formats.Tx, formats.FillEvent) (bool, error) {
-	return false, nil
+func (relayRemote) OnFill(context.Context, formats.Tx, formats.FillEvent) (formats.FillDecision, error) {
+	return formats.FillByFetchTime, nil
 }
 
 func (relayRemote) Rewrite(_ context.Context, _ formats.RemoteContext, _ formats.Path, doc []byte, _ formats.LinkBuilder) ([]byte, error) {

@@ -568,7 +568,7 @@ func (a *orderAdapter) PrepareFill(ctx context.Context, path, variant string, bo
 	return a.Adapter.PrepareFill(ctx, path, variant, body, size)
 }
 
-func (a *orderAdapter) OnFill(ctx context.Context, tx meta.Tx, f proxy.FillEvent) (bool, error) {
+func (a *orderAdapter) OnFill(ctx context.Context, tx meta.Tx, f proxy.FillEvent) (proxy.FillDecision, error) {
 	a.note("OnFill")
 	if a.onFill != nil {
 		a.onFill()

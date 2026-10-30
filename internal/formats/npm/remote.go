@@ -121,14 +121,14 @@ func (a remoteAdapter) PrepareFill(_ context.Context, rc formats.RemoteContext, 
 // freshness and changes no npm row, so the stored document and its records always
 // describe one document, whichever fill commits last. Both are decided in the data port,
 // under the lock of the package's record and against what is stored at that moment.
-func (a remoteAdapter) OnFill(ctx context.Context, tx formats.Tx, ev formats.FillEvent) (bool, error) {
+func (a remoteAdapter) OnFill(ctx context.Context, tx formats.Tx, ev formats.FillEvent) (formats.FillDecision, error) {
 	doc, ok := ev.Prepared.Data.(*remote.Doc)
 	if !ok {
-		return false, errs.E(errs.Internal, errs.CodeInternal, "The fill carries no checked document.")
+		return formats.FillByFetchTime, errs.E(errs.Internal, errs.CodeInternal, "The fill carries no checked document.")
 	}
 	st, err := storeOf(ev.Data)
 	if err != nil {
-		return false, err
+		return formats.FillByFetchTime, err
 	}
 	rep := a.f.replicaOfPort(ev.Data)
 	res, err := st.ApplyFill(ctx, tx, rows.RemoteFill{
@@ -136,19 +136,23 @@ func (a remoteAdapter) OnFill(ctx context.Context, tx formats.Tx, ev formats.Fil
 		Versions: doc.Versions, Audit: rows.Audit{RepoKey: ev.Repo.Key},
 	})
 	if err != nil {
-		return false, err
+		return formats.FillByFetchTime, err
 	}
 	if res.Superseded {
-		return true, nil
+		return formats.FillKeepStored, nil
 	}
 	if res.Stale {
 		rep.met.staleDocument(ev.Repo.Key)
-		return true, nil
+		return formats.FillKeepStored, nil
 	}
 	rep.met.removedVersions(ev.Repo.Key, len(res.Removed))
 	// A refresh with new content evicts the merged documents that contain the package
 	// early (R-REPO-020); nothing depends on the signal for correctness.
-	return false, ev.Packages.Notify(areaMetadataChanged, formats.PackageChanged(ev.Repo.ID, doc.Name))
+	decision := formats.FillByFetchTime
+	if res.Newer {
+		decision = formats.FillReplaceStored // the records are the newer document's: the entry follows them
+	}
+	return decision, ev.Packages.Notify(areaMetadataChanged, formats.PackageChanged(ev.Repo.ID, doc.Name))
 }
 
 // Rewrite renders a stored full document for one response of the repository the links

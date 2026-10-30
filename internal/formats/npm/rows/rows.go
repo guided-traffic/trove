@@ -223,13 +223,15 @@ type RemoteFill struct {
 
 // RemoteApplied is what applying a fill did. Stale says that the document is a stale
 // copy of the stored one (older time.modified), Superseded that the stored entry was
-// fetched later than the document (the core keeps the later one, R-REPO-026): in both
-// cases nothing was changed and the caller keeps the stored document. Removed are the
-// versions that went from listed to unlisted; Relisted those that came back.
+// fetched later than a document of the same or an unknown time.modified (the core keeps
+// the later one, R-REPO-026): in both cases nothing was changed and the caller keeps
+// the stored document. Newer says that the document has a later time.modified than the
+// stored one although the stored entry was fetched later, so the entry takes it. Removed
+// are the versions that went from listed to unlisted; Relisted those that came back.
 type RemoteApplied struct {
-	Stale, Superseded bool
-	Removed           []RemoteVersion
-	Relisted          []string
+	Stale, Superseded, Newer bool
+	Removed                  []RemoteVersion
+	Relisted                 []string
 }
 
 // TarballFacts is everything the serving of one tarball of a remote repository

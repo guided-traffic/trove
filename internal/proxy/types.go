@@ -256,6 +256,20 @@ type URLMapping struct {
 	Upstream string
 }
 
+// FillDecision is the answer of OnFill to the engine.
+type FillDecision uint8
+
+const (
+	// FillByFetchTime stores the document unless the entry that is stored was fetched
+	// later (R-REPO-026).
+	FillByFetchTime FillDecision = iota
+	// FillKeepStored keeps the stored document and renews only its freshness.
+	FillKeepStored
+	// FillReplaceStored stores the document whatever fetch time the stored entry has: the
+	// format recorded it as newer by an order of its own.
+	FillReplaceStored
+)
+
 // FillEvent is what OnFill learns of a metadata fill. It runs in the fill
 // transaction, under the entry's row lock when the entry exists.
 type FillEvent struct {
@@ -289,9 +303,9 @@ type Adapter interface {
 	// PrepareFill validates a fetched metadata document before anything is stored
 	// and outside every transaction (R-ARCH-019); an error keeps the previous entry.
 	PrepareFill(ctx context.Context, path, variant string, body io.ReaderAt, size int64) (Prepared, error)
-	// OnFill runs inside the metadata fill transaction. keepStored keeps the stored
-	// document and renews only its freshness.
-	OnFill(ctx context.Context, tx meta.Tx, f FillEvent) (keepStored bool, err error)
+	// OnFill runs inside the metadata fill transaction. The decision says whether the
+	// stored document stays and only its freshness is renewed, or the entry takes this one.
+	OnFill(ctx context.Context, tx meta.Tx, f FillEvent) (FillDecision, error)
 	// TracksVersionRemoval says that the format's removal marks replace the generic
 	// gone-package rule (R-REPO-029).
 	TracksVersionRemoval() bool

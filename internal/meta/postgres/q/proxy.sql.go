@@ -606,7 +606,7 @@ ON CONFLICT (repo_id, path, variant) DO UPDATE
        fetched_at = EXCLUDED.fetched_at, validated_at = EXCLUDED.validated_at, expires_at = EXCLUDED.expires_at,
        upstream_gone_at = NULL
  WHERE remote_cache_entries.kind = 'metadata'
-   AND remote_cache_entries.fetched_at <= EXCLUDED.fetched_at
+   AND ($10::boolean OR remote_cache_entries.fetched_at <= EXCLUDED.fetched_at)
 RETURNING (extract(epoch FROM validated_at) * 1000000)::bigint AS validated_us,
           (extract(epoch FROM expires_at) * 1000000)::bigint AS expires_us
 `
@@ -621,6 +621,7 @@ type ProxyMetadataUpsertParams struct {
 	LastModifiedUs int64
 	FetchedUs      int64
 	TtlSeconds     int64
+	Force          bool
 }
 
 type ProxyMetadataUpsertRow struct {
@@ -630,7 +631,9 @@ type ProxyMetadataUpsertRow struct {
 
 // The entry of a fetched document. A row that is already newer (fetched_at) is kept:
 // the statement then returns no row and the caller serves what is stored
-// (R-REPO-026: the upsert keeps the newer fetched_at). validated_at is the database
+// (R-REPO-026: the upsert keeps the newer fetched_at), unless force is set: the format
+// recorded the document as the newer one by an order of its own (npm: time.modified), so
+// the entry follows its records whatever fetch time it has. validated_at is the database
 // clock now, expires_at is that plus the period. A gone mark is cleared by a 2xx.
 func (q *Queries) ProxyMetadataUpsert(ctx context.Context, arg ProxyMetadataUpsertParams) ([]ProxyMetadataUpsertRow, error) {
 	rows, err := q.db.Query(ctx, proxyMetadataUpsert,
@@ -643,6 +646,7 @@ func (q *Queries) ProxyMetadataUpsert(ctx context.Context, arg ProxyMetadataUpse
 		arg.LastModifiedUs,
 		arg.FetchedUs,
 		arg.TtlSeconds,
+		arg.Force,
 	)
 	if err != nil {
 		return nil, err

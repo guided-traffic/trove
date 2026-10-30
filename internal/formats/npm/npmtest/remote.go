@@ -39,11 +39,14 @@ func (s *Store) ApplyFill(_ context.Context, _ formats.Tx, f rows.RemoteFill) (r
 	cur := s.remote[k]
 	var out rows.RemoteApplied
 	if cur != nil && !s.remoteState.DocGone {
-		if !f.FetchedAt.IsZero() && cur.fill.FetchedAt.After(f.FetchedAt) {
-			return rows.RemoteApplied{Superseded: true}, nil
-		}
-		if !f.DocModified.IsZero() && !cur.fill.DocModified.IsZero() && f.DocModified.Before(cur.fill.DocModified) {
+		ordered := !f.DocModified.IsZero() && !cur.fill.DocModified.IsZero()
+		switch {
+		case ordered && f.DocModified.Before(cur.fill.DocModified):
 			return rows.RemoteApplied{Stale: true}, nil
+		case ordered && f.DocModified.After(cur.fill.DocModified):
+			out.Newer = true
+		case !f.FetchedAt.IsZero() && cur.fill.FetchedAt.After(f.FetchedAt):
+			return rows.RemoteApplied{Superseded: true}, nil
 		}
 	}
 	if cur == nil {

@@ -37,6 +37,20 @@ type URLMapping struct {
 	Upstream string
 }
 
+// FillDecision is the answer of OnFill to the core.
+type FillDecision uint8
+
+const (
+	// FillByFetchTime stores the document unless the entry that is stored was fetched
+	// later (R-REPO-026): the rule of a format that has no order of its own.
+	FillByFetchTime FillDecision = iota
+	// FillKeepStored keeps the stored document and renews only its freshness.
+	FillKeepStored
+	// FillReplaceStored stores the document whatever fetch time the stored entry has: the
+	// format recorded it as newer by an order of its own, such as time.modified.
+	FillReplaceStored
+)
+
 // FillEvent is what OnFill learns of a metadata fill. It runs in the fill
 // transaction, under the cache entry's row lock.
 type FillEvent struct {
@@ -94,9 +108,9 @@ type RemoteAdapter interface {
 	// and answers 502 in the format's shape (R-NPM-024).
 	PrepareFill(ctx context.Context, rc RemoteContext, p Path, variant string, body io.ReaderAt, size int64) (Prepared, error)
 	// OnFill runs inside the metadata fill transaction, under the entry's row lock
-	// (R-ARCH-008 "Remote fill"). keepStored keeps the stored document and renews
-	// only its freshness.
-	OnFill(ctx context.Context, tx Tx, f FillEvent) (keepStored bool, err error)
+	// (R-ARCH-008 "Remote fill"). The decision says whether the stored document
+	// stays and only its freshness is renewed, or the entry takes this one.
+	OnFill(ctx context.Context, tx Tx, f FillEvent) (FillDecision, error)
 	// Rewrite renders a stored upstream document for one response.
 	Rewrite(ctx context.Context, rc RemoteContext, p Path, doc []byte, links LinkBuilder) ([]byte, error)
 	// TracksVersionRemoval says that the format's removal marks replace the

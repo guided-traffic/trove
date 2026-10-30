@@ -404,10 +404,11 @@ func (f *fetcher) fillLink(resp *http.Response, sp *items.Spooled, prepared Prep
 			ev.StoredAt = micro(l.FetchedUs)
 			copy(ev.StoredDigest[:], l.BlobSha256)
 		}
-		keep, err := rq.Adapter.OnFill(ctx, tx, ev)
+		decision, err := rq.Adapter.OnFill(ctx, tx, ev)
 		if err != nil {
 			return err
 		}
+		keep := decision == FillKeepStored
 		ttl := int64(rem.Settings.Cache.MetadataTTLSeconds)
 		// keep renews the entry that is stored now, which a concurrent fill may have created
 		// after this one read none; an entry that is there to renew decides, not Replaces.
@@ -425,6 +426,7 @@ func (f *fetcher) fillLink(resp *http.Response, sp *items.Spooled, prepared Prep
 			rows, err := qs.ProxyMetadataUpsert(ctx, q.ProxyMetadataUpsertParams{
 				RepoID: rem.id, Path: rq.Path, Variant: rq.Variant, BlobSha256: sp.SHA256[:], UpstreamUrl: stripUser(f.finalURL(resp)),
 				UpstreamEtag: ev.ETag, LastModifiedUs: unixMicro(ev.LastModified), FetchedUs: fetchedUs, TtlSeconds: ttl,
+				Force: decision == FillReplaceStored,
 			})
 			if err != nil {
 				return err

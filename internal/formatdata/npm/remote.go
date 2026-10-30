@@ -22,9 +22,13 @@ import (
 //
 // Both rules that keep the stored document are decided here, after the lock and against
 // what is stored now, not against what the fill saw when it began: a first fill that a
-// concurrent fill overtook has seen no entry. A stored entry that was fetched later than
-// the document stays (R-REPO-026, RemoteApplied.Superseded), and a document older than the
-// stored one is a stale copy (RemoteApplied.Stale); neither changes a row. A version that
+// concurrent fill overtook has seen no entry. The time.modified of the documents orders
+// them first: a document older than the stored one is a stale copy (RemoteApplied.Stale)
+// and a later one replaces it even when the stored entry was fetched later
+// (RemoteApplied.Newer), because a lagging edge answers an older document after the
+// newer one was fetched. Only documents of the same or an unknown time.modified are
+// ordered by fetch time: a stored entry that was fetched later stays (R-REPO-026,
+// RemoteApplied.Superseded). Stale and superseded fills change no row. A version that
 // went from listed to unlisted writes npm.remote.version_removed in this transaction, so a
 // duplicate fill finds nothing to report (R-NPM-026).
 func (s *Store) ApplyFill(ctx context.Context, tx meta.Tx, f rows.RemoteFill) (rows.RemoteApplied, error) {
@@ -55,11 +59,14 @@ func (s *Store) ApplyFill(ctx context.Context, tx meta.Tx, f rows.RemoteFill) (r
 		}
 		// A document that is gone is replaced by whatever the upstream serves now.
 		if len(entry) > 0 && !entry[0].Gone {
-			if !f.FetchedAt.IsZero() && time.UnixMicro(entry[0].FetchedUs).After(f.FetchedAt) {
-				return rows.RemoteApplied{Superseded: true}, nil
-			}
-			if len(cur) > 0 && !f.DocModified.IsZero() && cur[0].DocModified.Valid && f.DocModified.Before(cur[0].DocModified.Time) {
+			ordered := len(cur) > 0 && !f.DocModified.IsZero() && cur[0].DocModified.Valid
+			switch {
+			case ordered && f.DocModified.Before(cur[0].DocModified.Time):
 				return rows.RemoteApplied{Stale: true}, nil
+			case ordered && f.DocModified.After(cur[0].DocModified.Time):
+				out.Newer = true
+			case !f.FetchedAt.IsZero() && time.UnixMicro(entry[0].FetchedUs).After(f.FetchedAt):
+				return rows.RemoteApplied{Superseded: true}, nil
 			}
 		}
 		if err := qs.NPMRemoteSetPackage(ctx, q.NPMRemoteSetPackageParams{

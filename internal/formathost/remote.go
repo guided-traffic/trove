@@ -284,17 +284,24 @@ func (a *adapter) PrepareFill(ctx context.Context, path, variant string, body io
 	return out, nil
 }
 
-func (a *adapter) OnFill(ctx context.Context, tx meta.Tx, f proxy.FillEvent) (bool, error) {
+func (a *adapter) OnFill(ctx context.Context, tx meta.Tx, f proxy.FillEvent) (proxy.FillDecision, error) {
 	w, err := a.deps.writerFor(tx, nil, a.repo.Format)
 	if err != nil {
-		return false, err
+		return proxy.FillByFetchTime, err
 	}
 	prepared, _ := f.Prepared.Data.(formats.Prepared)
-	return a.ra.OnFill(ctx, tx, formats.FillEvent{
+	d, err := a.ra.OnFill(ctx, tx, formats.FillEvent{
 		Repo: a.ref, Path: formats.Path{Path: f.Path}, Variant: f.Variant, Digest: f.Digest, Replaces: f.Replaces,
 		Prepared: prepared, StoredAt: f.StoredAt, FetchedAt: f.FetchedAt, StoredDigest: f.StoredDigest, ETag: f.ETag, LastModified: f.LastModified,
 		Packages: w, Data: a.deps.Bindings.Get(a.f.Descriptor().ID),
 	})
+	switch d {
+	case formats.FillKeepStored:
+		return proxy.FillKeepStored, err
+	case formats.FillReplaceStored:
+		return proxy.FillReplaceStored, err
+	}
+	return proxy.FillByFetchTime, err
 }
 
 func (a *adapter) TracksVersionRemoval() bool { return a.ra.TracksVersionRemoval() }

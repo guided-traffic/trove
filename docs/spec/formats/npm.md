@@ -1306,8 +1306,10 @@ exceptions. This requirement fixes what an npm remote fetches and how it is chec
   the stored document. The stale-copy rule above is evaluated in that same transaction, under that
   lock, against the `doc_modified` of the document stored at that moment, not against the one
   that was stored when the fetch began: a fill whose document is older than one that another fill
-  committed meanwhile is a stale copy by the time it commits. When the core keeps the newer stored entry
-  (R-REPO-026), or the stale-copy rule applies, the fill keeps the stored document, renews its
+  committed meanwhile is a stale copy by the time it commits. A document with a later `time.modified`
+  replaces the stored one even when the stored entry was fetched later, and the cache entry follows
+  it (Q-NPM-57, Q-REPO-120). When the core keeps the newer stored entry
+  (R-REPO-026: documents of the same or an unknown `time.modified`), or the stale-copy rule applies, the fill keeps the stored document, renews its
   freshness and changes no npm row. The stored document and its records then describe the same
   document, the newest one received, whichever fill commits last, so a lost Valkey lock costs one
   upstream request and never a tarball 404 for a version the served document lists (INV-3).
@@ -3584,7 +3586,7 @@ R-NPM-024 wants the stored document and its records to describe one document whi
 | Option | What it means | For | Against |
 |---|---|---|---|
 | (a) In the engine's upsert, the format is told | The core compares `fetched_at`, the format receives `Replaces` | The core owns the comparison | A fill that saw no entry never learns that one appeared |
-| (b) In the data port, after the lock of `npm_remote_packages` | `ApplyFill` locks the package record, reads the cache entry as it is now, and reports `Superseded` (the stored entry was fetched later) or `Stale` (older `time.modified`); `OnFill` keeps the stored document for both | Decides on what is stored at that moment, in the fill transaction, with the same comparison as the upsert | The format repeats the core's `fetched_at` comparison; the engine renews the entry that exists instead of trusting `Replaces` |
+| (b) In the data port, after the lock of `npm_remote_packages` | `ApplyFill` locks the package record, reads the cache entry as it is now, and reports `Superseded` (the stored entry was fetched later) or `Stale` (older `time.modified`); `OnFill` keeps the stored document for both (the order of the two rules: Q-NPM-57) | Decides on what is stored at that moment, in the fill transaction, with the same comparison as the upsert | The format repeats the core's `fetched_at` comparison; the engine renews the entry that exists instead of trusting `Replaces` |
 
 **Choice:** (b). `FillEvent` gains `FetchedAt`; the engine renews the stored entry whenever the format keeps it and a row exists to renew.
 
@@ -4134,6 +4136,24 @@ Context: a publish was authorized on the name before the body, but the ownership
 **Rationale:** the early answer is advisory by construction. The development agent would revisit the choice if the extra read shows in the cost of a publish.
 
 **Applied in the spec:** R-NPM-007 step 1.
+
+### Q-NPM-57 · time.modified orders two documents before the fetch time does
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-NPM-32 reported `Superseded` before it looked at `time.modified`. With Valkey stopped, two replicas fill one document; when the upstream answers the older copy with a later response (a lagging edge), that fill has the later `fetched_at` and commits first, and the newer document that was fetched earlier was discarded as superseded. The stored document listed one version fewer than the upstream, and the URL of the missing version was empty. It showed in about one run in four of the two-replica test in the order where the older answer arrives first.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `time.modified` first: older is `Stale`, later replaces the stored document even when the stored entry was fetched later (`Newer`); only equal or unknown `time.modified` is ordered by fetch time (`Superseded`) | The order of the content decides when the content has one | Matches the stale-copy rule's own reason (a lagging edge); the newest document wins in both orders | The format's answer must reach the upsert (Q-REPO-120) |
+| (b) Fetch time first, as before | No change | One order everywhere | The newest document can lose to an older one that arrived later |
+| (c) Compare the digests of the documents | No clock | Needs no ordering field | A digest has no order |
+
+**Choice:** (a). `ApplyFill` reports `Newer`, `OnFill` answers "replace whatever the fetch time", the engine's upsert follows and records the URL map of that document.
+
+**Rationale:** a stale answer that overtakes a newer one is exactly the case the stale-copy rule exists for; ordering it by fetch time made the rule depend on which response was slow. The development agent would revisit the choice if upstreams that send a `time.modified` that does not grow with their content show up.
+
+**Applied in the spec:** R-NPM-024 (the paragraph on one stored document), Q-NPM-32 (the order of the two rules).
 
 ## What this does not cover
 

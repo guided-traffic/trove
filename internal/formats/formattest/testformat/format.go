@@ -759,8 +759,8 @@ func (remoteAdapter) PrepareFill(_ context.Context, _ formats.RemoteContext, _ f
 	return formats.Prepared{}, nil
 }
 
-func (remoteAdapter) OnFill(context.Context, formats.Tx, formats.FillEvent) (bool, error) {
-	return false, nil
+func (remoteAdapter) OnFill(context.Context, formats.Tx, formats.FillEvent) (formats.FillDecision, error) {
+	return formats.FillByFetchTime, nil
 }
 
 func (remoteAdapter) TracksVersionRemoval() bool { return false }

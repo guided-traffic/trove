@@ -146,7 +146,7 @@ func TestR_NPM_024_PrepareFillChecksTheDocumentAndRecordsOnlyForeignTarballURLs(
 }
 
 // fill runs OnFill for a document the way the engine does.
-func fill(t *testing.T, f *Format, twin *npmtest.Store, body []byte, ev formats.FillEvent) (bool, formats.Prepared) {
+func fill(t *testing.T, f *Format, twin *npmtest.Store, body []byte, ev formats.FillEvent) (formats.FillDecision, formats.Prepared) {
 	t.Helper()
 	rc := formats.RemoteContext{Upstream: mustURL(t, "https://registry.example.org/")}
 	prep, err := f.Remote().PrepareFill(context.Background(), rc, formats.Path{Path: "react"}, "full", bytes.NewReader(body), int64(len(body)))
@@ -158,11 +158,11 @@ func fill(t *testing.T, f *Format, twin *npmtest.Store, body []byte, ev formats.
 	if ev.Packages == nil {
 		ev.Packages = &fakeWriter{}
 	}
-	keep, err := f.Remote().OnFill(context.Background(), nil, ev)
+	decision, err := f.Remote().OnFill(context.Background(), nil, ev)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return keep, prep
+	return decision, prep
 }
 
 func TestR_NPM_024_OnFillRecordsAFillAndKeepsTheNewerDocument(t *testing.T) {
@@ -174,7 +174,7 @@ func TestR_NPM_024_OnFillRecordsAFillAndKeepsTheNewerDocument(t *testing.T) {
 
 	// A first fill records every version; it asks the core to store the document.
 	w := &fakeWriter{}
-	if keep, _ := fill(t, f, twin, older, formats.FillEvent{Digest: [32]byte{1}, FetchedAt: t0, Packages: w}); keep {
+	if d, _ := fill(t, f, twin, older, formats.FillEvent{Digest: [32]byte{1}, FetchedAt: t0, Packages: w}); d != formats.FillByFetchTime {
 		t.Fatal("a first fill keeps nothing")
 	}
 	if len(twin.Fills) != 1 || len(twin.Fills[0].Versions) != 2 {
@@ -194,21 +194,30 @@ func TestR_NPM_024_OnFillRecordsAFillAndKeepsTheNewerDocument(t *testing.T) {
 	// A fill that carries the older document and was fetched later: the stale-copy rule
 	// (R-NPM-024) keeps the stored document, renews its freshness and changes no row.
 	keep, _ := fill(t, f, twin, older, formats.FillEvent{Digest: [32]byte{1}, FetchedAt: t0.Add(2 * time.Second)})
-	if !keep || len(twin.Fills) != 2 {
-		t.Errorf("a stale copy was stored: keep %v, %d fills", keep, len(twin.Fills))
+	if keep != formats.FillKeepStored || len(twin.Fills) != 2 {
+		t.Errorf("a stale copy was stored: decision %v, %d fills", keep, len(twin.Fills))
 	}
 	facts, _ := twin.TarballFacts(context.Background(), 9, "react", "19.0.0")
 	if !facts.Known || !facts.Listed {
 		t.Errorf("19.0.0 = %+v: the stale copy marked a version removed", facts)
 	}
 
-	// The core keeps the entry that was fetched later (R-REPO-026): the format records
-	// nothing for the fill that loses that comparison, whichever document it carries.
-	keep, _ = fill(t, f, twin, upstreamBody("react", "2026-10-30T13:00:00.000Z", "18.0.0"), formats.FillEvent{
+	// Documents of one time.modified are ordered by fetch time (R-REPO-026): the format
+	// records nothing for the fill that loses that comparison.
+	keep, _ = fill(t, f, twin, upstreamBody("react", "2026-10-30T11:00:00.000Z", "18.0.0"), formats.FillEvent{
 		Digest: [32]byte{3}, FetchedAt: t0.Add(500 * time.Millisecond),
 	})
-	if !keep || len(twin.Fills) != 2 {
-		t.Errorf("a fill the core discards was recorded: keep %v, %d fills", keep, len(twin.Fills))
+	if keep != formats.FillKeepStored || len(twin.Fills) != 2 {
+		t.Errorf("a fill the core discards was recorded: decision %v, %d fills", keep, len(twin.Fills))
+	}
+
+	// A later time.modified outranks the fetch time: the document an edge answered after
+	// the stored entry was fetched is the newer one, so the entry is told to take it.
+	keep, _ = fill(t, f, twin, upstreamBody("react", "2026-10-30T12:00:00.000Z", "18.0.0", "18.1.0", "19.0.0", "19.1.0"), formats.FillEvent{
+		Digest: [32]byte{5}, FetchedAt: t0.Add(500 * time.Millisecond),
+	})
+	if keep != formats.FillReplaceStored || len(twin.Fills) != 3 {
+		t.Errorf("a newer document fetched earlier: decision %v, %d fills", keep, len(twin.Fills))
 	}
 
 	// The upstream drops 18.1.0: it is marked, once.

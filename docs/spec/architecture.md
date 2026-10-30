@@ -1123,8 +1123,10 @@ type RemoteAdapter interface {
 	// OnFill runs inside a remote metadata cache-fill transaction, while the core holds the cache
 	// entry's row lock and before it writes the entry. f.Replaces says whether the core's upsert
 	// rule replaces the stored document or keeps a newer stored one (repositories-and-proxy.md
-	// R-REPO-026 step 5). keepStored keeps the stored document and renews only its freshness.
-	OnFill(ctx context.Context, tx Tx, f FillEvent) (keepStored bool, err error)
+	// R-REPO-026 step 5). The decision is FillByFetchTime (the upsert keeps a later stored fetch),
+	// FillKeepStored (keep the stored document and renew only its freshness) or FillReplaceStored
+	// (the format recorded this document as the newer one by its own order, Q-REPO-120).
+	OnFill(ctx context.Context, tx Tx, f FillEvent) (FillDecision, error)
 	// Rewrite renders a stored upstream document for one response (repositories-and-proxy.md).
 	Rewrite(ctx context.Context, rc RemoteContext, p Path, doc []byte, links LinkBuilder) ([]byte, error)
 	// TracksVersionRemoval says that the format's removal marks replace the generic gone-package rule (R-REPO-029).
@@ -1210,7 +1212,8 @@ Normative rules:
 - **Remote fill.** The storage hook that runs inside a remote metadata cache-fill transaction,
   `RemoteAdapter.OnFill` (R-ARCH-012 lists remote cache fill among its triggers), MUST:
   1. tell the format whether the cache-entry upsert replaces the stored document or keeps the newer
-     stored one ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026 step 5);
+     stored one ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-026 step 5), and let
+     the format answer that its own order outranks the fetch time (Q-REPO-120);
   2. let the format keep the stored document, with only its freshness renewed, when the format's
      own comparison against a value it recorded for the stored document says the received one is
      older.

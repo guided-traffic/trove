@@ -1675,7 +1675,8 @@ PostgreSQL advisory lock. The protocol:
      never fail a request.
 5. **Commit and release.** The blob is committed through [storage.md](storage.md); the entry upsert
    runs in one short transaction, the cache-fill transaction, which also writes the populate audit
-   event (below). An upstream 404 or 410 is recorded as a negative entry
+   event (below). The upsert keeps an entry with a later `fetched_at` unless the format's `OnFill`
+   answered that it recorded this document as the newer one by an order of its own (Q-REPO-120). An upstream 404 or 410 is recorded as a negative entry
    (R-REPO-028) before the release. After the entry has committed, after the negative entry has
    been written, or after the fetch has failed, `FlightHold.Release` deletes the lock only if it
    still carries this hold's token ([DELIFEQ](https://valkey.io/commands/delifeq/)) and publishes
@@ -4359,6 +4360,24 @@ Context: the fill transaction recorded the URL mappings of the fetched document 
 **Rationale:** the digest check still refused a wrong byte stream, so the exposure was an avoidable 502; the map is cheap to keep right. The development agent would revisit the choice if a format stores more than one document per package.
 
 **Applied in the spec:** R-REPO-043 (the bullet on the map).
+
+### Q-REPO-120 · The format can tell the upsert to take a document whatever its fetch time
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-026 keeps the entry with the newer `fetched_at`, which is the time the response headers arrived. A format with an order of its own (npm: `time.modified`) can see a document that is newer by that order and was fetched earlier, because a lagging edge answered the older document after the newer one was fetched. The format then wrote the records of the newer document while the upsert kept the older entry, so the served document and its records described two documents (an installable version missing from the document, no URL map row for it).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `OnFill` answers with a decision: by fetch time (default), keep the stored document, or replace it whatever the stored fetch time; the upsert takes a `force` flag from it | The format's order outranks the core's only when the format says so | One owner per comparison; formats without an order keep R-REPO-026 unchanged | The interface answer grows from a bool to three values |
+| (b) The engine drops the `fetched_at` condition when `OnFill` answers "replace" | No new value | Every format that answers "replace" silently loses the newer-fetch rule | A format without an order of its own loses R-REPO-026 |
+| (c) The format writes the entry's `fetched_at` itself | No engine change | Format code writes a core table | Breaks the layering of R-ARCH-012 |
+
+**Choice:** (a). The upsert with `force` still writes the document's own `fetched_at`, validators and freshness.
+
+**Rationale:** the stored document, its records and its URL map have to describe one document whichever fill commits last (R-NPM-024); that is only possible when the decision that wrote the records and the decision that wrote the entry are the same one. The development agent would revisit the choice if a second format records an order of its own and the three values prove too coarse.
+
+**Applied in the spec:** R-REPO-026 step 5 (below), [architecture.md](architecture.md) R-ARCH-012 (`OnFill`).
 
 ## What this does not cover
 
