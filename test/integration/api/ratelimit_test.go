@@ -30,6 +30,15 @@ func burstOf(t *testing.T, e *env, nodes []*node, token string, total int) (admi
 	var next, ok, no, noRetry atomic.Int64
 	var wg sync.WaitGroup
 	val := e.stack.Validator()
+	// The answers are validated against the API document after the burst: the
+	// validation costs more than the request, and inside the timed window it
+	// would stretch the burst past the 2 s the bound holds for on a slow runner.
+	type answer struct {
+		status int
+		header http.Header
+		body   []byte
+	}
+	answers := make([]answer, total)
 	start := time.Now()
 	for range 16 {
 		wg.Add(1)
@@ -49,10 +58,7 @@ func burstOf(t *testing.T, e *env, nodes []*node, token string, total int) (admi
 				}
 				body, _ := io.ReadAll(res.Body)
 				_ = res.Body.Close()
-				check, _ := http.NewRequest("GET", "http://"+testenv.DefaultHost+"/api/v1/system/version", nil)
-				if _, err := val.Check(check, res.StatusCode, res.Header, body); err != nil {
-					t.Errorf("response validation: %v\n%s", err, body)
-				}
+				answers[i] = answer{res.StatusCode, res.Header, body}
 				switch res.StatusCode {
 				case 200:
 					ok.Add(1)
@@ -68,7 +74,17 @@ func burstOf(t *testing.T, e *env, nodes []*node, token string, total int) (admi
 		}()
 	}
 	wg.Wait()
-	return int(ok.Load()), int(no.Load()), time.Since(start), int(noRetry.Load())
+	elapsed = time.Since(start)
+	for _, a := range answers {
+		if a.status == 0 {
+			continue // the request failed and was reported above
+		}
+		check, _ := http.NewRequest("GET", "http://"+testenv.DefaultHost+"/api/v1/system/version", nil)
+		if _, err := val.Check(check, a.status, a.header, a.body); err != nil {
+			t.Errorf("response validation: %v\n%s", err, a.body)
+		}
+	}
+	return int(ok.Load()), int(no.Load()), elapsed, int(noRetry.Load())
 }
 
 // fallback is the value of trove_ratelimit_fallback{limiter="api_read"} on a
