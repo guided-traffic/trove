@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
@@ -191,7 +192,11 @@ func (s *Server) authorize(pattern string, next http.Handler) http.Handler {
 			httpserver.Problem(w, r, errs.E(errs.Forbidden, errs.CodeForbidden, "The operation has no permission declaration."))
 			return
 		}
-		if err := s.decide(r, op.Requirement); err != nil {
+		r, err := s.begin(r, op.Requirement)
+		if err == nil {
+			err = s.decide(r, op.Requirement)
+		}
+		if err != nil {
 			httpserver.Problem(w, r, err)
 			return
 		}
@@ -214,6 +219,38 @@ type ActionAccess interface {
 	// RequireAction decides the coordinate for the caller of ctx and returns nil
 	// or the error of R-AUTHZ-016 (401, 404 hidden, 403, 503).
 	RequireAction(ctx context.Context, c authz.Coordinate) error
+}
+
+// begin takes the index of a request whose declaration decides (a capability, a
+// role, an action on a repository) and returns the request carrying the holder,
+// so that the check below and every question the handler asks are answered on
+// one index (R-AUTHZ-015, Q-API-158). The repository an action declaration names
+// is made known first. A declaration that decides nothing (public,
+// authenticated) takes no index: an operation that never decided must not start
+// to answer 503 while the index is unconfirmed; a handler that decides begins it
+// itself.
+func (s *Server) begin(r *http.Request, q Requirement) (*http.Request, error) {
+	b, ok := s.o.Access.(Beginner)
+	if !ok {
+		return r, nil
+	}
+	var permission string
+	var keys []string
+	switch {
+	case q.Permission != "":
+		permission = q.Permission
+	case q.Role != "":
+		permission = authz.RolePermission(authz.Role(q.Role))
+	case q.Action != "":
+		keys = []string{valueOf(r, q.Repository)}
+	default:
+		return r, nil
+	}
+	a, err := b.Begin(r.Context(), permission, keys...)
+	if err != nil || a == nil {
+		return r, err
+	}
+	return r.WithContext(edge.WithAccess(r.Context(), a)), nil
 }
 
 // decide applies one declaration to the caller of the request.

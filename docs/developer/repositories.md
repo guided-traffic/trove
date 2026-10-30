@@ -17,7 +17,7 @@ Milestone M1 implements the local class of the generic format only; remote and v
 | File | Responsibility |
 |---|---|
 | [repository.go](../../internal/repository/repository.go) | the shared contract: `Repository`, `Class` (the catalog's), `Lifecycle`, `Reader`, `KeyPattern`, `ReservedKeys()`; `Repository.Admits` |
-| [document.go](../../internal/repository/document.go) | `Document` and `Settings` (the configuration document of R-REPO-004), `DecodeDocument` (strict: unknown and duplicate members), `MergePatch` (RFC 7396), `ConsumerView` |
+| [document.go](../../internal/repository/document.go) | `Document` and `Settings` (the configuration document of R-REPO-004), `DecodeDocument` (strict: unknown and duplicate members), `ConsumerView` |
 | [validate.go](../../internal/repository/validate.go) | `validate`: every rule of R-REPO-008 in one pass; the error shape (one violation under its own code, several under `validation_failed`) |
 | [key.go](../../internal/repository/key.go), [path.go](../../internal/repository/path.go) | `ValidKeyShape`, `IsReservedKey`; `CleanPath` (R-ARCH-005) |
 | [pattern.go](../../internal/repository/pattern.go) | `CompilePattern`, `PatternSubject` (the catalog's), `Pattern.Match`, `Admission` (include and exclude lists, folder admission) |
@@ -68,7 +68,7 @@ grant). A handler calls, after it has authorized:
 |---|---|---|
 | `POST /repositories` | `Create(ctx, caller, body)`, `CreateTx(ctx, tx, …)` | `409 already_exists` also for a key being deleted; never an upsert; `CreateTx` runs in the transaction of an idempotency key |
 | `GET /repositories/{key}` | `Get(ctx, key)` | from PostgreSQL (R-API-052); `Document.WithoutAdminNotes`, `Document.ConsumerView` for the narrower views |
-| `PATCH` | `Patch(ctx, caller, key, pre, patch)` | RFC 7396 applied to the stored document; `pre` is `MatchVersion(n)` or `MatchAny()`; 428 is the handler's, because the header is |
+| `PATCH` | `Patch(ctx, caller, key, pre, apply Patcher)` | `apply` turns the stored document, as JSON, into the patched one under the row lock; the handler passes `v1.MergePatcher(patch)`, the API's one RFC 7396 merge (Q-API-157), and the result is read strictly like a PUT body; `pre` is `MatchVersion(n)` or `MatchAny()`; 428 is the handler's, because the header is |
 | `PUT` | `Replace(ctx, caller, key, pre, body)` | omitted settings revert to defaults; an omitted `key`, `class` or `format` means "unchanged" |
 | `GET /repositories` | `List(ctx, filter)` | sorted by key, keyset paging (`After`, `Limit`, `HasMore`), filters of R-REPO-012 |
 | `DELETE` | `Delete(ctx, caller, key, detach)`, `DeleteTx(ctx, tx, …, pre)` | `DeleteResult{JobID, JobState, Done}`: 202 with the job, or 204 for a repository without content; `pre` is the optional `If-Match` (412 on a stale version) |
@@ -101,9 +101,9 @@ removed in the first transaction. `detach` has nothing to detach until virtual m
 | Operation | Handler | Declaration | Notes |
 |---|---|---|---|
 | `GET /api/v1/formats` | `ListFormats` | `public` | the descriptors of `formats.Descriptors()`; 401 for an anonymous caller while anonymous access is off |
-| `GET /api/v1/repositories` | `ListRepositories` | `public` | filters `class`, `format`, `q`, `state`, `project`, `view`; keyset cursor over the key; a holder of `repositories:read-config` sees every repository the endpoint exposes (`authz.ExposureFilter`, R-EP-014), the others the readable ones (`Authorizer.Readable`, Q-REPO-19); both through `visibleKeys`; `view=full` needs the capability |
+| `GET /api/v1/repositories` | `ListRepositories` | `public` | filters `class`, `format`, `q`, `state`, `project`, `view`; keyset cursor over the key; a holder of `repositories:read-config` sees every repository the endpoint exposes (`edge.Access.Exposed`, R-EP-014), the others the readable ones (`edge.Access.Readable`, Q-REPO-19); both through `visibleKeys`, on the one index the handler begins with `requestHolder` (Q-API-158); `view=full` needs the capability |
 | `POST /api/v1/repositories` | `CreateRepository` | `repositories:write-config` | strict body, `Idempotency-Key` through `Idempotency.Do`, `CreateTx` in its transaction; 201 with `Location`, `ETag: "1"`, the document and `warnings` |
-| `GET /api/v1/repositories/{key}` | `GetRepository` | `public` | the capability holder passes the exposure ceiling of the endpoint (`visibleKeys`) and reads from PostgreSQL; the others pass the decision first (the unknown key is looked up and the index caught up before it, Q-ARCH-40) and get the consumer view; hidden and missing are `authz.NotFound()` |
+| `GET /api/v1/repositories/{key}` | `GetRepository` | `public` | the capability holder passes the exposure ceiling of the endpoint (`visibleKeys`) and reads from PostgreSQL; the others pass the decision first (`edge.Access.Decide`; the unknown key is looked up and the index caught up when the holder begins with the key, Q-ARCH-40) and get the consumer view; hidden and missing are `authz.NotFound()` |
 | `PUT`, `PATCH /api/v1/repositories/{key}` | `ReplaceRepository`, `UpdateRepository` | `repositories:write-config`, `x-trove-if-match: required` | 428 before the body is read; the domain applies the merge patch and returns `*StaleVersion`, which becomes 412 with `currentEtag` |
 | `DELETE /api/v1/repositories/{key}` | `DeleteRepository` | `repositories:write-config` | optional `If-Match` and `Idempotency-Key`; 202 with the job reference or 204 |
 

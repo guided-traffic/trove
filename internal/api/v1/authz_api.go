@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -472,6 +473,9 @@ func (s *Server) GetAuthzMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sub := caller(r)
+	// The only question of the API without an …On form: the decision point takes
+	// the installed index for it (Q-API-158). The operation decides nothing else,
+	// so the request still answers on one index.
 	me, err := s.o.Authz.Engine.Effective(r.Context(), sub)
 	if err != nil {
 		httpserver.Problem(w, r, err)
@@ -511,7 +515,8 @@ type checkResponse struct {
 }
 
 // CheckPermissions implements POST /api/v1/authz/check (R-AUTHZ-023): the
-// caller's own credential, up to 100 checks, one index.
+// caller's own credential, up to 100 checks, one index (the one the request
+// holds, R-AUTHZ-015).
 func (s *Server) CheckPermissions(w http.ResponseWriter, r *http.Request) {
 	if s.o.Authz.Engine == nil {
 		httpserver.Problem(w, r, unavailable("The permission service"))
@@ -526,12 +531,17 @@ func (s *Server) CheckPermissions(w http.ResponseWriter, r *http.Request) {
 	for i, c := range in.Checks {
 		items[i] = authz.CheckItem{Repository: c.Repository, Package: c.Package, Path: c.Path, Action: authz.Action(c.Action)}
 	}
-	got, epoch, err := s.o.Authz.Engine.Check(r.Context(), caller(r), items)
+	// One index answers every check and names the epoch of the answer.
+	acc, err := edge.Resolve(r.Context(), s.o.Authz.Engine, caller(r))
+	var got []bool
+	if err == nil {
+		got, err = acc.Check(items)
+	}
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
 	}
-	out := checkResponse{Results: make([]checkResult, len(got)), Epoch: epoch}
+	out := checkResponse{Results: make([]checkResult, len(got)), Epoch: acc.Epoch()}
 	for i, ok := range got {
 		out.Results[i] = checkResult{Allowed: ok}
 	}

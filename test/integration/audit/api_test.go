@@ -503,13 +503,13 @@ func TestR_AUTHZ_031_RepositoryUpdateRecordsSettingsChanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.a.Repos.Patch(ctx, caller, "generic-hook", repository.MatchVersion(st.Repository.Version), []byte(`{"description":"nothing of authorization"}`)); err != nil {
+	if _, err := f.a.Repos.Patch(ctx, caller, "generic-hook", repository.MatchVersion(st.Repository.Version), v1.MergePatcher([]byte(`{"description":"nothing of authorization"}`))); err != nil {
 		t.Fatal(err)
 	}
 	if n := f.e.Number("SELECT count(*) FROM audit_event WHERE action = 'authz.settings.changed'"); n != 0 {
 		t.Fatalf("%d events for a change of the description", n)
 	}
-	if _, err := f.a.Repos.Patch(ctx, caller, "generic-hook", repository.MatchAny(), []byte(`{"requireAuthentication":true}`)); err != nil {
+	if _, err := f.a.Repos.Patch(ctx, caller, "generic-hook", repository.MatchAny(), v1.MergePatcher([]byte(`{"requireAuthentication":true}`))); err != nil {
 		t.Fatal(err)
 	}
 	ev := f.find(t, "action=authz.settings.changed", 1)[0]

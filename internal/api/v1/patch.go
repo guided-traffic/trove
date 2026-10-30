@@ -1,11 +1,15 @@
 package v1
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"reflect"
 
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/repository"
 )
 
 // JSON Merge Patch (RFC 7396, R-API-013). A PATCH body is an object: a present
@@ -24,26 +28,60 @@ func ReadMergePatch(w http.ResponseWriter, r *http.Request, limit int64) ([]byte
 	if err := checkSyntax(body); err != nil {
 		return nil, err
 	}
+	// null decodes into a nil map without an error, and as a patch it would replace
+	// the whole resource.
 	var probe map[string]json.RawMessage
-	if err := json.Unmarshal(body, &probe); err != nil {
+	if err := json.Unmarshal(body, &probe); err != nil || probe == nil {
 		return nil, malformed("", "type", "a merge patch must be a JSON object", err)
 	}
 	return body, nil
 }
 
 // MergePatch applies patch to original per RFC 7396 and returns the result as
-// JSON. Both are JSON documents. Member order of the result is not preserved.
+// JSON. Both are JSON documents. It is the one implementation of the merge: the
+// handlers of the API call it, and an area that stores the resource receives it
+// as a function (Q-API-157). The patch is read strictly, as every request body is
+// (a duplicate member and a nesting beyond maxBodyDepth are 400), and numbers
+// keep their literal, so an integer beyond 2^53 survives the merge. Member order
+// of the result is not preserved.
 func MergePatch(original, patch []byte) ([]byte, error) {
-	var o, p any
-	if len(original) > 0 {
-		if err := json.Unmarshal(original, &o); err != nil {
-			return nil, err
-		}
-	}
-	if err := json.Unmarshal(patch, &p); err != nil {
+	if err := checkSyntax(patch); err != nil {
 		return nil, err
 	}
+	p, err := decodeNumbers(patch)
+	if err != nil {
+		return nil, malformed("", "syntax", "the patch is not valid JSON", err)
+	}
+	var o any
+	if len(original) > 0 {
+		if o, err = decodeNumbers(original); err != nil {
+			return nil, errs.Wrap(err, "api.mergePatch")
+		}
+	}
 	return json.Marshal(mergeNode(o, p))
+}
+
+// MergePatcher is the patch as the repository service applies it: the stored
+// document in, the merged document out, inside the service's row lock
+// (R-REPO-011, Q-API-157).
+func MergePatcher(patch []byte) repository.Patcher {
+	return func(current []byte) ([]byte, error) { return MergePatch(current, patch) }
+}
+
+// decodeNumbers decodes one JSON value and keeps numbers as [json.Number], the
+// literal the document holds: float64 would round an integer beyond 2^53 and
+// would make two different values equal.
+func decodeNumbers(raw []byte) (any, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return nil, err
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return nil, errors.New("the document holds more than one JSON value")
+	}
+	return v, nil
 }
 
 // mergeNode is the MergePatch function of RFC 7396 section 2 on decoded values.
@@ -82,7 +120,7 @@ func ApplyMergePatch[T any](current T, patch []byte) (T, error) {
 	}
 	merged, err := MergePatch(cur, patch)
 	if err != nil {
-		return zero, malformed("", "syntax", "the patch is not valid JSON", err)
+		return zero, err
 	}
 	// The unknown-member check looks at the patch itself, so a pointer names a
 	// member the client sent.
@@ -124,14 +162,17 @@ func CheckImmutable(before, after any, names ...string) error {
 	return errs.E(errs.Invalid, errs.CodeValidation, "An immutable member was changed.", errs.WithFields(fields...))
 }
 
+// members is the top-level members of v as JSON; numbers keep their literal, so
+// two different large integers are different members.
 func members(v any) (map[string]any, error) {
 	raw, err := json.Marshal(v)
 	if err != nil {
 		return nil, err
 	}
-	var m map[string]any
-	if err := json.Unmarshal(raw, &m); err != nil {
+	doc, err := decodeNumbers(raw)
+	if err != nil {
 		return nil, err
 	}
+	m, _ := doc.(map[string]any)
 	return m, nil
 }

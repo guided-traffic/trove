@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 
+	"github.com/guided-traffic/trove/internal/api/edge"
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -29,12 +30,13 @@ var (
 	_ v1.Access       = bridgeAccess{}
 	_ v1.Prober       = bridgeAccess{}
 	_ v1.ActionAccess = bridgeAccess{}
+	_ v1.Beginner     = bridgeAccess{}
 )
 
 func newBridgeAccess(a authz.Authorizer, anonymousRead bool) bridgeAccess {
 	b := bridgeAccess{anonymousRead: anonymousRead}
-	if a != nil {
-		b.inner = v1.NewAccess(a)
+	if d := v1.DeciderOf(a); d != nil {
+		b.inner = v1.NewAccess(d)
 	}
 	return b
 }
@@ -93,6 +95,21 @@ func (b bridgeAccess) Require(ctx context.Context, permission string) error {
 		return errs.E(errs.Forbidden, errs.CodeForbidden, "The operation is not permitted.")
 	}
 	return b.inner.Require(ctx, permission)
+}
+
+// Begin implements [v1.Beginner]: the index of a request the shared step is about
+// to decide, taken by the decision point behind the bridge. A permission the
+// bridge opens is no decision, so it takes none and the operation keeps
+// answering while the index is unconfirmed; without a decision point there is
+// nothing to begin.
+func (b bridgeAccess) Begin(ctx context.Context, permission string, keys ...string) (*edge.Access, error) {
+	if b.bootstrapOpen(ctx, permission) {
+		return nil, nil
+	}
+	if bg, ok := b.inner.(v1.Beginner); ok {
+		return bg.Begin(ctx, permission, keys...)
+	}
+	return nil, nil
 }
 
 func (b bridgeAccess) RequireAction(ctx context.Context, c authz.Coordinate) error {

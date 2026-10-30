@@ -301,33 +301,3 @@ func TestConsumerView(t *testing.T) {
 		}
 	})
 }
-
-func TestMergePatch(t *testing.T) {
-	// The examples of RFC 7396 appendix A.
-	cases := []struct{ doc, patch, want string }{
-		{`{"a":"b"}`, `{"a":"c"}`, `{"a":"c"}`},
-		{`{"a":"b"}`, `{"b":"c"}`, `{"a":"b","b":"c"}`},
-		{`{"a":"b"}`, `{"a":null}`, `{}`},
-		{`{"a":"b","b":"c"}`, `{"a":null}`, `{"b":"c"}`},
-		{`{"a":["b"]}`, `{"a":"c"}`, `{"a":"c"}`},
-		{`{"a":"c"}`, `{"a":["b"]}`, `{"a":["b"]}`},
-		{`{"a":{"b":"c"}}`, `{"a":{"b":"d","c":null}}`, `{"a":{"b":"d"}}`},
-		{`{"a":[{"b":"c"}]}`, `{"a":[1]}`, `{"a":[1]}`},
-		{`{}`, `{"a":{"bb":{"ccc":null}}}`, `{"a":{"bb":{}}}`},
-	}
-	for _, c := range cases {
-		t.Run("R-REPO-011 RFC 7396 "+c.patch, func(t *testing.T) {
-			got, err := MergePatch([]byte(c.doc), []byte(c.patch))
-			if err != nil || string(got) != c.want {
-				t.Fatalf("got %s, %v; want %s", got, err, c.want)
-			}
-		})
-	}
-	t.Run("R-REPO-011 a patch that is not an object is invalid_document", func(t *testing.T) {
-		for _, p := range []string{`[]`, `"x"`, `null`, `{"a":1,"a":2}`, `{`} {
-			if _, err := MergePatch([]byte(`{}`), []byte(p)); err == nil {
-				t.Errorf("patch %s accepted", p)
-			}
-		}
-	})
-}

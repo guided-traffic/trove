@@ -97,7 +97,7 @@ func TestSnapshotAcrossReplicas(t *testing.T) {
 	})
 
 	t.Run("R-REPO-049 R-ARCH-018 a pattern change on A reaches B within the poll interval", func(t *testing.T) {
-		if _, err := a.svc.Patch(ctx, caller, "unknown-key", repository.MatchAny(), []byte(`{"includePatterns":["releases/**"]}`)); err != nil {
+		if _, err := a.svc.Patch(ctx, caller, "unknown-key", repository.MatchAny(), mergePatch(`{"includePatterns":["releases/**"]}`)); err != nil {
 			t.Fatal(err)
 		}
 		waitFor(t, "B to honour the include pattern", within, func() bool {
@@ -111,7 +111,7 @@ func TestSnapshotAcrossReplicas(t *testing.T) {
 	})
 
 	t.Run("R-REPO-004 disabled and requireAuthentication reach the read model of the other replica", func(t *testing.T) {
-		if _, err := a.svc.Patch(ctx, caller, "unknown-key", repository.MatchAny(), []byte(`{"disabled":true,"requireAuthentication":true,"hideExistence":"false"}`)); err != nil {
+		if _, err := a.svc.Patch(ctx, caller, "unknown-key", repository.MatchAny(), mergePatch(`{"disabled":true,"requireAuthentication":true,"hideExistence":"false"}`)); err != nil {
 			t.Fatal(err)
 		}
 		waitFor(t, "B to see the settings", within, func() bool {
@@ -136,7 +136,7 @@ func TestSnapshotAcrossReplicas(t *testing.T) {
 		if _, err := b.reader.List(ctx); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := a.svc.Patch(ctx, caller, "second-one", repository.MatchAny(), []byte(`{"disabled":true}`)); err != nil {
+		if _, err := a.svc.Patch(ctx, caller, "second-one", repository.MatchAny(), mergePatch(`{"disabled":true}`)); err != nil {
 			t.Fatal(err)
 		}
 		waitFor(t, "B to see the change", within, func() bool {

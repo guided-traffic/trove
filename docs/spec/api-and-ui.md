@@ -366,6 +366,9 @@ Priority: **MVP** · Covers: ADMAPI-001, ADMAPI-041, IAM-032
 | Authenticated, target is a repository, item or package the caller cannot read, and hiding is on | 404 `not_found`, identical to a missing target |
 | Administrative collections (users, groups, settings, …) without permission | 403; the existence of these endpoints is not secret |
 
+- A request takes its authorization index once (R-AUTHZ-015, Q-AUTHZ-159, Q-API-158): the shared
+  step begins it for an operation that decides (a capability, a role, an action on a repository)
+  and hands it to the handler, which asks every further question of the same index.
 - Hiding is `authz.hide_existence` with its per-repository override (R-AUTHZ-017 in
   [authorization.md](authorization.md)).
 - List and search endpoints filter silently: they never answer 403 because some items are
@@ -647,6 +650,11 @@ Priority: **MVP** · Covers: ADMAPI-007, ADMAPI-016, ADMAPI-024
 - Immutable fields (`key`, `format`, `class`, names the owner declares immutable) in a patch answer
   422 when they differ from the stored value and are ignored when equal.
 - The answer is the full updated resource with its new ETag.
+- One implementation of RFC 7396 serves every PATCH, and the API conventions own it
+  (Q-API-157): the area that stores the resource receives the merge as a function and keeps its own
+  row lock. The body is read once, as an object without duplicate members; numbers keep their
+  literal, so an integer above 2^53 is stored as sent and an immutable number that differs in its
+  last digit is a change.
 
 Acceptance criteria:
 
@@ -5193,6 +5201,61 @@ revision tag.
 The development agent would revisit it if another resource gets a volatile member; then the suffix becomes a shared helper.
 
 **Applied in the spec:** R-API-012.
+
+### Q-API-157 · The API conventions own the merge patch, the domain receives it as a function
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: RFC 7396 was implemented twice, in `internal/api/v1` (R-API-013, decoding numbers as `float64`, so an integer above 2^53
+lost its last digits and two different large values compared equal in the immutable-member check) and in `internal/repository`
+(R-REPO-011, with `UseNumber`, a duplicate check and an object check). The repository service needs the merge inside its row lock
+and its `If-Match: *` semantics.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The API owns it, the domain receives a function (chosen) | `v1.MergePatch` is the one implementation; `repository.Service.Patch` takes a `Patcher` (`func(current []byte) ([]byte, error)`) and applies it to the stored document under the row lock | One merge; the domain keeps the lock and the `*` semantics; the convention stays with the API | The service API takes a function |
+| (b) A leaf package both import | `internal/mergepatch` | Neither area depends on the other | A third home for an API convention |
+| (c) Read, merge and replace in the handler | The handler reads the document, merges, calls `Replace` | No function parameter | A patch with `If-Match: *` becomes a lost update or a 412 |
+
+**Choice:** (a). The merge keeps every number as its literal (`json.Decoder.UseNumber`) and refuses a patch with a duplicate
+member or nesting deeper than 64 levels (Q-API-75). That the patch is an object is checked where the body is read
+(`ReadMergePatch`), not in the merge: the merge is RFC 7396 as written, and a non-object patch replaces the target, which the
+appendix-A examples of the RFC require and the conventions test keeps. `CheckImmutable` compares numbers by literal for the same
+reason. The 400 of a patch that cannot be read is `malformed_request` with the pointer of the member (`duplicate`, `syntax`,
+`type`); `invalid_document` stays the field code of a stored-document problem without a pointer (Q-REPO-84).
+
+**Rationale:** the merge is part of how the API reads a request, so the API owns it; the transaction is part of how the domain
+writes, so the domain owns that. The development agent would revisit this if a second area outside the management API needs to
+merge a patch; then the merge moves to a leaf package (b).
+
+**Applied in the spec:** R-API-013 (a bullet).
+
+### Q-API-158 · The shared step begins the index only for an operation that decides; a handler that decides begins it itself
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-AUTHZ-159 gives a request one index in a holder (`edge.Access`). Of the operations of the management API, the ones
+declared `public` or `authenticated` never decide in the step, and several of them decide in the handler (the repository read and
+list, the permission checks).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Begin for every operation | The step takes the index before any declaration | Every handler finds a holder | `ping`, `version`, the problem catalogue and every `authenticated` read answer 503 `authz_stale` while the index is unconfirmed, which they never did |
+| (b) Begin for the forms that decide; a handler that decides begins itself (chosen) | A capability, a role and an action declaration begin with the repository of the action form as a key and store the holder; a handler of any other declaration calls `Begin` through the same `Access` and passes the context it derives to everything after | No new refusal for an operation that decides nothing | Two places begin; a handler must pass the derived context |
+| (c) A lazy holder | The step stores a holder that begins on first use | One place | `edge.Access` has no lazy form; a context cannot be changed by a callee |
+
+**Choice:** (b). `Beginner` is the optional third method of `v1.Access`: `Begin(ctx, permission, keys...)` returns the holder, or
+none for a permission the access opens without a decision (`system.bootstrap_anonymous_read`, Q-AUTHZ-16), so that bridge keeps
+answering while the index is stale. `edge.Resolve` returns the stored holder, brought up to the keys the handler learns, or
+begins one for a request that reached the handler without the step. Two questions stay outside it, both documented as
+exceptions: the rate-limit exemption of administrators, which runs in a chain stage before the step, and the effective
+capabilities of `GET /api/v1/authz/me`, for which the decision point offers no `…On` form yet.
+
+**Rationale:** one request, one index is a consistency property, and a refusal that an operation did not have before is a
+regression. The development agent would revisit this when the decision point offers `EffectiveOn` and the chain stage can store a
+holder; then the step begins for every operation that is not public and the handler's own `Begin` goes.
+
+**Applied in the spec:** R-API-008 (a bullet).
 
 ### Q-API-136 · One rule for the top-level code of an error
 

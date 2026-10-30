@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -34,7 +35,8 @@ type RepositoryServices struct {
 	// operations with 503.
 	Service *repository.Service
 	// Authz is the decision point for the reads that depend on what the caller may
-	// read: the repository read and the list.
+	// read: the repository read and the list. It decides per request through its
+	// [authz.Decider] form ([DeciderOf]); one that has none answers 503.
 	Authz authz.Authorizer
 	// Reader is the replica's snapshot of the repositories. The read of a
 	// repository looks an unknown key up before it decides, so that a repository
@@ -374,7 +376,11 @@ func (s *Server) ListRepositories(w http.ResponseWriter, r *http.Request, _ gen.
 		httpserver.Problem(w, r, err)
 		return
 	}
-	cfg, err := s.holds(ctx, capabilityReadConfig)
+	ctx, acc, err := requestHolder(ctx, s.o.Repositories.Authz)
+	var cfg bool
+	if err == nil {
+		cfg, err = s.holds(ctx, capabilityReadConfig)
+	}
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
@@ -384,7 +390,7 @@ func (s *Server) ListRepositories(w http.ResponseWriter, r *http.Request, _ gen.
 		return
 	}
 	f.IncludeDeleting = cfg
-	rows, err := s.visibleRepositories(r, svc, f, cfg, lq.First("project") != "")
+	rows, err := s.visibleRepositories(ctx, acc, svc, f, cfg, lq.First("project") != "")
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
@@ -427,11 +433,10 @@ func repositoryFilter(lq ListQuery) (repository.ListFilter, string, error) {
 // else those it may read, which the exposure narrows as well (R-AUTHZ-016,
 // R-EP-014). The filtering runs over the rows after the cursor, in key order,
 // so the cursor stays the key of the last row of the page.
-func (s *Server) visibleRepositories(r *http.Request, svc *repository.Service, f repository.ListFilter, cfg, byProject bool) ([]repository.Stored, error) {
+func (s *Server) visibleRepositories(ctx context.Context, acc *edge.Access, svc *repository.Service, f repository.ListFilter, cfg, byProject bool) ([]repository.Stored, error) {
 	if byProject { // projects arrive after M1: no repository belongs to one
 		return nil, nil
 	}
-	ctx := r.Context()
 	res, err := svc.List(ctx, f)
 	if err != nil {
 		return nil, err
@@ -441,7 +446,7 @@ func (s *Server) visibleRepositories(r *http.Request, svc *repository.Service, f
 	for i, st := range rows {
 		keys[i] = st.Document.Key
 	}
-	visible, err := s.visibleKeys(ctx, SubjectFrom(ctx), keys, cfg)
+	visible, err := s.visibleKeys(ctx, acc, keys, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -458,26 +463,19 @@ func (s *Server) visibleRepositories(r *http.Request, svc *repository.Service, f
 	return kept, nil
 }
 
-// visibleKeys filters repository keys for the subject of the request. A holder of
-// repositories:read-config needs no read grant, but the exposure ceiling of the
-// request's endpoint binds it like every subject (R-EP-013, Q-EP-12): config
-// selects the view, never what the endpoint shows.
-func (s *Server) visibleKeys(ctx context.Context, sub authz.Subject, keys []string, cfg bool) ([]string, error) {
-	az := s.o.Repositories.Authz
+// visibleKeys filters repository keys for the subject of the request, on the
+// index the request holds. A holder of repositories:read-config needs no read
+// grant, but the exposure ceiling of the request's endpoint binds it like every
+// subject (R-EP-013, Q-EP-12): config selects the view, never what the endpoint
+// shows. Without a holder no decision point is wired and nothing is shown.
+func (s *Server) visibleKeys(ctx context.Context, acc *edge.Access, keys []string, cfg bool) ([]string, error) {
+	if acc == nil {
+		return nil, errNoDecisionPoint()
+	}
 	if !cfg {
-		if az == nil {
-			return nil, unavailable("The authorization state")
-		}
-		return az.Readable(ctx, sub, keys)
+		return acc.Readable(ctx, keys)
 	}
-	if xf, ok := az.(authz.ExposureFilter); ok {
-		return xf.Exposed(ctx, sub, keys)
-	}
-	if sub.Endpoint != "" {
-		// A request of an endpoint and no decision point that applies its ceiling.
-		return nil, unavailable("The authorization state")
-	}
-	return keys, nil
+	return acc.Exposed(keys), nil
 }
 
 // CreateRepository implements POST /api/v1/repositories (R-REPO-009).
@@ -530,21 +528,25 @@ func (s *Server) GetRepository(w http.ResponseWriter, r *http.Request, key strin
 		httpserver.Problem(w, r, err)
 		return
 	}
-	cfg, err := s.holds(ctx, capabilityReadConfig)
+	ctx, acc, err := requestHolder(ctx, s.o.Repositories.Authz, key)
+	var cfg bool
+	if err == nil {
+		cfg, err = s.holds(ctx, capabilityReadConfig)
+	}
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
 	}
 	if !cfg {
 		// Authorization first, then the lookup: the decision point looks an unknown key
-		// up itself (authz.Engine.Know) and answers before the result is used, so a
+		// up itself (authz.Decider.Begin) and answers before the result is used, so a
 		// repository the caller may not read is answered like a missing one.
-		if s.o.Repositories.Authz == nil {
-			httpserver.Problem(w, r, unavailable("The authorization state"))
+		if acc == nil {
+			httpserver.Problem(w, r, errNoDecisionPoint())
 			return
 		}
 		c := authz.Coordinate{Repository: key, Kind: authz.KindMetadata, Actions: []authz.Action{authz.Read}}
-		if d := s.o.Repositories.Authz.Decide(ctx, SubjectFrom(ctx), c); !d.Allowed() {
+		if d := acc.Decide(ctx, c); !d.Allowed() {
 			httpserver.Problem(w, r, d.Err())
 			return
 		}
@@ -552,7 +554,7 @@ func (s *Server) GetRepository(w http.ResponseWriter, r *http.Request, key strin
 		// The ceiling binds a configuration reader too, before the lookup, so a
 		// repository the endpoint does not expose answers like a missing one
 		// (R-EP-013, R-EP-014).
-		exposed, err := s.visibleKeys(ctx, SubjectFrom(ctx), []string{key}, true)
+		exposed, err := s.visibleKeys(ctx, acc, []string{key}, true)
 		if err != nil {
 			httpserver.Problem(w, r, err)
 			return
@@ -603,7 +605,7 @@ func (s *Server) ReplaceRepository(w http.ResponseWriter, r *http.Request, key s
 // UpdateRepository implements PATCH /api/v1/repositories/{key} (R-REPO-011).
 func (s *Server) UpdateRepository(w http.ResponseWriter, r *http.Request, key string, _ gen.UpdateRepositoryParams) {
 	s.writeRepository(w, r, func(svc *repository.Service, pre repository.Precondition, patch []byte) (repository.Stored, error) {
-		return svc.Patch(r.Context(), repositoryCaller(r), key, pre, patch)
+		return svc.Patch(r.Context(), repositoryCaller(r), key, pre, MergePatcher(patch))
 	}, func() ([]byte, error) { return s.patchBody(w, r) })
 }
 

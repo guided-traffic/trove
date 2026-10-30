@@ -30,6 +30,7 @@ The contract is [api/openapi.yaml](../../api/openapi.yaml) (OpenAPI 3.1, R-API-0
 | JSON | `writeJSON` in `handlers.go`: `application/json; charset=utf-8`, UTC times with `Z`, empty collections as `[]`, "no value" as `null` |
 | Caller | `httpserver.PrincipalFrom(ctx)`: kind, ID, name, groups and the credential that proved it (method, token ID and type, scope ceiling, endpoint binding); never read credentials from headers. Ask authorization with `edge.SubjectFrom(r)` (`v1.SubjectFrom(ctx)` delegates): it carries the principal, the epoch and the listener's endpoint, see [m1-contracts.md](m1-contracts.md) |
 | Permission check | done before the handler by the authorization step of [authorize.go](../../internal/api/v1/authorize.go), from the operation's declaration; a handler adds a check only where the decision depends on the request body (R-API-008) |
+| Authorization index | one per request (R-AUTHZ-015, Q-API-158): for a capability, a role or an action declaration the step calls `Beginner.Begin` ([access.go](../../internal/api/v1/access.go)) before it checks the declaration and stores the `edge.Access` holder in the request's context; the handler asks every further question through `edge.AccessFrom(ctx)` or `requestHolder`. See "One index per request" below |
 | Base URL | `httpserver.InfoFrom(ctx).BaseURL`, never `Host` |
 | Authorization table | `Document.Operations()` maps the route pattern to the declarations, each decoded into an `Operation.Requirement` at load |
 | Registration | `Server.Register(router)` registers through `httpserver.Router` behind `authorizingMux`, which wraps every handler in the check of the operation its pattern names; the composition root then calls `Document.CheckRoutes(router.Patterns())` |
@@ -49,6 +50,28 @@ so start-up stops before an operation can run with a declaration nobody checks):
 A route whose pattern has no operation in the document is denied to everyone with 403 (and `CheckRoutes`
 stops start-up for it). The binding of path parameters runs after the check. R-API-008 defines the full
 grammar; every form that `parseRequirement` accepts is enforced by `decide` in `authorize.go`.
+
+### One index per request
+
+A request decides on one authorization index (R-AUTHZ-015, Q-AUTHZ-159, Q-API-158). Where the index is taken depends on
+the declaration:
+
+| Declaration | Index |
+|---|---|
+| `permission`, `role` | the step begins (`Server.begin`) before `Access.Require`; `Beginner.Begin(ctx, permission, keys...)` returns the `edge.Access` and the step stores it with `edge.WithAccess` in the request it passes on |
+| `action` | the same, with the repository of the request as the key, so a repository created on another replica is known to the index first (Q-AUTHZ-133) |
+| `public`, `authenticated` | none: an operation that decides nothing must not start to answer 503 while the index is unconfirmed |
+
+`v1.Access` stays the interface the step and the stand-ins of the tests use; `NewAccess(authz.Decider)` returns the one over
+the decision point, whose `Require`, `Holds` and `RequireAction` resolve the holder from the context (`edge.Resolve`) and begin a
+second index only for a request that reached them without the step. A handler that decides (the repository read and list,
+check-exposure, the permission checks) calls `edge.Resolve` or `requestHolder(ctx, decider, keys...)`, and passes the context
+that returns to everything after, so the `s.holds` questions it asks through `Access` use the same holder. `DeciderOf` takes
+the per-request form out of a service typed as `authz.Authorizer`; a value without it answers 503, it never decides on an
+index of its own.
+
+Two questions stay outside it: the rate limit's administrator exemption runs in a chain stage before the step and asks the
+decision point on its own index, and `GET /api/v1/authz/me` calls `Engine.Effective`, which has no `…On` form yet.
 
 ## The `/files/` family in the document
 
@@ -106,7 +129,7 @@ The helpers live in [internal/api/v1](../../internal/api/v1). A handler calls th
 | Strict JSON body: content type (415), size (413), unknown or duplicate member, wrong type and a nesting deeper than 64 levels (400 `malformed_request` with `errors[0].pointer`, R-API-003, R-API-017, Q-API-75) | `ReadBody`, `DecodeJSON`, `StrictUnmarshal` | [decode.go](../../internal/api/v1/decode.go) | The request type is the response type, so a body obtained by GET can be sent back and read-only members are accepted and ignored. Member names compare exactly. |
 | Cursor pagination, filters, sort (R-API-010, R-API-011) | `ParseList`, `ListSpec`, `ListQuery`, `NewPage`, `MapPage`, `WritePage` | [paging.go](../../internal/api/v1/paging.go) | `limit` default `api.page_size_default`, clamped to `api.page_size_max` (Q-API-16). An unknown parameter or sort field is 400; a cursor for other filters or another sort is 400 `invalid_cursor`. |
 | `ETag` from a revision column, `If-Match`, `If-None-Match` (R-API-012) | `ETag`, `SetETag`, `ParseIfMatch`, `expectedRevision`, `Precondition.Revision/Matches`, `Failed`, `NotModified`; `errs.Stale`, `errs.AnyRevision` | [etag.go](../../internal/api/v1/etag.go), [revision.go](../../internal/errs/revision.go) | 428 without `If-Match` on PUT/PATCH (the binder, below); 412 with `currentEtag`, from the one `errs.Stale`. |
-| JSON merge patch (R-API-013) | `ReadMergePatch`, `MergePatch`, `ApplyMergePatch`, `CheckImmutable` | [patch.go](../../internal/api/v1/patch.go) | RFC 7396; an immutable member that differs is 422 `validation_failed` with its pointer. |
+| JSON merge patch (R-API-013) | `ReadMergePatch`, `MergePatch`, `MergePatcher`, `ApplyMergePatch`, `CheckImmutable` | [patch.go](../../internal/api/v1/patch.go) | RFC 7396, the one implementation (Q-API-157): numbers keep their literal (an integer beyond 2^53 survives), a duplicate member and a nesting beyond 64 levels are 400, `ReadMergePatch` refuses a body that is not an object (`null` included). An immutable member that differs is 422 `validation_failed` with its pointer, compared by literal. An area that stores the resource takes the merge as a function: `MergePatcher(patch)` is the `repository.Patcher`. |
 | Idempotency keys, stored in PostgreSQL (R-API-014, R-API-051) | `Idempotency.Do`, `IdempotentOp`, `Outcome` | [idempotency.go](../../internal/api/v1/idempotency.go) | The row is inserted in the transaction of the change. |
 | Item paths and reserved names (R-API-004) | `CheckItemPath`, `CheckReservedName` | [path.go](../../internal/api/v1/path.go) | The rules of `repository.CleanPath` on the decoded path: no backslash, at most 4096 bytes and 255 per segment, the length checked first. `invalid_path` is registered by the files area. |
 | Rate limits, CORS, response headers (R-API-016, R-API-017, R-API-018) | `NewRateLimit`, `CORS`, `EdgeStage` | [ratelimit.go](../../internal/api/v1/ratelimit.go), [cors.go](../../internal/api/v1/cors.go) | The chain's stage 7; wired by [wire_api.go](../../internal/app/wire_api.go). |

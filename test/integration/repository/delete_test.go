@@ -140,7 +140,7 @@ func TestDelete(t *testing.T) {
 		e.exec(`UPDATE repositories SET lifecycle = 'deleting' WHERE key = 'held'`)
 		_, err := web.svc.Create(ctx, caller, []byte(fmt.Sprintf(genericBody, "held")))
 		wantCode(t, err, 409, errs.CodeAlreadyExists)
-		_, err = web.svc.Patch(ctx, caller, "held", repository.MatchAny(), []byte(`{"description":"x"}`))
+		_, err = web.svc.Patch(ctx, caller, "held", repository.MatchAny(), mergePatch(`{"description":"x"}`))
 		wantCode(t, err, 409, errs.CodeConflict)
 		got, err := web.svc.Get(ctx, "held")
 		if err != nil || got.Repository.Lifecycle != repository.Deleting {

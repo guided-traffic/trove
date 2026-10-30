@@ -55,7 +55,7 @@ security view is [permissions.md](../security/permissions.md).
 | [metrics.go](../../internal/authz/metrics.go) | The `trove_authz_*` families |
 | [authz.sql](../../internal/meta/postgres/queries/authz.sql) | Every statement (sqlc); identifiers travel as text, instants as microseconds |
 | [wire_authz.go](../../internal/app/wire_authz.go), [access.go](../../internal/app/access.go) | The composition root: the engine at step 8, the header wrapper, the dev-profile bridge |
-| [authorize.go](../../internal/api/v1/authorize.go), [subject.go](../../internal/api/v1/subject.go) | The declaration forms of `x-trove-permission` and the conversion `Principal` to `Subject` |
+| [authorize.go](../../internal/api/v1/authorize.go), [access.go](../../internal/api/v1/access.go), [subject.go](../../internal/api/v1/subject.go) | The declaration forms of `x-trove-permission` and the step that begins the request's index for them; `NewAccess` over the `Decider` and `requestHolder` for a handler that decides; the conversion `Principal` to `Subject` |
 | [authz_api.go](../../internal/api/v1/authz_api.go) | The handlers of the permission operations, thin over `Service` and `Engine` |
 
 ## The model
@@ -224,7 +224,10 @@ Every operation in `api/openapi.yaml` carries `x-trove-permission`. `parseRequir
 
 A source the request lacks is the empty string and names no repository, so the request is refused before the handler.
 Decisions that depend on the request body are the handler's, using the request's `edge.Access` (or `authz.Authorizer` in
-a job).
+a job). For a capability, a role or an action declaration the step takes the request's index before it checks the declaration
+(`Server.begin`, `v1.Beginner`) and stores the holder in the context, so the check and every question of the handler are answered
+on one index; a handler of a `public` or `authenticated` operation that decides begins the holder itself (`requestHolder`,
+Q-API-158; [http-api.md](http-api.md) "One index per request").
 
 The existing operations of M0 declare `settings:read` (formerly `system.read`).
 
@@ -272,8 +275,8 @@ step; nil means anonymous access is off. A replica without PostgreSQL wires noth
 (Q-AUTHZ-16), which opens the system information and the replica list only; `endpointStage` puts the request path into the
 context for it (Q-AUTHZ-71).
 
-`Engine.Exposed` (in [ceiling.go](../../internal/authz/ceiling.go), the optional interface `authz.ExposureFilter`) applies the
-endpoint's exposure alone: the repository list and read of a holder of `repositories:read-config` use it, since that caller
+`Decider.ExposedOn` (in [ceiling.go](../../internal/authz/ceiling.go); `edge.Access.Exposed`) applies the endpoint's exposure
+alone: the repository list and read of a holder of `repositories:read-config` use it through `visibleKeys`, since that caller
 needs no read grant but is bound by the ceiling (R-EP-014).
 
 The runtime anonymous switch is `Options.AnonymousAccess(ctx) (bool, error)`; the engine reads it once per request for an

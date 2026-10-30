@@ -256,15 +256,22 @@ func (s *Service) Replace(ctx context.Context, c Caller, key string, pre Precond
 	return s.update(ctx, c, key, pre, func(Document) (Document, error) { return DecodeDocument(body) })
 }
 
-// Patch implements PATCH of R-REPO-011: patch is an RFC 7396 merge patch applied
-// to the stored document, arrays replaced as a whole and null removing a setting.
-func (s *Service) Patch(ctx context.Context, c Caller, key string, pre Precondition, patch []byte) (Stored, error) {
+// Patcher applies a client's patch to the stored document: the current document
+// as JSON in, the patched document as JSON out. The management API passes its
+// RFC 7396 merge (Q-API-157), so the service owns the row lock and the version
+// precondition and the API owns how a patch reads.
+type Patcher func(current []byte) ([]byte, error)
+
+// Patch implements PATCH of R-REPO-011: apply is the client's patch, run on the
+// stored document under the row lock. The result is read strictly like a
+// document of a PUT, so a patch cannot introduce an unknown member.
+func (s *Service) Patch(ctx context.Context, c Caller, key string, pre Precondition, apply Patcher) (Stored, error) {
 	return s.update(ctx, c, key, pre, func(cur Document) (Document, error) {
 		base, err := json.Marshal(cur)
 		if err != nil {
 			return Document{}, err
 		}
-		merged, err := MergePatch(base, patch)
+		merged, err := apply(base)
 		if err != nil {
 			return Document{}, err
 		}

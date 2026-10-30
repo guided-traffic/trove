@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/config"
@@ -33,7 +34,8 @@ type EndpointServices struct {
 	RateLimits map[string]config.EndpointRateLimit
 	// Exposure is the rule service; nil answers the operations with 503.
 	Exposure *authz.ExposureService
-	// Authorizer decides read on the repository of check-exposure; nil refuses.
+	// Authorizer decides read on the repository of check-exposure, through its
+	// [authz.Decider] form ([DeciderOf]); one that has none refuses.
 	Authorizer authz.Authorizer
 }
 
@@ -594,14 +596,19 @@ func (s *Server) CheckExposure(w http.ResponseWriter, r *http.Request, endpoint 
 }
 
 // requireRead decides read on the repository for the caller, under the ceiling of
-// the endpoint the subject carries (R-AUTHZ-015); the refusal is that of R-AUTHZ-016.
+// the endpoint the subject carries (R-AUTHZ-015), on the index the request holds;
+// the refusal is that of R-AUTHZ-016.
 func (s *Server) requireRead(ctx context.Context, repo string) error {
-	a := s.o.Endpoints.Authorizer
-	if a == nil {
+	d := DeciderOf(s.o.Endpoints.Authorizer)
+	if d == nil {
 		return errs.E(errs.Forbidden, errs.CodeForbidden, "The operation is not permitted.")
 	}
+	acc, err := edge.Resolve(ctx, d, SubjectFrom(ctx), repo)
+	if err != nil {
+		return err
+	}
 	c := authz.Coordinate{Repository: repo, Kind: authz.KindMetadata, Actions: []authz.Action{authz.Read}}
-	return a.Decide(ctx, SubjectFrom(ctx), c).Err()
+	return acc.Decide(ctx, c).Err()
 }
 
 func checkResultOf(res authz.ExposureCheckResult) exposureCheckResult {

@@ -83,7 +83,9 @@ func (a *App) wireAPI(ctx context.Context, infra bool) error {
 	if a.m1.authorizer != nil {
 		access := a.access()
 		// A question, not an operation: a request of a caller without the capability
-		// is not a refusal and records no authz.denied (R-AUTHZ-029).
+		// is not a refusal and records no authz.denied (R-AUTHZ-029). It runs in a
+		// chain stage before the shared step, so it asks the decision point on an
+		// index of its own; the operation's decisions use the step's (Q-API-158).
 		isAdmin = func(r *http.Request) bool {
 			ok, err := v1.Holds(r.Context(), access, string(authz.ContentBypass))
 			return err == nil && ok

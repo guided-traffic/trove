@@ -9,9 +9,14 @@ import (
 	"strings"
 	"testing"
 
+	apiv1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/repository"
 )
+
+// mergePatch is the patch as the management API applies it to a stored document
+// (R-REPO-011, Q-API-157).
+func mergePatch(patch string) repository.Patcher { return apiv1.MergePatcher([]byte(patch)) }
 
 func wantCode(t *testing.T, err error, status int, code string) *errs.Error {
 	t.Helper()
@@ -97,7 +102,7 @@ func TestCreateReadUpdate(t *testing.T) {
 
 	t.Run("R-REPO-011 patch changes only that setting, moves the version and records what changed", func(t *testing.T) {
 		before := epoch()
-		st, err := svc.Patch(ctx, caller, "generic-local", repository.MatchVersion(1), []byte(`{"description":"installers","includePatterns":["releases/**"]}`))
+		st, err := svc.Patch(ctx, caller, "generic-local", repository.MatchVersion(1), mergePatch(`{"description":"installers","includePatterns":["releases/**"]}`))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -120,24 +125,24 @@ func TestCreateReadUpdate(t *testing.T) {
 	})
 
 	t.Run("R-REPO-011 a stale If-Match is 412 with the current version, If-Match * passes", func(t *testing.T) {
-		_, err := svc.Patch(ctx, caller, "generic-local", repository.MatchVersion(1), []byte(`{"description":"stale"}`))
+		_, err := svc.Patch(ctx, caller, "generic-local", repository.MatchVersion(1), mergePatch(`{"description":"stale"}`))
 		wantCode(t, err, 412, errs.CodePreconditionFailed)
 		var sv *errs.StaleRevision
 		if !errors.As(err, &sv) || sv.Current != 2 {
 			t.Fatalf("cause = %v", err)
 		}
-		st, err := svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), []byte(`{"description":"blind"}`))
+		st, err := svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), mergePatch(`{"description":"blind"}`))
 		if err != nil || st.Repository.Version != 3 {
 			t.Fatalf("blind write: %+v, %v", st, err)
 		}
-		_, err = svc.Patch(ctx, caller, "nope", repository.MatchAny(), []byte(`{}`))
+		_, err = svc.Patch(ctx, caller, "nope", repository.MatchAny(), mergePatch(`{}`))
 		wantCode(t, err, 404, errs.CodeRepositoryNotFound)
 	})
 
 	t.Run("R-REPO-001 R-REPO-011 key, class and format are immutable", func(t *testing.T) {
 		for member, value := range map[string]string{"format": `"npm"`, "class": `"remote"`, "key": `"other"`} {
 			before := epoch()
-			_, err := svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), []byte(`{"`+member+`":`+value+`}`))
+			_, err := svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), mergePatch(`{"`+member+`":`+value+`}`))
 			ee := wantCode(t, err, 422, errs.CodeValidation)
 			if len(ee.Fields) != 1 || ee.Fields[0].Pointer != "/"+member {
 				t.Fatalf("%s: fields = %+v", member, ee.Fields)
@@ -147,7 +152,7 @@ func TestCreateReadUpdate(t *testing.T) {
 			}
 		}
 		// The same value is not a change.
-		if _, err := svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), []byte(`{"format":"generic","class":"local","key":"generic-local"}`)); err != nil {
+		if _, err := svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), mergePatch(`{"format":"generic","class":"local","key":"generic-local"}`)); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -155,7 +160,7 @@ func TestCreateReadUpdate(t *testing.T) {
 	t.Run("R-REPO-011 an update that changes nothing writes nothing", func(t *testing.T) {
 		cur, _ := svc.Get(ctx, "generic-local")
 		events, before := len(rep.rec.types()), epoch()
-		st, err := svc.Patch(ctx, caller, "generic-local", repository.MatchVersion(cur.Repository.Version), []byte(`{"description":"blind"}`))
+		st, err := svc.Patch(ctx, caller, "generic-local", repository.MatchVersion(cur.Repository.Version), mergePatch(`{"description":"blind"}`))
 		if err != nil || st.Repository.Version != cur.Repository.Version {
 			t.Fatalf("no-op: %+v, %v", st, err)
 		}
@@ -165,11 +170,11 @@ func TestCreateReadUpdate(t *testing.T) {
 	})
 
 	t.Run("R-REPO-011 null removes a setting, an array is replaced as a whole", func(t *testing.T) {
-		st, err := svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), []byte(`{"description":null,"includePatterns":["a/**","b/**"]}`))
+		st, err := svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), mergePatch(`{"description":null,"includePatterns":["a/**","b/**"]}`))
 		if err != nil || st.Document.Description != "" || len(st.Document.IncludePatterns) != 2 {
 			t.Fatalf("stored = %+v, %v", st.Document, err)
 		}
-		st, err = svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), []byte(`{"includePatterns":["c/**"]}`))
+		st, err = svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), mergePatch(`{"includePatterns":["c/**"]}`))
 		if err != nil || len(st.Document.IncludePatterns) != 1 || st.Document.IncludePatterns[0] != "c/**" {
 			t.Fatalf("stored = %+v, %v", st.Document, err)
 		}
@@ -177,12 +182,12 @@ func TestCreateReadUpdate(t *testing.T) {
 
 	t.Run("R-REPO-011 a patch that makes the document invalid reports 422 and changes nothing", func(t *testing.T) {
 		cur, _ := svc.Get(ctx, "generic-local")
-		_, err := svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), []byte(`{"priorityMember":true,"local":{"packageOwnership":"enforce"},"excludePatterns":["a**b"]}`))
+		_, err := svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), mergePatch(`{"priorityMember":true,"local":{"packageOwnership":"enforce"},"excludePatterns":["a**b"]}`))
 		ee := wantCode(t, err, 422, errs.CodeValidation)
 		if len(ee.Fields) != 3 {
 			t.Fatalf("fields = %+v", ee.Fields)
 		}
-		_, err = svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), []byte(`{"unknownSetting":1}`))
+		_, err = svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), mergePatch(`{"unknownSetting":1}`))
 		wantCode(t, err, 400, errs.CodeInvalid)
 		after, _ := svc.Get(ctx, "generic-local")
 		if after.Repository.Version != cur.Repository.Version {
@@ -209,7 +214,7 @@ func TestCreateReadUpdate(t *testing.T) {
 			t.Fatal("create succeeded although the audit insert failed")
 		}
 		cur, _ := svc.Get(ctx, "generic-local")
-		_, err = svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), []byte(`{"description":"never"}`))
+		_, err = svc.Patch(ctx, caller, "generic-local", repository.MatchAny(), mergePatch(`{"description":"never"}`))
 		if err == nil {
 			t.Fatal("update succeeded although the audit insert failed")
 		}
