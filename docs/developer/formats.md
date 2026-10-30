@@ -29,8 +29,12 @@ their own sections below: [Conformance kit](#conformance-kit) and [Untrusted con
   raw view of every repository and is served by the generic layer, not by the dispatcher.
 - **`ContractVersion` is 1 until the freeze at the end of M3** ([Q-ARCH-213](../spec/architecture.md#decisions)): a change to the
   contract is applied to every format in the same change.
-- **Unbound seams fail closed.** Package ownership and the namespace auto claim are not wired yet; `Claim` and `AutoClaim` refuse until the
-  composition root binds them ([Q-ARCH-215](../spec/architecture.md#decisions)).
+- **Unbound seams fail closed.** `Claim` and `AutoClaim` refuse until the composition root binds the ownership rule and the namespace auto
+  claim ([Q-ARCH-215](../spec/architecture.md#decisions)); it binds both ([wire_formats.go](../../internal/app/wire_formats.go)), so a format with package
+  names publishes under the rule. `AutoClaim` returns the `AutoClaimResult` that the publish's audit event records.
+- **Per-replica state of a format hangs off the Host.** A format is registered once per process; a process may hold several replicas (the integration tests do).
+  A format that reads `trove.yaml` or exports metrics implements `Bind(host, cfg, metrics)`, which the composition root calls with the Host it built
+  (`hostBinder` in [wire_formats.go](../../internal/app/wire_formats.go)); the format keeps the result per Host, never in a package variable (npm: [bind.go](../../internal/formats/npm/bind.go)).
 
 ## Files
 
@@ -80,7 +84,7 @@ for `Lookup` and `List`. It panics on:
 
 `formats.Validate(f)` runs the contract checks without registering. The exposure facts of the catalog come from `Format.Exposure()`: no adapter
 means not exposable, and the adapter's `Dimensions` and `catalog.Versioning` are what the decision point reads. The composition root
-freezes the catalog ([wire_formats.go](../../internal/app/wire_formats.go) `formatsDeps`) before the replica serves.
+freezes the catalog ([wire_formats.go](../../internal/app/wire_formats.go) `wireFormats`) before the replica serves.
 
 ## The request path of a format route
 
@@ -136,12 +140,13 @@ line through `WriteError` without `Content-Disposition`, and aborts the connecti
 
 | Function | Moment | Does |
 |---|---|---|
-| `formatsDeps`, `formatHooks` | step 8, from `wireFiles` | freezes the catalog, binds and checks the data ports (`formatPorts` is where a format with side tables adds its constructor), builds the hooks and the files seam; also on a worker, whose delete job runs the hooks |
+| `wireFormats` | step `formats` | freezes the catalog, binds and checks the data ports (`formatPorts` is where a format with side tables adds its constructor), builds the hooks and the files seam; also on a worker, whose delete job runs the hooks |
 | `formatHost`, `buildFormatHost` | first use | builds the package store, the rendition cache (`cache.rendition_bytes`), the `Host` and the dispatcher, once |
 | `registerFormats` | step 9, from `startClient` | mounts the prefix of every format with routes on each endpoint's router, with its error shape |
 
-The seams the composition root does **not** bind yet: `formathost.Ownership` (the package-ownership rule, `EnforceTx`), `formathost.AutoClaimer` (the namespace auto claim), the
-remote engine and the resolver (`Host.Remote()` and `Host.Resolver()` answer an internal error that says so; a virtual `DeployTarget` answers `405 no_deploy_target`).
+The composition root binds `formathost.Ownership` (over `authz.Ownership.EnforceTx`) and `formathost.AutoClaimer` (over `repository.Routing.AutoClaim`, which gets the caller of the
+request and returns its `AutoClaimResult`) with two small adapters. It does **not** bind the remote engine and the resolver yet (`Host.Remote()` and `Host.Resolver()` answer an internal
+error that says so; a virtual `DeployTarget` answers `405 no_deploy_target`; the stub's `ShadowCheck` lets a first publish proceed, because without the engine no remote member serves a name).
 Each is a field of `formathost.Options` or `Deps`.
 
 ## Tests

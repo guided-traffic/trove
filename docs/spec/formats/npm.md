@@ -1,6 +1,6 @@
 # npm registry
 
-Status: specification — not implemented
+Status: specification — local repositories partly implemented (routes, classification, error shape, publish, the data port; the work packages of documents, dist-tags, unpublish and identity, and the remote and virtual classes, are not built)
 
 This page specifies how trove speaks the npm registry protocol for local, remote and virtual
 npm repositories: the endpoints below `/api/npm/<repoKey>/`, how the npm format plug-in classifies
@@ -562,6 +562,10 @@ so of two concurrent first publishes of `acme-ui` and `acme_ui` through differen
 commits and the other answers 400 `npm_invalid_name`, and two concurrent first publishes of one
 new name both succeed.
 
+Notes on the implementation (Q-NPM-20, Q-NPM-22, Q-NPM-24): the body is read by a scanner that does not assume the order of its members; outside the attachment data it
+may hold 768 KiB, a provenance bundle 256 KiB. The tarball is committed first and the bundle second, so a publish with a bundle raises `rev_seq` twice. An upload to an npm
+repository through `/files/` is refused until R-NPM-036 exists. The answer of an acknowledged retry carries the current `rev`.
+
 Configuration (`trove.yaml`):
 
 ```yaml
@@ -973,7 +977,7 @@ Configuration (`npm` section of a local repository):
 
 ```yaml
 npm:
-  latestGuard: true   # default (proposed)
+  latestGuard: true   # default (proposed); not settable yet: the repository document has no format section, so the guard is always on (Q-NPM-23)
 ```
 
 Acceptance criteria:
@@ -2042,7 +2046,7 @@ actor, repository, package, version or tag, outcome and source address:
 
 | Event | When |
 |---|---|
-| `npm.publish` | R-NPM-007, R-NPM-036; with integrity, the dist-tag and whether the latest guard applied; outcome `retry_acknowledged` for an acknowledged retry (R-NPM-007 step 4) |
+| `npm.publish` | R-NPM-007, R-NPM-036; with integrity, the dist-tag and whether the latest guard applied; outcome `success` with the reason `retry_acknowledged` for an acknowledged retry (R-NPM-007 step 4, Q-NPM-25) |
 | `npm.unpublish` | R-NPM-017, per version, with its integrity. The registry entry declares `journal: revocation` (R-OPS-014), so a restore re-applies it (R-NPM-047, Q-NPM-12) |
 | `npm.reinstate` | R-NPM-047: `trove admin npm reinstate` put a withheld version back, with its integrity and the journal entry that withheld it |
 | `npm.dist_tag.set`, `npm.dist_tag.delete` | R-NPM-016 |
@@ -2054,7 +2058,7 @@ actor, repository, package, version or tag, outcome and source address:
 Login, logout and token events are R-AUTH-041's; integrity and egress events of remote fetches are
 repositories-and-proxy.md's.
 
-Metrics (prefix `trove_`, INV-16): `trove_npm_requests_total{class,operation,status}`,
+Metrics (prefix `trove_`, INV-16; the label written `repository` below is `repo` in the label list of R-OPS-007, Q-NPM-25): `trove_npm_requests_total{class,operation,status}`,
 `trove_npm_request_duration_seconds{class,operation}`,
 `trove_npm_document_render_seconds{class,variant}`,
 `trove_npm_virtual_version_conflicts_total{repository}`,
@@ -3192,6 +3196,163 @@ the revisit condition of Q-NPM-6, or if more than a handful of steps are missing
 **Applied in the spec:** R-NPM-007 step 3 (the name and version bullet, the three
 conventions after the step list). Code: `internal/formats/npm/manifest`; corpus:
 `internal/formats/npm/manifest/testdata/prepare/`.
+
+### Q-NPM-20 · How the publish body is read
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-NPM-007 step 2 forbids holding the decoded tarball in memory, and the base64 form of a 256 MiB
+tarball is a JSON string of 341 MB. `encoding/json` returns a string as one value, so a decoder
+holds all of it. The order in which libnpmpublish writes the members of the body was **not
+verified**, and pnpm and Yarn build their own bodies.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `encoding/json` with a custom reader | Decode the document with `Decoder.Token` | Standard library | A string token is a whole string: the attachment is in memory before the first byte is decoded |
+| (b) A scanner over the byte stream | `internal/formats/npm/publish`: every member is read within a byte budget and a depth limit, the value of `data` is decoded from base64 while it streams into the caller's writer | Memory is bounded by the buffers; the order of the members is not assumed (the manifest with its digests may follow the data) | About 400 lines of parser that must be fuzzed |
+| (c) Require an order | Refuse a body whose metadata follows the attachments | A simple pass | Fails any client that writes the other order, which was not verified for four clients |
+
+**Choice:** (b).
+
+**Rationale:**
+- It is the only option that holds R-NPM-007 step 2 for every client. `FuzzPublishScanner` and a test that
+  streams a 96 MiB attachment and asserts that the scan allocated less than 16 MiB pin the property.
+- The scanner is strict where two JSON readers could differ: a member twice, data after the document, a control
+  character inside a string, an escape other than the ones a base64 string can carry (`\/` and `\u00XX`).
+- The bounds: the body outside the attachment data is at most 768 KiB (the manifest with its README, the
+  descriptors and the dist-tags; with a provenance bundle of at most 256 KiB, whose base64 form is 342 KiB, the sum
+  stays below the 1 MiB that R-NPM-007 step 2 adds to the base64 of the tarball), nesting at most 64 levels, a member name at
+  most 1,024 bytes, at most 4 attachments. A README that does not fit the budget makes the publish a 413.
+- The tarball is spooled first and validated from the spool (`Inspect`'s way, the pass of `tarball.Validate` reading the
+  spool), not validated while it streams: the digests a client announces may follow the data, and the contract's
+  `Ingestor.Spool` takes a reader.
+- The development agent would revisit the 768 KiB budget if a client sends manifests with larger READMEs
+  (npm itself truncates none), and (c) never.
+
+**Applied in the spec:** R-NPM-007 steps 2 and 3 (the order of the members is not assumed; the budget). Code:
+`internal/formats/npm/publish`.
+
+### Q-NPM-21 · How the format reaches the core and its own tables
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The architecture test lets a format import the contract, `errs`, `config`, `observability`, `untrusted` and its own tree
+(R-ARCH-008). npm needs more: it writes its own tables (D-1), records audit events in the transaction of a write, takes
+the `npm.*` configuration and exports metrics, and a process may hold several replicas that each have their own.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Widen the allowlist | npm may import `audit`, `meta` and the metrics registry | No new seam | A format could then write SQL and every other format could ask for the same |
+| (b) The data port carries it | Audit events are recorded by the data package in the transaction, the values cross in a leaf (`internal/formats/npm/rows`); settings and metrics are bound per Host by the composition root (`Format.Bind`) | The allowlist stays; one place per replica holds the replica's state; two replicas in one process do not share metrics | One more leaf package and one layer row |
+| (c) Package variables | The format keeps its configuration and metrics in variables set at start-up | Shortest | R-ARCH-032 forbids package-level state, and two replicas in one test process would overwrite each other |
+
+**Choice:** (b). `internal/formats/npm/rows` is a leaf (layer table row, no import of the module) that the format and
+`internal/formatdata/npm` share; the data port persists what the format decided, so the SemVer order stays in the format
+(the latest rule and the latest guard are computed there and the store receives the complete tag map).
+
+**Rationale:**
+- The audit event of a write is part of its transaction (R-OPS-015): the port is where the transaction is.
+- Binding per Host is what the request already carries (`rq.Host`); a Host nobody bound runs on the defaults without
+  metrics, which is what the conformance kit's Host is.
+- Two contract details followed: `PackageWriter.AutoClaim` returns the `AutoClaimResult`, which the audit event of the publish
+  records, and `SetupData` gained `RegistryKey` and `RequiresAuth`, because the keyed credential line of R-NPM-041 is the registry URL without its
+  scheme and the always-auth switches depend on anonymous read.
+- The development agent would revisit it if a second format needs the same, which would argue for a generic port base.
+
+**Applied in the spec:** R-NPM-044 (the metric label is `repo`, the name R-OPS-007 allows; see Q-NPM-25). Code: `internal/formats/npm/{store.go,bind.go}`, `internal/formats/npm/rows`,
+`internal/formatdata/npm`, `internal/app/wire_formats.go`; contract: [architecture.md](../architecture.md) R-ARCH-009.
+
+### Q-NPM-22 · The provenance bundle of a publish
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+A publish with a provenance bundle stores two items, the tarball and `<name>/-/<basename>-<version>.sigstore` (R-NPM-006). The item
+store commits one item per transaction, and a commit of an item runs the format's hook.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Tarball first, bundle second | The bundle's commit links it to the live version | The version becomes visible with the first commit, and nothing refused can leave an item; no path is held by an unfinished publish | If the second commit fails, the version exists without its bundle |
+| (b) Bundle first | The tarball's commit links it | The version never exists without it | A publish that is refused (ownership, a conflict) after the first commit leaves an item at a path of a version that does not exist, and the next publish of that number with another bundle (re-signed bundles always differ) is refused |
+| (c) A second transaction mechanism in the item store | Commit several items in one transaction | Atomic | Changes the item store for one format |
+
+**Choice:** (a). The answer to the request is the 201 only after both commits; a failure of the second is a 500 that says the version is published and
+its bundle is not stored, and a retry of that request is the 409 of R-NPM-008 (the retry conditions of step 4 name the bundle, so it does not match).
+
+**Rationale:**
+- A version without a bundle is the lesser harm; an item at a version's path that blocks the legitimate publish is the greater, and an attacker with `deploy` could plant it.
+- The window is the time between two commits of one request, and there is no repair path in the MVP: the bundle is stored, not interpreted (PKG-NPM-024 is deferred).
+- `rev_seq` grows twice for a publish with a bundle, once for each commit that changes the package rows.
+- The development agent would revisit (a) when attestations are served (R-NPM-027), because then a half-published version is visible to `npm audit signatures`; (c) would be the answer.
+
+**Applied in the spec:** R-NPM-007 steps 5 and 6. Code: `internal/formats/npm/{hooks.go,publish.go}`.
+
+### Q-NPM-23 · Dist-tag decisions, the latest guard setting and what `warn` stores
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-NPM-016 puts the latest rule and the latest guard in the transaction of the write, and R-NPM-007 says the stored manifest stays the request's. Two
+statements need an owner: who computes the tags, and what is stored in `warn` mode (the configuration description said the tarball's values).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The store computes | SQL compares versions | Next to the data | SemVer in SQL, or a second implementation of the order |
+| (b) The format computes | `tagAfterPublish` and `tagsAfterRemoval` use `semver` on the tags read under the package row lock; the store writes the map | One order, tested as a table | The format reads the tags (`Store.Tags`) before it writes them |
+
+**Choice:** (b). `warn` accepts the publish, records `npm.publish.manifest_mismatch` and stores the request's manifest, as R-NPM-007 says; the
+description of `npm.publish.manifest_consistency` is corrected. `npm.latestGuard` is on for every repository: the repository document has no
+format section yet, so the setting of R-NPM-016 cannot be written, and a published version never moves `latest` backwards.
+
+**Rationale:**
+- The guard exists to stop a maintenance release from becoming `latest`; leaving it on until the setting exists errs towards the safe side, and the
+  rows' `LatestKept` flag is in the audit event, so the day the setting exists nothing changes for existing data.
+- Storing the tarball's values in `warn` would change what the document lists against what the publisher sent.
+- The development agent would revisit it when a format section of the repository document is built (not planned).
+
+**Applied in the spec:** R-NPM-016 (the guard is always on until the setting exists), R-NPM-007 (the description of `warn`). Code: `internal/formats/npm/tags.go`.
+
+### Q-NPM-24 · What an npm repository takes through `/files/` and what `Inspect` answers
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+An item that reaches an npm repository through the raw view would be a file no document lists, at a path R-NPM-008 cannot protect. Separately, the
+conformance kit asks `Inspect` for 413 or 422 and the core's `untrusted` limits (10,000 entries, 64 MiB read into memory) are lower than npm's
+publish limits (100,000 entries, 2 GiB unpacked).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Accept raw uploads | The hook ignores an item that comes without a publish | Nothing to build | A tarball can bypass every rule of R-NPM-007 and R-NPM-008 |
+| (b) Refuse them | `OnCommit` of an upload without the publish's payload is 400 `npm_bad_publish` until the raw deploy of R-NPM-036 is built | R-NPM-008 holds without exception | `/files/` cannot add to an npm repository |
+| (c) Inspect with the publish limits | One limit set | One set | Fails the kit's crafted inputs, and a caller of `Inspect` gets 2 GiB |
+
+**Choice:** (b), and `Inspect` uses the limits of the inspection (`untrusted`, tightened by the descriptor: 1 MiB `package.json`, depth 64, ratio 100:1) and answers 422
+`content_refused` where the publish answers 400 `npm_bad_publish` and 413 where a bound is crossed. A publish validates with `npm.publish.*`, which are the format's own.
+
+**Rationale:** R-NPM-007 states 400 for a malformed or ambiguous archive, so the publish keeps it; `Inspect` is the contract's path for content that is not a publish, which the kit
+holds to 413 or 422. The development agent would revisit (b) with R-NPM-036.
+
+**Applied in the spec:** R-NPM-007 (a note after the processing steps), R-NPM-036. Code: `internal/formats/npm/{hooks.go,publish.go,format.go}`.
+
+### Q-NPM-25 · The shape of refusals, audit outcomes and metric labels
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Four statements of the page cannot be built as written: R-NPM-001 and R-NPM-043 want 501 for a `POST`, and the error model has no 501; R-NPM-007 and R-NPM-044 name
+the outcome `retry_acknowledged`, and an audit outcome is `success`, `failure` or `denied`; R-NPM-044 names a metric label `repository`, and
+R-OPS-007 allows `repo`; R-NPM-005 names the log fields `npm-command` and `npm-session`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Bend the platform | A fourth audit outcome, the label `repository`, a free status in errors | Matches the text | Changes the audit table, the label list and the error kinds for one format |
+| (b) Fit the page to the platform | A new error kind `NotImplemented` (501); outcome `success` with the reason `retry_acknowledged`; the label `repo`; the log fields as named | The platform's rules stay | The page is corrected in three places |
+
+**Choice:** (b). `errs.NotImplemented` is the only addition to the error model. The unimplemented endpoints share one matcher, so each family answers GET, PUT and DELETE with 404 and POST with 501
+by four routes instead of a route per path; a 404 carries `not_found`, a 501 `npm_not_implemented`. The audit event of the acknowledged retry is `npm.publish` with outcome `success` and
+reason `retry_acknowledged`. The metric label is `repo`, capped by the repository limit of the metrics section.
+
+**Rationale:** The statuses and names clients see do not change. The label limiter (`CappedLabels`) has no component that feeds it the repository keys yet, so every `repo` value is `_other` today;
+the format asks the limiter and is correct once it is fed.
+
+**Applied in the spec:** R-NPM-005 (501 stands for the not-implemented kind), R-NPM-007 step 4, R-NPM-044 (outcome, label). Code: `internal/errs`, `internal/audit/events_npm.go`, `internal/formats/npm/{routes.go,bind.go}`.
 
 ### Q-NPM-41 · Where the test upstream gets its packages
 

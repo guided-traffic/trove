@@ -1309,7 +1309,11 @@ completes or fails. The same conventions as R-OPS-010 apply.
 [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-047 adds the fields `flight_role`
 and `cache_status` to records with `purpose: remote`. `flight_role` is `leader`, `follower` or
 `waiter` for pull-through fetches, and `probe` for the upstream request of a shadowing check
-(R-REPO-048), which stores nothing.
+(R-REPO-048), which stores nothing. The role says how the request that sends the upstream request
+came to send it: a `leader` fetches without having joined or waited first (it holds the flight
+lock, or no lock exists), a `follower` first joined a flight of its replica that ended with
+nothing to read and then fetched itself, a `waiter` first waited for another replica's flight
+that ended without an entry and then fetched (Q-REPO-92).
 
 ```yaml
 log:
@@ -1743,6 +1747,11 @@ asynchronous. "Hook" marks events that webhooks may select (R-OPS-037).
 | `repository.created`, `repository.updated`, `repository.deleted` | T | — | Repository configuration change | `changes` |
 | `repository.cache_invalidated` | T | — | R-OPS-021 | `path`, `scope`, `count` |
 | `repository.remote_package_shadowed` | T | — | Security event: a caller holding `manage` (or `content:bypass`) gave a local repository its first version of a name that a remote member of a containing virtual repository serves ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-048); written in the commit transaction. The local repository is the `repository` column | `package`, `exposure` (the pairs `{virtual, remote}`) |
+| `proxy.upstream_gone` | T | — | The upstream answered 404 or 410 for a stored document; the first such answer marks it ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-029); written in the marking transaction | `path`, `variant` |
+| `proxy.upstream_digest_changed` | A | — | Security event: an artifact is cached and the upstream's metadata now announces another digest, or two fetches of one artifact returned different bytes; the cached artifact is kept (R-REPO-041, R-REPO-026); at most once an hour per path and announced digest | `path`, `cachedSha256`, `announced`, `fetchedSha256` |
+| `proxy.integrity_mismatch` | A | — | Security event: a fetched artifact does not match the digest the upstream announced; nothing is stored (R-REPO-041) | `path`, `announced`, `computedSha256` |
+| `proxy.tls_untrusted` | A | — | Security event: the upstream's certificate is not trusted; at most once a minute per repository and host (R-REPO-047) | `host` |
+| `proxy.egress_denied` | A | — | Security event: the egress address policy refused the upstream's address; at most once a minute per repository and host (R-REPO-038) | `host` |
 | `package.published` | T | yes | A package version was accepted (npm publish, NuGet push). Journal flag with `journal_entry: optional` (R-OPS-014): journaled for local NuGet repositories only ([formats/nuget.md](formats/nuget.md) R-NUGET-033) | `package`, `version`, `files` |
 | `package.deleted` | T | yes | A package version was deleted or unpublished. Journal flag with `journal_entry: optional`, as for `package.published` | `package`, `version` |
 | `npm.reinstate` | T | — | `trove admin npm reinstate` put back a version that a journal replay had withheld ([formats/npm.md](formats/npm.md) R-NPM-044, R-NPM-047); not journaled, because it restores access rather than removing it | `package`, `version`, `integrity`, `journal_entry` (the entry that withheld it) |

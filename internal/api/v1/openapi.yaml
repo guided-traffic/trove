@@ -8084,11 +8084,11 @@ components:
         A package format of this build (R-ARCH-010): the names of `GET /api/v1/formats`. The four enums of
         this block are generated from the format registry and `TestR_ARCH_010_PerClassFormatEnums` fails on
         any difference; no list of formats per class is kept by hand anywhere.
-      enum: [generic]
+      enum: [generic, npm]
     LocalFormatName:
       type: string
       description: The formats whose classes contain `local`. The create form offers these for a local repository.
-      enum: [generic]
+      enum: [generic, npm]
     RemoteFormatName:
       type: string
       description: The formats whose classes contain `remote`. The create form offers these for a remote repository.

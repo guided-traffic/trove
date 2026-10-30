@@ -18,8 +18,10 @@ const (
 	MaxUserAgent = 512
 	MaxPath      = 2 << 10
 	// MaxHost bounds the host field (R-EP-009).
-	MaxHost   = 255
-	maxMethod = 32
+	MaxHost = 255
+	// MaxExtraField bounds a field a protocol adds with RequestInfo.SetField.
+	MaxExtraField = 128
+	maxMethod     = 32
 	// TruncatedMarker ends a field that was cut.
 	TruncatedMarker = "…[truncated]"
 )
@@ -154,7 +156,7 @@ func RequestLog(log *slog.Logger, m *Metrics, opts ...RequestOption) func(http.H
 			if auth == "" {
 				auth = "none"
 			}
-			rlog.LogAttrs(ctx, slog.LevelInfo, "request completed",
+			attrs := []slog.Attr{
 				slog.String("trace_id", RequestID(ctx)),
 				nullable("span_id", SpanID(ctx)),
 				slog.String("listener", o.listener),
@@ -181,7 +183,11 @@ func RequestLog(log *slog.Logger, m *Metrics, opts ...RequestOption) func(http.H
 				nullable("deny_reason", facts.denyReason),
 				nullable("limiter", facts.limiter),
 				nullable("limit_mode", facts.limitMode),
-			)
+			}
+			for _, f := range facts.extra {
+				attrs = append(attrs, nullable(f.name, clipField(f.value, MaxExtraField, o.scrub)))
+			}
+			rlog.LogAttrs(ctx, slog.LevelInfo, "request completed", attrs...)
 		})
 	}
 }

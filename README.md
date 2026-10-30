@@ -284,7 +284,7 @@ The names of the event registry ([internal/audit](internal/audit/)). Each event 
 The code registry is [internal/errs/codes.go](internal/errs/codes.go). Every problem answer carries one of these values as `code`. The HTTP status of each code is in the registry.
 
 <details>
-<summary>Error codes (109 codes in the registry, grouped as the file groups them)</summary>
+<summary>Error codes (127 codes in the registry, grouped as the file groups them)</summary>
 
 - General: `internal`, `malformed_request`, `validation_failed`, `unauthenticated`, `forbidden`, `not_found`, `method_not_allowed`, `conflict`, `precondition_failed`, `payload_too_large`, `unsupported_media_type`, `rate_limited`, `insufficient_storage`, `unavailable`, `upstream_failed`, `upstream_timeout`, `repository_not_found`, `database_unavailable`, `egress_denied`, `key_ring_incompatible`, `object_store_unavailable`, `shutting_down`, `server_busy`, `database_timeout`, `misdirected_request`, `invalid_cursor`, `invalid_header`, `already_exists`, `idempotency_in_progress`, `idempotency_key_reused`, `precondition_required`, `reserved_name`, `managed_by_config`
 - Tokens: `invalid_token`, `credentials_required`, `invalid_credentials`, `principal_disabled`, `invalid_scope`, `invalid_ttl`, `ttl_exceeds_maximum`, `default_above_maximum`, `exceeds_ceiling`, `non_expiring_not_allowed`, `non_expiring_restricted`, `pat_not_allowed`, `ci_token_restricted`, `token_already_issued`, `token_limit_reached`, `derivation_exceeds_parent`, `description_required`, `not_a_token`
@@ -294,6 +294,7 @@ The code registry is [internal/errs/codes.go](internal/errs/codes.go). Every pro
 - Files: `invalid_path`, `not_admitted`, `path_conflict`, `content_unavailable`, `range_not_satisfiable`
 - Endpoints and exposure: `endpoint_read_only`, `invalid_version_range`, `dimension_not_supported`, `format_not_exposable`, `endpoint_not_configured`, `exposure_rule_limit_reached`
 - Package ownership and populating (M2): `package_owned_by_other_owner`, `last_owner`, `populate_not_permitted`
+- npm (M2): `npm_invalid_name`, `npm_invalid_version`, `npm_invalid_range`, `npm_invalid_tag`, `npm_bad_publish`, `npm_manifest_mismatch`, `npm_too_large`, `npm_class_not_writable`, `npm_version_exists`, `npm_version_unpublished`, `npm_stale_rev`, `npm_not_implemented`, `npm_audit_unavailable`, `npm_invalid_upstream_document`
 - Remote repositories (M2): `upstream_secret_unavailable`, `source_network_unavailable`, `foreign_host_denied`
 - Package content (M2): `content_refused`
 

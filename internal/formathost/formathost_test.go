@@ -231,7 +231,7 @@ func TestR_AUTHZ_018_ClaimFailsClosed(t *testing.T) {
 		if err := w.Claim(context.Background(), tg, formats.OwnershipWrite{Publish: true}); errs.KindOf(err) != errs.Internal {
 			t.Fatalf("err = %v", err)
 		}
-		if err := w.AutoClaim(context.Background(), "left-pad"); errs.KindOf(err) != errs.Internal {
+		if _, err := w.AutoClaim(context.Background(), "left-pad"); errs.KindOf(err) != errs.Internal {
 			t.Fatalf("err = %v", err)
 		}
 	})
@@ -240,7 +240,7 @@ func TestR_AUTHZ_018_ClaimFailsClosed(t *testing.T) {
 		if err := w.Claim(context.Background(), tg, formats.OwnershipWrite{Publish: true}); errs.KindOf(err) != errs.Internal {
 			t.Fatalf("err = %v", err)
 		}
-		if err := w.AutoClaim(context.Background(), "left-pad"); errs.KindOf(err) != errs.Internal {
+		if _, err := w.AutoClaim(context.Background(), "left-pad"); errs.KindOf(err) != errs.Internal {
 			t.Fatalf("err = %v", err)
 		}
 	})

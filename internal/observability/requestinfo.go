@@ -31,7 +31,15 @@ type requestFacts struct {
 	limitMode     string
 	remoteAddr    string
 	host          string
+	// extra are the fields a protocol layer adds to the record (SetField), in the
+	// order they were set.
+	extra []extraField
 }
+
+type extraField struct{ name, value string }
+
+// MaxExtraFields bounds the fields one request adds with SetField.
+const MaxExtraFields = 8
 
 type infoKey struct{}
 
@@ -109,3 +117,21 @@ func (ri *RequestInfo) SetRemoteAddr(a string) { ri.set(func(v *requestFacts) { 
 // SetHost records the effective host of the request (R-EP-003), after the
 // endpoint's host rule; the record clips it to MaxHost bytes.
 func (ri *RequestInfo) SetHost(h string) { ri.set(func(v *requestFacts) { v.host = h }) }
+
+// SetField adds a field of the protocol to the request record: the access-log
+// fields a package format names (npm-command, npm-session, R-NPM-005). The value
+// comes from the client and is clipped when the record is written; a name set
+// twice keeps the first value, and more than MaxExtraFields names are ignored.
+// It is never used for a decision.
+func (ri *RequestInfo) SetField(name, value string) {
+	ri.set(func(v *requestFacts) {
+		for _, f := range v.extra {
+			if f.name == name {
+				return
+			}
+		}
+		if len(v.extra) < MaxExtraFields {
+			v.extra = append(v.extra, extraField{name: name, value: value})
+		}
+	})
+}

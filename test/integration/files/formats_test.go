@@ -5,6 +5,7 @@ package files
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -344,8 +345,10 @@ func TestR_ARCH_005_DispatcherRoutesAndRefuses(t *testing.T) {
 	}
 
 	t.Run("R-ARCH-005 the prefix of a format with routes is registered and generic has none", func(t *testing.T) {
-		if got := strings.Join(f.disp.Prefixes(), ","); got != "probe" {
-			t.Fatalf("prefixes = %s", got)
+		// Every registered format with routes has its prefix (npm and the probe
+		// format here); generic has none.
+		if got := f.disp.Prefixes(); !slices.Contains(got, "probe") || !slices.Contains(got, "npm") || slices.Contains(got, "generic") {
+			t.Fatalf("prefixes = %s", strings.Join(got, ","))
 		}
 		for _, p := range f.router.Patterns() {
 			if strings.Contains(p, "/api/generic/") {

@@ -81,8 +81,14 @@ type RemoteAdapter interface {
 // CacheStatus is what the remote engine reports for the Cache-Status header.
 type CacheStatus struct {
 	Hit, Stale, Stored, Negative bool
-	TTL                          time.Duration
-	Detail                       string
+	// Collapsed: the response came from another request's fetch.
+	Collapsed bool
+	TTL       time.Duration
+	Detail    string
+	// Header is the value of the Cache-Status header (RFC 9211) the engine rendered
+	// for the response; a handler sets it as it is (R-REPO-047). A Negative status is
+	// the 404 of a negative entry: the document has no content.
+	Header string
 }
 
 // RemoteDocument is a stored or fetched metadata document of a remote repository.

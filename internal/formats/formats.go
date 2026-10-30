@@ -174,6 +174,10 @@ type Descriptor struct {
 	// MaxDocumentBytes bounds a document held in memory; the smaller of it and
 	// proxy.max_metadata_bytes applies (R-ARCH-028).
 	MaxDocumentBytes int64
+	// VerifyAnnouncedDigests says that the format's protocol addresses artifacts by
+	// the digests its metadata announces, so a remote fill compares them whatever
+	// integrity.checksumPolicy says (R-REPO-041: npm always verifies, R-NPM-026).
+	VerifyAnnouncedDigests bool
 	// Limits tighten untrusted.DefaultLimits; a zero field keeps the default.
 	Limits Limits
 	// RepositoryIndex says the format has repository-wide derived indexes, which

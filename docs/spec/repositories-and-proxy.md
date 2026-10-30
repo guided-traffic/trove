@@ -1558,12 +1558,15 @@ execute these steps in order:
   collection, but they are not items.
 - **Object store unavailable** ([R-STOR-036](storage.md)): an artifact miss is streamed to the client
   without storing it, under the pass-through rules of R-REPO-044 (verification included); a
-  refreshed metadata document is served but not stored, and entries are not updated.
+  refreshed metadata document is served but not stored, and entries are not updated. The
+  requests that waited for the flight fetch for themselves, and a ranged request is answered
+  503 `object_store_unavailable`, because the range is served from a stored item (Q-REPO-95).
 - Replicas SHOULD keep recently served metadata bytes in a bounded in-memory cache keyed by blob
   digest, so a fresh hit costs no object-store round trip. Which digest a request serves is always
   read from `remote_cache_entries`; the key is the content address, so this cache can never make
   one replica answer differently from another (INV-18, R-REPO-049). It is never shared through
-  Valkey ([architecture.md](architecture.md) R-ARCH-030).
+  Valkey ([architecture.md](architecture.md) R-ARCH-030). Its size is `proxy.metadata_cache_bytes`
+  (128 MiB by default); a document above an eighth of it is not kept.
 
 Data model:
 
@@ -1895,7 +1898,9 @@ Outcome classification:
 | unexpected content type (R-REPO-042) | yes | stale if stored, else 502 | 502 |
 
 - Stale serving is bounded by `cache.maxStaleSeconds` when that is not `0`; beyond it the failure is
-  returned.
+  returned. The bound counts from the end of the metadata period and applies to a failed or slow
+  refresh and to an open circuit; offline mode, the cache view and a caller without the populate
+  right serve any stored entry (Q-REPO-96).
 - One immediate retry after 250 ms MUST be made for a connection failure that occurred before any
   request byte was sent; no other automatic retry happens inside a client request.
 - **Upstream gone** (Q-REPO-3). When the upstream answers 404 or 410 for a metadata document that
@@ -2519,7 +2524,9 @@ Priority: **MVP** · Covers: RMT-022
   and the upsert then refuses this one (R-REPO-026). On a mismatch it MUST abort the client connection
   without completing the message (HTTP/1.1: close before the announced length or the final chunk;
   HTTP/2: reset the stream), so no client receives a complete response with unverified content
-  ([RFC 9112, section 8](https://www.rfc-editor.org/rfc/rfc9112#section-8)). Nothing is stored;
+  ([RFC 9112, section 8](https://www.rfc-editor.org/rfc/rfc9112#section-8)). The leader streams
+  only when the upstream announced the length of the body, and the status line goes out with the
+  first byte beyond the withheld tail, so an error before that is a plain 502 (Q-REPO-94). Nothing is stored;
   collapsed followers get 502 `upstream_integrity_mismatch`; a security event is logged; nothing is
   negatively cached.
 - **Immutable stays immutable.** When refreshed metadata announces, for an artifact already cached, a
@@ -2881,7 +2888,11 @@ L covers the name) is not counted (Q-REPO-115).
 
 - Every upstream request writes one record of the `upstream` log
   ([R-OPS-011](operations-and-observability.md)); this page adds the fields `flight_role`
-  (`leader`, `follower`, `waiter`) and `cache_status`.
+  (`leader`, `follower`, `waiter`) and `cache_status`. The role says how the request that sends
+  the upstream request came to send it (Q-REPO-92): a `leader` fetches without having joined or
+  waited first, a `follower` first joined a flight of its replica that ended with nothing to
+  read and then fetched itself, a `waiter` first waited for another replica's flight that ended
+  without an entry and then fetched.
 - Audit events (INV-16): `repository.created`, `repository.updated`, `repository.deleted`,
   `repository.cache_invalidated`, `repository.claims_changed`, `proxy.global_offline_changed`,
   `proxy.client_certificate_changed`, `proxy.outbound_proxy_changed`. Security events:
@@ -3822,6 +3833,150 @@ Context: R-REPO-024 lists a default for every member but says formats "propose e
 **Rationale:** Refusing is the only behavior that keeps the stored document and the enforced behavior equal. The development agent would revisit it when the P1 requirements are built; each refusal is one line in `validateRemote` and goes with its requirement.
 
 **Applied in the spec:** R-REPO-024 (the `extraHosts` row and the bullets on `url` and the refusals).
+
+### Q-REPO-92 · The role of an upstream request in the flight is how its request came to send it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-OPS-011 and R-REPO-047 name the roles `leader`, `follower` and `waiter` for the upstream log and leave the difference between the last two undefined. A follower or a waiter that is served from the flight's entry sends no upstream request, so a role that only described joining would never appear in a record.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The role says how the request that sends the request got to be the one that sends it (chosen) | `leader`: it fetches without having joined or waited first (it holds the lock, or no lock exists: Valkey unavailable, draining); `follower`: it joined a flight of this replica that ended with nothing to read (a pass-through, an unstored refresh) and then fetched itself; `waiter`: it waited for another replica's flight that ended without an entry (the holder failed, its lock expired, the wait bound ran out) and then fetched; `probe` for a shadowing check | Every role occurs on records that exist; the three can be told apart in a post-mortem of a fetch storm | A role describes history, not only the current act |
+| (b) The role says whether the request joined a flight | follower and waiter for every request that joined, whether it fetched or not | Simple | Never logged: a joiner sends no request, so the field would only ever read `leader` |
+| (c) One value `waiter-bypass` | A single role for every fetch without the lock | Matches the plan's sketch | Cannot tell the in-process case from the cross-replica one |
+
+**Choice:** (a).
+
+**Rationale:** The log is read for what happened to a request, and only requests that send one are in it. The development agent would revisit the definition when a fourth way to fetch exists.
+
+**Applied in the spec:** R-OPS-011 and R-REPO-047 define the three roles and the probe role.
+
+### Q-REPO-93 · validated_at is the database clock at the fill statement, fetched_at the database clock when the headers arrive
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-027 compares entries with the invalidations by database time, R-REPO-026 keeps the newer `fetched_at`, and the acceptance criteria need a document fetched for 90 s to be fresh when it arrives.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `validated_at` and `expires_at` from `clock_timestamp()` in the fill statement; `fetched_at` read from the database when the response headers arrive (chosen) | The period starts when the document is stored; two overlapping fetches of one document are ordered by the time their answers began | One clock decides everything the invalidations and the upsert compare; a slow transfer does not shorten the period | A fill that fetched before an invalidation and commits after it counts as validated after it; the fold's last pass catches the entries a fill stored late (Q-REPO-103) |
+| (b) Both from the replica clock | `time.Now()` at the end of the transfer | No extra round trip | Skew between replicas orders two fetches wrongly and breaks the comparison with the invalidation times |
+| (c) Both from the database clock before the request is sent | The period starts when the request is sent | An invalidation during the transfer always wins | A transfer longer than the period stores an expired entry |
+
+**Choice:** (a). `cache.maxStaleSeconds` counts from the end of the period (RFC 5861 `stale-if-error`), on the database clock.
+
+**Rationale:** The extra statement per fetch is small against a transfer. The development agent would revisit it if invalidations during long transfers matter more than the period of a slow fetch.
+
+**Applied in the spec:** R-REPO-027 (the clock of freshness) and R-REPO-029 (the bound of stale serving).
+
+### Q-REPO-94 · The leader's client gets the body while it is fetched only when the length is announced; the status line goes out with the first released byte
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-041 lets the leader stream the body to its own client with the last 64 KiB withheld; a failure after the status line can only abort the connection, while R-REPO-040 owes a client a 502 when an item crosses the size limit.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Stream when the upstream announced a length; otherwise answer from the stored entry (chosen) | A body of announced length cannot cross the limit; the status line is held back until the first byte beyond the withheld tail leaves, so a body that ends inside it still gets a clean error; a failure after the status line aborts the connection (`http.ErrAbortHandler`) | The first byte reaches the client early for the large artifacts the rule is for; limit and integrity failures are 502 where they can be | A chunked body without a length is served after the commit |
+| (b) Always stream | Also without a length | One path | A size limit crossed mid-transfer cuts the client instead of answering 502 |
+| (c) Never stream | Serve after the commit | Simplest | A 200 MiB artifact sends nothing for minutes and meets idle timeouts of the edge |
+
+**Choice:** (a). A request with `Range` or a `HEAD` is not streamed: the range is served from the stored item (R-REPO-025), the `HEAD` stores nothing. The stream never stops the fetch: a client that stalls for a minute or leaves is dropped and the fetch goes on (R-REPO-026).
+
+**Rationale:** The development agent would revisit it when a format needs conditional first fetches.
+
+**Applied in the spec:** R-REPO-041 (the withheld tail) and R-REPO-040 (the refusal for an unannounced length).
+
+### Q-REPO-95 · With the object store unavailable an artifact is streamed and not stored, a document is served and not stored
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-025 says so and does not say what the requests that waited for the flight get, or what a ranged request gets.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The leader's client gets the verified body; the requests that waited fetch for themselves; a ranged request is 503 `object_store_unavailable` (chosen) | The commit fails with `object_store_unavailable`; the verified tail is released; no entry, no item; the followers find nothing to read and fetch under the slots, as a pass-through does (R-REPO-044) | Installs keep working in an outage; verification is not skipped | A burst of requests for one uncached artifact costs one upstream fetch each while the store is down |
+| (b) 503 for every uncached artifact | Refuse until the store is back | No duplicate fetches | The requirement says an uncached artifact is still installed |
+| (c) Spool for the waiters | Hand the spool file to the followers | One fetch | A spool is the pod's scratch space and its lifetime is the request's (INV-13) |
+
+**Choice:** (a). The `Cache-Status` header of a streamed response is written before the commit result is known and says `stored`.
+
+**Rationale:** The development agent would revisit it if the outage case needs the fetch collapsed.
+
+**Applied in the spec:** R-REPO-025 (the object-store bullet).
+
+### Q-REPO-96 · Which stale serving is bounded by maxStaleSeconds
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-029 bounds stale serving by `cache.maxStaleSeconds`; R-REPO-030 serves stored entries regardless of expiry in offline mode, and R-AUTHZ-008 serves what the cache holds to a caller who may not fill it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The bound applies where the engine chose to ask and could not: a failed or slow refresh and an open circuit (chosen) | Offline mode, the cache view, only-if-cached and a caller without the populate right serve any stored entry | Each rule says what its spec page says; the bound limits only what an outage would otherwise keep alive | An offline repository can serve a very old document, by the operator's decision |
+| (b) The bound applies everywhere | Every stale answer is bounded | One rule | Contradicts R-REPO-030 and the cache view |
+| (c) The bound applies to nothing but failures | Not to the open circuit | Narrower | An open circuit is the long outage the bound is for |
+
+**Choice:** (a).
+
+**Rationale:** The development agent would revisit it when an operator asks for a ceiling on offline mode.
+
+**Applied in the spec:** R-REPO-029 (the bullet on stale serving).
+
+### Q-REPO-97 · Fetch slots: the share is read when a fetch asks, and every upstream request takes one
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-040 divides `limits.maxConcurrentFetches` by the number of live replicas and says a probe, a pass-through and a fetch outside a flight take slots directly.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `ceil(budget / n)` with n read at every acquisition; a waiter takes none; probes and HEAD requests take one; the wait polls every 250 ms (chosen) | A replica's counters only; n comes from the replica registry's count | A scale event is seen at the next acquisition; no coordination; the bound `budget + n - 1` holds | A queued fetch may wait up to 250 ms longer than a notification would |
+| (b) n fixed at start | Read once | Cheaper | Wrong after a scale event until restart |
+| (c) A cluster-wide semaphore in Valkey | Exact total | Exact | Depends on Valkey, which R-REPO-040 forbids |
+
+**Choice:** (a).
+
+**Rationale:** The development agent would revisit it if the 250 ms poll shows up in the queue-wait histogram.
+
+**Applied in the spec:** R-REPO-040 states the slots of probes and HEAD requests.
+
+### Q-REPO-98 · The circuit: a probe claims its slot when it sends, every success is one statement, and a replica follows through an asynchronous reload
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-029 says the first request on each replica after `open_until` probes and the others answer as open, that healthy traffic causes no writes, and that `trove_remote_upstream_up` is 0 on every replica within 2 s.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The probe slot is claimed right before the upstream request and given back when it ends; a success runs one conditional UPDATE that matches no row while the counter is 0; the state is a registered cache of area `upstream_state` that a change reloads in the background (chosen) | Requests that are answered earlier (negative entry, refusal to fill) never hold the slot; a 404 neither counts nor resets | The slot is never lost to a request that did not fetch; no write when healthy; the gauge follows without traffic for repositories the replica has served | A statement per success; a repository that a replica never served has no series on it |
+| (b) Claim the slot at the circuit check | At step 7 | Earlier | A request that stops at step 8 or 9 leaves the slot taken |
+| (c) Count in memory and write rarely | Batch the counter | Fewer writes | n replicas count a burst differently and open the circuit late |
+
+**Choice:** (a). A failure whose UPDATE finds the circuit open reads the state and holds it open at once.
+
+**Rationale:** The development agent would revisit it if the success statement is measurable in a profile.
+
+**Applied in the spec:** R-REPO-029 (the circuit bullets).
+
+### Q-REPO-99 · The gone-package gate and the URL map
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-029 and R-REPO-043 leave open how the gone set is keyed when the package document has variants, what the cache view does, and where the foreign-host check happens.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The gone set maps the path of each gone document to its variant; the gate refreshes the package document under the normal steps and answers 404 for the cache view and only-if-cached; a mapping is dropped when it equals the derived URL, ignored when it is not of the document's package, and checked against the hosts when the artifact is fetched (chosen) | A format that tracks removal is skipped; the refresh clears the mark through the fill | The mark heals for clients that never request documents; a document cannot choose another package's artifact; a host added to `extraHosts` takes effect for recorded URLs | Recorded URLs on a foreign host stay in the table until they are fetched or replaced |
+| (b) Check the host when the mapping is recorded | Refuse the document | Earlier | A later `extraHosts` change would not apply to what was recorded |
+| (c) Key the gone set by package name | The format maps both ways | Smaller set | Needs an inverse of `PackageDocumentPath` the contract does not have |
+
+**Choice:** (a).
+
+**Rationale:** The development agent would revisit it when a format with several variants of the package document exists.
+
+**Applied in the spec:** R-REPO-029 and R-REPO-043 (no change of text; the criteria are tested).
 
 ### Q-REPO-100 · The prefix of an invalidation is whole segments, validated up front
 

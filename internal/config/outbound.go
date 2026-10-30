@@ -29,6 +29,7 @@ type Proxy struct {
 	QueueTimeoutSeconds      int         `yaml:"queue_timeout_seconds" default:"10" validate:"min=0,max=600" doc:"How long a fetch waits for a free slot before it answers 503 with Retry-After: 5; 0 refuses at once (R-REPO-040)."`
 	GlobalOffline            bool        `yaml:"global_offline" default:"false" doc:"No remote repository contacts its upstream; the runtime switch cannot lift it (R-REPO-031)."`
 	BlockedContentTypes      []string    `yaml:"blocked_content_types" default:"[\"text/html\",\"application/xhtml+xml\"]" doc:"Media types an upstream answer may not have where integrity.blockUnexpectedContentTypes is true (R-REPO-042); lower-case type/subtype without parameters."`
+	MetadataCacheBytes       ByteSize    `yaml:"metadata_cache_bytes" default:"128MiB" validate:"min=0" doc:"Per replica: the bytes of recently served metadata documents of remote repositories by blob digest, so a fresh hit costs no object-store round trip (R-REPO-025); a document above an eighth of it is not kept; 0 turns the cache off."`
 	MergedMetadataCacheBytes ByteSize    `yaml:"merged_metadata_cache_bytes" default:"256MiB" validate:"min=0" doc:"Per replica: merged package documents of virtual repositories (R-REPO-020); 0 turns the cache off."`
 	Claims                   ProxyClaims `yaml:"claims"`
 

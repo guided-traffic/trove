@@ -29,9 +29,21 @@ type SetupTemplate struct {
 // SetupData is the only data a setup template sees. It has no credential field,
 // so a template that names one fails to execute (kit check 8).
 type SetupData struct {
+	// RegistryURL is the registry URL of the repository, with its trailing slash.
 	RegistryURL string
 	Repository  string
 	Endpoint    string
-	Scope       string
-	Username    string
+	// Scope is the scope a snippet binds to the repository without its "@"
+	// ("acme"), "" for the default registry of the client.
+	Scope    string
+	Username string
+	// RegistryKey is RegistryURL without its scheme, "//trove.example.com/api/npm/npm-all/":
+	// the key an .npmrc credential line is bound to, so that the client sends the
+	// credential to this registry and to no other URL (R-NPM-041). It is a key, not
+	// a credential.
+	RegistryKey string
+	// RequiresAuth is true when the repository is not anonymously readable: a
+	// snippet then makes the client send its credential without waiting for a
+	// challenge (always-auth, npmAlwaysAuth).
+	RequiresAuth bool
 }

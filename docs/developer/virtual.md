@@ -306,10 +306,8 @@ type Locals interface {
 
 ### Binding the proxy engine
 
-The remote engine is the one seam without a production implementation yet. `Options.Remotes` takes a `virtual.Remotes`; the composition root's
-`virtualRemotes()` ([wire_virtual_engine.go](../../internal/app/wire_virtual_engine.go)) returns nil until the proxy engine is bound (it is not on main yet; the binding is to return it there, as a new input of the step), and the engine
-then treats every remote member as one that cannot be asked (502 for an artifact, `partial` for a merge, `offline` in the explanation, undetermined
-for the shadowing check). The binding is mechanical:
+The remote engine is bound: `Options.Remotes` takes `formathost.NewVirtualRemotes` over the proxy engine ([wire_virtual_engine.go](../../internal/app/wire_virtual_engine.go), [proxy.md](proxy.md) "Binding to the virtual engine"). Without a remote engine the virtual engine would treat every remote member as one that cannot be asked (502 for an artifact, `partial` for a merge, `offline` in the explanation, undetermined
+for the shadowing check). The seam it binds:
 
 ```go
 type Remotes interface {

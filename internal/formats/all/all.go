@@ -5,8 +5,10 @@ package all
 import (
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/generic"
+	"github.com/guided-traffic/trove/internal/formats/npm"
 )
 
 func init() {
 	formats.Register(generic.Format{})
+	formats.Register(npm.New())
 }

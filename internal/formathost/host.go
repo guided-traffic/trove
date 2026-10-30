@@ -62,8 +62,11 @@ type Options struct {
 	Deps
 	// Renditions is the cache of rendered documents; nil never hits.
 	Renditions formats.RenditionCache
-	// Remote and Resolver are the engines; nil answers "not supported" (the engines
-	// land with the remote and virtual classes of the first format that has them).
+	// Engine is the remote engine; the host wraps it in the RemoteFetcher the
+	// formats see (remote.go). Remote replaces that wrapper, for a test.
+	Engine RemoteEngine
+	// Remote and Resolver are the engines; nil answers "not supported" (the virtual
+	// engine lands with the virtual class of the first format that has it).
 	Remote   formats.RemoteFetcher
 	Resolver formats.Resolver
 	// DownloadBuffer is storage.download.buffer_size; below 4,096 uses 4,096.
@@ -94,6 +97,10 @@ func New(o Options) (*Host, error) {
 	if o.Renditions == nil {
 		o.Renditions = missCache{}
 	}
+	h := &Host{}
+	if o.Remote == nil && o.Engine != nil {
+		o.Remote = &remote{h: h, e: o.Engine}
+	}
 	if o.Remote == nil {
 		o.Remote = unsupportedRemote{}
 	}
@@ -103,7 +110,8 @@ func New(o Options) (*Host, error) {
 	if o.Log == nil {
 		o.Log = slog.Default()
 	}
-	return &Host{o: o}, nil
+	h.o = o
+	return h, nil
 }
 
 // Ingest implements [formats.Host].

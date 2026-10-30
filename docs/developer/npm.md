@@ -1,24 +1,153 @@
 # npm format
 
 The npm registry format ([spec/formats/npm.md](../spec/formats/npm.md)). This page grows with the format: each work package adds
-its section under "Package layout" and its own heading. Today it describes the four leaf libraries every other part of the
-format builds on: package names and versions, manifests and tarballs. The format package itself (`internal/formats/npm`, routes, publish, documents,
-remote and virtual repositories, exposure) is *planned* and not built yet.
+its section. Built today: the format itself (routes, classification, error shape, setup snippets), the publish of a version to a local
+repository, the data port and its PostgreSQL implementation, and the four leaf libraries every part builds on. Planned and not built:
+package documents, tarball downloads, dist-tags, unpublish, whoami and ping (their routes answer 501 until then), and the remote and
+virtual classes, merge and exposure.
 
 ## Package layout
 
 ```text
 internal/formats/npm/
-├── name/      package names: lookup rules, new-name rules, the canonical form, the look-alike fold     (built)
-├── semver/    SemVer 2.0.0 versions, node-semver ranges and their pre-release rule, dist-tag names     (built)
-├── manifest/  publish manifest normalization and the consistency compare                               (built)
-├── tarball/   streaming validation of a package tarball                                                (built)
-└── ...        the format, its store port, publish, documents, remote, merge, exposure                  (planned)
+├── format.go        the Format: Descriptor (catalog facts, data port, limits), Names, Match, Classify, PackageDocumentPath
+├── routes.go        the whole endpoint map of R-NPM-001 with the name of every handler; op() wraps each handler
+├── match.go         the grammar of the escaped paths (names in one or two segments, the markers - and -rev, the deferred families)
+├── paths.go         file names and item paths of a version (TarballPath, SigstorePath, VersionOfFile)
+├── errors.go        WriteError: the native error body, the 401 challenge, the access-log fields npm-command and npm-session
+├── publish.go       the publish handler (F1), Inspect, the acknowledged retry, the shadow check
+├── hooks.go         OnCommit of a tarball and of a provenance bundle; claim(), the ownership helper of every write
+├── tags.go          the dist-tag rules of R-NPM-016 on the SemVer order
+├── store.go         the data port (Store), with marked blocks for the work packages that add to it
+├── bind.go          Format.Bind: the settings and the metrics of one replica, kept per Host
+├── rev.go           Rev: the _rev of a document and the rev of a write (R-NPM-009)
+├── setup.go         the client setup snippets (R-NPM-041)
+├── handlers_*.go    the handlers another work package builds; each answers 501 in the native shape until then
+├── name/  semver/  manifest/  tarball/   the leaf libraries (below)
+├── publish/         the streaming reader of the request body and the checks of R-NPM-007 step 3 that need no state
+├── rows/            the values of the data port: a leaf the format and the data package share
+└── npmtest/         the in-memory twin of the data port, for the conformance kit and tests without PostgreSQL
+internal/formatdata/npm/   the data port's implementation (SQL in internal/meta/postgres/queries/npm_local.sql)
+internal/audit/events_npm.go   every audit event type of R-NPM-044
 ```
 
-The sub-packages are leaves: the standard library and [internal/errs](../../internal/errs/) only (and, for `tarball`, its
-sibling `manifest`), no format contract. The format import rule of R-ARCH-008 ([archtest](../../internal/archtest/imports.go)) allows exactly that inside a
-format's own tree, so a leaf that grows an import of another layer fails `go test ./internal/archtest/...`.
+The sub-packages `name`, `semver`, `manifest`, `tarball` and `publish` are leaves: the standard library and [internal/errs](../../internal/errs/) (and
+their siblings). The format import rule of R-ARCH-008 ([archtest](../../internal/archtest/imports.go)) allows exactly that inside a format's own tree, so a leaf that grows an
+import of another layer fails `go test ./internal/archtest/...`. `rows` is a layer-table leaf of its own: the domain package `internal/formatdata/npm` may import it, which it may not
+do with any other package of the format.
+
+## The format
+
+| Question | Where |
+|---|---|
+| What does the format declare? | `Descriptor()` in [format.go](../../internal/formats/npm/format.go): the local class (remote and virtual join with their adapters), layout `npm`, default upstream and cache periods, pattern subject `name`, `OwnershipDefault: enforce`, property prefix `npm.`, `DataPort: Store`, `MaxDocumentBytes` 128 MiB, the limits of a `package.json` |
+| How is a path matched? | `Match` = `formats.MatchRoutes` on the route table, then `name.ParseEscaped` on the name the matcher found: the name is decoded exactly once (R-NPM-002), a second layer of escapes is 400 `npm_invalid_name` for every route |
+| How is a path classified? | `Classify` ([R-NPM-003](../spec/formats/npm.md)): `<name>` and `<name>/<ref>` metadata, `<name>/-/<file>` content (tarball and `.sigstore`), `-/…` computed; what it cannot read is metadata (R-REPO-003) |
+| How is an error rendered? | `WriteError`: `{"error","message","code"}`, `Content-Type: application/json`; a 401 carries the stage's challenge or `Basic realm="trove"` and never `otp` or `ipaddress` (R-NPM-004) |
+| What is logged and counted? | `op()` records `npm-command` and `npm-session` through `observability.RequestInfo.SetField` and counts `trove_npm_requests_total{class,operation,status}`, `trove_npm_request_duration_seconds{class,operation}`; the retry counter is `trove_npm_publish_retries_acknowledged_total{repo}` |
+| Where do the settings and the metrics come from? | `Bind(host, cfg, metrics)` is called by the composition root with the Host it built; handlers find the replica by `rq.Host`. A Host nobody bound (the kit's) runs on the defaults without metrics |
+
+## The routes
+
+[routes.go](../../internal/formats/npm/routes.go) is the complete table of R-NPM-001, written once. Another work package adds a handler file and never edits it.
+
+| Route (`npm.` prefix) | Method, path below the registry URL | Kind, action | Handler | State |
+|---|---|---|---|---|
+| `root` | GET `` | computed, read | `handleRoot` | built (200 `{}`) |
+| `document.get`, `version.get` | GET `{name}`, `{name}/{ref}` | metadata, read | `handleDocument`, `handleVersion` | 501 until the documents are built |
+| `tarball.get` | GET `{name}/-/{file}` | download, read | `handleTarball` | 501 |
+| `publish` | PUT `{name}` | upload, deploy | `handlePublish` | built |
+| `unpublish.put`, `unpublish.delete`, `unpublish.tarball` | PUT, DELETE `{name}/-rev/{rev}`, DELETE `{name}/-/{file}/-rev/{rev}` | delete, delete | `handleUnpublish*` | 501 |
+| `disttags.get`, `disttag.put`, `disttag.delete` | GET `-/package/{name}/dist-tags`, PUT, DELETE `…/{tag}` | metadata read; admin deploy | `handleDistTags`, `handleDistTagSet`, `handleDistTagDelete` | 501 |
+| `ping`, `whoami` | GET `-/ping`, `-/whoami` | computed, read | `handlePing`, `handleWhoami` | 501 |
+| `deferred.get`, `.put`, `.delete`, `.post` | every path of the families npm defines and trove does not implement | computed or admin, read | `handleDeferred` | built (404; 501 for POST) |
+
+The deferred families (R-NPM-043) are one matcher (`matchDeferred`): `-/user`, `-/v1`, `-/npm`, `-/org`, `-/team`, `-/all`, `-/external`, `-/stage` and `-/package/{name}/access|visibility|collaborators`.
+Each family answers GET, PUT and DELETE with 404 and POST with 501, because npm's fetch layer retries a GET and a PUT on a 5xx and never a POST.
+
+The classes of the table are all classes of the format. While the format lists the local class only, a repository is local; when the remote and virtual classes join, the write routes get `Classes: local` so that a remote
+repository answers 405 `npm_class_not_writable` and a virtual one routes a write to its deployment target (the dispatcher does this for kind `upload`; the other write kinds need the virtual engine's
+work package).
+
+To add a route: add it to `buildRoutes` with an example that no other route of its method matches (`formats.Validate` checks), a matcher in `match.go` if the grammar is new, and a handler
+method; then a content case or a change case in [conformance_test.go](../../internal/formats/npm/conformance_test.go) (the kit refuses a route without one).
+
+## Publish
+
+`PUT {name}` (R-NPM-007, flow F1). The order is fixed by what must not hold a resource while bytes arrive (R-NPM-046):
+
+```mermaid
+flowchart TD
+    A[authorize deploy on the name] --> B[scan the body: spool the tgz and the bundle, hold the metadata]
+    B --> C[Request: name, one version, one tag, attachments, announced digests]
+    C --> D[CheckDigests: 409 on a mismatch]
+    D --> E[validate the tarball from the spool, identity, consistency]
+    E --> F[authorize with the version]
+    F --> G{VersionFacts}
+    G -->|tombstone| X1[409 npm_version_unpublished]
+    G -->|live| R{retry of this publish?}
+    R -->|yes| ACK[audit retry_acknowledged, 201 + npm-notice]
+    R -->|no| X2[409 npm_version_exists]
+    G -->|new| S[shadow check, no transaction]
+    S --> T[commit the tarball: OnCommit in the item transaction]
+    T --> U[commit the bundle, if any]
+    U --> V[201 with the rev]
+```
+
+- **The body is a stream.** [publish/scan.go](../../internal/formats/npm/publish/scan.go) reads the JSON byte by byte for the metadata (budget 768 KiB, depth 64, a duplicate member or data after
+  the document is an error) and pipes the `data` string through a base64 decoder into `Ingestor.Spool`; the spool hashes in one pass. `FuzzPublishScanner` and the 96 MiB streaming test
+  pin the memory bound. The sink for a second `.tgz`, an unknown suffix or an oversize attachment answers before the rest is read.
+- **`Request`** ([publish/request.go](../../internal/formats/npm/publish/request.go)) applies the checks of step 3 that need no state: the name equals the path's and is valid for a new package, one version (`semver.Clean`
+  then `semver.Parse`, no build metadata), one tag (`semver.ValidateTag`), the manifest names that package and version and holds no NUL (jsonb cannot store one), the tarball and at most one bundle with their declared lengths, and a sha512 or shasum to check.
+- **`OnCommit`** ([hooks.go](../../internal/formats/npm/hooks.go)) runs in the transaction of the item. Order: `EnsureLocked` (the package row lock), `claim` (ownership, R-AUTHZ-018), `AutoClaim` on a first version
+  (R-REPO-023), `InsertVersion` (raises `rev_seq`), properties `npm.name`, `npm.version`, `npm.scope`, `Store.Tags`, the tags by `tagAfterPublish`, `Store.Publish`, the signal `metadata_changed`.
+  A tombstone, a live number and a look-alike name each abort the transaction with their 409 or 400.
+- **The acknowledged retry** is decided from PostgreSQL alone (`Store.VersionFacts`: publisher, age on its clock, integrity, tag) plus the stored bundle's SHA-256, so every replica decides alike. A retry that races
+  its original reaches the commit with identical bytes: the item store reports an identical commit, the hook does not run, and the handler decides again from the committed facts.
+- **The ownership helper.** `f.claim(ctx, writer, op, package, version, firstVersion)` is the one place a write of npm asks the ownership question: `opPublish` (claims a first version), `opDistTag`, `opDeprecate`
+  (deploy) and `opUnpublish` (delete). The handlers of dist-tags, unpublish and deprecation call it under the package row lock.
+- **What is deliberately not done:** a provenance bundle is stored, linked and not read; a refused publish stores nothing except a bundle-less version when the second commit fails (Q-NPM-22); an upload through `/files/` to an npm repository is refused (Q-NPM-24).
+
+## The store port
+
+`Store` ([store.go](../../internal/formats/npm/store.go)) is the interface the format declares (`Descriptor.DataPort`); [internal/formatdata/npm](../../internal/formatdata/npm/store.go) implements it and
+[wire_formats.go](../../internal/app/wire_formats.go) binds it (`formatPorts`). The format passes the values of [rows](../../internal/formats/npm/rows/rows.go) and the transaction it received (opaque, `formats.Tx`);
+the implementation unwraps it and runs the statements of [npm_local.sql](../../internal/meta/postgres/queries/npm_local.sql). The format computes every decision that needs the SemVer order and hands the store the
+complete tag map.
+
+| Method | Does |
+|---|---|
+| `VersionFacts` | outside a transaction: live or tombstoned, integrity, tag, publisher, age on PostgreSQL's clock |
+| `Tags` | the tags of a package under its row lock |
+| `Publish` | tombstone check, the npm row (`ON CONFLICT DO NOTHING`, then locked; no row of its own means the unique `(repo_id, name_fold)` refused a look-alike: 400), the version row, the tags, `modified_at = greatest(modified_at + 1 ms, clock)`, `npm.publish` |
+| `RecordRetry`, `RecordMismatch` | the audit event of an acknowledged retry; the asynchronous mismatch event |
+| `SetTag`, `DeleteTag`, `Tombstone` | stored tags and `npm.dist_tag.*`; the tombstone with the integrity of the version row, the tags, `npm.unpublish` with its journal entry (`repositoryId`, `package`, `version`, `integrity`, `actorId`) |
+
+Add to the port in the `>>> M2 npm-read` and `>>> M2 npm-remote` blocks of `store.go` and `npm_local.sql`/`npm_remote.sql`; add the method to the twin in `npmtest` in the same change. The README text and the manifest are
+cleaned for the columns (valid UTF-8, no NUL, 64 KiB) in `Publish`.
+
+## Tests
+
+| Tier | Where | Proves |
+|---|---|---|
+| Unit | [internal/formats/npm](../../internal/formats/npm/) `*_test.go` | the route table and every status (`TestR_NPM_001_RouteTable`, `TestR_NPM_043_UnimplementedEndpointsAnswerPredictably`), classification (`TestR_NPM_003_Classification`), the error shape over all routes and all statuses (R-NPM-005), no `otp` (R-NPM-004), the access-log fields and the metrics, the hook's order and refusals with a fake writer, the dist-tag rules, the snippet lint (R-NPM-041) |
+| Conformance | `TestR_ARCH_010_Conformance` | the ten checks of the kit; checks 4 and 5 are skipped with a reason until the remote and virtual classes exist, and the kit refuses the skip then |
+| Scanner | [publish](../../internal/formats/npm/publish/) | the body rules, the 96 MiB streaming bound, `FuzzPublishScanner` |
+| Fuzz | `FuzzMatch` (own, escaped-path properties), `FuzzR_ARCH_028_Match`, `FuzzR_ARCH_028_Inspect`, `FuzzPublishScanner` | no panic, canonical names, classified errors |
+| Integration | [test/integration/npm](../../test/integration/npm/) | against PostgreSQL and the object store, with replicas started through `app.New` (`testenv.NewStack`, `Start`, `Do`): publish rows and item, tags and the latest guard, immutability, the retry on another replica and after an edge reset, concurrent publishes of two versions, of one new name and of look-alike names, ownership races, auto claim, archive rules, limits, a slow 200 MiB publish (no connection idle in a transaction, bounded heap), the route contract over the real chain, the access log, metrics and the store's writes |
+
+```sh
+go test ./internal/formats/npm/...
+go test -run '^$' -fuzz '^FuzzPublishScanner$' -fuzztime 2m ./internal/formats/npm/publish/
+go test -run '^$' -fuzz '^FuzzMatch$' -fuzztime 2m ./internal/formats/npm/
+set -a; . .dev/integration/env; set +a; go test -count=1 -p 1 -tags integration ./test/integration/npm/...
+```
+
+### What is not verified
+
+- The order in which libnpmpublish, pnpm and Yarn write the members of the body (the scanner does not assume one).
+- Publish with pnpm, Yarn 1 and Yarn 2+: no client runs in the development environment (the e2e work package does).
+- The `repo` metric label is `_other` for every repository until a component feeds `observability.CappedLabels` the repository keys.
 
 ## Names and versions
 
@@ -90,8 +219,7 @@ Deliberate differences from node-semver (everything else is identical):
 | `ParseForExposure` accepts a range only if it parses with and without `IncludePrerelease` | Q-NPM-16 |
 
 An `*errs.Error` of kind `Invalid` carries the code: `npm_invalid_version`, `npm_invalid_range`, `npm_invalid_tag`. The codes are
-declared in the package and are not yet in the registry of [errs/codes.go](../../internal/errs/codes.go); the format package that
-renders the npm error body (R-NPM-005) is where they are registered.
+declared in the package and registered in [errs/codes.go](../../internal/errs/codes.go) (`CodeNPM…`, block `M2 npm`).
 
 ### Tests and how to extend them
 
@@ -126,7 +254,7 @@ packages implement exactly that; neither opens a connection or touches a store.
 
 ```mermaid
 flowchart LR
-    body[publish body] --> pub[publish scanner<br/>planned, WP2.4-A]
+    body[publish body] --> pub[publish scanner<br/>publish/]
     pub -->|decoded tarball stream| tb[tarball.Validate]
     pub -->|version manifest bytes| mp[manifest.Parse]
     tb -->|Result: package.json, Facts, digests| cmp
@@ -134,9 +262,8 @@ flowchart LR
     cmp --> st[manifest.Stored]
 ```
 
-Callers outside these packages: none yet. The publish path (WP2.4-A) streams the attachment into the spool
-and into `tarball.Validate` in the same pass, parses the version manifest with `manifest.Parse`, and
-compares with `CheckIdentity` and `CheckConsistency` (`Mismatches` in `warn` mode).
+The publish path ([publish.go](../../internal/formats/npm/publish.go)) streams the attachment into the spool, validates the tarball from the spool with
+`tarball.Validate`, parses the version manifest with `manifest.Parse`, and compares with `CheckIdentity` and `Mismatches` (rejecting through `CheckConsistency` in `reject` mode).
 
 ### `manifest`
 
@@ -163,8 +290,7 @@ Steps (R-NPM-007 step 3), each tested alone and each idempotent:
 Bounded reading: `Read` takes at most `max+1` bytes, so a 2 GiB source costs about 1 MiB; `Parse` refuses
 an oversize or too deeply nested document (default 1 MiB, depth 64) before the decoder allocates a node.
 Errors are `*errs.Error` with the native npm codes `npm_bad_publish` (400), `npm_manifest_mismatch` (400) and
-`npm_too_large` (413). The codes are strings of these packages; registering them in `internal/errs` (the
-problem catalog) belongs to the protocol layer.
+`npm_too_large` (413). The codes are strings of these packages and are registered in `internal/errs` (the problem catalog).
 
 ### `tarball`
 

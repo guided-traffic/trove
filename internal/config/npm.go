@@ -20,7 +20,7 @@ type NPMPublish struct {
 	MaxTarballSize      ByteSize      `yaml:"max_tarball_size" default:"256MiB" validate:"min=1KiB" doc:"Largest tarball of a publish; at most storage.upload.max_size."`
 	MaxUnpackedSize     ByteSize      `yaml:"max_unpacked_size" default:"2GiB" validate:"min=1KiB" doc:"Largest sum of the unpacked entry sizes of a tarball."`
 	MaxTarEntries       int           `yaml:"max_tar_entries" default:"100000" validate:"min=1,max=10000000" doc:"Most entries in one tarball."`
-	ManifestConsistency string        `yaml:"manifest_consistency" default:"reject" validate:"oneof=reject|warn" doc:"A request manifest that differs from the tarball's package.json: reject answers 400 npm_manifest_mismatch, warn stores the tarball's values."`
+	ManifestConsistency string        `yaml:"manifest_consistency" default:"reject" validate:"oneof=reject|warn" doc:"A request manifest that differs from the tarball's package.json: reject answers 400 npm_manifest_mismatch, warn audits the difference, accepts the publish and stores the request's manifest."`
 	RetryWindow         time.Duration `yaml:"retry_window" default:"10m" validate:"min=0s,max=24h" doc:"How long a repeated publish of identical bytes is acknowledged as the first one (Q-NPM-11); 0s turns the acknowledgement off."`
 }
 

@@ -1,9 +1,8 @@
 # The pull-through proxy
 
-The remote class of [R-REPO-024 to R-REPO-049](../spec/repositories-and-proxy.md). This page has one section per part that is
-built: the upstream clients and the cache invalidation of remote repositories. The engine that answers a request for a remote
-repository (the request path, the flights, the circuit) adds its sections when it is built; until then the invalidation is a
-library and an API that nothing in the request path consults yet. Code: [internal/proxy](../../internal/proxy/).
+The remote class of [R-REPO-024 to R-REPO-049](../spec/repositories-and-proxy.md). This page has one section per part: the upstream
+clients, the cache invalidation of remote repositories and the engine that answers a request for a remote repository (the request
+path, the flights, the circuit, the fill). Code: [internal/proxy](../../internal/proxy/).
 
 ## The upstream clients
 
@@ -285,3 +284,116 @@ unavailable through an unreachable Sentinel, which is the same path of the clien
   count.
 - The entry list shows the upstream URLs a repository was fetched from (without user info, R-REPO-025);
   it is open to the holders of `repositories:read-config` and `manage` only.
+
+## The engine
+
+Package [internal/proxy](../../internal/proxy/): the request path of [R-REPO-025](../spec/repositories-and-proxy.md), the collapsing protocol
+of R-REPO-026, freshness, the negative cache, failure handling and the circuit (R-REPO-027 to R-REPO-031), the cache view (R-REPO-032),
+the limits and verification of R-REPO-040 to R-REPO-042 and the observability of R-REPO-047. It is a domain package and knows no format:
+the format reaches it through [formathost/remote.go](../../internal/formathost/remote.go), which adapts a `formats.RemoteAdapter` to
+`proxy.Adapter` for one request and the decision point to `proxy.Populate` (Q-ARCH-200).
+
+```mermaid
+flowchart TD
+  R["Metadata / Artifact"] --> G["gone package? (R-REPO-029)"]
+  G --> E{"entry: artifact, or fresh and not invalidated?"}
+  E -- yes --> H["serve: hit"]
+  E -- no --> V["cache view / only-if-cached: stored or 404 / 504"]
+  V --> O["offline: stale or 404 not_cached_offline"]
+  O --> C["circuit open: stale or 503"]
+  C --> N["negative entry (L1, then Valkey): 404"]
+  N --> P{"may fill?"}
+  P -- no --> S["stale, else 403 populate_not_permitted"]
+  P -- yes --> F["collapse: in-process flight, FlightLock, re-check"]
+  F --> X["fetch: slots, circuit, request, classify, verify"]
+  X --> T["fill transaction: entry, OnFill, URL map, populate event"]
+  T --> L["release(stored | failed)"]
+```
+
+### Files
+
+| File | Responsibility |
+|---|---|
+| [types.go](../../internal/proxy/types.go) | `Request`, `Remote`, `Document`, `Adapter`, `Populate`, the URL builder `UpstreamBase` (every segment encoded again) |
+| [engine.go](../../internal/proxy/engine.go) | `Options`, `New`, `Drain`/`Quiesce`, the cheap steps (offline, fill check), the gone-package gate, `EntryState`, `CachedArtifacts` |
+| [metadata.go](../../internal/proxy/metadata.go) | `Metadata`, `EnsureCurrent`, freshness, the document answer, the metadata fill transaction and the URL map |
+| [artifact.go](../../internal/proxy/artifact.go) | `Artifact`, `Cached`, `HEAD`, the artifact fetch, the entry written in the item commit, the immutability checks |
+| [flight.go](../../internal/proxy/flight.go) | the in-process flight, `lead` (Acquire, Wait, re-check, bypass), `recheck` |
+| [fetch.go](../../internal/proxy/fetch.go), [classify.go](../../internal/proxy/classify.go) | one fetch: slots, circuit, request, the retry, classification of the outcome (R-REPO-029 table) |
+| [state.go](../../internal/proxy/state.go) | the per-repository state cache (circuit, gone documents), the probe slot, `markGone` |
+| [negative.go](../../internal/proxy/negative.go) | the negative L1 and its readers' validation (R-REPO-028) |
+| [integrity.go](../../internal/proxy/integrity.go), [body.go](../../internal/proxy/body.go) | digests, the withheld tail (`stream`), the size limit, the idle timeout of a body |
+| [slots.go](../../internal/proxy/slots.go), [probe.go](../../internal/proxy/probe.go), [cachestatus.go](../../internal/proxy/cachestatus.go), [metrics.go](../../internal/proxy/metrics.go), [store.go](../../internal/proxy/store.go) | fetch slots, `Probe`, the `Cache-Status` header, metrics, the reads of the sqlc queries |
+| [proxy.sql](../../internal/meta/postgres/queries/proxy.sql) | every statement of the engine |
+| [proxytest/](../../internal/proxy/proxytest/) | a counting adapter, a counting TLS upstream and a counting `Populate`, for tests that need no format |
+
+### The collapsing protocol in code
+
+`collapse` joins the in-process flight of the key or leads one. The leader's flight runs in its own goroutine on a context detached from
+the client (it ends only at `Quiesce`), so a client that leaves does not stop a fetch others wait for. `lead` is R-REPO-026 steps 3 to 6:
+re-check (steps 4 to 8), `Acquire`, `Wait` and re-check in a loop bounded by `proxy.fetch_wait_timeout_seconds`, a bypass with its reason
+(`valkey_unavailable`, `wait_timeout`, `draining`) when no lock can be had, the fetch, and `Release` with `stored` or `failed`. A draining
+replica never calls `Acquire`; it waits for another replica's flight and fetches under its own single-flight otherwise. The re-check counts an
+entry whose `validated_at` differs from the one the request read first as fresh, so a period of 0 does not make every waiter fetch again.
+`flight_role` is defined in Q-REPO-92.
+
+The leader's own client is streamed (`stream`) only when the upstream announced a length and the request is a plain `GET`; the last 64 KiB
+wait for the commit. A failure after the status line is `panic(http.ErrAbortHandler)` in the handler goroutine, which the format dispatcher
+lets through. The stream is the request's, not the flight's: `detach` ends its share before the handler returns.
+
+### State per replica (R-ARCH-032, R-REPO-049)
+
+| State | Registered as | Kept fresh by |
+|---|---|---|
+| circuit and gone documents of a repository | cache `proxy_upstream_state`, area `upstream_state` | a change reloads the repository in the background; the writer takes the state from `RETURNING` |
+| negative L1 | cache `proxy_negative_l1` (`proxy.negative_l1_entries`) | nothing: readers validate window and invalidations |
+| bytes of metadata by digest | cache `proxy_metadata_bytes` (`proxy.metadata_cache_bytes`) | nothing: content-addressed |
+| flights, probe slots, fetch slots | plain fields of the engine | end with the process |
+
+### The fill
+
+A metadata document: `PrepareFill` (outside any transaction), then `blob.Commit` with a link function that locks the entry, runs
+`OnFill`, upserts the entry (the newer `fetched_at` wins), records the URL map, attaches the `metadata_changed` signal and writes the
+populate event. An artifact: `items.Commit` (origin `fill`, `MayOverwrite`) with an `Extra` that locks the entry, refuses another digest
+(`proxy.upstream_digest_changed`), inserts the entry and writes the populate and `artifact.cached` events. No transaction is open during a
+transfer, a wait or an extension.
+
+### Wiring
+
+[wire_proxy_engine.go](../../internal/app/wire_proxy_engine.go) is the area `proxy-engine` (a component with `Drain` and `Quiesce`); its
+inputs are the upstream clients, the invalidation set, the item store and the replica count. The format host takes it as `Options.Engine`.
+
+### Binding to the virtual engine
+
+[formathost/virtual_remotes.go](../../internal/formathost/virtual_remotes.go) implements `virtual.Remotes` over the engine (`NewVirtualRemotes`),
+and the area `virtual-engine` takes it ([wire_virtual_engine.go](../../internal/app/wire_virtual_engine.go)). Per call it builds the engine's
+request for the member (the format's adapter, the kind from the format's classification of the path) with a populate check that answers the
+`MayFill` the virtual engine decided; `Engine.Peek` supplies `Negative`, `Offline` and `CircuitOpenFor` of the explanation. A fill made for a
+virtual request records its allowed populate event with the grant reason of the caller (the call carries no grant index to name sources).
+
+### Tests
+
+| Tier | Where | Proves |
+|---|---|---|
+| unit | [proxy_test.go](../../internal/proxy/proxy_test.go) | the URL builder (`%2e%2e`, `a b`), the `Cache-Status` forms, digest policies, the withheld tail, the size limit, the idle timeout, slot shares, the classification table, the negative readers, `withStatus` |
+| unit | [remote_test.go](../../internal/formathost/remote_test.go) | mode, settings member, currency of the bridge |
+| integration | [test/integration/proxy](../../test/integration/proxy/) | R-REPO-025 order and download order (R-ARCH-013); R-REPO-026 on two replicas (100 requests, killed and cancelled holders, draining, polling without messages, foreign locks, duplicate fills); R-REPO-027 to R-REPO-032; R-REPO-040 to R-REPO-043; R-REPO-047, R-OPS-011; R-AUTHZ-008 and R-EP-019 at the engine |
+
+The variants that need the real outage (Valkey stopped, `SIGKILL` of a pod, `kubectl drain`, S3 stopped, `FLUSHALL`) are end-to-end tests: here Valkey
+is unavailable through a client whose Sentinels do not answer, the holder is a second client that is closed, and the object store fails through a
+wrapper. Not tested here: the criteria with a `sourceNetwork` on two pods (R-REPO-024), `npm` clients, the dispatcher setting `CacheView`.
+
+### Decisions
+
+[Q-REPO-92 to Q-REPO-99](../spec/repositories-and-proxy.md#q-repo-92--the-role-of-an-upstream-request-in-the-flight-is-how-its-request-came-to-send-it),
+[Q-ARCH-200 to Q-ARCH-204](../spec/architecture.md#q-arch-200--the-engine-takes-a-format-through-its-own-adapter-and-the-populate-check-through-an-interface).
+
+### Security notes
+
+- The engine never sets `Authorization`; the client's hop policy adds the credential (R-REPO-033). The upstream URL of an artifact comes from
+  the recorded map only after `Client.Allowed` accepted its host, and no client path can choose a host (R-REPO-043).
+- The URL builder encodes every canonical segment again and refuses `.` and `..`: a client that sent `%252e%252e` cannot make trove request `..`
+  with the upstream credentials.
+- A value read from Valkey (a negative entry, a lock) can only make a request answer 404 or wait at most `proxy.fetch_wait_timeout_seconds`;
+  the probe of a shadowing check reads neither (R-ARCH-030).
+- A refused fill (`populate_not_permitted`, an endpoint without `cache_fill`) writes no negative entry and sends no request.

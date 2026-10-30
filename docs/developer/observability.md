@@ -150,7 +150,11 @@ ri.SetHandler("npm.packument")                    // metrics label, handler fiel
 ri.SetRepo("npm-all", "npm")
 ri.SetPrincipal(name, "user", principalID)
 ri.SetToken(tokenID, "bearer")                    // the ID, never the token
+ri.SetField("npm-command", value)                 // a field of the protocol: at most 8 per request, 128 bytes each, scrubbed like the path
 ```
+
+`SetField` is how a package format adds the access-log fields of its protocol (npm: `npm-command`, `npm-session`, R-NPM-005); a name set twice keeps its first value, and a field
+that was never set is `null`.
 
 The authentication stage fills the principal the same way: the request log stage is outside it (R-ARCH-005), so it reads the
 facts after the request. `app.authenticate` calls `recordPrincipal` ([wire_observability.go](../../internal/app/wire_observability.go))

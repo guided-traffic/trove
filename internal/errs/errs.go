@@ -38,6 +38,7 @@ const (
 	Unprocessable             // 422 without field errors: a state or name rule refused a well-formed request (R-API-014, R-API-004)
 	PreconditionRequired      // 428: the operation needs If-Match (R-API-012)
 	RangeNotSatisfiable       // 416 + Content-Range: bytes */size, set by the caller (R-STOR-012)
+	NotImplemented            // 501: the protocol defines the operation and this server does not implement it (R-NPM-001)
 )
 
 // StatusClientClosed is the status logged for a request whose client went away.
@@ -85,6 +86,8 @@ func (k Kind) String() string {
 		return "precondition_required"
 	case RangeNotSatisfiable:
 		return "range_not_satisfiable"
+	case NotImplemented:
+		return "not_implemented"
 	default:
 		return fmt.Sprintf("kind(%d)", uint8(k))
 	}
@@ -110,6 +113,9 @@ type Error struct {
 	// of a 412, tokenId of a replayed token creation, job of a 409 on a task.
 	// Values are plain JSON values; a key never replaces a standard member.
 	Extensions map[string]any
+	// Headers are further response headers of the answer, set after the headers
+	// of the kind: the Cache-Status of a remote repository's refusal (R-REPO-047).
+	Headers map[string]string
 	// status, when set, replaces the status of the kind. It exists for the one
 	// case the kind cannot express: a 400 that lists the offending member of an
 	// unparsable body (R-API-003).
@@ -160,6 +166,18 @@ func WithExtension(name string, value any) Option {
 			e.Extensions = map[string]any{}
 		}
 		e.Extensions[name] = value
+	}
+}
+
+// WithHeader adds a response header to the answer of the error. The headers the
+// writer sets for the problem itself (Content-Type, X-Content-Type-Options) cannot
+// be replaced.
+func WithHeader(name, value string) Option {
+	return func(e *Error) {
+		if e.Headers == nil {
+			e.Headers = map[string]string{}
+		}
+		e.Headers[name] = value
 	}
 }
 
@@ -234,6 +252,8 @@ func (e *Error) Status() int {
 		return 428
 	case RangeNotSatisfiable:
 		return 416
+	case NotImplemented:
+		return 501
 	default:
 		return 500
 	}

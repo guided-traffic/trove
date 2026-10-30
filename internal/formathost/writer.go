@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
+	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/packages"
@@ -45,10 +47,12 @@ type Ownership interface {
 
 // AutoClaimer is the seam to the namespace auto claim of R-REPO-023 (C-15): it
 // claims the package name for the repository's owner in the publish transaction
-// when a claim rule asks for it. The composition root binds it over
-// repository.Routing.AutoClaim. Unbound, AutoClaim refuses (fail closed).
+// when a claim rule asks for it, and returns what it did, which the audit event
+// of the publish records. by is the caller of the request, the actor of the claim's
+// own event. The composition root binds it over repository.Routing.AutoClaim.
+// Unbound, AutoClaim refuses (fail closed).
 type AutoClaimer interface {
-	AutoClaimTx(ctx context.Context, tx meta.Tx, repo repository.Repository, name string) error
+	AutoClaimTx(ctx context.Context, tx meta.Tx, repo repository.Repository, name string, by repository.Caller) (repository.AutoClaimResult, error)
 }
 
 // Changer writes the change-log row of a change area into the transaction
@@ -172,15 +176,19 @@ func (w *writer) Claim(ctx context.Context, t formats.Target, ow formats.Ownersh
 	})
 }
 
-// AutoClaim applies the namespace auto claim of the request's repository.
-func (w *writer) AutoClaim(ctx context.Context, name string) error {
+// AutoClaim applies the namespace auto claim of the request's repository, as the
+// caller of the request.
+func (w *writer) AutoClaim(ctx context.Context, name string) (formats.AutoClaimResult, error) {
 	if w.req == nil {
-		return errs.E(errs.Internal, errs.CodeInternal, "The auto claim runs for a request; this writer has none.")
+		return formats.AutoClaimResult{}, errs.E(errs.Internal, errs.CodeInternal, "The auto claim runs for a request; this writer has none.")
 	}
 	if w.d.auto == nil {
-		return errs.E(errs.Internal, errs.CodeInternal, "The auto claim is not wired on this replica; the write is refused.")
+		return formats.AutoClaimResult{}, errs.E(errs.Internal, errs.CodeInternal, "The auto claim is not wired on this replica; the write is refused.")
 	}
-	return w.d.auto.AutoClaimTx(ctx, w.tx, *w.req.Repo, name)
+	by := repository.Caller{
+		Actor: edge.ActorFrom(httpserver.PrincipalFrom(ctx)), Source: httpserver.SourceFrom(ctx), Endpoint: w.req.Subject.Endpoint,
+	}
+	return w.d.auto.AutoClaimTx(ctx, w.tx, *w.req.Repo, name, by)
 }
 
 // Notify attaches the notification to the transaction as its area's class says:

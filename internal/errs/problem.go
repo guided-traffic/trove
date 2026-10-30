@@ -134,6 +134,13 @@ func Write(w http.ResponseWriter, r *http.Request, err error, requestID string, 
 			h.Set("Retry-After", retryAfterSeconds(e.RetryAfter))
 		}
 	}
+	for k, v := range e.Headers {
+		switch http.CanonicalHeaderKey(k) {
+		case "Content-Type", "X-Content-Type-Options":
+		default:
+			h.Set(k, v)
+		}
+	}
 	body, mErr := json.Marshal(p)
 	if mErr != nil { // cannot happen: Problem holds only strings and ints
 		body = []byte(`{"type":"` + ProblemTypePrefix + CodeInternal + `","title":"Internal error","status":500,"code":"internal"}`)

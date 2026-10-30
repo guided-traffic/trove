@@ -293,6 +293,10 @@ type Request struct {
 	Index *authz.Index
 	// Endpoint holds the facts of the request's endpoint (C-17).
 	Endpoint EndpointFacts
+	// CacheView says that the request addressed the cache view of a remote repository,
+	// `<key>~cache` (R-REPO-032): the remote engine then serves stored entries only
+	// and never contacts the upstream. The dispatcher sets it from the address.
+	CacheView bool
 	// Host is the core as the format reaches it. It shadows the http.Request's
 	// Host string on purpose: no handler reads the Host header (R-ARCH-006).
 	Host Host

@@ -1494,7 +1494,7 @@
           "properties": {
             "manifest_consistency": {
               "default": "reject",
-              "description": "A request manifest that differs from the tarball's package.json: reject answers 400 npm_manifest_mismatch, warn stores the tarball's values.",
+              "description": "A request manifest that differs from the tarball's package.json: reject answers 400 npm_manifest_mismatch, warn audits the difference, accepts the publish and stores the request's manifest.",
               "enum": [
                 "reject",
                 "warn"
@@ -1653,6 +1653,16 @@
             "integer"
           ],
           "x-trove-env": "TROVE_PROXY_MERGED_METADATA_CACHE_BYTES",
+          "x-trove-type": "bytes"
+        },
+        "metadata_cache_bytes": {
+          "default": "128MiB",
+          "description": "Per replica: the bytes of recently served metadata documents of remote repositories by blob digest, so a fresh hit costs no object-store round trip (R-REPO-025); a document above an eighth of it is not kept; 0 turns the cache off.",
+          "type": [
+            "string",
+            "integer"
+          ],
+          "x-trove-env": "TROVE_PROXY_METADATA_CACHE_BYTES",
           "x-trove-type": "bytes"
         },
         "negative_l1_entries": {

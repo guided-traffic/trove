@@ -1164,6 +1164,9 @@ type SetupTemplate struct {
 	File     string // target file when the snippet is file content, e.g. ".npmrc"
 	Template string // text/template over SetupData, which has no credential field (api-and-ui.md R-API-030)
 }
+
+// SetupData: RegistryURL, Repository, Endpoint, Scope (without "@"), Username, RegistryKey (the registry URL
+// without its scheme, the key of a keyed credential line) and RequiresAuth (the repository is not anonymously readable).
 ```
 
 Normative rules:
@@ -1276,10 +1279,11 @@ type PackageWriter interface {
 	// the row lock. It is for a change that writes only the format's side rows.
 	BumpRevision(ctx context.Context, pkg PackageRef) (RevSeq, time.Time, error)
 	// Claim checks ownership and claims in the commit transaction (R-AUTHZ-018); AutoClaim applies the
-	// namespace auto claim (R-REPO-023). Both refuse until the composition root binds the rule
+	// namespace auto claim (R-REPO-023) and returns what it did, which the audit event of the publish
+	// records. Both refuse until the composition root binds the rule
 	// (Q-ARCH-215). Notify attaches a notification to the transaction (R-ARCH-018); Enqueue a job (R-ARCH-016).
 	Claim(ctx context.Context, t Target, w OwnershipWrite) error
-	AutoClaim(ctx context.Context, name string) error
+	AutoClaim(ctx context.Context, name string) (AutoClaimResult, error) // Created, Pattern; or the Reason: disabled, covered, skipped, limit
 	Notify(area string, payload any) error
 	Enqueue(ctx context.Context, j JobSpec) error
 }
@@ -5435,6 +5439,96 @@ The client certificate is a connection property, not a header. A policy that als
 **Rationale:** The rule has to hold for the first request, for each redirect and for the TLS handshake, and only the round tripper sees all three. The redirect limit, the `https` to `http` refusal and the egress check stay where they were, in `CheckRedirect` and the dialer. Revisit if a format needs a credential that depends on the response of a previous hop (a token handshake): that belongs to the format plug-in's own requests, each of which passes through `Decorate` as hop 0.
 
 **Applied in the spec:** R-REPO-039 states that the client certificate follows the same rule as the credentials and that `forwardAuthOnRedirect` widens redirect hops only.
+
+### Q-ARCH-200 · The engine takes a format through its own Adapter and the populate check through an interface
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: The proxy is a domain package and cannot import the format contract (an edge package), the plan sketched `MayFill bool` computed by the host, and the refusal at step 9 has to be audited while the stale path must not audit.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `proxy.Adapter` and `proxy.Populate` declared in the proxy; `internal/formathost/remote.go` adapts a `formats.RemoteAdapter` per request and the decision point to `Populate` (chosen) | `Populate` has `May` (a question), `Deny` (the audited refusal), `Record` (the allowed event in the fill transaction) and `Endpoint` | The engine decides when to ask, which `MayFill` could not; the layers hold; the engine is testable with a counting adapter | Two similar interfaces |
+| (b) `MayFill bool` computed by the host | A boolean per request | Simple | Asks the decision point on every hit; cannot audit the refusal only when nothing is served |
+| (c) The proxy imports the contract | No adapter | No bridge | An edge package imported by the domain |
+
+**Choice:** (a). Three additions to the contract follow: `formats.Request.CacheView` (set by the dispatcher from the `~cache` address), `Descriptor.VerifyAnnouncedDigests` (npm always verifies, R-REPO-041) and `formats.CacheStatus.Header` and `Collapsed`.
+
+**Rationale:** The development agent would revisit it when the second format needs an adapter method the bridge cannot derive.
+
+**Applied in the spec:** R-ARCH-008 and R-ARCH-009 (the remote engine as the format sees it).
+
+### Q-ARCH-201 · An error carries response headers, so a refusal of the engine carries its Cache-Status
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-047 wants `Cache-Status` on every response of a remote repository; an error is rendered by the format's `WriteError`, which has no handle on the engine's status.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `errs.WithHeader(name, value)`; `errs.Write` sets them after the headers of the kind (chosen) | A negative entry is a Document with `Status.Negative`, every other refusal an error with the header | One mechanism for any package that needs a header on an answer | A small addition to the error model |
+| (b) The format reads the status from the context | A header sink in the request context | No change in `errs` | A hidden channel; every format must remember it |
+| (c) Leave errors without the header | Document the gap | None | Violates the requirement |
+
+**Choice:** (a). The headers `Content-Type` and `X-Content-Type-Options` cannot be replaced.
+
+**Rationale:** The development agent would revisit it if a second header needs a rule.
+
+**Applied in the spec:** R-ARCH-023 (the error model) and R-REPO-047.
+
+### Q-ARCH-202 · The engine is a wiring area of its own and a component that drains and quiesces
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: The plan sketched `StartDrain` and `CancelBefore(deadline)`; the composition root already has the optional phases `Drainer` and `Quiescer` (R-ARCH-024), and the engine needs the upstream clients, the invalidation set, the item store and the replica count.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Area `proxy-engine` with those four inputs; the engine implements `Drain` and `Quiesce` (chosen) | `Drain` stops cross-replica leadership; `Quiesce` cancels the running flights, which release with `failed`, and waits for them | The shutdown sequence calls it like every other component; a missing input is a start-up error | The names differ from the plan |
+| (b) Build the engine in the proxy area | One area | One file less | The proxy area is built before the item store exists |
+| (c) Lazy accessors | Resolve inputs when a request needs them | No ordering | A missing prerequisite becomes a nil at request time |
+
+**Choice:** (a).
+
+**Rationale:** The development agent would revisit it if the engine's inputs change.
+
+**Applied in the spec:** R-ARCH-024 (the optional phases name the engine) and R-REPO-026 (the shutdown bullet).
+
+### Q-ARCH-203 · A fill commits through the blob commit and the item commit, and the entry is written in their transaction
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-025 and R-ARCH-013 fix the order spool, blob, one short transaction, release; R-ARCH-019 forbids a transaction across a transfer; R-REPO-041 refuses a different digest for an artifact.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A document goes through `blob.Commit` with a link function that locks the entry, runs `OnFill`, upserts the entry, records the URL map, signals and writes the populate event; an artifact goes through `items.Commit` with `Extra` that locks the entry, refuses another digest, inserts it and writes the populate and `artifact.cached` events (chosen) | Validation (`PrepareFill`) runs before, outside any transaction | Entry, rows of the format and events commit or fail together; the unique row lock serializes duplicate flights | A refused digest rolls back an item row that the commit wrote first |
+| (b) Commit the blob, then a second transaction for the entry | Two steps | Smaller transaction | A crash between them leaves a blob without an entry and an item without one |
+| (c) An advisory lock per entry | Serialize flights in the database | Simple | Banned in the proxy (R-ARCH-033) and holds a connection |
+
+**Choice:** (a). `artifact.cached` has audit mode `none` and the webhook flag (R-OPS-014: webhook only); the fill transaction hands it to the recorder, which records nothing for that mode until the outbox exists.
+
+**Rationale:** The development agent would revisit it when the outbox of R-OPS-035 is built.
+
+**Applied in the spec:** R-REPO-025 (the data model) and R-OPS-016.
+
+### Q-ARCH-204 · The proxy's security events: one transactional, four asynchronous and throttled
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-047 lists `proxy.upstream_gone`, `proxy.upstream_digest_changed`, `proxy.integrity_mismatch`, `proxy.tls_untrusted` and `proxy.egress_denied` and does not say how they are written; four of them concern a request that stores nothing.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `proxy.upstream_gone` in the transaction that marks the document; the others through the asynchronous buffer, `tls_untrusted` and `egress_denied` at most once a minute per repository and host, `upstream_digest_changed` at most once an hour per path and announced digest (chosen) | Category `repository` | The mark and its event commit together; a broken upstream does not flood the trail | A security event can be dropped when the buffer is full (the log copy remains, R-OPS-015) |
+| (b) All transactional | A transaction for each | Never dropped | There is no transaction to join where nothing is stored |
+| (c) No throttle | One event per request | Complete | A failing upstream writes one per request |
+
+**Choice:** (a).
+
+**Rationale:** The development agent would revisit it when an alert rule needs the count of requests rather than of episodes.
+
+**Applied in the spec:** R-OPS-016 (the event table).
 
 ### Q-ARCH-205 · One edge package for the conversions every HTTP entry point shares
 

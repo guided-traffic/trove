@@ -340,12 +340,15 @@ func (e FormatDescriptorPatternSubject) Valid() bool {
 // Defines values for FormatName.
 const (
 	FormatNameGeneric FormatName = "generic"
+	FormatNameNpm     FormatName = "npm"
 )
 
 // Valid indicates whether the value is a known member of the FormatName enum.
 func (e FormatName) Valid() bool {
 	switch e {
 	case FormatNameGeneric:
+		return true
+	case FormatNameNpm:
 		return true
 	default:
 		return false
@@ -502,12 +505,15 @@ func (e JobState) Valid() bool {
 // Defines values for LocalFormatName.
 const (
 	LocalFormatNameGeneric LocalFormatName = "generic"
+	LocalFormatNameNpm     LocalFormatName = "npm"
 )
 
 // Valid indicates whether the value is a known member of the LocalFormatName enum.
 func (e LocalFormatName) Valid() bool {
 	switch e {
 	case LocalFormatNameGeneric:
+		return true
+	case LocalFormatNameNpm:
 		return true
 	default:
 		return false

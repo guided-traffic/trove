@@ -1,0 +1,22 @@
+package npm
+
+import (
+	"context"
+	"net/http"
+
+	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/formats"
+	"github.com/guided-traffic/trove/internal/formats/npm/manifest"
+	"github.com/guided-traffic/trove/internal/formats/npm/name"
+	"github.com/guided-traffic/trove/internal/formats/npm/publish"
+)
+
+// metadataUpdate is the PUT of a package document without an attachment: npm
+// deprecate (R-NPM-018, P1) and the partial update of npm owner (PKG-NPM-022,
+// deferred). The body was scanned within the metadata limit of a publish.
+func (f *Format) metadataUpdate(_ context.Context, _ *formats.Request, _ http.ResponseWriter, _ name.Name, env *publish.Envelope) error {
+	if len(env.Versions) == 0 {
+		return manifest.BadPublish("maintainer lists are not supported; ownership is managed in trove")
+	}
+	return errs.E(errs.NotImplemented, errs.CodeNPMNotImplemented, "Deprecating a version is not available yet.")
+}

@@ -1,14 +1,22 @@
 package app
 
 import (
+	"context"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/formats"
 	_ "github.com/guided-traffic/trove/internal/formats/all" // the formats the replica registers
 	"github.com/guided-traffic/trove/internal/formats/catalog"
+	"github.com/guided-traffic/trove/internal/meta"
 )
+
+// noRunner is a transaction runner that runs nothing: the data ports are built, not used.
+type noRunner struct{}
+
+func (noRunner) InTx(context.Context, func(meta.Tx) error) error { return nil }
 
 type portStore interface{ Name() string }
 
@@ -45,7 +53,11 @@ func (sidecar) PackageDocumentPath(string) (formats.Path, bool) {
 // a binding missing or wrong (typed wiring).
 func TestQ_ARCH_193_AMissingDataPortBindingIsAStartupError(t *testing.T) {
 	t.Run("the formats of this build pass with the bindings the root makes", func(t *testing.T) {
-		if _, err := bindFormatPorts(formats.List(), formatPorts(nil)); err != nil {
+		ports, err := formatPorts(noRunner{}, audit.Nop{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := bindFormatPorts(formats.List(), ports); err != nil {
 			t.Fatal(err)
 		}
 	})

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/formats/untrusted"
+	"github.com/guided-traffic/trove/internal/repository"
 )
 
 // RepoRef names a repository the way a storage hook meets it.
@@ -210,6 +211,11 @@ type OwnershipWrite struct {
 	FirstVersion bool
 }
 
+// AutoClaimResult is the outcome of the namespace auto claim (R-REPO-023): Created
+// with the claim's Pattern, or the Reason nothing was created ("disabled",
+// "covered", "skipped", "limit").
+type AutoClaimResult = repository.AutoClaimResult
+
 // PackageWriter writes the generic package rows inside a storage transaction
 // (R-ARCH-009, C-2). It is bound to the transaction of the hook or of
 // [Host.Write] that handed it out, and to nothing else.
@@ -249,8 +255,10 @@ type PackageWriter interface {
 	// no request - a fill, a job - answers errs.Internal: those paths decide no
 	// ownership.
 	Claim(ctx context.Context, t Target, w OwnershipWrite) error
-	// AutoClaim applies the namespace auto claim of R-REPO-023 (C-15).
-	AutoClaim(ctx context.Context, name string) error
+	// AutoClaim applies the namespace auto claim of R-REPO-023 (C-15) and returns
+	// what it did, which the audit event of the publish records. A writer bound to
+	// no request answers errs.Internal.
+	AutoClaim(ctx context.Context, name string) (AutoClaimResult, error)
 	// Notify attaches a notification to the transaction: a change area writes its
 	// change-log row in it, a signal area is published after the commit
 	// (R-ARCH-018). A rollback sends neither.

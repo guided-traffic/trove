@@ -199,6 +199,32 @@ const (
 )
 
 // <<< M2 upstream
+//
+// >>> M2 proxy
+
+// Codes of the remote engine (R-REPO-025 to R-REPO-042). The answers for an upstream
+// that failed carry the specific code of the failure (R-REPO-029); the codes of the
+// outbound client's refusals (tls_untrusted, too_many_redirects, insecure_redirect)
+// are the ones the upstream test reports.
+const (
+	CodeNotCachedOffline           = "not_cached_offline"
+	CodeUpstreamAssumedOffline     = "upstream_assumed_offline"
+	CodeUpstreamAuthFailed         = "upstream_auth_failed"
+	CodeUpstreamError              = "upstream_error"
+	CodeUpstreamUnreachable        = "upstream_unreachable"
+	CodeUpstreamUnexpectedStatus   = "upstream_unexpected_status"
+	CodeUpstreamItemTooLarge       = "upstream_item_too_large"
+	CodeUpstreamIntegrityMismatch  = "upstream_integrity_mismatch"
+	CodeUpstreamDigestMissing      = "upstream_digest_missing"
+	CodeUpstreamContentTypeBlocked = "upstream_content_type_blocked"
+	CodeTLSUntrusted               = "tls_untrusted"
+	CodeTooManyRedirects           = "too_many_redirects"
+	CodeInsecureRedirect           = "insecure_redirect"
+	CodeFetchQueueTimeout          = "fetch_queue_timeout"
+	CodeNotCachedOnlyIfCached      = "not_cached_only_if_cached"
+)
+
+// <<< M2 proxy
 
 // >>> M2 untrusted
 
@@ -231,6 +257,31 @@ const (
 )
 
 // <<< M2 virtual
+
+// >>> M2 npm
+
+// Codes of the npm protocol (R-NPM-005). The leaf libraries of internal/formats/npm
+// declare the ones they raise as strings of their own (name, semver, manifest,
+// tarball); the values are these. The native error body of the format carries them
+// as "code".
+const (
+	CodeNPMInvalidName             = "npm_invalid_name"
+	CodeNPMInvalidVersion          = "npm_invalid_version"
+	CodeNPMInvalidRange            = "npm_invalid_range"
+	CodeNPMInvalidTag              = "npm_invalid_tag"
+	CodeNPMBadPublish              = "npm_bad_publish"
+	CodeNPMManifestMismatch        = "npm_manifest_mismatch"
+	CodeNPMTooLarge                = "npm_too_large"
+	CodeNPMClassNotWritable        = "npm_class_not_writable"
+	CodeNPMVersionExists           = "npm_version_exists"
+	CodeNPMVersionUnpublished      = "npm_version_unpublished"
+	CodeNPMStaleRev                = "npm_stale_rev"
+	CodeNPMNotImplemented          = "npm_not_implemented"
+	CodeNPMAuditUnavailable        = "npm_audit_unavailable"
+	CodeNPMInvalidUpstreamDocument = "npm_invalid_upstream_document"
+)
+
+// <<< M2 npm
 
 // CodeInfo documents one code for the problem catalog.
 type CodeInfo struct {
@@ -378,6 +429,24 @@ var registry = []CodeInfo{
 	{CodeSourceNetworkUnavailable, UpstreamFailed, "Source network unavailable", "This replica has no interface address inside the remote repository's sourceNetwork, so it does not connect to the upstream. The failure does not count toward the circuit; another replica may have such an address."},
 	{CodeForeignHostDenied, UpstreamFailed, "Foreign host denied", "The upstream document points to a host that is neither the upstream origin nor an entry of the remote repository's extraHosts; trove did not send a request."},
 	// <<< M2 upstream
+	//
+	// >>> M2 proxy
+	{CodeNotCachedOffline, NotFound, "Not cached while offline", "The remote repository is offline (its own mode or the global switch) and the path is not in its cache; trove sends no request. A 404, not a 5xx, because the operator decided the item is not available here."},
+	{CodeUpstreamAssumedOffline, Unavailable, "Upstream assumed offline", "Consecutive failures opened the circuit of the remote repository's upstream and the path is not cached. Retry-After says when the next probe may close it."},
+	{CodeUpstreamAuthFailed, UpstreamFailed, "Upstream authentication failed", "The upstream answered 401 or 403 to the remote repository's credentials. The status is never forwarded; the repository's administrator checks the credential."},
+	{CodeUpstreamError, UpstreamFailed, "Upstream error", "The upstream answered 500, 502, 503 or 504. A stored copy, if any, is served instead of this error."},
+	{CodeUpstreamUnreachable, UpstreamFailed, "Upstream unreachable", "The connection to the upstream failed (connection, DNS or TLS handshake failure). A stored copy, if any, is served instead of this error."},
+	{CodeUpstreamUnexpectedStatus, UpstreamFailed, "Unexpected upstream status", "The upstream answered with a status trove does not act on (another 4xx, or a 3xx without a followable target). Nothing is cached and the circuit is not counted."},
+	{CodeUpstreamItemTooLarge, UpstreamFailed, "Upstream item too large", "The upstream item is larger than the effective maxArtifactBytes or maxMetadataBytes. Nothing is stored and nothing is negatively cached, so raising the limit takes effect at once."},
+	{CodeUpstreamIntegrityMismatch, UpstreamFailed, "Upstream integrity mismatch", "The fetched artifact does not match the digest the upstream announced. Nothing is stored; a security event is written."},
+	{CodeUpstreamDigestMissing, UpstreamFailed, "Upstream digest missing", "The repository requires an announced SHA-256 or stronger digest (integrity.checksumPolicy: require) and the upstream's metadata announces none."},
+	{CodeUpstreamContentTypeBlocked, UpstreamFailed, "Upstream content type blocked", "The upstream answered with a media type that integrity.blockUnexpectedContentTypes refuses, usually an HTML error page or a captive portal in place of a package."},
+	{CodeTLSUntrusted, UpstreamFailed, "Upstream certificate not trusted", "The upstream's certificate is not signed by a CA in proxy.outbound.tls or does not match the host name. A security event is written; the circuit is not counted."},
+	{CodeTooManyRedirects, UpstreamFailed, "Too many redirects", "The upstream redirected more often than proxy.max_redirects allows."},
+	{CodeInsecureRedirect, UpstreamFailed, "Insecure redirect", "The upstream redirected from https to http, which trove refuses."},
+	{CodeFetchQueueTimeout, Unavailable, "Fetch queue timeout", "All upstream fetch slots (proxy.max_concurrent_fetches, limits.maxConcurrentFetches) stayed busy for proxy.queue_timeout_seconds. Retry-After is 5 s."},
+	{CodeNotCachedOnlyIfCached, UpstreamTimeout, "Not cached", "The request carried Cache-Control: only-if-cached and the path is not in the cache (RFC 9111 section 5.2.1.7)."},
+	// <<< M2 proxy
 	// >>> M2 untrusted
 	{CodeContentRefused, Unprocessable, "Content refused", "The package content has a structure trove does not read: duplicate names, link entries, a document type declaration, names two readers would resolve differently, or a document that is not well-formed."},
 	// <<< M2 untrusted
@@ -390,6 +459,22 @@ var registry = []CodeInfo{
 	{CodeShadowsRemotePackage, Forbidden, "Shadows a remote package", "The first publish of this package name into a local repository would replace, for the clients of the virtual repositories that contain it, a package that a remote repository serves. A holder of manage on the package decides that; otherwise a holder of manage claims the name on the repository first (R-REPO-048). Nothing was stored."},
 	{CodeShadowCheckUnavailable, Unavailable, "Shadowing check unavailable", "Whether a remote repository serves this package name could not be determined, for example because its upstream is unreachable or its circuit is open, and the caller does not hold manage. Retry after the Retry-After period; nothing was stored."},
 	// <<< M2 virtual
+	// >>> M2 npm
+	{CodeNPMInvalidName, Invalid, "Invalid npm package name", "The package name breaks the rules of R-NPM-002: an empty, \".\" or \"..\" segment, a control character, a percent sign left after decoding, more than one \"/\", or, for a name being published, npm's rules for new names or a look-alike of an existing name."},
+	{CodeNPMInvalidVersion, Invalid, "Invalid npm version", "The version is not a canonical SemVer 2.0.0 version without build metadata."},
+	{CodeNPMInvalidRange, Invalid, "Invalid npm version range", "The version range is not accepted by node-semver."},
+	{CodeNPMInvalidTag, Invalid, "Invalid npm dist-tag", "A dist-tag is 1 to 128 characters, starts with a letter or digit and is not a valid SemVer range; the version of a tag must be a live version."},
+	{CodeNPMBadPublish, Invalid, "Malformed npm publish", "The publish request or its tarball is malformed or ambiguous: the envelope, the attachments, the archive rules of R-NPM-007."},
+	{CodeNPMManifestMismatch, Invalid, "npm manifest mismatch", "The manifest of the request and the package.json in the tarball disagree on name, version or an install-relevant field."},
+	{CodeNPMTooLarge, TooLarge, "npm publish too large", "A limit of the publish is exceeded: the body, the tarball, the unpacked size, the entry count, the package.json or the compression ratio."},
+	{CodeNPMClassNotWritable, MethodNotAllowed, "npm repository is not writable", "The repository class takes no writes; publish to a local repository or to the deployment target of a virtual repository."},
+	{CodeNPMVersionExists, Conflict, "npm version exists", "The version was published before. A name and version are never accepted again with other bytes."},
+	{CodeNPMVersionUnpublished, Conflict, "npm version unpublished", "The version was unpublished and is never accepted again; publish a new version."},
+	{CodeNPMStaleRev, Conflict, "npm revision is stale", "Another write changed the package after the document was read; read it again with ?write=true."},
+	{CodeNPMNotImplemented, NotImplemented, "npm operation not implemented", "The operation is part of the npm protocol and is not implemented by trove."},
+	{CodeNPMAuditUnavailable, NotImplemented, "npm audit not available", "The audit endpoint is not available for this repository."},
+	{CodeNPMInvalidUpstreamDocument, UpstreamFailed, "Invalid npm upstream document", "The upstream package document failed validation and was not stored."},
+	// <<< M2 npm
 }
 
 // Codes returns a copy of the registry in declaration order.

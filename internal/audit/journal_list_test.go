@@ -13,7 +13,6 @@ import (
 // flag or on it.
 var journalPending = map[string]string{
 	"ci.token.revoked":  "CI identity (M4, R-CI-017)",
-	"npm.unpublish":     "npm format (M2, R-NPM-017)",
 	"package.published": "NuGet format (M2, R-NUGET-033)",
 	"package.deleted":   "NuGet format (M2, R-NUGET-033)",
 	"ci.issuer.*":       "CI identity (M4)",

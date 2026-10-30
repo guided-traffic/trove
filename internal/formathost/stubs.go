@@ -61,8 +61,12 @@ func (unsupportedResolver) DeployTarget(context.Context, *formats.Request) (*rep
 		"The virtual repository has no default deployment target, so it takes no deploys.", errs.WithAllow("GET", "HEAD"))
 }
 
+// ShadowCheck lets a first publish proceed: without the virtual engine no remote
+// member of a virtual repository serves a name, so nothing can be shadowed
+// (R-REPO-048 "an empty exposure set lets the publish proceed"). The engine's
+// bridge replaces this answer with the check.
 func (unsupportedResolver) ShadowCheck(context.Context, *formats.Request, string) (formats.ShadowOutcome, error) {
-	return formats.ShadowOutcome{}, errNoResolver()
+	return formats.ShadowOutcome{Proceed: true}, nil
 }
 
 // missCache is the rendition cache of a host that has none: it never hits.

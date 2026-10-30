@@ -356,7 +356,9 @@ func (w *writer) Claim(_ context.Context, t formats.Target, ow formats.Ownership
 	return nil
 }
 
-func (w *writer) AutoClaim(context.Context, string) error { return nil }
+func (w *writer) AutoClaim(context.Context, string) (formats.AutoClaimResult, error) {
+	return formats.AutoClaimResult{Reason: "disabled"}, nil
+}
 
 func (w *writer) Notify(area string, payload any) error {
 	if area == "" {
