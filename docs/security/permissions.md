@@ -166,7 +166,7 @@ target shadow a remote package.
 
 R-AUTHZ-015's re-check runs for every deploy of `/files/`: after the body has arrived and before the commit transaction
 opens, the write is decided again on the committing replica's index, for a new file and an identical re-upload as for an
-overwrite, and the recorded decision is that one ([deploy.go](../../internal/files/deploy.go);
+overwrite, and the recorded decision is that one ([deploy.go](../../internal/files/deploy.go), on a new holder begun after the body arrived, Q-ARCH-208;
 `TestR_AUTHZ_015_ADeployIsDecidedAgainWhenItCommits` removes the grant while the body is arriving). Two things remain.
 
 The credential is not authenticated again: a token revoked, or a session ended, while its upload runs still commits that

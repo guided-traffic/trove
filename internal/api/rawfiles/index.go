@@ -5,9 +5,10 @@ import (
 	"net/http"
 	"strings"
 
-	v1 "github.com/guided-traffic/trove/internal/api/v1"
+	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/files"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -20,7 +21,7 @@ import (
 // the entries the caller may read, in pages of storage.listing limits: the
 // `limit` and `cursor` query parameters of the management API.
 func (h *Handler) index(w http.ResponseWriter, r *http.Request, caller files.Caller, key string, p repository.Cleaned) {
-	lq, err := v1.ParseList(r, v1.ListSpec{}, h.api)
+	lq, err := edge.ParseList(r, edge.ListSpec{}, h.api)
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
@@ -29,7 +30,7 @@ func (h *Handler) index(w http.ResponseWriter, r *http.Request, caller files.Cal
 	if len(lq.After) == 1 {
 		after = lq.After[0]
 	} else if lq.After != nil {
-		httpserver.Problem(w, r, v1.InvalidCursor())
+		httpserver.Problem(w, r, edge.InvalidCursor())
 		return
 	}
 	page, err := h.svc.Children(r.Context(), caller, key, files.ChildrenQuery{
@@ -44,7 +45,7 @@ func (h *Handler) index(w http.ResponseWriter, r *http.Request, caller files.Cal
 		next = lq.EncodeCursor([]string{page.Next})
 	}
 	cw := httpserver.ContentWriterFor(w, r, httpserver.ContentIndex, "")
-	cw.Header().Set("Cache-Control", cacheControl(r))
+	cw.Header().Set("Cache-Control", edge.CacheControl(r))
 	if wantsHTML(r.Header.Get("Accept")) {
 		cw.Header().Set("Content-Type", "text/html; charset=utf-8")
 		cw.WriteHeader(http.StatusOK)
@@ -56,13 +57,13 @@ func (h *Handler) index(w http.ResponseWriter, r *http.Request, caller files.Cal
 	body := struct {
 		Repository string        `json:"repository"`
 		Path       string        `json:"path"`
-		Items      []files.Child `json:"items"`
+		Items      []items.Child `json:"items"`
 		NextCursor *string       `json:"nextCursor"`
 	}{Repository: key, Path: p.Path, Items: page.Items}
 	if next != "" {
 		body.NextCursor = &next
 	}
-	v1.WriteJSON(cw, r, http.StatusOK, body)
+	edge.WriteJSON(cw, r, http.StatusOK, body)
 }
 
 // wantsHTML reports whether text/html is the preferred type of an Accept header:
@@ -131,7 +132,7 @@ func encodeSegment(name string) string {
 	return b.String()
 }
 
-func renderHTML(key, path string, items []files.Child, next string, r *http.Request) string {
+func renderHTML(key, path string, entries []items.Child, next string, r *http.Request) string {
 	title := "/" + key + "/"
 	if path != "" {
 		title += path + "/"
@@ -142,9 +143,9 @@ func renderHTML(key, path string, items []files.Child, next string, r *http.Requ
 	if path != "" {
 		b.WriteString("<li><a href=\"../\">../</a></li>\n")
 	}
-	for _, it := range items {
+	for _, it := range entries {
 		name, href := it.Path, "./"+encodeSegment(it.Path)
-		if it.Kind == files.KindFolder {
+		if it.Kind == items.KindFolder {
 			name += "/"
 			href += "/"
 		}

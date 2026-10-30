@@ -4,9 +4,11 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/files"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/items"
 )
 
 // The items operations of R-API-025 (R-STOR-016 to R-STOR-018, R-STOR-015): the
@@ -16,39 +18,35 @@ import (
 // service decides again for the entries of a listing and the items of a subtree.
 // The raw transfer under /files/ is internal/api/rawfiles.
 
-// CallerFrom builds the caller of a request for the files service: the subject the
-// decision point evaluates, the endpoint (the exposure of an endpoint is a ceiling,
-// R-EP-013), and the actor and source of the audit events.
-func CallerFrom(r *http.Request) files.Caller {
+// filesCaller builds the caller of a request for the files service: the holder of
+// the index the request decides on, which the shared step of the operation began
+// (edge.AccessFrom; R-AUTHZ-015) or, for a request that reaches the handler
+// without it, a holder begun here with the repository key made known; the subject
+// behind it, whose endpoint is the ceiling of every decision (R-EP-013); and the
+// actor and source of the audit events.
+func (s *Server) filesCaller(r *http.Request, repoKey string) (files.Caller, error) {
 	ctx := r.Context()
-	p := httpserver.PrincipalFrom(ctx)
-	c := files.Caller{
-		Subject: SubjectFrom(ctx),
-		Actor:   ActorFrom(p),
-		Source:  auditSource(r),
+	if _, ok := edge.AccessFrom(ctx); !ok && s.o.FilesDecider == nil {
+		return files.Caller{}, unavailable("The files service")
 	}
-	if ep := httpserver.EndpointFrom(ctx); ep != nil {
-		c.Endpoint = ep.Name()
+	acc, err := edge.Resolve(ctx, s.o.FilesDecider, edge.SubjectFrom(r), repoKey)
+	if err != nil {
+		return files.Caller{}, err
 	}
-	return c
+	return files.Caller{
+		Access: acc, Subject: acc.Subject,
+		Actor: edge.ActorFrom(httpserver.PrincipalFrom(ctx)), Source: auditSource(r),
+	}, nil
 }
-
-// WriteJSON answers a JSON body; the files transfer uses it for the item
-// description it returns from /files/.
-func WriteJSON(w http.ResponseWriter, r *http.Request, status int, v any) { writeJSON(w, r, status, v) }
-
-// InvalidCursor is the 400 of a cursor that does not belong to the request.
-func InvalidCursor() error { return invalidCursor() }
 
 // WriteDeleteResult answers a delete of the files service: 204, or 202 with the
 // job to poll and its location.
-func WriteDeleteResult(w http.ResponseWriter, r *http.Request, res files.DeleteResult) {
+func WriteDeleteResult(w http.ResponseWriter, r *http.Request, res items.DeleteResult) {
 	if res.Done {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	w.Header().Set("Location", jobLocation(r, res.JobID))
-	writeJSON(w, r, http.StatusAccepted, gen.JobReferenceEnvelope{Job: jobReference(res.JobID, files.DeleteJobKind, res.JobState)})
+	edge.WriteJob(w, r, res.JobID, items.DeleteJobKind, res.JobState)
 }
 
 func (s *Server) filesService() (*files.Service, error) {
@@ -58,8 +56,8 @@ func (s *Server) filesService() (*files.Service, error) {
 	return s.o.Files, nil
 }
 
-func (s *Server) links(r *http.Request) files.Links {
-	return files.Links{Base: httpserver.InfoFrom(r.Context()).BaseURL}
+func (s *Server) links(r *http.Request) edge.Links {
+	return edge.Links{Base: httpserver.InfoFrom(r.Context()).BaseURL}
 }
 
 // itemPath validates the path parameter of an items operation: an item path
@@ -78,15 +76,18 @@ func (s *Server) GetItem(w http.ResponseWriter, r *http.Request, repoKey string,
 	if err == nil {
 		path, err = itemPath(params.Path)
 	}
-	var it files.Item
+	var it items.Item
 	if err == nil {
-		it, err = svc.ItemInfo(r.Context(), CallerFrom(r), repoKey, path)
+		var c files.Caller
+		if c, err = s.filesCaller(r, repoKey); err == nil {
+			it, err = svc.ItemInfo(r.Context(), c, repoKey, path)
+		}
 	}
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
 	}
-	writeJSON(w, r, http.StatusOK, it.View(s.links(r)))
+	writeJSON(w, r, http.StatusOK, edge.DescribeItem(it, s.links(r)))
 }
 
 // DeleteItem implements DELETE /api/v1/repositories/{repoKey}/items (R-STOR-018).
@@ -96,9 +97,12 @@ func (s *Server) DeleteItem(w http.ResponseWriter, r *http.Request, repoKey stri
 	if err == nil {
 		path, err = itemPath(params.Path)
 	}
-	var res files.DeleteResult
+	var res items.DeleteResult
 	if err == nil {
-		res, err = svc.Delete(r.Context(), CallerFrom(r), files.DeleteRequest{Repo: repoKey, Path: path})
+		var c files.Caller
+		if c, err = s.filesCaller(r, repoKey); err == nil {
+			res, err = svc.Delete(r.Context(), c, files.DeleteRequest{Repo: repoKey, Path: path})
+		}
 	}
 	if err != nil {
 		httpserver.Problem(w, r, err)
@@ -166,12 +170,17 @@ func (s *Server) ListChildren(w http.ResponseWriter, r *http.Request, repoKey st
 	if len(lq.After) == 1 {
 		cq.After = lq.After[0]
 	}
-	page, err := svc.Children(r.Context(), CallerFrom(r), repoKey, cq)
+	caller, err := s.filesCaller(r, repoKey)
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
 	}
-	out := Page[files.Child]{Items: page.Items}
+	page, err := svc.Children(r.Context(), caller, repoKey, cq)
+	if err != nil {
+		httpserver.Problem(w, r, err)
+		return
+	}
+	out := Page[items.Child]{Items: page.Items}
 	if page.Next != "" {
 		c := lq.EncodeCursor([]string{page.Next})
 		out.NextCursor = &c
@@ -193,9 +202,12 @@ func (s *Server) GetItemStats(w http.ResponseWriter, r *http.Request, repoKey st
 	if err == nil {
 		path, err = CheckItemPath(params.Path, PathOptions{})
 	}
-	var st files.StatsInfo
+	var st items.DownloadStats
 	if err == nil {
-		st, err = svc.Stats(r.Context(), CallerFrom(r), repoKey, path)
+		var c files.Caller
+		if c, err = s.filesCaller(r, repoKey); err == nil {
+			st, err = svc.Stats(r.Context(), c, repoKey, path)
+		}
 	}
 	if err != nil {
 		httpserver.Problem(w, r, err)

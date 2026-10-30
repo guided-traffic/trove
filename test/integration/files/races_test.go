@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -14,7 +13,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/blob"
@@ -131,13 +129,9 @@ func TestR_STOR_018_DeletingInAVirtualRepositoryIsRefused(t *testing.T) {
 	e.breakGlass()
 	r := e.newReplica("a", replicaOpts{})
 	r.createRepository("generic-v", nil)
-	svc, err := files.New(files.Options{
-		Runner: r.db, Blobs: r.blobs, Repos: fixedConfig{Reader: r.reader, class: repository.Virtual}, Authz: r.engine, Recorder: audit.Nop{}, Log: quiet,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = svc.Delete(context.Background(), files.Caller{Subject: authz.Subject{Kind: principal.KindBreakGlass, ID: uuidV4(), Name: "admin"}}, files.DeleteRequest{Repo: "generic-v", Path: "x/y.bin"})
+	svc := r.filesOn(r.blobs, fixedConfig{Reader: r.reader, class: repository.Virtual})
+	caller := r.caller(authz.Subject{Kind: principal.KindBreakGlass, ID: uuidV4(), Name: "admin"}, "generic-v")
+	_, err := svc.Delete(context.Background(), caller, files.DeleteRequest{Repo: "generic-v", Path: "x/y.bin"})
 	ee, ok := errs.As(err)
 	if !ok || ee.Kind != errs.MethodNotAllowed {
 		t.Fatalf("err = %v, want 405", err)
@@ -177,13 +171,9 @@ func TestR_STOR_004_AnUndecodableUploadLimitRefusesTheUpload(t *testing.T) {
 		t.Fatalf("create with maxUploadSize 1e9: %d %s", res.status, res.body)
 	}
 	for _, cfg := range []string{`{"storage":{"maxUploadSize":1e9}}`, `{"storage":{"maxUploadSize":-1}}`} {
-		svc, err := files.New(files.Options{
-			Runner: r.db, Blobs: r.blobs, Repos: fixedConfig{Reader: r.reader, cfg: cfg}, Authz: r.engine, Recorder: audit.Nop{}, Log: quiet,
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, err = svc.Deploy(context.Background(), files.Caller{Subject: authz.Subject{Kind: principal.KindBreakGlass, ID: uuidV4(), Name: "admin"}}, files.DeployRequest{
+		svc := r.filesOn(r.blobs, fixedConfig{Reader: r.reader, cfg: cfg})
+		caller := r.caller(authz.Subject{Kind: principal.KindBreakGlass, ID: uuidV4(), Name: "admin"}, "generic-lim")
+		_, err := svc.Deploy(context.Background(), caller, files.DeployRequest{
 			Repo: "generic-lim", Path: repository.Cleaned{Path: "x.bin"}, Body: strings.NewReader("data"), ContentLength: 4,
 		})
 		if ee, ok := errs.As(err); !ok || ee.Kind != errs.Internal {
@@ -195,12 +185,11 @@ func TestR_STOR_004_AnUndecodableUploadLimitRefusesTheUpload(t *testing.T) {
 	}
 }
 
-// commitProbe wraps the blob store and the decision point of one files service:
-// before the commit transaction starts it lets a concurrent upload create the
-// path, and it counts the decisions that are asked while the link step runs.
+// commitProbe wraps the blob store and the holder of one request's decisions: before
+// the commit transaction starts it lets a concurrent upload create the path, and
+// it counts the decisions that are asked while the link step runs.
 type commitProbe struct {
 	*blob.Store
-	*authz.Engine
 	before   func()
 	inCommit atomic.Bool
 	inside   atomic.Int64
@@ -217,22 +206,26 @@ func (p *commitProbe) Commit(ctx context.Context, sp *blob.Spooled, link blob.Li
 	})
 }
 
-func (p *commitProbe) Decide(ctx context.Context, sub authz.Subject, c authz.Coordinate) authz.Decision {
-	if p.inCommit.Load() {
-		p.inside.Add(1)
-	}
-	return p.Engine.Decide(ctx, sub, c)
+// probeAccess counts the decisions of its holder that are asked inside the
+// commit transaction. RecordAllowed is not one: it is the write the transaction
+// exists for.
+type probeAccess struct {
+	files.Access
+	probe *commitProbe
 }
 
-func (p *commitProbe) PathsAllowed(ctx context.Context, sub authz.Subject, base authz.Coordinate, a authz.Action, paths []string) ([]bool, error) {
-	if p.inCommit.Load() {
-		p.inside.Add(1)
+func (a probeAccess) Decide(ctx context.Context, c authz.Coordinate) authz.Decision {
+	if a.probe.inCommit.Load() {
+		a.probe.inside.Add(1)
 	}
-	return p.Engine.PathsAllowed(ctx, sub, base, a, paths)
+	return a.Access.Decide(ctx, c)
 }
 
-func (p *commitProbe) Ingest(ctx context.Context, body io.Reader, o blob.IngestOptions) (*blob.Spooled, error) {
-	return p.Store.Ingest(ctx, body, o)
+func (a probeAccess) PathsAllowed(ctx context.Context, base authz.Coordinate, act authz.Action, paths []string) ([]bool, error) {
+	if a.probe.inCommit.Load() {
+		a.probe.inside.Add(1)
+	}
+	return a.Access.PathsAllowed(ctx, base, act, paths)
 }
 
 // TestR_STOR_007_NoDecisionWaitsInsideTheCommitTransaction: a concurrent upload
@@ -255,18 +248,21 @@ func TestR_STOR_007_NoDecisionWaitsInsideTheCommitTransaction(t *testing.T) {
 	})
 
 	deploy := func(p person, path string) (*commitProbe, error) {
-		probe := &commitProbe{Store: r.blobs, Engine: r.engine}
+		probe := &commitProbe{Store: r.blobs}
 		probe.before = func() {
 			if res := r.put("admin", "/files/generic-up/"+path, "somebody else was first"); res.status != 201 {
 				t.Errorf("the concurrent upload: %d %s", res.status, res.body)
 			}
 		}
-		svc, err := files.New(files.Options{Runner: r.db, Blobs: probe, Repos: r.reader, Authz: probe, Recorder: audit.Nop{}, Log: quiet})
-		if err != nil {
-			t.Fatal(err)
+		svc := r.filesOn(probe, r.reader)
+		caller := r.caller(authz.Subject{Kind: principal.KindUser, ID: p.ID, Name: p.Name}, "generic-up")
+		caller.Access = probeAccess{Access: caller.Access, probe: probe}
+		recheck := caller.Recheck
+		caller.Recheck = func(ctx context.Context, key string) (files.Access, error) {
+			a, err := recheck(ctx, key)
+			return probeAccess{Access: a, probe: probe}, err
 		}
-		caller := files.Caller{Subject: authz.Subject{Kind: principal.KindUser, ID: p.ID, Name: p.Name}}
-		_, err = svc.Deploy(context.Background(), caller, files.DeployRequest{
+		_, err := svc.Deploy(context.Background(), caller, files.DeployRequest{
 			Repo: "generic-up", Path: repository.Cleaned{Path: path}, Body: strings.NewReader("mine"), ContentLength: 4,
 		})
 		return probe, err

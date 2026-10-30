@@ -4137,6 +4137,27 @@ management API gains a migration that rewrites such documents.
 
 **Applied in the spec:** R-STOR-004 reads unchanged; the same change makes deleting in a virtual repository `405` in code, as R-STOR-018 already says.
 
+### Q-STOR-146 · A remote fill is an item with its upstream URL and no `artifact.deployed` event
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the proxy stores the artifact of a remote repository as an item of that repository (R-REPO-025) through the item store's one commit
+(Q-ARCH-207). `artifact.deployed` is specified as "a file was stored in a local repository by any upload path" (R-OPS-014), and the cache event
+`artifact.cached` is webhook-only and raised by the proxy.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The commit writes `artifact.deployed` for every origin | One audit row per commit | One rule | A cache fill would claim an upload that nobody made, and the audit trail would hold one row per cached tarball |
+| (b) Only an upload writes it; a fill stores `upstream_url` on the item and the proxy raises its own event (chosen) | The audit row is part of the commit for `OriginUpload` | The event means what R-OPS-014 says; the item still names where its bytes came from | The proxy owns the fill's event |
+
+**Choice:** (b). The `upstream_url` column of the item is written by the insert and the replace of a file and read into `items.Item.UpstreamURL`;
+the item description (`upstreamUrl`) shows it for a cached item and `null` for an uploaded one. The store removes any user info from the URL before it stores or reports it.
+
+**Rationale:** an audit trail records what a person or a credential did. The development agent would revisit it if an audit requirement for
+fills appears.
+
+**Applied in the spec:** R-STOR-016 (the description's `upstreamUrl`) reads unchanged.
+
 ## What this does not cover
 
 ### H-11 · Object-store principals bypass trove's authorization and integrity checks

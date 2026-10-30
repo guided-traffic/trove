@@ -240,6 +240,29 @@ func TestModuleBans(t *testing.T) {
 			pkg("internal/app", "internal/api/login", "internal/api/v1"),
 		}))
 	})
+	t.Run("R-ARCH-002 the item store importing the decision point names the edge", func(t *testing.T) {
+		wantEdge(t, CheckModuleBans(mod, []Package{pkg("internal/items", "internal/authz")}), "R-ARCH-002", "internal/items", "internal/authz")
+		wantEdge(t, CheckModuleBans(mod, []Package{pkg("internal/items/sub", "internal/authz")}), "R-ARCH-002", "internal/items/sub", "internal/authz")
+	})
+	t.Run("R-ARCH-002 the generic layer reaches storage only through the item store", func(t *testing.T) {
+		wantEdge(t, CheckModuleBans(mod, []Package{pkg("internal/files", "internal/blob")}), "R-ARCH-002", "internal/files", "internal/blob")
+		wantEdge(t, CheckModuleBans(mod, []Package{pkg("internal/files", "internal/meta/postgres/q")}), "R-ARCH-002", "internal/files", "internal/meta/postgres/q")
+		wantClean(t, CheckModuleBans(mod, []Package{pkg("internal/files", "internal/items", "internal/meta", "internal/authz", "internal/repository")}))
+	})
+	t.Run("R-ARCH-002 the raw routes and the shared edge package do not import the management API", func(t *testing.T) {
+		wantEdge(t, CheckModuleBans(mod, []Package{pkg("internal/api/rawfiles", "internal/api/v1")}), "R-ARCH-002", "internal/api/rawfiles", "internal/api/v1")
+		wantEdge(t, CheckModuleBans(mod, []Package{pkg("internal/api/rawfiles", "internal/api/v1/gen")}), "R-ARCH-002", "internal/api/rawfiles", "internal/api/v1/gen")
+		wantEdge(t, CheckModuleBans(mod, []Package{pkg("internal/api/edge", "internal/api/v1")}), "R-ARCH-002", "internal/api/edge", "internal/api/v1")
+		wantClean(t, CheckModuleBans(mod, []Package{
+			pkg("internal/api/rawfiles", "internal/api/edge", "internal/files", "internal/items"),
+			pkg("internal/api/v1", "internal/api/edge", "internal/files", "internal/items"),
+			pkg("internal/items", "internal/blob", "internal/meta/postgres", "internal/repository"),
+		}))
+	})
+	t.Run("R-ARCH-002 the item store is a domain package: the edge may import it, the infrastructure may not", func(t *testing.T) {
+		wantClean(t, CheckLayers(mod, []Package{pkg("internal/api/edge", "internal/items"), pkg("internal/files", "internal/items")}))
+		wantEdge(t, CheckLayers(mod, []Package{pkg("internal/blob", "internal/items")}), "R-ARCH-002", "internal/blob", "internal/items")
+	})
 }
 
 func TestStateExemption(t *testing.T) {

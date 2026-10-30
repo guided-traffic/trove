@@ -1,175 +1,153 @@
-// Package files is the items side of the raw file transfer (R-STOR-007,
-// R-STOR-012, R-STOR-013, R-STOR-016 to R-STOR-018, R-GENERIC-004 to
-// R-GENERIC-007): deploy, download, delete, item information, folder listings
-// and download statistics of the files in a repository, on the blob store and
-// the items tables. The HTTP layers are thin: internal/api/rawfiles serves
-// /files/ and internal/api/v1 serves the items operations of the management API,
-// and both call this package, so the rules exist once.
+// Package files is the generic layer: the raw view of the items of any
+// repository (R-STOR-007, R-STOR-012, R-STOR-013, R-STOR-016 to R-STOR-018,
+// R-GENERIC-004 to R-GENERIC-007, R-EP-014). It decides, resolves and admits; the
+// items store (internal/items) stores. A deploy, a download, a delete, the
+// description of an item, the listing of a folder and the download statistics all
+// go through it, so that /files/ (internal/api/rawfiles) and the items operations
+// of the management API (internal/api/v1) apply the rules once.
 //
 // Every operation asks the decision point first, with the action of R-AUTHZ-006
 // and the coordinate it concerns (R-AUTHZ-016: authorization runs before any
-// lookup of the repository or the item), and answers a refusal with the error of
-// the decision, so that a hidden item is the same 404 as a missing one. Nothing
-// here keeps state between requests (R-ARCH-032) except the write-only buffers
-// of the download statistics and the repository activity.
+// lookup of the repository or the item), on the index the request began with
+// (R-AUTHZ-015; [Caller.Access]), and answers a refusal with the error of the
+// decision, so that a hidden item is the same 404 as a missing one. The checks
+// that must run in the item store's transactions are handed to it as callbacks;
+// the store itself calls no decision point. The package reaches the object store
+// and the items tables only through the store: the architecture test refuses an
+// import of internal/blob or internal/meta/postgres here.
+//
+// Nothing here keeps state between requests (R-ARCH-032).
 package files
 
 import (
 	"context"
 	"io"
 	"log/slog"
-	"strings"
 
 	"github.com/guided-traffic/trove/internal/audit"
-	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/authz"
-	"github.com/guided-traffic/trove/internal/blob"
-	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/errs"
-	"github.com/guided-traffic/trove/internal/jobs"
+	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
-// Blobs is the part of the blob store the transfer uses; *blob.Store implements
-// it.
-type Blobs interface {
-	Ingest(ctx context.Context, body io.Reader, o blob.IngestOptions) (*blob.Spooled, error)
-	Commit(ctx context.Context, sp *blob.Spooled, link blob.LinkFunc) (blob.CommitResult, error)
-	Open(ctx context.Context, d blob.Digest, size int64, o blob.OpenOptions) (io.ReadCloser, error)
+// Items is the part of the item store the generic layer uses; *items.Store
+// implements it.
+type Items interface {
+	Spool(ctx context.Context, body io.Reader, o items.IngestOptions) (*items.Spooled, error)
+	Commit(ctx context.Context, spec items.CommitSpec) (items.CommitResult, error)
+	CreateFolder(ctx context.Context, spec items.FolderSpec) (items.FolderResult, error)
+	Live(ctx context.Context, repo items.RepoRef, path string) (items.Item, bool, error)
+	Open(ctx context.Context, it items.Item, rng *items.Range) (io.ReadCloser, error)
+	Children(ctx context.Context, repo items.RepoRef, cq items.ChildrenQuery, visible items.Visibility) (items.ChildrenPage, error)
+	DownloadStats(ctx context.Context, itemID int64) (items.DownloadStats, error)
+	Delete(ctx context.Context, spec items.DeleteSpec) (items.DeleteResult, error)
+	Served(ctx context.Context, e items.ServedEvent)
 }
 
-// JobEnqueuer enqueues a job in the caller's transaction; *jobs.Queue implements
-// it.
-type JobEnqueuer interface {
-	Enqueue(ctx context.Context, tx meta.Tx, e jobs.EnqueueSpec) (jobs.Result, error)
-}
+var _ Items = (*items.Store)(nil)
 
-// PathDecider is implemented by the decision point beyond the Authorizer
-// contract: one action for many paths of a repository on one index, without an
-// audit event per refused entry (authz.Engine.PathsAllowed). A listing omits
-// what the caller may not read, and a folder delete needs `delete` on every
-// item of the subtree (R-STOR-017, R-STOR-018).
-type PathDecider interface {
-	PathsAllowed(ctx context.Context, sub authz.Subject, base authz.Coordinate, a authz.Action, paths []string) ([]bool, error)
+// Access is what a request holds to ask the decision point: the decisions of one
+// request, all on the index it began with (internal/api/edge.Access implements
+// it). The subject, and with it the endpoint whose exposure is the ceiling of
+// every decision (R-EP-013), is bound into it.
+type Access interface {
+	// Decide decides every action of the coordinate.
+	Decide(ctx context.Context, c authz.Coordinate) authz.Decision
+	// PathsAllowed decides one action for many paths of a repository without an
+	// audit event per refused entry: a listing omits what the caller may not read,
+	// and a folder delete needs `delete` on every item of the subtree (R-STOR-017,
+	// R-STOR-018).
+	PathsAllowed(ctx context.Context, base authz.Coordinate, a authz.Action, paths []string) ([]bool, error)
+	// RecordAllowed records an allowed write in the transaction of the change
+	// (R-AUTHZ-029).
+	RecordAllowed(ctx context.Context, tx meta.Tx, c authz.Coordinate, d authz.Decision) error
 }
-
-// WriteRecorder is implemented by the decision point to record an allowed write in
-// the transaction of the change (authz.Engine.RecordAllowed, R-AUTHZ-029).
-type WriteRecorder interface {
-	RecordAllowed(ctx context.Context, tx meta.Tx, sub authz.Subject, c authz.Coordinate, d authz.Decision) error
-}
-
-// ActivitySink receives "this repository was used" (repository.Activity).
-type ActivitySink interface{ Touch(repoID string) }
 
 // Options configure [New].
 type Options struct {
-	Runner meta.Runner
-	Blobs  Blobs
-	Repos  repository.Reader
-	Authz  authz.Authorizer
-	// Recorder records artifact.* events; nil discards them.
-	Recorder audit.Recorder
-	// Jobs enqueues the deletion job of a large subtree; nil makes a subtree above
-	// storage.delete.max_sync_items fail with 503.
-	Jobs JobEnqueuer
-	// Storage is the storage section: delete bounds, the download buffer.
-	Storage config.Storage
-	// RecordDownloads is audit.record_downloads (R-OPS-015).
-	RecordDownloads bool
-	// Activity and Stats are the write-only buffers; nil disables them.
-	Activity ActivitySink
-	Stats    *Stats
-	Log      *slog.Logger
+	Items Items
+	Repos repository.Reader
+	Log   *slog.Logger
 }
 
-// Service is the files transfer on the items tables.
+// Service is the generic layer over the item store.
 type Service struct {
-	run      meta.Runner
-	blobs    Blobs
-	repos    repository.Reader
-	authz    authz.Authorizer
-	paths    PathDecider
-	writes   WriteRecorder
-	rec      audit.Recorder
-	jobs     JobEnqueuer
-	cfg      config.Storage
-	download bool
-	activity ActivitySink
-	stats    *Stats
-	log      *slog.Logger
+	items Items
+	repos repository.Reader
+	log   *slog.Logger
 }
 
 // New creates the service.
 func New(o Options) (*Service, error) {
 	switch {
-	case o.Runner == nil:
-		return nil, errs.E(errs.Internal, errs.CodeInternal, "files: no transaction runner")
-	case o.Blobs == nil:
-		return nil, errs.E(errs.Internal, errs.CodeInternal, "files: no blob store")
+	case o.Items == nil:
+		return nil, errs.E(errs.Internal, errs.CodeInternal, "files: no item store")
 	case o.Repos == nil:
 		return nil, errs.E(errs.Internal, errs.CodeInternal, "files: no repository reader")
-	case o.Authz == nil:
-		return nil, errs.E(errs.Internal, errs.CodeInternal, "files: no authorizer")
-	}
-	if o.Recorder == nil {
-		o.Recorder = audit.Nop{}
 	}
 	if o.Log == nil {
 		o.Log = slog.Default()
 	}
-	s := &Service{
-		run: o.Runner, blobs: o.Blobs, repos: o.Repos, authz: o.Authz, rec: o.Recorder, jobs: o.Jobs,
-		cfg: o.Storage, download: o.RecordDownloads, stats: o.Stats, log: o.Log,
-	}
-	if o.Activity != nil {
-		s.activity = o.Activity
-	}
-	s.paths, _ = o.Authz.(PathDecider)
-	s.writes, _ = o.Authz.(WriteRecorder)
-	return s, nil
+	return &Service{items: o.Items, repos: o.Repos, log: o.Log}, nil
 }
 
-// Caller is who acts and through which endpoint: the subject the decision point
-// evaluates, which carries the endpoint whose exposure is the ceiling of every
-// decision (R-EP-013, Q-EP-20), the endpoint the audit events record, and the
-// actor and source of the audit events.
+// Caller is who acts: the request's decision holder, the subject behind it (whose
+// Endpoint the audit events record, R-EP-013), and the actor and source of the
+// audit events. The holder is begun once per request by the shared step of the
+// entry point (edge.Begin); the service never begins one.
 type Caller struct {
-	Subject  authz.Subject
-	Endpoint string
-	Actor    audit.Actor
-	Source   audit.Source
+	Access  Access
+	Subject authz.Subject
+	Actor   audit.Actor
+	Source  audit.Source
+	// Recheck begins a holder on the index the replica holds now, with the key
+	// made known. A deploy decides again after its body arrived, and that
+	// decision must see a grant removed while the body was on the wire: it is
+	// made against the index of the moment of the commit, not the one the request
+	// began with (R-AUTHZ-015, Q-ARCH-208). Nil decides again on Access, which is
+	// right for a caller whose request is short.
+	Recheck func(ctx context.Context, key string) (Access, error)
 }
 
-// actorID returns the actor's principal id when it is one, "" otherwise (a
-// break-glass administrator has no row of the principal table).
-func (c Caller) actorID() string { return principal.IDOrEmpty(c.Actor.ID) }
+// afterBody returns the caller whose decisions are made on the index of this
+// moment, for the decisions that follow the arrival of a request body.
+func (c Caller) afterBody(ctx context.Context, key string) (Caller, error) {
+	if c.Recheck == nil {
+		return c, nil
+	}
+	a, err := c.Recheck(ctx, key)
+	if err != nil {
+		return c, err
+	}
+	c.Access = a
+	return c, nil
+}
 
 // decide asks the decision point for the actions on a path and returns the
 // decision for the caller to keep (RecordAllowed) or the error of its refusal.
 //
-// A key the grant index does not hold yet is looked up and caught up by the
-// decision point itself (authz.Engine.Know, R-ARCH-011 step 2, R-API-052).
-func (s *Service) decide(ctx context.Context, c Caller, repo, path string, kind authz.RequestKind, actions ...authz.Action) (authz.Decision, error) {
-	d := s.authz.Decide(ctx, c.Subject, s.coordinate(c, repo, path, kind, actions...))
+// A key the grant index does not hold yet was made known when the request began
+// its index (authz.Decider.Begin, R-ARCH-011 step 2, R-API-052).
+func (c Caller) decide(ctx context.Context, repo, path string, kind authz.RequestKind, actions ...authz.Action) (authz.Decision, error) {
+	d := c.Access.Decide(ctx, coordinate(repo, path, kind, actions...))
 	if !d.Allowed() {
 		return d, d.Err()
 	}
 	return d, nil
 }
 
-func (s *Service) coordinate(_ Caller, repo, path string, kind authz.RequestKind, actions ...authz.Action) authz.Coordinate {
+func coordinate(repo, path string, kind authz.RequestKind, actions ...authz.Action) authz.Coordinate {
 	return authz.Coordinate{Repository: repo, Path: path, Kind: kind, Actions: actions}
 }
 
-// recordAllowed records an allowed write in the writer's transaction, when the
-// decision point can (R-AUTHZ-029).
-func (s *Service) recordAllowed(ctx context.Context, tx meta.Tx, c Caller, repo, path string, d authz.Decision, actions ...authz.Action) error {
-	if s.writes == nil {
-		return nil
+// recorder returns the callback that records an allowed write in the item
+// store's transaction (R-AUTHZ-029).
+func (c Caller) recorder(repo, path string, d authz.Decision, actions ...authz.Action) func(context.Context, meta.Tx) error {
+	return func(ctx context.Context, tx meta.Tx) error {
+		return c.Access.RecordAllowed(ctx, tx, coordinate(repo, path, authz.KindWrite, actions...), d)
 	}
-	return s.writes.RecordAllowed(ctx, tx, c.Subject, s.coordinate(c, repo, path, authz.KindWrite, actions...), d)
 }
 
 // notFound is the one answer for a missing and for a hidden resource.
@@ -192,44 +170,11 @@ func (s *Service) resolve(ctx context.Context, key string, strict bool) (reposit
 	return r, nil
 }
 
-// repoID parses the id of a repository read model.
-func repoID(r repository.Repository) int64 {
-	var n int64
-	for i := range len(r.ID) {
-		if r.ID[i] < '0' || r.ID[i] > '9' {
-			return 0
-		}
-		n = n*10 + int64(r.ID[i]-'0')
+// errForbidden is the 403 of an action the caller does not hold on a path.
+func errForbidden(a authz.Action, repo, path string) error {
+	target := repo
+	if path != "" {
+		target += "/" + path
 	}
-	return n
-}
-
-// parentOf returns the parent path of a canonical path: "" for a top-level entry.
-func parentOf(p string) string {
-	if i := strings.LastIndexByte(p, '/'); i >= 0 {
-		return p[:i]
-	}
-	return ""
-}
-
-// ancestors lists the ancestor folders of a canonical path from the top:
-// "a/b/c" has "a" and "a/b".
-func ancestors(p string) []string {
-	var out []string
-	for i := range len(p) {
-		if p[i] == '/' {
-			out = append(out, p[:i])
-		}
-	}
-	return out
-}
-
-// subtreeBounds returns the range [lo, hi) of the paths below a folder in the "C"
-// collation: lo is the folder plus "/", hi the folder plus "0" (the byte after
-// "/"). The root has no bounds.
-func subtreeBounds(p string) (lo, hi string) {
-	if p == "" {
-		return "", ""
-	}
-	return p + "/", p + "0"
+	return errs.E(errs.Forbidden, errs.CodeForbidden, "The action "+string(a)+" is not permitted on "+target+".")
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/files"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/repository"
@@ -128,14 +129,17 @@ func TestE1_5_EveryProducerIsAuditedAndLogged(t *testing.T) {
 			o.Authz = v1.AuthzServices{Policies: policies, Engine: engine}
 		}
 		c.Routes = func(engine *authz.Engine, r *httpserver.Router) {
-			svc, err := files.New(files.Options{
-				Runner: p.db, Blobs: noBlobs{}, Repos: reader, Authz: engine, Recorder: e.audit,
-				Storage: config.Storage{}, Log: quiet,
+			store, err := items.New(items.Options{
+				Runner: p.db, Blobs: noBlobs{}, Recorder: e.audit, Storage: config.Storage{}, Log: quiet,
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			rawfiles.New(rawfiles.Options{Service: svc, API: idapi.APIConfig()}).Register(r)
+			svc, err := files.New(files.Options{Items: store, Repos: reader, Log: quiet})
+			if err != nil {
+				t.Fatal(err)
+			}
+			rawfiles.New(rawfiles.Options{Service: svc, Decider: engine, API: idapi.APIConfig()}).Register(r)
 		}
 	}
 	// The repository exists before the replica builds its grant index.

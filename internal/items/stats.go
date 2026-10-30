@@ -1,4 +1,4 @@
-package files
+package items
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/meta"
 )
 
@@ -155,4 +156,35 @@ func (s *Stats) Flush(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// ServedEvent is a download that was answered with its content.
+type ServedEvent struct {
+	Item     Item
+	Actor    audit.Actor
+	Source   audit.Source
+	Endpoint string
+	// CountStats is false for a request that asked not to be counted
+	// (`?stats=false`).
+	CountStats bool
+}
+
+// Served records a download that was answered with its content: 200 with the
+// whole file, or 206 for a range that starts at byte 0 (R-STOR-015). HEAD, 304
+// and `?stats=false` are not counted. It counts the download statistics, the
+// repository activity and, with audit.record_downloads, the asynchronous event
+// (R-OPS-015). It never blocks and never fails the request.
+func (s *Store) Served(ctx context.Context, e ServedEvent) {
+	s.touch(e.Item.RepoID)
+	if e.CountStats && s.stats != nil {
+		s.stats.Add(e.Item.ID, actorID(e.Actor))
+	}
+	if s.download {
+		raw, _ := json.Marshal(map[string]any{"path": e.Item.Path, "sha256": e.Item.Digest.Hex()})
+		s.rec.Record(ctx, audit.Event{
+			Type: audit.EventArtifactDownloaded, Actor: e.Actor, Outcome: audit.Success, Source: e.Source, Endpoint: e.Endpoint,
+			Subject: audit.Subject{Kind: "repository", Name: e.Item.Repository}, Repository: e.Item.Repository,
+			Path: e.Item.Path, Details: raw,
+		})
+	}
 }

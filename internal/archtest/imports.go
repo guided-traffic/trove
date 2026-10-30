@@ -64,6 +64,62 @@ func CheckImportBans(pkgs []Package) []Violation {
 	return out
 }
 
+// moduleBan forbids an edge inside this module that the layer rule allows: the
+// packages below from may not import the packages below forbidden. It names a
+// boundary two neighbouring packages keep on purpose (R-ARCH-002), where the
+// layers alone would let the import through.
+type moduleBan struct {
+	rule      string
+	from      string   // module-relative package prefix
+	forbidden []string // module-relative package prefixes
+	why       string
+}
+
+func moduleBans() []moduleBan {
+	return []moduleBan{
+		{
+			rule: "R-ARCH-002", from: "internal/items", forbidden: []string{"internal/authz"},
+			why: "the item store makes no decision and calls no decision point: whoever commits or removes decided before, and hands the store its checks as callbacks (Q-ARCH-207)",
+		},
+		{
+			rule: "R-ARCH-002", from: "internal/files", forbidden: []string{"internal/blob", "internal/meta/postgres"},
+			why: "the generic layer reaches the object store and the items tables only through internal/items (Q-ARCH-206)",
+		},
+		{
+			rule: "R-ARCH-002", from: "internal/api/rawfiles", forbidden: []string{"internal/api/v1"},
+			why: "the raw /files/ routes share their conversions and content responses through internal/api/edge, not through the management API (Q-ARCH-206)",
+		},
+		{
+			rule: "R-ARCH-002", from: "internal/api/edge", forbidden: []string{"internal/api/v1"},
+			why: "internal/api/edge is what the entry points share; it imports none of them (Q-ARCH-205)",
+		},
+		{
+			rule: "R-ARCH-002", from: "internal/api/login", forbidden: []string{"internal/api/v1"},
+			why: "the browser login routes are an entry point of their own; they share conversions through internal/api/edge and never import the management API (Q-AUTH-175)",
+		},
+	}
+}
+
+// CheckModuleBans implements the boundaries of moduleBans over the package graph.
+func CheckModuleBans(module string, pkgs []Package) []Violation {
+	var out []Violation
+	for _, p := range pkgs {
+		for _, ban := range moduleBans() {
+			if !under(p.Rel, ban.from) {
+				continue
+			}
+			for _, imp := range p.Imports {
+				target := rel(module, imp)
+				if target != imp && underAny(target, ban.forbidden) {
+					out = append(out, Violation{Rule: ban.rule, From: p.Rel, To: target, Detail: ban.why})
+				}
+			}
+		}
+	}
+	sortViolations(out)
+	return out
+}
+
 // formatAllowed is what a format package may import from this module (R-ARCH-008,
 // R-ARCH-009): the format contract (internal/formats itself), its own tree, the
 // format catalog (the name rule and the exposure versioning it declares), the
@@ -160,48 +216,6 @@ func CheckStorageValkey(pkgs []Package) []Violation {
 					Rule: "R-STOR-046", From: p.Rel, To: imp,
 					Detail: "storage uses Valkey only through the cluster package's callers, never directly",
 				})
-			}
-		}
-	}
-	sortViolations(out)
-	return out
-}
-
-// moduleBan forbids the packages under from to import the packages under
-// forbidden, both module-relative. importBans matches external paths only; this
-// is the list for edges inside the module that the layer table cannot express
-// because both ends lie in the same layer.
-type moduleBan struct {
-	rule      string
-	from      []string
-	forbidden []string
-	why       string
-}
-
-func moduleBans() []moduleBan {
-	return []moduleBan{
-		{
-			rule:      "R-ARCH-002",
-			from:      []string{"internal/api/login"},
-			forbidden: []string{"internal/api/v1"},
-			why:       "the browser login routes are an entry point of their own; they share conversions through internal/api/edge and never import the management API",
-		},
-	}
-}
-
-// CheckModuleBans implements moduleBans: it names every import of a forbidden
-// package from a package under a banned tree.
-func CheckModuleBans(module string, pkgs []Package) []Violation {
-	var out []Violation
-	for _, p := range pkgs {
-		for _, ban := range moduleBans() {
-			if !underAny(p.Rel, ban.from) {
-				continue
-			}
-			for _, imp := range p.Imports {
-				if target := rel(module, imp); target != imp && underAny(target, ban.forbidden) {
-					out = append(out, Violation{Rule: ban.rule, From: p.Rel, To: target, Detail: ban.why})
-				}
 			}
 		}
 	}

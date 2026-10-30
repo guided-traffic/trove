@@ -2,19 +2,12 @@ package files
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"io"
-	"time"
 
-	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/authz"
-	"github.com/guided-traffic/trove/internal/blob"
-	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/repository"
 )
-
-const retryAfter = 2 * time.Second
 
 // Resolved is the answer of Stat: what the request path resolved to, from
 // PostgreSQL alone (R-STOR-012: HEAD and conditional requests never reach the
@@ -22,7 +15,7 @@ const retryAfter = 2 * time.Second
 type Resolved struct {
 	Repo repository.Repository
 	// Item is the file, or the folder when IsFolder.
-	Item     Item
+	Item     items.Item
 	IsFolder bool
 }
 
@@ -37,7 +30,7 @@ func (s *Service) Stat(ctx context.Context, c Caller, repoKey string, p reposito
 	if p.Folder {
 		kind = authz.KindMetadata
 	}
-	if _, err := s.decide(ctx, c, repoKey, p.Path, kind, authz.Read); err != nil {
+	if _, err := c.decide(ctx, repoKey, p.Path, kind, authz.Read); err != nil {
 		return Resolved{}, err
 	}
 	repo, err := s.resolve(ctx, repoKey, true)
@@ -48,87 +41,32 @@ func (s *Service) Stat(ctx context.Context, c Caller, repoKey string, p reposito
 		return Resolved{}, notFound()
 	}
 	if p.Path == "" {
-		return Resolved{Repo: repo, Item: rootItem(repoKey, repo), IsFolder: true}, nil
+		return Resolved{Repo: repo, Item: items.Root(repoKey, repo.CreatedAt, repo.UpdatedAt), IsFolder: true}, nil
 	}
-	it, found, err := s.liveItem(ctx, repoKey, repoID(repo), p.Path)
+	it, found, err := s.items.Live(ctx, items.RepoOf(repo), p.Path)
 	if err != nil {
 		return Resolved{}, err
 	}
-	if !found || (p.Folder && it.Kind != KindFolder) {
+	if !found || (p.Folder && it.Kind != items.KindFolder) {
 		return Resolved{}, notFound()
 	}
-	if it.Kind == KindFolder {
+	if it.Kind == items.KindFolder {
 		return Resolved{Repo: repo, Item: it, IsFolder: true}, nil
 	}
-	if err := contentStatus(it); err != nil {
+	if err := items.ContentError(it); err != nil {
 		return Resolved{}, err
 	}
 	return Resolved{Repo: repo, Item: it}, nil
 }
 
-// rootItem is the synthetic folder of the repository root.
-func rootItem(key string, repo repository.Repository) Item {
-	return Item{
-		Repository: key, Kind: KindFolder, Explicit: true,
-		CreatedAt: repo.CreatedAt.UTC(), ModifiedAt: repo.UpdatedAt.UTC(), UpdatedAt: repo.UpdatedAt.UTC(),
-	}
+// Open opens the content of a resolved file for streaming ([items.Store.Open]).
+func (s *Service) Open(ctx context.Context, it items.Item, rng *items.Range) (io.ReadCloser, error) {
+	return s.items.Open(ctx, it, rng)
 }
 
-// contentStatus refuses a file whose blob is not ok: 503 with Retry-After for a
-// missing object, which can come back through a restore, and 500 for a corrupt
-// one (R-STOR-012).
-func contentStatus(it Item) error {
-	switch it.ContentStatus {
-	case "", "ok":
-		return nil
-	case "missing":
-		return errs.E(errs.Unavailable, errs.CodeContentUnavailable, "The stored object of this file is missing; retry later.", errs.WithRetryAfter(30*time.Second))
-	}
-	return errs.E(errs.Internal, errs.CodeContentUnavailable, "The stored object of this file failed verification.")
-}
-
-// Range is a byte range of a download; Length < 0 reads to the end.
-type Range struct{ Offset, Length int64 }
-
-// Open opens the content of a resolved file for streaming: the whole file through
-// the verifying reader of R-STOR-013, or the byte range as stored (ranged reads
-// cannot be verified, H-11). An object that is missing is 503 content_unavailable.
-func (s *Service) Open(ctx context.Context, it Item, rng *Range) (io.ReadCloser, error) {
-	var o blob.OpenOptions
-	if rng != nil {
-		o.Range = &blob.ByteRange{Offset: rng.Offset, Length: rng.Length}
-	}
-	body, err := s.blobs.Open(ctx, it.Digest, it.Size, o)
-	switch {
-	case err == nil:
-		return body, nil
-	case errors.Is(err, blob.ErrNotFound):
-		return nil, errs.E(errs.Unavailable, errs.CodeContentUnavailable, "The stored object of this file is missing; retry later.",
-			errs.WithRetryAfter(30*time.Second), errs.WithCause(err))
-	case errors.Is(err, blob.ErrCorrupt):
-		return nil, errs.E(errs.Internal, errs.CodeContentUnavailable, "The stored object of this file failed verification.", errs.WithCause(err))
-	}
-	return nil, err
-}
-
-// Served records a download that was answered with its content: 200 with the
-// whole file, or 206 for a range that starts at byte 0 (R-STOR-015). HEAD, 304
-// and `?stats=false` are not counted. It counts the download statistics, the
-// repository activity and, with audit.record_downloads, the asynchronous event
-// (R-OPS-015). It never blocks and never fails the request.
+// Served records a download that was answered with its content ([items.Store.Served]).
 func (s *Service) Served(ctx context.Context, c Caller, res Resolved, countStats bool) {
-	if s.activity != nil {
-		s.activity.Touch(res.Repo.ID)
-	}
-	if countStats && s.stats != nil {
-		s.stats.Add(res.Item.ID, c.actorID())
-	}
-	if s.download {
-		raw, _ := json.Marshal(map[string]any{"path": res.Item.Path, "sha256": res.Item.Digest.Hex()})
-		s.rec.Record(ctx, audit.Event{
-			Type: audit.EventArtifactDownloaded, Actor: c.Actor, Outcome: audit.Success, Source: c.Source, Endpoint: c.Endpoint,
-			Subject: audit.Subject{Kind: "repository", Name: res.Item.Repository}, Repository: res.Item.Repository,
-			Path: res.Item.Path, Details: raw,
-		})
-	}
+	s.items.Served(ctx, items.ServedEvent{
+		Item: res.Item, Actor: c.Actor, Source: c.Source, Endpoint: c.Subject.Endpoint, CountStats: countStats,
+	})
 }

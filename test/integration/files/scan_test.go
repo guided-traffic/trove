@@ -14,6 +14,7 @@ import (
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/files"
+	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/meta"
 )
 
@@ -45,18 +46,23 @@ func TestR_STOR_017_AListingOfAMostlyHiddenFolder(t *testing.T) {
 	e.exec(`INSERT INTO items (repo_id, path, parent_path, kind) VALUES ($1, 'pub-1', '', 'folder'), ($1, 'pub-2', '', 'folder')`, rid)
 
 	run := &countingRunner{Runner: r.db}
-	svc, err := files.New(files.Options{Runner: run, Blobs: r.blobs, Repos: r.reader, Authz: r.engine, Recorder: audit.Nop{}, Log: quiet})
+	svc, err := items.New(items.Options{Runner: run, Blobs: r.blobs, Recorder: audit.Nop{}, Log: quiet})
 	if err != nil {
 		t.Fatal(err)
 	}
-	caller := files.Caller{Subject: authz.Subject{Kind: principal.KindUser, ID: reader.ID, Name: reader.Name}}
+	svcFiles, err := files.New(files.Options{Items: svc, Repos: r.reader, Log: quiet})
+	if err != nil {
+		t.Fatal(err)
+	}
 	waitFor(t, "the grant taking effect", 10*time.Second, func() bool {
 		return r.get("reader", "/files/generic-wide/pub-1/").status == 200
 	})
+	// The index of the request is taken once the grant is in effect.
+	caller := r.caller(authz.Subject{Kind: principal.KindUser, ID: reader.ID, Name: reader.Name}, "generic-wide")
 
 	t.Run("R-STOR-017 a page that skips 100,000 hidden entries costs a few dozen queries", func(t *testing.T) {
 		run.n.Store(0)
-		page, err := svc.Children(context.Background(), caller, "generic-wide", files.ChildrenQuery{Folders: true, Limit: 1})
+		page, err := svcFiles.Children(context.Background(), caller, "generic-wide", files.ChildrenQuery{Folders: true, Limit: 1})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -71,7 +77,7 @@ func TestR_STOR_017_AListingOfAMostlyHiddenFolder(t *testing.T) {
 				t.Fatalf("the cursor %q names a hidden entry", page.Next)
 			}
 		})
-		next, err := svc.Children(context.Background(), caller, "generic-wide", files.ChildrenQuery{Folders: true, Limit: 1, After: page.Next})
+		next, err := svcFiles.Children(context.Background(), caller, "generic-wide", files.ChildrenQuery{Folders: true, Limit: 1, After: page.Next})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -81,7 +87,7 @@ func TestR_STOR_017_AListingOfAMostlyHiddenFolder(t *testing.T) {
 	})
 	t.Run("R-AUTHZ-016 a position that names no item of the repository is an invalid cursor", func(t *testing.T) {
 		other := e.number("SELECT max(id) + 1000 FROM items")
-		_, err := svc.Children(context.Background(), caller, "generic-wide", files.ChildrenQuery{Folders: true, Limit: 1, After: "\x00" + strconv.FormatInt(other, 10)})
+		_, err := svcFiles.Children(context.Background(), caller, "generic-wide", files.ChildrenQuery{Folders: true, Limit: 1, After: "\x00" + strconv.FormatInt(other, 10)})
 		if err == nil || !strings.Contains(err.Error(), "cursor") {
 			t.Fatalf("%v", err)
 		}

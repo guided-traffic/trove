@@ -346,12 +346,13 @@ func TestPaging(t *testing.T) {
 	t.Run("R-API-010 the fingerprint ignores filter order and unused filters", func(t *testing.T) {
 		a, _ := parse("format=npm&format=nuget&limit=1")
 		b, _ := parse("limit=7&format=nuget&format=npm")
-		if a.fingerprint != b.fingerprint {
+		// The cursor carries the fingerprint, so equal cursors for one key mean equal fingerprints.
+		if a.EncodeCursor([]string{"k"}) != b.EncodeCursor([]string{"k"}) {
 			t.Fatal("OR values in another order must give the same fingerprint")
 		}
 		wider := ListSpec{Filters: []string{"format", "q", "newFilter"}, Sorts: spec.Sorts, DefaultSort: "name"}
 		c, _ := ParseList(httptest.NewRequest("GET", "/x?format=npm&format=nuget", nil), wider, apiCfg())
-		if a.fingerprint != c.fingerprint {
+		if a.EncodeCursor([]string{"k"}) != c.EncodeCursor([]string{"k"}) {
 			t.Fatal("a release that adds an optional filter must not change the fingerprint of a request that does not use it")
 		}
 	})

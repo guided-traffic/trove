@@ -296,12 +296,13 @@ func (q *Queries) InsertExplicitFolder(ctx context.Context, arg InsertExplicitFo
 
 const insertFileItem = `-- name: InsertFileItem :many
 INSERT INTO items (repo_id, path, parent_path, kind, blob_sha256, size, media_type,
-                   declared_sha256, declared_sha512, declared_sha1, declared_md5,
+                   declared_sha256, declared_sha512, declared_sha1, declared_md5, upstream_url,
                    created_by, modified_by)
 VALUES ($1::bigint, $2::text, $3::text, 'file',
         $4::bytea, $5::bigint, NULLIF($6::text, ''),
         $7::bytea, $8::bytea, $9::bytea, $10::bytea,
-        NULLIF($11::text, '')::uuid, NULLIF($11::text, '')::uuid)
+        NULLIF($11::text, ''),
+        NULLIF($12::text, '')::uuid, NULLIF($12::text, '')::uuid)
 ON CONFLICT (repo_id, path) WHERE trashed_at IS NULL DO NOTHING
 RETURNING id
 `
@@ -317,6 +318,7 @@ type InsertFileItemParams struct {
 	DeclaredSha512 []byte
 	DeclaredSha1   []byte
 	DeclaredMd5    []byte
+	UpstreamUrl    string
 	Actor          string
 }
 
@@ -334,6 +336,7 @@ func (q *Queries) InsertFileItem(ctx context.Context, arg InsertFileItemParams) 
 		arg.DeclaredSha512,
 		arg.DeclaredSha1,
 		arg.DeclaredMd5,
+		arg.UpstreamUrl,
 		arg.Actor,
 	)
 	if err != nil {
@@ -834,9 +837,9 @@ UPDATE items
        media_type = NULLIF($3::text, ''),
        declared_sha256 = $4::bytea, declared_sha512 = $5::bytea,
        declared_sha1 = $6::bytea, declared_md5 = $7::bytea,
-       declared_mismatch = false,
-       modified_at = now(), updated_at = now(), modified_by = NULLIF($8::text, '')::uuid
- WHERE id = $9::bigint
+       declared_mismatch = false, upstream_url = NULLIF($8::text, ''),
+       modified_at = now(), updated_at = now(), modified_by = NULLIF($9::text, '')::uuid
+ WHERE id = $10::bigint
 RETURNING id
 `
 
@@ -848,6 +851,7 @@ type ReplaceFileContentParams struct {
 	DeclaredSha512 []byte
 	DeclaredSha1   []byte
 	DeclaredMd5    []byte
+	UpstreamUrl    string
 	Actor          string
 	ID             int64
 }
@@ -864,6 +868,7 @@ func (q *Queries) ReplaceFileContent(ctx context.Context, arg ReplaceFileContent
 		arg.DeclaredSha512,
 		arg.DeclaredSha1,
 		arg.DeclaredMd5,
+		arg.UpstreamUrl,
 		arg.Actor,
 		arg.ID,
 	)

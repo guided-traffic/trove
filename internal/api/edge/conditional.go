@@ -1,4 +1,4 @@
-package rawfiles
+package edge
 
 import (
 	"net/http"

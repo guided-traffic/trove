@@ -150,6 +150,9 @@ type Options struct {
 	// Files is the files service behind the items operations (items_api.go); nil
 	// disables them with 503.
 	Files *files.Service
+	// FilesDecider is the decision point the items operations begin their index on
+	// when the shared step stored no holder in the request (edge.Resolve, R-AUTHZ-015).
+	FilesDecider authz.Decider
 	// <<< M1 files
 }
 

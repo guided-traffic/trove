@@ -17,6 +17,7 @@ import (
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/files"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -113,6 +114,9 @@ type m1Wiring struct {
 	// answers 503. It is read under a.mu, because a job can run while the
 	// bootstrap still wires.
 	files *files.Service
+	// items is the item store the files service and the delete job run on; nil
+	// where files is.
+	items *items.Store
 	// <<< M1 files
 
 	// >>> M1 endpoints

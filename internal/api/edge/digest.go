@@ -1,22 +1,22 @@
-package rawfiles
+package edge
 
 import (
 	"encoding/base64"
 	"net/http"
 	"strings"
 
-	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/items"
 )
 
-// parseReprDigest reads the Repr-Digest header of an upload (RFC 9530, R-STOR-007):
+// ParseReprDigest reads the Repr-Digest header of an upload (RFC 9530, R-STOR-007):
 // a structured-field dictionary of byte sequences, `sha-256=:<base64>:` and
 // `sha-512=:<base64>:`. Other algorithms (md5, sha-1, unixsum) are deprecated by
 // the RFC and not verified here. A value that is not a dictionary of byte
 // sequences, or a digest of the wrong length, is 400 invalid_header; a digest
 // that differs from the content is 409 after the body (the spool).
-func parseReprDigest(h http.Header) (blob.Expected, error) {
-	var out blob.Expected
+func ParseReprDigest(h http.Header) (items.Expected, error) {
+	var out items.Expected
 	for _, line := range h.Values("Repr-Digest") {
 		for _, member := range strings.Split(line, ",") {
 			member = strings.TrimSpace(member)

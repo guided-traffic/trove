@@ -68,11 +68,12 @@ SELECT id, path
 -- A concurrent upload to the same path wins the unique index; no row comes back
 -- and the caller locks the winner and treats its own upload as an overwrite.
 INSERT INTO items (repo_id, path, parent_path, kind, blob_sha256, size, media_type,
-                   declared_sha256, declared_sha512, declared_sha1, declared_md5,
+                   declared_sha256, declared_sha512, declared_sha1, declared_md5, upstream_url,
                    created_by, modified_by)
 VALUES (sqlc.arg(repo_id)::bigint, sqlc.arg(path)::text, sqlc.arg(parent)::text, 'file',
         sqlc.arg(blob_sha256)::bytea, sqlc.arg(size)::bigint, NULLIF(sqlc.arg(media_type)::text, ''),
         sqlc.narg(declared_sha256)::bytea, sqlc.narg(declared_sha512)::bytea, sqlc.narg(declared_sha1)::bytea, sqlc.narg(declared_md5)::bytea,
+        NULLIF(sqlc.arg(upstream_url)::text, ''),
         NULLIF(sqlc.arg(actor)::text, '')::uuid, NULLIF(sqlc.arg(actor)::text, '')::uuid)
 ON CONFLICT (repo_id, path) WHERE trashed_at IS NULL DO NOTHING
 RETURNING id;
@@ -93,7 +94,7 @@ UPDATE items
        media_type = NULLIF(sqlc.arg(media_type)::text, ''),
        declared_sha256 = sqlc.narg(declared_sha256)::bytea, declared_sha512 = sqlc.narg(declared_sha512)::bytea,
        declared_sha1 = sqlc.narg(declared_sha1)::bytea, declared_md5 = sqlc.narg(declared_md5)::bytea,
-       declared_mismatch = false,
+       declared_mismatch = false, upstream_url = NULLIF(sqlc.arg(upstream_url)::text, ''),
        modified_at = now(), updated_at = now(), modified_by = NULLIF(sqlc.arg(actor)::text, '')::uuid
  WHERE id = sqlc.arg(id)::bigint
 RETURNING id;

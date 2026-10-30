@@ -7,23 +7,28 @@
 //
 // Errors are problem details; a response whose body is stored content, or a page
 // rendered from it, is written through httpserver.ContentWriter, which sets the
-// content headers of R-ARCH-007 and checks them again at the status line.
+// content headers of R-ARCH-007 and checks them again at the status line. The
+// content response itself (validators, conditional requests, ranges, digests) is
+// internal/api/edge's, which the format routes share. The package imports no
+// entry point of the management API.
 package rawfiles
 
 import (
+	"context"
 	"io"
 	"mime"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
-	v1 "github.com/guided-traffic/trove/internal/api/v1"
+	"github.com/guided-traffic/trove/internal/api/edge"
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/files"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -33,6 +38,8 @@ const Prefix = "/files/"
 // Options configure [New].
 type Options struct {
 	Service *files.Service
+	// Decider is the decision point a request begins its index on (R-AUTHZ-015).
+	Decider authz.Decider
 	// Download is storage.download: the copy buffer of a body.
 	Download config.StorageDownload
 	// API supplies the paging of a directory index; its page sizes are replaced by
@@ -42,16 +49,17 @@ type Options struct {
 
 // Handler serves /files/.
 type Handler struct {
-	svc *files.Service
-	buf int
-	api config.API
+	svc     *files.Service
+	decider authz.Decider
+	buf     int
+	api     config.API
 }
 
 // New creates the handler.
 func New(o Options) *Handler {
 	api := o.API
 	api.PageSizeDefault, api.PageSizeMax = 1000, 10_000
-	return &Handler{svc: o.Service, buf: max(int(o.Download.BufferSize), 4096), api: api}
+	return &Handler{svc: o.Service, decider: o.Decider, buf: max(int(o.Download.BufferSize), 4096), api: api}
 }
 
 // Register mounts the routes of the files family on the router: the four methods
@@ -88,12 +96,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch r.Method {
-	case http.MethodGet, http.MethodHead:
-		h.get(w, r, key, p)
-	case http.MethodPut:
-		h.put(w, r, key, p)
-	case http.MethodDelete:
-		h.delete(w, r, key, p)
+	case http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete:
+		caller, err := h.caller(r, key)
+		if err != nil {
+			httpserver.Problem(w, r, err)
+			return
+		}
+		switch r.Method {
+		case http.MethodGet, http.MethodHead:
+			h.get(w, r, caller, key, p)
+		case http.MethodPut:
+			h.put(w, r, caller, key, p)
+		default:
+			h.delete(w, r, caller, key, p)
+		}
 	default:
 		httpserver.Problem(w, r, errs.E(errs.MethodNotAllowed, errs.CodeMethodNotAllowed, "The resource does not support this method.",
 			errs.WithAllow(http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete)))
@@ -115,30 +131,41 @@ func splitPath(escaped string) (key, rest string, ok bool) {
 	return key, rest, true
 }
 
-func (h *Handler) links(r *http.Request) files.Links {
-	return files.Links{Base: httpserver.InfoFrom(r.Context()).BaseURL}
+// caller takes the index the request decides on, with the key made known, and
+// builds the caller of the generic layer (R-AUTHZ-015): one holder for every
+// decision of the request. The subject carries the endpoint whose listener
+// accepted it (R-EP-013). An index that cannot be confirmed is 503 authz_stale,
+// an unreached Trove-Authz-Min-Epoch 412.
+func (h *Handler) caller(r *http.Request, key string) (files.Caller, error) {
+	ctx := r.Context()
+	if _, ok := edge.AccessFrom(ctx); !ok && h.decider == nil { // a replica without the authz area
+		return files.Caller{}, errs.E(errs.Unavailable, errs.CodeUnavailable, "The files service is not available on this replica.", errs.WithRetryAfter(time.Second))
+	}
+	acc, err := edge.Resolve(ctx, h.decider, edge.SubjectFrom(r), key)
+	if err != nil {
+		return files.Caller{}, err
+	}
+	return files.Caller{
+		Access: acc, Subject: acc.Subject,
+		Actor: edge.ActorFrom(httpserver.PrincipalFrom(ctx)), Source: httpserver.SourceFrom(ctx),
+		// A write that waited for its body decides again on a new index (R-AUTHZ-015).
+		Recheck: func(ctx context.Context, key string) (files.Access, error) {
+			fresh, err := edge.Begin(ctx, acc.D, acc.Subject, key)
+			if err != nil {
+				return nil, err
+			}
+			return fresh, nil
+		},
+	}, nil
 }
 
-func fileName(p string) string {
-	if i := strings.LastIndexByte(p, '/'); i >= 0 {
-		return p[i+1:]
-	}
-	return p
-}
-
-// cacheControl is `private, no-cache` for an authenticated request and `no-cache`
-// for an anonymous one; clients revalidate with the ETag (R-STOR-012).
-func cacheControl(r *http.Request) string {
-	if httpserver.PrincipalFrom(r.Context()).Anonymous {
-		return "no-cache"
-	}
-	return "private, no-cache"
+func (h *Handler) links(r *http.Request) edge.Links {
+	return edge.Links{Base: httpserver.InfoFrom(r.Context()).BaseURL}
 }
 
 // get serves GET and HEAD: a file with the semantics of R-STOR-012, a folder as
 // the directory index of R-STOR-017.
-func (h *Handler) get(w http.ResponseWriter, r *http.Request, key string, p repository.Cleaned) {
-	caller := v1.CallerFrom(r)
+func (h *Handler) get(w http.ResponseWriter, r *http.Request, caller files.Caller, key string, p repository.Cleaned) {
 	res, err := h.svc.Stat(r.Context(), caller, key, p)
 	if err != nil {
 		httpserver.Problem(w, r, err)
@@ -153,87 +180,13 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request, key string, p repo
 		h.index(w, r, caller, key, p)
 		return
 	}
-	h.serveFile(w, r, caller, res)
+	edge.ServeItem(w, r, res.Item,
+		func(rng *items.Range) (io.ReadCloser, error) { return h.svc.Open(r.Context(), res.Item, rng) },
+		edge.ServeOptions{
+			Buffer: h.buf,
+			Served: func() { h.svc.Served(r.Context(), caller, res, r.URL.Query().Get("stats") != "false") },
+		})
 }
-
-// serveFile answers a GET or HEAD of a file (R-STOR-012): the conditional headers
-// and the range from the item row alone, the body from the object store through
-// the verifying reader (R-STOR-013). The headers of the file are collected first;
-// they go to the response of a status that carries the file (200, 206, 304) and
-// never to a problem.
-func (h *Handler) serveFile(w http.ResponseWriter, r *http.Request, caller files.Caller, res files.Resolved) {
-	it := res.Item
-	etag, modified := it.ETag(), it.ModifiedAt.Truncate(time.Second)
-	hd := http.Header{}
-	hd.Set("ETag", etag)
-	hd.Set("Last-Modified", modified.UTC().Format(http.TimeFormat))
-	hd.Set("Accept-Ranges", "bytes")
-	hd.Set("Cache-Control", cacheControl(r))
-	hd.Set("Repr-Digest", reprDigest(r.Header, it.Digest[:], it.SHA512))
-	hd.Set("Content-Type", it.MediaTypeOrDefault())
-	content := func() http.ResponseWriter {
-		cw := httpserver.ContentWriterFor(w, r, httpserver.ContentFile, fileName(it.Path))
-		for k, v := range hd {
-			cw.Header()[k] = v
-		}
-		return cw
-	}
-
-	switch evaluate(r, etag, modified) {
-	case notModified:
-		content().WriteHeader(http.StatusNotModified)
-		return
-	case preconditionFailed:
-		httpserver.Problem(w, r, errs.E(errs.PreconditionFailed, errs.CodePreconditionFailed, "A precondition of the request does not hold."))
-		return
-	}
-	start, length, rr := byteRange(r, etag, modified, it.Size)
-	status := http.StatusOK
-	switch rr {
-	case unsatisfiable:
-		w.Header().Set("Content-Range", "bytes */"+strconv.FormatInt(it.Size, 10))
-		httpserver.Problem(w, r, errs.E(errs.RangeNotSatisfiable, errs.CodeRangeNotSatisfiable, "The requested range is not satisfiable."))
-		return
-	case partialContent:
-		status = http.StatusPartialContent
-		hd.Set("Content-Range", "bytes "+strconv.FormatInt(start, 10)+"-"+strconv.FormatInt(start+length-1, 10)+"/"+strconv.FormatInt(it.Size, 10))
-	default:
-		start, length = 0, it.Size
-	}
-	hd.Set("Content-Length", strconv.FormatInt(length, 10))
-	if r.Method == http.MethodHead {
-		content().WriteHeader(status)
-		return
-	}
-	var rng *files.Range
-	if rr == partialContent {
-		rng = &files.Range{Offset: start, Length: length}
-	}
-	body, err := h.svc.Open(r.Context(), it, rng)
-	if err != nil { // before the status line: a problem the client can read
-		httpserver.Problem(w, r, err)
-		return
-	}
-	defer body.Close()
-	cw := content()
-	cw.WriteHeader(status)
-	if _, err := io.CopyBuffer(cw, readerOnly{body}, make([]byte, h.buf)); err != nil {
-		if r.Context().Err() != nil { // the client went away
-			return
-		}
-		// The held-back bytes were not released, or the object store failed in the
-		// middle of the body: the client sees a truncated transfer, never a complete
-		// corrupted file (R-STOR-013).
-		httpserver.Logger(r.Context()).Error("a download was aborted", "path", it.Path, "error", err)
-		panic(http.ErrAbortHandler)
-	}
-	if start == 0 { // 200, or 206 from byte 0 (R-STOR-015)
-		h.svc.Served(r.Context(), caller, res, r.URL.Query().Get("stats") != "false")
-	}
-}
-
-// readerOnly hides WriterTo and ReaderFrom so that CopyBuffer uses the buffer.
-type readerOnly struct{ io.Reader }
 
 func queryOf(r *http.Request) string {
 	if r.URL.RawQuery == "" {
@@ -243,8 +196,8 @@ func queryOf(r *http.Request) string {
 }
 
 // put deploys a file or creates a folder (R-STOR-007).
-func (h *Handler) put(w http.ResponseWriter, r *http.Request, key string, p repository.Cleaned) {
-	expect, err := parseReprDigest(r.Header)
+func (h *Handler) put(w http.ResponseWriter, r *http.Request, caller files.Caller, key string, p repository.Cleaned) {
+	expect, err := edge.ParseReprDigest(r.Header)
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
@@ -255,7 +208,7 @@ func (h *Handler) put(w http.ResponseWriter, r *http.Request, key string, p repo
 		return
 	}
 	ctx := r.Context()
-	res, err := h.svc.Deploy(ctx, v1.CallerFrom(r), files.DeployRequest{
+	res, err := h.svc.Deploy(ctx, caller, files.DeployRequest{
 		Repo: key, Path: p, Body: r.Body, ContentLength: r.ContentLength, MediaType: mt, Expect: expect,
 		CreateOnly:  strings.TrimSpace(r.Header.Get("If-None-Match")) == "*",
 		BeginCommit: func() { httpserver.BeginCommit(ctx) },
@@ -269,11 +222,11 @@ func (h *Handler) put(w http.ResponseWriter, r *http.Request, key string, p repo
 	if res.Created {
 		status = http.StatusCreated
 	}
-	w.Header().Set("Location", l.File(key, res.Item.Path, res.Item.Kind == files.KindFolder))
-	if res.Item.Kind == files.KindFile {
+	w.Header().Set("Location", l.File(key, res.Item.Path, res.Item.Kind == items.KindFolder))
+	if res.Item.Kind == items.KindFile {
 		w.Header().Set("ETag", res.Item.ETag())
 	}
-	v1.WriteJSON(w, r, status, res.Item.View(l))
+	edge.WriteJSON(w, r, status, edge.DescribeItem(res.Item, l))
 }
 
 // mediaType reads the Content-Type to store with the item: a well-formed media
@@ -302,11 +255,15 @@ func mediaType(r *http.Request) (string, error) {
 }
 
 // delete removes a file, or a folder with its subtree (R-STOR-018).
-func (h *Handler) delete(w http.ResponseWriter, r *http.Request, key string, p repository.Cleaned) {
-	res, err := h.svc.Delete(r.Context(), v1.CallerFrom(r), files.DeleteRequest{Repo: key, Path: p.Path, Strict: true})
+func (h *Handler) delete(w http.ResponseWriter, r *http.Request, caller files.Caller, key string, p repository.Cleaned) {
+	res, err := h.svc.Delete(r.Context(), caller, files.DeleteRequest{Repo: key, Path: p.Path, Strict: true})
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
 	}
-	v1.WriteDeleteResult(w, r, res)
+	if res.Done {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	edge.WriteJob(w, r, res.JobID, items.DeleteJobKind, res.JobState)
 }

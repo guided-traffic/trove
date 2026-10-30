@@ -480,7 +480,8 @@ func (a *App) startClient() error {
 			Repositories: a.repositoryAPI(),
 			// <<< M1 repository
 			// >>> M1 files
-			Files: a.filesService(),
+			Files:        a.filesService(),
+			FilesDecider: a.filesDecider(),
 			// <<< M1 files
 		})
 		// The router drops the routes of a family the endpoint's surface does not hold.

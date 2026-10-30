@@ -1,4 +1,4 @@
-package files
+package items
 
 import (
 	"context"

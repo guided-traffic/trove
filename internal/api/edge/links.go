@@ -1,4 +1,4 @@
-package files
+package edge
 
 import (
 	"encoding/hex"
@@ -6,69 +6,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/guided-traffic/trove/internal/blob"
-	"github.com/guided-traffic/trove/internal/meta/postgres/q"
+	"github.com/guided-traffic/trove/internal/items"
 )
-
-// Kinds of an item.
-const (
-	KindFile   = "file"
-	KindFolder = "folder"
-)
-
-// Item is a live row of the items table with what the descriptions need of its
-// blob.
-type Item struct {
-	ID         int64
-	RepoID     int64
-	Repository string
-	Path       string
-	Kind       string
-	Size       int64
-	MediaType  string
-	// Digest is the SHA-256 of the content; the other digests are those of the
-	// blob row. All are zero for a folder.
-	Digest blob.Digest
-	SHA1   []byte
-	MD5    []byte
-	SHA512 []byte
-	// Declared digests are those the client announced (Repr-Digest), nil if none.
-	DeclaredSHA256, DeclaredSHA512, DeclaredSHA1, DeclaredMD5 []byte
-	DeclaredMismatch                                          bool
-	Explicit                                                  bool
-	Generated                                                 bool
-	ContentStatus                                             string
-	CreatedAt, ModifiedAt, UpdatedAt                          time.Time
-	// CreatedBy and ModifiedBy are "<kind>:<name>" of the principal, "" when the
-	// row has none (a break-glass administrator, an erased principal).
-	CreatedBy, ModifiedBy string
-}
-
-// itemFrom converts the row of GetLiveItem.
-func itemFrom(repoKey string, r q.GetLiveItemRow) Item {
-	it := Item{
-		ID: r.ID, RepoID: r.RepoID, Repository: repoKey, Path: r.Path, Kind: r.Kind,
-		DeclaredSHA256: r.DeclaredSha256, DeclaredSHA512: r.DeclaredSha512, DeclaredSHA1: r.DeclaredSha1, DeclaredMD5: r.DeclaredMd5,
-		DeclaredMismatch: r.DeclaredMismatch, Explicit: r.ExplicitFolder, Generated: r.Generated,
-		CreatedAt: r.CreatedAt.Time.UTC(), ModifiedAt: r.ModifiedAt.Time.UTC(), UpdatedAt: r.UpdatedAt.Time.UTC(),
-		CreatedBy: r.CreatedByName, ModifiedBy: r.ModifiedByName,
-	}
-	if r.Kind != KindFile {
-		return it
-	}
-	it.Size = r.Size.Int64
-	it.MediaType = r.MediaType.String
-	copy(it.Digest[:], r.BlobSha256)
-	it.SHA1, it.MD5, it.SHA512 = r.BlobSha1, r.BlobMd5, r.BlobSha512
-	it.ContentStatus = r.ContentStatus.String
-	return it
-}
-
-// ETag is the strong entity tag of a file: the content address (R-STOR-012).
-func (it Item) ETag() string { return `"` + it.Digest.Hex() + `"` }
 
 // Links builds the absolute URLs a description carries from the public base URL
-// (R-ARCH-007: content links come from one place).
+// (R-ARCH-007: content links come from one place). Base is the base URL the
+// request's endpoint resolved (httpserver.InfoFrom(ctx).BaseURL).
 type Links struct{ Base string }
 
 func (l Links) base() string { return strings.TrimSuffix(l.Base, "/") }
@@ -118,10 +61,11 @@ type Digests struct {
 	MD5    string `json:"md5,omitempty"`
 }
 
-// View is the description of an item that R-STOR-016 and the answer of a deploy
-// (R-STOR-007) return. The package of an item and the upstream URL are null:
-// M1 has generic local repositories only (R-GENERIC-006).
-type View struct {
+// ItemView is the description of an item that R-STOR-016 and the answer of a
+// deploy (R-STOR-007) return. The package of an item is null: the generic format
+// groups no items into packages (R-GENERIC-006). The upstream URL is that of an
+// item a remote repository cached, null for an uploaded one.
+type ItemView struct {
 	Repository       string    `json:"repository"`
 	Path             string    `json:"path"`
 	Kind             string    `json:"kind"`
@@ -149,15 +93,16 @@ func nonEmpty(s string) *string {
 	return &s
 }
 
-// View renders the description of the item.
-func (it Item) View(l Links) View {
-	v := View{
+// DescribeItem renders the description of the item.
+func DescribeItem(it items.Item, l Links) ItemView {
+	v := ItemView{
 		Repository: it.Repository, Path: it.Path, Kind: it.Kind,
 		Created:   Stamp{At: it.CreatedAt, By: nonEmpty(it.CreatedBy)},
 		Modified:  Stamp{At: it.ModifiedAt, By: nonEmpty(it.ModifiedBy)},
 		UpdatedAt: it.UpdatedAt, ItemURL: l.Item(it.Repository, it.Path),
+		UpstreamURL: nonEmpty(it.UpstreamURL),
 	}
-	if it.Kind == KindFolder {
+	if it.Kind == items.KindFolder {
 		ex := it.Explicit
 		listing := l.Children(it.Repository, it.Path)
 		v.Explicit, v.ListingURL = &ex, &listing
@@ -179,7 +124,7 @@ func (it Item) View(l Links) View {
 	return v
 }
 
-func declared(it Item) *Digests {
+func declared(it items.Item) *Digests {
 	d := Digests{}
 	if len(it.DeclaredSHA256) > 0 {
 		d.SHA256 = hex.EncodeToString(it.DeclaredSHA256)
@@ -197,13 +142,4 @@ func declared(it Item) *Digests {
 		return nil
 	}
 	return &d
-}
-
-// MediaTypeOrDefault is the media type served for the item (R-GENERIC-005): the
-// one recorded at deploy time, or application/octet-stream.
-func (it Item) MediaTypeOrDefault() string {
-	if it.MediaType == "" {
-		return "application/octet-stream"
-	}
-	return it.MediaType
 }

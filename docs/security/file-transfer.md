@@ -1,8 +1,9 @@
 # File transfer: content isolation, hidden existence and the write path
 
 Status: the raw transfer of the generic local class and the items operations of milestone M1 are implemented
-([internal/files](../../internal/files/), [internal/api/rawfiles](../../internal/api/rawfiles/); the developer view is
-[files.md](../developer/files.md)). This page describes the mechanisms of `/files/` and of the items operations that have a
+([internal/items](../../internal/items/) stores, [internal/files](../../internal/files/) decides over it,
+[internal/api/rawfiles](../../internal/api/rawfiles/) and [internal/api/edge](../../internal/api/edge/) serve; the developer view is
+[files.md](../developer/files.md) and [items.md](../developer/items.md)). This page describes the mechanisms of `/files/` and of the items operations that have a
 security relation. The decision itself is [permissions.md](permissions.md); the model, the path rules and the patterns are
 [repository-model.md](repository-model.md).
 
@@ -55,7 +56,15 @@ A `PUT` is checked in this order, and each step refuses before the next one cost
    commit-time re-check): `deploy` with `overwrite` when an existing item has other bytes, `deploy` alone for a new file or an
    identical re-upload. A grant removed while the body was arriving stops the write, and a refused replacement never reaches the
    object store (integration tests: the put counter does not move; `TestR_AUTHZ_015_ADeployIsDecidedAgainWhenItCommits`);
-5. in the commit transaction the item is locked and the decision is made again for a path that appeared meanwhile.
+5. in the commit transaction the item is locked; whether `overwrite` is held was settled before the transaction opened, so a path
+   that appeared meanwhile is refused as a decision (`items.ErrOverwriteDenied`, then `Decide` for `overwrite`) and no decision waits
+   inside the transaction (Q-STOR-144).
+
+The item store that performs step 5 makes no decision and cannot: `internal/items` does not import `internal/authz` (the
+architecture test `TestModuleBans` fails the build of that edge), and the generic layer reaches the object store and the items
+tables only through it. The proxy's cache fills and a format's publish use the same commit, so a storage path exists that is not
+decided by the generic layer; whoever calls it owns the decision before it (the request that caused a fill was decided before the
+fill started, a format's request on the index of its dispatcher), and the audit row of an allowed write is the committer's `Extra`.
 
 An allowed write is recorded with the change (`authz.write.allowed`, `artifact.deployed`) in one transaction: a failing audit
 insert rolls the write back.
@@ -70,7 +79,7 @@ challenge while anonymous access is off. The listing operations drop what the ca
 page instead of a refusal per entry, which would write a denial event for every omitted name. A page reads at most 100,000 rows in
 queries that double in size from `limit + 1` up to 5,000 rows, so a page costs a few dozen queries whatever its size; a page that
 ends at that bound beyond its last visible entry carries the item id of the last row it read as its cursor, never its path
-([children.go](../../internal/files/children.go), Q-STOR-62; `TestR_STOR_017_AListingOfAMostlyHiddenFolder`).
+([children.go](../../internal/items/children.go), Q-STOR-62; `TestR_STOR_017_AListingOfAMostlyHiddenFolder`).
 
 One deliberate exception to "authorization before lookup": the request path looks up a key that the replica's snapshot does not hold
 before it decides, so that a repository created through another replica is usable at once (Q-ARCH-40, H-155).

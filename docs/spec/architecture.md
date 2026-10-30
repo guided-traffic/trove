@@ -448,13 +448,14 @@ trove/
 │   ├── httpserver/              # listeners, ServeMux, middleware, client address
 │   ├── api/v1/                  # management API handlers
 │   │   └── gen/                 # oapi-codegen output: models, std-http-server interface (generated, committed)
-│   ├── api/rawfiles/            # the /files/ handler (R-API-025)
-│   ├── api/edge/                # request-to-domain conversions every entry point shares: Subject, Access (Q-ARCH-205)
+│   ├── api/rawfiles/            # the /files/ handler (R-API-025); content responses through api/edge
+│   ├── api/edge/                # what every entry point shares: Subject, Access, the content response, conditional and digest headers, links, list query, JSON (Q-ARCH-205)
 │   ├── auth/{principal,oidc,session,token,ciexchange}/   # principal: the principal table; the others as named
 │   ├── auth/scope/              # the token scope value type (leaf layer)
 │   ├── authz/
 │   ├── repository/              # model, snapshot, CleanPath, classification, routing of virtual repositories (members, claims, pins)
-│   ├── files/                   # items: raw deploy, download, delete, listing, statistics (R-STOR-007 to R-STOR-018)
+│   ├── items/                   # the item store: spool, the one commit, stat, open, listing rows, subtree delete, statistics; no authz (Q-ARCH-207)
+│   ├── files/                   # the generic layer: decides on the request's index, resolves and admits, over items (R-STOR-007 to R-STOR-018, Q-ARCH-206)
 │   ├── formats/                 # contract (Format, Host), registry
 │   │   ├── all/                 # imports and registers every format
 │   │   ├── catalog/             # the format catalog: facts, name rule, exposure (leaf layer, Q-ARCH-188)
@@ -4911,6 +4912,8 @@ R-ARCH-003 names no package for the items and the raw transfer.
 
 **Applied in the spec:** R-ARCH-003 (the tree).
 
+Superseded by [Q-ARCH-206](#q-arch-206--the-files-transfer-is-three-packages-the-item-store-the-generic-layer-and-the-raw-routes): the revisit condition was met when the formats gained storage hooks of their own.
+
 ### Q-ARCH-86 · The resource policy of content read with the session cookie
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -5274,6 +5277,88 @@ exposure ceiling must exist once. The development agent would revisit this if th
 by at least two entry points.
 
 **Applied in the spec:** R-ARCH-002 (component table, layer list) and R-ARCH-003 (the tree).
+
+### Q-ARCH-206 · The files transfer is three packages: the item store, the generic layer and the raw routes
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `internal/files` held the authorization of every operation, the repository resolution, the admission of the path, the spool, the
+commit and link protocol, the listing, the subtree delete, the delete job and the statistics. The proxy commits the artifact of a
+remote fill as an item of the remote repository (R-REPO-025) and a format's publish commits an upload (R-ARCH-009 `Host.Ingest()`);
+both need the storage half without the decision half, and the format's storage hooks (R-ARCH-009) must run in the transaction of both.
+The decision half in turn must reach the formats' serve check later (R-EP-014) without importing the registry.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep one package and add the proxy's and the formats' entry points | `files` gains a commit for fills and the hooks | No move | The proxy would import a package that decides and imports authz; the "no authz in the storage path" rule cannot be enforced by the layers |
+| (b) `internal/items` (storage, no decision) and `internal/files` (the generic layer, decisions and admission) over it, both domain, with the format seam injected (chosen) | `items` imports no authz (architecture test); `files` imports neither `blob` nor `meta/postgres` (architecture test) and reaches storage only through `items`; the hooks arrive as an `items.Hooks` value the composition root injects | The proxy and `Host.Ingest()` import `items` only; both rules are held by the import test, not by review; `files` is testable with a fake store | One more package; the callbacks (`Check`, `Extra`) that carry the generic layer's decisions into the store's transactions |
+| (c) Move `files` to the edge so that it imports `formats` directly | The generic layer is an edge package | No injection for the serve check | The management API and the jobs would import an edge package for logic; the delete job's hooks would still need injection into `items` |
+
+**Choice:** (b). `internal/items` is the item store behind `Host.Ingest()` and `Host.Items()`; `internal/files` is the generic layer (decide on the
+request's index, resolve the repository, admit the path, the overwrite pre-check, the per-entry filter of a listing, `RecordAllowed` inside the
+store's transaction); `internal/api/rawfiles` is the `/files/` routes and imports neither `internal/api/v1` nor a store. Three import rules hold the
+cut (`moduleBans` in `internal/archtest`): `internal/items` does not import `internal/authz`, `internal/files` does not import `internal/blob` or
+`internal/meta/postgres`, `internal/api/rawfiles` and `internal/api/edge` do not import `internal/api/v1`. The format seam of the generic layer
+(`Classify`, `ServeCheck`, R-EP-014) is added to `files` as an injected interface when the format contract lands; the storage hooks are
+`items.Hooks`, already injected.
+
+**Rationale:** the rule "a commit is decided before it is called" is only worth something if the commit cannot call the decision point. The
+development agent would revisit this if a second consumer needs the generic layer's decisions without its HTTP shape, or if the number of callbacks
+the store takes grows past what a reader can hold in mind.
+
+**Applied in the spec:** R-ARCH-003 (the tree); Q-ARCH-43 is superseded.
+
+### Q-ARCH-207 · One commit in the item store: the item row, then the committer's write, then the format's hook, then the audit row
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: three committers write an item. A client upload through the generic layer records the allowed write (R-AUTHZ-029) in the commit
+transaction. A format's publish commits the upload and runs its own hook. The proxy stores a remote artifact and upserts the cache entry that
+names the new item's id. All three need the same link protocol (ancestor folders, the row lock, the overwrite gate) and the same transaction
+for the committer's own write, the format's hook and the audit row, so that a failing step leaves no item (R-STOR-005).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One commit function per committer | One for uploads, one for fills | Each reads simply | Three copies of the link protocol, or three wrappers of one private function |
+| (b) One `Commit(CommitSpec)` with `Origin`, `UpstreamURL` and `Extra` (chosen) | Inside the one transaction: the item row (and the ancestor folders), `Extra(ctx, tx, itemRef)`, `Hooks.OnCommit(CommitEvent)`, the audit row | One protocol; `Extra` can reference the new item's id; the order is a property of one function and is tested | `Extra` is a callback that must be safe to run again, because the transaction may restart |
+| (c) The committer opens the transaction and passes it | `Commit(ctx, tx, spec)` | No callback | The blob store's commit protocol owns the transaction (it holds the blob row's lock); a second owner would break R-STOR-005 |
+
+**Choice:** (b). `items.Store.Commit(ctx, items.CommitSpec{Repo, Path, Spooled, MediaType, Declared, Origin, UpstreamURL, CreateOnly, MayOverwrite, Actor,
+Source, Endpoint, Payload, Extra, BeginCommit})` returns `CommitResult{Created, Overwritten, Item}`. `Origin` is `OriginUpload` or `OriginFill`;
+`items.CommitEvent` and `items.RemovedEvent` are the store's own types, which the format host turns into the contract's. An identical commit
+changes no row: `Extra` runs, the hook and the audit row do not. The caller settles `MayOverwrite` before the call and outside any transaction
+(Q-STOR-144); a path that holds other content when the link step runs with `MayOverwrite` false is `items.ErrOverwriteDenied` and nothing is
+written. The delete path takes the same shape: `DeleteSpec.Check` (asked of every path of the subtree before anything is removed) and
+`DeleteSpec.Extra` (in the removing transaction), and `Hooks.OnItemsRemoved` once per statement that removes files.
+
+**Rationale:** one function with one order is the only way the proxy's cache entry, a format's package rows and the audit row can all be
+rolled back with the item. The development agent would revisit it if a fourth committer needs a step between the hook and the audit row.
+
+**Applied in the spec:** R-ARCH-009 (the storage hooks run in this order; the format contract writes its side of it).
+
+### Q-ARCH-208 · A deploy decides again on a new index after its body arrived
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-AUTHZ-015 says a request takes its index once (Q-AUTHZ-159) and, separately, that a write is evaluated again when it commits "against
+the grant index that the committing replica holds at that moment". The first would answer the re-check of a deploy on the index the request
+began with, which is minutes old after a large upload and misses a grant removed while the body was on the wire; the integration test
+`TestR_AUTHZ_015_ADeployIsDecidedAgainWhenItCommits` removes the grant mid-body and expects the refusal.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The re-check uses the request's holder | One index for the request | The statement "one index per request" is literal | The commit-time re-check is then no re-check at all |
+| (b) The generic layer asks the entry point for a new holder after the body arrived (chosen) | `files.Caller.Recheck` begins a new `edge.Access` on the current index; the checks that follow the body (the existing-item check, the commit-time decision, the overwrite question, the recorded decision) use it | The re-check sees what the committing replica knows now; the decisions before the body stay on one index | A write has two indexes, by design |
+| (c) Decide inside the commit transaction | Re-check as late as possible | Latest possible view | A stale index makes a decision wait while the transaction holds the blob row and the item (R-ARCH-019) |
+
+**Choice:** (b). `Recheck` is set by the entry point (`rawfiles`, the integration environment); a caller without it re-checks on its own holder, which is
+right for a caller whose request is short. Only `Deploy` re-begins; reads and deletes decide once.
+
+**Rationale:** R-AUTHZ-015 asks for both, and they do not contradict: the consistency of one index is for the decisions that shape one answer, the
+re-check is for the window between the first decision and the commit. The development agent would revisit it if a second write operation reads a
+long body.
+
+**Applied in the spec:** R-AUTHZ-015 reads unchanged.
 
 ## What this does not cover
 

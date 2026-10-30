@@ -36,6 +36,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/api/rawfiles"
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/api/v1/apitest"
@@ -53,6 +54,7 @@ import (
 	_ "github.com/guided-traffic/trove/internal/formats/all"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
@@ -435,6 +437,10 @@ type replicaOpts struct {
 	storage func(*config.Storage)
 	// validate wraps the handler in the response validator of the OpenAPI document.
 	validate *apitest.Validator
+	// hooks are the storage hooks of the replica's item store.
+	hooks items.Hooks
+	// recorder wraps the replica's audit recorder for the item store.
+	recorder func(audit.Recorder) audit.Recorder
 }
 
 // replica is one in-process web replica with a listener of its own.
@@ -452,8 +458,9 @@ type replica struct {
 	policy  *authz.Service
 	blobs   *blob.Store
 	obj     *countingStore
+	items   *items.Store
 	files   *files.Service
-	stats   *files.Stats
+	stats   *items.Stats
 	act     *repository.Activity
 	rec     *recorder
 	queue   *jobs.Queue
@@ -539,8 +546,8 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	reg.RegisterKind(repository.DeleteJobKind, repository.DeleteJobSpec(func(ctx context.Context, run *jobs.Run) error {
 		return r.repos.RunDeleteJob(ctx, run)
 	}))
-	reg.RegisterKind(files.DeleteJobKind, files.DeleteJobSpec(func(ctx context.Context, run *jobs.Run) error {
-		return r.files.RunDeleteJob(ctx, run)
+	reg.RegisterKind(items.DeleteJobKind, items.DeleteJobSpec(func(ctx context.Context, run *jobs.Run) error {
+		return r.items.RunDeleteJob(ctx, run)
 	}))
 	reg.Freeze()
 	r.queue = jobs.NewQueue(jobs.QueueOptions{DB: r.db.Main(), Registry: reg, Signals: r.signals, Log: quiet})
@@ -583,19 +590,63 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	if r.blobs, err = blob.New(cfg, r.obj, r.db, blob.WithLogger(quiet), blob.WithWaitPoll(25*time.Millisecond)); err != nil {
 		t.Fatal(err)
 	}
-	r.stats = files.NewStats(r.db, 300*time.Millisecond, quiet)
+	r.stats = items.NewStats(r.db, 300*time.Millisecond, quiet)
 	r.act = repository.NewActivity(r.db, 300*time.Millisecond, quiet)
 	r.stats.Start(context.Background())
 	r.act.Start(context.Background())
-	if r.files, err = files.New(files.Options{
-		Runner: r.db, Blobs: r.blobs, Repos: r.reader, Authz: r.engine, Recorder: r.rec, Jobs: r.queue,
+	var itemRec audit.Recorder = r.rec
+	if o.recorder != nil {
+		itemRec = o.recorder(r.rec)
+	}
+	if r.items, err = items.New(items.Options{
+		Runner: r.db, Blobs: r.blobs, Recorder: itemRec, Jobs: r.queue, Hooks: o.hooks,
 		Storage: cfg, RecordDownloads: true, Activity: r.act, Stats: r.stats, Log: quiet,
 	}); err != nil {
+		t.Fatal(err)
+	}
+	if r.files, err = files.New(files.Options{Items: r.items, Repos: r.reader, Log: quiet}); err != nil {
 		t.Fatal(err)
 	}
 
 	r.serve(o)
 	return r
+}
+
+// caller begins the index of a request for sub, with the keys made known, as the
+// entry points do, and returns the caller of the generic layer. Every decision
+// of the returned caller is answered on that one index.
+func (r *replica) caller(sub authz.Subject, keys ...string) files.Caller {
+	r.t.Helper()
+	acc, err := edge.Begin(context.Background(), r.engine, sub, keys...)
+	if err != nil {
+		r.t.Fatalf("begin: %v", err)
+	}
+	return files.Caller{
+		Access: acc, Subject: sub,
+		Recheck: func(ctx context.Context, key string) (files.Access, error) {
+			fresh, err := edge.Begin(ctx, r.engine, sub, key)
+			if err != nil {
+				return nil, err
+			}
+			return fresh, nil
+		},
+	}
+}
+
+// filesOn builds a generic layer over a store of its own on this replica's
+// database, with the given blob store and repository reader: a test replaces one
+// of them to observe or to change what the transfer sees.
+func (r *replica) filesOn(blobs items.Blobs, repos repository.Reader) *files.Service {
+	r.t.Helper()
+	st, err := items.New(items.Options{Runner: r.db, Blobs: blobs, Recorder: audit.Nop{}, Log: quiet})
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	svc, err := files.New(files.Options{Items: st, Repos: repos, Log: quiet})
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	return svc
 }
 
 // serve builds the router and the chain and starts the listener.
@@ -621,9 +672,10 @@ func (r *replica) serve(o replicaOpts) {
 		},
 		Repositories: v1.RepositoryServices{Service: r.repos, Authz: r.engine, Reader: r.reader, AnonymousAccess: func(context.Context) (bool, error) { return r.e.anonymous.Load(), nil }},
 		Files:        r.files,
+		FilesDecider: r.engine,
 	})
 	api.Register(router)
-	rawfiles.New(rawfiles.Options{Service: r.files, Download: r.e.s3.cfg.Download, API: apiConfig()}).Register(router)
+	rawfiles.New(rawfiles.Options{Service: r.files, Decider: r.engine, Download: r.e.s3.cfg.Download, API: apiConfig()}).Register(router)
 	if err := doc.CheckRoutes(router.Patterns()); err != nil {
 		t.Fatalf("route table: %v", err)
 	}
