@@ -352,7 +352,19 @@ func TestTaskList(t *testing.T) {
 			return nil
 		}()
 		last, _ := gc["lastRun"].(map[string]any)
-		if last["jobId"] != id || last["outcome"] != "succeeded" || last["replica"] != "worker-1" || last["finishedAt"] == nil {
+		// The scheduler may run gc again after the triggered run, so the last run is
+		// the triggered one or one that started after it finished.
+		if last["jobId"] != id {
+			ours := send(t, c, "GET", "/api/v1/system/jobs/"+id, nil, admin...).json(t)
+			fin, _ := ours["finishedAt"].(string)
+			started, _ := last["startedAt"].(string)
+			tf, err1 := time.Parse(time.RFC3339Nano, fin)
+			ts, err2 := time.Parse(time.RFC3339Nano, started)
+			if err1 != nil || err2 != nil || ts.Before(tf) {
+				t.Fatalf("lastRun = %v, but the triggered run %s finished at %q", last, id, fin)
+			}
+		}
+		if last["outcome"] != "succeeded" || last["replica"] != "worker-1" || last["finishedAt"] == nil {
 			t.Fatalf("lastRun = %v", last)
 		}
 	})

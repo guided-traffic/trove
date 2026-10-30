@@ -232,7 +232,11 @@ func TestE1_11Scatter(t *testing.T) {
 		name := fmt.Sprintf("e2e-vis-%d", time.Now().Unix())
 		t.Cleanup(func() { adm.do(http.MethodDelete, "/api/v1/groups/"+name, nil) })
 		// Each write sends the ETag of the previous one: identity resources carry a revision (Q-AUTH-50).
-		etag := adm.do(http.MethodPost, "/api/v1/groups", map[string]string{"name": name, "description": "v0"}).want(t, "create group", 201).Header.Get("ETag")
+		adm.do(http.MethodPost, "/api/v1/groups", map[string]string{"name": name, "description": "v0"}).want(t, "create group", 201)
+		etag := adm.get("/api/v1/groups/"+name).want(t, "read the new group", 200).Header.Get("ETag")
+		if etag == "" {
+			t.Fatal("a group read carries no ETag")
+		}
 		for i := 1; i <= 24; i++ {
 			desc := "v" + strconv.Itoa(i)
 			w := adm.do(http.MethodPatch, "/api/v1/groups/"+name, `{"description":"`+desc+`"}`, "Content-Type", "application/merge-patch+json", "If-Match", etag).want(t, "patch "+desc, 200)
