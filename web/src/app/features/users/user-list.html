@@ -4,62 +4,70 @@
 </header>
 <trove-needs id="needs-users" capability="identities:write" />
 
-<form class="toolbar" (submit)="submit($event)" role="search" i18n-aria-label="@@users.filters" aria-label="User filters">
-  <trove-text-field i18n-label="@@users.q" label="Name or email" name="q" [(value)]="q" />
-  <trove-select-field i18n-label="@@users.status" label="Status" name="status" [options]="statusOptions" [(value)]="status" />
-  <trove-select-field i18n-label="@@users.origin" label="Origin" name="origin" [options]="originOptions" [(value)]="origin" />
-  <trove-text-field i18n-label="@@users.group" label="Group" name="group" [(value)]="group" />
-  <trove-select-field i18n-label="@@users.admin" label="Administrator" name="admin" [options]="adminOptions" [(value)]="admin" />
-  <button mat-flat-button type="submit" i18n="@@users.apply">Apply filters</button>
-</form>
-
-@if (list.error(); as e) {
-  <trove-error-notice [error]="e" (retry)="list.reload()" />
-}
-
-@if (list.loaded()) {
-  @if (list.items().length === 0) {
-    <p i18n="@@users.empty">No user matches.</p>
-  } @else {
-    <div class="scroll" tabindex="0" role="region" i18n-aria-label="@@users.region" aria-label="Users">
-      <table class="data">
-        <caption class="visually-hidden" i18n="@@users.caption">Users</caption>
-        <thead>
-          <tr>
-            <th scope="col" i18n="@@users.col.username">User name</th>
-            <th scope="col" i18n="@@users.col.display-name">Display name</th>
-            <th scope="col" i18n="@@users.col.email">Email</th>
-            <th scope="col" i18n="@@users.col.origin">Origin</th>
-            <th scope="col" i18n="@@users.col.status">Status</th>
-            <th scope="col" i18n="@@users.col.last-login">Last sign-in</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (u of list.items(); track u.id) {
-            <tr>
-              <th scope="row"><a [routerLink]="['/admin/users', u.username]" translate="no">{{ u.username }}</a></th>
-              <td>{{ u.displayName ?? '' }}</td>
-              <td>{{ u.email ?? '' }}</td>
-              <td>{{ originLabel(u.origin) }}</td>
-              <td>
-                @if (u.status === 'active') {
-                  <span class="ok"><span class="material-icons" aria-hidden="true">check_circle</span> <ng-container i18n="@@users.active">Active</ng-container></span>
-                } @else {
-                  <span class="bad"><span class="material-icons" aria-hidden="true">block</span> <ng-container i18n="@@users.disabled">Disabled</ng-container></span>
-                }
-              </td>
-              <td>{{ u.lastLoginAt | date: 'medium' }}</td>
-            </tr>
-          }
-        </tbody>
-      </table>
+<div class="list-layout" [class.panel-open]="panelOpen()">
+  <div class="list-main">
+    <div class="list-toolbar">
+      <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
     </div>
-    @if (list.hasMore()) {
-      <p>
-        <button mat-button type="button" [disabled]="list.loading()" (click)="list.more()" i18n="@@users.more">Load more</button>
-      </p>
-    }
-  }
-} @else if (list.loading()) {
-  <p role="status" i18n="@@users.loading">Loading users.</p>
-}
+
+    <trove-data-table
+      [caption]="caption"
+      [columns]="columns"
+      [sort]="sort()"
+      (sortChange)="sortBy($event)"
+      [loaded]="list.loaded()"
+      [loading]="list.loading()"
+      [error]="list.error()"
+      [empty]="list.items().length === 0"
+      i18n-emptyText="@@users.empty"
+      emptyText="No user matches."
+      [hasMore]="list.hasMore()"
+      (more)="list.more()"
+      (retry)="list.reload()"
+    >
+      @for (u of list.items(); track u.id) {
+        <tr>
+          <th scope="row">
+            <a [routerLink]="['/admin/users', u.username]" translate="no">{{ u.username }}</a>
+          </th>
+          <td>{{ u.displayName ?? '' }}</td>
+          <td>{{ u.email ?? '' }}</td>
+          <td>{{ originLabel(u.origin) }}</td>
+          <td>
+            @if (u.status === 'active') {
+              <span class="ok"><span class="material-icons inline" aria-hidden="true">check_circle</span><ng-container i18n="@@users.active">Active</ng-container></span>
+            } @else {
+              <span class="bad"><span class="material-icons inline" aria-hidden="true">block</span><ng-container i18n="@@users.disabled">Disabled</ng-container></span>
+            }
+          </td>
+          <td>{{ u.lastLoginAt | date: 'medium' }}</td>
+        </tr>
+      }
+    </trove-data-table>
+  </div>
+
+  <trove-filter-panel
+    #panel
+    class="list-side"
+    [(open)]="panelOpen"
+    [activeCount]="activeCount()"
+    (apply)="apply()"
+    (clearAll)="clear()"
+  >
+    <trove-filter-category i18n-label="@@users.q" label="Name or email" [active]="!!q().trim()" [expanded]="!!q().trim()">
+      <trove-text-field i18n-label="@@users.q" label="Name or email" name="q" [(value)]="q" />
+    </trove-filter-category>
+    <trove-filter-category i18n-label="@@users.status" label="Status" [active]="!!status()" [expanded]="!!status()">
+      <trove-select-field i18n-label="@@users.status" label="Status" name="status" [options]="statusOptions" [(value)]="status" />
+    </trove-filter-category>
+    <trove-filter-category i18n-label="@@users.origin" label="Origin" [active]="!!origin()" [expanded]="!!origin()">
+      <trove-select-field i18n-label="@@users.origin" label="Origin" name="origin" [options]="originOptions" [(value)]="origin" />
+    </trove-filter-category>
+    <trove-filter-category i18n-label="@@users.group" label="Group" [active]="!!group().trim()" [expanded]="!!group().trim()">
+      <trove-text-field i18n-label="@@users.group" label="Group" name="group" [(value)]="group" />
+    </trove-filter-category>
+    <trove-filter-category i18n-label="@@users.admin" label="Administrator" [active]="!!admin()" [expanded]="!!admin()">
+      <trove-select-field i18n-label="@@users.admin" label="Administrator" name="admin" [options]="adminOptions" [(value)]="admin" />
+    </trove-filter-category>
+  </trove-filter-panel>
+</div>

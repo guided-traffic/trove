@@ -8,60 +8,64 @@
 </header>
 <trove-needs id="needs-policies" capability="policies:write" />
 
-<form class="toolbar" (submit)="submit($event)" role="search" i18n-aria-label="@@policies.filters" aria-label="Policy filters">
-  <trove-text-field
-    i18n-label="@@policies.principal"
-    label="Principal"
-    name="principal"
-    [(value)]="principalFilter"
-    i18n-hint="@@policies.principal-hint"
-    hint="user:name, group:name, sa:name, anonymous or authenticated"
-  />
-  <trove-text-field i18n-label="@@policies.repository" label="Repository" name="repository" [(value)]="repositoryFilter" />
-  <button mat-flat-button type="submit" i18n="@@policies.apply">Apply filters</button>
-</form>
-
-@if (list.error(); as e) {
-  <trove-error-notice [error]="e" (retry)="list.reload()" />
-}
-@if (list.loaded()) {
-  @if (list.items().length === 0) {
-    <p i18n="@@policies.empty">No policy matches.</p>
-  } @else {
-    <div class="scroll" tabindex="0" role="region" i18n-aria-label="@@policies.region" aria-label="Permission policies">
-      <table class="data">
-        <caption class="visually-hidden" i18n="@@policies.caption">Permission policies</caption>
-        <thead>
-          <tr>
-            <th scope="col" i18n="@@policies.col.name">Name</th>
-            <th scope="col" i18n="@@policies.col.description">Description</th>
-            <th scope="col" i18n="@@policies.col.principals">Principals</th>
-            <th scope="col" i18n="@@policies.col.resources">Repositories</th>
-            <th scope="col" i18n="@@policies.col.actions">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (p of list.items(); track p.name) {
-            <tr>
-              <th scope="row">
-                <a [routerLink]="['/admin/permissions', p.name]" translate="no">{{ p.name }}</a>
-                @if (p.inert) {
-                  <br /><span class="badge warn"><span class="material-icons" aria-hidden="true">warning</span><ng-container i18n="@@policies.inert">Grants nothing</ng-container></span>
-                }
-              </th>
-              <td>{{ p.description }}</td>
-              <td>{{ principalSummary(p) }}</td>
-              <td translate="no">{{ repositorySummary(p) }}</td>
-              <td translate="no">{{ actionSummary(p) }}</td>
-            </tr>
-          }
-        </tbody>
-      </table>
+<div class="list-layout" [class.panel-open]="panelOpen()">
+  <div class="list-main">
+    <div class="list-toolbar">
+      <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
     </div>
-    @if (list.hasMore()) {
-      <p><button mat-button type="button" [disabled]="list.loading()" (click)="list.more()" i18n="@@policies.more">Load more</button></p>
-    }
-  }
-} @else if (list.loading()) {
-  <p role="status" i18n="@@policies.loading">Loading policies.</p>
-}
+
+    <trove-data-table
+      [caption]="caption"
+      [columns]="columns"
+      [sort]="sort()"
+      (sortChange)="sortBy($event)"
+      [loaded]="list.loaded()"
+      [loading]="list.loading()"
+      [error]="list.error()"
+      [empty]="list.items().length === 0"
+      i18n-emptyText="@@policies.empty"
+      emptyText="No policy matches."
+      [hasMore]="list.hasMore()"
+      (more)="list.more()"
+      (retry)="list.reload()"
+    >
+      @for (p of list.items(); track p.name) {
+        <tr>
+          <th scope="row">
+            <a [routerLink]="['/admin/permissions', p.name]" translate="no">{{ p.name }}</a>
+            @if (p.inert) {
+              <span class="badge warn"><span class="material-icons" aria-hidden="true">warning</span><ng-container i18n="@@policies.inert">Grants nothing</ng-container></span>
+            }
+          </th>
+          <td>{{ p.description }}</td>
+          <td>{{ principalSummary(p) }}</td>
+          <td class="wrap" translate="no">{{ repositorySummary(p) }}</td>
+          <td class="wrap" translate="no">{{ actionSummary(p) }}</td>
+        </tr>
+      }
+    </trove-data-table>
+  </div>
+
+  <trove-filter-panel
+    #panel
+    class="list-side"
+    [(open)]="panelOpen"
+    [activeCount]="activeCount()"
+    (apply)="apply()"
+    (clearAll)="clear()"
+  >
+    <trove-filter-category i18n-label="@@policies.principal" label="Principal" [active]="!!principalFilter().trim()" [expanded]="!!principalFilter().trim()">
+      <trove-text-field
+        i18n-label="@@policies.principal"
+        label="Principal"
+        name="principal"
+        [(value)]="principalFilter"
+        i18n-hint="@@policies.principal-hint"
+        hint="user:name, group:name, sa:name, anonymous or authenticated"
+      />
+    </trove-filter-category>
+    <trove-filter-category i18n-label="@@policies.repository" label="Repository" [active]="!!repositoryFilter().trim()" [expanded]="!!repositoryFilter().trim()">
+      <trove-text-field i18n-label="@@policies.repository" label="Repository" name="repository" [(value)]="repositoryFilter" />
+    </trove-filter-category>
+  </trove-filter-panel>
+</div>

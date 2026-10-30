@@ -6,14 +6,15 @@ Requirements: [R-ARCH-004](../spec/architecture.md), [R-UI-001](../spec/api-and-
 [R-UI-045](../spec/api-and-ui.md), [R-UI-046](../spec/api-and-ui.md),
 [R-UI-047](../spec/api-and-ui.md).
 
-The shell (skip link, header with user menu, side bar pinned from 1024 CSS px and a drawer below,
-banner area, notice regions, router outlet), the HTTP layer, the session handling and every
+The shell (skip link, dark top bar with the repository search and the user menu, dark navigation sidebar pinned from 1024 CSS px
+with folding groups and an icon rail and a drawer below, breadcrumbs, banner area, notice regions, router outlet; see
+[Shell, design tokens and the list components](#shell-design-tokens-and-the-list-components)), the HTTP layer, the session handling and every
 cross-cutting UI mechanism are in place, so the screens are content. Built: sign-in, signed out, the system status
 screen with its jobs screen, the repository list, wizard and edit form, the file tree, the endpoint screens with the exposure rule editor and
 the audit log (see [Screens of the catalog area](#screens-of-the-catalog-area)); the other routed M1 screens are placeholders with their final
 path and title until their work package replaces them. Requirements: [R-UI-002 to R-UI-005](../spec/api-and-ui.md),
 [R-UI-010, R-UI-011](../spec/api-and-ui.md), [R-UI-020, R-UI-021](../spec/api-and-ui.md), [R-UI-037, R-UI-038](../spec/api-and-ui.md),
-[R-UI-042 to R-UI-047](../spec/api-and-ui.md), [R-EP-017](../spec/endpoints.md); decisions Q-UI-10 to Q-UI-19 on the same page.
+[R-UI-042 to R-UI-047](../spec/api-and-ui.md), [R-EP-017](../spec/endpoints.md); decisions Q-UI-10 to Q-UI-19 and Q-UI-68 (shell and list layout) on the same page.
 
 ## Workspace layout
 
@@ -26,16 +27,16 @@ path and title until their work package replaces them. Requirements: [R-UI-002 t
 | [web/src/index.html](../../web/src/index.html) | Root element `<trove-root ngCspNonce="TROVE_CSP_NONCE">`; `internal/webui` replaces the literal on every response |
 | [web/src/main.ts](../../web/src/main.ts) | `bootstrapApplication(App, appConfig)` |
 | [web/src/locale/](../../web/src/locale/) | `messages.xlf` (extracted source), `messages.de.xlf`, [GLOSSARY.md](../../web/src/locale/GLOSSARY.md) |
-| [web/src/styles/](../../web/src/styles/) | `_tokens.scss` (trove custom properties, spacing, light/dark), `_icons.scss` (self-hosted icon font), `main.scss` (Material theme, density -2) |
-| [web/src/app/app.ts](../../web/src/app/app.ts), `app.html` | Root standalone component: skip link, header and user menu (language, theme, sign out), side bar from `core/navigation.ts`, banner, notices, outlet; opens the session dialogs |
+| [web/src/styles/](../../web/src/styles/) | `_tokens.scss` (trove custom properties: spacing, type, radii, elevation, content colours, the dark navigation colours, light/dark), `_icons.scss` (self-hosted icon font), `_shell.scss` (top bar, sidebar, rail, breadcrumbs), `_list-screens.scss` (data table, filter toggle, filter panel, list layout), `_catalog-screens.scss` (older shared classes), `main.scss` (Material theme, density -2) |
+| [web/src/app/app.ts](../../web/src/app/app.ts), `app.html` | Root standalone component: skip link, top bar (wordmark, repository search, user menu with language, theme, sign out), sidebar from `core/navigation.ts` with the rail toggle, breadcrumbs, banner, notices, outlet; opens the session dialogs |
 | [web/src/app/app.config.ts](../../web/src/app/app.config.ts) | Router (component input binding, `TroveTitleStrategy`), `HttpClient` on fetch with the XSRF configuration of R-AUTH-012 and the three interceptors, `provideApiServices()`, global error listeners |
 | [web/src/app/app.routes.ts](../../web/src/app/app.routes.ts) | `/login` and `/logged-out` without a guard; everything else under `authGuard`; one lazy `loadChildren` per area |
 | [web/src/app/api/](../../web/src/app/api/) | `client.ts` (`ApiClient`), `problem.ts` (`Problem`, `ApiError`), `pagination.ts` (`collectAll`, `PagedList`), `types.ts` (helpers over the generated types), one `*-api.ts` per endpoint family (abstract service class, hand-typed DTO where the OpenAPI document lacks the operation, HTTP implementation), `providers.ts`, `testing/fakes.ts`. Catalog services typed from the generated schema: `repositories-api.ts` (repositories and the format catalog), `files-api.ts` (items, children, statistics, delete, upload and folder creation; the XHR client of Q-UI-16), `endpoints-api.ts` (endpoints, exposure rules, the dry run), `audit-api.ts`, `jobs-api.ts` (jobs and tasks); `csrf.ts` holds the CSRF cookie and header names; their fakes are in `testing/fakes-catalog.ts` and `provideFakeApis()` spreads them |
 | `web/src/app/api/generated/` | `schema.d.ts` from openapi-typescript, committed, never edited |
-| [web/src/app/core/](../../web/src/app/core/) | `session-store.ts`, `authz-epoch.ts`, `auth-guard.ts`, `navigation.ts`, `preferences-store.ts`, `notifier.ts`, `title-strategy.ts`, `focus-on-navigation.ts`, `storage.ts` (the only user of browser storage), `browser-navigation.ts` (`safeReturnTo`), `layout.ts`, `banner-store.ts`; `http/interceptors.ts` and `http/problem-messages.ts` |
-| [web/src/app/shared/](../../web/src/app/shared/) | `ErrorNotice`, `Notices`, `SessionDialog`, `ConflictDialog` with `ConflictResolver`, `Banner`, `ScreenPlaceholder` and `placeholderRoute`; `access/` (building blocks of the identity and permission screens, see below); for the forms and lists of the catalog area: `PagedResource` (a "Load more" list as signals, with `start`, `more`, `reload`, `replace`, `remove`; used by every list screen) with `asApiError`, and `valueOf` (a resource's value without the throw of the error state), `merge-patch.ts` (RFC 7396 diff and apply), `field-errors.ts` (`ErrorSummary`, `fieldMessage`, `fieldErrorAt`, `problemsAt`), `unsaved-guard.ts`, `drafts.ts` (`DraftStore`: a draft across a re-authentication and the registry behind "Copy draft as JSON"), `confirm-dialog.ts` (`Confirm`: confirm, type-to-confirm, an optional choice that starts ticked or not), `diff-dialog.ts`, `copy-button.ts`, `job-progress.ts` (polling progress component) |
+| [web/src/app/core/](../../web/src/app/core/) | `session-store.ts`, `authz-epoch.ts`, `auth-guard.ts`, `navigation.ts` (areas, groups, icons, capabilities), `nav-state.ts` (rail and folded groups per principal), `breadcrumbs.ts`, `preferences-store.ts`, `notifier.ts`, `title-strategy.ts`, `focus-on-navigation.ts`, `storage.ts` (the only user of browser storage), `browser-navigation.ts` (`safeReturnTo`), `layout.ts`, `banner-store.ts`; `http/interceptors.ts` and `http/problem-messages.ts` |
+| [web/src/app/shared/](../../web/src/app/shared/) | `ErrorNotice`, `Notices`, `SessionDialog`, `ConflictDialog` with `ConflictResolver`, `Banner`, `ScreenPlaceholder` and `placeholderRoute`; `access/` (building blocks of the identity and permission screens, see below); for the forms and lists of the catalog area: `PagedResource` (a "Load more" list as signals, with `start`, `more`, `reload`, `replace`, `remove`; used by every list screen) with `asApiError`, and `valueOf` (a resource's value without the throw of the error state), `merge-patch.ts` (RFC 7396 diff and apply), `field-errors.ts` (`ErrorSummary`, `fieldMessage`, `fieldErrorAt`, `problemsAt`), `unsaved-guard.ts`, `drafts.ts` (`DraftStore`: a draft across a re-authentication and the registry behind "Copy draft as JSON"), `ui/data-table.ts` and `ui/filter-panel.ts` (the list components, see below), `confirm-dialog.ts` (`Confirm`: confirm, type-to-confirm, an optional choice that starts ticked or not), `diff-dialog.ts`, `copy-button.ts`, `job-progress.ts` (polling progress component) |
 | [web/src/app/features/](../../web/src/app/features/) | One folder per area with an `<area>.routes.ts` (`login`, the identity and permission areas of the section below, `system`, `repositories`, `browse`, `endpoints` and `audit` carry built screens), `not-found` |
-| [web/src/app/testing/](../../web/src/app/testing/) | `axe.ts`, the accessibility helper of the component specs; `screen.ts`, `renderScreen` (a screen against the fakes, dialogs without animation, a catch-all route), `settle`, `sleep`, `expectAccessible`, `browserStorage` and `storedText`, and the small DOM helpers of the specs (`text`, `button`, `buttonByText`, `type`, `typeInto`) |
+| [web/src/app/testing/](../../web/src/app/testing/) | `axe.ts`, the accessibility helper of the component specs; `screen.ts`, `renderScreen` (a screen against the fakes, dialogs without animation, a catch-all route), `settle`, `sleep`, `expectAccessible`, `browserStorage` and `storedText`, and the small DOM helpers of the specs (`text`, `button`, `buttonByText`, `type`, `typeInto`, `openFilters`) |
 | [web/e2e/](../../web/e2e/) | The Playwright journeys of R-UI-047 and their support code, a TypeScript project of its own (`web/e2e/tsconfig.json`, type-checked with `npx tsc -p e2e/tsconfig.json`); `@playwright/test`, `@axe-core/playwright` and `@types/node` are devDependencies of this workspace, so one lockfile pins them. Not part of the Angular build or of `make web-lint`. Described in [e2e.md](e2e.md#browser-journeys) |
 | [web/scripts/](../../web/scripts/) | `build-embed.mjs`, `check-budget.mjs`, `check-rules.mjs` |
 | [web/eslint.config.js](../../web/eslint.config.js) | angular-eslint plus the R-UI-046 rules |
@@ -122,14 +123,14 @@ mux.Handle("/ui/", h) // do not strip the prefix
 
 | Route | Component | Services | Notes |
 |---|---|---|---|
-| `/admin/repositories` | [repository-list](../../web/src/app/features/repositories/repository-list.ts) | `RepositoriesApi`, `JobsApi` (progress) | Filters `q`, `class`, `format`, `state` in the query; cursor "Load more"; delete with typed key and job progress; "recently viewed" in browser storage |
+| `/admin/repositories` | [repository-list](../../web/src/app/features/repositories/repository-list.ts) | `RepositoriesApi`, `JobsApi` (progress) | Data table (no sort control: the API takes no `sort`); filter panel with `q`, `class`, `format`, `state`, applied into the query; cursor "Load more"; delete with typed key and job progress; "recently viewed" in browser storage |
 | `/admin/repositories/new` | [repository-wizard](../../web/src/app/features/repositories/repository-wizard.ts) | `RepositoriesApi` | Five steps; classes and formats only from `GET /api/v1/formats`; live key check; `Idempotency-Key` from the moment the wizard opens; field errors mapped by pointer |
 | `/admin/repositories/:key` | [repository-detail](../../web/src/app/features/repositories/repository-detail.ts) | `RepositoriesApi` | Tabs General, Access, API; merge patch with `If-Match`; 412 conflict dialog; consumer view without a form; delete |
 | `/browse`, `/browse/{repo}/{path…}` | [browse](../../web/src/app/features/browse/browse.ts) | `RepositoriesApi`, `FilesApi`, `SessionStore.check` | `@angular/aria` tree with lazy pages; details General, Statistics, API; upload and folder dialogs, delete (204 or job) |
-| `/admin/endpoints` | [endpoint-list](../../web/src/app/features/endpoints/endpoint-list.ts) | `EndpointsApi` | Inert names flagged |
+| `/admin/endpoints` | [endpoint-list](../../web/src/app/features/endpoints/endpoint-list.ts) | `EndpointsApi` | Data table; name and rule count sort in the browser because the API answers the whole list; inert names flagged |
 | `/admin/endpoints/:endpoint` | [endpoint-detail](../../web/src/app/features/endpoints/endpoint-detail.ts) | `EndpointsApi`, `RepositoriesApi` | Read-only configuration, mode `all` banner, rule table with the enable switch (`PATCH {enabled}`), client addresses |
 | `/admin/endpoints/:endpoint/rules/new`, `…/rules/:name` | [exposure-rule-editor](../../web/src/app/features/endpoints/exposure-rule-editor.ts) | `EndpointsApi`, `RepositoriesApi` | Dimensions by pattern subject; preview through `check-exposure` after 500 ms; diff dialog before `PUT`; create with an idempotency key |
-| `/admin/audit` | [audit-log](../../web/src/app/features/audit/audit-log.ts) | `AuditApi` | Filters and the open event in the query; keyset "Load more"; UTC switch; export links |
+| `/admin/audit` | [audit-log](../../web/src/app/features/audit/audit-log.ts) | `AuditApi` | Data table (always newest first, no sort control); filter panel; filters and the open event in the query; keyset "Load more"; UTC switch; export links |
 | `/admin/system` | [system-status](../../web/src/app/features/system/system-status.ts) | `SystemApi`, `EncryptionApi`, `JobsApi` | Key card with per-replica rings, scheduled tasks card, recent jobs |
 | `/admin/system/jobs` | [jobs-page](../../web/src/app/features/system/jobs-page.ts) | `JobsApi` | Filters `kind` and `state`; refresh with a pause control; cancel |
 
@@ -205,6 +206,99 @@ feeds the two live regions of `<trove-notices>`: `status` is polite, `alert` is 
 **Secrets** never enter these services (R-UI-043): token values live in component signals only. `core/storage.ts` is for non-secret
 convenience data and answers as if empty when the browser blocks storage.
 
+## Shell, design tokens and the list components
+
+Decision [Q-UI-68](../spec/api-and-ui.md#q-ui-68--layout-of-the-application-shell-and-the-list-screens); requirements
+[R-UI-002](../spec/api-and-ui.md), [R-UI-005](../spec/api-and-ui.md), [R-UI-044](../spec/api-and-ui.md).
+
+### The shell
+
+| Piece | Where | What it does |
+|---|---|---|
+| Top bar | [app.html](../../web/src/app/app.html), `mat-toolbar.topbar` | Wordmark, the repository search (`form[role=search]`; submit goes to `/admin/repositories?q=`; shown only with `repositories:read-config`, because the repository list is its API), user menu. The slot for the global search (R-UI-015), the project filter and the help link stays empty until their APIs exist |
+| Navigation model | [core/navigation.ts](../../web/src/app/core/navigation.ts) | `NAV_AREAS`: areas, each with items and folding groups; an item has `route`, `label`, `icon` (a ligature of the icon font, decoration only) and the `capability` that shows it. `Navigation.areas()` drops entries the caller lacks and groups left empty |
+| Sidebar | `mat-sidenav.sidebar` | Pinned from 1024 CSS px (`Layout.pinned`), a drawer below. Group headings are buttons with `aria-expanded`; the current page is `aria-current="page"` with a filled row, an accent bar and bold text. The foot button (`aria-pressed`) compacts it to the rail: `.rail` hides the labels visually (they stay in the DOM as accessible names), always shows the groups' entries and shrinks the sidebar to `--trove-nav-width-collapsed`; `App` calls `MatSidenavContainer.updateContentMargins()` after the change, because Material measures the sidebar once |
+| Persisted state | [core/nav-state.ts](../../web/src/app/core/nav-state.ts) | Rail on or off and the folded group ids, in `localStorage` through `BrowserStorage` under `trove.nav.<principal name>`; blocked storage means the state lasts for the tab. Non-secret (R-UI-043) |
+| Breadcrumbs | [core/breadcrumbs.ts](../../web/src/app/core/breadcrumbs.ts) | `collect()` walks the activated route snapshot: `data.crumbs` of a route (`{ label, link }`, used for the area names and for lazy wrapper routes, see `wrapper()` in [app.routes.ts](../../web/src/app/app.routes.ts)), a string `title`, a `:param` segment (shows the value), and the file tree's matcher (one crumb per segment). A trail of one step is dropped. A new area adds `data: wrapper(<title>)` to its `loadChildren` route, otherwise its detail screens lose the link to the list |
+| Styles | [styles/_shell.scss](../../web/src/styles/_shell.scss) | Global and scoped under `trove-root`, because the root component's own stylesheet is held to the component style budget of `angular.json` |
+
+### Design tokens
+
+[styles/_tokens.scss](../../web/src/styles/_tokens.scss) holds the custom properties; components use them and no literal colour or length. Material's own
+`--mat-sys-*` tokens come from `mat.theme` in `main.scss`.
+
+| Group | Properties | Notes |
+|---|---|---|
+| Spacing | `--trove-space-1` to `-8` | 4, 8, 12, 16, 20, 24, 32 px |
+| Type | `--trove-font-mono`, `--trove-text-muted-size`; sizes from `--mat-sys-*` | One system font stack (set in `main.scss`) |
+| Shape and elevation | `--trove-radius-s`, `-m`, `--trove-elevation-1`, `-2` | The shadows use `light-dark()`, so the dark scheme gets darker ones |
+| Content | `--trove-border`, `--trove-border-strong`, `--trove-text-muted`, `--trove-accent`, `--trove-accent-container`, `--trove-surface-raised`, `--trove-table-head-bg`, `--trove-row-hover`, `--trove-focus-ring` | The accent is the Material primary: one colour for active and primary states |
+| Status | `--trove-status-ok`, `-warn`, `-bad` | Always with an icon and a text |
+| Navigation | `--trove-nav-bg`, `-bg-deep`, `-fg`, `-fg-muted`, `-hover`, `-active`, `-accent`, `-border`, `--trove-nav-width`, `-width-collapsed`, `--trove-topbar-height` | Dark in both schemes (the sidebar and the top bar do not follow the theme). Contrast was measured, not assumed: text 8.3:1 to 17:1, muted text on the hover fill 6.3:1, the accent mark on the active fill 4.8:1, the search field's outline 3.7:1 (AA asks 4.5:1 and 3:1). Recompute when a value changes |
+
+The themes are the ones of [R-API-021](../spec/api-and-ui.md): `color-scheme: light dark`, and `data-theme` on the root element for an explicit choice.
+
+### The data table
+
+[shared/ui/data-table.ts](../../web/src/app/shared/ui/data-table.ts), `<trove-data-table>`. It owns the frame; the rows stay in the screen.
+
+```html
+<trove-data-table
+  [caption]="caption"            <!-- accessible name, rendered as a visually hidden <caption> -->
+  [columns]="columns"            <!-- TableColumn[]: id, label, help?, sortable?, numeric?, hideLabel? -->
+  [sort]="sort()"                <!-- TableSort | null: { column, direction: 'asc' | 'desc' } -->
+  (sortChange)="sortBy($event)"
+  [loaded]="list.loaded()" [loading]="list.loading()" [error]="list.error()"
+  [empty]="list.items().length === 0" emptyText="No user matches."
+  [hasMore]="list.hasMore()" (more)="list.more()" (retry)="list.reload()"
+>
+  @for (u of list.items(); track u.id) {
+    <tr><th scope="row"><a [routerLink]="...">{{ u.username }}</a></th><td>...</td></tr>
+  }
+</trove-data-table>
+```
+
+- **Sorting is a request.** `sortChange` carries the column and direction; the screen restarts its list with the `sort` parameter the API understands (`'-username'` for descending) or sorts a complete list itself (endpoints). Only mark a column `sortable` where one of the two is true. The `<th>` gets `aria-sort`; the header is a `<button>` that toggles ascending and descending.
+- **Help.** A column with `help` gets a "?" button with the accessible name "About the column X" and a `matTooltip` whose message is also its `aria-describedby`; the tooltip opens on focus and hover and closes with Escape.
+- **States.** Not loaded and loading: a status line. Loaded and `empty`: `emptyText`. `error`: `<trove-error-notice>` with the retry output. Otherwise the table in a focusable scroll region (`tabindex="0"`, `role="region"`, labelled by the caption) with a sticky header; the region scrolls, not the page. `hasMore` shows "Load more".
+- **Rows.** Columns and cells must agree in number and order; an actions column uses `hideLabel` and `td.actions`; a figure column uses `numeric` and `td.num`. `.secondary` is the muted second line of a cell. A long identifier in a `<code>` wraps.
+- The token table ([shared/access/token-table.ts](../../web/src/app/shared/access/token-table.ts)) wraps the data table for the three screens that list tokens and passes `hasMore`, `loading` and `more` through.
+
+### The filter panel
+
+[shared/ui/filter-panel.ts](../../web/src/app/shared/ui/filter-panel.ts): `<trove-filter-toggle>`, `<trove-filter-panel>`, `<trove-filter-category>`.
+
+```html
+<div class="list-layout" [class.panel-open]="panelOpen()">
+  <div class="list-main">
+    <div class="list-toolbar">
+      <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
+    </div>
+    <trove-data-table ...>...</trove-data-table>
+  </div>
+  <trove-filter-panel #panel class="list-side" [(open)]="panelOpen" [activeCount]="activeCount()"
+                      (apply)="apply()" (clearAll)="clear()">
+    <trove-filter-category label="Status" [active]="!!status()" [expanded]="!!status()">
+      <trove-select-field label="Status" [options]="statusOptions" [(value)]="status" />
+    </trove-filter-category>
+  </trove-filter-panel>
+</div>
+```
+
+- The panel holds no values. The screen keeps the staged values as signals (or in the query parameters, as the repository and audit screens do), counts the **applied** filters for `activeCount`, and reacts to `apply` (the apply button submits the form) and `clearAll`.
+- A category is a heading button with a chevron (`aria-expanded`); give it `[active]` and `[expanded]` of its filter, so that an applied filter is never hidden. A screen that can be reached with a filter in the URL (policies, audit, repositories) opens the panel itself.
+- Focus moves to the panel heading on opening and back to the opener on closing; Escape closes. The form is a `search` landmark named by its heading.
+- Controls inside a category need their own accessible name (`aria-label` for a native control, the label of `TextField` and `SelectField` otherwise); the category button is not their label.
+- `.list-layout` puts the panel to the right of the table and below `52rem` of content width above it (container query on `.content`). Only add a filter that a request parameter of the API backs.
+
+### Add a list screen
+
+1. Declare the columns (`TableColumn[]` with `$localize` labels; `sortable` only where the API sorts, `help` where a column needs explaining) and bind the states of the list to `<trove-data-table>`.
+2. If the API sorts, add `sort` to the filter type in `api/<family>-api.ts`, pass it through the HTTP client (it is part of `cleanQuery(filters)`), and make the fake honour it (`sorted()` in [testing/access-fakes.ts](../../web/src/app/api/testing/access-fakes.ts)).
+3. If the screen has filters, add the panel, one category per filter, and the three signals (`panelOpen`, staged values, `activeCount`).
+4. Specs: a table spec (sort flips `aria-sort` and the order of the rows; help buttons are named), a panel spec (the count, "Clear all", apply reaches the API or the router), `openFilters(fixture, root)` from `testing/screen.ts` before a spec types into a filter; the axe check with the panel open. The component specs [data-table.spec.ts](../../web/src/app/shared/ui/data-table.spec.ts) and [filter-panel.spec.ts](../../web/src/app/shared/ui/filter-panel.spec.ts) cover the components themselves.
+5. Browser journeys: use `openFilter(page, '<category>')` from [web/e2e/support.ts](../../web/e2e/support.ts) before using a filter field.
+
 <!-- >>> M1 ui-b -->
 ## Identity, token and permission screens
 
@@ -276,7 +370,7 @@ Conventions these screens follow:
 4. Create forms with an idempotency key from `newIdempotencyKey()` for creates and the loaded `ETag` for edits; show failures with `<trove-error-notice>`
    and field errors from `ApiError.fieldErrors` (`ErrorSummary` and `problemsAt` of `shared/field-errors.ts`). Forms use signals and native controls (Q-UI-14);
    read a resource's value with `valueOf(resource)` wherever the error state is shown next to it, because `resource.value()` throws in that state.
-5. Add the navigation entry to `NAV_GROUPS` in [core/navigation.ts](../../web/src/app/core/navigation.ts) with the capability that shows it.
+5. Add the navigation entry to `NAV_AREAS` in [core/navigation.ts](../../web/src/app/core/navigation.ts) with its icon and the capability that shows it, and `data: wrapper(<title>)` to the `loadChildren` route in `app.routes.ts` so that the breadcrumbs link the list from the detail screens.
 6. Mark every text with `i18n`/`$localize`, run `npm run extract-i18n`, add the German `<target>`s to `messages.de.xlf`, extend the glossary.
 7. Write specs next to the code with the requirement ID in the test name, add the route to `SCREENS` in `app.routes.spec.ts` (heading, title and the axe check come with it),
    run `npm run lint` and `npm test`.
@@ -295,7 +389,8 @@ Conventions these screens follow:
 - The session expiry warning of R-UI-002 (WCAG 2.2.1) is not built: it needs the session deadlines in an answer the UI can read (`whoami` shows `type: session` without an
   expiry; the timeouts are in `settings/auth`, which needs `settings:read`). The `reauthentication_required` dialog leads to `/login?...&reauth=1`; the identity, token,
   settings and policy editors and the catalog editors keep and restore their non-secret drafts (see above).
-- No project filter, global search, help link or keyboard-shortcut switch in the header (P1 entries of R-UI-002).
+- The top bar has the repository search only. The global search over packages and files, the project filter, the help link and the keyboard-shortcut switch are P1 entries of R-UI-002; the packages list and package details (R-UI-006 to R-UI-009) arrive with their API and reuse the data table and the filter panel. The sidebar shows no version or footer text, because no API the browser may read carries the version.
+- The jobs list of the system area (`/admin/system/jobs`) and the older tables of the detail screens (role bindings, group members, exposure rules, job table) still use their own `table.data` markup; they move to the data table when their screens are next touched.
 - Forms: the identity, token, settings and policy forms use plain signals with `TextField` and `SelectField` (Q-UI-20), the catalog forms plain signals with native controls (Q-UI-14); in both the server's field errors by JSON pointer carry the validation, and the client checks only what saves a round trip. Signal Forms with validators derived from the OpenAPI constraints are not used.
 - Browser-mode component tests and contract mocks. Of the Playwright tier, reflow at 320 CSS px, focus order across navigations, Firefox and WebKit, the client-setup journey with real `npm` and `dotnet` commands and the claim tester arrive with the screens and formats they need; the journeys of the M1 subset exist ([e2e.md](e2e.md#browser-journeys)).
 - Local runs on a Node.js other than `web/.nvmrc` work only while the version satisfies `engines`; `make versions-check` names a mismatch.

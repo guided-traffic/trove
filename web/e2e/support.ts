@@ -125,3 +125,16 @@ export async function signOut(page: Page): Promise<void> {
   await page.getByRole('button', { name: /User menu|Benutzermenü/ }).click();
   await page.getByRole('menuitem', { name: /Sign out|Abmelden/ }).click();
 }
+
+/**
+ * Opens the filter panel of a list screen (if it is closed) and unfolds one filter category (if it is folded), so that
+ * the fields of that category can be used. The panel opens by itself while a filter is applied, and a category with a
+ * value starts unfolded, so both steps look at the state first.
+ */
+export async function openFilter(page: Page, category: string): Promise<void> {
+  const panel = page.getByRole('search', { name: 'Filters' });
+  if (!(await panel.isVisible())) await page.getByRole('button', { name: /^Filters/ }).first().click();
+  const toggle = panel.getByRole('button', { name: new RegExp(`^${category}( \\(active\\))?$`) });
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+}
+

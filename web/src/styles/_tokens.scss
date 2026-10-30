@@ -9,7 +9,49 @@
   --trove-space-2: 8px;
   --trove-space-3: 12px;
   --trove-space-4: 16px;
+  --trove-space-5: 20px;
   --trove-space-6: 24px;
+  --trove-space-8: 32px;
+
+  // Typography: one family stack, the Material type scale for sizes (mat.theme in main.scss).
+  --trove-font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --trove-text-muted-size: 0.8125rem;
+
+  // Radii and elevation. Elevation is a hairline border plus a soft shadow; the dark scheme
+  // raises the border instead of the shadow, which would not show on a dark surface.
+  --trove-radius-s: 4px;
+  --trove-radius-m: 8px;
+  --trove-elevation-1: 0 1px 2px light-dark(rgb(16 24 40 / 8%), rgb(0 0 0 / 40%));
+  --trove-elevation-2: 0 4px 12px light-dark(rgb(16 24 40 / 14%), rgb(0 0 0 / 55%));
+
+  // Content area: whitespace, borders and the one accent. The accent is the Material primary, so
+  // a theme change moves every accent-coloured control with it.
+  --trove-border: var(--mat-sys-outline-variant);
+  --trove-border-strong: var(--mat-sys-outline);
+  --trove-text-muted: var(--mat-sys-on-surface-variant);
+  --trove-accent: var(--mat-sys-primary);
+  --trove-accent-container: var(--mat-sys-secondary-container);
+  --trove-on-accent-container: var(--mat-sys-on-secondary-container);
+  --trove-surface-raised: var(--mat-sys-surface-container-lowest);
+  --trove-table-head-bg: var(--mat-sys-surface-container-low);
+  --trove-row-hover: var(--mat-sys-surface-container);
+  --trove-focus-ring: 2px solid var(--mat-sys-primary);
+
+  // Navigation sidebar and top bar: dark in both schemes. Measured contrast (R-UI-044, AA asks
+  // 4.5:1 for text and 3:1 for marks): text on the background 8.3:1 to 17:1, muted text on the
+  // hover fill 6.3:1 at the lowest, the accent mark on the active fill 4.8:1 at the lowest, the
+  // outline of the search field 3.7:1.
+  --trove-nav-bg: light-dark(#17222f, #0d141c);
+  --trove-nav-bg-deep: light-dark(#101923, #080d13);
+  --trove-nav-fg: #eaf0f6;
+  --trove-nav-fg-muted: #aebccb;
+  --trove-nav-hover: rgb(255 255 255 / 9%);
+  --trove-nav-active: rgb(255 255 255 / 15%);
+  --trove-nav-accent: #7eb6ff;
+  --trove-nav-border: rgb(255 255 255 / 12%);
+  --trove-nav-width: 15rem;
+  --trove-nav-width-collapsed: 3.75rem;
+  --trove-topbar-height: 3rem;
 
   --trove-surface: var(--mat-sys-surface);
   --trove-on-surface: var(--mat-sys-on-surface);

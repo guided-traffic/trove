@@ -1,0 +1,377 @@
+// The shared look of list screens: the data table, the filter toggle and the filter panel, and the
+// layout that puts the panel to the right of the table. Global on purpose: the table frame belongs to
+// <trove-data-table>, but its rows are projected from the screens, so scoped component styles
+// would not reach them. Colours and lengths come from the tokens only (R-UI-044).
+
+.list-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--trove-space-4);
+  align-items: start;
+
+  &.panel-open {
+    grid-template-columns: minmax(0, 1fr) 19rem;
+  }
+
+  // Below this width of the content area the panel sits above the table instead of beside it.
+  @container content (max-width: 52rem) {
+    &.panel-open {
+      grid-template-columns: minmax(0, 1fr);
+
+      .list-side {
+        order: -1;
+      }
+    }
+  }
+}
+
+.list-main {
+  min-inline-size: 0;
+}
+
+.list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--trove-space-3);
+  margin-block-end: var(--trove-space-3);
+
+  .list-toolbar-spacer {
+    flex: 1 1 auto;
+  }
+}
+
+.filter-toggle {
+  .material-icons {
+    font-size: 1.125rem;
+    margin-inline-end: var(--trove-space-1);
+  }
+}
+
+.filter-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 1.25rem;
+  margin-inline-start: var(--trove-space-2);
+  padding-inline: var(--trove-space-1);
+  border-radius: var(--mat-sys-corner-full);
+  background: var(--trove-accent);
+  color: var(--mat-sys-on-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+// ---- Data table --------------------------------------------------------------------------
+
+.trove-data-table {
+  display: block;
+
+  .table-frame {
+    border: 1px solid var(--trove-border);
+    border-radius: var(--trove-radius-m);
+    background: var(--trove-surface-raised);
+    overflow: hidden;
+  }
+
+  // The inner scroll keeps the header in view: the region scrolls, not the page.
+  .table-scroll {
+    max-block-size: max(22rem, calc(100dvh - 17rem));
+    overflow: auto;
+
+    &:focus-visible {
+      outline: var(--trove-focus-ring);
+      outline-offset: -2px;
+    }
+  }
+
+  table.data {
+    border-collapse: separate;
+    border-spacing: 0;
+    inline-size: 100%;
+
+    th,
+    td {
+      padding: var(--trove-space-3);
+      text-align: start;
+      vertical-align: middle;
+      border-block-end: 1px solid var(--trove-border);
+    }
+
+    thead th {
+      position: sticky;
+      inset-block-start: 0;
+      z-index: 1;
+      background: var(--trove-table-head-bg);
+      border-block-end: 1px solid var(--trove-border-strong);
+      font: var(--mat-sys-label-large);
+      white-space: nowrap;
+    }
+
+    th.num,
+    td.num {
+      text-align: end;
+      font-variant-numeric: tabular-nums;
+    }
+
+    tbody th[scope='row'] {
+      font-weight: 600;
+    }
+
+    tbody tr:last-child > * {
+      border-block-end: 0;
+    }
+
+    tbody tr:hover > * {
+      background: var(--trove-row-hover);
+    }
+
+    td.actions {
+      white-space: nowrap;
+      text-align: end;
+
+      .row-actions {
+        flex-wrap: nowrap;
+        justify-content: flex-end;
+      }
+    }
+
+    // Keys, names and identifiers are never broken at a hyphen; a status keeps icon and label on one line.
+    th[scope='row'] a,
+    td[translate='no']:not(.wrap),
+    td time,
+    td > .ok,
+    td > .bad,
+    td > .warn {
+      white-space: nowrap;
+    }
+
+    td > .ok,
+    td > .bad,
+    td > .warn {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--trove-space-1);
+    }
+
+    // A long address, target or URL is cut with an ellipsis; its full text is the title.
+    .ellipsis {
+      display: inline-block;
+      max-inline-size: 24ch;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      vertical-align: middle;
+    }
+
+    // A long address or identifier wraps instead of pushing the action column out of view.
+    td code {
+      overflow-wrap: anywhere;
+    }
+
+    // Secondary text: the second line of a cell, a hint, a technical name.
+    .secondary {
+      display: block;
+      color: var(--trove-text-muted);
+      font-size: var(--trove-text-muted-size);
+      font-weight: 400;
+    }
+
+    .type-cell {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--trove-space-2);
+
+      .material-icons {
+        font-size: 1.25rem;
+        color: var(--trove-text-muted);
+      }
+    }
+  }
+
+  .th-inner {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--trove-space-1);
+  }
+
+  .th-sort,
+  .th-help {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--trove-space-1);
+    min-block-size: 24px;
+    padding: 0 var(--trove-space-1);
+    border: 0;
+    border-radius: var(--trove-radius-s);
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--trove-row-hover);
+    }
+
+    &:focus-visible {
+      outline: var(--trove-focus-ring);
+      outline-offset: 1px;
+    }
+  }
+
+  .th-help {
+    color: var(--trove-text-muted);
+
+    .material-icons {
+      font-size: 1.125rem;
+    }
+  }
+
+  .th-arrow {
+    font-size: 1.125rem;
+    color: var(--trove-text-muted);
+
+    &.sorted {
+      color: var(--trove-accent);
+    }
+  }
+
+  .table-status,
+  .table-empty {
+    margin-block: var(--trove-space-6);
+    padding: var(--trove-space-6);
+    border: 1px dashed var(--trove-border);
+    border-radius: var(--trove-radius-m);
+    color: var(--trove-text-muted);
+    text-align: center;
+  }
+
+  .table-more {
+    margin-block: var(--trove-space-3) 0;
+  }
+}
+
+// ---- Filter panel --------------------------------------------------------------------------
+
+.trove-filter-panel {
+  display: block;
+
+  .panel {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--trove-border);
+    border-radius: var(--trove-radius-m);
+    background: var(--trove-surface-raised);
+    box-shadow: var(--trove-elevation-1);
+  }
+
+  .panel-head {
+    display: flex;
+    align-items: center;
+    gap: var(--trove-space-2);
+    padding: var(--trove-space-3) var(--trove-space-3) var(--trove-space-3) var(--trove-space-4);
+    border-block-end: 1px solid var(--trove-border);
+
+    h2 {
+      flex: 1 1 auto;
+      margin: 0;
+      font: var(--mat-sys-title-medium);
+      outline: none;
+    }
+  }
+
+  .panel-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--trove-space-2);
+    padding: var(--trove-space-3);
+  }
+
+  .panel-foot {
+    padding: var(--trove-space-3);
+    border-block-start: 1px solid var(--trove-border);
+
+    button {
+      inline-size: 100%;
+    }
+  }
+}
+
+.trove-filter-panel {
+  .text-input,
+  .select-input {
+    inline-size: 100%;
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--trove-space-1);
+    margin-block-end: var(--trove-space-2);
+  }
+}
+
+// Without an open panel the grid has one column and the empty side cell must not add a gap.
+.list-layout:not(.panel-open) > .list-side {
+  display: none;
+}
+
+.trove-filter-category {
+  display: block;
+
+  .category {
+    border: 1px solid var(--trove-border);
+    border-radius: var(--trove-radius-s);
+    background: var(--trove-table-head-bg);
+  }
+
+  .category-heading {
+    margin: 0;
+    font: inherit;
+  }
+
+  .category-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--trove-space-2);
+    inline-size: 100%;
+    min-block-size: 2.5rem;
+    padding: var(--trove-space-2) var(--trove-space-3);
+    border: 0;
+    border-radius: var(--trove-radius-s);
+    background: none;
+    color: inherit;
+    font: var(--mat-sys-label-large);
+    text-align: start;
+    cursor: pointer;
+
+    &:focus-visible {
+      outline: var(--trove-focus-ring);
+      outline-offset: -2px;
+    }
+
+    .category-label {
+      flex: 1 1 auto;
+    }
+
+    .chevron {
+      font-size: 1.25rem;
+      color: var(--trove-text-muted);
+    }
+  }
+
+  .category-dot {
+    inline-size: 0.5rem;
+    block-size: 0.5rem;
+    border-radius: 50%;
+    background: var(--trove-accent);
+  }
+
+  .category-body {
+    padding: var(--trove-space-2) var(--trove-space-3) var(--trove-space-3);
+
+    &[hidden] {
+      display: none;
+    }
+  }
+}

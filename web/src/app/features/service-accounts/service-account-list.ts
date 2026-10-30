@@ -13,6 +13,8 @@ import { fieldErrorAt } from '../../shared/field-errors';
 import { Needs } from '../../shared/access/needs';
 import { PagedResource, asApiError } from '../../shared/paged-resource';
 import { ErrorNotice } from '../../shared/error-notice';
+import { DataTable, TableColumn, TableSort } from '../../shared/ui/data-table';
+import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
 
 /** "New service account" (R-UI-026). The idempotency key lives as long as the dialog (R-UI-042). */
 @Component({
@@ -85,7 +87,7 @@ export class ServiceAccountCreateDialog {
  */
 @Component({
   selector: 'trove-service-account-list',
-  imports: [MatButtonModule, RouterLink, ErrorNotice, Needs, TextField],
+  imports: [MatButtonModule, RouterLink, DataTable, FilterCategory, FilterPanel, FilterToggle, Needs, TextField],
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@sas.heading">Service accounts</h1>
@@ -96,52 +98,57 @@ export class ServiceAccountCreateDialog {
       Use a service account for CI systems that cannot sign in through OpenID Connect and for long-running automation. Its tokens act as the account, not as a person.
     </p>
 
-    <form class="toolbar" (submit)="submit($event)" role="search" i18n-aria-label="@@sas.filters" aria-label="Service account filters">
-      <trove-text-field i18n-label="@@sas.q" label="Name" name="q" [(value)]="q" />
-      <button mat-flat-button type="submit" i18n="@@sas.apply">Apply filter</button>
-    </form>
-
-    @if (list.error(); as e) {
-      <trove-error-notice [error]="e" (retry)="list.reload()" />
-    }
-    @if (list.loaded()) {
-      @if (list.items().length === 0) {
-        <p i18n="@@sas.empty">No service account matches.</p>
-      } @else {
-        <div class="scroll" tabindex="0" role="region" i18n-aria-label="@@sas.region" aria-label="Service accounts">
-          <table class="data">
-            <caption class="visually-hidden" i18n="@@sas.caption">Service accounts</caption>
-            <thead>
-              <tr>
-                <th scope="col" i18n="@@sas.col.name">Name</th>
-                <th scope="col" i18n="@@sas.col.description">Description</th>
-                <th scope="col" i18n="@@sas.col.status">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (a of list.items(); track a.id) {
-                <tr>
-                  <th scope="row"><a [routerLink]="['/admin/service-accounts', a.name]" translate="no">{{ a.name }}</a></th>
-                  <td>{{ a.description }}</td>
-                  <td>
-                    @if (a.status === 'active') {
-                      <span class="ok"><span class="material-icons" aria-hidden="true">check_circle</span> <ng-container i18n="@@sas.active">Active</ng-container></span>
-                    } @else {
-                      <span class="bad"><span class="material-icons" aria-hidden="true">block</span> <ng-container i18n="@@sas.disabled">Disabled</ng-container></span>
-                    }
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
+    <div class="list-layout" [class.panel-open]="panelOpen()">
+      <div class="list-main">
+        <div class="list-toolbar">
+          <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
         </div>
-        @if (list.hasMore()) {
-          <p><button mat-button type="button" [disabled]="list.loading()" (click)="list.more()" i18n="@@sas.more">Load more</button></p>
-        }
-      }
-    } @else if (list.loading()) {
-      <p role="status" i18n="@@sas.loading">Loading service accounts.</p>
-    }
+
+        <trove-data-table
+          [caption]="caption"
+          [columns]="columns"
+          [sort]="sort()"
+          (sortChange)="sortBy($event)"
+          [loaded]="list.loaded()"
+          [loading]="list.loading()"
+          [error]="list.error()"
+          [empty]="list.items().length === 0"
+          i18n-emptyText="@@sas.empty"
+          emptyText="No service account matches."
+          [hasMore]="list.hasMore()"
+          (more)="list.more()"
+          (retry)="list.reload()"
+        >
+          @for (a of list.items(); track a.id) {
+            <tr>
+              <th scope="row"><a [routerLink]="['/admin/service-accounts', a.name]" translate="no">{{ a.name }}</a></th>
+              <td>{{ a.description }}</td>
+              <td>
+                @if (a.status === 'active') {
+                  <span class="ok"><span class="material-icons inline" aria-hidden="true">check_circle</span><ng-container i18n="@@sas.active">Active</ng-container></span>
+                } @else {
+                  <span class="bad"><span class="material-icons inline" aria-hidden="true">block</span><ng-container i18n="@@sas.disabled">Disabled</ng-container></span>
+                }
+              </td>
+            </tr>
+          }
+        </trove-data-table>
+      </div>
+
+      <trove-filter-panel
+        #panel
+        class="list-side"
+        [(open)]="panelOpen"
+        [activeCount]="activeCount()"
+        [applyLabel]="applyLabel"
+        (apply)="apply()"
+        (clearAll)="clear()"
+      >
+        <trove-filter-category i18n-label="@@sas.q" label="Name" [active]="!!q().trim()" [expanded]="!!q().trim()">
+          <trove-text-field i18n-label="@@sas.q" label="Name" name="q" [(value)]="q" />
+        </trove-filter-category>
+      </trove-filter-panel>
+    </div>
   `,
   styleUrl: '../../shared/access/access.scss',
 })
@@ -153,17 +160,35 @@ export class ServiceAccountList {
 
   protected readonly list = new PagedResource<ServiceAccount>();
   protected readonly q = signal('');
+  protected readonly panelOpen = signal(false);
+  protected readonly activeCount = signal(0);
+  protected readonly sort = signal<TableSort>({ column: 'name', direction: 'asc' });
+  protected readonly caption = $localize`:@@sas.caption:Service accounts`;
+  protected readonly applyLabel = $localize`:@@sas.apply:Apply filter`;
+  protected readonly columns: readonly TableColumn[] = [
+    { id: 'name', label: $localize`:@@sas.col.name:Name`, sortable: true },
+    { id: 'description', label: $localize`:@@sas.col.description:Description` },
+    { id: 'status', label: $localize`:@@sas.col.status:Status` },
+  ];
 
   constructor() {
     void this.apply();
   }
 
   protected async apply(): Promise<void> {
-    await this.list.start(this.api.serviceAccounts({ q: this.q().trim() || undefined }));
+    const q = this.q().trim() || undefined;
+    this.activeCount.set(q ? 1 : 0);
+    const sort = this.sort();
+    await this.list.start(this.api.serviceAccounts({ q, sort: sort.direction === 'desc' ? '-name' : 'name' }));
   }
 
-  protected submit(event: Event): void {
-    event.preventDefault();
+  protected sortBy(sort: TableSort): void {
+    this.sort.set(sort);
+    void this.apply();
+  }
+
+  protected clear(): void {
+    this.q.set('');
     void this.apply();
   }
 

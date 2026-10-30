@@ -3,7 +3,7 @@ import { FakeIdentityApi, problem } from '../../api/testing/access-fakes';
 import { SessionsApi } from '../../api/sessions-api';
 import { FakeSessionsApi } from '../../api/testing/access-fakes';
 import { seriousViolations } from '../../testing/axe';
-import { buttonByText, renderScreen, settle, text, typeInto, sleep } from '../../testing/screen';
+import { buttonByText, openFilters, renderScreen, settle, text, typeInto, sleep } from '../../testing/screen';
 import { UserDetail } from './user-detail';
 import { UserList } from './user-list';
 
@@ -42,6 +42,7 @@ describe('Users list (R-UI-024)', () => {
 
   it('R-UI-024 a filter starts a new traversal', async () => {
     const { fixture, root } = await renderScreen(UserList);
+    await openFilters(fixture, root);
     typeInto(root, 'Name or email', 'bob');
     buttonByText(root, 'Apply filters').click();
     await settle(fixture);

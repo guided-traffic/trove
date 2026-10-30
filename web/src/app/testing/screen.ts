@@ -105,6 +105,13 @@ export function type(
   );
 }
 
+/** Opens the filter panel of a list screen (a no-op when an applied filter opened it already). */
+export async function openFilters(fixture: ComponentFixture<unknown>, root: ParentNode): Promise<void> {
+  if (root.querySelector('trove-filter-panel form')) return;
+  button(root, /^\s*filter_list\s*Filters/).click();
+  await settle(fixture);
+}
+
 /** The button or link whose text contains `label`, searched under `root`. */
 export function buttonByText(root: ParentNode, label: string): HTMLButtonElement | HTMLAnchorElement {
   const found = [...root.querySelectorAll<HTMLButtonElement | HTMLAnchorElement>('button, a')].find((b) =>

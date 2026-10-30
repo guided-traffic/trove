@@ -1,0 +1,367 @@
+// The look of the application shell: skip link, dark top bar, navigation sidebar (and its icon
+// rail), content frame and breadcrumb trail (R-UI-002, Q-UI-68). Global and scoped to the root
+// element, because the root component's own stylesheet is held to the component style budget.
+
+trove-root {
+  .skip-link {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    z-index: 1000;
+    padding: var(--trove-space-2) var(--trove-space-4);
+    background: var(--trove-surface);
+    color: var(--trove-on-surface);
+    transform: translateY(-100%);
+
+    &:focus {
+      transform: translateY(0);
+    }
+  }
+
+  // ---- Top bar: dark in both schemes -----------------------------------------------------------
+
+  .header {
+    flex: none;
+    gap: var(--trove-space-3);
+  }
+
+  .topbar {
+    --mat-toolbar-container-background-color: var(--trove-nav-bg-deep);
+    --mat-toolbar-container-text-color: var(--trove-nav-fg);
+    --mat-toolbar-standard-height: var(--trove-topbar-height);
+    --mat-button-text-label-text-color: var(--trove-nav-fg);
+    --mat-button-text-state-layer-color: #fff;
+    --mat-icon-button-icon-color: var(--trove-nav-fg);
+    --mat-icon-button-state-layer-color: #fff;
+    position: relative;
+    z-index: 2;
+    border-block-end: 1px solid var(--trove-nav-border);
+    padding-inline: var(--trove-space-4);
+
+    :is(a, button, input):focus-visible {
+      outline: 2px solid var(--trove-nav-accent);
+      outline-offset: 2px;
+    }
+  }
+
+  .product {
+    color: var(--trove-nav-fg);
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-decoration: none;
+  }
+
+  .spacer {
+    flex: 1 1 auto;
+  }
+
+  .search {
+    display: flex;
+    align-items: center;
+    position: relative;
+    inline-size: min(20rem, 40vw);
+
+    .search-icon {
+      position: absolute;
+      inset-inline-start: var(--trove-space-2);
+      font-size: 1.25rem;
+      color: var(--trove-nav-fg-muted);
+      pointer-events: none;
+    }
+
+    input {
+      box-sizing: border-box;
+      inline-size: 100%;
+      block-size: 1.75rem;
+      padding: 0 var(--trove-space-3) 0 2rem;
+      border: 1px solid rgb(255 255 255 / 40%);
+      border-radius: var(--mat-sys-corner-full);
+      background: rgb(255 255 255 / 9%);
+      color: var(--trove-nav-fg);
+      font: var(--mat-sys-body-medium);
+
+      &::placeholder {
+        color: var(--trove-nav-fg-muted);
+        opacity: 1;
+      }
+    }
+  }
+
+  .user-name {
+    max-inline-size: 16rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  // ---- Frame and content -----------------------------------------------------------------------
+
+  .frame {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .content {
+    container-type: inline-size;
+    container-name: content;
+    padding: var(--trove-space-6) var(--trove-space-8);
+    outline: none;
+  }
+
+  @media (max-width: 1023.98px) {
+    .content {
+      padding: var(--trove-space-4);
+    }
+  }
+
+  // Links in the page: the accent colour and an underline, so a link is not told apart by colour alone.
+  .content a:not([class*='mat-']):not([class*='mdc-']) {
+    color: var(--trove-accent);
+    text-underline-offset: 0.2em;
+
+    &:focus-visible {
+      outline: var(--trove-focus-ring);
+      outline-offset: 2px;
+    }
+  }
+
+  .breadcrumbs {
+    margin-block-end: var(--trove-space-3);
+
+    ol {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      color: var(--trove-text-muted);
+      font-size: var(--trove-text-muted-size);
+    }
+
+    li + li::before {
+      content: '/';
+      margin-inline: var(--trove-space-2);
+      color: var(--trove-text-muted);
+    }
+
+    a {
+      color: var(--trove-accent);
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+      }
+
+      &:focus-visible {
+        outline: var(--trove-focus-ring);
+        outline-offset: 2px;
+      }
+    }
+
+    [aria-current='page'] {
+      color: var(--trove-on-surface);
+      font-weight: 600;
+    }
+  }
+
+  // ---- Navigation sidebar: dark in both schemes ------------------------------------------------
+
+  .sidebar {
+    --mat-sidenav-container-background-color: var(--trove-nav-bg);
+    --mat-sidenav-container-text-color: var(--trove-nav-fg);
+    --mat-sidenav-container-divider-color: transparent;
+    --mat-sidenav-container-shape: 0;
+    display: flex;
+    flex-direction: column;
+    inline-size: var(--trove-nav-width);
+    background: var(--trove-nav-bg);
+    color: var(--trove-nav-fg);
+    border: 0;
+
+    &.rail {
+      inline-size: var(--trove-nav-width-collapsed);
+    }
+
+    :is(a, button):focus-visible {
+      outline: 2px solid var(--trove-nav-accent);
+      outline-offset: -2px;
+    }
+  }
+
+  nav {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: var(--trove-space-3) 0;
+  }
+
+  .nav-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .area-title {
+    margin: var(--trove-space-4) var(--trove-space-4) var(--trove-space-2);
+    color: var(--trove-nav-fg-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+
+    &:first-child {
+      margin-block-start: 0;
+    }
+  }
+
+  .nav-link {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--trove-space-3);
+    inline-size: 100%;
+    box-sizing: border-box;
+    min-block-size: 2.5rem;
+    padding: var(--trove-space-2) var(--trove-space-4);
+    border: 0;
+    background: none;
+    color: var(--trove-nav-fg);
+    font: inherit;
+    text-align: start;
+    text-decoration: none;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--trove-nav-hover);
+    }
+
+    .nav-icon {
+      flex: none;
+      font-size: 1.25rem;
+      color: var(--trove-nav-fg-muted);
+    }
+
+    .nav-label {
+      flex: 1 1 auto;
+      min-inline-size: 0;
+    }
+
+    // The current page: a filled row and a bar in the accent colour; the text is bold as well, so
+    // the state is not carried by colour alone (R-UI-044).
+    &.active {
+      background: var(--trove-nav-active);
+      font-weight: 600;
+
+      &::before {
+        content: '';
+        position: absolute;
+        inset-block: 0;
+        inset-inline-start: 0;
+        inline-size: 3px;
+        background: var(--trove-nav-accent);
+      }
+
+      .nav-icon {
+        color: var(--trove-nav-accent);
+      }
+    }
+  }
+
+  .nested .nav-link {
+    padding-inline-start: var(--trove-space-8);
+    min-block-size: 2.25rem;
+  }
+
+  .group-toggle {
+    .chevron {
+      flex: none;
+      font-size: 1.25rem;
+      color: var(--trove-nav-fg-muted);
+    }
+
+    &.has-active .nav-icon {
+      color: var(--trove-nav-accent);
+    }
+  }
+
+  .sidebar-foot {
+    flex: none;
+    padding: var(--trove-space-2);
+    border-block-start: 1px solid var(--trove-nav-border);
+  }
+
+  .rail-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--trove-space-3);
+    inline-size: 100%;
+    min-block-size: 2.5rem;
+    padding: var(--trove-space-2);
+    border: 0;
+    border-radius: var(--trove-radius-s);
+    background: none;
+    color: var(--trove-nav-fg-muted);
+    font: inherit;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--trove-nav-hover);
+      color: var(--trove-nav-fg);
+    }
+
+    .material-icons {
+      font-size: 1.25rem;
+    }
+  }
+
+  // The icon rail: icons only. The labels stay for assistive technology (visually hidden, not
+  // removed), group headings give way to a divider and the groups are always open.
+  .rail {
+    .area-title,
+    .nav-label {
+      position: absolute;
+      inline-size: 1px;
+      block-size: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    .area-title {
+      inline-size: auto;
+      block-size: 0;
+      border-block-start: 1px solid var(--trove-nav-border);
+      margin: var(--trove-space-2) var(--trove-space-3);
+      position: static;
+      clip-path: none;
+      overflow: hidden;
+      font-size: 0;
+
+      &:first-child {
+        border: 0;
+      }
+    }
+
+    .nav-link {
+      justify-content: center;
+      padding-inline: 0;
+    }
+
+    .nested .nav-link {
+      padding-inline-start: 0;
+    }
+
+    .group-toggle {
+      display: none;
+    }
+
+    .nested[hidden] {
+      display: block;
+    }
+
+    .rail-toggle {
+      justify-content: center;
+    }
+  }
+}

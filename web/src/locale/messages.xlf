@@ -89,9 +89,25 @@
         <source>Open navigation</source>
       </segment>
     </unit>
+    <unit id="shell.search.label">
+      <notes>
+        <note category="location">src/app/app.html:24,26</note>
+      </notes>
+      <segment>
+        <source>Find a repository</source>
+      </segment>
+    </unit>
+    <unit id="shell.search.placeholder">
+      <notes>
+        <note category="location">src/app/app.html:33,35</note>
+      </notes>
+      <segment>
+        <source>Find a repository</source>
+      </segment>
+    </unit>
     <unit id="shell.user-menu">
       <notes>
-        <note category="location">src/app/app.html:31,32</note>
+        <note category="location">src/app/app.html:51,52</note>
       </notes>
       <segment>
         <source>User menu</source>
@@ -99,7 +115,7 @@
     </unit>
     <unit id="shell.sign-in">
       <notes>
-        <note category="location">src/app/app.html:35,38</note>
+        <note category="location">src/app/app.html:55,58</note>
       </notes>
       <segment>
         <source>Sign in</source>
@@ -107,7 +123,7 @@
     </unit>
     <unit id="shell.menu.profile">
       <notes>
-        <note category="location">src/app/app.html:41,44</note>
+        <note category="location">src/app/app.html:61,64</note>
       </notes>
       <segment>
         <source>Profile and tokens</source>
@@ -115,7 +131,7 @@
     </unit>
     <unit id="shell.menu.language">
       <notes>
-        <note category="location">src/app/app.html:48,50</note>
+        <note category="location">src/app/app.html:68,70</note>
       </notes>
       <segment>
         <source> Language </source>
@@ -123,7 +139,7 @@
     </unit>
     <unit id="shell.menu.theme">
       <notes>
-        <note category="location">src/app/app.html:51,53</note>
+        <note category="location">src/app/app.html:71,73</note>
       </notes>
       <segment>
         <source> Theme </source>
@@ -131,7 +147,7 @@
     </unit>
     <unit id="shell.menu.sign-out">
       <notes>
-        <note category="location">src/app/app.html:54,58</note>
+        <note category="location">src/app/app.html:74,78</note>
       </notes>
       <segment>
         <source> Sign out </source>
@@ -139,7 +155,7 @@
     </unit>
     <unit id="shell.theme.system">
       <notes>
-        <note category="location">src/app/app.html:65,67</note>
+        <note category="location">src/app/app.html:85,87</note>
       </notes>
       <segment>
         <source> Follow the system </source>
@@ -147,7 +163,7 @@
     </unit>
     <unit id="shell.theme.light">
       <notes>
-        <note category="location">src/app/app.html:68,70</note>
+        <note category="location">src/app/app.html:88,90</note>
       </notes>
       <segment>
         <source> Light </source>
@@ -155,7 +171,7 @@
     </unit>
     <unit id="shell.theme.dark">
       <notes>
-        <note category="location">src/app/app.html:71,75</note>
+        <note category="location">src/app/app.html:91,95</note>
       </notes>
       <segment>
         <source> Dark </source>
@@ -163,15 +179,49 @@
     </unit>
     <unit id="shell.nav">
       <notes>
-        <note category="location">src/app/app.html:83,84</note>
+        <note category="location">src/app/app.html:105,106</note>
       </notes>
       <segment>
         <source>Main navigation</source>
       </segment>
     </unit>
+    <unit id="shell.rail">
+      <notes>
+        <note category="location">src/app/app.html:170,171</note>
+      </notes>
+      <segment>
+        <source>Compact navigation</source>
+      </segment>
+    </unit>
+    <unit id="shell.breadcrumbs">
+      <notes>
+        <note category="location">src/app/app.html:181,183</note>
+      </notes>
+      <segment>
+        <source>Breadcrumb</source>
+      </segment>
+    </unit>
+    <unit id="nav.group.content">
+      <notes>
+        <note category="location">src/app/app.routes.ts:7</note>
+        <note category="location">src/app/core/navigation.ts:40</note>
+      </notes>
+      <segment>
+        <source>Packages and files</source>
+      </segment>
+    </unit>
+    <unit id="nav.group.admin">
+      <notes>
+        <note category="location">src/app/app.routes.ts:8</note>
+        <note category="location">src/app/core/navigation.ts:45</note>
+      </notes>
+      <segment>
+        <source>Administration</source>
+      </segment>
+    </unit>
     <unit id="route.login.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:13</note>
+        <note category="location">src/app/app.routes.ts:20</note>
       </notes>
       <segment>
         <source>Sign in</source>
@@ -179,15 +229,33 @@
     </unit>
     <unit id="route.logged-out.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:21</note>
+        <note category="location">src/app/app.routes.ts:28</note>
       </notes>
       <segment>
         <source>Signed out</source>
       </segment>
     </unit>
+    <unit id="nav.browse">
+      <notes>
+        <note category="location">src/app/app.routes.ts:42</note>
+        <note category="location">src/app/core/navigation.ts:41</note>
+      </notes>
+      <segment>
+        <source>Browse</source>
+      </segment>
+    </unit>
+    <unit id="route.profile.title">
+      <notes>
+        <note category="location">src/app/app.routes.ts:47</note>
+        <note category="location">src/app/features/profile/profile.routes.ts:7</note>
+      </notes>
+      <segment>
+        <source>Profile</source>
+      </segment>
+    </unit>
     <unit id="route.notfound.title">
       <notes>
-        <note category="location">src/app/app.routes.ts:102</note>
+        <note category="location">src/app/app.routes.ts:112</note>
       </notes>
       <segment>
         <source>Page not found</source>
@@ -873,41 +941,33 @@
         <source>The server could not be reached. Check your connection and try again.</source>
       </segment>
     </unit>
-    <unit id="nav.group.content">
-      <notes>
-        <note category="location">src/app/core/navigation.ts:25</note>
-      </notes>
-      <segment>
-        <source>Packages and files</source>
-      </segment>
-    </unit>
-    <unit id="nav.browse">
-      <notes>
-        <note category="location">src/app/core/navigation.ts:26</note>
-      </notes>
-      <segment>
-        <source>Browse</source>
-      </segment>
-    </unit>
-    <unit id="nav.group.admin">
-      <notes>
-        <note category="location">src/app/core/navigation.ts:30</note>
-      </notes>
-      <segment>
-        <source>Administration</source>
-      </segment>
-    </unit>
     <unit id="nav.repositories">
       <notes>
-        <note category="location">src/app/core/navigation.ts:32</note>
+        <note category="location">src/app/core/navigation.ts:47</note>
       </notes>
       <segment>
         <source>Repositories</source>
       </segment>
     </unit>
+    <unit id="nav.endpoints">
+      <notes>
+        <note category="location">src/app/core/navigation.ts:48</note>
+      </notes>
+      <segment>
+        <source>Endpoints</source>
+      </segment>
+    </unit>
+    <unit id="nav.section.identity">
+      <notes>
+        <note category="location">src/app/core/navigation.ts:53</note>
+      </notes>
+      <segment>
+        <source>Identity</source>
+      </segment>
+    </unit>
     <unit id="nav.users">
       <notes>
-        <note category="location">src/app/core/navigation.ts:33</note>
+        <note category="location">src/app/core/navigation.ts:55</note>
       </notes>
       <segment>
         <source>Users</source>
@@ -915,7 +975,7 @@
     </unit>
     <unit id="nav.groups">
       <notes>
-        <note category="location">src/app/core/navigation.ts:34</note>
+        <note category="location">src/app/core/navigation.ts:56</note>
       </notes>
       <segment>
         <source>Groups</source>
@@ -923,15 +983,31 @@
     </unit>
     <unit id="nav.service-accounts">
       <notes>
-        <note category="location">src/app/core/navigation.ts:35</note>
+        <note category="location">src/app/core/navigation.ts:57</note>
       </notes>
       <segment>
         <source>Service accounts</source>
       </segment>
     </unit>
+    <unit id="nav.tokens">
+      <notes>
+        <note category="location">src/app/core/navigation.ts:58</note>
+      </notes>
+      <segment>
+        <source>Tokens</source>
+      </segment>
+    </unit>
+    <unit id="nav.section.access">
+      <notes>
+        <note category="location">src/app/core/navigation.ts:65</note>
+      </notes>
+      <segment>
+        <source>Access</source>
+      </segment>
+    </unit>
     <unit id="nav.permissions">
       <notes>
-        <note category="location">src/app/core/navigation.ts:36</note>
+        <note category="location">src/app/core/navigation.ts:67</note>
       </notes>
       <segment>
         <source>Permission policies</source>
@@ -939,47 +1015,39 @@
     </unit>
     <unit id="nav.roles">
       <notes>
-        <note category="location">src/app/core/navigation.ts:37</note>
+        <note category="location">src/app/core/navigation.ts:68</note>
       </notes>
       <segment>
         <source>System roles</source>
       </segment>
     </unit>
-    <unit id="nav.tokens">
+    <unit id="nav.section.system">
       <notes>
-        <note category="location">src/app/core/navigation.ts:38</note>
+        <note category="location">src/app/core/navigation.ts:75</note>
       </notes>
       <segment>
-        <source>Tokens</source>
-      </segment>
-    </unit>
-    <unit id="nav.endpoints">
-      <notes>
-        <note category="location">src/app/core/navigation.ts:39</note>
-      </notes>
-      <segment>
-        <source>Endpoints</source>
-      </segment>
-    </unit>
-    <unit id="nav.audit">
-      <notes>
-        <note category="location">src/app/core/navigation.ts:40</note>
-      </notes>
-      <segment>
-        <source>Audit log</source>
+        <source>System</source>
       </segment>
     </unit>
     <unit id="nav.system">
       <notes>
-        <note category="location">src/app/core/navigation.ts:41</note>
+        <note category="location">src/app/core/navigation.ts:77</note>
       </notes>
       <segment>
         <source>System status</source>
       </segment>
     </unit>
+    <unit id="nav.audit">
+      <notes>
+        <note category="location">src/app/core/navigation.ts:78</note>
+      </notes>
+      <segment>
+        <source>Audit log</source>
+      </segment>
+    </unit>
     <unit id="nav.settings">
       <notes>
-        <note category="location">src/app/core/navigation.ts:42</note>
+        <note category="location">src/app/core/navigation.ts:79</note>
       </notes>
       <segment>
         <source>Settings</source>
@@ -1529,148 +1597,9 @@
         <source>Refresh</source>
       </segment>
     </unit>
-    <unit id="audit.filter.range">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:8,9</note>
-      </notes>
-      <segment>
-        <source>Time range</source>
-      </segment>
-    </unit>
-    <unit id="audit.range.1h">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:11,13</note>
-      </notes>
-      <segment>
-        <source> Last hour </source>
-      </segment>
-    </unit>
-    <unit id="audit.range.24h">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:14,16</note>
-      </notes>
-      <segment>
-        <source> Last 24 hours </source>
-      </segment>
-    </unit>
-    <unit id="audit.range.7d">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:17,19</note>
-      </notes>
-      <segment>
-        <source> Last 7 days </source>
-      </segment>
-    </unit>
-    <unit id="audit.range.30d">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:20,22</note>
-      </notes>
-      <segment>
-        <source> Last 30 days </source>
-      </segment>
-    </unit>
-    <unit id="audit.range.custom">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:23,25</note>
-      </notes>
-      <segment>
-        <source> Custom </source>
-      </segment>
-    </unit>
-    <unit id="audit.filter.from">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:30,33</note>
-      </notes>
-      <segment>
-        <source>From (your time zone)</source>
-      </segment>
-    </unit>
-    <unit id="audit.filter.to">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:41,43</note>
-      </notes>
-      <segment>
-        <source>To (your time zone)</source>
-      </segment>
-    </unit>
-    <unit id="audit.filter.actor">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:52,54</note>
-      </notes>
-      <segment>
-        <source>Actor (name or ID)</source>
-      </segment>
-    </unit>
-    <unit id="audit.filter.action">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:62,64</note>
-      </notes>
-      <segment>
-        <source>Action</source>
-      </segment>
-    </unit>
-    <unit id="audit.filter.category">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:79,81</note>
-        <note category="location">src/app/features/audit/audit-log.html:252,253</note>
-      </notes>
-      <segment>
-        <source>Category</source>
-      </segment>
-    </unit>
-    <unit id="repo.filter.any">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:85,86</note>
-        <note category="location">src/app/features/audit/audit-log.html:111,112</note>
-        <note category="location">src/app/features/browse/browse.html:29,30</note>
-        <note category="location">src/app/features/browse/browse.html:42,43</note>
-        <note category="location">src/app/features/repositories/repository-list.html:28,29</note>
-        <note category="location">src/app/features/repositories/repository-list.html:41,42</note>
-      </notes>
-      <segment>
-        <source>Any</source>
-      </segment>
-    </unit>
-    <unit id="audit.filter.repository">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:93,96</note>
-        <note category="location">src/app/features/audit/audit-log.html:278,280</note>
-      </notes>
-      <segment>
-        <source>Repository</source>
-      </segment>
-    </unit>
-    <unit id="audit.filter.outcome">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:105,107</note>
-      </notes>
-      <segment>
-        <source>Outcome</source>
-      </segment>
-    </unit>
-    <unit id="repo.filter.apply">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:117,119</note>
-        <note category="location">src/app/features/browse/browse.html:63,66</note>
-        <note category="location">src/app/features/repositories/repository-list.html:56,58</note>
-        <note category="location">src/app/features/system/jobs-page.ts:80,83</note>
-      </notes>
-      <segment>
-        <source>Search</source>
-      </segment>
-    </unit>
-    <unit id="repo.filter.clear">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:120,124</note>
-        <note category="location">src/app/features/repositories/repository-list.html:59,63</note>
-      </notes>
-      <segment>
-        <source> Clear filters </source>
-      </segment>
-    </unit>
     <unit id="audit.utc">
       <notes>
-        <note category="location">src/app/features/audit/audit-log.html:133,135</note>
+        <note category="location">src/app/features/audit/audit-log.html:15,17</note>
       </notes>
       <segment>
         <source>Show times in UTC</source>
@@ -1678,7 +1607,7 @@
     </unit>
     <unit id="audit.export.csv">
       <notes>
-        <note category="location">src/app/features/audit/audit-log.html:136,137</note>
+        <note category="location">src/app/features/audit/audit-log.html:18,19</note>
       </notes>
       <segment>
         <source>Export CSV</source>
@@ -1686,7 +1615,7 @@
     </unit>
     <unit id="audit.export.jsonl">
       <notes>
-        <note category="location">src/app/features/audit/audit-log.html:138,142</note>
+        <note category="location">src/app/features/audit/audit-log.html:20,24</note>
       </notes>
       <segment>
         <source>Export JSON Lines</source>
@@ -1694,105 +1623,15 @@
     </unit>
     <unit id="audit.empty">
       <notes>
-        <note category="location">src/app/features/audit/audit-log.html:150,152</note>
+        <note category="location">src/app/features/audit/audit-log.html:39,40</note>
       </notes>
       <segment>
         <source>No event matches the filters in this time range.</source>
       </segment>
     </unit>
-    <unit id="audit.caption">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:155,156</note>
-      </notes>
-      <segment>
-        <source> Audit events, newest first </source>
-      </segment>
-    </unit>
-    <unit id="audit.col.time">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:159,160</note>
-        <note category="location">src/app/features/audit/audit-log.html:241,243</note>
-      </notes>
-      <segment>
-        <source>Time</source>
-      </segment>
-    </unit>
-    <unit id="audit.col.actor">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:160,161</note>
-        <note category="location">src/app/features/audit/audit-log.html:262,264</note>
-      </notes>
-      <segment>
-        <source>Actor</source>
-      </segment>
-    </unit>
-    <unit id="audit.col.action">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:161,162</note>
-        <note category="location">src/app/features/audit/audit-log.html:247,249</note>
-      </notes>
-      <segment>
-        <source>Action</source>
-      </segment>
-    </unit>
-    <unit id="audit.col.target">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:162,163</note>
-      </notes>
-      <segment>
-        <source>Target</source>
-      </segment>
-    </unit>
-    <unit id="audit.col.outcome">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:163,164</note>
-        <note category="location">src/app/features/audit/audit-log.html:254,256</note>
-      </notes>
-      <segment>
-        <source>Outcome</source>
-      </segment>
-    </unit>
-    <unit id="audit.col.source">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:164,166</note>
-        <note category="location">src/app/features/audit/audit-log.html:301,302</note>
-      </notes>
-      <segment>
-        <source>Source address</source>
-      </segment>
-    </unit>
-    <unit id="list.load-more">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:219,220</note>
-        <note category="location">src/app/features/repositories/repository-list.html:191,193</note>
-        <note category="location">src/app/features/system/jobs-page.ts:104,105</note>
-      </notes>
-      <segment>
-        <source> Load more </source>
-      </segment>
-    </unit>
-    <unit id="repo.loading">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:225,229</note>
-        <note category="location">src/app/features/audit/audit-log.html:331,333</note>
-        <note category="location">src/app/features/browse/browse.html:119,120</note>
-        <note category="location">src/app/features/browse/browse.html:152,154</note>
-        <note category="location">src/app/features/browse/browse.html:189,191</note>
-        <note category="location">src/app/features/browse/browse.html:354,356</note>
-        <note category="location">src/app/features/endpoints/endpoint-detail.html:17,18</note>
-        <note category="location">src/app/features/endpoints/endpoint-detail.html:192,196</note>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:27,28</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:10,12</note>
-        <note category="location">src/app/features/repositories/repository-list.html:197,199</note>
-        <note category="location">src/app/features/repositories/repository-wizard.html:9,11</note>
-      </notes>
-      <segment>
-        <source>Loading.</source>
-      </segment>
-    </unit>
     <unit id="audit.detail.heading">
       <notes>
-        <note category="location">src/app/features/audit/audit-log.html:232,233</note>
+        <note category="location">src/app/features/audit/audit-log.html:84,85</note>
       </notes>
       <segment>
         <source>Event</source>
@@ -1800,31 +1639,96 @@
     </unit>
     <unit id="audit.detail.close">
       <notes>
-        <note category="location">src/app/features/audit/audit-log.html:234,236</note>
+        <note category="location">src/app/features/audit/audit-log.html:86,88</note>
       </notes>
       <segment>
         <source> Close </source>
       </segment>
     </unit>
+    <unit id="audit.col.time">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.html:93,95</note>
+        <note category="location">src/app/features/audit/audit-log.ts:88</note>
+      </notes>
+      <segment>
+        <source>Time</source>
+      </segment>
+    </unit>
+    <unit id="audit.col.action">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.html:99,101</note>
+        <note category="location">src/app/features/audit/audit-log.ts:92</note>
+      </notes>
+      <segment>
+        <source>Action</source>
+      </segment>
+    </unit>
+    <unit id="audit.filter.category">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.html:104,105</note>
+        <note category="location">src/app/features/audit/audit-log.html:242</note>
+        <note category="location">src/app/features/audit/audit-log.html:243</note>
+      </notes>
+      <segment>
+        <source>Category</source>
+      </segment>
+    </unit>
+    <unit id="audit.col.outcome">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.html:106,108</note>
+        <note category="location">src/app/features/audit/audit-log.ts:96</note>
+      </notes>
+      <segment>
+        <source>Outcome</source>
+      </segment>
+    </unit>
+    <unit id="audit.col.actor">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.html:114,116</note>
+        <note category="location">src/app/features/audit/audit-log.ts:91</note>
+      </notes>
+      <segment>
+        <source>Actor</source>
+      </segment>
+    </unit>
     <unit id="audit.detail.token">
       <notes>
-        <note category="location">src/app/features/audit/audit-log.html:274,275</note>
+        <note category="location">src/app/features/audit/audit-log.html:126,127</note>
       </notes>
       <segment>
         <source>Token</source>
       </segment>
     </unit>
+    <unit id="audit.filter.repository">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.html:130,132</note>
+        <note category="location">src/app/features/audit/audit-log.html:250</note>
+        <note category="location">src/app/features/audit/audit-log.html:251</note>
+      </notes>
+      <segment>
+        <source>Repository</source>
+      </segment>
+    </unit>
     <unit id="audit.detail.resource">
       <notes>
-        <note category="location">src/app/features/audit/audit-log.html:296,297</note>
+        <note category="location">src/app/features/audit/audit-log.html:148,149</note>
       </notes>
       <segment>
         <source>Resource</source>
       </segment>
     </unit>
+    <unit id="audit.col.source">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.html:153,154</note>
+        <note category="location">src/app/features/audit/audit-log.ts:99</note>
+      </notes>
+      <segment>
+        <source>Source address</source>
+      </segment>
+    </unit>
     <unit id="audit.detail.endpoint">
       <notes>
-        <note category="location">src/app/features/audit/audit-log.html:306,308</note>
+        <note category="location">src/app/features/audit/audit-log.html:158,160</note>
       </notes>
       <segment>
         <source>Endpoint</source>
@@ -1832,7 +1736,7 @@
     </unit>
     <unit id="audit.detail.replica">
       <notes>
-        <note category="location">src/app/features/audit/audit-log.html:312,313</note>
+        <note category="location">src/app/features/audit/audit-log.html:164,165</note>
       </notes>
       <segment>
         <source>Replica</source>
@@ -1840,7 +1744,7 @@
     </unit>
     <unit id="audit.detail.event-id">
       <notes>
-        <note category="location">src/app/features/audit/audit-log.html:315,317</note>
+        <note category="location">src/app/features/audit/audit-log.html:167,169</note>
       </notes>
       <segment>
         <source>Event ID</source>
@@ -1848,7 +1752,7 @@
     </unit>
     <unit id="audit.detail.trace">
       <notes>
-        <note category="location">src/app/features/audit/audit-log.html:321,323</note>
+        <note category="location">src/app/features/audit/audit-log.html:173,175</note>
       </notes>
       <segment>
         <source>Trace ID</source>
@@ -1856,15 +1760,179 @@
     </unit>
     <unit id="audit.detail.details">
       <notes>
-        <note category="location">src/app/features/audit/audit-log.html:328,329</note>
+        <note category="location">src/app/features/audit/audit-log.html:180,181</note>
       </notes>
       <segment>
         <source>Details</source>
       </segment>
     </unit>
+    <unit id="repo.loading">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.html:183,185</note>
+        <note category="location">src/app/features/browse/browse.html:119,120</note>
+        <note category="location">src/app/features/browse/browse.html:152,154</note>
+        <note category="location">src/app/features/browse/browse.html:189,191</note>
+        <note category="location">src/app/features/browse/browse.html:354,356</note>
+        <note category="location">src/app/features/endpoints/endpoint-detail.html:17,18</note>
+        <note category="location">src/app/features/endpoints/endpoint-detail.html:192,196</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:10,12</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:9,11</note>
+      </notes>
+      <segment>
+        <source>Loading.</source>
+      </segment>
+    </unit>
+    <unit id="audit.filter.range">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.html:199</note>
+        <note category="location">src/app/features/audit/audit-log.html:201,202</note>
+      </notes>
+      <segment>
+        <source>Time range</source>
+      </segment>
+    </unit>
+    <unit id="audit.range.1h">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.html:203,204</note>
+      </notes>
+      <segment>
+        <source>Last hour</source>
+      </segment>
+    </unit>
+    <unit id="audit.range.24h">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.html:204,205</note>
+      </notes>
+      <segment>
+        <source>Last 24 hours</source>
+      </segment>
+    </unit>
+    <unit id="audit.range.7d">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.html:205,206</note>
+      </notes>
+      <segment>
+        <source>Last 7 days</source>
+      </segment>
+    </unit>
+    <unit id="audit.range.30d">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.html:206,207</note>
+      </notes>
+      <segment>
+        <source>Last 30 days</source>
+      </segment>
+    </unit>
+    <unit id="audit.range.custom">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.html:207,209</note>
+      </notes>
+      <segment>
+        <source>Custom</source>
+      </segment>
+    </unit>
+    <unit id="audit.filter.from">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.html:212,213</note>
+      </notes>
+      <segment>
+        <source>From (your time zone)</source>
+      </segment>
+    </unit>
+    <unit id="audit.filter.to">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.html:216,217</note>
+      </notes>
+      <segment>
+        <source>To (your time zone)</source>
+      </segment>
+    </unit>
+    <unit id="audit.filter.actor">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.html:221</note>
+        <note category="location">src/app/features/audit/audit-log.html:222</note>
+      </notes>
+      <segment>
+        <source>Actor (name or ID)</source>
+      </segment>
+    </unit>
+    <unit id="audit.filter.action">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.html:224</note>
+        <note category="location">src/app/features/audit/audit-log.html:233</note>
+      </notes>
+      <segment>
+        <source>Action</source>
+      </segment>
+    </unit>
+    <unit id="repo.filter.any">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.html:244,245</note>
+        <note category="location">src/app/features/audit/audit-log.html:255,256</note>
+        <note category="location">src/app/features/browse/browse.html:29,30</note>
+        <note category="location">src/app/features/browse/browse.html:42,43</note>
+        <note category="location">src/app/features/repositories/repository-list.html:145,146</note>
+        <note category="location">src/app/features/repositories/repository-list.html:158,159</note>
+      </notes>
+      <segment>
+        <source>Any</source>
+      </segment>
+    </unit>
+    <unit id="audit.filter.outcome">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.html:253</note>
+        <note category="location">src/app/features/audit/audit-log.html:254</note>
+      </notes>
+      <segment>
+        <source>Outcome</source>
+      </segment>
+    </unit>
+    <unit id="repo.filter.apply">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.ts:82</note>
+        <note category="location">src/app/features/browse/browse.html:63,66</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:114</note>
+        <note category="location">src/app/features/system/jobs-page.ts:80,83</note>
+      </notes>
+      <segment>
+        <source>Search</source>
+      </segment>
+    </unit>
+    <unit id="audit.caption">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.ts:83</note>
+      </notes>
+      <segment>
+        <source>Audit events, newest first</source>
+      </segment>
+    </unit>
+    <unit id="audit.help.time">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.ts:89</note>
+      </notes>
+      <segment>
+        <source>Events are listed newest first. Narrow the time range in the filters to reach older ones.</source>
+      </segment>
+    </unit>
+    <unit id="audit.col.target">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.ts:93</note>
+      </notes>
+      <segment>
+        <source>Target</source>
+      </segment>
+    </unit>
+    <unit id="audit.help.outcome">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.ts:97</note>
+      </notes>
+      <segment>
+        <source>Success: the action was carried out. Failure: it was allowed but did not work. Denied: the caller was not permitted.</source>
+      </segment>
+    </unit>
     <unit id="audit.copy-id">
       <notes>
-        <note category="location">src/app/features/audit/audit-log.ts:231</note>
+        <note category="location">src/app/features/audit/audit-log.ts:273</note>
       </notes>
       <segment>
         <source>Copy the event ID</source>
@@ -1872,7 +1940,7 @@
     </unit>
     <unit id="audit.copy-trace">
       <notes>
-        <note category="location">src/app/features/audit/audit-log.ts:232</note>
+        <note category="location">src/app/features/audit/audit-log.ts:274</note>
       </notes>
       <segment>
         <source>Copy the trace ID</source>
@@ -1908,8 +1976,9 @@
         <note category="location">src/app/features/browse/browse.html:240,241</note>
         <note category="location">src/app/features/repositories/repository-detail.html:24,25</note>
         <note category="location">src/app/features/repositories/repository-detail.html:52,53</note>
-        <note category="location">src/app/features/repositories/repository-list.html:22,24</note>
-        <note category="location">src/app/features/repositories/repository-list.html:105,106</note>
+        <note category="location">src/app/features/repositories/repository-list.html:138</note>
+        <note category="location">src/app/features/repositories/repository-list.html:143</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:121</note>
         <note category="location">src/app/features/repositories/repository-wizard.html:151,152</note>
       </notes>
       <segment>
@@ -1922,8 +1991,9 @@
         <note category="location">src/app/features/browse/browse.html:242,243</note>
         <note category="location">src/app/features/repositories/repository-detail.html:26,27</note>
         <note category="location">src/app/features/repositories/repository-detail.html:54,55</note>
-        <note category="location">src/app/features/repositories/repository-list.html:35,37</note>
-        <note category="location">src/app/features/repositories/repository-list.html:104,105</note>
+        <note category="location">src/app/features/repositories/repository-list.html:151</note>
+        <note category="location">src/app/features/repositories/repository-list.html:156</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:118</note>
         <note category="location">src/app/features/repositories/repository-wizard.html:153,154</note>
       </notes>
       <segment>
@@ -1957,7 +2027,7 @@
     <unit id="repo.badge.disabled">
       <notes>
         <note category="location">src/app/features/browse/browse.html:96,98</note>
-        <note category="location">src/app/features/repositories/repository-list.html:123,125</note>
+        <note category="location">src/app/features/repositories/repository-list.html:54,56</note>
       </notes>
       <segment>
         <source>disabled</source>
@@ -2056,7 +2126,7 @@
       <notes>
         <note category="location">src/app/features/browse/browse.html:229,230</note>
         <note category="location">src/app/features/repositories/repository-detail.html:165,166</note>
-        <note category="location">src/app/features/repositories/repository-list.html:168,169</note>
+        <note category="location">src/app/features/repositories/repository-list.html:104,105</note>
       </notes>
       <segment>
         <source>Deleting</source>
@@ -2697,7 +2767,7 @@
     <unit id="ep.col.base-url">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:47,48</note>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:40,41</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:98</note>
       </notes>
       <segment>
         <source>Base URL</source>
@@ -2706,7 +2776,7 @@
     <unit id="ep.col.hosts">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:49,50</note>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:41,42</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:99</note>
       </notes>
       <segment>
         <source>Hosts</source>
@@ -2723,7 +2793,7 @@
     <unit id="ep.col.surface">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:55,56</note>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:42,43</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:102</note>
       </notes>
       <segment>
         <source>Surface</source>
@@ -2732,7 +2802,7 @@
     <unit id="ep.col.mode">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:57,58</note>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:43,44</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:107</note>
       </notes>
       <segment>
         <source>Exposure</source>
@@ -2749,7 +2819,7 @@
     <unit id="ep.col.pool">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:64,65</note>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:45,47</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:111</note>
       </notes>
       <segment>
         <source>Pool</source>
@@ -2790,7 +2860,7 @@
     <unit id="ep.col.name">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:96,97</note>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:39,40</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:97</note>
       </notes>
       <segment>
         <source>Name</source>
@@ -2847,7 +2917,7 @@
     <unit id="repo.col.actions">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:103,105</note>
-        <note category="location">src/app/features/repositories/repository-list.html:109,111</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:135</note>
         <note category="location">src/app/features/system/job-table.ts:32,34</note>
         <note category="location">src/app/features/system/tasks-card.ts:48,50</note>
       </notes>
@@ -2901,7 +2971,7 @@
     <unit id="repo.action.edit">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:172,173</note>
-        <note category="location">src/app/features/repositories/repository-list.html:151,152</note>
+        <note category="location">src/app/features/repositories/repository-list.html:87,88</note>
       </notes>
       <segment>
         <source>Edit</source>
@@ -2911,7 +2981,7 @@
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:180,181</note>
         <note category="location">src/app/features/repositories/repository-detail.html:159,161</note>
-        <note category="location">src/app/features/repositories/repository-list.html:162,163</note>
+        <note category="location">src/app/features/repositories/repository-list.html:98,99</note>
       </notes>
       <segment>
         <source> Delete </source>
@@ -2997,7 +3067,7 @@
     </unit>
     <unit id="ep.list.heading">
       <notes>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:17,19</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:18,20</note>
       </notes>
       <segment>
         <source>Endpoints</source>
@@ -3005,7 +3075,7 @@
     </unit>
     <unit id="ep.list.hint">
       <notes>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:20,24</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:21,25</note>
       </notes>
       <segment>
         <source> Endpoints come from the configuration file. Exposure rules decide what an endpoint in mode &quot;rules&quot; makes retrievable. </source>
@@ -3013,31 +3083,15 @@
     </unit>
     <unit id="ep.list.empty">
       <notes>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:30,32</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:35,36</note>
       </notes>
       <segment>
         <source>No endpoint is configured.</source>
       </segment>
     </unit>
-    <unit id="ep.list.caption">
-      <notes>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:35,36</note>
-      </notes>
-      <segment>
-        <source> Endpoints </source>
-      </segment>
-    </unit>
-    <unit id="ep.col.rules">
-      <notes>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:44,45</note>
-      </notes>
-      <segment>
-        <source>Rules (enabled)</source>
-      </segment>
-    </unit>
     <unit id="ep.badge.inert">
       <notes>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:54,55</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:43,45</note>
       </notes>
       <segment>
         <source>not configured</source>
@@ -3045,7 +3099,7 @@
     </unit>
     <unit id="ep.mode.all">
       <notes>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:64,65</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:53,54</note>
       </notes>
       <segment>
         <source>all (rules have no effect)</source>
@@ -3053,7 +3107,7 @@
     </unit>
     <unit id="ep.mode.rules">
       <notes>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:66,67</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:55,57</note>
       </notes>
       <segment>
         <source>rules</source>
@@ -3061,10 +3115,42 @@
     </unit>
     <unit id="ep.inert.text">
       <notes>
-        <note category="location">src/app/features/endpoints/endpoint-list.ts:74,75</note>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:63,64</note>
       </notes>
       <segment>
         <source>No longer configured: <ph id="0" equiv="INTERPOLATION" disp="{{ e.ruleCount }}"/> rules without effect.</source>
+      </segment>
+    </unit>
+    <unit id="ep.list.caption">
+      <notes>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:95</note>
+      </notes>
+      <segment>
+        <source>Endpoints</source>
+      </segment>
+    </unit>
+    <unit id="ep.help.surface">
+      <notes>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:103</note>
+      </notes>
+      <segment>
+        <source>Which parts of trove this endpoint serves: the web interface, the management API, the CI token exchange, package clients and file downloads.</source>
+      </segment>
+    </unit>
+    <unit id="ep.help.mode">
+      <notes>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:108</note>
+      </notes>
+      <segment>
+        <source>In mode &quot;all&quot; the endpoint serves every repository its surface allows; in mode &quot;rules&quot; only what its exposure rules select.</source>
+      </segment>
+    </unit>
+    <unit id="ep.col.rules">
+      <notes>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:110</note>
+      </notes>
+      <segment>
+        <source>Rules (enabled)</source>
       </segment>
     </unit>
     <unit id="route.endpoints.title">
@@ -4142,7 +4228,7 @@
     </unit>
     <unit id="group.origin.admin">
       <notes>
-        <note category="location">src/app/features/groups/group-list.ts:17</note>
+        <note category="location">src/app/features/groups/group-list.ts:18</note>
       </notes>
       <segment>
         <source>Created by an administrator</source>
@@ -4150,7 +4236,7 @@
     </unit>
     <unit id="group.origin.oidc">
       <notes>
-        <note category="location">src/app/features/groups/group-list.ts:19</note>
+        <note category="location">src/app/features/groups/group-list.ts:20</note>
       </notes>
       <segment>
         <source>Identity provider</source>
@@ -4158,7 +4244,7 @@
     </unit>
     <unit id="group.origin.scim">
       <notes>
-        <note category="location">src/app/features/groups/group-list.ts:21</note>
+        <note category="location">src/app/features/groups/group-list.ts:22</note>
       </notes>
       <segment>
         <source>SCIM</source>
@@ -4166,7 +4252,7 @@
     </unit>
     <unit id="groups.heading">
       <notes>
-        <note category="location">src/app/features/groups/group-list.ts:31,32</note>
+        <note category="location">src/app/features/groups/group-list.ts:42,43</note>
       </notes>
       <segment>
         <source>Groups</source>
@@ -4174,23 +4260,24 @@
     </unit>
     <unit id="groups.add">
       <notes>
-        <note category="location">src/app/features/groups/group-list.ts:32,34</note>
+        <note category="location">src/app/features/groups/group-list.ts:43,45</note>
       </notes>
       <segment>
         <source>New group</source>
       </segment>
     </unit>
-    <unit id="groups.filters">
+    <unit id="groups.empty">
       <notes>
-        <note category="location">src/app/features/groups/group-list.ts:36,37</note>
+        <note category="location">src/app/features/groups/group-list.ts:63,64</note>
       </notes>
       <segment>
-        <source>Group filters</source>
+        <source>No group matches.</source>
       </segment>
     </unit>
     <unit id="groups.q">
       <notes>
-        <note category="location">src/app/features/groups/group-list.ts:37</note>
+        <note category="location">src/app/features/groups/group-list.ts:87</note>
+        <note category="location">src/app/features/groups/group-list.ts:88</note>
       </notes>
       <segment>
         <source>Name</source>
@@ -4198,39 +4285,16 @@
     </unit>
     <unit id="groups.origin">
       <notes>
-        <note category="location">src/app/features/groups/group-list.ts:38</note>
+        <note category="location">src/app/features/groups/group-list.ts:90</note>
+        <note category="location">src/app/features/groups/group-list.ts:91</note>
       </notes>
       <segment>
         <source>Origin</source>
       </segment>
     </unit>
-    <unit id="groups.apply">
-      <notes>
-        <note category="location">src/app/features/groups/group-list.ts:39,42</note>
-      </notes>
-      <segment>
-        <source>Apply filters</source>
-      </segment>
-    </unit>
-    <unit id="groups.empty">
-      <notes>
-        <note category="location">src/app/features/groups/group-list.ts:47,49</note>
-      </notes>
-      <segment>
-        <source>No group matches.</source>
-      </segment>
-    </unit>
-    <unit id="groups.region">
-      <notes>
-        <note category="location">src/app/features/groups/group-list.ts:50</note>
-      </notes>
-      <segment>
-        <source>Groups</source>
-      </segment>
-    </unit>
     <unit id="groups.caption">
       <notes>
-        <note category="location">src/app/features/groups/group-list.ts:51,52</note>
+        <note category="location">src/app/features/groups/group-list.ts:110</note>
       </notes>
       <segment>
         <source>Groups</source>
@@ -4238,7 +4302,7 @@
     </unit>
     <unit id="groups.col.name">
       <notes>
-        <note category="location">src/app/features/groups/group-list.ts:54,55</note>
+        <note category="location">src/app/features/groups/group-list.ts:112</note>
       </notes>
       <segment>
         <source>Name</source>
@@ -4246,7 +4310,7 @@
     </unit>
     <unit id="groups.col.description">
       <notes>
-        <note category="location">src/app/features/groups/group-list.ts:55,56</note>
+        <note category="location">src/app/features/groups/group-list.ts:113</note>
       </notes>
       <segment>
         <source>Description</source>
@@ -4254,39 +4318,31 @@
     </unit>
     <unit id="groups.col.origin">
       <notes>
-        <note category="location">src/app/features/groups/group-list.ts:56,57</note>
+        <note category="location">src/app/features/groups/group-list.ts:116</note>
       </notes>
       <segment>
         <source>Origin</source>
       </segment>
     </unit>
+    <unit id="groups.help.origin">
+      <notes>
+        <note category="location">src/app/features/groups/group-list.ts:117</note>
+      </notes>
+      <segment>
+        <source>Where the group comes from: created by an administrator, mapped from the identity provider, or provisioned by SCIM.</source>
+      </segment>
+    </unit>
     <unit id="groups.col.members">
       <notes>
-        <note category="location">src/app/features/groups/group-list.ts:57,59</note>
+        <note category="location">src/app/features/groups/group-list.ts:119</note>
       </notes>
       <segment>
         <source>Members</source>
       </segment>
     </unit>
-    <unit id="groups.more">
-      <notes>
-        <note category="location">src/app/features/groups/group-list.ts:73,75</note>
-      </notes>
-      <segment>
-        <source>Load more</source>
-      </segment>
-    </unit>
-    <unit id="groups.loading">
-      <notes>
-        <note category="location">src/app/features/groups/group-list.ts:77,80</note>
-      </notes>
-      <segment>
-        <source>Loading groups.</source>
-      </segment>
-    </unit>
     <unit id="groups.any">
       <notes>
-        <note category="location">src/app/features/groups/group-list.ts:93</note>
+        <note category="location">src/app/features/groups/group-list.ts:123</note>
       </notes>
       <segment>
         <source>Any</source>
@@ -5182,17 +5238,26 @@
         <source>New policy</source>
       </segment>
     </unit>
-    <unit id="policies.filters">
+    <unit id="policies.empty">
       <notes>
-        <note category="location">src/app/features/permissions/policy-list.html:11,13</note>
+        <note category="location">src/app/features/permissions/policy-list.html:27,28</note>
       </notes>
       <segment>
-        <source>Policy filters</source>
+        <source>No policy matches.</source>
+      </segment>
+    </unit>
+    <unit id="policies.inert">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.html:37,38</note>
+      </notes>
+      <segment>
+        <source>Grants nothing</source>
       </segment>
     </unit>
     <unit id="policies.principal">
       <notes>
-        <note category="location">src/app/features/permissions/policy-list.html:14,16</note>
+        <note category="location">src/app/features/permissions/policy-list.html:57</note>
+        <note category="location">src/app/features/permissions/policy-list.html:60,62</note>
       </notes>
       <segment>
         <source>Principal</source>
@@ -5200,7 +5265,7 @@
     </unit>
     <unit id="policies.principal-hint">
       <notes>
-        <note category="location">src/app/features/permissions/policy-list.html:18,20</note>
+        <note category="location">src/app/features/permissions/policy-list.html:64,66</note>
       </notes>
       <segment>
         <source>user:name, group:name, sa:name, anonymous or authenticated</source>
@@ -5208,111 +5273,16 @@
     </unit>
     <unit id="policies.repository">
       <notes>
-        <note category="location">src/app/features/permissions/policy-list.html:20</note>
+        <note category="location">src/app/features/permissions/policy-list.html:67</note>
+        <note category="location">src/app/features/permissions/policy-list.html:68</note>
       </notes>
       <segment>
         <source>Repository</source>
       </segment>
     </unit>
-    <unit id="policies.apply">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-list.html:21,24</note>
-      </notes>
-      <segment>
-        <source>Apply filters</source>
-      </segment>
-    </unit>
-    <unit id="policies.empty">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-list.html:29,31</note>
-      </notes>
-      <segment>
-        <source>No policy matches.</source>
-      </segment>
-    </unit>
-    <unit id="policies.region">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-list.html:31,33</note>
-      </notes>
-      <segment>
-        <source>Permission policies</source>
-      </segment>
-    </unit>
-    <unit id="policies.caption">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-list.html:33,35</note>
-      </notes>
-      <segment>
-        <source>Permission policies</source>
-      </segment>
-    </unit>
-    <unit id="policies.col.name">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-list.html:36,37</note>
-      </notes>
-      <segment>
-        <source>Name</source>
-      </segment>
-    </unit>
-    <unit id="policies.col.description">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-list.html:37,38</note>
-      </notes>
-      <segment>
-        <source>Description</source>
-      </segment>
-    </unit>
-    <unit id="policies.col.principals">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-list.html:38,39</note>
-      </notes>
-      <segment>
-        <source>Principals</source>
-      </segment>
-    </unit>
-    <unit id="policies.col.resources">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-list.html:39,40</note>
-      </notes>
-      <segment>
-        <source>Repositories</source>
-      </segment>
-    </unit>
-    <unit id="policies.col.actions">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-list.html:40,42</note>
-      </notes>
-      <segment>
-        <source>Actions</source>
-      </segment>
-    </unit>
-    <unit id="policies.inert">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-list.html:49,50</note>
-      </notes>
-      <segment>
-        <source>Grants nothing</source>
-      </segment>
-    </unit>
-    <unit id="policies.more">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-list.html:62,65</note>
-      </notes>
-      <segment>
-        <source>Load more</source>
-      </segment>
-    </unit>
-    <unit id="policies.loading">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-list.html:66,68</note>
-      </notes>
-      <segment>
-        <source>Loading policies.</source>
-      </segment>
-    </unit>
     <unit id="policies.sum.users">
       <notes>
-        <note category="location">src/app/features/permissions/policy-list.ts:22</note>
+        <note category="location">src/app/features/permissions/policy-list.ts:23</note>
       </notes>
       <segment>
         <source>Users: <ph id="0" equiv="count" disp="count.user"/></source>
@@ -5320,7 +5290,7 @@
     </unit>
     <unit id="policies.sum.groups">
       <notes>
-        <note category="location">src/app/features/permissions/policy-list.ts:23</note>
+        <note category="location">src/app/features/permissions/policy-list.ts:24</note>
       </notes>
       <segment>
         <source>Groups: <ph id="0" equiv="count" disp="count.group"/></source>
@@ -5328,7 +5298,7 @@
     </unit>
     <unit id="policies.sum.sas">
       <notes>
-        <note category="location">src/app/features/permissions/policy-list.ts:24</note>
+        <note category="location">src/app/features/permissions/policy-list.ts:25</note>
       </notes>
       <segment>
         <source>Service accounts: <ph id="0" equiv="count" disp="count.sa"/></source>
@@ -5336,15 +5306,79 @@
     </unit>
     <unit id="policies.sum.special">
       <notes>
-        <note category="location">src/app/features/permissions/policy-list.ts:25</note>
+        <note category="location">src/app/features/permissions/policy-list.ts:26</note>
       </notes>
       <segment>
         <source>Anonymous or all signed-in: <ph id="0" equiv="count" disp="count.special"/></source>
       </segment>
     </unit>
+    <unit id="policies.caption">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.ts:61</note>
+      </notes>
+      <segment>
+        <source>Permission policies</source>
+      </segment>
+    </unit>
+    <unit id="policies.col.name">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.ts:63</note>
+      </notes>
+      <segment>
+        <source>Name</source>
+      </segment>
+    </unit>
+    <unit id="policies.col.description">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.ts:64</note>
+      </notes>
+      <segment>
+        <source>Description</source>
+      </segment>
+    </unit>
+    <unit id="policies.col.principals">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.ts:67</note>
+      </notes>
+      <segment>
+        <source>Principals</source>
+      </segment>
+    </unit>
+    <unit id="policies.help.principals">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.ts:68</note>
+      </notes>
+      <segment>
+        <source>Who the policy grants to, counted by kind: users, groups, service accounts, and the special principals for anonymous and all signed-in callers.</source>
+      </segment>
+    </unit>
+    <unit id="policies.col.resources">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.ts:72</note>
+      </notes>
+      <segment>
+        <source>Repositories</source>
+      </segment>
+    </unit>
+    <unit id="policies.help.resources">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.ts:73</note>
+      </notes>
+      <segment>
+        <source>The repository keys or patterns the policy covers. Open the policy to see which repositories they match now.</source>
+      </segment>
+    </unit>
+    <unit id="policies.col.actions">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.ts:75</note>
+      </notes>
+      <segment>
+        <source>Actions</source>
+      </segment>
+    </unit>
     <unit id="policies.sum.more">
       <notes>
-        <note category="location">src/app/features/permissions/policy-list.ts:85</note>
+        <note category="location">src/app/features/permissions/policy-list.ts:116</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="list" disp="shown"/> and <ph id="1" equiv="count" disp="repos.length - 3"/> more</source>
@@ -5894,14 +5928,6 @@
         <source>Save preferences</source>
       </segment>
     </unit>
-    <unit id="route.profile.title">
-      <notes>
-        <note category="location">src/app/features/profile/profile.routes.ts:7</note>
-      </notes>
-      <segment>
-        <source>Profile</source>
-      </segment>
-    </unit>
     <unit id="route.profile.tokens.title">
       <notes>
         <note category="location">src/app/features/profile/profile.routes.ts:12</note>
@@ -6001,7 +6027,7 @@
     <unit id="repo.action.browse">
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.html:4,7</note>
-        <note category="location">src/app/features/repositories/repository-list.html:153,155</note>
+        <note category="location">src/app/features/repositories/repository-list.html:89,91</note>
       </notes>
       <segment>
         <source>Browse</source>
@@ -6019,7 +6045,7 @@
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.html:30,32</note>
         <note category="location">src/app/features/repositories/repository-detail.html:59,61</note>
-        <note category="location">src/app/features/repositories/repository-list.html:107,108</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:127</note>
       </notes>
       <segment>
         <source>Client address</source>
@@ -6052,7 +6078,7 @@
     <unit id="repo.col.activity">
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.html:78,80</note>
-        <note category="location">src/app/features/repositories/repository-list.html:108,109</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:132</note>
       </notes>
       <segment>
         <source>Last activity</source>
@@ -6110,7 +6136,7 @@
     <unit id="repo.delete.title">
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.ts:250</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:113</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:173</note>
       </notes>
       <segment>
         <source>Delete repository <ph id="0" equiv="key" disp="this.key()"/>?</source>
@@ -6119,7 +6145,7 @@
     <unit id="repo.delete.text">
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.ts:252</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:115</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:175</note>
       </notes>
       <segment>
         <source>The repository and everything in it are deleted for good. Deletion runs as a background job; the key stays taken until it has finished.</source>
@@ -6128,7 +6154,7 @@
     <unit id="repo.delete.confirm">
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.ts:254</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:117</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:177</note>
       </notes>
       <segment>
         <source>Delete repository</source>
@@ -6137,7 +6163,7 @@
     <unit id="repo.delete.failed">
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.ts:271</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:159</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:219</note>
       </notes>
       <segment>
         <source>Deleting repository <ph id="0" equiv="key" disp="this.key()"/> failed. Its row is kept; try again.</source>
@@ -6146,7 +6172,7 @@
     <unit id="repo.delete.done">
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.ts:276</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:149</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:209</note>
       </notes>
       <segment>
         <source>Repository <ph id="0" equiv="key" disp="this.key()"/> deleted.</source>
@@ -6155,7 +6181,7 @@
     <unit id="repo.delete.progress">
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.ts:281</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:87</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:142</note>
       </notes>
       <segment>
         <source>Repository deletion</source>
@@ -6164,7 +6190,7 @@
     <unit id="repo.copy-address">
       <notes>
         <note category="location">src/app/features/repositories/repository-detail.ts:282</note>
-        <note category="location">src/app/features/repositories/repository-list.ts:86</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:141</note>
       </notes>
       <segment>
         <source>Copy client address</source>
@@ -6352,81 +6378,114 @@
         <source>Create repository</source>
       </segment>
     </unit>
-    <unit id="repo.filter.text">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-list.html:12,14</note>
-      </notes>
-      <segment>
-        <source>Key or description</source>
-      </segment>
-    </unit>
-    <unit id="repo.filter.inactive">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-list.html:54,56</note>
-      </notes>
-      <segment>
-        <source>Disabled only</source>
-      </segment>
-    </unit>
     <unit id="repo.recent">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.html:66,68</note>
+        <note category="location">src/app/features/repositories/repository-list.html:12,14</note>
       </notes>
       <segment>
         <source>Recently viewed</source>
       </segment>
     </unit>
-    <unit id="repo.list.empty-filtered">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-list.html:89,91</note>
-      </notes>
-      <segment>
-        <source>No repository matches the filters.</source>
-      </segment>
-    </unit>
-    <unit id="repo.list.empty">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-list.html:92,94</note>
-      </notes>
-      <segment>
-        <source>There is no repository yet.</source>
-      </segment>
-    </unit>
-    <unit id="repo.list.caption">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-list.html:99,101</note>
-      </notes>
-      <segment>
-        <source> Repositories </source>
-      </segment>
-    </unit>
-    <unit id="repo.col.key">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-list.html:104</note>
-      </notes>
-      <segment>
-        <source>Key</source>
-      </segment>
-    </unit>
-    <unit id="repo.col.description">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-list.html:106,107</note>
-      </notes>
-      <segment>
-        <source>Description</source>
-      </segment>
-    </unit>
     <unit id="repo.badge.deleting">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.html:126,128</note>
+        <note category="location">src/app/features/repositories/repository-list.html:57,59</note>
       </notes>
       <segment>
         <source>being deleted</source>
       </segment>
     </unit>
+    <unit id="repo.filter.text">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-list.html:127</note>
+        <note category="location">src/app/features/repositories/repository-list.html:133,135</note>
+      </notes>
+      <segment>
+        <source>Key or description</source>
+      </segment>
+    </unit>
+    <unit id="repo.filter.state">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-list.html:164</note>
+      </notes>
+      <segment>
+        <source>State</source>
+      </segment>
+    </unit>
+    <unit id="repo.filter.inactive">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-list.html:171,173</note>
+      </notes>
+      <segment>
+        <source>Disabled only</source>
+      </segment>
+    </unit>
+    <unit id="repo.list.caption">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-list.ts:111</note>
+      </notes>
+      <segment>
+        <source>Repositories</source>
+      </segment>
+    </unit>
+    <unit id="repo.list.empty">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-list.ts:112</note>
+      </notes>
+      <segment>
+        <source>There is no repository yet.</source>
+      </segment>
+    </unit>
+    <unit id="repo.list.empty-filtered">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-list.ts:113</note>
+      </notes>
+      <segment>
+        <source>No repository matches the filters.</source>
+      </segment>
+    </unit>
+    <unit id="repo.col.key">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-list.ts:117</note>
+      </notes>
+      <segment>
+        <source>Key</source>
+      </segment>
+    </unit>
+    <unit id="repo.help.class">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-list.ts:122</note>
+      </notes>
+      <segment>
+        <source>Local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.</source>
+      </segment>
+    </unit>
+    <unit id="repo.col.description">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-list.ts:124</note>
+      </notes>
+      <segment>
+        <source>Description</source>
+      </segment>
+    </unit>
+    <unit id="repo.help.address">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-list.ts:128</note>
+      </notes>
+      <segment>
+        <source>The address that package managers and download tools use for this repository.</source>
+      </segment>
+    </unit>
+    <unit id="repo.help.activity">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-list.ts:133</note>
+      </notes>
+      <segment>
+        <source>The last time a client read from or wrote to the repository. A dash means nothing has been recorded yet.</source>
+      </segment>
+    </unit>
     <unit id="repo.delete.detach">
       <notes>
-        <note category="location">src/app/features/repositories/repository-list.ts:120</note>
+        <note category="location">src/app/features/repositories/repository-list.ts:180</note>
       </notes>
       <segment>
         <source>Also remove it from the virtual repositories that include it</source>
@@ -7101,7 +7160,7 @@
     </unit>
     <unit id="sa-create.title">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:22,23</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:24,25</note>
       </notes>
       <segment>
         <source>New service account</source>
@@ -7109,7 +7168,7 @@
     </unit>
     <unit id="sa-create.name">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:31,32</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:33,34</note>
       </notes>
       <segment>
         <source>Name</source>
@@ -7117,7 +7176,7 @@
     </unit>
     <unit id="sa-create.name-hint">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:36,38</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:38,40</note>
       </notes>
       <segment>
         <source>Lower-case letters, digits and -, two to 63 characters</source>
@@ -7125,7 +7184,7 @@
     </unit>
     <unit id="sa-create.description">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:38</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:40</note>
       </notes>
       <segment>
         <source>Description</source>
@@ -7133,7 +7192,7 @@
     </unit>
     <unit id="sa-create.cancel">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:41,42</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:43,44</note>
       </notes>
       <segment>
         <source>Cancel</source>
@@ -7141,7 +7200,7 @@
     </unit>
     <unit id="sa-create.submit">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:42,43</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:44,45</note>
       </notes>
       <segment>
         <source>Create service account</source>
@@ -7149,7 +7208,7 @@
     </unit>
     <unit id="sa-create.created">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:72</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:74</note>
       </notes>
       <segment>
         <source>Service account created.</source>
@@ -7157,7 +7216,7 @@
     </unit>
     <unit id="sas.heading">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:91,92</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:93,94</note>
       </notes>
       <segment>
         <source>Service accounts</source>
@@ -7165,7 +7224,7 @@
     </unit>
     <unit id="sas.add">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:92,93</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:94,95</note>
       </notes>
       <segment>
         <source>New service account</source>
@@ -7173,82 +7232,18 @@
     </unit>
     <unit id="sas.hint">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:96,99</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:98,101</note>
       </notes>
       <segment>
         <source> Use a service account for CI systems that cannot sign in through OpenID Connect and for long-running automation. Its tokens act as the account, not as a person. </source>
       </segment>
     </unit>
-    <unit id="sas.filters">
-      <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:99,100</note>
-      </notes>
-      <segment>
-        <source>Service account filters</source>
-      </segment>
-    </unit>
-    <unit id="sas.q">
-      <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:100</note>
-      </notes>
-      <segment>
-        <source>Name</source>
-      </segment>
-    </unit>
-    <unit id="sas.apply">
-      <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:101,104</note>
-      </notes>
-      <segment>
-        <source>Apply filter</source>
-      </segment>
-    </unit>
     <unit id="sas.empty">
-      <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:109,111</note>
-      </notes>
-      <segment>
-        <source>No service account matches.</source>
-      </segment>
-    </unit>
-    <unit id="sas.region">
-      <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:111,112</note>
-      </notes>
-      <segment>
-        <source>Service accounts</source>
-      </segment>
-    </unit>
-    <unit id="sas.caption">
-      <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:113,114</note>
-      </notes>
-      <segment>
-        <source>Service accounts</source>
-      </segment>
-    </unit>
-    <unit id="sas.col.name">
-      <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:116,117</note>
-      </notes>
-      <segment>
-        <source>Name</source>
-      </segment>
-    </unit>
-    <unit id="sas.col.description">
       <notes>
         <note category="location">src/app/features/service-accounts/service-account-list.ts:117,118</note>
       </notes>
       <segment>
-        <source>Description</source>
-      </segment>
-    </unit>
-    <unit id="sas.col.status">
-      <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:118,120</note>
-      </notes>
-      <segment>
-        <source>Status</source>
+        <source>No service account matches.</source>
       </segment>
     </unit>
     <unit id="sas.active">
@@ -7267,20 +7262,53 @@
         <source>Disabled</source>
       </segment>
     </unit>
-    <unit id="sas.more">
+    <unit id="sas.q">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:139,140</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:147</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:148</note>
       </notes>
       <segment>
-        <source>Load more</source>
+        <source>Name</source>
       </segment>
     </unit>
-    <unit id="sas.loading">
+    <unit id="sas.caption">
       <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:143,146</note>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:166</note>
       </notes>
       <segment>
-        <source>Loading service accounts.</source>
+        <source>Service accounts</source>
+      </segment>
+    </unit>
+    <unit id="sas.apply">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:167</note>
+      </notes>
+      <segment>
+        <source>Apply filter</source>
+      </segment>
+    </unit>
+    <unit id="sas.col.name">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:169</note>
+      </notes>
+      <segment>
+        <source>Name</source>
+      </segment>
+    </unit>
+    <unit id="sas.col.description">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:170</note>
+      </notes>
+      <segment>
+        <source>Description</source>
+      </segment>
+    </unit>
+    <unit id="sas.col.status">
+      <notes>
+        <note category="location">src/app/features/service-accounts/service-account-list.ts:171</note>
+      </notes>
+      <segment>
+        <source>Status</source>
       </segment>
     </unit>
     <unit id="route.service-accounts.title">
@@ -7741,6 +7769,15 @@
       </notes>
       <segment>
         <source>No job matches the filters.</source>
+      </segment>
+    </unit>
+    <unit id="list.load-more">
+      <notes>
+        <note category="location">src/app/features/system/jobs-page.ts:104,105</note>
+        <note category="location">src/app/shared/ui/data-table.ts:106,107</note>
+      </notes>
+      <segment>
+        <source> Load more </source>
       </segment>
     </unit>
     <unit id="system.loading">
@@ -8655,17 +8692,26 @@
         <source>Token administration</source>
       </segment>
     </unit>
-    <unit id="tokens-admin.filters">
+    <unit id="tokens-admin.revoke-selected">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.html:7,9</note>
+        <note category="location">src/app/features/tokens/token-admin.html:13,14</note>
       </notes>
       <segment>
-        <source>Token filters</source>
+        <source>Revoke selected</source>
+      </segment>
+    </unit>
+    <unit id="tokens-admin.loading">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.html:37,41</note>
+      </notes>
+      <segment>
+        <source>Loading tokens.</source>
       </segment>
     </unit>
     <unit id="tokens-admin.owner">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.html:11,12</note>
+        <note category="location">src/app/features/tokens/token-admin.html:49</note>
+        <note category="location">src/app/features/tokens/token-admin.html:53,54</note>
       </notes>
       <segment>
         <source>Owner</source>
@@ -8673,7 +8719,7 @@
     </unit>
     <unit id="tokens-admin.owner-hint">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.html:14,16</note>
+        <note category="location">src/app/features/tokens/token-admin.html:56,58</note>
       </notes>
       <segment>
         <source>me, a user name or sa:name</source>
@@ -8681,7 +8727,8 @@
     </unit>
     <unit id="tokens-admin.type">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.html:16</note>
+        <note category="location">src/app/features/tokens/token-admin.html:59</note>
+        <note category="location">src/app/features/tokens/token-admin.html:60</note>
       </notes>
       <segment>
         <source>Type</source>
@@ -8689,7 +8736,8 @@
     </unit>
     <unit id="tokens-admin.state">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.html:17</note>
+        <note category="location">src/app/features/tokens/token-admin.html:62</note>
+        <note category="location">src/app/features/tokens/token-admin.html:63</note>
       </notes>
       <segment>
         <source>State</source>
@@ -8697,7 +8745,8 @@
     </unit>
     <unit id="tokens-admin.expires-before">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.html:20,22</note>
+        <note category="location">src/app/features/tokens/token-admin.html:65</note>
+        <note category="location">src/app/features/tokens/token-admin.html:68,70</note>
       </notes>
       <segment>
         <source>Expires before</source>
@@ -8705,47 +8754,16 @@
     </unit>
     <unit id="tokens-admin.unused">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.html:27,29</note>
+        <note category="location">src/app/features/tokens/token-admin.html:74</note>
+        <note category="location">src/app/features/tokens/token-admin.html:77,79</note>
       </notes>
       <segment>
         <source>Not used for (days)</source>
       </segment>
     </unit>
-    <unit id="tokens-admin.apply">
-      <notes>
-        <note category="location">src/app/features/tokens/token-admin.html:32,35</note>
-      </notes>
-      <segment>
-        <source>Apply filters</source>
-      </segment>
-    </unit>
-    <unit id="tokens-admin.revoke-selected">
-      <notes>
-        <note category="location">src/app/features/tokens/token-admin.html:46,47</note>
-      </notes>
-      <segment>
-        <source>Revoke selected</source>
-      </segment>
-    </unit>
-    <unit id="tokens-admin.more">
-      <notes>
-        <note category="location">src/app/features/tokens/token-admin.html:60,63</note>
-      </notes>
-      <segment>
-        <source> Load more </source>
-      </segment>
-    </unit>
-    <unit id="tokens-admin.loading">
-      <notes>
-        <note category="location">src/app/features/tokens/token-admin.html:64,67</note>
-      </notes>
-      <segment>
-        <source>Loading tokens.</source>
-      </segment>
-    </unit>
     <unit id="tokens-admin.by-value">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.html:69,70</note>
+        <note category="location">src/app/features/tokens/token-admin.html:88,89</note>
       </notes>
       <segment>
         <source>Revoke by value</source>
@@ -8753,7 +8771,7 @@
     </unit>
     <unit id="tokens-admin.by-value-text">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.html:71,73</note>
+        <note category="location">src/app/features/tokens/token-admin.html:90,92</note>
       </notes>
       <segment>
         <source> Paste a leaked token to revoke it. The value is sent once and removed from this form at once. </source>
@@ -8761,7 +8779,7 @@
     </unit>
     <unit id="tokens-admin.value">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.html:79,81</note>
+        <note category="location">src/app/features/tokens/token-admin.html:98,100</note>
       </notes>
       <segment>
         <source>Token value</source>
@@ -8769,7 +8787,7 @@
     </unit>
     <unit id="tokens-admin.reveal">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.html:86,87</note>
+        <note category="location">src/app/features/tokens/token-admin.html:105,106</note>
       </notes>
       <segment>
         <source>Show the value</source>
@@ -8777,7 +8795,7 @@
     </unit>
     <unit id="tokens-admin.revoke-value">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.html:90,92</note>
+        <note category="location">src/app/features/tokens/token-admin.html:109,111</note>
       </notes>
       <segment>
         <source> Revoke token </source>
@@ -8785,7 +8803,7 @@
     </unit>
     <unit id="tokens-admin.any">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.ts:49</note>
+        <note category="location">src/app/features/tokens/token-admin.ts:64</note>
       </notes>
       <segment>
         <source>Any</source>
@@ -8793,7 +8811,7 @@
     </unit>
     <unit id="tokens-admin.type.pat">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.ts:50</note>
+        <note category="location">src/app/features/tokens/token-admin.ts:65</note>
       </notes>
       <segment>
         <source>Personal (pat)</source>
@@ -8801,7 +8819,7 @@
     </unit>
     <unit id="tokens-admin.type.sat">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.ts:51</note>
+        <note category="location">src/app/features/tokens/token-admin.ts:66</note>
       </notes>
       <segment>
         <source>Service account (sat)</source>
@@ -8809,7 +8827,7 @@
     </unit>
     <unit id="tokens-admin.type.cit">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.ts:52</note>
+        <note category="location">src/app/features/tokens/token-admin.ts:67</note>
       </notes>
       <segment>
         <source>Pipeline (cit)</source>
@@ -8817,7 +8835,7 @@
     </unit>
     <unit id="tokens-admin.state.active">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.ts:55</note>
+        <note category="location">src/app/features/tokens/token-admin.ts:70</note>
       </notes>
       <segment>
         <source>Active</source>
@@ -8825,7 +8843,7 @@
     </unit>
     <unit id="tokens-admin.state.expired">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.ts:56</note>
+        <note category="location">src/app/features/tokens/token-admin.ts:71</note>
       </notes>
       <segment>
         <source>Expired</source>
@@ -8833,7 +8851,7 @@
     </unit>
     <unit id="tokens-admin.state.revoked">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.ts:57</note>
+        <note category="location">src/app/features/tokens/token-admin.ts:72</note>
       </notes>
       <segment>
         <source>Revoked</source>
@@ -8841,7 +8859,7 @@
     </unit>
     <unit id="tokens-admin.state.all">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.ts:58</note>
+        <note category="location">src/app/features/tokens/token-admin.ts:73</note>
       </notes>
       <segment>
         <source>All</source>
@@ -8849,7 +8867,7 @@
     </unit>
     <unit id="tokens-admin.revoke-title">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.ts:87</note>
+        <note category="location">src/app/features/tokens/token-admin.ts:111</note>
       </notes>
       <segment>
         <source>Revoke this token?</source>
@@ -8857,7 +8875,7 @@
     </unit>
     <unit id="tokens-admin.revoke-text">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.ts:88</note>
+        <note category="location">src/app/features/tokens/token-admin.ts:112</note>
       </notes>
       <segment>
         <source>“<ph id="0" equiv="description" disp="token.description"/>” of <ph id="1" equiv="owner" disp="token.owner.name"/> stops working at once on every replica.</source>
@@ -8865,8 +8883,8 @@
     </unit>
     <unit id="tokens-admin.revoke-confirm">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.ts:89</note>
-        <note category="location">src/app/features/tokens/token-admin.ts:100</note>
+        <note category="location">src/app/features/tokens/token-admin.ts:113</note>
+        <note category="location">src/app/features/tokens/token-admin.ts:124</note>
       </notes>
       <segment>
         <source>Revoke</source>
@@ -8874,7 +8892,7 @@
     </unit>
     <unit id="tokens-admin.revoke-selected-title">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.ts:98</note>
+        <note category="location">src/app/features/tokens/token-admin.ts:122</note>
       </notes>
       <segment>
         <source>Revoke the selected tokens?</source>
@@ -8882,7 +8900,7 @@
     </unit>
     <unit id="tokens-admin.revoke-selected-text">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.ts:99</note>
+        <note category="location">src/app/features/tokens/token-admin.ts:123</note>
       </notes>
       <segment>
         <source>The selected tokens (<ph id="0" equiv="count" disp="ids.length"/>) stop working at once on every replica. This cannot be undone.</source>
@@ -8890,7 +8908,7 @@
     </unit>
     <unit id="tokens-admin.revoked">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.ts:116</note>
+        <note category="location">src/app/features/tokens/token-admin.ts:140</note>
       </notes>
       <segment>
         <source>Tokens revoked.</source>
@@ -8898,7 +8916,7 @@
     </unit>
     <unit id="tokens-admin.value-revoked">
       <notes>
-        <note category="location">src/app/features/tokens/token-admin.ts:128</note>
+        <note category="location">src/app/features/tokens/token-admin.ts:152</note>
       </notes>
       <segment>
         <source>The token of <ph id="0" equiv="owner" disp="revoked.owner"/> was revoked.</source>
@@ -9000,17 +9018,9 @@
         <source>New token</source>
       </segment>
     </unit>
-    <unit id="tokens.more">
-      <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:132,133</note>
-      </notes>
-      <segment>
-        <source> Load more </source>
-      </segment>
-    </unit>
     <unit id="tokens.loading">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:136,139</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:134,137</note>
       </notes>
       <segment>
         <source>Loading tokens.</source>
@@ -9018,7 +9028,7 @@
     </unit>
     <unit id="tokens.create-submit">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:160</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:158</note>
       </notes>
       <segment>
         <source>Create token</source>
@@ -9026,7 +9036,7 @@
     </unit>
     <unit id="tokens.draft-restored">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:195</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:193</note>
       </notes>
       <segment>
         <source>Your entries were restored. Create the token again.</source>
@@ -9034,7 +9044,7 @@
     </unit>
     <unit id="tokens.revoke-title">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:259</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:257</note>
       </notes>
       <segment>
         <source>Revoke this token?</source>
@@ -9042,7 +9052,7 @@
     </unit>
     <unit id="tokens.revoke-text">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:260</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:258</note>
       </notes>
       <segment>
         <source>“<ph id="0" equiv="description" disp="token.description"/>” stops working at once on every replica. This cannot be undone.</source>
@@ -9050,7 +9060,7 @@
     </unit>
     <unit id="tokens.revoke-confirm">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:261</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:259</note>
       </notes>
       <segment>
         <source>Revoke</source>
@@ -9058,7 +9068,7 @@
     </unit>
     <unit id="tokens.revoked">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:266</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:264</note>
       </notes>
       <segment>
         <source>Token revoked.</source>
@@ -9066,7 +9076,7 @@
     </unit>
     <unit id="tokens.revoke-all-title">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:272</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:270</note>
       </notes>
       <segment>
         <source>Revoke all tokens?</source>
@@ -9074,7 +9084,7 @@
     </unit>
     <unit id="tokens.revoke-all-text">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:273</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:271</note>
       </notes>
       <segment>
         <source>Every token of this owner stops working at once. This cannot be undone.</source>
@@ -9082,7 +9092,7 @@
     </unit>
     <unit id="tokens.revoke-all-confirm">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:274</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:272</note>
       </notes>
       <segment>
         <source>Revoke all</source>
@@ -9090,7 +9100,7 @@
     </unit>
     <unit id="tokens.revoked-all">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:282</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:280</note>
       </notes>
       <segment>
         <source>All tokens revoked.</source>
@@ -9792,137 +9802,17 @@
         <source>Add user</source>
       </segment>
     </unit>
-    <unit id="users.filters">
-      <notes>
-        <note category="location">src/app/features/users/user-list.html:7,8</note>
-      </notes>
-      <segment>
-        <source>User filters</source>
-      </segment>
-    </unit>
-    <unit id="users.q">
-      <notes>
-        <note category="location">src/app/features/users/user-list.html:8</note>
-      </notes>
-      <segment>
-        <source>Name or email</source>
-      </segment>
-    </unit>
-    <unit id="users.status">
-      <notes>
-        <note category="location">src/app/features/users/user-list.html:9</note>
-      </notes>
-      <segment>
-        <source>Status</source>
-      </segment>
-    </unit>
-    <unit id="users.origin">
-      <notes>
-        <note category="location">src/app/features/users/user-list.html:10</note>
-      </notes>
-      <segment>
-        <source>Origin</source>
-      </segment>
-    </unit>
-    <unit id="users.group">
-      <notes>
-        <note category="location">src/app/features/users/user-list.html:11</note>
-      </notes>
-      <segment>
-        <source>Group</source>
-      </segment>
-    </unit>
-    <unit id="users.admin">
-      <notes>
-        <note category="location">src/app/features/users/user-list.html:12</note>
-      </notes>
-      <segment>
-        <source>Administrator</source>
-      </segment>
-    </unit>
-    <unit id="users.apply">
-      <notes>
-        <note category="location">src/app/features/users/user-list.html:13,16</note>
-      </notes>
-      <segment>
-        <source>Apply filters</source>
-      </segment>
-    </unit>
     <unit id="users.empty">
       <notes>
-        <note category="location">src/app/features/users/user-list.html:22,24</note>
+        <note category="location">src/app/features/users/user-list.html:23,24</note>
       </notes>
       <segment>
         <source>No user matches.</source>
       </segment>
     </unit>
-    <unit id="users.region">
-      <notes>
-        <note category="location">src/app/features/users/user-list.html:25</note>
-      </notes>
-      <segment>
-        <source>Users</source>
-      </segment>
-    </unit>
-    <unit id="users.caption">
-      <notes>
-        <note category="location">src/app/features/users/user-list.html:26,28</note>
-      </notes>
-      <segment>
-        <source>Users</source>
-      </segment>
-    </unit>
-    <unit id="users.col.username">
-      <notes>
-        <note category="location">src/app/features/users/user-list.html:29,30</note>
-      </notes>
-      <segment>
-        <source>User name</source>
-      </segment>
-    </unit>
-    <unit id="users.col.display-name">
-      <notes>
-        <note category="location">src/app/features/users/user-list.html:30,31</note>
-      </notes>
-      <segment>
-        <source>Display name</source>
-      </segment>
-    </unit>
-    <unit id="users.col.email">
-      <notes>
-        <note category="location">src/app/features/users/user-list.html:31,32</note>
-      </notes>
-      <segment>
-        <source>Email</source>
-      </segment>
-    </unit>
-    <unit id="users.col.origin">
-      <notes>
-        <note category="location">src/app/features/users/user-list.html:32,33</note>
-      </notes>
-      <segment>
-        <source>Origin</source>
-      </segment>
-    </unit>
-    <unit id="users.col.status">
-      <notes>
-        <note category="location">src/app/features/users/user-list.html:33,34</note>
-      </notes>
-      <segment>
-        <source>Status</source>
-      </segment>
-    </unit>
-    <unit id="users.col.last-login">
-      <notes>
-        <note category="location">src/app/features/users/user-list.html:34,36</note>
-      </notes>
-      <segment>
-        <source>Last sign-in</source>
-      </segment>
-    </unit>
     <unit id="users.active">
       <notes>
-        <note category="location">src/app/features/users/user-list.html:46,47</note>
+        <note category="location">src/app/features/users/user-list.html:38,39</note>
       </notes>
       <segment>
         <source>Active</source>
@@ -9930,33 +9820,126 @@
     </unit>
     <unit id="users.disabled">
       <notes>
-        <note category="location">src/app/features/users/user-list.html:48,49</note>
+        <note category="location">src/app/features/users/user-list.html:40,41</note>
       </notes>
       <segment>
         <source>Disabled</source>
       </segment>
     </unit>
-    <unit id="users.more">
+    <unit id="users.q">
       <notes>
-        <note category="location">src/app/features/users/user-list.html:59,61</note>
+        <note category="location">src/app/features/users/user-list.html:57</note>
+        <note category="location">src/app/features/users/user-list.html:58</note>
       </notes>
       <segment>
-        <source>Load more</source>
+        <source>Name or email</source>
       </segment>
     </unit>
-    <unit id="users.loading">
+    <unit id="users.status">
       <notes>
-        <note category="location">src/app/features/users/user-list.html:64,66</note>
+        <note category="location">src/app/features/users/user-list.html:60</note>
+        <note category="location">src/app/features/users/user-list.html:61</note>
       </notes>
       <segment>
-        <source>Loading users.</source>
+        <source>Status</source>
+      </segment>
+    </unit>
+    <unit id="users.origin">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:63</note>
+        <note category="location">src/app/features/users/user-list.html:64</note>
+      </notes>
+      <segment>
+        <source>Origin</source>
+      </segment>
+    </unit>
+    <unit id="users.group">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:66</note>
+        <note category="location">src/app/features/users/user-list.html:67</note>
+      </notes>
+      <segment>
+        <source>Group</source>
+      </segment>
+    </unit>
+    <unit id="users.admin">
+      <notes>
+        <note category="location">src/app/features/users/user-list.html:69</note>
+        <note category="location">src/app/features/users/user-list.html:70</note>
+      </notes>
+      <segment>
+        <source>Administrator</source>
+      </segment>
+    </unit>
+    <unit id="users.caption">
+      <notes>
+        <note category="location">src/app/features/users/user-list.ts:57</note>
+      </notes>
+      <segment>
+        <source>Users</source>
+      </segment>
+    </unit>
+    <unit id="users.col.username">
+      <notes>
+        <note category="location">src/app/features/users/user-list.ts:59</note>
+      </notes>
+      <segment>
+        <source>User name</source>
+      </segment>
+    </unit>
+    <unit id="users.col.display-name">
+      <notes>
+        <note category="location">src/app/features/users/user-list.ts:60</note>
+      </notes>
+      <segment>
+        <source>Display name</source>
+      </segment>
+    </unit>
+    <unit id="users.col.email">
+      <notes>
+        <note category="location">src/app/features/users/user-list.ts:61</note>
+      </notes>
+      <segment>
+        <source>Email</source>
+      </segment>
+    </unit>
+    <unit id="users.col.origin">
+      <notes>
+        <note category="location">src/app/features/users/user-list.ts:64</note>
+      </notes>
+      <segment>
+        <source>Origin</source>
+      </segment>
+    </unit>
+    <unit id="users.help.origin">
+      <notes>
+        <note category="location">src/app/features/users/user-list.ts:65</note>
+      </notes>
+      <segment>
+        <source>How the account came to exist: at first sign-in through the identity provider, created by an administrator, provisioned by SCIM, or the built-in break-glass account.</source>
+      </segment>
+    </unit>
+    <unit id="users.col.status">
+      <notes>
+        <note category="location">src/app/features/users/user-list.ts:67</note>
+      </notes>
+      <segment>
+        <source>Status</source>
+      </segment>
+    </unit>
+    <unit id="users.col.last-login">
+      <notes>
+        <note category="location">src/app/features/users/user-list.ts:68</note>
+      </notes>
+      <segment>
+        <source>Last sign-in</source>
       </segment>
     </unit>
     <unit id="users.any">
       <notes>
-        <note category="location">src/app/features/users/user-list.ts:41</note>
-        <note category="location">src/app/features/users/user-list.ts:47</note>
-        <note category="location">src/app/features/users/user-list.ts:54</note>
+        <note category="location">src/app/features/users/user-list.ts:72</note>
+        <note category="location">src/app/features/users/user-list.ts:78</note>
+        <note category="location">src/app/features/users/user-list.ts:85</note>
       </notes>
       <segment>
         <source>Any</source>
@@ -9964,7 +9947,7 @@
     </unit>
     <unit id="users.status.active">
       <notes>
-        <note category="location">src/app/features/users/user-list.ts:42</note>
+        <note category="location">src/app/features/users/user-list.ts:73</note>
       </notes>
       <segment>
         <source>Active</source>
@@ -9972,7 +9955,7 @@
     </unit>
     <unit id="users.status.disabled">
       <notes>
-        <note category="location">src/app/features/users/user-list.ts:43</note>
+        <note category="location">src/app/features/users/user-list.ts:74</note>
       </notes>
       <segment>
         <source>Disabled</source>
@@ -9980,7 +9963,7 @@
     </unit>
     <unit id="users.status.locked">
       <notes>
-        <note category="location">src/app/features/users/user-list.ts:44</note>
+        <note category="location">src/app/features/users/user-list.ts:75</note>
       </notes>
       <segment>
         <source>Locked</source>
@@ -9988,7 +9971,7 @@
     </unit>
     <unit id="users.admin.yes">
       <notes>
-        <note category="location">src/app/features/users/user-list.ts:55</note>
+        <note category="location">src/app/features/users/user-list.ts:86</note>
       </notes>
       <segment>
         <source>Administrators</source>
@@ -9996,7 +9979,7 @@
     </unit>
     <unit id="users.admin.no">
       <notes>
-        <note category="location">src/app/features/users/user-list.ts:56</note>
+        <note category="location">src/app/features/users/user-list.ts:87</note>
       </notes>
       <segment>
         <source>Not administrators</source>
@@ -10413,7 +10396,7 @@
     </unit>
     <unit id="token-table.scope.inherit">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:14</note>
+        <note category="location">src/app/shared/access/token-table.ts:15</note>
       </notes>
       <segment>
         <source>All permissions of the owner</source>
@@ -10421,7 +10404,7 @@
     </unit>
     <unit id="token-table.scope.none">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:19</note>
+        <note category="location">src/app/shared/access/token-table.ts:20</note>
       </notes>
       <segment>
         <source>No repository access</source>
@@ -10429,7 +10412,7 @@
     </unit>
     <unit id="token-table.scope.grants">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:20</note>
+        <note category="location">src/app/shared/access/token-table.ts:21</note>
       </notes>
       <segment>
         <source>Repository grants: <ph id="0" equiv="count" disp="grants.length"/></source>
@@ -10437,7 +10420,7 @@
     </unit>
     <unit id="token-table.scope.admin">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:23</note>
+        <note category="location">src/app/shared/access/token-table.ts:24</note>
       </notes>
       <segment>
         <source>administrator roles</source>
@@ -10445,7 +10428,7 @@
     </unit>
     <unit id="token-table.scope.system">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:25</note>
+        <note category="location">src/app/shared/access/token-table.ts:26</note>
       </notes>
       <segment>
         <source>system: <ph id="0" equiv="list" disp="system.join(&apos;, &apos;)"/></source>
@@ -10453,119 +10436,15 @@
     </unit>
     <unit id="token-table.empty">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:46,48</note>
+        <note category="location">src/app/shared/access/token-table.ts:51,53</note>
       </notes>
       <segment>
         <source>No tokens match.</source>
       </segment>
     </unit>
-    <unit id="token-table.region">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:49,50</note>
-      </notes>
-      <segment>
-        <source>Tokens</source>
-      </segment>
-    </unit>
-    <unit id="token-table.caption">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:50,52</note>
-      </notes>
-      <segment>
-        <source>Tokens</source>
-      </segment>
-    </unit>
-    <unit id="token-table.select">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:54,56</note>
-      </notes>
-      <segment>
-        <source>Select</source>
-      </segment>
-    </unit>
-    <unit id="token-table.description">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:56,57</note>
-      </notes>
-      <segment>
-        <source>Description</source>
-      </segment>
-    </unit>
-    <unit id="token-table.type">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:57,58</note>
-      </notes>
-      <segment>
-        <source>Type</source>
-      </segment>
-    </unit>
-    <unit id="token-table.owner">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:59,61</note>
-      </notes>
-      <segment>
-        <source>Owner</source>
-      </segment>
-    </unit>
-    <unit id="token-table.scope">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:61,62</note>
-      </notes>
-      <segment>
-        <source>Scope</source>
-      </segment>
-    </unit>
-    <unit id="token-table.created">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:62,63</note>
-      </notes>
-      <segment>
-        <source>Created</source>
-      </segment>
-    </unit>
-    <unit id="token-table.expires">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:63,64</note>
-      </notes>
-      <segment>
-        <source>Expires</source>
-      </segment>
-    </unit>
-    <unit id="token-table.last-used">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:64,65</note>
-      </notes>
-      <segment>
-        <source>Last used</source>
-      </segment>
-    </unit>
-    <unit id="token-table.via">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:65,66</note>
-      </notes>
-      <segment>
-        <source>Created via</source>
-      </segment>
-    </unit>
-    <unit id="token-table.state">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:66,67</note>
-      </notes>
-      <segment>
-        <source>State</source>
-      </segment>
-    </unit>
-    <unit id="token-table.actions">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:67,69</note>
-      </notes>
-      <segment>
-        <source>Actions</source>
-      </segment>
-    </unit>
     <unit id="token-table.unknown-endpoints">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:98,100</note>
+        <note category="location">src/app/shared/access/token-table.ts:83,85</note>
       </notes>
       <segment>
         <source>Bound to an endpoint that is not configured:</source>
@@ -10573,7 +10452,7 @@
     </unit>
     <unit id="token-table.soon">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:111,112</note>
+        <note category="location">src/app/shared/access/token-table.ts:96,97</note>
       </notes>
       <segment>
         <source>Expires soon</source>
@@ -10581,7 +10460,7 @@
     </unit>
     <unit id="token-table.never">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:115,116</note>
+        <note category="location">src/app/shared/access/token-table.ts:100,102</note>
       </notes>
       <segment>
         <source>Never</source>
@@ -10589,7 +10468,7 @@
     </unit>
     <unit id="token-table.not-recorded">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:122,124</note>
+        <note category="location">src/app/shared/access/token-table.ts:107,110</note>
       </notes>
       <segment>
         <source>Not recorded</source>
@@ -10597,7 +10476,7 @@
     </unit>
     <unit id="token-table.state.active">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:129,130</note>
+        <note category="location">src/app/shared/access/token-table.ts:114,116</note>
       </notes>
       <segment>
         <source>Active</source>
@@ -10605,7 +10484,7 @@
     </unit>
     <unit id="token-table.state.expired">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:132,133</note>
+        <note category="location">src/app/shared/access/token-table.ts:117,119</note>
       </notes>
       <segment>
         <source>Expired</source>
@@ -10613,7 +10492,7 @@
     </unit>
     <unit id="token-table.state.revoked">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:135,136</note>
+        <note category="location">src/app/shared/access/token-table.ts:120,122</note>
       </notes>
       <segment>
         <source>Revoked</source>
@@ -10621,7 +10500,7 @@
     </unit>
     <unit id="token-table.rotate">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:143,144</note>
+        <note category="location">src/app/shared/access/token-table.ts:128,129</note>
       </notes>
       <segment>
         <source>Rotate</source>
@@ -10629,15 +10508,135 @@
     </unit>
     <unit id="token-table.revoke">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:149,150</note>
+        <note category="location">src/app/shared/access/token-table.ts:134,135</note>
       </notes>
       <segment>
         <source>Revoke</source>
       </segment>
     </unit>
+    <unit id="token-table.caption">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:161</note>
+      </notes>
+      <segment>
+        <source>Tokens</source>
+      </segment>
+    </unit>
+    <unit id="token-table.select">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:164</note>
+      </notes>
+      <segment>
+        <source>Select</source>
+      </segment>
+    </unit>
+    <unit id="token-table.description">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:166</note>
+      </notes>
+      <segment>
+        <source>Description</source>
+      </segment>
+    </unit>
+    <unit id="token-table.type">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:169</note>
+      </notes>
+      <segment>
+        <source>Type</source>
+      </segment>
+    </unit>
+    <unit id="token-table.help.type">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:170</note>
+      </notes>
+      <segment>
+        <source>pat is a personal token, sat belongs to a service account, cit was issued to a CI pipeline.</source>
+      </segment>
+    </unit>
+    <unit id="token-table.owner">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:172</note>
+      </notes>
+      <segment>
+        <source>Owner</source>
+      </segment>
+    </unit>
+    <unit id="token-table.scope">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:175</note>
+      </notes>
+      <segment>
+        <source>Scope</source>
+      </segment>
+    </unit>
+    <unit id="token-table.help.scope">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:176</note>
+      </notes>
+      <segment>
+        <source>What the token may do: all permissions of its owner, or only the listed repository grants.</source>
+      </segment>
+    </unit>
+    <unit id="token-table.created">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:178</note>
+      </notes>
+      <segment>
+        <source>Created</source>
+      </segment>
+    </unit>
+    <unit id="token-table.expires">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:179</note>
+      </notes>
+      <segment>
+        <source>Expires</source>
+      </segment>
+    </unit>
+    <unit id="token-table.last-used">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:182</note>
+      </notes>
+      <segment>
+        <source>Last used</source>
+      </segment>
+    </unit>
+    <unit id="token-table.help.last-used">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:183</note>
+      </notes>
+      <segment>
+        <source>The last time the token authenticated a request. Not every use is recorded immediately.</source>
+      </segment>
+    </unit>
+    <unit id="token-table.via">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:185</note>
+      </notes>
+      <segment>
+        <source>Created via</source>
+      </segment>
+    </unit>
+    <unit id="token-table.state">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:186</note>
+      </notes>
+      <segment>
+        <source>State</source>
+      </segment>
+    </unit>
+    <unit id="token-table.actions">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:187</note>
+      </notes>
+      <segment>
+        <source>Actions</source>
+      </segment>
+    </unit>
     <unit id="token-table.select-one">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:193</note>
+        <note category="location">src/app/shared/access/token-table.ts:208</note>
       </notes>
       <segment>
         <source>Select <ph id="0" equiv="description" disp="t.description"/></source>
@@ -10994,6 +10993,86 @@
       </notes>
       <segment>
         <source> Sign in again </source>
+      </segment>
+    </unit>
+    <unit id="table.loading">
+      <notes>
+        <note category="location">src/app/shared/ui/data-table.ts:51,53</note>
+      </notes>
+      <segment>
+        <source>Loading.</source>
+      </segment>
+    </unit>
+    <unit id="table.empty">
+      <notes>
+        <note category="location">src/app/shared/ui/data-table.ts:126</note>
+      </notes>
+      <segment>
+        <source>Nothing to show.</source>
+      </segment>
+    </unit>
+    <unit id="table.help-label">
+      <notes>
+        <note category="location">src/app/shared/ui/data-table.ts:155</note>
+      </notes>
+      <segment>
+        <source>About the column <ph id="0" equiv="column" disp="c.label"/></source>
+      </segment>
+    </unit>
+    <unit id="filters.toggle">
+      <notes>
+        <note category="location">src/app/shared/ui/filter-panel.ts:36,37</note>
+      </notes>
+      <segment>
+        <source>Filters</source>
+      </segment>
+    </unit>
+    <unit id="filters.active-count">
+      <notes>
+        <note category="location">src/app/shared/ui/filter-panel.ts:51</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="count" disp="this.activeCount()"/> filters active</source>
+      </segment>
+    </unit>
+    <unit id="filters.category-active">
+      <notes>
+        <note category="location">src/app/shared/ui/filter-panel.ts:75,77</note>
+      </notes>
+      <segment>
+        <source>(active)</source>
+      </segment>
+    </unit>
+    <unit id="filters.title">
+      <notes>
+        <note category="location">src/app/shared/ui/filter-panel.ts:120,121</note>
+      </notes>
+      <segment>
+        <source>Filters</source>
+      </segment>
+    </unit>
+    <unit id="filters.clear-all">
+      <notes>
+        <note category="location">src/app/shared/ui/filter-panel.ts:121,122</note>
+      </notes>
+      <segment>
+        <source>Clear all</source>
+      </segment>
+    </unit>
+    <unit id="filters.close">
+      <notes>
+        <note category="location">src/app/shared/ui/filter-panel.ts:122,123</note>
+      </notes>
+      <segment>
+        <source>Close filters</source>
+      </segment>
+    </unit>
+    <unit id="filters.apply">
+      <notes>
+        <note category="location">src/app/shared/ui/filter-panel.ts:144</note>
+      </notes>
+      <segment>
+        <source>Apply filters</source>
       </segment>
     </unit>
     <unit id="unsaved.title">

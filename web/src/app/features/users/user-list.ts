@@ -9,18 +9,31 @@ import { SessionStore } from '../../core/session-store';
 import { SelectField, SelectOption, TextField } from '../../shared/access/fields';
 import { Needs } from '../../shared/access/needs';
 import { PagedResource } from '../../shared/paged-resource';
-import { ErrorNotice } from '../../shared/error-notice';
+import { DataTable, TableColumn, TableSort } from '../../shared/ui/data-table';
+import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
 import { UserCreateDialog } from './user-create-dialog';
 import { originLabel } from './user-labels';
 
 /**
  * Users (R-UI-024): username, display name, email, origin, status and last sign-in; filters text,
- * status, origin, group and administrator; cursor paging with "Load more". "Add user"
+ * status, origin, group and administrator in the filter panel; the user name column sorts through
+ * the API's `sort` parameter; cursor paging with "Load more". "Add user"
  * pre-provisions a user linked to an identity-provider identity; there are no password fields.
  */
 @Component({
   selector: 'trove-user-list',
-  imports: [DatePipe, MatButtonModule, RouterLink, ErrorNotice, Needs, SelectField, TextField],
+  imports: [
+    DatePipe,
+    MatButtonModule,
+    RouterLink,
+    DataTable,
+    FilterCategory,
+    FilterPanel,
+    FilterToggle,
+    Needs,
+    SelectField,
+    TextField,
+  ],
   templateUrl: './user-list.html',
   styleUrl: '../../shared/access/access.scss',
 })
@@ -36,6 +49,24 @@ export class UserList {
   protected readonly origin = signal('');
   protected readonly group = signal('');
   protected readonly admin = signal('');
+  protected readonly panelOpen = signal(false);
+  /** How many filters the list currently applies (not the staged values in the panel). */
+  protected readonly activeCount = signal(0);
+  protected readonly sort = signal<TableSort>({ column: 'username', direction: 'asc' });
+
+  protected readonly caption = $localize`:@@users.caption:Users`;
+  protected readonly columns: readonly TableColumn[] = [
+    { id: 'username', label: $localize`:@@users.col.username:User name`, sortable: true },
+    { id: 'displayName', label: $localize`:@@users.col.display-name:Display name` },
+    { id: 'email', label: $localize`:@@users.col.email:Email` },
+    {
+      id: 'origin',
+      label: $localize`:@@users.col.origin:Origin`,
+      help: $localize`:@@users.help.origin:How the account came to exist: at first sign-in through the identity provider, created by an administrator, provisioned by SCIM, or the built-in break-glass account.`,
+    },
+    { id: 'status', label: $localize`:@@users.col.status:Status` },
+    { id: 'lastLogin', label: $localize`:@@users.col.last-login:Last sign-in` },
+  ];
 
   protected readonly statusOptions: readonly SelectOption[] = [
     { value: '', label: $localize`:@@users.any:Any` },
@@ -69,11 +100,24 @@ export class UserList {
       group: this.group().trim() || undefined,
       admin: this.admin() === '' ? undefined : this.admin() === 'true',
     };
-    await this.list.start(this.api.users(filters));
+    this.activeCount.set(Object.values(filters).filter((v) => v !== undefined).length);
+    const sort = this.sort();
+    await this.list.start(
+      this.api.users({ ...filters, sort: sort.direction === 'desc' ? '-username' : 'username' }),
+    );
   }
 
-  protected submit(event: Event): void {
-    event.preventDefault();
+  protected sortBy(sort: TableSort): void {
+    this.sort.set(sort);
+    void this.apply();
+  }
+
+  protected clear(): void {
+    this.q.set('');
+    this.status.set('');
+    this.origin.set('');
+    this.group.set('');
+    this.admin.set('');
     void this.apply();
   }
 

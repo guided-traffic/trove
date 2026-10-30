@@ -2,7 +2,7 @@
   >Skip to main content</a
 >
 
-<mat-toolbar class="header">
+<mat-toolbar class="header topbar">
   @if (showNav() && !layout.pinned()) {
     <button
       mat-icon-button
@@ -15,14 +15,40 @@
       <span class="material-icons" aria-hidden="true">menu</span>
     </button>
   }
-  <span class="product">trove</span>
+  <a class="product" routerLink="/" translate="no">trove</a>
   <span class="spacer"></span>
+
+  @if (canSearch()) {
+    <form
+      class="search"
+      role="search"
+      i18n-aria-label="@@shell.search.label"
+      aria-label="Find a repository"
+      (submit)="submitSearch($event)"
+    >
+      <label class="visually-hidden" for="global-search" i18n="@@shell.search.label"
+        >Find a repository</label
+      >
+      <span class="material-icons search-icon" aria-hidden="true">search</span>
+      <input
+        id="global-search"
+        type="search"
+        autocomplete="off"
+        spellcheck="false"
+        i18n-placeholder="@@shell.search.placeholder"
+        placeholder="Find a repository"
+        [value]="searchText()"
+        (input)="searchText.set($any($event.target).value)"
+      />
+    </form>
+  }
 
   @switch (session.state()) {
     @case ('authenticated') {
       <button
         mat-button
         type="button"
+        class="user-button"
         [matMenuTriggerFor]="userMenu"
       >
         <span class="material-icons" aria-hidden="true">account_circle</span>
@@ -76,35 +102,102 @@
   @if (showNav()) {
     <mat-sidenav
       #drawer
+      class="sidebar"
+      [class.rail]="rail()"
       [mode]="layout.pinned() ? 'side' : 'over'"
       [opened]="layout.pinned()"
       [fixedInViewport]="false"
     >
       <nav i18n-aria-label="@@shell.nav" aria-label="Main navigation">
-        @for (group of navigation.groups(); track group.id) {
-          <p class="group-title" [id]="'nav-' + group.id">{{ group.label }}</p>
-          <ul [attr.aria-labelledby]="'nav-' + group.id">
-            @for (item of group.items; track item.route) {
-              <li>
-                <a
-                  class="nav-link"
-                  [routerLink]="item.route"
-                  routerLinkActive="active"
-                  ariaCurrentWhenActive="page"
-                  (click)="closeDrawer(drawer)"
-                  >{{ item.label }}</a
-                >
-              </li>
+        @for (area of navigation.areas(); track area.id) {
+          <p class="area-title" [id]="'nav-' + area.id">{{ area.label }}</p>
+          <ul class="nav-list" [attr.aria-labelledby]="'nav-' + area.id">
+            @for (entry of area.entries; track entry.kind === 'group' ? entry.id : entry.route) {
+              @if (entry.kind === 'item') {
+                <li>
+                  <a
+                    class="nav-link"
+                    [routerLink]="entry.route"
+                    routerLinkActive="active"
+                    ariaCurrentWhenActive="page"
+                    (click)="closeDrawer(drawer)"
+                  >
+                    <span class="material-icons nav-icon" aria-hidden="true">{{ entry.icon }}</span>
+                    <span class="nav-label">{{ entry.label }}</span>
+                  </a>
+                </li>
+              } @else {
+                <li class="nav-group">
+                  <button
+                    type="button"
+                    class="nav-link group-toggle"
+                    [class.has-active]="groupActive(entry)"
+                    [attr.aria-expanded]="navState.isOpen(entry.id)"
+                    [attr.aria-controls]="'nav-group-' + entry.id"
+                    (click)="navState.toggleGroup(entry.id)"
+                  >
+                    <span class="material-icons nav-icon" aria-hidden="true">{{ entry.icon }}</span>
+                    <span class="nav-label">{{ entry.label }}</span>
+                    <span class="material-icons chevron" aria-hidden="true">{{
+                      navState.isOpen(entry.id) ? 'expand_less' : 'expand_more'
+                    }}</span>
+                  </button>
+                  <ul class="nav-list nested" [id]="'nav-group-' + entry.id" [hidden]="!rail() && !navState.isOpen(entry.id)">
+                    @for (item of entry.items; track item.route) {
+                      <li>
+                        <a
+                          class="nav-link"
+                          [routerLink]="item.route"
+                          routerLinkActive="active"
+                          ariaCurrentWhenActive="page"
+                          (click)="closeDrawer(drawer)"
+                        >
+                          <span class="material-icons nav-icon" aria-hidden="true">{{ item.icon }}</span>
+                          <span class="nav-label">{{ item.label }}</span>
+                        </a>
+                      </li>
+                    }
+                  </ul>
+                </li>
+              }
             }
           </ul>
         }
       </nav>
+      @if (layout.pinned()) {
+        <div class="sidebar-foot">
+          <button
+            type="button"
+            class="rail-toggle"
+            [attr.aria-pressed]="rail()"
+            (click)="navState.setRail(!rail())"
+          >
+            <span class="material-icons" aria-hidden="true">{{ rail() ? 'last_page' : 'first_page' }}</span>
+            <span class="nav-label" i18n="@@shell.rail">Compact navigation</span>
+          </button>
+        </div>
+      }
     </mat-sidenav>
   }
 
   <mat-sidenav-content>
     <trove-banner />
     <main #main id="main" tabindex="-1" class="content">
+      @if (breadcrumbs.trail().length > 0) {
+        <nav class="breadcrumbs" i18n-aria-label="@@shell.breadcrumbs" aria-label="Breadcrumb">
+          <ol>
+            @for (crumb of breadcrumbs.trail(); track $index; let last = $last) {
+              <li>
+                @if (last || !crumb.commands) {
+                  <span [attr.aria-current]="last ? 'page' : null" [attr.translate]="crumb.literal ? 'no' : null">{{ crumb.label }}</span>
+                } @else {
+                  <a [routerLink]="crumb.commands" [attr.translate]="crumb.literal ? 'no' : null">{{ crumb.label }}</a>
+                }
+              </li>
+            }
+          </ol>
+        </nav>
+      }
       @if (loadFailure(); as failure) {
         <trove-error-notice [error]="failure" (retry)="retrySession()" />
       }

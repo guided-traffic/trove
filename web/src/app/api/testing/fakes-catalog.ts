@@ -135,7 +135,7 @@ export class FakeRepositoriesApi extends RepositoriesApi {
         class: r.class,
         format: r.format,
         description: r.description ?? '',
-        addresses: [`/files/${r.key}/`],
+        addresses: [`https://trove.example.net/files/${r.key}/`],
         disabled: r.disabled ?? false,
         lifecycle: 'active' as const,
         lastActivityAt: r.lastActivityAt ?? null,
@@ -163,7 +163,7 @@ export class FakeRepositoriesApi extends RepositoriesApi {
           format: repo.format,
           description: repo.description ?? '',
           layout: 'generic',
-          addresses: [`/files/${key}/`],
+          addresses: [`https://trove.example.net/files/${key}/`],
         },
         etag: `"${this.version(key)}-consumer"`,
       };

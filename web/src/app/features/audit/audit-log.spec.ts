@@ -2,7 +2,7 @@ import { Router } from '@angular/router';
 import { AuditApi } from '../../api/audit-api';
 import { ApiError } from '../../api/problem';
 import { FakeAuditApi, sampleEvent } from '../../api/testing/fakes-catalog';
-import { button, expectAccessible, renderScreen, settle, text, type } from '../../testing/screen';
+import { button, expectAccessible, openFilters, renderScreen, settle, text, type } from '../../testing/screen';
 import { AuditLog } from './audit-log';
 
 async function open(inputs: Record<string, unknown> = {}, setup?: (audit: FakeAuditApi) => void) {
@@ -65,6 +65,7 @@ describe('Audit log', () => {
 
   it('R-UI-037 "Search" puts the filters into the URL and keeps the other parameters', async () => {
     const { root, fixture, router } = await open();
+    await openFilters(fixture, root);
     type(root.querySelector<HTMLInputElement>('#a-actor')!, 'alice');
     type(root.querySelector<HTMLSelectElement>('#a-category')!, 'authz');
     type(root.querySelector<HTMLSelectElement>('#a-range')!, '7d');

@@ -3709,7 +3709,7 @@ paths:
                     class: local
                     format: generic
                     description: Installers and build outputs
-                    addresses: [/files/generic-local/]
+                    addresses: [https://trove.example.net/files/generic-local/]
                     disabled: false
                     lastActivityAt: "2026-10-28T09:14:03.117Z"
                     project: null
@@ -7499,7 +7499,7 @@ components:
           type: string
         addresses:
           type: array
-          description: The client addresses, paths on the public base URL.
+          description: "The client addresses: absolute URLs, the public base URL followed by the repository's path."
           items:
             type: string
     RepositoryRead:
@@ -7522,6 +7522,7 @@ components:
           type: string
         addresses:
           type: array
+          description: "The client addresses: absolute URLs, the public base URL followed by the repository's path."
           items:
             type: string
         disabled:

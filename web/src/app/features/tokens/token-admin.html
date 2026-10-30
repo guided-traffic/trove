@@ -4,65 +4,84 @@
 
 <trove-needs capability="tokens:revoke" />
 
-<form class="toolbar" (submit)="submit($event)" role="search" i18n-aria-label="@@tokens-admin.filters" aria-label="Token filters">
-  <trove-text-field
-    i18n-label="@@tokens-admin.owner"
-    label="Owner"
-    name="owner"
-    [(value)]="owner"
-    i18n-hint="@@tokens-admin.owner-hint"
-    hint="me, a user name or sa:name"
-  />
-  <trove-select-field i18n-label="@@tokens-admin.type" label="Type" name="type" [options]="typeOptions" [(value)]="type" />
-  <trove-select-field i18n-label="@@tokens-admin.state" label="State" name="state" [options]="stateOptions" [(value)]="state" />
-  <trove-text-field
-    i18n-label="@@tokens-admin.expires-before"
-    label="Expires before"
-    name="expiresBefore"
-    type="date"
-    [(value)]="expiresBefore"
-  />
-  <trove-text-field
-    i18n-label="@@tokens-admin.unused"
-    label="Not used for (days)"
-    name="unusedDays"
-    type="number"
-    [(value)]="unusedDays"
-  />
-  <button mat-flat-button type="submit" i18n="@@tokens-admin.apply">Apply filters</button>
-</form>
+<div class="list-layout" [class.panel-open]="panelOpen()">
+  <div class="list-main">
+    <div class="list-toolbar">
+      <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
+      @if (session.has('tokens:revoke') && selected().length > 0) {
+        <button mat-flat-button type="button" (click)="revokeSelected()">
+          <ng-container i18n="@@tokens-admin.revoke-selected">Revoke selected</ng-container> ({{ selected().length }})
+        </button>
+      }
+    </div>
 
-@if (actionError(); as e) {
-  <trove-error-notice [error]="e" />
-}
-@if (list.error(); as e) {
-  <trove-error-notice [error]="e" (retry)="list.reload()" />
-}
+    @if (actionError(); as e) {
+      <trove-error-notice [error]="e" />
+    }
+    @if (list.error(); as e) {
+      <trove-error-notice [error]="e" (retry)="list.reload()" />
+    }
+    @if (list.loaded()) {
+      <trove-token-table
+        [tokens]="list.items()"
+        [showOwner]="true"
+        [selectable]="session.has('tokens:revoke')"
+        [canRevoke]="session.has('tokens:revoke')"
+        [(selected)]="selected"
+        [hasMore]="list.hasMore()"
+        [loading]="list.loading()"
+        (more)="list.more()"
+        (revoke)="revokeOne($event)"
+      />
+    } @else if (list.loading()) {
+      <p role="status" i18n="@@tokens-admin.loading">Loading tokens.</p>
+    }
+  </div>
 
-@if (list.loaded()) {
-  @if (session.has('tokens:revoke') && selected().length > 0) {
-    <p>
-      <button mat-flat-button type="button" (click)="revokeSelected()">
-        <ng-container i18n="@@tokens-admin.revoke-selected">Revoke selected</ng-container> ({{ selected().length }})
-      </button>
-    </p>
-  }
-  <trove-token-table
-    [tokens]="list.items()"
-    [showOwner]="true"
-    [selectable]="session.has('tokens:revoke')"
-    [canRevoke]="session.has('tokens:revoke')"
-    [(selected)]="selected"
-    (revoke)="revokeOne($event)"
-  />
-  @if (list.hasMore()) {
-    <button mat-button type="button" [disabled]="list.loading()" (click)="list.more()" i18n="@@tokens-admin.more">
-      Load more
-    </button>
-  }
-} @else if (list.loading()) {
-  <p role="status" i18n="@@tokens-admin.loading">Loading tokens.</p>
-}
+  <trove-filter-panel
+    #panel
+    class="list-side"
+    [(open)]="panelOpen"
+    [activeCount]="activeCount()"
+    (apply)="apply()"
+    (clearAll)="clear()"
+  >
+    <trove-filter-category i18n-label="@@tokens-admin.owner" label="Owner" [active]="!!owner().trim()" [expanded]="!!owner().trim()">
+      <trove-text-field
+        i18n-label="@@tokens-admin.owner"
+        label="Owner"
+        name="owner"
+        [(value)]="owner"
+        i18n-hint="@@tokens-admin.owner-hint"
+        hint="me, a user name or sa:name"
+      />
+    </trove-filter-category>
+    <trove-filter-category i18n-label="@@tokens-admin.type" label="Type" [active]="!!type()" [expanded]="!!type()">
+      <trove-select-field i18n-label="@@tokens-admin.type" label="Type" name="type" [options]="typeOptions" [(value)]="type" />
+    </trove-filter-category>
+    <trove-filter-category i18n-label="@@tokens-admin.state" label="State" [active]="state() !== 'active'" [expanded]="state() !== 'active'">
+      <trove-select-field i18n-label="@@tokens-admin.state" label="State" name="state" [options]="stateOptions" [(value)]="state" />
+    </trove-filter-category>
+    <trove-filter-category i18n-label="@@tokens-admin.expires-before" label="Expires before" [active]="!!expiresBefore()" [expanded]="!!expiresBefore()">
+      <trove-text-field
+        i18n-label="@@tokens-admin.expires-before"
+        label="Expires before"
+        name="expiresBefore"
+        type="date"
+        [(value)]="expiresBefore"
+      />
+    </trove-filter-category>
+    <trove-filter-category i18n-label="@@tokens-admin.unused" label="Not used for (days)" [active]="!!unusedDays()" [expanded]="!!unusedDays()">
+      <trove-text-field
+        i18n-label="@@tokens-admin.unused"
+        label="Not used for (days)"
+        name="unusedDays"
+        type="number"
+        [(value)]="unusedDays"
+      />
+    </trove-filter-category>
+  </trove-filter-panel>
+</div>
 
 @if (session.has('tokens:revoke')) {
   <section class="card" aria-labelledby="by-value-heading">

@@ -62,6 +62,13 @@ export function arrayPages<T>(items: () => readonly T[]): PageFetcher<T> {
   };
 }
 
+/** The order the API gives for `sort=<field>` and `sort=-<field>` (default ascending). */
+export function sorted<T>(items: readonly T[], key: (item: T) => string, sort: string | undefined): T[] {
+  if (!sort) return [...items];
+  const order = sort.startsWith('-') ? -1 : 1;
+  return [...items].sort((a, b) => order * key(a).localeCompare(key(b)));
+}
+
 export function problem(status: number, code: string, extra: Record<string, unknown> = {}): ApiError {
   return new ApiError(status, { code, ...extra }, 'req-1');
 }
@@ -225,11 +232,15 @@ export class FakeIdentityApi extends IdentityApi {
   override users(filters: UserFilters): PageFetcher<User> {
     return (cursor, limit) =>
       arrayPages(() =>
-        this.userList.filter(
-          (u) =>
-            (!filters.q || u.username.includes(filters.q)) &&
-            (!filters.status || u.status === filters.status) &&
-            (!filters.origin || u.origin === filters.origin),
+        sorted(
+          this.userList.filter(
+            (u) =>
+              (!filters.q || u.username.includes(filters.q)) &&
+              (!filters.status || u.status === filters.status) &&
+              (!filters.origin || u.origin === filters.origin),
+          ),
+          (u) => u.username,
+          filters.sort,
         ),
       )(cursor, Math.min(limit, this.pageSize));
   }
@@ -317,8 +328,12 @@ export class FakeIdentityApi extends IdentityApi {
   override groups(filters: GroupFilters): PageFetcher<Group> {
     return (cursor, limit) =>
       arrayPages(() =>
-        this.groupList.filter(
-          (g) => (!filters.q || g.name.includes(filters.q)) && (!filters.origin || g.origin === filters.origin),
+        sorted(
+          this.groupList.filter(
+            (g) => (!filters.q || g.name.includes(filters.q)) && (!filters.origin || g.origin === filters.origin),
+          ),
+          (g) => g.name,
+          filters.sort,
         ),
       )(cursor, Math.min(limit, this.pageSize));
   }
@@ -398,7 +413,7 @@ export class FakeIdentityApi extends IdentityApi {
 
   override serviceAccounts(filters: ServiceAccountFilters): PageFetcher<ServiceAccount> {
     return (cursor, limit) =>
-      arrayPages(() => this.accounts.filter((a) => !filters.q || a.name.includes(filters.q)))(
+      arrayPages(() => sorted(this.accounts.filter((a) => !filters.q || a.name.includes(filters.q)), (a) => a.name, filters.sort))(
         cursor,
         Math.min(limit, this.pageSize),
       );
@@ -736,10 +751,14 @@ export class FakePolicyApi extends PolicyApi {
 
   override list(filters: PolicyFilters): PageFetcher<PermissionPolicy> {
     return arrayPages(() =>
-      this.policies.filter(
-        (p) =>
-          (!filters.principal || p.entries.some((e) => e.principal === filters.principal)) &&
-          (!filters.repository || (p.resources.repositories ?? []).includes(filters.repository)),
+      sorted(
+        this.policies.filter(
+          (p) =>
+            (!filters.principal || p.entries.some((e) => e.principal === filters.principal)) &&
+            (!filters.repository || (p.resources.repositories ?? []).includes(filters.repository)),
+        ),
+        (p) => p.name,
+        filters.sort,
       ),
     );
   }

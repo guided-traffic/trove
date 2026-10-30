@@ -124,14 +124,12 @@ export class RotateDialog {
         [tokens]="list.items()"
         [canRotate]="canRotate()"
         [canRevoke]="canRevoke()"
+        [hasMore]="list.hasMore()"
+        [loading]="list.loading()"
+        (more)="list.more()"
         (revoke)="revoke($event)"
         (rotate)="rotate($event)"
       />
-      @if (list.hasMore()) {
-        <button mat-button type="button" [disabled]="list.loading()" (click)="list.more()" i18n="@@tokens.more">
-          Load more
-        </button>
-      }
     } @else if (list.loading()) {
       <p role="status" i18n="@@tokens.loading">Loading tokens.</p>
     }

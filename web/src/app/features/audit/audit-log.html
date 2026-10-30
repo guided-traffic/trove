@@ -3,126 +3,8 @@
   <button mat-button type="button" (click)="refresh()" i18n="@@audit.refresh">Refresh</button>
 </header>
 
-<form class="toolbar" role="search" (submit)="apply($event)">
-  <div class="field">
-    <label class="field-label" for="a-range" i18n="@@audit.filter.range">Time range</label>
-    <select id="a-range" class="select-input" (change)="presetDraft.set($any($event.target).value)">
-      <option value="1h" [selected]="presetDraft() === '1h'" i18n="@@audit.range.1h">
-        Last hour
-      </option>
-      <option value="24h" [selected]="presetDraft() === '24h'" i18n="@@audit.range.24h">
-        Last 24 hours
-      </option>
-      <option value="7d" [selected]="presetDraft() === '7d'" i18n="@@audit.range.7d">
-        Last 7 days
-      </option>
-      <option value="30d" [selected]="presetDraft() === '30d'" i18n="@@audit.range.30d">
-        Last 30 days
-      </option>
-      <option value="custom" [selected]="presetDraft() === 'custom'" i18n="@@audit.range.custom">
-        Custom
-      </option>
-    </select>
-  </div>
-  @if (presetDraft() === 'custom') {
-    <div class="field">
-      <label class="field-label" for="a-from" i18n="@@audit.filter.from"
-        >From (your time zone)</label
-      >
-      <input
-        id="a-from"
-        class="text-input"
-        type="datetime-local"
-        [value]="draft()['from']"
-        (input)="setDraft('from', $any($event.target).value)"
-      />
-    </div>
-    <div class="field">
-      <label class="field-label" for="a-to" i18n="@@audit.filter.to">To (your time zone)</label>
-      <input
-        id="a-to"
-        class="text-input"
-        type="datetime-local"
-        [value]="draft()['to']"
-        (input)="setDraft('to', $any($event.target).value)"
-      />
-    </div>
-  }
-  <div class="field">
-    <label class="field-label" for="a-actor" i18n="@@audit.filter.actor">Actor (name or ID)</label>
-    <input
-      id="a-actor"
-      class="text-input"
-      autocomplete="off"
-      [value]="draft()['actor']"
-      (input)="setDraft('actor', $any($event.target).value)"
-    />
-  </div>
-  <div class="field">
-    <label class="field-label" for="a-action" i18n="@@audit.filter.action">Action</label>
-    <input
-      id="a-action"
-      class="text-input"
-      autocomplete="off"
-      spellcheck="false"
-      list="a-actions"
-      [value]="draft()['action']"
-      (input)="setDraft('action', $any($event.target).value)"
-    />
-    <datalist id="a-actions">
-      @for (a of knownActions; track a) {
-        <option [value]="a"></option>
-      }
-    </datalist>
-  </div>
-  <div class="field">
-    <label class="field-label" for="a-category" i18n="@@audit.filter.category">Category</label>
-    <select
-      id="a-category"
-      class="select-input"
-      (change)="setDraft('category', $any($event.target).value)"
-    >
-      <option value="" [selected]="!draft()['category']" i18n="@@repo.filter.any">Any</option>
-      @for (c of categories; track c) {
-        <option [value]="c" [selected]="draft()['category'] === c">{{ categoryText(c) }}</option>
-      }
-    </select>
-  </div>
-  <div class="field">
-    <label class="field-label" for="a-repository" i18n="@@audit.filter.repository"
-      >Repository</label
-    >
-    <input
-      id="a-repository"
-      class="text-input"
-      autocomplete="off"
-      spellcheck="false"
-      [value]="draft()['repository']"
-      (input)="setDraft('repository', $any($event.target).value)"
-    />
-  </div>
-  <div class="field">
-    <label class="field-label" for="a-outcome" i18n="@@audit.filter.outcome">Outcome</label>
-    <select
-      id="a-outcome"
-      class="select-input"
-      (change)="setDraft('outcome', $any($event.target).value)"
-    >
-      <option value="" [selected]="!draft()['outcome']" i18n="@@repo.filter.any">Any</option>
-      @for (o of ['success', 'failure', 'denied']; track o) {
-        <option [value]="o" [selected]="draft()['outcome'] === o">{{ outcomeText(o) }}</option>
-      }
-    </select>
-  </div>
-  <button mat-flat-button type="submit" i18n="@@repo.filter.apply">Search</button>
-  @if (filtered()) {
-    <button mat-button type="button" (click)="clear()" i18n="@@repo.filter.clear">
-      Clear filters
-    </button>
-  }
-</form>
-
 <div class="options">
+  <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
   <label class="check-row" for="a-utc">
     <input
       id="a-utc"
@@ -143,87 +25,57 @@
   <trove-error-notice [error]="f" (retry)="list.more()" />
 }
 
+<div class="list-layout" [class.panel-open]="panelOpen()">
+<div class="list-main">
 <div class="layout" [class.with-detail]="event()">
   <div class="table-pane">
-    @if (list.loaded()) {
-      @if (list.items().length === 0) {
-        <p class="empty" i18n="@@audit.empty">No event matches the filters in this time range.</p>
-      } @else {
-        <div class="scroll" tabindex="0" role="region" aria-labelledby="audit-caption">
-          <table class="data">
-            <caption id="audit-caption" class="visually-hidden" i18n="@@audit.caption">
-              Audit events, newest first
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col" i18n="@@audit.col.time">Time</th>
-                <th scope="col" i18n="@@audit.col.actor">Actor</th>
-                <th scope="col" i18n="@@audit.col.action">Action</th>
-                <th scope="col" i18n="@@audit.col.target">Target</th>
-                <th scope="col" i18n="@@audit.col.outcome">Outcome</th>
-                <th scope="col" i18n="@@audit.col.source">Source address</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (e of list.items(); track e.id) {
-                <tr [class.current]="e.id === event()">
-                  <td>
-                    <time [attr.datetime]="e.occurredAt">{{
-                      e.occurredAt | date: 'medium' : timeZone()
-                    }}</time>
-                  </td>
-                  <td translate="no">{{ actorName(e) }}</td>
-                  <th scope="row">
-                    <button
-                      type="button"
-                      class="link"
-                      [attr.aria-current]="e.id === event() ? 'true' : null"
-                      (click)="open(e.id)"
-                    >
-                      {{ actionLabel(e.action) }}
-                    </button>
-                    <div class="hint" translate="no">{{ e.action }}</div>
-                  </th>
-                  <td translate="no">{{ targetText(e) }}</td>
-                  <td>
-                    @switch (e.outcome) {
-                      @case ('success') {
-                        <span class="material-icons inline ok" aria-hidden="true"
-                          >check_circle</span
-                        >
-                      }
-                      @case ('failure') {
-                        <span class="material-icons inline bad" aria-hidden="true">error</span>
-                      }
-                      @case ('denied') {
-                        <span class="material-icons inline warn" aria-hidden="true">block</span>
-                      }
-                    }
-                    {{ outcomeText(e.outcome) }}
-                  </td>
-                  <td translate="no">{{ e.source.ip ?? '–' }}</td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-        @if (list.hasMore()) {
-          <p>
+    <trove-data-table
+      [caption]="caption"
+      [columns]="columns"
+      [loaded]="list.loaded()"
+      [loading]="list.loading()"
+      [empty]="list.items().length === 0"
+      i18n-emptyText="@@audit.empty"
+      emptyText="No event matches the filters in this time range."
+      [hasMore]="list.hasMore()"
+      (more)="list.more()"
+    >
+      @for (e of list.items(); track e.id) {
+        <tr [class.current]="e.id === event()">
+          <td>
+            <time [attr.datetime]="e.occurredAt">{{ e.occurredAt | date: 'medium' : timeZone() }}</time>
+          </td>
+          <td translate="no"><span class="ellipsis" [attr.title]="actorName(e)">{{ actorName(e) }}</span></td>
+          <th scope="row">
             <button
-              mat-stroked-button
               type="button"
-              [disabled]="list.loading()"
-              (click)="list.more()"
-              i18n="@@list.load-more"
+              class="link"
+              [attr.aria-current]="e.id === event() ? 'true' : null"
+              (click)="open(e.id)"
             >
-              Load more
+              {{ actionLabel(e.action) }}
             </button>
-          </p>
-        }
+            <span class="secondary" translate="no">{{ e.action }}</span>
+          </th>
+          <td translate="no"><span class="ellipsis" [attr.title]="targetText(e)">{{ targetText(e) }}</span></td>
+          <td>
+            @switch (e.outcome) {
+              @case ('success') {
+                <span class="material-icons inline ok" aria-hidden="true">check_circle</span>
+              }
+              @case ('failure') {
+                <span class="material-icons inline bad" aria-hidden="true">error</span>
+              }
+              @case ('denied') {
+                <span class="material-icons inline warn" aria-hidden="true">block</span>
+              }
+            }
+            {{ outcomeText(e.outcome) }}
+          </td>
+          <td translate="no">{{ e.source.ip ?? '–' }}</td>
+        </tr>
       }
-    } @else if (list.loading()) {
-      <p role="status" i18n="@@repo.loading">Loading.</p>
-    }
+    </trove-data-table>
   </div>
 
   @if (event()) {
@@ -332,4 +184,79 @@
       }
     </section>
   }
+</div>
+</div>
+
+  <trove-filter-panel
+    #panel
+    class="list-side"
+    [(open)]="panelOpen"
+    [activeCount]="activeCount()"
+    [applyLabel]="applyLabel"
+    (apply)="apply()"
+    (clearAll)="clear()"
+  >
+    <trove-filter-category i18n-label="@@audit.filter.range" label="Time range" [active]="presetDraft() !== '24h'" [expanded]="presetDraft() !== '24h'">
+      <div class="field">
+        <label class="field-label" for="a-range" i18n="@@audit.filter.range">Time range</label>
+        <select id="a-range" class="select-input" (change)="presetDraft.set($any($event.target).value)">
+          <option value="1h" [selected]="presetDraft() === '1h'" i18n="@@audit.range.1h">Last hour</option>
+          <option value="24h" [selected]="presetDraft() === '24h'" i18n="@@audit.range.24h">Last 24 hours</option>
+          <option value="7d" [selected]="presetDraft() === '7d'" i18n="@@audit.range.7d">Last 7 days</option>
+          <option value="30d" [selected]="presetDraft() === '30d'" i18n="@@audit.range.30d">Last 30 days</option>
+          <option value="custom" [selected]="presetDraft() === 'custom'" i18n="@@audit.range.custom">Custom</option>
+        </select>
+      </div>
+      @if (presetDraft() === 'custom') {
+        <div class="field">
+          <label class="field-label" for="a-from" i18n="@@audit.filter.from">From (your time zone)</label>
+          <input id="a-from" class="text-input" type="datetime-local" [value]="draft()['from']" (input)="setDraft('from', $any($event.target).value)" />
+        </div>
+        <div class="field">
+          <label class="field-label" for="a-to" i18n="@@audit.filter.to">To (your time zone)</label>
+          <input id="a-to" class="text-input" type="datetime-local" [value]="draft()['to']" (input)="setDraft('to', $any($event.target).value)" />
+        </div>
+      }
+    </trove-filter-category>
+    <trove-filter-category i18n-label="@@audit.filter.actor" label="Actor (name or ID)" [active]="!!draft()['actor']" [expanded]="!!actor()">
+      <input id="a-actor" class="text-input" autocomplete="off" i18n-aria-label="@@audit.filter.actor" aria-label="Actor (name or ID)" [value]="draft()['actor']" (input)="setDraft('actor', $any($event.target).value)" />
+    </trove-filter-category>
+    <trove-filter-category i18n-label="@@audit.filter.action" label="Action" [active]="!!draft()['action']" [expanded]="!!action()">
+      <input
+        id="a-action"
+        class="text-input"
+        autocomplete="off"
+        spellcheck="false"
+        list="a-actions"
+        i18n-aria-label="@@audit.filter.action"
+        aria-label="Action"
+        [value]="draft()['action']"
+        (input)="setDraft('action', $any($event.target).value)"
+      />
+      <datalist id="a-actions">
+        @for (a of knownActions; track a) {
+          <option [value]="a"></option>
+        }
+      </datalist>
+    </trove-filter-category>
+    <trove-filter-category i18n-label="@@audit.filter.category" label="Category" [active]="!!draft()['category']" [expanded]="!!category()">
+      <select id="a-category" class="select-input" i18n-aria-label="@@audit.filter.category" aria-label="Category" (change)="setDraft('category', $any($event.target).value)">
+        <option value="" [selected]="!draft()['category']" i18n="@@repo.filter.any">Any</option>
+        @for (c of categories; track c) {
+          <option [value]="c" [selected]="draft()['category'] === c">{{ categoryText(c) }}</option>
+        }
+      </select>
+    </trove-filter-category>
+    <trove-filter-category i18n-label="@@audit.filter.repository" label="Repository" [active]="!!draft()['repository']" [expanded]="!!repository()">
+      <input id="a-repository" class="text-input" autocomplete="off" spellcheck="false" i18n-aria-label="@@audit.filter.repository" aria-label="Repository" [value]="draft()['repository']" (input)="setDraft('repository', $any($event.target).value)" />
+    </trove-filter-category>
+    <trove-filter-category i18n-label="@@audit.filter.outcome" label="Outcome" [active]="!!draft()['outcome']" [expanded]="!!outcome()">
+      <select id="a-outcome" class="select-input" i18n-aria-label="@@audit.filter.outcome" aria-label="Outcome" (change)="setDraft('outcome', $any($event.target).value)">
+        <option value="" [selected]="!draft()['outcome']" i18n="@@repo.filter.any">Any</option>
+        @for (o of ['success', 'failure', 'denied']; track o) {
+          <option [value]="o" [selected]="draft()['outcome'] === o">{{ outcomeText(o) }}</option>
+        }
+      </select>
+    </trove-filter-category>
+  </trove-filter-panel>
 </div>

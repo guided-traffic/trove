@@ -32,15 +32,21 @@ export interface UserFilters {
   readonly origin?: User['origin'];
   readonly group?: string;
   readonly admin?: boolean;
+  /** `username` (default) or `-username` (R-API-010, R-UI-024). */
+  readonly sort?: 'username' | '-username';
 }
 
 export interface GroupFilters {
   readonly q?: string;
   readonly origin?: Group['origin'];
+  /** `name` (default) or `-name`. */
+  readonly sort?: 'name' | '-name';
 }
 
 export interface ServiceAccountFilters {
   readonly q?: string;
+  /** `name` (default) or `-name`. */
+  readonly sort?: 'name' | '-name';
 }
 
 export interface DisableOptions {

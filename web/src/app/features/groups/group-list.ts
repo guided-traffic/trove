@@ -8,7 +8,8 @@ import { SessionStore } from '../../core/session-store';
 import { SelectField, SelectOption, TextField } from '../../shared/access/fields';
 import { Needs } from '../../shared/access/needs';
 import { PagedResource } from '../../shared/paged-resource';
-import { ErrorNotice } from '../../shared/error-notice';
+import { DataTable, TableColumn, TableSort } from '../../shared/ui/data-table';
+import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
 import { GroupCreateDialog } from './group-create-dialog';
 
 export function groupOriginLabel(origin: Group['origin']): string {
@@ -22,10 +23,20 @@ export function groupOriginLabel(origin: Group['origin']): string {
   }
 }
 
-/** Groups (R-UI-025): name, description, origin and member count, with filters and paging. */
+/** Groups (R-UI-025): name, description, origin and member count, with the filter panel, a sortable name and paging. */
 @Component({
   selector: 'trove-group-list',
-  imports: [MatButtonModule, RouterLink, ErrorNotice, Needs, SelectField, TextField],
+  imports: [
+    MatButtonModule,
+    RouterLink,
+    DataTable,
+    FilterCategory,
+    FilterPanel,
+    FilterToggle,
+    Needs,
+    SelectField,
+    TextField,
+  ],
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@groups.heading">Groups</h1>
@@ -33,49 +44,54 @@ export function groupOriginLabel(origin: Group['origin']): string {
     </header>
     <trove-needs id="needs-groups" capability="identities:write" />
 
-    <form class="toolbar" (submit)="submit($event)" role="search" i18n-aria-label="@@groups.filters" aria-label="Group filters">
-      <trove-text-field i18n-label="@@groups.q" label="Name" name="q" [(value)]="q" />
-      <trove-select-field i18n-label="@@groups.origin" label="Origin" name="origin" [options]="originOptions" [(value)]="origin" />
-      <button mat-flat-button type="submit" i18n="@@groups.apply">Apply filters</button>
-    </form>
-
-    @if (list.error(); as e) {
-      <trove-error-notice [error]="e" (retry)="list.reload()" />
-    }
-    @if (list.loaded()) {
-      @if (list.items().length === 0) {
-        <p i18n="@@groups.empty">No group matches.</p>
-      } @else {
-        <div class="scroll" tabindex="0" role="region" i18n-aria-label="@@groups.region" aria-label="Groups">
-          <table class="data">
-            <caption class="visually-hidden" i18n="@@groups.caption">Groups</caption>
-            <thead>
-              <tr>
-                <th scope="col" i18n="@@groups.col.name">Name</th>
-                <th scope="col" i18n="@@groups.col.description">Description</th>
-                <th scope="col" i18n="@@groups.col.origin">Origin</th>
-                <th scope="col" i18n="@@groups.col.members">Members</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (g of list.items(); track g.id) {
-                <tr>
-                  <th scope="row"><a [routerLink]="['/admin/groups', g.name]" translate="no">{{ g.name }}</a></th>
-                  <td>{{ g.description }}</td>
-                  <td>{{ originLabel(g.origin) }}</td>
-                  <td>{{ g.memberCount }}</td>
-                </tr>
-              }
-            </tbody>
-          </table>
+    <div class="list-layout" [class.panel-open]="panelOpen()">
+      <div class="list-main">
+        <div class="list-toolbar">
+          <trove-filter-toggle [(open)]="panelOpen" [activeCount]="activeCount()" [controls]="panel.panelId" />
         </div>
-        @if (list.hasMore()) {
-          <p><button mat-button type="button" [disabled]="list.loading()" (click)="list.more()" i18n="@@groups.more">Load more</button></p>
-        }
-      }
-    } @else if (list.loading()) {
-      <p role="status" i18n="@@groups.loading">Loading groups.</p>
-    }
+
+        <trove-data-table
+          [caption]="caption"
+          [columns]="columns"
+          [sort]="sort()"
+          (sortChange)="sortBy($event)"
+          [loaded]="list.loaded()"
+          [loading]="list.loading()"
+          [error]="list.error()"
+          [empty]="list.items().length === 0"
+          i18n-emptyText="@@groups.empty"
+          emptyText="No group matches."
+          [hasMore]="list.hasMore()"
+          (more)="list.more()"
+          (retry)="list.reload()"
+        >
+          @for (g of list.items(); track g.id) {
+            <tr>
+              <th scope="row"><a [routerLink]="['/admin/groups', g.name]" translate="no">{{ g.name }}</a></th>
+              <td>{{ g.description }}</td>
+              <td>{{ originLabel(g.origin) }}</td>
+              <td class="num">{{ g.memberCount }}</td>
+            </tr>
+          }
+        </trove-data-table>
+      </div>
+
+      <trove-filter-panel
+        #panel
+        class="list-side"
+        [(open)]="panelOpen"
+        [activeCount]="activeCount()"
+        (apply)="apply()"
+        (clearAll)="clear()"
+      >
+        <trove-filter-category i18n-label="@@groups.q" label="Name" [active]="!!q().trim()" [expanded]="!!q().trim()">
+          <trove-text-field i18n-label="@@groups.q" label="Name" name="q" [(value)]="q" />
+        </trove-filter-category>
+        <trove-filter-category i18n-label="@@groups.origin" label="Origin" [active]="!!origin()" [expanded]="!!origin()">
+          <trove-select-field i18n-label="@@groups.origin" label="Origin" name="origin" [options]="originOptions" [(value)]="origin" />
+        </trove-filter-category>
+      </trove-filter-panel>
+    </div>
   `,
   styleUrl: '../../shared/access/access.scss',
 })
@@ -88,6 +104,20 @@ export class GroupList {
   protected readonly list = new PagedResource<Group>();
   protected readonly q = signal('');
   protected readonly origin = signal('');
+  protected readonly panelOpen = signal(false);
+  protected readonly activeCount = signal(0);
+  protected readonly sort = signal<TableSort>({ column: 'name', direction: 'asc' });
+  protected readonly caption = $localize`:@@groups.caption:Groups`;
+  protected readonly columns: readonly TableColumn[] = [
+    { id: 'name', label: $localize`:@@groups.col.name:Name`, sortable: true },
+    { id: 'description', label: $localize`:@@groups.col.description:Description` },
+    {
+      id: 'origin',
+      label: $localize`:@@groups.col.origin:Origin`,
+      help: $localize`:@@groups.help.origin:Where the group comes from: created by an administrator, mapped from the identity provider, or provisioned by SCIM.`,
+    },
+    { id: 'members', label: $localize`:@@groups.col.members:Members`, numeric: true },
+  ];
   protected readonly originLabel = groupOriginLabel;
   protected readonly originOptions: readonly SelectOption[] = [
     { value: '', label: $localize`:@@groups.any:Any` },
@@ -105,11 +135,19 @@ export class GroupList {
       q: this.q().trim() || undefined,
       origin: (this.origin() || undefined) as GroupFilters['origin'],
     };
-    await this.list.start(this.api.groups(filters));
+    this.activeCount.set(Object.values(filters).filter((v) => v !== undefined).length);
+    const sort = this.sort();
+    await this.list.start(this.api.groups({ ...filters, sort: sort.direction === 'desc' ? '-name' : 'name' }));
   }
 
-  protected submit(event: Event): void {
-    event.preventDefault();
+  protected sortBy(sort: TableSort): void {
+    this.sort.set(sort);
+    void this.apply();
+  }
+
+  protected clear(): void {
+    this.q.set('');
+    this.origin.set('');
     void this.apply();
   }
 

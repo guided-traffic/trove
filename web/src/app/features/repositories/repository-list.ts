@@ -1,4 +1,4 @@
-import { DOCUMENT, DatePipe } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import {
   Component,
   computed,
@@ -20,6 +20,8 @@ import { Confirm } from '../../shared/confirm-dialog';
 import { CopyButton } from '../../shared/copy-button';
 import { ErrorNotice } from '../../shared/error-notice';
 import { JobProgress } from '../../shared/job-progress';
+import { DataTable, TableColumn } from '../../shared/ui/data-table';
+import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
 import { PagedResource, asApiError, valueOf } from '../../shared/paged-resource';
 import { RecentRepositories } from './recent-repositories';
 import { classLabel } from './repository-wizard';
@@ -32,7 +34,18 @@ import { classLabel } from './repository-wizard';
  */
 @Component({
   selector: 'trove-repository-list',
-  imports: [DatePipe, MatButtonModule, RouterLink, CopyButton, ErrorNotice, JobProgress],
+  imports: [
+    DatePipe,
+    MatButtonModule,
+    RouterLink,
+    CopyButton,
+    DataTable,
+    ErrorNotice,
+    FilterCategory,
+    FilterPanel,
+    FilterToggle,
+    JobProgress,
+  ],
   templateUrl: './repository-list.html',
   styleUrl: './repository-list.scss',
 })
@@ -42,7 +55,6 @@ export class RepositoryList {
   private readonly session = inject(SessionStore);
   private readonly notifier = inject(Notifier);
   private readonly confirm = inject(Confirm);
-  private readonly dom = inject(DOCUMENT);
   protected readonly recent = inject(RecentRepositories);
 
   /** Query parameters, bound by the router's component input binding. */
@@ -57,6 +69,10 @@ export class RepositoryList {
   protected readonly deleting = signal<ReadonlyMap<string, JobReference>>(new Map());
   protected readonly deleteFailure = signal<ApiError | null>(null);
   protected readonly search = signal('');
+  protected readonly stagedClass = signal('');
+  protected readonly stagedFormat = signal('');
+  protected readonly stagedInactive = signal(false);
+  protected readonly panelOpen = signal(false);
 
   protected readonly canCreate = computed(() => this.session.has('repositories:write-config'));
   protected readonly canDelete = this.canCreate;
@@ -65,6 +81,9 @@ export class RepositoryList {
   );
   protected readonly filtered = computed(
     () => !!(this.q() || this.class() || this.format() || this.state()),
+  );
+  protected readonly activeCount = computed(
+    () => [this.q(), this.class(), this.format(), this.state()].filter((v) => !!v).length,
   );
 
   constructor() {
@@ -77,27 +96,67 @@ export class RepositoryList {
       };
       untracked(() => {
         this.search.set(filters.q ?? '');
+        this.stagedClass.set(filters.class ?? '');
+        this.stagedFormat.set(filters.format ?? '');
+        this.stagedInactive.set(filters.state === 'inactive');
+        // An applied filter is never hidden: the panel opens with it.
+        if (this.activeCount() > 0) this.panelOpen.set(true);
         void this.list.start(this.api.list(filters));
       });
     });
   }
 
   protected classText = classLabel;
+  protected readonly tableCaption = $localize`:@@repo.list.caption:Repositories`;
+  protected readonly emptyText = $localize`:@@repo.list.empty:There is no repository yet.`;
+  protected readonly emptyFilteredText = $localize`:@@repo.list.empty-filtered:No repository matches the filters.`;
+  protected readonly applyLabel = $localize`:@@repo.filter.apply:Search`;
+  /** No sort control: the repository list is ordered by key and the API takes no sort parameter. */
+  protected readonly columns: readonly TableColumn[] = [
+    { id: 'key', label: $localize`:@@repo.col.key:Key` },
+    { id: 'format', label: $localize`:@@repo.col.format:Format` },
+    {
+      id: 'class',
+      label: $localize`:@@repo.col.class:Class`,
+      help: $localize`:@@repo.help.class:Local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.`,
+    },
+    { id: 'description', label: $localize`:@@repo.col.description:Description` },
+    {
+      id: 'address',
+      label: $localize`:@@repo.col.address:Client address`,
+      help: $localize`:@@repo.help.address:The address that package managers and download tools use for this repository.`,
+    },
+    {
+      id: 'activity',
+      label: $localize`:@@repo.col.activity:Last activity`,
+      help: $localize`:@@repo.help.activity:The last time a client read from or wrote to the repository. A dash means nothing has been recorded yet.`,
+    },
+    { id: 'actions', label: $localize`:@@repo.col.actions:Actions`, hideLabel: true },
+  ];
+
+  protected classIcon(c: RepositorySummary['class']): string {
+    return c === 'local' ? 'storage' : c === 'remote' ? 'cloud_download' : 'layers';
+  }
   protected readonly copyLabel = $localize`:@@repo.copy-address:Copy client address`;
   protected readonly deleteLabel = $localize`:@@repo.delete.progress:Repository deletion`;
 
   protected address(row: RepositorySummary): string {
-    const path = row.addresses[0];
-    return path ? this.dom.location.origin + path : '';
+    // The server serves absolute URLs (public base URL plus path): shown and copied as they are.
+    return row.addresses[0] ?? '';
   }
 
   protected applyFilter(change: Readonly<Record<string, string | null>>): void {
     void this.router.navigate([], { queryParams: change, queryParamsHandling: 'merge' });
   }
 
-  protected submitSearch(event: Event): void {
-    event.preventDefault();
-    this.applyFilter({ q: this.search().trim() || null });
+  /** The panel's apply button: all staged values reach the query at once. */
+  protected submitFilters(): void {
+    this.applyFilter({
+      q: this.search().trim() || null,
+      class: this.stagedClass() || null,
+      format: this.stagedFormat() || null,
+      state: this.stagedInactive() ? 'inactive' : null,
+    });
   }
 
   protected clearFilters(): void {

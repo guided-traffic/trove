@@ -1,17 +1,18 @@
-import { Component, computed, inject, resource } from '@angular/core';
+import { Component, computed, inject, resource, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { EndpointsApi } from '../../api/endpoints-api';
-import { ErrorNotice } from '../../shared/error-notice';
+import { Endpoint, EndpointsApi } from '../../api/endpoints-api';
+import { DataTable, TableColumn, TableSort } from '../../shared/ui/data-table';
 import { asApiError, valueOf } from '../../shared/paged-resource';
 
 /**
  * The endpoint list (R-EP-017): name, base URL, hosts, surface, exposure mode, rule count and pool.
  * An endpoint that is no longer configured but still has rules is flagged "inert": its rules have
- * no effect and can only be read and deleted.
+ * no effect and can only be read and deleted. The API answers the whole list in one call, so the
+ * sortable columns (name, rule count) sort in the browser, which is exact.
  */
 @Component({
   selector: 'trove-endpoint-list',
-  imports: [RouterLink, ErrorNotice],
+  imports: [RouterLink, DataTable],
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@ep.list.heading">Endpoints</h1>
@@ -21,68 +22,53 @@ import { asApiError, valueOf } from '../../shared/paged-resource';
       "rules" makes retrievable.
     </p>
 
-    @if (failure(); as f) {
-      <trove-error-notice [error]="f" (retry)="endpoints.reload()" />
-    } @else if (endpoints.isLoading() && !valueOf(endpoints)) {
-      <p role="status" i18n="@@repo.loading">Loading.</p>
-    } @else if (valueOf(endpoints); as list) {
-      @if (list.length === 0) {
-        <p class="empty" i18n="@@ep.list.empty">No endpoint is configured.</p>
-      } @else {
-        <div class="scroll" tabindex="0" role="region" aria-labelledby="ep-caption">
-          <table class="data">
-            <caption id="ep-caption" class="visually-hidden" i18n="@@ep.list.caption">
-              Endpoints
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col" i18n="@@ep.col.name">Name</th>
-                <th scope="col" i18n="@@ep.col.base-url">Base URL</th>
-                <th scope="col" i18n="@@ep.col.hosts">Hosts</th>
-                <th scope="col" i18n="@@ep.col.surface">Surface</th>
-                <th scope="col" i18n="@@ep.col.mode">Exposure</th>
-                <th scope="col" i18n="@@ep.col.rules">Rules (enabled)</th>
-                <th scope="col" i18n="@@ep.col.pool">Pool</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (e of list; track e.name) {
-                <tr>
-                  <th scope="row">
-                    <a [routerLink]="['/admin/endpoints', e.name]" translate="no">{{ e.name }}</a>
-                    @if (e.inert) {
-                      <span class="badge" i18n="@@ep.badge.inert">not configured</span>
-                    }
-                  </th>
-                  @if (e.configuration; as c) {
-                    <td translate="no">{{ c.baseUrl }}</td>
-                    <td translate="no">{{ c.hosts.join(', ') }}</td>
-                    <td translate="no">{{ c.surface.join(', ') }}</td>
-                    <td>
-                      @if (c.exposure === 'all') {
-                        <span class="material-icons inline warn" aria-hidden="true">warning</span>
-                        <span i18n="@@ep.mode.all">all (rules have no effect)</span>
-                      } @else {
-                        <span i18n="@@ep.mode.rules">rules</span>
-                      }
-                    </td>
-                    <td class="num">{{ e.ruleCount }} ({{ e.enabledRuleCount }})</td>
-                    <td translate="no">{{ c.pool ?? '–' }}</td>
-                  } @else {
-                    <td colspan="5">
-                      <span i18n="@@ep.inert.text"
-                        >No longer configured: {{ e.ruleCount }} rules without effect.</span
-                      >
-                    </td>
-                    <td class="num">{{ e.ruleCount }} ({{ e.enabledRuleCount }})</td>
-                  }
-                </tr>
+    <trove-data-table
+      [caption]="caption"
+      [columns]="columns"
+      [sort]="sort()"
+      (sortChange)="sort.set($event)"
+      [loaded]="valueOf(endpoints) !== undefined"
+      [loading]="endpoints.isLoading()"
+      [error]="failure()"
+      [empty]="rows().length === 0"
+      i18n-emptyText="@@ep.list.empty"
+      emptyText="No endpoint is configured."
+      (retry)="endpoints.reload()"
+    >
+      @for (e of rows(); track e.name) {
+        <tr>
+          <th scope="row">
+            <a [routerLink]="['/admin/endpoints', e.name]" translate="no">{{ e.name }}</a>
+            @if (e.inert) {
+              <span class="badge" i18n="@@ep.badge.inert">not configured</span>
+            }
+          </th>
+          @if (e.configuration; as c) {
+            <td translate="no"><span class="ellipsis" [attr.title]="c.baseUrl">{{ c.baseUrl }}</span></td>
+            <td translate="no"><span class="ellipsis" [attr.title]="c.hosts.join(', ')">{{ c.hosts.join(', ') }}</span></td>
+            <td translate="no">{{ c.surface.join(', ') }}</td>
+            <td>
+              @if (c.exposure === 'all') {
+                <span class="material-icons inline warn" aria-hidden="true">warning</span>
+                <span i18n="@@ep.mode.all">all (rules have no effect)</span>
+              } @else {
+                <span i18n="@@ep.mode.rules">rules</span>
               }
-            </tbody>
-          </table>
-        </div>
+            </td>
+            <td class="num">{{ e.ruleCount }} ({{ e.enabledRuleCount }})</td>
+            <td translate="no">{{ c.pool ?? '–' }}</td>
+          } @else {
+            <td colspan="4">
+              <span i18n="@@ep.inert.text"
+                >No longer configured: {{ e.ruleCount }} rules without effect.</span
+              >
+            </td>
+            <td class="num">{{ e.ruleCount }} ({{ e.enabledRuleCount }})</td>
+            <td></td>
+          }
+        </tr>
       }
-    }
+    </trove-data-table>
   `,
   styles: `
     .badge {
@@ -103,5 +89,35 @@ export class EndpointList {
   protected readonly failure = computed(() => {
     const e = this.endpoints.error();
     return e ? asApiError(e) : null;
+  });
+
+  protected readonly sort = signal<TableSort>({ column: 'name', direction: 'asc' });
+  protected readonly caption = $localize`:@@ep.list.caption:Endpoints`;
+  protected readonly columns: readonly TableColumn[] = [
+    { id: 'name', label: $localize`:@@ep.col.name:Name`, sortable: true },
+    { id: 'baseUrl', label: $localize`:@@ep.col.base-url:Base URL` },
+    { id: 'hosts', label: $localize`:@@ep.col.hosts:Hosts` },
+    {
+      id: 'surface',
+      label: $localize`:@@ep.col.surface:Surface`,
+      help: $localize`:@@ep.help.surface:Which parts of trove this endpoint serves: the web interface, the management API, the CI token exchange, package clients and file downloads.`,
+    },
+    {
+      id: 'mode',
+      label: $localize`:@@ep.col.mode:Exposure`,
+      help: $localize`:@@ep.help.mode:In mode "all" the endpoint serves every repository its surface allows; in mode "rules" only what its exposure rules select.`,
+    },
+    { id: 'rules', label: $localize`:@@ep.col.rules:Rules (enabled)`, sortable: true, numeric: true },
+    { id: 'pool', label: $localize`:@@ep.col.pool:Pool` },
+  ];
+
+  /** The list in the chosen order; the whole list is loaded, so sorting here is exact. */
+  protected readonly rows = computed<readonly Endpoint[]>(() => {
+    const list = valueOf(this.endpoints) ?? [];
+    const { column, direction } = this.sort();
+    const factor = direction === 'asc' ? 1 : -1;
+    return [...list].sort((a, b) =>
+      column === 'rules' ? factor * (a.ruleCount - b.ruleCount) : factor * a.name.localeCompare(b.name),
+    );
   });
 }

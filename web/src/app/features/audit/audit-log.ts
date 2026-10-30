@@ -14,6 +14,8 @@ import { Router, RouterLink } from '@angular/router';
 import { AUDIT_CATEGORIES, AuditApi, AuditEvent, AuditFilters } from '../../api/audit-api';
 import { CopyButton } from '../../shared/copy-button';
 import { ErrorNotice } from '../../shared/error-notice';
+import { DataTable, TableColumn } from '../../shared/ui/data-table';
+import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
 import { PagedResource, asApiError, valueOf } from '../../shared/paged-resource';
 import { KNOWN_ACTIONS, auditActionLabel, categoryLabel, outcomeLabel } from './audit-labels';
 
@@ -37,7 +39,17 @@ const PRESETS: Readonly<Record<string, number>> = {
  */
 @Component({
   selector: 'trove-audit-log',
-  imports: [DatePipe, MatButtonModule, RouterLink, CopyButton, ErrorNotice],
+  imports: [
+    DatePipe,
+    MatButtonModule,
+    RouterLink,
+    CopyButton,
+    DataTable,
+    ErrorNotice,
+    FilterCategory,
+    FilterPanel,
+    FilterToggle,
+  ],
   templateUrl: './audit-log.html',
   styleUrl: './audit-log.scss',
 })
@@ -66,6 +78,26 @@ export class AuditLog {
   // The form controls hold their text until "Apply" puts it into the URL.
   protected readonly draft = signal<Readonly<Record<string, string>>>({});
   protected readonly presetDraft = signal('24h');
+  protected readonly panelOpen = signal(false);
+  protected readonly applyLabel = $localize`:@@repo.filter.apply:Search`;
+  protected readonly caption = $localize`:@@audit.caption:Audit events, newest first`;
+  /** No sort control: the log is always newest first, and the API takes no sort parameter. */
+  protected readonly columns: readonly TableColumn[] = [
+    {
+      id: 'time',
+      label: $localize`:@@audit.col.time:Time`,
+      help: $localize`:@@audit.help.time:Events are listed newest first. Narrow the time range in the filters to reach older ones.`,
+    },
+    { id: 'actor', label: $localize`:@@audit.col.actor:Actor` },
+    { id: 'action', label: $localize`:@@audit.col.action:Action` },
+    { id: 'target', label: $localize`:@@audit.col.target:Target` },
+    {
+      id: 'outcome',
+      label: $localize`:@@audit.col.outcome:Outcome`,
+      help: $localize`:@@audit.help.outcome:Success: the action was carried out. Failure: it was allowed but did not work. Denied: the caller was not permitted.`,
+    },
+    { id: 'source', label: $localize`:@@audit.col.source:Source address` },
+  ];
 
   protected readonly preset = computed(() => this.range() ?? '24h');
   protected readonly timeZone = computed(() => (this.utc() === '1' ? 'UTC' : undefined));
@@ -104,6 +136,13 @@ export class AuditLog {
         this.range()
       ),
   );
+  /** The number of filters in the URL, the time range included when it is not the default. */
+  protected readonly activeCount = computed(
+    () =>
+      [this.actor(), this.action(), this.category(), this.repository(), this.outcome(), this.range()].filter(
+        (v) => !!v,
+      ).length,
+  );
   protected readonly csvUrl = computed(() => this.api.exportUrl(this.filters(), 'csv'));
   protected readonly jsonlUrl = computed(() => this.api.exportUrl(this.filters(), 'jsonl'));
 
@@ -129,6 +168,10 @@ export class AuditLog {
       untracked(() => void this.list.start(this.api.events(filters), AUDIT_PAGE_SIZE));
     });
     effect(() => {
+      // An applied filter is never hidden: the panel opens with it.
+      if (this.activeCount() > 0) untracked(() => this.panelOpen.set(true));
+    });
+    effect(() => {
       this.draft.set({
         actor: this.actor() ?? '',
         action: this.action() ?? '',
@@ -146,8 +189,7 @@ export class AuditLog {
     this.draft.update((d) => ({ ...d, [name]: value }));
   }
 
-  protected apply(event: Event): void {
-    event.preventDefault();
+  protected apply(): void {
     const d = this.draft();
     const preset = this.presetDraft();
     this.now.set(Date.now());

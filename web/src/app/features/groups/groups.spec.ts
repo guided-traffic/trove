@@ -12,9 +12,10 @@ describe('Groups (R-UI-025)', () => {
     const { root } = await renderScreen(GroupList);
     const rows = [...root.querySelectorAll('tbody tr')];
     expect(rows).toHaveLength(3);
-    expect(text(rows[1]!)).toContain('team-web');
-    expect(text(rows[1]!)).toContain('Identity provider');
-    expect(text(rows[1]!)).toContain('2');
+    // The list is sorted by name (the API's default order), so team-web comes last.
+    expect(text(rows[2]!)).toContain('team-web');
+    expect(text(rows[2]!)).toContain('Identity provider');
+    expect(text(rows[2]!)).toContain('2');
     expect(await seriousViolations(root)).toEqual([]);
   });
 

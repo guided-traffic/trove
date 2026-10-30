@@ -2397,7 +2397,7 @@ type RepositoryLifecycle string
 
 // RepositoryConsumerView What a caller sees who may read a repository but not its configuration (R-REPO-010).
 type RepositoryConsumerView struct {
-	// Addresses The client addresses, paths on the public base URL.
+	// Addresses The client addresses: absolute URLs, the public base URL followed by the repository's path.
 	Addresses   []string                    `json:"addresses"`
 	Class       RepositoryConsumerViewClass `json:"class"`
 	Description string                      `json:"description"`
@@ -2427,6 +2427,7 @@ type RepositoryRead struct {
 
 // RepositorySummary defines model for RepositorySummary.
 type RepositorySummary struct {
+	// Addresses The client addresses: absolute URLs, the public base URL followed by the repository's path.
 	Addresses      []string               `json:"addresses"`
 	Class          RepositorySummaryClass `json:"class"`
 	Description    string                 `json:"description"`

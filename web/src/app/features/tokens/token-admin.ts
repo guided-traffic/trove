@@ -11,6 +11,7 @@ import { Needs } from '../../shared/access/needs';
 import { PagedResource, asApiError } from '../../shared/paged-resource';
 import { TokenTable } from '../../shared/access/token-table';
 import { ErrorNotice } from '../../shared/error-notice';
+import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
 
 /**
  * Token administration (R-UI-030): every token with filters (type, owner, state, expiring before,
@@ -21,7 +22,18 @@ import { ErrorNotice } from '../../shared/error-notice';
  */
 @Component({
   selector: 'trove-token-admin',
-  imports: [MatButtonModule, MatCheckboxModule, ErrorNotice, Needs, SelectField, TextField, TokenTable],
+  imports: [
+    MatButtonModule,
+    MatCheckboxModule,
+    ErrorNotice,
+    FilterCategory,
+    FilterPanel,
+    FilterToggle,
+    Needs,
+    SelectField,
+    TextField,
+    TokenTable,
+  ],
   templateUrl: './token-admin.html',
   styleUrl: '../../shared/access/access.scss',
 })
@@ -38,6 +50,9 @@ export class TokenAdmin {
   protected readonly expiresBefore = signal('');
   protected readonly unusedDays = signal('');
   protected readonly selected = signal<readonly string[]>([]);
+  protected readonly panelOpen = signal(false);
+  /** How many filters the list currently applies; the default state "active" is not one. */
+  protected readonly activeCount = signal(0);
   protected readonly actionError = signal<ApiError | null>(null);
 
   protected readonly pasted = signal('');
@@ -74,11 +89,20 @@ export class TokenAdmin {
       lastUsedBefore:
         Number.isFinite(days) && days > 0 ? new Date(Date.now() - days * 86_400_000).toISOString() : undefined,
     };
+    this.activeCount.set(
+      [filters.owner, filters.type, filters.state !== 'active' ? filters.state : undefined, filters.expiresBefore, filters.lastUsedBefore].filter(
+        (v) => v !== undefined,
+      ).length,
+    );
     await this.list.start(this.api.list(filters));
   }
 
-  protected submit(event: Event): void {
-    event.preventDefault();
+  protected clear(): void {
+    this.owner.set('');
+    this.type.set('');
+    this.state.set('active');
+    this.expiresBefore.set('');
+    this.unusedDays.set('');
     void this.apply();
   }
 

@@ -1,6 +1,6 @@
 import { TokensApi } from '../../api/tokens-api';
 import { FakeTokensApi, SECRET_VALUE, sampleToken } from '../../api/testing/access-fakes';
-import { buttonByText, renderScreen, settle, storedText, text, typeInto, sleep } from '../../testing/screen';
+import { buttonByText, openFilters, renderScreen, settle, storedText, text, typeInto, sleep } from '../../testing/screen';
 import { seriousViolations } from '../../testing/axe';
 import { TokenAdmin } from './token-admin';
 
@@ -35,6 +35,7 @@ describe('Token administration (R-UI-030)', () => {
 
   it('R-UI-030 the state filter "All" also lists revoked tokens', async () => {
     const { fixture, root } = await renderScreen(TokenAdmin);
+    await openFilters(fixture, root);
     typeInto(root, 'State', 'all');
     buttonByText(root, 'Apply filters').click();
     await settle(fixture);
@@ -44,6 +45,7 @@ describe('Token administration (R-UI-030)', () => {
 
   it('R-UI-030 "unused for N days" becomes lastUsedBefore N days ago', async () => {
     const { fixture, root, get } = await renderScreen(TokenAdmin);
+    await openFilters(fixture, root);
     typeInto(root, 'Not used for', '90');
     await settle(fixture);
     buttonByText(root, 'Apply filters').click();

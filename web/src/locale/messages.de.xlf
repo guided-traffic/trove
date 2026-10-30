@@ -2519,7 +2519,7 @@
         <note category="location">src/app/features/audit/audit-log.html:11,13</note>
       </notes>
       <segment>
-        <source> Last hour </source>
+        <source>Last hour</source>
         <target>Letzte Stunde</target>
       </segment>
     </unit>
@@ -2528,7 +2528,7 @@
         <note category="location">src/app/features/audit/audit-log.html:14,16</note>
       </notes>
       <segment>
-        <source> Last 24 hours </source>
+        <source>Last 24 hours</source>
         <target>Letzte 24 Stunden</target>
       </segment>
     </unit>
@@ -2537,7 +2537,7 @@
         <note category="location">src/app/features/audit/audit-log.html:17,19</note>
       </notes>
       <segment>
-        <source> Last 7 days </source>
+        <source>Last 7 days</source>
         <target>Letzte 7 Tage</target>
       </segment>
     </unit>
@@ -2546,7 +2546,7 @@
         <note category="location">src/app/features/audit/audit-log.html:20,22</note>
       </notes>
       <segment>
-        <source> Last 30 days </source>
+        <source>Last 30 days</source>
         <target>Letzte 30 Tage</target>
       </segment>
     </unit>
@@ -2555,7 +2555,7 @@
         <note category="location">src/app/features/audit/audit-log.html:23,25</note>
       </notes>
       <segment>
-        <source> Custom </source>
+        <source>Custom</source>
         <target>Benutzerdefiniert</target>
       </segment>
     </unit>
@@ -2650,16 +2650,6 @@
         <target>Suchen</target>
       </segment>
     </unit>
-    <unit id="repo.filter.clear">
-      <notes>
-        <note category="location">src/app/features/audit/audit-log.html:120,124</note>
-        <note category="location">src/app/features/repositories/repository-list.html:59,63</note>
-      </notes>
-      <segment>
-        <source> Clear filters </source>
-        <target>Filter zurücksetzen</target>
-      </segment>
-    </unit>
     <unit id="audit.utc">
       <notes>
         <note category="location">src/app/features/audit/audit-log.html:133,135</note>
@@ -2701,7 +2691,7 @@
         <note category="location">src/app/features/audit/audit-log.html:155,156</note>
       </notes>
       <segment>
-        <source> Audit events, newest first </source>
+        <source>Audit events, newest first</source>
         <target>Audit-Ereignisse, neueste zuerst</target>
       </segment>
     </unit>
@@ -4150,7 +4140,7 @@
         <note category="location">src/app/features/endpoints/endpoint-list.ts:35,36</note>
       </notes>
       <segment>
-        <source> Endpoints </source>
+        <source>Endpoints</source>
         <target>Endpunkte</target>
       </segment>
     </unit>
@@ -5382,7 +5372,7 @@
         <note category="location">src/app/features/repositories/repository-list.html:99,101</note>
       </notes>
       <segment>
-        <source> Repositories </source>
+        <source>Repositories</source>
         <target>Repositories</target>
       </segment>
     </unit>
@@ -7417,15 +7407,6 @@
         <target>Neue Gruppe</target>
       </segment>
     </unit>
-    <unit id="groups.filters">
-      <notes>
-        <note category="location">src/app/features/groups/group-list.ts:36,37</note>
-      </notes>
-      <segment>
-        <source>Group filters</source>
-        <target>Gruppenfilter</target>
-      </segment>
-    </unit>
     <unit id="groups.q">
       <notes>
         <note category="location">src/app/features/groups/group-list.ts:37</note>
@@ -7444,15 +7425,6 @@
         <target>Herkunft</target>
       </segment>
     </unit>
-    <unit id="groups.apply">
-      <notes>
-        <note category="location">src/app/features/groups/group-list.ts:39,42</note>
-      </notes>
-      <segment>
-        <source>Apply filters</source>
-        <target>Filter anwenden</target>
-      </segment>
-    </unit>
     <unit id="groups.empty">
       <notes>
         <note category="location">src/app/features/groups/group-list.ts:47,49</note>
@@ -7460,15 +7432,6 @@
       <segment>
         <source>No group matches.</source>
         <target>Keine Gruppe passt.</target>
-      </segment>
-    </unit>
-    <unit id="groups.region">
-      <notes>
-        <note category="location">src/app/features/groups/group-list.ts:50</note>
-      </notes>
-      <segment>
-        <source>Groups</source>
-        <target>Gruppen</target>
       </segment>
     </unit>
     <unit id="groups.caption">
@@ -7514,24 +7477,6 @@
       <segment>
         <source>Members</source>
         <target>Mitglieder</target>
-      </segment>
-    </unit>
-    <unit id="groups.more">
-      <notes>
-        <note category="location">src/app/features/groups/group-list.ts:73,75</note>
-      </notes>
-      <segment>
-        <source>Load more</source>
-        <target>Mehr laden</target>
-      </segment>
-    </unit>
-    <unit id="groups.loading">
-      <notes>
-        <note category="location">src/app/features/groups/group-list.ts:77,80</note>
-      </notes>
-      <segment>
-        <source>Loading groups.</source>
-        <target>Gruppen werden geladen.</target>
       </segment>
     </unit>
     <unit id="groups.any">
@@ -8355,15 +8300,6 @@
         <target>Neue Richtlinie</target>
       </segment>
     </unit>
-    <unit id="policies.filters">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-list.html:11,13</note>
-      </notes>
-      <segment>
-        <source>Policy filters</source>
-        <target>Richtlinienfilter</target>
-      </segment>
-    </unit>
     <unit id="policies.principal">
       <notes>
         <note category="location">src/app/features/permissions/policy-list.html:14,16</note>
@@ -8391,15 +8327,6 @@
         <target>Repository</target>
       </segment>
     </unit>
-    <unit id="policies.apply">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-list.html:21,24</note>
-      </notes>
-      <segment>
-        <source>Apply filters</source>
-        <target>Filter anwenden</target>
-      </segment>
-    </unit>
     <unit id="policies.empty">
       <notes>
         <note category="location">src/app/features/permissions/policy-list.html:29,31</note>
@@ -8407,15 +8334,6 @@
       <segment>
         <source>No policy matches.</source>
         <target>Keine Richtlinie passt.</target>
-      </segment>
-    </unit>
-    <unit id="policies.region">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-list.html:31,33</note>
-      </notes>
-      <segment>
-        <source>Permission policies</source>
-        <target>Berechtigungsrichtlinien</target>
       </segment>
     </unit>
     <unit id="policies.caption">
@@ -8479,24 +8397,6 @@
       <segment>
         <source>Grants nothing</source>
         <target>Erlaubt nichts</target>
-      </segment>
-    </unit>
-    <unit id="policies.more">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-list.html:62,65</note>
-      </notes>
-      <segment>
-        <source>Load more</source>
-        <target>Mehr laden</target>
-      </segment>
-    </unit>
-    <unit id="policies.loading">
-      <notes>
-        <note category="location">src/app/features/permissions/policy-list.html:66,68</note>
-      </notes>
-      <segment>
-        <source>Loading policies.</source>
-        <target>Richtlinien werden geladen.</target>
       </segment>
     </unit>
     <unit id="policies.sum.users">
@@ -9706,15 +9606,6 @@
         <target>Verwenden Sie ein Servicekonto für CI-Systeme, die sich nicht über OpenID Connect anmelden können, und für lang laufende Automatisierung. Seine Token handeln als das Konto, nicht als Person.</target>
       </segment>
     </unit>
-    <unit id="sas.filters">
-      <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:99,100</note>
-      </notes>
-      <segment>
-        <source>Service account filters</source>
-        <target>Servicekonto-Filter</target>
-      </segment>
-    </unit>
     <unit id="sas.q">
       <notes>
         <note category="location">src/app/features/service-accounts/service-account-list.ts:100</note>
@@ -9740,15 +9631,6 @@
       <segment>
         <source>No service account matches.</source>
         <target>Kein Servicekonto passt.</target>
-      </segment>
-    </unit>
-    <unit id="sas.region">
-      <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:111,112</note>
-      </notes>
-      <segment>
-        <source>Service accounts</source>
-        <target>Servicekonten</target>
       </segment>
     </unit>
     <unit id="sas.caption">
@@ -9803,24 +9685,6 @@
       <segment>
         <source>Disabled</source>
         <target>Deaktiviert</target>
-      </segment>
-    </unit>
-    <unit id="sas.more">
-      <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:139,140</note>
-      </notes>
-      <segment>
-        <source>Load more</source>
-        <target>Mehr laden</target>
-      </segment>
-    </unit>
-    <unit id="sas.loading">
-      <notes>
-        <note category="location">src/app/features/service-accounts/service-account-list.ts:143,146</note>
-      </notes>
-      <segment>
-        <source>Loading service accounts.</source>
-        <target>Servicekonten werden geladen.</target>
       </segment>
     </unit>
     <unit id="auth-settings.heading">
@@ -10166,15 +10030,6 @@
         <target>Token-Verwaltung</target>
       </segment>
     </unit>
-    <unit id="tokens-admin.filters">
-      <notes>
-        <note category="location">src/app/features/tokens/token-admin.html:7,9</note>
-      </notes>
-      <segment>
-        <source>Token filters</source>
-        <target>Token-Filter</target>
-      </segment>
-    </unit>
     <unit id="tokens-admin.owner">
       <notes>
         <note category="location">src/app/features/tokens/token-admin.html:11,12</note>
@@ -10229,15 +10084,6 @@
         <target>Nicht benutzt seit (Tage)</target>
       </segment>
     </unit>
-    <unit id="tokens-admin.apply">
-      <notes>
-        <note category="location">src/app/features/tokens/token-admin.html:32,35</note>
-      </notes>
-      <segment>
-        <source>Apply filters</source>
-        <target>Filter anwenden</target>
-      </segment>
-    </unit>
     <unit id="tokens-admin.revoke-selected">
       <notes>
         <note category="location">src/app/features/tokens/token-admin.html:46,47</note>
@@ -10245,15 +10091,6 @@
       <segment>
         <source>Revoke selected</source>
         <target>Ausgewählte widerrufen</target>
-      </segment>
-    </unit>
-    <unit id="tokens-admin.more">
-      <notes>
-        <note category="location">src/app/features/tokens/token-admin.html:60,63</note>
-      </notes>
-      <segment>
-        <source> Load more </source>
-        <target>Mehr laden</target>
       </segment>
     </unit>
     <unit id="tokens-admin.loading">
@@ -10552,15 +10389,6 @@
       <segment>
         <source>New token</source>
         <target>Neues Token</target>
-      </segment>
-    </unit>
-    <unit id="tokens.more">
-      <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:132,133</note>
-      </notes>
-      <segment>
-        <source> Load more </source>
-        <target>Mehr laden</target>
       </segment>
     </unit>
     <unit id="tokens.loading">
@@ -11436,15 +11264,6 @@
         <target>Benutzer hinzufügen</target>
       </segment>
     </unit>
-    <unit id="users.filters">
-      <notes>
-        <note category="location">src/app/features/users/user-list.html:7,8</note>
-      </notes>
-      <segment>
-        <source>User filters</source>
-        <target>Benutzerfilter</target>
-      </segment>
-    </unit>
     <unit id="users.q">
       <notes>
         <note category="location">src/app/features/users/user-list.html:8</note>
@@ -11490,15 +11309,6 @@
         <target>Administrator</target>
       </segment>
     </unit>
-    <unit id="users.apply">
-      <notes>
-        <note category="location">src/app/features/users/user-list.html:13,16</note>
-      </notes>
-      <segment>
-        <source>Apply filters</source>
-        <target>Filter anwenden</target>
-      </segment>
-    </unit>
     <unit id="users.empty">
       <notes>
         <note category="location">src/app/features/users/user-list.html:22,24</note>
@@ -11506,15 +11316,6 @@
       <segment>
         <source>No user matches.</source>
         <target>Kein Benutzer passt.</target>
-      </segment>
-    </unit>
-    <unit id="users.region">
-      <notes>
-        <note category="location">src/app/features/users/user-list.html:25</note>
-      </notes>
-      <segment>
-        <source>Users</source>
-        <target>Benutzer</target>
       </segment>
     </unit>
     <unit id="users.caption">
@@ -11596,24 +11397,6 @@
       <segment>
         <source>Disabled</source>
         <target>Deaktiviert</target>
-      </segment>
-    </unit>
-    <unit id="users.more">
-      <notes>
-        <note category="location">src/app/features/users/user-list.html:59,61</note>
-      </notes>
-      <segment>
-        <source>Load more</source>
-        <target>Mehr laden</target>
-      </segment>
-    </unit>
-    <unit id="users.loading">
-      <notes>
-        <note category="location">src/app/features/users/user-list.html:64,66</note>
-      </notes>
-      <segment>
-        <source>Loading users.</source>
-        <target>Benutzer werden geladen.</target>
       </segment>
     </unit>
     <unit id="users.any">
@@ -12168,15 +11951,6 @@
         <target>Kein Token passt.</target>
       </segment>
     </unit>
-    <unit id="token-table.region">
-      <notes>
-        <note category="location">src/app/shared/access/token-table.ts:49,50</note>
-      </notes>
-      <segment>
-        <source>Tokens</source>
-        <target>Token</target>
-      </segment>
-    </unit>
     <unit id="token-table.caption">
       <notes>
         <note category="location">src/app/shared/access/token-table.ts:50,52</note>
@@ -12385,5 +12159,293 @@
       </segment>
     </unit>
     <!-- <<< M1 ui-b -->
+    <unit id="shell.search.label">
+      <notes>
+        <note category="location">src/app/app.html:24,26</note>
+      </notes>
+      <segment>
+        <source>Find a repository</source>
+        <target>Repository suchen</target>
+      </segment>
+    </unit>
+    <unit id="shell.search.placeholder">
+      <notes>
+        <note category="location">src/app/app.html:33,35</note>
+      </notes>
+      <segment>
+        <source>Find a repository</source>
+        <target>Repository suchen</target>
+      </segment>
+    </unit>
+    <unit id="shell.rail">
+      <notes>
+        <note category="location">src/app/app.html:170,171</note>
+      </notes>
+      <segment>
+        <source>Compact navigation</source>
+        <target>Navigation verkleinern</target>
+      </segment>
+    </unit>
+    <unit id="shell.breadcrumbs">
+      <notes>
+        <note category="location">src/app/app.html:181,183</note>
+      </notes>
+      <segment>
+        <source>Breadcrumb</source>
+        <target>Brotkrumennavigation</target>
+      </segment>
+    </unit>
+    <unit id="nav.section.identity">
+      <notes>
+        <note category="location">src/app/core/navigation.ts:53</note>
+      </notes>
+      <segment>
+        <source>Identity</source>
+        <target>Identität</target>
+      </segment>
+    </unit>
+    <unit id="nav.section.access">
+      <notes>
+        <note category="location">src/app/core/navigation.ts:65</note>
+      </notes>
+      <segment>
+        <source>Access</source>
+        <target>Zugriff</target>
+      </segment>
+    </unit>
+    <unit id="nav.section.system">
+      <notes>
+        <note category="location">src/app/core/navigation.ts:75</note>
+      </notes>
+      <segment>
+        <source>System</source>
+        <target>System</target>
+      </segment>
+    </unit>
+    <unit id="audit.help.time">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.ts:89</note>
+      </notes>
+      <segment>
+        <source>Events are listed newest first. Narrow the time range in the filters to reach older ones.</source>
+        <target>Die Ereignisse sind nach Zeit absteigend sortiert, das neueste steht oben. Ältere erreichen Sie über den Zeitraum in den Filtern.</target>
+      </segment>
+    </unit>
+    <unit id="audit.help.outcome">
+      <notes>
+        <note category="location">src/app/features/audit/audit-log.ts:97</note>
+      </notes>
+      <segment>
+        <source>Success: the action was carried out. Failure: it was allowed but did not work. Denied: the caller was not permitted.</source>
+        <target>Erfolg: Die Aktion wurde ausgeführt. Fehler: Sie war erlaubt, ist aber fehlgeschlagen. Verweigert: Der Aufrufer war nicht berechtigt.</target>
+      </segment>
+    </unit>
+    <unit id="ep.help.surface">
+      <notes>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:103</note>
+      </notes>
+      <segment>
+        <source>Which parts of trove this endpoint serves: the web interface, the management API, the CI token exchange, package clients and file downloads.</source>
+        <target>Welche Teile von trove dieser Endpunkt bereitstellt: die Weboberfläche, die Management-API, den CI-Token-Austausch, Paket-Clients und Dateidownloads.</target>
+      </segment>
+    </unit>
+    <unit id="ep.help.mode">
+      <notes>
+        <note category="location">src/app/features/endpoints/endpoint-list.ts:108</note>
+      </notes>
+      <segment>
+        <source>In mode &quot;all&quot; the endpoint serves every repository its surface allows; in mode &quot;rules&quot; only what its exposure rules select.</source>
+        <target>Im Modus „all“ liefert der Endpunkt alle Repositories aus, die seine Routen erlauben; im Modus „rules“ nur, was seine Freigaberegeln auswählen.</target>
+      </segment>
+    </unit>
+    <unit id="groups.help.origin">
+      <notes>
+        <note category="location">src/app/features/groups/group-list.ts:117</note>
+      </notes>
+      <segment>
+        <source>Where the group comes from: created by an administrator, mapped from the identity provider, or provisioned by SCIM.</source>
+        <target>Woher die Gruppe stammt: von einem Administrator angelegt, aus dem Identitätsanbieter abgeleitet oder per SCIM bereitgestellt.</target>
+      </segment>
+    </unit>
+    <unit id="policies.help.principals">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.ts:68</note>
+      </notes>
+      <segment>
+        <source>Who the policy grants to, counted by kind: users, groups, service accounts, and the special principals for anonymous and all signed-in callers.</source>
+        <target>An wen die Richtlinie vergibt, nach Art gezählt: Benutzer, Gruppen, Servicekonten sowie die besonderen Prinzipale für anonyme und alle angemeldeten Aufrufer.</target>
+      </segment>
+    </unit>
+    <unit id="policies.help.resources">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-list.ts:73</note>
+      </notes>
+      <segment>
+        <source>The repository keys or patterns the policy covers. Open the policy to see which repositories they match now.</source>
+        <target>Die Repository-Schlüssel oder Muster, die die Richtlinie abdeckt. Öffnen Sie die Richtlinie, um zu sehen, welche Repositories sie derzeit trifft.</target>
+      </segment>
+    </unit>
+    <unit id="repo.filter.state">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-list.html:164</note>
+      </notes>
+      <segment>
+        <source>State</source>
+        <target>Zustand</target>
+      </segment>
+    </unit>
+    <unit id="repo.help.class">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-list.ts:122</note>
+      </notes>
+      <segment>
+        <source>Local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.</source>
+        <target>Lokale Repositories enthalten, was Sie hochladen; Remote-Repositories laden aus einer anderen Registry und halten eine Kopie vor; virtuelle Repositories fassen andere Repositories unter einer Adresse zusammen.</target>
+      </segment>
+    </unit>
+    <unit id="repo.help.address">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-list.ts:128</note>
+      </notes>
+      <segment>
+        <source>The address that package managers and download tools use for this repository.</source>
+        <target>Die Adresse, die Paketmanager und Download-Werkzeuge für dieses Repository verwenden.</target>
+      </segment>
+    </unit>
+    <unit id="repo.help.activity">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-list.ts:133</note>
+      </notes>
+      <segment>
+        <source>The last time a client read from or wrote to the repository. A dash means nothing has been recorded yet.</source>
+        <target>Der letzte Zeitpunkt, zu dem ein Client aus dem Repository gelesen oder in es geschrieben hat. Ein Strich bedeutet, dass noch nichts erfasst wurde.</target>
+      </segment>
+    </unit>
+    <unit id="users.help.origin">
+      <notes>
+        <note category="location">src/app/features/users/user-list.ts:65</note>
+      </notes>
+      <segment>
+        <source>How the account came to exist: at first sign-in through the identity provider, created by an administrator, provisioned by SCIM, or the built-in break-glass account.</source>
+        <target>Wie das Konto entstanden ist: bei der ersten Anmeldung über den Identitätsanbieter, von einem Administrator angelegt, per SCIM bereitgestellt oder das eingebaute Break-Glass-Konto.</target>
+      </segment>
+    </unit>
+    <unit id="token-table.help.type">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:170</note>
+      </notes>
+      <segment>
+        <source>pat is a personal token, sat belongs to a service account, cit was issued to a CI pipeline.</source>
+        <target>pat ist ein persönliches Token, sat gehört zu einem Servicekonto, cit wurde an eine CI-Pipeline ausgegeben.</target>
+      </segment>
+    </unit>
+    <unit id="token-table.help.scope">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:176</note>
+      </notes>
+      <segment>
+        <source>What the token may do: all permissions of its owner, or only the listed repository grants.</source>
+        <target>Was das Token darf: alle Berechtigungen seines Besitzers oder nur die aufgeführten Repository-Berechtigungen.</target>
+      </segment>
+    </unit>
+    <unit id="token-table.help.last-used">
+      <notes>
+        <note category="location">src/app/shared/access/token-table.ts:183</note>
+      </notes>
+      <segment>
+        <source>The last time the token authenticated a request. Not every use is recorded immediately.</source>
+        <target>Der letzte Zeitpunkt, zu dem sich mit dem Token eine Anfrage authentifiziert hat. Nicht jede Nutzung wird sofort erfasst.</target>
+      </segment>
+    </unit>
+    <unit id="table.loading">
+      <notes>
+        <note category="location">src/app/shared/ui/data-table.ts:51,53</note>
+      </notes>
+      <segment>
+        <source>Loading.</source>
+        <target>Wird geladen.</target>
+      </segment>
+    </unit>
+    <unit id="table.empty">
+      <notes>
+        <note category="location">src/app/shared/ui/data-table.ts:126</note>
+      </notes>
+      <segment>
+        <source>Nothing to show.</source>
+        <target>Nichts anzuzeigen.</target>
+      </segment>
+    </unit>
+    <unit id="table.help-label">
+      <notes>
+        <note category="location">src/app/shared/ui/data-table.ts:155</note>
+      </notes>
+      <segment>
+        <source>About the column <ph id="0" equiv="column" disp="c.label"/></source>
+        <target>Über die Spalte <ph id="0" equiv="column" disp="c.label"/></target>
+      </segment>
+    </unit>
+    <unit id="filters.toggle">
+      <notes>
+        <note category="location">src/app/shared/ui/filter-panel.ts:36,37</note>
+      </notes>
+      <segment>
+        <source>Filters</source>
+        <target>Filter</target>
+      </segment>
+    </unit>
+    <unit id="filters.active-count">
+      <notes>
+        <note category="location">src/app/shared/ui/filter-panel.ts:51</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="count" disp="this.activeCount()"/> filters active</source>
+        <target><ph id="0" equiv="count" disp="this.activeCount()"/> Filter aktiv</target>
+      </segment>
+    </unit>
+    <unit id="filters.category-active">
+      <notes>
+        <note category="location">src/app/shared/ui/filter-panel.ts:75,77</note>
+      </notes>
+      <segment>
+        <source>(active)</source>
+        <target>(aktiv)</target>
+      </segment>
+    </unit>
+    <unit id="filters.title">
+      <notes>
+        <note category="location">src/app/shared/ui/filter-panel.ts:120,121</note>
+      </notes>
+      <segment>
+        <source>Filters</source>
+        <target>Filter</target>
+      </segment>
+    </unit>
+    <unit id="filters.clear-all">
+      <notes>
+        <note category="location">src/app/shared/ui/filter-panel.ts:121,122</note>
+      </notes>
+      <segment>
+        <source>Clear all</source>
+        <target>Alle löschen</target>
+      </segment>
+    </unit>
+    <unit id="filters.close">
+      <notes>
+        <note category="location">src/app/shared/ui/filter-panel.ts:122,123</note>
+      </notes>
+      <segment>
+        <source>Close filters</source>
+        <target>Filter schließen</target>
+      </segment>
+    </unit>
+    <unit id="filters.apply">
+      <notes>
+        <note category="location">src/app/shared/ui/filter-panel.ts:144</note>
+      </notes>
+      <segment>
+        <source>Apply filters</source>
+        <target>Filter anwenden</target>
+      </segment>
+    </unit>
   </file>
 </xliff>

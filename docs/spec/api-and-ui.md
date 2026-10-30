@@ -2282,18 +2282,44 @@ Acceptance criteria:
 ### R-UI-002 · Application shell
 Priority: **MVP** · Covers: UI-001, UI-004
 
-- Header: product name, global search (P1, R-UI-015), project filter (P1, R-UI-041), help link
-  (`ui.help_url`), user menu. A configurable server name is P2 on
-  [operations-and-observability.md](operations-and-observability.md).
+- Top bar (slim, dark in both colour schemes, Q-UI-68): the product name, a repository search
+  field, the user menu. The search field takes a text and opens the repository list (R-UI-020)
+  filtered by it; it is shown only to a caller who holds `repositories:read-config`, because that
+  list is the API behind it. The global search over packages and files (P1, R-UI-015), the project
+  filter (P1, R-UI-041) and the help link (`ui.help_url`, which the browser cannot read yet,
+  Q-UI-15) take their place in the same bar when their APIs exist. A configurable server name is P2
+  on [operations-and-observability.md](operations-and-observability.md).
 - Navigation with two areas: **Packages and files** (packages, browser, search, trash, builds) and
   **Administration** (shown when `/api/v1/authz/me` reports any administrative capability). The
-  sections are the routes of R-UI-003.
-- Layout and density (Q-UI-2): the navigation is a left side bar below the header, permanently
-  visible at viewport widths of 1024 CSS px and more, and a drawer opened from a menu button in the
-  header below that width. Tables, lists and form fields use compact density (Angular Material
-  density scale `-2`) on every screen; interactive targets stay at least 24 × 24 CSS px
+  sections are the routes of R-UI-003. Inside Administration, the single entries (repositories,
+  endpoints) come first and related screens are grouped under folding headings: identity (users,
+  groups, service accounts, tokens), access (permission policies, system roles) and system (system
+  status, audit log, settings). Every entry has an icon, which is decoration: the label is the
+  accessible name. Entries the caller may not use are hidden (R-UI-005); a group without a visible
+  entry disappears.
+- Layout and density (Q-UI-2, Q-UI-68): the navigation is a dark left side bar below the top bar,
+  permanently visible at viewport widths of 1024 CSS px and more, and a drawer opened from a menu
+  button in the top bar below that width. Where it is pinned, a button at its foot compacts it to
+  an icon rail and back; the rail keeps every entry's accessible name. The rail state and the
+  folded groups are kept in browser storage per signed-in principal (non-secret, R-UI-043) and are
+  a convenience only. The active entry is marked by a filled row, a bar in the accent colour and
+  bold text, never by colour alone. Tables, lists and form fields use compact density (Angular
+  Material density scale `-2`) on every screen; interactive targets stay at least 24 × 24 CSS px
   (R-UI-044). Screen layouts that switch between one and two columns use CSS container queries on
   the content area, so collapsing the side bar never breaks them.
+- Breadcrumbs: a trail above the page title, derived from the route configuration (R-UI-003) and
+  not written by the screens: the area name (no link), the screen, and for a detail screen the
+  object's name. The file tree adds one step per path segment. A trail of one step is not shown.
+- List screens: the repository, user, group, service account, token, permission policy, endpoint
+  and audit log lists share one data table (bordered, inner scroll with a sticky header, sortable
+  column headers with `aria-sort`, a "?" help tooltip on a column that needs one, loading, empty
+  and error states with retry, "Load more") and, where the screen has filters, one filter panel on
+  the right (a toggle button with the number of applied filters above the table, collapsible
+  filter categories, "Clear all", a close button, one apply button). A column is sortable only
+  where the API sorts by it (`sort` of `GET /api/v1/users`, `groups`, `service-accounts`,
+  `permission-policies`), or where the whole list is in the browser (endpoints); a filter appears
+  only where the API takes it. The panel opens by itself while a filter is applied. The packages
+  list (R-UI-006) uses the same two components.
 - User menu: profile and tokens, client setup, quick repository setup (P1; only when repositories
   may be created), language, theme, keyboard shortcuts on or off, sign out.
 - The banner of `GET /api/v1/system/banner` above the content, and a notice when maintenance mode
@@ -2310,6 +2336,11 @@ Acceptance criteria:
   heading.
 - At 1280 CSS px the side bar is visible without interaction; at 800 CSS px it is hidden and the
   header's menu button opens it as a drawer that traps focus until closed.
+- Compacting the side bar at 1280 CSS px leaves only icons, every entry still has its label as
+  accessible name, and the choice is still in force after a reload for the same user.
+- On `/admin/users/alice` the trail reads "Administration / Users / alice" and "Users" links to
+  the list.
+- A user whose `authz/me` lacks `repositories:read-config` sees no search field in the top bar.
 
 ### R-UI-003 · Route map and deep links
 Priority: **MVP** · Covers: UI-002
@@ -2447,6 +2478,9 @@ Acceptance criteria:
 ### R-UI-006 · Packages list
 Priority: **MVP** · Covers: UI-008, ART-048
 
+- The list uses the shared data table and the shared filter panel of R-UI-002 (Q-UI-68): the
+  filters below are the panel's categories, the sort control is a column header, "Load more" is the
+  table's.
 - Start page, backed by R-API-029. Filters: format (multi-select), repository (multi-select), text
   (`q`), keyword, created period (last 7, 30, 90 days, custom). Applied filters appear as removable
   chips and live in the URL.
@@ -2914,8 +2948,10 @@ are registered.
 ### R-UI-020 · Repository list
 Priority: **MVP** · Covers: UI-030, REPO-007
 
-- Table: key, format, class, description, client URL with copy button, created. Filters: format,
-  class, text. Sort by key or creation. "Recently viewed" (browser storage, 20).
+- Table: key, format, class, description, client URL with copy button, last activity. Filters in
+  the filter panel: format, class, text, disabled only. The list is ordered by key; the API takes
+  no `sort` parameter yet, so the table has no sort control (sorting by creation arrives with the
+  API, and the creation time with the summary, Q-UI-18). "Recently viewed" (browser storage, 20).
 - Row actions: edit, browse, client setup, reindex (P1), invalidate cache (remote and virtual),
   delete. Delete requires typing the key, offers the `detach` choice of
   [repositories-and-proxy.md](repositories-and-proxy.md) when other repositories reference it, and
@@ -3005,7 +3041,8 @@ Acceptance criteria:
 Priority: **MVP** · Covers: UI-035, UI-036
 
 - List: username, display name, email, origin (identity provider, administrator-created, SCIM,
-  break-glass), status, last login; filters text, status, origin, group, administrator.
+  break-glass), status, last login; filters text, status, origin, group, administrator (filter
+  panel); the user name column sorts (`sort=username`, `-username`).
 - Detail: identities (provider and subject, read-only and copyable); attributes from the identity
   provider, read-only and labelled as such; status with "Disable" (choice to revoke tokens) and
   "Enable"; group memberships (identity-provider-sourced read-only with a badge, manual ones
@@ -3025,7 +3062,8 @@ Acceptance criteria:
 ### R-UI-025 · Groups
 Priority: **MVP** · Covers: UI-037
 
-- List: name, description, origin, member count.
+- List: name, description, origin, member count; filters name and origin (filter panel); the name
+  column sorts (`sort=name`, `-name`).
 - Editor: name (rename allowed where the owner allows it), description, auto-join, members with
   their sources (manual, identity provider, SCIM) where only manual ones are editable, role bindings
   of the group (read-only with link to `/admin/roles`), the policies naming the group (read-only
@@ -3277,7 +3315,7 @@ Priority: **MVP** · Covers: OPS-023
 
 - Table from `GET /api/v1/audit/events`: time, actor, action (translated label), target, outcome,
   source address; filters time range (presets and custom), actor, action, category, repository,
-  outcome; "Load more".
+  outcome (filter panel); "Load more". The log is always newest first and has no sort control.
 - Detail panel with the full event and links to actor and target.
 - Times in the user's locale with a UTC toggle; export of the current filter as CSV or JSON Lines
   (`/api/v1/audit/events/export`).
@@ -4802,6 +4840,25 @@ The third was a false alarm of timing, not a defect. The development agent would
 
 **Applied in the spec:** R-UI-044 is unchanged; the fixes are in [main.scss](../../web/src/styles/main.scss) and [app.html](../../web/src/app/app.html).
 <!-- <<< M1 e2e-ui -->
+
+### Q-UI-68 · Layout of the application shell and the list screens
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The owner asked on 2026-10-30 for a product-grade layout with a navigation sidebar, list tables and a filter panel, and supplied a screenshot of another product as a visual reference for layout and interaction only. This decision turns it into trove's own structure; Q-UI-2 (side bar from 1024 CSS px, compact density, container queries) stays in force.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the light side bar and the per-screen tables, restyle with tokens | Same markup, new colours | Smallest change, no new components | Every list screen keeps its own table markup, header handling and filter form; the screens drift again, and the packages list (R-UI-006) would be the ninth copy |
+| (b) Dark side bar with folding groups and an icon rail, dark top bar, breadcrumbs from the routes, one data-table component and one filter-panel component on every list screen | The shell of R-UI-002 and the list screens of this change | One look and one keyboard and screen-reader behaviour for the lists; sort, help and states are written once; the packages list and later lists reuse them; the groups keep eleven entries scannable | Two new shared components to maintain; the filter fields move from an always-visible form into a panel that has to be opened |
+| (c) A tabbed top navigation with the side bar only inside Administration | Areas as tabs, side bar per area | Familiar from other consoles | Contradicts Q-UI-2 (pinned side bar), hides the second area's entries behind a click, and two navigation designs have to be built and tested |
+| (d) A generic grid library for the tables | A third-party grid component | Sorting, resizing and virtual scrolling for free | A new runtime dependency (R-UI-001 asks for none without a reason), its own accessibility and CSP surface, and none of the lists has the thousands of rows that need virtual scrolling: they page through "Load more" |
+
+**Choice:** (b), with these rules. The sidebar and the top bar are dark in both colour schemes, and their text and accent colours are chosen well above the AA minimum of R-UI-044 (the lowest measured pair is 6.3:1 for text and 4.8:1 for the accent mark, against 4.5:1 and 3:1); the content area keeps the Material theme and its one accent, the primary colour. The sidebar's entries are grouped (identity, access, system), carry icons from the icon font (Q-UI-1) and can be compacted to a rail; rail and folded groups are browser-local per principal. Breadcrumbs come from the route configuration. A column is sortable only where the API sorts by it or the whole list is in the browser; a filter exists only where the API takes it; the filter panel applies staged values with one button, and a link that arrives with a filter opens the panel. The top bar's search is the repository list's `q` filter, shown to the callers who may list repositories; the global search waits for its API (R-UI-015).
+
+**Rationale:** The shell and the lists are what an administrator looks at all day, and eight list screens had eight hand-written tables with the same four states each. One component makes the behaviour that is easy to get wrong (an `aria-sort` that follows the sort, a help text that is a real button with a described-by tooltip, a scroll region that is focusable, a sticky header) right once, and it is the reason the packages list can arrive later with the same behaviour at no design cost. (a) leaves that duplication; (c) conflicts with a decision that still holds; (d) buys virtual scrolling that no list needs and costs a dependency. Opening a filter panel costs one click compared with the always-visible form, which is why the toggle shows the number of applied filters and the panel opens by itself when a filter is applied. The development agent revisits this if the walkthrough shows that administrators miss the always-visible filters on the user and token lists (an option would be a pinned panel on wide screens) or when the packages list brings a filter set that does not fit the category pattern.
+
+**Applied in the spec:** R-UI-002 gains the top bar, grouped navigation, rail, breadcrumbs and list-screen bullets and three acceptance criteria; R-UI-006 states that the packages list uses the shared table and filter panel; R-UI-020 drops "sort by key or creation" (the API has no `sort`; the list is ordered by key) and names the filter panel; R-UI-024, R-UI-025 and R-UI-037 name the sortable column and the panel. The implementation is described in [web-ui.md](../developer/web-ui.md#shell-design-tokens-and-the-list-components).
 
 ### Q-API-16 · A `limit` above the maximum is clamped
 
