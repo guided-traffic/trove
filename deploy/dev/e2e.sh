@@ -19,12 +19,18 @@
 #                       scatter of E1.11, the 500 MB transfers of E1.13 (CI runs it on every change too, beside push)
 #   e2e.sh access       the M1 tests alone: E1.1, E1.8, E1.11, E1.13, E1.14 (they switch to the scatter profile and back)
 #   e2e.sh drain        E0.14 only (this is `make dev-drain`)
+#   e2e.sh clients      the smoke test of the npm client pods (R-NPM-045: every gate row runs --version, the base URL
+#                       reaches the cluster); builds the clients image and starts the pods, which stay up
+#   e2e.sh clients-down removes the client pods
 #   e2e.sh <regex>      any other argument is a `go test -run` expression
 #
 # Environment: TROVE_DEV_HTTP_PORT (the port the cluster was created with; read back from the node),
 # TROVE_E2E_OUT (artifact directory, default .out/e2e), TROVE_E2E_TIMEOUT (go test timeout, default 90m),
 # TROVE_E2E_DRIVER_BIN (a prebuilt linux driver binary instead of building one),
 # TROVE_E2E_SCATTER_RETURN=0 (leave the cluster in the scatter profile after E0.11 and the M1 tests).
+# The npm client pods (set clients): TROVE_E2E_NPM_CLIENTS_PODS (how many, default 1), TROVE_E2E_NPM_CLIENTS_TARGET
+# (host:port the forwarder in each pod relays to, default the in-cluster HAProxy Ingress HTTPS port),
+# TROVE_E2E_NPM_CLIENTS_IMAGE_BUILD=0 (use the image already built locally instead of rebuilding it).
 set -euo pipefail
 # shellcheck source=deploy/dev/lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -39,6 +45,10 @@ case "$set_name" in
   failover) run='^Test(E04|E06|E13|E1_08|E1_11|E1_13)' ;;
   access) run='^TestE1_' ;;
   drain) run='^TestE14' ;;
+  # >>> M2 npm-clients
+  clients) run='^TestNPMClients$'; NPM_CLIENTS=1 ;;
+  clients-down) NPM_CLIENTS=down ;;
+  # <<< M2 npm-clients
   *) run="$set_name" ;;
 esac
 
@@ -120,6 +130,74 @@ export TROVE_E2E_REPO="$REPO_ROOT" TROVE_E2E_CONTEXT="$CTX" TROVE_E2E_NAMESPACE=
   TROVE_E2E_OPS_SCHEME="$OPS_SCHEME" TROVE_E2E_CA_FILE="$CA_FILE" TROVE_E2E_K6_HOSTS_ADDR="$K6_HOSTS_ADDR" \
   TROVE_E2E_OPENSSL_IMAGE="$OPENSSL_IMAGE" \
   TROVE_E2E_DEV_DIR="$DEV_DIR" TROVE_E2E_SCATTER_RETURN="${TROVE_E2E_SCATTER_RETURN:-1}" TROVE_DEV_HTTP_PORT="$EDGE_PORT"
+
+# >>> M2 npm-clients
+# The client pods of the npm acceptance matrix (R-NPM-045, docs/developer/e2e.md#the-npm-client-matrix). Each pod
+# runs the forwarder fwd as its only process: it listens on 127.0.0.1:<edge port> inside the pod and relays to
+# the in-cluster edge, so the base URL of the setup snippets (https://localhost:<port>) works unchanged and the
+# certificate is verified for `localhost`. The dev CA is mounted from a ConfigMap, never baked into the image.
+# The clients run through `kubectl exec <pod> -- <row> ...` (npm10 ... yarn1, see test/e2e/clients/bin).
+NPM_CLIENTS_IMAGE="trove-e2e-clients:dev"
+NPM_CLIENTS_LABEL="app.kubernetes.io/component=e2e-npm-client"
+NPM_CLIENTS_PREFIX="trove-e2e-npm-"
+NPM_CLIENTS_COUNT="${TROVE_E2E_NPM_CLIENTS_PODS:-1}"
+
+npm_clients_down() {
+  kn delete pod -l "$NPM_CLIENTS_LABEL" --ignore-not-found --wait=true >/dev/null
+  kn delete configmap trove-e2e-npm-ca --ignore-not-found >/dev/null
+}
+
+# npm_clients_exec <index> <command...>: what the tests do through kubectl, for a shell session.
+npm_clients_exec() {
+  local i="$1"; shift
+  kn exec "${NPM_CLIENTS_PREFIX}${i}" -- "$@"
+}
+
+npm_clients_up() {
+  local target="${TROVE_E2E_NPM_CLIENTS_TARGET:-haproxy-ingress.ingress-controller.svc.cluster.local:443}" i
+  [ -n "${CA_FILE:-}" ] && [ -s "$CA_FILE" ] || die "the client pods verify the edge against the dev CA, which is missing (TROVE_DEV_CA_FILE, TROVE_DEV_SCHEME=https; run make dev-up)"
+  if [ "${TROVE_E2E_NPM_CLIENTS_IMAGE_BUILD:-1}" != 0 ]; then
+    "$REPO_ROOT/test/e2e/clients/build.sh" "$NPM_CLIENTS_IMAGE" >"$OUT/npm-clients-image.log" 2>&1 || { tail -20 "$OUT/npm-clients-image.log" >&2; die "clients image build failed"; }
+  fi
+  kind load docker-image "$NPM_CLIENTS_IMAGE" --name "$CLUSTER" >"$OUT/npm-clients-load.log" 2>&1 || { tail -20 "$OUT/npm-clients-load.log" >&2; die "kind load failed"; }
+  npm_clients_down
+  kn create configmap trove-e2e-npm-ca --from-file=ca.crt="$CA_FILE" >/dev/null
+  log "starting $NPM_CLIENTS_COUNT client pod(s) forwarding localhost:$EDGE_PORT to $target"
+  for i in $(seq 0 $((NPM_CLIENTS_COUNT - 1))); do
+    jq -n --arg name "${NPM_CLIENTS_PREFIX}${i}" --arg ns "$NS" --arg image "$NPM_CLIENTS_IMAGE" \
+      --arg listen "127.0.0.1:$EDGE_PORT" --arg target "$target" '
+      { apiVersion: "v1", kind: "Pod",
+        metadata: { name: $name, namespace: $ns, labels: { "app.kubernetes.io/name": "trove-e2e", "app.kubernetes.io/component": "e2e-npm-client" } },
+        spec: {
+          terminationGracePeriodSeconds: 5,
+          nodeSelector: { "node-role.kubernetes.io/control-plane": "" },
+          tolerations: [{ key: "node-role.kubernetes.io/control-plane", operator: "Exists", effect: "NoSchedule" }],
+          automountServiceAccountToken: false,
+          securityContext: { runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: { type: "RuntimeDefault" } },
+          containers: [{
+            name: "clients", image: $image, imagePullPolicy: "IfNotPresent",
+            args: ["-listen", $listen, "-to", $target],
+            env: [{ name: "NODE_EXTRA_CA_CERTS", value: "/etc/trove-ca/ca.crt" }],
+            securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } },
+            volumeMounts: [
+              { name: "ca", mountPath: "/etc/trove-ca", readOnly: true },
+              { name: "work", mountPath: "/work" },
+              { name: "tmp", mountPath: "/tmp" } ] }],
+          volumes: [
+            { name: "ca", configMap: { name: "trove-e2e-npm-ca" } },
+            { name: "work", emptyDir: { sizeLimit: "2Gi" } },
+            { name: "tmp", emptyDir: { sizeLimit: "512Mi" } } ] } }' \
+      | kn apply -f - >/dev/null
+  done
+  kn wait --for=condition=Ready pod -l "$NPM_CLIENTS_LABEL" --timeout=120s >/dev/null || { kn describe pod -l "$NPM_CLIENTS_LABEL" >&2; die "the client pods did not become ready"; }
+}
+
+if [ "${NPM_CLIENTS:-}" = down ]; then npm_clients_down; log "client pods removed"; exit 0; fi
+if [ "${NPM_CLIENTS:-}" = 1 ]; then
+  npm_clients_up
+  export TROVE_E2E_NPM_CLIENTS_POD_PREFIX="$NPM_CLIENTS_PREFIX" TROVE_E2E_NPM_CLIENTS_PODS="$NPM_CLIENTS_COUNT"
+fi
+# <<< M2 npm-clients
 
 log "go test -tags e2e -run '$run' (report: .out/test-e2e.json, artifacts: $OUT)"
 cd "$REPO_ROOT"

@@ -2071,6 +2071,10 @@ maintenance until 2027-04-30, 24 in maintenance, 26 active LTS from 2026-10-28):
 - Each row pins one exact version once in the test harness; local runs and CI read the same pin.
   A scheduled job raises the pins within each major and re-evaluates the rule at every release;
   a major that leaves the rule stays as a non-blocking row for one more release, then is removed.
+  The pin is the npm alias of the row in `test/e2e/clients/package.json` with its
+  `package-lock.json` (Q-NPM-44); all eight clients run on the one Node.js of `web/.nvmrc`, which
+  every row's `engines` accepts (Q-NPM-45). Renovate raises the aliases within their major and never
+  opens a major; changing the rows is a deliberate edit of the table above and of that file.
 - The test upstream is a stub registry with recorded documents and tarballs and switches for the
   failure cases of R-NPM-024 to R-NPM-026 and R-NPM-033; the full run of Test and Release on the commit that closes the phase runs the read-only subset
   against `https://registry.npmjs.org`.
@@ -2901,6 +2905,57 @@ revalidates the document first.
 acceptance criterion); R-NPM-044 (the metric); the revisit of Q-NPM-2; H-33 and H-51; the Security
 notes. Cross-page: [backup-and-restore.md](../backup-and-restore.md) R-BAK-022 (formats read
 `system_state.restored_at`).
+
+### Q-NPM-44 · How the end-to-end suite gets the eight clients
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NPM-045 needs npm 10 to 12, pnpm 10 to 12, Yarn 4 and Yarn 1 at exact versions, against
+the `scatter` profile in the dev cluster, with the base URL and the TLS behavior of the setup
+snippets (R-NPM-041): `https://localhost:<port>` verified against the dev CA.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One pinned image, clients in cluster pods behind a forwarder | `test/e2e/clients/package.json` holds one npm alias per row, `package-lock.json` the integrity; the image has a wrapper per row and a TCP forwarder on `127.0.0.1:<base port>` that relays to the edge or one `web` pod; the dev CA is mounted | Exact, locked versions on any host and in CI; the snippets run verbatim and the certificate is verified for `localhost`; a client can be pinned to one replica; nothing is installed on the host | An image to build and load into kind; the clients do not run on the host's network stack |
+| (b) Clients on the host | Install the eight clients on the developer's machine or the runner and call the edge on `localhost:8080` | No image, no forwarder | Eight installs per machine, drift between laptops and CI, a second place for the pins; no way to pin a client to one replica |
+| (c) Fetch at run time | Corepack, `npx` or the clients' own self-update download the version when a test starts | Nothing to build | Downloads during the test (network, supply chain, flakiness), versions not locked by integrity, the scheduled raise of the pins has no file to change |
+
+**Choice:** (a).
+
+**Rationale:** The matrix is only meaningful when every row is the version the rule names, and when a
+change to one pin is visible as a diff of one file. (a) is the only option where the version, its
+integrity and the network path are fixed before the test starts; the forwarder keeps the setup
+snippets byte for byte what a user pastes. The development agent would revisit this if kind's node
+network ever makes the forwarder a bottleneck for the install loops of the drain run (R-HA-059), or
+if a client gains a certificate rule that `NODE_EXTRA_CA_CERTS` does not reach.
+
+**Applied in the spec:** R-NPM-045 (where the pins live).
+
+### Q-NPM-45 · The Node.js the clients run on
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: npm, pnpm 10, pnpm 11, Yarn 4 and Yarn 1 run on Node.js; pnpm 12 ships a native binary.
+Verified on 2026-10-30 from the packages' `engines`: npm 10.9.9 `^18.17.0 || >=20.5.0`, npm 11.21.1
+`^20.17.0 || >=22.9.0`, npm 12.2.1 `^22.22.2 || ^24.15.0 || >=26.0.0`, pnpm 10.34.9 `>=18.12`,
+pnpm 11.28.9 `>=22.13`, pnpm 12.16.1 `>=18`, Yarn 4.18.1 `>=18.12.0`, Yarn 1.22.22 `>=4.0.0`. The
+repository's Node.js is 24.22.2 (`web/.nvmrc`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One Node.js, the repository's | One image `FROM node:<web/.nvmrc>-trixie-slim`, pinned by digest in `tools/versions.env`; `make versions-check` compares the tag with `web/.nvmrc` | One Node pin for the repository; every `engines` range accepts 24.22.2; one image, one build; the glibc variant most CI images use | A row runs on a Node it was not bundled with (npm 10 normally meets Node 22) |
+| (b) The bundled Node per row | Node 22 for npm 10, Node 24 for npm 11, Node 26 for npm 12, and so on | Each npm runs where users run it | Three or more Node pins and images; the version-per-tool rule is broken for Node; the registry-visible behavior of the clients does not depend on the Node minor |
+| (c) Alpine variant | As (a) on musl | Smaller image | pnpm 12 would run its musl binary, which is not the one most users run; the image is a test tool whose size does not matter |
+
+**Choice:** (a), the digest-pinned `node:24.22.2-trixie-slim`. The image removes the `npm`,
+`npx` and `corepack` that come with Node.js, so the only npm in it is the three npm rows.
+
+**Rationale:** No row needs a different Node: all eight `--version` calls ran on 24.22.2 in the
+image, and npm 12 (`^24.15.0`) and pnpm 12 (native, `>=18`) accept it. The development agent would
+revisit this if a scenario fails on a row only on Node 24 and passes on the Node the row is bundled
+with; that row then gets its own image tag and its own pin.
+
+**Applied in the spec:** R-NPM-045 (the Node.js of the clients).
 
 ## What this does not cover
 

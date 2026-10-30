@@ -181,7 +181,7 @@ test-release-tooling: ## Release tooling: npm ci, npm audit signatures, and the 
 # One version per tool (E0.2): every pin of a tool that is installed on PATH is compared with the
 # pin, so a copy of another version can never be the one a check ran with.
 .PHONY: versions-check
-versions-check: ## One version per tool (E0.2): go, Node, sqlc, oapi-codegen, the linters and the CI tools against their pins
+versions-check: ## One version per tool (E0.2): go, Node, sqlc, oapi-codegen, the linters, the CI tools and the npm client pins against their pins
 	@set -e; fail=0; \
 	have="$$(go env GOVERSION | sed 's/^go//')"; \
 	if [ "$$have" != "$(GO_MOD_GO)" ]; then echo "go: running $$have, go.mod pins $(GO_MOD_GO)"; fail=1; fi; \
@@ -205,6 +205,7 @@ versions-check: ## One version per tool (E0.2): go, Node, sqlc, oapi-codegen, th
 	  if [ "$$have" != "$(K6_VERSION)" ]; then echo "k6: installed $$have, pin is $(K6_VERSION)"; fail=1; fi; fi; \
 	if docker buildx version >/dev/null 2>&1; then have="$$(docker buildx version | awk '{print $$2}')"; \
 	  if [ "$$have" != "$(BUILDX_VERSION)" ]; then echo "docker buildx: installed $$have, pin is $(BUILDX_VERSION)"; fail=1; fi; fi; \
+	node test/e2e/clients/check-pins.mjs "$(NODE_VERSION)" "$(E2E_CLIENTS_NODE_IMAGE)" || fail=1; \
 	if [ $$fail -ne 0 ]; then exit 1; fi; \
 	echo "versions ok: go $$(go env GOVERSION), node $(NODE_VERSION), sqlc, oapi-codegen match their pins"
 
@@ -332,3 +333,9 @@ dev-drain: ## Drain a node under k6 load with cursor-persisting jobs; fails on a
 .PHONY: e2e
 e2e: ## End-to-end tests on the dev cluster (deploy/dev/e2e.sh); SET=push|failover|access|full|drain|<go test -run regexp>, default: all but the profile switch
 	deploy/dev/e2e.sh '$(SET)'
+
+# >>> M2 npm-clients
+.PHONY: npm-clients-image
+npm-clients-image: ## Build the image of the npm client matrix (R-NPM-045: npm 10-12, pnpm 10-12, Yarn 4, Yarn 1) into the local Docker; NPM_CLIENTS_IMAGE, default trove-e2e-clients:dev
+	test/e2e/clients/build.sh $(or $(NPM_CLIENTS_IMAGE),trove-e2e-clients:dev)
+# <<< M2 npm-clients

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Gate row pnpm12 of R-NPM-045 (test/e2e/clients/package.json). The package ships a native binary that its
+# install script puts in place (the Dockerfile runs it), so this row does not run on Node.
+exec /clients/node_modules/pnpm12/pnpm "$@"

@@ -259,6 +259,34 @@
       "groupSlug": "k6"
     },
     {
+      "description": "npm client matrix (test/e2e/clients/package.json, R-NPM-045): the eight gate rows are npm aliases that move within their major, in one pull request, because the e2e matrix runs all of them. A new major is a change of the gate rows themselves, decided by the rule of R-NPM-045 and made by hand, so Renovate does not open it. No automerge: the matrix is reviewed.",
+      "matchFileNames": [
+        "test/e2e/clients/package.json"
+      ],
+      "groupName": "npm clients",
+      "groupSlug": "npm-clients",
+      "automerge": false
+    },
+    {
+      "description": "npm client matrix: no major pull requests (see above)",
+      "matchFileNames": [
+        "test/e2e/clients/package.json"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Node.js: web/.nvmrc and the clients image (E2E_CLIENTS_NODE_IMAGE in tools/versions.env, whose tag starts with the .nvmrc version; make versions-check compares them) move together",
+      "matchDepNames": [
+        "node",
+        "docker.io/library/node"
+      ],
+      "groupName": "Node.js",
+      "groupSlug": "nodejs"
+    },
+    {
       "description": "Use 'fix' instead of 'chore' for dependency updates (valkey-operator's policy, kept: every automerged dependency PR is a patch release under the conventional commits rule of .releaserc.json)",
       "semanticCommitType": "fix",
       "matchUpdateTypes": [

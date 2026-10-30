@@ -1,0 +1,3 @@
+#!/bin/sh
+# Gate row yarn1 of R-NPM-045 (test/e2e/clients/package.json).
+exec node /clients/node_modules/yarn1/bin/yarn.js "$@"

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Gate row npm11 of R-NPM-045 (test/e2e/clients/package.json).
+exec node /clients/node_modules/npm11/bin/npm-cli.js "$@"

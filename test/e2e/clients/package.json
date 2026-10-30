@@ -1,0 +1,16 @@
+{
+  "name": "trove-e2e-clients",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The package-manager clients of the npm acceptance matrix (R-NPM-045), one exact version per gate row. Not published; installed into the clients image (test/e2e/clients/Dockerfile).",
+  "dependencies": {
+    "npm10": "npm:npm@10.9.9",
+    "npm11": "npm:npm@11.21.1",
+    "npm12": "npm:npm@12.2.1",
+    "pnpm10": "npm:pnpm@10.34.9",
+    "pnpm11": "npm:pnpm@11.28.9",
+    "pnpm12": "npm:pnpm@12.16.1",
+    "yarn1": "npm:yarn@1.22.22",
+    "yarn4": "npm:@yarnpkg/cli-dist@4.18.1"
+  }
+}
