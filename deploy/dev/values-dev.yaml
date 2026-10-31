@@ -79,6 +79,10 @@ config:
               - match_regex: "trove-(.+)"        # trove-team-web -> team-web, trove-platform-admins -> platform-admins
                 group: "$1"
             create_groups: true
+  # The dev cluster's edge took more than 5 s to drop a draining pod's endpoint on the CPU-limited runners, and the
+  # requests it still sent there got 502 (Actions run 41241903588, E2.11); the chart's grace period of 120 s leaves 100 s.
+  health:
+    shutdown_drain_delay: 15s           # default 5s; must exceed the edge's endpoint removal time (R-HA-059)
   # The dev pods have 1Gi: smaller caches leave the memory slots to requests (Q-ARCH-243), about 860 instead of 90.
   cache:
     rendition_bytes: 64MiB              # default 256MiB
