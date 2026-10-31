@@ -186,6 +186,46 @@ func TestLimiterCluster(t *testing.T) {
 		}
 	})
 
+	t.Run("R-ARCH-034 Q-HA-66 requests a stage held are charged to the windows they arrived in", func(t *testing.T) {
+		// A client at 8 requests/s, below a burst of 10 per 1 s window, whose requests of three seconds are all
+		// decided at the end, as after a database switchover that held the token lookup.
+		held := func(take func(l *Limiter, at time.Time) bool, perSecond int) int {
+			st, clk := newMemWindows(), newLimClock()
+			l := replica(t, st, clk, 1, nil).NewLimiter("api_package_read", ScopeCluster, 10, 10)
+			start := clk.now()
+			clk.advance(3 * time.Second)
+			admitted := 0
+			for i := range 3 * perSecond {
+				if take(l, start.Add(time.Duration(i)*time.Second/time.Duration(perSecond))) {
+					admitted++
+				}
+			}
+			return admitted
+		}
+		byArrival := func(l *Limiter, at time.Time) bool { return l.TakeAt(t.Context(), "token:t", at).Allowed }
+		if got := held(byArrival, 8); got != 24 {
+			t.Errorf("charged by arrival, %d of 24 held requests of a client below its rate were admitted, want all", got)
+		}
+		byCheck := func(l *Limiter, _ time.Time) bool { return l.Take(t.Context(), "token:t").Allowed }
+		if got := held(byCheck, 8); got != 10 {
+			t.Errorf("charged at the check, %d of 24 were admitted; the control expects the burst of 10", got)
+		}
+		// A client above its rate stays limited: each window of arrival admits its burst and no more.
+		if got := held(byArrival, 20); got != 10 {
+			t.Errorf("charged by arrival, %d of 60 held requests of a client at twice its rate were admitted, want 10", got)
+		}
+	})
+
+	t.Run("R-ARCH-034 Q-HA-66 an arrival time in the future or zero is now", func(t *testing.T) {
+		st, clk := newMemWindows(), newLimClock()
+		l := replica(t, st, clk, 1, nil).NewLimiter("x", ScopeCluster, 1, 2)
+		l.TakeAt(t.Context(), "a", clk.now().Add(time.Hour))
+		l.TakeAt(t.Context(), "a", time.Time{})
+		if v := l.TakeAt(t.Context(), "a", clk.now()); v.Allowed {
+			t.Fatalf("the third request of a burst of 2 in one window was admitted: %+v", v)
+		}
+	})
+
 	t.Run("R-ARCH-034 buckets are independent", func(t *testing.T) {
 		st, clk := newMemWindows(), newLimClock()
 		l := replica(t, st, clk, 1, nil).NewLimiter("x", ScopeCluster, 1, 2)

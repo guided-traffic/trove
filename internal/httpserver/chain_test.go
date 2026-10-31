@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
 )
@@ -323,6 +324,20 @@ func TestAuthenticationStage(t *testing.T) {
 			return Principal{Name: "alice"}, nil
 		}}.Handler()
 		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/x", nil)) // httptest peer is 192.0.2.1
+	})
+
+	t.Run("R-ARCH-034 Q-HA-66 the request info carries the time the chain received the request, before authentication", func(t *testing.T) {
+		var authAt, received time.Time
+		router := newTestRouter("GET /x", func(_ http.ResponseWriter, r *http.Request) { received = InfoFrom(r.Context()).Received })
+		h := Chain{Router: router, Authenticate: func(*http.Request) (Principal, error) {
+			authAt = time.Now()
+			time.Sleep(20 * time.Millisecond) // a token lookup that waits for the database
+			return Principal{Name: "alice"}, nil
+		}}.Handler()
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/x", nil))
+		if received.IsZero() || received.After(authAt) {
+			t.Fatalf("Received = %v, authentication started %v: want a time before the authentication", received, authAt)
+		}
 	})
 }
 

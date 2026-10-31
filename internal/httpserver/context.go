@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/errs"
 )
@@ -51,6 +52,9 @@ type RequestInfo struct {
 	// Misdirected is true when the endpoint checks hosts and the effective host
 	// is not in its set; the chain answers 421.
 	Misdirected bool
+	// Received is when step 5 took the request. The rate limits charge the
+	// request to the window of this time, not of their own check (Q-HA-66).
+	Received time.Time
 }
 
 // InfoFrom returns the resolved request information; the zero value outside the

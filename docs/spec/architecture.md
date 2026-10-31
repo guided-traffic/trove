@@ -2885,6 +2885,10 @@ The owning pages define the limit classes, their bucket keys and their values
     `EXPIRE <key> <2W> NX`, `GET` of the previous window's key, `EXEC`.
   - A request is admitted when `previous × (1 − elapsed ÷ W) + current ≤ burst`. Otherwise it is
     refused, and the owning page renders the `429` with its `Retry-After`.
+  - The window of a request, and its `elapsed`, are those of the time the request was received, not of
+    the check: a request that a stage before the limiter held (the token lookup during a database
+    switchover) is charged to the window it arrived in ([ha-and-helm.md](ha-and-helm.md) Q-HA-66). The
+    per-replica fallback decides at the time of the check.
   - The `INCR` runs before the decision, so refused requests count too. A caller that keeps sending
     while refused stays refused until its rate drops below the limit; a caller that honours
     `Retry-After` gets the configured rate.

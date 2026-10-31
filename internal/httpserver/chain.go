@@ -246,6 +246,7 @@ func (c Chain) addrStage(next http.Handler) http.Handler {
 			info = RequestInfo{Peer: Peer(r), Client: Peer(r)}
 		}
 		info.UserAgent = r.UserAgent()
+		info.Received = time.Now()
 		ctx := context.WithValue(r.Context(), keyInfo, info)
 		r = r.WithContext(ctx)
 		if c.Annotate != nil {

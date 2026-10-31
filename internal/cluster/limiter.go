@@ -276,12 +276,25 @@ func (l *Limiter) Allow(ctx context.Context, bucket string) bool { return l.Take
 // divided by the number of live replicas; it never fails and never waits for
 // more than valkey.command_timeout.
 func (l *Limiter) Take(ctx context.Context, bucket string) Verdict {
+	return l.TakeAt(ctx, bucket, time.Time{})
+}
+
+// TakeAt is Take for a request that arrived at at. In the cluster scope it is
+// counted in, and decided against, the window it arrived in (Q-HA-66): a request
+// that a stage before the limiter held, the token lookup during a database
+// switchover for one, would otherwise be charged to the window it is released
+// in, where the held requests of a client below its rate add up to a burst it
+// never sent. A zero or future at is now; the local buckets decide at now.
+func (l *Limiter) TakeAt(ctx context.Context, bucket string, at time.Time) Verdict {
 	now := l.set.now()
+	if at.IsZero() || at.After(now) {
+		at = now
+	}
 	if l.scope == ScopeReplica {
 		return l.record(l.takeLocal(bucket, now, 1, ModeReplica))
 	}
 	if l.usesValkey() {
-		idx, el := l.windowIndex(now)
+		idx, el := l.windowIndex(at)
 		cur, prev, err := l.set.store.hit(ctx, l.keyName, l.bucketKey(bucket), idx, 2*l.window)
 		if err == nil {
 			l.inFallback.Store(false)

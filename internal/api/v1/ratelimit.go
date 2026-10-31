@@ -102,7 +102,7 @@ func NewRateLimit(o RateLimitOptions) (func(http.Handler) http.Handler, error) {
 			}
 			name, bucket := classify(r)
 			c := classes[name]
-			v := c.l.Take(r.Context(), bucket)
+			v := c.l.TakeAt(r.Context(), bucket, httpserver.InfoFrom(r.Context()).Received)
 			setRateLimitFields(w, c, name, v)
 			if v.Allowed {
 				next.ServeHTTP(w, r)

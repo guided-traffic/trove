@@ -48,7 +48,7 @@ func NewEndpointRateLimit(o EndpointRateLimitOptions) func(http.Handler) http.Ha
 	policy := `"` + class + `";q=` + strconv.Itoa(o.Limiter.Burst()) + ";w=" + strconv.FormatInt(w, 10)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-			v := o.Limiter.Take(r.Context(), o.Endpoint+"\x00"+endpointBucket(r, o.Limit.Key))
+			v := o.Limiter.TakeAt(r.Context(), o.Endpoint+"\x00"+endpointBucket(r, o.Limit.Key), httpserver.InfoFrom(r.Context()).Received)
 			p := policy
 			if v.Mode != cluster.ModeCluster {
 				p = `"` + class + `";q=` + strconv.Itoa(v.Limit) + ";w=" + strconv.FormatInt(int64(v.Window/1e9), 10)
