@@ -290,6 +290,7 @@ func waitForNewPrimary(ctx context.Context, t *testing.T, v testenv.Valkey, old 
 			// Wait for the old primary to rejoin as a replica so the next round
 			// has a replica to promote.
 			waitForReplica(ctx, t, v, cur)
+			waitForSentinelReplica(ctx, t, v)
 			return cur
 		}
 		time.Sleep(500 * time.Millisecond)
@@ -310,4 +311,24 @@ func waitForReplica(ctx context.Context, t *testing.T, v testenv.Valkey, primary
 		time.Sleep(500 * time.Millisecond)
 	}
 	t.Fatalf("%s has no online replica after 60s", primary)
+}
+
+// waitForSentinelReplica waits until the Sentinel that the next round asks to
+// fail over lists a replica it would promote. The primary reports the replica as
+// online before that Sentinel's own INFO of it (refreshed every 10 s) does, and a
+// SENTINEL FAILOVER in between answers NOGOODSLAVE.
+func waitForSentinelReplica(ctx context.Context, t *testing.T, v testenv.Valkey) {
+	t.Helper()
+	sentinel := direct(t, v, v.Sentinels[0], "", v.SentinelPassword)
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		replicas, err := sentinel.Do(ctx, sentinel.B().SentinelReplicas().Master(v.PrimaryName).Build()).ToArray()
+		for _, r := range replicas {
+			if m, merr := r.AsStrMap(); err == nil && merr == nil && m["flags"] == "slave" && m["master-link-status"] == "ok" {
+				return
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Fatalf("Sentinel %s lists no replica it would promote after 60s", v.Sentinels[0])
 }
