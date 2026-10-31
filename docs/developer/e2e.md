@@ -796,8 +796,9 @@ dispatch runs instead, adds the 5-minute Valkey outage, which R-HA-052 keeps for
 
 The fixture ([npm_load_test.go](../../test/e2e/npm_load_test.go), `npmHAFx`, once per process, about 10 s):
 
-- the service account `e2e-npm-ha` with `read`, `deploy`, `delete` on `npm-local` and `read` on `npm-remote` and `npm-all`, and 18
-  tokens: two per `npm ci` loop, which alternates them per command, one for k6, one for the publisher. The `package_read` class of
+- the service account `e2e-npm-ha` with `read`, `deploy`, `delete` on `npm-local` and `read` on `npm-remote` and `npm-all`, and 20
+  tokens: two per `npm ci` loop, which alternates them per command, three for k6, which takes them in turn per request (a PostgreSQL
+  switchover queues 19 s of its load at the edge, which then arrives at once, over one token's burst), one for the publisher. The `package_read` class of
   R-API-016 budgets 200 requests/s per token with a burst of 1,000 in 5 s, and one loop asks for 475 tarballs every 2.5 s (finding 1 below);
 - three packages `@e2e/ha-<run>-lib0..2` in `npm-local`, nine versions of `@e2e/ha-<run>-blob` with 1 MiB to 5 MiB of random bytes (k6's
   tarballs), one `@e2e/ha-<run>-small` of 50 KiB (P-8 below);
@@ -885,7 +886,7 @@ Valkey outage): 2,651 s in all, 44 minutes of tests; `npm-ha` alone is about 36 
 
 | Scenario | Result |
 |---|---|
-| fixture | 475 locked packages (3 from `npm-local`), tarballs of 1,049,373 to 5,244,966 bytes, 18 tokens, 10 s |
+| fixture | 475 locked packages (3 from `npm-local`), tarballs of 1,049,373 to 5,244,966 bytes, 18 tokens (20 since k6 has three), 10 s |
 | drain variant A (`trove-worker2`: a `web` and a `worker` pod, a Sentinel, the Valkey replica and the PostgreSQL standby) | `drain.sh` 48 s; 939 `npm ci` and 35 publishes, all exit `0`, slowest command 4.3 s, every loop ran 15 to 17 commands between the first eviction and the end of the drain; k6 41,563 requests in 5 min 46 s, `document 200` 21,341, `document 304` 4,641, `tarball 200` 15,581, nothing else, no wrong tarball, 0 dropped; p99 292 ms in the warm-up (14,304 requests) and 255 ms from the first eviction until 2 minutes after the drain (20,070); the 35 publishes installed; 4 of 6 probe jobs moved and resumed at step 162 with `attempt` 1; longest `Pending` 0.7 s; no SIGKILL |
 | PostgreSQL switchover | 9 s; 354 `npm ci` and 14 publishes, all exit `0`, every loop ran 2 or 3 commands during the switchover, slowest 8.8 s; k6 15,728 requests, only `2xx` and `304`; `/healthz` and `/readyz` 200 throughout. Before the fix of finding 9 one run of three had 153 `429`; after it, four runs of four had none |
 | Valkey failover | 2 s; 342 `npm ci` and 13 publishes, all exit `0`; k6 14,797 requests, only `2xx` and `304`, p99 236 ms; `/readyz` 200 on every pod throughout; `trove_valkey_primary_changes_total` +1 on each of the five replicas |

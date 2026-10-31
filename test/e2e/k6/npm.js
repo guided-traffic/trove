@@ -22,7 +22,8 @@ import { SharedArray } from 'k6/data';
 
 const TARGET = __ENV.TARGET || 'http://trove-control-plane:30080';
 const HOST = __ENV.HOST || 'localhost';
-const TOKEN = open('/out/token').trim();
+// one token per line; an iteration takes them in turn (npm_load_test.go haK6Tokens)
+const TOKENS = open('/out/token').split('\n').map((s) => s.trim()).filter((s) => s);
 const FIXTURE = new SharedArray('fixture', () => [JSON.parse(open('/out/npm-fixture.json'))]);
 const ACCEPT = 'application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*';
 
@@ -55,7 +56,7 @@ export default function () {
   const n = exec.scenario.iterationInTest;
   const f = FIXTURE[0];
   const timeout = __ENV.TIMEOUT || '60s';
-  const headers = { Host: HOST, Authorization: `Bearer ${TOKEN}` };
+  const headers = { Host: HOST, Authorization: `Bearer ${TOKENS[n % TOKENS.length]}` };
   const t0 = Date.now();
   if (n % 8 < 5) {
     const path = f.documents[n % f.documents.length];
