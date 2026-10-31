@@ -9,14 +9,14 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 270 of 626 spec requirements are implemented: a passing test names them and no
+**Status.** 285 of 627 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 695 specified (190 of them implemented), 1,544 open.
-626 spec requirements: 523 cover catalog features, 103 cover none (`trove-only`, [listed at the
+**Totals.** 2,239 catalog features on 60 pages: 695 specified (204 of them implemented), 1,544 open.
+627 spec requirements: 524 cover catalog features, 103 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
 ## Pages
@@ -47,7 +47,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Content API operation catalog](#content-api-operation-catalog-api) | `API` | 166 | 11 of 11 | 67 | 99 | 11 |
 | [Operation catalog: administration API](#operation-catalog-administration-api-admapi) | `ADMAPI` | 114 | 34 of 34 | 54 | 60 | 4 |
 | [Package formats: matrix and cross-format behavior](#package-formats-matrix-and-cross-format-behavior-fmt) | `FMT` | 14 | 8 of 8 | 9 | 5 | 4 |
-| [npm package format](#npm-package-format-pkg-npm) | `PKG-NPM` | 62 | 37 of 37 | 52 | 10 | 9 |
+| [npm package format](#npm-package-format-pkg-npm) | `PKG-NPM` | 62 | 37 of 37 | 52 | 10 | 23 |
 | [NuGet](#nuget-pkg-nuget) | `PKG-NUGET` | 56 | 35 of 35 | 42 | 14 | 0 |
 | [Docker image format](#docker-image-format-pkg-docker) | `PKG-DOCKER` | 52 | – | 1 | 51 | 0 |
 | [OCI images and artifacts](#oci-images-and-artifacts-pkg-oci) | `PKG-OCI` | 20 | – | 0 | 20 | 0 |
@@ -102,7 +102,7 @@ Catalog page: [repositories.md](../features/repositories.md) · specified by pri
 | REPO-002 | One package format per repository | MVP | implemented | [R-ARCH-008](../spec/architecture.md) (implemented), [R-REPO-001](../spec/repositories-and-proxy.md) (implemented) |
 | REPO-003 | Generic repositories | P1 | open | – |
 | REPO-004 | Repository key naming rules | MVP | implemented | [R-REPO-002](../spec/repositories-and-proxy.md) (implemented) |
-| REPO-005 | Repository addressing | MVP | specified | [R-ARCH-005](../spec/architecture.md) (implemented), [R-NPM-001](../spec/formats/npm.md), [R-NUGET-001](../spec/formats/nuget.md), [R-REPO-002](../spec/repositories-and-proxy.md) (implemented) |
+| REPO-005 | Repository addressing | MVP | specified | [R-ARCH-005](../spec/architecture.md) (implemented), [R-NPM-001](../spec/formats/npm.md) (implemented), [R-NUGET-001](../spec/formats/nuget.md), [R-REPO-002](../spec/repositories-and-proxy.md) (implemented) |
 | REPO-006 | Format support per repository class | MVP | implemented | [R-ARCH-008](../spec/architecture.md) (implemented), [R-REPO-003](../spec/repositories-and-proxy.md) (implemented) |
 | REPO-007 | Repository administration list | MVP | specified | [R-UI-020](../spec/api-and-ui.md), [R-REPO-012](../spec/repositories-and-proxy.md) (implemented) |
 | REPO-008 | Quick repository setup wizard | P1 | specified | [R-UI-023](../spec/api-and-ui.md), [R-REPO-015](../spec/repositories-and-proxy.md) |
@@ -195,11 +195,11 @@ Catalog page: [remote-repositories.md](../features/remote-repositories.md) · sp
 | RMT-015 | Network timeouts and source interface | MVP | implemented | [R-ARCH-022](../spec/architecture.md) (implemented), [R-REPO-024](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-016 | Outbound proxy selection per repository | P1 | implemented | [R-REPO-037](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-017 | Store artifacts locally or pass through | P1 | specified | [R-REPO-044](../spec/repositories-and-proxy.md) |
-| RMT-018 | Metadata retrieval cache period | MVP | specified | [R-ARCH-013](../spec/architecture.md), [R-NPM-024](../spec/formats/npm.md) (implemented), [R-NUGET-015](../spec/formats/nuget.md), [R-REPO-027](../spec/repositories-and-proxy.md) |
-| RMT-019 | Metadata retrieval timeout with stale fallback | MVP | specified | [R-ARCH-013](../spec/architecture.md), [R-NPM-024](../spec/formats/npm.md) (implemented), [R-REPO-027](../spec/repositories-and-proxy.md) |
+| RMT-018 | Metadata retrieval cache period | MVP | specified | [R-ARCH-013](../spec/architecture.md), [R-NPM-024](../spec/formats/npm.md) (implemented), [R-NUGET-015](../spec/formats/nuget.md), [R-REPO-027](../spec/repositories-and-proxy.md) (implemented) |
+| RMT-019 | Metadata retrieval timeout with stale fallback | MVP | specified | [R-ARCH-013](../spec/architecture.md), [R-NPM-024](../spec/formats/npm.md) (implemented), [R-REPO-027](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-020 | Negative cache period | MVP | specified | [R-ARCH-013](../spec/architecture.md), [R-NPM-024](../spec/formats/npm.md) (implemented), [R-NUGET-015](../spec/formats/nuget.md), [R-REPO-028](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-021 | Unused cached artifact cleanup | P1 | specified | [R-REPO-046](../spec/repositories-and-proxy.md) |
-| RMT-022 | Remote checksum policy | P1 | specified | [R-NPM-025](../spec/formats/npm.md), [R-NUGET-029](../spec/formats/nuget.md), [R-REPO-041](../spec/repositories-and-proxy.md) |
+| RMT-022 | Remote checksum policy | P1 | specified | [R-NPM-025](../spec/formats/npm.md), [R-NUGET-029](../spec/formats/nuget.md), [R-REPO-041](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-023 | MIME-type mismatch blocking | MVP | implemented | [R-REPO-042](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-024 | HEAD request bypass | P2 | open | – |
 | RMT-025 | Eager fetching of companion artifacts | P2 | open | – |
@@ -1379,7 +1379,7 @@ Catalog page: [ui-inventory.md](../features/ui-inventory.md) · specified by pri
 | UI-007 | First-run onboarding wizard | P2 | open | – |
 | UI-058 | Supported browsers | MVP | implemented | [R-UI-001](../spec/api-and-ui.md) (implemented) |
 | UI-008 | Packages list screen | MVP | specified | [R-UI-006](../spec/api-and-ui.md) |
-| UI-009 | Package details screen | MVP | specified | [R-UI-007](../spec/api-and-ui.md), [R-UI-008](../spec/api-and-ui.md) |
+| UI-009 | Package details screen | MVP | specified | [R-UI-007](../spec/api-and-ui.md), [R-UI-008](../spec/api-and-ui.md) (implemented) |
 | UI-010 | Install command panel | MVP | specified | [R-UI-009](../spec/api-and-ui.md) |
 | UI-011 | Artifact browser screen | MVP | specified | [R-UI-010](../spec/api-and-ui.md) |
 | UI-012 | Item actions and their required permissions | MVP | specified | [R-UI-011](../spec/api-and-ui.md) |
@@ -1393,8 +1393,8 @@ Catalog page: [ui-inventory.md](../features/ui-inventory.md) · specified by pri
 | UI-020 | Artifact search on the browser page | P1 | specified | [R-UI-015](../spec/api-and-ui.md) |
 | UI-021 | Client setup dialog | MVP | specified | [R-UI-016](../spec/api-and-ui.md) |
 | UI-022 | Credential step and token embedding | MVP | specified | [R-UI-016](../spec/api-and-ui.md) |
-| UI-023 | Snippet templating | MVP | specified | [R-API-030](../spec/api-and-ui.md), [R-UI-016](../spec/api-and-ui.md) |
-| UI-024 | npm client instructions | MVP | specified | [R-UI-017](../spec/api-and-ui.md), [R-NPM-041](../spec/formats/npm.md) |
+| UI-023 | Snippet templating | MVP | specified | [R-API-030](../spec/api-and-ui.md) (implemented), [R-UI-016](../spec/api-and-ui.md) |
+| UI-024 | npm client instructions | MVP | specified | [R-UI-017](../spec/api-and-ui.md), [R-NPM-041](../spec/formats/npm.md) (implemented) |
 | UI-025 | NuGet client instructions | MVP | specified | [R-UI-018](../spec/api-and-ui.md), [R-NUGET-026](../spec/formats/nuget.md) |
 | UI-026 | Instructions for other formats | P1 | specified | [R-UI-019](../spec/api-and-ui.md) |
 | UI-027 | Federated repository instructions | Later | open | – |
@@ -1749,7 +1749,7 @@ Catalog page: [formats/README.md](../features/formats/README.md) · specified by
 | FMT-003 | Client version floors and validated client versions | MVP | specified | [R-ARCH-010](../spec/architecture.md) (implemented), [R-NPM-045](../spec/formats/npm.md) |
 | FMT-004 | Format eligibility for federation | Later | open | – |
 | FMT-005 | Container-only deployment profile | Out of scope | open | – |
-| FMT-006 | Client setup instructions across formats | MVP | specified | [R-ARCH-008](../spec/architecture.md) (implemented), [R-NPM-041](../spec/formats/npm.md) |
+| FMT-006 | Client setup instructions across formats | MVP | specified | [R-ARCH-008](../spec/architecture.md) (implemented), [R-GENERIC-016](../spec/formats/generic.md), [R-NPM-041](../spec/formats/npm.md) (implemented) |
 | FMT-007 | Package view and file view | MVP | implemented | [R-ARCH-009](../spec/architecture.md) (implemented) |
 | FMT-008 | Format property namespaces | MVP | implemented | [R-ARCH-008](../spec/architecture.md) (implemented), [R-NPM-006](../spec/formats/npm.md) (implemented) |
 | FMT-009 | Format-aware deploy coordinates | P2 | open | – |
@@ -1764,12 +1764,12 @@ Catalog page: [formats/README.md](../features/formats/README.md) · specified by
 Catalog page: [formats/npm.md](../features/formats/npm.md) · specified by priority: MVP 37 of 37 · P1 15 of 15 · P2 0 of 8 · Later 0 of 1 · Out of scope 0 of 1
 
 <details>
-<summary>62 features: 52 specified, 10 open, 9 implemented</summary>
+<summary>62 features: 52 specified, 10 open, 23 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
-| PKG-NPM-001 | npm repositories in all three repository classes | MVP | specified | [R-NPM-001](../spec/formats/npm.md) |
-| PKG-NPM-002 | Registry URL of a repository | MVP | specified | [R-NPM-001](../spec/formats/npm.md) |
+| PKG-NPM-001 | npm repositories in all three repository classes | MVP | implemented | [R-NPM-001](../spec/formats/npm.md) (implemented) |
+| PKG-NPM-002 | Registry URL of a repository | MVP | implemented | [R-NPM-001](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-003 | Scoped packages and encoded slashes | MVP | implemented | [R-AUTHZ-005](../spec/authorization.md) (implemented), [R-NPM-002](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-004 | Package name rules | MVP | implemented | [R-NPM-002](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-005 | Bearer token in client configuration | MVP | specified | [R-NPM-004](../spec/formats/npm.md), [R-AUTH-033](../spec/identity-and-authentication.md) (implemented) |
@@ -1782,27 +1782,27 @@ Catalog page: [formats/npm.md](../features/formats/npm.md) · specified by prior
 | PKG-NPM-012 | One-time-password challenge on writes | P2 | open | – |
 | PKG-NPM-013 | Trusted publishing through CI OIDC token exchange | P1 | specified | [R-NPM-022](../spec/formats/npm.md) |
 | PKG-NPM-014 | Client-side token and profile management | P2 | open | – |
-| PKG-NPM-015 | Publish through the npm protocol | MVP | specified | [R-AUTHZ-007](../spec/authorization.md), [R-NPM-007](../spec/formats/npm.md) (implemented) |
+| PKG-NPM-015 | Publish through the npm protocol | MVP | implemented | [R-AUTHZ-007](../spec/authorization.md) (implemented), [R-NPM-007](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-016 | Immutable versions | MVP | implemented | [R-NPM-008](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-017 | Deploy a package tarball through the UI or generic upload | P1 | specified | [R-NPM-036](../spec/formats/npm.md) |
 | PKG-NPM-018 | Reject uploads whose path does not match the package | P1 | specified | [R-NPM-036](../spec/formats/npm.md) |
-| PKG-NPM-019 | Unpublish | MVP | specified | [R-AUTHZ-007](../spec/authorization.md), [R-NPM-017](../spec/formats/npm.md) |
+| PKG-NPM-019 | Unpublish | MVP | implemented | [R-AUTHZ-007](../spec/authorization.md) (implemented), [R-NPM-017](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-020 | Deprecate and undeprecate | P1 | specified | [R-NPM-018](../spec/formats/npm.md) |
-| PKG-NPM-021 | Dist-tag management | MVP | specified | [R-AUTHZ-007](../spec/authorization.md), [R-NPM-016](../spec/formats/npm.md) (implemented) |
+| PKG-NPM-021 | Dist-tag management | MVP | implemented | [R-AUTHZ-007](../spec/authorization.md) (implemented), [R-NPM-016](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-022 | Maintainer list changes | P2 | open | – |
 | PKG-NPM-023 | Staged publishing | Later | open | – |
 | PKG-NPM-024 | Provenance bundles and attestation links | P2 | open | – |
 | PKG-NPM-025 | Full package document | MVP | implemented | [R-NPM-010](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-026 | Abbreviated package document | MVP | implemented | [R-NPM-011](../spec/formats/npm.md) (implemented) |
-| PKG-NPM-027 | Publish times for client-side release-age policies | MVP | specified | [R-NPM-012](../spec/formats/npm.md) |
-| PKG-NPM-028 | Single-version document | P1 | specified | [R-NPM-014](../spec/formats/npm.md) |
+| PKG-NPM-027 | Publish times for client-side release-age policies | MVP | implemented | [R-NPM-012](../spec/formats/npm.md) (implemented) |
+| PKG-NPM-028 | Single-version document | P1 | implemented | [R-NPM-014](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-062 | Tarball download | MVP | specified | [R-NPM-015](../spec/formats/npm.md), [R-NPM-025](../spec/formats/npm.md) |
 | PKG-NPM-029 | Metadata calculation for local repositories | MVP | implemented | [R-NPM-010](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-030 | Recalculate npm metadata | P1 | specified | [R-NPM-035](../spec/formats/npm.md) |
 | PKG-NPM-031 | Selection of the `latest` dist-tag | MVP | specified | [R-NPM-016](../spec/formats/npm.md) (implemented), [R-NPM-031](../spec/formats/npm.md) |
 | PKG-NPM-032 | Conditional requests and cache headers | MVP | implemented | [R-NPM-013](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-033 | Stored package properties | MVP | implemented | [R-NPM-006](../spec/formats/npm.md) (implemented) |
-| PKG-NPM-034 | Storage layout | MVP | specified | [R-NPM-003](../spec/formats/npm.md), [R-NPM-006](../spec/formats/npm.md) (implemented) |
+| PKG-NPM-034 | Storage layout | MVP | implemented | [R-NPM-003](../spec/formats/npm.md) (implemented), [R-NPM-006](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-035 | Strict layout enforcement per local repository | P2 | open | – |
 | PKG-NPM-036 | Strict-layout conversion of existing repositories | P2 | open | – |
 | PKG-NPM-037 | Registry signatures for `npm audit signatures` | P2 | open | – |
@@ -1815,20 +1815,20 @@ Catalog page: [formats/npm.md](../features/formats/npm.md) · specified by prior
 | PKG-NPM-044 | Virtual metadata cache period | MVP | specified | [R-NPM-032](../spec/formats/npm.md) |
 | PKG-NPM-045 | Publishing through a virtual repository | MVP | specified | [R-AUTHZ-009](../spec/authorization.md) (implemented), [R-NPM-029](../spec/formats/npm.md) |
 | PKG-NPM-046 | External dependency rewrite | P1 | specified | [R-NPM-034](../spec/formats/npm.md) |
-| PKG-NPM-047 | Permissions covering metadata as well as tarballs | MVP | specified | [R-AUTHZ-005](../spec/authorization.md) (implemented), [R-NPM-003](../spec/formats/npm.md) |
+| PKG-NPM-047 | Permissions covering metadata as well as tarballs | MVP | implemented | [R-AUTHZ-005](../spec/authorization.md) (implemented), [R-NPM-003](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-048 | `npm search` | P1 | specified | [R-NPM-037](../spec/formats/npm.md) |
-| PKG-NPM-049 | `npm audit` forwarding | P1 | specified | [R-NPM-038](../spec/formats/npm.md), [R-VULN-017](../spec/vulnerability-scanning.md) |
-| PKG-NPM-050 | npm client configuration | MVP | specified | [R-NPM-041](../spec/formats/npm.md) |
+| PKG-NPM-049 | `npm audit` forwarding | P1 | specified | [R-NPM-038](../spec/formats/npm.md) (implemented), [R-VULN-017](../spec/vulnerability-scanning.md) |
+| PKG-NPM-050 | npm client configuration | MVP | implemented | [R-NPM-041](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-051 | pnpm | MVP | specified | [R-NPM-040](../spec/formats/npm.md) |
 | PKG-NPM-052 | Yarn Classic (1.x) | MVP | specified | [R-NPM-040](../spec/formats/npm.md) |
 | PKG-NPM-053 | Yarn Modern (2 and later) | MVP | specified | [R-NPM-042](../spec/formats/npm.md) |
-| PKG-NPM-054 | Client setup instructions in the UI | MVP | specified | [R-NPM-041](../spec/formats/npm.md) |
+| PKG-NPM-054 | Client setup instructions in the UI | MVP | implemented | [R-NPM-041](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-055 | Build metadata through a companion CLI wrapper | P1 | specified | [R-NPM-039](../spec/formats/npm.md) |
-| PKG-NPM-056 | Read endpoints | MVP | specified | [R-NPM-001](../spec/formats/npm.md) |
-| PKG-NPM-057 | Write endpoints | MVP | specified | [R-NPM-007](../spec/formats/npm.md) (implemented), [R-NPM-009](../spec/formats/npm.md) |
-| PKG-NPM-058 | Authentication endpoints | MVP | specified | [R-NPM-019](../spec/formats/npm.md), [R-NPM-020](../spec/formats/npm.md), [R-NPM-043](../spec/formats/npm.md) |
-| PKG-NPM-059 | Security audit endpoints | P1 | specified | [R-NPM-038](../spec/formats/npm.md), [R-VULN-017](../spec/vulnerability-scanning.md) |
-| PKG-NPM-060 | Headers and error bodies | MVP | specified | [R-NPM-005](../spec/formats/npm.md) (implemented), [R-NPM-043](../spec/formats/npm.md) |
+| PKG-NPM-056 | Read endpoints | MVP | implemented | [R-NPM-001](../spec/formats/npm.md) (implemented) |
+| PKG-NPM-057 | Write endpoints | MVP | implemented | [R-NPM-007](../spec/formats/npm.md) (implemented), [R-NPM-009](../spec/formats/npm.md) (implemented) |
+| PKG-NPM-058 | Authentication endpoints | MVP | specified | [R-NPM-019](../spec/formats/npm.md), [R-NPM-020](../spec/formats/npm.md), [R-NPM-043](../spec/formats/npm.md) (implemented) |
+| PKG-NPM-059 | Security audit endpoints | P1 | specified | [R-NPM-038](../spec/formats/npm.md) (implemented), [R-VULN-017](../spec/vulnerability-scanning.md) |
+| PKG-NPM-060 | Headers and error bodies | MVP | implemented | [R-NPM-005](../spec/formats/npm.md) (implemented), [R-NPM-043](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-061 | Public-registry-only endpoints | Out of scope | open | – |
 
 </details>
@@ -1860,10 +1860,10 @@ Catalog page: [formats/nuget.md](../features/formats/nuget.md) · specified by p
 | PKG-NUGET-016 | Anonymous access and forced authentication | MVP | specified | [R-AUTHZ-016](../spec/authorization.md) (implemented), [R-NUGET-012](../spec/formats/nuget.md), [R-AUTH-002](../spec/identity-and-authentication.md) (implemented), [R-AUTH-037](../spec/identity-and-authentication.md) (implemented) |
 | PKG-NUGET-017 | Client credentials over HTTP Basic | MVP | specified | [R-NUGET-012](../spec/formats/nuget.md), [R-AUTH-033](../spec/identity-and-authentication.md) (implemented) |
 | PKG-NUGET-018 | API key for push and delete | MVP | specified | [R-NUGET-006](../spec/formats/nuget.md), [R-NUGET-012](../spec/formats/nuget.md), [R-AUTH-033](../spec/identity-and-authentication.md) (implemented) |
-| PKG-NUGET-019 | Permissions per NuGet operation | MVP | specified | [R-AUTHZ-007](../spec/authorization.md), [R-AUTHZ-008](../spec/authorization.md) (implemented), [R-NUGET-013](../spec/formats/nuget.md) |
+| PKG-NUGET-019 | Permissions per NuGet operation | MVP | specified | [R-AUTHZ-007](../spec/authorization.md) (implemented), [R-AUTHZ-008](../spec/authorization.md) (implemented), [R-NUGET-013](../spec/formats/nuget.md) |
 | PKG-NUGET-020 | Push through the NuGet protocol | MVP | specified | [R-NUGET-006](../spec/formats/nuget.md) |
 | PKG-NUGET-021 | Deploy through the UI and generic upload | MVP | specified | [R-NUGET-005](../spec/formats/nuget.md) |
-| PKG-NUGET-022 | Delete, unlist and relist | MVP | specified | [R-AUTHZ-007](../spec/authorization.md), [R-NUGET-007](../spec/formats/nuget.md) |
+| PKG-NUGET-022 | Delete, unlist and relist | MVP | specified | [R-AUTHZ-007](../spec/authorization.md) (implemented), [R-NUGET-007](../spec/formats/nuget.md) |
 | PKG-NUGET-023 | NuGet remote repository settings | MVP | specified | [R-NUGET-014](../spec/formats/nuget.md) |
 | PKG-NUGET-024 | Proxying the public NuGet gallery | MVP | specified | [R-NUGET-014](../spec/formats/nuget.md), [R-NUGET-015](../spec/formats/nuget.md), [R-NUGET-016](../spec/formats/nuget.md) |
 | PKG-NUGET-025 | Chained remote NuGet repository | P2 | open | – |
@@ -2985,7 +2985,7 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-API-021 (implemented) | Current caller and UI preferences | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-API-053 | Guides of the formats | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-API-048 | Package ownership surface | P1 | [api-and-ui.md](../spec/api-and-ui.md) |
-| R-UI-049 | Guides for every registry variant | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-049 (implemented) | Guides for every registry variant | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-026 | Service accounts | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-036 | Claim tester | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-042 | Errors, conflicts and feedback | MVP | [api-and-ui.md](../spec/api-and-ui.md) |

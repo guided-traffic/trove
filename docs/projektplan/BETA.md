@@ -143,28 +143,28 @@ Details: [roadmap M1](../coverage/roadmap.md#m1--access-core)
 Details: [roadmap M2](../coverage/roadmap.md#m2--npm) · spec: [formats/npm.md](../spec/formats/npm.md)
 
 **Engines shared by all registries**
-- 🟡 Contract hardening from the M1 architecture review, before the format contract freezes ([roadmap WP2.0](../coverage/roadmap.md#m2--npm))
-- 🟡 Format contract and conformance kit
-- ⚪ Proxy engine: upstream settings, request collapsing through Valkey, metadata and negative caches, stale metadata while the upstream is down
-- ⚪ Virtual engine: member order, merged metadata, deployment target, namespace claims, protection against dependency confusion
+- 🟢 Contract hardening from the M1 architecture review, before the format contract freezes ([roadmap WP2.0](../coverage/roadmap.md#m2--npm))
+- 🟢 Format contract and conformance kit
+- 🟢 Proxy engine: upstream settings, request collapsing through Valkey, metadata and negative caches, stale metadata while the upstream is down
+- 🟢 Virtual engine: member order, merged metadata, deployment target, namespace claims, protection against dependency confusion
 
 **npm**
-- ⚪ Local: publish, package documents, dist-tags, unpublish, whoami, ping
-- ⚪ Remote: proxy of the public npm registry, tarball URL rewriting, versions removed upstream
-- ⚪ Virtual: merged package documents and dist-tags, writes through the deployment target
-- ⚪ Clients: npm, pnpm, Yarn Classic, Yarn Berry
-- ⚪ Package UI: package list and detail, README, install panel, client setup snippets
-- ⚪ Repository settings form rendered from the format's settings schema (R-ARCH-004, R-UI-021): the API serves the schema (`settingsSchema` of `GET /api/v1/formats`) and validates the `npm` member (Q-ARCH-229); the form is not built, so npm's settings are settable through the API only
-- ⚪ npm on a customer endpoint: package documents and dist-tags list only exposed versions, URLs on the endpoint's host, no upstream fetch from that endpoint by default
-- 🟡 Security audit: `npm audit`, `pnpm audit` and `yarn npm audit` through remote and virtual repositories (R-NPM-038, owner 2026-10-31)
+- 🟢 Local: publish, package documents, dist-tags, unpublish, whoami, ping
+- 🟢 Remote: proxy of the public npm registry, tarball URL rewriting, versions removed upstream
+- 🟢 Virtual: merged package documents and dist-tags, writes through the deployment target
+- 🟢 Clients: npm, pnpm, Yarn Classic, Yarn Berry
+- 🟢 Package UI: package list and detail, README, install panel, client setup snippets
+- 🟢 Repository settings form rendered from the format's settings schema (R-ARCH-004, R-UI-021, Q-ARCH-229, Q-UI-78 to Q-UI-82)
+- 🟢 npm on a customer endpoint: package documents and dist-tags list only exposed versions, URLs on the endpoint's host, no upstream fetch from that endpoint by default
+- 🟢 Security audit: `npm audit`, `pnpm audit` and `yarn npm audit` through remote and virtual repositories (R-NPM-038, owner 2026-10-31)
 - 🟡 In-app guide for every npm variant: local, remote and virtual repositories with npm, pnpm, Yarn Berry and Yarn Classic (owner 2026-10-31)
 
 **Tests**
-- ⚪ npm integration tests: protocol over HTTP, conformance kit, nightly fuzzing of package documents
-- ⚪ npm e2e tests: install and publish with npm, pnpm, Yarn Classic and Yarn Berry through local, remote and virtual repositories
-- ⚪ npm e2e: cold cache with three clients at once, upstream down, Valkey stopped, replica killed mid-install
-- ⚪ npm load joins the drain and failover tests
-- ⚪ npm e2e: a customer endpoint through its own Ingress lists only exposed versions; hidden versions answer 404
+- 🟡 npm integration tests: protocol over HTTP, conformance kit, nightly fuzzing of package documents (the 30-minute fuzz legs run in the closing dispatch)
+- 🟢 npm e2e tests: install and publish with npm, pnpm, Yarn Classic and Yarn Berry through local, remote and virtual repositories
+- 🟡 npm e2e: cold cache with three clients at once, upstream down, Valkey stopped, replica killed mid-install (the Valkey-stopped leg runs in the closing dispatch)
+- 🟡 npm load joins the drain and failover tests (green on kind; the CI leg `npm-ha` has not run yet)
+- 🟢 npm e2e: a customer endpoint through its own Ingress lists only exposed versions; hidden versions answer 404
 
 **Release**
 - ⚪ the release that closes the phase (cut by Semantic Release; the version goes into the table)

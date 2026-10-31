@@ -17,12 +17,12 @@ regenerated.
 <!-- coverage-gen:begin headline -->
 | Number | Value | Kind |
 |---|---|---|
-| **Implemented** | **8.5%** (190 of 2,239 catalog features) | measured from passing tests that name requirements (Q-ROAD-4) |
+| **Implemented** | **9.1%** (204 of 2,239 catalog features) | measured from passing tests that name requirements (Q-ROAD-4) |
 | **MVP features covered by spec requirements** | **100%** (379 of 379) | measured from `Covers:` lines |
 | P1 features covered by spec requirements | 56.7% (293 of 517) | measured from `Covers:` lines |
 | In-scope features covered (MVP, P1, P2, Later) | 32.1% (695 of 2,167) | measured from `Covers:` lines |
 | Catalog features | 2,239 on 60 pages | measured from catalog headings |
-| Spec requirements | 626 on 15 pages (472 MVP, 149 P1, 5 P2) | measured from spec headings |
+| Spec requirements | 627 on 15 pages (473 MVP, 149 P1, 5 P2) | measured from spec headings |
 | Requirements covering no catalog feature | 103 (`trove-only`) | measured from `Covers:` lines |
 <!-- coverage-gen:end headline -->
 
@@ -51,12 +51,12 @@ see [Honesty notes](#honesty-notes).
 <!-- coverage-gen:begin priority -->
 | Priority | Features | Specified | Open | Specified share | Covered by an MVP requirement | Implemented |
 |---|---:|---:|---:|---:|---:|---:|
-| **MVP** | 379 | 379 | 0 | 100% | 379 | 138 |
-| **P1** | 517 | 293 | 224 | 56.7% | 62 | 45 |
+| **MVP** | 379 | 379 | 0 | 100% | 379 | 151 |
+| **P1** | 517 | 293 | 224 | 56.7% | 62 | 46 |
 | **P2** | 895 | 23 | 872 | 2.6% | 12 | 7 |
 | **Later** | 376 | 0 | 376 | 0% | 0 | 0 |
 | **Out of scope** | 72 | 0 | 72 | 0% | 0 | 0 |
-| **Total** | 2,239 | 695 | 1,544 | 31.0% | 453 | 190 |
+| **Total** | 2,239 | 695 | 1,544 | 31.0% | 453 | 204 |
 <!-- coverage-gen:end priority -->
 
 The column *Covered by an MVP requirement* shows where the spec pulls work forward: 55 P1 features
@@ -187,7 +187,7 @@ table.
 <!-- coverage-gen:begin audiences -->
 | Audience | MVP entries | MVP and P1 entries | Implemented | Most open entries (MVP and P1) |
 |---|---|---|---:|---|
-| **npm-only team** | 202 of 202 specified, 0 open (100%) | 316 of 364 specified, 48 open (86.8%) | 106 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
+| **npm-only team** | 202 of 202 specified, 0 open (100%) | 316 of 364 specified, 48 open (86.8%) | 120 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
 | **.NET team** | 200 of 200 specified, 0 open (100%) | 306 of 354 specified, 48 open (86.4%) | 97 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
 | **platform/ops team** | 260 of 260 specified, 0 open (100%) | 442 of 462 specified, 20 open (95.7%) | 145 | Repositories 9; Operations, monitoring and configuration 4; High availability and deployment 3 |
 
