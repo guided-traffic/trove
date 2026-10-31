@@ -1515,6 +1515,29 @@ everything else. The development agent would revisit this if the owner wants sca
 **Applied in the spec:** this page (Milestones at a glance, Why this order, M4b, M5's E5.4, E5.8, E5.13 and WP5.5, the
 walkthrough, M12, Later), [BETA.md](../projektplan/BETA.md) phase 6, [FULL.md](../projektplan/FULL.md) M6, M12, F4 and F.
 
+### Q-ROAD-9 · What WP2.8 builds of R-ARCH-027's load scripts, and where they run
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: WP2.8 starts "the load scripts of R-ARCH-027 with k6, running against npm". R-ARCH-027 measures at the replica, with the load
+generator inside the cluster, on a reference environment that does not exist yet; E5.3 gates P-1 to P-17 there. The dev profile is a
+kind cluster on a laptop or a runner.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The npm scripts now, reported on the dev profile, gated in E5.3 | [perf/k6/npm.js](../../perf/k6/npm.js) with the targets a client can measure (P-1, P-3, P-5, P-7, P-8) as k6 scenarios against one `web` pod from inside the cluster; `TestNPMPerf` runs it in the leg `npm-ha` and fails on an unanswered request, not on a target; `GATE=1` makes the targets k6 thresholds for the reference run | The scripts run on every change, so they cannot rot before M5; the numbers of each run are in the log; E5.3 runs the same file | A missed target on the dev profile is no signal |
+| (b) Gate on the dev profile now | The thresholds apply on kind | A regression fails at once | A kind cluster is not the reference environment: a target missed there says nothing about the product, and one met there proves nothing |
+| (c) Scripts in M5 | WP5.6 writes them | No unused work | WP2.8 names them; M5 would build a harness again |
+
+**Choice:** (a). P-4, P-6 and P-9 to P-17 need the replica's side, the upstream's timing or another driver (P-12 is E2.9's test,
+P-13 and P-14 the driver's of E0.6 and E0.13) and stay with WP5.6.
+
+**Rationale:** A script that runs on every change stays correct, and the reference environment is where a target means something.
+The development agent revisits this when the reference environment exists: the run there sets `GATE=1`, and the dev-profile run may
+then be dropped from the per-change leg.
+
+**Applied in the roadmap:** none; [../developer/e2e.md](../developer/e2e.md#drain-and-failover-under-npm-load).
+
 The ADR log's index
 [Decisions by the development agent](../decisions.md#decisions-by-the-development-agent) lists
-Q-ROAD-1 to Q-ROAD-8 after the spec questions.
+Q-ROAD-1 to Q-ROAD-9 after the spec questions.

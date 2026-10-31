@@ -449,11 +449,12 @@ func startK6(t testing.TB, name string, d time.Duration) *k6run {
 
 // k6Opts parameterizes startK6Script: the iterations per second, the console lines that show the load runs
 // (their prefix) and, for a script that needs a credential, a token that is handed over as the file /out/token
-// (never as an argument).
+// (never as an argument). files are further inputs of the script, written into /out by name.
 type k6Opts struct {
 	rate   int
 	prefix string
 	token  string
+	files  map[string][]byte
 }
 
 // startK6Script runs a script of test/e2e/k6 the way startK6 runs load.js.
@@ -466,6 +467,11 @@ func startK6Script(t testing.TB, name, scriptName string, d time.Duration, o k6O
 	_ = os.Chmod(k.dir, 0o777)
 	if o.token != "" {
 		if err := os.WriteFile(filepath.Join(k.dir, "token"), []byte(o.token), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, b := range o.files {
+		if err := os.WriteFile(filepath.Join(k.dir, name), b, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}

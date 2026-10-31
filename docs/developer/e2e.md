@@ -2,10 +2,12 @@
 
 The suite proves the exit criteria of M0 that need Kubernetes: E0.3, E0.4 (chart part), E0.6, E0.7,
 E0.11, E0.12 (dev-profile parts), E0.13, E0.14, E0.15 and E0.16 of the [roadmap](../coverage/roadmap.md), and the
-end-to-end criteria of the access core of M1: E1.1, E1.8, E1.11 (the API part and the browser journeys), E1.13 and E1.14. It runs
+end-to-end criteria of the access core of M1: E1.1, E1.8, E1.11 (the API part and the browser journeys), E1.13 and E1.14, and of
+npm in M2: E2.1 to E2.12 and E2.11's drain and failovers under npm load. It runs
 the real release image on the [dev profile](local-profile.md), over TLS on every connection, and injects the failures of
 [R-HA-051 and R-HA-052](../spec/ha-and-helm.md). This is work package WP0.11 (and its TLS part, WP0.12); the M1 tests are
-[described below](#m1-tests).
+[described below](#m1-tests), the npm tests [further down](#the-npm-tests), and WP2.8's harness, which runs the drain and the
+failovers under npm load, in [Drain and failover under npm load](#drain-and-failover-under-npm-load).
 
 ## What has to be in your head first
 
@@ -71,6 +73,12 @@ test/e2e/                   the Go tests, build tag `e2e`, package e2e
   npm_upstream_test.go      E2.2, E2.4, E2.5, E2.9: what the counting upstream recorded (TestNPMCollapse, TestNPMUpstream)
   npm_endpoint_test.go      E2.12: npm on the endpoint `customers`
   npm_closing_test.go       the closing run: the matrix and the cold install with Valkey stopped, the public-registry subset
+  npm_load_test.go          E2.11's load: the fixture (tokens, the lockfile of 475 packages, the 1 to 5 MiB tarballs), the npm ci
+                            and publish loops detached in the client pods, the k6 npm requests and their conditions
+  npm_ha_test.go            E2.11: drain variant A, PostgreSQL switchover, Valkey failover, pod crash (TestNPMHA); the Valkey
+                            outage of the closing run (TestNPMHAClosing)
+  npm_perf_test.go          R-ARCH-027: perf/k6/npm.js against one web replica from inside the cluster, reported (TestNPMPerf)
+  k6/npm.js                 the k6 npm requests of R-HA-059: documents and 1 to 5 MiB tarballs of npm-all, 120 requests/s
   clients/                  the npm client matrix image (below): package.json + package-lock.json, bin/ wrappers, shim/npm, fwd/ forwarder,
                             Dockerfile, build.sh, check-pins.mjs
 web/e2e/                    the Playwright journeys of R-UI-047 (TypeScript, in the web workspace's lockfile)
@@ -78,6 +86,7 @@ web/e2e/                    the Playwright journeys of R-UI-047 (TypeScript, in 
   global-setup.ts           verifies the TLS chains against the dev CA, removes alice and bob (JIT users of an earlier run)
   support.ts                the `page`, `admin` and `replicas` fixtures, the CSP watch, `expectAccessible` (axe), the sign-ins
   tests/01-...07-*.spec.ts  the journeys, in the order they run (Browser journeys, below)
+perf/k6/npm.js              the npm load scripts of R-ARCH-027 (P-1, P-3, P-5, P-7, P-8); TestNPMPerf runs them
 ```
 
 ## Running it
@@ -93,8 +102,10 @@ make e2e SET=drain           # E0.14 only (with the transfer loop of E1.13)
 make e2e SET='^TestE06'      # any go test -run expression
 make e2e SET=clients         # build the npm clients image, start the client pods, run the smoke test (the pods stay up)
 make e2e SET=clients-down    # remove the client pods
-make e2e SET=npm             # the npm acceptance matrix and E2.2 to E2.12 (CI job e2e-npm, every change); three client pods
+make e2e SET=npm             # the npm acceptance matrix and E2.2 to E2.12 but E2.11 (CI job e2e-npm, every change); three client pods
 make e2e SET=npm-closing     # the additions of the closing run (below); fails unless TROVE_E2E_NPM_CLOSING=1, which the set exports
+make e2e SET=npm-ha          # E2.11: drain variant A and the failovers under the npm load, then perf/k6/npm.js (CI leg npm-ha, every change)
+make e2e SET=npm-ha-closing  # npm-ha plus the 5-minute Valkey outage under the npm load (the closing run's leg)
 make npm-clients-image       # only build the image into the local Docker
 make fuzz-npm FUZZ=FuzzMatch FUZZTIME=1m   # npm's fuzz targets (CI: 30 minutes, closing run only)
 ```
@@ -545,6 +556,21 @@ profile after the fixes (`SET=push` and `SET=failover`, above): the measurements
    its pod).
 8. **Fixed in the profile: the Keycloak client's redirect URI was `https://localhost:8080/…` whatever port the cluster
    was created with.** `up.sh` now sets `KC_TROVE_BASE_URL` from the edge port.
+9. **Fixed in trove: a PostgreSQL switchover made a client below its rate limit receive `429`** (`TestNPMHA`, the switchover;
+   red in one run of three). k6 sent 120 requests/s on one token, below its `package_read` budget of 1,000 per 5 s, at exactly 120
+   arrivals per second throughout; the switchover held the requests for 6 s; 4 to 5 s after the release, 153 requests were answered
+   `429` on all three replicas. A window of 600 arrivals can exceed 1,000 only if it is charged requests that arrived before it: the
+   limiter, which runs after the authentication because its bucket is the token, counted each request in the window of its check, and
+   a token lookup whose cache entry had expired (`auth.tokens.cache_ttl`, 15 s) waited for the database, so every request of that token
+   on that replica reached the limiter at the release. Fix
+   ([Q-HA-66](../spec/ha-and-helm.md#q-ha-66--the-rate-limit-window-of-a-request-that-a-database-outage-held)): step 5 of the chain
+   records `RequestInfo.Received`, and the API and endpoint limits call `Limiter.TakeAt` with it, which counts and decides the request in
+   the window it arrived in ([valkey.md](valkey.md)). Regression: `TestLimiterCluster` in
+   [internal/cluster/limiter_test.go](../../internal/cluster/limiter_test.go) ("requests a stage held are charged to the windows they
+   arrived in": 24 held requests of a client at 8/s are all admitted by arrival, 10 by the time of the check, and a client at twice its
+   rate is still held to its burst) and `TestAuthenticationStage` in [internal/httpserver/chain_test.go](../../internal/httpserver/chain_test.go)
+   (`Received` lies before the authentication). After the fix the switchover ran three times in a row with k6 only `2xx` and `304`.
+   Not run by this change: the integration tier's rate-limit tests (`test/integration`), whose stack was in use.
 
 ## TLS in the suite
 
@@ -630,7 +656,7 @@ test/e2e/clients/
 ## The npm tests
 
 `make e2e SET=npm` (CI job `e2e-npm`, every change) runs the eight clients and the criteria E2.1 to E2.12 of the
-[roadmap](../coverage/roadmap.md) that need a cluster; `make e2e SET=npm-closing` adds what the run that closes a phase adds
+[roadmap](../coverage/roadmap.md) that need a cluster, but E2.11, which is the leg `npm-ha` ([below](#drain-and-failover-under-npm-load)); `make e2e SET=npm-closing` adds what the run that closes a phase adds
 ([Q-NPM-46](../spec/formats/npm.md#q-npm-46--what-marks-the-run-that-closes-the-phase), [releasing.md](releasing.md#the-run-that-closes-a-phase)).
 `e2e.sh` builds the clients image, starts three client pods and the counting upstream, and the tests switch the cluster to the
 `scatter` profile once ([useScatter](../../test/e2e/m1_env_test.go)). Decisions: Q-NPM-46 to Q-NPM-49 in [npm.md](../spec/formats/npm.md).
@@ -736,7 +762,145 @@ Found while building the matrix and running it through `npm-all`, in the order t
 - E2.8's package list, the sanitized README and the comparison of the setup page with `setupSnippet` are the browser journey
   `08-packages.spec.ts` ([Browser journeys](#browser-journeys)), which runs in `TestE1_11Journeys`, not in this suite. Its repository is its own
   local npm repository, not `npm-all`.
-- E2.11 (drain and failover under npm load) is WP2.8's.
+- E2.11 (drain and failover under npm load) is in [its own section](#drain-and-failover-under-npm-load). The second build with another
+  `npmRenderVersion` is still open after WP2.8: the constant lives in `internal/formats/npm/document`, which has no build-time variant yet,
+  and that package was another work package's while WP2.8 was built.
+
+## Drain and failover under npm load
+
+`make e2e SET=npm-ha` (CI leg `e2e-npm (npm-ha)`, every change) is exit criterion E2.11 of the [roadmap](../coverage/roadmap.md) and the
+M2 part of work package WP2.8: variant A of [R-HA-059](../spec/ha-and-helm.md#r-ha-059--node-drain-without-outage)'s drain test and the
+pod-crash, PostgreSQL-switchover and Valkey-failover scenarios of [R-HA-052](../spec/ha-and-helm.md#r-ha-052--failure-injection-test-suite),
+each under the npm part of R-HA-059's load, then the npm load scripts of R-ARCH-027 as a report. `SET=npm-ha-closing`, the leg a closing
+dispatch runs instead, adds the 5-minute Valkey outage, which R-HA-052 keeps for the full suite. The harness of the npm tests is the base
+(three client pods, the counting test upstream, the scatter profile with three `web` and two `worker` replicas); the M0 drain harness
+(`startPodWatch`, `checkEvents`, the driver's probe jobs, `startMonitor`) is reused. Decisions:
+[Q-HA-65 to Q-HA-69](../spec/ha-and-helm.md#q-ha-65--the-npm-part-of-r-ha-059s-load-before-nuget-exists-and-how-its-commands-are-counted) and
+[Q-ROAD-9](../coverage/roadmap.md#q-road-9--what-wp28-builds-of-r-arch-027s-load-scripts-and-where-they-run).
+
+### The load
+
+| Source | What it runs | Where |
+|---|---|---|
+| eight `npm ci` loops | `npm11 ci --cache <new directory>` of the fixture's lockfile through `npm-all`, again and again; npm's default retries; update notifier, fund and audit off as in the matrix | the three client pods, loops spread over them |
+| one publish loop | `npm11 publish` of `@e2e/ha-<run>-<scenario>-pub@1.0.<n>` to `npm-local` every 10 s, counted from the start of the previous publish | client pod 0 |
+| k6, [k6/npm.js](../../test/e2e/k6/npm.js) | 120 requests/s through the edge to `npm-all`: five in eight a package document with `npm install`'s `Accept` (every second round of a VU with the `ETag` it saw, so `304`s are part of it), three in eight a tarball of 1 to 5 MiB, compared with its length and `sha512` | a container on the Docker network `kind` |
+
+The fixture ([npm_load_test.go](../../test/e2e/npm_load_test.go), `npmHAFx`, once per process, about 10 s):
+
+- the service account `e2e-npm-ha` with `read`, `deploy`, `delete` on `npm-local` and `read` on `npm-remote` and `npm-all`, and 18
+  tokens: two per `npm ci` loop, which alternates them per command, one for k6, one for the publisher. The `package_read` class of
+  R-API-016 budgets 200 requests/s per token with a burst of 1,000 in 5 s, and one loop asks for 475 tarballs every 2.5 s (finding 1 below);
+- three packages `@e2e/ha-<run>-lib0..2` in `npm-local`, nine versions of `@e2e/ha-<run>-blob` with 1 MiB to 5 MiB of random bytes (k6's
+  tarballs), one `@e2e/ha-<run>-small` of 50 KiB (P-8 below);
+- the lockfile project: the corpus roots of `corpus.Reference(397)` plus the three local packages, resolved with `npm install` through
+  `npm-all`. Its lockfile locks 475 packages (472 through `npm-remote`, 3 from `npm-local`; R-HA-059 asks for 400), and the install
+  fills trove's cache, so every loop runs with the cache warm. An `npm ci` of it takes 2.5 s on a quiet cluster.
+
+**How a command is counted** ([Q-HA-65](../spec/ha-and-helm.md#q-ha-65--the-npm-part-of-r-ha-059s-load-before-nuget-exists-and-how-its-commands-are-counted)). Each loop is a shell
+script (`ciLoopScript`, `publishLoopScript`) started once in its pod with `setsid`, detached from the `kubectl exec` that started it. It
+writes `R <ci|publish> <start ms> <end ms> <exit status> <n> [version]` per command to `records` and keeps the output of a failed command
+in `out/<n>.log`; the test ends it with a file `stop`, waits for `finished` and reads the records. A `kubectl exec` that breaks during a
+fault is therefore never a failed client command, and a loop that dies leaves no records, which fails `loopsSpan`.
+
+### The scenarios
+
+| Test | Injection | Load | Pass conditions |
+|---|---|---|---|
+| `TestNPMHA` drain | `drain.sh <node>`, 2 minutes after the load started; the load runs 3 more minutes after the drain returns; six `system.probe` jobs of 330 steps | all three | R-HA-059's: every `npm` command exits `0`; k6 only `2xx` and `304`, no connection error, no wrong tarball, no dropped iteration and 95 % of the rate; the p99 of the k6 requests from the first eviction until 2 minutes after the drain at most twice the p99 of the warm-up; every acknowledged publish installs afterwards; every probe job `succeeded` with `attempt` 1, at least one moved and resumed from its cursor; no container exit 137 or `OOMKilled`, no SIGKILL or `FailedKillPod` event; no trove pod `Pending` for more than 60 s; `drain.sh` returns within 10 minutes and the node is uncordoned |
+| `TestNPMHA` switchover | `failover.sh` (`dev-failover`) after 1 minute; 1 minute after | all three | every `npm` command exits `0`, every `npm ci` loop ran a command during the switchover; k6 as above; every acknowledged publish installs; `/healthz` 200 on every pod, no restart |
+| `TestNPMHA` Valkey failover | `valkey-failover.sh` (`dev-valkey-failover`) after 1 minute; 1 minute after | all three | as the switchover, and `/readyz` 200 on every pod throughout, and `trove_valkey_primary_changes_total` rises by exactly one on every `web` and `worker` replica (R-HA-057) |
+| `TestNPMHA` pod crash | `kubectl delete pod --grace-period=0 --force` of a random `web` or `worker` pod (the seed is logged), ten times, every 2 minutes | `npm ci` and publish loops (R-HA-052 adds k6 only to the drain and Valkey rows) | every `npm` command exits `0`; every version `npm-local` lists for the publish loop's package downloads with its `dist.integrity`, and every acknowledged one is listed (the interim of `trove admin storage verify`, [Q-HA-69](../spec/ha-and-helm.md#q-ha-69--the-storage-check-of-the-pod-crash-before-trove-admin-storage-verify-exists)); every acknowledged publish installs; `/healthz` 200 on every pod that was not deleted; three `web` and two `worker` pods ready at the end |
+| `TestNPMHAClosing` (closing run) | `valkey-stop.sh` after 1 minute; 2 minutes in, one `web` pod deleted with its grace period; `valkey-start.sh` 5 minutes after the stop | all three | every `npm` command exits `0`; k6 as above; the replacement pod becomes ready with `valkey` degraded; `/readyz` 200 throughout on every pod but the deleted one and its replacement; after the return, `degraded` clears on every replica within `open_duration` plus `health_check_interval` plus 5 s (15 s in the dev profile, read through `driver info`), counted from the first moment a Sentinel names a primary again (`valkeyClearWatch` polls while `valkey-start.sh` still waits for the StatefulSets and the operator) |
+| `TestNPMPerf` | none | [perf/k6/npm.js](../../perf/k6/npm.js) | every request answered `200`; the numbers are reported, not gated (below) |
+
+The drain picks its node with `drainNodeVariantA`: a worker node with a `web` and a `worker` pod and neither the PostgreSQL primary nor
+the Valkey primary, which it asks the Sentinels for. A primary in the way is moved first, before the load starts. On the three-node
+profile the node still carries a Sentinel and often the PostgreSQL standby or a Valkey replica; their own disruption budgets drain them
+([Q-HA-68](../spec/ha-and-helm.md#q-ha-68--the-node-variant-a-drains-on-the-three-node-local-profile)). The first eviction is the first pod
+the pod watch sees with a deletion timestamp; the warm-up is every k6 request before it.
+
+**Not built in M2, with where it lands:** the NuGet rows of the load (`dotnet restore`, `dotnet nuget push`, k6's 20 %) in M3; the
+long-transfer probes of R-HA-059 and variants B to E in E5.9; R-HA-057's "every replica writes to the new primary within 10 s", the alerts
+(`TroveValkeyUnavailable`; the dev profile runs no Prometheus) and the other Valkey rows in E5.10; `trove admin storage verify` in E5.2. The
+Valkey-primary-loss row of R-HA-052, which also runs on every change, is E0.13's (`valkey-kill.sh` under the ping load); its npm load
+joins with M5.
+
+### The load scripts of R-ARCH-027
+
+`TestNPMPerf` ([npm_perf_test.go](../../test/e2e/npm_perf_test.go)) runs [perf/k6/npm.js](../../perf/k6/npm.js) against one `web` pod: the
+k6 container joins the network namespace of the control-plane node (`--network container:<cluster>-control-plane`), which routes the
+pod network, and resolves `localhost` to the pod's address, so the requests reach the pod's listener without the edge and the certificate
+is checked for `localhost`. Twenty tokens of the service account `e2e-npm-perf` carry the 2,000 requests/s of P-7 (the per-token budget
+again). The scenarios run one after the other for 30 s each:
+
+| Scenario | Target of R-ARCH-027 | Request | Rate |
+|---|---|---|---|
+| `p1` | P-1, time to first byte | the 1 MiB tarball of `npm-local` | 50/s |
+| `p3` | P-3 | a document of `npm-local`, gzip | 50/s |
+| `p5` | P-5 | a document of `npm-all` (whether the replica merged is not visible to a client) | 50/s |
+| `p7` | P-7 | documents of `npm-local` | 2,000/s |
+| `p8` | P-8 | the 50 KiB tarball | 1,000/s |
+
+The dev profile is not the reference environment, so the test fails on an unanswered request only and logs the numbers; with `GATE=1` the
+script makes the targets k6 thresholds, which is the run of roadmap E5.3
+([Q-ROAD-9](../coverage/roadmap.md#q-road-9--what-wp28-builds-of-r-arch-027s-load-scripts-and-where-they-run)). The result is
+`.out/e2e/perf-npm/perf-npm.json`.
+
+### Artifacts
+
+`.out/e2e/npm-load-<scenario>.json` (every command with its times and exit status, the output of a failed one),
+`npm-ha-<scenario>.json` and `npm-ha-drain.json` (the conditions' numbers), `k6-npm-<scenario>/` (one line per request:
+`N <unix ms> <status> <replica> <ms> <document|tarball> <ok|bad> <path>`, and k6's summary), `drain-pod-watch.jsonl`, `drain-events.json`,
+`npm-drain-<pod>.log` (the drained pods' logs), `perf-npm/`. The loops' own files stay in the client pods below `/work/ha-<run>-<scenario>-*`.
+
+### Measured on the dev cluster
+
+Apple-silicon laptop (arm64), 18 CPUs and 24 GB for Docker, kind v0.33.0, edge on `https://localhost:8080`, the release image built from
+the working tree of 2026-10-31 with the fix of finding 9. One run of `make e2e SET=npm-ha-closing` (the scenarios of `npm-ha` and the
+Valkey outage): 2,651 s in all, 44 minutes of tests; `npm-ha` alone is about 36 minutes of tests.
+
+| Scenario | Result |
+|---|---|
+| fixture | 475 locked packages (3 from `npm-local`), tarballs of 1,049,373 to 5,244,966 bytes, 18 tokens, 10 s |
+| drain variant A (`trove-worker2`: a `web` and a `worker` pod, a Sentinel, the Valkey replica and the PostgreSQL standby) | `drain.sh` 48 s; 939 `npm ci` and 35 publishes, all exit `0`, slowest command 4.3 s, every loop ran 15 to 17 commands between the first eviction and the end of the drain; k6 41,563 requests in 5 min 46 s, `document 200` 21,341, `document 304` 4,641, `tarball 200` 15,581, nothing else, no wrong tarball, 0 dropped; p99 292 ms in the warm-up (14,304 requests) and 255 ms from the first eviction until 2 minutes after the drain (20,070); the 35 publishes installed; 4 of 6 probe jobs moved and resumed at step 162 with `attempt` 1; longest `Pending` 0.7 s; no SIGKILL |
+| PostgreSQL switchover | 9 s; 354 `npm ci` and 14 publishes, all exit `0`, every loop ran 2 or 3 commands during the switchover, slowest 8.8 s; k6 15,728 requests, only `2xx` and `304`; `/healthz` and `/readyz` 200 throughout. Before the fix of finding 9 one run of three had 153 `429`; after it, four runs of four had none |
+| Valkey failover | 2 s; 342 `npm ci` and 13 publishes, all exit `0`; k6 14,797 requests, only `2xx` and `304`, p99 236 ms; `/readyz` 200 on every pod throughout; `trove_valkey_primary_changes_total` +1 on each of the five replicas |
+| pod crash, 10 force-deletes in 20 minutes (8 `web`, 2 `worker`) | 4,231 `npm ci` and 131 publishes, all exit `0`, slowest command 3.8 s; 131 versions listed, every tarball read with its integrity |
+| Valkey outage, 5 minutes, a `web` pod deleted at minute 2 | 1,193 `npm ci` and 44 publishes, all exit `0`; k6 52,426 requests, only `2xx` and `304`; the replacement ready with `valkey` degraded; `degraded` cleared on every replica 6.6 s after a Sentinel named a primary again (bound 15 s) |
+| R-ARCH-027, one `web` pod (reported, not gated) | p1 p50 2.5 ms / p99 4.5 ms; p3 0.8 / 1.8 ms; p5 0.8 / 1.7 ms; p7 2,000/s held, p99 3.7 ms; p8 1,000/s held, p99 10.7 ms; every request `200` |
+
+Not verified here: a run of the leg on a CI runner (the runners were queued), and the timings there.
+
+### Findings of the scenarios under npm load
+
+1. **Fixed in trove: a PostgreSQL switchover made a client below its rate limit receive `429`** (finding 9 of
+   [the suite](#findings-of-the-suite)).
+2. **The harness: one token per `npm ci` loop met the `package_read` budget.** A loop asks for 475 tarballs every 2.5 s, and the budget
+   is 1,000 per 5 s per token: four in ten commands got a `429` and waited 10 s for npm's retry (45,709 refusals on one replica over one
+   run; the p90 of a command 11.4 s instead of 3 s). The commands still exited `0`, but the load measured the limiter more than the
+   drain. Each loop now alternates two tokens of its own
+   ([Q-HA-65](../spec/ha-and-helm.md#q-ha-65--the-npm-part-of-r-ha-059s-load-before-nuget-exists-and-how-its-commands-are-counted)).
+   The loops still meet the budget now and then at the peak of a command (314 refusals on the three replicas over three switchover
+   runs, 0.04 % of the loops' requests), which npm retries within the command: no command of the final run took more than 10 s. k6, on
+   its own token, received none.
+3. **The harness: right after a Valkey failover both Valkey pods report `role` `master` for a moment** (the promoted replica answers
+   before the old primary is demoted). The node choice of the drain, which asked the pods (`valkeyPrimaryPod` of E0.12), failed the
+   primary over three times in a row and gave up. It asks the Sentinels now (`valkeyPrimaryBySentinel`); E0.12 keeps its helper, which
+   it calls without a failover before it.
+4. **The harness: the administrator's write budget.** Revoking an earlier run's 18 tokens and minting 18 after the fixture's other writes
+   exceeds the burst of 50 of `api.rate_limits.write`; `pacedSATokens` waits out each `429` for its `Retry-After`.
+5. **The harness: a fault of one second can fall between two publishes** of the publish loop (one command of half a second every 10 s).
+   `loopsSpan` requires the overlap of the `npm ci` loops, which is the criterion's "during an `npm ci` loop", and reports the publish
+   loop's.
+6. **Observed, not a failure:** in the pod crash with one token per loop, commands took up to 2 minutes 15 seconds (689 of 1,854 above
+   10 s, 8 above 60 s), all exiting `0`. With two tokens per loop the slowest of 4,231 commands took 3.8 s with the same ten
+   force-deletes, so the long commands were the limiter's `429`s and npm's waits between retries (finding 2), not the killed pods. No
+   command of that run took long enough for an npm retry of a cut request (npm's first wait is 10 s); whether the edge resent a
+   refused connection to another pod was not measured.
+7. **Observed on the dev profile, not gated:** `p8` of the R-ARCH-027 report held 1,000 requests/s with a p99 of 16.5 ms in one run and
+   dropped 126 iterations with a p99 of 649 ms in the run before, on the same cluster; a kind cluster on a laptop is no reference
+   environment.
 
 ## The counting npm test upstream
 
@@ -892,6 +1056,9 @@ how and why. `make npm-reference-check` regenerates and diffs; it needs Docker, 
   with a message that says what was measured. Use `faultRun` for a fault under load.
 - **A new fault.** A script in `deploy/dev/` that injects, waits for the recovery and prints how long
   it took; a `make dev-…` target; a case in `TestE13Failover`.
-- **A later milestone's client load.** Extend `k6/load.js` (WP2.8); the Go side only reads the console lines.
+- **A later milestone's client load.** The npm part of R-HA-059's load is [npm_load_test.go](../../test/e2e/npm_load_test.go) and
+  [k6/npm.js](../../test/e2e/k6/npm.js). NuGet (M3) adds a `dotnet restore` loop beside `ciLoopScript` (four loops, R-HA-059), a push beside
+  the publish loop, its 20 % of k6 requests to `k6/npm.js`'s mix (or a script of its own at 30 requests/s, so the total is 150), and the same
+  conditions in `npmLoadResult`. `k6/load.js` stays M0's ping load.
 - **A new job kind for a test.** Register it in the release image only when the test cannot be written
   without it, and say so here.

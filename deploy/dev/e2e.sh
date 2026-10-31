@@ -22,6 +22,8 @@
 #   e2e.sh clients      the smoke test of the npm client pods (R-NPM-045: every gate row runs --version, the base URL
 #                       reaches the cluster); builds the clients image and starts the pods, which stay up
 #   e2e.sh clients-down removes the client pods
+#   e2e.sh npm-ha       drain variant A and the failovers of R-HA-052 under the npm load (E2.11), then the npm load
+#                       scripts of R-ARCH-027 (perf/k6/npm.js, reported); npm-ha-closing adds the Valkey outage
 #   e2e.sh <regex>      any other argument is a `go test -run` expression
 #
 # Environment: TROVE_DEV_HTTP_PORT (the port the cluster was created with; read back from the node),
@@ -55,6 +57,12 @@ case "$set_name" in
   # the public registry. Started by the workflow only when it is dispatched with closing=true (Q-NPM-46).
   npm-closing) run='^TestNPMClosing'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NPM_CLOSING=1 ;;
   # <<< M2 npm-clients
+  # Drain and failover under npm load (E2.11, test/e2e/npm_ha_test.go): drain variant A of R-HA-059, the PostgreSQL
+  # switchover, the Valkey failover and the pod crash of R-HA-052 under eight npm ci loops, a publish loop and k6
+  # (CI: e2e-npm, every change), then perf/k6/npm.js against one replica (TestNPMPerf, reported, not gated). npm-ha-closing
+  # adds the 5-minute Valkey outage of the full suite (closing run).
+  npm-ha) run='^TestNPM(HA|Perf)$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
+  npm-ha-closing) run='^TestNPM(HA|HAClosing|Perf)$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NPM_CLOSING=1 ;;
   *) run="$set_name" ;;
 esac
 

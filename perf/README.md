@@ -1,17 +1,29 @@
 # perf
 
-Inputs of the performance and end-to-end tests that are data rather than code (R-ARCH-027). Load scripts and the P-12
-driver join this directory with the work packages that need them.
+Inputs of the performance and end-to-end tests that are data rather than code, and the load scripts of R-ARCH-027. The P-12
+driver and the scripts of the other formats join this directory with the work packages that need them.
 
 ```
 perf/
 ├── README.md                    this file
+├── k6/
+│   └── npm.js                   the targets of R-ARCH-027 an npm client meets (P-1, P-3, P-5, P-7, P-8), against one web replica
 └── npm/
     ├── reference.sh             writes or checks the reference project below (make npm-reference, make npm-reference-check)
     └── reference/
         ├── package.json         the reference project: root dependencies chosen from the corpus
         └── package-lock.json    its lockfile (lockfileVersion 3), 707 entries today
 ```
+
+## The npm load scripts
+
+[k6/npm.js](k6/npm.js) runs five k6 scenarios one after the other against one `web` pod's listener, from inside the cluster: P-1 (time
+to first byte of a 1 MiB tarball), P-3 (a document of `npm-local`), P-5 (a document of `npm-all`), P-7 (documents at 2,000 requests/s)
+and P-8 (a 50 KiB tarball at 1,000 requests/s). Its inputs are a token file and a fixture file in `/out`, which `TestNPMPerf`
+([test/e2e/npm_perf_test.go](../test/e2e/npm_perf_test.go)) writes; the result is `/out/perf-npm.json`. Without `GATE=1` it reports, which
+is how the leg `npm-ha` runs it on the dev profile; with `GATE=1` the targets are k6 thresholds, for the reference environment of
+R-ARCH-027 (roadmap E5.3, [Q-ROAD-9](../docs/coverage/roadmap.md#q-road-9--what-wp28-builds-of-r-arch-027s-load-scripts-and-where-they-run)).
+How it is started: [e2e.md](../docs/developer/e2e.md#the-load-scripts-of-r-arch-027).
 
 ## The npm reference project
 

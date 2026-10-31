@@ -116,7 +116,11 @@ l.Count(ctx, bucket)             // one failure
   trip, `MULTI`, `INCR`, `EXPIRE … NX`, `GET` of the previous window, `EXEC`, and no script. The request is counted before
   it is decided, so refused requests use up budget. `Exceeded` is a pipelined `GET` of both windows, `Count` the `INCR` part.
   The window index comes from the replica's wall clock; clock skew between replicas of some milliseconds moves a window
-  boundary by that much.
+  boundary by that much. `TakeAt(ctx, bucket, at)` counts and decides in the window of `at`, the time the request was
+  received (`httpserver.RequestInfo.Received`, step 5 of the chain); the API and endpoint limits call it, so a request that
+  the authentication held during a database switchover is charged to the window it arrived in, not to the one it was released
+  in ([Q-HA-66](../spec/ha-and-helm.md#q-ha-66--the-rate-limit-window-of-a-request-that-a-database-outage-held)). A zero or
+  future `at` is now, and the fallback buckets decide at now.
 - Scope `replica` counts in memory and never touches Valkey.
 - **Fallback.** When `Valkey.Available()` is false (client down, circuit open, probe failed) or a call fails, the check is
   answered from a local token bucket with rate `rate ÷ n` and burst `max(1, burst ÷ n)`; no Valkey I/O is attempted while the

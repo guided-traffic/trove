@@ -1016,6 +1016,11 @@ Variants, with the same load and pass conditions:
 | D | an instance of the transaction-mode pooler (pooler profile, R-HA-058) | — | a green full run of Test and Release on the commit that closes the phase |
 | E | a running backup pod (R-HA-060) | the backup Job completes, and the eviction is not counted against `backoffLimit` | a green full run of Test and Release on the commit that closes the phase |
 
+On the local profile of R-HA-051, whose three worker nodes each host a Sentinel and most a Valkey pod or a PostgreSQL instance,
+variant A drains a node that hosts neither the PostgreSQL primary nor the Valkey primary; a Sentinel, a Valkey replica or the
+standby on it leaves by rule 5, and a primary that is in the way is moved before the load starts
+([Q-HA-68](#q-ha-68--the-node-variant-a-drains-on-the-three-node-local-profile)).
+
 ## PostgreSQL
 
 ### R-HA-013 · Supported PostgreSQL versions and server settings
@@ -4813,7 +4818,7 @@ against the local profile (R-HA-051) in CI. Load comes from real clients in para
 
 | Scenario | Injection | Pass condition |
 |---|---|---|
-| Pod crash | `kubectl delete pod --grace-period=0 --force` of a random `web` or `worker` replica every 2 min for 20 min | No client iteration fails after its own retries; no item row without a durable object (`trove admin storage verify`) |
+| Pod crash | `kubectl delete pod --grace-period=0 --force` of a random `web` or `worker` replica every 2 min for 20 min | No client iteration fails after its own retries; no item row without a durable object (`trove admin storage verify`; until that command exists, every version the scenario's publishes left is downloaded against its integrity, [Q-HA-69](#q-ha-69--the-storage-check-of-the-pod-crash-before-trove-admin-storage-verify-exists)) |
 | Rolling restart | `kubectl rollout restart` of `deploy/trove-web`, then of `deploy/trove-worker` | Zero failed iterations |
 | Rolling upgrade | Previous minor → current with the migration Job | Zero failed iterations; R-HA-020 verification passes |
 | Rollback | `helm rollback` after the upgrade | Zero failed iterations |
@@ -5986,6 +5991,142 @@ projects the client secret and the break-glass password. The Keycloak CA stays a
 
 **Applied in the spec:** none; [../developer/local-profile.md](../developer/local-profile.md) and
 [../developer/e2e.md](../developer/e2e.md#m1-tests).
+
+### Q-HA-65 · The npm part of R-HA-059's load before NuGet exists, and how its commands are counted
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: roadmap E2.11 runs variant A of [R-HA-059](#r-ha-059--node-drain-without-outage) in M2 "with the npm part of its load". The
+load table has three npm rows (eight `npm ci` loops of a fixture with 400 locked dependencies through `npm-all`, an `npm publish` every
+10 s, k6 at 150 requests/s of which 50 % are npm documents and 30 % npm tarballs of 1 to 5 MB) and NuGet rows that M3 brings. The
+corpus of the counting test upstream has no tarball near 1 MB, and the package classes of R-API-016 budget 200 requests/s per token.
+The pass condition is that every `npm` command exits `0` with npm's default retries, while the clients run in pods that the test
+reaches through `kubectl exec`, which runs through the API server while a node is drained or a database switches over.
+
+| Question | Options | Choice |
+|---|---|---|
+| The k6 rate and mix | (a) the npm rows at their own rates: 120 requests/s, documents and tarballs 5 to 3; (b) 150 requests/s of npm alone, 62.5 % documents and 37.5 % tarballs; (c) 150 requests/s with NuGet's share as `GET /api/v1/system/ping` | (a). (b) is a mix the spec does not name, with 25 % more large tarballs than its load; (c) adds requests the load table does not name, which make the warm-up's p99 smaller and the latency condition easier |
+| The fixtures | (a) built at test time: nine versions of a package with 1 to 5 MiB of random bytes in `npm-local` for k6's tarballs; a lockfile resolved through `npm-all` from corpus roots whose closure has at least 397 names plus three `npm-local` packages; (b) committed fixtures | (a): the lockfile locks 475 packages (472 through `npm-remote`, 3 from `npm-local`), and its `npm install` fills trove's cache, so the loops start warm; nothing to keep in step with the corpus |
+| Tokens | (a) one per load source; (b) two per `npm ci` loop, alternated per command, one each for k6 and the publisher | (b). A loop asks for 475 tarballs every 2.5 s; on one token per loop four in ten commands met the `package_read` budget of 1,000 in 5 s (measured: `429`, then npm's retry after 10 s), so the load measured the limiter more than the drain. 18 tokens, of the 20 an account may hold |
+| How a command is counted | (a) a shell loop per load source detached in its client pod (`setsid`), one record per command with its exit status, the output of a failed one kept, stopped through a file; (b) one `kubectl exec` per command from the test; (c) a Go client that sends npm's requests | (a): the exit status is the client's own, and an exec that breaks during a fault is never a failed command. (b) cannot tell a broken exec stream's status from npm's; (c) is not npm, whose retries and timeouts the criterion names. A loop that writes no record fails `loopsSpan` |
+
+The long-transfer probes of R-HA-059 are no npm load and join the drain test in E5.9.
+
+**Rationale:** E2.11 names the npm rows, and their rates are the spec's. The development agent revisits this when M3 adds the NuGet
+rows: k6 then reaches 150 requests/s with the spec's mix, and the tokens become two per loop of both clients (another account, because
+of the 20-token bound); and the counting when the clients run as Jobs of their own, whose exit status Kubernetes records.
+
+**Applied in the spec:** none; [../developer/e2e.md](../developer/e2e.md#drain-and-failover-under-npm-load) and
+[test/e2e/npm_load_test.go](../../test/e2e/npm_load_test.go).
+
+### Q-HA-66 · The rate-limit window of a request that a database outage held
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the rate limits of R-API-016 and R-EP-015 run after the authentication stage, because their bucket is the token
+([architecture.md](architecture.md) R-ARCH-034). A token lookup that misses the replica's cache (its `auth.tokens.cache_ttl` of 15 s
+ends) goes to PostgreSQL, and during a switchover that read is held for up to `database.retry.max_elapsed` (R-HA-015). Every request of
+that token on that replica waits behind it and reaches the limiter when the database returns. The limiter counted a request in the
+window of its check, so a client that never exceeded its rate was charged its held requests and its new ones in one window. Measured
+in the switchover under npm load (E2.11): k6 at 120 requests/s on one token, below its budget of 200/s and 1,000 per 5 s, arriving at
+exactly 120 per second throughout; the switchover held the requests for 6 s; 4 to 5 s after the release, 153 requests of the client
+were answered `429` on all three replicas (the counter is cluster-wide). A window that receives 600 arrivals can exceed 1,000 only if
+it is also charged requests that arrived earlier, so the requests were counted after their wait; the authentication is the one stage
+before the limiter that reads the database. It happened in one switchover of three, which fits the cache of at least two of the three
+replicas expiring during a 6 s hold. Variant C of R-HA-059, a drain of the PostgreSQL primary's node under k6, would meet it in E5.9.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Charge a request to the window it arrived in | Step 5 of the chain records `Received`; the limiter counts the request in, and decides it against, the window of that time; the per-replica fallback decides at the time of the check | A client is charged by what it sent and when; a client above its rate is still refused, each window of arrival admits its burst; no new key, no new round trip | The `RateLimit` fields of a held request describe its arrival window |
+| (b) Serve the expired cache entry while the database is unreachable | The authentication does not wait | No hold before the limiter | A revoked or disabled token would be accepted past R-AUTH-042's bound for as long as the outage lasts; a security regression |
+| (c) Exempt a request from the limit when it waited | A request that waited longer than a bound skips the limiter | Simple | An outage would open the limit for every client at once, the abusive ones too |
+| (d) Keep it | Clients retry a `429` | No change | A non-retrying client fails on a switchover it did not cause; R-HA-052's zero failed iterations and variant C's k6 condition fail in about one switchover in three |
+
+**Choice:** (a). `Limiter.TakeAt` in [internal/cluster/limiter.go](../../internal/cluster/limiter.go), called by the stages of
+[ratelimit.go](../../internal/api/v1/ratelimit.go) and [endpoint_ratelimit.go](../../internal/api/v1/endpoint_ratelimit.go) with
+`RequestInfo.Received` ([internal/httpserver/chain.go](../../internal/httpserver/chain.go), step 5). An arrival time in the future or
+zero is the time of the check. The login limiters (R-AUTH-038) take no token and run before any wait; they keep `Take`.
+
+**Rationale:** The budget is a statement about the client's rate, which the arrival time measures and the time of the check does not.
+What the limit defends stays: the held requests of a client above its rate are refused by the windows they arrived in (unit test
+`TestLimiterCluster`, "requests a stage held are charged to the windows they arrived in"). What it does not defend: the backlog of a
+client within its budget is served at once when the database returns, which adds to the load of the recovery; that load was sent at
+an admitted rate, and the in-flight limit of the chain (step 4) still bounds it. One more bound is weaker than before: the counters
+of a window live two windows from their first hit (`EXPIRE … NX`), so a request held longer than that finds its window's counter gone
+and starts it again, and that window can admit one more burst than its limit, at most twice the limit in all. Only a stage before the
+limiter holds a request that long (the token lookup during a database outage); a client cannot make it happen. The development agent revisits this when the
+token lookup no longer waits for the database during an outage without weakening R-AUTH-042, which would remove the hold itself.
+
+**Applied in the spec:** [architecture.md](architecture.md) R-ARCH-034, the cluster-scope bullets: the window of a request is the window
+of its arrival.
+
+### Q-HA-67 · Where and how often the scenarios under npm load run
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-HA-052 runs the pod-crash and switchover scenarios and variant A of the drain test on every change to `main`, and the
+Valkey scenarios in the full suite; E2.11 pairs the drain with `dev-failover` and `dev-valkey-failover` during an `npm ci` loop. The
+scenarios need the client pods, the counting test upstream and the scatter profile of the npm tests. The pod crash alone takes
+20 minutes.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A leg `npm-ha` of the job `e2e-npm` | `make e2e SET=npm-ha` on every change: drain variant A, PostgreSQL switchover, Valkey failover, pod crash, and the load scripts of R-ARCH-027 as a report; a closing dispatch runs the leg as `npm-ha-closing`, which adds the 5-minute Valkey outage | R-HA-052's split as written, the Valkey failover of E2.11 on every change; its own cluster, so the matrix of the leg `npm` does not load the drain and the drain does not slow the matrix | One more kind cluster per change; about 40 minutes of scenarios |
+| (b) Everything on every change | The outage in `npm-ha` too | One set | 10 more minutes per change for a scenario R-HA-052 keeps for the full suite |
+| (c) The scenarios in the set `npm` | One cluster for all npm tests | No extra cluster | The matrix leg grows by 40 minutes; a failure of either blocks the other's evidence |
+| (d) In the job `e2e` beside E0.14 | The push set drains under npm load | One drain per change | That job has no client pods and no test upstream, and runs two `web` replicas, not R-HA-059's three |
+
+**Choice:** (a), with the step budget raised to 80 minutes for the `npm-ha` legs (the job to 120).
+
+**Rationale:** (a) follows R-HA-052's frequencies and gives E2.11 its every-change evidence without making the matrix slower. The
+development agent revisits this when the runners run more than one leg per host and the latency condition of the drain becomes
+noisy, or when the pod crash moves to a shorter interval in the spec.
+
+**Applied in the spec:** none; [release.yml](../../.github/workflows/release.yml) (job `e2e-npm`),
+[deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) (sets `npm-ha` and `npm-ha-closing`).
+
+### Q-HA-68 · The node variant A drains on the three-node local profile
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: variant A of R-HA-059 drains a node that hosts a `web` and a `worker` pod and "nothing else", with PostgreSQL and Valkey on
+other nodes. The local profile of R-HA-051 spreads three Sentinels and two Valkey pods one per zone over its three worker nodes, and the
+two PostgreSQL instances over two of them: every node hosts a Sentinel, and most host a Valkey pod or a PostgreSQL instance.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A node with neither primary | The node hosts a `web` and a `worker` pod and neither the PostgreSQL primary nor the Valkey primary; its Sentinel, a Valkey replica or the PostgreSQL standby drain by their own disruption budgets. A primary in the way is moved before the load starts (`valkey-failover.sh`, `failover.sh`) | Variant A's subject, trove's own pods, is what is drained; the primaries stay put, so A does not turn into B or C; no change to the profile | The drained node is not empty of dependencies; a Sentinel and a standby leave with it |
+| (b) A fourth worker node for trove alone | `kind.yaml` gains a node that only trove pods may use | Variant A as written | A fourth node on every laptop and runner; spreading over three zones for the dependencies and four nodes for trove makes the profile unlike a production cluster |
+| (c) Pin the dependencies to two nodes | Valkey, the Sentinels and PostgreSQL leave the third node free | Variant A as written on three nodes | Two Sentinels on one node; a node loss takes the Sentinel majority, which R-HA-059's rule 5 forbids |
+
+**Choice:** (a). `drainNodeVariantA` in [npm_ha_test.go](../../test/e2e/npm_ha_test.go) picks the node.
+
+**Rationale:** A drained Sentinel or standby is rule 5 of R-HA-059 at work, which every variant relies on; a moved primary is what
+variants B and C test. The development agent revisits this when the local profile gains a node for other reasons.
+
+**Applied in the spec:** R-HA-059, the variants table: the note on variant A in the local profile.
+
+### Q-HA-69 · The storage check of the pod crash before `trove admin storage verify` exists
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the pod-crash row of R-HA-052 passes when "no item row [is] without a durable object (`trove admin storage verify`)". The
+command belongs to M5 (roadmap E5.2); WP2.8 runs the scenario in M2.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Read every listed version | After the scenario, every version that `npm-local` lists for the package the publish loop wrote is downloaded through the API and compared with its `dist.integrity` | An item row without its object answers an error; the check reads what a client reads | Only the items the scenario wrote, and only through npm |
+| (b) Wait for the command | The scenario runs without the storage condition until M5 | No interim check | The condition that makes a crash during a publish dangerous goes unchecked until M5 |
+| (c) Compare the item table with a bucket listing | SQL over the item rows, the S3 listing of `trove-blobs` | Every item | A second reading of the storage layout in a test, which the command will own |
+
+**Choice:** (a), `committedTarballsReadable` in [npm_load_test.go](../../test/e2e/npm_load_test.go). Every acknowledged publish must
+be among the listed versions.
+
+**Rationale:** The writes of the scenario are the only items a crash in it can leave without an object, and a download is the reading
+that matters to a client. The development agent revisits this when `trove admin storage verify` exists: the scenario then runs the
+command as R-HA-052 states.
+
+**Applied in the spec:** R-HA-052, the pod-crash row: the interim check.
 
 ## What this does not cover
 

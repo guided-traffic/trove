@@ -66,7 +66,7 @@ on a checkout with an installed `node_modules` therefore picks them up; use `mak
 | Architecture | [internal/archtest](../../internal/archtest) | `go` on `PATH` (it runs `go list -deps -json ./...` and loads the packages with type information) | part of `make test` |
 | Integration | [test/integration](../../test/integration), build tag `integration` | the stack below | `make integration-up && make test-integration` |
 | Performance (nightly) | the latency tests of [test/integration/coordination](../../test/integration/coordination) | the stack below | `make integration-up && make test-performance` |
-| End to end | `deploy/dev`, `test/e2e` | a kind cluster | `make dev-up && make e2e`; `SET=access` runs the access-core scenarios (`test/e2e/e1_*`, `m1_env_test.go`). `make dev-valkey-stop` and `make dev-valkey-start` hold a Valkey outage across a criterion of unknown length |
+| End to end | `deploy/dev`, `test/e2e` | a kind cluster | `make dev-up && make e2e`; `SET=access` runs the access-core scenarios (`test/e2e/e1_*`, `m1_env_test.go`), `SET=npm` the npm tests and `SET=npm-ha` the drain and failovers under npm load ([e2e.md](e2e.md#drain-and-failover-under-npm-load)). `make dev-valkey-stop` and `make dev-valkey-start` hold a Valkey outage across a criterion of unknown length |
 
 A test that verifies a requirement carries the requirement ID in a subtest name, for example
 `t.Run("R-ARCH-002 forbidden import names the edge", …)`. The coverage generator reads the IDs from the

@@ -29,6 +29,8 @@ type podWatch struct {
 	seen    map[string]bool
 	done    chan struct{}
 	raw     *os.File
+	// firstDeleted is when the first pod got a deletion timestamp: the first eviction of a drain.
+	firstDeleted time.Time
 }
 
 func startPodWatch(t testing.TB, selector string) *podWatch {
@@ -53,8 +55,11 @@ func startPodWatch(t testing.TB, selector string) *podWatch {
 			var ev struct {
 				Type   string
 				Object struct {
-					Metadata struct{ Name string }
-					Status   struct {
+					Metadata struct {
+						Name              string
+						DeletionTimestamp *time.Time
+					}
+					Status struct {
 						Phase             string
 						ContainerStatuses []struct {
 							Name  string
@@ -85,6 +90,9 @@ func startPodWatch(t testing.TB, selector string) *podWatch {
 			name := ev.Object.Metadata.Name
 			w.mu.Lock()
 			w.seen[name] = true
+			if ev.Object.Metadata.DeletionTimestamp != nil && w.firstDeleted.IsZero() {
+				w.firstDeleted = now
+			}
 			switch ev.Object.Status.Phase {
 			case "Pending":
 				if _, ok := w.pending[name]; !ok {

@@ -10,7 +10,7 @@
 // into its own image, and deploy/dev/e2e.sh runs it as a pod next to the release.
 //
 //	driver idle                              wait for exec commands until SIGTERM
-//	driver info                              print the bounds of P-13 and P-14 as JSON
+//	driver info                              print the bounds of P-13 and P-14 and of R-HA-057's outage as JSON
 //	driver load [-duration 60s] [-every 1s]  write a change and enqueue a job each tick, then print the summary
 //	driver probe [-steps 90] [-interval-ms 1000]   enqueue one long system.probe job and print its id
 //	driver stop                              end a running load after its current tick
@@ -79,6 +79,9 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 			"epoch_poll_interval_ms": cfg.Cluster.EpochPollInterval.Milliseconds(),
 			"jobs_poll_interval_ms":  cfg.Jobs.PollInterval.Milliseconds(),
 			"retry_max_elapsed_ms":   cfg.Database.Retry.MaxElapsed.Milliseconds(),
+			// R-HA-057's bound for degraded to clear after a Valkey outage
+			"valkey_open_duration_ms":         cfg.Valkey.CircuitBreaker.OpenDuration.Milliseconds(),
+			"valkey_health_check_interval_ms": cfg.Valkey.HealthCheckInterval.Milliseconds(),
 		})
 	case "stop":
 		return os.WriteFile(stopFile, nil, 0o600)

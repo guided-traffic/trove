@@ -67,7 +67,7 @@ selects are never touched.
 | `make dev-pg-kill` | `pg-kill.sh` | force-deletes the PostgreSQL primary pod, waits until the operator reports a healthy cluster |
 | `make dev-pg-stop DURATION=30s` | `pg-stop.sh 30s` | fences every instance of `trove-db` (`cnpg.io/fencedInstances`, PostgreSQL stops, pods and volumes stay), waits, removes the fence, waits for a healthy cluster |
 | `make dev-drain` | `drain.sh` | the E0.14 test: drains a node with a web and a worker pod under the k6 load and cursor-persisting jobs; `drain.sh <node>` is the drain alone, `drain.sh --pick` prints the node |
-| `make e2e SET=push\|failover\|full\|drain\|<regexp>` | `e2e.sh` | the end-to-end suite, see [e2e.md](e2e.md) |
+| `make e2e SET=push\|failover\|full\|drain\|npm\|npm-ha\|<regexp>` | `e2e.sh` | the end-to-end suite, see [e2e.md](e2e.md); `npm-ha` drains a node and fails PostgreSQL and Valkey over under the npm load ([E2.11](e2e.md#drain-and-failover-under-npm-load)) |
 | `make chart-lint`, `make chart-test` | `test/chart/lint.sh`, `test/chart/test.sh` | see [helm-chart.md](helm-chart.md#value-sets-and-tests) |
 
 The failover scripts show that the failover happens and how long it takes. What they cost the clients
