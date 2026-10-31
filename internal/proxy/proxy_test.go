@@ -219,10 +219,12 @@ func TestIdleBody(t *testing.T) {
 		pr, pw := io.Pipe()
 		var fired atomic.Bool
 		ctx, cancel := context.WithCancel(context.Background())
-		b := newIdleBody(pr, 80*time.Millisecond, cancel, &fired, func() {})
+		// A write every 10 ms against a 500 ms timer: a margin of 50, because a CPU-limited runner under the race
+		// detector oversleeps a short sleep several times over.
+		b := newIdleBody(pr, 500*time.Millisecond, cancel, &fired, func() {})
 		go func() {
 			for range 5 {
-				time.Sleep(40 * time.Millisecond)
+				time.Sleep(10 * time.Millisecond)
 				_, _ = pw.Write([]byte("x"))
 			}
 		}()
