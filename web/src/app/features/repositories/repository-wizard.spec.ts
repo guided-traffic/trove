@@ -169,6 +169,128 @@ describe('Repository creation wizard', () => {
     expect(text(r.root)).toContain('https://trove.example.net/api/npm/web-libs/');
   });
 
+  it('R-UI-021 R-ARCH-004 the settings step renders the members of the format schema that apply to the class, and the create writes only what differs from the default', async () => {
+    const r = await renderScreen(RepositoryWizard, {
+      setup: (get) =>
+        ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [GENERIC_FORMAT, FAKE_NPM]),
+    });
+    const fake = r.get(RepositoriesApi) as FakeRepositoriesApi;
+    vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    await pick(r, 'class', 'virtual');
+    await next(r);
+    await pick(r, 'format', 'npm');
+    await next(r);
+    type(r.root.querySelector<HTMLInputElement>('#f-key')!, 'npm-all');
+    await settle(r.fixture);
+    await next(r);
+
+    expect(text(r.root.querySelector('nav')!)).toContain('4. Access and npm settings');
+    expect(text(r.root)).toContain('npm settings');
+    expect(r.root.querySelector('#f-npm-latestGuard')).toBeNull();
+    expect(r.root.querySelector('#f-npm-serveRemovedVersions')).toBeNull();
+    const strategy = r.root.querySelector<HTMLSelectElement>('#f-npm-latestStrategy')!;
+    expect(strategy.options[strategy.selectedIndex]?.textContent?.trim()).toBe(
+      'highest-member-latest',
+    );
+    expect(r.root.querySelector('#f-npm-distTagStrategy')).not.toBeNull();
+    await expectAccessible(r.root);
+
+    type(strategy, '1');
+    type(r.root.querySelector<HTMLSelectElement>('#f-npm-distTagStrategy')!, '0');
+    await settle(r.fixture);
+    await next(r);
+    expect(text(r.root)).toContain('latestStrategy: newest-published');
+    expect(text(r.root)).not.toContain('distTagStrategy');
+    expect(r.root.querySelector('pre')?.textContent).toContain(
+      '"latestStrategy": "newest-published"',
+    );
+
+    button(r.root, 'Create repository').click();
+    await settle(r.fixture);
+    expect(fake.repositories.find((x) => x.key === 'npm-all')?.npm).toEqual({
+      latestStrategy: 'newest-published',
+    });
+  });
+
+  it('R-UI-021 another format starts the format settings afresh, the generic format has none, and npm left at its defaults is created without an npm member', async () => {
+    const r = await renderScreen(RepositoryWizard, {
+      setup: (get) =>
+        ((get(RepositoriesApi) as FakeRepositoriesApi).formatsResult = [GENERIC_FORMAT, FAKE_NPM]),
+    });
+    const toFormatStep = async () => {
+      button(r.root, /2\. Format/).click();
+      await settle(r.fixture);
+    };
+    const guard = () => r.root.querySelector<HTMLInputElement>('#f-npm-latestGuard');
+    await pick(r, 'class', 'local');
+    await next(r);
+    await pick(r, 'format', 'npm');
+    await next(r);
+    type(r.root.querySelector<HTMLInputElement>('#f-key')!, 'npm-local');
+    await settle(r.fixture);
+    await next(r);
+    expect(guard()?.checked).toBe(true);
+    guard()!.checked = false;
+    guard()!.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle(r.fixture);
+
+    await toFormatStep();
+    await pick(r, 'format', 'generic');
+    await next(r);
+    await next(r);
+    expect(r.root.querySelector('trove-format-settings')).toBeNull();
+    expect(text(r.root.querySelector('nav')!)).toContain('4. Access settings');
+
+    await toFormatStep();
+    await pick(r, 'format', 'npm');
+    await next(r);
+    await next(r);
+    expect(guard()?.checked).toBe(true);
+    await next(r);
+    expect(text(r.root)).toContain('The defaults of the format');
+    expect(r.root.querySelector('pre')?.textContent).not.toContain('"npm":');
+  });
+
+  it('R-UI-021 a server error at a format setting returns to the settings step and is shown at its control and in the summary', async () => {
+    const r = await renderScreen(RepositoryWizard, {
+      setup: (get) => {
+        const fake = get(RepositoriesApi) as FakeRepositoriesApi;
+        fake.formatsResult = [GENERIC_FORMAT, FAKE_NPM];
+        fake.create = async () => {
+          throw new ApiError(
+            422,
+            {
+              code: 'validation_failed',
+              errors: [
+                { pointer: '/npm/latestGuard', code: 'not_applicable', detail: 'local only' },
+              ],
+            },
+            null,
+          );
+        };
+      },
+    });
+    await pick(r, 'class', 'local');
+    await next(r);
+    await pick(r, 'format', 'npm');
+    await next(r);
+    type(r.root.querySelector<HTMLInputElement>('#f-key')!, 'npm-local');
+    await settle(r.fixture);
+    await next(r);
+    await next(r);
+    button(r.root, 'Create repository').click();
+    await settle(r.fixture);
+
+    const guard = r.root.querySelector<HTMLInputElement>('#f-npm-latestGuard')!;
+    expect(guard.getAttribute('aria-invalid')).toBe('true');
+    expect(text(r.root)).toContain('This setting does not apply to this class or format.');
+    const summaryButton = r.root.querySelector<HTMLButtonElement>('[role="alert"] button')!;
+    expect(summaryButton.textContent).toContain('/npm/latestGuard');
+    summaryButton.click();
+    expect(document.activeElement).toBe(guard);
+    await expectAccessible(r.root);
+  });
+
   it('R-UI-021 the key is checked live: shape at once, availability after a pause (a 404 means free)', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {

@@ -26,9 +26,11 @@ import { ErrorSummary, SummaryItem, fieldMessage, problemsAt } from '../../share
 import { DraftStore } from '../../shared/drafts';
 import { asApiError, valueOf } from '../../shared/paged-resource';
 import { HasUnsavedChanges } from '../../shared/unsaved-guard';
+import { FormatSettings } from './format-settings';
 import { RepositoryFields } from './repository-fields';
 import {
   EMPTY_FORM,
+  FormatMemberOf,
   KEY_PATTERN,
   RepositoryForm,
   apiAddress,
@@ -36,7 +38,9 @@ import {
   curlOf,
   documentOf,
   lines,
+  settingsOf,
 } from './repository-model';
+import { SettingSchema, errorTarget, settingEntries, settingNodes } from './settings-schema';
 
 type KeyCheck = 'idle' | 'checking' | 'free' | 'taken' | 'unknown';
 
@@ -84,7 +88,14 @@ export function classHelp(cls: string): string {
  */
 @Component({
   selector: 'trove-repository-wizard',
-  imports: [MatButtonModule, RouterLink, ErrorNotice, ErrorSummary, RepositoryFields],
+  imports: [
+    MatButtonModule,
+    RouterLink,
+    ErrorNotice,
+    ErrorSummary,
+    FormatSettings,
+    RepositoryFields,
+  ],
   templateUrl: './repository-wizard.html',
   styleUrl: './repository-wizard.scss',
 })
@@ -113,13 +124,15 @@ export class RepositoryWizard implements HasUnsavedChanges {
   private created = false;
   private keyTimer: ReturnType<typeof setTimeout> | undefined;
 
-  protected readonly steps = [
+  protected readonly steps = computed(() => [
     $localize`:@@repo.wizard.step.class:Class`,
     $localize`:@@repo.wizard.step.format:Format`,
     $localize`:@@repo.wizard.step.basic:Basic settings`,
-    $localize`:@@repo.wizard.step.access:Access settings`,
+    this.settingNodes().length > 0
+      ? $localize`:@@repo.wizard.step.access-format:Access and ${this.formatLabel()}:format: settings`
+      : $localize`:@@repo.wizard.step.access:Access settings`,
     $localize`:@@repo.wizard.step.review:Review`,
-  ];
+  ]);
 
   protected readonly classes = computed<readonly RepositoryClass[]>(() => {
     const all = new Set<RepositoryClass>();
@@ -133,6 +146,28 @@ export class RepositoryWizard implements HasUnsavedChanges {
   protected readonly format = computed(
     () => (valueOf(this.formats) ?? []).find((f) => f.name === this.formatName()) ?? null,
   );
+  protected readonly formatLabel = computed(
+    () => this.format()?.displayName ?? this.formatName() ?? '',
+  );
+  /** The format member of the document and the schema it is rendered from (R-UI-021). */
+  private readonly member = computed<FormatMemberOf | null>(() => {
+    const name = this.formatName();
+    return name
+      ? { name, schema: this.format()?.settingsSchema as SettingSchema | null | undefined }
+      : null;
+  });
+  protected readonly memberPointer = computed(() => `/${this.formatName() ?? ''}`);
+  protected readonly settingNodes = computed(() => {
+    const m = this.member();
+    const cls = this.cls();
+    return m && cls ? settingNodes(m.schema, cls, m.name) : [];
+  });
+  /** The format settings the create writes, for the review. */
+  protected readonly formatEntries = computed(() => {
+    const m = this.member();
+    const written = m ? settingsOf(this.form(), m)[m.name] : undefined;
+    return written ? settingEntries(written as Record<string, unknown>) : [];
+  });
   protected readonly loadFailure = computed(() => {
     const e = this.formats.error();
     return e ? asApiError(e) : null;
@@ -159,8 +194,8 @@ export class RepositoryWizard implements HasUnsavedChanges {
   });
   protected readonly body = computed<Repository | null>(() => {
     const cls = this.cls();
-    const format = this.formatName();
-    return cls && format ? documentOf(cls, format, this.form()) : null;
+    const member = this.member();
+    return cls && member ? documentOf(cls, member, this.form()) : null;
   });
   protected readonly requestJson = computed(() => JSON.stringify(this.body(), null, 2));
   protected readonly curl = computed(() => {
@@ -219,11 +254,24 @@ export class RepositoryWizard implements HasUnsavedChanges {
     if (this.cls() !== cls) {
       this.cls.set(cls);
       this.formatName.set(null);
+      this.resetFormatMember();
     }
   }
 
   protected chooseFormat(name: string): void {
-    this.formatName.set(name);
+    if (this.formatName() !== name) {
+      this.formatName.set(name);
+      this.resetFormatMember();
+    }
+  }
+
+  protected setFormatMember(formatMember: Record<string, unknown>): void {
+    this.form.update((f) => ({ ...f, formatMember }));
+  }
+
+  /** The format settings belong to one class and one format: another choice starts them afresh. */
+  private resetFormatMember(): void {
+    if (Object.keys(this.form().formatMember).length > 0) this.setFormatMember({});
   }
 
   protected canNext(): boolean {
@@ -241,7 +289,7 @@ export class RepositoryWizard implements HasUnsavedChanges {
 
   protected next(): void {
     if (this.step() === 2) this.showErrors.set(true);
-    if (this.canNext() && this.step() < this.steps.length - 1) this.step.update((s) => s + 1);
+    if (this.canNext() && this.step() < this.steps().length - 1) this.step.update((s) => s + 1);
   }
 
   protected back(): void {
@@ -307,7 +355,7 @@ export class RepositoryWizard implements HasUnsavedChanges {
   }
 
   protected pointerTarget(pointer: string): string {
-    return `f-${pointer.split('/')[1] ?? ''}`;
+    return errorTarget(pointer, this.settingNodes(), this.memberPointer());
   }
 
   protected keyErrors(): readonly FieldProblem[] {

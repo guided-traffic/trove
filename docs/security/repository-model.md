@@ -114,6 +114,20 @@ The routing above is the same for everybody; the engine ([virtual.md](../develop
 
 ## What this does not cover
 
+### H-303 · A format setting is stored and returned as given, so a format's schema must not hold a secret
+
+Component: the member named after the format in the repository document (`npm`; R-REPO-004, Q-ARCH-229) and the settings form rendered
+from the format's schema ([web-ui.md](../developer/web-ui.md#the-repository-settings-form-rendered-from-the-formats-schema), Q-UI-78).
+Subject: every holder of `repositories:read-config`, who reads the member in `GET /api/v1/repositories/{key}` and sees it on the edit
+form, in its API tab and in the conflict dialog (the audit event names the changed member, not its value). The upstream credential of a remote repository is
+sealed and answered as `{"set": true}` ([data-and-secret-flow.md](data-and-secret-flow.md)); the format member has no such
+treatment: what a format declares in its schema is stored in `repositories.config` and returned as it was written. Dormant: npm's
+settings are switches and strategies. What makes it real: a format that adds a setting carrying a credential, for example an advisory
+provider URL with user information (`https://user:token@host/`) or a token for an outside service. Hardening, in this order: a format
+setting never carries a credential (a review item for every change of a `settings.schema.json`); `catalog.Register` refuses a schema
+member marked `writeOnly` or `format: password` until the member has a sealed, write-only form like the upstream credential; a URL setting
+refuses user information.
+
 ### H-283 · Honouring `Restricted` is up to the format's merge
 
 Component: `VirtualAdapter.Merge` of a format ([virtual.md](../developer/virtual.md) "The contract of a format's merge"). Subject: the versions

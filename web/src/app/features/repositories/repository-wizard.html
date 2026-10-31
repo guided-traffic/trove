@@ -11,7 +11,7 @@
   <nav aria-labelledby="wizard-steps">
     <h2 id="wizard-steps" class="visually-hidden" i18n="@@repo.wizard.steps">Steps</h2>
     <ol class="steps">
-      @for (name of steps; track $index) {
+      @for (name of steps(); track $index) {
         <li [attr.aria-current]="$index === step() ? 'step' : null" [class.done]="$index < step()">
           @if ($index < step()) {
             <button type="button" class="step-link" (click)="goTo($index)">
@@ -138,10 +138,21 @@
     @case (3) {
       <h2 i18n="@@repo.wizard.access.heading">Access settings</h2>
       <p class="hint" i18n="@@repo.wizard.access.hint">
-        Settings of the local class. Remote and virtual repositories add their own settings once a
-        format implements them.
+        Which paths the repository admits and who may see it.
       </p>
       <trove-repository-fields section="access" [(form)]="form" [fieldErrors]="fieldErrors()" />
+      @if (settingNodes().length > 0) {
+        <h2 i18n="@@repo.format.heading">
+          <span translate="no">{{ formatLabel() }}</span> settings
+        </h2>
+        <trove-format-settings
+          [nodes]="settingNodes()"
+          [pointer]="memberPointer()"
+          [value]="form().formatMember"
+          (valueChange)="setFormatMember($event)"
+          [fieldErrors]="fieldErrors()"
+        />
+      }
     }
     @case (4) {
       <h2 i18n="@@repo.wizard.review.heading">Review</h2>
@@ -160,6 +171,19 @@
         <dd translate="no">{{ includes().length > 0 ? includes().join(', ') : '–' }}</dd>
         <dt i18n="@@repo.field.exclude">Exclude patterns</dt>
         <dd translate="no">{{ excludes().length > 0 ? excludes().join(', ') : '–' }}</dd>
+        @if (settingNodes().length > 0) {
+          <dt i18n="@@repo.format.heading">
+            <span translate="no">{{ formatLabel() }}</span> settings
+          </dt>
+          <dd>
+            @for (e of formatEntries(); track e[0]) {
+              <code translate="no">{{ e[0] }}: {{ e[1] }}</code
+              >&ngsp;
+            } @empty {
+              <span i18n="@@repo.review.format-defaults">The defaults of the format</span>
+            }
+          </dd>
+        }
         <dt i18n="@@repo.review.switches">Switches</dt>
         <dd>
           @if (form().disabled) {
@@ -193,7 +217,7 @@
     >
       Back
     </button>
-    @if (step() < steps.length - 1) {
+    @if (step() < steps().length - 1) {
       <button
         mat-flat-button
         type="button"

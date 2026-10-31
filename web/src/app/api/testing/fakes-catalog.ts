@@ -64,7 +64,76 @@ export const GENERIC_FORMAT: FormatDescriptor = {
   settingsSchema: null,
 };
 
-/** A package format as the catalog could list it: name patterns, versions and tags. */
+/** The settings schema npm registers (internal/formats/npm/settings.schema.json), as the catalog serves it. */
+export const NPM_SETTINGS_SCHEMA = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    latestGuard: {
+      description:
+        'A publish under latest does not move latest backwards or onto a pre-release in front of a release.',
+      type: 'boolean',
+      default: true,
+      'x-trove-classes': ['local'],
+    },
+    serveRemovedVersions: {
+      description: 'Serve the cached tarball of a version the upstream no longer lists.',
+      type: 'boolean',
+      default: false,
+      'x-trove-classes': ['remote'],
+    },
+    latestStrategy: {
+      description: 'How a virtual repository merges latest.',
+      type: 'string',
+      enum: ['highest-member-latest', 'newest-published'],
+      default: 'highest-member-latest',
+      'x-trove-classes': ['virtual'],
+    },
+    distTagStrategy: {
+      description: 'How a virtual repository merges the other dist-tags.',
+      type: 'string',
+      enum: ['member-order', 'highest-semver', 'newest-published'],
+      default: 'member-order',
+      'x-trove-classes': ['virtual'],
+    },
+  },
+};
+
+/**
+ * npm's members plus the constructs a format may add (a nested object of one class, an enum, a
+ * nullable URI, durations and sizes as strings, an integer, an array the form does not edit).
+ */
+export const RICH_SETTINGS_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    latestGuard: { type: 'boolean', default: true, 'x-trove-classes': ['local'] },
+    serveRemovedVersions: { type: 'boolean', default: false, 'x-trove-classes': ['remote'] },
+    audit: {
+      type: 'object',
+      description: 'The security audit.',
+      additionalProperties: false,
+      'x-trove-classes': ['remote'],
+      properties: {
+        mode: { type: 'string', enum: ['forward', 'disabled'], default: 'forward' },
+        providerURL: { type: ['string', 'null'], format: 'uri', default: null },
+        timeout: { type: 'string', default: '30s', description: 'A duration such as 30s.' },
+        maxBodySize: { type: 'string', default: '10MiB' },
+        retries: { title: 'Retries', type: 'integer', default: 2 },
+        hosts: { type: 'array', items: { type: 'string' } },
+      },
+    },
+    latestStrategy: {
+      type: 'string',
+      enum: ['highest-member-latest', 'newest-published'],
+      default: 'highest-member-latest',
+      'x-trove-classes': ['virtual'],
+    },
+  },
+};
+
+/** A package format as the catalog could list it: name patterns, versions, tags and settings. */
 export const PACKAGE_FORMAT: FormatDescriptor = {
   ...GENERIC_FORMAT,
   name: 'npm',
@@ -72,6 +141,7 @@ export const PACKAGE_FORMAT: FormatDescriptor = {
   classes: ['local', 'remote', 'virtual'],
   protocolBasePath: '/api/npm/{key}/',
   patternSubject: 'name',
+  settingsSchema: NPM_SETTINGS_SCHEMA,
 };
 
 export class FakeRepositoriesApi extends RepositoriesApi {

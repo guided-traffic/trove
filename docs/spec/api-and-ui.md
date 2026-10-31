@@ -3099,6 +3099,9 @@ Priority: **MVP** · Covers: UI-031
   format member of the repository document that is named after the format (`npm`, `nuget`;
   [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-004), never into a generic
   `formatSettings` member. A format adds a panel only for interactions a schema cannot express.
+  The form shows the members whose `x-trove-classes` contain the class, in the class-specific step
+  of the wizard and on a tab of the edit form, and writes a setting only where it differs from the
+  schema's default (Q-UI-78 to Q-UI-81).
 - NuGet local repositories: the settings view, in the wizard's review and on the edit form, shows
   the effective `nuget.deleteMode`, `unlist` (the default) or `delete`, with one sentence on what
   `dotnet nuget delete` and `nuget delete` do in this repository: unlist the version, or delete it
@@ -3127,6 +3130,9 @@ Acceptance criteria:
 - The edit form of `nuget-local` without a `nuget.deleteMode` shows "unlist"; after
   `PATCH /api/v1/repositories/nuget-local` with `If-Match` and `{"nuget": {"deleteMode": "delete"}}`
   it shows "delete".
+- Creating a local npm repository in the wizard with `latestGuard` turned off stores
+  `{"npm": {"latestGuard": false}}`; turning it on again on the edit form removes the `npm` member,
+  and the wizard offers no `latestGuard` for a virtual repository.
 
 ### R-UI-022 · Virtual repository member editor
 Priority: **MVP** · Covers: UI-032
@@ -4795,7 +4801,7 @@ Status: **Decided by the development agent** — selected from the options below
 | Question | Options | Choice |
 |---|---|---|
 | Columns of the list | The spec's "created"; what the summary view carries | `GET /api/v1/repositories` answers the summary view with `lastActivityAt` and the client addresses but no creation time, and `view=full` has no addresses. The list shows **last activity** instead of "created" and sorts by key only; the detail page shows creation and last change. The two missing members (creation time on the summary, sort by creation) are reported to the backend |
-| Settings forms | Rendered from a JSON Schema per format (R-UI-021); hand-built | The format descriptor of `GET /api/v1/formats` carries the settings schema (`settingsSchema`, Q-ARCH-229), but the form that renders from it is not built: the forms are hand-built for the members that apply to the generic format (R-REPO-004, R-GENERIC-008): description, notes, include and exclude patterns, disabled, require authentication, hide existence. The `npm` member is settable through the API only until the schema-rendered form exists (BETA.md, phase 3 notes) |
+| Settings forms | Rendered from a JSON Schema per format (R-UI-021); hand-built | The forms are hand-built for the members that apply to the generic format (R-REPO-004, R-GENERIC-008): description, notes, include and exclude patterns, disabled, require authentication, hide existence. *Superseded for the format member by [Q-UI-78](#q-ui-78--the-repository-settings-form-renders-the-subset-of-json-schema-the-formats-use): the `npm` member is rendered from `settingsSchema` (Q-ARCH-229).* |
 | Classes in the wizard | A list in the UI; derived | The union of the `classes` of all formats; the format step offers the formats that contain the chosen class. Today that is `local` and the generic format |
 | Edit | `PUT`; `PATCH` | A JSON merge patch of the changed members only (`shared/merge-patch.ts`) with the loaded `ETag`; no change disables "Save". A `412` re-reads the repository: equal to the draft after a retried write is a success, otherwise the conflict dialog; "Overwrite" sends the draft's difference against the newly stored version with the new `ETag` |
 | Delete | Immediate; type the key | The key is typed; `202` is followed by the job progress component until the job ends, and the row disappears when it succeeded. A `repository_referenced` answer repeats the dialog with the "detach" choice |
@@ -5146,6 +5152,96 @@ R-API-030 and Q-UI-70 spelled the clients of npm `npm`, `pnpm`, `yarn-berry` and
 **Rationale:** The format page is the source of its client list (R-API-030); the UI table only decides what the pickers offer. The development agent revisits this when a format's client id needs a display name the UI cannot derive from the server (the catalog already carries `DisplayName` per client).
 
 **Applied in the spec:** R-API-030 (the client list of npm), R-UI-017.
+
+### Q-UI-78 · The repository settings form renders the subset of JSON Schema the formats use
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-021 and R-ARCH-004 render a format's settings from the schema `GET /api/v1/formats` serves (`settingsSchema`, Q-ARCH-229); Q-UI-18 had left the forms hand-built for the generic format, so the `npm` member could be set through the API only. npm's schema holds booleans and string enums, each with a default and its classes in `x-trove-classes`; the audit settings of R-NPM-038 add an object of the remote class with an enum, a nullable URL, and durations and byte sizes written as strings. The server compiles and enforces the whole schema.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A renderer of the subset the formats use, in the repository feature | An object with `properties` is a fieldset, `boolean` a checkbox, `enum` a select, `string` a text field (`format: uri` a URL field), `integer` and `number` a text field with a numeric keyboard; `null` in a type list is ignored, so an empty field means "not set"; a member whose `x-trove-classes` lack the class is left out at every level; any other construct (an array, a composition, `$ref`) is shown with its stored value and "Set it through the API" | No dependency (INV-1); a format adds a setting by editing its schema; the server stays the only validator | A construct outside the subset is not editable until the renderer learns it |
+| (b) A JSON Schema form library | A generic form engine | Covers more of the standard | A dependency with its own widgets, styles and accessibility for four switches today; its validation would be a second one next to the server's |
+| (c) A panel per format under `features/formats/<id>/` | Hand-written controls | Free layout | Code per field, which R-ARCH-004 reserves for what a schema cannot express; the schema and the panel drift apart |
+
+**Choice:** (a): the model is `features/repositories/settings-schema.ts` (`settingNodes`, `pruneDefaults`), the component `format-settings.ts`. The form does not validate: a number field sends a number only when its text is one as JSON writes it, otherwise the text, which the server refuses at the field (`invalid_value`). A server field error goes to the control of the deepest member its pointer names, else to the enclosing object or to the section, in the field and in the error summary.
+
+**Rationale:** The settings the formats declare are switches and choices; a renderer of that subset is small and keeps every control a labelled native element (Q-UI-14). The development agent revisits this when a format's schema needs a construct the subset lacks (a list of strings, a `oneOf`) and then extends the renderer, not the format.
+
+**Applied in the spec:** R-UI-021 (where the settings appear, an acceptance criterion); the "Settings forms" row of Q-UI-18 is superseded for the format member.
+
+### Q-UI-79 · The labels and descriptions of the settings form are the schema's
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: every UI text is translatable (R-UI-045), while a schema's descriptions are English texts of the format; a translation per member would be code per field.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The schema's texts as sent | The label is the schema's `title`, else the member name (`latestGuard`), the name the API tab and the `curl` text show; the description is shown as the schema has it, marked `lang="en"`; enum values are shown as they are written | R-UI-045 keeps API texts English and identifiers untranslated; a new setting needs no UI change | German users read English descriptions, and npm's descriptions carry requirement IDs written for the API reader |
+| (b) A translation table in the UI keyed by format and member | `$localize` per member | German texts | Code per field (R-ARCH-004); a schema change without a UI change shows an untranslated member anyway |
+| (c) Localized schemas from the server | `title` and `description` per locale | Both languages without UI code | A server change and a second text per member in every format, for four settings |
+
+**Choice:** (a). The texts the form adds itself ("Default: on", "Not set", the introduction, the note on a construct it does not edit, the step and tab names) are translated.
+
+**Rationale:** The settings are configuration identifiers that an administrator meets again in the API and in the format's documentation; the description explains them in the language the API speaks. The development agent revisits this when the owner wants German descriptions or a format writes its schema for end users: (c) would then keep the text with the format. Walkthrough note: whether the descriptions should lose their requirement IDs is the format's choice (its schema), not the form's.
+
+**Applied in the spec:** none; R-UI-045 already keeps API texts English.
+
+### Q-UI-80 · A setting equal to its default is not written
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a checkbox and a select always show a value, so for an absent setting the form shows the schema's default. What does the form send when the value shown is the default?
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Leave it out | The format member carries only the settings that differ from their default; an object that this leaves empty is left out, and so is the member; a `required` member and a member the schema does not know stay | The repository follows the format's default (Q-NPM-59: an omitted setting takes its default); switching a value back and forth is no change; the create body is minimal | A value deliberately set to today's default is not pinned |
+| (b) Write every effective value | The form fills in the defaults | The document states everything | Every repository the form touches pins today's defaults, and a later default changes nothing for them |
+| (c) Write what the user touched | Touched members are written as set | Pins what was chosen | A switch set back is an unsaved change; the dirty check needs a record of touched members |
+
+**Choice:** (a). The edit form compares the stored and the edited member both without their defaults, so a stored explicit default is no change, and a value set back to its default sends `null` for it, or for the whole member, in the merge patch.
+
+**Rationale:** The format owns its defaults (Q-NPM-59); a form that wrote them would freeze them into every repository it saves. The development agent revisits this when a format has a setting whose default may change but must stay as it is for existing repositories; such a setting is `required` in the schema, which (a) keeps.
+
+**Applied in the spec:** R-UI-021.
+
+### Q-UI-81 · The format settings are a section of the class-specific step and a tab of the edit form
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-021 has five steps (class, format, basic settings, class-specific settings, review), and the edit form shows the same sections as tabs. Each member of npm's schema applies to one class.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A section of the fourth step and a tab of its own | When the schema has a member for the class, the fourth step shows a section "npm settings" below the access settings and is called "Access and npm settings"; the review lists the settings that will be written, or "The defaults of the format"; the edit form has a tab "npm settings" between Access and API | Five steps as specified; the settings are class-specific by construction; a format without settings shows nothing new | The name of the step changes once a format is chosen |
+| (b) A sixth step "Format settings" | A step of its own, only when there are members | A clear place | The number of steps depends on the format; R-UI-021 names five |
+| (c) Part of the basic settings | Next to the key and the description | One step less | The basic step does not depend on the class, the settings do |
+
+**Choice:** (a). Choosing another class or format in the wizard starts the format settings afresh, because a member of another class would be refused (`not_applicable`).
+
+**Rationale:** The schema already sorts its members by class, which is what the class-specific step is for. The development agent revisits the layout when a format's settings outgrow one section (more than about ten controls) and would then give them a step of their own. Walkthrough note: the owner should look at the step name and at the tab between Access and API.
+
+**Applied in the spec:** R-UI-021.
+
+### Q-UI-82 · The packages journey compares the setup page with the matrix's snippet written out
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: E2.8 asks that E2.1's configure step use the snippets of the client setup dialog verbatim. The npm matrix does not open the dialog: `setupSnippet` ([npm_matrix_test.go](../../test/e2e/npm_matrix_test.go)) renders npm's configure templates with the data the setup API would give them (the edge's registry URL on `localhost`, the keyed credential line with `${TROVE_TOKEN}`, the always-auth switches of a repository that is not anonymously readable). R-UI-047's acceptance criterion asks that a deliberately broken snippet template fail the client-setup journey.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The journey compares the page with the snippet written out for the matrix's data | `matrixSnippet` in `web/e2e/tests/08-packages.spec.ts` spells out what the templates render for the journey's repository; the snippet on the page must equal it character for character, for each of the four clients, with the file it names | A broken template fails the journey (R-UI-047); page, API and matrix are held against one independent statement | The rendering is written down a second time: a deliberate template change edits the journey too |
+| (b) The journey compares the page with the setup API's answer | `GET /api/v1/repositories/{repoKey}/client-setup` with the administrator token | Nothing written twice | Proves only that the page shows what the API says; a broken template passes |
+| (c) The matrix opens the dialog | The Go test drives a browser | The literal criterion | A browser in the npm suite for text the API already returns |
+
+**Choice:** (a), with the credential mode "Reference an environment variable", which writes `${TROVE_TOKEN}` as the matrix does. The journey's repository is its own local npm repository (INV-17: prepared through the API), not `npm-all`, which only the npm suite creates; the templates are the same for every key.
+
+**Rationale:** The criterion exists to catch a dialog and a client configuration that disagree, and only an expected text that neither of them produced can. The development agent revisits this when the matrix reads its snippets from the setup API itself, which would make (b) enough.
+
+**Applied in the spec:** none; [e2e.md](../developer/e2e.md#browser-journeys) describes the journey.
 
 ### Q-API-16 · A `limit` above the maximum is clamped
 

@@ -36,10 +36,20 @@ import { JobProgress } from '../../shared/job-progress';
 import { JsonObject, mergePatchOf } from '../../shared/merge-patch';
 import { asApiError, valueOf } from '../../shared/paged-resource';
 import { HasUnsavedChanges } from '../../shared/unsaved-guard';
+import { FormatSettings } from './format-settings';
 import { RecentRepositories } from './recent-repositories';
 import { RepositoryFields } from './repository-fields';
-import { RepositoryForm, apiAddress, clientAddress, curlOf, formOf, settingsOf } from './repository-model';
+import {
+  FormatMemberOf,
+  RepositoryForm,
+  apiAddress,
+  clientAddress,
+  curlOf,
+  formOf,
+  settingsOf,
+} from './repository-model';
 import { classLabel } from './repository-wizard';
+import { SettingSchema, errorTarget, settingNodes } from './settings-schema';
 
 /**
  * The edit form of a repository (R-UI-021): key, class and format are read-only; the settings are
@@ -58,6 +68,7 @@ import { classLabel } from './repository-wizard';
     ErrorNotice,
     ErrorSummary,
     JobProgress,
+    FormatSettings,
     RepositoryFields,
   ],
   templateUrl: './repository-detail.html',
@@ -107,18 +118,29 @@ export class RepositoryDetail implements HasUnsavedChanges {
     [...this.fieldErrors()].map(([pointer, problem]) => ({
       label: pointer,
       message: fieldMessage(problem),
-      targetId: `f-${pointer.split('/')[1] ?? ''}`,
+      targetId: this.pointerTarget(pointer),
     })),
   );
-  protected readonly patch = computed<JsonObject>(() => {
-    const base = this.baseline();
-    const now = this.form();
-    return base && now ? mergePatchOf(settingsOf(base), settingsOf(now)) : {};
-  });
-  protected readonly dirty = computed(() => Object.keys(this.patch()).length > 0);
   protected readonly format = computed(
     () => (valueOf(this.formats) ?? []).find((f) => f.name === this.stored()?.format) ?? null,
   );
+  /** The format member of the document and its schema; the schema is unknown until the formats load. */
+  private readonly member = computed<FormatMemberOf>(() => ({
+    name: this.stored()?.format ?? '',
+    schema: this.format()?.settingsSchema as SettingSchema | null | undefined,
+  }));
+  protected readonly memberPointer = computed(() => `/${this.member().name}`);
+  protected readonly settingNodes = computed(() => {
+    const repo = this.stored();
+    return repo ? settingNodes(this.member().schema, repo.class, repo.format) : [];
+  });
+  protected readonly patch = computed<JsonObject>(() => {
+    const base = this.baseline();
+    const now = this.form();
+    const m = this.member();
+    return base && now ? mergePatchOf(settingsOf(base, m), settingsOf(now, m)) : {};
+  });
+  protected readonly dirty = computed(() => Object.keys(this.patch()).length > 0);
   protected readonly address = computed(() =>
     clientAddress(valueOf(this.baseUrl), this.format() ?? undefined, this.key()),
   );
@@ -154,6 +176,14 @@ export class RepositoryDetail implements HasUnsavedChanges {
 
   protected setForm(form: RepositoryForm): void {
     this.form.set(form);
+  }
+
+  protected setFormatMember(formatMember: JsonObject): void {
+    this.form.update((f) => (f ? { ...f, formatMember } : f));
+  }
+
+  private pointerTarget(pointer: string): string {
+    return errorTarget(pointer, this.settingNodes(), this.memberPointer());
   }
 
   /** Takes a freshly read representation as the new baseline; a saved draft is restored once. */
@@ -219,9 +249,10 @@ export class RepositoryDetail implements HasUnsavedChanges {
       return;
     }
     const theirForm = formOf(theirs.value);
+    const m = this.member();
     if (
       error.afterRetry &&
-      JSON.stringify(settingsOf(theirForm)) === JSON.stringify(settingsOf(mine))
+      JSON.stringify(settingsOf(theirForm, m)) === JSON.stringify(settingsOf(mine, m))
     ) {
       // The first attempt of a retried write did commit: that is a success, not a conflict.
       this.adopt(theirs);
@@ -229,14 +260,14 @@ export class RepositoryDetail implements HasUnsavedChanges {
       return;
     }
     const decision = await this.conflicts.resolve({
-      mine: settingsOf(mine),
-      theirs: settingsOf(theirForm),
+      mine: settingsOf(mine, m),
+      theirs: settingsOf(theirForm, m),
     });
     if (decision === 'reload') {
       this.adopt(theirs);
     } else if (decision === 'overwrite') {
       try {
-        await this.send(mergePatchOf(settingsOf(theirForm), settingsOf(mine)), theirs.etag);
+        await this.send(mergePatchOf(settingsOf(theirForm, m), settingsOf(mine, m)), theirs.etag);
       } catch (e) {
         this.failure.set(asApiError(e));
       }
@@ -285,5 +316,9 @@ export class RepositoryDetail implements HasUnsavedChanges {
   protected readonly copyAddress = $localize`:@@repo.copy-address:Copy client address`;
   protected readonly tabGeneral = $localize`:@@repo.tab.general:General`;
   protected readonly tabAccess = $localize`:@@repo.tab.access:Access`;
+  protected readonly tabFormat = computed(
+    () =>
+      $localize`:@@repo.tab.format:${this.format()?.displayName ?? this.member().name}:format: settings`,
+  );
   protected readonly tabApi = $localize`:@@repo.tab.api:API`;
 }

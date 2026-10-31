@@ -10,7 +10,8 @@ The shell (skip link, dark top bar with the repository search and the user menu,
 with folding groups and an icon rail and a drawer below, breadcrumbs, banner area, notice regions, router outlet; see
 [Shell, design tokens and the list components](#shell-design-tokens-and-the-list-components)), the HTTP layer, the session handling and every
 cross-cutting UI mechanism are in place, so the screens are content. Built: sign-in, signed out, the system status
-screen with its jobs screen, the repository list, wizard and edit form, the file tree, the endpoint screens with the exposure rule editor and
+screen with its jobs screen, the repository list, wizard and edit form with the format settings rendered from the format's schema (see
+[The repository settings form](#the-repository-settings-form-rendered-from-the-formats-schema)), the file tree, the endpoint screens with the exposure rule editor and
 the audit log (see [Screens of the catalog area](#screens-of-the-catalog-area)), and the package screens: the list, the details with the install panel and the README, and the client setup page (see [Package screens and client setup](#package-screens-and-client-setup)); the other routed M1 screens are placeholders with their final
 path and title until their work package replaces them. Requirements: [R-UI-002 to R-UI-005](../spec/api-and-ui.md),
 [R-UI-010, R-UI-011](../spec/api-and-ui.md), [R-UI-020, R-UI-021](../spec/api-and-ui.md), [R-UI-037, R-UI-038](../spec/api-and-ui.md),
@@ -124,8 +125,8 @@ mux.Handle("/ui/", h) // do not strip the prefix
 | Route | Component | Services | Notes |
 |---|---|---|---|
 | `/admin/repositories` | [repository-list](../../web/src/app/features/repositories/repository-list.ts) | `RepositoriesApi`, `JobsApi` (progress) | Data table (no sort control: the API takes no `sort`); filter panel with `q`, `class`, `format`, `state`, applied into the query; cursor "Load more"; delete with typed key and job progress; "recently viewed" in browser storage |
-| `/admin/repositories/new` | [repository-wizard](../../web/src/app/features/repositories/repository-wizard.ts) | `RepositoriesApi` | Five steps; classes and formats only from `GET /api/v1/formats`; live key check; `Idempotency-Key` from the moment the wizard opens; field errors mapped by pointer |
-| `/admin/repositories/:key` | [repository-detail](../../web/src/app/features/repositories/repository-detail.ts) | `RepositoriesApi` | Tabs General, Access, API; merge patch with `If-Match`; 412 conflict dialog; consumer view without a form; delete |
+| `/admin/repositories/new` | [repository-wizard](../../web/src/app/features/repositories/repository-wizard.ts) | `RepositoriesApi` | Five steps; classes and formats only from `GET /api/v1/formats`; live key check; the format's settings in the fourth step ("Access and npm settings") and in the review; `Idempotency-Key` from the moment the wizard opens; field errors mapped by pointer |
+| `/admin/repositories/:key` | [repository-detail](../../web/src/app/features/repositories/repository-detail.ts) | `RepositoriesApi` | Tabs General, Access, the format's settings ("npm settings", only when its schema has a member for the class), API; merge patch with `If-Match`; 412 conflict dialog; consumer view without a form; delete |
 | `/browse`, `/browse/{repo}/{path…}` | [browse](../../web/src/app/features/browse/browse.ts) | `RepositoriesApi`, `FilesApi`, `SessionStore.check` | `@angular/aria` tree with lazy pages; details General, Statistics, API; upload and folder dialogs, delete (204 or job) |
 | `/admin/endpoints` | [endpoint-list](../../web/src/app/features/endpoints/endpoint-list.ts) | `EndpointsApi` | Data table; name and rule count sort in the browser because the API answers the whole list; inert names flagged |
 | `/admin/endpoints/:endpoint` | [endpoint-detail](../../web/src/app/features/endpoints/endpoint-detail.ts) | `EndpointsApi`, `RepositoriesApi` | Read-only configuration, mode `all` banner, rule table with the enable switch (`PATCH {enabled}`), client addresses |
@@ -135,7 +136,58 @@ mux.Handle("/ui/", h) // do not strip the prefix
 | `/admin/system/jobs` | [jobs-page](../../web/src/app/features/system/jobs-page.ts) | `JobsApi` | Filters `kind` and `state`; refresh with a pause control; cancel |
 
 Every screen has a loading, an empty, an error and a filled state, covered by component specs that run axe (no serious or critical violation).
-Decisions: Q-UI-14 (forms), Q-UI-15 (`ui.*` constants), Q-UI-16 (upload), Q-UI-17 (tree), Q-UI-18 (repositories), Q-UI-19 (endpoints, audit, status).
+Decisions: Q-UI-14 (forms), Q-UI-15 (`ui.*` constants), Q-UI-16 (upload), Q-UI-17 (tree), Q-UI-18 (repositories), Q-UI-19 (endpoints, audit, status),
+Q-UI-78 to Q-UI-81 (the format settings).
+
+## The repository settings form rendered from the format's schema
+
+R-UI-021 and R-ARCH-004: the member of the repository document named after the format (`npm`) is edited in a form rendered from the
+format's settings schema, `settingsSchema` of `GET /api/v1/formats` (Q-ARCH-229; npm's is
+[settings.schema.json](../../internal/formats/npm/settings.schema.json)). Nothing in the UI names a setting: a format adds, changes or removes one
+by editing its schema, and the wizard and the edit form follow. The server validates the member against the whole schema; the form only
+offers controls ([Q-UI-78](../spec/api-and-ui.md#q-ui-78--the-repository-settings-form-renders-the-subset-of-json-schema-the-formats-use)).
+
+| File | Responsibility |
+|---|---|
+| [settings-schema.ts](../../web/src/app/features/repositories/settings-schema.ts) | `settingNodes(schema, class, format)`: the members that apply to the class, as a tree of nodes with pointer, control id, label, description and default; `pruneDefaults`, `valueAt`, `withValue`, `numberOrText`, `targetOf` and `errorTarget` (the control a field error belongs to), `settingEntries` (the review) |
+| [format-settings.ts](../../web/src/app/features/repositories/format-settings.ts) | `<trove-format-settings [nodes] [pointer] [(value)] [fieldErrors]>`: the controls, the defaults, the descriptions and the field errors |
+| [repository-model.ts](../../web/src/app/features/repositories/repository-model.ts) | `RepositoryForm.formatMember` holds the member; `settingsOf(form, {name, schema})` writes it without its defaults; `documentOf` names it after the format |
+
+**What each schema construct becomes.**
+
+| Schema | Control |
+|---|---|
+| `type: object` with `properties` | a fieldset, legend = `title` or the member name, the description below it, its members inside; left out when no member applies to the class |
+| `type: boolean` | a checkbox showing the value in effect (stored, else `default`); "Default: on" or "Default: off" |
+| `enum` (any type) | a select of the values as written; the default is selected while the member is absent; "Not set" as a first option when there is no default |
+| `type: string` | a text field, empty while absent; `format: uri` makes it a URL field. Durations and byte sizes (`30s`, `10MiB`) are strings with a pattern: the field takes the text, the server checks the pattern |
+| `type: integer` or `number` | a text field with a numeric keyboard; a number is sent when the text is one as JSON writes it, otherwise the text, which the server refuses at the field |
+| `type: [<type>, "null"]` | the control of `<type>`; an empty field leaves the member out, so the default (which may be `null`) applies |
+| `x-trove-classes` | at every level, a member whose list lacks the repository's class is not rendered (the server checks it at the top level and answers `not_applicable`) |
+| `default`, `description`, `title` | the value shown while a member is absent, the hint below the control (`lang="en"`), the label |
+| anything else (`array`, `oneOf`, `$ref`, an object without `properties`) | the label, the description, the stored value as JSON and "Set it through the API"; the value is kept as it is |
+
+**Rules.**
+
+- *A default is not written* ([Q-UI-80](../spec/api-and-ui.md#q-ui-80--a-setting-equal-to-its-default-is-not-written)). `settingsOf` leaves out a setting equal to its default, an
+  object left empty by that, and the member when nothing is left; a `required` member and a member the schema does not know stay. Both sides of the
+  edit form's merge patch are pruned the same way, so a stored explicit default is no change, and a value set back to its default sends `null`.
+- *Texts* ([Q-UI-79](../spec/api-and-ui.md#q-ui-79--the-labels-and-descriptions-of-the-settings-form-are-the-schemas)). Labels and descriptions are the schema's, in English;
+  only the texts the form adds are translated (`repo.format.*`).
+- *Where it is* ([Q-UI-81](../spec/api-and-ui.md#q-ui-81--the-format-settings-are-a-section-of-the-class-specific-step-and-a-tab-of-the-edit-form)). The fourth wizard step and a
+  tab of the edit form, only when `settingNodes` is not empty. Choosing another class or format in the wizard empties the member.
+- *Field errors.* The control id is the pointer with every run of other characters than letters, digits and `_` turned into `-`, prefixed with `f`
+  (`/npm/audit/timeout` is `f-npm-audit-timeout`). An error goes to the deepest rendered member its pointer names, else to the enclosing object, else
+  to the section (`f-npm`); the error summary focuses the same element.
+- *Tests.* [settings-schema.spec.ts](../../web/src/app/features/repositories/settings-schema.spec.ts) and
+  [format-settings.spec.ts](../../web/src/app/features/repositories/format-settings.spec.ts) run against `RICH_SETTINGS_SCHEMA` of
+  [fakes-catalog.ts](../../web/src/app/api/testing/fakes-catalog.ts) (npm's members plus a nested object of the remote class with an enum, a nullable URL,
+  durations, an integer and an array); the wizard and edit specs against `NPM_SETTINGS_SCHEMA`, a copy of npm's schema. The browser journey
+  `08-packages.spec.ts` creates and edits an npm repository with it ([e2e.md](e2e.md#browser-journeys)).
+
+**A format that needs more.** A setting the subset cannot express (a list of strings, a choice between shapes) is first a case for extending
+`settingNodes` and the component with one more kind; a panel under `features/formats/<id>/` is for an interaction a schema cannot express at all
+(R-ARCH-004), such as NuGet's view of the effective `deleteMode`.
 
 ## Package screens and client setup
 
@@ -434,10 +486,12 @@ Conventions these screens follow:
 - System status: the backups card and route are placeholders (R-UI-048).
 - What the API lacks for the catalog screens, and the UI works around (Q-UI-15, Q-UI-18, Q-UI-19): the values of `ui.browser.page_size` and
   `ui.deploy.max_upload_bytes`; a creation time and a sort by creation on the repository summary view; a flag for
-  formats with tags in the descriptor. The descriptor carries the settings schema now (`settingsSchema`, Q-ARCH-229); the form that renders from it is not built.
+  formats with tags in the descriptor.
 - The tree does not label the members of a virtual repository ("resolves from") or the cache of a remote one: M1 has neither class. Copy, move, properties and the trash can are P1.
-- The repository settings forms cover the generic format; the `npm` member (`latestGuard`, `serveRemovedVersions`, `latestStrategy`, `distTagStrategy`) is settable through the API only until a form renders from the format's settings schema (R-ARCH-004; BETA.md, phase 3); NuGet's `deleteMode` view, upstream presets, "Test connection", the member editor and the other format
-  panels arrive with those formats.
+- The repository settings forms cover the generic members and the format member rendered from the format's schema
+  ([above](#the-repository-settings-form-rendered-from-the-formats-schema)). The wizard has no fields for the upstream of a remote repository (an npm remote
+  is created with the format's default upstream) or for the members of a virtual one; NuGet's `deleteMode` view, upstream presets, "Test connection", the
+  member editor and the other format panels arrive with those formats. A schema construct outside the rendered subset is shown, not edited.
 - The session expiry warning of R-UI-002 (WCAG 2.2.1) is not built: it needs the session deadlines in an answer the UI can read (`whoami` shows `type: session` without an
   expiry; the timeouts are in `settings/auth`, which needs `settings:read`). The `reauthentication_required` dialog leads to `/login?...&reauth=1`; the identity, token,
   settings and policy editors and the catalog editors keep and restore their non-secret drafts (see above).

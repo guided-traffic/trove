@@ -52,3 +52,5 @@ before using a new term in a German text.
 | deployment target | Veröffentlichungsziel |
 | README | README |
 | recently viewed, saved view | Zuletzt angesehen, gespeicherte Ansicht |
+| class (of a repository), format settings | Klasse, Formateinstellungen (`npm-Einstellungen`) |
+| default (value of a setting) | Standard |

@@ -175,7 +175,9 @@ after the format (R-REPO-004). Four pieces make it one mechanism, and none of th
 | The reader | the format reads its member from `rq.Repo.Config` (npm: `settingsOf`, [settings.go](../../internal/formats/npm/settings.go)) | Defaults for what the document leaves out. The format never validates what the service validated |
 
 `formats.Validate` refuses a format that declares a schema and has no `formatMembers` entry, and a format named like another member of the document (`repository.IsReservedMember`). The schema is
-served as `settingsSchema` of `GET /api/v1/formats`, and the create form is meant to render from it (R-ARCH-004); the form is not built yet (see [web-ui.md](web-ui.md)). The OpenAPI schema of the
+served as `settingsSchema` of `GET /api/v1/formats`, and the repository wizard and edit form render the member from it (R-ARCH-004, [web-ui.md](web-ui.md#the-repository-settings-form-rendered-from-the-formats-schema)):
+a setting needs no UI code as long as it uses the rendered subset (objects, booleans, enums, strings, integers, numbers; `title`, `description`,
+`default`, `x-trove-classes`), and its `description` is the text the form shows. The OpenAPI schema of the
 member (`NpmSettings`) is written by hand and `TestR_ARCH_008_NpmSettingsSchemaEqualsTheOpenAPIMember` fails on any difference to the registered schema.
 
 ## Content headers and error shapes

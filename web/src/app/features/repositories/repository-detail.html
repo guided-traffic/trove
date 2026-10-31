@@ -113,6 +113,19 @@
             />
           </div>
         </mat-tab>
+        @if (settingNodes().length > 0) {
+          <mat-tab [label]="tabFormat()">
+            <div class="tab">
+              <trove-format-settings
+                [nodes]="settingNodes()"
+                [pointer]="memberPointer()"
+                [value]="current.formatMember"
+                (valueChange)="setFormatMember($event)"
+                [fieldErrors]="fieldErrors()"
+              />
+            </div>
+          </mat-tab>
+        }
         <mat-tab [label]="tabApi">
           <div class="tab">
             <h2 i18n="@@repo.detail.api.document">Stored document</h2>

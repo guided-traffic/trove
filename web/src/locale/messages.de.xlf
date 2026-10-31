@@ -5578,11 +5578,11 @@
     </unit>
     <unit id="repo.wizard.access.hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:141,144</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:141,143</note>
       </notes>
       <segment>
-        <source> Settings of the local class. Remote and virtual repositories add their own settings once a format implements them. </source>
-        <target>Einstellungen der lokalen Klasse. Remote- und virtuelle Repositories bringen eigene Einstellungen mit, sobald ein Format sie umsetzt.</target>
+        <source> Which paths the repository admits and who may see it. </source>
+        <target>Welche Pfade das Repository aufnimmt und wer es sehen darf.</target>
       </segment>
     </unit>
     <unit id="repo.wizard.review.heading">
@@ -14060,6 +14060,97 @@
       <segment>
         <source>Client setup</source>
         <target>Client-Einrichtung</target>
+      </segment>
+    </unit>
+    <unit id="repo.format.intro">
+      <notes>
+        <note category="location">src/app/features/repositories/format-settings.ts:34,37</note>
+      </notes>
+      <segment>
+        <source> Only the settings that apply to this class of repository are shown. A setting left at its default is not written into the repository. </source>
+        <target>Es werden nur die Einstellungen gezeigt, die für diese Klasse von Repository gelten. Eine Einstellung, die auf ihrem Standard bleibt, wird nicht in das Repository geschrieben.</target>
+      </segment>
+    </unit>
+    <unit id="repo.format.unset">
+      <notes>
+        <note category="location">src/app/features/repositories/format-settings.ts:89,90</note>
+      </notes>
+      <segment>
+        <source> Not set </source>
+        <target>Nicht gesetzt</target>
+      </segment>
+    </unit>
+    <unit id="repo.format.other">
+      <notes>
+        <note category="location">src/app/features/repositories/format-settings.ts:108,109</note>
+      </notes>
+      <segment>
+        <source> This setting cannot be changed here. Set it through the API. </source>
+        <target>Diese Einstellung kann hier nicht geändert werden. Setzen Sie sie über die API.</target>
+      </segment>
+    </unit>
+    <unit id="repo.format.default-on">
+      <notes>
+        <note category="location">src/app/features/repositories/format-settings.ts:147,149</note>
+      </notes>
+      <segment>
+        <source>Default: on</source>
+        <target>Standard: an</target>
+      </segment>
+    </unit>
+    <unit id="repo.format.default-off">
+      <notes>
+        <note category="location">src/app/features/repositories/format-settings.ts:150,152</note>
+      </notes>
+      <segment>
+        <source>Default: off</source>
+        <target>Standard: aus</target>
+      </segment>
+    </unit>
+    <unit id="repo.format.default">
+      <notes>
+        <note category="location">src/app/features/repositories/format-settings.ts:154,156</note>
+      </notes>
+      <segment>
+        <source> Default: <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code translate=&quot;no&quot;&gt;" dispEnd="&lt;/code&gt;"><ph id="1" equiv="INTERPOLATION" disp="{{ fallbackText(n) }}"/></pc></source>
+        <target>Standard: <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code translate=&quot;no&quot;&gt;" dispEnd="&lt;/code&gt;"><ph id="1" equiv="INTERPOLATION" disp="{{ fallbackText(n) }}"/></pc></target>
+      </segment>
+    </unit>
+    <unit id="repo.tab.format">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:321</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="format" disp="this.format()?.displayName ?? this.member().name"/> settings</source>
+        <target><ph id="0" equiv="format" disp="this.format()?.displayName ?? this.member().name"/>-Einstellungen</target>
+      </segment>
+    </unit>
+    <unit id="repo.format.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.html:146,148</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:176,178</note>
+      </notes>
+      <segment>
+        <source><pc id="0" equivStart="START_TAG_SPAN" equivEnd="CLOSE_TAG_SPAN" type="other" dispStart="&lt;span translate=&quot;no&quot;&gt;" dispEnd="&lt;/span&gt;"><ph id="1" equiv="INTERPOLATION" disp="{{ formatLabel() }}"/></pc> settings </source>
+        <target><pc id="0" equivStart="START_TAG_SPAN" equivEnd="CLOSE_TAG_SPAN" type="other" dispStart="&lt;span translate=&quot;no&quot;&gt;" dispEnd="&lt;/span&gt;"><ph id="1" equiv="INTERPOLATION" disp="{{ formatLabel() }}"/></pc>-Einstellungen</target>
+      </segment>
+    </unit>
+    <unit id="repo.review.format-defaults">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.html:183,186</note>
+      </notes>
+      <segment>
+        <source>The defaults of the format</source>
+        <target>Die Standards des Formats</target>
+      </segment>
+    </unit>
+    <unit id="repo.wizard.step.access-format">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:132</note>
+      </notes>
+      <segment>
+        <source>Access and <ph id="0" equiv="format" disp="this.formatLabel()"/> settings</source>
+        <target>Zugriffs- und <ph id="0" equiv="format" disp="this.formatLabel()"/>-Einstellungen</target>
       </segment>
     </unit>
   </file>

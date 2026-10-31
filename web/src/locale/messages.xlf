@@ -2104,7 +2104,7 @@
         <note category="location">src/app/features/repositories/repository-list.html:138</note>
         <note category="location">src/app/features/repositories/repository-list.html:143</note>
         <note category="location">src/app/features/repositories/repository-list.ts:120</note>
-        <note category="location">src/app/features/repositories/repository-wizard.html:151,152</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:162,163</note>
       </notes>
       <segment>
         <source>Class</source>
@@ -2119,7 +2119,7 @@
         <note category="location">src/app/features/repositories/repository-list.html:151</note>
         <note category="location">src/app/features/repositories/repository-list.html:156</note>
         <note category="location">src/app/features/repositories/repository-list.ts:117</note>
-        <note category="location">src/app/features/repositories/repository-wizard.html:153,154</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:164,165</note>
       </notes>
       <segment>
         <source>Format</source>
@@ -2250,7 +2250,7 @@
     <unit id="repo.deleting">
       <notes>
         <note category="location">src/app/features/browse/browse.html:229,230</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:165,166</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:178,179</note>
         <note category="location">src/app/features/repositories/repository-list.html:104,105</note>
       </notes>
       <segment>
@@ -2262,8 +2262,8 @@
         <note category="location">src/app/features/browse/browse.html:244,245</note>
         <note category="location">src/app/features/repositories/repository-detail.html:28,29</note>
         <note category="location">src/app/features/repositories/repository-fields.ts:18,20</note>
-        <note category="location">src/app/features/repositories/repository-wizard.html:155,156</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:295</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:166,167</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:343</note>
       </notes>
       <segment>
         <source>Description</source>
@@ -2458,8 +2458,8 @@
       <notes>
         <note category="location">src/app/features/browse/browse.ts:213</note>
         <note category="location">src/app/features/packages/package-detail.ts:211</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:55</note>
-        <note category="location">src/app/features/setup/client-setup.ts:191</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:59</note>
+        <note category="location">src/app/features/setup/client-setup.ts:192</note>
       </notes>
       <segment>
         <source>Local</source>
@@ -2469,8 +2469,8 @@
       <notes>
         <note category="location">src/app/features/browse/browse.ts:215</note>
         <note category="location">src/app/features/packages/package-detail.ts:212</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:57</note>
-        <note category="location">src/app/features/setup/client-setup.ts:193</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:61</note>
+        <note category="location">src/app/features/setup/client-setup.ts:194</note>
       </notes>
       <segment>
         <source>Remote</source>
@@ -2480,8 +2480,8 @@
       <notes>
         <note category="location">src/app/features/browse/browse.ts:217</note>
         <note category="location">src/app/features/packages/package-detail.ts:213</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:59</note>
-        <note category="location">src/app/features/setup/client-setup.ts:195</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:63</note>
+        <note category="location">src/app/features/setup/client-setup.ts:196</note>
       </notes>
       <segment>
         <source>Virtual</source>
@@ -3111,7 +3111,7 @@
     <unit id="repo.action.delete">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:180,181</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:159,161</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:172,174</note>
         <note category="location">src/app/features/repositories/repository-list.html:98,99</note>
       </notes>
       <segment>
@@ -3618,7 +3618,7 @@
     <unit id="repo.edit.reset">
       <notes>
         <note category="location">src/app/features/endpoints/exposure-rule-editor.html:418,419</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:150,151</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:163,164</note>
       </notes>
       <segment>
         <source> Discard changes </source>
@@ -3627,7 +3627,7 @@
     <unit id="repo.edit.unsaved">
       <notes>
         <note category="location">src/app/features/endpoints/exposure-rule-editor.html:423,425</note>
-        <note category="location">src/app/features/repositories/repository-detail.html:154,156</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:167,169</note>
       </notes>
       <segment>
         <source>You have unsaved changes.</source>
@@ -7036,6 +7036,54 @@
         <source>Preferences saved.</source>
       </segment>
     </unit>
+    <unit id="repo.format.intro">
+      <notes>
+        <note category="location">src/app/features/repositories/format-settings.ts:34,37</note>
+      </notes>
+      <segment>
+        <source> Only the settings that apply to this class of repository are shown. A setting left at its default is not written into the repository. </source>
+      </segment>
+    </unit>
+    <unit id="repo.format.unset">
+      <notes>
+        <note category="location">src/app/features/repositories/format-settings.ts:89,90</note>
+      </notes>
+      <segment>
+        <source> Not set </source>
+      </segment>
+    </unit>
+    <unit id="repo.format.other">
+      <notes>
+        <note category="location">src/app/features/repositories/format-settings.ts:108,109</note>
+      </notes>
+      <segment>
+        <source> This setting cannot be changed here. Set it through the API. </source>
+      </segment>
+    </unit>
+    <unit id="repo.format.default-on">
+      <notes>
+        <note category="location">src/app/features/repositories/format-settings.ts:147,149</note>
+      </notes>
+      <segment>
+        <source>Default: on</source>
+      </segment>
+    </unit>
+    <unit id="repo.format.default-off">
+      <notes>
+        <note category="location">src/app/features/repositories/format-settings.ts:150,152</note>
+      </notes>
+      <segment>
+        <source>Default: off</source>
+      </segment>
+    </unit>
+    <unit id="repo.format.default">
+      <notes>
+        <note category="location">src/app/features/repositories/format-settings.ts:154,156</note>
+      </notes>
+      <segment>
+        <source> Default: <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code translate=&quot;no&quot;&gt;" dispEnd="&lt;/code&gt;"><ph id="1" equiv="INTERPOLATION" disp="{{ fallbackText(n) }}"/></pc></source>
+      </segment>
+    </unit>
     <unit id="route.repositories.new.title">
       <notes>
         <note category="location">src/app/features/repositories/repositories.routes.ts:13</note>
@@ -7138,7 +7186,7 @@
     </unit>
     <unit id="repo.detail.api.document">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:118,119</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:131,132</note>
       </notes>
       <segment>
         <source>Stored document</source>
@@ -7146,7 +7194,7 @@
     </unit>
     <unit id="repo.detail.api.patch">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:120,122</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:133,135</note>
       </notes>
       <segment>
         <source>Your change as a request</source>
@@ -7154,7 +7202,7 @@
     </unit>
     <unit id="repo.detail.api.nochange">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:125,127</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:138,140</note>
       </notes>
       <segment>
         <source> Change a setting to see the request that saves it. </source>
@@ -7162,7 +7210,7 @@
     </unit>
     <unit id="repo.edit.save">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.html:141,142</note>
+        <note category="location">src/app/features/repositories/repository-detail.html:154,155</note>
       </notes>
       <segment>
         <source> Save changes </source>
@@ -7170,8 +7218,8 @@
     </unit>
     <unit id="repo.edit.saved">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:201</note>
-        <note category="location">src/app/features/repositories/repository-detail.ts:228</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:231</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:259</note>
       </notes>
       <segment>
         <source>Repository saved.</source>
@@ -7179,7 +7227,7 @@
     </unit>
     <unit id="repo.delete.title">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:253</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:284</note>
         <note category="location">src/app/features/repositories/repository-list.ts:172</note>
       </notes>
       <segment>
@@ -7188,7 +7236,7 @@
     </unit>
     <unit id="repo.delete.text">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:255</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:286</note>
         <note category="location">src/app/features/repositories/repository-list.ts:174</note>
       </notes>
       <segment>
@@ -7197,7 +7245,7 @@
     </unit>
     <unit id="repo.delete.confirm">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:257</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:288</note>
         <note category="location">src/app/features/repositories/repository-list.ts:176</note>
       </notes>
       <segment>
@@ -7206,7 +7254,7 @@
     </unit>
     <unit id="repo.delete.failed">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:274</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:305</note>
         <note category="location">src/app/features/repositories/repository-list.ts:218</note>
       </notes>
       <segment>
@@ -7215,7 +7263,7 @@
     </unit>
     <unit id="repo.delete.done">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:279</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:310</note>
         <note category="location">src/app/features/repositories/repository-list.ts:208</note>
       </notes>
       <segment>
@@ -7224,7 +7272,7 @@
     </unit>
     <unit id="repo.delete.progress">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:284</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:315</note>
         <note category="location">src/app/features/repositories/repository-list.ts:141</note>
       </notes>
       <segment>
@@ -7233,7 +7281,7 @@
     </unit>
     <unit id="repo.copy-address">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:285</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:316</note>
         <note category="location">src/app/features/repositories/repository-list.ts:140</note>
       </notes>
       <segment>
@@ -7242,7 +7290,7 @@
     </unit>
     <unit id="repo.tab.general">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:286</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:317</note>
       </notes>
       <segment>
         <source>General</source>
@@ -7250,15 +7298,23 @@
     </unit>
     <unit id="repo.tab.access">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:287</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:318</note>
       </notes>
       <segment>
         <source>Access</source>
       </segment>
     </unit>
+    <unit id="repo.tab.format">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.ts:321</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="format" disp="this.format()?.displayName ?? this.member().name"/> settings</source>
+      </segment>
+    </unit>
     <unit id="repo.tab.api">
       <notes>
-        <note category="location">src/app/features/repositories/repository-detail.ts:288</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:323</note>
       </notes>
       <segment>
         <source>API</source>
@@ -7275,7 +7331,7 @@
     <unit id="repo.field.notes">
       <notes>
         <note category="location">src/app/features/repositories/repository-fields.ts:39,41</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:297</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:345</note>
       </notes>
       <segment>
         <source>Administrator notes</source>
@@ -7292,8 +7348,8 @@
     <unit id="repo.field.include">
       <notes>
         <note category="location">src/app/features/repositories/repository-fields.ts:62,64</note>
-        <note category="location">src/app/features/repositories/repository-wizard.html:159,160</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:299</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:170,171</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:347</note>
       </notes>
       <segment>
         <source>Include patterns</source>
@@ -7302,8 +7358,8 @@
     <unit id="repo.field.exclude">
       <notes>
         <note category="location">src/app/features/repositories/repository-fields.ts:80,82</note>
-        <note category="location">src/app/features/repositories/repository-wizard.html:161,162</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:301</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:172,173</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:349</note>
       </notes>
       <segment>
         <source>Exclude patterns</source>
@@ -7376,7 +7432,7 @@
     <unit id="repo.field.hide">
       <notes>
         <note category="location">src/app/features/repositories/repository-fields.ts:149,151</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:303</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:351</note>
       </notes>
       <segment>
         <source>Hide existence from callers without access</source>
@@ -7594,8 +7650,8 @@
     <unit id="repo.field.key">
       <notes>
         <note category="location">src/app/features/repositories/repository-wizard.html:83,85</note>
-        <note category="location">src/app/features/repositories/repository-wizard.html:150</note>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:293</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:161</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:341</note>
       </notes>
       <segment>
         <source>Key</source>
@@ -7659,15 +7715,24 @@
     </unit>
     <unit id="repo.wizard.access.hint">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:141,144</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:141,143</note>
       </notes>
       <segment>
-        <source> Settings of the local class. Remote and virtual repositories add their own settings once a format implements them. </source>
+        <source> Which paths the repository admits and who may see it. </source>
+      </segment>
+    </unit>
+    <unit id="repo.format.heading">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.html:146,148</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:176,178</note>
+      </notes>
+      <segment>
+        <source><pc id="0" equivStart="START_TAG_SPAN" equivEnd="CLOSE_TAG_SPAN" type="other" dispStart="&lt;span translate=&quot;no&quot;&gt;" dispEnd="&lt;/span&gt;"><ph id="1" equiv="INTERPOLATION" disp="{{ formatLabel() }}"/></pc> settings </source>
       </segment>
     </unit>
     <unit id="repo.wizard.review.heading">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:147,149</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:158,160</note>
       </notes>
       <segment>
         <source>Review</source>
@@ -7675,15 +7740,23 @@
     </unit>
     <unit id="repo.review.address">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:157,158</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:168,169</note>
       </notes>
       <segment>
         <source>Client address</source>
       </segment>
     </unit>
+    <unit id="repo.review.format-defaults">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.html:183,186</note>
+      </notes>
+      <segment>
+        <source>The defaults of the format</source>
+      </segment>
+    </unit>
     <unit id="repo.review.switches">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:163,165</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:187,189</note>
       </notes>
       <segment>
         <source>Switches</source>
@@ -7691,7 +7764,7 @@
     </unit>
     <unit id="repo.review.disabled">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:166,168</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:190,192</note>
       </notes>
       <segment>
         <source>Disabled.</source>
@@ -7699,7 +7772,7 @@
     </unit>
     <unit id="repo.review.require-auth">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:169,171</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:193,195</note>
       </notes>
       <segment>
         <source>Authentication required.</source>
@@ -7707,7 +7780,7 @@
     </unit>
     <unit id="repo.review.api">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:177,178</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:201,202</note>
       </notes>
       <segment>
         <source>Show as API request</source>
@@ -7715,7 +7788,7 @@
     </unit>
     <unit id="repo.review.api.json">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:178,179</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:202,203</note>
       </notes>
       <segment>
         <source>Request body</source>
@@ -7723,7 +7796,7 @@
     </unit>
     <unit id="repo.review.api.curl">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:180,181</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:204,205</note>
       </notes>
       <segment>
         <source>The same request with curl</source>
@@ -7731,7 +7804,7 @@
     </unit>
     <unit id="repo.wizard.back">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:194,196</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:218,220</note>
       </notes>
       <segment>
         <source> Back </source>
@@ -7739,7 +7812,7 @@
     </unit>
     <unit id="repo.wizard.next">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:204,206</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:228,230</note>
       </notes>
       <segment>
         <source> Next </source>
@@ -7747,7 +7820,7 @@
     </unit>
     <unit id="repo.wizard.create">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.html:214,217</note>
+        <note category="location">src/app/features/repositories/repository-wizard.html:238,241</note>
       </notes>
       <segment>
         <source> Create repository </source>
@@ -7755,7 +7828,7 @@
     </unit>
     <unit id="repo.class.local.help">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:68</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:72</note>
       </notes>
       <segment>
         <source>Holds content that is deployed to trove.</source>
@@ -7763,7 +7836,7 @@
     </unit>
     <unit id="repo.class.remote.help">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:70</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:74</note>
       </notes>
       <segment>
         <source>Caches content from an upstream registry.</source>
@@ -7771,7 +7844,7 @@
     </unit>
     <unit id="repo.class.virtual.help">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:72</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:76</note>
       </notes>
       <segment>
         <source>Presents several repositories under one address.</source>
@@ -7779,7 +7852,7 @@
     </unit>
     <unit id="repo.wizard.step.class">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:117</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:128</note>
       </notes>
       <segment>
         <source>Class</source>
@@ -7787,7 +7860,7 @@
     </unit>
     <unit id="repo.wizard.step.format">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:118</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:129</note>
       </notes>
       <segment>
         <source>Format</source>
@@ -7795,15 +7868,23 @@
     </unit>
     <unit id="repo.wizard.step.basic">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:119</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:130</note>
       </notes>
       <segment>
         <source>Basic settings</source>
       </segment>
     </unit>
+    <unit id="repo.wizard.step.access-format">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:132</note>
+      </notes>
+      <segment>
+        <source>Access and <ph id="0" equiv="format" disp="this.formatLabel()"/> settings</source>
+      </segment>
+    </unit>
     <unit id="repo.wizard.step.access">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:120</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:133</note>
       </notes>
       <segment>
         <source>Access settings</source>
@@ -7811,7 +7892,7 @@
     </unit>
     <unit id="repo.wizard.step.review">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:121</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:134</note>
       </notes>
       <segment>
         <source>Review</source>
@@ -7819,7 +7900,7 @@
     </unit>
     <unit id="repo.wizard.created">
       <notes>
-        <note category="location">src/app/features/repositories/repository-wizard.ts:268</note>
+        <note category="location">src/app/features/repositories/repository-wizard.ts:316</note>
       </notes>
       <segment>
         <source>Repository <ph id="0" equiv="key" disp="created.value.key"/> created.</source>
@@ -8984,7 +9065,7 @@
     </unit>
     <unit id="setup.copy">
       <notes>
-        <note category="location">src/app/features/setup/client-setup.ts:166</note>
+        <note category="location">src/app/features/setup/client-setup.ts:167</note>
       </notes>
       <segment>
         <source>Copy snippet</source>
@@ -8992,7 +9073,7 @@
     </unit>
     <unit id="setup.copy-token">
       <notes>
-        <note category="location">src/app/features/setup/client-setup.ts:167</note>
+        <note category="location">src/app/features/setup/client-setup.ts:168</note>
       </notes>
       <segment>
         <source>Copy token</source>
@@ -9000,7 +9081,7 @@
     </unit>
     <unit id="setup.publish.read-only">
       <notes>
-        <note category="location">src/app/features/setup/client-setup.ts:201</note>
+        <note category="location">src/app/features/setup/client-setup.ts:202</note>
       </notes>
       <segment>
         <source>Read only</source>
@@ -9008,7 +9089,7 @@
     </unit>
     <unit id="setup.publish.by-target">
       <notes>
-        <note category="location">src/app/features/setup/client-setup.ts:203</note>
+        <note category="location">src/app/features/setup/client-setup.ts:204</note>
       </notes>
       <segment>
         <source>Publishing goes to its default deployment target</source>
@@ -9016,7 +9097,7 @@
     </unit>
     <unit id="setup.publish.yes">
       <notes>
-        <note category="location">src/app/features/setup/client-setup.ts:206</note>
+        <note category="location">src/app/features/setup/client-setup.ts:207</note>
       </notes>
       <segment>
         <source>You can publish</source>
@@ -9024,7 +9105,7 @@
     </unit>
     <unit id="setup.publish.no">
       <notes>
-        <note category="location">src/app/features/setup/client-setup.ts:207</note>
+        <note category="location">src/app/features/setup/client-setup.ts:208</note>
       </notes>
       <segment>
         <source>You cannot publish</source>
@@ -9032,7 +9113,7 @@
     </unit>
     <unit id="setup.token.description">
       <notes>
-        <note category="location">src/app/features/setup/client-setup.ts:244</note>
+        <note category="location">src/app/features/setup/client-setup.ts:245</note>
       </notes>
       <segment>
         <source>Client setup: <ph id="0" equiv="client" disp="setup.client"/>, <ph id="1" equiv="repository" disp="repository"/>, <ph id="2" equiv="date" disp="new Date().toISOString().slice(0, 10)"/></source>

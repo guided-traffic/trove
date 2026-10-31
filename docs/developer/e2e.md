@@ -328,8 +328,10 @@ and, with `@axe-core/playwright`, `color-contrast` and the document-level rules 
 | `05-exposure.spec.ts` | exposure rule with the preview | R-UI-039, R-EP-017 | on the endpoint `customers`: the preview's verdict per path as the rule is typed, create, read back on another replica |
 | `06-audit-and-system.spec.ts` | audit log, system status | R-UI-036 to R-UI-038 | one entry for each action the journeys before it did (repository, group, membership, policy, token created and revoked, exposure rule), an event opened; the status screen shows three ready `web` replicas and "Answered by" names one of them |
 | `07-german-dark.spec.ts` | German, dark theme | R-UI-044, R-UI-045 | the break-glass sign-in at `/ui/de/...`, five screens in German with axe in the dark theme, the language menu back to English, sign-out |
+| `08-packages.spec.ts` | packages and client setup (E2.8); npm settings | R-UI-006, R-UI-008, R-UI-016, R-UI-021 | `beforeAll` creates an npm local repository and publishes a version to it with the npm protocol (`PUT /api/npm/<key>/<name>`, a tarball built in the journey whose README carries a `<script>`, an `onerror` image, a `javascript:` link and an `<iframe>`). The version is found in the packages list through the repository filter; its README tab shows the Markdown (a heading with its `user-content-` anchor, the code block) and none of the hostile elements, and none of them ran; "Set up your client for this repository" opens the setup page, where the configure snippet of npm, pnpm, Yarn Berry and Yarn Classic, with the environment-variable credential, equals character for character what `setupSnippet` of the npm matrix writes for that repository, with the same file name ([Q-UI-82](../spec/api-and-ui.md#q-ui-82--the-packages-journey-compares-the-setup-page-with-the-matrixs-snippet-written-out)). The second journey creates a local npm repository in the wizard with `latestGuard` off (the API shows `{"npm": {"latestGuard": false}}`), reads it back on the edit form's "npm settings" tab and turns it on again (the API shows no `npm` member) |
 
-The files run in this order, in one worker: the audit journey reads what the journeys before it did. A journey prepares
+The files run in this order, in one worker: the audit journey reads what the journeys before it did (the packages journey runs after it and is
+not read by it). A journey prepares
 its data through the API with the administrator token (INV-17: `beforeAll` creates repositories and files, `afterAll`
 deletes them) and does through the UI only what it tests. Every name carries a base-36 timestamp, so a rerun needs no
 cleanup first.
@@ -728,7 +730,9 @@ Found while building the matrix and running it through `npm-all`, in the order t
 
 - A test build of the plug-in with a higher `npmRenderVersion` next to the current one (R-NPM-046): `document.RenderVersion` is a constant hashed into the validator (`Inputs.ETag`), so the criterion needs a second image with another constant next to the first; this suite builds one image and has no test for it. Open: a build-tag or ldflags variant of the constant in WP2.8's harness.
 - The pooler profile (R-HA-058, from M5) and the 200 MiB upload over a throttled link (R-NPM-007, covered by `test/integration/npm/big_test.go`).
-- E2.8's package list and the sanitized README render in the package UI (WP2.7), not in this suite.
+- E2.8's package list, the sanitized README and the comparison of the setup page with `setupSnippet` are the browser journey
+  `08-packages.spec.ts` ([Browser journeys](#browser-journeys)), which runs in `TestE1_11Journeys`, not in this suite. Its repository is its own
+  local npm repository, not `npm-all`.
 - E2.11 (drain and failover under npm load) is WP2.8's.
 
 ## The counting npm test upstream

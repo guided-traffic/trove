@@ -8,6 +8,28 @@ import {
 import { button, expectAccessible, renderScreen, settle, text, type } from '../../testing/screen';
 import { RepositoryDetail } from './repository-detail';
 
+async function openTab(r: Awaited<ReturnType<typeof open>>, label: string) {
+  const tab = [...r.root.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) =>
+    t.textContent?.includes(label),
+  );
+  if (!tab) throw new Error(`no tab ${label}`);
+  tab.click();
+  await settle(r.fixture);
+}
+
+function withNpmLocal(npm?: Record<string, unknown>) {
+  return (fake: FakeRepositoriesApi) => {
+    fake.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT];
+    fake.repositories.push({
+      key: 'npm-local',
+      class: 'local',
+      format: 'npm',
+      description: 'Internal packages',
+      ...(npm ? { npm: npm as never } : {}),
+    });
+  };
+}
+
 async function open(setup?: (fake: FakeRepositoriesApi) => void, key = 'generic-local') {
   return renderScreen(RepositoryDetail, {
     inputs: { key },
@@ -115,6 +137,51 @@ describe('Repository edit form', () => {
     );
     expect(r.root.querySelector('#f-description')?.getAttribute('aria-invalid')).toBe('true');
     await expectAccessible(r.root);
+  });
+
+  it('R-UI-021 R-ARCH-004 the npm settings tab is rendered from the schema for the class; turning the guard off patches the npm member only', async () => {
+    const r = await open(withNpmLocal(), 'npm-local');
+    const fake = r.get(RepositoriesApi) as FakeRepositoriesApi;
+    await openTab(r, 'npm settings');
+    const guard = r.root.querySelector<HTMLInputElement>('#f-npm-latestGuard')!;
+    expect(guard.checked).toBe(true);
+    expect(r.root.querySelector('#f-npm-latestStrategy')).toBeNull();
+    expect(button(r.root, 'Save changes').disabled).toBe(true);
+    await expectAccessible(r.root);
+
+    guard.checked = false;
+    guard.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle(r.fixture);
+    button(r.root, 'Save changes').click();
+    await settle(r.fixture);
+    expect(fake.patches.at(-1)?.patch).toEqual({ npm: { latestGuard: false } });
+    expect(fake.repositories.find((x) => x.key === 'npm-local')?.npm).toEqual({
+      latestGuard: false,
+    });
+    expect(r.fixture.componentInstance.hasUnsavedChanges()).toBe(false);
+  });
+
+  it('R-UI-021 Q-UI-80 setting a value back to its default removes it from the document, and a stored default is no change', async () => {
+    const r = await open(withNpmLocal({ latestGuard: false }), 'npm-local');
+    const fake = r.get(RepositoriesApi) as FakeRepositoriesApi;
+    await openTab(r, 'npm settings');
+    const guard = r.root.querySelector<HTMLInputElement>('#f-npm-latestGuard')!;
+    expect(guard.checked).toBe(false);
+    guard.checked = true;
+    guard.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle(r.fixture);
+    button(r.root, 'Save changes').click();
+    await settle(r.fixture);
+    expect(fake.patches.at(-1)?.patch).toEqual({ npm: null });
+
+    const stored = await open(withNpmLocal({ latestGuard: true }), 'npm-local');
+    expect(stored.fixture.componentInstance.hasUnsavedChanges()).toBe(false);
+  });
+
+  it('R-UI-021 a repository of a format without settings has no format tab', async () => {
+    const r = await open((fake) => (fake.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT]));
+    const tabs = [...r.root.querySelectorAll('[role="tab"]')].map((t) => text(t));
+    expect(tabs).toEqual(['General', 'Access', 'API']);
   });
 
   it('R-UI-021 a caller who may use but not configure the repository sees the consumer view without a form', async () => {
