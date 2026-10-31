@@ -1,11 +1,11 @@
 # trove · Full product plan after the beta
 
 **Status:** ⚪ not started · 🟡 in progress or partly done · 🟢 done
-**Last updated:** 2026-10-29
+**Last updated:** 2026-10-31
 
 Everything that goes beyond the beta release in [BETA.md](BETA.md): the beta phase, the remaining
 registry types, and platform features. Every completed block or milestone ships the next minor
-version after the beta (`v0.8.0`, `v0.9.0`, …); trove stays on major version 0 until the owner
+version after the beta (`v0.9.0`, `v0.10.0`, …); trove stays on major version 0 until the owner
 decides otherwise. Order and scope follow the
 [roadmap](../coverage/roadmap.md); per-feature detail is in the [feature catalog](../features/README.md)
 and, once written, in the [spec](../spec/README.md).
@@ -24,7 +24,7 @@ repositories) before it counts as done.
 | [C · Platform features](#c--platform-features-p1) | npm/NuGet completion, retention, search, webhooks, identity breadth, HA breadth, curation | ⚪ |
 | [D · Further registries](#d--further-registries-p2) | 37 more registry types | ⚪ |
 | [E · Further platform work](#e--further-platform-work-p2) | Replication, query language, more storage back ends, … | ⚪ |
-| [F · Later](#f--later) | Federation, distribution, scanning engine | ⚪ |
+| [F · Later](#f--later) | Federation, distribution, license scanning and SBOMs | ⚪ |
 | [G · Beyond the catalog](#g--beyond-the-catalog) | Signing and provenance, quotas, cache pre-warming, … | ⚪ |
 
 ---
@@ -78,6 +78,7 @@ follow the [roadmap's format order](../coverage/roadmap.md#p1-format-expansion-o
 - ⚪ Registry API under `/v2/`, token challenge, chunked uploads across replicas
 - ⚪ Local, remote (Docker Hub and other registries), virtual; multi-architecture images; referrers
 - ⚪ Clients: Docker CLI, Podman, BuildX, ORAS, Cosign
+- ⚪ Image vulnerability scanning: operating-system and language packages inside images, with the findings, report and blocking of beta phase 6; the analyser is decided on the spec page ([vulnerability-scanning.md](../spec/vulnerability-scanning.md#deferred))
 - ⚪ Integration tests
 - ⚪ E2E tests: push and pull with Docker and Podman through local, remote and virtual repositories, an upload interrupted by a drain
 
@@ -105,10 +106,10 @@ parallel.
 
 ### M6 · npm and NuGet completion
 - ⚪ `npm login` (web and legacy flows), `npm search`, deprecate, single-version documents
-- ⚪ npm audit endpoints, external dependency rewrite, metadata recalculation, upload without the npm client
+- ⚪ npm audit forwarding to the upstream as an opt-in (trove answers audits from its own advisory data from beta phase 6), external dependency rewrite, metadata recalculation, upload without the npm client
 - ⚪ Further upstream registries with their own credentials
 - ⚪ NuGet autocomplete, symbol server and symbol proxy
-- ⚪ NuGet vulnerability information, embedded icon, license and README, metadata reindex
+- ⚪ NuGet vulnerability information passed through from the upstream and in registrations (trove's own `VulnerabilityInfo` ships in beta phase 6), embedded icon, license and README, metadata reindex
 - ⚪ Integration and e2e tests extended for every addition
 
 ### M7 · Storage lifecycle and retention
@@ -143,8 +144,8 @@ parallel.
 - ⚪ Container installation without Kubernetes (documented, not HA)
 
 ### M12 · Upstream curation
-- ⚪ Block packages at the remote-repository boundary: malicious, vulnerable, too new (spec page to write)
-- ⚪ Risk data source integration; curation audit
+- ⚪ Curation policies at the remote-repository boundary: vulnerable and too-new versions, dry run, waivers, compliant-version fallback (spec page to write); blocking of malicious versions and the advisory data source ship in beta phase 6
+- ⚪ Further risk facts for curation (licenses, end of life, project health); curation audit
 
 ## D · Further registries (P2)
 
@@ -208,7 +209,7 @@ all four columns green.
 
 - ⚪ Federation of repositories across sites, active-active across sites
 - ⚪ Release sets, distribution to edge instances, lifecycle stages, evidence
-- ⚪ Vulnerability and license scanning engine
+- ⚪ License scanning and compliance, SBOM generation and export, content analyses (secrets, applicability), scan policies and scopes, on top of the advisory matching of beta phase 6
 - ⚪ Machine-learning model repositories with a proprietary SDK client
 - ⚪ OSTree hosting, TUF-signed metadata, checksum database for hosted Go modules
 

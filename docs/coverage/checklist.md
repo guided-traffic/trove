@@ -9,14 +9,14 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 270 of 592 spec requirements are implemented: a passing test names them and no
+**Status.** 270 of 624 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 675 specified (190 of them implemented), 1,564 open.
-592 spec requirements: 498 cover catalog features, 94 cover none (`trove-only`, [listed at the
+**Totals.** 2,239 catalog features on 60 pages: 695 specified (190 of them implemented), 1,544 open.
+624 spec requirements: 523 cover catalog features, 101 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
 ## Pages
@@ -26,13 +26,13 @@ end](#requirements-that-cover-no-catalog-feature)).
 
 | Catalog page | Prefix | Features | MVP specified | Specified | Open | Implemented |
 |---|---|---:|---:|---:|---:|---:|
-| [Repositories](#repositories-repo) | `REPO` | 68 | 23 of 23 | 40 | 28 | 19 |
+| [Repositories](#repositories-repo) | `REPO` | 68 | 23 of 23 | 41 | 27 | 19 |
 | [Remote repositories](#remote-repositories-rmt) | `RMT` | 49 | 15 of 15 | 28 | 21 | 14 |
 | [Replication, federation and multi-site topology](#replication-federation-and-multi-site-topology-repl) | `REPL` | 72 | – | 0 | 72 | 0 |
 | [Artifact management](#artifact-management-art) | `ART` | 53 | 10 of 10 | 32 | 21 | 12 |
 | [Search and query language](#search-and-query-language-srch) | `SRCH` | 64 | – | 3 | 61 | 0 |
 | [Builds and CI integration](#builds-and-ci-integration-bld) | `BLD` | 49 | – | 0 | 49 | 0 |
-| [Identity and access](#identity-and-access-iam) | `IAM` | 69 | 20 of 20 | 34 | 35 | 20 |
+| [Identity and access](#identity-and-access-iam) | `IAM` | 69 | 20 of 20 | 35 | 34 | 20 |
 | [Authentication providers and human login](#authentication-providers-and-human-login-authn) | `AUTHN` | 44 | 13 of 13 | 18 | 26 | 10 |
 | [Access tokens](#access-tokens-tok) | `TOK` | 48 | 24 of 24 | 27 | 21 | 19 |
 | [OIDC federation for CI systems](#oidc-federation-for-ci-systems-cioidc) | `CIOIDC` | 40 | 20 of 20 | 31 | 9 | 0 |
@@ -42,7 +42,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 43 | 57 | 19 |
 | [Events and extensibility](#events-and-extensibility-evt) | `EVT` | 82 | 1 of 1 | 26 | 56 | 1 |
 | [Distribution and release lifecycle](#distribution-and-release-lifecycle-dist) | `DIST` | 70 | – | 0 | 70 | 0 |
-| [Security scanning and curation](#security-scanning-and-curation-sec) | `SEC` | 98 | – | 0 | 98 | 0 |
+| [Security scanning and curation](#security-scanning-and-curation-sec) | `SEC` | 98 | 18 of 18 | 18 | 80 | 0 |
 | [UI inventory](#ui-inventory-ui) | `UI` | 61 | 30 of 30 | 47 | 14 | 1 |
 | [Content API operation catalog](#content-api-operation-catalog-api) | `API` | 166 | 11 of 11 | 67 | 99 | 11 |
 | [Operation catalog: administration API](#operation-catalog-administration-api-admapi) | `ADMAPI` | 114 | 34 of 34 | 54 | 60 | 4 |
@@ -91,10 +91,10 @@ end](#requirements-that-cover-no-catalog-feature)).
 
 ## Repositories (REPO)
 
-Catalog page: [repositories.md](../features/repositories.md) · specified by priority: MVP 23 of 23 · P1 17 of 26 · P2 0 of 16 · Later 0 of 2 · Out of scope 0 of 1
+Catalog page: [repositories.md](../features/repositories.md) · specified by priority: MVP 23 of 23 · P1 17 of 26 · P2 0 of 16 · Later 1 of 2 · Out of scope 0 of 1
 
 <details>
-<summary>68 features: 40 specified, 28 open, 19 implemented</summary>
+<summary>68 features: 41 specified, 27 open, 19 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -118,7 +118,7 @@ Catalog page: [repositories.md](../features/repositories.md) · specified by pri
 | REPO-018 | Priority resolution | P1 | specified | [R-NPM-028](../spec/formats/npm.md), [R-REPO-022](../spec/repositories-and-proxy.md) (implemented) |
 | REPO-019 | Download redirect | P2 | open | – |
 | REPO-020 | CDN download redirect | Out of scope | open | – |
-| REPO-021 | Scanner indexing | Later | open | – |
+| REPO-021 | Scanner indexing | Later | specified | [R-VULN-001](../spec/vulnerability-scanning.md), [R-VULN-002](../spec/vulnerability-scanning.md) |
 | REPO-022 | Deployment checksum policy | P1 | open | – |
 | REPO-023 | Release and snapshot handling | P1 | open | – |
 | REPO-024 | Snapshot naming behavior | P1 | open | – |
@@ -518,10 +518,10 @@ Catalog page: [builds-and-ci.md](../features/builds-and-ci.md) · specified by p
 
 ## Identity and access (IAM)
 
-Catalog page: [identity-and-access.md](../features/identity-and-access.md) · specified by priority: MVP 20 of 20 · P1 11 of 11 · P2 3 of 26 · Later 0 of 7 · Out of scope 0 of 5
+Catalog page: [identity-and-access.md](../features/identity-and-access.md) · specified by priority: MVP 20 of 20 · P1 11 of 11 · P2 3 of 26 · Later 1 of 7 · Out of scope 0 of 5
 
 <details>
-<summary>69 features: 34 specified, 35 open, 20 implemented</summary>
+<summary>69 features: 35 specified, 34 open, 20 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -532,7 +532,7 @@ Catalog page: [identity-and-access.md](../features/identity-and-access.md) · sp
 | IAM-005 | Anonymous user | MVP | specified | [R-AUTHZ-003](../spec/authorization.md) (implemented), [R-NPM-004](../spec/formats/npm.md), [R-AUTH-037](../spec/identity-and-authentication.md) (implemented) |
 | IAM-006 | Auditor role | P1 | implemented | [R-AUTHZ-011](../spec/authorization.md) (implemented) |
 | IAM-007 | Delegated system roles: resource manager and webhook manager | P1 | implemented | [R-AUTHZ-012](../spec/authorization.md) (implemented) |
-| IAM-008 | Scan-related roles | Later | open | – |
+| IAM-008 | Scan-related roles | Later | specified | [R-VULN-013](../spec/vulnerability-scanning.md), [R-VULN-019](../spec/vulnerability-scanning.md) |
 | IAM-009 | User management operations | MVP | implemented | [R-AUTH-016](../spec/identity-and-authentication.md) (implemented) |
 | IAM-010 | Administrator recovery by bootstrap credentials | MVP | implemented | [R-AUTH-014](../spec/identity-and-authentication.md) (implemented), [R-AUTH-015](../spec/identity-and-authentication.md) (implemented) |
 | IAM-011 | User invitation by email | Out of scope | open | – |
@@ -1253,17 +1253,17 @@ Catalog page: [distribution-and-lifecycle.md](../features/distribution-and-lifec
 
 ## Security scanning and curation (SEC)
 
-Catalog page: [security-scanning-and-curation.md](../features/security-scanning-and-curation.md) · specified by priority: P1 0 of 22 · P2 0 of 18 · Later 0 of 56 · Out of scope 0 of 2
+Catalog page: [security-scanning-and-curation.md](../features/security-scanning-and-curation.md) · specified by priority: MVP 18 of 18 · P1 0 of 18 · P2 0 of 17 · Later 0 of 43 · Out of scope 0 of 2
 
 <details>
-<summary>98 features: 0 specified, 98 open, 0 implemented</summary>
+<summary>98 features: 18 specified, 80 open, 0 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
-| SEC-001 | Package risk data source | P1 | open | – |
-| SEC-002 | Online synchronization of the vulnerability database | P1 | open | – |
-| SEC-003 | Offline synchronization of the vulnerability database | P2 | open | – |
-| SEC-004 | Malicious package intelligence | P1 | open | – |
+| SEC-001 | Package risk data source | MVP | specified | [R-VULN-003](../spec/vulnerability-scanning.md), [R-VULN-006](../spec/vulnerability-scanning.md), [R-VULN-007](../spec/vulnerability-scanning.md), [R-VULN-008](../spec/vulnerability-scanning.md), [R-VULN-010](../spec/vulnerability-scanning.md), [R-VULN-030](../spec/vulnerability-scanning.md) |
+| SEC-002 | Online synchronization of the vulnerability database | MVP | specified | [R-VULN-004](../spec/vulnerability-scanning.md), [R-VULN-021](../spec/vulnerability-scanning.md) |
+| SEC-003 | Offline synchronization of the vulnerability database | MVP | specified | [R-VULN-005](../spec/vulnerability-scanning.md) |
+| SEC-004 | Malicious package intelligence | MVP | specified | [R-VULN-003](../spec/vulnerability-scanning.md), [R-VULN-006](../spec/vulnerability-scanning.md) |
 | SEC-005 | Package labels | P2 | open | – |
 | SEC-006 | Custom licenses | P2 | open | – |
 | SEC-090 | Package intelligence browser | P2 | open | – |
@@ -1272,7 +1272,7 @@ Catalog page: [security-scanning-and-curation.md](../features/security-scanning-
 | SEC-009 | Curation policy | P1 | open | – |
 | SEC-010 | Curation policy scope | P1 | open | – |
 | SEC-011 | Curation condition model | P1 | open | – |
-| SEC-012 | Malicious package condition | P1 | open | – |
+| SEC-012 | Malicious package condition | MVP | specified | [R-VULN-015](../spec/vulnerability-scanning.md) |
 | SEC-013 | Vulnerability conditions | P1 | open | – |
 | SEC-014 | Package age conditions | P1 | open | – |
 | SEC-015 | Single-version and end-of-life conditions | P2 | open | – |
@@ -1302,14 +1302,14 @@ Catalog page: [security-scanning-and-curation.md](../features/security-scanning-
 | SEC-039 | On-demand evaluation of uncovered packages | Later | open | – |
 | SEC-040 | Curation policy sharing across sites | Later | open | – |
 | SEC-041 | Redirect endpoint for intercepted public registry traffic | P2 | open | – |
-| SEC-042 | Indexing scope | Later | open | – |
-| SEC-043 | Scanning on upload and on cache | Later | open | – |
-| SEC-044 | On-demand indexing and reindexing | Later | open | – |
+| SEC-042 | Indexing scope | MVP | specified | [R-VULN-001](../spec/vulnerability-scanning.md), [R-VULN-002](../spec/vulnerability-scanning.md) |
+| SEC-043 | Scanning on upload and on cache | MVP | specified | [R-VULN-001](../spec/vulnerability-scanning.md), [R-VULN-009](../spec/vulnerability-scanning.md), [R-VULN-011](../spec/vulnerability-scanning.md) |
+| SEC-044 | On-demand indexing and reindexing | MVP | specified | [R-VULN-011](../spec/vulnerability-scanning.md) |
 | SEC-045 | Scan data retention | Later | open | – |
 | SEC-046 | File-name exclusion from indexing | Later | open | – |
-| SEC-047 | Scan status | Later | open | – |
-| SEC-048 | Continuous re-evaluation | Later | open | – |
-| SEC-049 | Scan results view | Later | open | – |
+| SEC-047 | Scan status | MVP | specified | [R-VULN-011](../spec/vulnerability-scanning.md), [R-VULN-012](../spec/vulnerability-scanning.md) |
+| SEC-048 | Continuous re-evaluation | MVP | specified | [R-VULN-011](../spec/vulnerability-scanning.md) |
+| SEC-049 | Scan results view | MVP | specified | [R-VULN-012](../spec/vulnerability-scanning.md), [R-VULN-020](../spec/vulnerability-scanning.md), [R-VULN-022](../spec/vulnerability-scanning.md), [R-VULN-023](../spec/vulnerability-scanning.md) |
 | SEC-050 | Scan policy model | Later | open | – |
 | SEC-051 | Security rule criteria | Later | open | – |
 | SEC-052 | License rule criteria | Later | open | – |
@@ -1322,10 +1322,10 @@ Catalog page: [security-scanning-and-curation.md](../features/security-scanning-
 | SEC-059 | Violation notifications and webhooks | Later | open | – |
 | SEC-060 | Issue tracker integration | Later | open | – |
 | SEC-097 | Export of findings to external security dashboards | Later | open | – |
-| SEC-061 | Block downloads on violation | Later | open | – |
-| SEC-062 | Block downloads of not-yet-scanned artifacts | Later | open | – |
-| SEC-063 | Download status check | Later | open | – |
-| SEC-064 | Global blocking overrides | Later | open | – |
+| SEC-061 | Block downloads on violation | MVP | specified | [R-VULN-002](../spec/vulnerability-scanning.md), [R-VULN-015](../spec/vulnerability-scanning.md), [R-VULN-016](../spec/vulnerability-scanning.md) |
+| SEC-062 | Block downloads of not-yet-scanned artifacts | MVP | specified | [R-VULN-015](../spec/vulnerability-scanning.md) |
+| SEC-063 | Download status check | MVP | specified | [R-VULN-020](../spec/vulnerability-scanning.md) |
+| SEC-064 | Global blocking overrides | MVP | specified | [R-VULN-015](../spec/vulnerability-scanning.md), [R-VULN-025](../spec/vulnerability-scanning.md) |
 | SEC-065 | SBOM generation | Later | open | – |
 | SEC-066 | SBOM export | Later | open | – |
 | SEC-067 | SBOM import and aggregation | Later | open | – |
@@ -1334,16 +1334,16 @@ Catalog page: [security-scanning-and-curation.md](../features/security-scanning-
 | SEC-069 | License detection and management | Later | open | – |
 | SEC-070 | License conclusion by priority | Later | open | – |
 | SEC-071 | License attribution report | Later | open | – |
-| SEC-072 | Scan result export per resource | Later | open | – |
+| SEC-072 | Scan result export per resource | MVP | specified | [R-VULN-020](../spec/vulnerability-scanning.md) |
 | SEC-073 | Aggregated security reports | Later | open | – |
-| SEC-074 | Affected-resource search | Later | open | – |
+| SEC-074 | Affected-resource search | MVP | specified | [R-VULN-020](../spec/vulnerability-scanning.md) |
 | SEC-075 | Scanned-resource search | Later | open | – |
 | SEC-076 | Summaries, comparison and differences | Later | open | – |
 | SEC-077 | Remediation suggestions | Later | open | – |
 | SEC-078 | Custom issues | Later | open | – |
 | SEC-079 | Scanner audit log | Later | open | – |
 | SEC-080 | Scanner operational settings | Later | open | – |
-| SEC-092 | Security overview dashboard | Later | open | – |
+| SEC-092 | Security overview dashboard | MVP | specified | [R-VULN-021](../spec/vulnerability-scanning.md), [R-VULN-022](../spec/vulnerability-scanning.md) |
 | SEC-094 | Threat intelligence feed with impact check | Later | open | – |
 | SEC-095 | Scanner processing failures and retries | Later | open | – |
 | SEC-096 | Scanner system status | Later | open | – |
@@ -1817,7 +1817,7 @@ Catalog page: [formats/npm.md](../features/formats/npm.md) · specified by prior
 | PKG-NPM-046 | External dependency rewrite | P1 | specified | [R-NPM-034](../spec/formats/npm.md) |
 | PKG-NPM-047 | Permissions covering metadata as well as tarballs | MVP | specified | [R-AUTHZ-005](../spec/authorization.md) (implemented), [R-NPM-003](../spec/formats/npm.md) |
 | PKG-NPM-048 | `npm search` | P1 | specified | [R-NPM-037](../spec/formats/npm.md) |
-| PKG-NPM-049 | `npm audit` forwarding | P1 | specified | [R-NPM-038](../spec/formats/npm.md) |
+| PKG-NPM-049 | `npm audit` forwarding | P1 | specified | [R-NPM-038](../spec/formats/npm.md), [R-VULN-017](../spec/vulnerability-scanning.md) |
 | PKG-NPM-050 | npm client configuration | MVP | specified | [R-NPM-041](../spec/formats/npm.md) |
 | PKG-NPM-051 | pnpm | MVP | specified | [R-NPM-040](../spec/formats/npm.md) |
 | PKG-NPM-052 | Yarn Classic (1.x) | MVP | specified | [R-NPM-040](../spec/formats/npm.md) |
@@ -1827,7 +1827,7 @@ Catalog page: [formats/npm.md](../features/formats/npm.md) · specified by prior
 | PKG-NPM-056 | Read endpoints | MVP | specified | [R-NPM-001](../spec/formats/npm.md) |
 | PKG-NPM-057 | Write endpoints | MVP | specified | [R-NPM-007](../spec/formats/npm.md) (implemented), [R-NPM-009](../spec/formats/npm.md) |
 | PKG-NPM-058 | Authentication endpoints | MVP | specified | [R-NPM-019](../spec/formats/npm.md), [R-NPM-020](../spec/formats/npm.md), [R-NPM-043](../spec/formats/npm.md) |
-| PKG-NPM-059 | Security audit endpoints | P1 | specified | [R-NPM-038](../spec/formats/npm.md) |
+| PKG-NPM-059 | Security audit endpoints | P1 | specified | [R-NPM-038](../spec/formats/npm.md), [R-VULN-017](../spec/vulnerability-scanning.md) |
 | PKG-NPM-060 | Headers and error bodies | MVP | specified | [R-NPM-005](../spec/formats/npm.md) (implemented), [R-NPM-043](../spec/formats/npm.md) |
 | PKG-NPM-061 | Public-registry-only endpoints | Out of scope | open | – |
 
@@ -1893,7 +1893,7 @@ Catalog page: [formats/nuget.md](../features/formats/nuget.md) · specified by p
 | PKG-NUGET-048 | Search autocomplete service | P1 | specified | [R-NUGET-011](../spec/formats/nuget.md) |
 | PKG-NUGET-049 | Push, delete and relist (package publish) | MVP | specified | [R-NUGET-006](../spec/formats/nuget.md), [R-NUGET-007](../spec/formats/nuget.md) |
 | PKG-NUGET-050 | Symbol package publish | MVP | specified | [R-NUGET-020](../spec/formats/nuget.md) |
-| PKG-NUGET-051 | Vulnerability information | P1 | specified | [R-NUGET-023](../spec/formats/nuget.md) |
+| PKG-NUGET-051 | Vulnerability information | P1 | specified | [R-NUGET-023](../spec/formats/nuget.md), [R-VULN-018](../spec/vulnerability-scanning.md), [R-VULN-032](../spec/vulnerability-scanning.md) |
 | PKG-NUGET-052 | Repository signatures | P2 | open | – |
 | PKG-NUGET-053 | Catalog | P2 | open | – |
 | PKG-NUGET-054 | URI template resources | P2 | open | – |
@@ -2969,7 +2969,7 @@ Requirements whose `Covers:` line says `trove-only`: trove's own design work tha
 catalog feature measures. They count toward the requirement total, not toward any share.
 
 <details>
-<summary>94 requirements</summary>
+<summary>101 requirements</summary>
 
 | Requirement | Title | Priority | Spec page |
 |---|---|---|---|
@@ -3067,5 +3067,12 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-STOR-036 (implemented) | Behavior during an object-store outage | MVP | [storage.md](../spec/storage.md) |
 | R-STOR-046 (implemented) | Storage work per role and across replicas | MVP | [storage.md](../spec/storage.md) |
 | R-STOR-047 | Storage state in backups and restores | MVP | [storage.md](../spec/storage.md) |
+| R-VULN-014 | History and retention | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
+| R-VULN-024 | Metrics, audit events, alerts and status | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
+| R-VULN-026 | Vulnerability data in backups and restores | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
+| R-VULN-027 | Across replicas, without Valkey and during a drain | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
+| R-VULN-028 | Performance bounds | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
+| R-VULN-029 | Acceptance suite | MVP | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
+| R-VULN-031 | Time-limited dismissals | P1 | [vulnerability-scanning.md](../spec/vulnerability-scanning.md) |
 
 </details>

@@ -192,6 +192,11 @@ checked every earlier decision against them:
 | [ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling) | Endpoints: one listener each, identified by the listener, with exposure rules as a ceiling (INV-6, INV-9, INV-15) | Decided by the development agent — owner review at the walkthrough |
 | [ADR-129](#adr-129--the-owners-kubernetes-operators-are-the-standard-stack) | The owner's Kubernetes operators are the standard stack (dev profile, chart and production) | Accepted (owner constraint, 2026-10-29) |
 | [ADR-130](#adr-130--the-organisations-ci-and-release-standard) | The organisation's CI and release standard | Accepted (owner constraint, 2026-10-29) |
+| [ADR-131](#adr-131--own-vulnerability-scanning-with-a-dashboard-in-the-beta) | Own vulnerability scanning with a dashboard in the beta | Accepted (owner constraint, 2026-10-31) |
+| [ADR-132](#adr-132--advisories-mirrored-from-osv-and-matched-inside-trove-by-package-identity) | Advisories mirrored from OSV and matched inside trove by package identity | Decided by the development agent — owner review at the walkthrough |
+| [ADR-133](#adr-133--scan-state-lives-in-postgresql-a-re-fetchable-advisory-mirror-and-backed-up-findings) | Scan state lives in PostgreSQL: a re-fetchable advisory mirror and backed-up findings | Decided by the development agent — owner review at the walkthrough |
+| [ADR-134](#adr-134--malicious-versions-are-blocked-at-download-by-default) | Malicious versions are blocked at download by default | Decided by the development agent — owner review at the walkthrough |
+| [ADR-135](#adr-135--public-advisories-never-apply-to-claimed-internal-names) | Public advisories never apply to claimed internal names | Decided by the development agent — owner review at the walkthrough |
 
 </details>
 
@@ -4932,6 +4937,132 @@ AWS account and a CI role exist. The MinIO conformance leg runs in Test and Rele
 [Q-ROAD-7](coverage/roadmap.md#q-road-7--which-end-to-end-jobs-run-on-each-push-and-which-nightly),
 [release process](developer/releasing.md).
 
+## Vulnerability scanning
+
+### ADR-131 · Own vulnerability scanning with a dashboard in the beta
+
+**Status:** Accepted (owner constraint, 2026-10-31)
+
+**Context.** Until 2026-10-31 the plan had scanning only as a later item (a scanning engine in block F of
+[FULL.md](projektplan/FULL.md)) and curation as P1 (M12). The owner decided on 2026-10-31 that trove needs its own scan and a
+vulnerability dashboard, and that both are part of the beta.
+
+**Decision.** trove scans the packages it stores itself, keeps the results with a triage workflow, and shows them in a
+vulnerability report in the API and the UI, in the beta. How it scans is the development agent's design
+([ADR-132](#adr-132--advisories-mirrored-from-osv-and-matched-inside-trove-by-package-identity) to
+[ADR-135](#adr-135--public-advisories-never-apply-to-claimed-internal-names)).
+
+**Consequences.** A beta phase and a milestone are added before the HA phase, so that the HA phase hardens the scanner too
+(BETA.md phase 6, roadmap M4b, [Q-ROAD-8](coverage/roadmap.md#q-road-8--where-vulnerability-scanning-goes-in-the-beta)).
+The catalog entries the beta builds are raised to MVP on [security-scanning-and-curation.md](features/security-scanning-and-curation.md).
+With one phase more, the beta is expected as the eighth minor release rather than the seventh; the versions still come from
+the commits ([ADR-130](#adr-130--the-organisations-ci-and-release-standard)).
+
+**Alternatives considered.** None; set by the owner.
+
+**Spec:** [spec/README.md](spec/README.md#owner-constraints), [spec/vulnerability-scanning.md](spec/vulnerability-scanning.md).
+
+### ADR-132 · Advisories mirrored from OSV and matched inside trove by package identity
+
+**Status:** Decided by the development agent — owner review at the walkthrough
+
+**Context.** trove runs as stateless, interchangeable `web` replicas and lease-based `worker` jobs, without shared volumes,
+with TLS on every connection, egress rules for outbound fetches, backups of all state, and air-gapped installations. It
+knows the exact format, name and version of every stored package version.
+
+**Decision.** For package formats, a `worker` task mirrors the OSV archive of each served ecosystem (GitHub Advisory Database
+and OpenSSF malicious-packages records) and the CISA known-exploited catalog into PostgreSQL, incrementally through the
+change file, or from a generic repository in an air-gapped installation. trove evaluates OSV ranges against stored versions
+with each format's own version order, through an optional interface of the format contract. The same data answers
+`npm audit`, `pnpm audit` and `yarn npm audit` (mode `local`, the default) and NuGet's restore audit (`VulnerabilityInfo`),
+so no package name leaves the installation. Container images get an analyser with the OCI format; Trivy is the candidate,
+in client mode inside a `worker` job, not as a server.
+
+**Consequences.** No new component, no local state, no new TLS surface; re-evaluation reads no blob. trove owns the matching
+code per ecosystem and tests it against a real-record corpus and osv-scanner's results. Audit forwarding to the upstream
+becomes opt-in, which closes [H-34](spec/formats/npm.md#h-34--audit-forwarding-discloses-the-dependency-set) by default.
+Advisory data is unsigned ([H-309](spec/vulnerability-scanning.md#h-309--advisory-data-is-not-signed)).
+
+**Alternatives considered.** Trivy's server as a chart component (local database and cache state, plain HTTP, one shared
+token, no malicious-package data, a supply-chain compromise of its releases in March 2026); Grype as a CLI (no server mode, a
+database on local disk that refuses scans after 120 hours offline); the OSV query API (sends stored names out). Decided in
+[Q-VULN-1](spec/vulnerability-scanning.md#q-vuln-1--scanner-and-advisory-data-source),
+[Q-VULN-9](spec/vulnerability-scanning.md#q-vuln-9--npm-audit-from-troves-data-by-default) to
+[Q-VULN-12](spec/vulnerability-scanning.md#q-vuln-12--the-offline-path-for-air-gapped-installations) and
+[Q-VULN-15](spec/vulnerability-scanning.md#q-vuln-15--how-formats-join-after-the-contract-freeze).
+
+**Spec:** [spec/vulnerability-scanning.md](spec/vulnerability-scanning.md) R-VULN-003 to R-VULN-009, R-VULN-017, R-VULN-018.
+
+### ADR-133 · Scan state lives in PostgreSQL: a re-fetchable advisory mirror and backed-up findings
+
+**Status:** Decided by the development agent — owner review at the walkthrough
+
+**Context.** The block decision has to be the same on every replica at every request, triage is work that cannot be fetched
+again, and the advisory data is public and large (the npm archive holds about 231,000 records).
+
+**Decision.** Advisory tables and findings live in PostgreSQL. The advisory tables have the export class `transient`; findings
+and their history are `data`. While an ecosystem's data is not completely imported, no evaluation resolves a finding, so a
+restore keeps its blocks and triage until the first full import has run. Per-replica caches (source state, the rendered NuGet
+page) follow the change area `vuln_data`, written once per sync run that changed records.
+
+**Consequences.** A download's block verdict is joined into its item lookup and costs no extra query. Backups stay small; a
+restored installation re-imports the advisory data, from its backed-up mirror repository when it is air-gapped.
+
+**Alternatives considered.** Advisory data as objects in S3 with in-memory indexes per replica; findings in Valkey (INV-3
+forbids it); advisory tables in every backup. Decided in
+[Q-VULN-2](spec/vulnerability-scanning.md#q-vuln-2--where-scan-state-lives) and
+[Q-VULN-13](spec/vulnerability-scanning.md#q-vuln-13--advisory-data-in-backups).
+
+**Spec:** [spec/vulnerability-scanning.md](spec/vulnerability-scanning.md) R-VULN-011, R-VULN-012, R-VULN-026, R-VULN-027.
+
+### ADR-134 · Malicious versions are blocked at download by default
+
+**Status:** Decided by the development agent — owner review at the walkthrough
+
+**Context.** A lockfile install fetches tarballs and packages by URL without reading metadata, so only a refusal at the
+download stops a known-bad version. Blocking every vulnerable version by default would break builds on upgrade.
+
+**Decision.** A version with an open finding of a malicious record is refused on every route that serves its content, with
+`403` in the protocol's error shape, and on the remote boundary before it is fetched. A severity threshold per repository is
+opt-in. A dismissal, which needs the capability `vulnerabilities:triage`, lifts a block. In a virtual repository the member
+that stores the version decides, and a block ends resolution. A version is evaluated in its publish or fill commit; without
+any advisory data the default is to allow. `vulnerabilities.enforcement: report` turns every block into a count.
+
+**Consequences.** Malicious packages known to the data are not installed through trove, lockfiles included; new malicious
+versions are blocked only once their record arrives
+([H-310](spec/vulnerability-scanning.md#h-310--a-malicious-version-is-unknown-until-its-advisory-is-published)). A dismissal
+is an installation-wide decision ([H-312](spec/vulnerability-scanning.md#h-312--a-dismissal-lifts-a-block-for-every-consumer-of-the-repository)).
+
+**Alternatives considered.** Report only; blocking critical findings by default; waiting for a scan; a full policy engine.
+Decided in [Q-VULN-4](spec/vulnerability-scanning.md#q-vuln-4--what-blocks-a-download-in-the-beta),
+[Q-VULN-5](spec/vulnerability-scanning.md#q-vuln-5--versions-without-advisory-data) and
+[Q-VULN-8](spec/vulnerability-scanning.md#q-vuln-8--who-may-triage-findings).
+
+**Spec:** [spec/vulnerability-scanning.md](spec/vulnerability-scanning.md) R-VULN-013, R-VULN-015, R-VULN-016.
+
+### ADR-135 · Public advisories never apply to claimed internal names
+
+**Status:** Decided by the development agent — owner review at the walkthrough
+
+**Context.** Most malicious npm records affect every version of their name. An attacker who publishes a malicious package
+under an internal name and gets it flagged would, with name matching alone, make trove block the internal package.
+
+**Decision.** A stored version is matched against public advisories only when it is of public origin: a version of a remote
+whose upstream is a recognised public registry, or a local version whose name no namespace claim covers
+([R-REPO-023](spec/repositories-and-proxy.md#r-repo-023--dependency-confusion-protection-pin-rules-and-namespace-claims)).
+A setting per repository overrides it (`always`, `never`). A public advisory for a claimed name is recorded as a security
+event and raises a critical alert. Client audits withhold claimed names the same way.
+
+**Consequences.** Dependency-confusion protection and scanning agree on what is internal, and the attacker's step becomes a
+signal. Vendored public packages under claimed names and internal mirrors of the public registry need `always`
+([H-313](spec/vulnerability-scanning.md#h-313--claimed-names-are-not-matched-against-public-advisories),
+[H-314](spec/vulnerability-scanning.md#h-314--remotes-with-an-unrecognised-upstream-are-not-scanned-by-default)).
+
+**Alternatives considered.** Matching every stored version by name; never blocking local versions. Decided in
+[Q-VULN-3](spec/vulnerability-scanning.md#q-vuln-3--which-stored-versions-public-advisories-apply-to).
+
+**Spec:** [spec/vulnerability-scanning.md](spec/vulnerability-scanning.md) R-VULN-010, R-VULN-017, R-VULN-018.
+
 ## Decisions by the development agent
 
 The development agent selected each of these decisions from the options documented in the
@@ -5539,6 +5670,23 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-EP-58](spec/endpoints.md#q-ep-58--who-counts-a-refused-upstream-contact-of-a-virtual-repository) | Who counts a refused upstream contact of a virtual repository? | (a) the virtual engine, through the remote engine's counter, for each member it skips because the endpoint does not fill | — |
 | [Q-EP-59](spec/endpoints.md#q-ep-59--raw-paths-of-a-format-with-package-names-on-an-endpoint-with-rules) | How does the exposure decide a raw path of an npm repository? | (a) on the package and version the format gives it; a path without a package is not exposed | — |
 | [Q-EP-60](spec/endpoints.md#q-ep-60--no-cache-status-on-an-endpoint-with-rules) | Does an answer on an endpoint with rules carry `Cache-Status`? | (a) no: `formats.ServeRoute` removes it at the status line, whoever set it | — |
+| [Q-VULN-1](spec/vulnerability-scanning.md#q-vuln-1--scanner-and-advisory-data-source) | Which scanner and which advisory data source? | (d) hybrid: the OSV archives of the served ecosystems mirrored into PostgreSQL and matched by trove for package formats now; an image analyser (Trivy in client mode the candidate) with the OCI format | [ADR-132](#adr-132--advisories-mirrored-from-osv-and-matched-inside-trove-by-package-identity) |
+| [Q-VULN-2](spec/vulnerability-scanning.md#q-vuln-2--where-scan-state-lives) | Where does scan state live? | (a) PostgreSQL for the advisory mirror and the findings | [ADR-133](#adr-133--scan-state-lives-in-postgresql-a-re-fetchable-advisory-mirror-and-backed-up-findings) |
+| [Q-VULN-3](spec/vulnerability-scanning.md#q-vuln-3--which-stored-versions-public-advisories-apply-to) | Which stored versions do public advisories apply to? | (b) remotes with a recognised upstream and local names no claim covers; `matchPublicAdvisories` per repository; a match on a claimed name is an alert | [ADR-135](#adr-135--public-advisories-never-apply-to-claimed-internal-names) |
+| [Q-VULN-4](spec/vulnerability-scanning.md#q-vuln-4--what-blocks-a-download-in-the-beta) | What blocks a download in the beta? | (b) malicious versions by default, a severity threshold opt-in per repository, a dismissal lifts a block; decided in the item lookup, ends virtual resolution | [ADR-134](#adr-134--malicious-versions-are-blocked-at-download-by-default) |
+| [Q-VULN-5](spec/vulnerability-scanning.md#q-vuln-5--versions-without-advisory-data) | What happens to versions without advisory data? | (a) evaluated in the commit; allowed by default while no data exists, `onMissingData: block` opt-in; no finding resolves while data is incomplete | [ADR-134](#adr-134--malicious-versions-are-blocked-at-download-by-default) |
+| [Q-VULN-6](spec/vulnerability-scanning.md#q-vuln-6--severity-when-sources-carry-several-scores) | Which severity when sources carry several scores? | (a) the newest CVSS vector of the canonical record scored by trove, then aliases, then the qualitative fallback; malicious is critical | — |
+| [Q-VULN-7](spec/vulnerability-scanning.md#q-vuln-7--finding-statuses-and-a-dismissal-whose-advisory-changes) | Which finding statuses, and what happens to a dismissal whose advisory changes? | (a) `needs_triage`, `confirmed`, `dismissed` by people, `resolved` by trove; a dismissal reopens on a higher severity, a malicious marking or known exploitation | — |
+| [Q-VULN-8](spec/vulnerability-scanning.md#q-vuln-8--who-may-triage-findings) | Who may triage findings? | (a) the system capability `vulnerabilities:triage` (`admin`, `security-admin`) | [ADR-134](#adr-134--malicious-versions-are-blocked-at-download-by-default) |
+| [Q-VULN-9](spec/vulnerability-scanning.md#q-vuln-9--npm-audit-from-troves-data-by-default) | Does npm audit answer from trove's data by default? | (a) mode `local` by default on every npm repository, `forward` opt-in on remotes; legacy audit endpoints stay `501` | [ADR-132](#adr-132--advisories-mirrored-from-osv-and-matched-inside-trove-by-package-identity) |
+| [Q-VULN-10](spec/vulnerability-scanning.md#q-vuln-10--nuget-vulnerability-information-from-troves-data) | Does NuGet's vulnerability resource come from trove's data? | (a) one page with trove's data on every NuGet repository, `local` by default | [ADR-132](#adr-132--advisories-mirrored-from-osv-and-matched-inside-trove-by-package-identity) |
+| [Q-VULN-11](spec/vulnerability-scanning.md#q-vuln-11--how-the-incremental-sync-finds-changed-records) | How does the incremental sync find changed records? | (a) the change file read from its start with ranged requests, then single records; a full sync weekly and when the change is large | — |
+| [Q-VULN-12](spec/vulnerability-scanning.md#q-vuln-12--the-offline-path-for-air-gapped-installations) | What is the offline path for air-gapped installations? | (a) a generic local repository as the mirror (`mode: repository`) | [ADR-132](#adr-132--advisories-mirrored-from-osv-and-matched-inside-trove-by-package-identity) |
+| [Q-VULN-13](spec/vulnerability-scanning.md#q-vuln-13--advisory-data-in-backups) | Is advisory data backed up? | (a) advisory tables `transient`, findings `data`; a restore keeps its blocks until the first complete import | [ADR-133](#adr-133--scan-state-lives-in-postgresql-a-re-fetchable-advisory-mirror-and-backed-up-findings) |
+| [Q-VULN-14](spec/vulnerability-scanning.md#q-vuln-14--known-exploited-and-exploit-probability-enrichment) | Which enrichments, and on by default? | (a) CISA known-exploited in the MVP and on; EPSS in P1 and off, because its terms are unclear | — |
+| [Q-VULN-15](spec/vulnerability-scanning.md#q-vuln-15--how-formats-join-after-the-contract-freeze) | How do formats join after the contract freeze? | (a) an optional `VulnerabilityAdapter` interface, discovered by type assertion | [ADR-132](#adr-132--advisories-mirrored-from-osv-and-matched-inside-trove-by-package-identity) |
+| [Q-VULN-16](spec/vulnerability-scanning.md#q-vuln-16--how-the-trend-is-computed) | How is the trend computed? | (a) from `detected_at` and `resolved_at` of the findings the caller can read; no snapshot table | — |
+| [Q-VULN-17](spec/vulnerability-scanning.md#q-vuln-17--the-numeric-advisory-id-of-the-npm-audit-answer) | Which numeric id does an advisory carry in the npm audit answer? | (a) 53 bits of SHA-256 of `npm:<canonical id>` | — |
 | [Q-ROAD-1](coverage/roadmap.md#q-road-1--generic-local-repositories-in-m1) | Generic local repositories in M1? | (a) the local class of the generic format is built in M1 as MVP, from a new spec page `formats/generic.md`; remote and virtual generic stay P1 | — |
 | [Q-ROAD-2](coverage/roadmap.md#q-road-2--backup-and-restore-in-the-beta) | Backup and restore in the beta? | (e) trove's own backup create and restore, the platform layer (R-HA-023, R-HA-025) and the revocation journal (R-HA-054, R-AUTHZ-031) are MVP and gate in M5; their work runs in its own lane from M1 on, and M0 gives every table its export class. Revisited 2026-10-28: was (a), both kept at P1 and the journal after 1.0 | [ADR-094](#adr-094--a-configurable-backup-job-writes-consistent-backups-to-s3), [ADR-078](#adr-078--restores-keep-metadata-and-blobs-consistent-by-ordering-not-by-coordination) |
 | [Q-ROAD-3](coverage/roadmap.md#q-road-3--ecosystems-the-owners-teams-use-after-npm-and-nuget) | Which ecosystems after npm and NuGet? | (a) the P1 format order of the roadmap stands; revisited 2026-10-29: Ansible Galaxy (owner demand) is F0 and P1, ahead of F1 | — |
@@ -5546,3 +5694,4 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-ROAD-5](coverage/roadmap.md#q-road-5--evidence-rules-of-the-coverage-generator) | Which evidence counts for the coverage generator? | (b) a failing test vetoes its ID; a skip counts as neither; an unknown ID fails the run | — |
 | [Q-ROAD-6](coverage/roadmap.md#q-road-6--how-the-end-to-end-driver-reads-and-drives-the-cluster) | How does the end-to-end driver read and drive the cluster? | (a) a diagnostic job kind `system.probe` in the release image, enqueued through the product's job path | — |
 | [Q-ROAD-7](coverage/roadmap.md#q-road-7--which-end-to-end-jobs-run-on-each-push-and-which-nightly) | Which end-to-end jobs run on each push, and which nightly? | (b) a push set on every push and a nightly failover set. Owner decision of 2026-10-29: no nightly workflow; both sets run on every change | [ADR-130](#adr-130--the-organisations-ci-and-release-standard) |
+| [Q-ROAD-8](coverage/roadmap.md#q-road-8--where-vulnerability-scanning-goes-in-the-beta) | Where does vulnerability scanning go in the beta? | (a) a milestone M4b between M4 and M5; BETA.md phase 6 before the HA phase | [ADR-131](#adr-131--own-vulnerability-scanning-with-a-dashboard-in-the-beta) |

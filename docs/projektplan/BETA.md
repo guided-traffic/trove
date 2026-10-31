@@ -1,7 +1,7 @@
 # trove · Project plan to the beta release
 
 **Status:** ⚪ not started · 🟡 in progress or partly done · 🟢 done
-**Last updated:** 2026-10-30
+**Last updated:** 2026-10-31
 
 The way from zero to the beta release. The beta is trove with two package registries, **npm** and
 **NuGet (.NET)**, each with local, remote (pull-through) and virtual repositories, running on the
@@ -10,14 +10,14 @@ and `worker` roles, node drains without outage, and a backup job. Everything aft
 (further registries such as Ansible Galaxy, PyPI, Docker, and platform breadth) is in
 [FULL.md](FULL.md).
 
-The beta release is what the [roadmap](../coverage/roadmap.md) builds in M0 to M5, after the
-owner walkthrough. Details, exit criteria and requirement IDs of every phase are in the roadmap
+The beta release is what the [roadmap](../coverage/roadmap.md) builds in M0 to M5, M4b included, after
+the owner walkthrough. Details, exit criteria and requirement IDs of every phase are in the roadmap
 section linked under each heading.
 
 **Versions:** trove stays on major version 0 until the owner decides otherwise. Semantic Release
 sets the versions from the conventional commits on `main` (`feat` minor, `fix` patch). A phase closes
 with the release that the pipeline cuts from its commits; the Version column records it when the phase
-completes. The beta release is the release that closes phase 7.
+completes. The beta release is the release that closes phase 8.
 
 ## Where we are
 
@@ -29,8 +29,9 @@ completes. The beta release is the release that closes phase 7.
 | [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | — | 🟡 |
 | [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual | — | ⚪ |
 | [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | — | ⚪ |
-| [6 · HA, backup, Helm](#phase-6--ha-hardening-backup-and-helm-m5) | Drains and failovers without errors, backup and restore; beta candidate | — | ⚪ |
-| [7 · Walkthrough and beta](#phase-7--walkthrough-and-beta-release) | Owner review, objections fixed; **beta release** | — | ⚪ |
+| [6 · Vulnerability scanning](#phase-6--vulnerability-scanning-m4b) | Own advisory mirror, findings and vulnerability report, malicious versions blocked, npm and NuGet audits from trove's data | — | ⚪ |
+| [7 · HA, backup, Helm](#phase-7--ha-hardening-backup-and-helm-m5) | Drains and failovers without errors, backup and restore; beta candidate | — | ⚪ |
+| [8 · Walkthrough and beta](#phase-8--walkthrough-and-beta-release) | Owner review, objections fixed; **beta release** | — | ⚪ |
 
 ## Testing rule for every registry
 
@@ -84,7 +85,7 @@ Details: [roadmap M0](../coverage/roadmap.md#m0--foundation)
 - 🟢 Metrics, JSON request log, health and readiness endpoints
 - 🟢 TLS on every connection, trove's listeners included; certificate rotation without restart
 - 🟢 Endpoints: further client listeners with their own port, hosts (one wildcard allowed), base URL and certificates chosen by SNI; the endpoint is the listener's, a foreign host gets `421`; route families per endpoint; host-root binding reserved for later registries ([spec](../spec/endpoints.md))
-- 🟢 Helm chart per endpoint: Service or own pool, Ingress with its own class, hosts and TLS Secret, NetworkPolicy per port (the Gateway route per endpoint arrives with the chart's Gateway support, R-HA-038, in phase 6)
+- 🟢 Helm chart per endpoint: Service or own pool, Ingress with its own class, hosts and TLS Secret, NetworkPolicy per port (the Gateway route per endpoint arrives with the chart's Gateway support, R-HA-038, in phase 7)
 
 **Exit checks**
 - 🟢 PostgreSQL and Valkey failover under load without a failed request
@@ -206,13 +207,49 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - ⚪ E2E tests against a GitLab test instance for npm and NuGet, with a `web` node drained during the run
 - ⚪ the release that closes the phase (cut by Semantic Release; the version goes into the table)
 
-## Phase 6 · HA hardening, backup and Helm (M5)
+## Phase 6 · Vulnerability scanning (M4b)
+
+Details: [roadmap M4b](../coverage/roadmap.md#m4b--vulnerability-scanning) · spec: [vulnerability-scanning.md](../spec/vulnerability-scanning.md)
+
+The owner decided on 2026-10-31 that trove scans its stored packages itself and shows a vulnerability dashboard in the
+beta. The phase comes before the HA phase, so that phase 7 hardens the scanner with everything else. The testing rule above
+applies to the npm and NuGet parts of this phase.
+
+**Engines**
+- ⚪ Advisory mirror on `worker`: the OSV archives of npm and NuGet (GitHub Advisory Database, OpenSSF malicious packages), full and incremental sync with conditional and ranged requests, integrity and shrink guards, egress rules, sources status
+- ⚪ Offline import for air-gapped installations from a generic repository
+- ⚪ Known-exploited marking from the CISA catalog
+- ⚪ Matching by package identity with each format's version order, as an optional interface of the frozen format contract; public advisories never applied to claimed names, claimed-name matches as a security alert
+- ⚪ Findings: severity from CVSS, triage statuses and history, re-evaluation when the advisory data changes, rescan on demand, retention
+- ⚪ Download blocking: malicious versions by default, a severity threshold per repository, on every route that serves a version, in the one item-lookup query; report mode for the whole installation
+
+**Formats**
+- ⚪ npm: `npm audit`, `pnpm audit` and `yarn npm audit` answered from trove's data on local, remote and virtual repositories; no package name leaves the installation
+- ⚪ NuGet: `VulnerabilityInfo` from trove's data on every repository class, so `dotnet restore` reports NU1901 to NU1904
+- ⚪ Blocked downloads in npm's and NuGet's error shapes
+
+**API and UI**
+- ⚪ Vulnerability report: counts by severity, trend, filterable and sortable list, finding detail, bulk triage, CSV export; per repository through its filter
+- ⚪ Vulnerabilities tab on the package page; sources screen with the offline commands
+- ⚪ Permissions: findings only where the caller can read the package; triage with the capability `vulnerabilities:triage`
+
+**Tests**
+- ⚪ Integration tests against PostgreSQL, Valkey with Sentinel and S3 with a test advisory source: sync paths and faults, the matching corpus per format, the finding lifecycle, blocking on every route, the API with permission-narrowed callers
+- ⚪ E2E tests: npm, pnpm and Yarn audits and a blocked install, `dotnet restore` audit warnings and a blocked restore, through local, remote and virtual repositories on several `web` replicas with random distribution; browser journeys of the report, triage and export
+- ⚪ E2E: a full sync drained mid-run finishes on another `worker`; the set once with Valkey stopped
+- ⚪ Performance bounds V-1 to V-9 with 100,000 stored versions
+
+**Release**
+- ⚪ the release that closes the phase (cut by Semantic Release; the version goes into the table)
+
+## Phase 7 · HA hardening, backup and Helm (M5)
 
 Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · spec: [ha-and-helm.md](../spec/ha-and-helm.md), [backup-and-restore.md](../spec/backup-and-restore.md)
 
 **High availability**
 - ⚪ Failure suite: pod crash, PostgreSQL switchover and failover, Valkey failover and outage, S3 outage, node loss
 - ⚪ Node drain under npm and NuGet load with zero failed requests
+- ⚪ Vulnerability scanning under the failure suite: sync and evaluation jobs across drains and failovers, blocks and triage after a restore (E5.13)
 - ⚪ Rolling upgrade from the previous pre-release with mixed versions
 - ⚪ Performance targets met in two nightly runs in a row
 
@@ -226,9 +263,9 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
 - ⚪ Chart complete: values reference and schema, autoscaling, network policies, monitoring integration
 - ⚪ Security documentation in [docs/security](../security/README.md) and security review
 - ⚪ Release pipeline: `Release Docker & Helm` publishes the image `guidedtraffic/trove` (Docker Hub) and the chart (GitHub Pages) with each release ([releasing.md](../developer/releasing.md#the-release-pipeline)). `v0.1.0` was published by the pipeline before it, to `ghcr.io`; the new pipeline has not published a release yet
-- ⚪ Beta candidate published (the release that closes phase 6)
+- ⚪ Beta candidate published (the release that closes phase 7)
 
-## Phase 7 · Walkthrough and beta release
+## Phase 8 · Walkthrough and beta release
 
 Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
 
@@ -236,12 +273,13 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
   - ⚪ OIDC sign-in, users, groups, tokens, permission policies
   - ⚪ npm and .NET clients against local, remote and virtual repositories
   - ⚪ GitLab reference pipeline
+  - ⚪ Vulnerability report, a blocked malicious version, and the npm and .NET audits from trove's data
   - ⚪ Node drain and PostgreSQL and Valkey failover under load
   - ⚪ Backup by the CronJob and restore into an empty namespace
 - ⚪ Objections from the walkthrough worked off
 - ⚪ All exit checks green again
 - ⚪ Beta documentation: installation guide, configuration reference, known limitations
-- ⚪ **Beta release**: the release that closes phase 7; its version goes into the table
+- ⚪ **Beta release**: the release that closes phase 8; its version goes into the table
 
 ---
 
@@ -254,4 +292,5 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
 | **npm** | ⚪ | ⚪ | ⚪ |
 | **NuGet (.NET)** | ⚪ | ⚪ | ⚪ |
 | GitLab CI OIDC | ⚪ | ⚪ | ⚪ |
+| Vulnerability scanning | ⚪ | ⚪ | ⚪ |
 | Backup and restore | ⚪ | ⚪ | — |

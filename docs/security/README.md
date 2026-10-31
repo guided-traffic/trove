@@ -79,6 +79,19 @@ Spec pages hold the gaps of their mechanisms, among them [H-41](../spec/operatio
 [H-6](../spec/repositories-and-proxy.md#h-6--remote-repositories-reach-private-networks). The perspective pages link them where
 they apply and do not repeat them.
 
+Vulnerability scanning is specified and not built, so it has no perspective page yet; its gaps are on
+[vulnerability-scanning.md](../spec/vulnerability-scanning.md#what-this-does-not-cover):
+[H-309](../spec/vulnerability-scanning.md#h-309--advisory-data-is-not-signed),
+[H-310](../spec/vulnerability-scanning.md#h-310--a-malicious-version-is-unknown-until-its-advisory-is-published),
+[H-311](../spec/vulnerability-scanning.md#h-311--a-block-refuses-the-download-not-the-resolution-or-an-earlier-install),
+[H-312](../spec/vulnerability-scanning.md#h-312--a-dismissal-lifts-a-block-for-every-consumer-of-the-repository),
+[H-313](../spec/vulnerability-scanning.md#h-313--claimed-names-are-not-matched-against-public-advisories),
+[H-314](../spec/vulnerability-scanning.md#h-314--remotes-with-an-unrecognised-upstream-are-not-scanned-by-default),
+[H-315](../spec/vulnerability-scanning.md#h-315--matching-by-package-identity-does-not-see-content),
+[H-316](../spec/vulnerability-scanning.md#h-316--nothing-is-blocked-while-advisory-data-is-missing),
+[H-317](../spec/vulnerability-scanning.md#h-317--the-same-bytes-in-a-repository-without-scanning-are-not-blocked) and
+[H-318](../spec/vulnerability-scanning.md#h-318--findings-keep-the-names-of-removed-versions).
+
 A new gap takes the next free number across all spec and security pages. The command is in
 [developer/README.md](../developer/README.md#id-schemes).
 

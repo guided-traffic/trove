@@ -16,7 +16,7 @@ EVT-014 and EVT-015 in [events-and-extensibility.md](events-and-extensibility.md
 ## Package risk data
 
 ### SEC-001 · Package risk data source
-Priority: **P1**
+Priority: **MVP**
 
 Upstream curation and scanning both decide against a database of facts per package and per package
 version that is maintained outside the request path and updated continuously. It merges public
@@ -68,7 +68,7 @@ Edge cases: a package version published very recently may not be in the data sou
 the pending-data state (SEC-022).
 
 ### SEC-002 · Online synchronization of the vulnerability database
-Priority: **P1**
+Priority: **MVP**
 
 In online mode (the default), the system polls the data provider for updates about every hour and
 applies them incrementally, without operator action. The data provider can shorten the interval
@@ -90,7 +90,7 @@ UI location: administration, scanner settings, database synchronization (last up
 result of the last run).
 
 ### SEC-003 · Offline synchronization of the vulnerability database
-Priority: **P2**
+Priority: **MVP**
 
 For air-gapped installations: an update package is downloaded with the companion command-line
 tool on a connected machine, carried to the isolated installation and applied from the
@@ -103,7 +103,7 @@ applied.
 Unspecified: package format, size, whether partial (incremental) offline packages exist.
 
 ### SEC-004 · Malicious package intelligence
-Priority: **P1**
+Priority: **MVP**
 
 A malicious package carries intentionally harmful code or behavior. The registry consumes a
 malicious flag per package version from the data source (SEC-001) and acts on it in curation
@@ -412,7 +412,7 @@ Built-in conditions cannot be edited or deleted. Each policy references exactly 
 combining criteria means several policies or one custom condition with relaxations.
 
 ### SEC-012 · Malicious package condition
-Priority: **P1**
+Priority: **MVP**
 
 Blocks any version of a third-party package that the data source flags as malicious (SEC-004).
 Built-in only, no relaxation, all package types.
@@ -1084,7 +1084,7 @@ Unspecified: the semantics of the curation link flag.
 ## Scanning stored content
 
 ### SEC-042 · Indexing scope
-Priority: **Later**
+Priority: **MVP**
 
 Indexing extracts and stores the component inventory and dependency graph of a resource, which is
 what scanning, continuous re-evaluation (SEC-048) and affected-resource search (SEC-074) operate
@@ -1112,7 +1112,7 @@ UI location: administration, scanner settings, indexed resources (tabs for repos
 release sets).
 
 ### SEC-043 · Scanning on upload and on cache
-Priority: **Later**
+Priority: **MVP**
 
 In an indexed repository, every artifact that is uploaded, modified, or (in a remote repository)
 cached from the upstream is indexed and scanned. Existing content is not scanned when indexing is
@@ -1131,7 +1131,7 @@ Per indexed repository:
 Edge cases: by-pattern scope requires a retention value for "all other artifacts" as well.
 
 ### SEC-044 · On-demand indexing and reindexing
-Priority: **Later**
+Priority: **MVP**
 
 | Operation | Inputs | Output | Privilege |
 |---|---|---|---|
@@ -1178,7 +1178,7 @@ An installation-level list of file names (separated by `|`) that indexing skips.
 requires a restart of the scanner and a forced reindex (SEC-044) of already scanned artifacts.
 
 ### SEC-047 · Scan status
-Priority: **Later**
+Priority: **MVP**
 
 Every scannable resource has an overall scan status and a status per analysis part, each with a
 timestamp (RFC 3339).
@@ -1206,7 +1206,7 @@ Interactions: terminal statuses produce scan-status events, EVT-015 in
 [events-and-extensibility.md](events-and-extensibility.md).
 
 ### SEC-048 · Continuous re-evaluation
-Priority: **Later**
+Priority: **MVP**
 
 Stored content is not scanned once and forgotten. Every change in the vulnerability database (a
 new CVE, a changed advisory, a newly flagged malicious package, a change in CISA KEV membership)
@@ -1226,7 +1226,7 @@ Without scan scopes and policies, results are updated but no violations or actio
 Limits: only indexed resources within their retention period (SEC-045) are covered.
 
 ### SEC-049 · Scan results view
-Priority: **Later**
+Priority: **MVP**
 
 A scan results list per resource kind (repositories, builds, release sets, packages, Git
 repositories); selecting a resource and version opens:
@@ -1505,7 +1505,7 @@ format", which webhooks (SEC-059, EVT-015) already provide.
 ## Download blocking
 
 ### SEC-061 · Block downloads on violation
-Priority: **Later**
+Priority: **MVP**
 
 When a rule with the block-download action matches an artifact, downloads of that artifact are
 refused. The client sees a forbidden response without the policy name; the download status check
@@ -1524,7 +1524,7 @@ Interactions: curation blocks at the remote boundary before content enters (SEC-
 blocks content already stored, including local repositories.
 
 ### SEC-062 · Block downloads of not-yet-scanned artifacts
-Priority: **Later**
+Priority: **MVP**
 
 With the *block unscanned artifacts* option on a block-download action, a download of an artifact
 in the scope that has not been scanned yet does not proceed immediately: the request waits for the
@@ -1542,7 +1542,7 @@ scan to finish, at most for a configurable timeout.
 Unspecified: whether the request is refused or released when the timeout expires.
 
 ### SEC-063 · Download status check
-Priority: **Later**
+Priority: **MVP**
 
 Answers, without downloading, whether an artifact's download is currently blocked and why. The
 artifact must exist; the caller needs the same read permission as for a download.
@@ -1562,7 +1562,7 @@ severity, finding (for example the CVE), state, violation id, scope, policy and 
 command-line tool presents this as a table or JSON.
 
 ### SEC-064 · Global blocking overrides
-Priority: **Later**
+Priority: **MVP**
 
 | Setting | Meaning | Default |
 |---|---|---|
@@ -1714,7 +1714,7 @@ manifests, and the unmodified full license text. Required notice files (such as 
 ## Reports, search and analysis of results
 
 ### SEC-072 · Scan result export per resource
-Priority: **Later**
+Priority: **MVP**
 
 From a resource version in the scan results list:
 
@@ -1764,7 +1764,7 @@ Reports aggregate findings across many resources.
 | Delete report | id | Report and data removed permanently | report manager |
 
 ### SEC-074 · Affected-resource search
-Priority: **Later**
+Priority: **MVP**
 
 Answers "where is this vulnerability or package used?" across all scanned resources.
 
@@ -1898,7 +1898,7 @@ again; liveness, readiness (with an option to bypass cached results) and ping pr
 authentication; version information.
 
 ### SEC-092 · Security overview dashboard
-Priority: **Later**
+Priority: **MVP**
 
 A scanner landing page summarises scanning coverage, secret findings, supply-chain risk and policy
 state for the installation. A threat view on it leads into the affected-resource search (SEC-074);
