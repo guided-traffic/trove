@@ -158,7 +158,7 @@ Details: [roadmap M2](../coverage/roadmap.md#m2--npm) · spec: [formats/npm.md](
 - 🟢 Repository settings form rendered from the format's settings schema (R-ARCH-004, R-UI-021, Q-ARCH-229, Q-UI-78 to Q-UI-82)
 - 🟢 npm on a customer endpoint: package documents and dist-tags list only exposed versions, URLs on the endpoint's host, no upstream fetch from that endpoint by default
 - 🟢 Security audit: `npm audit`, `pnpm audit` and `yarn npm audit` through remote and virtual repositories (R-NPM-038, owner 2026-10-31)
-- 🟡 In-app guide for every npm variant: local, remote and virtual repositories with npm, pnpm, Yarn Berry and Yarn Classic (owner 2026-10-31)
+- 🟢 In-app guide for every npm variant: local, remote and virtual repositories with npm, pnpm, Yarn Berry and Yarn Classic (owner 2026-10-31)
 
 **Tests**
 - 🟡 npm integration tests: protocol over HTTP, conformance kit, nightly fuzzing of package documents (the 30-minute fuzz legs run in the closing dispatch)
