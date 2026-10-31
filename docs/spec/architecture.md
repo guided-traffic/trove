@@ -1266,7 +1266,7 @@ type Host interface {
 	Ingest() Ingestor            // upload pipeline of storage.md: admission, spool, digests, commit; Commit takes the request's other files as Companions, in one transaction (Q-ARCH-228)
 	Items() ItemStore            // repository paths <-> blobs, Range and conditional reads (storage.md)
 	Packages() PackageStore      // package and version rows behind the package view (FMT-007)
-	Remote() RemoteFetcher       // remote engine (repositories-and-proxy.md)
+	Remote() RemoteFetcher       // remote engine (repositories-and-proxy.md); Exchange sends one request through a remote's upstream client outside the cache (Q-NPM-62)
 	Resolver() Resolver          // virtual resolution (repositories-and-proxy.md)
 	Links(rq *Request) LinkBuilder // absolute URLs on the response base URL of rq's endpoint and host (R-ARCH-006)
 	Renditions() RenditionCache  // rendered documents (R-ARCH-012), keyed by a struct the core hashes

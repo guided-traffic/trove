@@ -592,6 +592,24 @@ func (e LocalFormatName) Valid() bool {
 	}
 }
 
+// Defines values for NpmSettingsAuditMode.
+const (
+	NpmSettingsAuditModeDisabled NpmSettingsAuditMode = "disabled"
+	NpmSettingsAuditModeForward  NpmSettingsAuditMode = "forward"
+)
+
+// Valid indicates whether the value is a known member of the NpmSettingsAuditMode enum.
+func (e NpmSettingsAuditMode) Valid() bool {
+	switch e {
+	case NpmSettingsAuditModeDisabled:
+		return true
+	case NpmSettingsAuditModeForward:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NpmSettingsDistTagStrategy.
 const (
 	NpmSettingsDistTagStrategyHighestSemver   NpmSettingsDistTagStrategy = "highest-semver"
@@ -2925,6 +2943,24 @@ type NewUser struct {
 // fails on any difference between the two. A setting that does not apply to the class of the repository
 // answers 422 `not_applicable`. An omitted setting takes its default.
 type NpmSettings struct {
+	// Audit Remote repositories (R-NPM-038). The security audit endpoint: forward the names this remote has fetched,
+	// and that nothing marks internal, to an advisory provider.
+	Audit *struct {
+		// MaxBodySize The largest audit body as sent, `1KiB` to `10MiB`; ten times that decompressed. Larger bodies answer 413.
+		MaxBodySize *string `json:"maxBodySize,omitempty"`
+
+		// Mode `forward` answers audits through this remote; `disabled` answers 501 `npm_audit_unavailable`.
+		Mode *NpmSettingsAuditMode `json:"mode,omitempty"`
+
+		// ProviderURL The https registry URL of the advisory provider, without user info, query or fragment; null is the remote's
+		// upstream URL. The provider gets the repository's sealed upstream credentials only when it is the upstream's
+		// origin or an `extraHosts` entry with `sendCredentials` (R-REPO-033), never through the URL.
+		ProviderURL *string `json:"providerURL,omitempty"`
+
+		// Timeout The longest a forward may take, `1s` to `300s`; never longer than `server.shutdown_timeout` minus one second.
+		Timeout *string `json:"timeout,omitempty"`
+	} `json:"audit,omitempty"`
+
 	// DistTagStrategy Virtual repositories (R-NPM-031). How the other dist-tags are merged.
 	DistTagStrategy *NpmSettingsDistTagStrategy `json:"distTagStrategy,omitempty"`
 
@@ -2937,6 +2973,9 @@ type NpmSettings struct {
 	// ServeRemovedVersions Remote repositories (R-NPM-026). Serve the cached tarball of a version the upstream no longer lists.
 	ServeRemovedVersions *bool `json:"serveRemovedVersions,omitempty"`
 }
+
+// NpmSettingsAuditMode `forward` answers audits through this remote; `disabled` answers 501 `npm_audit_unavailable`.
+type NpmSettingsAuditMode string
 
 // NpmSettingsDistTagStrategy Virtual repositories (R-NPM-031). How the other dist-tags are merged.
 type NpmSettingsDistTagStrategy string

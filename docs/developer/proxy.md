@@ -9,7 +9,12 @@ path, the flights, the circuit, the fill). Code: [internal/proxy](../../internal
 A format's `RemoteAdapter` may also implement `formats.TypeExpecter` (media types the engine does not block, R-REPO-042) and `formats.ArtifactGate` (`BeforeArtifact`: the format's marks and
 the digests its metadata announces, run before every road to a remote artifact, including the cached tier of a remote member of a virtual repository; Q-NPM-33). `FillEvent.FetchedAt` is the
 `fetched_at` the upsert writes, so a format that records facts decides with the comparison the upsert uses (Q-NPM-32); a fill whose format keeps the stored document renews the entry that is
-there. `Request.CacheView` is set by the dispatcher from `<key>~cache`, and `Host.Authorize` refuses a name a global claim covers on a remote repository (Q-NPM-37). npm: [npm.md](npm.md).
+there. `Request.CacheView` is set by the dispatcher from `<key>~cache`, and `Host.Authorize` refuses a name a global claim covers on a remote repository (Q-NPM-37).
+`RemoteFetcher.Exchange` sends one request of a format through a remote's upstream client outside the cache, the advisory request of an npm audit
+(`Engine.Exchange` in [exchange.go](../../internal/proxy/exchange.go)): the client's egress rules, trust store, redirect rules and credential policy apply, a
+transport failure is classified as a fetch's and an egress or TLS refusal is a security event, but no fetch slot is taken and the circuit is neither read
+nor moved, because the provider may be another host than the upstream (Q-NPM-62). An offline repository answers `proxy.ErrOffline` (`formats.ErrOffline`)
+and sends nothing; the upstream log record has no `flight_role`. npm: [npm.md](npm.md).
 
 ## The upstream clients
 
@@ -328,6 +333,7 @@ flowchart TD
 | [artifact.go](../../internal/proxy/artifact.go) | `Artifact`, `Cached`, `HEAD`, the artifact fetch, the entry written in the item commit, the immutability checks |
 | [flight.go](../../internal/proxy/flight.go) | the in-process flight, `lead` (Acquire, Wait, re-check, bypass), `recheck` |
 | [fetch.go](../../internal/proxy/fetch.go), [classify.go](../../internal/proxy/classify.go) | one fetch: slots, circuit, request, the retry, classification of the outcome (R-REPO-029 table) |
+| [exchange.go](../../internal/proxy/exchange.go) | `Exchange`: one request of a format outside the cache, through the repository's client, without slot or circuit (Q-NPM-62) |
 | [state.go](../../internal/proxy/state.go) | the per-repository state cache (circuit, gone documents), the probe slot, `markGone` |
 | [negative.go](../../internal/proxy/negative.go) | the negative L1 and its readers' validation (R-REPO-028) |
 | [integrity.go](../../internal/proxy/integrity.go), [body.go](../../internal/proxy/body.go) | digests, the withheld tail (`stream`), the size limit, the idle timeout of a body |

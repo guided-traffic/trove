@@ -207,11 +207,30 @@ func deferredFamilies() []string {
 // does not implement: access, visibility and collaborators.
 func deferredPackageOps() []string { return []string{"access", "visibility", "collaborators"} }
 
+// auditBulkOp returns the segments of the bulk advisory endpoint after "-" (R-NPM-038).
+func auditBulkOp() []string { return []string{"npm", "v1", "security", "advisories", "bulk"} }
+
+// matchAuditLegacy matches npm 6's audit endpoints, -/npm/v1/security/audits and
+// -/npm/v1/security/audits/quick.
+func matchAuditLegacy(escaped string) (formats.Params, bool) {
+	if p, ok := matchOp("npm", "v1", "security", "audits")(escaped); ok {
+		return p, true
+	}
+	return matchOp("npm", "v1", "security", "audits", "quick")(escaped)
+}
+
+// isAudit says whether a path is one of the audit endpoints, which have routes of their own.
+func isAudit(escaped string) bool {
+	_, bulk := matchOp(auditBulkOp()...)(escaped)
+	_, legacy := matchAuditLegacy(escaped)
+	return bulk || legacy
+}
+
 // matchDeferred matches every path of an unimplemented npm endpoint, for any
 // method; the four routes of the family answer 404 or 501 by method.
 func matchDeferred(escaped string) (formats.Params, bool) {
 	segs := segments(escaped)
-	if len(segs) < 2 || !isLiteral(segs[0], "-") {
+	if len(segs) < 2 || !isLiteral(segs[0], "-") || isAudit(escaped) {
 		return nil, false
 	}
 	if second, ok := decode(segs[1]); ok && slices.Contains(deferredFamilies(), second) {

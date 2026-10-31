@@ -138,6 +138,9 @@ func (f *Format) Classify(p formats.Path) formats.PathInfo {
 	}
 	segs := strings.Split(p.Path, "/")
 	if segs[0] == "-" { // a protocol operation
+		if isAudit(p.Path) { // forwarded and never cached (R-NPM-038)
+			return formats.PathInfo{Kind: formats.PathVolatile}
+		}
 		return formats.PathInfo{Kind: formats.PathComputed}
 	}
 	text, rest := segs[0], segs[1:]

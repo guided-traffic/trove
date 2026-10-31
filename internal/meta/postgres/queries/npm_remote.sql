@@ -93,3 +93,50 @@ SELECT (v.version IS NOT NULL)::boolean AS known,
   LEFT JOIN npm_remote_versions v
          ON v.repo_id = r.id AND v.name = sqlc.arg(name)::text AND v.version = sqlc.arg(version)::text
  WHERE r.id = sqlc.arg(repo_id)::bigint;
+
+-- name: NPMAuditNames :many
+-- What decides the forwarded set of an audit request (R-NPM-038), in one statement for the
+-- whole body: per distinct name, whether the forwarding remote holds a stored upstream document
+-- of it (also one the core marked gone), whether a local npm repository holds the package or a
+-- tombstone of it, whether a namespace claim of any scope of a local npm repository covers it,
+-- and whether a pin rule of the requesting virtual repository (0: none) selects it. A pattern is
+-- an exact name, or a literal and one trailing "*" (nothing after it holds "/") or "**"
+-- (R-REPO-023); an npm name holds no backslash (R-NPM-002), so a stored npm pattern holds no
+-- escape.
+WITH n AS (
+  SELECT DISTINCT unnest(sqlc.arg(names)::text[]) AS name
+), locals AS (
+  SELECT id FROM repositories WHERE format = 'npm' AND class = 'local'
+), patterns AS (
+  SELECT c.pattern, 'claim'::text AS source
+    FROM namespace_claims c JOIN locals l ON l.id = c.repo_id
+  UNION ALL
+  SELECT unnest(p.package_patterns), 'pin'::text
+    FROM virtual_pin_rules p
+   WHERE p.virtual_id = sqlc.arg(virtual_id)::bigint
+), parsed AS (
+  SELECT rtrim(pattern, '*') AS literal,
+         CASE WHEN pattern LIKE '%**' THEN 2 WHEN pattern LIKE '%*' THEN 1 ELSE 0 END AS star,
+         source
+    FROM patterns
+)
+SELECT n.name::text AS name,
+       EXISTS (SELECT 1 FROM npm_remote_packages rp
+                WHERE rp.repo_id = sqlc.arg(remote_id)::bigint AND rp.name = n.name)::boolean AS proxied,
+       (EXISTS (SELECT 1 FROM packages p JOIN locals l ON l.id = p.repo_id WHERE p.name = n.name)
+        OR EXISTS (SELECT 1 FROM npm_tombstones t JOIN locals l ON l.id = t.repo_id WHERE t.name = n.name))::boolean AS local,
+       EXISTS (SELECT 1 FROM parsed m
+                WHERE m.source = 'claim'
+                  AND CASE m.star
+                        WHEN 0 THEN n.name = m.literal
+                        WHEN 1 THEN starts_with(n.name, m.literal) AND strpos(substr(n.name, length(m.literal) + 1), '/') = 0
+                        ELSE starts_with(n.name, m.literal)
+                      END)::boolean AS claimed,
+       EXISTS (SELECT 1 FROM parsed m
+                WHERE m.source = 'pin'
+                  AND CASE m.star
+                        WHEN 0 THEN n.name = m.literal
+                        WHEN 1 THEN starts_with(n.name, m.literal) AND strpos(substr(n.name, length(m.literal) + 1), '/') = 0
+                        ELSE starts_with(n.name, m.literal)
+                      END)::boolean AS pinned
+  FROM n;

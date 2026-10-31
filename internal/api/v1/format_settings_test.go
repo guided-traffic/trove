@@ -18,9 +18,11 @@ import (
 // default must be the same in both; a setting added to one without the other fails here.
 func TestR_ARCH_008_NpmSettingsSchemaEqualsTheOpenAPIMember(t *testing.T) {
 	type property struct {
-		Type    string   `json:"type" yaml:"type"`
-		Enum    []string `json:"enum" yaml:"enum"`
-		Default any      `json:"default" yaml:"default"`
+		Type       any                 `json:"type" yaml:"type"`
+		Enum       []string            `json:"enum" yaml:"enum"`
+		Default    any                 `json:"default" yaml:"default"`
+		Pattern    string              `json:"pattern" yaml:"pattern"`
+		Properties map[string]property `json:"properties" yaml:"properties"`
 	}
 	type object struct {
 		AdditionalProperties any                 `json:"additionalProperties" yaml:"additionalProperties"`

@@ -3,6 +3,7 @@ package formats
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -178,4 +179,28 @@ type RemoteFetcher interface {
 	EnsureCurrent(ctx context.Context, rq *Request, p Path, variant string) (*RemoteDocument, Currency, error)
 	// EntryState reads the cache entries of a path without contacting the upstream.
 	EntryState(ctx context.Context, rq *Request, p Path) (EntryState, error)
+	// Exchange sends one request through the upstream client of the remote repository rq
+	// addresses, outside the cache: its egress rules, trust store, redirect rules and
+	// credential policy apply (R-REPO-033, R-REPO-038, R-REPO-039). It reads and writes no
+	// cache entry, takes no fetch slot, neither reads nor moves the circuit and holds no
+	// transaction; ctx bounds it. A repository that may not contact its upstream answers
+	// [ErrOffline] and sends nothing. The caller closes the response body.
+	Exchange(ctx context.Context, rq *Request, x Exchange) (*http.Response, error)
 }
+
+// Exchange is one request a format sends to an upstream service on a client's behalf:
+// npm's bulk advisory request (R-NPM-038).
+type Exchange struct {
+	Method string
+	// Base is the URL Path is joined to; nil is the repository's upstream URL. Its host
+	// may be another than the upstream's: the credential policy decides what it is sent.
+	Base *url.URL
+	// Path is relative to Base: "-/npm/v1/security/advisories/bulk".
+	Path   string
+	Header http.Header
+	Body   []byte
+}
+
+// ErrOffline is the answer of [RemoteFetcher.Exchange] for a remote repository in offline
+// mode, and for every one while proxy.global_offline is on (R-REPO-030, R-REPO-031).
+var ErrOffline = errors.New("formats: the remote repository may not contact its upstream")

@@ -254,3 +254,14 @@ type TarballFacts struct {
 	// ServeRemoved is npm.serveRemovedVersions of the repository.
 	ServeRemoved bool
 }
+
+// AuditName is what decides whether one name of an audit request is forwarded to the
+// advisory provider (R-NPM-038), read in one statement for the whole request: Proxied
+// says that the forwarding remote holds a stored upstream document of the name; Local
+// that a local npm repository of the installation holds the package or a tombstone of
+// it; Claimed that a namespace claim of any scope of a local npm repository covers it;
+// Pinned that a pin rule of the requesting virtual repository selects it.
+type AuditName struct {
+	Name                            string
+	Proxied, Local, Claimed, Pinned bool
+}

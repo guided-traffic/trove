@@ -156,6 +156,7 @@ Details: [roadmap M2](../coverage/roadmap.md#m2--npm) · spec: [formats/npm.md](
 - ⚪ Package UI: package list and detail, README, install panel, client setup snippets
 - ⚪ Repository settings form rendered from the format's settings schema (R-ARCH-004, R-UI-021): the API serves the schema (`settingsSchema` of `GET /api/v1/formats`) and validates the `npm` member (Q-ARCH-229); the form is not built, so npm's settings are settable through the API only
 - ⚪ npm on a customer endpoint: package documents and dist-tags list only exposed versions, URLs on the endpoint's host, no upstream fetch from that endpoint by default
+- 🟡 Security audit: `npm audit`, `pnpm audit` and `yarn npm audit` through remote and virtual repositories (R-NPM-038, owner 2026-10-31)
 
 **Tests**
 - ⚪ npm integration tests: protocol over HTTP, conformance kit, nightly fuzzing of package documents

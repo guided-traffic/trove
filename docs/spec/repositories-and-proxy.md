@@ -2374,7 +2374,8 @@ Acceptance criteria:
 Priority: **MVP** · Covers: trove-only
 
 - Every connection made for a remote repository (upstream, extra hosts, redirect targets, URLs taken
-  from upstream metadata, outbound proxies) MUST check each resolved IP address inside the dialer's
+  from upstream metadata, outbound proxies, the advisory provider of an npm audit forward,
+  [formats/npm.md](formats/npm.md) R-NPM-038) MUST check each resolved IP address inside the dialer's
   `Control` hook, after DNS resolution and before connecting, so a DNS answer that changes between
   check and use cannot pass. Addresses in `allow_cidrs` are permitted even inside a denied range;
   addresses in a denied range are refused; everything else is permitted.

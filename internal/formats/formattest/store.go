@@ -691,6 +691,8 @@ type MemRemote struct {
 	// artifacts by canonical path.
 	Docs      map[string][]byte
 	Artifacts map[string][]byte
+	// Exchanges answers Exchange; nil answers it with [formats.ErrOffline].
+	Exchanges func(ctx context.Context, rq *formats.Request, x formats.Exchange) (*http.Response, error)
 
 	note func([]byte)
 }
@@ -745,4 +747,11 @@ func (m *MemRemote) EnsureCurrent(_ context.Context, _ *formats.Request, p forma
 func (m *MemRemote) EntryState(_ context.Context, _ *formats.Request, p formats.Path) (formats.EntryState, error) {
 	_, ok := m.Docs[p.Path]
 	return formats.EntryState{Stored: ok}, nil
+}
+
+func (m *MemRemote) Exchange(ctx context.Context, rq *formats.Request, x formats.Exchange) (*http.Response, error) {
+	if m.Exchanges == nil {
+		return nil, formats.ErrOffline
+	}
+	return m.Exchanges(ctx, rq, x)
 }

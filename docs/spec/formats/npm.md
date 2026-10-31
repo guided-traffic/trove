@@ -95,8 +95,10 @@ format is not npm, answers 404 with the npm error body (R-NPM-005).
   retries `POST` ([make-fetch-happen](https://github.com/npm/make-fetch-happen/blob/main/lib/remote.js)),
   so a 5xx on a `GET` would cost the user retries, while 501 on a `POST` costs nothing and says
   what it means. This holds for npm. pnpm 10, 11 and 12 retry a 501 answer to their audit `POST` after
-  10 seconds and after a minute (measured, Q-NPM-49), and a metadata `PUT` that is not built answers
-  404 for the same reason as any other `PUT`.
+  10 seconds and after a minute (measured, Q-NPM-49); through a forwarding repository pnpm 11 and 12
+  get the provider's answer (R-NPM-038), and pnpm 10, which asks npm 6's audit endpoints, keeps the
+  501 (Q-NPM-65). A metadata `PUT` that is not built answers 404 for the same reason as any other
+  `PUT`.
 
 <details>
 <summary>Endpoint map</summary>
@@ -117,7 +119,7 @@ format is not npm, answers 404 with the npm error body (R-NPM-005).
 | PUT, GET | `-/user/org.couchdb.user:{username}` | R-NPM-021 (P1) | yes | yes | yes |
 | DELETE | `-/user/token/{token}` | R-NPM-021 (P1) | yes | yes | yes |
 | GET | `-/v1/search` | R-NPM-037 (P1) | yes | cached only | merged |
-| POST | `-/npm/v1/security/advisories/bulk` | R-NPM-038 (P1) | 501 | yes | via member |
+| POST | `-/npm/v1/security/advisories/bulk` | R-NPM-038 | 501 | yes | via member |
 | POST | `-/npm/v1/security/audits/quick`, `-/npm/v1/security/audits` | R-NPM-038 | 501 | 501 | 501 |
 | GET | `-/external/{remoteKey}/{path}` | R-NPM-034 (P1) | 404 | 404 | yes |
 | POST | `/-/npm/v1/oidc/token/exchange/package/{name}` (**host root**) | R-NPM-022 (P1) | — | — | — |
@@ -192,7 +194,8 @@ table is the normative answer to "which npm paths are metadata":
 | `GET -/package/{name}/dist-tags` | `<name>` | `metadata` | `dist-tags` | name |
 | publish, metadata `PUT`, `-rev` writes, dist-tag `PUT`/`DELETE`, tarball `DELETE` | `<name>` or the tarball path | `write` | — | name, version where present |
 | `GET -/v1/search` | — | `search` | — | — |
-| `-/ping`, `-/whoami`, login, logout, audit, external | — | `other` | — | — |
+| `POST -/npm/v1/security/advisories/bulk`, npm 6's `…/security/audits[/quick]` | — | `search`: forwarded, never cached (Q-NPM-62) | — | — |
+| `-/ping`, `-/whoami`, login, logout, external | — | `other` | — | — |
 
 Consequences:
 
@@ -1811,65 +1814,93 @@ Acceptance criteria:
   without `read` on `npm-local` gets no hit from it; the test upstream receives no search request.
 
 ### R-NPM-038 · Security audit endpoints
-Priority: **P1** · Covers: PKG-NPM-049, PKG-NPM-059
+Priority: **MVP** · Covers: PKG-NPM-049, PKG-NPM-059
 
-`POST -/npm/v1/security/advisories/bulk` (npm 7+ with a gzip body, pnpm uncompressed, `yarn npm
-audit`):
+Raised from P1 to MVP and built in M2 (Q-NPM-61). `POST -/npm/v1/security/advisories/bulk` (npm 7+
+with a gzip body, pnpm 11 and later uncompressed, `yarn npm audit`); the body is an object of package
+names, each with a list of versions:
 
 - Mode `forward` (remote repositories, the default, Q-NPM-3): trove decompresses the body
-  (`npm.audit.maxBodySize` compressed, ten times that decompressed, 413 beyond) and forwards to
-  the provider (default: the remote's upstream URL), with the remote's upstream credentials and
-  `npm.audit.timeout`, through the egress rules of R-REPO-038, **only the names that the
-  forwarding remote already holds a stored upstream document for** (an `npm_remote_packages` row,
-  R-NPM-024, also one whose package document the core marked gone, since withdrawn malware carries
-  advisories; one query for the whole body). Of those it also withholds
-  every name that exists in any npm local repository of the installation, is covered by a
-  namespace claim of any scope of any npm local repository, or matches a pin rule of the
-  requesting virtual repository (R-REPO-023). A name the remote has fetched is one the upstream
-  has already seen from this installation, so forwarding discloses which public packages a
-  project combines but no name the upstream did not already know; a name it never fetched (a git
-  or file dependency, a package installed from elsewhere, an internal name nobody claimed) is
-  withheld. A `providerURL` other than the upstream learns the same set of names.
+  (`npm.audit.maxBodySize` as sent, ten times that decompressed, at most 100,000 names, 413
+  `npm_too_large` beyond; a content coding other than gzip is 415, a body that is no such object
+  400, Q-NPM-64) and forwards to the provider (default: the remote's upstream URL), with the
+  remote's upstream credentials and `npm.audit.timeout`, through the egress rules of R-REPO-038,
+  **only the names that the forwarding remote already holds a stored upstream document for** (an
+  `npm_remote_packages` row, R-NPM-024, also one whose package document the core marked gone, since
+  withdrawn malware carries advisories; one query for the whole body). Of those it also withholds
+  every name that exists in any npm local repository of the installation (a package row or a
+  tombstone), is covered by a namespace claim of any scope of any npm local repository, matches a
+  pin rule of the requesting virtual repository (R-REPO-023), or is refused by the include and
+  exclude patterns of the forwarding remote or of the requesting virtual repository (R-REPO-005,
+  Q-NPM-63). A name the remote has fetched is one the upstream has already seen from this
+  installation, so forwarding discloses which public packages a project combines but no name the
+  upstream did not already know; a name it never fetched (a git or file dependency, a package
+  installed from elsewhere, an internal name nobody claimed) is withheld. A `providerURL` other than
+  the upstream learns the same set of names.
 - When names were withheld, the response carries `npm-notice: trove audited <n> of <m>
   packages; <k> internal or not yet proxied names were not sent to the advisory provider`, and
-  `trove_npm_audit_names_withheld_total{reason}` counts them by reason (`not_proxied`, `local`,
-  `claimed`, `pinned`). Withheld names are absent from the answer, which clients read as "no
-  advisories"; the notice is what tells the user the audit was partial. When every name is
-  withheld, trove answers `{}` without contacting the provider.
-- The provider's 200 body is returned unchanged; pnpm accepts only an object keyed by package
-  name whose advisories carry a numeric `id` and a string `vulnerable_versions`, which the public
-  registry's answer satisfies. Provider failure: 502.
-- A virtual repository forwards through its first remote member in resolution order whose mode is
-  `forward`.
-- Mode `disabled`, every local repository, and a virtual repository without a forwarding member
-  answer **501** `npm_audit_unavailable` with "security audit is not available on repository
-  <key>; it is disabled or no upstream provides advisories". Why 501 and not 404: the repository
-  and the endpoint exist, and "not found" sends users looking for a wrong registry URL; 501 is the
-  HTTP status for a function the server does not support; npm never retries a `POST`; `npm install`
-  logs the audit failure and completes; `npm audit` and `pnpm audit` print status and text.
-- npm 6's `-/npm/v1/security/audits/quick` and `-/npm/v1/security/audits` answer 501.
-- Permission: `read` on the repository and, for a virtual, on the forwarding member.
+  `trove_npm_audit_names_withheld_total{reason}` counts them by reason (`local`, `claimed`,
+  `pinned`, `not_proxied`: each name once, by the first reason in this order, labelled with the
+  forwarding remote, Q-NPM-63). Withheld names are absent from the answer, which clients read as "no
+  advisories"; the notice is what tells the user the audit was partial, and only npm prints it on
+  a successful answer ([H-302](../../security/data-and-secret-flow.md#h-302--pnpm-and-yarn-do-not-show-that-an-audit-was-partial)).
+  When every name is withheld, trove answers `{}` without contacting the provider.
+- The provider's 200 body is returned unchanged, with its `Content-Type` and `Content-Encoding`,
+  `Cache-Control: no-store` and at most 128 MiB (`MaxDocumentBytes`); pnpm accepts only an object
+  keyed by package name whose advisories carry a numeric `id` and a string `vulnerable_versions`,
+  which the public registry's answer satisfies. Provider failure (no answer within the deadline, a
+  refused connection, any status other than 200): 502, with the code of the failure
+  (`upstream_timeout`, `egress_denied`, `upstream_error`, `upstream_auth_failed`, …).
+- The forward is one request through the forwarding remote's upstream client
+  ([repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-033, R-REPO-038, R-REPO-039):
+  its egress rules, trust store, redirect rules and credential policy, which sends the remote's
+  sealed upstream credentials only to the upstream origin and to `extraHosts` entries with
+  `sendCredentials`, so a `providerURL` on another host gets none. It reads no cache entry, takes no
+  fetch slot and neither reads nor moves the circuit (Q-NPM-62). `providerURL` is an `https` URL
+  without user info, query or fragment (the repository document is shown in clear to every holder of
+  `repositories:read-config`, H-303): no credential ever travels in it.
+- A virtual repository forwards through its first remote member in resolution order (priority
+  members first, R-REPO-022) that is enabled and whose mode is `forward`, whoever asks (Q-NPM-62).
+- Mode `disabled`, every local repository, a virtual repository without a forwarding member, a
+  remote that may not contact its upstream (offline, its own mode or `proxy.global_offline`,
+  R-REPO-030, R-REPO-031), the cache view `<key>~cache`, and an endpoint that does not fill caches
+  or has exposure rules (R-NPM-048) answer **501** `npm_audit_unavailable` with "security audit is
+  not available on repository <key>; it is disabled or no upstream provides advisories". Why 501
+  and not 404: the repository and the endpoint exist, and "not found" sends users looking for a
+  wrong registry URL; 501 is the HTTP status for a function the server does not support; npm never
+  retries a `POST`; `npm install` logs the audit failure and completes; `npm audit` and `pnpm audit`
+  print status and text.
+- npm 6's `-/npm/v1/security/audits/quick` and `-/npm/v1/security/audits` answer 501
+  `npm_audit_unavailable`: with the text above where no repository forwards, else with a text that
+  names the bulk endpoint (npm 7 to 10 ask the quick endpoint after a failed bulk request and print
+  its answer). pnpm 10 asks only these two endpoints, so `pnpm audit` of pnpm 10 is not served; it
+  retries each 501 after 10 seconds and a minute and fails after about 140 seconds (measured,
+  Q-NPM-65).
+- Permission: `read` on the repository and, for a virtual, on the forwarding member; a caller
+  without `read` on the forwarding member gets the refusal of R-AUTHZ-016 and no provider is asked.
 - The forward holds no PostgreSQL connection while it waits: its one query runs before the
-  provider is called. Its deadline is `min(npm.audit.timeout, server.shutdown_timeout − 1 s)`.
-  npm never retries a `POST` (R-NPM-001), so a forward cut by its replica's shutdown would fail
-  `npm audit`; with this deadline, a forward that is running when its replica starts to drain ends
-  before the shutdown deadline ([architecture.md](../architecture.md) R-ARCH-024, R-NPM-046).
+  provider is called. Its deadline is `min(npm.audit.timeout, server.shutdown_timeout − 1 s)`,
+  counted from the arrival of the request. npm never retries a `POST` (R-NPM-001), so a forward cut
+  by its replica's shutdown would fail `npm audit`; with this deadline, a forward that is running
+  when its replica starts to drain ends before the shutdown deadline
+  ([architecture.md](../architecture.md) R-ARCH-024, R-NPM-046).
 
-Configuration (`npm` section of a remote repository):
+Configuration (`npm` section of a remote repository, validated by
+[settings.schema.json](../../../internal/formats/npm/settings.schema.json)):
 
 ```yaml
 npm:
   audit:
-    mode: forward          # default (proposed); forward | disabled
-    providerURL: null      # default (proposed): the remote's upstream URL
-    timeout: 30s           # default (proposed)
-    maxBodySize: 10MiB     # default (proposed)
+    mode: forward          # default; forward | disabled
+    providerURL: null      # default: the remote's upstream URL; an https URL without user info, query or fragment
+    timeout: 30s           # default; 1s to 300s
+    maxBodySize: 1MiB      # default (Q-NPM-64); 1KiB to 10MiB, ten times that decompressed
 ```
 
 Acceptance criteria:
 
 - After `npm install` through `npm-all`, `npm audit` reports the advisories the public registry
-  reports for the same lockfile; `pnpm audit` and `yarn npm audit` likewise.
+  reports for the same lockfile; `pnpm audit` (pnpm 11 and later) and `yarn npm audit` likewise.
 - The test provider's request log never contains `@acme/ui` or any other name present in
   `npm-local`, nor a name covered by a claim, nor a name `npm-remote` never fetched.
 - A lockfile with one public package that `npm-remote` never fetched: `npm audit` prints the
@@ -1877,6 +1908,7 @@ Acceptance criteria:
 - `npm audit --registry …/npm-local/` fails with 501 and the error text; `npm install` against the
   same registry succeeds.
 - A small gzip body that inflates beyond the limit answers 413.
+- A `providerURL` with user info is refused with 422 when the repository document is written.
 - The test provider answers after 20 s. The `web` pod that forwards an `npm audit` is deleted
   1 s after the request arrived; `npm audit` succeeds, and the kubelet events show no `SIGKILL`.
 
@@ -1907,8 +1939,8 @@ Priority: **MVP** · Covers: PKG-NPM-051, PKG-NPM-052
 pnpm needs, beyond the shared protocol: the abbreviated document labelled by `Content-Type`
 (R-NPM-011); `time` in abbreviated documents (R-NPM-012); `_npmUser` and `dist.attestations`
 passed through (R-NPM-027) and never mixed across members (R-NPM-030); legacy login with Basic
-credentials beside the body (R-NPM-021); the uncompressed audit body and strict audit response
-(R-NPM-038). Yarn 1 reads `.npmrc`, requests abbreviated documents and sends credentials only with
+credentials beside the body (R-NPM-021); the uncompressed audit body and strict audit response of pnpm 11 and later
+(R-NPM-038; pnpm 10 asks npm 6's audit endpoints, which answer 501, Q-NPM-65). Yarn 1 reads `.npmrc`, requests abbreviated documents and sends credentials only with
 `always-auth=true` or for scoped packages (R-NPM-004); `yarn publish` sends npm's publish request.
 
 Acceptance criteria:
@@ -2113,8 +2145,9 @@ actor, repository, package, version or tag, outcome and source address:
 | `npm.trusted_publishing.exchange` | R-NPM-022, with the matched identity mapping |
 | `npm.remote.version_removed` | R-NPM-026 |
 
-Login, logout and token events are R-AUTH-041's; integrity and egress events of remote fetches are
-repositories-and-proxy.md's.
+Login, logout and token events are R-AUTH-041's; integrity and egress events of remote fetches, and
+the egress and TLS events of an audit forward (R-NPM-038), are repositories-and-proxy.md's. An audit
+forward writes no audit event of its own.
 
 Metrics (prefix `trove_`, INV-16; the label written `repository` below is `repo` in the label list of R-OPS-007, Q-NPM-25): `trove_npm_requests_total{class,operation,status}`,
 `trove_npm_request_duration_seconds{class,operation}`,
@@ -2122,7 +2155,7 @@ Metrics (prefix `trove_`, INV-16; the label written `repository` below is `repo`
 `trove_npm_virtual_version_conflicts_total{repository}`,
 `trove_npm_removed_upstream_versions_total{repository}`,
 `trove_npm_stale_upstream_documents_total{repository}`,
-`trove_npm_audit_names_withheld_total{repository,reason}` (R-NPM-038),
+`trove_npm_audit_names_withheld_total{repository,reason}` (R-NPM-038; the repository is the forwarding remote, Q-NPM-63),
 `trove_npm_publish_retries_acknowledged_total{repository}` (R-NPM-007),
 `trove_npm_tarball_document_revalidations_total{repository,outcome}` (R-NPM-025). Each replica exports its
 own counts; dashboards sum them over the replicas of a role. Access logs record `npm-command` and
@@ -2442,8 +2475,10 @@ document and before compression:
 - **No writes.** `?write=true`, publish, dist-tag writes, deprecation and unpublish answer 403
   `endpoint_read_only` (R-EP-013).
 - **Upstream contact.** On an endpoint with `cache_fill: false` (R-EP-019), the audit endpoint
-  (R-NPM-038, P1) answers 501 `npm_audit_unavailable`, as in mode `disabled`, because forwarding
-  would contact an upstream.
+  (R-NPM-038) answers 501 `npm_audit_unavailable`, as in mode `disabled`, because forwarding
+  would contact an upstream. It does so on an endpoint with exposure rules as well, because the
+  split into forwarded and withheld names tells which names a remote has fetched, the fact
+  `Cache-Status` is hidden for there (Q-EP-60, Q-NPM-62).
 - **Validators.** The ETag of R-NPM-013 includes the endpoint and its exposure fingerprint, so a
   rule change makes every cached copy of the document fail revalidation.
 - **Version ranges** in rules use node-semver range syntax; `ValidateRange` refuses what npm's own
@@ -2498,13 +2533,17 @@ Acceptance criteria (fixture of [endpoints.md](../endpoints.md) R-EP-012, with `
   the metadata period has passed or a restore happened (R-NPM-025, Q-NPM-13), so lockfile installs
   and restored marks do not bypass a takedown while the upstream is reachable.
 - **Audit forwarding** sends a dependency name to the provider only if the forwarding remote has
-  already fetched it from its upstream and no local repository, claim or pin rule marks it
-  internal (R-NPM-038); see H-34.
+  already fetched it from its upstream and no local repository, claim, pin rule or pattern marks it
+  internal (R-NPM-038); see H-34. The forward runs through the remote's upstream client, so the
+  egress rules apply and the remote's sealed credentials reach only the upstream origin and
+  `sendCredentials` hosts; `providerURL` refuses user info, so no credential sits in the repository
+  document (H-303). What remains open is [H-300](../../security/data-and-secret-flow.md#h-300--the-advisory-providers-answer-is-trusted-as-it-is)
+  to [H-302](../../security/data-and-secret-flow.md#h-302--pnpm-and-yarn-do-not-show-that-an-audit-was-partial).
 - **ID tokens stay on trove's host.** trove owns the host root of its base URL (R-OPS-005 refuses a
   base URL with a path), so the host-root exchange URL npm derives from the registry URL always
   reaches trove and never another service on a shared host (R-NPM-022).
-- **Bounded parsing.** Publish bodies, tarball scans and gzip audit bodies are bounded before they
-  are parsed (R-NPM-007, R-NPM-038), and upstream documents by R-REPO-040, so one request cannot
+- **Bounded parsing.** Publish bodies, tarball scans and audit bodies (as sent, decompressed, and
+  by their number of names) are bounded before they are parsed (R-NPM-007, R-NPM-038, Q-NPM-64), and upstream documents by R-REPO-040, so one request cannot
   exhaust a replica's memory or spool.
 - **Encoded names.** Names are decoded once and validated before any lookup (R-NPM-002); storage is
   content-addressed, so a name never becomes a file-system path.
@@ -2533,7 +2572,7 @@ Acceptance criteria (fixture of [endpoints.md](../endpoints.md) R-EP-012, with `
 
 ## Decisions
 
-Each question below was decided by the development agent from the listed options; the owner reviews the choices at the walkthrough.
+Each question below was decided by the development agent from the listed options, unless its status names the owner; the owner reviews the choices at the walkthrough.
 
 ### Q-NPM-1 · Host-root routes next to INV-6
 
@@ -4042,6 +4081,14 @@ page did not match what the clients do:
 cost a user 70 seconds. The client behaviors are facts to record, not to hide. The development agent would
 revisit 2 when audit is built (R-NPM-038): the 501 then no longer occurs.
 
+Revisited 2026-10-31, when audit was built: point 2 holds where trove answers 501, and only there.
+Through a forwarding repository pnpm 11 and 12 get the provider's answer and retry nothing. A
+repository without a forwarder (a local repository, mode `disabled`, a virtual repository without a
+forwarding remote member) still answers 501, which pnpm retries for 70 seconds per request. pnpm 10
+asks npm 6's audit endpoints, which answer 501 everywhere, and reports after about 140 seconds
+(Q-NPM-65). The choice stays (a); the scenario now asserts the advisories for every row but pnpm 10
+and Yarn 1, and the 501 for pnpm 10.
+
 **Applied in the spec:** R-NPM-018 (the answer until it is built), R-NPM-001 (the 501 note), R-NPM-043 (the
 criterion). Code: `internal/formats/npm/handlers_deprecate.go`, `TestR_NPM_043_DeprecateIsRefusedWithoutRetries`.
 Open, for the owner: pnpm 11 and 12 cannot unpublish through a virtual repository as the design stands (point 5); letting a
@@ -4222,6 +4269,139 @@ Context: R-NPM-016 puts the guard on a publish that carries `latest`; a dist-tag
 
 **Applied in the spec:** R-NPM-016 (the configuration block). Code: `internal/formats/npm/{publish.go,hooks.go}`.
 
+### Q-NPM-61 · The security audit is part of the beta
+
+Status: **Decided by the owner on 2026-10-31.**
+
+Context: R-NPM-038 was P1 and planned for M6; until then the audit endpoints answered 501 (R-NPM-043), and the matrix
+asserted that 501. The teams that will use the beta run `npm audit` routinely, in CI and by hand, and an audit that
+always fails takes a security signal away from every one of them.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep R-NPM-038 at P1 (M6) | The beta answers 501 | Smaller M2 | `npm audit` fails for every user of the beta; `pnpm audit` waits 70 seconds first (Q-NPM-49) |
+| (b) Raise R-NPM-038 to MVP and build it in phase 3 (M2) | The audit forward of Q-NPM-3 ships with the npm format | The teams keep their audits | M2 grows by one requirement |
+
+**Choice:** (b).
+
+**Rationale:** the owner's decision: the teams use `npm audit` heavily, so it belongs in the beta. The development
+agent records no revisit condition; the priority is the owner's.
+
+**Applied in the spec:** R-NPM-038 (priority MVP); [roadmap](../../coverage/roadmap.md) M2 scope and E2.1, M6 without
+R-NPM-038; [BETA.md](../../projektplan/BETA.md) phase 3; the coverage pages regenerated.
+
+### Q-NPM-62 · Which repository forwards an audit, and how it reaches the provider
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NPM-038 names the forwarding member of a virtual repository ("the first remote member in resolution order
+whose mode is `forward`") and the permission on it, but not what happens when the caller cannot read that member, nor
+where a forward is impossible besides mode `disabled`, nor how the request reaches the provider: the remote engine had
+only cached reads and fetches, and the format contract had no call that sends a request outside the cache.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The first enabled forwarding member, whoever asks; `read` on it or the refusal of R-AUTHZ-016. 501 also for the cache view, an offline remote and an endpoint without cache fills or with exposure rules. One contract call, `RemoteFetcher.Exchange`, through the remote's upstream client, outside the cache, without fetch slot or circuit. The routes are `Volatile` reads | One provider per virtual repository, whoever asks; one decision, audited when it refuses; the egress rules, the trust store and the credential policy of the remote apply unchanged | A caller who reads the virtual repository but not its forwarding member gets a refusal instead of an audit |
+| (b) The first forwarding member the caller can read, skipped silently | An audit for more callers | The provider depends on who asks; the question needs a non-audited member check the contract does not have |
+| (c) The forward through the engine's fetch path (slots and circuit) | One path for all upstream traffic | The provider may be another host than the upstream: its failures would open the upstream's circuit, and a fetch slot would be held while the provider thinks |
+
+**Choice:** (a). The routes `npm.audit.bulk` and `npm.audit.legacy` are of kind `Volatile` with action `read` and every
+class: a write kind would send a virtual repository's audit to its deployment target, and a content kind is for bytes trove
+renders or stores. `Classify` says `volatile` for the two paths, so the descriptor of R-NPM-003 is `search`, not `other`:
+the kind that is passed through and never cached. On an endpoint with exposure rules the split into forwarded and withheld
+names tells which names a remote has fetched, which R-EP-018 hides by removing `Cache-Status` (Q-EP-60), so the audit is
+501 there. `Exchange` answers `ErrOffline` for an offline remote and the format answers 501.
+
+**Rationale:** the egress rules and the credential policy are the reason to go through the remote's client at all, and
+`Exchange` keeps them without the cache semantics a provider request does not have. Requiring `read` on the forwarding
+member follows R-NPM-038's permission line literally and matches the finding that a virtual repository needs `read` on its
+members anyway (Q-NPM-49 point 6). The development agent would revisit (a) if installations grant `read` on virtual
+repositories without their remote members on purpose; (b) would then need a non-audited member question in the contract.
+
+**Applied in the spec:** R-NPM-038 (the forwarding member, the 501 cases, the forward), R-NPM-003 (the audit row),
+R-NPM-048 (exposure rules), [repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-038 (the exchange is a
+connection of the remote). Code: `internal/formats/remote.go` (`Exchange`, `ErrOffline`), `internal/proxy/exchange.go`,
+`internal/formathost/remote.go`, `internal/formats/npm/{routes.go,match.go,format.go,handlers_audit.go}`.
+
+### Q-NPM-63 · How the forwarded set is decided, and how withheld names are counted
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NPM-038 asks for one query for the whole body and names four reasons for the metric. A name can have several
+reasons; claims and pin rules are patterns that the routing matches in memory; and an exclude pattern added after a remote
+fetched a name leaves its record behind.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One statement decides every fact: the record of the forwarding remote, a package row or tombstone in any npm local repository, a claim of any scope of an npm local repository, a pin rule of the requesting virtual repository. The patterns of the forwarding remote and of the virtual repository refuse as `not_proxied`. One reason per name, in the order `local`, `claimed`, `pinned`, `not_proxied`; the metric is labelled with the forwarding remote | The committed state at the moment of the audit, also on a replica whose routing index lags; `not_proxied` counts exactly the names an opt-in to forward unproxied names would add (the revisit condition of Q-NPM-3) | The claim pattern match exists twice, in the routing index and in SQL |
+| (b) The record in SQL, claims and pins from the replica's routing index | One matcher | A contract addition for the index; a claim made on another replica a moment ago is not seen |
+| (c) Every reason counted | Complete counts | The counts no longer add up to the withheld names of the notice |
+
+**Choice:** (a). The SQL match relies on npm's name rule: a stored npm pattern holds no escape, because an npm name holds
+no backslash (R-NPM-002), so a pattern is an exact name, or a literal and one trailing `*` (nothing after it holds `/`) or
+`**` (R-REPO-023). A name that is no npm name is `not_proxied` without a query.
+
+**Rationale:** withholding has to be at least as strict as routing, so it reads what is committed rather than what a
+replica's index holds. A name kept away from a remote by its patterns is one the remote does not proxy, whatever it fetched
+before the pattern was set. The development agent would revisit the duplicated matcher if claim or pin patterns gain a form
+beyond the two of R-REPO-023; `TestR_NPM_038_TheForwardedSetThroughARemoteAndAVirtualRepository` covers both forms.
+
+**Applied in the spec:** R-NPM-038 (the patterns, the order of the reasons, the label), R-NPM-044 (the label). Code:
+`internal/meta/postgres/queries/npm_remote.sql` (`NPMAuditNames`), `internal/formats/npm/handlers_audit.go` (`auditSplit`,
+`withheldReason`), `internal/formats/npm/bind.go`.
+
+### Q-NPM-64 · The bounds of an audit body
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NPM-038 proposed `maxBodySize: 10MiB` as sent and ten times that decompressed. The body is decoded in memory to
+decide the set, so the decompressed size is what a request costs, and a body of many tiny names costs more than its bytes.
+A lockfile of 10,000 packages sends about 500 KiB uncompressed (pnpm) and about 100 KiB as gzip (npm).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The proposed 10 MiB | 10 MiB as sent, 100 MiB decompressed | Room for any lockfile | Up to 100 MiB decompressed per request on a `web` replica, for every caller with `read`, anonymous ones included where anonymous read is on |
+| (b) Default 1 MiB, settable from 1 KiB to 10 MiB, ten times that decompressed, at most 100,000 names; gzip or no coding (415 otherwise); an object of version lists (400 otherwise) | About twenty times the largest lockfile in plain JSON; at most 10 MiB decompressed by default; the names bound the query's parameter | A monorepo beyond about 20,000 packages that audits with pnpm needs a larger setting |
+| (c) Spool the body to disk and decide in two passes | Memory bounded by the names | A second pass and a spool file for a request that is small in practice |
+
+**Choice:** (b). The settings are strings of the forms the schema allows (`30s`, `1MiB`), within the schema constructs the
+settings form renders.
+
+**Rationale:** the default fits every realistic lockfile with a margin and keeps a burst of audits from exhausting a
+replica's memory; an installation that needs more raises it per remote. The development agent would revisit it if
+`npm_too_large` answers to audits show up in real use, or if a memory bound per replica for all request bodies arrives
+(then (c) or a shared budget).
+
+**Applied in the spec:** R-NPM-038 (the bounds and the configuration block; the default was 10 MiB, proposed). Code:
+`internal/formats/npm/{settings.go,settings.schema.json,handlers_audit.go}`; the residual cost is
+[H-301](../../security/data-and-secret-flow.md#h-301--an-audit-body-is-held-in-memory).
+
+### Q-NPM-65 · npm 6's audit endpoints and pnpm 10
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: measured on 2026-10-31 with the pinned clients against the bulk endpoint: npm 10, 11 and 12, pnpm 11 and 12 and
+Yarn 4 use `-/npm/v1/security/advisories/bulk` and print the advisories. pnpm 10.34.9 (a gate row) does not: it posts npm 6's
+audit tree to `-/npm/v1/security/audits/quick` and then to `-/npm/v1/security/audits`, and retries each 501 after 10 seconds
+and a minute; it fails after 2 minutes 20 seconds. npm 7 to 10 ask the quick endpoint after a failed bulk request and
+print its answer.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) npm 6's endpoints answer 501 `npm_audit_unavailable` | R-NPM-038 as written: the text of the bulk endpoint where no repository forwards, else a text that names the bulk endpoint | One protocol to keep right; npm 10's audit at `npm-local` prints the criterion's 501 and text | `pnpm audit` of pnpm 10 is not served and costs 140 seconds |
+| (b) Serve npm 6's protocol by translation | Bulk names from the audit tree to the provider, an npm 6 report with findings and paths back | pnpm 10 audits | A second protocol with a second answer format, the paths of every finding computed from the tree, for one client major that leaves the gate rule within months |
+| (c) 404 for npm 6's endpoints | pnpm 10 fails at once with its own hint | Fast | Breaks the rule of R-NPM-001 for `POST`; npm 10 at `npm-local` would print a 404 instead of the 501 the criterion asks for |
+
+**Choice:** (a). pnpm 10's audit scenario asserts the 501 it reports.
+
+**Rationale:** pnpm 10 leaves the gate when its newest release is six months old (R-NPM-045), and pnpm 11 and 12 speak the
+bulk protocol. The answer pnpm 10 prints says which clients trove serves. The development agent would revisit (b) if users
+of the beta stay on pnpm 10 past its gate row, or if another supported client speaks npm 6's protocol.
+
+**Applied in the spec:** R-NPM-038 (npm 6's endpoints, pnpm 10), R-NPM-040, R-NPM-001 (the pnpm note), Q-NPM-49 (point 2
+revisited). Code: `internal/formats/npm/handlers_audit.go` (`handleAuditLegacy`); `test/e2e/npm_matrix_test.go`
+(`scenarioAudit`).
+
 ## What this does not cover
 
 
@@ -4253,7 +4433,7 @@ deciding. trove does not scan package content; curation and scanning are separat
 
 Component: audit forwarding (R-NPM-038). Subject: the dependency set of every project that runs
 `npm audit`, `pnpm audit` or `yarn npm audit` against a repository whose remote forwards (the
-default). Live once R-NPM-038 (P1) ships. trove forwards only names its remote has already fetched
+default). Live since R-NPM-038 was built (M2). trove forwards only names its remote has already fetched
 from the upstream and that no local repository, claim or pin rule marks internal, so no internal
 name the upstream has not seen leaves the installation. What still leaves it: the combination of
 public names and versions per project, which tells the provider (by default the upstream registry)

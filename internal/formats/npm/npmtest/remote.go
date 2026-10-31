@@ -104,3 +104,43 @@ func (s *Store) TarballFacts(_ context.Context, repo int64, name, version string
 	}
 	return out, nil
 }
+
+// AuditFacts are what AuditNames reports beyond the twin's own rows, which the database
+// reads from the claims, the pin rules and every local repository of the installation.
+type AuditFacts struct {
+	Local, Claimed, Pinned map[string]bool
+}
+
+// SetAuditFacts sets the names AuditNames reports local, claimed and pinned.
+func (s *Store) SetAuditFacts(f AuditFacts) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.audit = f
+	s.AuditQueries = 0
+}
+
+// AuditNames reports the names: proxied when ApplyFill recorded a document of the name in
+// the remote, local when a package of that name was published here or AuditFacts says so.
+// Every call counts in AuditQueries, the statements the database would run.
+func (s *Store) AuditNames(_ context.Context, remoteID, virtualID int64, names []string) ([]rows.AuditName, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.AuditQueries++
+	local := map[string]bool{}
+	for _, p := range s.pkgs {
+		local[p.name] = true
+	}
+	seen := map[string]bool{}
+	var out []rows.AuditName
+	for _, n := range names {
+		if seen[n] {
+			continue
+		}
+		seen[n] = true
+		out = append(out, rows.AuditName{
+			Name: n, Proxied: s.remote[pkgKey(remoteID, n)] != nil, Local: local[n] || s.audit.Local[n],
+			Claimed: s.audit.Claimed[n], Pinned: virtualID != 0 && s.audit.Pinned[n],
+		})
+	}
+	return out, nil
+}

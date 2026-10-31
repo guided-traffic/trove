@@ -3616,6 +3616,36 @@ export interface components {
              * @enum {string}
              */
             distTagStrategy: "member-order" | "highest-semver" | "newest-published";
+            /**
+             * @description Remote repositories (R-NPM-038). The security audit endpoint: forward the names this remote has fetched,
+             *     and that nothing marks internal, to an advisory provider.
+             */
+            audit?: {
+                /**
+                 * @description `forward` answers audits through this remote; `disabled` answers 501 `npm_audit_unavailable`.
+                 * @default forward
+                 * @enum {string}
+                 */
+                mode: "forward" | "disabled";
+                /**
+                 * Format: uri
+                 * @description The https registry URL of the advisory provider, without user info, query or fragment; null is the remote's
+                 *     upstream URL. The provider gets the repository's sealed upstream credentials only when it is the upstream's
+                 *     origin or an `extraHosts` entry with `sendCredentials` (R-REPO-033), never through the URL.
+                 * @default null
+                 */
+                providerURL: string | null;
+                /**
+                 * @description The longest a forward may take, `1s` to `300s`; never longer than `server.shutdown_timeout` minus one second.
+                 * @default 30s
+                 */
+                timeout: string;
+                /**
+                 * @description The largest audit body as sent, `1KiB` to `10MiB`; ten times that decompressed. Larger bodies answer 413.
+                 * @default 1MiB
+                 */
+                maxBodySize: string;
+            };
         };
         /** @description What a caller sees who may read a repository but not its configuration (R-REPO-010). */
         RepositoryConsumerView: {

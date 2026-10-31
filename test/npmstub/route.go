@@ -16,8 +16,11 @@ type route struct {
 // and as "@scope/name" from other clients; both address the same package. The decoded name is
 // only ever a map key here, never a file path.
 func parseRoute(escapedPath string) route {
-	if escapedPath == "/-/ping" {
+	switch escapedPath {
+	case "/-/ping":
 		return route{kind: KindPing}
+	case auditPath:
+		return route{kind: KindAudit}
 	}
 	trimmed := strings.TrimPrefix(escapedPath, "/")
 	segments := strings.Split(trimmed, "/")

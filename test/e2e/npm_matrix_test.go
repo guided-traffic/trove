@@ -25,6 +25,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/npm"
+	"github.com/guided-traffic/trove/test/npmstub"
 	"github.com/guided-traffic/trove/test/npmstub/corpus"
 )
 
@@ -537,27 +538,53 @@ var retryNotice = regexp.MustCompile(`(?i)will retry|retrying|retry in|attempt \
 // loginRefusal matches what a client prints of the registry's refusal of a login: the status, or Yarn's text for it.
 var loginRefusal = regexp.MustCompile(`\b(401|404|501)\b|Invalid authentication|Not Implemented|requires an authenticated`)
 
-// scenarioAudit: audit is P1 (R-NPM-038); the bulk endpoint answers 501, which is what the client reports.
+// scenarioAudit (R-NPM-038): the row's audit through npm-all reports the test upstream's advisories for the remote
+// packages it installed (left-pad 1900001, @cobalt/dusky-gauge 1900003, test/npmstub/testdata/advisories.json), and the
+// row's own package, which npm-local holds, never reaches the provider; npm prints the notice that names the withheld
+// name. npm's audit against npm-local fails with the 501 of R-NPM-038 and its text, and the install there succeeds.
+// pnpm 10 speaks npm 6's audit protocol (audits/quick, then audits), which trove answers with 501 (Q-NPM-65): pnpm
+// retries a 501 after 10 seconds and a minute for each of the two, so the row reports the 501 after about 140 seconds.
 func scenarioAudit(t *testing.T, c *npmClient) {
 	plain, _ := c.ensurePublished()
 	dir := c.project("audit", nil)
 	c.configure(dir)
-	c.mustInstall(dir, plain)
+	c.mustInstall(dir, plain, "left-pad", "@cobalt/dusky-gauge")
+	var r npmRun
 	if c.family() == "yarn4" {
-		c.expectRefusal(t, c.row+" audit", c.run(dir, "npm", "audit"), "501", 30*time.Second)
-		return
+		r = c.run(dir, "npm", "audit")
+	} else {
+		r = c.run(dir, "audit")
 	}
-	r := c.run(dir, "audit")
-	if c.family() == "pnpm" {
-		// pnpm answers a 501 to its audit POST with two retries after 10 s and 1 minute (measured on pnpm 10, 11 and
-		// 12), the opposite of the premise of R-NPM-001 that a 501 on a POST costs nothing. The scenario asks for the
-		// answer the registry gave; the cost is a finding of the suite (docs/developer/e2e.md, "Findings").
-		if r.Code == 0 || !strings.Contains(r.Out, "501") {
-			t.Fatalf("%s audit: exit %d, want a failure that reports the registry's 501:\n%s", c.row, r.Code, tailLines(r.Out, 15))
+	if c.row == "pnpm10" {
+		if r.Code == 0 || !strings.Contains(r.Out, "501") || !strings.Contains(r.Out, "bulk advisory endpoint") {
+			t.Fatalf("%s audit: exit %d, want a failure that reports the registry's 501 for npm 6's endpoints:\n%s", c.row, r.Code, tailLines(r.Out, 15))
 		}
 		return
 	}
-	c.expectRefusal(t, c.row+" audit", r, "501", 30*time.Second)
+	// Every client exits non-zero when it found an advisory.
+	if r.Code == 0 || !strings.Contains(r.Out, "1900001") || !strings.Contains(r.Out, "1900003") {
+		t.Fatalf("%s audit: exit %d, want the advisories 1900001 (left-pad) and 1900003 (@cobalt/dusky-gauge):\n%s", c.row, r.Code, tailLines(r.Out, 40))
+	}
+	if c.family() == "npm" && !strings.Contains(r.Out, "trove audited") {
+		t.Errorf("%s printed no npm-notice of the withheld name %s:\n%s", c.row, plain, tailLines(r.Out, 20))
+	}
+	log := stub(t).audits(t)
+	if npmstub.Asked(log, plain) || !npmstub.Asked(log, "left-pad") {
+		t.Fatalf("the provider's log asked about %s: %v, about left-pad: %v; want only the remote's names", plain, npmstub.Asked(log, plain), npmstub.Asked(log, "left-pad"))
+	}
+	if c.family() != "npm" {
+		return
+	}
+	local := *c
+	local.registryKey = npmLocalKey
+	ldir := local.project("audit-local", nil)
+	local.configure(ldir)
+	local.mustInstall(ldir, plain)
+	lr := local.run(ldir, "audit")
+	c.expectRefusal(t, c.row+" audit at npm-local", lr, "501", 30*time.Second)
+	if !strings.Contains(lr.Out, "security audit is not available on repository "+npmLocalKey) {
+		t.Fatalf("%s audit at npm-local does not print the text of R-NPM-038:\n%s", c.row, tailLines(lr.Out, 15))
+	}
 }
 
 // scenarioSearch: search is P1 (R-NPM-037); the endpoint answers 404 as R-NPM-043 prescribes for a GET.

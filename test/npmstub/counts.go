@@ -11,6 +11,7 @@ const (
 	KindDocument = "document"
 	KindTarball  = "tarball"
 	KindPing     = "ping"
+	KindAudit    = "audit"
 	KindOther    = "other"
 )
 

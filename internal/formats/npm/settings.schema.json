@@ -31,6 +31,40 @@
       "enum": ["member-order", "highest-semver", "newest-published"],
       "default": "member-order",
       "x-trove-classes": ["virtual"]
+    },
+    "audit": {
+      "description": "The security audit endpoint (R-NPM-038): forward the names this remote has fetched, and that nothing marks internal, to an advisory provider.",
+      "type": "object",
+      "additionalProperties": false,
+      "x-trove-classes": ["remote"],
+      "properties": {
+        "mode": {
+          "description": "forward answers audits through this remote; disabled answers 501 npm_audit_unavailable.",
+          "type": "string",
+          "enum": ["forward", "disabled"],
+          "default": "forward"
+        },
+        "providerURL": {
+          "description": "The https registry URL of the advisory provider, without user info, query or fragment; null is the remote's upstream URL. The provider gets the repository's sealed upstream credentials only when it is the upstream's origin or an extraHosts entry with sendCredentials (R-REPO-033), never through the URL.",
+          "type": ["string", "null"],
+          "format": "uri",
+          "pattern": "^https://[^/?#@\\s]+(/[^?#\\s]*)?$",
+          "maxLength": 2048,
+          "default": null
+        },
+        "timeout": {
+          "description": "The longest a forward may take, 1s to 300s; never longer than server.shutdown_timeout minus one second.",
+          "type": "string",
+          "pattern": "^([1-9]|[1-9][0-9]|[12][0-9]{2}|300)s$",
+          "default": "30s"
+        },
+        "maxBodySize": {
+          "description": "The largest audit body as sent, 1KiB to 10MiB; ten times that decompressed. Larger bodies answer 413.",
+          "type": "string",
+          "pattern": "^([1-9][0-9]{0,3}KiB|([1-9]|10)MiB)$",
+          "default": "1MiB"
+        }
+      }
     }
   }
 }

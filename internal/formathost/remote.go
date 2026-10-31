@@ -1,8 +1,10 @@
 package formathost
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -27,6 +29,7 @@ type RemoteEngine interface {
 	Cached(ctx context.Context, rq proxy.Request) (items.Item, bool, error)
 	EnsureCurrent(ctx context.Context, rq proxy.Request, restoredAt time.Time) (*proxy.Document, proxy.Currency, error)
 	EntryState(ctx context.Context, repoID int64, path string) (proxy.EntryState, error)
+	Exchange(ctx context.Context, rem proxy.Remote, req *http.Request, caller proxy.CallerFacts) (*http.Response, error)
 }
 
 var _ RemoteEngine = (*proxy.Engine)(nil)
@@ -138,6 +141,36 @@ func (r *remote) EntryState(ctx context.Context, rq *formats.Request, p formats.
 		return formats.EntryState{}, err
 	}
 	return formats.EntryState{Stored: st.Stored, GoneAt: st.GoneAt}, nil
+}
+
+// Exchange implements [formats.RemoteFetcher]: one request through the repository's
+// upstream client, outside the cache (R-NPM-038).
+func (r *remote) Exchange(ctx context.Context, rq *formats.Request, x formats.Exchange) (*http.Response, error) {
+	rem, err := proxy.NewRemote(*rq.Repo)
+	if err != nil {
+		return nil, errs.E(errs.Internal, errs.CodeInternal, "The repository is not a usable remote repository.", errs.WithCause(err))
+	}
+	base := x.Base
+	if base == nil {
+		if base, err = url.Parse(rem.Settings.URL); err != nil {
+			return nil, errs.E(errs.Internal, errs.CodeInternal, "The upstream URL of the repository does not parse.", errs.WithCause(err))
+		}
+	}
+	req, err := http.NewRequestWithContext(ctx, x.Method, base.JoinPath(x.Path).String(), bytes.NewReader(x.Body))
+	if err != nil {
+		return nil, errs.E(errs.Internal, errs.CodeInternal, "", errs.WithCause(err))
+	}
+	if x.Header != nil {
+		req.Header = x.Header.Clone()
+	}
+	pr := principalOf(ctx)
+	resp, err := r.e.Exchange(ctx, rem, req, proxy.CallerFacts{
+		Principal: pr.ID, Actor: edge.ActorFrom(pr), Source: httpserver.SourceFrom(ctx), Endpoint: rq.Subject.Endpoint,
+	})
+	if errors.Is(err, proxy.ErrOffline) {
+		return nil, formats.ErrOffline
+	}
+	return resp, err
 }
 
 func currency(c proxy.Currency) formats.Currency {

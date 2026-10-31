@@ -208,7 +208,19 @@ func (s *stubControl) counts(t testing.TB) npmstub.Counts {
 	return c
 }
 
-// reset zeroes the counters; resetAll also clears the modes and the package changes.
+// audits reads the log of the advisory requests the test upstream received (R-NPM-038).
+func (s *stubControl) audits(t testing.TB) []npmstub.AuditRequest {
+	t.Helper()
+	var log struct {
+		Requests []npmstub.AuditRequest `json:"requests"`
+	}
+	if err := json.Unmarshal(s.send(t, http.MethodGet, "/-/stub/audits", nil), &log); err != nil {
+		t.Fatal(err)
+	}
+	return log.Requests
+}
+
+// reset zeroes the counters and the log of advisory requests; resetAll also clears the modes and the package changes.
 func (s *stubControl) reset(t testing.TB) { s.send(t, http.MethodPost, "/-/stub/reset", nil) }
 
 func (s *stubControl) resetAll(t testing.TB) {

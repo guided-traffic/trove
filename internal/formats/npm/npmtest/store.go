@@ -73,6 +73,9 @@ type Store struct {
 	Fills       []rows.RemoteFill
 	remote      map[string]*remoteRec
 	remoteState RemoteState
+	// AuditQueries counts the calls of AuditNames.
+	AuditQueries int
+	audit        AuditFacts
 }
 
 // New creates an empty store.

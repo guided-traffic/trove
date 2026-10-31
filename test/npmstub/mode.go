@@ -23,7 +23,7 @@ const MaxHang = 2 * time.Minute
 type Mode struct {
 	// Down makes the whole registry fail: DownUnavailable, DownReset or DownHang.
 	Down string `json:"down,omitempty"`
-	// DelayMS delays the answer by class: "document", "tarball" or "other" (also "ping").
+	// DelayMS delays the answer by class: "document", "tarball", "audit" or "other" (also "ping").
 	DelayMS map[string]int `json:"delay_ms,omitempty"`
 	// NotFound lists package names whose documents and tarballs answer 404.
 	NotFound []string `json:"not_found,omitempty"`
@@ -79,8 +79,8 @@ func (m Mode) Validate() error {
 		}
 	}
 	for class, ms := range m.DelayMS {
-		if !slices.Contains([]string{KindDocument, KindTarball, KindOther, KindPing}, class) {
-			return fmt.Errorf("delay_ms class %q: want document, tarball or other", class)
+		if !slices.Contains([]string{KindDocument, KindTarball, KindAudit, KindOther, KindPing}, class) {
+			return fmt.Errorf("delay_ms class %q: want document, tarball, audit or other", class)
 		}
 		if ms < 0 || ms > int(MaxHang/time.Millisecond) {
 			return fmt.Errorf("delay_ms %q: %d out of range", class, ms)

@@ -17,7 +17,7 @@ The address policy is on for every purpose except `objectstore`:
 | Purpose | Address policy | Why |
 |---|---|---|
 | `oidc_discovery`, `jwks`, `webhook` | on | addresses an operator or a provider names |
-| `remote` | on | addresses that a repository's upstream, its redirects and its upstream metadata name; the clients are built in [proxy/upstream](../../internal/proxy/upstream/clients.go) |
+| `remote` | on | addresses that a repository's upstream, its redirects and its upstream metadata name, and the advisory provider of an npm audit forward (`Engine.Exchange`, [exchange.go](../../internal/proxy/exchange.go)); the clients are built in [proxy/upstream](../../internal/proxy/upstream/clients.go) |
 | `objectstore` | **off** ([factory.go](../../internal/outbound/factory.go), `clientSettings`) | the endpoint is operator configuration and, in development, a local service; see [H-56](../spec/architecture.md#h-56--the-object-store-endpoint-skips-the-egress-address-policy) |
 
 The OTLP span export does not use the factory at all; it uses the SDK's transport ([H-53](../spec/operations-and-observability.md#h-53--span-export-bypasses-the-egress-address-policy)).
@@ -104,6 +104,10 @@ policy removes `Authorization` and every credential or custom header it knows on
 table allows, so a header that is not one of the standard sensitive ones does not travel. The certificate is withheld in the TLS
 handshake from the decision stored in the request context ([factory.go](../../internal/outbound/factory.go), `certGetter`).
 Pre-signed object-storage redirects therefore receive nothing by default.
+
+The advisory provider of an npm audit forward is reached through the same client and rows: a provider on the upstream origin, or on a
+`sendCredentials` host, gets the credential, and one on any other host gets none
+([data-and-secret-flow.md](data-and-secret-flow.md#the-audit-forward)).
 
 ## The upstream test
 

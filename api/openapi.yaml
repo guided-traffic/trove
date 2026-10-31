@@ -8748,6 +8748,38 @@ components:
           enum: [member-order, highest-semver, newest-published]
           default: member-order
           description: Virtual repositories (R-NPM-031). How the other dist-tags are merged.
+        audit:
+          type: object
+          additionalProperties: false
+          description: |
+            Remote repositories (R-NPM-038). The security audit endpoint: forward the names this remote has fetched,
+            and that nothing marks internal, to an advisory provider.
+          properties:
+            mode:
+              type: string
+              enum: [forward, disabled]
+              default: forward
+              description: "`forward` answers audits through this remote; `disabled` answers 501 `npm_audit_unavailable`."
+            providerURL:
+              type: [string, "null"]
+              format: uri
+              pattern: '^https://[^/?#@\s]+(/[^?#\s]*)?$'
+              maxLength: 2048
+              default: null
+              description: |
+                The https registry URL of the advisory provider, without user info, query or fragment; null is the remote's
+                upstream URL. The provider gets the repository's sealed upstream credentials only when it is the upstream's
+                origin or an `extraHosts` entry with `sendCredentials` (R-REPO-033), never through the URL.
+            timeout:
+              type: string
+              pattern: '^([1-9]|[1-9][0-9]|[12][0-9]{2}|300)s$'
+              default: 30s
+              description: The longest a forward may take, `1s` to `300s`; never longer than `server.shutdown_timeout` minus one second.
+            maxBodySize:
+              type: string
+              pattern: '^([1-9][0-9]{0,3}KiB|([1-9]|10)MiB)$'
+              default: 1MiB
+              description: The largest audit body as sent, `1KiB` to `10MiB`; ten times that decompressed. Larger bodies answer 413.
     RepositoryConsumerView:
       type: object
       description: What a caller sees who may read a repository but not its configuration (R-REPO-010).

@@ -11,7 +11,8 @@ import (
 // of Config.ControlToken and is not counted:
 //
 //	GET  /-/stub/counts             the counters (Counts as JSON)
-//	POST /-/stub/reset[?all=true]   zero the counters; with all, also modes and changes to packages
+//	GET  /-/stub/audits             the log of the advisory requests ({"requests": [AuditRequest]})
+//	POST /-/stub/reset[?all=true]   zero the counters and the log; with all, also modes and changes to packages
 //	GET  /-/stub/mode               the failure switches
 //	POST /-/stub/mode               replace them (a Mode as JSON; {} clears)
 //	POST /-/stub/publish            {"name","version","dependencies","tags"}: offer a version
@@ -42,6 +43,10 @@ func (s *Server) serveControl(w http.ResponseWriter, r *http.Request) {
 	switch r.Method + " " + r.URL.Path {
 	case "GET /-/stub/counts":
 		writeJSON(w, s.Counts())
+	case "GET /-/stub/audits":
+		writeJSON(w, struct {
+			Requests []AuditRequest `json:"requests"`
+		}{s.Audits()})
 	case "POST /-/stub/reset":
 		if r.URL.Query().Get("all") == "true" {
 			s.ResetAll()

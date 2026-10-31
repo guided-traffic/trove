@@ -136,6 +136,8 @@ func conformance(t *testing.T) formattest.Fixture {
 			{Name: "ping", Path: "-/ping", Status: 200},
 			{Name: "whoami", Path: "-/whoami", Status: 200},
 			{Name: "an endpoint npm defines and trove does not implement", Path: "-/v1/search", Status: 404},
+			{Name: "the audit of a local repository", Method: http.MethodPost, Path: "-/npm/v1/security/advisories/bulk", Body: []byte(`{"lodash":["4.17.21"]}`), Status: 501},
+			{Name: "npm 6's quick audit", Method: http.MethodPost, Path: "-/npm/v1/security/audits/quick", Body: []byte(`{}`), Status: 501},
 		},
 		Changes: []formattest.ChangeCase{
 			{

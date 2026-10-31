@@ -47,8 +47,10 @@ func TestR_NPM_001_RouteTable(t *testing.T) {
 		{"PUT", "-/user/org.couchdb.user:alice", "npm.deferred.put", ""},
 		{"GET", "-/user/org.couchdb.user:alice", "npm.deferred.get", ""},
 		{"DELETE", "-/user/token/abc", "npm.deferred.delete", ""},
-		{"POST", "-/npm/v1/security/advisories/bulk", "npm.deferred.post", ""},
-		{"POST", "-/npm/v1/security/audits/quick", "npm.deferred.post", ""},
+		{"POST", "-/npm/v1/security/advisories/bulk", "npm.audit.bulk", ""},
+		{"POST", "-/npm/v1/security/audits/quick", "npm.audit.legacy", ""},
+		{"POST", "-/npm/v1/security/audits", "npm.audit.legacy", ""},
+		{"POST", "-/npm/v1/security/advisories", "npm.deferred.post", ""},
 		{"POST", "-/npm/v1/oidc/token/exchange/package/%40acme%2fui", "npm.deferred.post", ""},
 		{"GET", "-/package/@acme/ui/access", "npm.deferred.get", ""},
 		{"GET", "-/org/acme/user", "npm.deferred.get", ""},
@@ -82,6 +84,7 @@ func TestR_NPM_001_RouteTable(t *testing.T) {
 			{"PATCH", "-/v1/login", 405, "DELETE, GET, HEAD, POST, PUT"},
 			{"PUT", "-/package/lodash/dist-tags", 405, "GET, HEAD"},
 			{"POST", "", 405, "GET, HEAD"},
+			{"GET", "-/npm/v1/security/advisories/bulk", 405, "POST"},
 			{"GET", "@acme/", 404, ""},
 		} {
 			_, _, err := f.Match(c.method, c.path)

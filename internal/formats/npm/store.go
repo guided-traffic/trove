@@ -90,5 +90,10 @@ type Store interface {
 	// tarball of a remote repository decides on: the version's record, the state of the
 	// package document's cache entry and npm.serveRemovedVersions (R-NPM-025, R-NPM-026).
 	TarballFacts(ctx context.Context, repoID int64, name, version string) (rows.TarballFacts, error)
+	// AuditNames reads, outside a transaction and in one statement for the whole request,
+	// what decides the forwarded set of an audit (R-NPM-038): one row per distinct name.
+	// remoteID is the forwarding remote, virtualID the requesting virtual repository whose
+	// pin rules apply, 0 for a request addressed to the remote itself.
+	AuditNames(ctx context.Context, remoteID, virtualID int64, names []string) ([]rows.AuditName, error)
 	// <<< M2 npm-remote
 }

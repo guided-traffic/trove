@@ -60,6 +60,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !s.gate(w, r, rt, mode) {
 		return
 	}
+	if rt.kind == KindAudit {
+		s.serveAudit(w, r)
+		return
+	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")

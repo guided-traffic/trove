@@ -57,6 +57,8 @@ type Server struct {
 	cache   map[cacheKey]*rendered
 	// stale holds the older copies still to be served, by package name (Mode.StaleCopy).
 	stale map[string]*staleLeft
+	// audits is the log of the advisory requests (audit.go).
+	audits []AuditRequest
 }
 
 // staleLeft is the state of the older copy of one package: the document requests to answer
@@ -102,6 +104,7 @@ func (s *Server) resetLocked() {
 	s.touched = map[string]time.Time{}
 	s.cache = map[cacheKey]*rendered{}
 	s.stale = map[string]*staleLeft{}
+	s.audits = nil
 }
 
 // Counts returns a snapshot of the request counters.
@@ -128,11 +131,13 @@ func (s *Server) Counts() Counts {
 	return out
 }
 
-// Reset zeroes the request counters; modes and published or dropped versions stay.
+// Reset zeroes the request counters and empties the log of audit requests; modes and
+// published or dropped versions stay.
 func (s *Server) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.counts = map[countKey]*Entry{}
+	s.audits = nil
 }
 
 // ResetAll returns the stub to its initial state: counters zero, healthy, no change to the corpus.

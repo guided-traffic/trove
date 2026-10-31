@@ -669,7 +669,7 @@ The registry is `npm-all` when the build serves the virtual class and `npm-local
 | `deprecate` (P1, 404) | `npm deprecate` | `pnpm deprecate` | n/a: no such command | n/a: no such command |
 | `unpublish` | `npm unpublish` | `pnpm unpublish --force` (pnpm 11 and 12 at `npm-local`, see the findings) | n/a: no such command | n/a: no such command |
 | `login` (P1) | `npm login` (501) and `--auth-type=legacy` (404) under a pseudo-terminal | `pnpm login` under a pseudo-terminal | `yarn npm login` under a pseudo-terminal | n/a: `yarn login` only stores the name and e-mail locally and sends no request |
-| `audit` (P1, 501) | `npm audit` | `pnpm audit` (retries, see below) | `yarn npm audit` | n/a: `yarn audit` goes to registry.yarnpkg.com whatever `.npmrc` says |
+| `audit` (R-NPM-038): `left-pad` and `@cobalt/dusky-gauge` from the counting upstream and the row's own package through `npm-all`; the report lists the advisories 1900001 and 1900003, the provider's log never the row's package | `npm audit`, which prints the `npm-notice` of the withheld name; then `npm audit` at `npm-local`: 501 and the text of R-NPM-038 | `pnpm audit` (pnpm 10: the 501 of npm 6's endpoints after about 140 s, see below) | `yarn npm audit` | n/a: `yarn audit` goes to registry.yarnpkg.com whatever `.npmrc` says |
 | `search` (P1, 404) | `npm search` | `pnpm search` | n/a: no such command | n/a: no such command |
 | `deferred-endpoints` (R-NPM-043) | `token list`, `profile get`, `org ls`, `access get status`, `owner add` | n/a: npm's commands | n/a | n/a |
 | `lockfile-reinstall` | `npm ci` | `pnpm install --frozen-lockfile` | `yarn install --immutable` | `yarn install --frozen-lockfile` |
@@ -713,8 +713,11 @@ Found while building the matrix and running it through `npm-all`, in the order t
 - **pnpm 10 shells out to `npm`** for `whoami`, `view` and the upload of `publish`; the image has no npm, so it has a shim (the npm11 row) on pnpm 10's `PATH` only.
 - **Yarn 4 quarantines a version younger than `npmMinimalAgeGate`**; the matrix sets the gate to 0 in the environment, not in the snippet.
 - **`yarn npm publish` needs an installed project**: the package directory is installed once (no dependencies, no request) before it publishes.
-- **`pnpm audit` retries a 501 `POST`** (10 seconds, then a minute) on pnpm 10, 11 and 12, which contradicts the premise of R-NPM-001 that a 501 on a `POST` costs nothing. The
-  scenario asserts the 501 the registry gave; the row takes about two minutes for it until audit is built (R-NPM-038).
+- **`pnpm audit` retries a 501 `POST`** (10 seconds, then a minute) on pnpm 10, 11 and 12, which contradicts the premise of R-NPM-001 that a 501 on a `POST` costs nothing. Since audit
+  is built (R-NPM-038), pnpm 11 and 12 get the provider's answer through `npm-all`. **pnpm 10 speaks npm 6's audit protocol**: it posts to `-/npm/v1/security/audits/quick` and then to
+  `-/npm/v1/security/audits`, never to the bulk endpoint, and both answer 501 (Q-NPM-65); the row reports that 501 after about 140 seconds (2 min 20 s measured locally with 10.34.9).
+- **Only npm prints the `npm-notice` of a partial audit** on a successful answer; pnpm 11 and 12 and Yarn 4 do not, so their users do not see that names were withheld
+  ([H-302](../security/data-and-secret-flow.md#h-302--pnpm-and-yarn-do-not-show-that-an-audit-was-partial)).
 - **`yarn audit` ignores `.npmrc` and goes to registry.yarnpkg.com**; **`yarn login` sends no request**; **Yarn 4 has no unpublish, deprecate or search**. All are `not applicable` with those reasons.
 - **`npm owner ls` succeeds** (it reads the maintainers); the criterion of R-NPM-043 names `npm owner add`.
 - **pnpm 11 and 12 cannot unpublish through a virtual repository.** They read the package with a plain `GET`, whose `_rev` on `npm-all` is the merge's synthetic one, and send it back; the write
@@ -749,6 +752,7 @@ are the same code. It reaches no network, and it answers TLS only.
 | [route.go](../../test/npmstub/route.go) | path to package name: `@scope%2fname` and `@scope/name` are one package |
 | [counts.go](../../test/npmstub/counts.go) | the counters and their readers: `Documents`, `ConditionalDocuments`, `Tarballs`, `Tarball`, `Requests`, `Violations(maxDocuments, maxTarballs)` |
 | [mode.go](../../test/npmstub/mode.go) | the failure switches |
+| [audit.go](../../test/npmstub/audit.go) | the advisory endpoint: the recorded advisories of [testdata/advisories.json](../../test/npmstub/testdata/advisories.json), the log of the requests (`Audits`, `Asked`) |
 | [control.go](../../test/npmstub/control.go) | the control API below `/-/stub/` |
 | [tls.go](../../test/npmstub/tls.go) | `Start` (TLS or nothing), a throwaway CA and certificate, a certificate reloaded when its files change |
 | [recorded.go](../../test/npmstub/recorded.go) | the recorded set, embedded from `testdata/recorded` |
@@ -778,6 +782,7 @@ stub.Publish("@acme/ui", "99.0.0", nil)                         // E2.5: a highe
 | `GET /{name}`, `GET /@scope%2fname`, `GET /@scope/name` | the package document; the install document when `Accept` contains `application/vnd.npm.install-v1+json`; `Vary: Accept, Accept-Encoding`; a weak `ETag` over the body and `Last-Modified`; 304 for a matching `If-None-Match`, else for an `If-Modified-Since` at or after the modification time (only when no `If-None-Match` is present); gzip when asked |
 | `GET /{name}/-/{file}.tgz` | the tarball; `ETag` and 304 |
 | `GET /-/ping` | `{}` |
+| `POST /-/npm/v1/security/advisories/bulk` | the bulk advisory request (plain or gzip): every recorded advisory of every name it was asked about, in the public registry's shape (`id`, `url`, `title`, `severity`, `vulnerable_versions`, `cwe`, `cvss`); the clients match the versions. The names, the credential scheme and the coding go to the log of `GET /-/stub/audits`. The advisories are synthetic (ids from 1900001, addresses on `advisories.example.org`): `left-pad` `<=1.3.0`, `lodash` `<4.17.21`, `@cobalt/dusky-gauge` `>=1.0.0 <3.0.0` |
 | any other method on a package | 405 (counted) |
 | anything else | 404 |
 
@@ -803,7 +808,7 @@ than once and every tarball file requested more than once.
 | Field | Effect |
 |---|---|
 | `down` | `503`: every request answers 503; `reset`: the connection is cut without an answer; `hang`: the request is held until the client gives up (at most two minutes) |
-| `delay_ms` | `{"document": 200}` delays by class: `document`, `tarball`, `other` |
+| `delay_ms` | `{"document": 200}` delays by class: `document`, `tarball`, `audit`, `other` |
 | `not_found`, `gone` | names whose documents and tarballs answer 404 / 410 |
 | `bad_integrity` | names whose documents promise an integrity the tarballs do not have |
 | `wrong_name` | names whose documents carry another `name` than the one requested |
@@ -827,7 +832,8 @@ Control requests are not counted.
 | Request | Effect |
 |---|---|
 | `GET /-/stub/counts` | `{"entries": [{method, path, conditional, auth, kind, name, file, accept, count}]}` |
-| `POST /-/stub/reset[?all=true]` | zero the counters; with `all` also modes and package changes |
+| `GET /-/stub/audits` | `{"requests": [{names, auth, encoding}]}`: the advisory requests, oldest first |
+| `POST /-/stub/reset[?all=true]` | zero the counters and the log of advisory requests; with `all` also modes and package changes |
 | `GET`/`POST /-/stub/mode` | read / replace the failure switches |
 | `POST /-/stub/publish` | `{"name","version","dependencies","tags"}` (409 if the version exists) |
 | `POST /-/stub/drop`, `POST /-/stub/restore` | `{"name","version"}` |

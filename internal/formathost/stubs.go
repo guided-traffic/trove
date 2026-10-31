@@ -44,6 +44,10 @@ func (unsupportedRemote) EntryState(context.Context, *formats.Request, formats.P
 	return formats.EntryState{}, errNoRemote()
 }
 
+func (unsupportedRemote) Exchange(context.Context, *formats.Request, formats.Exchange) (*http.Response, error) {
+	return nil, errNoRemote()
+}
+
 type unsupportedResolver struct{}
 
 func (unsupportedResolver) Artifact(context.Context, *formats.Request, formats.Path, formats.PathInfo, http.ResponseWriter) error {

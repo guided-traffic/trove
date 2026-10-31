@@ -52,13 +52,13 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 	}
 	m := newModel(c, pageOrder(filepath.Join(repoRoot(t), "docs", "features"), c.Pages), map[string]bool{})
 
-	// Catalog priority -> entries, listed in a Covers: line.
-	// The roadmap's "Starting point" table.
+	// Catalog priority -> entries, listed in a Covers: line; measured 2026-10-31, after the page
+	// vulnerability-scanning.md raised its features to MVP.
 	want := map[string][2]int{
-		prioMVP:   {359, 359},
-		prioP1:    {521, 293},
-		prioP2:    {896, 23},
-		prioLater: {391, 0},
+		prioMVP:   {377, 377},
+		prioP1:    {517, 293},
+		prioP2:    {895, 23},
+		prioLater: {378, 2},
 		prioOut:   {72, 0},
 	}
 	t.Run("E0.8 catalog counts per priority", func(t *testing.T) {
@@ -79,11 +79,11 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 		if got := len(m.Features); got != 2239 {
 			t.Errorf("catalog entries: got %d, want 2239", got)
 		}
-		if got := m.countSpecified(m.Features); got != 675 {
-			t.Errorf("listed entries: got %d, want 675", got)
+		if got := m.countSpecified(m.Features); got != 695 {
+			t.Errorf("listed entries: got %d, want 695", got)
 		}
-		if got := m.countOpen(m.Features); got != 1564 {
-			t.Errorf("not listed entries: got %d, want 1564", got)
+		if got := m.countOpen(m.Features); got != 1544 {
+			t.Errorf("not listed entries: got %d, want 1544", got)
 		}
 	})
 	t.Run("E0.8 requirement counts", func(t *testing.T) {
@@ -91,8 +91,8 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 		for _, r := range m.Reqs {
 			count[r.Priority]++
 		}
-		if len(m.Reqs) != 592 || count[prioMVP] != 439 || count[prioP1] != 148 || count[prioP2] != 5 {
-			t.Errorf("requirements: got %d (MVP %d, P1 %d, P2 %d), want 592 (439, 148, 5)",
+		if len(m.Reqs) != 624 || count[prioMVP] != 469 || count[prioP1] != 150 || count[prioP2] != 5 {
+			t.Errorf("requirements: got %d (MVP %d, P1 %d, P2 %d), want 624 (469, 150, 5)",
 				len(m.Reqs), count[prioMVP], count[prioP1], count[prioP2])
 		}
 	})

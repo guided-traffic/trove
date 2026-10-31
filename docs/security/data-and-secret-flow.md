@@ -2,7 +2,7 @@
 
 Status: implemented in M0 for the credentials of every connection, the stored-secret key ring and its envelope, and the
 redaction of logs, spans and error texts, and in M2 for the upstream credentials of remote repositories: their sealed rows, the
-secret references and the clients that send them. Package bytes do not exist yet: the blob layer is built, but no package
+secret references and the clients that send them, and for the names an npm audit forwards to an advisory provider. Package bytes do not exist yet: the blob layer is built, but no package
 writes it.
 
 This page says where each credential lives inside the running installation, when a process reads it, what a process holds in
@@ -144,6 +144,43 @@ mandatory expiry ([valkey_keys.go](../../internal/cluster/valkey_keys.go)); thei
 serves is read from Valkey and no positive authentication or authorization result is ([spec Q-ARCH-16](../spec/architecture.md#q-arch-16--what-valkey-may-hold)).
 What a Valkey writer can do is on [roles-and-trust-boundaries.md](roles-and-trust-boundaries.md).
 
+## The audit forward
+
+`npm audit`, `pnpm audit` (pnpm 11 and later) and `yarn npm audit` post a project's dependency names and versions to the
+registry. A remote repository forwards them to its advisory provider ([R-NPM-038](../spec/formats/npm.md#r-npm-038--security-audit-endpoints),
+[handlers_audit.go](../../internal/formats/npm/handlers_audit.go)); a virtual repository forwards through its first forwarding
+remote member. This is the one place where trove sends data a client posted to a third party.
+
+| What | Leaves the installation | Is withheld |
+|---|---|---|
+| A name the forwarding remote holds a stored upstream document for (`npm_remote_packages`, also one marked gone) | yes, with the versions the client listed | — |
+| A name that a package row or a tombstone of any npm local repository holds | — | `local` |
+| A name a namespace claim of any scope of an npm local repository covers | — | `claimed` |
+| A name a pin rule of the requesting virtual repository selects | — | `pinned` |
+| A name the remote never fetched, one its or the virtual repository's patterns refuse, and what is no npm name | — | `not_proxied` |
+
+One statement decides all of it before the provider is asked (`NPMAuditNames` in
+[npm_remote.sql](../../internal/meta/postgres/queries/npm_remote.sql)), on committed rows, so a claim made a moment ago on another
+replica withholds already. The withheld names are counted in `trove_npm_audit_names_withheld_total{repo,reason}` and named, as a
+count, in the `npm-notice` header of the answer. Nothing of the request is stored, logged beyond the access record, or kept in Valkey.
+
+Where the request goes and what travels with it:
+
+- **The provider** is `npm.audit.providerURL` of the forwarding remote, by default its upstream URL. The URL is `https` and carries no
+  user info, query or fragment (the schema and `settingsOf` refuse them), because the repository document is shown in clear to every
+  holder of `repositories:read-config` (H-303 of the settings form's work). A credential never travels in it.
+- **The connection** is the remote's upstream client ([egress.md](egress.md#which-connections-are-checked)): the address policy, the
+  trust store and the redirect rules apply, and a refusal is `502 egress_denied` with the security event `proxy.egress_denied`.
+- **The credential** is the remote's sealed upstream credential, added by the client's credential policy only on a request to the
+  upstream origin or to an `extraHosts` entry with `sendCredentials: true`
+  ([egress.md](egress.md#which-hosts-receive-credentials)). A `providerURL` on another host gets no credential.
+- **The answer** is the provider's body, passed to the client unchanged and bounded to 128 MiB; trove does not check what it says
+  ([H-300](#h-300--the-advisory-providers-answer-is-trusted-as-it-is)).
+
+What the audit does not send: the client's own credential (the request to the provider is trove's), the `npm-command`, `npm-session`
+and other client headers, the project's name, and any name of the table's lower rows. What it does send is still the combination of
+public names a project uses: [H-34](../spec/formats/npm.md#h-34--audit-forwarding-discloses-the-dependency-set).
+
 ## What this does not cover
 
 ### H-70 · The standard-output log carries every record in full
@@ -187,3 +224,43 @@ upstream tokens that the operator mounts under `config_as_code.secrets_dir`, one
 What makes it real: one `secrets_dir` that holds the tokens of several upstreams and a repository administrator who is not meant to
 know all of them. The mitigation is operational: mount only the references that the holders of the capability may use.
 
+### H-300 · The advisory provider's answer is trusted as it is
+
+Stage: the answer of an audit forward ([handlers_audit.go](../../internal/formats/npm/handlers_audit.go), `handleAudit`,
+[R-NPM-038](../spec/formats/npm.md#r-npm-038--security-audit-endpoints)).
+
+Live wherever a remote forwards (the default). trove passes the provider's 200 body to the client unchanged; it checks neither its
+shape nor a signature. Subject: what `npm audit`, `pnpm audit` and `yarn npm audit` report to developers and CI gates. A provider, or
+whoever controls the path to it, can leave out advisories (a vulnerable package reported clean) or add false ones (a build blocked).
+The TLS verification of the upstream client protects the path; the provider itself is the operator's choice, by default the upstream.
+
+What makes it real: a `providerURL` that points at a service the operator does not control, or an upstream that is itself a mirror of
+unknown provenance. Mitigation: leave `providerURL` empty or point it at a provider the organization trusts; treat audit results as
+one signal next to the vulnerability scanning of the installation.
+
+### H-301 · An audit body is held in memory
+
+Stage: the reading of an audit body ([handlers_audit.go](../../internal/formats/npm/handlers_audit.go), `readAuditBody`).
+
+Live: a body is read and decompressed in memory before the forwarded set is decided, up to ten times `npm.audit.maxBodySize`
+(10 MiB with the default of 1 MiB, 100 MiB with the largest setting) plus the decoded names, at most 100,000
+([Q-NPM-64](../spec/formats/npm.md#q-npm-64--the-bounds-of-an-audit-body)). No budget per replica bounds the audits that run at once.
+Subject: the memory of the `web` replicas. A caller with `read` on a forwarding repository (an anonymous one where anonymous read is
+on) can send many large gzip bodies at once.
+
+What makes it real: a raised `maxBodySize` together with a burst of large audits; the request rate limits of the edge are the only
+bound beyond the per-request one. Mitigation: keep the default, and keep anonymous read off on repositories that forward audits.
+
+### H-302 · pnpm and Yarn do not show that an audit was partial
+
+Stage: the `npm-notice` header of an audit answer ([R-NPM-038](../spec/formats/npm.md#r-npm-038--security-audit-endpoints)).
+
+Live: a withheld name is absent from the answer, which every client reads as "no advisories". npm prints the notice that says how many
+names were withheld; pnpm 11 and 12 and Yarn 4 do not print it on a successful answer (measured with the pinned clients on 2026-10-31).
+Subject: the developers and CI jobs that audit with pnpm or Yarn. A package installed from elsewhere (a lockfile resolved against
+another registry, a tarball dependency) that a remote never fetched is reported clean, whatever advisories exist for it.
+
+What makes it real: lockfiles that were not resolved through trove, and audit gates in CI that run `pnpm audit` or `yarn npm audit`.
+Mitigation: install through trove before auditing (an install fetches every public package of the tree), and watch
+`trove_npm_audit_names_withheld_total{reason="not_proxied"}`, whose sustained growth is the revisit condition of
+[Q-NPM-3](../spec/formats/npm.md#q-npm-3--audit-forwarding-on-by-default).

@@ -82,6 +82,14 @@ func (f *Format) buildRoutes() []formats.Route {
 		route("ping", http.MethodGet, "/-/ping", formats.Computed, read, matchOp("ping"), []string{"-/ping"}, f.handlePing),
 		route("whoami", http.MethodGet, "/-/whoami", formats.Computed, read, matchOp("whoami"), []string{"-/whoami"}, f.handleWhoami),
 
+		// The security audit (R-NPM-038): forwarded and never cached, and a read of every
+		// class, so the dispatcher sends a virtual repository's audit to no deployment
+		// target; npm 6's endpoints answer 501.
+		route("audit.bulk", http.MethodPost, "/-/npm/v1/security/advisories/bulk", formats.Volatile, read,
+			matchOp(auditBulkOp()...), []string{auditBulkPath}, f.handleAudit),
+		route("audit.legacy", http.MethodPost, "/-/npm/v1/security/audits[/quick]", formats.Volatile, read,
+			matchAuditLegacy, []string{"-/npm/v1/security/audits", "-/npm/v1/security/audits/quick"}, f.handleAuditLegacy),
+
 		// What npm defines and trove does not implement (R-NPM-043): 404 for a GET, PUT
 		// and DELETE, 501 for a POST, so that npm's fetch layer, which retries a GET
 		// and a PUT on a 5xx but never a POST, fails at once. The four routes share one
@@ -94,13 +102,13 @@ func (f *Format) buildRoutes() []formats.Route {
 }
 
 // deferredExamples are paths of the endpoints of R-NPM-043: login, user, token and
-// search endpoints, the security, key, attestation and OIDC endpoints, the
+// search endpoints, the key, attestation and OIDC endpoints, the
 // organization, team and package-access endpoints, the external-dependency path,
 // staged publishing and the listing of all packages.
 func deferredExamples() []string {
 	return []string{
 		"-/v1/login", "-/v1/search", "-/user/org.couchdb.user:alice", "-/user/token/abc",
-		"-/npm/v1/security/advisories/bulk", "-/npm/v1/security/audits/quick", "-/npm/v1/keys", "-/npm/v1/attestations/lodash@1.0.0",
+		"-/npm/v1/security/advisories", "-/npm/v1/keys", "-/npm/v1/attestations/lodash@1.0.0",
 		"-/npm/v1/oidc/token/exchange/package/lodash", "-/npm/v1/tokens", "-/npm/v1/user",
 		"-/org/acme/user", "-/team/acme/dev", "-/all", "-/external/npm-remote/lodash", "-/stage/package/lodash",
 		"-/package/lodash/access", "-/package/@acme%2fui/visibility", "-/package/@acme/ui/collaborators",

@@ -466,13 +466,13 @@ var registry = []CodeInfo{
 	{CodeNPMInvalidTag, Invalid, "Invalid npm dist-tag", "A dist-tag is 1 to 128 characters, starts with a letter or digit and is not a valid SemVer range; the version of a tag must be a live version."},
 	{CodeNPMBadPublish, Invalid, "Malformed npm publish", "The publish request or its tarball is malformed or ambiguous: the envelope, the attachments, the archive rules of R-NPM-007."},
 	{CodeNPMManifestMismatch, Invalid, "npm manifest mismatch", "The manifest of the request and the package.json in the tarball disagree on name, version or an install-relevant field."},
-	{CodeNPMTooLarge, TooLarge, "npm publish too large", "A limit of the publish is exceeded: the body, the tarball, the unpacked size, the entry count, the package.json or the compression ratio."},
+	{CodeNPMTooLarge, TooLarge, "npm request too large", "A limit of the publish is exceeded (the body, the tarball, the unpacked size, the entry count, the package.json or the compression ratio), or one of an audit body (npm.audit.maxBodySize as sent, ten times that decompressed, the number of names)."},
 	{CodeNPMClassNotWritable, MethodNotAllowed, "npm repository is not writable", "The repository class takes no writes; publish to a local repository or to the deployment target of a virtual repository."},
 	{CodeNPMVersionExists, Conflict, "npm version exists", "The version was published before. A name and version are never accepted again with other bytes."},
 	{CodeNPMVersionUnpublished, Conflict, "npm version unpublished", "The version was unpublished and is never accepted again; publish a new version."},
 	{CodeNPMStaleRev, Conflict, "npm revision is stale", "Another write changed the package after the document was read; read it again with ?write=true."},
 	{CodeNPMNotImplemented, NotImplemented, "npm operation not implemented", "The operation is part of the npm protocol and is not implemented by trove."},
-	{CodeNPMAuditUnavailable, NotImplemented, "npm audit not available", "The audit endpoint is not available for this repository."},
+	{CodeNPMAuditUnavailable, NotImplemented, "npm audit not available", "The audit endpoint is not available for this repository: no remote of it forwards, it may not contact its upstream, or the endpoint does not allow it; npm 6's audit endpoints always answer it."},
 	{CodeNPMInvalidUpstreamDocument, UpstreamFailed, "Invalid npm upstream document", "The upstream package document failed validation and was not stored."},
 	// <<< M2 npm
 }

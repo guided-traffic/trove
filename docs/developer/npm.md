@@ -4,8 +4,8 @@ The npm registry format ([spec/formats/npm.md](../spec/formats/npm.md)). This pa
 its section. Built today: the format itself (routes, classification, error shape, setup snippets), the local repository end to end
 (publish, the package documents and their validators, tarball downloads, dist-tags, unpublish, whoami and ping, the serve-time check and the
 removal hooks), the remote and virtual classes with the merge, the data port and its PostgreSQL implementation, the leaf libraries every part builds on, and the exposure adapter with the
-filter of documents on endpoints with rules (R-NPM-048), and the format's settings as the `npm` member of the repository document
-(Q-NPM-59). Not built: deprecate (R-NPM-018, P1): a `PUT` of a document without an attachment answers 404 `not_found`, the answer
+filter of documents on endpoints with rules (R-NPM-048), the format's settings as the `npm` member of the repository document
+(Q-NPM-59), and the security audit through remote and virtual repositories (R-NPM-038). Not built: deprecate (R-NPM-018, P1): a `PUT` of a document without an attachment answers 404 `not_found`, the answer
 R-NPM-043 gives an unimplemented `PUT`.
 
 ## Package layout
@@ -27,6 +27,7 @@ internal/formats/npm/
 ├── handlers_unpublish.go the three unpublish requests
 ├── handlers_identity.go  whoami and ping
 ├── handlers_deprecate.go the metadata PUT; answers 404 until deprecate is built (R-NPM-018, R-NPM-043), 400 for a body without versions
+├── handlers_audit.go     the security audit: the forwarder, the bounds of the body, the forwarded set, the forward and npm 6's endpoints (R-NPM-038)
 ├── tags.go          the dist-tag rules of R-NPM-016 on the SemVer order
 ├── exposure.go      the exposure adapter (ranges, pre-releases, dimensions) and the filter of rows and documents (R-NPM-048)
 ├── store.go         the data port (Store), with marked blocks for the work packages that add to it
@@ -71,9 +72,12 @@ do with any other package of the format.
 | `unpublish.put`, `unpublish.delete`, `unpublish.tarball` | PUT, DELETE `{name}/-rev/{rev}`, DELETE `{name}/-/{file}/-rev/{rev}` | delete, delete | `handleUnpublish*` | built |
 | `disttags.get`, `disttag.put`, `disttag.delete` | GET `-/package/{name}/dist-tags`, PUT, DELETE `…/{tag}` | metadata read; admin deploy | `handleDistTags`, `handleDistTagSet`, `handleDistTagDelete` | built |
 | `ping`, `whoami` | GET `-/ping`, `-/whoami` | computed, read | `handlePing`, `handleWhoami` | built |
+| `audit.bulk` | POST `-/npm/v1/security/advisories/bulk` | volatile, read | `handleAudit` | built ([Security audit](#security-audit)) |
+| `audit.legacy` | POST `-/npm/v1/security/audits`, `…/audits/quick` | volatile, read | `handleAuditLegacy` | built (501) |
 | `deferred.get`, `.put`, `.delete`, `.post` | every path of the families npm defines and trove does not implement | computed or admin, read | `handleDeferred` | built (404; 501 for POST) |
 
-The deferred families (R-NPM-043) are one matcher (`matchDeferred`): `-/user`, `-/v1`, `-/npm`, `-/org`, `-/team`, `-/all`, `-/external`, `-/stage` and `-/package/{name}/access|visibility|collaborators`.
+The deferred families (R-NPM-043) are one matcher (`matchDeferred`): `-/user`, `-/v1`, `-/npm`, `-/org`, `-/team`, `-/all`, `-/external`, `-/stage` and `-/package/{name}/access|visibility|collaborators`,
+without the audit paths, which have routes of their own (`isAudit`); a `GET` of an audit path is 405 with `Allow: POST`.
 Each family answers GET, PUT and DELETE with 404 and POST with 501, because npm's fetch layer retries a GET and a PUT on a 5xx and never a POST.
 
 The reads serve every class of the format (local, remote, virtual). Every route whose action is not `read` has `Classes: local` (`buildRoutes`): a remote
@@ -262,15 +266,62 @@ internal/meta/postgres/queries/npm_remote.sql
 | How is a virtual document built? | `Resolver.Metadata` plans (patterns, claims, pins, `read`, `MayFill`), collects `LocalDocument` and the engine's documents, calls `Merge`; a member the caller may not fill is `Restricted` and supplies cached versions only (R-AUTHZ-008). Tarball addresses are neutral in the cache and rewritten per response (Q-NPM-34) |
 | Where do writes go? | Write routes are `Classes: local`. The dispatcher sends every write kind of a virtual repository to its target; a remote repository's 405 becomes `npm_class_not_writable` in `WriteError` (Q-NPM-36). `?write=true` on a virtual repository reads the target's own document |
 | What does an exposure rule do here? | `exposedDocument` rewrites, filters with `FilterDocument(viewOf(rq))` and parses again; dist-tags and `latest` come from the filtered document; a hidden version is 404 before any fetch (`hiddenVersion`) (R-NPM-048, H-295) |
-| Settings | `latestGuard` (local, default `true`), `serveRemovedVersions` (remote, default `false`), `latestStrategy` (virtual, default `highest-member-latest`) and `distTagStrategy` (virtual, default `member-order`) are the `npm` member of the repository document; the repository service validates it against [settings.schema.json](../../internal/formats/npm/settings.schema.json) (a member of another class is refused), and `settingsOf` reads it from the stored document of the request's repository (Q-NPM-59). The repository wizard and edit form render the four settings from the schema ([web-ui.md](web-ui.md#the-repository-settings-form-rendered-from-the-formats-schema)) |
+| Settings | `latestGuard` (local, default `true`), `serveRemovedVersions` and `audit` (remote, defaults `false` and [Security audit](#security-audit)), `latestStrategy` (virtual, default `highest-member-latest`) and `distTagStrategy` (virtual, default `member-order`) are the `npm` member of the repository document; the repository service validates it against [settings.schema.json](../../internal/formats/npm/settings.schema.json) (a member of another class is refused), and `settingsOf` reads it from the stored document of the request's repository (Q-NPM-59). The repository wizard and edit form render the settings from the schema ([web-ui.md](web-ui.md#the-repository-settings-form-rendered-from-the-formats-schema)) |
 
 Metrics: `trove_npm_virtual_version_conflicts_total`, `trove_npm_removed_upstream_versions_total`, `trove_npm_stale_upstream_documents_total`,
-`trove_npm_tarball_document_revalidations_total{outcome}` ([bind.go](../../internal/formats/npm/bind.go)). A fill reaches its replica through the data port it is handed
+`trove_npm_tarball_document_revalidations_total{outcome}`, `trove_npm_audit_names_withheld_total{reason}` ([bind.go](../../internal/formats/npm/bind.go)). A fill reaches its replica through the data port it is handed
 (`Format.replicaOfPort`), because a storage hook has no request.
 
 Tests: `remote/remote_test.go` and `merge/merge_test.go` (with `FuzzRewrite`, `FuzzMerge`), `remote_test.go`, `handlers_remote_test.go`, `parity_test.go` (the install and version documents derived from a full
 document equal the local renderings), conformance checks 4 and 5, and in [test/integration/npm](../../test/integration/npm/) `remote_test.go`, `remote_marks_test.go`, `virtual_test.go`, `exposure_virtual_test.go`
 against [test/npmstub](../../test/npmstub/) in the test process (`remote_env_test.go` builds the repositories).
+
+## Security audit
+
+`POST -/npm/v1/security/advisories/bulk` (R-NPM-038; decisions Q-NPM-61 to Q-NPM-65). [handlers_audit.go](../../internal/formats/npm/handlers_audit.go)
+forwards the bulk advisory request of npm 7 and later, pnpm 11 and later and `yarn npm audit` to the advisory provider of a remote
+repository, with only the names that remote has fetched and that nothing marks internal.
+
+```mermaid
+flowchart TD
+    A[forwarder: the remote, or the first enabled forwarding member of a virtual repository] -->|none, offline view, endpoint without fills or with rules| X1[501 npm_audit_unavailable]
+    A --> R{read on the member}
+    R -->|refused| X2[R-AUTHZ-016 refusal]
+    R --> B[read the body: maxBodySize as sent, 10x decompressed, 100,000 names]
+    B -->|beyond| X3[413 npm_too_large / 415 / 400]
+    B --> Q[Store.AuditNames: one statement for every name]
+    Q --> S[split: local, claimed, pinned, not_proxied or patterns refuse, else forward]
+    S -->|nothing to forward| E["200 {} with npm-notice"]
+    S --> F[Remote.Exchange through the remote's upstream client, deadline min timeout, shutdown - 1 s]
+    F -->|ErrOffline| X1
+    F -->|no answer, not 200| X4[502 with the failure's code]
+    F --> P[200: the provider's body unchanged, npm-notice when names were withheld]
+```
+
+| Question | Answer |
+|---|---|
+| Which repository forwards? | `forwarder`: a remote whose `npm.audit.mode` is `forward`; for a virtual repository the first member in resolution order (priority members first) that is remote, enabled and forwards, whoever asks; the caller needs `read` on it (`Host.Authorize` on a copy of the request addressed to the member), a refusal is answered as it is (Q-NPM-62) |
+| Where does it never forward? | Local repositories, mode `disabled`, a virtual repository without such a member, the cache view, an endpoint that does not fill caches or has exposure rules, and an offline remote (`Exchange` answers `formats.ErrOffline`): 501 with the text of R-NPM-038 |
+| How is the body bounded? | `readAuditBody`: `Content-Length` and the bytes as sent against `npm.audit.maxBodySize` (default 1 MiB), gzip (`Content-Encoding: gzip`) or no coding (415 otherwise), ten times the limit decompressed, at most `auditMaxNames` (100,000) names, an object of version lists (400 otherwise) (Q-NPM-64) |
+| What decides the forwarded set? | One statement, `NPMAuditNames` in [npm_remote.sql](../../internal/meta/postgres/queries/npm_remote.sql), through `Store.AuditNames`: the record of the forwarding remote (`npm_remote_packages`, a gone document included), a package row or tombstone of any npm local repository, a claim of any scope of an npm local repository, a pin rule of the requesting virtual repository. The patterns of the remote and of the virtual repository (`Repository.Admits`) and the name rule (`name.Parse`) are applied in the format. One reason per name: `withheldReason` (Q-NPM-63) |
+| How does the request reach the provider? | `Host.Remote().Exchange`: `internal/proxy/exchange.go` sends it through the remote's upstream client (egress rules, trust store, redirect rules, credential policy), with no fetch slot and no circuit; the body is the forwarded names as plain JSON, `Accept-Encoding: identity`. `npm.audit.providerURL` is the base, the remote's upstream URL without it |
+| What is answered? | The provider's 200 body unchanged (`Content-Type`, `Content-Encoding`, `Content-Length`), at most `MaxDocumentBytes`; `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` (a `Volatile` route has no content wrapper), and `npm-notice` when names were withheld. Any other status and every transport failure is 502 with the code of the failure (`providerFailed`, `providerStatus`) |
+| What bounds the time? | `replica.auditBound`: `min(npm.audit.timeout, server.shutdown_timeout - 1 s)`, counted from the start of the handler, so a forward running when the replica starts to drain ends before the shutdown deadline. The statement runs and commits before the provider is asked |
+| npm 6's endpoints? | `handleAuditLegacy`: 501 `npm_audit_unavailable`, with the text of the bulk endpoint where no repository forwards (npm 7 to 10 ask the quick endpoint after a failed bulk request and print its answer), else a text that names the bulk endpoint. pnpm 10 asks only these and is not served (Q-NPM-65) |
+| What is counted? | `trove_npm_audit_names_withheld_total{repo,reason}`, labelled with the forwarding remote; the request itself in `trove_npm_requests_total{operation="audit.bulk"}` and the upstream request in `trove_remote_upstream_requests_total` |
+
+Settings: `npm.audit` of a remote repository, `{mode, providerURL, timeout, maxBodySize}` with the defaults `forward`, null, `30s`, `1MiB`
+([settings.schema.json](../../internal/formats/npm/settings.schema.json)); `providerURL` is `https` without user info, query or fragment, so no
+credential sits in the document. Security: [data-and-secret-flow.md](../security/data-and-secret-flow.md#the-audit-forward).
+
+Tests: [handlers_audit_test.go](../../internal/formats/npm/handlers_audit_test.go) (`TestR_NPM_038_*`: the forwarded set and the notice, gzip,
+the order of the reasons, the bounds, the 501 cases on both kinds of endpoint, 502 per failure, the provider URL and the deadline, the
+schema and its defaults); [audit_test.go](../../test/integration/npm/audit_test.go) against the stack with the counting upstream as the
+provider (the set through a remote and a virtual repository with a claim, a pin rule, a local package, a gone document and patterns, the
+provider's log, the metric, the refusal for a caller without `read` on the member, 501, 413 for a gzip bomb, 502 for a provider that is down
+and for one the egress policy refuses, no session idle in a transaction while the provider takes 2 s, the deadline of 4 s and of a remote's
+own 1 s, the credential only for the upstream origin, the settings through the management API); the advisory endpoint of the stub
+([audit.go](../../test/npmstub/audit.go)); the matrix scenario `audit` ([e2e.md](e2e.md#the-npm-tests)).
 
 ## The package view
 
@@ -308,6 +359,7 @@ complete tag map.
 | `LiveVersions` | under the row lock: the versions the document holds, in publish order |
 | `Tombstoned` | one lookup, for `ServeCheck` |
 | `ClearTombstone` | a restore: removes the tombstone when the stored version has the integrity it holds |
+| `AuditNames` | one statement (`NPMAuditNames`): per name of an audit body, the record of the forwarding remote, a package row or tombstone of any npm local repository, a claim of an npm local repository, a pin rule of the requesting virtual repository (R-NPM-038) |
 
 Add to the port in the `>>> M2 npm-read` and `>>> M2 npm-remote` blocks of `store.go` and `npm_local.sql`/`npm_remote.sql` (the reads of the local class are in [read.go](../../internal/formatdata/npm/read.go)); add the method to the twin in `npmtest` in the same change.
 The twin reads the revision of a document from `Store.Revisions`, which a test binds to the kit Host's `RevSeq`, because the database reads `packages.rev_seq` in the same statement. The README text and the manifest are
@@ -342,6 +394,10 @@ set -a; . .dev/integration/env; set +a; go test -count=1 -p 1 -tags integration 
 - Compression of documents is tested with gzip only; a client that sends another coding gets the identity form.
 - Publish, `npm view`, `npm unpublish`, `npm dist-tag`, `pnpm` and Yarn against the documents in the unit and integration tiers: the real clients run in the end-to-end client matrix ([e2e.md](e2e.md)).
 - The `repo` metric label is `_other` for every repository until a component feeds `observability.CappedLabels` the repository keys.
+- The audit with real clients is not in the unit and integration tiers: npm 10, 11 and 12, pnpm 10, 11 and 12 and Yarn 4 were run by hand on
+  2026-10-31 against an in-process replica with the counting upstream as provider (advisories reported, the notice printed by npm only, the 501
+  at `npm-local`, pnpm 10 after 2 min 20 s); the matrix scenario `audit` repeats it in CI. The criterion that compares with the public
+  registry's advisories and the drain criterion of R-NPM-038 (the forwarding pod deleted during a 20 s forward) have no test yet.
 
 ## Names and versions
 

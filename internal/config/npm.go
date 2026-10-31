@@ -4,10 +4,9 @@ import "time"
 
 // NPM is the npm section (R-NPM-007, R-NPM-011, R-NPM-013): the limits of a publish
 // and the cache headers of package documents. The per-repository settings of the
-// format (latestGuard, serveRemovedVersions, the virtual strategies) are in the
-// repository document, not here. The keys of the trusted publishing exchange
-// (R-NPM-022) and of the audit forwarding (R-NPM-038) arrive with their
-// requirements.
+// format (latestGuard, serveRemovedVersions, the virtual strategies, the audit forward
+// of R-NPM-038) are in the repository document, not here. The keys of the trusted
+// publishing exchange (R-NPM-022) arrive with their requirement.
 type NPM struct {
 	Publish NPMPublish `yaml:"publish"`
 

@@ -141,3 +141,27 @@ func (s *Store) TarballFacts(ctx context.Context, repoID int64, name, version st
 	})
 	return out, err
 }
+
+// AuditNames reads what decides the forwarded set of an audit request, in one statement
+// (R-NPM-038). The transaction ends before the caller asks the advisory provider, so no
+// connection is held while it waits (R-NPM-046).
+func (s *Store) AuditNames(ctx context.Context, remoteID, virtualID int64, names []string) ([]rows.AuditName, error) {
+	var out []rows.AuditName
+	err := s.o.DB.InTx(ctx, func(tx meta.Tx) error {
+		out = nil
+		qs, err := queries(tx)
+		if err != nil {
+			return err
+		}
+		rs, err := qs.NPMAuditNames(ctx, q.NPMAuditNamesParams{RemoteID: remoteID, VirtualID: virtualID, Names: names})
+		if err != nil {
+			return err
+		}
+		out = make([]rows.AuditName, len(rs))
+		for i, r := range rs {
+			out[i] = rows.AuditName{Name: r.Name, Proxied: r.Proxied, Local: r.Local, Claimed: r.Claimed, Pinned: r.Pinned}
+		}
+		return nil
+	})
+	return out, err
+}

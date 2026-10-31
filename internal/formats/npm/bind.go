@@ -23,7 +23,9 @@ import (
 // replica is what the composition root bound for one Host.
 type replica struct {
 	cfg config.NPM
-	met *metrics
+	// shutdown is server.shutdown_timeout, which bounds an audit forward (R-NPM-038).
+	shutdown time.Duration
+	met      *metrics
 }
 
 // A storage hook meets the format without a request and so without a Host: the fill
@@ -35,7 +37,7 @@ type replica struct {
 // registers the metric families on m and must be called once per Host, before the
 // replica serves.
 func (f *Format) Bind(h formats.Host, cfg *config.Config, m *observability.Metrics) {
-	r := &replica{cfg: cfg.NPM}
+	r := &replica{cfg: cfg.NPM, shutdown: cfg.Server.ShutdownTimeout}
 	if m != nil {
 		r.met = newMetrics(m)
 	}
@@ -43,6 +45,16 @@ func (f *Format) Bind(h formats.Host, cfg *config.Config, m *observability.Metri
 	if d := h.FormatData(ID); d != nil {
 		f.ports.Store(d, r)
 	}
+}
+
+// auditBound is the deadline of an audit forward: min(npm.audit.timeout,
+// server.shutdown_timeout - 1 s), so a forward that runs when its replica starts to drain
+// ends before the shutdown deadline (R-NPM-038). A Host nobody bound has no shutdown.
+func (r *replica) auditBound(timeout time.Duration) time.Duration {
+	if r.shutdown > 0 {
+		return min(timeout, r.shutdown-time.Second)
+	}
+	return timeout
 }
 
 // replicaOf finds the replica of a request's Host.
@@ -87,6 +99,7 @@ type metrics struct {
 	removed     *prometheus.CounterVec
 	stale       *prometheus.CounterVec
 	revalidated *prometheus.CounterVec
+	withheld    *prometheus.CounterVec
 }
 
 func newMetrics(m *observability.Metrics) *metrics {
@@ -106,6 +119,8 @@ func newMetrics(m *observability.Metrics) *metrics {
 			"Fetched upstream documents that were older than the stored one and were not stored (R-NPM-024).", "repo"),
 		revalidated: m.NewCounterVec("trove_npm_tarball_document_revalidations_total",
 			"Tarball requests that revalidated the package document first, by outcome (R-NPM-025).", "repo", "outcome"),
+		withheld: m.NewCounterVec("trove_npm_audit_names_withheld_total",
+			"Names of audit requests not sent to the advisory provider, by the forwarding remote and the reason (R-NPM-038).", "repo", "reason"),
 	}
 }
 
@@ -148,6 +163,19 @@ func (m *metrics) staleDocument(repoKey string) {
 func (m *metrics) revalidation(repoKey, outcome string) {
 	if m != nil {
 		m.revalidated.WithLabelValues(m.repos.Value("trove_npm_tarball_document_revalidations_total", repoKey), outcome).Inc()
+	}
+}
+
+// auditWithheld counts the names an audit withheld, by reason; repoKey is the forwarding
+// remote (Q-NPM-63).
+func (m *metrics) auditWithheld(repoKey string, byReason map[string]int) {
+	if m == nil {
+		return
+	}
+	for _, reason := range withheldReasons() {
+		if n := byReason[reason]; n > 0 {
+			m.withheld.WithLabelValues(m.repos.Value("trove_npm_audit_names_withheld_total", repoKey), reason).Add(float64(n))
+		}
 	}
 }
 
