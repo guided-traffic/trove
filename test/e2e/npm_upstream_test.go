@@ -44,6 +44,7 @@ func (fx *npmFixture) upstreamRepos(t testing.TB, purpose string, settings map[s
 		"virtual": map[string]any{"members": []string{npmLocalKey, u.remote}, "deployTarget": npmLocalKey},
 	}).want(t, "create "+u.all, 201)
 	ensurePolicy(t, fx.adm, "e2e-npm-"+purpose+"-"+fx.run, []string{u.remote, u.all}, [2]any{"sa:" + npmPublisher, []string{"read"}})
+	awaitReadableOnEveryReplica(t, fx.token, u.remote, u.all)
 	// A remote that stays behind keeps being asked by the shadowing check of every first publish into npm-local (R-REPO-048
 	// asks each remote of each virtual repository that contains the target); one whose upstream was stopped keeps its
 	// circuit open for circuitOpenSeconds and makes every such publish a 503. The repositories go with the test.
@@ -53,6 +54,33 @@ func (fx *npmFixture) upstreamRepos(t testing.TB, purpose string, settings map[s
 		}
 	})
 	return u
+}
+
+// awaitReadableOnEveryReplica waits until each web replica lets the token read the new repositories: a repository and
+// the policy that grants it reach the other replicas within the bound of R-AUTHZ-028 (1 s with Valkey,
+// epoch_poll_interval of 1 s plus 1 s without), and a replica that has not seen them yet answers 404. The tests allow one
+// more second for the poll and the request, as E1.14 does; a replica that takes longer fails the test.
+func awaitReadableOnEveryReplica(t testing.TB, token string, keys ...string) {
+	t.Helper()
+	addrs, stop := podForwards(t)
+	defer stop()
+	const within = 3 * time.Second
+	for i, addr := range addrs {
+		a := apiAtPod(t, addr, token)
+		for _, key := range keys {
+			start := time.Now()
+			for {
+				r := a.get("/api/npm/" + key + "/-/ping") // action read: the repository and the grant on that replica
+				if r.Status == 200 {
+					break
+				}
+				if r.Status != 404 && r.Status != 429 || time.Since(start) > within {
+					t.Fatalf("replica %d: repository %s answered %s %s after its creation, want 200 within %s (R-AUTHZ-028)", i, key, time.Since(start).Round(time.Millisecond), r, within)
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+	}
 }
 
 // deleteRepository deletes a repository, waiting out the admin API's rate limit (R-API-016).
@@ -386,7 +414,7 @@ func TestNPMUpstream(t *testing.T) {
 		name := "e2e-no-such-" + fx.run
 		path := "/api/npm/" + repos.remote + "/" + name
 		for i := 0; i < 12; i++ { // scattered over the replicas by the edge
-			fx.adm.withToken(fx.token).get(path).want(t, "document of a missing name", 404)
+			fx.publisherGet(t, path).want(t, "document of a missing name", 404)
 		}
 		if got := s.counts(t).Documents(name); got != 1 {
 			t.Fatalf("the test upstream recorded %d requests for the missing name, want 1 inside the negative cache period", got)

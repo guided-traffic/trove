@@ -16,8 +16,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"text/template"
@@ -139,7 +141,26 @@ func (c *npmClient) publish(name, version string) string {
 // check of the result that does not trust the client's report does.
 func (fx *npmFixture) registryDoc(t testing.TB, key, name string) reply {
 	t.Helper()
-	return fx.adm.withToken(fx.token).get("/api/npm/" + key + "/" + url.PathEscape(name))
+	return fx.publisherGet(t, "/api/npm/"+key+"/"+url.PathEscape(name))
+}
+
+// publisherGet reads a path with the publisher's token and waits out a 429 as the clients do: the eight rows share the
+// token, so their clients and these reads together can reach the endpoint's rate limit (R-API-016).
+func (fx *npmFixture) publisherGet(t testing.TB, path string) reply {
+	t.Helper()
+	a := fx.adm.withToken(fx.token)
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		r := a.get(path)
+		if r.Status != http.StatusTooManyRequests || time.Now().After(deadline) {
+			return r
+		}
+		wait, err := strconv.Atoi(r.Header.Get("Retry-After"))
+		if err != nil || wait < 1 {
+			wait = 1
+		}
+		time.Sleep(time.Duration(min(wait, 5)) * time.Second)
+	}
 }
 
 func (fx *npmFixture) versionsOf(t testing.TB, key, name string) (versions []string, tags map[string]string, doc map[string]any) {
@@ -176,9 +197,8 @@ func (c *npmClient) ensurePublished() (plain, scoped string) {
 func requireScatter(t testing.TB, fx *npmFixture) {
 	t.Helper()
 	seen := map[string]bool{}
-	a := fx.adm.withToken(fx.token)
 	for i := 0; i < 6 && len(seen) < 2; i++ {
-		seen[a.get("/api/npm/"+fx.registry()+"/-/ping").Replica()] = true
+		seen[fx.publisherGet(t, "/api/npm/"+fx.registry()+"/-/ping").Replica()] = true
 	}
 	if len(seen) < 2 {
 		t.Fatalf("six consecutive requests reached %d replica(s): the cluster is not in the scatter profile", len(seen))
@@ -480,7 +500,7 @@ func scenarioUnpublish(t *testing.T, c *npmClient) {
 	if len(versions) != 1 || versions[0] != "1.0.0" || tags["latest"] != "1.0.0" {
 		t.Fatalf("after unpublish of 1.1.0: versions %v, dist-tags %v, want 1.0.0 as latest", versions, tags)
 	}
-	r := c.fx.adm.withToken(c.fx.token).get("/api/npm/" + c.registryKey + "/" + url.PathEscape(name) + "/-/" + name + "-1.1.0.tgz")
+	r := c.fx.publisherGet(t, "/api/npm/"+c.registryKey+"/"+url.PathEscape(name)+"/-/"+name+"-1.1.0.tgz")
 	if r.Status != 404 && r.Status != 410 {
 		t.Fatalf("the tarball of the unpublished version answers %s, want 404 or 410", r)
 	}

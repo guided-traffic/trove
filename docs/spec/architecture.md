@@ -6002,6 +6002,8 @@ that run the nightly job have no CPU limit (dedicated performance runners): then
 
 **Applied in the spec:** the P-13 and P-14 rows of R-ARCH-027; [docs/developer/coordination.md](../developer/coordination.md) ("Bounds P-13
 and P-14"); [docs/developer/releasing.md](../developer/releasing.md) ("Performance (nightly)"); [docs/developer/build-and-test.md](../developer/build-and-test.md).
+Applied on 2026-10-31 to the same bounds on kind: E0.6 (`TestE06Lease` in [e06_lease_test.go](../../test/e2e/e06_lease_test.go)) asserts delivery and the
+p50 bounds per change and the p99 bounds with `TROVE_PERF_GATE=1`, after a run on throttled runner pods measured P-14 p99 = 1395 ms with n = 24.
 
 ### Q-ARCH-226 · The host answers an early, read-only ownership question
 

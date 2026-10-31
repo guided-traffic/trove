@@ -179,7 +179,8 @@ func TestEndpoints(t *testing.T) {
 		_, metrics := opsGet(web.ops, "/metrics")
 		for _, want := range []string{
 			`trove_http_requests_total{code="200",endpoint="default",handler="GET /api/v1/system/ping",listener="client",method="GET"}`,
-			`trove_http_requests_total{code="421",endpoint="customers",handler="unmatched",listener="client",method="GET"}`,
+			// the 421s of R-EP-003 asked for /api/npm/npm-all/, which the npm format's prefix routes on every endpoint
+			`trove_http_requests_total{code="421",endpoint="customers",handler="/api/npm/{repoKey}/{rest...}",listener="client",method="GET"}`,
 		} {
 			if !strings.Contains(metrics, want) {
 				t.Errorf("metrics lack %s\n%s", want, grepLines(metrics, "trove_http_requests_total"))
