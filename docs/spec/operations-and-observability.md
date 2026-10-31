@@ -645,6 +645,11 @@ replica registry (R-OPS-003) holds the per-replica view of every replica.
 - `database.pools` are the answering replica's. The Valkey block holds installation facts only;
   each replica's view of Valkey (its primary, circuit and Sentinels) is in the replica registry
   (R-OPS-003), and no Sentinel address appears in either.
+- From M4b, `vulnerabilityData` ([vulnerability-scanning.md](vulnerability-scanning.md)
+  R-VULN-024): `enforcement` and, per source and ecosystem, `source`, `ecosystem`, `mode`, `state`,
+  `stale`, `syncedAt` and `failures` (consecutive), read from `vuln_source_state` as the sources
+  API of R-VULN-021 reads them. Advisory data is cluster-wide state, so it is here and not in the
+  replica registry, and it never affects readiness.
 
 **Acceptance criteria:** the response contains no field whose value is a password, key, token or
 presigned URL. `grep -iE 'secret|password|trv_'` over the response finds only key names, never
@@ -819,6 +824,7 @@ Rules for every metric family, including families that format pages and other sp
   | `mechanism` | Valkey uses of [architecture.md](architecture.md) R-ARCH-030 (`flight_lock`, `negative_cache`, `rate_limit`, `change_message`, `signal`, `probe`) |
   | `limiter` | Registered rate limiters ([architecture.md](architecture.md) R-ARCH-034) |
   | `key_id` | Key IDs of the stored-secret key ring and key IDs that sealed values still reference ([architecture.md](architecture.md) R-ARCH-021); bounded by configuration |
+  | `ecosystem`, `severity` | From M4b ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-024): the OSV ecosystem names of the formats with the vulnerability adapter (`npm`, `NuGet`), `""` for a source without ecosystems; the severity levels `critical`, `high`, `medium`, `low`, `none`, `unknown` |
   | `version`, `revision`, `goversion`, `role` | Only on `trove_build_info` |
 
   Target labels that the scraper attaches (`role`, `pool`, `namespace`, `pod`, Q-OPS-13) are
@@ -1011,6 +1017,18 @@ HTTP duration histograms use the buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.
 | `trove_nuget_push_replayed_total` | counter | `repo` | Pushes of the identical bytes of a stored NuGet version, answered as accepted without a new event ([formats/nuget.md](formats/nuget.md) R-NUGET-006, R-NUGET-028, Q-NUGET-6; that page's label `repository` is `repo` here) |
 | `trove_nuget_symbol_index_lag_seconds` (P1) | gauge | — | Age of the oldest symbol package not yet indexed (R-NUGET-021, R-NUGET-028) |
 | `trove_nuget_symbol_index_failures_total` (P1) | counter | `repo`, `reason` | Symbol packages whose indexing ended with an error (R-NUGET-021, R-NUGET-028) |
+| `trove_vuln_source_last_success_timestamp_seconds` (M4b) | gauge | `source`, `ecosystem` | Last sync run of the advisory source that ended changed or unchanged; read from PostgreSQL ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-024) |
+| `trove_vuln_source_records` (M4b) | gauge | `source`, `ecosystem` | Stored advisory records; read from PostgreSQL (R-VULN-024) |
+| `trove_vuln_source_consecutive_failures` (M4b) | gauge | `source`, `ecosystem` | Consecutive failed sync runs (`vuln_source_state.failures`); read from PostgreSQL (R-VULN-024) |
+| `trove_vuln_sync_runs_total` (M4b) | counter | `source`, `ecosystem`, `kind` (`full`, `incremental`), `outcome` (`changed`, `unchanged`, `failed`) | Advisory sync runs (R-VULN-004) |
+| `trove_vuln_sync_records_total` (M4b) | counter | `source`, `ecosystem`, `result` (`written`, `skipped`, `rejected`, `deleted`) | Advisory records per sync result (R-VULN-004) |
+| `trove_vuln_unevaluable_ranges_total` (M4b) | counter | `ecosystem` | Advisory ranges the format's version order cannot evaluate (R-VULN-009) |
+| `trove_vuln_evaluations_total` (M4b) | counter | `trigger` (`publish`, `fill`, `miss`, `advisory`, `full`, `rescan`) | Evaluations of stored versions (R-VULN-011) |
+| `trove_vuln_evaluation_duration_seconds` (M4b) | histogram | `trigger` | Duration of an evaluation (R-VULN-011) |
+| `trove_vuln_findings` (M4b) | gauge | `severity`, `status`, `kind` | Findings; read from PostgreSQL (R-VULN-012) |
+| `trove_vuln_downloads_blocked_total` (M4b) | counter | `format`, `reason` (`malicious`, `severity`, `missing_data`), `mode` (`enforce`, `report`) | Downloads refused, or counted only in report mode (R-VULN-015) |
+| `trove_vuln_audit_requests_total` (M4b) | counter | `format`, `mode`, `outcome` | Client audits answered (R-VULN-017, R-VULN-018) |
+| `trove_vuln_claimed_name_matches` (M4b) | gauge | `ecosystem`, `kind` | Public advisories for claimed names; read from PostgreSQL (R-VULN-010) |
 
 </details>
 
@@ -1777,6 +1795,12 @@ asynchronous. "Hook" marks events that webhooks may select (R-OPS-037).
 | `webhook.created`, `webhook.updated`, `webhook.deleted` | T | — | R-OPS-038 | `changes` |
 | `webhook.secret_rotated`, `webhook.tested`, `webhook.redelivered` | T | — | R-OPS-040, R-OPS-041, R-OPS-043, R-OPS-044 | `secret_name` |
 | `webhook.disabled_by_receiver`, `webhook.suspended` | T | — | R-OPS-042, R-OPS-039 | `status`, `reason` |
+| `vulnerability.finding.status_changed` | T | — | From M4b: a triager changed a finding's status ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-013) | `finding`, `package`, `version`, `advisory`, `from`, `to`, `reason`, `bulk` |
+| `vulnerability.finding.reopened` | T | — | From M4b: trove returned a dismissed finding to `needs_triage` on a material advisory change (R-VULN-012) | `finding`, `advisory`, `change` |
+| `vulnerability.download_blocked` | A | — | From M4b, security event: a download was refused, or counted in report mode (R-VULN-015, R-VULN-016); at most once a minute per repository, version and client address | `package`, `version`, `advisory`, `reason`, `enforced`, `stored` |
+| `vulnerability.claimed_name_match` | A | — | From M4b, security event: a public advisory names a claimed internal name, once per advisory and name (R-VULN-010) | `package`, `advisory`, `kind`, `claimRepository` |
+| `vulnerability.source.failed` | A | — | From M4b: an advisory sync run failed; at most once an hour per source and ecosystem (R-VULN-004) | `source`, `ecosystem`, `code` |
+| `vulnerability.source.imported` | T | — | From M4b: a sync run in mode `repository` imported an item (R-VULN-005) | `source`, `ecosystem`, `sha256`, `deployedBy`, `acceptShrink` |
 
 </details>
 
@@ -1984,7 +2008,8 @@ requirement: the MVP registers `gc`, `gc-full`, `audit-retention`, `replica-regi
 (among them `session-cleanup`, `token-cleanup` and `token-expiry-notice` of
 [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-043, and
 `ci-keys-refresh`, `ci-replay-cleanup` and `ci-issuance-retention` of
-[gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-030); P1 requirements add theirs when they ship.
+[gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-030, and from M4b the four tasks of
+[vulnerability-scanning.md](vulnerability-scanning.md)); P1 requirements add theirs when they ship.
 
 **Tasks and leases.** A *task* is a named maintenance job, recurring or manual-only. A singleton
 scheduler enqueues due tasks into the job queue. The scheduler runs on the `worker` replica that
@@ -2048,6 +2073,10 @@ shared key is offered again on the next scheduler tick, so it is postponed, neve
 | `cluster-change-prune` | [architecture.md](architecture.md) R-ARCH-016 and R-ARCH-018: deletes change-log rows older than `cluster.change_retention` | `*/10 * * * *` (proposed, architecture.md) |
 | `proxy-invalidation-fold` | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-045: folds the cache invalidations into the metadata entries and deletes the rows that no reader needs any more (Q-OPS-153); one run at a time | `*/5 * * * *` (proposed) |
 | `backup-check` | [ha-and-helm.md](ha-and-helm.md) R-HA-023: the checks of `trove admin backup check`, exported as `trove_backup_check_ok{check}`; the task name is proposed here | `40 5 * * *` (proposed) |
+| `vuln-sync-osv` | From M4b, [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-004, R-VULN-005: incremental advisory sync per ecosystem, full when the state requires it; dedup key `vuln-sync-osv`; task parameter `{"acceptShrink": true}` for a manual run | `*/15 * * * *` (proposed, vulnerability-scanning.md) |
+| `vuln-sync-osv-full` | From M4b, R-VULN-004: full advisory sync, which also removes records the source no longer has; shares the dedup key `vuln-sync-osv` | `17 3 * * 0` (proposed, vulnerability-scanning.md) |
+| `vuln-sync-kev` | From M4b, R-VULN-008: the known-exploited catalog | `41 */6 * * *` (proposed, vulnerability-scanning.md) |
+| `vuln-findings-retention` | From M4b, R-VULN-014: deletes findings resolved longer than `vulnerabilities.findings.resolved_retention` ago | `50 3 * * *` (proposed, vulnerability-scanning.md) |
 
 Retention policies ([storage.md](storage.md)) carry their own schedules and appear in the job list,
 not in the task list.
@@ -2096,6 +2125,10 @@ maintenance:
     ci-keys-refresh: {enabled: true, schedule: "*/5 * * * *"}          # default (proposed); owned by gitlab-ci-oidc.md R-CI-030
     ci-replay-cleanup: {enabled: true, schedule: "7 * * * *"}          # default (proposed); owned by gitlab-ci-oidc.md R-CI-030
     ci-issuance-retention: {enabled: true, schedule: "40 3 * * *"}     # default (proposed); owned by gitlab-ci-oidc.md R-CI-030
+    vuln-sync-osv: {enabled: true, schedule: "*/15 * * * *"}           # default (proposed); from M4b, owned by vulnerability-scanning.md R-VULN-025
+    vuln-sync-osv-full: {enabled: true, schedule: "17 3 * * 0"}        # default (proposed); from M4b, owned by vulnerability-scanning.md R-VULN-025
+    vuln-sync-kev: {enabled: true, schedule: "41 */6 * * *"}           # default (proposed); from M4b, owned by vulnerability-scanning.md R-VULN-025
+    vuln-findings-retention: {enabled: true, schedule: "50 3 * * *"}   # default (proposed); from M4b, owned by vulnerability-scanning.md R-VULN-025
     # secrets-reencrypt is manual-only: no entry; one here stops startup
 ```
 

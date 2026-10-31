@@ -244,6 +244,7 @@ read (R-REPO-010) and the object body of configuration as code
 | `remote` | R-REPO-024; `cacheFillAction` within it is [R-AUTHZ-008](authorization.md) | — | this page |
 | `virtual` | R-REPO-017 | — | this page |
 | `storage` | Upload size, quota, presigned downloads, client checksum policy | see owner | [storage.md](storage.md) |
+| `vulnerabilities` | From M4b: scanning and download blocking of a local or remote repository of a format with the vulnerability adapter (`enabled`, `matchPublicAdvisories`, `blockMalicious`, `blockSeverity`, `onMissingData`); `not_applicable` on virtual repositories and other formats | see owner | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-002 |
 | `npm`, `nuget`, … | Format settings, under a member named after the format. The service validates it against the JSON Schema the format registers (`GET /api/v1/formats` serves it as `settingsSchema`), reports a violation as 422 `validation_failed` at `/<format>/<member>` (`invalid_value`), and answers `not_applicable` for a setting of another class and for the member of another format (Q-ARCH-229, Q-REPO-122). Built: `npm`; `nuget` joins with its format | see owner | format page |
 
 - A class section that does not match the class (for example `virtual` on a local repository)

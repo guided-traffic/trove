@@ -271,22 +271,25 @@ Priority: **MVP** · Covers: PKG-NPM-060
   `path_not_admitted`, `no_deploy_target`, `populate_not_permitted`,
   `upstream_integrity_mismatch`, `egress_denied`, `foreign_host_denied`, `shadows_remote_package`,
   `shadow_check_unavailable`, …); the table lists the npm-specific codes and the generic
-  `quota_exceeded`, whose npm behavior this page fixes:
+  `quota_exceeded` and, from M4b, vulnerability codes, whose npm behavior this page fixes:
 
 | Status | `code` | When |
 |---|---|---|
 | 400 | `npm_invalid_name`, `npm_invalid_version`, `npm_invalid_tag`, `npm_bad_publish`, `npm_manifest_mismatch` | R-NPM-002, R-NPM-007, R-NPM-016 |
+| 403 | `vulnerability_blocked`, `vulnerability_data_missing` (generic, from M4b) | A download refused by [vulnerability-scanning.md](../vulnerability-scanning.md) R-VULN-015, with `Cache-Control: no-store` and the text of R-VULN-016 |
 | 405 | `npm_class_not_writable` | write to a remote repository |
 | 409 | `npm_version_exists`, `npm_version_unpublished`, `npm_stale_rev` | R-NPM-008, R-NPM-009 |
 | 413 | `npm_too_large` | R-NPM-007 limits |
 | 501 | `npm_audit_unavailable`, `npm_not_implemented` | R-NPM-038, unimplemented `POST` endpoints |
 | 502 | `npm_invalid_upstream_document` | R-NPM-024 |
+| 503 | `vulnerability_data_unavailable` (generic, from M4b) | An audit in mode `local` before trove's npm advisory data is complete ([vulnerability-scanning.md](../vulnerability-scanning.md) R-VULN-017) |
 | 507 | `quota_exceeded` (generic, [storage.md](../storage.md) R-STOR-029, P1) | A publish or raw deploy would exceed the system capacity limit or the target repository's quota (storage.md Q-STOR-7). The `error` text names the limit: the repository key or the system limit. npm retries the publish `PUT` on a `5xx` twice by default (after 10 s and 60 s), so `npm publish` reports it after about 70 s |
 
 - `npm-notice` (a response header npm prints on any response,
   [npm-registry-fetch](https://github.com/npm/npm-registry-fetch/blob/main/lib/check-response.js);
   Yarn 2+ prints it only on error responses) is set only where this page says so (R-NPM-007,
-  R-NPM-016, R-NPM-038).
+  R-NPM-016, R-NPM-038) and, from M4b, where
+  [vulnerability-scanning.md](../vulnerability-scanning.md) R-VULN-017 says so.
 - Request headers `npm-command`, `npm-session`, `npm-scope`, `npm-in-ci` and `npm-auth-type` are
   logged (R-NPM-044) and never used for decisions.
 
@@ -1884,14 +1887,31 @@ names, each with a list of versions:
   by its replica's shutdown would fail `npm audit`; with this deadline, a forward that is running
   when its replica starts to drain ends before the shutdown deadline
   ([architecture.md](../architecture.md) R-ARCH-024, R-NPM-046).
+- **Mode `local`, from M4b** ([vulnerability-scanning.md](../vulnerability-scanning.md)
+  R-VULN-017, Q-VULN-9). The modes become `local | forward | disabled`, and `npm.audit` becomes a
+  member of every class: `local` and `disabled` on every class, `forward` on remote and virtual
+  repositories (a virtual repository in `forward` forwards through its first forwarding member, as
+  above). In mode `local` trove answers the bulk endpoint from its own advisory data on local,
+  remote and virtual repositories and sends nothing out; a virtual repository answers itself and
+  consults no member. The body bounds and the request handling above apply in every mode;
+  `providerURL` and `timeout` apply to `forward` only. The default is `local` while the
+  installation's `vulnerabilities.enabled` is `true` and its OSV source is not `off` (R-VULN-025);
+  otherwise it is the default above: `forward` on remote and virtual repositories, `disabled` on
+  local ones. The 501 cases above then hold for modes `forward` and `disabled`; in mode `local`
+  only the cache view and an endpoint with exposure rules (R-NPM-048, Q-VULN-19) answer 501, a local
+  repository and an offline remote answer, and while trove's npm advisory data is not complete the
+  answer is 503 `vulnerability_data_unavailable` (R-NPM-005). With the installation's
+  `vulnerabilities.enabled: false`, mode `local` answers like `disabled`. npm 6's endpoints keep
+  their 501 in every mode, with the text that names the bulk endpoint where it is served.
 
 Configuration (`npm` section of a remote repository, validated by
-[settings.schema.json](../../../internal/formats/npm/settings.schema.json)):
+[settings.schema.json](../../../internal/formats/npm/settings.schema.json); from M4b of every class,
+as the mode `local` bullet above says):
 
 ```yaml
 npm:
   audit:
-    mode: forward          # default; forward | disabled
+    mode: forward          # default; forward | disabled; from M4b also local, the default while scanning is on (R-VULN-017)
     providerURL: null      # default: the remote's upstream URL; an https URL without user info, query or fragment
     timeout: 30s           # default; 1s to 300s
     maxBodySize: 1MiB      # default (Q-NPM-64); 1KiB to 10MiB, ten times that decompressed
@@ -1906,11 +1926,16 @@ Acceptance criteria:
 - A lockfile with one public package that `npm-remote` never fetched: `npm audit` prints the
   `npm-notice` naming 1 withheld name, and the provider does not see that name.
 - `npm audit --registry …/npm-local/` fails with 501 and the error text; `npm install` against the
-  same registry succeeds.
+  same registry succeeds. (The M2 criterion; from M4b it holds with `npm-local` in mode
+  `disabled`.)
 - A small gzip body that inflates beyond the limit answers 413.
 - A `providerURL` with user info is refused with 422 when the repository document is written.
 - The test provider answers after 20 s. The `web` pod that forwards an `npm audit` is deleted
   1 s after the request arrived; `npm audit` succeeds, and the kubelet events show no `SIGKILL`.
+
+From M4b, while scanning is on, the forwarding criteria above run with `npm-remote` and `npm-all`
+set to `forward`; the criteria of mode `local` are those of
+[vulnerability-scanning.md](../vulnerability-scanning.md) R-VULN-017.
 
 ### R-NPM-039 · Build-tool integration surface
 Priority: **P1** · Covers: PKG-NPM-055
@@ -2226,6 +2251,12 @@ maintenance until 2027-04-30, 24 in maintenance, 26 active LTS from 2026-10-28):
   local and remote packages through `npm-all`; publish; dist-tag add, list, remove; deprecate and
   unpublish (npm, pnpm); whoami; login (web where supported, legacy otherwise); audit; search
   (npm, pnpm); lockfile reinstall with an empty client cache.
+- From M4b the audit scenario runs in mode `local` through `npm-local`, `npm-remote` and `npm-all`
+  ([vulnerability-scanning.md](../vulnerability-scanning.md) R-VULN-017, R-VULN-029), and the
+  forwarding scenario of M2 keeps running with `npm-remote` and `npm-all` set to `forward`. pnpm 10
+  expects the 501 of npm 6's endpoints in both modes (Q-NPM-65). Yarn 1's row stays not applicable:
+  `yarn audit` sends its request to registry.yarnpkg.com whatever `.npmrc` says, so it never reaches
+  trove.
 - A scenario that depends on a client feature a row's version lacks (for example npm's
   `min-release-age`, or the native trusted-publishing exchange, which npm 10 and Yarn 1 lack and
   which the npm 10, pnpm 10 and Yarn 1 rows therefore test through the generic-exchange snippet of
@@ -2478,7 +2509,11 @@ document and before compression:
   (R-NPM-038) answers 501 `npm_audit_unavailable`, as in mode `disabled`, because forwarding
   would contact an upstream. It does so on an endpoint with exposure rules as well, because the
   split into forwarded and withheld names tells which names a remote has fetched, the fact
-  `Cache-Status` is hidden for there (Q-EP-60, Q-NPM-62).
+  `Cache-Status` is hidden for there (Q-EP-60, Q-NPM-62). From M4b, mode `local`
+  ([vulnerability-scanning.md](../vulnerability-scanning.md) R-VULN-017) contacts no upstream, so
+  an endpoint with `cache_fill: false` answers audits in that mode; an endpoint with exposure rules
+  keeps the 501 in every mode, because in mode `local` the withheld names tell which names the
+  installation treats as internal, which a hidden package must not reveal (Q-VULN-19).
 - **Validators.** The ETag of R-NPM-013 includes the endpoint and its exposure fingerprint, so a
   rule change makes every cached copy of the document fail revalidation.
 - **Version ranges** in rules use node-semver range syntax; `ValidateRange` refuses what npm's own
@@ -2688,6 +2723,12 @@ the tree), and it is visible: npm prints `npm-notice` on every response (verifie
 Withdrawn packages stay forwardable, because malware advisories are exactly what an audit should
 find. The development agent would revisit this if `trove_npm_audit_names_withheld_total{reason="not_proxied"}`
 stays high for real users, which would call for an opt-in per remote to forward unproxied names.
+
+Revisited 2026-10-31: from M4b the default is mode `local` while scanning is on
+([vulnerability-scanning.md](../vulnerability-scanning.md) Q-VULN-9): the audit is answered from
+trove's own advisory data and nothing is sent out, so forwarding becomes opt-in per remote and
+virtual repository. Choice (c) stays the rule of mode `forward`, and its default where scanning is
+off or the OSV source is `off`.
 
 **Applied in the spec:** R-NPM-038 rewritten: the proxied-names rule, withholding of names covered
 by any claim scope, the `npm-notice` text, the `{}` answer when every name is withheld, and two new
@@ -4433,7 +4474,9 @@ deciding. trove does not scan package content; curation and scanning are separat
 
 Component: audit forwarding (R-NPM-038). Subject: the dependency set of every project that runs
 `npm audit`, `pnpm audit` or `yarn npm audit` against a repository whose remote forwards (the
-default). Live since R-NPM-038 was built (M2). trove forwards only names its remote has already fetched
+default until M4b). Live since R-NPM-038 was built (M2), and from M4b only for repositories in mode
+`forward`, which is then opt-in while scanning is on: the default mode `local` sends nothing out
+([vulnerability-scanning.md](../vulnerability-scanning.md) R-VULN-017, Q-VULN-9). trove forwards only names its remote has already fetched
 from the upstream and that no local repository, claim or pin rule marks internal, so no internal
 name the upstream has not seen leaves the installation. What still leaves it: the combination of
 public names and versions per project, which tells the provider (by default the upstream registry)

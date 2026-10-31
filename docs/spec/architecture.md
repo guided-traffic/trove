@@ -373,7 +373,7 @@ connection through an edge proxy that balances per request.
 
 | Per-replica state | Lifetime | Why it does not break INV-18 |
 |---|---|---|
-| Registered in-process caches (R-ARCH-018): the repository snapshot; the proxy's copies of the claims and pin-rule trie, gone packages, circuit state, global offline switch and cache invalidations ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-023, R-REPO-029, R-REPO-031, R-REPO-045); the grant index; the identity caches `auth_tokens`, `auth_sessions`, `auth_principals` and `auth_settings` ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023); the rendition cache; the merged-metadata cache; the per-remote upstream HTTP clients with their connection pools (`proxy_upstream_clients`, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-049, Q-REPO-89); CI issuer keys | Until evicted, invalidated or `SafetyTTL` | Each is a copy of PostgreSQL state. It is self-validating (`rev_seq`, epochs) or kept within the propagation bound of R-ARCH-018, and a fill never re-inserts a value that a change has already invalidated (R-ARCH-018), so another replica gives the same answer from PostgreSQL. An epoch that went backwards or was reused after a PostgreSQL failover flushes the area on every replica, for every change area (R-ARCH-018, change-area step 5). |
+| Registered in-process caches (R-ARCH-018): the repository snapshot; the proxy's copies of the claims and pin-rule trie, gone packages, circuit state, global offline switch and cache invalidations ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-023, R-REPO-029, R-REPO-031, R-REPO-045); the grant index; the identity caches `auth_tokens`, `auth_sessions`, `auth_principals` and `auth_settings` ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023); the rendition cache; the merged-metadata cache; the per-remote upstream HTTP clients with their connection pools (`proxy_upstream_clients`, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-049, Q-REPO-89); CI issuer keys; from M4b the advisory source state `vuln_source_state` and the rendered NuGet vulnerability page `vuln_nuget_page` ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-027) | Until evicted, invalidated or `SafetyTTL` | Each is a copy of PostgreSQL state. It is self-validating (`rev_seq`, epochs) or kept within the propagation bound of R-ARCH-018, and a fill never re-inserts a value that a change has already invalidated (R-ARCH-018), so another replica gives the same answer from PostgreSQL. An epoch that went backwards or was reused after a PostgreSQL failover flushes the area on every replica, for every change area (R-ARCH-018, change-area step 5). |
 | Metadata-bytes cache, keyed by blob digest ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-025) | Until evicted | Self-validating: which digest a request serves is always read from PostgreSQL, and the key is the content address, so every replica serves the same bytes. |
 | Negative cache of unknown repository keys (R-ARCH-011 step 2) | Until evicted, at most `SafetyTTL` | A copy of a PostgreSQL miss. Every `repo_config` change evicts it on every replica within the bound of R-ARCH-018, so a new repository answers `404` on a replica only if that replica missed the key shortly before the creation, and for at most that bound ([api-and-ui.md](api-and-ui.md) R-API-052). |
 | Negative-cache L1 (R-ARCH-030) | At most the checked lifetime of the Valkey entry it copies | A copy of an upstream `404` or `410`, not of PostgreSQL state. Any replica may answer from such an entry or ask the upstream within `notFoundTtlSeconds` ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-028), so both answers are the same contract; an invalidation applies to the L1 as to Valkey. |
@@ -1242,6 +1242,12 @@ Normative rules:
   - The hook reads through `Host` like every other format access, and runs no SQL itself.
   - The in-process state a format's check uses is listed in R-ARCH-032 like any other per-replica
     state. npm uses none: it reads PostgreSQL per request.
+- **Vulnerability adapter (from M4b).** A format takes part in vulnerability scanning by also
+  implementing the optional interface `formats.VulnerabilityAdapter` of
+  [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-009 (its OSV ecosystem, the
+  normalization of advisory names and versions, the format's version order). The core discovers it
+  by a type assertion, so the frozen methods above and `ContractVersion` stay as they are; a format
+  without it is `not_covered` (Q-VULN-15).
 
 Acceptance criteria:
 - The conformance kit (R-ARCH-010) passes for `npm` and `nuget`.
@@ -1415,12 +1421,16 @@ own tests:
    in-memory `Host`.
 10. For every sample package name the kit ships, `PackageDocumentPath` returns a path that `Match`
     resolves to a `GET` route, and two spellings of the same normalized name yield the same path.
+11. From M4b, for a format that implements `VulnerabilityAdapter`: the matching corpus of
+    [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-009 (the event table test and the
+    frozen real-record corpus) gives the expected results (Q-VULN-15).
 
 A check that cannot apply to a format is skipped in the format's test with a stated reason (generic
 has no routes, no clients and no package names); a skip without a reason fails the check, so a
 later class cannot pass a check vacuously. The kit also refuses a skip that the format contradicts:
 checks 1, 3 and 7 on a format that has routes, check 4 on one with a remote adapter, check 5 with a
-virtual adapter, check 8 with clients or setup templates, check 10 with package names. Check 2 is
+virtual adapter, check 8 with clients or setup templates, check 10 with package names, check 11
+with a vulnerability adapter. Check 2 is
 never skipped. A check with nothing to run over (an empty fixture) fails unless it is skipped.
 
 A format runs the kit as `formattest.Run(t, format, formattest.Fixture{…})` in its own test; one
@@ -1489,6 +1499,12 @@ Priority: **MVP** · Covers: ART-011, REPO-016, STOR-001
    - `Content`: the item lookup, then the format's serve-time check (`ServeCheck`, R-ARCH-008),
      then the `HEAD`, conditional, `Range` and streaming rules of [storage.md](storage.md).
      Conditional requests and `HEAD` never reach object storage.
+     From M4b the item lookup also reads the block verdict of
+     [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-015 in the same query, with the
+     repository's policy from the snapshot as parameters. It is applied after `ServeCheck`, so a
+     version the caller may not read or the format refuses keeps its `404`; a blocked version
+     answers `403 vulnerability_blocked` for `GET`, `HEAD`, conditional and `Range` requests alike,
+     never `304`.
    - `Computed`: R-ARCH-012.
 7. The response carries the content headers (R-ARCH-007).
 8. Download statistics are counted in memory and flushed in batches. The request path never writes
@@ -1595,6 +1611,13 @@ fixes their order and the components involved.
 | Upstream `401`/`403` | Never forwarded as `401`/`403` | `502` `upstream_auth_failed` |
 | Upstream unreachable / timeout | Counted toward the circuit | `502` `upstream_unreachable` / `504` `upstream_timeout` |
 | Destination refused by the egress policy | No connection | `502` `egress_denied` |
+
+**Vulnerability blocks, from M4b** ([vulnerability-scanning.md](vulnerability-scanning.md)
+R-VULN-011, R-VULN-015). A hit reads the joined block verdict in its item lookup, as R-ARCH-011
+step 6 does. On a miss of a path whose `PathInfo` names a package and a version, the core evaluates
+that version after the population check and before step 1 below: a blocked version takes no flight
+lock, is not fetched, not stored and answers `403`, and the evaluation of a version that is fetched
+is reused by the commit of step 5, so a fill costs one evaluation query.
 
 The order on a miss:
 1. Single-flight within the replica, then the cross-replica flight lock in Valkey through
@@ -1964,6 +1987,11 @@ Normative rules:
 | `data_migration_<name>` | R-ARCH-026 | Resumable through `checkpoint` |
 | `nuget-symbol-index` | [formats/nuget.md](formats/nuget.md) R-NUGET-021 (P1) | Queue `index`, dedup key `nuget-symbol-index:<version id>`, `exclusive`: one job per symbol package, enqueued in the symbol push's commit and, for the backfill, by a data migration. The handler re-checks `indexed_at` under the `nuget_symbol_package` row lock, so a released, retried or reindex-started run commits nothing twice; a package that cannot be indexed ends with `index_error` instead of failing the job. |
 | `cluster-change-prune` | R-ARCH-018 | Scheduled every 10 minutes, `exclusive`. Deletes a `cluster_change` row once the next row of its area is older than `cluster.change_retention`. The newest row of each area is therefore always kept, and a replica that polled within the retention still finds the row at its last applied epoch, which change-area step 5 of R-ARCH-018 checks. Idempotent. |
+| `vuln-sync-osv`, `vuln-sync-osv-full` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-004 (from M4b) | Queue `maintenance`. Dedup key `vuln-sync-osv`, shared by both kinds, `exclusive`, as for `gc` and `gc-full`. `MaxAttempts: 1`: a failed run waits for the next slot. A full sync checkpoints the index of its last committed batch and the archive's `ETag`. |
+| `vuln-sync-kev` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-008 (from M4b) | `exclusive` under its name; `MaxAttempts: 1`, as every sync run of R-VULN-004 |
+| `vuln-evaluate` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-011 (from M4b) | Queue `default`. Dedup key `vuln-evaluate`, `coalesce`. Its work is read from tables, never from `args`: the advisories queued in `vuln_pending_evaluation` and the full evaluations requested in `vuln_source_state`, so an enqueue that a waiting job absorbs loses nothing (Q-VULN-18). Checkpoints after each batch. |
+| `vuln-rescan` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-011 (from M4b) | Dedup key `vuln-rescan:<repository id>`, `exclusive`; its manual trigger answers `409` with the running job. A run that finds other scanning inputs of its repository at its end than at its start runs again before it ends (Q-VULN-18). |
+| `vuln-findings-retention` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-014 (from M4b) | `exclusive` under its name; deletes in batches |
 
 Tasks of other pages, such as those in R-OPS-019's table, register their kinds by the same rule.
 None of the storage kinds above takes an advisory-lock lease: their exclusion is the job key, and
@@ -2170,7 +2198,9 @@ leaves:
      - the fold job writes `cache_invalidation` when it deletes folded invalidation rows
        (R-REPO-045).
 
-     Both job writes happen per batch, not per client request.
+     Both job writes happen per batch, not per client request. From M4b the advisory sync of
+     [vulnerability-scanning.md](vulnerability-scanning.md) writes `vuln_data` once per sync run
+     that changed records, never per request (R-VULN-004, R-VULN-027).
 
      A transaction that notifies several change areas updates their `cluster_epoch` rows in
      area-name order, so two such transactions cannot deadlock. A project repository assignment
@@ -2331,6 +2361,7 @@ The owning page may move one of its areas to the other class. Until it does, thi
 | `events` | [operations-and-observability.md](operations-and-observability.md) | signal | Outbox dispatch wake-up (R-OPS-035, P1); outbox rows are written in publish and cache-fill transactions, and a five-second poll covers lost signals |
 | `deliveries` | [operations-and-observability.md](operations-and-observability.md) | signal | Wakes the delivery-log follow stream (R-OPS-044, P1); the payload carries delivery record IDs. The stream's own poll covers lost signals ([api-and-ui.md](api-and-ui.md) R-API-051). |
 | `ci_issuer_keys`, `ci_mappings` | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) | change | Key-set reload, written only when a stored key set changes (R-CI-003). Issuer and mapping reload, written by every issuer, mapping and delegation write (R-CI-002, R-CI-009). A mapping disable revokes. The exchange does not depend on the timing of either: it re-reads the key row on an unknown `kid` (throttled per replica), and it re-reads the issuer row and checks its `version` and `mappings_version` (R-CI-007). |
+| `vuln_data` | [vulnerability-scanning.md](vulnerability-scanning.md) | change | From M4b: the state of the advisory data per source and ecosystem (complete, stale, data epoch), written once per sync run that changed records. It invalidates the caches `vuln_source_state` (`SafetyTTL` 60 s) and `vuln_nuget_page`, whose key carries the `vuln_data`, `claims` and `repo_config` epochs (R-VULN-018, R-VULN-027). |
 
 The channel `trove_proxy_fetch` of the earlier design no longer exists: fill completion uses the
 flight channel of R-ARCH-033.

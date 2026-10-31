@@ -18,7 +18,7 @@ regenerated.
 | Number | Value | Kind |
 |---|---|---|
 | **Implemented** | **8.5%** (190 of 2,239 catalog features) | measured from passing tests that name requirements (Q-ROAD-4) |
-| **MVP features covered by spec requirements** | **100%** (377 of 377) | measured from `Covers:` lines |
+| **MVP features covered by spec requirements** | **100%** (379 of 379) | measured from `Covers:` lines |
 | P1 features covered by spec requirements | 56.7% (293 of 517) | measured from `Covers:` lines |
 | In-scope features covered (MVP, P1, P2, Later) | 32.1% (695 of 2,167) | measured from `Covers:` lines |
 | Catalog features | 2,239 on 60 pages | measured from catalog headings |
@@ -51,10 +51,10 @@ see [Honesty notes](#honesty-notes).
 <!-- coverage-gen:begin priority -->
 | Priority | Features | Specified | Open | Specified share | Covered by an MVP requirement | Implemented |
 |---|---:|---:|---:|---:|---:|---:|
-| **MVP** | 377 | 377 | 0 | 100% | 377 | 138 |
+| **MVP** | 379 | 379 | 0 | 100% | 379 | 138 |
 | **P1** | 517 | 293 | 224 | 56.7% | 61 | 45 |
 | **P2** | 895 | 23 | 872 | 2.6% | 12 | 7 |
-| **Later** | 378 | 2 | 376 | 0.5% | 2 | 0 |
+| **Later** | 376 | 0 | 376 | 0% | 0 | 0 |
 | **Out of scope** | 72 | 0 | 72 | 0% | 0 | 0 |
 | **Total** | 2,239 | 695 | 1,544 | 31.0% | 452 | 190 |
 <!-- coverage-gen:end priority -->
@@ -74,13 +74,13 @@ Each page name links to that page's section of the checklist.
 <!-- coverage-gen:begin pages -->
 | Catalog page | Features | MVP | P1 | P2 | Later | Out of scope | Specified | Open |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| [Repositories](checklist.md#repositories-repo) | 68 | 23 | 26 | 16 | 2 | 1 | 41 | 27 |
+| [Repositories](checklist.md#repositories-repo) | 68 | 24 | 26 | 16 | 1 | 1 | 41 | 27 |
 | [Remote repositories](checklist.md#remote-repositories-rmt) | 49 | 15 | 14 | 20 | 0 | 0 | 28 | 21 |
 | [Replication, federation and multi-site topology](checklist.md#replication-federation-and-multi-site-topology-repl) | 72 | 0 | 0 | 17 | 51 | 4 | 0 | 72 |
 | [Artifact management](checklist.md#artifact-management-art) | 53 | 10 | 20 | 22 | 0 | 1 | 32 | 21 |
 | [Search and query language](checklist.md#search-and-query-language-srch) | 64 | 0 | 24 | 35 | 5 | 0 | 3 | 61 |
 | [Builds and CI integration](checklist.md#builds-and-ci-integration-bld) | 49 | 0 | 15 | 22 | 11 | 1 | 0 | 49 |
-| [Identity and access](checklist.md#identity-and-access-iam) | 69 | 20 | 11 | 26 | 7 | 5 | 35 | 34 |
+| [Identity and access](checklist.md#identity-and-access-iam) | 69 | 21 | 11 | 26 | 6 | 5 | 35 | 34 |
 | [Authentication providers and human login](checklist.md#authentication-providers-and-human-login-authn) | 44 | 13 | 5 | 25 | 0 | 1 | 18 | 26 |
 | [Access tokens](checklist.md#access-tokens-tok) | 48 | 24 | 3 | 12 | 6 | 3 | 27 | 21 |
 | [OIDC federation for CI systems](checklist.md#oidc-federation-for-ci-systems-cioidc) | 40 | 20 | 9 | 10 | 1 | 0 | 31 | 9 |
@@ -187,9 +187,9 @@ table.
 <!-- coverage-gen:begin audiences -->
 | Audience | MVP entries | MVP and P1 entries | Implemented | Most open entries (MVP and P1) |
 |---|---|---|---:|---|
-| **npm-only team** | 200 of 200 specified, 0 open (100%) | 314 of 362 specified, 48 open (86.7%) | 106 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
-| **.NET team** | 198 of 198 specified, 0 open (100%) | 304 of 352 specified, 48 open (86.4%) | 97 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
-| **platform/ops team** | 258 of 258 specified, 0 open (100%) | 440 of 460 specified, 20 open (95.7%) | 145 | Repositories 9; Operations, monitoring and configuration 4; High availability and deployment 3 |
+| **npm-only team** | 202 of 202 specified, 0 open (100%) | 316 of 364 specified, 48 open (86.8%) | 106 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
+| **.NET team** | 200 of 200 specified, 0 open (100%) | 306 of 354 specified, 48 open (86.4%) | 97 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
+| **platform/ops team** | 260 of 260 specified, 0 open (100%) | 442 of 462 specified, 20 open (95.7%) | 145 | Repositories 9; Operations, monitoring and configuration 4; High availability and deployment 3 |
 
 Pages counted per audience:
 

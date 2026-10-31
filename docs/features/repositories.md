@@ -495,7 +495,7 @@ hosted (SaaS) offering; default off; not available for many formats. It has no m
 self-hosted system.
 
 ### REPO-021 · Scanner indexing
-Priority: **Later**
+Priority: **MVP**
 
 | Setting | Meaning | Default |
 |---|---|---|

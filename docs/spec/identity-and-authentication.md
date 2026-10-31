@@ -1968,6 +1968,7 @@ used for monitoring and audit tokens:
 | `settings:read` | `GET /api/v1/settings/auth` and other settings reads |
 | `audit:read` | Read audit events ([operations-and-observability.md](operations-and-observability.md)) |
 | `repositories:read-config` | Read repository configurations ([repositories-and-proxy.md](repositories-and-proxy.md)) |
+| `vulnerabilities:triage` | From M4b: change the status of vulnerability findings; the token also needs `read` on the finding's repository, so a scope with this item alone reads and changes no finding ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-013, R-VULN-019) |
 
 **Declaring items.** Every administration operation declares the item that admits it, in the
 OpenAPI document as `x-trove-system-scope`. Operations without a declared item need

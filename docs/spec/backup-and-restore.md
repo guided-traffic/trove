@@ -300,12 +300,20 @@ moves one of its tables states it on its own page.
 | `support_bundle`, `support_bundle_part` | operations-and-observability.md R-OPS-027 | `transient` | Diagnostic archives with logs; their blobs are not referenced by any other row |
 | `api_idempotency_keys` | [api-and-ui.md](api-and-ui.md) | `transient` | Retry protection for minutes |
 | `backup_run`, `backup_blob_pin` | this page | `transient` | The target, not the database, is the record of backups |
+| `vuln_advisory`, `vuln_affected`, `vuln_kev` | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-026 (from M4b) | `transient` | Public advisory data that the next sync fetches again, hundreds of megabytes in every export otherwise (Q-VULN-13) |
+| `vuln_source_state` | vulnerability-scanning.md R-VULN-026 (from M4b) | `transient` | After a restore every ecosystem is `empty`, so the next sync slot runs a full import, from the restored mirror repository in mode `repository` |
+| `vuln_pending_evaluation`, `vuln_claimed_match` | vulnerability-scanning.md R-VULN-026 (from M4b) | `transient` | Derived from the advisory data; the full evaluation after the first import recomputes them |
 | `schema_migration`, `schema_state` | [ha-and-helm.md](ha-and-helm.md) R-HA-018 | `schema` | Recreated by the migrations of R-BAK-023 |
 
 `ci_subject_token_uses` ([gitlab-ci-oidc.md](gitlab-ci-oidc.md)) stays `data` on purpose: it
 keeps a single-use subject token used before the snapshot from being exchanged again after a
 restore; tokens used after the snapshot are refused through the `system_state` key `restored_at`
 ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-018).
+
+`vuln_finding` and `vuln_finding_event` ([vulnerability-scanning.md](vulnerability-scanning.md)
+R-VULN-026, from M4b) stay `data`: triage is work people did and cannot be fetched again, and while
+the advisory tables are empty after a restore no evaluation resolves a finding, so restored blocks
+hold until the first complete import (R-VULN-011).
 
 `trove migrate up` checks the registry after it has applied the migrations: it compares the tables of the schema with
 `tables.Default()` and refuses with exit `3`, naming the unregistered tables, so an installation never runs with a

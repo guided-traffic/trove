@@ -129,13 +129,16 @@ values it knows, each resource MUST be listed under every alias in the table.
 | Metadata, SemVer 2, gzip | `RegistrationsBaseUrl/3.6.0` | `<feed>/registration-semver2/` |
 | Search | `SearchQueryService`, `SearchQueryService/3.0.0-beta`, `SearchQueryService/3.0.0-rc`, `SearchQueryService/3.5.0` | `<feed>/search` |
 | Autocomplete (P1) | `SearchAutocompleteService`, `…/3.0.0-beta`, `…/3.0.0-rc`, `…/3.5.0` | `<feed>/autocomplete` |
-| Vulnerability information (P1) | `VulnerabilityInfo/6.7.0` | `<feed>/vulnerabilities/index.json` |
+| Vulnerability information (from M4b; the pass-through P1) | `VulnerabilityInfo/6.7.0` | `<feed>/vulnerabilities/index.json` |
 | README template (P1) | `ReadmeUriTemplate/6.13.0` | `<feed>/flatcontainer/{lower_id}/{lower_version}/readme` |
 
 - Publish and symbol publish entries appear only on local repositories and on virtual
   repositories with a deploy target (R-NUGET-019). Remote repositories never list them.
 - Autocomplete, vulnerability information and the README template appear once their P1
   requirements are implemented; the vulnerability entry only when R-NUGET-023 has data to offer.
+  From M4b the vulnerability entry is listed on every repository class, local included, while
+  `nuget.vulnerabilityInfo` is `local` and trove's NuGet advisory data is complete
+  ([vulnerability-scanning.md](../vulnerability-scanning.md) R-VULN-018).
 - Resources the protocol defines but trove does not implement (catalog, repository signatures,
   package details, owner details, report abuse) MUST NOT be listed.
 
@@ -161,7 +164,9 @@ HTTP conventions for every NuGet endpoint:
     push;
   - for the service index: the repository's configuration version and `<base>`; from P1, for a
     remote or virtual repository also the stored digests of the upstream service indexes and the
-    member fingerprint that decide whether the vulnerability entry is listed (R-NUGET-023);
+    member fingerprint that decide whether the vulnerability entry is listed (R-NUGET-023); from
+    M4b also whether trove's NuGet advisory data is complete, which decides whether trove's own
+    entry is listed (R-VULN-018);
   - for every document: the endpoint of the request and its exposure fingerprint (R-NUGET-034,
     [endpoints.md](../endpoints.md) R-EP-018).
 
@@ -174,7 +179,9 @@ HTTP conventions for every NuGet endpoint:
   autocomplete responses carry no `ETag`.
 - Status codes follow the protocol: 200, 201, 204, 304, 400 invalid parameters or package, 401
   missing or invalid credentials, 403 or 404 per [authorization.md](../authorization.md)
-  (R-AUTHZ-016), 405 operation not offered by this repository class, 409 conflict, 413 too large,
+  (R-AUTHZ-016), from M4b 403 `vulnerability_blocked` or `vulnerability_data_missing` for a
+  download that [vulnerability-scanning.md](../vulnerability-scanning.md) R-VULN-015 refuses (body
+  of R-VULN-016), 405 operation not offered by this repository class, 409 conflict, 413 too large,
   502 or 503 for upstream and storage failures as [repositories-and-proxy.md](../repositories-and-proxy.md)
   and [storage.md](../storage.md) define them, 507 for a reached quota or capacity limit
   ([storage.md](../storage.md) R-STOR-029, P1).
@@ -746,7 +753,10 @@ permission `read` on the ID:
 | `GET <feed>/flatcontainer/{lower_id}/{lower_version}/{lower_id}.{lower_version}.nupkg` | 200 `application/octet-stream`, the package bytes; 404 |
 | `GET <feed>/flatcontainer/{lower_id}/{lower_version}/{lower_id}.nuspec` | 200 `application/xml`, the `.nuspec` bytes from inside the package; 404 |
 
-- Every version in a list MUST be downloadable by the same caller with the same permissions.
+- Every version in a list MUST be downloadable by the same caller with the same permissions. From
+  M4b, one exception: a version blocked by [vulnerability-scanning.md](../vulnerability-scanning.md)
+  R-VULN-015 stays listed and its package file answers 403 `vulnerability_blocked`
+  ([H-311](../vulnerability-scanning.md#h-311--a-block-refuses-the-download-not-the-resolution-or-an-earlier-install)).
 - Package files are served like every item (R-STOR-012: `Range`, conditional requests, streaming).
   Through a virtual repository the response carries `Trove-Resolved-From` (R-REPO-019).
 - `.nuspec` responses carry the package-content headers of the [Security notes](#security-notes).
@@ -1114,7 +1124,7 @@ remote:
 nuget:
   forwardSearch: true                            # default (proposed); R-NUGET-016, decided in Q-NUGET-4
   symbolServerUrl: https://symbols.nuget.org/download/symbols   # default (proposed); empty disables; P1
-  vulnerabilityInfo: true                        # default (proposed); P1
+  vulnerabilityInfo: local                       # default (proposed) while scanning is on, from M4b; local | upstream (P1) | off (R-NUGET-023)
 ```
 
 Acceptance criteria:
@@ -1646,7 +1656,15 @@ NuGet 6.7 and later download the
 [vulnerability resource](https://learn.microsoft.com/en-us/nuget/api/vulnerability-info) during
 restore and audit packages locally.
 
-- A remote repository with `nuget.vulnerabilityInfo: true` whose upstream offers
+- `nuget.vulnerabilityInfo` is `local | upstream | off`
+  ([vulnerability-scanning.md](../vulnerability-scanning.md) R-VULN-018, Q-VULN-10). `local`, from
+  M4b, serves trove's own advisory data on every class; `upstream` is the pass-through of this
+  requirement, on remote and virtual repositories; `off` lists no resource. The default is `local`
+  while the installation's `vulnerabilities.enabled` is `true` and its OSV source is not `off`,
+  otherwise `upstream` on remote and virtual repositories and `off` on local ones. Until this
+  requirement is built, `upstream` is refused when the repository document is written, and the
+  default where it would be `upstream` is `off`.
+- A remote repository with `nuget.vulnerabilityInfo: upstream` whose upstream offers
   `VulnerabilityInfo/6.7.0` lists the resource in its own service index and serves
   `<feed>/vulnerabilities/index.json` and `<feed>/vulnerabilities/<name>.json`. Index and pages are
   metadata cache entries; page URLs are rewritten to the remote; `@updated` is kept, so clients
@@ -1656,7 +1674,8 @@ restore and audit packages locally.
   `<first 8 hex of SHA-256 of the member key>-<upstream name>` truncated to 32 characters, and
   page URLs pointing at the virtual repository. The index MUST NOT exceed 16 entries; members
   beyond that are dropped in resolution order and the drop is logged.
-- Local repositories do not list the resource; trove holds no advisory data of its own. Because
+- Until M4b, local repositories do not list the resource, because trove holds no advisory data of
+  its own then; from M4b they list trove's resource in mode `local` (R-VULN-018). Because
   advisories are keyed by package ID, a virtual repository that includes a nuget.org remote also
   audits public packages restored from local members.
 - Deprecation and vulnerability data inside registration entries of remote packages pass through

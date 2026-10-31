@@ -26,13 +26,13 @@ end](#requirements-that-cover-no-catalog-feature)).
 
 | Catalog page | Prefix | Features | MVP specified | Specified | Open | Implemented |
 |---|---|---:|---:|---:|---:|---:|
-| [Repositories](#repositories-repo) | `REPO` | 68 | 23 of 23 | 41 | 27 | 19 |
+| [Repositories](#repositories-repo) | `REPO` | 68 | 24 of 24 | 41 | 27 | 19 |
 | [Remote repositories](#remote-repositories-rmt) | `RMT` | 49 | 15 of 15 | 28 | 21 | 14 |
 | [Replication, federation and multi-site topology](#replication-federation-and-multi-site-topology-repl) | `REPL` | 72 | – | 0 | 72 | 0 |
 | [Artifact management](#artifact-management-art) | `ART` | 53 | 10 of 10 | 32 | 21 | 12 |
 | [Search and query language](#search-and-query-language-srch) | `SRCH` | 64 | – | 3 | 61 | 0 |
 | [Builds and CI integration](#builds-and-ci-integration-bld) | `BLD` | 49 | – | 0 | 49 | 0 |
-| [Identity and access](#identity-and-access-iam) | `IAM` | 69 | 20 of 20 | 35 | 34 | 20 |
+| [Identity and access](#identity-and-access-iam) | `IAM` | 69 | 21 of 21 | 35 | 34 | 20 |
 | [Authentication providers and human login](#authentication-providers-and-human-login-authn) | `AUTHN` | 44 | 13 of 13 | 18 | 26 | 10 |
 | [Access tokens](#access-tokens-tok) | `TOK` | 48 | 24 of 24 | 27 | 21 | 19 |
 | [OIDC federation for CI systems](#oidc-federation-for-ci-systems-cioidc) | `CIOIDC` | 40 | 20 of 20 | 31 | 9 | 0 |
@@ -91,7 +91,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 
 ## Repositories (REPO)
 
-Catalog page: [repositories.md](../features/repositories.md) · specified by priority: MVP 23 of 23 · P1 17 of 26 · P2 0 of 16 · Later 1 of 2 · Out of scope 0 of 1
+Catalog page: [repositories.md](../features/repositories.md) · specified by priority: MVP 24 of 24 · P1 17 of 26 · P2 0 of 16 · Later 0 of 1 · Out of scope 0 of 1
 
 <details>
 <summary>68 features: 41 specified, 27 open, 19 implemented</summary>
@@ -118,7 +118,7 @@ Catalog page: [repositories.md](../features/repositories.md) · specified by pri
 | REPO-018 | Priority resolution | P1 | specified | [R-NPM-028](../spec/formats/npm.md), [R-REPO-022](../spec/repositories-and-proxy.md) (implemented) |
 | REPO-019 | Download redirect | P2 | open | – |
 | REPO-020 | CDN download redirect | Out of scope | open | – |
-| REPO-021 | Scanner indexing | Later | specified | [R-VULN-001](../spec/vulnerability-scanning.md), [R-VULN-002](../spec/vulnerability-scanning.md) |
+| REPO-021 | Scanner indexing | MVP | specified | [R-VULN-001](../spec/vulnerability-scanning.md), [R-VULN-002](../spec/vulnerability-scanning.md) |
 | REPO-022 | Deployment checksum policy | P1 | open | – |
 | REPO-023 | Release and snapshot handling | P1 | open | – |
 | REPO-024 | Snapshot naming behavior | P1 | open | – |
@@ -518,7 +518,7 @@ Catalog page: [builds-and-ci.md](../features/builds-and-ci.md) · specified by p
 
 ## Identity and access (IAM)
 
-Catalog page: [identity-and-access.md](../features/identity-and-access.md) · specified by priority: MVP 20 of 20 · P1 11 of 11 · P2 3 of 26 · Later 1 of 7 · Out of scope 0 of 5
+Catalog page: [identity-and-access.md](../features/identity-and-access.md) · specified by priority: MVP 21 of 21 · P1 11 of 11 · P2 3 of 26 · Later 0 of 6 · Out of scope 0 of 5
 
 <details>
 <summary>69 features: 35 specified, 34 open, 20 implemented</summary>
@@ -532,7 +532,7 @@ Catalog page: [identity-and-access.md](../features/identity-and-access.md) · sp
 | IAM-005 | Anonymous user | MVP | specified | [R-AUTHZ-003](../spec/authorization.md) (implemented), [R-NPM-004](../spec/formats/npm.md), [R-AUTH-037](../spec/identity-and-authentication.md) (implemented) |
 | IAM-006 | Auditor role | P1 | implemented | [R-AUTHZ-011](../spec/authorization.md) (implemented) |
 | IAM-007 | Delegated system roles: resource manager and webhook manager | P1 | implemented | [R-AUTHZ-012](../spec/authorization.md) (implemented) |
-| IAM-008 | Scan-related roles | Later | specified | [R-VULN-013](../spec/vulnerability-scanning.md), [R-VULN-019](../spec/vulnerability-scanning.md) |
+| IAM-008 | Scan-related roles | MVP | specified | [R-VULN-013](../spec/vulnerability-scanning.md), [R-VULN-019](../spec/vulnerability-scanning.md) |
 | IAM-009 | User management operations | MVP | implemented | [R-AUTH-016](../spec/identity-and-authentication.md) (implemented) |
 | IAM-010 | Administrator recovery by bootstrap credentials | MVP | implemented | [R-AUTH-014](../spec/identity-and-authentication.md) (implemented), [R-AUTH-015](../spec/identity-and-authentication.md) (implemented) |
 | IAM-011 | User invitation by email | Out of scope | open | – |

@@ -55,10 +55,10 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 	// Catalog priority -> entries, listed in a Covers: line; measured 2026-10-31, after the page
 	// vulnerability-scanning.md raised its features to MVP.
 	want := map[string][2]int{
-		prioMVP:   {377, 377},
+		prioMVP:   {379, 379},
 		prioP1:    {517, 293},
 		prioP2:    {895, 23},
-		prioLater: {378, 2},
+		prioLater: {376, 0},
 		prioOut:   {72, 0},
 	}
 	t.Run("E0.8 catalog counts per priority", func(t *testing.T) {

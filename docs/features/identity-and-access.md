@@ -172,7 +172,7 @@ Interactions: webhooks in [events-and-extensibility.md](events-and-extensibility
 policies (IAM-019).
 
 ### IAM-008 · Scan-related roles
-Priority: **Later**
+Priority: **MVP**
 
 Role flags set on users or groups that only matter when a vulnerability-scanning engine is
 present: manage security and compliance policies, view policies only, manage scan scopes (the

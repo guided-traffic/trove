@@ -1158,7 +1158,8 @@ Priority: **MVP** · Covers: trove-only
 | `/api/v1/repositories/{repoKey}/items`, `/children`, `/stats`, `/properties`; `/files/…` | Items and files | R-API-025, R-API-026 | [storage.md](storage.md) |
 | `/api/v1/content/…`, `/api/v1/trash-can/…` | Copy, move, trash | R-API-027 | [storage.md](storage.md) |
 | `/api/v1/search/…` | Search | R-API-028 | this page; indexes in [storage.md](storage.md) |
-| `/api/v1/packages…` | Packages across repositories | R-API-029 | this page; package metadata in [storage.md](storage.md) and format pages |
+| `/api/v1/packages…` | Packages across repositories; from M4b also the sub-resources `…/{packageId}/vulnerabilities` and `…/{packageId}/versions/{version}/vulnerabilities` | R-API-029; [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-020 | this page; package metadata in [storage.md](storage.md) and format pages |
+| `/api/v1/vulnerabilities/…` | Vulnerability findings, triage, export, advisories, summary, trend, sources, claimed-name matches (from M4b) | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-013, R-VULN-020, R-VULN-021 | [vulnerability-scanning.md](vulnerability-scanning.md) |
 | `/api/v1/users`, `/api/v1/groups`, `/api/v1/service-accounts`, `/api/v1/tokens` | Identities and tokens | R-API-031, R-API-032 | [identity-and-authentication.md](identity-and-authentication.md) |
 | `/api/v1/permission-policies`, `/api/v1/roles`, `/api/v1/role-bindings`, `/api/v1/authz/…` | Authorization | R-API-033, R-API-034 | [authorization.md](authorization.md) |
 | `/api/v1/auth/cli-logins/…`, `/api/v1/auth/device/…` | Command-line login approval and device flow (P1; screens in R-UI-004) | R-AUTH-034, R-AUTH-036 | [identity-and-authentication.md](identity-and-authentication.md) |
@@ -1189,7 +1190,7 @@ parameters and job result, MAY add a read-only domain view of its runs that refe
 and owns the read paths of its results (`GET /api/v1/storage/summary` and
 `GET /api/v1/storage/damaged-blobs` in [storage.md](storage.md)). No page adds a second start,
 stop or refresh path for a task. Per-resource actions (`/repositories/{key}/reindex`,
-`/storage/damaged-blobs/{sha256}/recheck`) and the runs of retention policies, which have their own
+`/storage/damaged-blobs/{sha256}/recheck`, from M4b `/repositories/{key}/vulnerabilities/rescan`) and the runs of retention policies, which have their own
 run model with queueing and per-policy runs ([storage.md](storage.md) R-STOR-041), are not
 singleton tasks and keep their resource paths.
 
@@ -1315,6 +1316,7 @@ of their owners:
 | POST | `/api/v1/repositories/{key}/reindex` | Rebuild the format's index and metadata from stored packages (npm package documents, NuGet indexes; later Maven metadata, PyPI simple index, Helm `index.yaml`); 202 with a job; 409 when the format has no index | `manage` | P1 | R-OPS-022, format pages |
 | POST | `/api/v1/repositories/{key}/cache/invalidate` | Mark cached metadata (`scope` `metadata`), cached misses (`negative`) or both (`all`) of a remote or virtual repository under a path prefix as stale, on every replica within `cluster.epoch_poll_interval` plus 1 s, with or without Valkey; binaries stay cached (INV-11); `400` on a local repository | `manage`, or `admin` | MVP | R-OPS-021, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-045 |
 | GET | `/api/v1/repositories/{key}/cache/entries` | Cached metadata entries for diagnosis | `repositories:read-config` or `manage` | MVP | [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-032 |
+| POST | `/api/v1/repositories/{key}/vulnerabilities/rescan` | Re-evaluate every stored version of the repository against the advisory data; 202 with the `vuln-rescan` job, 409 with the running one | `manage`, or `settings:write` | MVP (M4b) | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-011, R-VULN-019 |
 | POST | `/api/v1/system/caches/flush` | Installation-wide: flush every registered in-process cache on every `web` and `worker` replica and invalidate the negative entries of every remote repository; deletes no Valkey key; a synchronous action, not a task of R-OPS-019 | `admin` | P1 | R-OPS-047 |
 
 Acceptance criteria:
@@ -2386,7 +2388,9 @@ Priority: **MVP** · Covers: UI-001, UI-004
   filter (P1, R-UI-041) and the help link (`ui.help_url`, which the browser cannot read yet,
   Q-UI-15) take their place in the same bar when their APIs exist. A configurable server name is P2
   on [operations-and-observability.md](operations-and-observability.md).
-- Navigation with two areas: **Packages and files** (packages, browser, search, trash, builds) and
+- Navigation with two areas: **Packages and files** (packages, browser, search, trash, builds; from
+  M4b also vulnerabilities, shown to every signed-in user,
+  [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022) and
   **Administration** (shown when `/api/v1/authz/me` reports any administrative capability). The
   sections are the routes of R-UI-003. Inside Administration, the single entries (repositories,
   endpoints) come first and related screens are grouped under folding headings: identity (users,
@@ -2446,12 +2450,13 @@ Every screen and every object has a bookmarkable URL under `/ui/{locale}`. Filte
 selected tab and selected version live in query parameters.
 
 <details>
-<summary>Route table (28)</summary>
+<summary>Route table (29)</summary>
 
 | Route | Screen | Requirement |
 |---|---|---|
 | `/packages` | Packages list (start page) | R-UI-006 |
 | `/packages/{format}/{name…}` (`?version=`) | Package details | R-UI-007 |
+| `/vulnerabilities` (`?repository=&severity=&status=&…`), `/vulnerabilities/findings/{id}`, `/vulnerabilities/advisories/{ecosystem}/{id}`, `/vulnerabilities/sources` | Vulnerability report, finding, advisory, sources (from M4b) | [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022 |
 | `/browse/{repo}/{path…}` | File tree with selection | R-UI-010 |
 | `/search` (`?type=&q=&…`) | Search results (P1) | R-UI-015 |
 | `/trash` | Trash can (P1) | R-UI-014 |
@@ -2617,6 +2622,11 @@ Priority: **MVP** · Covers: UI-009, ART-049
   dependency kinds, NuGet target frameworks and dependency groups, authors, project URL as a text
   link with an external-link marker); Files (files of the version with size, SHA-256 copy button,
   download); Repositories (each with "show in browser"); Owners (R-API-048, P1); Builds (P1).
+- From M4b ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-023): a Vulnerabilities
+  tab (`tab=vulnerabilities`) with the selected version's evaluation state, block and findings per
+  readable repository, its label carrying the count of open findings; in the "All versions" tab the
+  highest open severity of each version as a text badge; in the header "Blocked in <repository>"
+  when the selected version is blocked in a repository the caller can read.
 - Layout (Q-UI-3): the header spans the full width. When the content area is at least 960 CSS px
   wide, two columns follow: the tabs on the left, the install panel (R-UI-009) on the right, which
   stays in view while the README scrolls (`position: sticky`). Narrower, one column: header,
@@ -3075,6 +3085,9 @@ Priority: **MVP** · Covers: UI-030, REPO-007
   no `sort` parameter yet, so the table has no sort control (sorting by creation arrives with the
   API, and the creation time with the summary, Q-UI-18). "Recently viewed" (browser storage, 20).
 - Row actions: edit, browse, client setup, reindex (P1), invalidate cache (remote and virtual),
+  from M4b vulnerabilities (local and remote repositories of a format with the vulnerability
+  adapter: the repository's view of the report, `/vulnerabilities?repository=<key>`,
+  [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022),
   delete. Delete requires typing the key, offers the `detach` choice of
   [repositories-and-proxy.md](repositories-and-proxy.md) when other repositories reference it, and
   shows that deletion runs as a job.
@@ -3113,6 +3126,9 @@ Priority: **MVP** · Covers: UI-031
   periods, offline switch (INV-11), and "Test connection" (`POST /api/v1/upstream-tests`) with the
   result inline.
 - Virtual: member editor (R-UI-022) and default deployment target.
+- From M4b, on local and remote repositories of a format with the vulnerability adapter: the
+  `vulnerabilities` member ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-002), and
+  on the edit form a link to the repository's view of the vulnerability report (R-VULN-022).
 - Review: summary plus "Show as API request" with the JSON body and the equivalent `curl` command
   (INV-17).
 - Create sends the `Idempotency-Key` generated when the wizard opened.
@@ -3533,6 +3549,11 @@ INV-12 makes roles, drains and Valkey MVP and INV-19 the backup job (Q-UI-7).
   age, an "Overdue" mark under the rule of R-API-050 (1.5 × the expected interval), "No backup
   yet", the last failure when it is newer than the last success, the active run with its phase and
   progress, and a link to the backups screen (R-UI-048).
+- **Vulnerability data card** (from M4b), from the `vulnerabilityData` block of `/system/info`
+  ([operations-and-observability.md](operations-and-observability.md) R-OPS-004,
+  [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-024): per source and ecosystem its
+  mode, state, age and consecutive failures, with icon and text for data that is stale, never
+  imported completely or failing to sync, and a link to the sources screen (R-VULN-022).
 - Jobs (`/admin/system/jobs`): the list of `GET /api/v1/system/jobs` with filters for `kind` and
   `state`. The state filter offers every job state of R-ARCH-016: `queued`, `running`,
   `succeeded`, `failed`, `cancelling`, `cancelled`. A cancelled job shows `cancelling` until it

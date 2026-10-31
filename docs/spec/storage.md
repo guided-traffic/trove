@@ -226,6 +226,7 @@ CREATE TABLE packages (
     created_at    timestamptz NOT NULL DEFAULT now(),
     UNIQUE (repo_id, name)                     -- also serves the rev_seq reads (R-ARCH-012, R-ARCH-015)
 );
+CREATE INDEX packages_name ON packages (name); -- from M4b: lookup by name across repositories (vulnerability-scanning.md R-VULN-011)
 
 CREATE TABLE package_versions (
     id               bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -604,6 +605,14 @@ loop (at most storage.upload.commit_attempts times):
   over the distinct blobs of all of them: each round locks the blob rows in digest order, a blob that needs an object write, a repair or a wait makes the round roll back, and the
   objects are written outside any transaction; when every row is `live` the one link step writes every item row, hook and audit row in that transaction. Two files of one content are
   one blob. A failure after an object write queues every written digest for the collector (R-STOR-024), as a failed single commit does.
+- **Vulnerability evaluation, from M4b** ([vulnerability-scanning.md](vulnerability-scanning.md)
+  R-VULN-011). When the link step links a content item to a package version (origin `Upload` or
+  `Fill`) of a format with the vulnerability adapter, the same transaction evaluates that version
+  after the format's `OnCommit`, with one indexed query on `vuln_affected (ecosystem, name)`, and
+  inserts its findings, so a finding exists when the publish answers. It reads no blob and contacts
+  no upstream (V-4 of R-VULN-028: p99 ≤ 5 ms added to the commit). Re-evaluations after an
+  advisory change find stored versions by name across repositories through `packages_name`
+  (R-STOR-003), which the unique key `(repo_id, name)` does not serve.
 - The `FOR SHARE` lock is held from the state check to commit; garbage collection needs a
   `FOR UPDATE` lock on the same row to start a deletion, so it either sees the new reference or
   makes this transaction wait and then fail the guard.
