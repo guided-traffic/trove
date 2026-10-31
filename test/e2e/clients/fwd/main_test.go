@@ -98,12 +98,10 @@ func TestServeRelaysBothDirections(t *testing.T) {
 
 // A target that refuses the connection closes the client's connection instead of hanging it.
 func TestServeClosesClientWhenTargetIsDown(t *testing.T) {
-	dead, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	addr := dead.Addr().String()
-	_ = dead.Close()
+	// Port 1 is privileged, so no test can listen on it, and nothing does: the dial is refused at once. A port taken
+	// with :0 and closed again was handed to a parallel test on a busy runner once, and the dial then reached a server
+	// that never answered.
+	const addr = "127.0.0.1:1"
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
