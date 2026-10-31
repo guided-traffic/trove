@@ -414,6 +414,7 @@ func TestE1_08RateLimits(t *testing.T) {
 			addrs, stop := podForwards(t)
 			defer stop()
 			direct := newAPI(t, withRoundRobin(addrs...))
+			started := time.Now()
 			// Warm the breakers: a few validations per replica, each of which consults the limiter first.
 			for i := 0; i < 60; i++ {
 				raw, _ := token.Generate(token.TypePAT)
@@ -432,8 +433,10 @@ func TestE1_08RateLimits(t *testing.T) {
 				}
 			}
 			t.Logf("Valkey stopped: after 60 warm-up requests, 400 more: validated %d, throttled %d", valid, limited)
-			if valid+60 > failBurst+8 {
-				t.Errorf("%d validations with Valkey stopped (60 warm-up included), want at most %d", valid+60, failBurst+8)
+			// The replicas' shares refill at failBurst per minute together while the requests run, so the bound is the
+			// burst plus what the time they took refilled: on a slow runner 460 requests took seconds, not one.
+			if bound := admittedBound(failBurst, failBurst/60, time.Since(started)); valid+60 > bound {
+				t.Errorf("%d validations with Valkey stopped (60 warm-up included) in %s, want at most %d", valid+60, time.Since(started).Round(time.Millisecond), bound)
 			}
 			if limited == 0 {
 				t.Error("no 429 with Valkey stopped")
