@@ -597,12 +597,13 @@ func (a *App) Shutdown(ctx context.Context) error {
 	cctx, ccancel := context.WithDeadline(ctx, plan.CloseBy)
 	defer ccancel()
 	closed := make(chan []error, 1)
-	go func() { closed <- a.closeComponents(cctx, comps) }()
+	var closing atomic.Value // the step the close phase is in, for the overrun's log line
+	go func() { closed <- a.closeComponents(cctx, comps, &closing) }()
 	select {
 	case e := <-closed:
 		errsOut = append(errsOut, e...)
 	case <-time.After(time.Until(plan.CloseBy.Add(a.budget.Abandon))):
-		a.log.Error("components did not stop before the close deadline; abandoning them to keep the exit deadline")
+		a.log.Error("components did not stop before the close deadline; abandoning them to keep the exit deadline", "at", closing.Load())
 		errsOut = append(errsOut, errors.New("close phase overran its deadline"))
 	}
 	octx, ocancel := context.WithDeadline(ctx, plan.ExitBy)
@@ -630,16 +631,18 @@ func (a *App) Shutdown(ctx context.Context) error {
 
 // closeComponents flushes, then stops, every component. Signals stop first: the
 // pending signals are published before the leases are released (R-ARCH-024 step 6).
-func (a *App) closeComponents(ctx context.Context, comps []Component) []error {
+func (a *App) closeComponents(ctx context.Context, comps []Component, closing *atomic.Value) []error {
 	var errsOut []error
 	for i := len(comps) - 1; i >= 0; i-- {
 		if f, ok := comps[i].(Flusher); ok {
+			closing.Store("flush " + comps[i].Name())
 			if err := f.Flush(ctx); err != nil {
 				errsOut = append(errsOut, fmt.Errorf("flush %s: %w", comps[i].Name(), err))
 			}
 		}
 	}
 	for _, c := range stopOrder(comps) {
+		closing.Store("stop " + c.Name())
 		if err := c.Stop(ctx); err != nil {
 			errsOut = append(errsOut, fmt.Errorf("stop %s: %w", c.Name(), err))
 		}
