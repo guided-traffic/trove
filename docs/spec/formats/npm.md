@@ -3976,14 +3976,13 @@ leaves the rule of R-NPM-045.
 
 **Applied in the spec:** R-NPM-041 (the pnpm line), R-NPM-045 (scenario table).
 
-### Q-NPM-48 · How the suite pins a client to a replica and what a waiting scenario does
+### Q-NPM-48 · How the suite pins a client to a replica
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 Context: E2.2, E2.3, E2.9 and E2.10 name the replica a client talks to; the scatter profile otherwise
 spreads requests. The client pods run the forwarder `fwd` on the base URL's port, so the clients cannot
-tell where their bytes go. Remote and virtual npm repositories (WP2.5) and the exposure adapter (WP2.9)
-arrive in other work packages than the harness.
+tell where their bytes go.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
@@ -3991,21 +3990,17 @@ arrive in other work packages than the harness.
 | (b) One pod per replica started by the script | The target is fixed at pod creation | No forwarder change | Pod IPs change whenever the web pods do; the pods would have to be recreated for each test |
 | (c) The clients talk to a port-forward on the host | `kubectl port-forward` per replica | No pod changes | The clients run in pods, not on the host |
 
-And for a scenario that needs a class the repository API refuses today (`unsupported_class`), the
-options are: (i) skip it, (ii) fail it, (iii) fail it unless an environment switch reports it as
-pending with the work package that unblocks it.
+**Choice:** (a). A scenario a client cannot run is `not applicable`, with the reason in the log line, in the
+report (`.out/e2e/npm-<run>.json`) and in [e2e.md](../../developer/e2e.md#the-matrix-and-what-is-not-applicable); no scenario is skipped
+for any other reason. While the remote and virtual classes and the exposure adapter did not exist, a scenario
+that needed them failed as pending unless an environment switch reported it as such; the switch and its probes
+were removed when WP2.5 and WP2.9 merged.
 
-**Choice:** (a) and (iii). `npmPending` fails the test with `PENDING WP2.5: …` unless
-`TROVE_E2E_NPM_ALLOW_PENDING=1`, which reports a skip that names the package and counts it as `pending` in the
-matrix report (`.out/e2e/npm-<run>.json`); CI never sets the switch, so a change cannot go green with a scenario
-that cannot run. A scenario a client cannot run is `not applicable`, with the reason in the log line, in the
-report and in [e2e.md](../../developer/e2e.md#the-matrix-and-what-is-not-applicable).
+**Rationale:** The matrix is only a gate when a client that cannot run a scenario says so, and nothing else
+goes missing quietly. The development agent would revisit (a) if the kind network makes the forwarder the
+bottleneck of the drain run (R-HA-059).
 
-**Rationale:** A pending scenario is a known hole; it must not look like a pass or like noise. The
-development agent would revisit (iii) when WP2.5 and WP2.9 have landed: the switch and the probes in
-`npmFixture` can then be removed.
-
-**Applied in the spec:** R-NPM-045 (a scenario that waits is reported, never silently skipped).
+**Applied in the spec:** R-NPM-045 (a scenario a row cannot run is reported, never silently skipped).
 
 ### Q-NPM-49 · What the P1 scenarios assert, and what the first run changed
 
@@ -4024,10 +4019,20 @@ page did not match what the clients do:
 4. A client that logs in anonymously (pnpm, Yarn 4, Yarn 1) gets the 401 of the authentication gate at a
    repository that requires authentication, where npm, which sends its credential, gets the 404 or 501 of the
    endpoint.
+5. Found when the matrix ran through `npm-all`: pnpm 11 and 12 read the package with a plain `GET` and send its
+   `_rev` back in `PUT {name}/-rev/{rev}`. On a virtual repository that `_rev` is the merge's synthetic one
+   (R-NPM-009: "neither can be written through"), so the write answers 409 `npm_stale_rev`, which the client retries
+   for 70 seconds. npm and pnpm 10 (whose unpublish is npm's) use `?write=true`, which returns the deployment
+   target's own `_rev` (R-NPM-029). R-NPM-017 and R-NPM-040 say "`pnpm unpublish` behaves like npm" without
+   saying through which repository.
+6. A virtual repository is read through the members the caller can read (R-AUTHZ-009 rule 2) and accepts only `read`
+   and `manage` in a policy: a token that reads a virtual repository and not its members sees an empty merge and
+   404, and a policy that grants `deploy` on a virtual repository is refused. The end-to-end fixtures grant
+   `read` on the virtual repository and its members, and the write actions on `npm-local`.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Fix 1, document 2 to 4 | The deprecating `PUT` answers 404 `not_found`; the scenarios assert the answer each client can produce (404, 501, or the 401 of the gate), and for `pnpm audit` only the 501 it reports; the criterion names `npm owner add` | The registry follows its own rule where it can; the suite states what clients do | `pnpm audit` keeps its 70 seconds until audit is built (P1) |
+| (a) Fix 1, document 2 to 6 | The deprecating `PUT` answers 404 `not_found`; the scenarios assert the answer each client can produce (404, 501, or the 401 of the gate), and for `pnpm audit` only the 501 it reports; the criterion names `npm owner add`; the unpublish of pnpm 11 and 12 is run against the deployment target (`npm-local`), the others through `npm-all` | The registry follows its own rule where it can; the suite states what clients do | `pnpm audit` keeps its 70 seconds until audit is built (P1) |
 | (b) Assert the spec text as written | Every P1 command must fail within seconds without a retry | One rule | Fails on facts about the clients that trove does not control |
 | (c) Skip the P1 scenarios | Not run | Fast | The criteria R-NPM-043 and E2.1 name them |
 
@@ -4039,6 +4044,9 @@ revisit 2 when audit is built (R-NPM-038): the 501 then no longer occurs.
 
 **Applied in the spec:** R-NPM-018 (the answer until it is built), R-NPM-001 (the 501 note), R-NPM-043 (the
 criterion). Code: `internal/formats/npm/handlers_deprecate.go`, `TestR_NPM_043_DeprecateIsRefusedWithoutRetries`.
+Open, for the owner: pnpm 11 and 12 cannot unpublish through a virtual repository as the design stands (point 5); letting a
+`-rev` write through a virtual repository accept the merge's `_rev` would make it work for packages that exist only in the
+deployment target, and would need a rule for versions that only a remote member holds (the `PUT` names them, R-NPM-017 answers 400).
 
 ### Q-NPM-50 · A package or version of the install snippet that a client would read as an option
 

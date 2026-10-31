@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -33,25 +34,6 @@ import (
 
 	"github.com/guided-traffic/trove/test/npmstub"
 )
-
-// ── what waits for another work package ──────────────────────────────────────
-
-// npmPending marks a scenario that cannot pass until another work package has landed (the remote and virtual
-// npm repositories of WP2.5, the endpoints of WP2.9). It is a failure, so a change cannot go green with it;
-// TROVE_E2E_NPM_ALLOW_PENDING=1 reports it as a skip that names the package instead, which is what the run of
-// a work package that has not merged yet uses. A scenario never calls it for a reason of its own.
-func npmPending(t testing.TB, workPackage, what string) {
-	t.Helper()
-	msg := fmt.Sprintf("PENDING %s: %s", workPackage, what)
-	if os.Getenv("TROVE_E2E_NPM_ALLOW_PENDING") == "1" {
-		npmReportKind(t, "pending")
-		npmKindMu.Lock()
-		npmReasonOf[t.Name()] = workPackage + ": " + what
-		npmKindMu.Unlock()
-		t.Skip(msg)
-	}
-	t.Fatal(msg + " (TROVE_E2E_NPM_ALLOW_PENDING=1 reports it as pending instead of failing)")
-}
 
 // ── fixture ──────────────────────────────────────────────────────────────────
 
@@ -67,11 +49,7 @@ type npmFixture struct {
 	adm      *api
 	token    string // the publisher's token, read/deploy/delete on the three repositories
 	run      string // six hex digits, part of every package name this run publishes
-	stubHost string // npmstub.<ns>.svc, "" when the test upstream is not deployed
-
-	// What this build of trove accepts: false until WP2.5 serves the classes (the repository API refuses them).
-	remote, virtual bool
-	whyNot          string
+	stubHost string // npmstub.<ns>.svc, where the counting test upstream is (deploy/dev/e2e.sh, TROVE_E2E_NPMSTUB=1)
 }
 
 var (
@@ -84,7 +62,10 @@ var (
 func npmFx(t testing.TB) *npmFixture {
 	t.Helper()
 	useScatter(t)
-	npmFxOnce.Do(func() { npmFxVal, npmFxErr = buildNPMFixture(t) })
+	npmFxOnce.Do(func() {
+		npmFxErr = fmt.Errorf("the fixture did not finish (see the first failure)")
+		npmFxVal, npmFxErr = buildNPMFixture(t)
+	})
 	if npmFxErr != nil {
 		t.Fatalf("npm fixture: %v", npmFxErr)
 	}
@@ -107,61 +88,37 @@ func buildNPMFixture(t testing.TB) (*npmFixture, error) {
 	if r.Status != 201 && r.Status != 409 {
 		return nil, fmt.Errorf("create %s: %s", npmLocalKey, r)
 	}
-	// The classes WP2.5 adds: a refusal is recorded as the reason the scenarios that need them are pending.
-	if fx.stubHost != "" {
-		r, err = create(map[string]any{
-			"key": npmRemoteKey, "class": "remote", "format": "npm",
-			"remote": map[string]any{"url": "https://" + fx.stubHost + "/"},
-		})
-		if err != nil {
-			return nil, err
-		}
-		switch r.Status {
-		case 201, 409:
-			fx.remote = true
-		default:
-			fx.whyNot = fmt.Sprintf("creating %s answered %s", npmRemoteKey, r)
-		}
-	} else {
-		fx.whyNot = "TROVE_E2E_NPMSTUB_HOST is not set: the test upstream is not deployed"
+	if fx.stubHost == "" {
+		return nil, fmt.Errorf("TROVE_E2E_NPMSTUB_HOST is not set: the test upstream is not deployed (run the npm sets of deploy/dev/e2e.sh)")
 	}
-	if fx.remote {
-		r, err = create(map[string]any{
+	for _, body := range []map[string]any{
+		{"key": npmRemoteKey, "class": "remote", "format": "npm", "remote": map[string]any{"url": "https://" + fx.stubHost + "/"}},
+		{
 			"key": npmAllKey, "class": "virtual", "format": "npm", "requireAuthentication": true,
 			"virtual": map[string]any{"members": []string{npmLocalKey, npmRemoteKey}, "deployTarget": npmLocalKey},
-		})
+		},
+	} {
+		r, err = create(body)
 		if err != nil {
 			return nil, err
 		}
-		switch r.Status {
-		case 201, 409:
-			fx.virtual = true
-		default:
-			fx.whyNot = fmt.Sprintf("creating %s answered %s", npmAllKey, r)
+		if r.Status != 201 && r.Status != 409 {
+			return nil, fmt.Errorf("create %v: %s", body["key"], r)
 		}
 	}
 
 	ensureSA(t, adm, npmPublisher)
-	repos := []string{npmLocalKey}
-	if fx.remote {
-		repos = append(repos, npmRemoteKey)
-	}
-	if fx.virtual {
-		repos = append(repos, npmAllKey)
-	}
-	ensurePolicy(t, adm, npmPublisher, repos, [2]any{"sa:" + npmPublisher, []string{"read", "deploy", "delete"}})
-	fx.token = newSAToken(t, adm, npmPublisher, 4*3600, map[string]any{"inherit": true}).Token
+	// A virtual repository accepts only read and manage (R-AUTHZ-009): a publish through it is authorized on its
+	// deployment target, so the write actions are granted on npm-local.
+	ensurePolicy(t, adm, npmPublisher, []string{npmLocalKey}, [2]any{"sa:" + npmPublisher, []string{"read", "deploy", "delete"}})
+	ensurePolicy(t, adm, npmPublisher+"-read", []string{npmRemoteKey, npmAllKey}, [2]any{"sa:" + npmPublisher, []string{"read"}})
+	fx.token = freshSAToken(t, adm, npmPublisher, 4*3600, map[string]any{"inherit": true}).Token
 	return fx, nil
 }
 
-// registry is the repository the matrix talks to: npm-all once the virtual class exists, else npm-local, whose
-// documents, tarballs and mutations are the same code (R-NPM-029 routes a write through npm-all to it).
-func (fx *npmFixture) registry() string {
-	if fx.virtual {
-		return npmAllKey
-	}
-	return npmLocalKey
-}
+// registry is the repository the matrix talks to: npm-all, the virtual repository over npm-local and npm-remote
+// (R-NPM-029 routes a write through it to npm-local).
+func (fx *npmFixture) registry() string { return npmAllKey }
 
 // registryURL is the base URL of a repository as the setup snippets print it (R-NPM-041): the edge's address.
 func registryURL(t testing.TB, host, key string) string {
@@ -176,14 +133,6 @@ func (fx *npmFixture) pkgName(label, role string, scoped bool) string {
 		return "@e2e/" + strings.TrimPrefix(n, "e2e-")
 	}
 	return n
-}
-
-// needRemote fails the test as pending on WP2.5 when the build does not serve remote and virtual npm repositories.
-func (fx *npmFixture) needRemote(t testing.TB) {
-	t.Helper()
-	if !fx.virtual {
-		npmPending(t, "WP2.5", "remote and virtual npm repositories: "+fx.whyNot)
-	}
 }
 
 // ── the counting test upstream ───────────────────────────────────────────────
@@ -464,9 +413,21 @@ func (c *npmClient) sh(dir, script string) npmRun {
 func (c *npmClient) write(path, content string) {
 	c.t.Helper()
 	pod := npmClientPod(c.t, c.pod)
-	cmd := exec.Command("kubectl", "--context", cfg.kubeContext, "-n", cfg.namespace, "exec", "-i", pod, "--", "sh", "-c",
-		`mkdir -p "$(dirname "$1")" && cat > "$1"`, "sh", path)
-	cmd.Stdin = strings.NewReader(content)
+	// kubectl does not pass the end of an empty standard input on, so `cat` of an empty file would wait for ever (seen
+	// once in the closing run, 45 minutes): an empty file is made without stdin. Any write is bounded.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	args := []string{"--context", cfg.kubeContext, "-n", cfg.namespace, "exec"}
+	script := `mkdir -p "$(dirname "$1")" && cat > "$1"`
+	if content == "" {
+		script = `mkdir -p "$(dirname "$1")" && : > "$1"`
+	} else {
+		args = append(args, "-i")
+	}
+	cmd := exec.CommandContext(ctx, "kubectl", append(args, pod, "--", "sh", "-c", script, "sh", path)...)
+	if content != "" {
+		cmd.Stdin = strings.NewReader(content)
+	}
 	if out, err := cmd.CombinedOutput(); err != nil {
 		c.t.Fatalf("write %s in %s: %v: %s", path, pod, err, out)
 	}
@@ -537,7 +498,7 @@ func npmForwarderTarget(t testing.TB, i int, target string) {
 // ── the matrix report ────────────────────────────────────────────────────────
 
 // npmReport collects the outcome of every cell of the matrix (row x scenario) and writes the counts per gate row
-// at the end: passed, not applicable (with the reason), pending (with the work package) and failed.
+// at the end: passed, not applicable (with the reason) and failed.
 type npmReport struct {
 	mu    sync.Mutex
 	cells []npmCell
@@ -547,7 +508,7 @@ type npmCell struct {
 	Run      string `json:"run"` // the test that produced the cells ("matrix", "matrix-valkey-stopped")
 	Row      string `json:"row"`
 	Scenario string `json:"scenario"`
-	Outcome  string `json:"outcome"` // passed, failed, not applicable, pending
+	Outcome  string `json:"outcome"` // passed, failed, not applicable
 	Reason   string `json:"reason,omitempty"`
 }
 
@@ -558,7 +519,7 @@ var (
 	npmReasonOf = map[string]string{}
 )
 
-// npmReportKind records why the running test ends in a skip: "pending" or "not applicable".
+// npmReportKind records why the running test ends in a skip ("not applicable").
 func npmReportKind(t testing.TB, kind string) {
 	npmKindMu.Lock()
 	npmKindOf[t.Name()] = kind
@@ -619,12 +580,71 @@ func (r *npmReport) flush(t testing.TB, run string) {
 		counts[c.Row][c.Outcome]++
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "npm matrix (%s): scenarios per gate row\n%-8s %7s %7s %5s %8s\n", run, "row", "passed", "failed", "n/a", "pending")
+	fmt.Fprintf(&b, "npm matrix (%s): scenarios per gate row\n%-8s %7s %7s %5s\n", run, "row", "passed", "failed", "n/a")
 	for _, row := range npmGateRows {
 		m := counts[row]
-		fmt.Fprintf(&b, "%-8s %7d %7d %5d %8d\n", row, m["passed"], m["failed"], m["not applicable"], m["pending"])
+		fmt.Fprintf(&b, "%-8s %7d %7d %5d\n", row, m["passed"], m["failed"], m["not applicable"])
 	}
 	t.Log("\n" + b.String())
 	raw, _ := json.MarshalIndent(mine, "", "  ")
 	_ = os.WriteFile(filepath.Join(cfg.out, "npm-"+run+".json"), raw, 0o644)
+}
+
+// freshSAToken mints a token of a service account after revoking the ones an earlier run left: an account holds a
+// limited number of active tokens (token_limit_reached), and a suite that runs many times a day on one cluster
+// would reach it.
+func freshSAToken(t testing.TB, adm *api, sa string, ttl int, scope map[string]any) createdToken {
+	t.Helper()
+	var l struct {
+		Items []struct {
+			ID string `json:"id"`
+		} `json:"items"`
+	}
+	if r := adm.get("/api/v1/tokens?owner=sa:" + sa + "&state=active&limit=500"); r.Status == 200 && json.Unmarshal(r.Body, &l) == nil {
+		for _, it := range l.Items {
+			adm.do(http.MethodDelete, "/api/v1/tokens/"+it.ID, nil)
+		}
+	}
+	return newSAToken(t, adm, sa, ttl, scope)
+}
+
+// burstGet sends n concurrent GETs to a path from client pod i, whose forwarder is pinned to web pod p for the time of the
+// burst, each on a connection of its own, and returns the status codes (0 for a request that got no answer). The burst
+// starts inside the cluster: a `kubectl port-forward` per connection loses connections under this many at once, which
+// would be a finding about the harness and not about the replicas.
+func burstGet(t testing.TB, i int, p pod, path, token string, n int) []int {
+	t.Helper()
+	pinClient(t, i, p.IP)
+	defer unpinClient(t, i)
+	js := `const https=require('https');const [path,tok,n,port]=process.argv.slice(1);
+Promise.all(Array.from({length:+n},()=>new Promise(done=>{
+  const rq=https.get({host:'localhost',port:+port,path,agent:false,headers:{Authorization:'Bearer '+tok}},r=>{r.resume();r.on('end',()=>done(r.statusCode))});
+  rq.on('error',()=>done(0));
+}))).then(a=>console.log(a.join(',')))`
+	out := strings.TrimSpace(npmClientExec(t, i, "node", "-e", js, path, token, strconv.Itoa(n), edgePort(t)))
+	var codes []int
+	for _, f := range strings.Split(out, ",") {
+		c, err := strconv.Atoi(f)
+		if err != nil {
+			t.Fatalf("the burst from client pod %d printed %q", i, out)
+		}
+		codes = append(codes, c)
+	}
+	return codes
+}
+
+// burstOver runs burstGet from client pods 0 and 1 against web pods 0 and 1 at once and returns all status codes.
+func burstOver(t testing.TB, webs []pod, path, token string, each int) []int {
+	t.Helper()
+	var wg sync.WaitGroup
+	res := make([][]int, 2)
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			res[i] = burstGet(t, i, webs[i], path, token, each)
+		}()
+	}
+	wg.Wait()
+	return append(res[0], res[1]...)
 }

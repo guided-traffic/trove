@@ -126,7 +126,6 @@ pod watch and the events of the drain, the logs of the drained pods, and the res
 | `TROVE_E2E_DRIVER_BIN` | unset | a prebuilt linux driver binary instead of `go build` |
 | `TROVE_E2E_SCATTER_RETURN` | `1` | `0` leaves the cluster in the `scatter` profile after E0.11 |
 | `TROVE_E2E_RUN` | unset | replaces the `go test -run` expression of any set (`TROVE_E2E_RUN='TestNPMMatrix/rows/E2.1_npm11' deploy/dev/e2e.sh npm`) |
-| `TROVE_E2E_NPM_ALLOW_PENDING` | unset | `1` reports a scenario that waits for another work package as a skip that names it; unset, it fails ([Pending](#pending)) |
 
 The suite runs over TLS by default: the scheme, the CA and the probe scheme are parameters (the defaults above),
 and nothing in the suite hard-codes `http`. What the move to TLS changed is listed in
@@ -638,8 +637,8 @@ test/e2e/clients/
 |---|---|---|
 | `TestNPMClients` | R-NPM-045 | the smoke test: every wrapper prints its pinned version, the base URL reaches the cluster with a verified certificate |
 | `TestNPMMatrix` | E2.1, E2.7, E2.8, R-NPM-040, R-NPM-042, R-NPM-043 | the scenario table below for each of the eight rows, rows side by side |
-| `TestNPMReplicas` | E2.3, E2.10 | publish on replica A and `npm view` on replica B (20 rounds); a validator answered 304 by every replica and invalid after a publish elsewhere; `npm unpublish` whose requests reach different replicas (read from the replicas' logs); the scenario list of one row during `FLUSHALL` every 1.5 s, and during a Sentinel failover; an unpublish whose answer the edge drops; a cache invalidation in force on every replica within `epoch_poll_interval` plus 1 s |
-| `TestNPMCollapse` | E2.2, E2.9 | three `npm ci` at once against three replicas from the reference lockfile of [perf/npm](../../perf/npm) through a fresh virtual repository over `npm-local` and a fresh remote on the counting upstream (the lockfile's registry key is the only thing rewritten): exactly one tarball request each, at most one document request each; 100 concurrent misses on two replicas with `pg_stat_activity` and `pg_locks` sampled; Valkey stopped; a killed holder |
+| `TestNPMReplicas` | E2.3, E2.10 | publish on replica A and `npm view` on replica B (20 rounds); a validator answered 304 by every replica and invalid after a publish elsewhere, for `npm-local` and for a remote after an upstream change; `npm unpublish` whose requests reach different replicas (read from each replica's `trove_npm_requests_total`); the scenario list of one row during `FLUSHALL` every 1.5 s, and during a Sentinel failover; an unpublish whose answer the edge drops; a cache invalidation in force on every replica within `epoch_poll_interval` plus 1 s |
+| `TestNPMCollapse` | E2.2, E2.9 | three `npm ci` at once against three replicas from the reference lockfile of [perf/npm](../../perf/npm) through a fresh virtual repository over `npm-local` and a fresh remote on the counting upstream (the lockfile's registry key is the only thing rewritten): exactly one tarball request each, at most one document request each; 100 concurrent misses on two replicas with `pg_stat_activity` and `pg_locks` sampled; Valkey stopped (bursts from client pods pinned to two replicas); a flight lock lost with `FLUSHALL` (at most one duplicate fetch, one cache entry); a killed holder |
 | `TestNPMUpstream` | E2.4, E2.5 | an install on a warm cache with the upstream down and the metadata expired; the negative cache; a claimed namespace never requested from the upstream; the shadowing check of R-REPO-048 with a `deploy` holder, a `manage` holder and the upstream down |
 | `TestNPMEndpoint` | E2.12 | every row lists and installs only the exposed versions of `@acme<run>/sdk` through the endpoint `customers` with a bound token, the hidden version is a 404, tarball URLs and bodies name only the endpoint, a narrowed rule invalidates the ETag on every replica, an uncached remote version is a 404 with no upstream request and the same install through `default` fills the cache |
 | `TestNPMClosing` | E2.1, E2.2, R-NPM-045 | closing run only: the matrix and the cold install with Valkey stopped (every replica ready and degraded), and a read-only subset against `https://registry.npmjs.org` for every row |
@@ -647,9 +646,8 @@ test/e2e/clients/
 ### The matrix and what is not applicable
 
 [npm_matrix_test.go](../../test/e2e/npm_matrix_test.go) holds one table of scenarios (`npmScenarios`); the rows are `npmGateRows`. A cell has one of
-four outcomes, in the log line of the subtest, in the table of counts that `TestNPMMatrix` logs per row, and in `.out/e2e/npm-matrix.json`:
-**passed**, **failed**, **not applicable** (the client cannot run the scenario; the reason is in the log and below) and **pending** (it waits for another work
-package; see [Pending](#pending)). Nothing is skipped silently.
+three outcomes, in the log line of the subtest, in the table of counts that `TestNPMMatrix` logs per row, and in `.out/e2e/npm-matrix.json`:
+**passed**, **failed** and **not applicable** (the client cannot run the scenario; the reason is in the log and below). Nothing is skipped silently.
 
 The client sees nothing but the snippet: [setupSnippet](../../test/e2e/npm_matrix_test.go) renders the `configure` template of npm's
 `SetupTemplates` with the data the setup API gives it (the edge's registry URL, the keyed credential line, always-auth because `npm-local` requires
@@ -664,29 +662,32 @@ The registry is `npm-all` when the build serves the virtual class and `npm-local
 | `ping` (E2.7) | `npm ping` | `pnpm ping` | n/a: no such command | n/a: no such command |
 | `publish`, scoped and unscoped | `npm publish` | `pnpm publish --no-git-checks` | `yarn npm publish` | `yarn publish --new-version` |
 | `install-local` | `npm install` | `pnpm add` | `yarn add` | `yarn add` |
-| `install-remote` | pending WP2.5 | pending WP2.5 | pending WP2.5 | pending WP2.5 |
+| `install-remote` (`@cobalt/dusky-gauge` and `left-pad` from the counting upstream through `npm-all`) | `npm install` | `pnpm add` | `yarn add` | `yarn add` |
 | `dist-tag` add, list, remove | `npm dist-tag` | `pnpm dist-tag` | `yarn npm tag` | `yarn tag` |
 | `deprecate` (P1, 404) | `npm deprecate` | `pnpm deprecate` | n/a: no such command | n/a: no such command |
-| `unpublish` | `npm unpublish` | `pnpm unpublish --force` | n/a: no such command | n/a: no such command |
+| `unpublish` | `npm unpublish` | `pnpm unpublish --force` (pnpm 11 and 12 at `npm-local`, see the findings) | n/a: no such command | n/a: no such command |
 | `login` (P1) | `npm login` (501) and `--auth-type=legacy` (404) under a pseudo-terminal | `pnpm login` under a pseudo-terminal | `yarn npm login` under a pseudo-terminal | n/a: `yarn login` only stores the name and e-mail locally and sends no request |
 | `audit` (P1, 501) | `npm audit` | `pnpm audit` (retries, see below) | `yarn npm audit` | n/a: `yarn audit` goes to registry.yarnpkg.com whatever `.npmrc` says |
 | `search` (P1, 404) | `npm search` | `pnpm search` | n/a: no such command | n/a: no such command |
 | `deferred-endpoints` (R-NPM-043) | `token list`, `profile get`, `org ls`, `access get status`, `owner add` | n/a: npm's commands | n/a | n/a |
 | `lockfile-reinstall` | `npm ci` | `pnpm install --frozen-lockfile` | `yarn install --immutable` | `yarn install --frozen-lockfile` |
 | `yarn4-lockfile` (R-NPM-042) | n/a | n/a | `yarn.lock` holds no URL of the registry | n/a |
-| `yarn4-switch-registry` (R-NPM-042) | n/a | n/a | pending WP2.5 | n/a |
-| `pnpm-workspace` (R-NPM-040) | n/a | pending WP2.5 (3 internal and 300 corpus packages) | n/a | n/a |
+| `yarn4-switch-registry` (R-NPM-042) | n/a | n/a | install through `npm-all`, point `npmRegistryServer` at `npm-remote`, `yarn install --immutable` | n/a |
+| `pnpm-workspace` (R-NPM-040) | n/a | 3 internal and 300 corpus packages: install, install `--frozen-lockfile`, delete `node_modules`, install again | n/a | n/a |
 
 The logins ask for a user name and a password only at a terminal; `npmClient.execPTY` runs them under `script` with typed answers. The status a
 client reports depends on whether it sends its credential to the login endpoint: npm does and gets the 501 of the `POST` and the 404 of the `PUT`;
 pnpm, Yarn 4 and Yarn 1 log in anonymously and, at a repository that requires authentication, get the 401 of the authentication gate first.
 
-### Pending
+### Repositories of a test
 
-`npmPending` ends a scenario that cannot pass yet as `PENDING WP2.5: …` (the repository API still answers `unsupported_class` for a remote or virtual npm
-repository) or `PENDING WP2.9: …` (the rule API refuses an npm repository). By default that is a failure. `TROVE_E2E_NPM_ALLOW_PENDING=1` turns it into a skip that
-names the package, which is how a work package that precedes WP2.5 runs the suite; CI never sets it. When WP2.5 and WP2.9 have landed, the probes in `npmFixture`
-and `npmPending` go away with the switch.
+The fixture ([npmFx](../../test/e2e/npm_env_test.go)) creates `npm-local`, `npm-remote` (the counting upstream) and `npm-all` (the virtual repository over both, deployment
+target `npm-local`) once per run. A virtual repository accepts only `read` and `manage` in a policy (R-AUTHZ-009) and is read through the members the caller can read, so the
+publisher holds `read`, `deploy` and `delete` on `npm-local` and `read` on the other two. A test that changes the upstream, stops it, or needs an empty cache makes a remote and a
+virtual repository of its own (`upstreamRepos`) and deletes them when it ends. That is not only tidiness: the shadowing check of R-REPO-048 asks every remote of every virtual
+repository that contains the target, so a remote left behind whose upstream was stopped keeps its circuit open for five minutes and answers every first publish into `npm-local`
+with `503 shadow_check_unavailable`; a document that a test made the upstream publish a future version of stays in the cache, because an older copy never marks a version
+removed (R-NPM-026). Tokens: `freshSAToken` revokes the earlier tokens of the account first (`token_limit_reached`).
 
 ### Pinning a client to a replica
 
@@ -702,7 +703,7 @@ workflow adds this leg, and the three 30-minute fuzz legs of `make fuzz-npm`, wh
 
 ### Findings of the npm tests
 
-Found while building the matrix, in the order they were found; the first is fixed, the rest are recorded in the spec (Q-NPM-47, Q-NPM-49).
+Found while building the matrix and running it through `npm-all`, in the order they were found; the first is fixed, the rest are recorded in the spec (Q-NPM-47, Q-NPM-49).
 
 - **`npm deprecate` waited 70 seconds.** The metadata `PUT` of a deprecation answered 501, npm retries a `PUT` on any 5xx. The answer is now the 404 of R-NPM-043
   (`TestR_NPM_043_DeprecateIsRefusedWithoutRetries`).
@@ -714,6 +715,14 @@ Found while building the matrix, in the order they were found; the first is fixe
   scenario asserts the 501 the registry gave; the row takes about two minutes for it until audit is built (R-NPM-038).
 - **`yarn audit` ignores `.npmrc` and goes to registry.yarnpkg.com**; **`yarn login` sends no request**; **Yarn 4 has no unpublish, deprecate or search**. All are `not applicable` with those reasons.
 - **`npm owner ls` succeeds** (it reads the maintainers); the criterion of R-NPM-043 names `npm owner add`.
+- **pnpm 11 and 12 cannot unpublish through a virtual repository.** They read the package with a plain `GET`, whose `_rev` on `npm-all` is the merge's synthetic one, and send it back; the write
+  answers 409 `npm_stale_rev` and the client retries it for 70 seconds. npm and pnpm 10 use `?write=true`. The scenario runs these two rows' unpublish at `npm-local`, the deployment target
+  (Q-NPM-49, open for the owner).
+- **A virtual repository needs `read` on its members.** A token that reads `npm-all` and not its members gets 404 for everything (R-AUTHZ-009 rule 2); the customer endpoint's token and every fixture grant the members.
+- **The shadowing check couples unrelated repositories** (above): one remote with an open circuit anywhere in a virtual repository that contains `npm-local` blocks first publishes for holders of `deploy`.
+- **`kubectl exec -i` with an empty standard input never ends.** An empty file is made without stdin (`npmClient.write`); every write is bounded to two minutes. It cost one run 45 minutes.
+- **`kubectl port-forward` loses connections under 50 at once**, so the collapse tests start their bursts inside the cluster, from the client pods pinned to a replica (`burstGet`).
+- **The replicas' pollers hold short transactions** (`ListClusterEpochs`, a few milliseconds each) that a sample of `pg_stat_activity` catches as `idle in transaction`; the E2.9 check counts only a session idle in a transaction for more than 700 ms, against an upstream delay of 1.5 s.
 
 ### Not covered by the npm tests
 

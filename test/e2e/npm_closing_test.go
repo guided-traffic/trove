@@ -39,7 +39,6 @@ func TestNPMClosing(t *testing.T) {
 
 	// E2.2: with Valkey stopped the upstream records at most one request per replica for each document and tarball.
 	t.Run("R-NPM-046 E2.2 the cold-cache install with Valkey stopped", func(t *testing.T) {
-		fx.needRemote(t)
 		withValkeyStopped(t, func() {
 			webReadyDegraded(t, true)
 			coldInstall(t, fx, true)
@@ -50,7 +49,6 @@ func TestNPMClosing(t *testing.T) {
 	// R-NPM-045: the read-only subset against the public registry, for every gate row: documents and tarballs the real
 	// registry serves, through a remote repository and a virtual one over it. Nothing is published, nothing changed.
 	t.Run("R-NPM-045 the read-only subset against the public registry", func(t *testing.T) {
-		fx.needRemote(t)
 		remote, all := "npm-public-"+fx.run+"-remote", "npm-public-"+fx.run+"-all"
 		fx.adm.do(http.MethodPost, "/api/v1/repositories", map[string]any{
 			"key": remote, "class": "remote", "format": "npm",
@@ -61,21 +59,26 @@ func TestNPMClosing(t *testing.T) {
 			"virtual": map[string]any{"members": []string{npmLocalKey, remote}, "deployTarget": npmLocalKey},
 		}).want(t, "create "+all, 201)
 		ensurePolicy(t, fx.adm, "e2e-npm-public-"+fx.run, []string{remote, all}, [2]any{"sa:" + npmPublisher, []string{"read"}})
+		// the shadowing check of every later first publish into npm-local asks this remote too; it goes with the test
+		t.Cleanup(func() {
+			deleteRepository(t, fx.adm, all)
+			deleteRepository(t, fx.adm, remote)
+		})
 		for i, row := range npmGateRows {
 			t.Run(row, func(t *testing.T) {
 				t.Parallel()
 				c := fx.clientOn(t, row, i%npmClientCount(t), all, "public")
 				dir := c.project("public", nil)
 				c.configure(dir)
-				// the legacy name of R-NPM-002 is not in the list: it is a stub-only shape; these are small, stable packages
-				specs := []string{"left-pad@1.3.0", "@types/ms@0.7.34"}
+				// small, stable packages that no other test publishes into npm-local (a name npm-local holds is claimed by it and never read from the remote, R-NPM-033)
+				specs := []string{"ms@2.1.3", "@types/ms@0.7.34"}
 				c.mustInstall(dir, specs...)
-				c.assertMarkersLoad(t, dir, "left-pad")
+				c.assertMarkersLoad(t, dir, "ms")
 				c.wipeClientState(dir)
 				c.must(dir, c.frozenInstall()...)
-				c.assertMarkersLoad(t, dir, "left-pad")
-				if got := strings.TrimSpace(c.viewVersion(dir, "left-pad@1.3.0")); !strings.Contains(got, "1.3.0") {
-					t.Fatalf("%s: view of left-pad@1.3.0 printed %q", row, got)
+				c.assertMarkersLoad(t, dir, "ms")
+				if got := strings.TrimSpace(c.viewVersion(dir, "ms@2.1.3")); !strings.Contains(got, "2.1.3") {
+					t.Fatalf("%s: view of ms@2.1.3 printed %q", row, got)
 				}
 			})
 		}

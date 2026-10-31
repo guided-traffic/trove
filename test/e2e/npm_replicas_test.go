@@ -117,15 +117,35 @@ func TestNPMReplicas(t *testing.T) {
 		if r.Status != 200 || r.Header.Get("ETag") == etag || r.Header.Get("ETag") == "" {
 			t.Fatalf("after a publish through replica C, replica A answered the old validator with %s (ETag %q), want 200 and a new ETag", r, r.Header.Get("ETag"))
 		}
-		// the same for the local repository itself when the matrix goes through npm-all
-		if fx.virtual {
-			local := "/api/npm/" + npmLocalKey + "/" + url.PathEscape(name)
-			e := at(0).get(local).want(t, "document of npm-local", 200).Header.Get("ETag")
-			for i := 1; i < len(addrs); i++ {
-				if r := at(i).get(local, "If-None-Match", e); r.Status != 304 {
-					t.Fatalf("npm-local: replica %d answered %s, want 304", i, r)
-				}
+		// the same for the local repository itself
+		local := "/api/npm/" + npmLocalKey + "/" + url.PathEscape(name)
+		e := at(0).get(local).want(t, "document of npm-local", 200).Header.Get("ETag")
+		for i := 1; i < len(addrs); i++ {
+			if r := at(i).get(local, "If-None-Match", e); r.Status != 304 {
+				t.Fatalf("npm-local: replica %d answered %s, want 304", i, r)
 			}
+		}
+		// and for a remote repository after an upstream change: the validator is the same on every replica, and a change
+		// that the repository has taken over (an invalidation makes it revalidate) gives every replica a new one
+		repos := fx.upstreamRepos(t, "e210etag", nil)
+		s := stub(t)
+		s.resetAll(t)
+		defer s.resetAll(t)
+		const remotePkg = "@cobalt/nimble-ledger"
+		remotePath := "/api/npm/" + repos.remote + "/" + url.PathEscape(remotePkg)
+		re := at(0).get(remotePath).want(t, "document of the remote", 200).Header.Get("ETag")
+		for i := 1; i < len(addrs); i++ {
+			if r := at(i).get(remotePath, "If-None-Match", re); r.Status != 304 {
+				t.Fatalf("the remote: replica %d answered %s, want 304", i, r)
+			}
+		}
+		s.publish(t, remotePkg, "99.0.0", nil, "latest")
+		fx.adm.do(http.MethodPost, "/api/v1/repositories/"+repos.remote+"/cache/invalidate", map[string]any{"path": remotePkg, "scope": "metadata"}).want(t, "invalidate", 200)
+		for i := range addrs {
+			waitFor(t, fmt.Sprintf("replica %d to answer the old validator of the remote with 200", i), 10*time.Second, 200*time.Millisecond, func() bool {
+				r := at(i).get(remotePath, "If-None-Match", re)
+				return r.Status == 200 && r.Header.Get("ETag") != re && r.Header.Get("ETag") != ""
+			})
 		}
 	})
 
@@ -218,7 +238,6 @@ func TestNPMReplicas(t *testing.T) {
 	// E2.10, R-OPS-021, R-REPO-045: a cache invalidation sent through one replica is in force on every replica within
 	// cluster.epoch_poll_interval plus one second. It needs a remote repository.
 	t.Run("R-OPS-021 E2.10 a cache invalidation takes effect on every replica", func(t *testing.T) {
-		fx.needRemote(t)
 		cacheInvalidationOnEveryReplica(t, fx)
 	})
 }
@@ -280,16 +299,21 @@ func cacheInvalidationOnEveryReplica(t *testing.T, fx *npmFixture) {
 		bound     = 2 * time.Second
 		allowance = 250 * time.Millisecond
 	)
+	// a remote repository of its own: the change made at the upstream below must not leak into the shared npm-remote,
+	// whose cached document the other tests read
+	repos := fx.upstreamRepos(t, "e210inv", nil)
 	s := stub(t)
+	s.resetAll(t)
+	defer s.resetAll(t)
 	addrs, stop := podForwards(t)
 	defer stop()
-	path := "/api/npm/" + npmRemoteKey + "/" + url.PathEscape(pkg)
+	path := "/api/npm/" + repos.remote + "/" + url.PathEscape(pkg)
 	for i := range addrs {
 		apiAtPod(t, addrs[i], fx.token).get(path).want(t, fmt.Sprintf("document through replica %d", i), 200)
 	}
 	version := fmt.Sprintf("99.%d.0", time.Now().Unix()%100000)
 	s.publish(t, pkg, version, nil, "latest")
-	fx.adm.do(http.MethodPost, "/api/v1/repositories/"+npmRemoteKey+"/cache/invalidate", map[string]any{"path": pkg, "scope": "metadata"}).want(t, "invalidate", 200)
+	fx.adm.do(http.MethodPost, "/api/v1/repositories/"+repos.remote+"/cache/invalidate", map[string]any{"path": pkg, "scope": "metadata"}).want(t, "invalidate", 200)
 	start := time.Now()
 	for i := range addrs {
 		a := apiAtPod(t, addrs[i], fx.token)

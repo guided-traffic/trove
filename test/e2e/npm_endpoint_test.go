@@ -5,14 +5,15 @@ package e2e
 // npm on a customer endpoint (E2.12, R-NPM-048, R-EP-018, R-EP-019): the endpoint `customers` of the dev profile has
 // its own Ingress and host (packages.trove.localhost) and exposes a repository only through rules. The clients reach it
 // by that host, which their pods resolve to the loopback address of their forwarder (hostAliases in deploy/dev/e2e.sh),
-// and use a token bound to the endpoint. The test waits for WP2.9 (the exposure adapter of npm) and WP2.5 (a remote
-// member): until the rule API refuses an npm repository it ends as pending on WP2.9 (npmPending).
+// and use a token bound to the endpoint. The virtual repository of the test has a remote member, so the cache-fill rule
+// of R-EP-019 is part of it.
 
 import (
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -34,6 +35,7 @@ func (c *npmClient) versionsOfPackage(dir, name string) []string {
 		r = c.run(dir, "view", name, "versions", "--json")
 	}
 	if r.Code != 0 {
+		c.t.Logf("%s could not list the versions of %s (exit %d):\n%s", c.row, name, r.Code, tailLines(r.Out, 12))
 		return nil
 	}
 	out := r.Out
@@ -77,14 +79,10 @@ func TestNPMEndpoint(t *testing.T) {
 		// the rule: versions from 2.0.0 on, no pre-releases
 		rule := map[string]any{
 			"name": "sdk-" + fx.run, "repository": repos.all,
-			"packages": map[string]any{"include": []string{sdk, "@cobalt/*"}},
+			"packages": map[string]any{"include": []string{sdk}},
 			"versions": map[string]any{"range": ">=2.0.0"},
 		}
-		r := fx.adm.do(http.MethodPost, "/api/v1/endpoints/customers/exposure-rules", rule)
-		if r.Status == 422 {
-			npmPending(t, "WP2.9", "the exposure adapter of npm: creating a rule for an npm repository answered "+r.String())
-		}
-		r.want(t, "create the rule", 201)
+		fx.adm.do(http.MethodPost, "/api/v1/endpoints/customers/exposure-rules", rule).want(t, "create the rule", 201)
 		defer func() {
 			g := fx.adm.get("/api/v1/endpoints/customers/exposure-rules/sdk-" + fx.run)
 			if g.Status == 200 {
@@ -93,8 +91,8 @@ func TestNPMEndpoint(t *testing.T) {
 		}()
 
 		ensureSA(t, fx.adm, "e2e-npm-cust")
-		ensurePolicy(t, fx.adm, "e2e-npm-cust-"+fx.run, []string{repos.all}, [2]any{"sa:e2e-npm-cust", []string{"read"}})
-		bound := newSAToken(t, fx.adm, "e2e-npm-cust", 3600, map[string]any{"inherit": true, "endpoints": []string{"customers"}}).Token
+		ensurePolicy(t, fx.adm, "e2e-npm-cust-"+fx.run, []string{repos.all, repos.remote, npmLocalKey}, [2]any{"sa:e2e-npm-cust", []string{"read"}})
+		bound := freshSAToken(t, fx.adm, "e2e-npm-cust", 3600, map[string]any{"inherit": true, "endpoints": []string{"customers"}}).Token
 
 		exposed := []string{"2.0.0", "2.1.0"}
 		for i, row := range npmGateRows {
@@ -113,8 +111,15 @@ func TestNPMEndpoint(t *testing.T) {
 				}
 				d2 := c.project("hidden", nil)
 				c.configure(d2)
-				if hr := c.run(d2, c.addCmd(sdk+"@1.9.0")...); hr.Code == 0 || !strings.Contains(hr.Out, "404") {
-					t.Fatalf("an install of the hidden 1.9.0 on customers exited %d, want a 404 as for a missing version:\n%s", hr.Code, tailLines(hr.Out, 12))
+				// a hidden version is a missing one: the client fails the install of 1.9.0 exactly as it fails the install of a
+				// version that no registry holds (npm: ETARGET, pnpm: NO_MATCHING_VERSION, Yarn: YN0016 or its resolution error)
+				hidden := c.run(d2, c.addCmd(sdk+"@1.9.0")...)
+				missing := c.run(d2, c.addCmd(sdk+"@9.9.9")...)
+				if hidden.Code == 0 || missing.Code == 0 {
+					t.Fatalf("the install of the hidden 1.9.0 exited %d and that of the missing 9.9.9 exited %d, want both to fail:\n%s", hidden.Code, missing.Code, tailLines(hidden.Out, 12))
+				}
+				if h, m := failureLine(hidden.Out, "1.9.0"), failureLine(missing.Out, "9.9.9"); h == "" || h != m {
+					t.Fatalf("the hidden 1.9.0 fails with %q and the missing 9.9.9 with %q, want the same failure:\n%s\n---\n%s", h, m, tailLines(hidden.Out, 8), tailLines(missing.Out, 8))
 				}
 			})
 		}
@@ -126,6 +131,8 @@ func TestNPMEndpoint(t *testing.T) {
 		if !strings.Contains(body, "https://"+custHost+":"+edgePort(t)+"/") {
 			t.Fatalf("tarball URLs on customers do not name the endpoint's host:\n%s", tailLines(body, 6))
 		}
+		// the tarball of a hidden version is the 404 of R-EP-013, and no tarball URL names anything but the endpoint
+		api.get("/api/npm/"+repos.all+"/"+url.PathEscape(sdk)+"/-/sdk-1.9.0.tgz").want(t, "the tarball of a hidden version", 404)
 		for _, member := range []string{npmLocalKey, repos.remote} {
 			if strings.Contains(body, member) {
 				t.Fatalf("the document on customers names the member %s", member)
@@ -152,16 +159,52 @@ func TestNPMEndpoint(t *testing.T) {
 		// R-EP-019: a version that is not cached in the remote member is not there on customers, and no request goes to
 		// the upstream; the same install through default fills the cache and then customers has it
 		const cobalt = "@cobalt/eager-lantern"
+		// a rule of its own: the package is exposed without a version range, so what keeps it from customers is the cache
+		fx.adm.do(http.MethodPost, "/api/v1/endpoints/customers/exposure-rules", map[string]any{
+			"name": "cobalt-" + fx.run, "repository": repos.all, "packages": map[string]any{"include": []string{cobalt}},
+		}).want(t, "create the rule of the remote package", 201)
+		defer func() {
+			g := fx.adm.get("/api/v1/endpoints/customers/exposure-rules/cobalt-" + fx.run)
+			if g.Status == 200 {
+				fx.adm.do(http.MethodDelete, "/api/v1/endpoints/customers/exposure-rules/cobalt-"+fx.run, nil, "If-Match", g.Header.Get("ETag"))
+			}
+		}()
+		for i, p := range pods {
+			waitFor(t, fmt.Sprintf("replica %d to know the rule", i), 10*time.Second, 200*time.Millisecond, func() bool {
+				return p.get("/api/npm/"+repos.all+"/-/ping").Status == 200
+			})
+		}
 		s.reset(t)
 		api.get("/api/npm/"+repos.all+"/"+url.PathEscape(cobalt)).want(t, "an uncached remote package on customers", 404)
 		if n := s.counts(t).Documents(cobalt) + s.counts(t).Tarballs(cobalt); n != 0 {
 			t.Fatalf("customers made %d requests to the upstream for %s, want none (cache_fill false)", n, cobalt)
 		}
-		fx.adm.withToken(fx.token).get("/api/npm/"+repos.all+"/"+url.PathEscape(cobalt)).want(t, "the same package through default", 200)
-		if s.counts(t).Documents(cobalt) < 1 {
-			t.Fatalf("default did not fill the cache for %s", cobalt)
+		// the same install through default fills the cache: the document alone does not, because a version that is not
+		// cached in the remote member is not exposed (R-EP-019), so the client downloads the package
+		fill := fx.clientOn(t, "npm11", 0, repos.all, "e212fill")
+		fd := fill.project("fill", nil)
+		fill.configure(fd)
+		fill.mustInstall(fd, cobalt)
+		if s.counts(t).Documents(cobalt) < 1 || s.counts(t).Tarballs(cobalt) < 1 {
+			t.Fatalf("the install through default did not fill the cache for %s: %s", cobalt, s.counts(t).Summary())
 		}
 		api.get("/api/npm/"+repos.all+"/"+url.PathEscape(cobalt)).want(t, "the package on customers after the fill", 200)
 		_ = npmstub.KindDocument
 	})
+}
+
+// failureRe finds the line of a client's output that states why the install failed: npm's and pnpm's error codes, Yarn
+// 4's YN code, Yarn 1's "error" line.
+var failureRe = regexp.MustCompile(`(?i)ETARGET|ERR_PNPM_[A-Z_]+|YN\d{4}|^error |No matching version|Failed to resolve`)
+
+// failureLine is the first such line with the version taken out, so that the failure of one version and the failure
+// of another compare equal when the client says the same thing about both.
+func failureLine(out, version string) string {
+	for _, l := range strings.Split(out, "\n") {
+		if failureRe.MatchString(strings.TrimSpace(l)) {
+			l = strings.ReplaceAll(l, version, "<version>")
+			return strings.Join(strings.Fields(l), " ")
+		}
+	}
+	return ""
 }

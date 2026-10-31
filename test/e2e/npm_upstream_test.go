@@ -4,8 +4,8 @@ package e2e
 
 // The criteria that are read off what the counting test upstream (test/npmstub) recorded: cold-cache collapse across
 // replicas (E2.2), a down upstream and the negative cache (E2.4), namespace claims and the shadowing check (E2.5), and
-// the request collapsing of R-ARCH-033 with its failure cases (E2.9). All of them need the remote and the virtual class
-// of npm (WP2.5): until the repository API serves them each test ends as pending on WP2.5 (npmPending).
+// the request collapsing of R-ARCH-033 with its failure cases (E2.9). Each test makes the repositories it needs (upstreamRepos)
+// and removes them again.
 
 import (
 	"encoding/json"
@@ -33,7 +33,6 @@ type upstreamRepos struct {
 
 func (fx *npmFixture) upstreamRepos(t testing.TB, purpose string, settings map[string]any) upstreamRepos {
 	t.Helper()
-	fx.needRemote(t)
 	u := upstreamRepos{remote: fmt.Sprintf("npm-%s-%s-remote", purpose, fx.run), all: fmt.Sprintf("npm-%s-%s-all", purpose, fx.run)}
 	remote := map[string]any{"url": "https://" + fx.stubHost + "/"}
 	for k, v := range settings {
@@ -44,8 +43,38 @@ func (fx *npmFixture) upstreamRepos(t testing.TB, purpose string, settings map[s
 		"key": u.all, "class": "virtual", "format": "npm", "requireAuthentication": true,
 		"virtual": map[string]any{"members": []string{npmLocalKey, u.remote}, "deployTarget": npmLocalKey},
 	}).want(t, "create "+u.all, 201)
-	ensurePolicy(t, fx.adm, "e2e-npm-"+purpose+"-"+fx.run, []string{u.remote, u.all}, [2]any{"sa:" + npmPublisher, []string{"read", "deploy", "delete"}})
+	ensurePolicy(t, fx.adm, "e2e-npm-"+purpose+"-"+fx.run, []string{u.remote, u.all}, [2]any{"sa:" + npmPublisher, []string{"read"}})
+	// A remote that stays behind keeps being asked by the shadowing check of every first publish into npm-local (R-REPO-048
+	// asks each remote of each virtual repository that contains the target); one whose upstream was stopped keeps its
+	// circuit open for circuitOpenSeconds and makes every such publish a 503. The repositories go with the test.
+	t.Cleanup(func() {
+		for _, key := range []string{u.all, u.remote} {
+			deleteRepository(t, fx.adm, key)
+		}
+	})
 	return u
+}
+
+// deleteRepository deletes a repository, waiting out the admin API's rate limit (R-API-016).
+func deleteRepository(t testing.TB, adm *api, key string) {
+	t.Helper()
+	for i := 0; i < 20; i++ {
+		r, err := adm.send(http.MethodDelete, "/api/v1/repositories/"+key, nil)
+		if err != nil {
+			t.Errorf("delete %s: %v", key, err)
+			return
+		}
+		switch r.Status {
+		case 429:
+			time.Sleep(2 * time.Second)
+		case 200, 202, 204, 404:
+			return
+		default:
+			t.Errorf("delete %s: %s", key, r)
+			return
+		}
+	}
+	t.Errorf("delete %s: still rate limited after 40 s", key)
 }
 
 // clientOn returns a client of the row on pod i that is configured for the repository key.
@@ -77,8 +106,11 @@ func referenceLockfile(t testing.TB, key string) (pkgJSON, lock string, packages
 	if err := json.Unmarshal(lk, &parsed); err != nil {
 		t.Fatal(err)
 	}
+	// one tarball per distinct address: a package that the tree holds at two places is one download
+	seen := map[string]bool{}
 	for _, p := range parsed.Packages {
-		if p.Resolved != "" {
+		if p.Resolved != "" && !seen[p.Resolved] {
+			seen[p.Resolved] = true
 			packages++
 		}
 	}
@@ -160,7 +192,6 @@ func TestNPMCollapse(t *testing.T) {
 	requireScatter(t, fx)
 
 	t.Run("R-NPM-045 R-REPO-026 E2.2 three clients run npm ci at once against three replicas", func(t *testing.T) {
-		fx.needRemote(t)
 		coldInstall(t, fx, false)
 	})
 
@@ -172,23 +203,39 @@ func TestNPMCollapse(t *testing.T) {
 		s.resetAll(t)
 		s.setMode(t, npmstub.Mode{DelayMS: map[string]int{"document": 1500}})
 		defer s.resetAll(t)
-		addrs, stop := podForwards(t)
-		defer stop()
+		webs := webReplicas(t, 2)
 		const name, misses = "@cobalt/eager-lantern", 100
 		path := "/api/npm/" + repos.remote + "/" + url.PathEscape(name)
+		// the system is quiet when the flight starts: a replica that came up a moment ago (the profile switch) may still
+		// be settling its sessions, which is not what the criterion measures
+		waitFor(t, "no session idle in transaction", 60*time.Second, time.Second, func() bool {
+			return strings.TrimSpace(sql(t, `SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND state LIKE 'idle in transaction%' AND now() - state_change > interval '700 ms'`)) == "0"
+		})
 		var wg sync.WaitGroup
-		statuses := make([]int, misses)
-		for i := 0; i < misses; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				statuses[i] = apiAtPod(t, addrs[i%2], fx.token).do(http.MethodGet, path, nil).Status
-			}()
+		var statuses []int
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			statuses = burstOver(t, webs, path, fx.token, misses/2)
+		}()
+		// The replicas' pollers run short transactions of a few milliseconds all the time (ListClusterEpochs and the like),
+		// which a sample catches "idle in transaction" now and then. What the criterion forbids is a transaction held
+		// across the upstream wait, which here is 1.5 s, so only a session idle in a transaction for longer than 700 ms
+		// counts. The advisory locks the installation holds by itself (the lease sessions of the replicas) are the
+		// baseline; the flight must add none.
+		advisory := func() string {
+			return strings.TrimSpace(sql(t, `SELECT count(*) FILTER (WHERE state LIKE 'idle in transaction%' AND now() - state_change > interval '700 ms') || ' ' || (SELECT count(*) FROM pg_locks WHERE locktype = 'advisory') FROM pg_stat_activity WHERE datname = current_database()`))
+		}
+		baseline := advisory()
+		if !strings.HasPrefix(baseline, "0 ") {
+			t.Fatalf("a session was idle in transaction before the test: %s", baseline)
 		}
 		var bad []string
 		for deadline := time.Now().Add(1200 * time.Millisecond); time.Now().Before(deadline); time.Sleep(200 * time.Millisecond) {
-			if out := strings.TrimSpace(sql(t, `SELECT count(*) FILTER (WHERE state LIKE 'idle in transaction%') || ' ' || (SELECT count(*) FROM pg_locks WHERE locktype = 'advisory') FROM pg_stat_activity WHERE datname = current_database()`)); out != "0 0" {
-				bad = append(bad, out)
+			if out := advisory(); out != baseline {
+				// name the session, so that a finding is about a connection and not about a count
+				who := sql(t, `SELECT coalesce(string_agg(format('%s/%s since %s: %s', usename, application_name, now() - state_change, left(query, 120)), '; '), 'none') FROM pg_stat_activity WHERE datname = current_database() AND state LIKE 'idle in transaction%' AND now() - state_change > interval '700 ms'`)
+				bad = append(bad, out+" ("+who+")")
 			}
 		}
 		wg.Wait()
@@ -201,7 +248,7 @@ func TestNPMCollapse(t *testing.T) {
 			t.Fatalf("the test upstream recorded %d document requests for %s, want 1 (100 misses over two replicas)", got, name)
 		}
 		if len(bad) > 0 {
-			t.Fatalf("while the flight ran, pg_stat_activity/pg_locks showed (idle in transaction, advisory locks): %v", bad)
+			t.Fatalf("while the flight ran, pg_stat_activity/pg_locks showed %v where the baseline is %q (idle in transaction, advisory locks)", bad, baseline)
 		}
 	})
 
@@ -212,26 +259,59 @@ func TestNPMCollapse(t *testing.T) {
 		s.resetAll(t)
 		s.setMode(t, npmstub.Mode{DelayMS: map[string]int{"document": 1500}})
 		defer s.resetAll(t)
-		addrs, stop := podForwards(t)
-		defer stop()
+		webs := webReplicas(t, 2)
 		const name = "@cobalt/early-nozzle"
 		path := "/api/npm/" + repos.remote + "/" + url.PathEscape(name)
 		withValkeyStopped(t, func() {
 			webReadyDegraded(t, true)
-			var wg sync.WaitGroup
-			for i := 0; i < 60; i++ {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					if st := apiAtPod(t, addrs[i%len(addrs)], fx.token).do(http.MethodGet, path, nil).Status; st != 200 {
-						t.Errorf("request %d answered %d", i, st)
-					}
-				}()
+			for i, st := range burstOver(t, webs, path, fx.token, 30) {
+				if st != 200 {
+					t.Errorf("request %d answered %d", i, st)
+				}
 			}
-			wg.Wait()
 		})
-		if got := s.counts(t).Documents(name); got < 1 || got > len(addrs) {
-			t.Fatalf("the test upstream recorded %d document requests for %s, want between 1 and %d (one per replica)", got, name, len(addrs))
+		if got := s.counts(t).Documents(name); got < 1 || got > 2 {
+			t.Fatalf("the test upstream recorded %d document requests for %s, want between 1 and 2 (one per replica of the two that were asked)", got, name)
+		}
+	})
+
+	// E2.9: a flight lock lost with Valkey's data (FLUSHALL stands for a Sentinel failover that drops the acknowledged
+	// write, R-ARCH-030) costs at most one duplicate fetch and leaves one cache entry. The second replica takes the lock
+	// that vanished, fetches the same document, and the duplicate fill is harmless (R-NPM-024 duplicate-fill rule).
+	t.Run("R-ARCH-033 E2.9 a flight lock lost with valkey's data costs at most one duplicate fetch", func(t *testing.T) {
+		repos := fx.upstreamRepos(t, "e29l", nil)
+		s := stub(t)
+		s.resetAll(t)
+		s.setMode(t, npmstub.Mode{DelayMS: map[string]int{"document": 4000}})
+		defer s.resetAll(t)
+		webs := webReplicas(t, 2)
+		const name = "@cobalt/lucid-dial"
+		path := "/api/npm/" + repos.remote + "/" + url.PathEscape(name)
+		var statuses []int
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			statuses = burstOver(t, webs, path, fx.token, 10)
+		}()
+		time.Sleep(2 * time.Second) // one replica leads the flight and waits for the upstream, the others wait for it
+		valkeyPrimaryCLI(t, "FLUSHALL")
+		wg.Wait()
+		for i, st := range statuses {
+			if st != 200 {
+				t.Fatalf("request %d answered %d", i, st)
+			}
+		}
+		if got := s.counts(t).Documents(name); got < 1 || got > 2 {
+			t.Fatalf("the test upstream recorded %d document requests for %s, want at most 2 (the leader's and one duplicate)", got, name)
+		}
+		r := fx.adm.get("/api/v1/repositories/"+repos.remote+"/cache/entries?pathPrefix="+url.QueryEscape(name)).want(t, "cache entries", 200)
+		var entries struct {
+			Items []json.RawMessage `json:"items"`
+		}
+		r.JSON(t, &entries)
+		if len(entries.Items) != 1 {
+			t.Fatalf("the cache holds %d entries for %s after the duplicate fetch, want 1: %s", len(entries.Items), name, r)
 		}
 	})
 
@@ -343,18 +423,21 @@ func TestNPMUpstream(t *testing.T) {
 		s := stub(t)
 		s.resetAll(t)
 		defer s.resetAll(t)
-		deployer := serviceToken(t, fx, "e2e-npm-deployer", []string{repos.all, npmLocalKey}, []string{"read", "deploy"})
-		manager := serviceToken(t, fx, "e2e-npm-manager", []string{repos.all, npmLocalKey}, []string{"read", "deploy", "manage"})
+		deployer := serviceToken(t, fx, "e2e-npm-deployer", repos.all, []string{"read", "deploy"}, []string{"read"})
+		manager := serviceToken(t, fx, "e2e-npm-manager", repos.all, []string{"read", "deploy", "manage"}, []string{"read", "manage"})
 		c := fx.clientOn(t, "npm11", 0, repos.all, "e25s")
 
 		c.token = deployer
-		name := "left-pad"
+		// a name the upstream serves, new to this run: a rerun on the same cluster must not meet the version of the last
+		name := "shadowed-" + fx.run
+		s.publish(t, name, "1.0.0", nil, "latest")
 		dir := c.publishDir(name, "0.0.1", "marker:shadow")
 		r := c.run(dir, "publish")
 		if r.Code == 0 || !strings.Contains(r.Out, "403") {
 			t.Fatalf("a deploy holder published %s, which the upstream serves (exit %d):\n%s", name, r.Code, tailLines(r.Out, 15))
 		}
-		if !strings.Contains(r.Out, "shadows_remote_package") && !strings.Contains(r.Out, "shadow") {
+		// npm prints the message of the refusal, not its code
+		if !strings.Contains(r.Out, "would replace a package that a remote repository serves") {
 			t.Fatalf("the refusal does not say why:\n%s", tailLines(r.Out, 15))
 		}
 
@@ -367,7 +450,7 @@ func TestNPMUpstream(t *testing.T) {
 		// the upstream cannot be asked: a deploy holder gets 503 shadow_check_unavailable
 		s.setMode(t, npmstub.Mode{Down: npmstub.DownUnavailable})
 		c.token = deployer
-		other := c.publishDir("react", "0.0.1", "marker:unavailable")
+		other := c.publishDir("shadow-unknown-"+fx.run, "0.0.1", "marker:unavailable")
 		r = c.run(other, "publish")
 		if r.Code == 0 || !strings.Contains(r.Out, "503") {
 			t.Fatalf("with the upstream down a deploy holder's first publish of an upstream name exited %d, want a 503:\n%s", r.Code, tailLines(r.Out, 15))
@@ -375,12 +458,14 @@ func TestNPMUpstream(t *testing.T) {
 	})
 }
 
-// serviceToken makes a service account with a policy of the actions on the repositories and returns a token.
-func serviceToken(t *testing.T, fx *npmFixture, sa string, repos, actions []string) string {
+// serviceToken makes a service account that holds localActions on npm-local and virtualActions on the virtual
+// repository (which accepts read and manage only, R-AUTHZ-009) and returns a token.
+func serviceToken(t *testing.T, fx *npmFixture, sa, virtualKey string, localActions, virtualActions []string) string {
 	t.Helper()
 	ensureSA(t, fx.adm, sa)
-	ensurePolicy(t, fx.adm, sa+"-"+fx.run, repos, [2]any{"sa:" + sa, actions})
-	return newSAToken(t, fx.adm, sa, 3600, map[string]any{"inherit": true}).Token
+	ensurePolicy(t, fx.adm, sa+"-local-"+fx.run, []string{npmLocalKey}, [2]any{"sa:" + sa, localActions})
+	ensurePolicy(t, fx.adm, sa+"-virtual-"+fx.run, []string{virtualKey}, [2]any{"sa:" + sa, virtualActions})
+	return freshSAToken(t, fx.adm, sa, 3600, map[string]any{"inherit": true}).Token
 }
 
 // setClaims writes the manual claims of a local repository (R-REPO-023): the complete set, with the version of the

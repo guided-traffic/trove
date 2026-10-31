@@ -4,10 +4,10 @@ package e2e
 
 // The client matrix of R-NPM-045: the scenario list of the spec, run by every gate row against the scatter profile
 // (E2.1). One table of scenarios, one table of rows; a cell a row's client cannot run is "not applicable" with
-// the reason, a cell that waits for another work package is "pending" (npmPending), and neither is ever a silent
-// skip: both are in the log line of the test, in the report of npmReport and in .out/e2e/npm-<run>.json.
+// the reason, never a silent skip: it is in the log line of the test, in the report of npmReport and in
+// .out/e2e/npm-<run>.json.
 //
-// The registry is npm-all once WP2.5 serves the virtual class, else npm-local (npmFixture.registry). Everything
+// The registry is npm-all, the virtual repository over npm-local and npm-remote (npmFixture.registry). Everything
 // here is configured only from the setup snippets of R-NPM-041 (npm's SetupTemplates, rendered the way the setup
 // API does); what the clients need beyond them (a cache directory, no telemetry, no release-age quarantine) goes
 // through the environment, never into the snippet files.
@@ -380,7 +380,6 @@ func (c *npmClient) assertMarkers(t *testing.T, dir string, want map[string]stri
 
 // scenarioInstallRemote: a package the remote repository serves is installed through the registry. Waits for WP2.5.
 func scenarioInstallRemote(t *testing.T, c *npmClient) {
-	c.fx.needRemote(t)
 	dir := c.project("install-remote", nil)
 	c.configure(dir)
 	const plain, scoped = "@cobalt/dusky-gauge", "left-pad"
@@ -459,6 +458,16 @@ func scenarioUnpublish(t *testing.T, c *npmClient) {
 	name := c.pkg("unpub", false)
 	c.publish(name, "1.0.0")
 	c.publish(name, "1.1.0")
+	// pnpm 11 and 12 read the package with a plain GET and send its _rev back; through a virtual repository that _rev
+	// is the merge's synthetic one, which R-NPM-009 says cannot be written through (only ?write=true returns the
+	// deployment target's, which npm and pnpm 10, whose unpublish is npm's, use). Their unpublish therefore goes to
+	// the deployment target itself (Q-NPM-49).
+	if (c.row == "pnpm11" || c.row == "pnpm12") && c.registryKey != npmLocalKey {
+		t.Logf("%s unpublishes at %s, the deployment target of %s (Q-NPM-49)", c.row, npmLocalKey, c.registryKey)
+		viaTarget := *c
+		viaTarget.registryKey = npmLocalKey
+		c = &viaTarget
+	}
 	dir := c.project("unpublish", nil)
 	c.configure(dir)
 	args := []string{"unpublish", name + "@1.1.0"}
@@ -630,7 +639,6 @@ func scenarioYarn4Lockfile(t *testing.T, c *npmClient) {
 
 // scenarioYarn4Switch (R-NPM-042): the lockfile of an install through npm-all works against npm-remote. Waits for WP2.5.
 func scenarioYarn4Switch(t *testing.T, c *npmClient) {
-	c.fx.needRemote(t)
 	dir := c.project("yarn4-switch", nil)
 	c.configure(dir)
 	c.mustInstall(dir, "@cobalt/dusky-gauge")
@@ -642,7 +650,6 @@ func scenarioYarn4Switch(t *testing.T, c *npmClient) {
 // scenarioPnpmWorkspace (R-NPM-040): a workspace of 3 internal and 300 public packages installs with an empty store
 // and again with a warm store and --frozen-lockfile. Waits for WP2.5, the public packages are the remote's.
 func scenarioPnpmWorkspace(t *testing.T, c *npmClient) {
-	c.fx.needRemote(t)
 	dir := c.workspace("workspace")
 	c.must(dir, "install")
 	c.must(dir, "install", "--frozen-lockfile")
