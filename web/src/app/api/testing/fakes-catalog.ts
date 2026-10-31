@@ -51,7 +51,7 @@ export const GENERIC_FORMAT: FormatDescriptor = {
   name: 'generic',
   displayName: 'Generic',
   classes: ['local'],
-  clients: [],
+  clients: [{ id: 'curl', displayName: 'curl' }],
   layout: 'generic',
   protocolBasePath: '/files/{key}/',
   defaultUpstreamUrl: null,

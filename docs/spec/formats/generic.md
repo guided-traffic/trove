@@ -18,6 +18,7 @@ general item handling of [storage.md](../storage.md) and is referenced, not repe
 | Request path, content headers on stored content, format plug-in contract, path canonicalisation | [architecture.md](../architecture.md) (R-ARCH-005, R-ARCH-007, R-ARCH-008, R-ARCH-011, R-ARCH-014) |
 | Repository actions and the permission rules of a raw deploy (`deploy`, `overwrite`, `delete`) | [authorization.md](../authorization.md) (R-AUTHZ-005, R-AUTHZ-006) |
 | `/files/` and the items operations as management API | [api-and-ui.md](../api-and-ui.md) (R-API-025) |
+| Client setup page and guides: operations and screens | [api-and-ui.md](../api-and-ui.md) (R-API-030, R-API-053, R-UI-016, R-UI-049); this page contributes curl's snippets and guide (R-GENERIC-016) |
 
 Covers: [features/formats/generic.md](../../features/formats/generic.md) (`PKG-GENERIC-*`), and the
 generic-specific parts of [features/repositories.md](../../features/repositories.md) and
@@ -53,6 +54,7 @@ Priority: **MVP** · Covers: PKG-GENERIC-001
 | `defaultMetadataTtlSeconds`, `defaultNotFoundTtlSeconds` | `null`, `1800` | The format has no metadata documents, so no metadata period; only the not-found period (used by the P1 remote class) has a default |
 | `patternSubject` | `path` | Include and exclude patterns are path patterns (R-GENERIC-007) |
 | `priorityMembers`, `pinsAndClaims`, `caps` | `false` | No package names, so nothing for these mechanisms to act on |
+| `clients` | `[{"id":"curl","displayName":"curl"}]` | The client of the setup snippets and the guide (R-GENERIC-016, Q-GENERIC-8) |
 
 - A generic repository accepts any file at any path. It does not parse the file, compute package
   metadata, maintain an index or answer a format-specific client protocol. A client of a specific
@@ -275,6 +277,58 @@ Acceptance criteria:
   `not_applicable` at `/local/packageOwnership`.
 - `GET /api/v1/repositories/generic-local` of a repository created with only key, class and format
   returns no `local`, `remote` or `virtual` member.
+
+### R-GENERIC-016 · Setup snippets and guide for curl
+Priority: **MVP** · Covers: FMT-006
+
+The client setup page and the guides (api-and-ui.md R-API-030, R-API-053, R-UI-016, R-UI-049) serve the generic
+format with one client, `curl` (Q-GENERIC-8). The format contributes its templates (`SetupTemplates()`,
+[setup.go](../../../internal/formats/generic/setup.go)) and its guide (`Guide()`,
+[guide/](../../../internal/formats/generic/guide/)); the API renders them like npm's.
+
+| Snippet `id` | Tab | Content (`<registry URL>` is `<public base URL>/files/<repoKey>/`) |
+|---|---|---|
+| `curl.configure.function` | Configure | The shell function `trove_curl` below |
+| `curl.install` | Install | `trove_curl --fail --remote-name "<registry URL><path>"` |
+| `curl.publish` | Publish | `trove_curl --fail --upload-file <file> "<registry URL><path>"`, only for a caller with `deploy` |
+
+```shell
+trove_curl() {
+  curl --silent --show-error --config - "$@" <<EOF
+header = "Authorization: Bearer ${TROVE_TOKEN}"
+EOF
+}
+```
+
+- The snippets are POSIX shell. The function hands curl the credential as configuration on standard input, so the
+  token is never an argument of curl and appears neither in the process list nor in a shell trace, and no file holds
+  it (Q-GENERIC-9). The header is the one line that names `${TROVE_TOKEN}`: `credentials=env` names the configured
+  variable there, `credentials=placeholder` the browser's token, and `credentials=none` drops the line, which leaves a
+  function that sends no credential.
+- Deleting has no snippet, because the tabs are Configure, Install and Publish (Q-API-160); the guide names the
+  command.
+- The guide is written for the local class and curl, as built: what a generic local repository is (free paths and
+  their limits, the patterns, `overwrite`, served as stored); configure (the function, addresses); authenticate
+  (tokens, the variable, CI, checking the sign-in); install (downloading, the `ETag` and `Repr-Digest` digests,
+  `If-Modified-Since` and `If-None-Match`, resuming with `Range`, listing a folder); publish (`PUT`, the media type, an
+  upload with `Repr-Digest`, `If-None-Match: *`, the size limit); maintain (replacing, deleting a file or a folder,
+  the job of a large folder); the endpoint with exposure rules; and a troubleshooting table of the codes `/files/`
+  answers. A section that needs a credential says nothing to an anonymous reader.
+
+Acceptance criteria:
+
+- `GET /api/v1/repositories/generic-local/client-setup?client=curl&credentials=env` holds the three snippets, the
+  configure snippet with `header = "Authorization: Bearer ${TROVE_TOKEN}"`; with `credentials=none` it holds no
+  `Authorization` line; without `deploy` it holds no publish snippet (`TestR_GENERIC_016_TheClientSetupOfCurl`).
+- The `configure`, `install` and `publish` snippets of `GET /api/v1/repositories/generic-local/guide?client=curl`
+  equal those of the client setup with `credentials=env` byte for byte
+  (`TestR_GENERIC_016_TheGuideShowsTheSnippetsOfTheClientSetup`).
+- The conformance kit runs check 8 over the generic format (`TestR_ARCH_010_Conformance`); every code of the
+  troubleshooting table is a code of the problem catalog under the status trove answers it with
+  (`TestR_GENERIC_016_TheTroubleshootingCodesAreTroves`), and the limits the guide names are the configured defaults
+  (`TestR_GENERIC_016_TheGuideStatesTheLimits`).
+- With the configure snippet defined in a POSIX shell and `TROVE_TOKEN` set, the install and publish snippets
+  download and upload a file of `generic-local`, and the token is in no argument of curl.
 
 ## Non-conformant content and other formats
 
@@ -534,6 +588,57 @@ dispatcher's checks (key shape, class, route match) from running over a path gra
 R-GENERIC-009 gives the generic format a remote class with its own routes.
 
 **Applied in the spec:** R-ARCH-005 table, R-GENERIC-001.
+
+### Q-GENERIC-8 · curl is the one client of the generic format
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-019 and Q-UI-83 require every format with clients to ship its setup snippets and its guide, and the
+guides list a format only once it names clients. The protocol of generic is plain HTTP on `/files/`, which every HTTP
+client speaks. A client of the format descriptor (`formats.Client`) is an ID, a display name and tested majors: it
+cannot say that a client only downloads, and the setup page shows a Publish tab for every client.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) curl only (chosen) | One client with configure, install and publish snippets and the guide of the local class | curl is installed on most CI images and developer machines; it uploads, downloads, resumes and sends conditional requests; one set of facts to keep true | A wget user translates the commands |
+| (b) curl, and wget for downloads only | A second client with configure and install snippets | wget is the only HTTP client on some minimal images | The Publish tab would tell a wget user who may deploy that the repository is read-only or the permission is missing, which is false, because a client cannot declare that it does not upload; the guide's upload and delete sections would exclude it by client, and every fact of the guide would be checked again for a client that adds no protocol; GNU wget can send `PUT`, so "downloads only" would be a choice, not a property |
+| (c) No client | generic stays out of the setup page and the guides | Nothing to keep true | Contradicts R-UI-019 and Q-UI-83 |
+
+**Choice:** (a). The guides area and the setup page list generic as soon as the catalog names curl; both offer the
+formats in the catalog's order, by name, so generic is preselected when the query chooses no format.
+
+**Rationale:** the client model fits a client that does everything the protocol allows, and curl does. The
+development agent would revisit this when a client with another credential mechanism is asked for, such as PowerShell
+on Windows, which no POSIX snippet serves, or when the client model learns which tabs a client has.
+
+**Applied in the spec:** R-GENERIC-001 (`clients`), R-GENERIC-016; api-and-ui.md R-API-030, R-UI-016 (the generic
+format and curl among the steps, the first format preselected) and R-UI-049 (the first format preselected; the
+acceptance criterion of `09-guides.spec.ts`).
+
+### Q-GENERIC-9 · curl receives the token as configuration on standard input
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the owner asked for the token in the environment variable `TROVE_TOKEN` and a header form without `.netrc`.
+A template never holds a token: it spells the reference `${TROVE_TOKEN}`, which the API rewrites by the credential
+mode (R-API-030), and `credentials=none` drops the line that holds it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `--header "Authorization: Bearer ${TROVE_TOKEN}"` on every command | The common form | Shortest; every command stands alone | The shell expands the token into an argument of curl: other users of the machine read it in the process list, a shell trace (`set -x`) prints it into a CI log, and an audit of executed commands records it |
+| (b) A shell function that hands curl the header as configuration on standard input (`--config -` with a here-document) (chosen) | `trove_curl` in the Configure tab; the other snippets and the guide call it | The token is never an argument; no file holds it; it uses only long-standing options of curl (`--config -`, `header`); the commands stay short; the one line with the reference is the header, so every credential mode of the API applies | The function lives in the shell that defined it; `trove_curl` cannot upload from standard input |
+| (c) `.netrc` (`--netrc-file`) | curl reads a login and password from a file | curl reads it itself | A file holding the token in plain text, which the owner ruled out; a template cannot write the token, so the file would need a step of its own |
+| (d) curl's variables (`--variable %TROVE_TOKEN` with `--expand-header`) | curl reads the variable itself | No shell involved | Needs curl 8.3 or later, which long-term-support distributions do not all ship; the reference is not `${TROVE_TOKEN}`, so neither the credential modes nor the configured variable name (`ui.client_setup.token_env_var`) would apply |
+
+**Choice:** (b). Basic authentication with `--user` is not offered for the same reason as (a).
+
+**Rationale:** a token in an argument reaches places a CI job does not control, and (b) avoids that at the cost of
+one function. With `credentials=placeholder` the browser writes the token into the function; the guide tells the
+reader to keep such a snippet in a file only they can read rather than type it into a shell, whose history keeps it.
+The development agent would revisit this when the curl of the supported distributions all have variables, which
+would make the function unnecessary.
+
+**Applied in the spec:** R-GENERIC-016.
 
 ## What this does not cover
 

@@ -60,7 +60,7 @@ their own sections below: [Conformance kit](#conformance-kit) and [Untrusted con
 | [internal/formats/catalog](../../internal/formats/catalog/) | The facts of every format, the name rule, the exposure facts and the compiled settings schema with `Entry.ValidateSettings` (a leaf layer); `Register` fills it |
 | [internal/formats/untrusted](../../internal/formats/untrusted/) | `Limits`, `DefaultLimits`, `Tighten`, and the bounded readers of R-ARCH-028 (see [Untrusted content](#untrusted-content)) |
 | [internal/formats/formattest](../../internal/formats/formattest/) | The conformance kit: the in-memory `Host`, the ten checks, the fuzz helpers (see [Conformance kit](#conformance-kit)); `crafted/` generates the hostile inputs, `testformat/` is the kit's own format with one named defect per check |
-| [internal/formats/generic](../../internal/formats/generic/) | The generic format: no routes, `Classify`, a paths-only exposure adapter |
+| [internal/formats/generic](../../internal/formats/generic/) | The generic format: no routes, `Classify`, a paths-only exposure adapter, the curl setup templates ([setup.go](../../internal/formats/generic/setup.go)) and the guide of curl ([guide.go](../../internal/formats/generic/guide.go), [guide/](../../internal/formats/generic/guide/)) |
 | [internal/formats/all](../../internal/formats/all/all.go) | Registers every format at compile time (R-ARCH-010) |
 | [internal/httpserver/content](../../internal/httpserver/content/content.go) | The content-header wrapper (`File`, `Index`, `Document`); `httpserver.ContentWriterFor` is the request-aware call |
 | [internal/packages](../../internal/packages/) | The generic package rows: `Store` (reads), `Writer` (writes, raises `rev_seq` once per package per transaction), `RestoredAt`; statements in [packages.sql](../../internal/meta/postgres/queries/packages.sql) |
@@ -201,7 +201,9 @@ white space only is left out, which is how a section speaks to some readers only
 Rules for the text: describe only what the format does as built and name what a user would try and is not built as not available; put a credential
 only as `${TROVE_TOKEN}` in a fenced code block; keep sub-headings (`###`) unique across the sections, because each section's HTML gets its heading
 anchors from the README component; pin each fact a test can hold (codes, quoted texts, defaults) in the format's tests (npm:
-[guide_test.go](../../internal/formats/npm/guide_test.go)). npm embeds one Markdown file per section ([guide/](../../internal/formats/npm/guide/)).
+[guide_test.go](../../internal/formats/npm/guide_test.go)). npm and generic embed one Markdown file per section ([npm guide/](../../internal/formats/npm/guide/),
+[generic guide/](../../internal/formats/generic/guide/)); generic's guide is for its one client, curl, and its local class (R-GENERIC-016,
+[guide_test.go](../../internal/formats/generic/guide_test.go)).
 
 ## Content headers and error shapes
 
@@ -243,7 +245,7 @@ cannot hold the host when it is created (Q-ARCH-210).
 | [format_enums_test.go](../../internal/api/v1/format_enums_test.go) | `TestR_ARCH_010_PerClassFormatEnums`: the OpenAPI enums equal the registry |
 | [formattest](../../internal/formats/formattest/) (`host_test.go`, `kit_test.go`), [testformat](../../internal/formats/formattest/testformat/format_test.go), [crafted](../../internal/formats/formattest/crafted/crafted_test.go) | The in-memory `Host` against the rules of the production writer, the kit's skip and fixture rules, every check failing on its named defect, the generators producing what they claim |
 | [internal/formats/untrusted](../../internal/formats/untrusted/) (`readers_test.go`, `internal_test.go`) | The bounded readers against the crafted inputs: 2 GiB manifest, 10 GiB zip, JSON 100,000 deep, a document type declaration |
-| [generic/conformance_test.go](../../internal/formats/generic/conformance_test.go) | Generic runs the kit with reasoned skips; checks 2 and 3 run |
+| [generic/conformance_test.go](../../internal/formats/generic/conformance_test.go) | Generic runs the kit with reasoned skips; checks 2, 3 and 8 run |
 | [test/integration/files/formats_test.go](../../test/integration/files/formats_test.go) | Against PostgreSQL and the object store: `rev_seq` once per transaction, the hooks in the item's transaction, the dispatcher end to end, `ServeCheck` on the route and on `/files/`, the removal hook |
 
 [probeformat_test.go](../../test/integration/files/probeformat_test.go) is a complete small format (routes, hooks, data port, exposure adapter, error shape) and the

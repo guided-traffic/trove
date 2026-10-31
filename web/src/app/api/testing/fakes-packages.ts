@@ -18,8 +18,9 @@ import { Repository } from '../repositories-api';
 
 /*
  * In-memory fakes of the packages and client setup services (R-UI-047 component tier). The setup
- * fake builds the npm snippets the way R-API-030 and R-UI-017 describe them, so a screen is tested
- * against realistic text: placeholders, the environment reference, quoting and the scheme-less key.
+ * fake builds the npm snippets the way R-API-030 and R-UI-017 describe them, and the curl snippets
+ * of the generic repository the way R-GENERIC-016 does, so a screen is tested against realistic
+ * text: placeholders, the environment reference, quoting and the scheme-less key.
  */
 
 const BASE = 'https://trove.example.net';
@@ -35,6 +36,14 @@ function pages<T>(all: readonly T[]): PageFetcher<T> {
     return { items: all.slice(start, end), nextCursor: end < all.length ? String(end) : null };
   };
 }
+
+/** The generic repository of the fakes, the first repository of the catalog fake. */
+export const GENERIC_REPOSITORY: Repository = {
+  key: 'generic-local',
+  class: 'local',
+  format: 'generic',
+  description: 'Installers and build outputs',
+};
 
 /** The npm repositories of the fakes: a local, a remote, a virtual with and one without a target. */
 export const NPM_REPOSITORIES: readonly Repository[] = [
@@ -257,6 +266,9 @@ export class FakeClientSetupApi extends ClientSetupApi {
       this.failure = null;
       throw e;
     }
+    if (repository === GENERIC_REPOSITORY.key) {
+      return curlSetup(repository, query, !this.readOnly.has(repository), this.ttl);
+    }
     const repo = NPM_REPOSITORIES.find((r) => r.key === repository);
     if (!repo) throw notFound();
     const credentials = query.credentials ?? 'placeholder';
@@ -349,6 +361,54 @@ export class FakeClientSetupApi extends ClientSetupApi {
       snippets,
     };
   }
+}
+
+/** The curl snippets of a generic repository: the function of the configure tab and its calls. */
+function curlSetup(repository: string, query: ClientSetupQuery, mayPublish: boolean, ttl: number): ClientSetup {
+  if (query.client !== 'curl') {
+    throw new ApiError(400, { code: 'malformed_request', detail: 'unknown client' }, null);
+  }
+  const credentials = query.credentials ?? 'placeholder';
+  const registryUrl = `${BASE}/files/${repository}/`;
+  const token = credentials === 'placeholder' ? '{{token}}' : credentials === 'env' ? '${TROVE_TOKEN}' : null;
+  const header = token === null ? '' : `header = "Authorization: Bearer ${token}"\n`;
+  const snippets: ClientSnippet[] = [
+    {
+      id: 'curl.configure.function',
+      tab: 'configure',
+      fileName: null,
+      language: 'shell',
+      content: `trove_curl() {\n  curl --silent --show-error --config - "$@" <<EOF\n${header}EOF\n}\n`,
+    },
+    {
+      id: 'curl.install',
+      tab: 'install',
+      fileName: null,
+      language: 'shell',
+      content: `trove_curl --fail --remote-name "${registryUrl}<path>"\n`,
+    },
+  ];
+  if (mayPublish) {
+    snippets.push({
+      id: 'curl.publish',
+      tab: 'publish',
+      fileName: null,
+      language: 'shell',
+      content: `trove_curl --fail --upload-file <file> "${registryUrl}<path>"\n`,
+    });
+  }
+  return {
+    repository,
+    format: 'generic',
+    client: 'curl',
+    credentials,
+    registryUrl,
+    endpointPath: registryUrl.replace(/^https?:/, ''),
+    username: credentials === 'none' ? null : 'alice',
+    publishTarget: mayPublish ? repository : null,
+    tokenTtlSeconds: ttl,
+    snippets,
+  };
 }
 
 export function providePackageFakes(): Provider[] {

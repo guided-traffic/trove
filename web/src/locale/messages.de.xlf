@@ -13974,7 +13974,7 @@
     </unit>
     <unit id="setup.snippet.npmrc">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:36</note>
+        <note category="location">src/app/features/setup/clients.ts:37</note>
       </notes>
       <segment>
         <source>Save this as .npmrc in your project. It sends every request for packages to this repository and signs in with the token.</source>
@@ -13983,7 +13983,7 @@
     </unit>
     <unit id="setup.snippet.npmrc-scoped">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:40</note>
+        <note category="location">src/app/features/setup/clients.ts:41</note>
       </notes>
       <segment>
         <source>Use this variant to take only the packages of one scope from this repository. All other packages still come from npm&apos;s default registry.</source>
@@ -13992,7 +13992,7 @@
     </unit>
     <unit id="setup.snippet.npm-cli">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:42</note>
+        <note category="location">src/app/features/setup/clients.ts:43</note>
       </notes>
       <segment>
         <source>Writes the same settings into your user configuration file ~/.npmrc. Your shell fills in the token, so it is stored in that file.</source>
@@ -14001,7 +14001,7 @@
     </unit>
     <unit id="setup.snippet.yarnrc">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:44</note>
+        <note category="location">src/app/features/setup/clients.ts:45</note>
       </notes>
       <segment>
         <source>Save this as .yarnrc.yml in your project. Yarn fills in the token variable itself.</source>
@@ -14010,7 +14010,7 @@
     </unit>
     <unit id="setup.snippet.install">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:49</note>
+        <note category="location">src/app/features/setup/clients.ts:50</note>
       </notes>
       <segment>
         <source>Installs a package through this repository once the client is configured.</source>
@@ -14019,7 +14019,7 @@
     </unit>
     <unit id="setup.snippet.publish-flag">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:53</note>
+        <note category="location">src/app/features/setup/clients.ts:54</note>
       </notes>
       <segment>
         <source>Publishes the package in the current directory to the repository that receives uploads.</source>
@@ -14028,7 +14028,7 @@
     </unit>
     <unit id="setup.snippet.publish-berry">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:55</note>
+        <note category="location">src/app/features/setup/clients.ts:56</note>
       </notes>
       <segment>
         <source>Add this to .yarnrc.yml, then run yarn npm publish.</source>
@@ -14037,7 +14037,7 @@
     </unit>
     <unit id="setup.snippet.gitlab-generic">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:57</note>
+        <note category="location">src/app/features/setup/clients.ts:58</note>
       </notes>
       <segment>
         <source>For npm 10, pnpm 10 on npm 10 and Yarn 1. A pipeline step exchanges the job&apos;s ID token for a short-lived trove token and revokes it again as its last step.</source>
@@ -14046,11 +14046,38 @@
     </unit>
     <unit id="setup.snippet.gitlab-native">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:59</note>
+        <note category="location">src/app/features/setup/clients.ts:60</note>
       </notes>
       <segment>
         <source>For npm 11.5.1 and later, pnpm 11 and 12 and Yarn 4. The client exchanges the job&apos;s ID token itself.</source>
         <target>Für npm 11.5.1 und neuer, pnpm 11 und 12 sowie Yarn 4. Der Client tauscht das ID-Token des Jobs selbst.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.curl-function">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:62</note>
+      </notes>
+      <segment>
+        <source>Paste this into the shell or the CI script that runs curl. It defines trove_curl, which hands curl the credential on standard input, so the token never appears on curl&apos;s command line.</source>
+        <target>Fügen Sie dies in die Shell oder das CI-Skript ein, in dem curl läuft. Es definiert trove_curl, das curl die Zugangsdaten über die Standardeingabe übergibt, sodass der Token nie in der Befehlszeile von curl erscheint.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.curl-install">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:64</note>
+      </notes>
+      <segment>
+        <source>Downloads a file of this repository with trove_curl. Replace &lt;path&gt; with the path of the file in the repository.</source>
+        <target>Lädt mit trove_curl eine Datei dieses Repositorys herunter. Ersetzen Sie &lt;path&gt; durch den Pfad der Datei im Repository.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.curl-publish">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:66</note>
+      </notes>
+      <segment>
+        <source>Uploads a file to the path you give. Replacing a file with other bytes also needs the overwrite permission.</source>
+        <target>Lädt eine Datei an den angegebenen Pfad hoch. Wer eine Datei durch andere Bytes ersetzt, braucht zusätzlich die Berechtigung overwrite.</target>
       </segment>
     </unit>
     <unit id="route.setup.title">

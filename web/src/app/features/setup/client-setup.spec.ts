@@ -4,7 +4,7 @@ import { RepositoriesApi } from '../../api/repositories-api';
 import { SessionApi } from '../../api/session-api';
 import { FakeSessionApi } from '../../api/testing/fakes';
 import { FakeRepositoriesApi, GENERIC_FORMAT, PACKAGE_FORMAT } from '../../api/testing/fakes-catalog';
-import { FakeClientSetupApi, NPM_REPOSITORIES } from '../../api/testing/fakes-packages';
+import { FakeClientSetupApi, GENERIC_REPOSITORY, NPM_REPOSITORIES } from '../../api/testing/fakes-packages';
 import { FakeTokensApi } from '../../api/testing/access-fakes';
 import { TokensApi } from '../../api/tokens-api';
 import {
@@ -81,7 +81,7 @@ describe('Client setup', () => {
   });
 
   it('R-UI-016 offers format, client and repository in steps; virtual repositories come first and are marked recommended, each repository states its publish availability', async () => {
-    const r = await open({});
+    const r = await open({ format: 'npm' });
     expect([...r.root.querySelectorAll('input[name="client"]')].map((i) => (i as HTMLInputElement).value)).toEqual([
       'npm',
       'pnpm',
@@ -95,6 +95,32 @@ describe('Client setup', () => {
     expect(t).toContain('Read only');
     expect(t).toContain('Publishing goes to its default deployment target');
     await expectAccessible(r.root);
+  });
+
+  it('R-UI-016 R-GENERIC-016 the generic format is offered with curl, first in the order of the catalog, and its snippets come with their explanations', async () => {
+    const withGeneric = (get: Opened['get']) =>
+      void (get(RepositoriesApi) as FakeRepositoriesApi).repositories.push({ ...GENERIC_REPOSITORY });
+    const first = await open({}, { setup: withGeneric });
+    expect([...first.root.querySelectorAll<HTMLInputElement>('input[name="format"]')].map((i) => i.value)).toEqual(['generic', 'npm']);
+    expect(radio(first, 'format', 'generic').checked).toBe(true);
+    expect([...first.root.querySelectorAll<HTMLInputElement>('input[name="client"]')].map((i) => i.value)).toEqual(['curl']);
+
+    const r = await open({ repository: 'generic-local' }, { setup: withGeneric });
+    expect(radio(r, 'format', 'generic').checked).toBe(true);
+    expect(r.setup.calls.at(-1)).toMatchObject({ repository: 'generic-local', query: { client: 'curl', credentials: 'env' } });
+    const [configure] = snippets(r);
+    expect(configure).toContain('trove_curl() {');
+    expect(configure).toContain('header = "Authorization: Bearer ${TROVE_TOKEN}"');
+    expect(text(r.root)).toContain('hands curl the credential on standard input');
+    await tab(r, 'Install');
+    expect(snippets(r)).toContain('trove_curl --fail --remote-name "https://trove.example.net/files/generic-local/<path>"\n');
+    await tab(r, 'Publish');
+    expect(snippets(r)).toContain('trove_curl --fail --upload-file <file> "https://trove.example.net/files/generic-local/<path>"\n');
+    expect(text(r.root)).toContain('also needs the overwrite permission');
+    await expectAccessible(r.root);
+
+    await choose(r, 'credentials', 'create');
+    expect(snippets(r)[0]).toContain('header = "Authorization: Bearer {{token}}"');
   });
 
   it('R-UI-016 a link from a repository opens the page prepared: the repository and client come from the query', async () => {

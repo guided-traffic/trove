@@ -1596,7 +1596,8 @@ on:
   deployment target of a virtual one, none for a remote one. Whether the snippets send the credential before
   being challenged (`RequiresAuth`) follows whether an anonymous caller on the same endpoint may read the
   repository; it is off for `credentials=none`. The npm templates contribute the configure and install snippets
-  (R-NPM-041); the publish and CI snippets of R-UI-017 are not templates yet.
+  (R-NPM-041); the publish and CI snippets of R-UI-017 are not templates yet. The generic templates contribute curl's
+  configure, install and publish snippets ([formats/generic.md](formats/generic.md) R-GENERIC-016).
 - A virtual repository without a default deployment target has no publish snippets and `publishTarget: null`;
   a caller without `deploy` on the target gets no publish snippets either.
 - Values substituted into shell commands (package names, versions, repository keys) MUST be
@@ -2948,9 +2949,9 @@ Priority: **MVP** · Covers: UI-021, UI-022, UI-023
   user menu, a repository row, a repository node in the browser, the package details (the install panel
   links to it with the repository and client chosen there) and empty states.
 - One page with progressive steps:
-  1. format (npm and NuGet in the MVP; further formats appear as they ship, from
-     `GET /api/v1/formats`);
-  2. client (npm, pnpm, Yarn Berry, Yarn classic; .NET CLI, NuGet CLI, Visual Studio,
+  1. format (generic, npm and NuGet in the MVP; further formats appear as they ship, from
+     `GET /api/v1/formats`, in its order, the first preselected);
+  2. client (curl; npm, pnpm, Yarn Berry, Yarn classic; .NET CLI, NuGet CLI, Visual Studio,
      `nuget.config`);
   3. repository: readable repositories of that format, virtual repositories marked as recommended,
      publish availability shown per repository;
@@ -3145,10 +3146,11 @@ endpoint with exposure rules changes, and what each answer of the protocol means
   (`?format=&client=&repository=&class=`); a tab **How to use** on the repository screen (and the same guide below the
   facts of the consumer view) for the repository's class and the client the reader picks; links between the guide and
   the client setup page of R-UI-016 in both directions, carrying the choice (Q-UI-84).
-- **Choice.** The guides area offers the formats of `GET /api/v1/formats` that list `clients`, their clients, the
-  readable repositories of the format (virtual first), and, without a repository, the format's classes (virtual
-  preselected). A repository opens its guide (`GET /api/v1/repositories/{key}/guide`), a class the guide of the format
-  (`GET /api/v1/formats/{format}/guide`), whose addresses show `<repository>`.
+- **Choice.** The guides area offers the formats of `GET /api/v1/formats` that list `clients`, in its order and the
+  first preselected, their clients, the readable repositories of the format (virtual first), and, without a
+  repository, the format's classes (virtual preselected). A repository opens its guide
+  (`GET /api/v1/repositories/{key}/guide`), a class the guide of the format (`GET /api/v1/formats/{format}/guide`),
+  whose addresses show `<repository>`.
 - **Content.** A contents list (a `nav` landmark) whose links move focus to the section heading without navigating; one
   region per section with its heading; the section's HTML bound like a README (R-UI-008, the same component and its
   finishing pass); the setup snippets of the section with a copy button each (Q-UI-85). The guide's text is the format's
@@ -3161,7 +3163,8 @@ endpoint with exposure rules changes, and what each answer of the protocol means
 
 Acceptance criteria:
 
-- Playwright (`09-guides.spec.ts`): the side bar opens the guides with npm and its four clients; the How to use tab of
+- Playwright (`09-guides.spec.ts`): the side bar opens the guides with generic and curl preselected, and offers npm
+  with its four clients; the How to use tab of
   a virtual npm repository shows the virtual repository's sections and names its deployment target; its configure
   snippet equals, character for character, the configure snippet the client setup page shows for the same repository
   and client with "Reference an environment variable"; the setup page links back to the same guide; axe finds no

@@ -12,6 +12,7 @@ export interface ClientChoice {
  * no setup screen yet and is not offered. The NuGet clients arrive with the NuGet format.
  */
 export const FORMAT_CLIENTS: Readonly<Record<string, readonly ClientChoice[]>> = {
+  generic: [{ id: 'curl', label: 'curl' }],
   npm: [
     { id: 'npm', label: 'npm' },
     { id: 'pnpm', label: 'pnpm' },
@@ -57,6 +58,12 @@ export function snippetExplanation(id: string): string | null {
       return $localize`:@@setup.snippet.gitlab-generic:For npm 10, pnpm 10 on npm 10 and Yarn 1. A pipeline step exchanges the job's ID token for a short-lived trove token and revokes it again as its last step.`;
     case 'npm.publish.gitlab-ci.native':
       return $localize`:@@setup.snippet.gitlab-native:For npm 11.5.1 and later, pnpm 11 and 12 and Yarn 4. The client exchanges the job's ID token itself.`;
+    case 'curl.configure.function':
+      return $localize`:@@setup.snippet.curl-function:Paste this into the shell or the CI script that runs curl. It defines trove_curl, which hands curl the credential on standard input, so the token never appears on curl's command line.`;
+    case 'curl.install':
+      return $localize`:@@setup.snippet.curl-install:Downloads a file of this repository with trove_curl. Replace <path> with the path of the file in the repository.`;
+    case 'curl.publish':
+      return $localize`:@@setup.snippet.curl-publish:Uploads a file to the path you give. Replacing a file with other bytes also needs the overwrite permission.`;
     default:
       return null;
   }

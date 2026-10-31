@@ -1,12 +1,13 @@
 import { Provider } from '@angular/core';
 import { Guide, GuideSection, GuidesApi } from '../guides-api';
 import { ApiError } from '../problem';
-import { FakeClientSetupApi, NPM_REPOSITORIES } from './fakes-packages';
+import { FakeClientSetupApi, GENERIC_REPOSITORY, NPM_REPOSITORIES } from './fakes-packages';
 
 /*
  * The in-memory fake of the guide operations (R-UI-047 component tier). Its sections have the ids,
- * topics and order of npm's guide, and its snippets are the setup fake's answer for the same
- * repository and client, as the server attaches them (R-API-053).
+ * topics and order of npm's guide and of the generic format's guide for curl, and its snippets are
+ * the setup fake's answer for the same repository and client, as the server attaches them
+ * (R-API-053).
  */
 
 const BASE = 'https://trove.example.net';
@@ -29,6 +30,7 @@ export class FakeGuidesApi extends GuidesApi {
   override async repository(key: string, client: string): Promise<Guide> {
     this.calls.push({ repository: key, client });
     this.fail();
+    if (key === GENERIC_REPOSITORY.key) return this.buildGeneric(key, client);
     const repo = NPM_REPOSITORIES.find((r) => r.key === key);
     if (!repo) throw new ApiError(400, { code: 'malformed_request', detail: 'no guide for this repository' }, null);
     return this.build(key, repo.class, client);
@@ -37,6 +39,7 @@ export class FakeGuidesApi extends GuidesApi {
   override async format(format: string, cls: string, client: string): Promise<Guide> {
     this.calls.push({ format, cls, client });
     this.fail();
+    if (format === 'generic' && cls === 'local') return this.buildGeneric(null, client);
     if (format !== 'npm') throw new ApiError(404, { code: 'not_found', detail: 'no such format' }, null);
     return this.build(null, cls as Guide['class'], client);
   }
@@ -86,6 +89,42 @@ export class FakeGuidesApi extends GuidesApi {
       client,
       repository: key,
       registryUrl,
+      publishTarget: key && setup.publishTarget && !this.anonymous ? setup.publishTarget : null,
+      credentials,
+      exposureRules: this.exposureRules,
+      sections,
+    };
+  }
+
+  private async buildGeneric(key: string | null, client: string): Promise<Guide> {
+    if (client !== 'curl') {
+      throw new ApiError(400, { code: 'malformed_request', detail: 'unknown client' }, null);
+    }
+    const credentials = this.anonymous ? 'none' : 'env';
+    const setup = await this.setup.get(GENERIC_REPOSITORY.key, { client, credentials });
+    const of = (tab: string) =>
+      setup.snippets
+        .filter((s) => s.tab === tab && (key !== null || tab !== 'publish'))
+        .map((s) => ({ ...s, content: key ? s.content : s.content.replaceAll(`/${GENERIC_REPOSITORY.key}/`, '/<repository>/') }));
+    const sections: GuideSection[] = [
+      section('generic.local.what', 'what', 'What a generic local repository is', '<p>Files at paths you choose.</p>'),
+      { ...section('generic.configure', 'configure', 'Point curl at the repository', '<p>Paste the function.</p>'), snippets: of('configure') },
+      section('generic.authenticate', 'authenticate', 'Sign curl in', this.anonymous ? '<p>No credential is needed.</p>' : '<p>Keep the token in <code>TROVE_TOKEN</code>.</p>'),
+      { ...section('generic.install', 'install', 'Download files', '<p>Download a file.</p>'), snippets: of('install') },
+    ];
+    if (!this.anonymous) {
+      sections.push({ ...section('generic.publish', 'publish', 'Upload files', '<p>Upload a file.</p>'), snippets: of('publish') });
+    }
+    if (this.exposureRules) {
+      sections.push(section('generic.endpoint', 'endpoint', 'On this endpoint', '<p><code>endpoint_read_only</code></p>'));
+    }
+    sections.push(section('generic.troubleshooting', 'troubleshooting', 'Troubleshooting', '<table><tr><td>404</td></tr></table>'));
+    return {
+      format: 'generic',
+      class: 'local',
+      client,
+      repository: key,
+      registryUrl: `${BASE}/files/${key ?? '<repository>'}/`,
       publishTarget: key && setup.publishTarget && !this.anonymous ? setup.publishTarget : null,
       credentials,
       exposureRules: this.exposureRules,

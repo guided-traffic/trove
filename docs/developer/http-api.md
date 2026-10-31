@@ -154,7 +154,7 @@ Decisions Q-API-175 to Q-API-179. [guide_api.go](../../internal/api/v1/guide_api
 | Step | Repository guide | Format guide |
 |---|---|---|
 | Services | `packageServices()` and `PackageServices.Guides`, else 503 | `PackageServices.Guides`, else 503; the anonymous gate first |
-| Format and client | `guideFormat`: the repository's format must have a guide and the client must be one of its clients, else `400` | an unknown format is `404`; then as the repository guide, and the class must be one of the format's, else `400` |
+| Format and client | `guideFormat` and `guideClient`: the repository's format must have a guide and the client must be one of its clients, else `400` | an unknown format is `404`; then as the repository guide, and the class must be one of the format's, else `400` |
 | Addresses | `setupAddress` (shared with the client setup): the endpoint's configured base URL plus the protocol path with the key, else `503` | the same with `formats.GuideRepositoryPlaceholder` for the key |
 | Caller | `requestHolder`, `publishTarget` (the target only with `deploy`), `ReadableAnonymously` for `RequiresAuth` | `SubjectFrom(ctx)`: anonymous or not, its endpoint |
 | Rendering | `renderGuide`: credentials `env`, or `none` for an anonymous caller; the setup snippets of the client through `renderSnippets`; each applicable section in topic order through `formats.ExecuteGuide`, `applyCredentials`, the renderer; a section that says nothing is dropped; every text and snippet is checked for the shape of a token | the same |
@@ -165,7 +165,7 @@ endpoint with rules. The guide renderer is a second `readme.Renderer` with a fix
 
 Tests: [guide_api_test.go](../../internal/api/v1/guide_api_test.go) (`TestR_API_053_*`: the snippets equal the client setup's for every client, the
 order of the sections per class, the target only with `deploy`, an anonymous caller, the guide of a format and its refusals, `503` without a base URL,
-no token shape, the endpoint section, the clients of the catalog) and [guide_test.go](../../test/integration/packages/guide_test.go) against the stack
+no token shape, the endpoint section, the clients of the catalog, a format without clients; `TestR_GENERIC_016_*` for generic and curl) and [guide_test.go](../../test/integration/packages/guide_test.go) against the stack
 (the same through the real chain and the endpoint `partners` with exposure rules).
 
 ## Conventions every resource inherits (WP1.6)

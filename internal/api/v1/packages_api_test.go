@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -162,6 +163,51 @@ func TestR_API_030_ClientSetupAnswer(t *testing.T) {
 	}
 }
 
+// TestR_GENERIC_016_TheClientSetupOfCurl: the curl snippets of a generic repository
+// in every credential mode; the publish snippet only for a caller who may deploy.
+func TestR_GENERIC_016_TheClientSetupOfCurl(t *testing.T) {
+	function := func(header string) string {
+		return "trove_curl() {\n  curl --silent --show-error --config - \"$@\" <<EOF\n" + header + "EOF\n}\n"
+	}
+	const (
+		install = "trove_curl --fail --remote-name \"https://trove.example.com/files/files/<path>\"\n"
+		publish = "trove_curl --fail --upload-file <file> \"https://trove.example.com/files/files/<path>\"\n"
+	)
+	for _, c := range []struct {
+		credentials string
+		deploy      bool
+		want        map[string]string
+	}{
+		{"env", true, map[string]string{
+			"curl.configure.function": function("header = \"Authorization: Bearer ${MY_TOKEN}\"\n"), "curl.install": install, "curl.publish": publish,
+		}},
+		{"placeholder", true, map[string]string{
+			"curl.configure.function": function("header = \"Authorization: Bearer {{token}}\"\n"), "curl.install": install, "curl.publish": publish,
+		}},
+		{"none", true, map[string]string{"curl.configure.function": function(""), "curl.install": install, "curl.publish": publish}},
+		{"env", false, map[string]string{"curl.configure.function": function("header = \"Authorization: Bearer ${MY_TOKEN}\"\n"), "curl.install": install}},
+	} {
+		w := get(setupServer(t, "https://trove.example.com", c.deploy), "/api/v1/repositories/files/client-setup?client=curl&credentials="+c.credentials)
+		var out gen.ClientSetup
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil || w.Code != 200 {
+			t.Fatalf("%s: %d %s", c.credentials, w.Code, w.Body.String())
+		}
+		got := map[string]string{}
+		for _, sn := range out.Snippets {
+			got[sn.Id] = sn.Content
+			if sn.Language != gen.Shell || sn.FileName != nil {
+				t.Errorf("%s: %+v", sn.Id, sn)
+			}
+		}
+		if !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s, deploy %v:\n%q\nwant\n%q", c.credentials, c.deploy, got, c.want)
+		}
+		if out.RegistryUrl != "https://trove.example.com/files/files/" || out.Format != "generic" {
+			t.Errorf("%+v", out)
+		}
+	}
+}
+
 func TestR_API_030_PublishTargetFollowsTheDeployRight(t *testing.T) {
 	for deploy, want := range map[bool]bool{true: true, false: false} {
 		w := get(setupServer(t, "https://trove.example.com", deploy), "/api/v1/repositories/npm-local/client-setup?client=npm")
@@ -213,7 +259,8 @@ func TestR_API_030_ClientSetupRefusesWhatItCannotAnswer(t *testing.T) {
 		"client=npm&package=" + url.QueryEscape("a/b"):        "npm-local",
 		"client=npm&package=" + url.QueryEscape("@scope"):     "npm-local",
 		"client=npm&package=" + url.QueryEscape("a%2fb"):      "npm-local",
-		"client=npm": "files", // the generic format has no setup templates
+		"client=npm":            "files", // the generic format offers curl only
+		"client=curl&package=x": "files", // and has no package names
 	} {
 		w := get(h, "/api/v1/repositories/"+repo+"/client-setup?"+q)
 		if w.Code != 400 {

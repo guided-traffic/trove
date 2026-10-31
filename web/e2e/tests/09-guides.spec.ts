@@ -1,9 +1,10 @@
 import { expect, expectAccessible, signInLocal, signOut, test, unique } from '../support';
 
-// R-UI-047 journey "guides" (E2.13; R-UI-049, R-API-053): the guide of a virtual npm repository opens from the side
-// bar and from the repository's "How to use" tab, shows the sections of npm's guide for the repository's class, and its
-// configure snippet is, byte for byte, the snippet the client setup page shows for the same repository and client. The
-// journey creates its own local and virtual repository: the journeys do not own the matrix's npm-all.
+// R-UI-047 journey "guides" (E2.13; R-UI-049, R-API-053): the side bar opens the guides with every format that has
+// clients; the guide of a virtual npm repository opens from there and from the repository's "How to use" tab, shows the
+// sections of npm's guide for the repository's class, and its configure snippet is, byte for byte, the snippet the
+// client setup page shows for the same repository and client. The journey creates its own local and virtual
+// repository: the journeys do not own the matrix's npm-all.
 
 const localKey = unique('ui-guide-local');
 const virtualKey = unique('ui-guide-all');
@@ -28,10 +29,15 @@ test('E2.13 R-UI-049 the guide of a virtual repository, and its configure snippe
 }) => {
   await signInLocal(page);
 
-  await test.step('the side bar opens the guides, which offer npm and its four clients', async () => {
+  await test.step('the side bar opens the guides, which offer generic with curl and npm with its four clients', async () => {
     await page.goto('/ui/en/packages');
     await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Guides' }).click();
     await expect(page.getByRole('heading', { name: 'Guides', level: 1 })).toBeVisible();
+    const formats = page.getByRole('group', { name: 'Package type' });
+    // The catalog is ordered by name, so generic opens first.
+    await expect(formats.getByRole('radio', { name: 'Generic', exact: true })).toBeChecked();
+    await expect(page.getByRole('group', { name: 'Client' }).getByRole('radio', { name: 'curl', exact: true })).toBeVisible();
+    await formats.getByRole('radio', { name: 'npm', exact: true }).check();
     for (const label of ['npm', 'pnpm', 'Yarn Berry (2 and later)', 'Yarn Classic (1.x)']) {
       await expect(page.getByRole('group', { name: 'Client' }).getByRole('radio', { name: label, exact: true })).toBeVisible();
     }

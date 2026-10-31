@@ -194,7 +194,8 @@ offers controls ([Q-UI-78](../spec/api-and-ui.md#q-ui-78--the-repository-setting
 R-UI-006 to R-UI-009, R-UI-016 and R-UI-017 against the contract of R-API-029 and R-API-030, which the server implements
 ([packages.md](packages.md)); the component specs run against the generated types and the fakes of
 [fakes-packages.ts](../../web/src/app/api/testing/fakes-packages.ts), and the Playwright journeys against the real server. The clients are the
-format's own ids (`npm`, `pnpm`, `yarn`, `yarn-classic`, Q-UI-77).
+format's own ids (`npm`, `pnpm`, `yarn`, `yarn-classic`, Q-UI-77; `curl` for generic, R-GENERIC-016). The setup fake answers the npm repositories with
+npm's snippets and `generic-local` with curl's.
 
 | Route | Component | Services | Notes |
 |---|---|---|---|
@@ -240,7 +241,7 @@ the UI knows no format. Everything it offers comes from `GET /api/v1/formats`: a
 | `/setup` | [client-setup](../../web/src/app/features/setup/client-setup.ts) | | A link "Read the guide" with the page's format, client and repository |
 
 Files: [guides-api.ts](../../web/src/app/api/guides-api.ts) (`GuidesApi`, `HttpGuidesApi`, the types `Guide`, `GuideSection`, `FormatClient`),
-[fakes-guides.ts](../../web/src/app/api/testing/fakes-guides.ts) (`FakeGuidesApi`: npm's section ids and topics, snippets taken from the setup fake, `anonymous`
+[fakes-guides.ts](../../web/src/app/api/testing/fakes-guides.ts) (`FakeGuidesApi`: the section ids and topics of npm's guide and of generic's for curl, snippets taken from the setup fake, `anonymous`
 and `exposureRules` switches, `failure`), [guides.routes.ts](../../web/src/app/features/guides/guides.routes.ts); the side bar entry in
 [navigation.ts](../../web/src/app/core/navigation.ts). Specs: [guides.spec.ts](../../web/src/app/features/guides/guides.spec.ts) (the formats offered, the
 defaults, a repository and a class from the query, the snippets equal the setup fake's answer with the variable, the anonymous reader, the contents
@@ -255,7 +256,9 @@ journey is `09-guides.spec.ts` ([e2e.md](e2e.md#browser-journeys)).
 - *A section's HTML is bound like a README* (Q-UI-85): the same component finishes it (link targets, image sources, heading anchors). The anchors of the
   sections are `<prefix>-<section id with dots as hyphens>`, so the guides page (`guide-…`) and the tab (`repo-guide-…`) never share an id.
 - *Clients come from the catalog.* The guides area and the tab read `clients` of the format descriptor; the setup page and the install panel still read
-  the table of [clients.ts](../../web/src/app/features/setup/clients.ts) (Q-UI-70, revisited for NuGet).
+  the table of [clients.ts](../../web/src/app/features/setup/clients.ts) (Q-UI-70, revisited for NuGet), which names npm's four clients and
+  generic's curl. The guides area and the setup page offer the formats in the order of the catalog, by name, and open the first one when the query names none:
+  generic, then npm.
 
 ## Conventions that CI enforces
 

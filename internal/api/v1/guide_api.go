@@ -122,17 +122,28 @@ func formatGuide(ctx context.Context, ps PackageServices, format string, class f
 // format's clients.
 func guideFormat(format, client string) (formats.Format, error) {
 	f, ok := formats.Lookup(format)
-	if !ok || len(f.Guide()) == 0 {
+	if !ok {
 		return nil, badParam("client", "is not offered for the format "+format)
+	}
+	if err := guideClient(f, client); err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+
+// guideClient checks the client against the clients of a format with a guide.
+func guideClient(f formats.Format, client string) error {
+	if len(f.Guide()) == 0 {
+		return badParam("client", "is not offered for the format "+string(f.Descriptor().ID))
 	}
 	var ids []string
 	for _, c := range f.Descriptor().Clients {
 		ids = append(ids, c.ID)
 	}
 	if !slices.Contains(ids, client) {
-		return nil, badParam("client", "is not one of "+strings.Join(ids, ", "))
+		return badParam("client", "is not one of "+strings.Join(ids, ", "))
 	}
-	return f, nil
+	return nil
 }
 
 // exposureRules reports whether the endpoint the request arrived on serves under

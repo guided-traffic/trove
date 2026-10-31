@@ -8,8 +8,9 @@
 // which the generic layer (internal/files, internal/api/rawfiles) serves for
 // every repository, so the format dispatcher registers no /api/generic/ prefix
 // (Q-GENERIC-7). What the contract still asks of it is the classification of a
-// path, which gives a /files/ request its coordinate (R-EP-014), and its
-// exposure facts.
+// path, which gives a /files/ request its coordinate (R-EP-014), its exposure
+// facts, and the setup snippets and the guide of its one client, curl
+// (R-GENERIC-016).
 package generic
 
 import (
@@ -44,6 +45,7 @@ func (Format) Descriptor() formats.Descriptor {
 			DefaultNotFoundTTLSeconds: &notFound,
 			PatternSubject:            formats.SubjectPath,
 		},
+		Clients:         []formats.Client{{ID: ClientCurl, DisplayName: "curl"}},
 		ContractVersion: formats.ContractVersion,
 	}
 }

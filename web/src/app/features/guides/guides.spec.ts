@@ -9,12 +9,15 @@ import { GuidePage } from './guide-page';
 
 type Opened = Awaited<ReturnType<typeof open>>;
 
+/** A format of the catalog without clients, and therefore without a guide. */
+const CLIENTLESS = { ...GENERIC_FORMAT, name: 'raw', displayName: 'Raw', clients: [] };
+
 async function open(inputs: Record<string, unknown> = {}, setup?: (guides: FakeGuidesApi) => void) {
   const r = await renderScreen(GuidePage, {
     inputs,
     setup: (get) => {
       const repos = get(RepositoriesApi) as FakeRepositoriesApi;
-      repos.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT];
+      repos.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT, CLIENTLESS];
       repos.repositories = [...repos.repositories, ...NPM_REPOSITORIES];
       setup?.(get(GuidesApi) as FakeGuidesApi);
     },
@@ -28,11 +31,31 @@ const radio = (r: Opened, name: string, value: string) =>
   r.root.querySelector<HTMLInputElement>(`input[name="${name}"][value="${value}"]`);
 
 describe('Guides', () => {
-  it('R-UI-049 the page offers the formats with clients, opens the guide of the recommended class and passes the accessibility check', async () => {
+  it('R-UI-049 R-UI-019 the page offers every format of the catalog that lists clients, in its order, and opens the first one', async () => {
     const r = await open();
     expect(r.root.querySelector('h1')?.textContent?.trim()).toBe('Guides');
+    const offered = [...r.root.querySelectorAll<HTMLInputElement>('input[name="guide-format"]')].map((i) => i.value);
+    expect(offered).toEqual(['generic', 'npm']);
+    expect(radio(r, 'guide-format', 'generic')?.checked).toBe(true);
+    expect([...r.root.querySelectorAll<HTMLInputElement>('input[name="guide-client"]')].map((i) => i.value)).toEqual(['curl']);
+    expect([...r.root.querySelectorAll<HTMLInputElement>('input[name="guide-class"]')].map((i) => i.value)).toEqual(['local']);
+    expect(r.guides.calls.at(-1)).toEqual({ format: 'generic', cls: 'local', client: 'curl' });
+    expect(sections(r)).toEqual([
+      'generic.local.what',
+      'generic.configure',
+      'generic.authenticate',
+      'generic.install',
+      'generic.publish',
+      'generic.troubleshooting',
+    ]);
+    const configure = r.root.querySelector('[data-section="generic.configure"] .snippet pre')?.textContent ?? '';
+    expect(configure).toContain('header = "Authorization: Bearer ${TROVE_TOKEN}"');
+    await expectAccessible(r.root);
+  });
+
+  it('R-UI-049 npm opens the guide of the recommended class and passes the accessibility check', async () => {
+    const r = await open({ format: 'npm' });
     expect(radio(r, 'guide-format', 'npm')?.checked).toBe(true);
-    expect(radio(r, 'guide-format', 'generic')).toBeNull();
     expect([...r.root.querySelectorAll('input[name="guide-client"]')].map((i) => (i as HTMLInputElement).value)).toEqual([
       'npm',
       'pnpm',
@@ -87,7 +110,7 @@ describe('Guides', () => {
   });
 
   it('R-UI-049 the sections carry the server HTML as a README does', async () => {
-    const r = await open();
+    const r = await open({ format: 'npm' });
     const what = r.root.querySelector('[data-section="npm.virtual.what"] trove-package-readme .readme');
     expect(what?.querySelector('h3')?.id).toBe('user-content-details');
   });

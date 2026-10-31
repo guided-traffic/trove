@@ -2747,7 +2747,7 @@ type FormatDescriptor struct {
 
 	// Clients The native clients of the format (FMT-002), in the format's order. A format with clients ships a
 	// guide for every class and client (R-UI-049, `GET /api/v1/formats/{format}/guide`); empty for a format
-	// addressed with any HTTP client, such as generic.
+	// without one. generic, addressed with any HTTP client, names curl (R-GENERIC-016).
 	Clients []FormatClient `json:"clients"`
 
 	// DefaultExtraHosts The further hosts a remote repository of the format may fetch from by default (R-REPO-024); empty for a format without any.

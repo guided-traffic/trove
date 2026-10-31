@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/packages/readme"
 )
@@ -173,17 +174,80 @@ func TestR_API_053_TheGuideOfAFormat(t *testing.T) {
 		t.Errorf("%+v", conf)
 	}
 	for q, want := range map[string]int{
-		"/api/v1/formats/nuget/guide?class=local&client=dotnet": 404,
-		"/api/v1/formats/npm/guide?class=bogus&client=npm":      400,
-		"/api/v1/formats/npm/guide?class=local&client=bun":      400,
-		"/api/v1/formats/generic/guide?class=local&client=curl": 400,
-		"/api/v1/repositories/files/guide?client=curl":          400,
-		"/api/v1/repositories/npm-local/guide?client=bun":       400,
-		"/api/v1/repositories/ghost/guide?client=npm":           404,
+		"/api/v1/formats/nuget/guide?class=local&client=dotnet":  404,
+		"/api/v1/formats/npm/guide?class=bogus&client=npm":       400,
+		"/api/v1/formats/npm/guide?class=local&client=bun":       400,
+		"/api/v1/formats/generic/guide?class=local&client=curl":  200,
+		"/api/v1/formats/generic/guide?class=remote&client=curl": 400,
+		"/api/v1/formats/generic/guide?class=local&client=npm":   400,
+		"/api/v1/repositories/files/guide?client=curl":           200,
+		"/api/v1/repositories/files/guide?client=npm":            400,
+		"/api/v1/repositories/npm-local/guide?client=bun":        400,
+		"/api/v1/repositories/ghost/guide?client=npm":            404,
 	} {
 		if w := get(h, q); w.Code != want {
 			t.Errorf("%s: %d %s", q, w.Code, w.Body.String())
 		}
+	}
+}
+
+// TestR_API_053_AFormatWithoutClientsHasNoGuide: a format without clients offers no
+// client, so its guide answers 400 whichever client is asked for.
+func TestR_API_053_AFormatWithoutClientsHasNoGuide(t *testing.T) {
+	f, _ := formats.Lookup("generic")
+	for _, client := range []string{"curl", ""} {
+		e, ok := errs.As(guideClient(clientless{f}, client))
+		if !ok || e.Status() != 400 || e.Code != errs.CodeInvalid {
+			t.Errorf("%q: %v", client, e)
+		}
+	}
+	if err := guideClient(f, "curl"); err != nil {
+		t.Errorf("generic offers curl: %v", err)
+	}
+}
+
+// clientless is a format without clients and therefore without a guide.
+type clientless struct{ formats.Format }
+
+func (c clientless) Descriptor() formats.Descriptor {
+	d := c.Format.Descriptor()
+	d.Clients = nil
+	return d
+}
+
+func (clientless) Guide() []formats.GuideSection { return nil }
+
+// TestR_GENERIC_016_TheGuideShowsTheSnippetsOfTheClientSetup: the configure, install
+// and publish snippets of the guide of a generic repository are the client setup's
+// answer for curl with credentials=env, byte for byte.
+func TestR_GENERIC_016_TheGuideShowsTheSnippetsOfTheClientSetup(t *testing.T) {
+	h := setupServer(t, "https://trove.example.com", true)
+	g := guideOf(t, get(h, "/api/v1/repositories/files/guide?client=curl"))
+	var setup gen.ClientSetup
+	w := get(h, "/api/v1/repositories/files/client-setup?credentials=env&client=curl")
+	if err := json.Unmarshal(w.Body.Bytes(), &setup); err != nil || w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	for _, tab := range []string{"configure", "install", "publish"} {
+		var want []gen.ClientSnippet
+		for _, sn := range setup.Snippets {
+			if string(sn.Tab) == tab {
+				want = append(want, sn)
+			}
+		}
+		got := sectionOf(t, g, "generic."+tab).Snippets
+		if len(want) != 1 || !slices.EqualFunc(got, want, snippetsEqual) {
+			t.Errorf("%s: guide %+v, setup %+v", tab, got, want)
+		}
+	}
+	if g.RegistryUrl != "https://trove.example.com/files/files/" || g.Format != "generic" || g.Class != gen.GuideClassLocal || g.Credentials != gen.GuideCredentialsEnv {
+		t.Errorf("%+v", g)
+	}
+	want := []string{
+		"generic.local.what", "generic.configure", "generic.authenticate", "generic.install", "generic.publish", "generic.maintain", "generic.troubleshooting",
+	}
+	if !slices.Equal(sectionIDs(g), want) {
+		t.Errorf("sections %v", sectionIDs(g))
 	}
 }
 
@@ -213,6 +277,11 @@ func TestR_API_053_NoGuideHoldsAToken(t *testing.T) {
 				if w.Code != 200 || shape.Match(w.Body.Bytes()) {
 					t.Errorf("%s %s: %d", p, client, w.Code)
 				}
+			}
+		}
+		for _, p := range []string{"repositories/files/guide?client=curl", "formats/generic/guide?class=local&client=curl"} {
+			if w := get(h, "/api/v1/"+p); w.Code != 200 || shape.Match(w.Body.Bytes()) {
+				t.Errorf("%s: %d", p, w.Code)
 			}
 		}
 	}
@@ -248,7 +317,7 @@ func TestR_API_053_TheEndpointNoteIsForEndpointsWithRules(t *testing.T) {
 }
 
 // TestR_API_053_TheFormatsNameTheirClients: the catalog lists npm's four clients in the
-// format's order and none for generic.
+// format's order and curl for generic.
 func TestR_API_053_TheFormatsNameTheirClients(t *testing.T) {
 	w := get(setupServer(t, "https://trove.example.com", true), "/api/v1/formats")
 	var out gen.FormatList
@@ -262,7 +331,7 @@ func TestR_API_053_TheFormatsNameTheirClients(t *testing.T) {
 			got[f.Name] = append(got[f.Name], c.Id+"="+c.DisplayName)
 		}
 	}
-	if !slices.Equal(got["npm"], []string{"npm=npm", "pnpm=pnpm", "yarn=Yarn Berry (2 and later)", "yarn-classic=Yarn Classic (1.x)"}) || len(got["generic"]) != 0 {
+	if !slices.Equal(got["npm"], []string{"npm=npm", "pnpm=pnpm", "yarn=Yarn Berry (2 and later)", "yarn-classic=Yarn Classic (1.x)"}) || !slices.Equal(got["generic"], []string{"curl=curl"}) {
 		t.Fatalf("%v", got)
 	}
 }

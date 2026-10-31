@@ -183,7 +183,23 @@ describe('Repository edit form', () => {
   it('R-UI-021 a repository of a format without settings has no format tab', async () => {
     const r = await open((fake) => (fake.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT]));
     const tabs = [...r.root.querySelectorAll('[role="tab"]')].map((t) => text(t));
-    expect(tabs).toEqual(['General', 'Access', 'API']);
+    expect(tabs).toEqual(['General', 'Access', 'How to use', 'API']);
+  });
+
+  it('R-UI-049 R-GENERIC-016 the How to use tab of a generic repository shows the guide for curl', async () => {
+    const r = await open((fake) => (fake.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT]));
+    await openTab(r, 'How to use');
+    const guides = r.get(GuidesApi) as FakeGuidesApi;
+    expect(guides.calls.at(-1)).toEqual({ repository: 'generic-local', client: 'curl' });
+    expect(r.root.querySelector('[data-section="generic.local.what"]')).not.toBeNull();
+    const configure = r.root.querySelector('[data-section="generic.configure"] .snippet pre')?.textContent ?? '';
+    expect(configure).toContain('trove_curl() {');
+    const hrefs = [...r.root.querySelectorAll<HTMLAnchorElement>('.links a')].map((a) => a.getAttribute('href'));
+    expect(hrefs).toEqual([
+      '/setup?format=generic&client=curl&repository=generic-local',
+      '/guides?format=generic&client=curl&repository=generic-local',
+    ]);
+    await expectAccessible(r.root);
   });
 
   it('R-UI-021 a caller who may use but not configure the repository sees the consumer view without a form', async () => {
