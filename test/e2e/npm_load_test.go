@@ -589,8 +589,10 @@ type npmK6Result struct {
 
 var npmK6Pattern = regexp.MustCompile(`^N (\d+) (\d+) (\S+) (\d+) (document|tarball) (ok|bad) (\S+)$`)
 
-// parseNPMK6 ends the k6 run with SIGINT and reads its lines. As parseK6 does, a request cut by the harness's own stop
-// (status 0, "context canceled", in the last two seconds) is set aside; every other status 0 is a failure.
+// parseNPMK6 ends the k6 run with SIGINT and reads its lines. A request cut by the harness's own stop (status 0,
+// "context canceled", ending within two seconds of the last request's end) is set aside; every other status 0 is a
+// failure. A line carries the request's start, and a tarball can run for seconds before the stop cuts it, so the end
+// decides, not the start as in parseK6's short requests.
 func parseNPMK6(t *testing.T, k *k6run) npmK6Result {
 	t.Helper()
 	stopK6(t, k)
@@ -620,8 +622,15 @@ func parseNPMK6(t *testing.T, k *k6run) npmK6Result {
 			r.Last = l.At
 		}
 	}
+	var stopped time.Time
 	for _, l := range all {
-		if l.Status == 0 && strings.HasSuffix(l.Replica, ":context_canceled") && l.At.After(r.Last.Add(-2*time.Second)) {
+		if end := l.At.Add(time.Duration(l.MS) * time.Millisecond); end.After(stopped) {
+			stopped = end
+		}
+	}
+	for _, l := range all {
+		end := l.At.Add(time.Duration(l.MS) * time.Millisecond)
+		if l.Status == 0 && strings.HasSuffix(l.Replica, ":context_canceled") && end.After(stopped.Add(-2*time.Second)) {
 			r.Interrupted++
 			continue
 		}
