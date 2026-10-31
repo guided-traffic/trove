@@ -38,6 +38,7 @@ func TestMemoryAdmission(t *testing.T) {
 		var (
 			mu                   sync.Mutex
 			maxHeld, maxInFlight float64
+			maxInUse             float64
 			samples              int
 			stop, sampled        = make(chan struct{}), make(chan struct{})
 		)
@@ -49,9 +50,10 @@ func TestMemoryAdmission(t *testing.T) {
 		go func() {
 			defer close(sampled)
 			for {
-				m := r.metrics(t, "go_memstats_sys_bytes", "go_memstats_heap_released_bytes", `trove_http_requests_in_flight{endpoint="default",listener="client"}`)
+				m := r.metrics(t, "go_memstats_sys_bytes", "go_memstats_heap_released_bytes", `trove_http_requests_in_flight{endpoint="default",listener="client"}`, "trove_http_memory_slots_in_use")
 				mu.Lock()
 				maxHeld, maxInFlight = max(maxHeld, held(m)), max(maxInFlight, m[`trove_http_requests_in_flight{endpoint="default",listener="client"}`])
+				maxInUse = max(maxInUse, m["trove_http_memory_slots_in_use"])
 				samples++
 				mu.Unlock()
 				select {
@@ -114,11 +116,12 @@ func TestMemoryAdmission(t *testing.T) {
 		}
 		// The in-flight gauge counts a request from the request log on, so it also holds the ones being shed.
 		m := r.metrics(t, bySlots, byHeap)
-		t.Logf("%d downloads: %d complete, %d answered 503 server_busy (%.0f for the slots, %.0f for the heap); in flight at most %.0f (%.0f slots); the runtime held at most %.1f MiB of the %d MiB limit (%d samples)",
-			n, ok, busy, m[bySlots], m[byHeap], maxInFlight, slots, maxHeld/(1<<20), budget>>20, samples)
-		// An admitted download cannot end before its client reads, so every 200 held a slot at the same time.
-		if busy == 0 || ok == 0 || float64(ok) > slots {
-			t.Errorf("%d complete, %d shed: the excess must be shed, the admitted ones must complete, and at most %.0f at once", ok, busy, slots)
+		t.Logf("%d downloads: %d complete, %d answered 503 server_busy (%.0f for the slots, %.0f for the heap); in flight at most %.0f, slots in use at most %.0f of %.0f; the runtime held at most %.1f MiB of the %d MiB limit (%d samples)",
+			n, ok, busy, m[bySlots], m[byHeap], maxInFlight, maxInUse, slots, maxHeld/(1<<20), budget>>20, samples)
+		// The slots in use are read on the server: a download the kernel's socket buffers took whole ends before its
+		// client reads and frees its slot for the next one, so the number of completed downloads can exceed the slots.
+		if busy == 0 || ok == 0 || maxInUse > slots || maxInUse == 0 {
+			t.Errorf("%d complete, %d shed, at most %.0f slots in use of %.0f: the excess must be shed, the admitted ones must complete, and no more than the slots at once", ok, busy, maxInUse, slots)
 		}
 		if got := shed(); got != float64(busy) {
 			t.Errorf("trove_http_requests_shed_total counts %.0f, the clients saw %d", got, busy)

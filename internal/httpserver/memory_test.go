@@ -34,6 +34,26 @@ func TestMemoryGuard(t *testing.T) {
 		}
 	})
 
+	t.Run("R-ARCH-005 InUse counts the slots admitted requests hold, and a full guard sheds", func(t *testing.T) {
+		g := NewMemoryGuard(MemoryGuardConfig{Limit: 5 << 20, RequestBytes: 2 << 20, Read: func() (uint64, uint64) { return 0, 0 }})
+		r1, _ := g.Admit()
+		r2, _ := g.Admit()
+		if g.Slots() != 2 || g.InUse() != 2 {
+			t.Fatalf("slots %d, in use %d, want 2 and 2", g.Slots(), g.InUse())
+		}
+		if _, reason := g.Admit(); reason != ShedMemorySlots {
+			t.Fatalf("a full guard answered %q, want %q", reason, ShedMemorySlots)
+		}
+		r1()
+		if g.InUse() != 1 {
+			t.Fatalf("in use %d after one release, want 1", g.InUse())
+		}
+		r2()
+		if (*MemoryGuard)(nil).InUse() != 0 {
+			t.Fatal("a nil guard reports slots in use")
+		}
+	})
+
 	t.Run("R-ARCH-005 the heap gate closes at the high-water mark, stays closed above the low-water mark and opens below it", func(t *testing.T) {
 		var heap atomic.Uint64
 		var changes []bool

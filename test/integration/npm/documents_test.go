@@ -5,6 +5,7 @@ package npm
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"slices"
 	"sort"
@@ -399,9 +400,18 @@ func TestR_NPM_010_ThousandVersions(t *testing.T) {
 		hits = append(hits, d)
 	}
 	sort.Slice(hits, func(i, j int) bool { return hits[i] < hits[j] })
-	t.Logf("from the cache: median %s", hits[len(hits)/2])
-	if m := hits[len(hits)/2]; m > 10*time.Millisecond {
+	// The 10 ms target is enforced with TROVE_PERF_GATE=1 (the nightly performance run), as the owner decided for the
+	// latency targets of the per-change tier on CPU-limited runners (Q-ARCH-220); per change a hit must still be far
+	// below a miss, which a document that is rendered again on every request is not.
+	m := hits[len(hits)/2]
+	t.Logf("from the cache: median %s", m)
+	switch {
+	case m > miss/2:
+		t.Errorf("the document of 1,000 versions took %s from the cache (median of 7) against %s on a miss: the cache does not serve it", m, miss)
+	case m > 10*time.Millisecond && os.Getenv("TROVE_PERF_GATE") == "1":
 		t.Errorf("the document of 1,000 versions took %s from the cache (median of 7), the target is 10 ms", m)
+	case m > 10*time.Millisecond:
+		t.Logf("median %s above the 10 ms target; enforced with TROVE_PERF_GATE=1 (Q-ARCH-220)", m)
 	}
 	// a conditional request needs no rendering at all
 	etag := e.get(a, "npm-local", url, e.tokA).Header.Get("ETag")

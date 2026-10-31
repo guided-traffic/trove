@@ -80,7 +80,7 @@ and counts in the overflow counter); the ops listener's series carry the empty v
 `trove_endpoint_listener_up`, `trove_endpoint_misdirected_total` and `trove_endpoint_forwarded_host_ignored_total` are
 exported at 0 per endpoint (`Metrics.ExportEndpoints`); see [endpoints.md](endpoints.md#observability). So is
 `trove_http_requests_shed_total{endpoint,reason}` for each reason (`in_flight`, `memory_slots`, `heap`; `Metrics.RequestShed`
-counts no other), beside the gauge `trove_http_memory_slots` (`Metrics.MemorySlots`) of the memory guard
+counts no other), beside the gauges `trove_http_memory_slots` (`Metrics.MemorySlots`) and `trove_http_memory_slots_in_use` (`Metrics.MemorySlotsInUse`, read at each scrape) of the memory guard
 ([architecture.md](architecture.md#stage-4-and-the-memory-guard)).
 
 `m.Handler()` serves `GET /metrics` for the operations listener: Prometheus text 0.0.4, OpenMetrics when the

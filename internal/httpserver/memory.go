@@ -95,6 +95,14 @@ func (g *MemoryGuard) Slots() int {
 	return cap(g.slots)
 }
 
+// InUse is the number of slots admitted requests hold now; 0 for a nil guard.
+func (g *MemoryGuard) InUse() int {
+	if g == nil {
+		return 0
+	}
+	return len(g.slots)
+}
+
 // Admit takes a slot. reason is empty when the request is admitted; release
 // gives the slot back and must be called once.
 func (g *MemoryGuard) Admit() (release func(), reason string) {

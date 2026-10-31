@@ -72,6 +72,7 @@ func (a *App) startMemoryGuard(ctx context.Context) *httpserver.MemoryGuard {
 		a.log.Warn("no memory limit is known (runtime.memory_limit_bytes, GOMEMLIMIT): the client listeners admit requests up to max_in_flight only")
 		return nil
 	}
+	a.tele.metrics.MemorySlotsInUse(g.InUse)
 	a.log.Info("memory limit", "go_memory_limit_bytes", limit, "source", source, "memory_slots", g.Slots(), "request_bytes", per)
 	a.bg.Add(1)
 	go func() {

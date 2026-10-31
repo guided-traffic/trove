@@ -350,6 +350,14 @@ func (m *Metrics) RequestShed(endpoint, reason string) {
 // MemorySlots sets trove_http_memory_slots.
 func (m *Metrics) MemorySlots(n int) { m.memSlots.WithLabelValues().Set(float64(n)) }
 
+// MemorySlotsInUse registers trove_http_memory_slots_in_use, read from inUse at each scrape.
+func (m *Metrics) MemorySlotsInUse(inUse func() int) {
+	m.reg.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "trove_http_memory_slots_in_use",
+		Help: "Memory slots that admitted requests hold now (trove_http_memory_slots is the number there are).",
+	}, func() float64 { return float64(inUse()) }))
+}
+
 // ExportEndpoints creates the per-endpoint series at 0, so a scrape sees them
 // before the first event.
 func (m *Metrics) ExportEndpoints() {

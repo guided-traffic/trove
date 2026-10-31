@@ -6071,6 +6071,10 @@ that run the nightly job have no CPU limit (dedicated performance runners): then
 and P-14"); [docs/developer/releasing.md](../developer/releasing.md) ("Performance (nightly)"); [docs/developer/build-and-test.md](../developer/build-and-test.md).
 Applied on 2026-10-31 to the same bounds on kind: E0.6 (`TestE06Lease` in [e06_lease_test.go](../../test/e2e/e06_lease_test.go)) asserts delivery and the
 p50 bounds per change and the p99 bounds with `TROVE_PERF_GATE=1`, after a run on throttled runner pods measured P-14 p99 = 1395 ms with n = 24.
+Applied on 2026-10-31 to two targets of the per-change integration tier that the runners missed by a few percent (Actions run 41218966825):
+R-NPM-010's 10 ms for a cached document of 1,000 versions (measured 14 ms; per change a hit must stay below half a miss) and R-API-014's 1.5 s
+for a concurrent duplicate (measured up to 1.59 s; per change at most 2.5 s, while the first request holds its row until the test ends). Both
+targets are enforced with `TROVE_PERF_GATE=1` by `make test-performance`, which runs them nightly.
 
 ### Q-ARCH-226 · The host answers an early, read-only ownership question
 
