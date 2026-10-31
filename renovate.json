@@ -344,6 +344,15 @@
       "automerge": false
     },
     {
+      "description": "The Valkey 8.1 image of the integration tier (INTEGRATION_VALKEY_81_IMAGE) is an unsupported line on purpose: test/integration/valkey checks that trove refuses it (R-ARCH-031), so it stays on 8.x and only takes patch and digest updates",
+      "matchDepNames": [
+        "docker.io/valkey/valkey",
+        "valkey/valkey"
+      ],
+      "matchCurrentVersion": "/^8\\./",
+      "allowedVersions": "<9"
+    },
+    {
       "description": "Every major update waits for approval in the Dependency Dashboard before Renovate creates its branch, so no major occupies the runners unasked; security updates are not held (vulnerabilityAlerts)",
       "matchUpdateTypes": [
         "major"
