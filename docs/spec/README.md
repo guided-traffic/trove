@@ -67,6 +67,8 @@ Given by the project owner; not up for redesign in these pages:
   a package cache on the Bastion keeps what it served, so repeated downloads do not reach the main installation. It is
   planned as milestone M13 ([FULL.md](../projektplan/FULL.md#m13--trove-bastion)); its spec page is written first. It is
   read-only for package content: publishes and every other write go to the main installation (owner, 2026-10-31).
+  It asks the main installation whether a credential is valid and what it may read, and keeps the answers for a
+  short, bounded time; it holds no copy of users, tokens or policies (owner, 2026-10-31).
 
 ## Design invariants
 
