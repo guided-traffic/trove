@@ -47,6 +47,9 @@ func TestMemoryAdmission(t *testing.T) {
 		held := func(m map[string]float64) float64 {
 			return m["go_memstats_sys_bytes"] - m["go_memstats_heap_released_bytes"]
 		}
+		var stopOnce sync.Once
+		stopSampler := func() { stopOnce.Do(func() { close(stop) }); <-sampled }
+		t.Cleanup(stopSampler) // also when a check below ends the test early
 		go func() {
 			defer close(sampled)
 			for {
@@ -64,20 +67,24 @@ func TestMemoryAdmission(t *testing.T) {
 			}
 		}()
 
-		downloads := make([]*slow, n)
-		for i := range downloads {
-			downloads[i] = slowGet(t, r.client, path, in.token)
-		}
 		// Every request is answered or holds its slot once the in-flight gauge and the shed
-		// counter add up to n.
+		// counter add up to the requests sent.
 		const bySlots, byHeap = `trove_http_requests_shed_total{endpoint="default",reason="memory_slots"}`, `trove_http_requests_shed_total{endpoint="default",reason="heap"}`
 		shed := func() float64 {
 			m := r.metrics(t, bySlots, byHeap)
 			return m[bySlots] + m[byHeap]
 		}
-		testenv.WaitFor(t, "every download admitted or shed", 60*time.Second, func() bool {
-			return r.metric(t, `trove_http_requests_in_flight{endpoint="default",listener="client"}`)+shed() >= n
-		})
+		// The downloads go out in batches of 100, each once the one before has reached the replica: 1,000 dials at once
+		// overflow the accept queue of a CPU-limited replica, and the dropped SYNs back off for over a minute.
+		downloads := make([]*slow, n)
+		for i := range downloads {
+			downloads[i] = slowGet(t, r.client, path, in.token)
+			if sent := i + 1; sent%100 == 0 || sent == n {
+				testenv.WaitFor(t, fmt.Sprintf("%d downloads admitted or shed", sent), 60*time.Second, func() bool {
+					return r.metric(t, `trove_http_requests_in_flight{endpoint="default",listener="client"}`)+shed() >= float64(sent)
+				})
+			}
+		}
 		time.Sleep(2 * time.Second) // the held downloads sit in their writes; the sampler keeps reading
 		if !r.alive() {
 			t.Fatal("the replica exited under the load")
@@ -100,8 +107,7 @@ func TestMemoryAdmission(t *testing.T) {
 		}
 		close(next)
 		wg.Wait()
-		close(stop)
-		<-sampled
+		stopSampler()
 
 		ok, busy := 0, 0
 		for i, res := range results {
