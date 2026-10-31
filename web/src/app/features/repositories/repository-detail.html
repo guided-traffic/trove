@@ -34,6 +34,12 @@
         }
       </dd>
     </dl>
+    @if (clientsOf(c.format).length > 0) {
+      <section class="how-to-use" aria-labelledby="repo-how-to-use">
+        <h2 id="repo-how-to-use" i18n="@@repo.tab.guide">How to use</h2>
+        <trove-repository-guide [key]="key()" [format]="c.format" [clients]="clientsOf(c.format)" />
+      </section>
+    }
   } @else if (stored(); as repo) {
     <trove-error-summary [items]="summary()" />
     @if (failure(); as f) {
@@ -124,6 +130,15 @@
                 [fieldErrors]="fieldErrors()"
               />
             </div>
+          </mat-tab>
+        }
+        @if (clientsOf(repo.format).length > 0) {
+          <mat-tab [label]="tabGuide">
+            <ng-template matTabContent>
+              <div class="tab">
+                <trove-repository-guide [key]="key()" [format]="repo.format" [clients]="clientsOf(repo.format)" />
+              </div>
+            </ng-template>
           </mat-tab>
         }
         <mat-tab [label]="tabApi">

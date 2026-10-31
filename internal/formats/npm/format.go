@@ -186,7 +186,7 @@ func clients() []formats.Client {
 	return []formats.Client{
 		{ID: "npm", DisplayName: "npm"},
 		{ID: "pnpm", DisplayName: "pnpm"},
-		{ID: "yarn", DisplayName: "Yarn"},
-		{ID: "yarn-classic", DisplayName: "Yarn Classic"},
+		{ID: "yarn", DisplayName: "Yarn Berry (2 and later)"},
+		{ID: "yarn-classic", DisplayName: "Yarn Classic (1.x)"},
 	}
 }

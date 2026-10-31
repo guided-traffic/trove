@@ -39,7 +39,7 @@ OPS-032),
 ## Reading this page
 
 - Part A (R-API-001 to R-API-019, R-API-051, R-API-052): conventions. Part B (R-API-020 to
-  R-API-050): endpoint surface. Part C (R-UI-001 to R-UI-048): UI.
+  R-API-050, R-API-053): endpoint surface. Part C (R-UI-001 to R-UI-049): UI.
 - Every `web` replica answers every request, and the Kubernetes Service picks one at random without
   session affinity (INV-2, INV-12). "A request" on this page therefore never means "the same
   replica as the previous request" (INV-18, R-API-051).
@@ -1154,7 +1154,7 @@ Priority: **MVP** · Covers: trove-only
 | Path prefix | Family | Requirement | Semantics and payloads |
 |---|---|---|---|
 | `/api/v1/auth/whoami`, `/api/v1/auth/login-options`, `/api/v1/authz/me`, `/api/v1/authz/check`, `/api/v1/users/me…` | Current caller | R-API-021 | [identity-and-authentication.md](identity-and-authentication.md), [authorization.md](authorization.md) |
-| `/api/v1/formats`, `/api/v1/repositories…`, `/api/v1/upstream-tests` | Repositories | R-API-022 to R-API-024, R-API-030 | [repositories-and-proxy.md](repositories-and-proxy.md), [architecture.md](architecture.md) |
+| `/api/v1/formats`, `/api/v1/repositories…`, `/api/v1/upstream-tests` | Repositories | R-API-022 to R-API-024, R-API-030, R-API-053 | [repositories-and-proxy.md](repositories-and-proxy.md), [architecture.md](architecture.md) |
 | `/api/v1/repositories/{repoKey}/items`, `/children`, `/stats`, `/properties`; `/files/…` | Items and files | R-API-025, R-API-026 | [storage.md](storage.md) |
 | `/api/v1/content/…`, `/api/v1/trash-can/…` | Copy, move, trash | R-API-027 | [storage.md](storage.md) |
 | `/api/v1/search/…` | Search | R-API-028 | this page; indexes in [storage.md](storage.md) |
@@ -1257,7 +1257,7 @@ Semantics, payloads and status codes: [repositories-and-proxy.md](repositories-a
 
 | Method | Path | Purpose | Permission |
 |---|---|---|---|
-| GET | `/api/v1/formats` | Format descriptors with classes (generated from `Descriptor().Classes`), clients and settings schema (`settingsSchema`, a JSON Schema 2020-12 or `null`; R-ARCH-008, R-ARCH-010, Q-ARCH-229), and `baseUrl`: the configured base URL of the endpoint the request arrived on, or `null` (Q-UI-75) | authenticated; anonymous where anonymous access is on |
+| GET | `/api/v1/formats` | Format descriptors with classes (generated from `Descriptor().Classes`), clients (`clients`: `{id, displayName}` from `Descriptor().Clients`, empty for generic; Q-API-177) and settings schema (`settingsSchema`, a JSON Schema 2020-12 or `null`; R-ARCH-008, R-ARCH-010, Q-ARCH-229), and `baseUrl`: the configured base URL of the endpoint the request arrived on, or `null` (Q-UI-75) | authenticated; anonymous where anonymous access is on |
 | GET | `/api/v1/repositories` | List; filters `class`, `format`, `q`, `state`, `project`; `view` | readable repositories; configuration fields only with `repositories:read-config` or `manage` |
 | POST | `/api/v1/repositories` | Create | `admin` or `repository-admin` role; project administrators per R-AUTHZ-026 |
 | GET | `/api/v1/repositories/{key}` | Read; full configuration for `manage` and `repositories:read-config` | `read` |
@@ -1623,6 +1623,50 @@ Acceptance criteria:
   `trv_(pat|sat|cit)_` (R-ARCH-010 kit check 8).
 - The npm install snippet for version `1.0.0` of a legacy remote package named `a(b)` reads
   `npm install 'a(b)@1.0.0'`.
+
+### R-API-053 · Guides of the formats
+Priority: **MVP** · Covers: trove-only
+
+The owner's requirement of 2026-10-31 (Q-UI-83): the guide of R-UI-049 for every registry variant (format × repository
+class × client). The format contributes the text (`Guide()` of the format contract, [architecture.md](architecture.md)
+R-ARCH-008, Q-ARCH-235); this page owns the operations (Q-API-175).
+
+| Method | Path | Purpose | Permission |
+|---|---|---|---|
+| GET | `/api/v1/repositories/{repoKey}/guide?client=` | The guide of a repository for one of its format's clients | `read` on the repository (`404` otherwise, like a missing repository) |
+| GET | `/api/v1/formats/{format}/guide?class=&client=` | The guide of a class of a format, without a repository | as `GET /api/v1/formats`: authenticated; anonymous where anonymous access is on |
+
+- The answer holds `format`, `class`, `client`, `repository` (`null` for the guide of a format), `registryUrl`,
+  `publishTarget`, `credentials`, `exposureRules` and `sections` of `{id, topic, title, html, snippets}`. The sections are
+  those of the format's guide that are written for the class and the client, in the topic order `what`, `configure`,
+  `authenticate`, `install`, `publish`, `maintain`, `audit`, `lockfiles`, `endpoint`, `troubleshooting`; a section that
+  renders to nothing is left out.
+- A section's Markdown is a template over the data of the setup templates plus the class, the client, the publish target
+  the caller may deploy to, whether the caller is anonymous, whether the endpoint has exposure rules, and the name of
+  `ui.client_setup.token_env_var` (`GuideData`); it has no credential field. The server renders it with the renderer and
+  the sanitizer of R-UI-008, with a source bound of its own (256 KiB) instead of `ui.readme.max_source_bytes`, which
+  bounds untrusted READMEs (Q-API-178).
+- A section that names a setup section carries the snippets of R-API-030 for the same repository, client and credential
+  mode, rendered by the same code, so the guide's configure and install snippets are the client setup's. The credential
+  mode is `env` for a signed-in caller and `none` for an anonymous one; the guide never carries a token or the placeholder
+  of one, and the reference `${TROVE_TOKEN}` of a section's text is rewritten like a snippet's (Q-API-176).
+- The guide of a format writes `<repository>` where the key goes and names no target. The guide of a virtual repository
+  names its deployment target only to a caller who may deploy there and never lists the members, which are configuration
+  (Q-API-179). Both operations answer `503` while no base URL is configured for the endpoint, like R-API-030.
+- An unknown format answers `404`; a client or class the format does not have, or a format without clients, `400
+  malformed_request`. No answer matches `trv_(pat|sat|cit)_`.
+
+Acceptance criteria:
+
+- For each npm client, the snippets of the `configure` and `install` sections of `GET …/repositories/npm-local/guide`
+  equal the snippets of the same tabs of `GET …/repositories/npm-local/client-setup?credentials=env` byte for byte
+  (`TestR_API_053_TheGuideShowsTheSnippetsOfTheClientSetup`, and through the stack
+  `TestR_API_053_TheGuideThroughTheStack`).
+- The guide of a remote repository has no `publish` and no `maintain` section; for an anonymous caller the guide of a
+  local repository has neither, and its snippets hold no credential line.
+- On an endpoint with exposure rules the guide carries the `endpoint` section and the endpoint's own addresses; on the
+  default endpoint it does not (`TestR_API_053_TheGuideOnAnEndpointWithRules`).
+- No answer, for any class, client and caller, matches `trv_(pat|sat|cit)_`.
 
 ### R-API-031 · Users, groups and service accounts
 Priority: **MVP** · Covers: ADMAPI-004, ADMAPI-005, ADMAPI-006, ADMAPI-007, ADMAPI-008, ADMAPI-009, ADMAPI-012, ADMAPI-013, ADMAPI-014, ADMAPI-015, ADMAPI-016, ADMAPI-017, ADMAPI-018
@@ -2388,7 +2432,7 @@ Priority: **MVP** · Covers: UI-001, UI-004
   filter (P1, R-UI-041) and the help link (`ui.help_url`, which the browser cannot read yet,
   Q-UI-15) take their place in the same bar when their APIs exist. A configurable server name is P2
   on [operations-and-observability.md](operations-and-observability.md).
-- Navigation with two areas: **Packages and files** (packages, browser, search, trash, builds; from
+- Navigation with two areas: **Packages and files** (packages, browser, guides (R-UI-049), search, trash, builds; from
   M4b also vulnerabilities, shown to every signed-in user,
   [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022) and
   **Administration** (shown when `/api/v1/authz/me` reports any administrative capability). The
@@ -2450,7 +2494,7 @@ Every screen and every object has a bookmarkable URL under `/ui/{locale}`. Filte
 selected tab and selected version live in query parameters.
 
 <details>
-<summary>Route table (29)</summary>
+<summary>Route table (30)</summary>
 
 | Route | Screen | Requirement |
 |---|---|---|
@@ -2462,6 +2506,7 @@ selected tab and selected version live in query parameters.
 | `/trash` | Trash can (P1) | R-UI-014 |
 | `/builds`, `/builds/{build}`, `/builds/{build}/{number}` | Builds (P1) | R-UI-040 |
 | `/setup` (`?repository=&client=`) | Client setup | R-UI-016 |
+| `/guides` (`?format=&client=&repository=&class=`) | Guides | R-UI-049 |
 | `/profile`, `/profile/tokens`, `/profile/sessions` | Profile, personal tokens, sessions | R-UI-029 |
 | `/integrations/webhooks`, `/integrations/webhooks/{key}` | Webhooks (P1) | R-UI-039 |
 | `/admin/repositories`, `/admin/repositories/new`, `/admin/repositories/{key}` | Repositories | R-UI-020, R-UI-021 |
@@ -2933,6 +2978,8 @@ Priority: **MVP** · Covers: UI-021, UI-022, UI-023
   service, browser storage or the URL and is discarded when the route is left (R-UI-043).
 - A virtual repository without a default deployment target shows, instead of the publish tab, an
   explanation and a link to its local members.
+- The page links to the guide of R-UI-049 for the chosen format, client and repository, and the guide links back
+  (Q-UI-84).
 
 Acceptance criteria:
 
@@ -3066,16 +3113,62 @@ Acceptance criteria (CI end-to-end, .NET SDK container, real token in `TROVE_TOK
   `GET /api/v1/packages?format=nuget`.
 
 ### R-UI-019 · Instructions for further formats
-Priority: **P1** · Covers: UI-026
+Priority: **MVP** · Covers: UI-026
 
-Each format page that ships contributes snippet templates (R-API-030) and acceptance commands for
-its native clients (for example `docker login`, Maven `settings.xml` with `${env.TROVE_TOKEN}`,
-`pip` index configuration, `GOPROXY` with `.netrc`, `helm repo add` and OCI registry login). The
-dialog is data-driven: a new format needs a format label, an icon and translated snippet texts, no
-new screen.
+Each format that ships, in whichever phase, ships in that phase its snippet templates (R-API-030), its guide
+(R-UI-049) for every class and client it supports, and acceptance commands for its native clients (for example
+`docker login`, Maven `settings.xml` with `${env.TROVE_TOKEN}`, `pip` index configuration, `GOPROXY` with `.netrc`,
+`helm repo add` and OCI registry login). The guide is not a later step: the conformance kit fails a format with
+clients that lacks it (R-ARCH-010 check 8). The setup page and the guides area are data-driven: a new format needs no
+new screen, and the guides area offers it as soon as `GET /api/v1/formats` lists it with clients; the setup page still
+takes its clients from the UI's table and the translated snippet explanations (Q-UI-70).
 
-Acceptance criteria: per format, on its page; the dialog lists a format as soon as its templates
-are registered.
+Raised from P1 to MVP by the owner's decision of 2026-10-31 (Q-UI-83): the rule binds NuGet in M3 and every later
+format. What stays P1 is the list of further formats itself; each brings its templates, its guide and its acceptance
+commands when it ships.
+
+Acceptance criteria: per format, on its page; the setup page lists a format as soon as its templates are registered and
+the UI's table names its clients, the guides area as soon as the format registers clients; the kit refuses a format
+whose guide misses a class or a client.
+
+### R-UI-049 · Guides for every registry variant
+Priority: **MVP** · Covers: trove-only
+
+The owner's requirement of 2026-10-31 (Q-UI-83): the UI offers documentation and setup help for every package registry
+variant, which is a format × a repository class (local, remote, virtual) × a client (for npm: npm, pnpm, Yarn Berry,
+Yarn Classic). A guide tells a developer, accurately for trove as built, what the repository is and how the client
+configures, signs in, installs, publishes, changes tags, unpublishes, audits and keeps lockfiles through it, what an
+endpoint with exposure rules changes, and what each answer of the protocol means. The text is the format's
+(R-ARCH-008 `Guide()`, kit check 8), rendered by the server (R-API-053); the UI adds no format knowledge.
+
+- **Where.** A side bar entry **Guides** in the area Packages and files, route `/guides`
+  (`?format=&client=&repository=&class=`); a tab **How to use** on the repository screen (and the same guide below the
+  facts of the consumer view) for the repository's class and the client the reader picks; links between the guide and
+  the client setup page of R-UI-016 in both directions, carrying the choice (Q-UI-84).
+- **Choice.** The guides area offers the formats of `GET /api/v1/formats` that list `clients`, their clients, the
+  readable repositories of the format (virtual first), and, without a repository, the format's classes (virtual
+  preselected). A repository opens its guide (`GET /api/v1/repositories/{key}/guide`), a class the guide of the format
+  (`GET /api/v1/formats/{format}/guide`), whose addresses show `<repository>`.
+- **Content.** A contents list (a `nav` landmark) whose links move focus to the section heading without navigating; one
+  region per section with its heading; the section's HTML bound like a README (R-UI-008, the same component and its
+  finishing pass); the setup snippets of the section with a copy button each (Q-UI-85). The guide's text is the format's
+  and English, marked `lang="en"`; the frame of the page is translated (Q-UI-86).
+- **Addresses** are the server's (the base URL of the endpoint the page is served from, R-API-053), never the page's
+  location (Q-UI-69).
+- **Anonymous readers** of anonymously readable repositories get the guide without credential steps: snippets without
+  an authentication line and no publishing, tag or unpublish sections.
+- Accessibility as R-UI-044: headings in order, landmarks, every control reachable by keyboard.
+
+Acceptance criteria:
+
+- Playwright (`09-guides.spec.ts`): the side bar opens the guides with npm and its four clients; the How to use tab of
+  a virtual npm repository shows the virtual repository's sections and names its deployment target; its configure
+  snippet equals, character for character, the configure snippet the client setup page shows for the same repository
+  and client with "Reference an environment variable"; the setup page links back to the same guide; axe finds no
+  serious or critical violation (E2.13, Q-UI-87).
+- For every class and client of npm the guide has the sections `what`, `configure`, `authenticate`, `install` and
+  `troubleshooting` (kit check 8), and every code its troubleshooting table names is a code of the problem catalog,
+  under the status trove answers it with (`TestR_UI_049_TheTroubleshootingCodesAreTroves`).
 
 ### R-UI-020 · Repository list
 Priority: **MVP** · Covers: UI-030, REPO-007
@@ -3133,7 +3226,8 @@ Priority: **MVP** · Covers: UI-031
   (INV-17).
 - Create sends the `Idempotency-Key` generated when the wizard opened.
 - Edit form: the same sections as tabs; key, class and format read-only; save sends PATCH with
-  `If-Match`; 412 opens the conflict dialog (R-UI-042); unsaved changes are guarded on navigation.
+  `If-Match`; 412 opens the conflict dialog (R-UI-042); unsaved changes are guarded on navigation. For a
+  format with clients, a tab **How to use** shows the repository's guide (R-UI-049).
 - Server field errors (`errors[].pointer`) are shown at their fields and in an error summary.
 
 Acceptance criteria:
@@ -5048,6 +5142,8 @@ R-UI-009 and R-UI-016 name the clients (npm, pnpm, Yarn Berry, Yarn Classic; .NE
 
 **Applied in the spec:** R-UI-009 (client picker lists the clients the UI has instructions for).
 
+**Revisited on 2026-10-31:** unchanged for the setup page and the install panel. The format descriptor now lists its clients (Q-API-177), which the guides area of R-UI-049 reads; moving the setup page onto that member stays the revisit at NuGet.
+
 ### Q-UI-71 · The README component finishes what Angular's sanitizer leaves
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -5263,6 +5359,104 @@ Context: E2.8 asks that E2.1's configure step use the snippets of the client set
 **Rationale:** The criterion exists to catch a dialog and a client configuration that disagree, and only an expected text that neither of them produced can. The development agent revisits this when the matrix reads its snippets from the setup API itself, which would make (b) enough.
 
 **Applied in the spec:** none; [e2e.md](../developer/e2e.md#browser-journeys) describes the journey.
+
+### Q-UI-83 · In-app guides for every registry variant
+
+Status: **Decided by the owner on 2026-10-31.**
+
+Context: the UI had the client setup page (R-UI-016, R-UI-017) with the snippets of R-API-030, and R-UI-019 left the
+instructions of later formats at P1. Nothing in the UI said what a local, a remote or a virtual repository is, how a
+client signs in, publishes, tags, unpublishes or audits through one, what a lockfile records, or what an answer such as
+`403 shadows_remote_package` or `E404` on a customer endpoint means. The owner: "It is important that the frontend
+offers documentation and setup help for all package registry variants."
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the snippets as the only help | The setup page | Nothing to build | A developer learns what trove does from its error messages |
+| (b) An in-app guide per variant (format × class × client), in the beta, and every later format ships its own | R-UI-049, R-API-053; R-UI-019 raised | Every variant is explained where it is used | One more surface each format keeps true |
+
+**Choice:** (b).
+
+**Rationale:** the owner's decision. The development agent records no revisit condition; the scope is the owner's.
+
+**Applied in the spec:** R-UI-049 and R-API-053 (new, MVP); R-UI-019 (raised to MVP: every format ships its guide in
+its own phase); R-UI-016 (the links); [architecture.md](architecture.md) R-ARCH-008 and R-ARCH-010 (the contract
+method and kit check 8); [formats/npm.md](formats/npm.md) R-NPM-041 (npm's guide); [formats/nuget.md](formats/nuget.md)
+R-NUGET-026 (NuGet's guide in M3); the [roadmap](../coverage/roadmap.md) (M2 scope, E2.13, M3 scope) and
+[BETA.md](../projektplan/BETA.md) (phases 3 and 4).
+
+### Q-UI-84 · Where the guides appear
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a developer looks for help in two situations: before choosing a repository ("what is a virtual repository?")
+and while looking at one ("how do I publish to this one?"). The setup page already holds the snippets and the token
+handling of R-UI-016.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A second step of the setup page | One page | Everything in one place | The setup page grows a manual, and its token handling becomes part of every reading of the docs |
+| (b) A guides area in the side bar, a How to use tab on the repository screen, links between both and the setup page | `/guides`, the tab, the links carry format, client and repository | Reachable before and while using a repository; the setup page stays the place where a token is handled | Two entry points to keep consistent; both use one component |
+| (c) Help links to an external site | `ui.help_url` | Nothing to build | Not the installation's addresses or behaviour; no such site exists (Q-UI-15) |
+
+**Choice:** (b). The area is in Packages and files, visible to every caller (anonymous ones included where anonymous access is on). The tab sits before the API tab of the edit form, and the consumer view shows the same guide below its facts. The guides area offers the formats of `GET /api/v1/formats` with clients, so NuGet appears without a screen change.
+
+**Rationale:** The guide is reading, the setup page is doing; keeping them apart keeps the token in one component (Q-UI-74). The development agent revisits this when a global help button exists (R-UI-002's help link), which would then open the guides area.
+
+**Applied in the spec:** R-UI-049, R-UI-002 (the side bar), R-UI-003 (the route), R-UI-016 and R-UI-021 (the links and the tab).
+
+### Q-UI-85 · A guide section is bound like a README, with the setup snippets below it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the server renders a section's Markdown with the README renderer (Q-API-178). Angular's sanitizer removes the heading ids, and a bare fragment link navigates to the UI root because of the document's `<base href>` (Q-UI-71).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Bind the HTML with the README component and render the snippets as structured data | `trove-package-readme` per section; snippets with copy buttons | The one finishing pass of Q-UI-71 serves both; the snippets are copied exactly as the setup page shows them | One README component instance per section |
+| (b) Put the snippets into the Markdown as code blocks | One HTML string | One binding | No copy button, and the snippet is no longer the setup API's value but a rendering of it |
+| (c) A component of its own for guide HTML | A second finishing pass | Freedom | Two implementations of one sanitizing rule |
+
+**Choice:** (a). The contents list is a `nav` landmark whose links move the focus to the section's heading and never navigate. The snippets have a copy button and no download: a guide holds no secret, and downloading is the setup page's.
+
+**Rationale:** The guide must show exactly what the setup page shows; structured snippets make that a comparison of values, not of renderings. The development agent revisits this when a section needs an interactive element the sanitizer cannot carry.
+
+**Applied in the spec:** R-UI-049.
+
+### Q-UI-86 · The text of a guide is English
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-045 translates every text of the UI. A guide's text is the format's (Q-ARCH-235), rendered by the server.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The format's text is English; the frame (headings of the page, labels, links) is translated | `lang="en"` on the guide's sections | One text per format, tested against the code | A German reader gets an English guide |
+| (b) A guide per locale in each format | German and English Markdown | Fully translated | Two texts to keep true for every statement; the tests pin one |
+| (c) Translate the guide in the UI by section ID | A message per section | The UI's mechanism | The UI would carry format knowledge, which R-UI-049 excludes |
+
+**Choice:** (a), as Q-UI-79 decided for the labels of a settings schema.
+
+**Rationale:** The guide's value is that it is true; one text that the tests pin is worth more than two that drift. The development agent revisits this when the server negotiates languages for format content.
+
+**Applied in the spec:** R-UI-049.
+
+### Q-UI-87 · The guides journey compares the guide with the setup page
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: E2.13 asks that the guide of a virtual npm repository show the configure snippet of the setup page. Q-UI-82 already holds the setup page against the snippet written out for the matrix's data.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The journey reads the guide's configure snippet and compares it with the setup page's for the same repository and client | `09-guides.spec.ts`, its own local and virtual repository | Proves the criterion: the two views agree; Q-UI-82 already proves the setup page right | Two pages in one journey |
+| (b) Compare the guide with a snippet written out | As Q-UI-82 | Independent of the setup page | Writes the rendering down a third time |
+
+**Choice:** (a). The journey creates a local and a virtual npm repository through the API (INV-17): the journeys do not own the matrix's `npm-all`, as Q-UI-82 found for the packages journey.
+
+**Rationale:** Equality of the guide and the setup page is the criterion; correctness of the setup page against the clients is Q-UI-82's and the matrix's. The development agent revisits this with Q-UI-82.
+
+**Applied in the spec:** R-UI-049; [e2e.md](../developer/e2e.md#browser-journeys).
 
 ### Q-API-16 · A `limit` above the maximum is clamped
 
@@ -5932,6 +6126,94 @@ Context: the list statement sorts and compares keyset positions on the normalize
 
 **Applied in the spec:** R-API-029 (the order and the cursor).
 
+### Q-API-175 · Two guide operations, rendered on the server
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-049 needs the guide of a repository and the guide of a class before a repository is chosen. The text is the format's (Q-ARCH-235) and must use the installation's addresses and the caller's rights.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `GET /api/v1/repositories/{key}/guide?client=` and `GET /api/v1/formats/{format}/guide?class=&client=`, sections rendered to sanitized HTML on the server | Two operations, one answer shape | One renderer and sanitizer (R-UI-008); the server fills addresses, target and credential mode like R-API-030 | Two operations to document |
+| (b) One operation that takes the raw Markdown templates, rendered in the browser | `GET /api/v1/formats/{format}/guide-templates` | One operation | A Markdown renderer and its sanitizer in the browser, a second rule set; the browser fills addresses |
+| (c) Fold the guide into the client setup answer | `client-setup` grows sections | No new operation | The setup answer carries the token modes; a guide must never carry one (Q-API-176) |
+
+**Choice:** (a). The repository operation needs `read` on the repository; the format operation is public like `GET /api/v1/formats`. Sections are filtered by the class and the client, ordered by topic, and a section that renders to nothing is left out, so a format writes conditional sections (an anonymous reader, an endpoint without rules) as templates.
+
+**Rationale:** The server already owns the addresses, the caller's rights and the sanitizer; the browser binds HTML it can finish (Q-UI-71). The development agent revisits this if a guide must be shown where the management API is not reachable (a static export of the documentation).
+
+**Applied in the spec:** R-API-053, R-API-020, R-API-022.
+
+### Q-API-176 · A guide references the credential and never holds it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the client setup offers three credential modes (R-API-030), one of them a placeholder the browser fills with a token (Q-UI-74). A guide shows the configure snippet too.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `env` for a signed-in caller, `none` for an anonymous one; the snippets go through the setup's renderer | No placeholder, no token mode | A guide can be copied, cached, printed without holding a secret; its snippet equals the setup page's default | A reader who wants a token goes to the setup page |
+| (b) The guide offers the three modes | The setup page's choice | One page for everything | The token would live in a second component (R-UI-043) |
+
+**Choice:** (a). The reference `${TROVE_TOKEN}` in a section's text is rewritten by the same function as a snippet's (`${<ui.client_setup.token_env_var>}`, or the line is dropped for an anonymous reader), and every answer is checked for the shape of a token before it is sent.
+
+**Rationale:** The guide is reading; the token stays with the one page built for it. The development agent revisits this if the setup page and the guides area merge.
+
+**Applied in the spec:** R-API-053.
+
+### Q-API-177 · The formats answer names each format's clients
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-049 must offer a new format without a new screen. Q-UI-70 kept the clients of the setup page in a UI table and named (b), the descriptor, as the revisit for NuGet.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `clients: [{id, displayName}]` in each format descriptor of `GET /api/v1/formats` | From `Descriptor().Clients` | The guides area needs no table; a format with clients is a format with a guide (kit check 8) | A required member more in the catalog |
+| (b) The guide answer lists the clients | Ask the guide first | No catalog change | The page needs a client to ask for a guide: a circle |
+| (c) A UI table, as for the setup page | `clients.ts` | Exists | A new format needs a UI release |
+
+**Choice:** (a). npm's display names are the labels the setup page used ("Yarn Berry (2 and later)", "Yarn Classic (1.x)", Q-NPM-67), so both pages read the same. The setup page keeps its table for now, because its explanations of the snippets are translated per snippet id (Q-UI-70); moving it onto the member is the revisit of Q-UI-70 at NuGet.
+
+**Rationale:** The client list is a fact of the format; the catalog is where the UI reads the format's facts. The development agent revisits this with Q-UI-70.
+
+**Applied in the spec:** R-API-022, R-UI-049.
+
+### Q-API-178 · The guide renderer is the README renderer with a bound of its own
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-008's renderer cuts a source at `ui.readme.max_source_bytes`, which an operator may set as low as 1 KiB, because a README is untrusted content. npm's troubleshooting section alone is about 9 KiB.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A second instance of the renderer with a fixed 256 KiB bound and no image origins | Same code, same sanitizer, `PackageServices.Guides` | A guide is never cut by a setting meant for untrusted input; one sanitizer | One more instance at start-up |
+| (b) The README instance | One instance | Nothing new | An operator's README limit cuts the guide |
+| (c) No sanitizer for trusted text | Render only | Cheaper | A format's text would reach `innerHTML` with one layer less; the browser layers stay but the rule of R-UI-008 is broken |
+
+**Choice:** (a). The guide carries no images: an image becomes a link, as for a README without listed origins.
+
+**Rationale:** The bound protects the server from input; a format's own text is not input, but sanitizing it costs nothing and keeps one rule for every HTML the UI binds. The development agent revisits this if a format's guide needs images.
+
+**Applied in the spec:** R-API-053.
+
+### Q-API-179 · What a guide names
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a guide of a virtual repository explains members and the deployment target; the members and the target are configuration (`repositories:read-config`), and a reader of the repository may hold neither that nor `deploy`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The guide explains the order and the deployment target generically, names the target only to a caller who may deploy there, and never lists the members | As `publishTarget` of R-API-030 | Reveals nothing the client setup does not; a config reader sees the members on the same screen | The guide of a virtual repository is less specific |
+| (b) List the members the caller may read | Specific | The caller can read those repositories | Membership is configuration the consumer view withholds |
+
+**Choice:** (a). Both operations need a configured base URL and answer `503` without one, like R-API-030; the guide of a format writes `<repository>` for the key and is as public as the format list, so it says nothing about any repository.
+
+**Rationale:** A guide must not become a way around the consumer view. The development agent revisits this if the consumer view gains the members.
+
+**Applied in the spec:** R-API-053; H-321.
+
 ## What this does not cover
 
 
@@ -5978,3 +6260,35 @@ With hiding on, a missing and an unreadable repository, item or package give the
 (R-API-008), but the server takes different code paths, and the response time can tell them apart.
 Equalizing response times is not specified; an attacker able to measure many requests can still learn
 whether a key or path exists.
+
+### H-319 · A configuration file that holds a token can be committed
+
+Component: the client setup page (R-UI-016) and the guides (R-UI-049). Subject: the projects of users who choose "Create
+a token for this setup" or "Use a token I already have". Live today. In those modes the snippets and the downloaded
+`.npmrc` or `.yarnrc.yml` hold the token itself, and the project directory is where the guide tells a reader to save a
+configuration file. The default mode references `TROVE_TOKEN`, the guide says never to commit a file that holds a token
+and to keep such a file in the home directory, and the token of the setup page is scoped to one repository and expires
+after `ui.client_setup.token_ttl`; nothing checks a repository of source code. What makes it real: a developer who
+downloads the file with an embedded token into a project and commits it. Hardening: a secret-scanning rule for
+`trv_(pat|sat|cit)_` in the source-code host (the prefix and the CRC-32 of INV-8 make the token recognisable), and a
+shorter `ui.client_setup.token_ttl`.
+
+### H-320 · A guide can state what trove no longer does
+
+Component: the guide text of a format (R-UI-049, R-ARCH-008 `Guide()`). Subject: readers who decide on the guide's
+statements, for example that a claimed name never reaches a remote member, which names an audit withholds, or that a
+published version never changes. Live whenever a change of behaviour leaves the guide unchanged. The tests pin what can be
+pinned (npm: every code of the troubleshooting table and its status against the problem catalog, the notices the
+handlers send, the defaults the text names, the snippets against the client setup), not every sentence. What makes it
+real: a change to the dependency-confusion rules, the audit forward or the publish rules whose author does not read the
+format's guide. Hardening: a change to a requirement that a guide section cites is reviewed together with that section
+(the developer pages name the files), and every new fact a guide states gets a test.
+
+### H-321 · An anonymous reader learns the token variable's name from the guide of a format
+
+Component: `GET /api/v1/formats/{format}/guide` (R-API-053). Subject: installations with anonymous access on; dormant
+otherwise. The operation is as public as the format list and names `ui.client_setup.token_env_var` in its text and
+snippets, besides the base URL that the format list already serves. The name is no secret, but it tells someone who can
+read a developer's environment which variable holds a trove token. What makes it real: anonymous access on, a variable
+name other than the default, and an attacker with read access to process environments of developer machines or CI
+runners, who could read every variable anyway.

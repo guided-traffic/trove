@@ -965,7 +965,7 @@ A format owns:
 - the storage hooks [storage.md](storage.md) needs;
 - upstream request mapping and metadata rewriting;
 - merging across virtual members;
-- client setup templates;
+- client setup templates and its guide (api-and-ui.md R-UI-049);
 - its native error shape.
 
 The core owns authentication, authorization, the upload and download pipeline, freshness, negative
@@ -1039,6 +1039,10 @@ type Format interface {
 
 	// SetupTemplates returns the client setup templates (text/template) used by api-and-ui.md R-API-033.
 	SetupTemplates() []SetupTemplate
+	// Guide returns the format's guide (api-and-ui.md R-UI-049, R-API-053): what a repository of each class is
+	// and how each client uses it, as Markdown templates over GuideData. A format with clients covers every class
+	// and client with the required topics (kit check 8, Q-ARCH-235).
+	Guide() []GuideSection
 
 	// WriteError renders a core error in the client's native error shape (R-ARCH-023). The dispatcher also
 	// uses it for the refusals of the chain's own stages on this format's paths (Q-ARCH-214).
@@ -1180,6 +1184,20 @@ type SetupTemplate struct {
 
 // SetupData: RegistryURL, Repository, Endpoint, Scope (without "@"), Username, RegistryKey (the registry URL
 // without its scheme, the key of a keyed credential line) and RequiresAuth (the repository is not anonymously readable).
+
+type GuideSection struct {
+	ID       string  // stable, e.g. "npm.remote.what"
+	Topic    string  // what, configure, authenticate, install, publish, maintain, audit, lockfiles, endpoint, troubleshooting
+	Title    string  // the heading, plain text
+	Classes  []Class // the classes the section is written for; empty is every class
+	Clients  []string // the clients it is written for; empty is every client
+	Snippets string  // the setup section whose snippets the API attaches: "configure", "install", "publish" or ""
+	Markdown string  // text/template over GuideData; the only credential it may spell is SetupTokenRef
+}
+
+// GuideData: SetupData plus Class, Client, PublishTarget (only when the reader may deploy there), Anonymous,
+// ExposureRules (the endpoint serves under exposure rules) and TokenEnvVar (a variable name). No credential field.
+// formats.ExecuteGuide parses and runs a section; the API and the kit both call it.
 ```
 
 Normative rules:
@@ -1415,7 +1433,16 @@ own tests:
    R-ARCH-007, including when the handler tries to remove them. No route of another kind returns a
    body taken from package content.
 8. Every client in `Descriptor().Clients` has `configure` and `install` templates. No template
-   contains a token placeholder that the server would fill.
+   contains a token placeholder that the server would fill. The format's guide (`Guide()`, Q-ARCH-236)
+   covers every class of `Classes` for every client with the topics `what`, `configure`,
+   `authenticate`, `install` and `troubleshooting`, each saying something for every reader the kit
+   tries (a named repository and none, one who may publish and one who may not, signed in and
+   anonymous, an endpoint with and without exposure rules); the `configure` and `install` topics
+   attach the setup snippets of their section; every section has a known topic, a title, a unique ID,
+   classes and clients of the descriptor and executes over `GuideData`; and the guide obeys the
+   template rule in the code a reader copies: its fenced code blocks spell no credential except the
+   option names the fixture lists and the reference `${TROVE_TOKEN}`, and no section holds the shape of
+   a token. A format without clients has no guide.
 9. Every storage hook, and every route of kind `Upload`, `Delete` or `Admin` that changes package
    rows, leaves the affected package's `rev_seq` higher than before (R-ARCH-009), measured on the
    in-memory `Host`.
@@ -1429,7 +1456,7 @@ A check that cannot apply to a format is skipped in the format's test with a sta
 has no routes, no clients and no package names); a skip without a reason fails the check, so a
 later class cannot pass a check vacuously. The kit also refuses a skip that the format contradicts:
 checks 1, 3 and 7 on a format that has routes, check 4 on one with a remote adapter, check 5 with a
-virtual adapter, check 8 with clients or setup templates, check 10 with package names, check 11
+virtual adapter, check 8 with clients, setup templates or a guide, check 10 with package names, check 11
 with a vulnerability adapter. Check 2 is
 never skipped. A check with nothing to run over (an empty fixture) fails unless it is skipped.
 
@@ -1442,7 +1469,8 @@ requires a content case for every `Download`, `Metadata`, `Computed` and `Volati
 change case, or a reasoned `NoRevision` entry, for every `Upload`, `Delete` and `Admin` route.
 `formattest.Evaluate` returns the same results without a `testing.T`; the kit's own tests use it to
 assert that a defective format fails the check the acceptance criteria name (`formattest/testformat`
-carries one named defect per check). Check 7 runs `formats.ServeRoute` with a handler that deletes
+carries one named defect per check, and for check 8 also `NoGuide`, a class without guide sections,
+and `GuideCredential`, a credential in a code block of the guide). Check 7 runs `formats.ServeRoute` with a handler that deletes
 the content headers before and while it writes, and reads the headers at the status line. Check 9
 runs each change against the in-memory `Host`, whose package writer raises `rev_seq` once per package
 per transaction as `internal/packages` does, and compares the revision before and after. The fuzz
@@ -1460,6 +1488,8 @@ Acceptance criteria:
   `rev_seq` fails kit check 9.
 - A unit test compares each per-class format enum in `api/openapi.yaml` with the registry and fails
   on any difference.
+- A test format whose guide has no section for one of its classes, or whose guide has a credential
+  in a code block, fails kit check 8 (`TestR_ARCH_010_Defects`).
 
 ## Request paths
 
@@ -6278,6 +6308,42 @@ Context: R-ARCH-008 says `Newest` is `Merge` with the remote members revalidated
 **Rationale:** nothing returns it; building it for an imagined caller would fix the wrong shape. The development agent would revisit it when the first format's merge needs "newest first": the freeze either carries a working `Newest` or no `Newest`.
 
 **Applied in the spec:** R-ARCH-008 (the `Strategy` constants). Code: `internal/virtual/types.go`, `internal/formats/virtual.go`.
+
+### Q-ARCH-235 · The guide is a method of the format contract
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the owner requires a guide for every registry variant (api-and-ui.md Q-UI-83, R-UI-049), and NuGet joins in M3 without new screens. Who writes what each format's repositories do, and where is it checked that every format writes it?
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Guide() []GuideSection` in the contract, Markdown templates over `GuideData`, embedded files in the format's package; `Base` returns none | The format writes its guide next to its setup templates and behaviour | "Every format ships its guide" becomes a kit rule; the text lives beside the code it describes; the API renders and fills addresses | A method more before the freeze |
+| (b) Static content in the UI, one page per format | `web/src/app/features/guides/npm.html` | No contract change | A new format needs a new screen; the text is far from the code; no kit rule |
+| (c) An optional interface found by type assertion | `formats.Guider` | No change of the frozen surface | A format can forget it; the kit could only check when it is there |
+
+**Choice:** (a). `ContractVersion` stays 1 (Q-ARCH-213): the change is applied to every format in the same change: generic and the kit's test format inherit or implement it, npm ships its guide, and the test format has the named defects of Q-ARCH-236. `GuideData` embeds `SetupData`, so a guide reaches the same addresses as a template and nothing more; `formats.ExecuteGuide` is the one parser the API and the kit use.
+
+**Rationale:** A guide that a format must ship is a contract fact, and only the contract lets the kit fail a format that has clients and no guide. The development agent revisits this at the freeze (E3.3): if WP3.0j moves dormant methods to optional interfaces, `Guide` stays in the frozen set, because every format with clients must have it.
+
+**Applied in the spec:** R-ARCH-008 (the method and the types), R-ARCH-010 (check 8); [api-and-ui.md](api-and-ui.md) R-UI-049, R-API-053. Code: `internal/formats/guide.go`, `internal/formats/npm/guide.go` with `guide/*.md`.
+
+### Q-ARCH-236 · Kit check 8 holds the guide to the rules of the setup templates
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: check 8 asked that every client have configure and install templates and that no template spell a credential (`token`, `password`, `_auth` outside the option names the fixture lists). A guide's prose must name tokens; its code blocks are what a reader pastes.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Extend check 8: required topics per class and client, configure and install attach the setup snippets, the credential rule on fenced code blocks, the shape of a token nowhere, execution over every reader the kit tries | One check, "setup templates and guide" | The rule that every variant is covered is mechanical; a code block cannot carry a credential value; the guide's snippets are the templates' | Prose is not scanned, by design |
+| (b) An eleventh check | A new number | Separate reporting | Renumbers the checks the spec, the subtests and check 11 of M4b name |
+| (c) Scan the whole text for the words | The template rule verbatim | Simple | A guide could not say "token" |
+
+**Choice:** (a). The named defects `NoGuide` (the remote class has no section) and `GuideCredential` (`_authToken=changeme` in a code block of the configure section) fail check 8 and no other check, as the kit's rule demands of every defect.
+
+**Rationale:** A required topic that says nothing, or a section that only some readers see, would pass a presence test; running each section over the variants catches both. The development agent revisits this when a format needs a required topic the list lacks.
+
+**Applied in the spec:** R-ARCH-010 (check 8). Code: `internal/formats/formattest/guide.go`, `testformat` (`NoGuide`, `GuideCredential`).
 
 ## What this does not cover
 

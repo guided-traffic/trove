@@ -1,5 +1,7 @@
+import { GuidesApi } from '../../api/guides-api';
 import { ApiError } from '../../api/problem';
 import { RepositoriesApi } from '../../api/repositories-api';
+import { FakeGuidesApi } from '../../api/testing/fakes-guides';
 import {
   FakeRepositoriesApi,
   GENERIC_FORMAT,
@@ -190,6 +192,38 @@ describe('Repository edit form', () => {
       'You may use this repository but not read or change its configuration.',
     );
     expect(r.root.querySelector('textarea')).toBeNull();
+    await expectAccessible(r.root);
+  });
+
+  it('R-UI-049 a repository of a format with clients has a How to use tab with its guide for the chosen client', async () => {
+    const r = await open(withNpmLocal(), 'npm-local');
+    const tabs = [...r.root.querySelectorAll('[role="tab"]')].map((t) => text(t));
+    expect(tabs).toEqual(['General', 'Access', 'npm settings', 'How to use', 'API']);
+    const guides = r.get(GuidesApi) as FakeGuidesApi;
+    expect(guides.calls).toEqual([]);
+    await openTab(r, 'How to use');
+    expect(guides.calls.at(-1)).toEqual({ repository: 'npm-local', client: 'npm' });
+    expect(r.root.querySelector('[data-section="npm.local.what"]')).not.toBeNull();
+    const yarn = r.root.querySelector<HTMLInputElement>('input[name="repo-guide-client"][value="yarn"]')!;
+    yarn.checked = true;
+    yarn.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle(r.fixture);
+    expect(guides.calls.at(-1)).toEqual({ repository: 'npm-local', client: 'yarn' });
+    const hrefs = [...r.root.querySelectorAll<HTMLAnchorElement>('.links a')].map((a) => a.getAttribute('href'));
+    expect(hrefs).toEqual([
+      '/setup?format=npm&client=yarn&repository=npm-local',
+      '/guides?format=npm&client=yarn&repository=npm-local',
+    ]);
+    await expectAccessible(r.root);
+  });
+
+  it('R-UI-049 the consumer view of an npm repository shows the guide under its own heading', async () => {
+    const r = await open((fake) => {
+      withNpmLocal()(fake);
+      fake.consumerOnly = true;
+    }, 'npm-local');
+    expect(r.root.querySelector('#repo-how-to-use')?.textContent?.trim()).toBe('How to use');
+    expect(r.root.querySelector('[data-section="npm.configure"]')).not.toBeNull();
     await expectAccessible(r.root);
   });
 

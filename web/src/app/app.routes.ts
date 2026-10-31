@@ -58,6 +58,13 @@ export const routes: Routes = [
         path: 'setup',
         loadChildren: () => import('./features/setup/setup.routes').then((m) => m.SETUP_ROUTES),
       },
+      {
+        path: 'guides',
+        data: {
+          crumbs: [area.content, { label: $localize`:@@nav.guides:Guides`, link: true }] satisfies CrumbSpec[],
+        },
+        loadChildren: () => import('./features/guides/guides.routes').then((m) => m.GUIDES_ROUTES),
+      },
       // <<< M2 ui-packages
       {
         path: 'profile',

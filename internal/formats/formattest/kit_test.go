@@ -32,10 +32,18 @@ func (bare) Classify(formats.Path) formats.PathInfo {
 }
 func (bare) PackageDocumentPath(string) (formats.Path, bool) { return formats.Path{}, false }
 
+// guided is bare with a guide: a guide without clients.
+type guided struct{ bare }
+
+func (guided) Guide() []formats.GuideSection {
+	return []formats.GuideSection{{ID: "g.what", Topic: formats.GuideWhat, Title: "What", Markdown: "x"}}
+}
+
 // override replaces parts of the test format.
 type override struct {
 	testformat.Format
 	templates []formats.SetupTemplate
+	guide     []formats.GuideSection
 	remote    formats.RemoteAdapter
 	match     func(method, p string) (*formats.Route, formats.Params, error)
 	inspect   func(context.Context, formats.InspectInput) (*formats.Inspection, error)
@@ -46,6 +54,13 @@ func (o override) SetupTemplates() []formats.SetupTemplate {
 		return o.templates
 	}
 	return o.Format.SetupTemplates()
+}
+
+func (o override) Guide() []formats.GuideSection {
+	if o.guide != nil {
+		return o.guide
+	}
+	return o.Format.Guide()
 }
 
 func (o override) Remote() formats.RemoteAdapter {
@@ -200,6 +215,8 @@ func TestR_ARCH_010_KitChecksCatchTheirDefects(t *testing.T) {
 		ts := []formats.SetupTemplate{
 			{ID: "tf.rc.configure", Client: "tf", Section: "configure", Lang: "ini", Template: "legacy_auth_mode=1\n"},
 			{ID: "tf.install", Client: "tf", Section: "install", Lang: "shell", Template: "tf install\n"},
+			// The guide of the test format attaches the publish snippets.
+			{ID: "tf.publish", Client: "tf", Section: "publish", Lang: "shell", Template: "tf publish\n"},
 		}
 		o := override{Format: testformat.New(), templates: ts}
 		if got := messages(formattest.Evaluate(o, fx), formattest.CheckSetup); !strings.Contains(got, "spells a credential") {
@@ -209,6 +226,55 @@ func TestR_ARCH_010_KitChecksCatchTheirDefects(t *testing.T) {
 		fx2.OptionNames = []string{"legacy_auth_mode"}
 		if got := messages(formattest.Evaluate(o, fx2), formattest.CheckSetup); got != "" {
 			t.Fatalf("refused despite the whitelist: %q", got)
+		}
+	})
+	t.Run("R-ARCH-010 R-UI-049 check 8: a guide section that breaks a rule of the guide fails", func(t *testing.T) {
+		with := func(change func(*formats.GuideSection)) []formats.GuideSection {
+			out := append([]formats.GuideSection(nil), testformat.New().Guide()...)
+			change(&out[0])
+			return out
+		}
+		extra := func(s formats.GuideSection) []formats.GuideSection {
+			return append(append([]formats.GuideSection(nil), testformat.New().Guide()...), s)
+		}
+		cases := map[string][]formats.GuideSection{
+			"does not execute over GuideData": with(func(s *formats.GuideSection) { s.Markdown = "{{.Token}}" }),
+			`has topic "faq"`:                 with(func(s *formats.GuideSection) { s.Topic = "faq" }),
+			"has no title":                    with(func(s *formats.GuideSection) { s.Title = " " }),
+			"is used twice":                   extra(formats.GuideSection{ID: "tf.what", Topic: formats.GuideWhat, Title: "x", Markdown: "x"}),
+			"which the descriptor does not list": extra(formats.GuideSection{
+				ID: "x1", Topic: formats.GuideWhat, Title: "x", Clients: []string{"other"}, Markdown: "x",
+			}),
+			"which the format does not support": extra(formats.GuideSection{
+				ID: "x2", Topic: formats.GuideWhat, Title: "x", Classes: []formats.Class{"federated"}, Markdown: "x",
+			}),
+			`attaches the snippets of section "deploy"`: with(func(s *formats.GuideSection) { s.Snippets = "deploy" }),
+			"holds the shape of a token":                with(func(s *formats.GuideSection) { s.Markdown = "Use trv_pat_x." }),
+			`no guide section of topic "configure" attaches the configure snippets`: func() []formats.GuideSection {
+				out := append([]formats.GuideSection(nil), testformat.New().Guide()...)
+				out[1].Snippets = ""
+				return out
+			}(),
+			`of the required topic "authenticate" says nothing`: func() []formats.GuideSection {
+				out := append([]formats.GuideSection(nil), testformat.New().Guide()...)
+				out[2].Markdown = "{{if .Anonymous}}{{else}}Keep it.{{end}}"
+				return out
+			}(),
+		}
+		for want, guide := range cases {
+			got := messages(formattest.Evaluate(override{Format: testformat.New(), guide: guide}, fx), formattest.CheckSetup)
+			if !strings.Contains(got, want) {
+				t.Errorf("%q does not say %q", got, want)
+			}
+		}
+	})
+	t.Run("R-ARCH-010 R-UI-049 check 8: a format with a guide and no clients fails, and its skip is refused", func(t *testing.T) {
+		if got := messages(formattest.Evaluate(guided{}, formattest.Fixture{}), formattest.CheckSetup); !strings.Contains(got, "a guide and no clients") {
+			t.Fatalf("not refused: %q", got)
+		}
+		rep := formattest.Evaluate(guided{}, formattest.Fixture{Skip: map[formattest.Check]string{formattest.CheckSetup: "no clients"}})
+		if got := messages(rep, formattest.CheckSetup); !strings.Contains(got, "or a guide") {
+			t.Fatalf("skip accepted: %q", got)
 		}
 	})
 	t.Run("R-ARCH-010 check 4: a rewrite that changes its input or is not idempotent fails", func(t *testing.T) {

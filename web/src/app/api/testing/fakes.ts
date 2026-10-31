@@ -19,6 +19,7 @@ import { provideCatalogFakes } from './fakes-catalog';
 // <<< M1 ui-a
 // >>> M2 ui-packages
 import { providePackageFakes } from './fakes-packages';
+import { provideGuideFakes } from './fakes-guides';
 // <<< M2 ui-packages
 
 /*
@@ -265,6 +266,7 @@ export function provideFakeApis(): Provider[] {
     // <<< M1 ui-a
     // >>> M2 ui-packages
     ...providePackageFakes(),
+    ...provideGuideFakes(),
     // <<< M2 ui-packages
   ];
 }

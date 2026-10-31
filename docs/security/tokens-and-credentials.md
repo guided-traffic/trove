@@ -142,6 +142,11 @@ setup answer into a token, which is the one place where the UI handles a token v
   through the ordinary token operation: the recent-authentication rule above applies, and the value is shown once.
 - **A file with a token leaves through a Blob URL** that is revoked right after the click.
 - **The install command panel (R-UI-009) asks for `credentials=none`**, so a command copied from a package page cannot contain a token.
+- **A guide never holds a token** (R-UI-049, R-API-053, Q-API-176). Its snippets are rendered by the setup's code with `credentials=env`, or
+  `none` for an anonymous reader, so they hold the variable's reference or no authentication line; the reference in a section's text is
+  rewritten the same way, every answer is checked for `trv_(pat|sat|cit)_` before it is sent (`TestR_API_053_NoGuideHoldsAToken`), and
+  kit check 8 refuses a format whose guide spells a credential in a code block. The guide tells readers never to commit a file that holds a
+  token; that a downloaded file with a token can still be committed is [H-319](../spec/api-and-ui.md#h-319--a-configuration-file-that-holds-a-token-can-be-committed).
 - **README HTML is bound, not trusted.** The README component ([package-readme.ts](../../web/src/app/features/packages/package-readme.ts),
   Q-UI-71) binds server HTML with `[innerHTML]` under Angular's sanitizer and the document's Trusted Types policy, removes a link target that
   is not a fragment, `http`, `https` or `mailto`, removes an image source that is not `https` or a path of this origin, and puts

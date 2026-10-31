@@ -43,6 +43,9 @@ type PackageServices struct {
 	Reader repository.Reader
 	// Readme renders the README of a version.
 	Readme *readme.Renderer
+	// Guides renders the guides of the formats (R-API-053): the same renderer and
+	// sanitizer, without the operator's source limit for untrusted READMEs.
+	Guides *readme.Renderer
 	// TokenEnvVar is ui.client_setup.token_env_var and TokenTTL ui.client_setup.token_ttl.
 	TokenEnvVar string
 	TokenTTL    time.Duration
@@ -529,19 +532,10 @@ func (s *Server) clientSetup(r *http.Request, ps PackageServices, repoKey string
 		values["package"] = norm
 	}
 
-	// The addresses come from the configured base URL of the endpoint, never from the
-	// Host the request carried: the snippets end up in files users copy.
-	info := httpserver.InfoFrom(ctx)
-	if info.BaseURLSource != "config" || info.BaseURL == "" {
-		return gen.ClientSetup{}, errs.E(errs.Unavailable, errs.CodeUnavailable,
-			"The client setup needs server.base_url (or the base URL of the endpoint); it is not configured.")
-	}
-	registry := strings.TrimSuffix(info.BaseURL, "/") + strings.ReplaceAll(f.Descriptor().ProtocolBasePath, "{key}", repoKey)
-	u, err := url.Parse(registry)
+	registry, registryKey, err := setupAddress(ctx, f, repoKey, "The client setup")
 	if err != nil {
-		return gen.ClientSetup{}, errs.Wrap(err, "api.clientSetup")
+		return gen.ClientSetup{}, err
 	}
-	registryKey := "//" + u.Host + u.Path
 
 	ctx, acc, err := requestHolder(ctx, ps.Decider, repoKey)
 	if err != nil {
@@ -579,14 +573,37 @@ func (s *Server) clientSetup(r *http.Request, ps PackageServices, repoKey string
 			// otherwise hand a token to a caller.
 			return gen.ClientSetup{}, errs.E(errs.Internal, errs.CodeInternal, "A setup snippet holds a token.")
 		}
-		cs := gen.ClientSnippet{Id: sn.ID, Tab: gen.ClientSnippetTab(sn.Tab), Language: gen.ClientSnippetLanguage(sn.Language), Content: sn.Content}
-		if sn.FileName != "" {
-			fn := sn.FileName
-			cs.FileName = &fn
-		}
-		out.Snippets = append(out.Snippets, cs)
+		out.Snippets = append(out.Snippets, clientSnippet(sn))
 	}
 	return out, nil
+}
+
+// clientSnippet is the representation of a rendered snippet.
+func clientSnippet(sn snippet) gen.ClientSnippet {
+	cs := gen.ClientSnippet{Id: sn.ID, Tab: gen.ClientSnippetTab(sn.Tab), Language: gen.ClientSnippetLanguage(sn.Language), Content: sn.Content}
+	if sn.FileName != "" {
+		fn := sn.FileName
+		cs.FileName = &fn
+	}
+	return cs
+}
+
+// setupAddress is the registry URL of a repository key and its scheme-less form,
+// the key npm binds a credential to. The addresses come from the configured base
+// URL of the endpoint, never from the Host the request carried: the snippets and
+// the guide end up in files users copy. what names the operation in the 503.
+func setupAddress(ctx context.Context, f formats.Format, key, what string) (registry, registryKey string, err error) {
+	info := httpserver.InfoFrom(ctx)
+	if info.BaseURLSource != "config" || info.BaseURL == "" {
+		return "", "", errs.E(errs.Unavailable, errs.CodeUnavailable,
+			what+" needs server.base_url (or the base URL of the endpoint); it is not configured.")
+	}
+	registry = strings.TrimSuffix(info.BaseURL, "/") + strings.ReplaceAll(f.Descriptor().ProtocolBasePath, "{key}", key)
+	u, err := url.Parse(registry)
+	if err != nil {
+		return "", "", errs.Wrap(err, "api.setupAddress")
+	}
+	return registry, "//" + u.Host + u.Path, nil
 }
 
 // publishTarget returns the repository a publish through repo goes to and whether

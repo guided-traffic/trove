@@ -5,7 +5,7 @@ its section. Built today: the format itself (routes, classification, error shape
 (publish, the package documents and their validators, tarball downloads, dist-tags, unpublish, whoami and ping, the serve-time check and the
 removal hooks), the remote and virtual classes with the merge, the data port and its PostgreSQL implementation, the leaf libraries every part builds on, and the exposure adapter with the
 filter of documents on endpoints with rules (R-NPM-048), the format's settings as the `npm` member of the repository document
-(Q-NPM-59), and the security audit through remote and virtual repositories (R-NPM-038). Not built: deprecate (R-NPM-018, P1): a `PUT` of a document without an attachment answers 404 `not_found`, the answer
+(Q-NPM-59), the security audit through remote and virtual repositories (R-NPM-038), and the guide of every npm variant (R-NPM-041, R-UI-049). Not built: deprecate (R-NPM-018, P1): a `PUT` of a document without an attachment answers 404 `not_found`, the answer
 R-NPM-043 gives an unimplemented `PUT`.
 
 ## Package layout
@@ -34,6 +34,8 @@ internal/formats/npm/
 ├── bind.go          Format.Bind: the settings and the metrics of one replica, kept per Host
 ├── rev.go           Rev: the _rev of a document and the rev of a write (R-NPM-009)
 ├── setup.go         the client setup snippets (R-NPM-041)
+├── guide.go         the guide (R-NPM-041, R-UI-049): the section table over the embedded texts of guide/
+├── guide/           one Markdown template per section (what-local, what-remote, what-virtual, configure, …, troubleshooting)
 ├── name/  semver/  manifest/  tarball/   the leaf libraries (below)
 ├── document/        the renderings (full, abbreviated, single version), the ETag, content negotiation, gzip; a leaf
 ├── publish/         the streaming reader of the request body and the checks of R-NPM-007 step 3 that need no state
@@ -322,6 +324,27 @@ provider's log, the metric, the refusal for a caller without `read` on the membe
 and for one the egress policy refuses, no session idle in a transaction while the provider takes 2 s, the deadline of 4 s and of a remote's
 own 1 s, the credential only for the upstream origin, the settings through the management API); the advisory endpoint of the stub
 ([audit.go](../../test/npmstub/audit.go)); the matrix scenario `audit` ([e2e.md](e2e.md#the-npm-tests)).
+
+## The guide
+
+R-NPM-041 (the guide of npm), [R-UI-049](../spec/api-and-ui.md), decisions Q-NPM-66, Q-NPM-67. [guide.go](../../internal/formats/npm/guide.go) returns twelve
+sections; their texts are the files of [guide/](../../internal/formats/npm/guide/), embedded, one per section. Each is a `text/template` over
+`formats.GuideData` with branches by `.Class`, `.Client`, `.Anonymous`, `.PublishTarget`, `.Repository` (empty in the guide of a format) and
+`.ExposureRules`; a section that renders to nothing is left out by the API. The outline per class and client is the table in the spec (R-NPM-041,
+"Sections per class and client").
+
+| Fact the guide states | Pinned by ([guide_test.go](../../internal/formats/npm/guide_test.go)) |
+|---|---|
+| The troubleshooting table's codes and statuses | `TestR_UI_049_TheTroubleshootingCodesAreTroves`: each row's code is in `internal/errs` and answers that status |
+| Every snake_case code anywhere in the guide | `TestR_UI_049_EveryCodeTheGuideNamesExists`, over every class, client, reader and endpoint kind |
+| The notices and the refusal it quotes | `TestR_NPM_041_TheGuideQuotesWhatTroveSends`, against `latestKeptNotice`, `retryAcknowledgedNotice` ([publish.go](../../internal/formats/npm/publish.go)), `auditPartialNotice`, `auditUnavailableText` ([handlers_audit.go](../../internal/formats/npm/handlers_audit.go)) |
+| Periods, limits, settings and their defaults | `TestR_NPM_041_TheGuideStatesTheDefaults`: the descriptor, the `default` tags of `config.NPMPublish`, the settings schema |
+| No credential step for an anonymous reader; the endpoint note only with rules | `TestR_UI_049_AnAnonymousReaderGetsNoCredentialSteps`, `TestR_UI_049_TheEndpointSectionIsForEndpointsWithRules` |
+| Coverage of every class and client, the snippets attached, no credential in code | kit check 8 in `TestR_ARCH_010_Conformance` (the fixture's `OptionNames` `_authToken`, `npmAuthToken`, `TROVE_TOKEN` are the option names a code block may spell) |
+
+When you change behaviour the guide describes (a code, a notice, a default, a client finding of [e2e.md](e2e.md#findings-of-the-npm-tests), a P1
+operation that ships), change the section in the same change, and add a test for a new fact a test can hold (H-320). Keep sub-headings unique across the
+sections, and keep example names out of the snake_case form of a code (`acme.ui`, not `acme_ui`): the test reads every such word as a code.
 
 ## The package view
 

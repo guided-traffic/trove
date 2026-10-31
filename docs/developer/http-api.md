@@ -115,6 +115,8 @@ an endpoint whose host check fails answers `421` `misdirected_request` before ro
 | `listRepositories`, `getRepository` | `GET /api/v1/repositories`, `/{key}` | public; the handler decides what the caller sees (R-AUTHZ-016) |
 | `listPackages`, `lookupPackage`, `getPackage`, `listPackageVersions`, `getPackageVersion`, `getPackageVersionReadme` | `GET /api/v1/packages`, `/lookup`, `/{packageId}`, `/{packageId}/versions`, `/{packageId}/versions/{version}`, `…/readme` | public; the read model filters by what the caller may read (Q-API-162, Q-API-165); [packages.md](packages.md) |
 | `getClientSetup` | `GET /api/v1/repositories/{repoKey}/client-setup` | `{action: read, repository: path.repoKey}`; the publish snippets also need `deploy` on the target ([packages.md](packages.md#client-setup)) |
+| `getRepositoryGuide` | `GET /api/v1/repositories/{repoKey}/guide` | `{action: read, repository: path.repoKey}` ([The guides of the formats](#the-guides-of-the-formats-r-api-053)) |
+| `getFormatGuide` | `GET /api/v1/formats/{format}/guide` | public; 401 for an anonymous caller while anonymous access is off, like `listFormats` |
 | `createRepository`, `replaceRepository`, `updateRepository`, `deleteRepository` | `POST`, `PUT`, `PATCH`, `DELETE` on `/api/v1/repositories` and `/{key}` | `repositories:write-config` |
 | `getRepositoryClaims`, `putRepositoryClaims` | `/api/v1/repositories/{repoKey}/claims` | `{action: read\|manage, repository: path.repoKey}`; a global claim also needs `repositories:write-config`, asked in the handler ([virtual.md](virtual.md)) |
 | `getItem`, `deleteItem`, `listChildren`, `getItemStats` | `/api/v1/repositories/{repoKey}/items`, `/children`, `/stats` | `{action: read\|delete, repository: path.repoKey, path: query.path}` ([files.md](files.md)) |
@@ -141,7 +143,30 @@ decides in the handler; the client setup declares `{action: read, repository: pa
   `400`; the cursor values are the sort values of the last item and the tie-breakers (name and format; version);
 - the summary, the details and the README answer a strong `ETag` through `NotModified`; the summary and the details hash the bytes they send, the README
   hashes its inputs so that a request that holds the tag renders nothing;
-- `GET /api/v1/formats` carries the `baseUrl` member (Q-UI-75), filled from the request's resolved information only when its source is the configuration.
+- `GET /api/v1/formats` carries the `baseUrl` member (Q-UI-75), filled from the request's resolved information only when its source is the configuration,
+  and each format's `clients` (`{id, displayName}` from `Descriptor().Clients`, Q-API-177).
+
+## The guides of the formats (R-API-053)
+
+The document's block `M2 guides` holds the two operations and the schemas `Guide` and `GuideSection`, and `FormatClient` sits next to `FormatDescriptor`.
+Decisions Q-API-175 to Q-API-179. [guide_api.go](../../internal/api/v1/guide_api.go) implements both on `Options.Packages`:
+
+| Step | Repository guide | Format guide |
+|---|---|---|
+| Services | `packageServices()` and `PackageServices.Guides`, else 503 | `PackageServices.Guides`, else 503; the anonymous gate first |
+| Format and client | `guideFormat`: the repository's format must have a guide and the client must be one of its clients, else `400` | an unknown format is `404`; then as the repository guide, and the class must be one of the format's, else `400` |
+| Addresses | `setupAddress` (shared with the client setup): the endpoint's configured base URL plus the protocol path with the key, else `503` | the same with `formats.GuideRepositoryPlaceholder` for the key |
+| Caller | `requestHolder`, `publishTarget` (the target only with `deploy`), `ReadableAnonymously` for `RequiresAuth` | `SubjectFrom(ctx)`: anonymous or not, its endpoint |
+| Rendering | `renderGuide`: credentials `env`, or `none` for an anonymous caller; the setup snippets of the client through `renderSnippets`; each applicable section in topic order through `formats.ExecuteGuide`, `applyCredentials`, the renderer; a section that says nothing is dropped; every text and snippet is checked for the shape of a token | the same |
+
+`exposureRules` reads the endpoint the request arrived on (`httpserver.EndpointFrom`, its exposure mode), so the `endpoint` section appears only on an
+endpoint with rules. The guide renderer is a second `readme.Renderer` with a fixed 256 KiB source bound and no image origins
+([wire_packages.go](../../internal/app/wire_packages.go), Q-API-178): a guide is the format's own text, which `ui.readme.max_source_bytes` must not cut.
+
+Tests: [guide_api_test.go](../../internal/api/v1/guide_api_test.go) (`TestR_API_053_*`: the snippets equal the client setup's for every client, the
+order of the sections per class, the target only with `deploy`, an anonymous caller, the guide of a format and its refusals, `503` without a base URL,
+no token shape, the endpoint section, the clients of the catalog) and [guide_test.go](../../test/integration/packages/guide_test.go) against the stack
+(the same through the real chain and the endpoint `partners` with exposure rules).
 
 ## Conventions every resource inherits (WP1.6)
 

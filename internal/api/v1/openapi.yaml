@@ -3629,6 +3629,7 @@ paths:
                   - name: generic
                     displayName: Generic
                     classes: [local]
+                    clients: []
                     layout: generic
                     protocolBasePath: /files/{key}/
                     defaultUpstreamUrl: null
@@ -5679,6 +5680,138 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
   # <<< M2 packages
+  #
+  # >>> M2 guides
+  /api/v1/repositories/{repoKey}/guide:
+    get:
+      operationId: getRepositoryGuide
+      tags: [repositories]
+      summary: The guide of a repository for one client
+      description: |
+        What the repository is and how the client uses it (R-API-053, R-UI-049): the sections of the format's
+        guide that are written for the repository's class and the client, in topic order, each rendered from
+        Markdown to sanitized HTML by the README renderer of R-UI-008. A section that names a setup section
+        carries the snippets of the client setup (R-API-030) for the same repository and client: `credentials`
+        is `env` for a signed-in caller and `none` for an anonymous one, so the guide never holds a token or a
+        placeholder for one, and a snippet equals the one `client-setup` answers with that mode. A section
+        that renders to nothing is left out, which drops the publishing sections for an anonymous reader and
+        the endpoint note on an endpoint without exposure rules. The guide names the deployment target only
+        when the caller may deploy there, and never the members of a virtual repository. The text is English.
+        Needs `read` on the repository (`404` otherwise, like a missing repository); `503` while no base URL
+        is configured for the endpoint. The answer never matches `trv_(pat|sat|cit)_`.
+      x-trove-permission:
+        action: read
+        repository: path.repoKey
+      parameters:
+        - name: repoKey
+          in: path
+          required: true
+          description: The repository key (R-REPO-002).
+          schema:
+            type: string
+            pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+        - name: client
+          in: query
+          required: true
+          description: One of the format's `clients` (`GET /api/v1/formats`); another value answers `400 malformed_request`.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The guide.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Guide"
+              example:
+                format: npm
+                class: virtual
+                client: npm
+                repository: npm-all
+                registryUrl: https://trove.example.com/api/npm/npm-all/
+                publishTarget: npm-local
+                credentials: env
+                exposureRules: false
+                sections:
+                  - id: npm.configure
+                    topic: configure
+                    title: Point the client at the repository
+                    html: "<p>Save the snippet as <code>.npmrc</code> in your project …</p>"
+                    snippets:
+                      - id: npm.configure.npmrc
+                        tab: configure
+                        fileName: .npmrc
+                        language: ini
+                        content: "registry=https://trove.example.com/api/npm/npm-all/\n//trove.example.com/api/npm/npm-all/:_authToken=${TROVE_TOKEN}\n"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/formats/{format}/guide:
+    get:
+      operationId: getFormatGuide
+      tags: [repositories]
+      summary: The guide of a format for one class and client
+      description: |
+        The guide of the format for a class and a client without a repository (R-API-053, R-UI-049): the same
+        sections as `GET /api/v1/repositories/{repoKey}/guide`, with the addresses of the endpoint's base URL
+        and `<repository>` where the repository key goes, no deployment target, and the snippets of the
+        client setup rendered for that address. Any caller; an anonymous caller only where anonymous access is
+        on, else `401`. An unknown format answers `404`; a class or client the format does not have `400`;
+        `503` while no base URL is configured for the endpoint.
+      x-trove-permission:
+        public: true
+      parameters:
+        - name: format
+          in: path
+          required: true
+          description: A format of `GET /api/v1/formats`.
+          schema:
+            type: string
+            pattern: "^[a-z][a-z0-9-]{1,31}$"
+        - name: class
+          in: query
+          required: true
+          description: One of the format's `classes`.
+          schema:
+            type: string
+            enum: [local, remote, virtual]
+        - name: client
+          in: query
+          required: true
+          description: One of the format's `clients`.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The guide.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Guide"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  # <<< M2 guides
   #
   # >>> M2 proxy
   /api/v1/repositories/{repoKey}/cache/invalidate:
@@ -8538,7 +8671,7 @@ components:
     # >>> M1 repository
     FormatDescriptor:
       type: object
-      required: [name, classes, layout, protocolBasePath, defaultUpstreamUrl, defaultExtraHosts, defaultMetadataTtlSeconds, defaultNotFoundTtlSeconds, patternSubject, priorityMembers, pinsAndClaims, caps, settingsSchema]
+      required: [name, classes, clients, layout, protocolBasePath, defaultUpstreamUrl, defaultExtraHosts, defaultMetadataTtlSeconds, defaultNotFoundTtlSeconds, patternSubject, priorityMembers, pinsAndClaims, caps, settingsSchema]
       properties:
         name:
           type: string
@@ -8551,6 +8684,14 @@ components:
           items:
             type: string
             enum: [local, remote, virtual]
+        clients:
+          type: array
+          description: |
+            The native clients of the format (FMT-002), in the format's order. A format with clients ships a
+            guide for every class and client (R-UI-049, `GET /api/v1/formats/{format}/guide`); empty for a format
+            addressed with any HTTP client, such as generic.
+          items:
+            $ref: "#/components/schemas/FormatClient"
         layout:
           type: string
         protocolBasePath:
@@ -8586,6 +8727,16 @@ components:
             after the format, R-REPO-004), which the create form renders and the service validates a document
             against (R-ARCH-008). Its properties may carry `x-trove-classes`, the classes the setting applies to;
             a setting of another class answers `not_applicable`. `null` for a format without settings.
+    FormatClient:
+      type: object
+      required: [id, displayName]
+      properties:
+        id:
+          type: string
+          description: The value of `client` of the client setup and the guide (`npm`, `pnpm`, `yarn`, `yarn-classic`).
+        displayName:
+          type: string
+          description: A product name; the UI does not translate it.
     FormatList:
       type: object
       required: [formats, baseUrl]
@@ -9540,6 +9691,61 @@ components:
           items:
             $ref: "#/components/schemas/ClientSnippet"
     # <<< M2 packages
+    #
+    # >>> M2 guides
+    Guide:
+      type: object
+      required: [format, class, client, repository, registryUrl, publishTarget, credentials, exposureRules, sections]
+      properties:
+        format:
+          type: string
+        class:
+          type: string
+          enum: [local, remote, virtual]
+        client:
+          type: string
+        repository:
+          type: [string, "null"]
+          description: The repository the guide is for; null for the guide of a format.
+        registryUrl:
+          type: string
+          description: The address the snippets use, with its trailing slash; `<repository>` stands for the key in the guide of a format.
+        publishTarget:
+          type: [string, "null"]
+          description: The repository a publish through this one reaches, when the caller may deploy there; null otherwise.
+        credentials:
+          type: string
+          enum: [env, none]
+          description: How the snippets reference the credential; `none` for an anonymous caller.
+        exposureRules:
+          type: boolean
+          description: The endpoint of the request serves under exposure rules (endpoints.md R-EP-012).
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/GuideSection"
+    GuideSection:
+      type: object
+      required: [id, topic, title, html, snippets]
+      properties:
+        id:
+          type: string
+          description: Stable, `<format>.<name>`, for example `npm.remote.what`.
+        topic:
+          type: string
+          enum: [what, configure, authenticate, install, publish, maintain, audit, lockfiles, endpoint, troubleshooting]
+        title:
+          type: string
+          description: The heading, plain text.
+        html:
+          type: string
+          description: The section's text, sanitized by the README renderer of R-UI-008; bind it like a README.
+        snippets:
+          type: array
+          description: The snippets of the client setup the section shows below its text, empty for most sections.
+          items:
+            $ref: "#/components/schemas/ClientSnippet"
+    # <<< M2 guides
     #
     # >>> M2 proxy
     CacheInvalidateRequest:

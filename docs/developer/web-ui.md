@@ -12,7 +12,7 @@ with folding groups and an icon rail and a drawer below, breadcrumbs, banner are
 cross-cutting UI mechanism are in place, so the screens are content. Built: sign-in, signed out, the system status
 screen with its jobs screen, the repository list, wizard and edit form with the format settings rendered from the format's schema (see
 [The repository settings form](#the-repository-settings-form-rendered-from-the-formats-schema)), the file tree, the endpoint screens with the exposure rule editor and
-the audit log (see [Screens of the catalog area](#screens-of-the-catalog-area)), and the package screens: the list, the details with the install panel and the README, and the client setup page (see [Package screens and client setup](#package-screens-and-client-setup)); the other routed M1 screens are placeholders with their final
+the audit log (see [Screens of the catalog area](#screens-of-the-catalog-area)), and the package screens: the list, the details with the install panel and the README, and the client setup page (see [Package screens and client setup](#package-screens-and-client-setup)), and the guides area with the How to use tab of the repository screen (see [Guides](#guides)); the other routed M1 screens are placeholders with their final
 path and title until their work package replaces them. Requirements: [R-UI-002 to R-UI-005](../spec/api-and-ui.md),
 [R-UI-010, R-UI-011](../spec/api-and-ui.md), [R-UI-020, R-UI-021](../spec/api-and-ui.md), [R-UI-037, R-UI-038](../spec/api-and-ui.md),
 [R-UI-042 to R-UI-047](../spec/api-and-ui.md), [R-EP-017](../spec/endpoints.md); decisions Q-UI-10 to Q-UI-19 and Q-UI-68 (shell and list layout) on the same page.
@@ -126,7 +126,7 @@ mux.Handle("/ui/", h) // do not strip the prefix
 |---|---|---|---|
 | `/admin/repositories` | [repository-list](../../web/src/app/features/repositories/repository-list.ts) | `RepositoriesApi`, `JobsApi` (progress) | Data table (no sort control: the API takes no `sort`); filter panel with `q`, `class`, `format`, `state`, applied into the query; cursor "Load more"; delete with typed key and job progress; "recently viewed" in browser storage |
 | `/admin/repositories/new` | [repository-wizard](../../web/src/app/features/repositories/repository-wizard.ts) | `RepositoriesApi` | Five steps; classes and formats only from `GET /api/v1/formats`; live key check; the format's settings in the fourth step ("Access and npm settings") and in the review; `Idempotency-Key` from the moment the wizard opens; field errors mapped by pointer |
-| `/admin/repositories/:key` | [repository-detail](../../web/src/app/features/repositories/repository-detail.ts) | `RepositoriesApi` | Tabs General, Access, the format's settings ("npm settings", only when its schema has a member for the class), API; merge patch with `If-Match`; 412 conflict dialog; consumer view without a form; delete |
+| `/admin/repositories/:key` | [repository-detail](../../web/src/app/features/repositories/repository-detail.ts) | `RepositoriesApi`, `GuidesApi` | Tabs General, Access, the format's settings ("npm settings", only when its schema has a member for the class), How to use (only for a format with clients, rendered when opened), API; merge patch with `If-Match`; 412 conflict dialog; consumer view without a form, with the guide below its facts; delete |
 | `/browse`, `/browse/{repo}/{path…}` | [browse](../../web/src/app/features/browse/browse.ts) | `RepositoriesApi`, `FilesApi`, `SessionStore.check` | `@angular/aria` tree with lazy pages; details General, Statistics, API; upload and folder dialogs, delete (204 or job) |
 | `/admin/endpoints` | [endpoint-list](../../web/src/app/features/endpoints/endpoint-list.ts) | `EndpointsApi` | Data table; name and rule count sort in the browser because the API answers the whole list; inert names flagged |
 | `/admin/endpoints/:endpoint` | [endpoint-detail](../../web/src/app/features/endpoints/endpoint-detail.ts) | `EndpointsApi`, `RepositoriesApi` | Read-only configuration, mode `all` banner, rule table with the enable switch (`PATCH {enabled}`), client addresses |
@@ -226,6 +226,36 @@ Files by purpose: [clients.ts](../../web/src/app/features/setup/clients.ts) (the
 - *Breadcrumbs.* A matcher route with `data.crumbParam` adds one step with that parameter (`@team-a/ui`); see `collect` in
   [breadcrumbs.ts](../../web/src/app/core/breadcrumbs.ts).
 - *New texts.* Snippet explanations are `$localize` texts keyed by the snippet's stable `id`; a snippet with an unknown `id` is shown without one.
+
+## Guides
+
+R-UI-049 against the operations of R-API-053; decisions Q-UI-83 to Q-UI-87. The text of a guide is the format's, rendered and sanitized by the server;
+the UI knows no format. Everything it offers comes from `GET /api/v1/formats`: a format with `clients` has a guide (kit check 8).
+
+| Route or place | Component | Services | Notes |
+|---|---|---|---|
+| `/guides` | [guide-page](../../web/src/app/features/guides/guide-page.ts) | `GuidesApi`, `RepositoriesApi` | Fieldsets package type (formats with clients), client, repository (none, or a readable repository of the format, virtual first) and, without a repository, the class (virtual preselected); `?format=&client=&repository=&class=`; a repository opens `GuidesApi.repository`, a class `GuidesApi.format`; a link to `/setup` with the same choice |
+| "How to use" tab and the consumer view | [repository-guide](../../web/src/app/features/repositories/repository-guide.ts) | `GuidesApi` | The format's clients as radios; links to `/setup` and `/guides` with format, client and repository |
+| (inside both) | [guide-view](../../web/src/app/features/guides/guide-view.ts) | none | A `nav` contents list whose links focus the section heading; one `section` per guide section with its `h2`, the HTML through `trove-package-readme`, the snippets with a copy button; `lang="en"` on the guide's own text (Q-UI-86) |
+| `/setup` | [client-setup](../../web/src/app/features/setup/client-setup.ts) | | A link "Read the guide" with the page's format, client and repository |
+
+Files: [guides-api.ts](../../web/src/app/api/guides-api.ts) (`GuidesApi`, `HttpGuidesApi`, the types `Guide`, `GuideSection`, `FormatClient`),
+[fakes-guides.ts](../../web/src/app/api/testing/fakes-guides.ts) (`FakeGuidesApi`: npm's section ids and topics, snippets taken from the setup fake, `anonymous`
+and `exposureRules` switches, `failure`), [guides.routes.ts](../../web/src/app/features/guides/guides.routes.ts); the side bar entry in
+[navigation.ts](../../web/src/app/core/navigation.ts). Specs: [guides.spec.ts](../../web/src/app/features/guides/guides.spec.ts) (the formats offered, the
+defaults, a repository and a class from the query, the snippets equal the setup fake's answer with the variable, the anonymous reader, the contents
+links, the README binding, a failure), the How to use tab and the consumer view in
+[repository-detail.spec.ts](../../web/src/app/features/repositories/repository-detail.spec.ts), `/guides` in the route map of `app.routes.spec.ts`. The browser
+journey is `09-guides.spec.ts` ([e2e.md](e2e.md#browser-journeys)).
+
+**Rules.**
+
+- *The guide never handles a token.* Its answer carries `credentials` `env` or `none` (Q-API-176); the copy buttons copy what the server sent. A token is the
+  setup page's (Q-UI-74), which the guide links to.
+- *A section's HTML is bound like a README* (Q-UI-85): the same component finishes it (link targets, image sources, heading anchors). The anchors of the
+  sections are `<prefix>-<section id with dots as hyphens>`, so the guides page (`guide-…`) and the tab (`repo-guide-…`) never share an id.
+- *Clients come from the catalog.* The guides area and the tab read `clients` of the format descriptor; the setup page and the install panel still read
+  the table of [clients.ts](../../web/src/app/features/setup/clients.ts) (Q-UI-70, revisited for NuGet).
 
 ## Conventions that CI enforces
 

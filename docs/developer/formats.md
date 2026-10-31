@@ -50,6 +50,7 @@ their own sections below: [Conformance kit](#conformance-kit) and [Untrusted con
 | [virtual.go](../../internal/formats/virtual.go) | `VirtualAdapter`, `MemberDocument`, `Resolver` and their types |
 | [exposure.go](../../internal/formats/exposure.go) | `ExposureAdapter`, `IndexBuilder` |
 | [setup.go](../../internal/formats/setup.go) | `Client`, `SetupTemplate`, `SetupData` |
+| [guide.go](../../internal/formats/guide.go) | `GuideSection`, `GuideData`, the topics (`GuideTopics`, `RequiredGuideTopics`), `GuideRepositoryPlaceholder`, `ExecuteGuide` (the one parser the API and the kit use), `AppliesTo` |
 | [serve.go](../../internal/formats/serve.go) | `ServeMode`, `ServeRoute`, `Base` |
 
 ### The packages around it
@@ -180,6 +181,28 @@ a setting needs no UI code as long as it uses the rendered subset (objects, bool
 `default`, `x-trove-classes`), and its `description` is the text the form shows. The OpenAPI schema of the
 member (`NpmSettings`) is written by hand and `TestR_ARCH_008_NpmSettingsSchemaEqualsTheOpenAPIMember` fails on any difference to the registered schema.
 
+## The guide of a format
+
+R-UI-049, R-API-053, Q-ARCH-235. `Guide()` returns the sections of the format's guide: what a repository of each class is and how each client
+configures, signs in, installs, publishes, maintains, audits and keeps lockfiles through it, what an endpoint with exposure rules changes, and a
+troubleshooting table. The API ([guide_api.go](../../internal/api/v1/guide_api.go), [http-api.md](http-api.md#the-guides-of-the-formats-r-api-053))
+filters the sections by the class and the client, orders them by topic, runs each through `formats.ExecuteGuide`, rewrites `${TROVE_TOKEN}` by the
+reader's credential mode, renders the Markdown with the README renderer and attaches the setup snippets a section names. A section that renders to
+white space only is left out, which is how a section speaks to some readers only (`{{if .ExposureRules}}`, `{{if not .Anonymous}}`).
+
+| Field of `GuideSection` | Rule |
+|---|---|
+| `ID` | Stable and unique, `<format>.<name>` |
+| `Topic` | One of `formats.GuideTopics()`; the required ones (`what`, `configure`, `authenticate`, `install`, `troubleshooting`) must cover every class and client |
+| `Classes`, `Clients` | Whom the section is written for; empty is everyone |
+| `Snippets` | `configure`, `install` or `publish`: the API attaches those setup snippets of the reader's client, rendered by the setup's code; the `configure` and `install` topics must attach theirs |
+| `Markdown` | `text/template` over `GuideData` (`SetupData` plus `Class`, `Client`, `PublishTarget`, `Anonymous`, `ExposureRules`, `TokenEnvVar`); `.Repository` is empty in the guide of a format, whose addresses carry `<repository>` |
+
+Rules for the text: describe only what the format does as built and name what a user would try and is not built as not available; put a credential
+only as `${TROVE_TOKEN}` in a fenced code block; keep sub-headings (`###`) unique across the sections, because each section's HTML gets its heading
+anchors from the README component; pin each fact a test can hold (codes, quoted texts, defaults) in the format's tests (npm:
+[guide_test.go](../../internal/formats/npm/guide_test.go)). npm embeds one Markdown file per section ([guide/](../../internal/formats/npm/guide/)).
+
 ## Content headers and error shapes
 
 `formats.ServeRoute(f, w, rq, sameOrigin)` is the one function that runs a handler. It wraps the writer for a route of kind `Download` (file headers with
@@ -272,12 +295,12 @@ The fixture ([kit.go](../../internal/formats/formattest/kit.go)) holds what only
 | 5 | `Merge` twice; for each version, the source must be the lowest (tier, position) part that holds it | Another member wins a version, or the output differs |
 | 6 | Every crafted input through `Inspect` with the effective limits (`untrusted.DefaultLimits` tightened by the descriptor): `413` or `422` within 5 s, heap sampled with `runtime/metrics` within 512 MiB of the baseline | Success, another kind, a timeout (the kit cancels the context), the heap bound, a panic |
 | 7 | Every content case through `formats.ServeRoute`, once with and once without a session cookie, with the handler wrapped so that it deletes the content headers before and while it writes; the headers are read at the status line and compared with `content.Headers` | A header missing or weakened; `Content-Disposition` on a document; a route of another kind that served an item or whose body holds package bytes it read; a route without a case |
-| 8 | Every client has a `configure` and an `install` template; every template parses and executes over `SetupData`; no template text matches `(?i)token\|password\|_auth` outside the whitelisted option names | A missing section, an unknown client, a duplicate ID, a bad language or section, a credential |
+| 8 | Every client has a `configure` and an `install` template; every template parses and executes over `SetupData`; no template text matches `(?i)token\|password\|_auth` outside the whitelisted option names. Then the guide ([guide.go](../../internal/formats/formattest/guide.go), Q-ARCH-236): every section has an ID, a known topic, a title, classes and clients of the descriptor and a valid `Snippets`; it executes over `GuideData` for every class and client it applies to and every reader variant (a named repository and none, with and without a publish target, signed in and anonymous, with and without exposure rules); its fenced code blocks match the credential pattern only in the option names, `${TROVE_TOKEN}` and the variable name; no output holds `trv_(pat\|sat\|cit)_`; every class and client has the required topics, which say something in every variant, and the `configure` and `install` topics attach those snippets | A missing section or template, an unknown client, a duplicate ID, a bad language or section, a credential; a class or client without a required topic, a required topic that says nothing, a section that attaches a section its client has no template of, a guide without clients |
 | 9 | Each `ChangeCase` against the in-memory host: `rev_seq` of its package before and after | The revision did not rise; a route of kind `Upload`, `Delete` or `Admin` without a case or a `NoRevision` entry |
 | 10 | For each spelling: normalize, `PackageDocumentPath`, escape, `Match("GET", …)`; all spellings of one name | A name the format rejects, spellings that normalize differently or lead to two paths, a path that matches no `GET` route |
 
 A skip without a reason fails the check. So does a skip the format contradicts: checks 1, 3 and 7 with routes, 4 with a remote adapter, 5 with a virtual
-adapter, 8 with clients, 10 with package names, and check 2 always. A check with nothing to run over and no skip fails: that is how a later generic remote
+adapter, 8 with clients, setup templates or a guide, 10 with package names, and check 2 always. A check with nothing to run over and no skip fails: that is how a later generic remote
 class cannot pass vacuously ([generic's test](../../internal/formats/generic/conformance_test.go) shows the skips of a format with no routes).
 
 ### The in-memory host
@@ -314,8 +337,8 @@ kit's cases, and a format may answer such an input with its own 400.
 
 [testformat](../../internal/formats/formattest/testformat/format.go) is a complete small format that passes all ten checks (`testformat.New()` with `testformat.Fixture()`), and a named
 `Defect` per check that breaks the rule the check exists for (`AmbiguousRoutes`, `CleaningMatch`, `ContentMetadata`, `NondeterministicRewrite`, `UpstreamLeak`, `MergeLastWins`,
-`InspectAccepts`, `InspectWrongKind`, `InspectHeap`, `TarballVolatile`, `TemplateCredential`, `NoInstallTemplate`, `TagWithoutRevision`, `NamesCaseSensitive`,
-`WrongDocumentPath`). [format_test.go](../../internal/formats/formattest/testformat/format_test.go) asserts that each defect fails the check the spec names, plus the checks that cannot
+`InspectAccepts`, `InspectWrongKind`, `InspectHeap`, `TarballVolatile`, `TemplateCredential`, `NoInstallTemplate`, `NoGuide`, `GuideCredential`, `TagWithoutRevision`,
+`NamesCaseSensitive`, `WrongDocumentPath`). [format_test.go](../../internal/formats/formattest/testformat/format_test.go) asserts that each defect fails the check the spec names, plus the checks that cannot
 stand without it (routes that are not told apart cannot be served), and no other: these are the acceptance criteria of R-ARCH-010 and R-ARCH-007. To add a rule to the kit, add the defect first
 and watch the test fail.
 
@@ -391,6 +414,7 @@ test of its own).
 5. Add the format's enum entries to `api/openapi.yaml` (`FormatName` and the schemas of its classes, the block `# >>> WP2.1 formats`);
    `TestR_ARCH_010_PerClassFormatEnums` fails until they match, then `make generate`.
 6. Write the conformance test with the kit (`formattest.Run`), the fixture of the format and its fuzz targets ([Conformance kit](#conformance-kit)), and the integration tests against the real stack.
+   A format with clients writes its setup templates and its guide ([The guide of a format](#the-guide-of-a-format)) in the same change: check 8 fails without them.
 7. Update this page, [repositories.md](repositories.md) (the format registry section) and the README's pages table.
 
 ## What this page does not cover

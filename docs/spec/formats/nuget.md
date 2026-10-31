@@ -1810,9 +1810,21 @@ environment on every platform):
   `.json`, credentials per source, `<clear />`, package source mapping, and from NuGet 7.6 the
   `NUGET_API_KEY` environment variable as an alternative to the API key option
   ([symbol packages](https://learn.microsoft.com/en-us/nuget/create-packages/symbol-packages-snupkg)).
+- **The guide of NuGet** ([api-and-ui.md](../api-and-ui.md) R-UI-049, R-UI-019; owner 2026-10-31, Q-UI-83) ships
+  with the format in M3: the format's `Guide()` covers local, remote and virtual repositories for the .NET CLI,
+  nuget.exe and Visual Studio, with `nuget.config` as the configuration all three read. It explains, true to this
+  page as built: push and the identical-bytes retry (R-NUGET-006, R-NUGET-032), unlist, relist and delete
+  (R-NUGET-007), the token as password and as API key (R-NUGET-012), `<clear />` and package source mapping against
+  dependency confusion together with namespace claims and the shadowing check, what a remote and a virtual repository
+  serve, `NU1102` for a version hidden on a customer endpoint (R-NUGET-034), `packages.lock.json`, and the troubleshooting
+  table of NuGet's answers. Its configure and install sections attach the snippets of this requirement, and kit check 8
+  fails the format without the guide ([architecture.md](../architecture.md) R-ARCH-010). The guides area and the
+  repository screen show it without a new screen.
 
 Acceptance criteria:
 
+- NuGet passes kit check 8 with its guide, and the How to use tab of `nuget-all` shows the configure snippet of the
+  setup page for each client.
 - Each snippet of the UI, with placeholders filled, runs unmodified in the acceptance suite.
 - The `nuget.config` above, with `TROVE_TOKEN` set, restores a project on Linux (dotnet 10 SDK)
   and on Windows (nuget.exe and dotnet).

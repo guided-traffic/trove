@@ -168,19 +168,19 @@ func (e ClientSnippetLanguage) Valid() bool {
 
 // Defines values for ClientSnippetTab.
 const (
-	Configure ClientSnippetTab = "configure"
-	Install   ClientSnippetTab = "install"
-	Publish   ClientSnippetTab = "publish"
+	ClientSnippetTabConfigure ClientSnippetTab = "configure"
+	ClientSnippetTabInstall   ClientSnippetTab = "install"
+	ClientSnippetTabPublish   ClientSnippetTab = "publish"
 )
 
 // Valid indicates whether the value is a known member of the ClientSnippetTab enum.
 func (e ClientSnippetTab) Valid() bool {
 	switch e {
-	case Configure:
+	case ClientSnippetTabConfigure:
 		return true
-	case Install:
+	case ClientSnippetTabInstall:
 		return true
-	case Publish:
+	case ClientSnippetTabPublish:
 		return true
 	default:
 		return false
@@ -499,6 +499,87 @@ func (e GroupMembersChangeSource) Valid() bool {
 	case GroupMembersChangeSourceAuto:
 		return true
 	case GroupMembersChangeSourceManual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GuideClass.
+const (
+	GuideClassLocal   GuideClass = "local"
+	GuideClassRemote  GuideClass = "remote"
+	GuideClassVirtual GuideClass = "virtual"
+)
+
+// Valid indicates whether the value is a known member of the GuideClass enum.
+func (e GuideClass) Valid() bool {
+	switch e {
+	case GuideClassLocal:
+		return true
+	case GuideClassRemote:
+		return true
+	case GuideClassVirtual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GuideCredentials.
+const (
+	GuideCredentialsEnv  GuideCredentials = "env"
+	GuideCredentialsNone GuideCredentials = "none"
+)
+
+// Valid indicates whether the value is a known member of the GuideCredentials enum.
+func (e GuideCredentials) Valid() bool {
+	switch e {
+	case GuideCredentialsEnv:
+		return true
+	case GuideCredentialsNone:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GuideSectionTopic.
+const (
+	GuideSectionTopicAudit           GuideSectionTopic = "audit"
+	GuideSectionTopicAuthenticate    GuideSectionTopic = "authenticate"
+	GuideSectionTopicConfigure       GuideSectionTopic = "configure"
+	GuideSectionTopicEndpoint        GuideSectionTopic = "endpoint"
+	GuideSectionTopicInstall         GuideSectionTopic = "install"
+	GuideSectionTopicLockfiles       GuideSectionTopic = "lockfiles"
+	GuideSectionTopicMaintain        GuideSectionTopic = "maintain"
+	GuideSectionTopicPublish         GuideSectionTopic = "publish"
+	GuideSectionTopicTroubleshooting GuideSectionTopic = "troubleshooting"
+	GuideSectionTopicWhat            GuideSectionTopic = "what"
+)
+
+// Valid indicates whether the value is a known member of the GuideSectionTopic enum.
+func (e GuideSectionTopic) Valid() bool {
+	switch e {
+	case GuideSectionTopicAudit:
+		return true
+	case GuideSectionTopicAuthenticate:
+		return true
+	case GuideSectionTopicConfigure:
+		return true
+	case GuideSectionTopicEndpoint:
+		return true
+	case GuideSectionTopicInstall:
+		return true
+	case GuideSectionTopicLockfiles:
+		return true
+	case GuideSectionTopicMaintain:
+		return true
+	case GuideSectionTopicPublish:
+		return true
+	case GuideSectionTopicTroubleshooting:
+		return true
+	case GuideSectionTopicWhat:
 		return true
 	default:
 		return false
@@ -1723,6 +1804,27 @@ func (e ListExposureRulesParamsSort) Valid() bool {
 	}
 }
 
+// Defines values for GetFormatGuideParamsClass.
+const (
+	GetFormatGuideParamsClassLocal   GetFormatGuideParamsClass = "local"
+	GetFormatGuideParamsClassRemote  GetFormatGuideParamsClass = "remote"
+	GetFormatGuideParamsClassVirtual GetFormatGuideParamsClass = "virtual"
+)
+
+// Valid indicates whether the value is a known member of the GetFormatGuideParamsClass enum.
+func (e GetFormatGuideParamsClass) Valid() bool {
+	switch e {
+	case GetFormatGuideParamsClassLocal:
+		return true
+	case GetFormatGuideParamsClassRemote:
+		return true
+	case GetFormatGuideParamsClassVirtual:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListGroupsParamsOrigin.
 const (
 	ListGroupsParamsOriginAdmin ListGroupsParamsOrigin = "admin"
@@ -2627,12 +2729,26 @@ type FieldError struct {
 	Pointer string `json:"pointer"`
 }
 
+// FormatClient defines model for FormatClient.
+type FormatClient struct {
+	// DisplayName A product name; the UI does not translate it.
+	DisplayName string `json:"displayName"`
+
+	// Id The value of `client` of the client setup and the guide (`npm`, `pnpm`, `yarn`, `yarn-classic`).
+	Id string `json:"id"`
+}
+
 // FormatDescriptor defines model for FormatDescriptor.
 type FormatDescriptor struct {
 	Caps bool `json:"caps"`
 
 	// Classes The classes the implementation accepts.
 	Classes []FormatDescriptorClasses `json:"classes"`
+
+	// Clients The native clients of the format (FMT-002), in the format's order. A format with clients ships a
+	// guide for every class and client (R-UI-049, `GET /api/v1/formats/{format}/guide`); empty for a format
+	// addressed with any HTTP client, such as generic.
+	Clients []FormatClient `json:"clients"`
 
 	// DefaultExtraHosts The further hosts a remote repository of the format may fetch from by default (R-REPO-024); empty for a format without any.
 	DefaultExtraHosts         []string                       `json:"defaultExtraHosts"`
@@ -2751,6 +2867,54 @@ type GroupPatch struct {
 	Description *string `json:"description,omitempty"`
 	Name        *string `json:"name,omitempty"`
 }
+
+// Guide defines model for Guide.
+type Guide struct {
+	Class  GuideClass `json:"class"`
+	Client string     `json:"client"`
+
+	// Credentials How the snippets reference the credential; `none` for an anonymous caller.
+	Credentials GuideCredentials `json:"credentials"`
+
+	// ExposureRules The endpoint of the request serves under exposure rules (endpoints.md R-EP-012).
+	ExposureRules bool   `json:"exposureRules"`
+	Format        string `json:"format"`
+
+	// PublishTarget The repository a publish through this one reaches, when the caller may deploy there; null otherwise.
+	PublishTarget *string `json:"publishTarget"`
+
+	// RegistryUrl The address the snippets use, with its trailing slash; `<repository>` stands for the key in the guide of a format.
+	RegistryUrl string `json:"registryUrl"`
+
+	// Repository The repository the guide is for; null for the guide of a format.
+	Repository *string        `json:"repository"`
+	Sections   []GuideSection `json:"sections"`
+}
+
+// GuideClass defines model for Guide.Class.
+type GuideClass string
+
+// GuideCredentials How the snippets reference the credential; `none` for an anonymous caller.
+type GuideCredentials string
+
+// GuideSection defines model for GuideSection.
+type GuideSection struct {
+	// Html The section's text, sanitized by the README renderer of R-UI-008; bind it like a README.
+	Html string `json:"html"`
+
+	// Id Stable, `<format>.<name>`, for example `npm.remote.what`.
+	Id string `json:"id"`
+
+	// Snippets The snippets of the client setup the section shows below its text, empty for most sections.
+	Snippets []ClientSnippet `json:"snippets"`
+
+	// Title The heading, plain text.
+	Title string            `json:"title"`
+	Topic GuideSectionTopic `json:"topic"`
+}
+
+// GuideSectionTopic defines model for GuideSection.Topic.
+type GuideSectionTopic string
 
 // Item The description of a file or folder (R-STOR-016, R-STOR-007).
 type Item struct {
@@ -4545,6 +4709,18 @@ type ReplaceExposureRuleParams struct {
 	IfMatch IfMatch `json:"If-Match"`
 }
 
+// GetFormatGuideParams defines parameters for GetFormatGuide.
+type GetFormatGuideParams struct {
+	// Class One of the format's `classes`.
+	Class GetFormatGuideParamsClass `form:"class" json:"class"`
+
+	// Client One of the format's `clients`.
+	Client string `form:"client" json:"client"`
+}
+
+// GetFormatGuideParamsClass defines parameters for GetFormatGuide.
+type GetFormatGuideParamsClass string
+
 // ListGroupsParams defines parameters for ListGroups.
 type ListGroupsParams struct {
 	// Q Case-insensitive substring of the name.
@@ -4866,6 +5042,12 @@ type GetClientSetupParams struct {
 
 // GetClientSetupParamsCredentials defines parameters for GetClientSetup.
 type GetClientSetupParamsCredentials string
+
+// GetRepositoryGuideParams defines parameters for GetRepositoryGuide.
+type GetRepositoryGuideParams struct {
+	// Client One of the format's `clients` (`GET /api/v1/formats`); another value answers `400 malformed_request`.
+	Client string `form:"client" json:"client"`
+}
 
 // DeleteItemParams defines parameters for DeleteItem.
 type DeleteItemParams struct {
@@ -5392,6 +5574,9 @@ type ServerInterface interface {
 	// ListFormats List the package formats
 	// (GET /api/v1/formats)
 	ListFormats(w http.ResponseWriter, r *http.Request)
+	// GetFormatGuide The guide of a format for one class and client
+	// (GET /api/v1/formats/{format}/guide)
+	GetFormatGuide(w http.ResponseWriter, r *http.Request, format string, params GetFormatGuideParams)
 	// ListGroups List groups
 	// (GET /api/v1/groups)
 	ListGroups(w http.ResponseWriter, r *http.Request, params ListGroupsParams)
@@ -5500,6 +5685,9 @@ type ServerInterface interface {
 	// GetClientSetup Client setup snippets of a repository
 	// (GET /api/v1/repositories/{repoKey}/client-setup)
 	GetClientSetup(w http.ResponseWriter, r *http.Request, repoKey string, params GetClientSetupParams)
+	// GetRepositoryGuide The guide of a repository for one client
+	// (GET /api/v1/repositories/{repoKey}/guide)
+	GetRepositoryGuide(w http.ResponseWriter, r *http.Request, repoKey string, params GetRepositoryGuideParams)
 	// DeleteItem Delete a file or folder
 	// (DELETE /api/v1/repositories/{repoKey}/items)
 	DeleteItem(w http.ResponseWriter, r *http.Request, repoKey string, params DeleteItemParams)
@@ -6633,6 +6821,61 @@ func (siw *ServerInterfaceWrapper) ListFormats(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListFormats(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetFormatGuide operation middleware
+func (siw *ServerInterfaceWrapper) GetFormatGuide(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "format" -------------
+	var format string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "format", r.PathValue("format"), &format, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "format", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetFormatGuideParams
+
+	// ------------- Required query parameter "class" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "class", r.URL.Query(), &params.Class, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "class"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "class", Err: err})
+		}
+		return
+	}
+
+	// ------------- Required query parameter "client" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "client", r.URL.Query(), &params.Client, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "client"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "client", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFormatGuide(w, r, format, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -8754,6 +8997,48 @@ func (siw *ServerInterfaceWrapper) GetClientSetup(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetClientSetup(w, r, repoKey, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetRepositoryGuide operation middleware
+func (siw *ServerInterfaceWrapper) GetRepositoryGuide(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "repoKey" -------------
+	var repoKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "repoKey", r.PathValue("repoKey"), &repoKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "repoKey", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetRepositoryGuideParams
+
+	// ------------- Required query parameter "client" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "client", r.URL.Query(), &params.Client, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "client"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "client", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRepositoryGuide(w, r, repoKey, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -11226,6 +11511,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages/{packageId}/versions/{version}", wrapper.GetPackageVersion)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/packages/{packageId}/versions/{version}/readme", wrapper.GetPackageVersionReadme)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/client-setup", wrapper.GetClientSetup)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/guide", wrapper.GetRepositoryGuide)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/formats/{format}/guide", wrapper.GetFormatGuide)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/cache/invalidate", wrapper.InvalidateRepositoryCache)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/cache/entries", wrapper.ListCacheEntries)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories/{key}/upstream-test", wrapper.TestRepositoryUpstream)

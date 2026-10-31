@@ -150,6 +150,10 @@ type Format interface {
 
 	// SetupTemplates are the client setup snippets (R-API-033).
 	SetupTemplates() []SetupTemplate
+	// Guide is the format's guide: what a repository of each class is and how each
+	// client uses it (R-UI-049). A format with clients covers every class and client
+	// with the required topics (kit check 8).
+	Guide() []GuideSection
 	// WriteError renders a core error in the protocol's native shape (R-ARCH-023).
 	// The dispatcher also uses it for the refusals of the chain's stages on this
 	// format's paths (Q-ARCH-214).

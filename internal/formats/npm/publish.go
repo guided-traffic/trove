@@ -37,6 +37,13 @@ const bodySlack = publish.DefaultMaxMetadataBytes + (maxSigstoreBytes+2)/3*4
 // the slack (R-NPM-007 step 2).
 func bodyLimit(maxTarball int64) int64 { return base64Len(maxTarball) + bodySlack }
 
+// The npm-notice texts of a publish (R-NPM-007 step 4, R-NPM-016); the guide quotes
+// them (guide_test.go).
+const (
+	latestKeptNotice        = "latest stays at %s; move it with npm dist-tag add"
+	retryAcknowledgedNotice = "%s@%s was already published by you at %s; nothing changed"
+)
+
 // handlePublish is PUT {name} (R-NPM-007, flow F1). The body is read once, as a
 // stream: the tarball goes decoded into the spool while its digests are computed,
 // everything else is held within the limits of the scanner; nothing is held in a
@@ -187,7 +194,7 @@ func (f *Format) handlePublish(ctx context.Context, rq *formats.Request, w http.
 		rev = sc.rev
 	}
 	if pc.kept {
-		w.Header().Set("npm-notice", "latest stays at "+pc.latest+"; move it with npm dist-tag add")
+		w.Header().Set("npm-notice", fmt.Sprintf(latestKeptNotice, pc.latest))
 	}
 	return writePublished(w, n.String(), Rev(repo.ID, pc.pkg, rev))
 }
@@ -322,8 +329,7 @@ func (f *Format) versionTakenAfterCommit(ctx context.Context, rq *formats.Reques
 	if !found {
 		return false, errs.E(errs.Internal, errs.CodeInternal, "The package row of a published version is missing.")
 	}
-	w.Header().Set("npm-notice", fmt.Sprintf("%s@%s was already published by you at %s; nothing changed",
-		n, version, facts.PublishedAt.UTC().Format(time.RFC3339)))
+	w.Header().Set("npm-notice", fmt.Sprintf(retryAcknowledgedNotice, n, version, facts.PublishedAt.UTC().Format(time.RFC3339)))
 	return true, writePublished(w, n.String(), Rev(rq.RepoRef().ID, row.Ref.ID, row.Ref.RevSeq))
 }
 

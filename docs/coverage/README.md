@@ -22,8 +22,8 @@ regenerated.
 | P1 features covered by spec requirements | 56.7% (293 of 517) | measured from `Covers:` lines |
 | In-scope features covered (MVP, P1, P2, Later) | 32.1% (695 of 2,167) | measured from `Covers:` lines |
 | Catalog features | 2,239 on 60 pages | measured from catalog headings |
-| Spec requirements | 624 on 15 pages (469 MVP, 150 P1, 5 P2) | measured from spec headings |
-| Requirements covering no catalog feature | 101 (`trove-only`) | measured from `Covers:` lines |
+| Spec requirements | 626 on 15 pages (472 MVP, 149 P1, 5 P2) | measured from spec headings |
+| Requirements covering no catalog feature | 103 (`trove-only`) | measured from `Covers:` lines |
 <!-- coverage-gen:end headline -->
 
 **What the owner constraints of 2026-10-28 changed.** The tables were regenerated on 2026-10-29,
@@ -52,11 +52,11 @@ see [Honesty notes](#honesty-notes).
 | Priority | Features | Specified | Open | Specified share | Covered by an MVP requirement | Implemented |
 |---|---:|---:|---:|---:|---:|---:|
 | **MVP** | 379 | 379 | 0 | 100% | 379 | 138 |
-| **P1** | 517 | 293 | 224 | 56.7% | 61 | 45 |
+| **P1** | 517 | 293 | 224 | 56.7% | 62 | 45 |
 | **P2** | 895 | 23 | 872 | 2.6% | 12 | 7 |
 | **Later** | 376 | 0 | 376 | 0% | 0 | 0 |
 | **Out of scope** | 72 | 0 | 72 | 0% | 0 | 0 |
-| **Total** | 2,239 | 695 | 1,544 | 31.0% | 452 | 190 |
+| **Total** | 2,239 | 695 | 1,544 | 31.0% | 453 | 190 |
 <!-- coverage-gen:end priority -->
 
 The column *Covered by an MVP requirement* shows where the spec pulls work forward: 55 P1 features

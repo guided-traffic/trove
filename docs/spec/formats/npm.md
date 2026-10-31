@@ -2111,6 +2111,46 @@ keyword exactly. A version tombstoned and not removed (a restore's replay, R-NPM
 nowhere. The README is the stored README text of the version; the setup snippets of this page are rendered by the
 API with the client ids `npm`, `pnpm`, `yarn` and `yarn-classic` (Q-UI-77).
 
+**The guide of npm** (a part of R-NPM-041: the guide of [api-and-ui.md](../api-and-ui.md) R-UI-049, owner 2026-10-31,
+Q-NPM-66). npm's `Guide()` ([guide.go](../../../internal/formats/npm/guide.go), the texts in
+[guide/](../../../internal/formats/npm/guide/)) covers local, remote and virtual repositories for npm, pnpm, Yarn Berry
+and Yarn Classic. Every statement describes the behaviour this page specifies and the code builds; what is not built is
+named as not available where a user would try it (`npm deprecate`, `npm login`, trusted publishing as "coming"), never
+described.
+
+<details>
+<summary>Sections per class and client</summary>
+
+| Section | Classes | What it says |
+|---|---|---|
+| `npm.local.what` | local | Immutability (`npm_version_exists`, the acknowledged retry), tombstones (`npm_version_unpublished`, no time window), the latest guard and its notice, package ownership, the rules for new names and look-alikes, the manifest and integrity checks of a publish, deprecate not available |
+| `npm.remote.what` | remote | Pull-through of the upstream, rewritten tarball addresses, read-only (`npm_class_not_writable`), the metadata and negative periods (defaults 2 h and 30 min), tarballs cached for good and checked against the upstream's integrity, invalid upstream documents, stale serving while the upstream is down and the `502`/`503`/`504` of what was never cached, an offline repository, versions removed upstream on every route and for lockfile installs, `serveRemovedVersions`, cache invalidation by a holder of `manage`, global claims and remote refusal |
+| `npm.virtual.what` | virtual | Members in order; the per-version source rule of R-NPM-030; the dist-tag merge (`latestStrategy`, `distTagStrategy`); read on the members; freshness through the virtual repository; writes through the deployment target (named when the reader may deploy there) and the refusal without one; namespace claims, pin rules and the shadowing check (`shadows_remote_package`, `shadow_check_unavailable`) |
+| `npm.configure` (configure snippets) | all | Per client: where the snippet goes (`.npmrc`, `~/.npmrc` for pnpm 11 and 12, `.yarnrc.yml`), the keyed credential line, `${TROVE_TOKEN}` expanded by the client, `npmAlwaysAuth` and `always-auth` and why, how to print the address in use, Yarn's `npmMinimalAgeGate`; the scoped registry (`@your-scope:registry=`, `npmScopes`) |
+| `npm.authenticate` | all | Personal and service-account tokens and their scope; Bearer or Basic with any user name; `TROVE_TOKEN` and never committing a token; CI with a masked variable, the GitLab CI exchange as coming; `whoami` and `ping`; no one-time password; the client's login command not supported yet. For an anonymous reader only that no credential is needed and that writes need one |
+| `npm.install` (install snippets) | all | The install and lockfile commands per client, what the class serves, `EINTEGRITY` |
+| `npm.publish` | local, virtual | Per client: the publish command (`--no-git-checks`, pnpm 10 handing the upload to npm, `yarn install` first, `--new-version`), `publishConfig`, scoped packages, the deployment target, the limits (defaults 256 MiB, 2 GiB, 100,000 files, 1 MiB) and `npm_too_large`, the acknowledged retry and its notice, `--provenance` and `--stage`; or why the reader cannot publish. Left out for an anonymous reader |
+| `npm.maintain` | local, virtual | Dist-tag commands per client, the permissions, `latest` (movable, not removable, moved on unpublish), tag names that are ranges; unpublish per client (none in Yarn), `delete` and ownership, no time window; pnpm 11 and 12 through a virtual repository (Q-NPM-49); deprecate not available. Left out for an anonymous reader |
+| `npm.audit` | all | A local repository's `501`; the forward of a remote or the first forwarding member of a virtual repository; the forwarded and the withheld names and npm's notice, which pnpm and Yarn Berry do not show; `501` and `502`; pnpm 10 not served; `yarn audit` never reaches trove |
+| `npm.lockfiles` | all | What each client's lockfile records; moving a `package-lock.json` by replacing the address; Yarn Berry's address-free lockfile (R-NPM-042); valid integrity values; withdrawn versions fail lockfile installs |
+| `npm.endpoint` | all | Only on an endpoint with exposure rules: hidden versions are `E404`, `latest` moves, hidden tags are dropped, writes are `403 endpoint_read_only`, the audit is `501`, no fill on an endpoint without fills, the endpoint's own addresses |
+| `npm.troubleshooting` | all | A table of status, code, meaning and remedy for `400`, `401`, `403`, `404` (a version hidden by an exposure rule included), `405`, `409`, `413`, `422` (the management API's), `429`, `501`, `502`, `503`, `504` |
+
+</details>
+
+The tests pin the facts the guide names ([guide_test.go](../../../internal/formats/npm/guide_test.go)): every code of
+the troubleshooting table exists in `internal/errs` and is listed under the status trove answers it with; every
+snake_case code the guide names exists; the notices and the refusal text it quotes are the format strings the handlers
+send; the periods, limits and settings it names are the defaults of the descriptor, the configuration and the settings
+schema; an anonymous reader gets no credential steps; the endpoint section appears only with exposure rules. The
+snippets of the configure and install sections are the setup templates' (R-API-053).
+
+Acceptance criteria (the guide):
+
+- npm passes kit check 8 with its guide: every class and client has the required topics, the configure and install
+  topics attach the setup snippets, and no code block of the guide spells a credential.
+- `TestR_UI_049_TheTroubleshootingCodesAreTroves` and `TestR_NPM_041_TheGuideQuotesWhatTroveSends` pass.
+
 ### R-NPM-042 · Yarn Berry tarball URLs and lockfiles
 Priority: **MVP** · Covers: PKG-NPM-053
 
@@ -4442,6 +4482,41 @@ of the beta stay on pnpm 10 past its gate row, or if another supported client sp
 **Applied in the spec:** R-NPM-038 (npm 6's endpoints, pnpm 10), R-NPM-040, R-NPM-001 (the pnpm note), Q-NPM-49 (point 2
 revisited). Code: `internal/formats/npm/handlers_audit.go` (`handleAuditLegacy`); `test/e2e/npm_matrix_test.go`
 (`scenarioAudit`).
+
+### Q-NPM-66 · What npm's guide says, and how it stays true
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-049 asks for a guide that is accurate for trove as built, for three classes and four clients. Much of this page is specified and not built (deprecate, logins, trusted publishing, search, the local audit mode), and the clients behave differently in ways the end-to-end suite found (Q-NPM-47, Q-NPM-49).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One template per topic, written for every class and client with branches where they differ; only built behaviour is described; what a user would try and is not built is named as not available; the facts are pinned by tests | Twelve sections in `guide/*.md` | One text per topic; the tests catch a renamed code, a changed notice or a changed default | Templates with branches are harder to read than prose |
+| (b) One text per class and client | Twelve files per topic | Plain prose | Twelve copies of every fact to keep true |
+| (c) Describe the specification | Copy this page | Complete | Tells users about behaviour they cannot use |
+
+**Choice:** (a). The notices and the refusal text the guide quotes are format strings shared by the handlers and the test (`latestKeptNotice`, `retryAcknowledgedNotice`, `auditPartialNotice`, `auditUnavailableText`). The troubleshooting table lists codes, not prose, so a test can compare each row with the problem catalog and its status. Example names in code are kept out of the snake_case form of codes, so that every such word is checked as a code.
+
+**Rationale:** A guide that is wrong is worse than none, and the parts that drift fastest are codes, texts and defaults, which a test can hold. What a test cannot hold is H-320. The development agent revisits this when a P1 operation ships: its section changes in the same change.
+
+**Applied in the spec:** R-NPM-041 (the guide of npm); [api-and-ui.md](../api-and-ui.md) R-UI-049.
+
+### Q-NPM-67 · npm's client display names are the setup page's labels
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the format registered its clients as "npm", "pnpm", "Yarn" and "Yarn Classic"; the setup page labels them "Yarn Berry (2 and later)" and "Yarn Classic (1.x)" (Q-UI-70). The formats answer now carries the display names (api-and-ui.md Q-API-177), and the guides area shows them.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The descriptor carries the setup page's labels | "Yarn Berry (2 and later)", "Yarn Classic (1.x)" | Both pages name a client alike; the major lines are in the name, which is what tells the two apart | A display name with a parenthesis |
+| (b) Keep "Yarn" and "Yarn Classic" | No change | Short | Two names for one client on two pages |
+
+**Choice:** (a).
+
+**Rationale:** A user who picks a client on one page must find it on the other. The development agent revisits this when the setup page reads the descriptor's clients (Q-UI-70).
+
+**Applied in the spec:** R-NPM-041 (the clients of the descriptor).
 
 ## What this does not cover
 

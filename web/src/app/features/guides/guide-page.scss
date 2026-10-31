@@ -1,0 +1,58 @@
+.intro {
+  max-inline-size: 60ch;
+  margin-block: 0 var(--trove-space-4);
+}
+
+.choices-panel {
+  display: grid;
+  gap: var(--trove-space-3);
+  max-inline-size: 48rem;
+  margin-block-end: var(--trove-space-3);
+
+  fieldset {
+    margin: 0;
+    padding: var(--trove-space-3) var(--trove-space-4);
+    border: 1px solid var(--trove-border);
+    border-radius: var(--trove-radius-m);
+    background: var(--trove-surface-raised);
+  }
+
+  legend {
+    padding-inline: var(--trove-space-1);
+    font: var(--mat-sys-title-medium);
+  }
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--trove-space-2) var(--trove-space-4);
+
+  &.vertical {
+    flex-direction: column;
+  }
+}
+
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--trove-space-2);
+}
+
+.choice-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.secondary {
+  color: var(--trove-text-muted);
+  font-size: var(--trove-text-muted-size);
+}
+
+.links {
+  margin-block: 0 var(--trove-space-4);
+}
+
+.result-title {
+  margin-block: 0 var(--trove-space-3);
+}

@@ -1,0 +1,97 @@
+<header class="page-header">
+  <h1 tabindex="-1" i18n="@@guides.heading">Guides</h1>
+</header>
+<p class="intro" i18n="@@guides.intro">
+  What each kind of repository is, and how your package manager configures, signs in, installs, publishes and
+  troubleshoots through it. The guide uses this installation's addresses.
+</p>
+
+@if (loadFailure(); as f) {
+  <trove-error-notice [error]="f" (retry)="answer.reload()" />
+}
+
+<div class="choices-panel">
+  <fieldset>
+    <legend i18n="@@guides.step.format">Package type</legend>
+    @if (formatOptions().length === 0 && formats.hasValue()) {
+      <p class="empty" i18n="@@guides.no-formats">No package type has a guide yet.</p>
+    }
+    <div class="choices">
+      @for (f of formatOptions(); track f.name) {
+        <label class="choice">
+          <input type="radio" name="guide-format" [value]="f.name" [checked]="f.name === activeFormat()?.name" (change)="pickFormat(f.name)" />
+          <span translate="no">{{ f.displayName }}</span>
+        </label>
+      }
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend i18n="@@guides.step.client">Client</legend>
+    <div class="choices">
+      @for (c of clients(); track c.id) {
+        <label class="choice">
+          <input type="radio" name="guide-client" [value]="c.id" [checked]="c.id === activeClient()" (change)="pick({ client: c.id })" />
+          <span translate="no">{{ c.displayName }}</span>
+        </label>
+      }
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend i18n="@@guides.step.repository">Repository</legend>
+    <div class="choices vertical">
+      <label class="choice">
+        <input type="radio" name="guide-repository" value="" [checked]="!activeRepository()" (change)="pick({ repository: null })" />
+        <span i18n="@@guides.repository.none">None in particular: the guide of a repository class</span>
+      </label>
+      @for (r of repositoryOptions(); track r.key) {
+        <label class="choice">
+          <input type="radio" name="guide-repository" [value]="r.key" [checked]="r.key === activeRepository()?.key" (change)="pick({ repository: r.key })" />
+          <span class="choice-text">
+            <span translate="no"><strong>{{ r.key }}</strong></span>
+            <span class="secondary">{{ classText(r.class) }}</span>
+          </span>
+        </label>
+      }
+    </div>
+  </fieldset>
+
+  @if (!activeRepository()) {
+    <fieldset>
+      <legend i18n="@@guides.step.class">Repository class</legend>
+      <div class="choices">
+        @for (c of classes(); track c) {
+          <label class="choice">
+            <input type="radio" name="guide-class" [value]="c" [checked]="c === activeClass()" (change)="pick({ class: c })" />
+            <span>{{ classText(c) }}</span>
+          </label>
+        }
+      </div>
+    </fieldset>
+  }
+</div>
+
+<p class="links">
+  <a routerLink="/setup" [queryParams]="setupQuery()" i18n="@@guides.setup-link">Open the client setup for this choice</a>
+</p>
+
+@if (guide(); as g) {
+  <section class="result" aria-labelledby="guide-result">
+    <h2 id="guide-result" class="result-title">
+      @if (g.repository; as key) {
+        <ng-container i18n="@@guides.result.repository">Guide for</ng-container>&ngsp;<span translate="no">{{ key }}</span>
+      } @else {
+        <ng-container i18n="@@guides.result.class">Guide for a repository of the class</ng-container>&ngsp;{{ classText(g.class) }}
+      }
+    </h2>
+    @if (!g.repository) {
+      <p class="hint" i18n="@@guides.placeholder">
+        The addresses show &lt;repository&gt; where the key of your repository goes.
+      </p>
+    }
+    <trove-guide-view [guide]="g" />
+  </section>
+} @else if (answer.isLoading()) {
+  <p role="status" i18n="@@guides.loading">Loading the guide.</p>
+}

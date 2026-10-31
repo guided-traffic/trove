@@ -9,14 +9,14 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 270 of 624 spec requirements are implemented: a passing test names them and no
+**Status.** 270 of 626 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
 **Totals.** 2,239 catalog features on 60 pages: 695 specified (190 of them implemented), 1,544 open.
-624 spec requirements: 523 cover catalog features, 101 cover none (`trove-only`, [listed at the
+626 spec requirements: 523 cover catalog features, 103 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
 ## Pages
@@ -2969,7 +2969,7 @@ Requirements whose `Covers:` line says `trove-only`: trove's own design work tha
 catalog feature measures. They count toward the requirement total, not toward any share.
 
 <details>
-<summary>101 requirements</summary>
+<summary>103 requirements</summary>
 
 | Requirement | Title | Priority | Spec page |
 |---|---|---|---|
@@ -2983,7 +2983,9 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-API-052 (implemented) | Visibility of a management write on other replicas | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-API-020 | Resource map and routing | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-API-021 (implemented) | Current caller and UI preferences | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-API-053 | Guides of the formats | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-API-048 | Package ownership surface | P1 | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-UI-049 | Guides for every registry variant | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-026 | Service accounts | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-036 | Claim tester | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-042 | Errors, conflicts and feedback | MVP | [api-and-ui.md](../spec/api-and-ui.md) |

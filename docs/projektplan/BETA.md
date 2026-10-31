@@ -157,6 +157,7 @@ Details: [roadmap M2](../coverage/roadmap.md#m2--npm) · spec: [formats/npm.md](
 - ⚪ Repository settings form rendered from the format's settings schema (R-ARCH-004, R-UI-021): the API serves the schema (`settingsSchema` of `GET /api/v1/formats`) and validates the `npm` member (Q-ARCH-229); the form is not built, so npm's settings are settable through the API only
 - ⚪ npm on a customer endpoint: package documents and dist-tags list only exposed versions, URLs on the endpoint's host, no upstream fetch from that endpoint by default
 - 🟡 Security audit: `npm audit`, `pnpm audit` and `yarn npm audit` through remote and virtual repositories (R-NPM-038, owner 2026-10-31)
+- 🟡 In-app guide for every npm variant: local, remote and virtual repositories with npm, pnpm, Yarn Berry and Yarn Classic (owner 2026-10-31)
 
 **Tests**
 - ⚪ npm integration tests: protocol over HTTP, conformance kit, nightly fuzzing of package documents
@@ -180,6 +181,7 @@ Details: [roadmap M3](../coverage/roadmap.md#m3--nuget) · spec: [formats/nuget.
 - ⚪ Authentication: token as password in `nuget.config`, token as API key for push
 - ⚪ Clients: .NET CLI, nuget.exe; setup instructions for Visual Studio
 - ⚪ Package UI and client setup snippets for .NET
+- ⚪ In-app guide for every NuGet variant: local, remote and virtual repositories with the .NET CLI, nuget.exe and Visual Studio, and `nuget.config` (R-UI-049, owner 2026-10-31)
 - ⚪ NuGet on a customer endpoint: version lists, registrations and search list only exposed versions; no push there
 - ⚪ Format contract additions found by the M2 architecture review (roadmap M3, WP3.0): a hook on a remote fill, discovery documents and the URL map for metadata, pass-through and fan-out for search, content on `Volatile` routes, a format that can name only its own repository, rendered-document mechanics in the contract, validation of remote configuration, the format's rules on the raw routes, a typed environment for a format, the dormant methods, the writer-owned eviction signal, no format knowledge in the virtual bridge, one engine value type each, links in refusals, the declared length of a body, a minimal contract, the per-format data-port leaf rule, the real populate decision in the audit event
 - ⚪ Format contract frozen for all later registries

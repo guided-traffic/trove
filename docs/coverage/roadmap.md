@@ -591,7 +591,7 @@ format reuses.
 | Format contract | R-ARCH-008…010, R-ARCH-028 |
 | Proxy and virtual engines | R-ARCH-012, R-ARCH-013, R-ARCH-015, R-ARCH-033, R-REPO-017, R-REPO-019…021, R-REPO-023…030, R-REPO-032, R-REPO-033, R-REPO-038…043, R-REPO-045, R-REPO-047…049, R-OPS-011, R-OPS-021, R-API-024 |
 | Authorization | R-AUTHZ-008, R-AUTHZ-009, R-AUTHZ-018, R-AUTHZ-019 |
-| API and UI | R-API-029, R-API-030, R-UI-006…009, R-UI-016, R-UI-017, R-UI-022 |
+| API and UI | R-API-029, R-API-030, R-API-053, R-UI-006…009, R-UI-016, R-UI-017, R-UI-022, R-UI-049 |
 
 R-OPS-021 and R-API-024 are MVP since 2026-10-28: the negative cache lives in Valkey, and cache
 invalidation is the one way to cut a wrong or forged negative entry short without a Valkey
@@ -599,7 +599,9 @@ credential (H-49). R-API-024's reindex row keeps P1 and arrives with R-OPS-022 i
 pooler-profile criterion runs from M5 (R-HA-058); R-REPO-049's NuGet criterion runs from M3.
 R-NPM-038 (the security audit) is MVP since 2026-10-31, the owner's decision (Q-NPM-61). Its drain
 criterion (the pod that forwards an audit is deleted during the forward) has no test yet; it belongs
-with the drain tests of R-HA-059 (WP2.8).
+with the drain tests of R-HA-059 (WP2.8). R-UI-049 and R-API-053, the in-app guide for every npm
+variant, are MVP since 2026-10-31, the owner's decision (Q-UI-83); the guide is a method of the format
+contract (Q-ARCH-235) that kit check 8 enforces.
 
 **Exit criteria.**
 
@@ -663,6 +665,14 @@ with the drain tests of R-HA-059 (WP2.8).
   gets `200` with the new list on every replica. A version not cached in a remote member answers
   `E404` on `customers` with no upstream request, and the same install through `default` fills the
   cache (R-NPM-048, R-EP-018, R-EP-019).
+- **E2.13** The in-app guide for every npm variant (R-UI-049, R-API-053). npm passes kit check 8 with
+  its guide: local, remote and virtual repositories, each for npm, pnpm, Yarn Berry and Yarn Classic,
+  have the sections `what`, `configure`, `authenticate`, `install` and `troubleshooting`, and no code
+  block spells a credential. Every code of the troubleshooting table is a code of the problem catalog
+  under its status, and the texts the guide quotes are the handlers'. The browser journey
+  `09-guides.spec.ts` opens the guides from the side bar and the How to use tab of a virtual npm
+  repository, whose configure snippet equals the client setup page's for the same repository and
+  client.
 
 **Work packages.**
 
@@ -675,7 +685,7 @@ with the drain tests of R-HA-059 (WP2.8).
 | WP2.4 | npm local: publish, documents, revisions, dist-tags, unpublish, tombstones, whoami | WP2.1 | WP2.2, WP2.3 |
 | WP2.5 | npm remote and virtual: document fetch, tarball URLs, upstream removals, merges | WP2.2 to WP2.4 | WP2.6 to WP2.8 |
 | WP2.6 | Client matrix, counting upstream stub, reference lockfile in `perf/` | WP2.4 | WP2.5, WP2.7, WP2.8 |
-| WP2.7 | Package UI, install panel, client setup dialog and snippets | WP2.4 | WP2.5, WP2.6, WP2.8 |
+| WP2.7 | Package UI, install panel, client setup dialog and snippets; the guides of R-UI-049 (the contract method, kit check 8, npm's guide, the two operations, the guides area and the How to use tab) | WP2.4 | WP2.5, WP2.6, WP2.8 |
 | WP2.9 | Endpoints in the engines: the exposure adapter in the format contract, filtering after merge and rewrite, endpoint and exposure fingerprint in cache keys and ETags, the cache-fill policy in the remote request path, npm's filter (R-EP-018, R-EP-019, R-NPM-048) | WP2.1 to WP2.4, WP1.9 | WP2.5 to WP2.8 |
 | WP2.8 | HA harness start: the pod-crash, PostgreSQL switchover, Valkey failover and Valkey outage scenarios of R-HA-052, variant A of R-HA-059's drain test, and the load scripts of R-ARCH-027 with k6, running against npm | WP2.4 | all |
 
@@ -693,7 +703,7 @@ and then freezes it.
 |---|---|
 | NuGet | R-NUGET-001…010, R-NUGET-012…020, R-NUGET-026…028, R-NUGET-030…032, R-NUGET-034 |
 | Authorization | R-AUTHZ-007 |
-| UI | R-UI-018 |
+| UI | R-UI-018, R-UI-019 (NuGet's guide, R-UI-049, R-NUGET-026) |
 
 **Exit criteria.**
 
@@ -727,6 +737,10 @@ and then freezes it.
   exposed versions, `dotnet add package` of a hidden version fails with `NU1102`, the service index
   lists no publish resource, and a push answers `403` (R-NUGET-034). The format contract freeze of
   E3.3 includes the exposure adapter.
+- **E3.8** NuGet's guide (R-UI-049, R-UI-019, R-NUGET-026): NuGet passes kit check 8 with a guide for
+  local, remote and virtual repositories and the .NET CLI, nuget.exe and Visual Studio; the guides area
+  offers NuGet without a screen change, and the How to use tab of `nuget-all` shows the setup page's
+  configure snippet for each client.
 
 **Work packages.** These can run in parallel:
 

@@ -546,13 +546,15 @@ var tokenText = regexp.MustCompile(`(?i)token|password|_auth`)
 
 // setup is check 8: every client has a configure and an install template; every
 // template parses and executes over SetupData, which has no credential field, and
-// none spells a credential.
+// none spells a credential; and the format's guide covers every class and client
+// under the same credential rule (guide).
 func (r *run) setup() {
 	tpls := r.f.SetupTemplates()
-	if len(r.d.Clients) == 0 && len(tpls) == 0 {
+	if len(r.d.Clients) == 0 && len(tpls) == 0 && len(r.f.Guide()) == 0 {
 		r.failf("the format has no clients and the check is not skipped")
 		return
 	}
+	defer r.guide(tpls)
 	known := map[string]bool{}
 	for _, c := range r.d.Clients {
 		known[c.ID] = true

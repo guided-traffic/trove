@@ -14153,5 +14153,234 @@
         <target>Zugriffs- und <ph id="0" equiv="format" disp="this.formatLabel()"/>-Einstellungen</target>
       </segment>
     </unit>
+    <unit id="nav.guides">
+      <notes>
+        <note category="location">src/app/app.routes.ts:64</note>
+        <note category="location">src/app/core/navigation.ts:46</note>
+      </notes>
+      <segment>
+        <source>Guides</source>
+        <target>Anleitungen</target>
+      </segment>
+    </unit>
+    <unit id="guides.heading">
+      <notes>
+        <note category="location">src/app/features/guides/guide-page.html:2,4</note>
+      </notes>
+      <segment>
+        <source>Guides</source>
+        <target>Anleitungen</target>
+      </segment>
+    </unit>
+    <unit id="guides.intro">
+      <notes>
+        <note category="location">src/app/features/guides/guide-page.html:5,9</note>
+      </notes>
+      <segment>
+        <source> What each kind of repository is, and how your package manager configures, signs in, installs, publishes and troubleshoots through it. The guide uses this installation&apos;s addresses.
+</source>
+        <target> Was jede Art von Repository ist und wie Ihr Paketmanager darüber konfiguriert, sich anmeldet, installiert, veröffentlicht und Fehler eingrenzt. Die Anleitung verwendet die Adressen dieser Installation.
+</target>
+      </segment>
+    </unit>
+    <unit id="guides.step.format">
+      <notes>
+        <note category="location">src/app/features/guides/guide-page.html:15,16</note>
+      </notes>
+      <segment>
+        <source>Package type</source>
+        <target>Pakettyp</target>
+      </segment>
+    </unit>
+    <unit id="guides.no-formats">
+      <notes>
+        <note category="location">src/app/features/guides/guide-page.html:17,19</note>
+      </notes>
+      <segment>
+        <source>No package type has a guide yet.</source>
+        <target>Noch kein Pakettyp hat eine Anleitung.</target>
+      </segment>
+    </unit>
+    <unit id="guides.step.client">
+      <notes>
+        <note category="location">src/app/features/guides/guide-page.html:30,31</note>
+      </notes>
+      <segment>
+        <source>Client</source>
+        <target>Client</target>
+      </segment>
+    </unit>
+    <unit id="guides.step.repository">
+      <notes>
+        <note category="location">src/app/features/guides/guide-page.html:42,43</note>
+      </notes>
+      <segment>
+        <source>Repository</source>
+        <target>Repository</target>
+      </segment>
+    </unit>
+    <unit id="guides.repository.none">
+      <notes>
+        <note category="location">src/app/features/guides/guide-page.html:46,48</note>
+      </notes>
+      <segment>
+        <source>None in particular: the guide of a repository class</source>
+        <target>Kein bestimmtes: die Anleitung einer Repository-Klasse</target>
+      </segment>
+    </unit>
+    <unit id="guides.step.class">
+      <notes>
+        <note category="location">src/app/features/guides/guide-page.html:62,63</note>
+      </notes>
+      <segment>
+        <source>Repository class</source>
+        <target>Repository-Klasse</target>
+      </segment>
+    </unit>
+    <unit id="guides.setup-link">
+      <notes>
+        <note category="location">src/app/features/guides/guide-page.html:76,79</note>
+      </notes>
+      <segment>
+        <source>Open the client setup for this choice</source>
+        <target>Client-Einrichtung für diese Auswahl öffnen</target>
+      </segment>
+    </unit>
+    <unit id="guides.result.repository">
+      <notes>
+        <note category="location">src/app/features/guides/guide-page.html:83</note>
+      </notes>
+      <segment>
+        <source>Guide for</source>
+        <target>Anleitung für</target>
+      </segment>
+    </unit>
+    <unit id="guides.result.class">
+      <notes>
+        <note category="location">src/app/features/guides/guide-page.html:85</note>
+      </notes>
+      <segment>
+        <source>Guide for a repository of the class</source>
+        <target>Anleitung für ein Repository der Klasse</target>
+      </segment>
+    </unit>
+    <unit id="guides.placeholder">
+      <notes>
+        <note category="location">src/app/features/guides/guide-page.html:90,93</note>
+      </notes>
+      <segment>
+        <source> The addresses show &lt;repository&gt; where the key of your repository goes. </source>
+        <target> Die Adressen zeigen &lt;repository&gt; dort, wo der Schlüssel Ihres Repositorys steht. </target>
+      </segment>
+    </unit>
+    <unit id="guides.loading">
+      <notes>
+        <note category="location">src/app/features/guides/guide-page.html:96,98</note>
+      </notes>
+      <segment>
+        <source>Loading the guide.</source>
+        <target>Die Anleitung wird geladen.</target>
+      </segment>
+    </unit>
+    <unit id="guide.toc">
+      <notes>
+        <note category="location">src/app/features/guides/guide-view.ts:19,20</note>
+      </notes>
+      <segment>
+        <source>On this page</source>
+        <target>Auf dieser Seite</target>
+      </segment>
+    </unit>
+    <unit id="guide.target-file">
+      <notes>
+        <note category="location">src/app/features/guides/guide-view.ts:38</note>
+      </notes>
+      <segment>
+        <source>File</source>
+        <target>Datei</target>
+      </segment>
+    </unit>
+    <unit id="guide.copy">
+      <notes>
+        <note category="location">src/app/features/guides/guide-view.ts:59</note>
+      </notes>
+      <segment>
+        <source>Copy snippet</source>
+        <target>Snippet kopieren</target>
+      </segment>
+    </unit>
+    <unit id="route.guides.title">
+      <notes>
+        <note category="location">src/app/features/guides/guides.routes.ts:7</note>
+      </notes>
+      <segment>
+        <source>Guides</source>
+        <target>Anleitungen</target>
+      </segment>
+    </unit>
+    <unit id="repo.tab.guide">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-detail.html:39,40</note>
+        <note category="location">src/app/features/repositories/repository-detail.ts:327</note>
+      </notes>
+      <segment>
+        <source>How to use</source>
+        <target>Verwendung</target>
+      </segment>
+    </unit>
+    <unit id="repo.guide.none">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-guide.ts:18,20</note>
+      </notes>
+      <segment>
+        <source>There is no guide for this package type.</source>
+        <target>Für diesen Pakettyp gibt es keine Anleitung.</target>
+      </segment>
+    </unit>
+    <unit id="repo.guide.client">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-guide.ts:21,22</note>
+      </notes>
+      <segment>
+        <source>Client</source>
+        <target>Client</target>
+      </segment>
+    </unit>
+    <unit id="repo.guide.setup">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-guide.ts:30,31</note>
+      </notes>
+      <segment>
+        <source>Open the client setup</source>
+        <target>Client-Einrichtung öffnen</target>
+      </segment>
+    </unit>
+    <unit id="repo.guide.open">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-guide.ts:31,33</note>
+      </notes>
+      <segment>
+        <source>Open in the guides</source>
+        <target>In den Anleitungen öffnen</target>
+      </segment>
+    </unit>
+    <unit id="repo.guide.loading">
+      <notes>
+        <note category="location">src/app/features/repositories/repository-guide.ts:38,42</note>
+      </notes>
+      <segment>
+        <source>Loading the guide.</source>
+        <target>Die Anleitung wird geladen.</target>
+      </segment>
+    </unit>
+    <unit id="setup.guide-link">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:13,17</note>
+      </notes>
+      <segment>
+        <source>Read the guide: what the repository is, publishing, lockfiles and troubleshooting</source>
+        <target>Zur Anleitung: was das Repository ist, Veröffentlichen, Lockfiles und Fehlersuche</target>
+      </segment>
+    </unit>
   </file>
 </xliff>

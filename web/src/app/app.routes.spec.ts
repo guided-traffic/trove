@@ -13,6 +13,7 @@ const SCREENS: readonly (readonly [url: string, heading: string])[] = [
   ['/logged-out', 'Signed out'],
   ['/packages', 'Packages'],
   ['/setup', 'Client setup'],
+  ['/guides', 'Guides'],
   ['/browse', 'Browse'],
   ['/browse/npm-local/@team-a/ui/-/ui-1.0.0.tgz', 'File tree'],
   ['/profile', 'Profile'],

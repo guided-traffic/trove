@@ -1,0 +1,53 @@
+:host {
+  display: block;
+  max-inline-size: 60rem;
+}
+
+.toc {
+  margin-block: 0 var(--trove-space-4);
+  padding: var(--trove-space-3) var(--trove-space-4);
+  border: 1px solid var(--trove-border);
+  border-radius: var(--trove-radius-m);
+  background: var(--trove-surface-raised);
+
+  ol {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--trove-space-1) var(--trove-space-4);
+    margin: 0;
+    padding-inline-start: var(--trove-space-4);
+  }
+}
+
+.toc-title {
+  margin-block: 0 var(--trove-space-2);
+  font: var(--mat-sys-title-small);
+}
+
+.guide-section {
+  margin-block-end: var(--trove-space-5);
+
+  > h2 {
+    margin-block: 0 var(--trove-space-2);
+    font: var(--mat-sys-title-large);
+  }
+}
+
+.snippet {
+  margin-block: var(--trove-space-3);
+
+  .target {
+    margin-block: 0 var(--trove-space-2);
+  }
+}
+
+.command {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--trove-space-2);
+
+  pre {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+}

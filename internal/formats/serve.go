@@ -183,6 +183,9 @@ func (Base) Exposure() ExposureAdapter { return nil }
 // SetupTemplates is empty.
 func (Base) SetupTemplates() []SetupTemplate { return nil }
 
+// Guide is empty.
+func (Base) Guide() []GuideSection { return nil }
+
 // WriteError renders the error as problem+json (R-ARCH-023).
 func (Base) WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	errs.Write(w, r, err, w.Header().Get("X-Request-Id"), slog.Default())

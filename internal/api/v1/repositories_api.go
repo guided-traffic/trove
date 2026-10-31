@@ -288,10 +288,15 @@ func (s *Server) ListFormats(w http.ResponseWriter, r *http.Request) {
 		httpserver.Problem(w, r, err)
 		return
 	}
+	type client struct {
+		ID          string `json:"id"`
+		DisplayName string `json:"displayName"`
+	}
 	type descriptor struct {
 		Name                      string   `json:"name"`
 		DisplayName               string   `json:"displayName"`
 		Classes                   []string `json:"classes"`
+		Clients                   []client `json:"clients"`
 		Layout                    string   `json:"layout"`
 		ProtocolBasePath          string   `json:"protocolBasePath"`
 		DefaultUpstreamURL        *string  `json:"defaultUpstreamUrl"`
@@ -318,7 +323,7 @@ func (s *Server) ListFormats(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, d := range formats.Descriptors() {
 		x := descriptor{
-			Name: string(d.ID), DisplayName: d.DisplayName, Classes: []string{}, Layout: d.Layout, DefaultExtraHosts: append([]string{}, d.DefaultExtraHosts...),
+			Name: string(d.ID), DisplayName: d.DisplayName, Classes: []string{}, Clients: []client{}, Layout: d.Layout, DefaultExtraHosts: append([]string{}, d.DefaultExtraHosts...),
 			ProtocolBasePath: d.ProtocolBasePath, DefaultMetadataTTLSeconds: d.DefaultMetadataTTLSeconds,
 			DefaultNotFoundTTLSeconds: d.DefaultNotFoundTTLSeconds, PatternSubject: string(d.PatternSubject),
 			PriorityMembers: d.PriorityMembers, PinsAndClaims: d.PinsAndClaims, Caps: d.Caps, SettingsSchema: json.RawMessage("null"),
@@ -332,6 +337,9 @@ func (s *Server) ListFormats(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, c := range d.Classes {
 			x.Classes = append(x.Classes, string(c))
+		}
+		for _, c := range d.Clients {
+			x.Clients = append(x.Clients, client{ID: c.ID, DisplayName: c.DisplayName})
 		}
 		out.Formats = append(out.Formats, x)
 	}

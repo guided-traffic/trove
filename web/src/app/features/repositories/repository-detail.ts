@@ -36,9 +36,11 @@ import { JobProgress } from '../../shared/job-progress';
 import { JsonObject, mergePatchOf } from '../../shared/merge-patch';
 import { asApiError, valueOf } from '../../shared/paged-resource';
 import { HasUnsavedChanges } from '../../shared/unsaved-guard';
+import { FormatClient } from '../../api/guides-api';
 import { FormatSettings } from './format-settings';
 import { RecentRepositories } from './recent-repositories';
 import { RepositoryFields } from './repository-fields';
+import { RepositoryGuide } from './repository-guide';
 import {
   FormatMemberOf,
   RepositoryForm,
@@ -70,6 +72,7 @@ import { SettingSchema, errorTarget, settingNodes } from './settings-schema';
     JobProgress,
     FormatSettings,
     RepositoryFields,
+    RepositoryGuide,
   ],
   templateUrl: './repository-detail.html',
   styleUrl: './repository-detail.scss',
@@ -321,4 +324,10 @@ export class RepositoryDetail implements HasUnsavedChanges {
       $localize`:@@repo.tab.format:${this.format()?.displayName ?? this.member().name}:format: settings`,
   );
   protected readonly tabApi = $localize`:@@repo.tab.api:API`;
+  protected readonly tabGuide = $localize`:@@repo.tab.guide:How to use`;
+
+  /** The format's clients; a format with clients has a guide (R-UI-049). */
+  protected clientsOf(format: string): readonly FormatClient[] {
+    return (valueOf(this.formats) ?? []).find((f) => f.name === format)?.clients ?? [];
+  }
 }

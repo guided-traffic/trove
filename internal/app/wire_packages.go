@@ -16,6 +16,9 @@ import (
 // API (R-API-029, R-API-030).
 const AreaPackagesAPI Area = "packages-api"
 
+// guideMaxSourceBytes bounds one rendered guide section (R-API-053).
+const guideMaxSourceBytes = 256 << 10
+
 // packagesAPIArea is the package operations' services of a replica with a client listener.
 type packagesAPIArea struct{ services v1.PackageServices }
 
@@ -42,8 +45,14 @@ func (a *App) wirePackagesAPI(_ context.Context, in infra, az authzArea, repo re
 	if err != nil {
 		return packagesAPIArea{}, fmt.Errorf("%s: the README renderer: %w", AreaPackagesAPI, err)
 	}
+	// The guides are the formats' own text, not untrusted content: ui.readme.max_source_bytes
+	// (as low as 1 KiB) must not cut them, and they carry no images.
+	guides, err := readme.New(readme.Options{MaxSourceBytes: guideMaxSourceBytes, OwnOrigins: a.ownOrigins()})
+	if err != nil {
+		return packagesAPIArea{}, fmt.Errorf("%s: the guide renderer: %w", AreaPackagesAPI, err)
+	}
 	return packagesAPIArea{services: v1.PackageServices{
-		View: svc, Decider: az.engine, Scoper: authz.ReadScoper(az.engine), Reader: repo.reader, Readme: rd,
+		View: svc, Decider: az.engine, Scoper: authz.ReadScoper(az.engine), Reader: repo.reader, Readme: rd, Guides: guides,
 		TokenEnvVar: a.cfg.UI.ClientSetup.TokenEnvVar, TokenTTL: a.cfg.UI.ClientSetup.TokenTTL,
 	}}, nil
 }

@@ -43,6 +43,7 @@ export const NAV_AREAS: readonly NavArea[] = [
       { kind: 'item', route: '/packages', icon: 'category', label: $localize`:@@nav.packages:Packages` },
       // <<< M2 ui-packages
       { kind: 'item', route: '/browse', icon: 'folder_open', label: $localize`:@@nav.browse:Browse` },
+      { kind: 'item', route: '/guides', icon: 'menu_book', label: $localize`:@@nav.guides:Guides` },
     ],
   },
   {

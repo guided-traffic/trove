@@ -54,10 +54,15 @@ func withheldReasons() []string {
 	return []string{withheldLocal, withheldClaimed, withheldPinned, withheldNotProxied}
 }
 
+// The texts of R-NPM-038; the guide quotes them (guide_test.go).
+const (
+	auditUnavailableText = "security audit is not available on repository %s; it is disabled or no upstream provides advisories"
+	auditPartialNotice   = "trove audited %d of %d packages; %d internal or not yet proxied names were not sent to the advisory provider"
+)
+
 // auditUnavailable is the 501 of R-NPM-038.
 func auditUnavailable(key string) error {
-	return errs.E(errs.NotImplemented, errs.CodeNPMAuditUnavailable,
-		"security audit is not available on repository "+key+"; it is disabled or no upstream provides advisories")
+	return errs.E(errs.NotImplemented, errs.CodeNPMAuditUnavailable, fmt.Sprintf(auditUnavailableText, key))
 }
 
 // auditForwarder is the remote repository an audit is forwarded through.
@@ -124,8 +129,7 @@ func (f *Format) handleAudit(ctx context.Context, rq *formats.Request, w http.Re
 	rep.met.auditWithheld(fw.rq.Repo.Key, withheld)
 	notice := ""
 	if n := len(body) - len(forward); n > 0 {
-		notice = fmt.Sprintf("trove audited %d of %d packages; %d internal or not yet proxied names were not sent to the advisory provider",
-			len(forward), len(body), n)
+		notice = fmt.Sprintf(auditPartialNotice, len(forward), len(body), n)
 	}
 	if len(forward) == 0 {
 		auditHeaders(w, notice)

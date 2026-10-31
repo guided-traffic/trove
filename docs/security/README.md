@@ -77,7 +77,11 @@ Spec pages hold the gaps of their mechanisms, among them [H-41](../spec/operatio
 [H-55](../spec/architecture.md#h-55--key-files-of-the-stored-secret-key-ring-are-read-once-at-start-up),
 [H-56](../spec/architecture.md#h-56--the-object-store-endpoint-skips-the-egress-address-policy) and
 [H-6](../spec/repositories-and-proxy.md#h-6--remote-repositories-reach-private-networks). The perspective pages link them where
-they apply and do not repeat them.
+they apply and do not repeat them. The guides of the formats (R-UI-049) record theirs on
+[api-and-ui.md](../spec/api-and-ui.md#what-this-does-not-cover):
+[H-319](../spec/api-and-ui.md#h-319--a-configuration-file-that-holds-a-token-can-be-committed),
+[H-320](../spec/api-and-ui.md#h-320--a-guide-can-state-what-trove-no-longer-does) and
+[H-321](../spec/api-and-ui.md#h-321--an-anonymous-reader-learns-the-token-variables-name-from-the-guide-of-a-format).
 
 Vulnerability scanning is specified and not built, so it has no perspective page yet; its gaps are on
 [vulnerability-scanning.md](../spec/vulnerability-scanning.md#what-this-does-not-cover):

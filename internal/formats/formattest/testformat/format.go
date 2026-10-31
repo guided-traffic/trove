@@ -71,6 +71,11 @@ const (
 	TemplateCredential Defect = "template-credential" //nolint:gosec // G101: the name of a defect, not a credential
 	// NoInstallTemplate leaves the client without an install template: check 8.
 	NoInstallTemplate Defect = "no-install-template"
+	// NoGuide leaves the remote class without guide sections: check 8.
+	NoGuide Defect = "no-guide"
+	// GuideCredential puts a credential option into a code block of the guide:
+	// check 8.
+	GuideCredential Defect = "guide-credential" //nolint:gosec // G101: the name of a defect, not a credential
 	// TagWithoutRevision lets the tag route write the tag to the format's own table
 	// and not raise the package's revision: check 9.
 	TagWithoutRevision Defect = "tag-without-revision"
@@ -373,6 +378,28 @@ func (f Format) SetupTemplates() []formats.SetupTemplate {
 		ts = append(ts, formats.SetupTemplate{ID: "tf.install", Client: "tf", Section: "install", Lang: "shell", Template: "tf install {{.Scope}}/name\n"})
 	}
 	return ts
+}
+
+// Guide implements formats.Format: one section per required topic for every class,
+// a publish section for the classes that take one, and the endpoint note.
+func (f Format) Guide() []formats.GuideSection {
+	configure := "Point tf at {{if .Repository}}`{{.Repository}}`{{else}}the repository{{end}}:\n"
+	if f.has(string(GuideCredential)) {
+		configure += "\n```ini\n//{{.Repository}}/:_authToken=changeme\n```\n"
+	}
+	all := []formats.Class{formats.Local, formats.Remote, formats.Virtual}
+	if f.has(string(NoGuide)) {
+		all = []formats.Class{formats.Local, formats.Virtual}
+	}
+	return []formats.GuideSection{
+		{ID: "tf.what", Topic: formats.GuideWhat, Title: "What it is", Classes: all, Markdown: "A {{.Class}} repository of the test format.\n"},
+		{ID: "tf.configure", Topic: formats.GuideConfigure, Title: "Configure", Classes: all, Snippets: "configure", Markdown: configure},
+		{ID: "tf.authenticate", Topic: formats.GuideAuthenticate, Title: "Authenticate", Classes: all, Markdown: "{{if .Anonymous}}No credential is needed.{{else}}Keep the token in `{{.TokenEnvVar}}`.{{end}}\n"},
+		{ID: "tf.install", Topic: formats.GuideInstall, Title: "Install", Classes: all, Snippets: "install", Markdown: "Install a package:\n"},
+		{ID: "tf.publish", Topic: formats.GuidePublish, Title: "Publish", Classes: []formats.Class{formats.Local, formats.Virtual}, Snippets: "publish", Markdown: "{{if not .Anonymous}}Publish with tf.{{end}}\n"},
+		{ID: "tf.endpoint", Topic: formats.GuideEndpoint, Title: "Endpoint", Markdown: "{{if .ExposureRules}}Hidden versions answer 404.{{end}}\n"},
+		{ID: "tf.troubleshooting", Topic: formats.GuideTroubleshooting, Title: "Troubleshooting", Classes: all, Markdown: "| Status | Code |\n|---|---|\n| 404 | `not_found` |\n"},
+	}
 }
 
 // manifest is package/package.json of an upload.

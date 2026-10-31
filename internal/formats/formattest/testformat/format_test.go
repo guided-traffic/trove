@@ -55,6 +55,8 @@ func TestR_ARCH_010_Defects(t *testing.T) {
 		},
 		{"R-ARCH-010 a setup template with a credential option fails check 8", testformat.TemplateCredential, formattest.CheckSetup, "spells a credential", nil},
 		{"R-ARCH-010 a client without an install template fails check 8", testformat.NoInstallTemplate, formattest.CheckSetup, "no install template", nil},
+		{"R-ARCH-010 R-UI-049 a class without guide sections fails check 8", testformat.NoGuide, formattest.CheckSetup, `class remote, client "tf": no guide section of topic "what"`, nil},
+		{"R-ARCH-010 R-UI-049 a guide with a credential in a code block fails check 8", testformat.GuideCredential, formattest.CheckSetup, "spells a credential in a code block", nil},
 		{"R-ARCH-009 a tag-changing Admin route that raises no revision fails check 9", testformat.TagWithoutRevision, formattest.CheckRevision, "must raise it", nil},
 		{
 			"R-ARCH-010 a name rule that keeps the case of a spelling fails check 10", testformat.NamesCaseSensitive, formattest.CheckNames, "normalize to",

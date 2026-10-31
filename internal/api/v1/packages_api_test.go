@@ -14,6 +14,7 @@ import (
 	"github.com/guided-traffic/trove/internal/errs"
 	_ "github.com/guided-traffic/trove/internal/formats/all"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/packages/readme"
 	"github.com/guided-traffic/trove/internal/packages/view"
 	"github.com/guided-traffic/trove/internal/repository"
 )
@@ -90,6 +91,16 @@ func (packagesScoper) ReadScopeOn(context.Context, *authz.Index, authz.Subject, 
 
 func setupServer(t *testing.T, baseURL string, deploy bool) http.Handler {
 	t.Helper()
+	return setupServerAs(t, baseURL, deploy, authed)
+}
+
+// setupServerAs is setupServer for a caller authn produces; nil is anonymous.
+func setupServerAs(t *testing.T, baseURL string, deploy bool, authn func(*http.Request) (httpserver.Principal, error)) http.Handler {
+	t.Helper()
+	guides, err := readme.New(readme.Options{MaxSourceBytes: 256 << 10})
+	if err != nil {
+		t.Fatal(err)
+	}
 	doc, err := LoadDocument(EmbeddedYAML())
 	if err != nil {
 		t.Fatal(err)
@@ -104,7 +115,7 @@ func setupServer(t *testing.T, baseURL string, deploy bool) http.Handler {
 		Document: doc, Identity: Identity{Replica: "r", Role: "web"}, Ready: func() bool { return true },
 		Access: allowAll{}, Replicas: fakeReplicas{}, Facts: fakeFacts{},
 		Packages: PackageServices{
-			View: &view.Service{}, Decider: packagesDecider{deploy: deploy}, Scoper: packagesScoper{}, Reader: repos,
+			View: &view.Service{}, Decider: packagesDecider{deploy: deploy}, Scoper: packagesScoper{}, Reader: repos, Guides: guides,
 			TokenEnvVar: "MY_TOKEN", TokenTTL: 36 * 3600 * 1e9,
 		},
 	}).Register(router)
@@ -112,7 +123,7 @@ func setupServer(t *testing.T, baseURL string, deploy bool) http.Handler {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chain := httpserver.Chain{Router: router, Resolver: res, Authenticate: authed, Replica: "r", ReplicaHeader: httpserver.ReplicaAuthenticated}
+	chain := httpserver.Chain{Router: router, Resolver: res, Authenticate: authn, Replica: "r", ReplicaHeader: httpserver.ReplicaAuthenticated}
 	return chain.Handler()
 }
 

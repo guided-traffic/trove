@@ -1944,6 +1944,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/repositories/{repoKey}/guide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The guide of a repository for one client
+         * @description What the repository is and how the client uses it (R-API-053, R-UI-049): the sections of the format's
+         *     guide that are written for the repository's class and the client, in topic order, each rendered from
+         *     Markdown to sanitized HTML by the README renderer of R-UI-008. A section that names a setup section
+         *     carries the snippets of the client setup (R-API-030) for the same repository and client: `credentials`
+         *     is `env` for a signed-in caller and `none` for an anonymous one, so the guide never holds a token or a
+         *     placeholder for one, and a snippet equals the one `client-setup` answers with that mode. A section
+         *     that renders to nothing is left out, which drops the publishing sections for an anonymous reader and
+         *     the endpoint note on an endpoint without exposure rules. The guide names the deployment target only
+         *     when the caller may deploy there, and never the members of a virtual repository. The text is English.
+         *     Needs `read` on the repository (`404` otherwise, like a missing repository); `503` while no base URL
+         *     is configured for the endpoint. The answer never matches `trv_(pat|sat|cit)_`.
+         */
+        get: operations["getRepositoryGuide"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/formats/{format}/guide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The guide of a format for one class and client
+         * @description The guide of the format for a class and a client without a repository (R-API-053, R-UI-049): the same
+         *     sections as `GET /api/v1/repositories/{repoKey}/guide`, with the addresses of the endpoint's base URL
+         *     and `<repository>` where the repository key goes, no deployment target, and the snippets of the
+         *     client setup rendered for that address. Any caller; an anonymous caller only where anonymous access is
+         *     on, else `401`. An unknown format answers `404`; a class or client the format does not have `400`;
+         *     `503` while no base URL is configured for the endpoint.
+         */
+        get: operations["getFormatGuide"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/repositories/{repoKey}/cache/invalidate": {
         parameters: {
             query?: never;
@@ -3474,6 +3529,12 @@ export interface components {
             displayName?: string;
             /** @description The classes the implementation accepts. */
             classes: ("local" | "remote" | "virtual")[];
+            /**
+             * @description The native clients of the format (FMT-002), in the format's order. A format with clients ships a
+             *     guide for every class and client (R-UI-049, `GET /api/v1/formats/{format}/guide`); empty for a format
+             *     addressed with any HTTP client, such as generic.
+             */
+            clients: components["schemas"]["FormatClient"][];
             layout: string;
             /** @description The client address template; `{key}` is the repository key. */
             protocolBasePath: string;
@@ -3496,6 +3557,12 @@ export interface components {
             settingsSchema: {
                 [key: string]: unknown;
             } | null;
+        };
+        FormatClient: {
+            /** @description The value of `client` of the client setup and the guide (`npm`, `pnpm`, `yarn`, `yarn-classic`). */
+            id: string;
+            /** @description A product name; the UI does not translate it. */
+            displayName: string;
         };
         FormatList: {
             formats: components["schemas"]["FormatDescriptor"][];
@@ -4088,6 +4155,38 @@ export interface components {
              * @description The lifetime the setup dialog asks for when it creates a token (`ui.client_setup.token_ttl`, bounded by the maximum of R-AUTH-040).
              */
             tokenTtlSeconds: number;
+            snippets: components["schemas"]["ClientSnippet"][];
+        };
+        Guide: {
+            format: string;
+            /** @enum {string} */
+            class: "local" | "remote" | "virtual";
+            client: string;
+            /** @description The repository the guide is for; null for the guide of a format. */
+            repository: string | null;
+            /** @description The address the snippets use, with its trailing slash; `<repository>` stands for the key in the guide of a format. */
+            registryUrl: string;
+            /** @description The repository a publish through this one reaches, when the caller may deploy there; null otherwise. */
+            publishTarget: string | null;
+            /**
+             * @description How the snippets reference the credential; `none` for an anonymous caller.
+             * @enum {string}
+             */
+            credentials: "env" | "none";
+            /** @description The endpoint of the request serves under exposure rules (endpoints.md R-EP-012). */
+            exposureRules: boolean;
+            sections: components["schemas"]["GuideSection"][];
+        };
+        GuideSection: {
+            /** @description Stable, `<format>.<name>`, for example `npm.remote.what`. */
+            id: string;
+            /** @enum {string} */
+            topic: "what" | "configure" | "authenticate" | "install" | "publish" | "maintain" | "audit" | "lockfiles" | "endpoint" | "troubleshooting";
+            /** @description The heading, plain text. */
+            title: string;
+            /** @description The section's text, sanitized by the README renderer of R-UI-008; bind it like a README. */
+            html: string;
+            /** @description The snippets of the client setup the section shows below its text, empty for most sections. */
             snippets: components["schemas"]["ClientSnippet"][];
         };
         CacheInvalidateRequest: {
@@ -7465,6 +7564,7 @@ export interface operations {
                      *           "classes": [
                      *             "local"
                      *           ],
+                     *           "clients": [],
                      *           "layout": "generic",
                      *           "protocolBasePath": "/files/{key}/",
                      *           "defaultUpstreamUrl": null,
@@ -9138,6 +9238,102 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getRepositoryGuide: {
+        parameters: {
+            query: {
+                /** @description One of the format's `clients` (`GET /api/v1/formats`); another value answers `400 malformed_request`. */
+                client: string;
+            };
+            header?: never;
+            path: {
+                /** @description The repository key (R-REPO-002). */
+                repoKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The guide. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "format": "npm",
+                     *       "class": "virtual",
+                     *       "client": "npm",
+                     *       "repository": "npm-all",
+                     *       "registryUrl": "https://trove.example.com/api/npm/npm-all/",
+                     *       "publishTarget": "npm-local",
+                     *       "credentials": "env",
+                     *       "exposureRules": false,
+                     *       "sections": [
+                     *         {
+                     *           "id": "npm.configure",
+                     *           "topic": "configure",
+                     *           "title": "Point the client at the repository",
+                     *           "html": "<p>Save the snippet as <code>.npmrc</code> in your project …</p>",
+                     *           "snippets": [
+                     *             {
+                     *               "id": "npm.configure.npmrc",
+                     *               "tab": "configure",
+                     *               "fileName": ".npmrc",
+                     *               "language": "ini",
+                     *               "content": "registry=https://trove.example.com/api/npm/npm-all/\n//trove.example.com/api/npm/npm-all/:_authToken=${TROVE_TOKEN}\n"
+                     *             }
+                     *           ]
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Guide"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getFormatGuide: {
+        parameters: {
+            query: {
+                /** @description One of the format's `classes`. */
+                class: "local" | "remote" | "virtual";
+                /** @description One of the format's `clients`. */
+                client: string;
+            };
+            header?: never;
+            path: {
+                /** @description A format of `GET /api/v1/formats`. */
+                format: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The guide. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Guide"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];

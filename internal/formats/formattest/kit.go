@@ -344,8 +344,8 @@ func (r *run) skipProblem(c Check, reason string) string {
 		return fmt.Sprintf("%s is skipped (%s) and the format has a remote adapter", c, reason)
 	case c == CheckMerge && r.f.Virtual() != nil:
 		return fmt.Sprintf("%s is skipped (%s) and the format has a virtual adapter", c, reason)
-	case c == CheckSetup && (len(r.d.Clients) > 0 || len(r.f.SetupTemplates()) > 0):
-		return fmt.Sprintf("%s is skipped (%s) and the format has clients or setup templates", c, reason)
+	case c == CheckSetup && (len(r.d.Clients) > 0 || len(r.f.SetupTemplates()) > 0 || len(r.f.Guide()) > 0):
+		return fmt.Sprintf("%s is skipped (%s) and the format has clients, setup templates or a guide", c, reason)
 	case c == CheckNames && r.d.PackageNames:
 		return fmt.Sprintf("%s is skipped (%s) and the format has package names", c, reason)
 	}

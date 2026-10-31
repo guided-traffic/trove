@@ -20,6 +20,7 @@ import { HttpTokensApi, TokensApi } from './tokens-api';
 // <<< M1 ui-b
 // >>> M2 ui-packages
 import { ClientSetupApi, HttpClientSetupApi, HttpPackagesApi, PackagesApi } from './packages-api';
+import { GuidesApi, HttpGuidesApi } from './guides-api';
 // <<< M2 ui-packages
 
 /**
@@ -52,6 +53,7 @@ export function provideApiServices(): Provider[] {
     // >>> M2 ui-packages
     { provide: PackagesApi, useClass: HttpPackagesApi },
     { provide: ClientSetupApi, useClass: HttpClientSetupApi },
+    { provide: GuidesApi, useClass: HttpGuidesApi },
     // <<< M2 ui-packages
   ];
 }

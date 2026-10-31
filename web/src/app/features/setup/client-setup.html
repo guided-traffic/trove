@@ -5,6 +5,14 @@
   Choose your package manager and a repository. You get the configuration and the commands that point the
   client at trove. Nothing is changed on the server.
 </p>
+<p class="intro">
+  <a
+    routerLink="/guides"
+    [queryParams]="{ format: activeFormat(), client: activeClient(), repository: activeRepository() }"
+    i18n="@@setup.guide-link"
+    >Read the guide: what the repository is, publishing, lockfiles and troubleshooting</a
+  >
+</p>
 
 @if (loadFailure(); as f) {
   <trove-error-notice [error]="f" (retry)="answer.reload()" />
