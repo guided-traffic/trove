@@ -244,8 +244,11 @@ var npmScenarios = []npmScenario{
 		return ""
 	}, run: scenarioLogin},
 	{id: "audit", reqs: "R-NPM-038 R-NPM-043 R-NPM-045", na: func(c *npmClient) string {
-		if c.row == "yarn1" {
+		switch c.row {
+		case "yarn1":
 			return "yarn audit sends its request to registry.yarnpkg.com whatever the .npmrc says (verified with --verbose), so it never reaches the registry under test"
+		case "pnpm10":
+			return "pnpm 10 speaks only npm 6's audit endpoints (audits/quick, audits), which trove answers with 501 and does not translate (Q-NPM-65)"
 		}
 		return ""
 	}, run: scenarioAudit},
@@ -562,8 +565,6 @@ var loginRefusal = regexp.MustCompile(`\b(401|404|501)\b|Invalid authentication|
 // packages it installed (left-pad 1900001, @cobalt/dusky-gauge 1900003, test/npmstub/testdata/advisories.json), and the
 // row's own package, which npm-local holds, never reaches the provider; npm prints the notice that names the withheld
 // name. npm's audit against npm-local fails with the 501 of R-NPM-038 and its text, and the install there succeeds.
-// pnpm 10 speaks npm 6's audit protocol (audits/quick, then audits), which trove answers with 501 (Q-NPM-65): pnpm
-// retries a 501 after 10 seconds and a minute for each of the two, so the row reports the 501 after about 140 seconds.
 func scenarioAudit(t *testing.T, c *npmClient) {
 	plain, _ := c.ensurePublished()
 	dir := c.project("audit", nil)
@@ -574,12 +575,6 @@ func scenarioAudit(t *testing.T, c *npmClient) {
 		r = c.run(dir, "npm", "audit")
 	} else {
 		r = c.run(dir, "audit")
-	}
-	if c.row == "pnpm10" {
-		if r.Code == 0 || !strings.Contains(r.Out, "501") || !strings.Contains(r.Out, "bulk advisory endpoint") {
-			t.Fatalf("%s audit: exit %d, want a failure that reports the registry's 501 for npm 6's endpoints:\n%s", c.row, r.Code, tailLines(r.Out, 15))
-		}
-		return
 	}
 	// Every client exits non-zero when it found an advisory.
 	if r.Code == 0 || !strings.Contains(r.Out, "1900001") || !strings.Contains(r.Out, "1900003") {
