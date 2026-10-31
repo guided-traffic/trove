@@ -906,6 +906,8 @@ HTTP duration histograms use the buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.
 | `trove_http_requests_total` | counter | `listener`, `endpoint` (client listener), `handler`, `method`, `code` | Completed requests |
 | `trove_http_request_duration_seconds` | histogram | `listener`, `endpoint` (client listener), `handler`, `method`, `code_class` | Time from first byte received to last byte sent |
 | `trove_http_requests_in_flight` | gauge | `listener`, `endpoint` (client listener) | Requests in progress |
+| `trove_http_requests_shed_total` | counter | `endpoint`, `reason` (`in_flight`, `memory_slots`, `heap`) | Requests step 4 of the chain answered `503 server_busy`: beyond the endpoint's `max_in_flight`, beyond the replica's memory slots, or while the heap gate was closed ([architecture.md](architecture.md) R-ARCH-005, Q-ARCH-240) |
+| `trove_http_memory_slots` | gauge | — | Concurrent requests the replica's memory admits; `0` when no memory limit is known (R-ARCH-005) |
 | `trove_http_received_bytes_total` | counter | `handler` | Request body bytes |
 | `trove_http_sent_bytes_total` | counter | `handler` | Response body bytes |
 | `trove_http_transfers_cut_total` | counter | `direction` | Transfers cut at the shutdown deadline ([architecture.md](architecture.md) R-ARCH-024, Q-ARCH-18) |

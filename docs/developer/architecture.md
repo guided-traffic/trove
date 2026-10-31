@@ -11,7 +11,7 @@ stops. Requirements: [R-ARCH-001](../spec/architecture.md), [R-ARCH-005](../spec
 |---|---|
 | [cmd/trove/serve.go](../../cmd/trove/serve.go) | Loads the configuration, turns `SIGTERM`/`SIGINT` into a context, calls `app.RunWith`. A second signal ends the process at once |
 | [internal/app](../../internal/app) | Composition root: role subsystems, start order, shutdown sequence, wiring of every infrastructure client |
-| [internal/httpserver](../../internal/httpserver) | Listeners and their TLS (`ListenerTLS`), `Router` (ServeMux wrapper), the middleware `Chain`, client address, in-flight limit, route-table rules, graceful shutdown (`server.go`; `linger*.go` holds a closing connection until the peer has acknowledged its last bytes and resets a cut one, Q-ARCH-187), and the endpoint model (`Endpoint`, host check, surface), see [endpoints.md](endpoints.md) |
+| [internal/httpserver](../../internal/httpserver) | Listeners and their TLS (`ListenerTLS`), `Router` (ServeMux wrapper), the middleware `Chain`, client address, in-flight limit and memory guard (`memory.go`), route-table rules, graceful shutdown (`server.go`; `linger*.go` holds a closing connection until the peer has acknowledged its last bytes and resets a cut one, Q-ARCH-187), and the endpoint model (`Endpoint`, host check, surface), see [endpoints.md](endpoints.md) |
 | [internal/tlsfiles](../../internal/tlsfiles) | Reloadable TLS material of every listener and client (leaf package), see [tls.md](tls.md) |
 | [internal/observability/health](../../internal/observability/health) | Readiness checks with debounce, the liveness watchdog, the probe handlers |
 | [internal/api/v1](../../internal/api/v1) | Management API handlers and the OpenAPI document, see [http-api.md](http-api.md) |
@@ -65,7 +65,7 @@ net/http server ── track (stall deadlines, active-request registry for the s
      └─ 2 trace        observability Tracer.Middleware (traceparent, trace ID)   [injected]
         └─ 2 request ID  X-Request-Id = trace ID (minted if no trace stage); X-Trove-Replica for replica_header=always; OnRequest hook names the handler
            └─ 3 request log + metrics   observability.RequestLog               [injected]
-              └─ 4 in-flight limit      503 server_busy + Retry-After: 1
+              └─ 4 in-flight limit, then the replica's memory guard (slots, heap gate)   503 server_busy + Retry-After: 1
                  └─ 5 client address    Resolver: peer, trusted proxies, base URL; Annotate hook; per endpoint: effective host, host check (421), binding
                     └─ preflight  CORS preflight of an allowed origin, answered before authentication (Q-API-138)
                        └─ 6 authentication principal or anonymous (bearer token or session cookie); invalid credential -> 401; X-Trove-Replica for authenticated callers
@@ -80,7 +80,29 @@ request would otherwise hide the mux's own pattern from the log stage.
 
 The ops listener ([ops.go](../../internal/httpserver/ops.go)) serves `GET /healthz`, `/readyz`,
 `/metrics` through the same recovery and request-ID stages and an optional request log. It has no
-in-flight limit, so a probe is never refused because the request pool is busy.
+in-flight limit and no memory guard, so a probe is never refused because the request pool is busy.
+
+### Stage 4 and the memory guard
+
+[memory.go](../../internal/httpserver/memory.go) holds `MemoryGuard`, which every endpoint's chain of a replica shares
+(`Chain.Memory`); [internal/app/memory.go](../../internal/app/memory.go) builds it at `Start` (R-ARCH-005,
+[Q-ARCH-240](../spec/architecture.md#q-arch-240--a-replica-admits-what-its-memory-holds-memory-slots-and-a-heap-gate-in-step-4)).
+
+1. `applyMemoryLimit` sets the Go memory limit of R-HA-036: `runtime.memory_limit_ratio` × `runtime.memory_limit_bytes`, unless
+   `GOMEMLIMIT` is in the environment. No limit known means no guard (`NewMemoryGuard` returns nil, which admits everything), and a
+   warning.
+2. `requestMemory` is what one request may hold: `blob.DownloadBufferBytes` (the verified download's buffer, rounded to its pool
+   class) + `storage.s3.http.receive_window` + `requestOverhead` (128 KiB, measured). The guard has ⌊0.8 × limit ÷ that⌋ slots, a buffered
+   channel; `Admit` takes one without waiting or refuses with `memory_slots`.
+3. `Run` reads `/gc/heap/live:bytes` + `/memory/classes/heap/stacks:bytes` every 50 ms. At 80 % of the limit the gate closes
+   (`Admit` refuses with `heap`) until the value is below 70 %. Why not the allocated heap: near the Go limit it is high by design.
+   A closed gate that sees `/gc/cycles/total:gc-cycles` unchanged for a second calls `runtime.GC` (Q-ARCH-242): an idle replica
+   would otherwise keep the last cycle's high value for two minutes.
+4. `Chain.shed` answers every refusal the same way, `503 server_busy` with `Retry-After: 1`, rendered through the path's error
+   shape, and calls `OnShed(reason)`, which the composition root counts in `trove_http_requests_shed_total{endpoint,reason}`.
+
+The endpoint's `max_in_flight` is asked first and its slot released if the guard refuses. The slots are what makes a burst safe:
+admission happens before the request allocates, so the heap gate alone would admit a whole burst inside one GC cycle.
 
 Every route of a listener is registered through `httpserver.Router`. The generated API operations, the
 UI and later the format dispatcher all use `Router.Handle`, so `Router.Patterns()` is the whole route
@@ -297,6 +319,10 @@ One new file and one line in the list.
 `set -a; . .dev/integration/env; set +a; go test -tags integration -race ./test/integration/server/...`.
 [test/integration/tls](../../test/integration/tls) builds the binary as well and runs `serve --role all` with TLS on both
 listeners, rotating the certificate under load (E0.15 at process level, [tls.md](tls.md#how-to-test)).
+[test/integration/overload](../../test/integration/overload) seeds an installation through `testenv.NewStack` and runs the binary
+(`Stack.Environ`) with `TROVE_RUNTIME_MEMORY_LIMIT_BYTES` of 256 MiB: 1,000 downloads whose clients read nothing, the memory
+guard's slots and `503`s, and the memory the runtime holds, sampled from `/metrics` ([Stage 4 and the memory guard](#stage-4-and-the-memory-guard)).
+A memory limit is per process, which is why this suite cannot use the in-process harness.
 
 ## Test builds
 

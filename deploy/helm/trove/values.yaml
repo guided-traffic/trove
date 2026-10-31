@@ -43,7 +43,7 @@ web:
       memory: 1Gi                       # default (proposed)
       ephemeral-storage: 2Gi            # default (proposed)
     limits:
-      memory: 2Gi                       # default (proposed); no CPU limit by default (R-HA-036)
+      memory: 2Gi                       # default (proposed); no CPU limit by default (R-HA-036); required, sizes what a pod admits (R-HA-029)
   podDisruptionBudget:
     enabled: true                       # default (proposed)
     maxUnavailable: 1                   # default (proposed)

@@ -1550,8 +1550,39 @@ P-13 and P-14 the driver's of E0.6 and E0.13) and stay with WP5.6.
 The development agent revisits this when the reference environment exists: the run there sets `GATE=1`, and the dev-profile run may
 then be dropped from the per-change leg.
 
-**Applied in the roadmap:** none; [../developer/e2e.md](../developer/e2e.md#drain-and-failover-under-npm-load).
+**Applied in the roadmap:** none; [../developer/e2e.md](../developer/e2e.md#drain-and-failover-under-npm-load). What an
+unanswered request is when the replica sheds load: Q-ROAD-10.
+
+### Q-ROAD-10 · What TestNPMPerf fails on when the replica sheds load
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: on a CI runner the CPU of the dev profile's `web` pod (request 250m, `GOMAXPROCS` 1) cannot serve P-8's 1,000
+requests/s of a 50 KiB tarball; on a laptop it serves them at a p99 of 10.7 ms. Before
+[Q-ARCH-240](../spec/architecture.md#q-arch-240--a-replica-admits-what-its-memory-holds-memory-slots-and-a-heap-gate-in-step-4)
+the pod collected requests until it was OOM-killed, and `TestNPMPerf` failed on the unexpected ends of connections and the
+refused connections that followed. Now the pod answers what it cannot serve with `503 server_busy` and `Retry-After: 1`, the
+answer a client retries elsewhere; the test, which failed on anything but `200`, would fail on that correct behaviour of an
+underpowered runner. The scenario's rate stays: it is R-ARCH-027's.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Shed answers pass, everything else fails, and a restart fails | `perf/k6/npm.js` counts every answer by status (`200`, `304`, the common 4xx and 5xx, then `4xx`, `5xx`, `other_status`), `shed` for a `503` whose body carries `server_busy`, and the error class of a request without an answer (`connection_refused`, `eof`, `reset`, `timeout`, `tls`, `http2`, `other_error`) into `perf-npm.json`; `TestNPMPerf` fails on any count but `200` and `shed`, on a scenario without a `200`, and when the target pod's restart count or UID changed | The run reports how much the runner could serve and fails on what is a defect anywhere: a replica that dies or answers wrongly | A replica that sheds everything but one request passes the report run |
+| (b) Fail on any non-`200`, as before | — | Strict | Fails on a runner's CPU, which the dev profile does not control; the leg would be red on every slow runner |
+| (c) Lower the rate on the dev profile | P-8 at what a runner can serve | Green | Measures nothing R-ARCH-027 asks; hides the overload path the defect came from |
+
+**Choice:** (a). With `GATE=1` (E5.3, the reference environment) a shed request in P-7 or P-8 fails the run too
+(`p7_outcome_shed`, `p8_outcome_shed`), because the target there is the rate held.
+
+**Rationale:** On an environment that cannot hold the rate, shedding is the specified behaviour (R-ARCH-005) and the protection
+that keeps the replica alive; dying and wrong answers are what the report run must catch. Run locally with the `web` pods limited to
+250m of CPU: the image before Q-ARCH-240 fails it (P-8: 3,451 failures, the pod `OOMKilled`), the image after passes it (P-8: 270
+served per second, 20,501 shed, no failure, no restart) ([../developer/e2e.md](../developer/e2e.md#findings-of-the-npm-tests)). The development agent revisits this
+with Q-ROAD-9, when the reference environment exists.
+
+**Applied in the roadmap:** none; [perf/k6/npm.js](../../perf/k6/npm.js), [npm_perf_test.go](../../test/e2e/npm_perf_test.go),
+[../developer/e2e.md](../developer/e2e.md#the-load-scripts-of-r-arch-027).
 
 The ADR log's index
 [Decisions by the development agent](../decisions.md#decisions-by-the-development-agent) lists
-Q-ROAD-1 to Q-ROAD-9 after the spec questions.
+Q-ROAD-1 to Q-ROAD-10 after the spec questions.

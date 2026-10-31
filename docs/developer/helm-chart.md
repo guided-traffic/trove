@@ -363,6 +363,7 @@ tests in `chart_test.go` assert both, row by row.
 | `worker.replicaCount` < 1 (names `worker.replicaCount`) | implemented |
 | `config.storage.upload.max_size` larger than the `web` spool budget | implemented |
 | `terminationGracePeriodSeconds` below `config.health.shutdown_drain_delay` + 15 s | implemented, per role |
+| `web` or an endpoint pool without `resources.limits.memory`, or with a limit that admits fewer than 64 requests (Q-HA-70); a limit that is not an integer with an optional binary or decimal unit | implemented, naming the limit and the values the request bytes come from |
 | Sentinel mode without addresses or `primary_name`; fewer than 3 addresses under `enforce`; standalone under `enforce` | implemented |
 | `secrets.valkey.existingSecret` empty | implemented |
 | `secrets.oidc[]`: an invalid or repeated `providerId`, an empty `existingSecret`, a `providerId` without a provider of that ID in `config.auth.oidc.providers`, `client_secret_file` set in `config` for it; `config.auth.break_glass.password_file` set | implemented, each naming the value |
@@ -412,6 +413,7 @@ is where the coverage generator reads the IDs from.
 | `R-HA-030` (`TestMigrationJobSecrets`) | the migration Job mounts no key ring; `web` and `worker` do |
 | `R-ARCH-006` (`TestTrustedProxiesExample`) | the `trusted_proxies` example is no pod-wide range and the default list is empty |
 | `R-HA-035`, `R-HA-036` | spool `sizeLimit` and budget; `GOMAXPROCS` rule; default resources |
+| `R-HA-029` (memory) | a `web` pod or endpoint pool without a memory limit, or one whose memory slots (`trove.requestBytes`, the formula of `internal/app/memory.go`) are fewer than 64, fails; `2G`, `64Mi` and a plain integer render |
 | `R-HA-032` | PDB, spread, tolerations, default replica counts and rolling update |
 | `R-HA-037`, `R-ARCH-032` | `sessionAffinity: None` everywhere, no affinity annotations, Ingress path `/` and `Prefix`, `ingress.path` fails naming `path` |
 | `R-HA-019` | hook annotations and weights, `podFailurePolicy`, same `trove.yaml`, nothing from Valkey or S3; disabled renders no Job |

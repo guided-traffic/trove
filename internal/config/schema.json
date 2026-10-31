@@ -2491,6 +2491,16 @@
                   "type": "string",
                   "x-trove-env": "TROVE_STORAGE_S3_HTTP_PROXY_URL"
                 },
+                "receive_window": {
+                  "default": "256KiB",
+                  "description": "HTTP/2 only: how far the store may send ahead of what trove has read of one object; it bounds what a slow download holds (Q-ARCH-241). The transport's own default is 4 MiB.",
+                  "type": [
+                    "string",
+                    "integer"
+                  ],
+                  "x-trove-env": "TROVE_STORAGE_S3_HTTP_RECEIVE_WINDOW",
+                  "x-trove-type": "bytes"
+                },
                 "response_header_timeout": {
                   "default": "30s",
                   "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",

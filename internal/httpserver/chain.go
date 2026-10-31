@@ -45,7 +45,7 @@ type EndpointEvents interface {
 //  1. panic recovery
 //  2. trace context and request ID
 //  3. request log and metrics
-//  4. in-flight limit
+//  4. in-flight limit and memory guard
 //  5. client address and base URL
 //  6. authentication
 //  7. rate limits
@@ -82,6 +82,12 @@ type Chain struct {
 	// MaxInFlight is stage 4: requests beyond it get 503 server_busy with
 	// Retry-After: 1. Zero means no limit.
 	MaxInFlight int
+	// Memory is the replica's memory guard, shared by every endpoint and asked
+	// after MaxInFlight; it refuses the same way. Nil admits everything.
+	Memory *MemoryGuard
+	// OnShed is called for every request stage 4 refuses, with the reason
+	// (ShedInFlight, ShedMemorySlots, ShedHeap).
+	OnShed func(reason string)
 
 	// Resolver is stage 5. Annotate, if set, receives the resolved information so
 	// the request log can record the client address.
@@ -217,23 +223,47 @@ func newTraceID() string {
 	return hex.EncodeToString(b[:])
 }
 
-// inflightStage is step 4. Probes live on the ops listener, so this limit never
-// starves them.
+// inflightStage is step 4: the endpoint's limit, then the replica's memory
+// guard. Probes live on the ops listener, so neither ever starves them.
 func (c Chain) inflightStage(next http.Handler) http.Handler {
-	if c.MaxInFlight <= 0 {
+	if c.MaxInFlight <= 0 && c.Memory == nil {
 		return next
 	}
-	sem := make(chan struct{}, c.MaxInFlight)
+	var sem chan struct{}
+	if c.MaxInFlight > 0 {
+		sem = make(chan struct{}, c.MaxInFlight)
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case sem <- struct{}{}:
-			defer func() { <-sem }()
-			next.ServeHTTP(w, r)
-		default:
-			Problem(w, r, errs.E(errs.Unavailable, CodeServerBusy,
-				"The replica is at its concurrent request limit; retry.", errs.WithRetryAfter(time.Second)))
+		if sem != nil {
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			default:
+				c.shed(w, r, ShedInFlight)
+				return
+			}
 		}
+		release, reason := c.Memory.Admit()
+		if reason != "" {
+			c.shed(w, r, reason)
+			return
+		}
+		defer release()
+		next.ServeHTTP(w, r)
 	})
+}
+
+// shed answers 503 server_busy with Retry-After: 1; a client retries, through
+// the Service possibly on another replica.
+func (c Chain) shed(w http.ResponseWriter, r *http.Request, reason string) {
+	if c.OnShed != nil {
+		c.OnShed(reason)
+	}
+	detail := "The replica is at its concurrent request limit; retry."
+	if reason != ShedInFlight {
+		detail = "The replica is at the limit of what its memory holds; retry."
+	}
+	Problem(w, r, errs.E(errs.Unavailable, CodeServerBusy, detail, errs.WithRetryAfter(time.Second)))
 }
 
 // addrStage is step 5.

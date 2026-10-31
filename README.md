@@ -219,6 +219,8 @@ Built families, all with the `trove_` prefix:
 | `trove_build_info` | build information, with the role |
 | `trove_http_requests_total`, `trove_http_request_duration_seconds` | `listener`, `endpoint`, `handler`, `method`, `code` (and `le` for the histogram) |
 | `trove_http_requests_in_flight` | `listener`, `endpoint` |
+| `trove_http_requests_shed_total` | `endpoint`, `reason` (`in_flight`, `memory_slots`, `heap`): requests answered `503 server_busy` by the replica's load protection |
+| `trove_http_memory_slots` | none; the concurrent requests the replica's memory admits, `0` without a known memory limit |
 | `trove_endpoint_listener_up`, `trove_endpoint_misdirected_total`, `trove_endpoint_forwarded_host_ignored_total` | `endpoint` |
 | `trove_ready` | none; 1 while `/readyz` answers 200 |
 | `trove_tls_certificate_expiry_timestamp_seconds`, `trove_tls_reloads_total`, `trove_tls_reload_errors_total` | `kind` (`listener`, `database`, `valkey`, `objectstore`, `outbound`), `listener` (`client`, `client:<endpoint>`, `ops`, or empty), `name` (the configured file) |
@@ -506,7 +508,7 @@ server:
   idle_timeout: 120s                    # default
   transfer_stall_timeout: 60s           # default
   max_header_bytes: 65536               # default; at least 4096
-  max_in_flight: 4096                   # default: concurrent requests per replica
+  max_in_flight: 4096                   # default: concurrent requests per replica; the memory slots of runtime.memory_limit_bytes bound them too
   shutdown_timeout: 0s                  # default: 0 derives it from runtime.termination_grace_period
   tls:                                  # the default endpoint's client listener; empty certificates = plain HTTP
     certificates: []                    # default; example: [{cert_file: /var/run/secrets/trove/tls/tls.crt, key_file: /var/run/secrets/trove/tls/tls.key}]
@@ -532,8 +534,8 @@ server:
   endpoint_rate_limits:                 # default
     external: {requests_per_second: 50, burst: 200, key: principal}
 runtime:
-  memory_limit_ratio: 0.85              # default; 0.1 to 1
-  memory_limit_bytes: 0                 # default: 0 = none known
+  memory_limit_ratio: 0.85              # default; 0.1 to 1; the Go memory limit is ratio × memory_limit_bytes unless GOMEMLIMIT is set
+  memory_limit_bytes: 0                 # default: 0 = none known, and no memory guard; the chart sets it from limits.memory
   termination_grace_period: 0s          # default: 0s = unknown
 ```
 
@@ -717,6 +719,7 @@ storage:
       response_header_timeout: 30s      # default; at least 1s
       idle_conn_timeout: 90s            # default
       idle_transfer_timeout: 60s        # default
+      receive_window: 256KiB            # default; 16KiB to 1GiB; HTTP/2 only: how far the store may send ahead of one download
       proxy_url: ""                     # default: empty = the environment; no user information
       proxy_credentials_file: ""        # default; file only; refused until the outbound layer can send it
       no_proxy: ""                      # default
@@ -757,7 +760,7 @@ storage:
   sidecars:
     pending_ttl: 1h                     # default
   download:
-    buffer_size: 256KiB                 # default; at least 4KiB
+    buffer_size: 256KiB                 # default; at least 4KiB; one pooled buffer per download, a smaller file takes a buffer of its size
     verify: true                        # default
     hold_back: 64KiB                    # default; at least 1KiB; 0 would release bytes before the digest check
   stats:
@@ -1325,7 +1328,7 @@ web:
     sizeLimit: ""                       # default: empty = spool.sizeLimit
   resources:
     requests: {cpu: "1", memory: 1Gi, ephemeral-storage: 2Gi}   # default
-    limits: {memory: 2Gi}               # default; no CPU limit
+    limits: {memory: 2Gi}               # default; no CPU limit; required: sizes the 2,228 requests the pod admits, at least 64 (R-HA-029)
   podDisruptionBudget: {enabled: true, maxUnavailable: 1, minAvailable: null}   # default
   topologySpread: {enabled: true, nodeTaintsPolicy: Honor}     # default; zone ScheduleAnyway, host DoNotSchedule
 worker:

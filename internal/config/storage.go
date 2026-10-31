@@ -81,6 +81,7 @@ type StorageS3HTTP struct {
 	ResponseHeaderTimeout time.Duration `yaml:"response_header_timeout" default:"30s" validate:"min=1s"`
 	IdleConnTimeout       time.Duration `yaml:"idle_conn_timeout" default:"90s"`
 	IdleTransferTimeout   time.Duration `yaml:"idle_transfer_timeout" default:"60s"`
+	ReceiveWindow         ByteSize      `yaml:"receive_window" default:"256KiB" validate:"min=16KiB,max=1GiB" doc:"HTTP/2 only: how far the store may send ahead of what trove has read of one object; it bounds what a slow download holds (Q-ARCH-241). The transport's own default is 4 MiB."`
 	ProxyURL              string        `yaml:"proxy_url" default:"" doc:"Empty means the environment."`
 	ProxyCredentialsFile  string        `yaml:"proxy_credentials_file" default:"" secret:"file"`
 	NoProxy               string        `yaml:"no_proxy" default:""`

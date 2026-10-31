@@ -2987,6 +2987,7 @@ The chart MUST refuse to render, naming the offending value, before anything is 
 | `worker.replicaCount` (or `worker.autoscaling.minReplicas`) < 1 | `worker.replicaCount` |
 | `config.storage.upload.max_size` > the spool budget derived from the `web` spool size (R-HA-035) | both |
 | `terminationGracePeriodSeconds` of a role < `config.health.shutdown_drain_delay` + 15 s | both |
+| `web` or an endpoint pool without `resources.limits.memory`, or with one that admits fewer than 64 requests: ⌊0.8 × `config.runtime.memory_limit_ratio` × the limit ÷ the request bytes of R-ARCH-005⌋, from `config.storage.download.buffer_size`, `hold_back` and `config.storage.s3.http.receive_window` (R-HA-036, Q-HA-70) | the limit, the Deployment or the slot count and the values it comes from |
 | `config.valkey.mode: sentinel` with `config.valkey.sentinel.addresses` or `config.valkey.sentinel.primary_name` empty | the value |
 | `highAvailability.enforce` and `config.valkey.mode` other than `sentinel`, or fewer than 3 Sentinel addresses | `config.valkey.mode` or `config.valkey.sentinel.addresses` |
 | `secrets.valkey.existingSecret` empty | the value |
@@ -3977,7 +3978,13 @@ Priority: **MVP** · Covers: HA-052
   At startup, unless `GOMEMLIMIT` is set explicitly, the process calls `debug.SetMemoryLimit` with
   `runtime.memory_limit_ratio` × that value ([SetMemoryLimit](https://pkg.go.dev/runtime/debug#SetMemoryLimit)).
   The garbage collector then works harder near the limit instead of the container being OOM-killed.
-  The rest is headroom for non-heap memory.
+  The rest is headroom for non-heap memory. `GOMEMLIMIT=off` is an explicit setting too: no limit.
+- **Admission follows the memory.** The same limit sizes what a `web` replica admits: memory slots
+  and a heap gate in step 4 of the chain ([architecture.md](architecture.md) R-ARCH-005,
+  Q-ARCH-240). A replica that the CPU cannot keep up with answers the excess `503 server_busy`
+  instead of collecting requests until the memory runs out. `server.max_in_flight` stays an upper
+  bound; with the chart's 2 GiB the 2,228 memory slots bind first. The chart refuses a `web` pod
+  without a memory limit and one whose limit admits fewer than 64 requests (R-HA-029, Q-HA-70).
 - Buffers are bounded so that memory does not scale with transfer size: streaming bodies, spool
   instead of memory above `storage.spool.memory_threshold`, bounded metadata documents (format pages
   set limits for npm packuments and NuGet registration pages).
@@ -3990,6 +3997,12 @@ Acceptance criteria:
   `gomaxprocs: 2`. With a limit of 3, it reports 3.
 - With a 1 GiB memory limit, a load test that holds 200 concurrent large-packument requests ends
   without an OOM kill, and `go_gc_cycles_total` rises instead.
+- With `TROVE_RUNTIME_MEMORY_LIMIT_BYTES` of 256 MiB, `go_gc_gomemlimit_bytes` is 85 % of it, and
+  1,000 slow downloads held open leave the memory the runtime holds below 256 MiB
+  (`test/integration/overload`, R-ARCH-005).
+- On the dev profile, P-8's 1,000 requests/s of a 50 KiB tarball against one `web` pod whose CPU
+  cannot serve them end without a restart of the pod; what it cannot serve is answered
+  `503 server_busy` ([coverage/roadmap.md](../coverage/roadmap.md) Q-ROAD-10).
 
 ### R-HA-037 · Service, Ingress and TLS at the edge
 Priority: **MVP** · Covers: HA-012, HA-022, HA-038, HA-039, HA-042
@@ -6127,6 +6140,35 @@ that matters to a client. The development agent revisits this when `trove admin 
 command as R-HA-052 states.
 
 **Applied in the spec:** R-HA-052, the pod-crash row: the interim check.
+
+### Q-HA-70 · The chart refuses a `web` pod whose memory cannot hold what it admits
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a `web` replica sizes its admission from its memory limit ([architecture.md](architecture.md) R-ARCH-005,
+Q-ARCH-240): ⌊0.8 × `L` ÷ request bytes⌋ memory slots, with `L` = `runtime.memory_limit_ratio` × the container limit. The
+chart passes `limits.memory` through the downward API; without a limit Kubernetes passes the node's allocatable memory
+instead, and the replica would size its slots from memory it does not have to itself. A limit that admits a handful of
+requests cannot serve the parallel downloads of even a few clients (npm opens up to 15 connections per install).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Require the limit and at least 64 slots | `trove.validate` computes the slots with the binary's formula for `web` and every endpoint pool and refuses a missing limit or fewer than 64, naming the values | A combination that cannot fit fails at `helm install`, before a pod sheds every request | The chart repeats a formula of the binary (one template, `trove.requestBytes`, tested against the binary's numbers) |
+| (b) Refuse an explicit `config.server.max_in_flight` above the slots | The operator's promise of concurrency must fit the memory | Catches the literal mismatch | The binary already admits the smaller of the two; refusing a value that is harmless at runtime only moves the arithmetic to the operator |
+| (c) A floor on `limits.memory` alone, such as 256 MiB | One number | Simple | Misses a large `buffer_size` on a large pod, which is the combination that does not fit |
+| (d) No chart rule | The binary logs its slots at start | Nothing to keep in sync | A pod that admits almost nothing is found under load |
+
+**Choice:** (a). The limit is read as a Kubernetes quantity with a binary or a decimal unit (`2Gi`, `2G`); a fraction or an
+exponent is refused with a message that says so.
+
+**Rationale:** The slots are the contract between the pod's memory and its admission; the chart is where both are chosen, so it
+is where a pair that cannot work is refused. 64 is four clients at npm's parallelism; with the defaults it is any limit of
+59 MiB or more, so it only catches a buffer configuration that is out of proportion to its pod. The development agent revisits the
+floor when the sizing profiles of R-HA-050 exist and say what a small pod is expected to serve.
+
+**Applied in the spec:** R-HA-029 (the row), R-HA-036 (admission follows the memory). Code:
+[_validate.tpl](../../deploy/helm/trove/templates/_validate.tpl), `trove.quantityBytes` and `trove.requestBytes` in
+[_helpers.tpl](../../deploy/helm/trove/templates/_helpers.tpl).
 
 ## What this does not cover
 

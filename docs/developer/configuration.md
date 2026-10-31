@@ -156,6 +156,30 @@ client certificates need certificates on the listener; with `inherit: true` ever
 default (it would be ignored); with `inherit: false` and no certificates the ops listener would be plain HTTP beside a
 TLS client listener, which is refused. `database.ssl_cert_file` and `database.ssl_key_file` are set together.
 
+## Memory and load protection keys
+
+No key of its own: the memory guard of step 4 (R-ARCH-005, [architecture.md](architecture.md#stage-4-and-the-memory-guard)) is
+sized from keys that exist for other reasons. With the chart, `runtime.memory_limit_bytes` comes from `limits.memory`.
+
+```yaml
+runtime:
+  memory_limit_ratio: 0.85            # default; the Go memory limit is this × memory_limit_bytes, unless GOMEMLIMIT is set
+  memory_limit_bytes: 0               # default: none known, no Go limit and no memory guard
+server:
+  max_in_flight: 4096                 # default; per endpoint, asked before the memory slots
+storage:
+  download:
+    buffer_size: 256KiB               # default; with hold_back, the buffer one download holds
+    hold_back: 64KiB                  # default
+  s3:
+    http:
+      receive_window: 256KiB          # default; 16KiB to 1GiB; the HTTP/2 window per object, Go's default is 4 MiB
+```
+
+Memory slots = ⌊0.8 × Go limit ÷ (class of max(`buffer_size`, 2 × `hold_back`, 4 KiB) + `receive_window` + 128 KiB)⌋: 278 for a
+256 MiB container, 1,114 for 1 GiB, 2,228 for 2 GiB. The 80 % and 70 % of the heap gate are constants
+([Q-ARCH-240](../spec/architecture.md#q-arch-240--a-replica-admits-what-its-memory-holds-memory-slots-and-a-heap-gate-in-step-4)).
+
 ## M2 keys
 
 The keys of the remote engine (`proxy.*` beside `proxy.outbound`), the virtual engine and the npm format. The per-repository

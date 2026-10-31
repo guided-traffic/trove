@@ -77,6 +77,8 @@ type App struct {
 	// opsTLS and clientTLS are the listeners' TLS (nil: plain HTTP).
 	opsTLS    *httpserver.ListenerTLS
 	clientTLS *httpserver.ListenerTLS
+	// memGuard is the memory guard every endpoint's chain shares (memory.go).
+	memGuard *httpserver.MemoryGuard
 
 	started   atomic.Bool
 	startedCh chan struct{}
@@ -288,6 +290,7 @@ func (a *App) Start(ctx context.Context) error {
 		defer a.bg.Done()
 		a.warnLoop(hctx, a.warnEvery())
 	}()
+	a.memGuard = a.startMemoryGuard(hctx)
 	a.log.Info("ops listener bound", "addr", ops.Addr().String())
 
 	bctx, cancel := context.WithCancel(context.WithoutCancel(ctx))

@@ -755,6 +755,13 @@ Found while building the matrix and running it through `npm-all`, in the order t
 - **`kubectl exec -i` with an empty standard input never ends.** An empty file is made without stdin (`npmClient.write`); every write is bounded to two minutes. It cost one run 45 minutes.
 - **`kubectl port-forward` loses connections under 50 at once**, so the collapse tests start their bursts inside the cluster, from the client pods pinned to a replica (`burstGet`).
 - **The replicas' pollers hold short transactions** (`ListClusterEpochs`, a few milliseconds each) that a sample of `pg_stat_activity` catches as `idle in transaction`; the E2.9 check counts only a session idle in a transaction for more than 700 ms, against an upstream delay of 1.5 s.
+- **A CPU-starved `web` pod was OOM-killed by P-8** (CI run 41206031404: 587/s served at a p50 of 3.7 s, then 1,998 unexpected ends and 761 refused
+  connections). Reproduced locally with `--set web.resources.limits.cpu=250m` on the dev profile: P-7 served 865/s at a p50 of 4.5 s (k6 dropped 51,931
+  iterations for want of free virtual users), P-8 289/s, then the pod was `OOMKilled`; P-8 counted 1,354 `connection_refused`, 1,995 `eof` and 102 `reset`.
+  With the memory guard ([Q-ARCH-240](../spec/architecture.md#q-arch-240--a-replica-admits-what-its-memory-holds-memory-slots-and-a-heap-gate-in-step-4))
+  the same run ended without a restart and without a failure: P-8 served 270/s and shed 20,501 requests, P-7 served 256/s and shed 50,577. P-7 serves
+  fewer than before because the requests k6 no longer has to hold are sent and refused: a shed answer costs the starved pod CPU too, and k6 does not
+  honour `Retry-After` (the dropped iterations fell to 3,171).
 
 ### Not covered by the npm tests
 
@@ -813,7 +820,7 @@ fault is therefore never a failed client command, and a loop that dies leaves no
 | `TestNPMHA` Valkey failover | `valkey-failover.sh` (`dev-valkey-failover`) after 1 minute; 1 minute after | all three | as the switchover, and `/readyz` 200 on every pod throughout, and `trove_valkey_primary_changes_total` rises by exactly one on every `web` and `worker` replica (R-HA-057) |
 | `TestNPMHA` pod crash | `kubectl delete pod --grace-period=0 --force` of a random `web` or `worker` pod (the seed is logged), ten times, every 2 minutes | `npm ci` and publish loops (R-HA-052 adds k6 only to the drain and Valkey rows) | every `npm` command exits `0`; every version `npm-local` lists for the publish loop's package downloads with its `dist.integrity`, and every acknowledged one is listed (the interim of `trove admin storage verify`, [Q-HA-69](../spec/ha-and-helm.md#q-ha-69--the-storage-check-of-the-pod-crash-before-trove-admin-storage-verify-exists)); every acknowledged publish installs; `/healthz` 200 on every pod that was not deleted; three `web` and two `worker` pods ready at the end |
 | `TestNPMHAClosing` (closing run) | `valkey-stop.sh` after 1 minute; 2 minutes in, one `web` pod deleted with its grace period; `valkey-start.sh` 5 minutes after the stop | all three | every `npm` command exits `0`; k6 as above; the replacement pod becomes ready with `valkey` degraded; `/readyz` 200 throughout on every pod but the deleted one and its replacement; after the return, `degraded` clears on every replica within `open_duration` plus `health_check_interval` plus 5 s (15 s in the dev profile, read through `driver info`), counted from the first moment a Sentinel names a primary again (`valkeyClearWatch` polls while `valkey-start.sh` still waits for the StatefulSets and the operator) |
-| `TestNPMPerf` | none | [perf/k6/npm.js](../../perf/k6/npm.js) | every request answered `200`; the numbers are reported, not gated (below) |
+| `TestNPMPerf` | none | [perf/k6/npm.js](../../perf/k6/npm.js) | every request answered `200` or shed with the replica's `503 server_busy`; no restart of the target pod; the numbers are reported, not gated (below) |
 
 The drain picks its node with `drainNodeVariantA`: a worker node with a `web` and a `worker` pod and neither the PostgreSQL primary nor
 the Valkey primary, which it asks the Sentinels for. A primary in the way is moved first, before the load starts. On the three-node
@@ -843,10 +850,25 @@ again). The scenarios run one after the other for 30 s each:
 | `p7` | P-7 | documents of `npm-local` | 2,000/s |
 | `p8` | P-8 | the 50 KiB tarball | 1,000/s |
 
-The dev profile is not the reference environment, so the test fails on an unanswered request only and logs the numbers; with `GATE=1` the
+The dev profile is not the reference environment, so the test does not gate the targets and logs the numbers; with `GATE=1` the
 script makes the targets k6 thresholds, which is the run of roadmap E5.3
 ([Q-ROAD-9](../coverage/roadmap.md#q-road-9--what-wp28-builds-of-r-arch-027s-load-scripts-and-where-they-run)). The result is
 `.out/e2e/perf-npm/perf-npm.json`.
+
+A runner's CPU may not serve P-7 or P-8 on one pod (request 250m, `GOMAXPROCS` 1). The pod then answers the excess with
+`503 server_busy` and `Retry-After: 1` from its memory guard (R-ARCH-005) instead of being OOM-killed, so the script counts every
+answer by its outcome
+([Q-ROAD-10](../coverage/roadmap.md#q-road-10--what-testnpmperf-fails-on-when-the-replica-sheds-load)):
+
+| Outcome in `perf-npm.json` (`scenarios.<id>.outcomes`) | Counts as |
+|---|---|
+| `200` | served (`served_per_s`, the latency trend) |
+| `shed`: a `503` with `Retry-After` whose npm error body has the code `server_busy` | shed (`shed`); fails only with `GATE=1`, for P-7 and P-8 |
+| `304`, `401`, `403`, `404`, `429`, `500`, `502`, `503`, `504`, then `4xx`, `5xx`, `other_status` | failed |
+| no answer: `connection_refused`, `eof` (unexpected end of the connection), `reset`, `timeout`, `tls`, `http2`, `other_error` (k6's `error_code` and message) | failed |
+
+`TestNPMPerf` fails on any failed count, on a scenario without a `200`, and when the target pod's restart count or UID changed
+during the run (an OOM kill restarts the container in place).
 
 ### Artifacts
 

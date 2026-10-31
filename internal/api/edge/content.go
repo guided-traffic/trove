@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/items"
@@ -14,8 +15,8 @@ import (
 
 // ServeOptions configure [ServeItem].
 type ServeOptions struct {
-	// Buffer is the copy buffer of the body (storage.download.buffer_size); a value
-	// below 4,096 uses 4,096.
+	// Buffer bounds the copy buffer of a body that is not the verifying reader
+	// (storage.download.buffer_size); a value below 4,096 uses 4,096.
 	Buffer int
 	// Served, when set, runs after a body that started at byte 0 was written
 	// completely: 200 with the whole file, or 206 from byte 0 (R-STOR-015). HEAD,
@@ -100,7 +101,7 @@ func ServeItem(w http.ResponseWriter, r *http.Request, it items.Item, open func(
 	defer body.Close()
 	cw := content()
 	cw.WriteHeader(status)
-	if _, err := io.CopyBuffer(cw, readerOnly{body}, make([]byte, max(o.Buffer, 4096))); err != nil {
+	if err := copyBody(cw, body, min(int64(max(o.Buffer, 4096)), max(length, 1))); err != nil {
 		if r.Context().Err() != nil { // the client went away
 			return
 		}
@@ -114,8 +115,20 @@ func ServeItem(w http.ResponseWriter, r *http.Request, it items.Item, open func(
 	}
 }
 
-// readerOnly hides WriterTo and ReaderFrom so that CopyBuffer uses the buffer.
-type readerOnly struct{ io.Reader }
+// copyBody streams the body: the verifying reader writes from its own buffer
+// (blob.Store.Open), any other body goes through a pooled buffer of at most size
+// bytes, so a small file never takes a buffer of storage.download.buffer_size
+// (Q-ARCH-241).
+func copyBody(w io.Writer, body io.Reader, size int64) error {
+	if wt, ok := body.(io.WriterTo); ok {
+		_, err := wt.WriteTo(w)
+		return err
+	}
+	buf := blob.Buffer(int(size))
+	defer blob.Release(buf)
+	_, err := io.CopyBuffer(w, body, (*buf)[:size])
+	return err
+}
 
 // fileName is the last segment of a canonical path, the name for
 // Content-Disposition.

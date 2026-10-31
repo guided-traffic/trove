@@ -38,7 +38,7 @@ How to report a vulnerability is in [SECURITY.md](../../SECURITY.md). This direc
 | [tokens-and-credentials.md](tokens-and-credentials.md) | Which credentials a request may carry, in which order they are read, how a token is stored, checked, scoped and revoked | the credential precedence and the 401 rule; the token format and its SHA-256 storage; scopes as a ceiling; lifetime limits; revocation across replicas with and without Valkey; the failed-credential throttle |
 | [login-and-sessions.md](login-and-sessions.md) | Who signs in how: the OIDC login and what it trusts the IdP and the browser with, where the login secrets live, the checks a login passes, sessions, CSRF and the break-glass account | the flow row and its single use; the ID-token checks; the claim gates; the session cookies, the session cache and the end of a session; the CSRF rules; the `auth.flow_starts` limit; the break-glass lockout, slots and rotation hold |
 | [permissions.md](permissions.md) | Who may do what: deny by default, policies, roles and capabilities, the token scope as a ceiling, hidden existence, how a change reaches every replica | the evaluation of R-AUTHZ-015; the grant index and its epochs; `Trove-Authz-Min-Epoch`; the bootstrap read bridge; decision audit |
-| [api-edge.md](api-edge.md) | What the management API does at its edge before a handler runs | strict body decoding; CORS; the cluster-wide rate-limit classes and their fallback; idempotency keys; the security headers |
+| [api-edge.md](api-edge.md) | What the management API does at its edge before a handler runs | strict body decoding; CORS; the cluster-wide rate-limit classes and their fallback; the replica's load protection (in-flight limit, memory guard); idempotency keys; the security headers |
 | [endpoints-and-exposure.md](endpoints-and-exposure.md) | What an outside audience on a further endpoint can present and see | the accepted credentials and bound tokens per endpoint; exposure rules as a ceiling for every caller; hidden content as a missing one; the endpoint rate-limit class; the endpoint API |
 | [file-transfer.md](file-transfer.md) | What a client can upload, download and delete under `/files/`, and what the served bytes can do in a browser | path cleaning; the decision of every request and listing; digests; Range; the response headers of served files; deletes and their job |
 | [egress.md](egress.md) | Which outbound connections are checked against which address rules, and where the check does not reach | the address policy at connect time; zoned IPv6 refusal; the deny and allow lists; NAT64; the objectstore and span-export exceptions |
@@ -75,7 +75,10 @@ that describes its mechanism.
 Spec pages hold the gaps of their mechanisms, among them [H-41](../spec/operations-and-observability.md#h-41--egress-is-unrestricted-and-ingress-enforcement-is-verified-on-one-cni-only),
 [H-53](../spec/operations-and-observability.md#h-53--span-export-bypasses-the-egress-address-policy),
 [H-55](../spec/architecture.md#h-55--key-files-of-the-stored-secret-key-ring-are-read-once-at-start-up),
-[H-56](../spec/architecture.md#h-56--the-object-store-endpoint-skips-the-egress-address-policy) and
+[H-56](../spec/architecture.md#h-56--the-object-store-endpoint-skips-the-egress-address-policy),
+the gaps of the replica's load protection [H-322](../spec/architecture.md#h-322--slow-requests-of-one-client-take-the-memory-slots-of-every-client),
+[H-323](../spec/architecture.md#h-323--a-replica-that-retains-memory-above-the-high-water-mark-refuses-every-request) and
+[H-324](../spec/architecture.md#h-324--connections-that-send-no-request-are-outside-the-memory-guard), and
 [H-6](../spec/repositories-and-proxy.md#h-6--remote-repositories-reach-private-networks). The perspective pages link them where
 they apply and do not repeat them. The guides of the formats (R-UI-049) record theirs on
 [api-and-ui.md](../spec/api-and-ui.md#what-this-does-not-cover):

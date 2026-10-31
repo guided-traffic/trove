@@ -5,8 +5,10 @@ package e2e
 // The load scripts of R-ARCH-027 against npm (WP2.8): perf/k6/npm.js runs against one web replica from inside the
 // cluster and reports the P-targets an npm client meets. The dev profile is not the reference environment of
 // R-ARCH-027, so the numbers are reported and not gated here; the gate is the run on the reference environment in
-// roadmap E5.3, with GATE=1 (Q-ROAD-9). What fails this test is a script that does not run, or a request that is not
-// answered with 200.
+// roadmap E5.3, with GATE=1 (Q-ROAD-9). What fails this test is a script that does not run, a restart of the target
+// pod, or a request that got neither 200 nor the replica's own 503 server_busy (Q-ROAD-10): a CPU-starved replica
+// sheds what it cannot serve (R-ARCH-005 step 4), and a client retries that elsewhere, but a refused connection, an
+// unexpected end of one or any other status is a failure.
 
 import (
 	"encoding/json"
@@ -23,17 +25,20 @@ import (
 const perfSA = "e2e-npm-perf"
 
 type perfScenario struct {
-	OfferedPerS float64 `json:"offered_per_s"`
-	ServedPerS  float64 `json:"served_per_s"`
-	Failed      float64 `json:"failed"`
-	P50MS       float64 `json:"p50_ms"`
-	P99MS       float64 `json:"p99_ms"`
-	MaxMS       float64 `json:"max_ms"`
+	OfferedPerS float64            `json:"offered_per_s"`
+	Requests    float64            `json:"requests"`
+	ServedPerS  float64            `json:"served_per_s"` // answered 200
+	Shed        float64            `json:"shed"`         // the replica's 503 server_busy
+	Failed      float64            `json:"failed"`       // everything else
+	Outcomes    map[string]float64 `json:"outcomes"`     // by status or error class
+	P50MS       float64            `json:"p50_ms"`
+	P99MS       float64            `json:"p99_ms"`
+	MaxMS       float64            `json:"max_ms"`
 }
 
 func TestNPMPerf(t *testing.T) {
 	h := npmHAFx(t)
-	t.Run("R-ARCH-027 P-1 P-3 P-5 P-7 P-8 the npm load scripts of perf/k6 against one web replica from inside the cluster: every request answered 200, the targets reported (gated in E5.3 on the reference environment)", func(t *testing.T) {
+	t.Run("R-ARCH-027 P-1 P-3 P-5 P-7 P-8 the npm load scripts of perf/k6 against one web replica from inside the cluster: every request answered 200 or shed with 503 server_busy, no restart of the pod, the targets reported (gated in E5.3 on the reference environment)", func(t *testing.T) {
 		adm := h.fx.adm
 		ensureSA(t, adm, perfSA)
 		ensurePolicy(t, adm, perfSA, []string{npmLocalKey, npmRemoteKey, npmAllKey}, [2]any{"sa:" + perfSA, []string{"read"}})
@@ -94,6 +99,16 @@ func TestNPMPerf(t *testing.T) {
 		t.Cleanup(func() { _ = exec.Command("docker", "kill", name).Run() })
 		start := time.Now()
 		out, err := exec.Command("docker", args...).CombinedOutput()
+		// An OOM kill restarts the container in place: the same pod with one restart more.
+		after := pod{Restarts: -1}
+		for _, p := range podsOf(t, selWeb) {
+			if p.Name == web.Name {
+				after = p
+			}
+		}
+		if after.UID != web.UID || after.Restarts != web.Restarts {
+			t.Errorf("%s restarted or went away during the load: %d restarts before, %d after (uid %s, %q)", web.Name, web.Restarts, after.Restarts, web.UID, after.UID)
+		}
 		_ = os.WriteFile(filepath.Join(dir, "console.log"), out, 0o644)
 		if err != nil {
 			t.Fatalf("k6 perf/k6/npm.js against %s: %v\n%s", web.Name, err, tailLines(string(out), 30))
@@ -116,9 +131,10 @@ func TestNPMPerf(t *testing.T) {
 				t.Errorf("scenario %s is missing from the result", id)
 				continue
 			}
-			t.Logf("  %s: offered %.0f/s, served %.0f/s, p50 %.1f ms, p99 %.1f ms, max %.1f ms, failed %.0f", id, s.OfferedPerS, s.ServedPerS, s.P50MS, s.P99MS, s.MaxMS, s.Failed)
+			t.Logf("  %s: offered %.0f/s, served %.0f/s, shed %.0f, failed %.0f, p50 %.1f ms, p99 %.1f ms, max %.1f ms, outcomes %v",
+				id, s.OfferedPerS, s.ServedPerS, s.Shed, s.Failed, s.P50MS, s.P99MS, s.MaxMS, s.Outcomes)
 			if s.Failed != 0 {
-				t.Errorf("%s: %.0f requests were not answered with 200", id, s.Failed)
+				t.Errorf("%s: %.0f requests got neither 200 nor 503 server_busy: %v", id, s.Failed, s.Outcomes)
 			}
 			if s.ServedPerS == 0 {
 				t.Errorf("%s: no request was served", id)

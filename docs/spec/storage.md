@@ -1076,7 +1076,9 @@ content) resolve the item (virtual and remote resolution:
 
 - **Streaming.** The body MUST be copied from the S3 `GetObject` response to the client through
   a bounded buffer (`storage.download.buffer_size`), never spooled. Client disconnect cancels the
-  S3 request.
+  S3 request. A download holds one buffer, taken from a pool and no larger than its object: the
+  verifying reader of R-STOR-013 writes the cleared bytes from its own buffer, which is at least
+  twice `storage.download.hold_back` ([architecture.md](architecture.md) Q-ARCH-241).
 - **HEAD and conditional requests** MUST be answered from PostgreSQL alone, without an S3 call.
 - **Response fields:** `Content-Length`; `Content-Type` from the item; `ETag: "<sha256 hex>"`
   (a strong validator: the content address); `Last-Modified` from `modified_at`;
@@ -2395,6 +2397,10 @@ Priority: **MVP** · Covers: STOR-024, STOR-017
 - The S3 client uses one HTTP connection pool per replica with `storage.s3.http.max_connections`, and
   explicit dial, TLS-handshake, response-header and idle timeouts. Body transfers have no fixed
   total timeout; they fail when no byte moves for `storage.s3.http.idle_transfer_timeout`.
+- Over HTTP/2, the store may send at most `storage.s3.http.receive_window` bytes of one object
+  ahead of what trove has read; the transport's own default, 4 MiB, would let every slow download
+  hold that much in memory ([architecture.md](architecture.md) Q-ARCH-241). Over HTTP/1.1, which
+  AWS S3 speaks, the kernel's socket buffer holds what is in flight and the key has no effect.
 - Retries: the SDK's standard retryer with `retry.max_attempts` and exponential backoff capped at
   `retry.max_backoff`, for throttling, `5xx` and network errors on idempotent operations (all
   operations trove uses are idempotent on content-addressed keys). Streaming `GetObject` bodies
@@ -2422,6 +2428,7 @@ storage:
       response_header_timeout: 30s # default (proposed)
       idle_conn_timeout: 90s       # default (proposed)
       idle_transfer_timeout: 60s   # default (proposed)
+      receive_window: 256KiB       # default; 16KiB to 1GiB, HTTP/2 only
     retry:
       max_attempts: 5              # default (proposed)
       max_backoff: 20s             # default (proposed)
@@ -3197,6 +3204,7 @@ storage:
       response_header_timeout: 30s       # default (proposed)
       idle_conn_timeout: 90s             # default (proposed)
       idle_transfer_timeout: 60s         # default (proposed)
+      receive_window: 256KiB             # default; HTTP/2 only (R-STOR-033)
       proxy_url: ""                      # default (proposed)
       proxy_credentials_file: ""
       no_proxy: ""

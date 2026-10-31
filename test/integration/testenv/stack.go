@@ -219,6 +219,10 @@ func (s *Stack) DatabaseConfig() config.Database { return s.pg }
 // Dir is the installation's scratch directory.
 func (s *Stack) Dir() string { return s.dir }
 
+// Environ is a copy of the environment every replica of the stack shares, for a
+// suite that runs the trove binary instead of the in-process replica.
+func (s *Stack) Environ() []string { return append([]string(nil), s.base...) }
+
 // KeyFile writes a base64 key file into the scratch directory and returns its
 // path: a replica whose key ring differs from the others sets
 // TROVE_SECRETS_ENCRYPTION_KEY_FILES to it.

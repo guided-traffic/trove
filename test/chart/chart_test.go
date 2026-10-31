@@ -1033,6 +1033,27 @@ func TestChart(t *testing.T) {
 		}
 	})
 
+	t.Run("R-HA-029 a web pod needs a memory limit that admits at least 64 requests", func(t *testing.T) {
+		pool := filepath.Join(chartDir, "ci", "endpoints-pool.yaml")
+		for _, c := range []struct {
+			name  string
+			files []string
+			sets  []string
+			want  []string
+		}{
+			{"no memory limit", required(), []string{"web.resources.limits=null"}, []string{"web.resources.limits.memory is required", "trove-web"}},
+			{"a limit too small for its requests", required(), []string{"web.resources.limits.memory=48Mi"}, []string{"web.resources.limits.memory (48Mi) admits 52 concurrent requests, fewer than 64"}},
+			{"a buffer too large for the limit", required(), []string{"config.storage.download.buffer_size=32MiB"}, []string{"web.resources.limits.memory (2Gi) admits 43 concurrent requests"}},
+			{"a buffer too large for a pool's limit", []string{pool}, []string{"config.storage.download.buffer_size=16MiB"}, []string{"endpoints.customers.pool.resources.limits.memory (1Gi) admits 42 concurrent requests"}},
+			{"a memory quantity the chart cannot read", required(), []string{"web.resources.limits.memory=1.5Gi"}, []string{"not a memory quantity"}},
+		} {
+			t.Run(c.name, func(t *testing.T) { renderFails(t, c.files, c.sets, c.want...) })
+		}
+		for _, mem := range []string{"2G", "64Mi", "2000000000"} {
+			render(t, required(), "web.resources.limits.memory="+mem)
+		}
+	})
+
 	t.Run("R-HA-032 each Deployment has a disruption budget and spreads over zones and hosts", func(t *testing.T) {
 		eachSet(t, func(t *testing.T, f string, _ string, docs []doc) {
 			for _, role := range []string{"web", "worker"} {

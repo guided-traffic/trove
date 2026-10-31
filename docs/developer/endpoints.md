@@ -129,7 +129,7 @@ The chain of [architecture.md](architecture.md#request-path-client-listener) is 
 |---|---|
 | 1 recovery | places `*httpserver.Endpoint` in the context |
 | 2/3 trace, log, metrics | `Tracer.MiddlewareFor(name)` adds `trove.endpoint`; `RequestLog(…, WithEndpoint(name))` sets the `endpoint` label and log field and counts `trove_http_requests_in_flight` per endpoint |
-| 4 in-flight limit | `Endpoint.MaxInFlight()`: `server.max_in_flight` for `default`, `max_in_flight` otherwise; a busy endpoint answers `503 server_busy` while another is unaffected |
+| 4 in-flight limit | `Endpoint.MaxInFlight()`: `server.max_in_flight` for `default`, `max_in_flight` otherwise; a busy endpoint answers `503 server_busy` while another is unaffected. Then the replica's memory guard, one for all endpoints ([architecture.md](architecture.md#stage-4-and-the-memory-guard)) |
 | 5 address and host | the endpoint's `Resolver` (its `trusted_proxies`): client address as before, then the effective host, the host check, the response base URL, the host-root binding |
 | 6 authentication | `ReplicaHeader` is the endpoint's; the stage applies the endpoint's credential rules (`endpointRules`, below) |
 | 7 rate limit | `endpointStage`: the endpoint's name into the context for the decision point, then the endpoint's rate-limit class, then the management API's stage (CORS and the classes of R-API-016) |

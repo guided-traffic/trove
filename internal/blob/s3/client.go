@@ -64,6 +64,7 @@ func NewFromFactory(ctx context.Context, cfg config.StorageS3, f *outbound.Facto
 	opts = append(opts,
 		outbound.WithConnectTimeout(cfg.HTTP.DialTimeout),
 		outbound.WithResponseHeaderTimeout(cfg.HTTP.ResponseHeaderTimeout),
+		outbound.WithStreamReceiveWindow(int(cfg.HTTP.ReceiveWindow)),
 	)
 	if cfg.HTTP.ProxyURL != "" {
 		u, err := url.Parse(cfg.HTTP.ProxyURL)

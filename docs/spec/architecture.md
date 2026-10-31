@@ -394,7 +394,7 @@ connection through an edge proxy that balances per request.
 | The replica's support-bundle part being collected ([operations-and-observability.md](operations-and-observability.md) R-OPS-027, P1) | At most `support.collect_timeout` | Uploaded as a blob when done; abandoned at `SIGTERM`, which leaves the bundle `partial` (R-ARCH-001). |
 | Signal coalescer queue (R-ARCH-018) | At most one coalescing window | Best-effort wake-ups that no request depends on. |
 | Fallback rate-limit buckets (R-ARCH-034) | While Valkey is unavailable | The degraded mode INV-12 names. While Valkey is available, the counters are cluster-wide. |
-| In-flight request counter (`server.max_in_flight`, R-ARCH-005); upstream fetch slots, which only fetching requests take ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-040); Argon2id verification slots ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-014) | Concurrent requests | Protect the replica itself: its connections, its upstream share and its memory. A refused request succeeds on retry elsewhere. |
+| In-flight request counter (`server.max_in_flight`, R-ARCH-005); the memory slots and the heap gate of R-ARCH-005's memory guard, sized from the replica's own memory limit (Q-ARCH-240); upstream fetch slots, which only fetching requests take ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-040); Argon2id verification slots ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-014) | Concurrent requests | Protect the replica itself: its connections, its upstream share and its memory. A refused request succeeds on retry elsewhere. |
 | Circuit breakers for the object store and for Valkey | Seconds | They describe this replica's own network path ([storage.md](storage.md) R-STOR-033, R-ARCH-031). |
 
 - A protocol that spans requests keeps its state in PostgreSQL and its data in S3. Valkey may hold
@@ -686,8 +686,8 @@ Middleware, outermost first:
    (R-ARCH-008), never the raw path. The dispatcher sets it to `Route.Name` as soon as the format's
    `Match` has resolved the route.
 4. In-flight limit (`server.max_in_flight` on the default endpoint, the endpoint's `max_in_flight`
-   on a further endpoint; client listeners only): `503` with `Retry-After: 1` and code
-   `server_busy`.
+   on a further endpoint; client listeners only), then the replica's memory guard below, which
+   every endpoint of the replica shares: `503` with `Retry-After: 1` and code `server_busy`.
 5. Client address (R-ARCH-006), the endpoint's host check with `421` for a foreign host, the
    base URL of the response and the host-root binding
    ([operations-and-observability.md](operations-and-observability.md) R-OPS-005,
@@ -706,6 +706,34 @@ Middleware, outermost first:
    longer than `valkey.command_timeout`.
 8. The handler. Authorization runs inside the handler, as soon as the repository and the path or
    package are known ([authorization.md](authorization.md)).
+
+Memory guard of step 4 ([Q-ARCH-240](#q-arch-240--a-replica-admits-what-its-memory-holds-memory-slots-and-a-heap-gate-in-step-4)).
+A replica under overload answers the excess with `503` and is never killed for it. The concurrency
+a replica admits is bounded by its memory as well as by `max_in_flight`:
+- **The limit.** The guard works against the Go memory limit `L` of
+  [ha-and-helm.md](ha-and-helm.md) R-HA-036: `runtime.memory_limit_ratio` ×
+  `runtime.memory_limit_bytes`, or `GOMEMLIMIT` when it is set. Without a known limit there is no
+  guard, only `max_in_flight`, and the replica logs a warning at start.
+- **Memory slots.** A request holds one slot from step 4 to its end. The replica has
+  ⌊0.8 × `L` ÷ request bytes⌋ slots, at least one. The request bytes are what one download may hold
+  (Q-ARCH-241): the buffer of a verified download (`storage.download.buffer_size`, at least twice
+  `storage.download.hold_back` and 4 KiB, rounded up to a power of two), the object store's receive
+  window `storage.s3.http.receive_window` and 128 KiB for the rest (connection, TLS state, stacks,
+  the object-store call), 640 KiB with the defaults. A 1 GiB container (`L` = 870 MiB) has 1,114
+  slots, the chart's default of 2 GiB 2,228, 256 MiB 278. The slots bound a burst that arrives
+  faster than a GC cycle can show it. An endpoint admits the smaller of its `max_in_flight` and the
+  slots the replica has left.
+- **Heap gate.** Every 50 ms the guard reads the live heap of the last GC cycle plus the goroutine
+  stacks (`runtime/metrics`). At 80 % of `L` it admits no request until they fall below 70 %. The
+  gate bounds requests that hold more than a download, such as a document held in memory
+  (R-ARCH-028). A closed gate that sees no GC cycle for 1 s runs one, so it opens once the load is
+  gone ([Q-ARCH-242](#q-arch-242--a-closed-heap-gate-runs-a-gc-cycle-when-none-came-for-a-second)).
+- **Visibility.** Every refusal of step 4 counts in `trove_http_requests_shed_total{endpoint,reason}`
+  (`in_flight`, `memory_slots`, `heap`); `trove_http_memory_slots` is the number of slots
+  ([operations-and-observability.md](operations-and-observability.md) R-OPS-008). The gate logs when it
+  closes and when it opens.
+- Not bounded by the guard: connections that send no request (H-324), memory a replica retains
+  beyond the high-water mark (H-323), and slots that slow requests hold (H-322).
 
 Transfer rules:
 - A handler MUST finish authentication and the coarse authorization of its route (R-ARCH-008)
@@ -754,6 +782,11 @@ Acceptance criteria:
 - With a further endpoint configured (R-EP-001), `:8080` and the endpoint's port each answer with
   their own route families, and a request whose host is not one of the further endpoint's hosts
   answers `421` there ([endpoints.md](endpoints.md) R-EP-002, R-EP-003, R-EP-005).
+- A replica with `runtime.memory_limit_bytes` of 256 MiB and 1,000 concurrent downloads of a 1 MiB
+  file whose clients do not read: at most 278 complete with their bytes once the clients read, every
+  other one answers `503` `server_busy` with `Retry-After: 1`, the memory the Go runtime holds stays
+  below 256 MiB, and the process does not exit. Afterwards a download answers `200` again
+  (`test/integration/overload`).
 
 ### R-ARCH-006 · Client address and trusted proxies
 Priority: **MVP** · Covers: HA-025
@@ -3746,7 +3779,7 @@ Acceptance criteria:
 | REPO-039 | P2 | Uncached retrieval through a virtual repository for requests from other instances. |
 | OPS-041 | P2 | Advanced runtime properties: every key is in the schema (R-ARCH-020); there are no hidden knobs. |
 | OPS-042 | P2 | Central configuration descriptor: configuration is split between the file and PostgreSQL by rule (R-ARCH-020). |
-| OPS-064 | P2 | Load protection per activity: the MVP has the per-replica in-flight limit (R-ARCH-005) and the rate limits of [api-and-ui.md](api-and-ui.md), whose counters can be cluster-wide (R-ARCH-034). |
+| OPS-064 | P2 | Load protection per activity: the MVP has the per-replica in-flight limit and memory guard (R-ARCH-005), which treat every request alike (H-322), and the rate limits of [api-and-ui.md](api-and-ui.md), whose counters can be cluster-wide (R-ARCH-034). |
 
 ## Security notes
 
@@ -6345,6 +6378,61 @@ Context: check 8 asked that every client have configure and install templates an
 
 **Applied in the spec:** R-ARCH-010 (check 8). Code: `internal/formats/formattest/guide.go`, `testformat` (`NoGuide`, `GuideCredential`).
 
+### Q-ARCH-240 · A replica admits what its memory holds: memory slots and a heap gate in step 4
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the leg `npm-ha` offered P-8's 1,000 requests/s of a 50 KiB tarball to one `web` pod of the dev profile (memory limit 1 GiB, CPU request 250m, `GOMAXPROCS` 1) on a CI runner. The pod served 587/s at a p50 of 3.7 s and was OOM-killed; k6 saw 1,998 unexpected ends of a connection and 761 refused connections. A slow replica keeps more requests in flight (587/s × 3.7 s ≈ 2,000, k6's virtual users), and nothing tied that number to memory: `server.max_in_flight` was 4,096, and a download held about 650 KiB (Q-ARCH-241). R-HA-036's `debug.SetMemoryLimit` was specified but not called, so the garbage collector did not work harder near the limit either. Measured with the binary on the integration stack, before this decision: a download held open costs 1.2 MiB of live heap; 800 of them took the heap to 960 MiB and what the runtime held from the system to 2 GiB.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Memory slots and a heap gate, replica-wide | Step 4 asks, after the endpoint's `max_in_flight`, a guard every endpoint shares: one of ⌊0.8 × `L` ÷ request bytes⌋ slots per request, and none while the live heap plus stacks is at 80 % of the Go limit `L`, until below 70 % | The slots bound a burst before any GC cycle sees it; the gate bounds requests that hold more than a download; both are an atomic read or a channel send per request | Two numbers instead of one; the gate reads a value that is as old as the last GC cycle (Q-ARCH-242) |
+| (b) Derive `max_in_flight` from the memory limit only | The endpoint limit becomes the smaller of the configured one and the memory-derived one | One mechanism | A request that holds a document of several MiB is not a download; a per-request budget large enough for it would refuse most downloads |
+| (c) Heap gate only | 503 while the live heap is high | Measures what matters | Admission happens before the request allocates: a burst of 2,000 is admitted inside one GC cycle and allocates past the limit before the gate can close |
+| (d) A lower `max_in_flight` default | 1,024 instead of 4,096 | No code | Still unrelated to the memory a replica has; wrong for every size but one |
+
+**Choice:** (a). The request bytes are what one download may hold (640 KiB with the defaults, Q-ARCH-241; 128 KiB of it the overhead measured beside the buffer and the window); a request that holds more is the heap gate's. The slots are replica-wide because the endpoints of a replica share its memory; each endpoint keeps its own `max_in_flight` (R-EP-002). Without a known limit (no `runtime.memory_limit_bytes`, no `GOMEMLIMIT`, or `GOMEMLIMIT=off`) there is no guard. The refusal is the one `max_in_flight` already gave, `503 server_busy` with `Retry-After: 1`, which a client retries and the Service sends to another replica. The shares 80 % and 70 % are constants of the spec, not keys: the operator's lever is the memory limit.
+
+**Rationale:** The defect is that the admitted concurrency followed the replica's speed instead of its memory. The slots make the bound a function of the memory limit and the configured buffers, so it holds however slow the replica is, and the gate covers what the slots cannot see. The development agent revisits this when a request kind other than downloads becomes common enough to need slots of its own, or when the 128 KiB overhead stops matching a measurement of a held download.
+
+**Applied in the spec:** R-ARCH-005 (step 4, the memory guard, an acceptance criterion), the load-protection row of R-ARCH-032, OPS-064 in Deferred, H-322 to H-324; [ha-and-helm.md](ha-and-helm.md) R-HA-036, R-HA-029 (Q-HA-70); [operations-and-observability.md](operations-and-observability.md) R-OPS-008. Code: `internal/httpserver/memory.go`, `internal/app/memory.go`.
+
+### Q-ARCH-241 · A download holds one buffer of its own size, and the object store sends no more than one window ahead
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a heap profile of 400 downloads held open (1 MiB file, defaults) attributed the 1.2 MiB per download to four buffers: the verifying reader's read buffer (`storage.download.buffer_size`, 256 KiB, allocated at full size whatever the file's size), its working copy of the withheld tail and the new bytes (up to 320 KiB), the copy buffer of the response (another 256 KiB) and the HTTP/2 receive buffer of the object-store client, which accepts up to 4 MiB per stream ahead of the reader (237 KiB per download on average here; the S3 gateway of the stack speaks HTTP/2). None of the buffers was pooled: a 50 KiB download allocated 761 KiB.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One pooled buffer, right-sized, and a bounded receive window | The verifying reader reads into one buffer of `buffer_size` (at least twice `hold_back`, at most the object plus one byte), keeps the withheld tail at its front and writes the cleared bytes from it (`io.WriterTo`), so the response needs no copy buffer; buffers come from pools of power-of-two classes; `storage.s3.http.receive_window` (256 KiB) bounds the HTTP/2 window per object | A held download costs one buffer and one window; a 50 KiB file takes a 64 KiB buffer; a finished download hands its buffer to the next | The tail moves to the front on every refill (at most `hold_back` per `buffer_size` − `hold_back` bytes cleared); a window of 256 KiB caps one stream at 256 KiB per round trip on an HTTP/2 object store far away |
+| (b) Pool the existing buffers | Same structure, `sync.Pool` | Smallest change | A held download still holds three buffers and the window |
+| (c) Spool slow downloads to disk | Hand the object to the spool and serve from there | Memory independent of the client | Disk I/O for every slow client, and R-STOR-012 forbids spooling a download |
+
+**Choice:** (a). The receive window is a key of `storage.s3.http` because it is a transport setting of the object store; AWS S3 itself speaks HTTP/1.1, where the window does not apply and the kernel's socket buffer holds what is in flight.
+
+**Rationale:** What a download holds is now what the slots of Q-ARCH-240 count: one buffer and one window. Measured the same way after the change: a download held open costs 553 KiB of live heap (the 256 KiB buffer, 220 KiB in the receive window, 81 KiB the rest) and 50 KiB of goroutine stacks, instead of 1.2 MiB; 800 of them take 454 MiB instead of 960 MiB; a 50 KiB download allocates 75 KiB instead of 761 KiB, so the collector runs a tenth as often under the same load. A pooled buffer is overwritten by the next read and only the bytes read for this download are ever written out, so reuse leaks nothing between requests; net/http's writers do not keep the slice after `Write` returns. The development agent revisits the window when an installation's object store is HTTP/2 and far enough away that 256 KiB per round trip limits a download.
+
+**Applied in the spec:** R-ARCH-005 (the request bytes); [storage.md](storage.md) R-STOR-012 (one bounded buffer), R-STOR-033 (`receive_window`). Code: `internal/blob/download.go`, `internal/blob/buffers.go`, `internal/api/edge/content.go`, `internal/outbound` (`WithStreamReceiveWindow`).
+
+### Q-ARCH-242 · A closed heap gate runs a GC cycle when none came for a second
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the live heap is known only at the end of a GC cycle. Under load cycles come every few milliseconds, but once the load that closed the gate stops, a replica that sheds everything allocates nothing, no cycle runs, and the gate would see the old high value until the runtime's forced cycle two minutes later.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A cycle after 1 s without one, while the gate is closed | The sampling goroutine calls `runtime.GC` | The gate opens within about a second of the load ending | A forced cycle costs CPU, at most one per second and only while the gate is closed and nothing else triggers one |
+| (b) Gate on the allocated heap instead of the live one | `/memory/classes/heap/objects:bytes` | Always current | Includes garbage: near the Go limit it is high by design, the gate would close under any steady load |
+| (c) Open the gate after a fixed time | Close for n seconds | Simple | Opens into a heap that may still be full |
+
+**Choice:** (a).
+
+**Rationale:** The gate must decide on the live heap, and a cycle is the only way to learn it; one per second while refusing is cheap next to a replica that refuses for two minutes. The development agent revisits this if the forced cycles show up in the CPU of a replica that stays at its high-water mark.
+
+**Applied in the spec:** R-ARCH-005 (the heap gate). Code: `MemoryGuard.Sample` in `internal/httpserver/memory.go`.
+
 ## What this does not cover
 
 
@@ -6464,3 +6552,56 @@ object-store credentials.
 What makes it real: a write to the configuration, or a compromise of the operator's configuration
 management, can point the object-store client at an internal address, and the policy that refuses the
 same address for upstreams does not apply. Upstream requests stay under the policy.
+
+### H-322 · Slow requests of one client take the memory slots of every client
+
+Stage: step 4 of R-ARCH-005, the memory slots of Q-ARCH-240, on every client listener of a `web`
+replica.
+
+Live in the MVP for every installation with a known memory limit. Subject: the availability of the
+replica for every principal, anonymous or not.
+
+A request holds its slot until it ends, and step 4 runs before authentication (step 6), so it cannot
+prefer anyone. A client that keeps as many requests open as the replica has slots, for example
+downloads it reads at a trickle or uploads it sends at one, gets every other request answered `503`
+until its own end. `server.transfer_stall_timeout` ends a request that moves no byte for 60 s, not
+one that moves a byte now and then. The number to reach is the slot count: 1,114 on a 1 GiB
+container, where `server.max_in_flight` alone allowed 4,096.
+
+What makes it real: a listener reachable by an unauthenticated client, a repository readable
+anonymously or a token with `read`, and enough connections from one place. Rate limits (step 7)
+count requests, not their duration. Mitigation today: a limit on concurrent connections per client
+address at the edge, and more replicas.
+
+### H-323 · A replica that retains memory above the high-water mark refuses every request
+
+Stage: the heap gate of R-ARCH-005 (Q-ARCH-240, Q-ARCH-242).
+
+Live for every installation whose caches and other retained state can reach 70 % of the Go memory
+limit: the sizes of the in-process caches are configured independently of the container limit.
+Subject: the availability of that replica.
+
+The gate cannot tell memory that requests hold from memory the replica keeps. Once requests push the
+live heap to 80 % and the gate closes, a replica whose retained memory alone stays above 70 % never
+falls below the low-water mark: it answers every request `503 server_busy` while `/readyz` stays
+`200`, so the Service keeps sending it traffic. Before the guard existed such a replica was
+OOM-killed instead.
+
+What makes it real: cache sizes (`proxy.metadata_cache_bytes`, `proxy.merged_metadata_cache_bytes`,
+the rendition cache) that together approach the memory limit. The operator sees it in
+`trove_http_requests_shed_total{reason="heap"}` and the gate's log line.
+
+### H-324 · Connections that send no request are outside the memory guard
+
+Stage: the client listeners (`net/http` and TLS) before step 1 of R-ARCH-005.
+
+Live for every installation. Subject: the memory and file descriptors of a `web` replica.
+
+The guard counts requests. An open connection that has not sent a request holds its TLS state, its
+read and write buffers and one or two goroutines, a few tens of KiB, until
+`server.read_header_timeout` (10 s) or `server.idle_timeout` (120 s) ends it. Nothing bounds the
+number of connections a replica accepts.
+
+What makes it real: a client that opens connections faster than the timeouts close them, tens of
+thousands at a time. Mitigation today: connection limits at the edge and the pod's file-descriptor
+limit.

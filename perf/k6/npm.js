@@ -13,6 +13,10 @@
 // edge. GATE=1 makes the targets k6 thresholds (k6 exits 99 when one is missed); that is the run on the reference
 // environment of R-ARCH-027 (roadmap E5.3). Without it the script reports, as on the dev profile (Q-ROAD-9).
 //
+// Every answer is counted by its outcome (Q-ROAD-10): 200; shed, the 503 server_busy of the replica's own load
+// protection (R-ARCH-005 step 4), which a client retries; another status; or the error class of a request that got no
+// answer (connection_refused, eof, reset, timeout, tls, http2, other_error). Everything but 200 and shed is a failure.
+//
 // Files in /out: tokens (one token per line; R-API-016's package_read budget is 200/s per token, so the throughput
 // scenarios spread over all of them), perf-fixture.json ({"tarball_1mib", "tarball_50kib", "local_documents": [...],
 // "virtual_documents": [...]}, paths below the target). The result is /out/perf-npm.json.
@@ -38,13 +42,22 @@ const SCENARIOS = {
   p7: { rate: 2000, exec: 'p7' },
   p8: { rate: 1000, exec: 'p8' },
 };
+// The statuses a report names; any other counts as 4xx, 5xx or other_status.
+const STATUSES = ['200', '304', '401', '403', '404', '429', '500', '502', '503', '504'];
+const ERRORS = ['connection_refused', 'eof', 'reset', 'timeout', 'tls', 'http2', 'other_error'];
+const OUTCOMES = [...STATUSES, 'shed', '4xx', '5xx', 'other_status', ...ERRORS];
 const trend = {};
 const done = {};
 const failed = {};
+const outcome = {};
 for (const id of Object.keys(SCENARIOS)) {
   trend[id] = new Trend(`${id}_ms`, true);
   done[id] = new Counter(`${id}_requests`);
   failed[id] = new Counter(`${id}_failed`);
+  outcome[id] = {};
+  for (const o of OUTCOMES) {
+    outcome[id][o] = new Counter(`${id}_outcome_${o}`);
+  }
 }
 
 const scenarios = {};
@@ -64,6 +77,9 @@ const targets = {
   p7_ms: ['p(99)<=50'],
   p7_failed: ['count==0'],
   p8_failed: ['count==0'],
+  // P-7 and P-8 ask for the rate held: on the reference environment a shed request misses it.
+  p7_outcome_shed: ['count==0'],
+  p8_outcome_shed: ['count==0'],
   dropped_iterations: ['count==0'],
 };
 
@@ -74,6 +90,41 @@ export const options = {
   summaryTrendStats: ['med', 'p(99)', 'max'],
 };
 
+// errorClass names why a request got no answer: k6's error code (https://grafana.com/docs/k6/latest/javascript-api/error-codes/)
+// and, for the unexpected end of a connection, its message.
+function errorClass(res) {
+  const code = res.error_code || 0;
+  const msg = res.error || '';
+  if (code === 1212 || msg.includes('connection refused')) return 'connection_refused';
+  if (msg.includes('EOF')) return 'eof';
+  if (code === 1220 || msg.includes('reset by peer')) return 'reset';
+  if (code === 1050 || code === 1211 || msg.includes('timeout')) return 'timeout';
+  if (code >= 1300 && code < 1400) return 'tls';
+  if (code >= 1600 && code < 1700) return 'http2';
+  return 'other_error';
+}
+
+// isShed tells the replica's own 503 server_busy from any other 503: the npm error body carries the code.
+function isShed(res) {
+  if (res.status !== 503 || !res.headers['Retry-After']) return false;
+  const body = typeof res.body === 'string' ? res.body : String.fromCharCode.apply(null, new Uint8Array(res.body || new ArrayBuffer(0)));
+  try {
+    return JSON.parse(body).code === 'server_busy';
+  } catch (e) {
+    return false;
+  }
+}
+
+function classify(res) {
+  if (res.status === 0) return errorClass(res);
+  if (isShed(res)) return 'shed';
+  const s = String(res.status);
+  if (STATUSES.includes(s)) return s;
+  if (res.status >= 400 && res.status < 500) return '4xx';
+  if (res.status >= 500 && res.status < 600) return '5xx';
+  return 'other_status';
+}
+
 function get(id, path, binary, ttfb) {
   const headers = { Host: HOST, Authorization: `Bearer ${TOKENS[exec.scenario.iterationInTest % TOKENS.length]}` };
   if (!binary) {
@@ -82,11 +133,14 @@ function get(id, path, binary, ttfb) {
   }
   const res = http.get(TARGET + path, { headers, timeout: '30s', responseType: binary ? 'binary' : 'text', tags: { name: id } });
   done[id].add(1);
-  if (res.status !== 200) {
+  const o = classify(res);
+  outcome[id][o].add(1);
+  if (o !== '200' && o !== 'shed') {
     failed[id].add(1);
-    return;
   }
-  trend[id].add(ttfb ? res.timings.waiting : res.timings.duration);
+  if (o === '200') {
+    trend[id].add(ttfb ? res.timings.waiting : res.timings.duration);
+  }
 }
 
 const pick = (list) => list[exec.scenario.iterationInTest % list.length];
@@ -100,8 +154,16 @@ export function handleSummary(data) {
   const v = (name, key) => (data.metrics[name] && data.metrics[name].values ? data.metrics[name].values[key] : null);
   const out = { gate: __ENV.GATE === '1', duration_s: SECONDS, dropped_iterations: v('dropped_iterations', 'count') || 0, scenarios: {} };
   for (const [id, s] of Object.entries(SCENARIOS)) {
+    const outcomes = {};
+    let failures = 0;
+    for (const o of OUTCOMES) {
+      const n = v(`${id}_outcome_${o}`, 'count') || 0;
+      if (n > 0) outcomes[o] = n;
+      if (o !== '200' && o !== 'shed') failures += n;
+    }
     out.scenarios[id] = {
-      offered_per_s: s.rate, served_per_s: (v(`${id}_requests`, 'count') || 0) / SECONDS, failed: v(`${id}_failed`, 'count') || 0,
+      offered_per_s: s.rate, requests: v(`${id}_requests`, 'count') || 0, served_per_s: (outcomes['200'] || 0) / SECONDS,
+      shed: outcomes.shed || 0, failed: failures, outcomes,
       p50_ms: v(`${id}_ms`, 'med'), p99_ms: v(`${id}_ms`, 'p(99)'), max_ms: v(`${id}_ms`, 'max'),
     };
   }

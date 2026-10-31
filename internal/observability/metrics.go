@@ -77,6 +77,8 @@ type Metrics struct {
 	epMisdirected *prometheus.CounterVec
 	epFwdIgnored  *prometheus.CounterVec
 	epRefused     *prometheus.CounterVec
+	shed          *prometheus.CounterVec
+	memSlots      *prometheus.GaugeVec
 }
 
 // NewMetrics builds the registry with the Go runtime and process collectors and
@@ -113,6 +115,9 @@ func NewMetrics(role string, opts ...MetricsOption) *Metrics {
 	m.epFwdIgnored = m.NewCounterVec("trove_endpoint_forwarded_host_ignored_total", "Forwarded hosts outside the endpoint's host set.", "endpoint")
 	m.epRefused = m.NewCounterVec("trove_endpoint_credentials_refused_total",
 		"Requests the endpoint's credential rules refused, by reason (token_type, token_binding, anonymous).", "endpoint", "reason")
+	m.shed = m.NewCounterVec("trove_http_requests_shed_total",
+		"Requests the in-flight stage answered 503 server_busy, by reason (in_flight, memory_slots, heap).", "endpoint", "reason")
+	m.memSlots = m.NewGaugeVec("trove_http_memory_slots", "Concurrent requests this replica's memory admits; 0 when no memory limit is known.")
 	m.recvBytes = m.NewCounterVec("trove_http_received_bytes_total", "Request body bytes.", "handler")
 	m.sentBytes = m.NewCounterVec("trove_http_sent_bytes_total", "Response body bytes.", "handler")
 	m.cut = m.NewCounterVec("trove_http_transfers_cut_total", "Transfers cut at the shutdown deadline.", "direction")
@@ -327,10 +332,31 @@ func (m *Metrics) EndpointCredentialsRefused(endpoint, reason string) {
 	}
 }
 
+// shedReasons are the values of the reason label of
+// trove_http_requests_shed_total (R-ARCH-005 step 4, Q-ARCH-240).
+func shedReasons() []string { return []string{"in_flight", "memory_slots", "heap"} }
+
+// RequestShed counts a request the in-flight stage refused; a reason outside
+// the closed list is not counted.
+func (m *Metrics) RequestShed(endpoint, reason string) {
+	for _, r := range shedReasons() {
+		if r == reason {
+			m.shed.WithLabelValues(m.endpointLabel(endpoint), reason).Inc()
+			return
+		}
+	}
+}
+
+// MemorySlots sets trove_http_memory_slots.
+func (m *Metrics) MemorySlots(n int) { m.memSlots.WithLabelValues().Set(float64(n)) }
+
 // ExportEndpoints creates the per-endpoint series at 0, so a scrape sees them
 // before the first event.
 func (m *Metrics) ExportEndpoints() {
 	for n := range m.endpoints {
+		for _, r := range shedReasons() {
+			m.shed.WithLabelValues(n, r)
+		}
 		m.epListenerUp.WithLabelValues(n)
 		m.epMisdirected.WithLabelValues(n)
 		m.epFwdIgnored.WithLabelValues(n)

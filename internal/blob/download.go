@@ -46,8 +46,20 @@ func (s *Store) Open(ctx context.Context, d Digest, size int64, o OpenOptions) (
 	return &verifyReader{
 		src: body, store: s, ctx: ctx, digest: d, size: size,
 		hash: sha256.New(), hold: int(s.cfg.Download.HoldBack),
-		chunk: make([]byte, max(4096, int(s.cfg.Download.BufferSize))),
+		capacity: verifyBuffer(int(s.cfg.Download.BufferSize), int(s.cfg.Download.HoldBack), size),
 	}, nil
+}
+
+// verifyBuffer is the length of a verified download's one buffer:
+// storage.download.buffer_size, at least twice the hold-back so that a refill
+// clears at least as much as it keeps, and no more than the object plus the byte
+// that would show it is longer (Q-ARCH-241).
+func verifyBuffer(bufferSize, hold int, size int64) int {
+	c := max(bufferSize, 2*hold, 4096)
+	if size < int64(c) {
+		c = int(size) + 1
+	}
+	return c
 }
 
 // markDamaged records a detection: content_status leaves 'ok', the counter
@@ -75,30 +87,31 @@ func (s *Store) markDamaged(ctx context.Context, d Digest, status string) {
 	}
 }
 
-// verifyReader hashes what it reads and withholds the last hold bytes.
+// verifyReader hashes what it reads and withholds the last hold bytes. It reads
+// into one pooled buffer: buf[off:ready] is cleared and not yet handed out,
+// buf[ready:k] is the withheld tail, which the next refill moves to the front.
 type verifyReader struct {
-	src    io.ReadCloser
-	store  *Store
-	ctx    context.Context
-	digest Digest
-	size   int64
-	hash   hash.Hash
-	hold   int
+	src      io.ReadCloser
+	store    *Store
+	ctx      context.Context
+	digest   Digest
+	size     int64
+	hash     hash.Hash
+	hold     int
+	capacity int
 
-	chunk []byte // read buffer
-	held  []byte // the withheld tail, at most hold bytes
-	ready []byte // bytes cleared for the caller
-	work  []byte
-	total int64
-	done  bool  // the source ended and the digest matched
-	err   error // sticky
+	buf           *[]byte // from Buffer on the first read, back with Close
+	off, ready, k int
+	total         int64
+	done          bool  // the source ended and the digest matched
+	err           error // sticky
 }
 
 func (v *verifyReader) Read(p []byte) (int, error) {
 	for {
-		if len(v.ready) > 0 {
-			n := copy(p, v.ready)
-			v.ready = v.ready[n:]
+		if v.off < v.ready {
+			n := copy(p, (*v.buf)[v.off:v.ready])
+			v.off += n
 			return n, nil
 		}
 		if v.err != nil {
@@ -107,35 +120,69 @@ func (v *verifyReader) Read(p []byte) (int, error) {
 		if v.done {
 			return 0, io.EOF
 		}
-		n, err := v.src.Read(v.chunk)
-		if n > 0 {
-			v.hash.Write(v.chunk[:n])
-			v.total += int64(n)
-			// held + new bytes; everything but the last hold bytes is cleared.
-			v.work = append(append(v.work[:0], v.held...), v.chunk[:n]...)
-			if cut := len(v.work) - v.hold; cut > 0 {
-				v.ready = v.work[:cut]
-				v.held = append(v.held[:0], v.work[cut:]...)
-			} else {
-				v.held = append(v.held[:0], v.work...)
+		v.fill()
+	}
+}
+
+// WriteTo writes the cleared bytes straight from the buffer, so a download needs
+// no copy buffer of its own.
+func (v *verifyReader) WriteTo(w io.Writer) (int64, error) {
+	var written int64
+	for {
+		if v.off < v.ready {
+			n, err := w.Write((*v.buf)[v.off:v.ready])
+			v.off += n
+			written += int64(n)
+			if err != nil {
+				return written, err
 			}
+			continue
+		}
+		if v.err != nil {
+			return written, v.err
+		}
+		if v.done {
+			return written, nil
+		}
+		v.fill()
+	}
+}
+
+// fill moves the withheld tail to the front and reads until the buffer is full
+// or the source ended. Then everything but the last hold bytes is cleared, or
+// everything once the digest matched. A body longer than the blob has nothing
+// more cleared; it is read to its end, where finish decides.
+func (v *verifyReader) fill() {
+	if v.buf == nil {
+		v.buf = Buffer(v.capacity)
+	}
+	b := (*v.buf)[:v.capacity]
+	v.k = copy(b, b[v.ready:v.k])
+	v.off, v.ready = 0, 0
+	for v.k < len(b) {
+		n, err := v.src.Read(b[v.k:])
+		if n > 0 {
+			v.hash.Write(b[v.k : v.k+n])
+			v.total += int64(n)
+			v.k += n
 		}
 		switch {
 		case err == nil:
 		case errors.Is(err, io.EOF):
-			if verr := v.finish(); verr != nil {
-				v.err = verr
-				v.ready = nil
-			} else {
-				v.ready = append(v.ready, v.held...) // work still backs ready
-				v.held = v.held[:0]
-				v.done = true
+			if v.err = v.finish(); v.err == nil {
+				v.ready, v.done = v.k, true
 			}
+			return
 		default:
 			v.err = err // a transport error: abort, no status change
-			v.ready = nil
+			return
 		}
 	}
+	if v.total > v.size {
+		v.k = 0
+		return
+	}
+	v.ready = max(0, v.k-v.hold)
 }
 
 // finish compares the complete body with the blob row.
@@ -149,5 +196,14 @@ func (v *verifyReader) finish() error {
 	return fmt.Errorf("%w: read %d bytes with SHA-256 %s, expected %d bytes with %s", ErrCorrupt, v.total, sum.Hex(), v.size, v.digest.Hex())
 }
 
-// Close closes the source.
-func (v *verifyReader) Close() error { return v.src.Close() }
+// Close closes the source and releases the buffer.
+func (v *verifyReader) Close() error {
+	Release(v.buf)
+	v.buf, v.off, v.ready, v.k = nil, 0, 0, 0
+	if v.err == nil {
+		v.err = errReadAfterClose
+	}
+	return v.src.Close()
+}
+
+var errReadAfterClose = errors.New("blob: read after close")

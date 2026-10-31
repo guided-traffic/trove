@@ -169,6 +169,7 @@ type clientSettings struct {
 	trust          *tlsfiles.Reloader // WithRootCAs; nil means the factory's
 	local          *localBinder       // WithLocalPrefix
 	hop            HopPolicy          // WithHopPolicy
+	streamWindow   int                // WithStreamReceiveWindow; 0 keeps the transport's 4 MiB
 }
 
 // WithTimeout sets the client's overall timeout including the body. The default
@@ -217,6 +218,13 @@ func WithProxyURL(proxyURL *url.URL, bypassHosts ...string) ClientOption {
 			return proxyURL, nil
 		}
 	}
+}
+
+// WithStreamReceiveWindow bounds what an HTTP/2 server may send on one stream
+// ahead of the reader, which is what a response body read slowly holds in
+// memory.
+func WithStreamReceiveWindow(n int) ClientOption {
+	return func(s *clientSettings) { s.streamWindow = n }
 }
 
 // WithDirect forbids any proxy for this client, also proxy_from_environment.
@@ -322,6 +330,9 @@ func (f *Factory) transport(purpose string, s clientSettings, roots *x509.CertPo
 			MinVersion:   f.minVersion,
 			Certificates: s.clientCert,
 		},
+	}
+	if s.streamWindow > 0 {
+		tr.HTTP2 = &http.HTTP2Config{MaxReceiveBufferPerStream: s.streamWindow}
 	}
 	if _, ok := s.hop.(ClientCertPolicy); ok && len(s.clientCert) > 0 {
 		tr.TLSClientConfig.Certificates = nil

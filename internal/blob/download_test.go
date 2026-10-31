@@ -7,6 +7,7 @@ import (
 	"io"
 	"sync/atomic"
 	"testing"
+	"testing/iotest"
 
 	"github.com/guided-traffic/trove/internal/blob"
 	"github.com/guided-traffic/trove/internal/config"
@@ -146,6 +147,77 @@ func TestDownloadVerification(t *testing.T) {
 		}
 		if got := readAll(t, r); !bytes.Equal(got, data[10:110]) {
 			t.Fatal("range differs")
+		}
+	})
+	t.Run("R-STOR-013 WriteTo, which a download streams through, sends the whole intact object and of a corrupted one never the held-back tail", func(t *testing.T) {
+		f, sp, _ := setup(t, nil)
+		r, err := f.store.Open(context.Background(), sp.SHA256, sp.Size, blob.OpenOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		if n, err := r.(io.WriterTo).WriteTo(&out); err != nil || n != int64(len(data)) || !bytes.Equal(out.Bytes(), data) {
+			t.Fatalf("wrote %d bytes, err %v", n, err)
+		}
+		r.Close()
+		bad := bytes.Clone(data)
+		bad[len(bad)-1] ^= 0xff
+		f.mem.Set(f.store.Key(sp.SHA256), bad, f.mem.Now())
+		r, err = f.store.Open(context.Background(), sp.SHA256, sp.Size, blob.OpenOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out.Reset()
+		n, err := r.(io.WriterTo).WriteTo(&out)
+		r.Close()
+		if !errors.Is(err, blob.ErrCorrupt) || n > int64(len(data)-(64<<10)) || !bytes.Equal(out.Bytes(), data[:n]) {
+			t.Fatalf("wrote %d of %d bytes, err %v", n, len(data), err)
+		}
+	})
+	t.Run("R-STOR-013 a reader that asks for one byte at a time gets the object through the reader's own buffer", func(t *testing.T) {
+		f, sp, _ := setup(t, nil)
+		r, err := f.store.Open(context.Background(), sp.SHA256, sp.Size, blob.OpenOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.Close()
+		got, err := io.ReadAll(iotest.OneByteReader(r))
+		if err != nil || !bytes.Equal(got, data) {
+			t.Fatalf("got %d bytes, err %v", len(got), err)
+		}
+		if _, err := r.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
+			t.Fatalf("after the end: %v", err)
+		}
+	})
+	t.Run("R-STOR-013 a body longer than the blob row releases nothing past the row's end and is marked corrupt", func(t *testing.T) {
+		f, sp, damaged := setup(t, nil)
+		f.mem.UnknownSize = true
+		f.mem.Set(f.store.Key(sp.SHA256), append(bytes.Clone(data), content(300<<10, 23)...), f.mem.Now())
+		r, err := f.store.Open(context.Background(), sp.SHA256, sp.Size, blob.OpenOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := io.ReadAll(r)
+		r.Close()
+		if !errors.Is(err, blob.ErrCorrupt) || len(got) > len(data) || !bytes.Equal(got, data[:len(got)]) {
+			t.Fatalf("got %d bytes, err %v", len(got), err)
+		}
+		if f.db.rows[sp.SHA256].status != "corrupt" || damaged.Load() != 1 {
+			t.Fatalf("status %s, damaged hook %d", f.db.rows[sp.SHA256].status, damaged.Load())
+		}
+	})
+	t.Run("R-STOR-013 a read after Close fails instead of touching the released buffer", func(t *testing.T) {
+		f, sp, _ := setup(t, nil)
+		r, err := f.store.Open(context.Background(), sp.SHA256, sp.Size, blob.OpenOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := r.Read(make([]byte, 10)); err != nil {
+			t.Fatal(err)
+		}
+		r.Close()
+		if n, err := r.Read(make([]byte, 10)); n != 0 || err == nil {
+			t.Fatalf("read after close: %d, %v", n, err)
 		}
 	})
 	t.Run("R-STOR-013 an object shorter than the hold-back is held until the digest matched", func(t *testing.T) {

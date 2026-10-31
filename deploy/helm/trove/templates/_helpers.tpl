@@ -110,6 +110,44 @@ followed by B). Fails for anything else, so a typo in a size never becomes a wro
 {{- end -}}
 
 {{/*
+Bytes of a Kubernetes memory quantity: an integer, a binary unit (Ki, Mi, Gi, Ti) or a decimal one
+(k, M, G, T).
+*/}}
+{{- define "trove.quantityBytes" -}}
+{{- $s := "" -}}
+{{- if kindIs "float64" . -}}
+{{- $s = printf "%.0f" . -}}
+{{- else -}}
+{{- $s = toString . | trim -}}
+{{- end -}}
+{{- if not (regexMatch "^[0-9]+(Ki|Mi|Gi|Ti|k|M|G|T)?$" $s) -}}
+{{- fail (printf "trove: %q is not a memory quantity the chart can size the replica with; use an integer or a unit such as 512Mi, 2Gi or 2G" $s) -}}
+{{- end -}}
+{{- $n := regexFind "^[0-9]+" $s | int64 -}}
+{{- $mult := dict "" 1 "Ki" 1024 "Mi" 1048576 "Gi" 1073741824 "Ti" 1099511627776 "k" 1000 "M" 1000000 "G" 1000000000 "T" 1000000000000 -}}
+{{- mul $n (get $mult (regexFind "[A-Za-z]+$" $s) | int64) -}}
+{{- end -}}
+
+{{/*
+What one request may hold, for the memory slots of R-ARCH-005 step 4 (Q-ARCH-240): the buffer of a
+verified download (storage.download.buffer_size, at least twice hold_back and 4 KiB, rounded up to
+a power of two), storage.s3.http.receive_window and 128 KiB. internal/app/memory.go computes the same.
+*/}}
+{{- define "trove.requestBytes" -}}
+{{- $cfg := .Values.config -}}
+{{- $buf := include "trove.bytes" (dig "storage" "download" "buffer_size" "256KiB" $cfg) | int64 -}}
+{{- $hold := include "trove.bytes" (dig "storage" "download" "hold_back" "64KiB" $cfg) | int64 -}}
+{{- $need := max $buf (mul 2 $hold) 4096 -}}
+{{- $class := 4096 -}}
+{{- range until 30 -}}
+{{- if lt $class $need -}}
+{{- $class = mul $class 2 -}}
+{{- end -}}
+{{- end -}}
+{{- add $class (include "trove.bytes" (dig "storage" "s3" "http" "receive_window" "256KiB" $cfg) | int64) 131072 -}}
+{{- end -}}
+
+{{/*
 Seconds of a duration made of whole hours, minutes and seconds (1h30m, 90s, 5s).
 */}}
 {{- define "trove.seconds" -}}

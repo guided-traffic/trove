@@ -152,6 +152,22 @@ before the body ended and the digest matched. On a mismatch the reader returns `
 differs from the row's, or a body read to its end with another digest. A transport error aborts the read but changes no
 status. `WithDamageHook` is where the audit event hangs. A range is returned as stored (H-11).
 
+What a download holds ([Q-ARCH-241](../spec/architecture.md#q-arch-241--a-download-holds-one-buffer-of-its-own-size-and-the-object-store-sends-no-more-than-one-window-ahead)):
+
+- The verifying reader has one buffer (`verifyBuffer`): `buffer_size`, at least `2 × hold_back` and 4 KiB, at most the object's
+  size plus one byte (the byte that would show a longer object). It is taken on the first read from `Buffer`, pools of
+  power-of-two classes from 4 KiB to 1 GiB ([buffers.go](../../internal/blob/buffers.go)), and given back by `Close`; a read after
+  `Close` fails.
+- `fill` moves the withheld tail to the front and reads until the buffer is full or the body ended; everything but the last
+  `hold_back` bytes is then cleared. With the minimum of twice the hold-back, a refill clears at least as much as it moves. A body
+  longer than the row has nothing more cleared and is read to its end, where the digest check fails.
+- It implements `io.WriterTo`, and `edge.ServeItem` uses it, so a verified download needs no copy buffer. Any other body (a range,
+  `verify: false`) is copied through a pooled buffer of at most `buffer_size` and its length.
+- `blob.DownloadBufferBytes` is the class of the full buffer; the memory guard counts it per request
+  ([architecture.md](architecture.md#stage-4-and-the-memory-guard)).
+- The object-store client's HTTP/2 receive window per stream is `storage.s3.http.receive_window` (`outbound.WithStreamReceiveWindow`);
+  without it Go's transport lets the store send 4 MiB of an object ahead of a slow reader.
+
 ## Garbage collection (R-STOR-024, R-STOR-025)
 
 `blob.NewCollector(cfg.GC, prefix, objects, db)`; `Run(ctx, RunOptions{Mode, DryRun, Cursor, Checkpoint})` returns a
