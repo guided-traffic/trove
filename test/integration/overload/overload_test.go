@@ -5,6 +5,8 @@ package overload
 import (
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -67,24 +69,22 @@ func TestMemoryAdmission(t *testing.T) {
 			}
 		}()
 
-		// Every request is answered or holds its slot once the in-flight gauge and the shed
-		// counter add up to the requests sent.
 		const bySlots, byHeap = `trove_http_requests_shed_total{endpoint="default",reason="memory_slots"}`, `trove_http_requests_shed_total{endpoint="default",reason="heap"}`
 		shed := func() float64 {
 			m := r.metrics(t, bySlots, byHeap)
 			return m[bySlots] + m[byHeap]
 		}
-		// The downloads go out in batches of 100, each once the one before has reached the replica: 1,000 dials at once
-		// overflow the accept queue of a CPU-limited replica, and the dropped SYNs back off for over a minute.
+		// Every request has reached the replica once the requests it completed (a shed 503 included) and the ones in
+		// flight add up to the requests sent. Completed counts too: on Linux the kernel's send buffer takes a whole
+		// 1 MiB answer, the handler returns before its client reads, and the request leaves the in-flight gauge.
+		base := r.completed(t)
 		downloads := make([]*slow, n)
 		for i := range downloads {
 			downloads[i] = slowGet(t, r.client, path, in.token)
-			if sent := i + 1; sent%100 == 0 || sent == n {
-				testenv.WaitFor(t, fmt.Sprintf("%d downloads admitted or shed", sent), 60*time.Second, func() bool {
-					return r.metric(t, `trove_http_requests_in_flight{endpoint="default",listener="client"}`)+shed() >= float64(sent)
-				})
-			}
 		}
+		testenv.WaitFor(t, "every download reached the replica", 60*time.Second, func() bool {
+			return r.completed(t)-base+r.metric(t, `trove_http_requests_in_flight{endpoint="default",listener="client"}`) >= n
+		})
 		time.Sleep(2 * time.Second) // the held downloads sit in their writes; the sampler keeps reading
 		if !r.alive() {
 			t.Fatal("the replica exited under the load")
@@ -163,4 +163,24 @@ func (r *replica) metrics(t *testing.T, series ...string) map[string]float64 {
 		}
 	}
 	return out
+}
+
+// completed sums trove_http_requests_total of the default endpoint's client listener over every handler, method and
+// code.
+func (r *replica) completed(t *testing.T) float64 {
+	t.Helper()
+	code, body := get("http://"+r.ops+"/metrics", "")
+	if code != http.StatusOK {
+		t.Fatalf("metrics: %d %s", code, body)
+	}
+	var sum float64
+	for _, line := range strings.Split(body, "\n") {
+		if !strings.HasPrefix(line, "trove_http_requests_total{") || !strings.Contains(line, `endpoint="default"`) || !strings.Contains(line, `listener="client"`) {
+			continue
+		}
+		if v, err := strconv.ParseFloat(line[strings.LastIndexByte(line, ' ')+1:], 64); err == nil {
+			sum += v
+		}
+	}
+	return sum
 }
