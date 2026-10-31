@@ -61,6 +61,12 @@ Given by the project owner; not up for redesign in these pages:
   vulnerability dashboard, and this is part of the beta. How it scans (advisory data, matching, blocking) is the development
   agent's design on [vulnerability-scanning.md](vulnerability-scanning.md); the record is
   [ADR-131](../decisions.md#adr-131--own-vulnerability-scanning-with-a-dashboard-in-the-beta).
+- **trove Bastion after the beta (2026-10-31).** A second, smaller deployment of trove, installed with a Helm chart of
+  its own and reached through an Ingress of its own, that serves the packages of a main installation close to its
+  consumers: clients authenticate with the same credentials and the same procedure as at the main installation, and
+  a package cache on the Bastion keeps what it served, so repeated downloads do not reach the main installation. It is
+  planned as milestone M13 ([FULL.md](../projektplan/FULL.md#m13--trove-bastion)); its spec page is written first. It is
+  read-only for package content: publishes and every other write go to the main installation (owner, 2026-10-31).
 
 ## Design invariants
 
