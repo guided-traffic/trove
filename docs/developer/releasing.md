@@ -137,8 +137,19 @@ The other targets of R-ARCH-027 (`perf/`) are not part of this workflow.
 Berlin time, with an installation token of the organisation's GitHub App (secrets `APP_CLIENT_ID` and
 `APP_PRIVATE_KEY`). The configuration is [renovate.json](../../renovate.json).
 
+Every Renovate branch runs the whole Test and Release pipeline on the organisation's nine shared runners, so the
+number of branches is bounded (owner, 2026-10-31):
+
+- Branches are created and updated only before 6:00 on Mondays (`schedule`, `updateNotScheduled: false`); the daily
+  run outside that window changes no branch, but it still closes pull requests whose update is gone.
+- Every minor, patch and digest update that no other rule groups is in one pull request, `non-major dependencies`;
+  the groups below keep their own. At most three Renovate branches and pull requests exist at a time, at most two
+  are opened per hour.
+- A major update gets its branch only after it is ticked in the Dependency Dashboard issue.
+- Security updates are not held by the schedule (`vulnerabilityAlerts`, `osvVulnerabilityAlerts`).
+
 - Go modules, the Go version (`go.mod`, grouped with `golang.org/x/*`) and GitHub Actions merge on
-  their own once CI passes; majors wait for review.
+  their own once CI passes; majors wait for approval and review.
 - The pins of [tools/versions.env](../../tools/versions.env) are read by custom managers: a
   `# renovate:` comment directly above a tool or chart pin names its datasource and package; image lines
   are read by their digest, and tag and digest move together. The k6 image and `K6_VERSION` are one

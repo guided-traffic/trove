@@ -6,8 +6,9 @@
     ":automergeDigest"
   ],
   "schedule": [
-    "at any time"
+    "before 6am on monday"
   ],
+  "updateNotScheduled": false,
   "timezone": "Europe/Berlin",
   "labels": [
     "dependencies"
@@ -16,15 +17,28 @@
   "automergeType": "pr",
   "automergeStrategy": "squash",
   "ignoreTests": false,
-  "prConcurrentLimit": 0,
-  "prHourlyLimit": 0,
-  "branchConcurrentLimit": 0,
+  "prConcurrentLimit": 3,
+  "prHourlyLimit": 2,
+  "branchConcurrentLimit": 3,
   "rebaseWhen": "auto",
+  "osvVulnerabilityAlerts": true,
   "postUpdateOptions": [
     "gomodTidy",
     "gomodUpdateImportPaths"
   ],
   "packageRules": [
+    {
+      "description": "One pull request for every minor, patch and digest update that no later rule groups on its own: each Renovate branch runs the full Test and Release pipeline on the organisation's nine shared runners, so updates arrive as one weekly set (owner, 2026-10-31)",
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest",
+        "pin",
+        "pinDigest"
+      ],
+      "groupName": "non-major dependencies",
+      "groupSlug": "non-major"
+    },
     {
       "description": "Go version: group all Go version updates together to keep them in sync (go.mod, the Go version the workflows and the Containerfile take from go.mod)",
       "matchDatasources": [
@@ -328,6 +342,13 @@
       "groupName": "Angular",
       "groupSlug": "angular",
       "automerge": false
+    },
+    {
+      "description": "Every major update waits for approval in the Dependency Dashboard before Renovate creates its branch, so no major occupies the runners unasked; security updates are not held (vulnerabilityAlerts)",
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "dependencyDashboardApproval": true
     }
   ],
   "customManagers": [
