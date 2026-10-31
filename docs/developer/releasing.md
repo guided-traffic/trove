@@ -46,7 +46,11 @@ Node.js from `web/.nvmrc`, and the pinned helm, kubectl, kind and Docker Buildx.
 
 The workflows pin their actions by major version tag (`actions/checkout@v7`), the way the
 organisation's other repositories do. Two actions are pinned by a release tag instead:
-`aquasecurity/trivy-action@v0.36.0` and `renovatebot/github-action@v46.3.10`.
+`aquasecurity/trivy-action@v0.36.0` and `renovatebot/github-action@v46.3.10`. Third-party actions that
+run with the release secrets are pinned by tag too: the owner decided so on 2026-10-31 after the risk
+was named ([ADR-130](../decisions.md#adr-130--the-organisations-ci-and-release-standard)). A tag can be
+moved, and a moved tag runs in the job that names it with that job's secrets
+([H-325](../security/data-and-secret-flow.md#h-325--a-moved-action-tag-runs-in-a-job-that-holds-release-secrets)).
 
 ### Coverage
 
@@ -248,12 +252,6 @@ Pages serves at `https://guided-traffic.github.io/trove/`.
 
 ## Not in place yet
 
-- **The workflows have not run on GitHub.** actionlint passes at the pin, and the make targets they call
-  were run locally, except the two named below. The first run on GitHub is the first test of each job's
-  runner setup.
-- **The e2e legs, the malware scan and the Trivy scan have not run here.** The e2e legs need the amd64
-  emulator on an arm64 host, `clamscan` is not installed on the machine that wrote the change, and Trivy
-  needs the built image in the local Docker.
 - **No signatures.** The image carries a provenance and an SBOM attestation, not a keyless signature. The
   chart carries neither a signature nor an attestation.
 - **Docker Buildx of the local machine** is the one of Docker Desktop, not the pinned version, until it

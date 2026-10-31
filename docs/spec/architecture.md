@@ -3520,8 +3520,8 @@ Priority: **MVP** · Covers: OPS-072, EVT-072
 | Database schema | Migration sequence | Not a public interface. N and N-1 run against one schema (INV-3, R-ARCH-026). |
 
 **Major version 0.** trove releases stay on major version 0 until the owner decides otherwise
-([ADR-124](../decisions.md#adr-124--releases-stay-on-major-version-0)); every completed project
-phase is the next minor release. Semantic Versioning would allow any change within 0.x; trove does
+([ADR-124](../decisions.md#adr-124--releases-stay-on-major-version-0)); Semantic Release sets each version from the
+conventional commits, and a phase closes with the release cut from its commits. Semantic Versioning would allow any change within 0.x; trove does
 not use that latitude. The promises of the table apply between 0.x minors as they would within a
 major, and a breaking change in 0.x is announced in the release notes with its migration path.
 | Token formats | `trv_*_` prefixes (INV-8) | A prefix never changes meaning. New token types get new prefixes. |

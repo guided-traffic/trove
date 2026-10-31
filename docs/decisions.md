@@ -185,17 +185,17 @@ checked every earlier decision against them:
 | [ADR-121](#adr-121--rendered-nuget-documents-carry-weak-etags) | Rendered NuGet documents carry weak ETags | Decided by the development agent — owner review at the walkthrough |
 | [ADR-122](#adr-122--a-restore-replays-nuget-publishes-and-deletes-into-tombstones) | A restore replays NuGet publishes and deletes into tombstones | Decided by the development agent — owner review at the walkthrough |
 | [ADR-123](#adr-123--nuget-symbol-packages-are-indexed-by-one-job-each-on-the-worker-role) | NuGet symbol packages are indexed by one job each on the worker role | Decided by the development agent — owner review at the walkthrough |
-| [ADR-124](#adr-124--releases-stay-on-major-version-0) | Releases stay on major version 0 | Accepted (owner constraint) |
+| [ADR-124](#adr-124--releases-stay-on-major-version-0) | Releases stay on major version 0 | Accepted (owner constraint); changed by the owner on 2026-10-31: no version is expected for the beta |
 | [ADR-125](#adr-125--gnu-make-and-one-pin-file-for-every-tool) | GNU Make and one pin file for every tool | Decided by the development agent — owner review at the walkthrough |
 | [ADR-126](#adr-126--problem-details-with-a-relative-type-a-requestid-member-and-named-error-codes) | Problem details with a relative type, a requestId member and named error codes | Decided by the development agent — owner review at the walkthrough |
 | [ADR-127](#adr-127--transport-encryption-on-every-connection-troves-listeners-included) | Transport encryption on every connection, trove's listeners included (INV-20) | Accepted (owner constraint) |
 | [ADR-128](#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling) | Endpoints: one listener each, identified by the listener, with exposure rules as a ceiling (INV-6, INV-9, INV-15) | Decided by the development agent — owner review at the walkthrough |
 | [ADR-129](#adr-129--the-owners-kubernetes-operators-are-the-standard-stack) | The owner's Kubernetes operators are the standard stack (dev profile, chart and production) | Accepted (owner constraint, 2026-10-29) |
-| [ADR-130](#adr-130--the-organisations-ci-and-release-standard) | The organisation's CI and release standard | Accepted (owner constraint, 2026-10-29) |
+| [ADR-130](#adr-130--the-organisations-ci-and-release-standard) | The organisation's CI and release standard | Accepted (owner constraint, 2026-10-29); action pinning decided by the owner on 2026-10-31 |
 | [ADR-131](#adr-131--own-vulnerability-scanning-with-a-dashboard-in-the-beta) | Own vulnerability scanning with a dashboard in the beta | Accepted (owner constraint, 2026-10-31) |
 | [ADR-132](#adr-132--advisories-mirrored-from-osv-and-matched-inside-trove-by-package-identity) | Advisories mirrored from OSV and matched inside trove by package identity | Decided by the development agent — owner review at the walkthrough |
 | [ADR-133](#adr-133--scan-state-lives-in-postgresql-a-re-fetchable-advisory-mirror-and-backed-up-findings) | Scan state lives in PostgreSQL: a re-fetchable advisory mirror and backed-up findings | Decided by the development agent — owner review at the walkthrough |
-| [ADR-134](#adr-134--malicious-versions-are-blocked-at-download-by-default) | Malicious versions are blocked at download by default | Decided by the development agent — owner review at the walkthrough |
+| [ADR-134](#adr-134--malicious-versions-are-blocked-at-download-by-default) | Malicious versions are blocked at download by default | What blocks and who sets and lifts a block: decided by the owner on 2026-10-31; the rest decided by the development agent — owner review at the walkthrough |
 | [ADR-135](#adr-135--public-advisories-never-apply-to-claimed-internal-names) | Public advisories never apply to claimed internal names | Decided by the development agent — owner review at the walkthrough |
 
 </details>
@@ -540,14 +540,18 @@ several pods. A worker type that needs a ReadWriteOnce volume is acceptable, but
 
 ### ADR-124 · Releases stay on major version 0
 
-**Status:** Accepted (owner constraint)
+**Status:** Accepted (owner constraint); changed by the owner on 2026-10-31
 
 **Context.** On 2026-10-29 the owner set the release numbering: development starts with `v0.1.0`,
-and there is no major release until the owner explicitly decides otherwise.
+and there is no major release until the owner explicitly decides otherwise. On 2026-10-31 the owner
+decided that no fixed version number is expected for the beta.
 
-**Decision.** trove releases stay on major version 0. Every completed project phase of
-[docs/projektplan/](projektplan/BETA.md) is released as the next minor version (`v0.1.0` for the
-foundation, `v0.7.0` for the beta, the next minors after it); fixes in between are patch releases.
+**Decision.** trove releases stay on major version 0 until the owner says otherwise. Semantic Release
+cuts every release from the conventional commits on `main`
+([ADR-130](#adr-130--the-organisations-ci-and-release-standard)); no project phase, milestone or the
+beta has a version number expected beforehand. A phase of [docs/projektplan/](projektplan/BETA.md)
+closes with the release cut from the commits that close it, and BETA.md's Version column records that
+release once it is published. The beta release is the release cut from the commits that close phase 8.
 The Helm chart follows the same numbering.
 
 **Consequences.** Semantic Versioning would allow any change within 0.x; trove does not use that
@@ -555,7 +559,14 @@ latitude. The promises of [R-ARCH-025](spec/architecture.md#r-arch-025--versioni
 apply between 0.x minors as they would within a major: direct upgrade to any later minor, rolling
 upgrade without downtime from N-1 to N, deprecated configuration aliases for at least two minors. A
 breaking change in 0.x is announced in the release notes together with its migration path. The
-roadmap and the project plans name releases by these versions.
+roadmap and the project plans name releases by the phase or milestone they close, never by an
+expected number.
+
+**Changed on 2026-10-31.** The owner decided that no fixed version number is expected for the beta.
+Until then this entry said that every completed phase is released as the next minor version, with
+`v0.7.0` for the beta, and the plans expected the beta candidate as `v0.7.0`, the beta as `v0.8.0` and
+the releases after it from `v0.9.0` on. Semantic Release had meanwhile cut `v0.2.0`, `v0.3.0` and
+`v0.4.0` (2026-10-29 and 2026-10-30) while phase 3 was still open, so a phase is not one minor version.
 
 **Alternatives considered.** None; set by the owner.
 
@@ -4913,8 +4924,8 @@ AWS account and a CI role exist. The MinIO conformance leg runs in Test and Rele
   tag or a GitHub release made by hand bypasses that rule, and a published release starts the image and chart pipeline
   with a version the commits do not describe.
 - **A phase is closed by a release run.** The Semantic Release run that publishes the last change of a phase closes the
-  phase, and the roadmap records the version that run published. The version the roadmap names beforehand
-  ([ADR-124](#adr-124--releases-stay-on-major-version-0)) is the expectation; the commits decide the number.
+  phase, and the project plan records the version that run published. No version is named beforehand
+  ([ADR-124](#adr-124--releases-stay-on-major-version-0), changed 2026-10-31); the commits decide the number.
 - **Docker Hub and GitHub Pages replace ghcr.io.** The image needs a stored Docker Hub access token (`DOCKERHUB_PAT`).
   Semantic Release and Renovate act through a GitHub App whose token the workflows create (`APP_CLIENT_ID`,
   `APP_PRIVATE_KEY`). No signature is produced, so a consumer has nothing to verify
@@ -4922,8 +4933,10 @@ AWS account and a CI role exist. The MinIO conformance leg runs in Test and Rele
 - **Self-hosted runners.** The runners are ephemeral pods without `make` or a C compiler, so every job installs the tools
   it calls, pinned in `tools/versions.env` or `go.mod`. The jobs of a pull request receive the repository's secrets
   ([H-80](spec/ha-and-helm.md#h-80--self-hosted-runners-build-the-code-of-every-pull-request)).
-- **Actions and Renovate.** Actions are pinned by major version tag, as the organisation's other repositories pin them;
-  Renovate updates the tags. Renovate's merges of minor and patch updates are `fix` commits, so each is a patch release.
+- **Actions and Renovate.** Actions are pinned by major version tag, as the organisation's other repositories pin them,
+  including the third-party actions that run with the release secrets (decided by the owner on 2026-10-31, below); Renovate
+  updates the tags. A moved tag runs in the job that names it, with that job's secrets ([H-325](security/data-and-secret-flow.md#h-325--a-moved-action-tag-runs-in-a-job-that-holds-release-secrets)).
+  Renovate's merges of minor and patch updates are `fix` commits, so each is a patch release.
 - **Nothing runs nightly.** The end-to-end failover set and the MinIO leg run on every change
   ([Q-ROAD-7](coverage/roadmap.md#q-road-7--which-end-to-end-jobs-run-on-each-push-and-which-nightly),
   [Q-HA-3](spec/ha-and-helm.md#q-ha-3--s3-component-of-the-local-profile-after-minios-archival)). The AWS S3 leg waits for
@@ -4931,6 +4944,34 @@ AWS account and a CI role exist. The MinIO conformance leg runs in Test and Rele
   The nightly acceptance runs that other pages name are not in the pipeline.
 
 **Alternatives considered.** None; set by the owner. The earlier pipeline (ghcr.io, cosign, nightly workflows) is replaced.
+
+**Action pinning (2026-10-31).** Status: **Decided by the owner on 2026-10-31** — option (a), after the risk was named.
+
+Context: the workflows reference every action by tag. Third-party actions run in jobs that hold the release secrets: in
+`container-scan` of Test and Release, `aquasecurity/trivy-action` runs after the job has logged in to Docker Hub with
+`DOCKERHUB_PAT`; in `Build Docker Image` of Release Docker & Helm, `anchore/sbom-action`, `softprops/action-gh-release` and
+`docker/scout-action` run in the job that pushes the image, `docker/scout-action` with the token as an input; in Renovate's job,
+`renovatebot/github-action` runs with the GitHub App's installation token. A tag can be moved to another commit by whoever
+controls the action's repository: in the Trivy incident (GHSA-69fq-xp46-6x23, March 2026) 76 of 77 tags of
+`aquasecurity/trivy-action` were moved to malicious commits. A moved tag of one of these actions runs with the Docker Hub token
+or the GitHub App's token. Two actions are pinned by a release tag rather than a major one (`aquasecurity/trivy-action@v0.36.0`,
+`renovatebot/github-action@v46.3.10`, [releasing.md](developer/releasing.md#ci)); a release tag can be moved as well.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Major version tags everywhere, as the organisation's standard says (chosen) | Every action by tag, Renovate raises the tags | One rule across the organisation's repositories; fixes of an action arrive with its tag; nothing to review per digest | A moved tag runs code nobody reviewed, with the job's secrets ([H-325](security/data-and-secret-flow.md#h-325--a-moved-action-tag-runs-in-a-job-that-holds-release-secrets)); the Trivy incident shows that it happens |
+| (b) Commit-SHA pins for high-risk third-party actions only | The third-party actions of the jobs that hold release secrets by full commit SHA, the tag as a comment; every other action by tag | Closes the path the incident used where the secrets are; a small set | Departs from the organisation's standard; a judgment per action of what is high-risk; each update of those actions is a digest change to review |
+| (c) SHA pins everywhere | Every action by full commit SHA, Renovate updating the digests | No tag can change what runs | Departs from the standard in every workflow; every action update is a digest change to review, the first-party `actions/*` included |
+
+**Choice:** (a). The two release-tag pins stay as they are; they are tag pins and carry the same risk.
+
+**Rationale:** the owner's decision: the organisation's standard governs the pins, and the owner accepted the risk after it was
+named. The residual risk and the hardening that would mitigate it are [H-325](security/data-and-secret-flow.md#h-325--a-moved-action-tag-runs-in-a-job-that-holds-release-secrets). The development agent records no
+revisit condition; the scope is the owner's.
+
+**Applied in the spec:** this entry (the Actions bullet); [releasing.md](developer/releasing.md#ci) (the pinning paragraph);
+[data-and-secret-flow.md](security/data-and-secret-flow.md#the-release-pipelines-credentials) (the release pipeline's
+credentials and H-325); [security/README.md](security/README.md#gaps).
 
 **Spec:** [R-HA-047](spec/ha-and-helm.md#r-ha-047--images-private-registries-air-gapped-installation-and-attestations),
 [Q-HA-11](spec/ha-and-helm.md#q-ha-11--publishing-location-of-images-and-chart), [Q-HA-3](spec/ha-and-helm.md#q-ha-3--s3-component-of-the-local-profile-after-minios-archival),
@@ -4955,8 +4996,9 @@ vulnerability report in the API and the UI, in the beta. How it scans is the dev
 **Consequences.** A beta phase and a milestone are added before the HA phase, so that the HA phase hardens the scanner too
 (BETA.md phase 6, roadmap M4b, [Q-ROAD-8](coverage/roadmap.md#q-road-8--where-vulnerability-scanning-goes-in-the-beta)).
 The catalog entries the beta builds are raised to MVP on [security-scanning-and-curation.md](features/security-scanning-and-curation.md).
-With one phase more, the beta is expected as the eighth minor release rather than the seventh; the versions still come from
-the commits ([ADR-130](#adr-130--the-organisations-ci-and-release-standard)).
+With one phase more, the beta release is the release that closes phase 8 instead of phase 7; no version number is expected
+for it ([ADR-124](#adr-124--releases-stay-on-major-version-0); until 2026-10-31 this said the eighth minor release rather than
+the seventh).
 
 **Alternatives considered.** None; set by the owner.
 
@@ -5017,28 +5059,39 @@ forbids it); advisory tables in every backup. Decided in
 
 ### ADR-134 · Malicious versions are blocked at download by default
 
-**Status:** Decided by the development agent — owner review at the walkthrough
+**Status:** What blocks, and who sets and lifts a block: decided by the owner on 2026-10-31
+([Q-VULN-20](spec/vulnerability-scanning.md#q-vuln-20--which-findings-block-a-download-and-who-sets-and-lifts-a-block)).
+The rest: decided by the development agent — owner review at the walkthrough.
 
 **Context.** A lockfile install fetches tarballs and packages by URL without reading metadata, so only a refusal at the
-download stops a known-bad version. Blocking every vulnerable version by default would break builds on upgrade.
+download stops a known-bad version. Blocking every vulnerable version by default would break builds on upgrade. On
+2026-10-31 the owner decided that only malicious versions are blocked by default and that every other block is a triage
+decision; until then this entry had a severity threshold per repository, opt-in.
 
 **Decision.** A version with an open finding of a malicious record is refused on every route that serves its content, with
-`403` in the protocol's error shape, and on the remote boundary before it is fetched. A severity threshold per repository is
-opt-in. A dismissal, which needs the capability `vulnerabilities:triage`, lifts a block. In a virtual repository the member
-that stores the version decides, and a block ends resolution. A version is evaluated in its publish or fill commit; without
-any advisory data the default is to allow. `vulnerabilities.enforcement: report` turns every block into a count.
+`403` in the protocol's error shape, and on the remote boundary before it is fetched. Every other block is set in triage: a
+holder of the capability `vulnerabilities:triage` moves a confirmed finding to the status `blocked`, which refuses that
+version in that repository, and lifts it by moving the finding back to `confirmed` or to `dismissed`. There is no severity
+threshold. A dismissal, which needs the same capability, lifts a malicious block. In a virtual repository the member that
+stores the version decides, and a block ends resolution. A version is evaluated in its publish or fill commit; without any
+advisory data the default is to allow. `vulnerabilities.enforcement: report` turns every block into a count.
 
 **Consequences.** Malicious packages known to the data are not installed through trove, lockfiles included; new malicious
 versions are blocked only once their record arrives
-([H-310](spec/vulnerability-scanning.md#h-310--a-malicious-version-is-unknown-until-its-advisory-is-published)). A dismissal
-is an installation-wide decision ([H-312](spec/vulnerability-scanning.md#h-312--a-dismissal-lifts-a-block-for-every-consumer-of-the-repository)).
+([H-310](spec/vulnerability-scanning.md#h-310--a-malicious-version-is-unknown-until-its-advisory-is-published)). Any other
+vulnerable version is served until a triager blocks it. A dismissal and a block set in triage are installation-wide decisions
+([H-312](spec/vulnerability-scanning.md#h-312--a-dismissal-lifts-a-block-for-every-consumer-of-the-repository)); the audit
+event of each carries `block: "set"` or `"lifted"`. A policy-based threshold may come with upstream curation (M12).
 
-**Alternatives considered.** Report only; blocking critical findings by default; waiting for a scan; a full policy engine.
-Decided in [Q-VULN-4](spec/vulnerability-scanning.md#q-vuln-4--what-blocks-a-download-in-the-beta),
-[Q-VULN-5](spec/vulnerability-scanning.md#q-vuln-5--versions-without-advisory-data) and
-[Q-VULN-8](spec/vulnerability-scanning.md#q-vuln-8--who-may-triage-findings).
+**Alternatives considered.** Report only; blocking critical findings by default; a severity threshold per repository (the
+design until 2026-10-31); waiting for a scan; a full policy engine; a triage block as a flag or as a list of versions instead
+of a status. Decided in [Q-VULN-4](spec/vulnerability-scanning.md#q-vuln-4--what-blocks-a-download-in-the-beta),
+[Q-VULN-5](spec/vulnerability-scanning.md#q-vuln-5--versions-without-advisory-data),
+[Q-VULN-8](spec/vulnerability-scanning.md#q-vuln-8--who-may-triage-findings),
+[Q-VULN-20](spec/vulnerability-scanning.md#q-vuln-20--which-findings-block-a-download-and-who-sets-and-lifts-a-block) and
+[Q-VULN-22](spec/vulnerability-scanning.md#q-vuln-22--a-block-set-in-triage-is-a-finding-status).
 
-**Spec:** [spec/vulnerability-scanning.md](spec/vulnerability-scanning.md) R-VULN-013, R-VULN-015, R-VULN-016.
+**Spec:** [spec/vulnerability-scanning.md](spec/vulnerability-scanning.md) R-VULN-012, R-VULN-013, R-VULN-015, R-VULN-016.
 
 ### ADR-135 · Public advisories never apply to claimed internal names
 
@@ -5421,7 +5474,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-NPM-46](spec/formats/npm.md#q-npm-46--what-marks-the-run-that-closes-the-phase) | What marks the run that closes the phase? | (a) the `closing` input of the workflow dispatch adds the Valkey-stopped leg, the public-registry subset and the 30-minute fuzz legs | — |
 | [Q-NPM-47](spec/formats/npm.md#q-npm-47--where-the-matrix-puts-the-snippets-and-what-it-adds-through-the-environment) | Where does the matrix put the snippets, and what does it add? | (a) the snippet verbatim in the file its client reads (`~/.npmrc` for pnpm), everything else through the environment | — |
 | [Q-NPM-48](spec/formats/npm.md#q-npm-48--how-the-suite-pins-a-client-to-a-replica) | How does the suite pin a client to a replica? | (a) a target file in the forwarder | — |
-| [Q-NPM-49](spec/formats/npm.md#q-npm-49--what-the-p1-scenarios-assert-and-what-the-first-run-changed) | What do the P1 scenarios assert, and what did the first run change? | (a) the deprecating `PUT` answers 404; the other client behaviors are documented and asserted as they are | — |
+| [Q-NPM-49](spec/formats/npm.md#q-npm-49--what-the-p1-scenarios-assert-and-what-the-first-run-changed) | What do the P1 scenarios assert, and what did the first run change? | (a) the deprecating `PUT` answers 404; the other client behaviors are documented and asserted as they are; point 5 decided by the owner in Q-NPM-68 | — |
 | [Q-NPM-50](spec/formats/npm.md#q-npm-50--a-package-or-version-of-the-install-snippet-that-a-client-would-read-as-an-option) | What does the client setup do with a package or version that starts with `-`? | (a) `400`; the package is validated and normalized by the format's name rule; a leading `-` is quoted | — |
 | [Q-NPM-53](spec/formats/npm.md#q-npm-53--the-publish-body-cap-is-the-sum-of-the-limits-of-its-parts) | What is the publish body cap? | (a) the base64 tarball plus 768 KiB of metadata plus the base64 bundle (1,110 KiB) | — |
 | [Q-NPM-54](spec/formats/npm.md#q-npm-54--the-whole-archive-has-an-inflation-ratio-cap) | Is there an overall inflation ratio cap? | (a) 100:1 over all inflated bytes with 8 MiB of slack | — |
@@ -5435,9 +5488,10 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-NPM-62](spec/formats/npm.md#q-npm-62--which-repository-forwards-an-audit-and-how-it-reaches-the-provider) | Which repository forwards an audit, and how does it reach the provider? | (a) the first enabled forwarding member, whoever asks, with `read` on it; 501 also for the cache view, offline remotes and endpoints without cache fills or with exposure rules; one `Exchange` through the remote's upstream client, without fetch slot or circuit | (b) the first readable member; (c) the fetch path |
 | [Q-NPM-63](spec/formats/npm.md#q-npm-63--how-the-forwarded-set-is-decided-and-how-withheld-names-are-counted) | How is the forwarded set decided, and how are withheld names counted? | (a) one statement for every fact, patterns refuse as `not_proxied`, one reason per name in the order `local`, `claimed`, `pinned`, `not_proxied`, labelled with the forwarding remote | (b) claims and pins from the routing index; (c) every reason counted |
 | [Q-NPM-64](spec/formats/npm.md#q-npm-64--the-bounds-of-an-audit-body) | What bounds an audit body? | (b) default 1 MiB as sent (1 KiB to 10 MiB), ten times that decompressed, at most 100,000 names, gzip or no coding | (a) 10 MiB; (c) a spool and two passes |
-| [Q-NPM-65](spec/formats/npm.md#q-npm-65--npm-6s-audit-endpoints-and-pnpm-10) | What do npm 6's audit endpoints answer, given that pnpm 10 uses them? | (a) 501 `npm_audit_unavailable`; `pnpm audit` of pnpm 10 is not served | (b) translate npm 6's protocol; (c) 404 |
+| [Q-NPM-65](spec/formats/npm.md#q-npm-65--npm-6s-audit-endpoints-and-pnpm-10) | What do npm 6's audit endpoints answer, given that pnpm 10 uses them? | (d) 501 `npm_audit_unavailable`, npm 6's protocol not translated; pnpm 10 and Yarn 1 stay gate rows, their audit scenario not applicable with its reason (owner, 2026-10-31; was (a) with pnpm 10's scenario asserting the 501) | (b) translate npm 6's protocol; (c) 404 |
 | [Q-NPM-66](spec/formats/npm.md#q-npm-66--what-npms-guide-says-and-how-it-stays-true) | What does npm's guide say, and how does it stay true? | (a) one template per topic for every class and client, only built behaviour, codes, quoted texts and defaults pinned by tests | (b) one text per class and client; (c) describe the specification |
 | [Q-NPM-67](spec/formats/npm.md#q-npm-67--npms-client-display-names-are-the-setup-pages-labels) | Which display names do npm's clients carry? | (a) the setup page's labels, "Yarn Berry (2 and later)" and "Yarn Classic (1.x)" | (b) keep "Yarn" and "Yarn Classic" |
+| [Q-NPM-68](spec/formats/npm.md#q-npm-68--pnpm-11-and-12-unpublish-at-the-deployment-target-not-through-a-virtual-repository) | How do pnpm 11 and 12 unpublish when a virtual repository is configured? | (a) documented as it is: at the deployment target; examined again in M6 (owner, 2026-10-31) | (b) accept the merge's `_rev` for packages only the deployment target holds |
 | [Q-NUGET-1](spec/formats/nuget.md#q-nuget-1--default-meaning-of-a-nuget-delete) | Default meaning of a NuGet delete? | (a) the protocol `DELETE` unlists unless the repository sets `deleteMode: delete`; management, UI and raw deletes are hard deletes | [ADR-090](#adr-090--a-nuget-protocol-delete-unlists-by-default) |
 | [Q-NUGET-2](spec/formats/nuget.md#q-nuget-2--metadata-cache-period-of-nuget-remotes) | Metadata cache period of NuGet remotes? | (b) 300 s as the NuGet format default; 1800 s stays for not-found entries. Revisited 2026-10-28, unchanged: refreshes collapse through Valkey, and degrade to one per replica while Valkey is unavailable | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving) |
 | [Q-NUGET-3](spec/formats/nuget.md#q-nuget-3--non-ascii-package-ids) | Allow non-ASCII package IDs? | (a) ASCII-restricted IDs for everything entering a local repository; upstream IDs keyed by the client's lowercased path | [ADR-074](#adr-074--nuget-package-ids-ascii-on-push-case-insensitive-first-casing-displayed) |
@@ -5704,7 +5758,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-VULN-1](spec/vulnerability-scanning.md#q-vuln-1--scanner-and-advisory-data-source) | Which scanner and which advisory data source? | (d) hybrid: the OSV archives of the served ecosystems mirrored into PostgreSQL and matched by trove for package formats now; an image analyser (Trivy in client mode the candidate) with the OCI format | [ADR-132](#adr-132--advisories-mirrored-from-osv-and-matched-inside-trove-by-package-identity) |
 | [Q-VULN-2](spec/vulnerability-scanning.md#q-vuln-2--where-scan-state-lives) | Where does scan state live? | (a) PostgreSQL for the advisory mirror and the findings | [ADR-133](#adr-133--scan-state-lives-in-postgresql-a-re-fetchable-advisory-mirror-and-backed-up-findings) |
 | [Q-VULN-3](spec/vulnerability-scanning.md#q-vuln-3--which-stored-versions-public-advisories-apply-to) | Which stored versions do public advisories apply to? | (b) remotes with a recognised upstream and local names no claim covers; `matchPublicAdvisories` per repository; a match on a claimed name is an alert | [ADR-135](#adr-135--public-advisories-never-apply-to-claimed-internal-names) |
-| [Q-VULN-4](spec/vulnerability-scanning.md#q-vuln-4--what-blocks-a-download-in-the-beta) | What blocks a download in the beta? | (b) malicious versions by default, a severity threshold opt-in per repository, a dismissal lifts a block; decided in the item lookup, ends virtual resolution | [ADR-134](#adr-134--malicious-versions-are-blocked-at-download-by-default) |
+| [Q-VULN-4](spec/vulnerability-scanning.md#q-vuln-4--what-blocks-a-download-in-the-beta) | What blocks a download in the beta? | (b) malicious versions by default, a severity threshold opt-in per repository, a dismissal lifts a block; decided in the item lookup, ends virtual resolution. Superseded in part by Q-VULN-20 (owner, 2026-10-31): no severity threshold | [ADR-134](#adr-134--malicious-versions-are-blocked-at-download-by-default) |
 | [Q-VULN-5](spec/vulnerability-scanning.md#q-vuln-5--versions-without-advisory-data) | What happens to versions without advisory data? | (a) evaluated in the commit; allowed by default while no data exists, `onMissingData: block` opt-in; no finding resolves while data is incomplete | [ADR-134](#adr-134--malicious-versions-are-blocked-at-download-by-default) |
 | [Q-VULN-6](spec/vulnerability-scanning.md#q-vuln-6--severity-when-sources-carry-several-scores) | Which severity when sources carry several scores? | (a) the newest CVSS vector of the canonical record scored by trove, then aliases, then the qualitative fallback; malicious is critical | — |
 | [Q-VULN-7](spec/vulnerability-scanning.md#q-vuln-7--finding-statuses-and-a-dismissal-whose-advisory-changes) | Which finding statuses, and what happens to a dismissal whose advisory changes? | (a) `needs_triage`, `confirmed`, `dismissed` by people, `resolved` by trove; a dismissal reopens on a higher severity, a malicious marking or known exploitation | — |
@@ -5714,12 +5768,15 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-VULN-11](spec/vulnerability-scanning.md#q-vuln-11--how-the-incremental-sync-finds-changed-records) | How does the incremental sync find changed records? | (a) the change file read from its start with ranged requests, then single records; a full sync weekly and when the change is large | — |
 | [Q-VULN-12](spec/vulnerability-scanning.md#q-vuln-12--the-offline-path-for-air-gapped-installations) | What is the offline path for air-gapped installations? | (a) a generic local repository as the mirror (`mode: repository`) | [ADR-132](#adr-132--advisories-mirrored-from-osv-and-matched-inside-trove-by-package-identity) |
 | [Q-VULN-13](spec/vulnerability-scanning.md#q-vuln-13--advisory-data-in-backups) | Is advisory data backed up? | (a) advisory tables `transient`, findings `data`; a restore keeps its blocks until the first complete import | [ADR-133](#adr-133--scan-state-lives-in-postgresql-a-re-fetchable-advisory-mirror-and-backed-up-findings) |
-| [Q-VULN-14](spec/vulnerability-scanning.md#q-vuln-14--known-exploited-and-exploit-probability-enrichment) | Which enrichments, and on by default? | (a) CISA known-exploited in the MVP and on; EPSS in P1 and off, because its terms are unclear | — |
+| [Q-VULN-14](spec/vulnerability-scanning.md#q-vuln-14--known-exploited-and-exploit-probability-enrichment) | Which enrichments, and on by default? | (a) CISA known-exploited in the MVP and on; EPSS in P1 and off, because its terms are unclear; the EPSS part completed by the owner in Q-VULN-21 | — |
 | [Q-VULN-15](spec/vulnerability-scanning.md#q-vuln-15--how-formats-join-after-the-contract-freeze) | How do formats join after the contract freeze? | (a) an optional `VulnerabilityAdapter` interface, discovered by type assertion | [ADR-132](#adr-132--advisories-mirrored-from-osv-and-matched-inside-trove-by-package-identity) |
 | [Q-VULN-16](spec/vulnerability-scanning.md#q-vuln-16--how-the-trend-is-computed) | How is the trend computed? | (a) from `detected_at` and `resolved_at` of the findings the caller can read; no snapshot table | — |
 | [Q-VULN-17](spec/vulnerability-scanning.md#q-vuln-17--the-numeric-advisory-id-of-the-npm-audit-answer) | Which numeric id does an advisory carry in the npm audit answer? | (a) 53 bits of SHA-256 of `npm:<canonical id>` | — |
 | [Q-VULN-18](spec/vulnerability-scanning.md#q-vuln-18--how-evaluation-jobs-keep-work-that-arrives-while-one-is-waiting-or-running) | How do evaluation jobs keep work that arrives while one is waiting or running? | (b) the work in tables: a full-evaluation request per ecosystem that every `vuln-evaluate` run serves first, and a rescan that runs again when its repository's scanning inputs changed meanwhile | — |
 | [Q-VULN-19](spec/vulnerability-scanning.md#q-vuln-19--npm-audits-in-mode-local-on-an-endpoint-with-exposure-rules) | Do npm audits in mode `local` answer on an endpoint with exposure rules? | (b) no: the 501 of R-NPM-048 in every mode; an endpoint with `cache_fill: false` and no rules answers | [ADR-132](#adr-132--advisories-mirrored-from-osv-and-matched-inside-trove-by-package-identity) |
+| [Q-VULN-20](spec/vulnerability-scanning.md#q-vuln-20--which-findings-block-a-download-and-who-sets-and-lifts-a-block) | Which findings block a download, and who sets and lifts a block? | (a) triage only: malicious versions blocked by default; every other block set by a holder of `vulnerabilities:triage` on a confirmed finding, for that version in that repository, and lifted in triage; no severity threshold (owner, 2026-10-31) | [ADR-134](#adr-134--malicious-versions-are-blocked-at-download-by-default) |
+| [Q-VULN-21](spec/vulnerability-scanning.md#q-vuln-21--epss-is-an-operator-option-whose-terms-the-operator-decides) | Who decides on EPSS's terms of use? | (a) EPSS stays P1, an operator option off by default; the operator who switches it on decides, and the documentation says FIRST states no licence (owner, 2026-10-31) | — |
+| [Q-VULN-22](spec/vulnerability-scanning.md#q-vuln-22--a-block-set-in-triage-is-a-finding-status) | How is a block set in triage stored and changed? | (a) a finding status `blocked`, reached from `confirmed` and left to `confirmed` or `dismissed` | [ADR-134](#adr-134--malicious-versions-are-blocked-at-download-by-default) |
 | [Q-ROAD-1](coverage/roadmap.md#q-road-1--generic-local-repositories-in-m1) | Generic local repositories in M1? | (a) the local class of the generic format is built in M1 as MVP, from a new spec page `formats/generic.md`; remote and virtual generic stay P1 | — |
 | [Q-ROAD-2](coverage/roadmap.md#q-road-2--backup-and-restore-in-the-beta) | Backup and restore in the beta? | (e) trove's own backup create and restore, the platform layer (R-HA-023, R-HA-025) and the revocation journal (R-HA-054, R-AUTHZ-031) are MVP and gate in M5; their work runs in its own lane from M1 on, and M0 gives every table its export class. Revisited 2026-10-28: was (a), both kept at P1 and the journal after 1.0 | [ADR-094](#adr-094--a-configurable-backup-job-writes-consistent-backups-to-s3), [ADR-078](#adr-078--restores-keep-metadata-and-blobs-consistent-by-ordering-not-by-coordination) |
 | [Q-ROAD-3](coverage/roadmap.md#q-road-3--ecosystems-the-owners-teams-use-after-npm-and-nuget) | Which ecosystems after npm and NuGet? | (a) the P1 format order of the roadmap stands; revisited 2026-10-29: Ansible Galaxy (owner demand) is F0 and P1, ahead of F1 | — |

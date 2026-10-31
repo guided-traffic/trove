@@ -17,7 +17,8 @@ section linked under each heading.
 **Versions:** trove stays on major version 0 until the owner decides otherwise. Semantic Release
 sets the versions from the conventional commits on `main` (`feat` minor, `fix` patch). A phase closes
 with the release that the pipeline cuts from its commits; the Version column records it when the phase
-completes. The beta release is the release that closes phase 8.
+completes. The beta release is the release Semantic Release cuts from the commits that close phase 8; no
+version number is expected for it ([ADR-124](../decisions.md#adr-124--releases-stay-on-major-version-0), owner, 2026-10-31).
 
 ## Where we are
 
@@ -224,7 +225,7 @@ applies to the npm and NuGet parts of this phase.
 - ⚪ Known-exploited marking from the CISA catalog
 - ⚪ Matching by package identity with each format's version order, as an optional interface of the frozen format contract; public advisories never applied to claimed names, claimed-name matches as a security alert
 - ⚪ Findings: severity from CVSS, triage statuses and history, re-evaluation when the advisory data changes, rescan on demand, retention
-- ⚪ Download blocking: malicious versions by default, a severity threshold per repository, on every route that serves a version, in the one item-lookup query; report mode for the whole installation
+- ⚪ Download blocking: malicious versions by default, every other block set and lifted in triage on a confirmed finding, no severity threshold (owner, 2026-10-31); on every route that serves a version, in the one item-lookup query; report mode for the whole installation
 
 **Formats**
 - ⚪ npm: `npm audit`, `pnpm audit` and `yarn npm audit` answered from trove's data on local, remote and virtual repositories; no package name leaves the installation
@@ -238,7 +239,7 @@ applies to the npm and NuGet parts of this phase.
 
 **Tests**
 - ⚪ Integration tests against PostgreSQL, Valkey with Sentinel and S3 with a test advisory source: sync paths and faults, the matching corpus per format, the finding lifecycle, blocking on every route, the API with permission-narrowed callers
-- ⚪ E2E tests: npm, pnpm and Yarn audits and a blocked install, `dotnet restore` audit warnings and a blocked restore, through local, remote and virtual repositories on several `web` replicas with random distribution; browser journeys of the report, triage and export
+- ⚪ E2E tests: npm, pnpm and Yarn audits and a blocked install, `dotnet restore` audit warnings and a blocked restore, through local, remote and virtual repositories on several `web` replicas with random distribution; browser journeys of the report, triage, blocking and export
 - ⚪ E2E: a full sync drained mid-run finishes on another `worker`; the set once with Valkey stopped
 - ⚪ Performance bounds V-1 to V-9 with 100,000 stored versions
 

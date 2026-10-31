@@ -639,7 +639,7 @@ lists as system scope items (R-AUTH-025) use the same names; the others extend t
 | `security-settings:write`: the authorization settings of this page | yes | yes | — | — | — |
 | `audit:read` | yes | yes | yes | — | — |
 | `endpoints:read`, `endpoints:write`: endpoints and their exposure rules ([endpoints.md](endpoints.md) R-EP-016) | yes, yes | yes, yes | yes, — | yes, — | — |
-| `vulnerabilities:triage`, from M4b: change the status of vulnerability findings, which lifts or restores download blocks; effective only together with `read` on the finding's repository ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-013, Q-VULN-8) | yes | yes | — | — | — |
+| `vulnerabilities:triage`, from M4b: change the status of vulnerability findings, which sets, lifts or restores download blocks (a block on a confirmed finding, the dismissal of a malicious one); effective only together with `read` on the finding's repository ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-013, Q-VULN-8, Q-VULN-20) | yes | yes | — | — | — |
 
 - Roles are bound to users, groups and service accounts (R-AUTHZ-022). A role bound to a group
   applies to every member, including members synchronized from the identity provider. This is how
@@ -694,7 +694,7 @@ Priority: **P1** · Covers: IAM-006, ADMAPI-041, TOK-014
   [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-013, available from M4b and to this
   role when it ships). Triage needs `read` on the finding's repository as well, which the role does
   not carry, so a security administrator triages only where a policy grants it `read`. A dismissal
-  lifts a block for every consumer of the repository
+  lifts a block, and a block set in triage refuses a version, for every consumer of the repository
   ([H-312](vulnerability-scanning.md#h-312--a-dismissal-lifts-a-block-for-every-consumer-of-the-repository)).
 - `auditor` reads everything that is not secret: configuration, policies, role bindings,
   identities, CI mappings, token metadata (never token values), settings and the audit log. It

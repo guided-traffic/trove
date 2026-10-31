@@ -1028,7 +1028,7 @@ HTTP duration histograms use the buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.
 | `trove_vuln_evaluations_total` (M4b) | counter | `trigger` (`publish`, `fill`, `miss`, `advisory`, `full`, `rescan`) | Evaluations of stored versions (R-VULN-011) |
 | `trove_vuln_evaluation_duration_seconds` (M4b) | histogram | `trigger` | Duration of an evaluation (R-VULN-011) |
 | `trove_vuln_findings` (M4b) | gauge | `severity`, `status`, `kind` | Findings; read from PostgreSQL (R-VULN-012) |
-| `trove_vuln_downloads_blocked_total` (M4b) | counter | `format`, `reason` (`malicious`, `severity`, `missing_data`), `mode` (`enforce`, `report`) | Downloads refused, or counted only in report mode (R-VULN-015) |
+| `trove_vuln_downloads_blocked_total` (M4b) | counter | `format`, `reason` (`malicious`, `triage`, `missing_data`), `mode` (`enforce`, `report`) | Downloads refused, or counted only in report mode (R-VULN-015) |
 | `trove_vuln_audit_requests_total` (M4b) | counter | `format`, `mode`, `outcome` | Client audits answered (R-VULN-017, R-VULN-018) |
 | `trove_vuln_claimed_name_matches` (M4b) | gauge | `ecosystem`, `kind` | Public advisories for claimed names; read from PostgreSQL (R-VULN-010) |
 
@@ -1797,8 +1797,8 @@ asynchronous. "Hook" marks events that webhooks may select (R-OPS-037).
 | `webhook.created`, `webhook.updated`, `webhook.deleted` | T | — | R-OPS-038 | `changes` |
 | `webhook.secret_rotated`, `webhook.tested`, `webhook.redelivered` | T | — | R-OPS-040, R-OPS-041, R-OPS-043, R-OPS-044 | `secret_name` |
 | `webhook.disabled_by_receiver`, `webhook.suspended` | T | — | R-OPS-042, R-OPS-039 | `status`, `reason` |
-| `vulnerability.finding.status_changed` | T | — | From M4b: a triager changed a finding's status ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-013) | `finding`, `package`, `version`, `advisory`, `from`, `to`, `reason`, `bulk` |
-| `vulnerability.finding.reopened` | T | — | From M4b: trove returned a dismissed finding to `needs_triage` on a material advisory change (R-VULN-012) | `finding`, `advisory`, `change` |
+| `vulnerability.finding.status_changed` | T | — | From M4b: a triager changed a finding's status ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-013); a change that sets or lifts a download block carries `block` | `finding`, `package`, `version`, `advisory`, `from`, `to`, `reason`, `bulk`, `block` |
+| `vulnerability.finding.reopened` | T | — | From M4b: trove returned a dismissed finding to `needs_triage` on a material advisory change (R-VULN-012) | `finding`, `advisory`, `change`, `block` |
 | `vulnerability.download_blocked` | A | — | From M4b, security event: a download was refused, or counted in report mode (R-VULN-015, R-VULN-016); at most once a minute per repository, version and client address | `package`, `version`, `advisory`, `reason`, `enforced`, `stored` |
 | `vulnerability.claimed_name_match` | A | — | From M4b, security event: a public advisory names a claimed internal name, once per advisory and name (R-VULN-010) | `package`, `advisory`, `kind`, `claimRepository` |
 | `vulnerability.source.failed` | A | — | From M4b: an advisory sync run failed; at most once an hour per source and ecosystem (R-VULN-004) | `source`, `ecosystem`, `code` |

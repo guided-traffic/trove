@@ -1051,6 +1051,10 @@ maps to three operations. Each needs `delete` and ownership (R-AUTHZ-007) and th
 - Remote repositories answer 405; their cached items are removed through the cache API of
   [repositories-and-proxy.md](../repositories-and-proxy.md). Virtual repositories route to the
   deployment target (R-NPM-029). No time window applies.
+- pnpm 11 and 12 unpublish at the deployment target, not through a virtual repository: they send
+  back the merged document's `_rev`, which the write refuses with 409 `npm_stale_rev` (R-NPM-009),
+  and retry for about 70 seconds. npm and pnpm 10 unpublish through the virtual repository
+  (Q-NPM-49 point 5, Q-NPM-68).
 
 Acceptance criteria:
 
@@ -1878,7 +1882,8 @@ names, each with a list of versions:
   names the bulk endpoint (npm 7 to 10 ask the quick endpoint after a failed bulk request and print
   its answer). pnpm 10 asks only these two endpoints, so `pnpm audit` of pnpm 10 is not served; it
   retries each 501 after 10 seconds and a minute and fails after about 140 seconds (measured,
-  Q-NPM-65).
+  Q-NPM-65). trove does not translate npm 6's audit protocol, and the audit scenario of pnpm 10's
+  row of R-NPM-045 is not applicable (owner, Q-NPM-65).
 - Permission: `read` on the repository and, for a virtual, on the forwarding member; a caller
   without `read` on the forwarding member gets the refusal of R-AUTHZ-016 and no provider is asked.
 - The forward holds no PostgreSQL connection while it waits: its one query runs before the
@@ -2130,7 +2135,7 @@ described.
 | `npm.authenticate` | all | Personal and service-account tokens and their scope; Bearer or Basic with any user name; `TROVE_TOKEN` and never committing a token; CI with a masked variable, the GitLab CI exchange as coming; `whoami` and `ping`; no one-time password; the client's login command not supported yet. For an anonymous reader only that no credential is needed and that writes need one |
 | `npm.install` (install snippets) | all | The install and lockfile commands per client, what the class serves, `EINTEGRITY` |
 | `npm.publish` | local, virtual | Per client: the publish command (`--no-git-checks`, pnpm 10 handing the upload to npm, `yarn install` first, `--new-version`), `publishConfig`, scoped packages, the deployment target, the limits (defaults 256 MiB, 2 GiB, 100,000 files, 1 MiB) and `npm_too_large`, the acknowledged retry and its notice, `--provenance` and `--stage`; or why the reader cannot publish. Left out for an anonymous reader |
-| `npm.maintain` | local, virtual | Dist-tag commands per client, the permissions, `latest` (movable, not removable, moved on unpublish), tag names that are ranges; unpublish per client (none in Yarn), `delete` and ownership, no time window; pnpm 11 and 12 through a virtual repository (Q-NPM-49); deprecate not available. Left out for an anonymous reader |
+| `npm.maintain` | local, virtual | Dist-tag commands per client, the permissions, `latest` (movable, not removable, moved on unpublish), tag names that are ranges; unpublish per client (none in Yarn), `delete` and ownership, no time window; pnpm 11 and 12 through a virtual repository (Q-NPM-49, Q-NPM-68); deprecate not available. Left out for an anonymous reader |
 | `npm.audit` | all | A local repository's `501`; the forward of a remote or the first forwarding member of a virtual repository; the forwarded and the withheld names and npm's notice, which pnpm and Yarn Berry do not show; `501` and `502`; pnpm 10 not served; `yarn audit` never reaches trove |
 | `npm.lockfiles` | all | What each client's lockfile records; moving a `package-lock.json` by replacing the address; Yarn Berry's address-free lockfile (R-NPM-042); valid integrity values; withdrawn versions fail lockfile installs |
 | `npm.endpoint` | all | Only on an endpoint with exposure rules: hidden versions are `E404`, `latest` moves, hidden tags are dropped, writes are `403 endpoint_read_only`, the audit is `501`, no fill on an endpoint without fills, the endpoint's own addresses |
@@ -2291,12 +2296,13 @@ maintenance until 2027-04-30, 24 in maintenance, 26 active LTS from 2026-10-28):
   local and remote packages through `npm-all`; publish; dist-tag add, list, remove; deprecate and
   unpublish (npm, pnpm); whoami; login (web where supported, legacy otherwise); audit; search
   (npm, pnpm); lockfile reinstall with an empty client cache.
+- pnpm 10 and Yarn 1 stay gate rows, and their audit scenario is not applicable, with its reason
+  (owner, Q-NPM-65): pnpm 10 speaks only npm 6's audit endpoints, which answer 501 (R-NPM-038), and
+  trove does not translate npm 6's audit protocol; Yarn 1's `yarn audit` always asks
+  registry.yarnpkg.com, whatever `.npmrc` says, so it never reaches trove.
 - From M4b the audit scenario runs in mode `local` through `npm-local`, `npm-remote` and `npm-all`
   ([vulnerability-scanning.md](../vulnerability-scanning.md) R-VULN-017, R-VULN-029), and the
-  forwarding scenario of M2 keeps running with `npm-remote` and `npm-all` set to `forward`. pnpm 10
-  expects the 501 of npm 6's endpoints in both modes (Q-NPM-65). Yarn 1's row stays not applicable:
-  `yarn audit` sends its request to registry.yarnpkg.com whatever `.npmrc` says, so it never reaches
-  trove.
+  forwarding scenario of M2 keeps running with `npm-remote` and `npm-all` set to `forward`.
 - A scenario that depends on a client feature a row's version lacks (for example npm's
   `min-release-age`, or the native trusted-publishing exchange, which npm 10 and Yarn 1 lack and
   which the npm 10, pnpm 10 and Yarn 1 rows therefore test through the generic-exchange snippet of
@@ -4168,13 +4174,16 @@ repository without a forwarder (a local repository, mode `disabled`, a virtual r
 forwarding remote member) still answers 501, which pnpm retries for 70 seconds per request. pnpm 10
 asks npm 6's audit endpoints, which answer 501 everywhere, and reports after about 140 seconds
 (Q-NPM-65). The choice stays (a); the scenario now asserts the advisories for every row but pnpm 10
-and Yarn 1, and the 501 for pnpm 10.
+and Yarn 1, and the 501 for pnpm 10. Since the owner's decision of 2026-10-31 (Q-NPM-65) the audit
+scenario of pnpm 10 is not applicable, as Yarn 1's is, and asserts no 501.
 
 **Applied in the spec:** R-NPM-018 (the answer until it is built), R-NPM-001 (the 501 note), R-NPM-043 (the
 criterion). Code: `internal/formats/npm/handlers_deprecate.go`, `TestR_NPM_043_DeprecateIsRefusedWithoutRetries`.
-Open, for the owner: pnpm 11 and 12 cannot unpublish through a virtual repository as the design stands (point 5); letting a
+Open, for the owner, until 2026-10-31: pnpm 11 and 12 cannot unpublish through a virtual repository as the design stands (point 5); letting a
 `-rev` write through a virtual repository accept the merge's `_rev` would make it work for packages that exist only in the
 deployment target, and would need a rule for versions that only a remote member holds (the `PUT` names them, R-NPM-017 answers 400).
+Decided by the owner on 2026-10-31 in [Q-NPM-68](#q-npm-68--pnpm-11-and-12-unpublish-at-the-deployment-target-not-through-a-virtual-repository):
+point 5 stays documented as it is, pnpm 11 and 12 unpublish at the deployment target, and the question is examined again in M6.
 
 ### Q-NPM-50 · A package or version of the install snippet that a client would read as an option
 
@@ -4459,29 +4468,41 @@ replica's memory; an installation that needs more raises it per remote. The deve
 
 ### Q-NPM-65 · npm 6's audit endpoints and pnpm 10
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the owner on 2026-10-31** — option (d): the endpoints answer as in (a), npm 6's audit protocol is not
+translated, and pnpm 10 and Yarn 1 stay gate rows whose audit scenario is not applicable. The development agent had chosen (a),
+with pnpm 10's audit scenario asserting the 501.
 
 Context: measured on 2026-10-31 with the pinned clients against the bulk endpoint: npm 10, 11 and 12, pnpm 11 and 12 and
 Yarn 4 use `-/npm/v1/security/advisories/bulk` and print the advisories. pnpm 10.34.9 (a gate row) does not: it posts npm 6's
 audit tree to `-/npm/v1/security/audits/quick` and then to `-/npm/v1/security/audits`, and retries each 501 after 10 seconds
 and a minute; it fails after 2 minutes 20 seconds. npm 7 to 10 ask the quick endpoint after a failed bulk request and
-print its answer.
+print its answer. Yarn 1's `yarn audit` sends its request to registry.yarnpkg.com whatever `.npmrc` says (R-NPM-045), so it
+never reaches trove, and its audit scenario was not applicable from the start. The development agent chose (a), with pnpm 10's
+audit scenario asserting the 501 it reports, because pnpm 10 leaves the gate when its newest release is six months old and
+pnpm 11 and 12 speak the bulk protocol; it would have revisited (b) if users of the beta stayed on pnpm 10 past its gate row,
+or if another supported client spoke npm 6's protocol. The owner decided on 2026-10-31 that pnpm 10 and Yarn 1 stay gate rows
+of the client matrix, that their audit scenario is not applicable with its reason, and that npm 6's audit protocol is not
+translated.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
 | (a) npm 6's endpoints answer 501 `npm_audit_unavailable` | R-NPM-038 as written: the text of the bulk endpoint where no repository forwards, else a text that names the bulk endpoint | One protocol to keep right; npm 10's audit at `npm-local` prints the criterion's 501 and text | `pnpm audit` of pnpm 10 is not served and costs 140 seconds |
 | (b) Serve npm 6's protocol by translation | Bulk names from the audit tree to the provider, an npm 6 report with findings and paths back | pnpm 10 audits | A second protocol with a second answer format, the paths of every finding computed from the tree, for one client major that leaves the gate rule within months |
 | (c) 404 for npm 6's endpoints | pnpm 10 fails at once with its own hint | Fast | Breaks the rule of R-NPM-001 for `POST`; npm 10 at `npm-local` would print a 404 instead of the 501 the criterion asks for |
+| (d) The endpoints as in (a); pnpm 10 and Yarn 1 stay gate rows, their audit scenario not applicable with its reason (chosen) | R-NPM-045 | Both clients stay gated for everything else they do; the matrix states what trove serves instead of spending 140 seconds per run on a refusal; one protocol to keep right | `pnpm audit` of pnpm 10 is not served, and the matrix no longer checks the 501 it gets; the endpoints' answer stays covered by R-NPM-038's tests and by npm 10's audit at `npm-local`, which asks the quick endpoint after the bulk one |
 
-**Choice:** (a). pnpm 10's audit scenario asserts the 501 it reports.
+**Choice:** (d). The matrix reports the audit scenario as not applicable with these reasons: pnpm 10 speaks only npm 6's
+audit endpoints, which answer 501; Yarn 1's `yarn audit` always asks registry.yarnpkg.com.
 
-**Rationale:** pnpm 10 leaves the gate when its newest release is six months old (R-NPM-045), and pnpm 11 and 12 speak the
-bulk protocol. The answer pnpm 10 prints says which clients trove serves. The development agent would revisit (b) if users
-of the beta stay on pnpm 10 past its gate row, or if another supported client speaks npm 6's protocol.
+**Rationale:** the owner's decision. pnpm 10 still leaves the gate by R-NPM-045's rule when its newest release is six months
+old. The development agent records no revisit condition; the scope is the owner's.
 
 **Applied in the spec:** R-NPM-038 (npm 6's endpoints, pnpm 10), R-NPM-040, R-NPM-001 (the pnpm note), Q-NPM-49 (point 2
 revisited). Code: `internal/formats/npm/handlers_audit.go` (`handleAuditLegacy`); `test/e2e/npm_matrix_test.go`
-(`scenarioAudit`).
+(`scenarioAudit`). On 2026-10-31: R-NPM-045 (pnpm 10 and Yarn 1), R-NPM-038 (the note), Q-NPM-49 (the revisited
+paragraph); [vulnerability-scanning.md](../vulnerability-scanning.md) R-VULN-017, R-VULN-029, Q-VULN-9; the
+[roadmap](../../coverage/roadmap.md) (E2.1). Not yet in the code: `scenarioAudit` still asserts pnpm 10's 501, and the
+scenario's not-applicable rule names Yarn 1 only.
 
 ### Q-NPM-66 · What npm's guide says, and how it stays true
 
@@ -4517,6 +4538,33 @@ Context: the format registered its clients as "npm", "pnpm", "Yarn" and "Yarn Cl
 **Rationale:** A user who picks a client on one page must find it on the other. The development agent revisits this when the setup page reads the descriptor's clients (Q-UI-70).
 
 **Applied in the spec:** R-NPM-041 (the clients of the descriptor).
+
+### Q-NPM-68 · pnpm 11 and 12 unpublish at the deployment target, not through a virtual repository
+
+Status: **Decided by the owner on 2026-10-31** — option (a), to be examined more thoroughly in M6.
+
+Context: Q-NPM-49 point 5: pnpm 11 and 12 read the package with a plain `GET` and send its `_rev` back in
+`PUT {name}/-rev/{rev}`. Through a virtual repository that `_rev` is the merge's synthetic one, which R-NPM-009 does not accept
+for a write, so the unpublish answers 409 `npm_stale_rev` and pnpm retries it for about 70 seconds. npm and pnpm 10 use
+`?write=true`, which returns the deployment target's own `_rev` (R-NPM-029), and unpublish through the virtual repository.
+Q-NPM-49 left the question open for the owner. npm's guide already tells pnpm users of a virtual repository to unpublish at the
+deployment target ([maintain.md](../../../internal/formats/npm/guide/maintain.md)), and the matrix runs these two rows'
+unpublish at `npm-local`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Document it as it is: pnpm 11 and 12 unpublish at the deployment target (chosen) | R-NPM-017, the guide, the matrix | The revision rule of R-NPM-009 stays as it is; the guide and the matrix already say and do this | A pnpm 11 or 12 user who unpublishes through the virtual repository waits 70 seconds for a 409 |
+| (b) A `-rev` write through a virtual repository accepts the merge's `_rev` for packages only the deployment target holds | The virtual repository maps its synthetic `_rev` to the target's | pnpm 11 and 12 unpublish through the virtual repository | Weakens the stale-write check of R-NPM-009 for those packages; needs a rule for versions only a remote member holds, which the `PUT` names and R-NPM-017 answers with 400 |
+
+**Choice:** (a). [FULL.md](../../projektplan/FULL.md#m6--npm-and-nuget-completion) M6 carries the follow-up: whether a write
+through a virtual repository may accept the merge's `_rev` for packages only the deployment target holds.
+
+**Rationale:** the owner's decision: documented as it is now, to be examined more thoroughly later. The development agent
+records no revisit condition beyond the M6 item; the scope is the owner's.
+
+**Applied in the spec:** R-NPM-017 (the pnpm bullet), R-NPM-041 (the `npm.maintain` row), Q-NPM-49 (the open sentence);
+[FULL.md](../../projektplan/FULL.md) M6; [e2e.md](../../developer/e2e.md#findings-of-the-npm-tests). The guide text needed no
+change.
 
 ## What this does not cover
 

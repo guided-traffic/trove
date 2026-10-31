@@ -696,7 +696,7 @@ The registry is `npm-all` when the build serves the virtual class and `npm-local
 | `deprecate` (P1, 404) | `npm deprecate` | `pnpm deprecate` | n/a: no such command | n/a: no such command |
 | `unpublish` | `npm unpublish` | `pnpm unpublish --force` (pnpm 11 and 12 at `npm-local`, see the findings) | n/a: no such command | n/a: no such command |
 | `login` (P1) | `npm login` (501) and `--auth-type=legacy` (404) under a pseudo-terminal | `pnpm login` under a pseudo-terminal | `yarn npm login` under a pseudo-terminal | n/a: `yarn login` only stores the name and e-mail locally and sends no request |
-| `audit` (R-NPM-038): `left-pad` and `@cobalt/dusky-gauge` from the counting upstream and the row's own package through `npm-all`; the report lists the advisories 1900001 and 1900003, the provider's log never the row's package | `npm audit`, which prints the `npm-notice` of the withheld name; then `npm audit` at `npm-local`: 501 and the text of R-NPM-038 | `pnpm audit` (pnpm 10: the 501 of npm 6's endpoints after about 140 s, see below) | `yarn npm audit` | n/a: `yarn audit` goes to registry.yarnpkg.com whatever `.npmrc` says |
+| `audit` (R-NPM-038): `left-pad` and `@cobalt/dusky-gauge` from the counting upstream and the row's own package through `npm-all`; the report lists the advisories 1900001 and 1900003, the provider's log never the row's package | `npm audit`, which prints the `npm-notice` of the withheld name; then `npm audit` at `npm-local`: 501 and the text of R-NPM-038 | `pnpm audit` (pnpm 10: n/a, it speaks only npm 6's audit endpoints, which answer 501; Q-NPM-65) | `yarn npm audit` | n/a: `yarn audit` goes to registry.yarnpkg.com whatever `.npmrc` says |
 | `search` (P1, 404) | `npm search` | `pnpm search` | n/a: no such command | n/a: no such command |
 | `deferred-endpoints` (R-NPM-043) | `token list`, `profile get`, `org ls`, `access get status`, `owner add` | n/a: npm's commands | n/a | n/a |
 | `lockfile-reinstall` | `npm ci` | `pnpm install --frozen-lockfile` | `yarn install --immutable` | `yarn install --frozen-lockfile` |
@@ -742,14 +742,14 @@ Found while building the matrix and running it through `npm-all`, in the order t
 - **`yarn npm publish` needs an installed project**: the package directory is installed once (no dependencies, no request) before it publishes.
 - **`pnpm audit` retries a 501 `POST`** (10 seconds, then a minute) on pnpm 10, 11 and 12, which contradicts the premise of R-NPM-001 that a 501 on a `POST` costs nothing. Since audit
   is built (R-NPM-038), pnpm 11 and 12 get the provider's answer through `npm-all`. **pnpm 10 speaks npm 6's audit protocol**: it posts to `-/npm/v1/security/audits/quick` and then to
-  `-/npm/v1/security/audits`, never to the bulk endpoint, and both answer 501 (Q-NPM-65); the row reports that 501 after about 140 seconds (2 min 20 s measured locally with 10.34.9).
+  `-/npm/v1/security/audits`, never to the bulk endpoint, and both answer 501 (2 min 20 s with its retries, measured locally with 10.34.9). The owner kept pnpm 10 as a gate row with its audit scenario not applicable (Q-NPM-65).
 - **Only npm prints the `npm-notice` of a partial audit** on a successful answer; pnpm 11 and 12 and Yarn 4 do not, so their users do not see that names were withheld
   ([H-302](../security/data-and-secret-flow.md#h-302--pnpm-and-yarn-do-not-show-that-an-audit-was-partial)).
 - **`yarn audit` ignores `.npmrc` and goes to registry.yarnpkg.com**; **`yarn login` sends no request**; **Yarn 4 has no unpublish, deprecate or search**. All are `not applicable` with those reasons.
 - **`npm owner ls` succeeds** (it reads the maintainers); the criterion of R-NPM-043 names `npm owner add`.
 - **pnpm 11 and 12 cannot unpublish through a virtual repository.** They read the package with a plain `GET`, whose `_rev` on `npm-all` is the merge's synthetic one, and send it back; the write
   answers 409 `npm_stale_rev` and the client retries it for 70 seconds. npm and pnpm 10 use `?write=true`. The scenario runs these two rows' unpublish at `npm-local`, the deployment target
-  (Q-NPM-49, open for the owner).
+  (Q-NPM-49; the owner decided on 2026-10-31 to keep it so and to examine it again in M6, Q-NPM-68).
 - **A virtual repository needs `read` on its members.** A token that reads `npm-all` and not its members gets 404 for everything (R-AUTHZ-009 rule 2); the customer endpoint's token and every fixture grant the members.
 - **The shadowing check couples unrelated repositories** (above): one remote with an open circuit anywhere in a virtual repository that contains `npm-local` blocks first publishes for holders of `deploy`.
 - **`kubectl exec -i` with an empty standard input never ends.** An empty file is made without stdin (`npmClient.write`); every write is bounded to two minutes. It cost one run 45 minutes.

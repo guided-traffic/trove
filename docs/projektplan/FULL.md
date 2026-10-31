@@ -4,9 +4,10 @@
 **Last updated:** 2026-10-31
 
 Everything that goes beyond the beta release in [BETA.md](BETA.md): the beta phase, the remaining
-registry types, and platform features. Every completed block or milestone ships the next minor
-version after the beta (`v0.9.0`, `v0.10.0`, …); trove stays on major version 0 until the owner
-decides otherwise. Order and scope follow the
+registry types, and platform features. Releases after the beta are cut by Semantic Release from the
+commits on `main`, as before it; no block or milestone has a version number expected beforehand, and
+trove stays on major version 0 until the owner decides otherwise
+([ADR-124](../decisions.md#adr-124--releases-stay-on-major-version-0)). Order and scope follow the
 [roadmap](../coverage/roadmap.md); per-feature detail is in the [feature catalog](../features/README.md)
 and, once written, in the [spec](../spec/README.md).
 
@@ -35,7 +36,7 @@ repositories) before it counts as done.
 - ⚪ Upgrade path from the beta to the next releases tested (rolling upgrade, data kept)
 - ⚪ Import tooling: copy existing packages from the registries trove replaces (npm, NuGet, Ansible Galaxy) into trove (spec page to write)
 - ⚪ User documentation: getting started, client setup per registry, administration, operations runbook
-- ⚪ Next `v0` minor release
+- ⚪ The release that closes the beta phase (cut by Semantic Release)
 
 ## B · Registries after the beta (P1)
 
@@ -110,6 +111,7 @@ parallel.
 - ⚪ Further upstream registries with their own credentials
 - ⚪ NuGet autocomplete, symbol server and symbol proxy
 - ⚪ NuGet vulnerability information passed through from the upstream and in registrations (trove's own `VulnerabilityInfo` ships in beta phase 6), embedded icon, license and README, metadata reindex
+- ⚪ Revisit pnpm 11 and 12 unpublishing through a virtual repository (Q-NPM-49 point 5): whether a write through a virtual repository may accept the merge's _rev for packages only the deployment target holds
 - ⚪ Integration and e2e tests extended for every addition
 
 ### M7 · Storage lifecycle and retention
@@ -144,7 +146,7 @@ parallel.
 - ⚪ Container installation without Kubernetes (documented, not HA)
 
 ### M12 · Upstream curation
-- ⚪ Curation policies at the remote-repository boundary: vulnerable and too-new versions, dry run, waivers, compliant-version fallback (spec page to write); blocking of malicious versions and the advisory data source ship in beta phase 6
+- ⚪ Curation policies at the remote-repository boundary: vulnerable and too-new versions, dry run, waivers, compliant-version fallback (spec page to write); blocking of malicious versions, blocks set in triage and the advisory data source ship in beta phase 6, and a policy-based severity threshold, which the beta does not have, may come here ([Q-VULN-20](../spec/vulnerability-scanning.md#q-vuln-20--which-findings-block-a-download-and-who-sets-and-lifts-a-block))
 - ⚪ Further risk facts for curation (licenses, end of life, project health); curation audit
 
 ### M13 · trove Bastion

@@ -2,11 +2,13 @@
 
 Status: implemented in M0 for the credentials of every connection, the stored-secret key ring and its envelope, and the
 redaction of logs, spans and error texts, and in M2 for the upstream credentials of remote repositories: their sealed rows, the
-secret references and the clients that send them, and for the names an npm audit forwards to an advisory provider. Package bytes do not exist yet: the blob layer is built, but no package
+secret references and the clients that send them, and for the names an npm audit forwards to an advisory provider; the release
+pipeline's secrets as the workflows hold them. Package bytes do not exist yet: the blob layer is built, but no package
 writes it.
 
 This page says where each credential lives inside the running installation, when a process reads it, what a process holds in
-memory, and what is written where it could be read by someone else. The rules are the code's; the requirement pages are linked.
+memory, and what is written where it could be read by someone else, and which code the release pipeline's credentials reach.
+The rules are the code's; the requirement pages are linked.
 
 ## Where credentials live
 
@@ -181,6 +183,23 @@ What the audit does not send: the client's own credential (the request to the pr
 and other client headers, the project's name, and any name of the table's lower rows. What it does send is still the combination of
 public names a project uses: [H-34](../spec/formats/npm.md#h-34--audit-forwarding-discloses-the-dependency-set).
 
+## The release pipeline's credentials
+
+The workflows that test, release and publish trove hold credentials that the running installation never sees, but that
+decide what every installation pulls: the image and the chart. They are secrets of the organisation
+([releasing.md](../developer/releasing.md#secrets-and-settings)), and each job that names one receives it. Every action is
+referenced by a tag, not by a commit (the owner's decision of 2026-10-31,
+[ADR-130](../decisions.md#adr-130--the-organisations-ci-and-release-standard)), so the third-party actions of a job run with
+what that job holds:
+
+| Credential | What it can do | Jobs that hold it | Third-party actions in those jobs |
+|---|---|---|---|
+| `DOCKERHUB_PAT`, the access token of the Docker Hub user `guidedtraffic` | push `docker.io/guidedtraffic/trove` under any tag | `Build Docker Image` ([build.yml](../../.github/workflows/build.yml)); in [release.yml](../../.github/workflows/release.yml) `image`, `container-scan`, `integration`, `s3-conformance`, `e2e` and `e2e-npm`, which log in for base-image pulls, on pull requests from this repository's branches too ([H-80](../spec/ha-and-helm.md#h-80--self-hosted-runners-build-the-code-of-every-pull-request)) | `Build Docker Image`: the `docker/*` actions, `anchore/sbom-action@v0`, `softprops/action-gh-release@v3`, `docker/scout-action@v1` (the token as an input); `container-scan`: `aquasecurity/trivy-action@v0.36.0`, after `docker/login-action` has stored the login on the runner; the other jobs: `docker/*`, `azure/setup-helm@v5`, `azure/setup-kubectl@v5` |
+| `APP_CLIENT_ID`, `APP_PRIVATE_KEY`, the organisation's GitHub App | an installation token for this repository: tags, releases (a release starts build.yml), commits | `Semantic Release` (release.yml, token with `contents: write`), `renovate` ([renovate.yml](../../.github/workflows/renovate.yml), token with every permission of the App) | `Semantic Release`: none, only `actions/*`; `renovate`: `renovatebot/github-action@v46.3.10` |
+| `GITHUB_TOKEN` of build.yml (`contents: write`, `pages: write`, `attestations: write`) | the release's assets and the `gh-pages` branch that serves the chart repository | both jobs of build.yml | as for `DOCKERHUB_PAT`, and `azure/setup-helm@v5` |
+
+No job runs in a GitHub environment with protection rules, so the secrets are bound to nothing but the job that names them.
+
 ## What this does not cover
 
 ### H-70 · The standard-output log carries every record in full
@@ -193,7 +212,6 @@ the ring as a stub with its head and its original size, while standard output ke
 user agent, path and host before they reach a record ([requestlog.go](../../internal/observability/requestlog.go)), so the
 gap becomes live only with a new attribute that carries client data unclipped, or with a value that a scrubber pattern does not
 match. Subject: the log storage of the platform, which keeps what standard output carries.
-</content>
 
 ### H-280 · A secret that cannot be resolved is found at its first use
 
@@ -264,3 +282,48 @@ What makes it real: lockfiles that were not resolved through trove, and audit ga
 Mitigation: install through trove before auditing (an install fetches every public package of the tree), and watch
 `trove_npm_audit_names_withheld_total{reason="not_proxied"}`, whose sustained growth is the revisit condition of
 [Q-NPM-3](../spec/formats/npm.md#q-npm-3--audit-forwarding-on-by-default).
+
+### H-325 · A moved action tag runs in a job that holds release secrets
+
+Stage: the actions of [release.yml](../../.github/workflows/release.yml), [build.yml](../../.github/workflows/build.yml) and
+[renovate.yml](../../.github/workflows/renovate.yml), each referenced by a tag
+([the release pipeline's credentials](#the-release-pipelines-credentials)).
+
+Live wherever the workflows run: Test and Release on every push and on every pull request from a branch of this repository,
+Renovate every day, Release Docker & Helm on every published release. Semantic Release has cut `v0.2.0` to `v0.4.0` (tags of
+this repository), so Test and Release has run on GitHub; whether Release Docker & Helm has published from them is not verified
+here. A tag is a movable reference: whoever controls an action's repository, or a maintainer's account, can point it at another
+commit, and the next run of a job that names the tag runs that commit with the job's secrets. Renovate does not notice: it
+raises a tag when a new one appears, and a moved tag keeps its name. In the Trivy incident (GHSA-69fq-xp46-6x23, March 2026)
+76 of 77 tags of `aquasecurity/trivy-action` were moved to malicious commits. The owner decided on 2026-10-31 to keep tag pins,
+as the organisation's standard has them, after the risk was named
+([ADR-130](../decisions.md#adr-130--the-organisations-ci-and-release-standard)).
+
+Subject, per credential:
+
+- `DOCKERHUB_PAT`: a moved `aquasecurity/trivy-action` tag runs in `container-scan` after the Docker Hub login, on every push
+  and pull request; a moved `anchore/sbom-action`, `softprops/action-gh-release` or `docker/scout-action` tag runs in the job
+  that pushes the image, at the next release; the `docker/*` and `azure/*` tags of the other jobs that log in run with the
+  login as well. With the token, the image of an existing tag can be replaced
+  ([H-79](../spec/ha-and-helm.md#h-79--artifacts-are-unsigned-and-nothing-checks-their-origin)), so every installation that
+  pulls by tag runs it.
+- The GitHub App: a moved `renovatebot/github-action` tag runs in Renovate's daily job with an installation token that holds
+  every permission of the App: it can push commits and tags and publish a release, which starts Release Docker & Helm.
+- The `GITHUB_TOKEN` of build.yml: a moved tag in its jobs can change the release's assets and the chart repository on
+  `gh-pages`.
+
+What makes it real: a compromised repository or maintainer account of one of the third-party actions above, before the moved
+tag is noticed and restored.
+
+Hardening that would mitigate it (none is in place):
+
+- commit-SHA pins, with the tag as a comment, for the third-party actions of the jobs that hold these secrets:
+  `aquasecurity/trivy-action`, `anchore/sbom-action`, `softprops/action-gh-release`, `docker/scout-action` and the `docker/*`
+  actions of build.yml, and `renovatebot/github-action`; a moved tag then changes nothing until a reviewed update;
+- a GitHub environment with protection rules (deployment from `main` only, required reviewers) for the jobs that publish,
+  holding `DOCKERHUB_PAT` and the App's credentials as environment secrets, so that the test jobs and pull requests cannot
+  read them, with a separate read-only Docker Hub token for the base-image pulls of the test jobs;
+- Renovate's digest pinning for GitHub Actions (`helpers:pinGitHubActionDigests`), which keeps SHA pins current through
+  reviewed pull requests;
+- an allow list of actions at the organisation level (the allowed actions of the organisation's Actions settings), so that a
+  workflow change cannot bring in an action nobody approved.

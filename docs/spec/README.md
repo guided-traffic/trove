@@ -32,9 +32,11 @@ Given by the project owner; not up for redesign in these pages:
   when it runs and stores it in S3.
 - No ReadWriteMany storage class can be assumed in the cluster: no volume may be attached to
   several pods. If a worker type needs a ReadWriteOnce volume, that is acceptable but not desired.
-- Versioning: releases stay on major version 0, starting at `v0.1.0`; every completed project
-  phase is the next minor release. No major release until the owner explicitly decides otherwise
-  ([ADR-124](../decisions.md#adr-124--releases-stay-on-major-version-0)).
+- Versioning: releases stay on major version 0, starting at `v0.1.0`. Semantic Release cuts every
+  release from the commits; no phase or milestone has a version number expected beforehand, and the
+  beta release is the release cut from the commits that close phase 8 of the
+  [project plan](../projektplan/BETA.md) (2026-10-31). No major release until the owner explicitly
+  decides otherwise ([ADR-124](../decisions.md#adr-124--releases-stay-on-major-version-0)).
 - **Transport encryption on every connection, trove's listeners included (2026-10-29).** Every connection that a
   component of this repository makes or accepts can run fully encrypted with TLS: PostgreSQL, Valkey and Sentinel,
   the object store, outbound HTTP, trove's own client and ops listeners (so a reverse proxy can connect to trove over
