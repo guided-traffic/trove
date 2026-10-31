@@ -46,10 +46,13 @@ const (
 
 // npmFixture is the installation the npm tests share: created once per run, idempotent over runs.
 type npmFixture struct {
-	adm      *api
-	token    string // the publisher's token, read/deploy/delete on the three repositories
-	run      string // six hex digits, part of every package name this run publishes
-	stubHost string // npmstub.<ns>.svc, where the counting test upstream is (deploy/dev/e2e.sh, TROVE_E2E_NPMSTUB=1)
+	adm   *api
+	token string // the publisher's token, read/deploy/delete on the three repositories
+	// rowTokens are one token of the publisher per gate row: the rows run side by side, and a token shared by eight
+	// clients reached the endpoint's rate budget, whose 429 the clients rightly retried (R-API-016).
+	rowTokens map[string]string
+	run       string // six hex digits, part of every package name this run publishes
+	stubHost  string // npmstub.<ns>.svc, where the counting test upstream is (deploy/dev/e2e.sh, TROVE_E2E_NPMSTUB=1)
 }
 
 var (
@@ -113,7 +116,30 @@ func buildNPMFixture(t testing.TB) (*npmFixture, error) {
 	ensurePolicy(t, adm, npmPublisher, []string{npmLocalKey}, [2]any{"sa:" + npmPublisher, []string{"read", "deploy", "delete"}})
 	ensurePolicy(t, adm, npmPublisher+"-read", []string{npmRemoteKey, npmAllKey}, [2]any{"sa:" + npmPublisher, []string{"read"}})
 	fx.token = freshSAToken(t, adm, npmPublisher, 4*3600, map[string]any{"inherit": true}).Token
+	fx.rowTokens = map[string]string{}
+	for _, row := range npmGateRows {
+		fx.rowTokens[row] = newSATokenWaiting(t, adm, npmPublisher, 4*3600, map[string]any{"inherit": true}).Token
+	}
 	return fx, nil
+}
+
+// newSATokenWaiting is newSAToken that waits out the management API's rate limit (R-API-016).
+func newSATokenWaiting(t testing.TB, adm *api, sa string, ttl int, scope map[string]any) createdToken {
+	t.Helper()
+	body := map[string]any{"description": "end-to-end test", "ttlSeconds": ttl, "scope": scope}
+	for range 20 {
+		r := adm.do(http.MethodPost, "/api/v1/service-accounts/"+sa+"/tokens", body)
+		if r.Status == http.StatusTooManyRequests {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		r.want(t, "token of "+sa, 201)
+		var c createdToken
+		r.JSON(t, &c)
+		return c
+	}
+	t.Fatalf("token of %s: still rate limited after 40 s", sa)
+	return createdToken{}
 }
 
 // registry is the repository the matrix talks to: npm-all, the virtual repository over npm-local and npm-remote
@@ -275,7 +301,11 @@ func (c *npmClient) hostName() string {
 
 // newNPMClient returns the row's client in the pod i%pods.
 func newNPMClient(t testing.TB, fx *npmFixture, row string, pod int) *npmClient {
-	return &npmClient{t: t, fx: fx, row: row, pod: pod, tag: row + "-" + fx.run, token: fx.token, registryKey: fx.registry()}
+	token := fx.token
+	if tok, ok := fx.rowTokens[row]; ok {
+		token = tok
+	}
+	return &npmClient{t: t, fx: fx, row: row, pod: pod, tag: row + "-" + fx.run, token: token, registryKey: fx.registry()}
 }
 
 // family is "npm", "pnpm", "yarn4" or "yarn1".
