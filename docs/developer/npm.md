@@ -4,8 +4,9 @@ The npm registry format ([spec/formats/npm.md](../spec/formats/npm.md)). This pa
 its section. Built today: the format itself (routes, classification, error shape, setup snippets), the local repository end to end
 (publish, the package documents and their validators, tarball downloads, dist-tags, unpublish, whoami and ping, the serve-time check and the
 removal hooks), the remote and virtual classes with the merge, the data port and its PostgreSQL implementation, the leaf libraries every part builds on, and the exposure adapter with the
-filter of documents on endpoints with rules (R-NPM-048). Planned and not built: deprecate (R-NPM-018, `PUT` without an attachment
-answers 501).
+filter of documents on endpoints with rules (R-NPM-048), and the format's settings as the `npm` member of the repository document
+(Q-NPM-59). Not built: deprecate (R-NPM-018, P1): a `PUT` of a document without an attachment answers 404 `not_found`, the answer
+R-NPM-043 gives an unimplemented `PUT`.
 
 ## Package layout
 
@@ -25,7 +26,7 @@ internal/formats/npm/
 ├── handlers_disttags.go  the dist-tag read and writes
 ├── handlers_unpublish.go the three unpublish requests
 ├── handlers_identity.go  whoami and ping
-├── handlers_deprecate.go the metadata PUT; answers 501 until deprecate is built (R-NPM-018)
+├── handlers_deprecate.go the metadata PUT; answers 404 until deprecate is built (R-NPM-018, R-NPM-043), 400 for a body without versions
 ├── tags.go          the dist-tag rules of R-NPM-016 on the SemVer order
 ├── exposure.go      the exposure adapter (ranges, pre-releases, dimensions) and the filter of rows and documents (R-NPM-048)
 ├── store.go         the data port (Store), with marked blocks for the work packages that add to it
@@ -75,9 +76,9 @@ do with any other package of the format.
 The deferred families (R-NPM-043) are one matcher (`matchDeferred`): `-/user`, `-/v1`, `-/npm`, `-/org`, `-/team`, `-/all`, `-/external`, `-/stage` and `-/package/{name}/access|visibility|collaborators`.
 Each family answers GET, PUT and DELETE with 404 and POST with 501, because npm's fetch layer retries a GET and a PUT on a 5xx and never a POST.
 
-The classes of the table are all classes of the format. While the format lists the local class only, a repository is local; when the remote and virtual classes join, the write routes get `Classes: local` so that a remote
-repository answers 405 `npm_class_not_writable` and a virtual one routes a write to its deployment target (the dispatcher does this for kind `upload`; the other write kinds need the virtual engine's
-work package).
+The reads serve every class of the format (local, remote, virtual). Every route whose action is not `read` has `Classes: local` (`buildRoutes`): a remote
+repository answers 405, which `WriteError` words as `npm_class_not_writable`, and the dispatcher sends every write kind addressed to a virtual repository to its deployment target
+(`redirectClass` in [dispatcher.go](../../internal/api/dispatch/dispatcher.go); 405 `no_deploy_target` without one, R-NPM-029, R-REPO-021).
 
 To add a route: add it to `buildRoutes` with an example that no other route of its method matches (`formats.Validate` checks), a matcher in `match.go` if the grammar is new, and a handler
 method; then a content case or a change case in [conformance_test.go](../../internal/formats/npm/conformance_test.go) (the kit refuses a route without one).
@@ -243,7 +244,7 @@ everything else from it; neither renders from rows.
 internal/formats/npm/
 ├── remote.go          Format.Remote(): the RemoteAdapter (UpstreamRequest, PrepareFill, OnFill, Rewrite, TracksVersionRemoval), TypeExpecter and the ArtifactGate
 ├── virtual.go         Format.Virtual(): Strategy (Merge for a package document), LocalDocument (neutral tarball address), Merge
-├── settings.go        the npm member of the repository document: serveRemovedVersions, latestStrategy, distTagStrategy
+├── settings.go        the npm member of the repository document (settings.schema.json): latestGuard, serveRemovedVersions, latestStrategy, distTagStrategy
 ├── handlers_remote.go serveFull (validator, rendition cache, derivation of the forms), remote documents and tarballs, exposedDocument
 ├── handlers_virtual.go the merged document, the tarball through the tiers, ?write=true from the deployment target
 ├── remote/            the checks of R-NPM-024 (Check, a stream), Parse, Full / Abbreviated / Version, Rewrite, URL; a leaf
@@ -261,7 +262,7 @@ internal/meta/postgres/queries/npm_remote.sql
 | How is a virtual document built? | `Resolver.Metadata` plans (patterns, claims, pins, `read`, `MayFill`), collects `LocalDocument` and the engine's documents, calls `Merge`; a member the caller may not fill is `Restricted` and supplies cached versions only (R-AUTHZ-008). Tarball addresses are neutral in the cache and rewritten per response (Q-NPM-34) |
 | Where do writes go? | Write routes are `Classes: local`. The dispatcher sends every write kind of a virtual repository to its target; a remote repository's 405 becomes `npm_class_not_writable` in `WriteError` (Q-NPM-36). `?write=true` on a virtual repository reads the target's own document |
 | What does an exposure rule do here? | `exposedDocument` rewrites, filters with `FilterDocument(viewOf(rq))` and parses again; dist-tags and `latest` come from the filtered document; a hidden version is 404 before any fetch (`hiddenVersion`) (R-NPM-048, H-295) |
-| Settings | `serveRemovedVersions`, `latestStrategy`, `distTagStrategy` are read from the stored document's `npm` member; the repository service does not accept them yet (Q-NPM-35) |
+| Settings | `latestGuard` (local, default `true`), `serveRemovedVersions` (remote, default `false`), `latestStrategy` (virtual, default `highest-member-latest`) and `distTagStrategy` (virtual, default `member-order`) are the `npm` member of the repository document; the repository service validates it against [settings.schema.json](../../internal/formats/npm/settings.schema.json) (a member of another class is refused), and `settingsOf` reads it from the stored document of the request's repository (Q-NPM-59) |
 
 Metrics: `trove_npm_virtual_version_conflicts_total`, `trove_npm_removed_upstream_versions_total`, `trove_npm_stale_upstream_documents_total`,
 `trove_npm_tarball_document_revalidations_total{outcome}` ([bind.go](../../internal/formats/npm/bind.go)). A fill reaches its replica through the data port it is handed
@@ -320,7 +321,7 @@ cleaned for the columns (valid UTF-8, no NUL, 64 KiB) in `Publish`.
 | Unit, rendering | [document](../../internal/formats/npm/document/) | the three renderings, the order, the ETag inputs, negotiation, the benchmark for 1,000 versions |
 | Unit, exposure | [exposure_test.go](../../internal/formats/npm/exposure_test.go) | the ranges of rules (`TestR_NPM_048_RangesOfRules`: strict syntax, `includePrerelease`, the catalog facts, the bounded memo); the rows of the R-EP-012 fixture (`TestR_NPM_048_TheFilterOfALocalDocument`, with the bytes filter of the rendered document compared to the rendering of the filtered rows); upstream-shaped documents with duplicate members, unpublished times, e-mails and a moved `latest` (`TestR_NPM_048_TheFilterOfAMergedOrRewrittenDocument`); the handlers on the kit's Host with endpoint facts (`TestR_NPM_048_HandlersOnAnEndpointWithRules`) |
 | Unit | [internal/formats/npm](../../internal/formats/npm/) `*_test.go` | the route table and every status (`TestR_NPM_001_RouteTable`, `TestR_NPM_043_UnimplementedEndpointsAnswerPredictably`), classification (`TestR_NPM_003_Classification`), the error shape over all routes and all statuses (R-NPM-005), no `otp` (R-NPM-004), the access-log fields and the metrics, the hook's order and refusals with a fake writer, the dist-tag rules, the snippet lint (R-NPM-041) |
-| Conformance | `TestR_ARCH_010_Conformance` | the ten checks of the kit; check 7 over every document, tarball, tag and identity route (a subject is set in `HostOptions.Subject`), check 9 over a change case for publish, tag set and remove, the unpublish `PUT` and `DELETE` and the removal hook; checks 4 and 5 are skipped with a reason until the remote and virtual classes exist, and the kit refuses the skip then |
+| Conformance | `TestR_ARCH_010_Conformance` | the ten checks of the kit; check 7 over every document, tarball, tag and identity route (a subject is set in `HostOptions.Subject`), check 9 over a change case for publish, tag set and remove, the unpublish `PUT` and `DELETE` and the removal hook; checks 4 (rewrite) and 5 (merge) over the fixtures `Remote` (an unscoped and a scoped upstream document) and `Merge` (a local and a remote member sharing a version; a remote member with a cached tarball before one without) |
 | Scanner | [publish](../../internal/formats/npm/publish/) | the body rules, the 96 MiB streaming bound, `FuzzPublishScanner` |
 | Fuzz | `FuzzMatch` (own, escaped-path properties), `FuzzR_ARCH_028_Match`, `FuzzR_ARCH_028_Inspect`, `FuzzPublishScanner` | no panic, canonical names, classified errors |
 | Integration | [test/integration/npm](../../test/integration/npm/) | against PostgreSQL and the object store, with replicas started through `app.New` (`testenv.NewStack`, `Start`, `Do`): publish rows and item, tags and the latest guard, immutability, the retry on another replica and after an edge reset, concurrent publishes of two versions, of one new name and of look-alike names, ownership races, auto claim, archive rules, limits, a slow 200 MiB publish (no connection idle in a transaction, bounded heap), the route contract over the real chain, the access log, metrics and the store's writes; [documents_test.go](../../test/integration/npm/documents_test.go): publish then view on another of three replicas 100 times with Valkey reachable and unreachable, 50 iterations of publish, tag and unpublish, validators and `304` on every replica, the clock rules, 1,000 versions; [mutations_test.go](../../test/integration/npm/mutations_test.go): the tarball, tag writes, the unpublish sequence with its tombstone and journal entry, stale revisions and the retry, a raw delete, withheld versions, concurrent writes of all kinds, whoami and ping; [exposure_test.go](../../test/integration/npm/exposure_test.go): R-NPM-048 and R-EP-018 on a second endpoint `customers` with the rule of R-EP-012 (see [endpoints.md](endpoints.md#tests)) |
@@ -335,11 +336,11 @@ set -a; . .dev/integration/env; set +a; go test -count=1 -p 1 -tags integration 
 ### What is not verified
 
 - The order in which libnpmpublish, pnpm and Yarn write the members of the body (the scanner does not assume one).
-- Publish with pnpm, Yarn 1 and Yarn 2+: no client runs in the development environment (the e2e work package does).
+- Publish with pnpm, Yarn 1 and Yarn 2+ in the unit and integration tiers: the clients run in the end-to-end client matrix only ([e2e.md](e2e.md)), which is not part of `make test`.
 - The revocation criterion of R-NPM-019 (`npm ping` fails on every replica within 2 s of a revocation) is not tested here: the authentication stage's bound is tested in the identity area (R-AUTH-023); ping and whoami answer 401 for the subject that stage produces.
 - The restore's replay (`trove admin npm reinstate`, the journal) does not exist yet; the withheld state is written by hand in `TestR_NPM_047_WithheldVersionsAreNotServed`. `OnItemsRestored` is driven through the kit only: the trash can is P1.
 - Compression of documents is tested with gzip only; a client that sends another coding gets the identity form.
-- Publish, `npm view`, `npm unpublish`, `npm dist-tag`, `pnpm` and Yarn against the documents: no client runs in the development environment (the e2e work package does).
+- Publish, `npm view`, `npm unpublish`, `npm dist-tag`, `pnpm` and Yarn against the documents in the unit and integration tiers: the real clients run in the end-to-end client matrix ([e2e.md](e2e.md)).
 - The `repo` metric label is `_other` for every repository until a component feeds `observability.CappedLabels` the repository keys.
 
 ## Names and versions

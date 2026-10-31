@@ -11,12 +11,12 @@ and R-REPO-020, in [internal/virtual](../../internal/virtual/); its sections sta
 
 What exists today: the model and its validation, the routing and the claim index, the auto claim of a first publish, the
 claims API, the detach of R-REPO-013, the grant index reading the members from their rows, and the engine: the plan, the
-tiers of an artifact, the merged-metadata cache, the shadowing check, the deploy target and the explanation API. What does not
-exist yet: nested virtual repositories (R-REPO-018, a member that is virtual answers `invalid_member`), `effectiveMembers`,
-every format that has package names (so no repository of a real format can hold a claim or be resolved until npm lands), and
-the binding of the proxy engine to the engine's `Remotes` seam (below): until it is bound, a remote member is a member that
-cannot be asked. The tests use a format registered in a test catalog and the fakes of
-[virtualtest](../../internal/virtual/virtualtest/).
+tiers of an artifact, the merged-metadata cache, the shadowing check, the deploy target and the explanation API, the binding of the
+proxy engine to the engine's `Remotes` seam ([below](#binding-the-proxy-engine)), and npm as the first format with package names and a
+virtual class ([npm.md](npm.md#remote-and-virtual-repositories)). What does not exist yet: nested virtual repositories (R-REPO-018, a
+member that is virtual answers `invalid_member`) and `effectiveMembers`. The engine's own tests use a format registered in a test
+catalog and the fakes of [virtualtest](../../internal/virtual/virtualtest/); npm's virtual class is tested in
+[test/integration/npm](../../test/integration/npm/).
 
 ## Files
 
@@ -252,7 +252,9 @@ for the first format with a latest-version request) collect one document per mem
 `PackageChanged` is the payload that a publisher of a local change (the `OnCommit` of a format's writer, after its commit) and the remote engine
 (after a refresh with new content) publish on the signal area `metadata_changed`. A format cannot import the engine, so `formats.PackageChanged` spells the same payload
 (a test in `internal/formathost` pins the two); the npm format attaches it with `PackageWriter.Notify` to every change of the rows of a local package (publish, tag change, unpublish, restore).
-The remote engine does not publish it yet; the engine is correct without it.
+The remote engine sends no signal of its own (Q-REPO-116): the format's `OnFill` attaches it for the package a fill stored (npm:
+[remote.go](../../internal/formats/npm/remote.go)). The engine is correct without any signal: a hit checks the revisions of the local members, and an entry expires with the earliest
+remote document it was merged from.
 
 ### The contract of a format's merge
 
@@ -341,7 +343,7 @@ type Remotes interface {
 | `Probe` | offline: `NotServed`; open circuit: `Undetermined` with the remaining time; else one GET through the fetch client, storing nothing and writing no negative entry |
 
 `RemoteCall` carries the remote and virtual repositories, the path, variant and package, the subject (for the audit and the upstream log, with
-`flight_role: probe` for a probe) and the endpoint. Two more lines complete the wiring when the formats with a virtual class register: the Host
+`flight_role: probe` for a probe) and the endpoint. Two more lines complete the wiring for the formats with a virtual class: the Host
 takes `formathost.NewResolver(engine, nil)` as `Options.Resolver` in `wireFormatHost`
 ([wire_formats.go](../../internal/app/wire_formats.go); the step takes `virtualEngineArea` as an input, requires the engine and runs after `wireVirtualEngine`, which takes the item store from `filesArea`), and the format's writer calls `ShadowCheck`
 (npm: `shadowCheck` in [publish.go](../../internal/formats/npm/publish.go); a proceeding outcome reaches the publish transaction, which writes `repository.remote_package_shadowed` and `shadowCheck: undetermined`).
