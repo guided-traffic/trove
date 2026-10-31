@@ -19,7 +19,10 @@ const budget = 256 << 20
 
 func TestMemoryAdmission(t *testing.T) {
 	in := newInstall(t)
-	r := in.start(t, "overload", fmt.Sprintf("TROVE_RUNTIME_MEMORY_LIMIT_BYTES=%d", budget))
+	// The caches are off, so all of the memory the guard shares out goes to requests (Q-ARCH-243 leaves their
+	// budgets aside): 0.8 × the Go limit / 640 KiB.
+	r := in.start(t, "overload", fmt.Sprintf("TROVE_RUNTIME_MEMORY_LIMIT_BYTES=%d", budget),
+		"TROVE_CACHE_RENDITION_BYTES=0", "TROVE_PROXY_METADATA_CACHE_BYTES=0", "TROVE_PROXY_MERGED_METADATA_CACHE_BYTES=0")
 	big := in.deploy(t, r, "big.bin", 1<<20)
 	const path = "/files/" + repo + "/big.bin"
 	slots := r.metric(t, "trove_http_memory_slots")

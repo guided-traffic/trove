@@ -3983,7 +3983,7 @@ Priority: **MVP** · Covers: HA-052
   and a heap gate in step 4 of the chain ([architecture.md](architecture.md) R-ARCH-005,
   Q-ARCH-240). A replica that the CPU cannot keep up with answers the excess `503 server_busy`
   instead of collecting requests until the memory runs out. `server.max_in_flight` stays an upper
-  bound; with the chart's 2 GiB the 2,228 memory slots bind first. The chart refuses a `web` pod
+  bound; with the chart's 2 GiB and the default caches the 1,204 memory slots bind first (Q-ARCH-243). The chart refuses a `web` pod
   without a memory limit and one whose limit admits fewer than 64 requests (R-HA-029, Q-HA-70).
 - Buffers are bounded so that memory does not scale with transfer size: streaming bodies, spool
   instead of memory above `storage.spool.memory_threshold`, bounded metadata documents (format pages
@@ -6146,7 +6146,7 @@ command as R-HA-052 states.
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 Context: a `web` replica sizes its admission from its memory limit ([architecture.md](architecture.md) R-ARCH-005,
-Q-ARCH-240): ⌊0.8 × `L` ÷ request bytes⌋ memory slots, with `L` = `runtime.memory_limit_ratio` × the container limit. The
+Q-ARCH-240, Q-ARCH-243): ⌊(0.8 × `L` − the caches' byte budgets) ÷ request bytes⌋ memory slots, with `L` = `runtime.memory_limit_ratio` × the container limit. The
 chart passes `limits.memory` through the downward API; without a limit Kubernetes passes the node's allocatable memory
 instead, and the replica would size its slots from memory it does not have to itself. A limit that admits a handful of
 requests cannot serve the parallel downloads of even a few clients (npm opens up to 15 connections per install).

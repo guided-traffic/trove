@@ -715,12 +715,14 @@ a replica admits is bounded by its memory as well as by `max_in_flight`:
   `runtime.memory_limit_bytes`, or `GOMEMLIMIT` when it is set. Without a known limit there is no
   guard, only `max_in_flight`, and the replica logs a warning at start.
 - **Memory slots.** A request holds one slot from step 4 to its end. The replica has
-  ⌊0.8 × `L` ÷ request bytes⌋ slots, at least one. The request bytes are what one download may hold
+  ⌊(0.8 × `L` − cache budgets) ÷ request bytes⌋ slots, at least one; the cache budgets are what the
+  replica's caches hold when full, `cache.rendition_bytes`, `proxy.metadata_cache_bytes` and
+  `proxy.merged_metadata_cache_bytes` (640 MiB with the defaults, Q-ARCH-243). The request bytes are what one download may hold
   (Q-ARCH-241): the buffer of a verified download (`storage.download.buffer_size`, at least twice
   `storage.download.hold_back` and 4 KiB, rounded up to a power of two), the object store's receive
   window `storage.s3.http.receive_window` and 128 KiB for the rest (connection, TLS state, stacks,
-  the object-store call), 640 KiB with the defaults. A 1 GiB container (`L` = 870 MiB) has 1,114
-  slots, the chart's default of 2 GiB 2,228, 256 MiB 278. The slots bound a burst that arrives
+  the object-store call), 640 KiB with the defaults. With the default caches a 1 GiB container (`L` = 870 MiB) has
+  90 slots and the chart's default of 2 GiB 1,204; without caches 1 GiB has 1,114 and 256 MiB 278. The slots bound a burst that arrives
   faster than a GC cycle can show it. An endpoint admits the smaller of its `max_in_flight` and the
   slots the replica has left.
 - **Heap gate.** Every 50 ms the guard reads the live heap of the last GC cycle plus the goroutine
@@ -6436,6 +6438,32 @@ Context: the live heap is known only at the end of a GC cycle. Under load cycles
 **Rationale:** The gate must decide on the live heap, and a cycle is the only way to learn it; one per second while refusing is cheap next to a replica that refuses for two minutes. The development agent revisits this if the forced cycles show up in the CPU of a replica that stays at its high-water mark.
 
 **Applied in the spec:** R-ARCH-005 (the heap gate). Code: `MemoryGuard.Sample` in `internal/httpserver/memory.go`.
+
+### Q-ARCH-243 · The memory slots leave the caches' byte budgets aside
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the closing run of phase 3 (Actions run 41235811145, leg `npm-ha-closing`, two kind clusters on one runner) had `web` pods
+OOMKilled under the npm load although the memory guard of Q-ARCH-240 was on. The slots shared 80 % of the Go limit among requests, but the
+rendition cache (256 MiB), the merged-metadata cache (256 MiB) and the proxy's metadata cache (128 MiB) hold up to 640 MiB of the same heap
+once full; with the dev profile's 1 GiB limit, full caches and 1,114 admitted downloads needed more than the pod had. The heap gate closes only
+at a GC cycle, after the admitted requests have already allocated.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Subtract the cache budgets before sizing the slots (chosen) | ⌊(0.8 × `L` − Σ budgets) ÷ request bytes⌋, at least 1; the chart checks the same | Full caches and full slots fit the limit by construction; the operator sees the trade in one formula | A replica with large caches admits fewer requests at once |
+| (b) Size the caches from the limit | Each cache a share of `L` | Nothing to configure | Changes every cache's documented default and its hit rate per pod size |
+| (c) Rely on the heap gate | Unchanged | No change | The gate learns of the heap only after a GC cycle; the OOM kills show that is too late |
+
+**Choice:** (a).
+
+**Rationale:** The caches are bounded by bytes already, so their budget is the memory they may take; reserving it is the only way the slot
+count is a promise and not an estimate. A start with budgets above 80 % of `L` admits one request at a time and logs an error; the chart
+refuses a pod that would have fewer than 64 slots. The development agent revisits this if a cache without a byte budget is added (it would
+need one) or if measurements show a cache's overhead well above its budget.
+
+**Applied in the spec:** R-ARCH-005 (memory slots); [ha-and-helm.md](ha-and-helm.md) R-HA-029 and Q-HA-70 (the chart's check). Code:
+`cacheBudgets` in `internal/app/memory.go`, `MemoryGuardConfig.Reserved` in `internal/httpserver/memory.go`, `_validate.tpl`.
 
 ## What this does not cover
 

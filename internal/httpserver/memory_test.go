@@ -17,6 +17,12 @@ func TestMemoryGuard(t *testing.T) {
 		if g.Slots() != 80 {
 			t.Fatalf("slots = %d, want 80", g.Slots())
 		}
+		if g := NewMemoryGuard(MemoryGuardConfig{Limit: 100 << 20, RequestBytes: 1 << 20, Reserved: 30 << 20}); g.Slots() != 50 {
+			t.Fatalf("with 30 MiB of cache budgets the slots are %d, want (80 - 30) MiB / 1 MiB = 50 (Q-ARCH-243)", g.Slots())
+		}
+		if g := NewMemoryGuard(MemoryGuardConfig{Limit: 100 << 20, RequestBytes: 1 << 20, Reserved: 90 << 20}); g.Slots() != 1 {
+			t.Fatalf("cache budgets above the high-water mark give %d slots, want 1", g.Slots())
+		}
 		if g := NewMemoryGuard(MemoryGuardConfig{Limit: 1 << 20, RequestBytes: 4 << 20}); g.Slots() != 1 {
 			t.Fatalf("a limit below one request gives %d slots, want 1", g.Slots())
 		}

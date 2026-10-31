@@ -37,6 +37,13 @@ func applyMemoryLimit(rt config.Runtime, environ []string) (int64, string) {
 	return l, "runtime.memory_limit_bytes"
 }
 
+// cacheBudgets is what the per-replica caches hold when they are full, which the
+// memory slots leave aside (Q-ARCH-243): the rendition cache and the two metadata
+// caches of the proxy and virtual engines.
+func cacheBudgets(c *config.Config) int64 {
+	return int64(c.Cache.RenditionBytes) + int64(c.Proxy.MetadataCacheBytes) + int64(c.Proxy.MergedMetadataCacheBytes)
+}
+
 // requestMemory is what one request may hold, for the memory slots
 // (Q-ARCH-240): the buffer of a verified download, the object store's receive
 // window and the overhead.
@@ -55,9 +62,9 @@ func (a *App) startMemoryGuard(ctx context.Context) *httpserver.MemoryGuard {
 		}
 		return nil
 	}
-	per := requestMemory(a.cfg)
+	per, reserved := requestMemory(a.cfg), cacheBudgets(a.cfg)
 	g := httpserver.NewMemoryGuard(httpserver.MemoryGuardConfig{
-		Limit: limit, RequestBytes: per,
+		Limit: limit, RequestBytes: per, Reserved: reserved,
 		OnChange: func(shedding bool, heap uint64) {
 			if shedding {
 				a.log.Warn("the live heap reached the high-water mark: new requests answer 503 server_busy until it falls below the low-water mark",
@@ -73,7 +80,11 @@ func (a *App) startMemoryGuard(ctx context.Context) *httpserver.MemoryGuard {
 		return nil
 	}
 	a.tele.metrics.MemorySlotsInUse(g.InUse)
-	a.log.Info("memory limit", "go_memory_limit_bytes", limit, "source", source, "memory_slots", g.Slots(), "request_bytes", per)
+	if float64(reserved) >= 0.8*float64(limit) {
+		a.log.Error("the caches' byte budgets take the memory the requests need: one request at a time is admitted; lower cache.rendition_bytes, proxy.metadata_cache_bytes and proxy.merged_metadata_cache_bytes or raise the memory limit",
+			"cache_budget_bytes", reserved, "go_memory_limit_bytes", limit)
+	}
+	a.log.Info("memory limit", "go_memory_limit_bytes", limit, "source", source, "memory_slots", g.Slots(), "request_bytes", per, "cache_budget_bytes", reserved)
 	a.bg.Add(1)
 	go func() {
 		defer a.bg.Done()

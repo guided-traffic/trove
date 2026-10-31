@@ -1035,6 +1035,7 @@ func TestChart(t *testing.T) {
 
 	t.Run("R-HA-029 a web pod needs a memory limit that admits at least 64 requests", func(t *testing.T) {
 		pool := filepath.Join(chartDir, "ci", "endpoints-pool.yaml")
+		noCaches := []string{"config.cache.rendition_bytes=0", "config.proxy.metadata_cache_bytes=0", "config.proxy.merged_metadata_cache_bytes=0"}
 		for _, c := range []struct {
 			name  string
 			files []string
@@ -1046,12 +1047,20 @@ func TestChart(t *testing.T) {
 			{"a buffer too large for the limit", required(), []string{"config.storage.download.buffer_size=32MiB"}, []string{"web.resources.limits.memory (2Gi) admits 43 concurrent requests"}},
 			{"a buffer too large for a pool's limit", []string{pool}, []string{"config.storage.download.buffer_size=16MiB"}, []string{"endpoints.customers.pool.resources.limits.memory (1Gi) admits 42 concurrent requests"}},
 			{"a memory quantity the chart cannot read", required(), []string{"web.resources.limits.memory=1.5Gi"}, []string{"not a memory quantity"}},
+			{"caches whose budgets leave too little for requests", required(), []string{"config.cache.rendition_bytes=1GiB", "config.proxy.merged_metadata_cache_bytes=256MiB"}, []string{"web.resources.limits.memory (2Gi) admits", "fewer than 64", "1476395008 bytes of cache budgets"}},
 		} {
-			t.Run(c.name, func(t *testing.T) { renderFails(t, c.files, c.sets, c.want...) })
+			// the cases about the request bytes turn the caches off, so their counts are the requests' alone (Q-ARCH-243)
+			sets := c.sets
+			if !strings.HasPrefix(c.name, "caches") {
+				sets = append(append([]string{}, c.sets...), noCaches...)
+			}
+			t.Run(c.name, func(t *testing.T) { renderFails(t, c.files, sets, c.want...) })
 		}
 		for _, mem := range []string{"2G", "64Mi", "2000000000"} {
-			render(t, required(), "web.resources.limits.memory="+mem)
+			render(t, required(), append([]string{"web.resources.limits.memory=" + mem}, noCaches...)...)
 		}
+		// the defaults: 2Gi for a web pod with the three caches at their default budgets
+		render(t, required())
 	})
 
 	t.Run("R-HA-032 each Deployment has a disruption budget and spreads over zones and hosts", func(t *testing.T) {

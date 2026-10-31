@@ -179,8 +179,9 @@ applies that rule to the roles web and all only.
 {{- end -}}
 
 {{- /*
-Memory (R-HA-036, Q-HA-70): a web pod sizes what it admits from its memory limit, 0.8 ×
-runtime.memory_limit_ratio × limits.memory / the bytes of one request (R-ARCH-005 step 4). A pod
+Memory (R-HA-036, Q-HA-70, Q-ARCH-243): a web pod sizes what it admits from its memory limit, (0.8 ×
+runtime.memory_limit_ratio × limits.memory − the caches' byte budgets) / the bytes of one request
+(R-ARCH-005 step 4). A pod
 without a limit would size it from the node's memory; one that holds fewer than 64 requests cannot
 serve a handful of clients at once.
 */ -}}
@@ -192,14 +193,15 @@ serve a handful of clients at once.
 {{- end -}}
 {{- $perRequest := include "trove.requestBytes" . | int64 -}}
 {{- $ratio := dig "runtime" "memory_limit_ratio" 0.85 $cfg | float64 -}}
+{{- $reserved := add (include "trove.bytes" (dig "cache" "rendition_bytes" "256MiB" $cfg) | int64) (include "trove.bytes" (dig "proxy" "metadata_cache_bytes" "128MiB" $cfg) | int64) (include "trove.bytes" (dig "proxy" "merged_metadata_cache_bytes" "256MiB" $cfg) | int64) -}}
 {{- range $p := $pods -}}
 {{- $mem := dig "limits" "memory" "" ($p.r.resources | default dict) -}}
 {{- if not $mem -}}
 {{- fail (printf "trove: %s.resources.limits.memory is required: a web replica sizes what it admits from its memory limit, and without one Deployment %s-%s would read the node's memory (R-HA-036)" $p.key (include "trove.fullname" $) $p.deployment) -}}
 {{- end -}}
-{{- $slots := floor (divf (mulf 0.8 $ratio (include "trove.quantityBytes" $mem | float64)) $perRequest) | int64 -}}
+{{- $slots := floor (divf (subf (mulf 0.8 $ratio (include "trove.quantityBytes" $mem | float64)) $reserved) $perRequest) | int64 -}}
 {{- if lt $slots 64 -}}
-{{- fail (printf "trove: %s.resources.limits.memory (%v) admits %d concurrent requests, fewer than 64: 0.8 × config.runtime.memory_limit_ratio (%v) × the limit / %d bytes per request (config.storage.download.buffer_size and hold_back, config.storage.s3.http.receive_window, R-ARCH-005); raise the limit or lower those values" $p.key $mem $slots $ratio $perRequest) -}}
+{{- fail (printf "trove: %s.resources.limits.memory (%v) admits %d concurrent requests, fewer than 64: (0.8 × config.runtime.memory_limit_ratio (%v) × the limit − %d bytes of cache budgets) / %d bytes per request (config.cache.rendition_bytes, config.proxy.metadata_cache_bytes and merged_metadata_cache_bytes; config.storage.download.buffer_size and hold_back, config.storage.s3.http.receive_window; R-ARCH-005); raise the limit or lower those values" $p.key $mem $slots $ratio $reserved $perRequest) -}}
 {{- end -}}
 {{- end -}}
 

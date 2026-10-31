@@ -79,7 +79,12 @@ config:
               - match_regex: "trove-(.+)"        # trove-team-web -> team-web, trove-platform-admins -> platform-admins
                 group: "$1"
             create_groups: true
+  # The dev pods have 1Gi: smaller caches leave the memory slots to requests (Q-ARCH-243), about 860 instead of 90.
+  cache:
+    rendition_bytes: 64MiB              # default 256MiB
   proxy:
+    metadata_cache_bytes: 32MiB         # default 128MiB
+    merged_metadata_cache_bytes: 64MiB  # default 256MiB
     outbound:
       tls:
         ca_files: [/var/run/secrets/trove-dev/keycloak-ca.crt]   # mounted by extraVolumes below: the chart has no trustedCA value yet

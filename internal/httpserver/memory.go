@@ -59,9 +59,12 @@ type MemoryGuard struct {
 type MemoryGuardConfig struct {
 	// Limit is the Go memory limit in bytes (debug.SetMemoryLimit).
 	Limit int64
-	// RequestBytes is what one request may hold: the slots are high-water ×
-	// Limit / RequestBytes.
+	// RequestBytes is what one request may hold: the slots are (high-water ×
+	// Limit − Reserved) / RequestBytes, at least 1.
 	RequestBytes int64
+	// Reserved is what the replica holds outside requests once its caches are
+	// full: the sum of their byte budgets.
+	Reserved int64
 	// Read returns the live heap plus the goroutine stacks and the number of
 	// completed GC cycles; nil reads them from runtime/metrics.
 	Read func() (heap, cycles uint64)
@@ -77,7 +80,7 @@ func NewMemoryGuard(c MemoryGuardConfig) *MemoryGuard {
 	}
 	high := memoryHighWater * float64(c.Limit)
 	g := &MemoryGuard{
-		slots: make(chan struct{}, max(1, int(high/float64(c.RequestBytes)))),
+		slots: make(chan struct{}, max(1, int((high-float64(c.Reserved))/float64(c.RequestBytes)))),
 		high:  uint64(high), low: uint64(memoryLowWater * float64(c.Limit)),
 		read: c.Read, onChange: c.OnChange, collect: runtime.GC, now: time.Now,
 	}
