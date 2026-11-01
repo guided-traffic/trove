@@ -28,12 +28,12 @@ The filter panel narrows the list:
 
 This version does not record when a token was last used: **Last used** shows **Not recorded**, and **Not used for (days)** therefore matches every token.
 
-To revoke, choose **Revoke** on a row, or tick active tokens and choose **Revoke selected**; both ask for confirmation. **Revoke by value** takes a leaked token: paste it into **Token value** and choose **Revoke token**. The field is cleared whatever the answer.
+To revoke, choose **Revoke** on a row, or tick active tokens and choose **Revoke selected**; both ask for confirmation. **Revoke by value** takes a leaked token: paste it into **Token value** and choose **Revoke token**. The field is cleared whatever the answer. An administrator is told whose token was revoked. Anyone else, and anyone who pastes a value that is not a token, gets the same neutral message that the request was accepted: it does not say whether the value was a token, so the screen cannot be used to test guesses.
 
 ## Tokens of users and service accounts
 
 - **A user's screen** (**Administration › Identity › Users**) lists the user's tokens in the section **Tokens**, with **Revoke** and **Revoke all tokens**. Nobody creates or rotates a personal token for another user. Disabling a user offers **Also revoke all tokens of this user**; without it the tokens remain but answer `401` `principal_disabled` while the user is disabled. Deleting a user removes the tokens.
-- **A service account's screen** (**Administration › Identity › Service accounts**) has a section **Tokens** with **Create token**, **Rotate**, **Revoke** and **Revoke all tokens**. The form is the one of personal tokens, plus the lifetime **Never expires** (see [Lifetime limits and defaults](#lifetime-limits-and-defaults)). The section needs the permission to read tokens. Creating and rotating a service-account token needs the administrator role and a recent sign-in, or a token of the account itself. Disabling the account offers **Also revoke all tokens of this account**; deleting it removes its tokens.
+- **A service account's screen** (**Administration › Identity › Service accounts**) has a section **Tokens** with **Create token**, **Rotate**, **Revoke** and **Revoke all tokens**. The form is the one of personal tokens, plus the lifetime **Never expires** (see [Lifetime limits and defaults](#lifetime-limits-and-defaults)). The section needs the permission to read tokens. Creating and rotating a service-account token needs the administrator role and a recent sign-in, or a token of the account itself; the buttons **Create token** and **Rotate** therefore appear for the administrator role only, not for a holder of the permission to change identities alone (for example a security administrator), whom the server would refuse. Disabling the account offers **Also revoke all tokens of this account**; deleting it removes its tokens.
 
 A rotation creates a new value with the same scope and gives the old one an overlap of **Not at all (revoked now)**, **One hour** or **One day** (the API accepts up to 86,400 seconds).
 
@@ -62,7 +62,7 @@ A scope is a ceiling on the owner's permissions; it never grants anything. Its m
 | `system` | System capabilities the token may exercise, of those the owner's roles grant |
 | `endpoints` | Up to 16 endpoint names the token is valid on; empty means unbound |
 
-A scope document holds at most 16 KiB; an unknown member, action, capability or endpoint answers `400` `invalid_scope`. The form of the UI offers `inherit` (**All permissions of the owner**) or one grant with repositories, package patterns and actions; it sets neither `admin`, `system`, `paths` nor `endpoints`. A token from the form therefore never exercises a system role.
+A scope document holds at most 16 KiB; an unknown member, action, capability or endpoint answers `400` `invalid_scope`. The form of the UI offers `inherit` (**All permissions of the owner**) or one grant with repositories, package patterns and actions; it sets neither `admin`, `system` nor `paths`, and `endpoints` only through the field **Endpoints** (see [Binding tokens to endpoints](#binding-tokens-to-endpoints)). A token from the form therefore never exercises a system role.
 
 A token can create another token of the same type and owner through the API. The new one has a scope no broader, an expiry no later and, if its parent is bound to endpoints, a subset of them (`403` `derivation_exceeds_parent` otherwise); it is revoked with its parent.
 
@@ -117,7 +117,7 @@ Each endpoint decides which credentials it accepts, under `server.endpoints.<nam
 
 A token whose `endpoints` list is not empty works only on the endpoints it names; list `default` too if it should also work on the main address. The names are checked against the configuration when the token is created and kept on rotation. If an endpoint is later removed from the configuration, the token lists show **Bound to an endpoint that is not configured:** with the name; the token is valid on none of them.
 
-The form of the UI has no endpoint field. Bind a token with the `--scope-file` of `trove admin token create`, or with `POST /api/v1/service-accounts/<name>/tokens` and the scope as its `scope` member. The API caller is an administrator with a recent sign-in or a token of the service account itself under the derivation rule above; an administrator's personal token from the UI form exercises no role and is refused. A scope for a customer endpoint `customers` (example values):
+The token form shows the field **Endpoints** when you may read endpoints: one checkbox per configured endpoint. Tick the endpoints the token is valid on; tick none and the token is unbound. The binding is part of the scope, so it cannot be changed afterwards and rotation keeps it. Without the permission to read endpoints the field is missing and the token is created unbound. The same binding is possible with the `--scope-file` of `trove admin token create`, or with `POST /api/v1/service-accounts/<name>/tokens` and the scope as its `scope` member. The API caller is an administrator with a recent sign-in or a token of the service account itself under the derivation rule above; an administrator's personal token from the UI form exercises no role and is refused. A scope for a customer endpoint `customers` (example values):
 
 ```json
 {

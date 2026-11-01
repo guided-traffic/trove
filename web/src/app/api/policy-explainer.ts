@@ -106,18 +106,18 @@ export class DraftPolicyExplainer extends PolicyExplainer {
   }
 
   /**
-   * The references an entry can name to apply to `principal`: itself, `authenticated` for any
-   * signed-in principal, and for a user the groups of its record (needs `identities:read`).
+   * The references an entry can name to apply to `principal`: itself, `authenticated` for a
+   * user, and for a user the groups of its record (needs `identities:read`).
    */
   private async references(
     principal: string,
     steps: ExplainStep[],
   ): Promise<{ ref: string }[]> {
     const refs: { ref: string }[] = [{ ref: principal }];
-    if (principal !== 'anonymous') {
-      refs.push({ ref: 'authenticated' });
-    }
     if (principal.startsWith('user:')) {
+      // `authenticated` covers users only, not service accounts, CI identities or anonymous
+      // (Q-AUTHZ-3, R-AUTHZ-030); the server's `authz/me` adds it the same way.
+      refs.push({ ref: 'authenticated' });
       try {
         const user = await this.identity.user(principal.slice('user:'.length));
         for (const g of user.value.groups) refs.push({ ref: `group:${g.name}` });

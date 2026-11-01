@@ -63,7 +63,7 @@ Every personal token expires. **Server default** is 90 days and the longest life
 
 ### Bind a token to endpoints
 
-An installation can serve its repositories on further endpoints, for example one for customers. A token can be bound to endpoints by name; it then works on those endpoints only. The form has no field for this: the binding is the `endpoints` member of the scope in the API. Further endpoints accept only service-account tokens bound to them unless an administrator configured otherwise, so for such an endpoint ask the administrator for a token. [Endpoints and exposure rules](../admin/endpoints.md) describes the endpoints.
+An installation can serve its repositories on further endpoints, for example one for customers. A token can be bound to endpoints by name; it then works on those endpoints only. If you may read endpoints, the form has a field **Endpoints** with one checkbox per endpoint; without that permission the form has no such field, and the binding is the `endpoints` member of the scope in the API. Further endpoints accept only service-account tokens bound to them unless an administrator configured otherwise, so for such an endpoint ask the administrator for a token. [Endpoints and exposure rules](../admin/endpoints.md) describes the endpoints.
 
 ### Limits
 

@@ -272,6 +272,19 @@ describe('File tree', () => {
     expect(text(root)).toContain('"kind": "file"');
   });
 
+  it('R-UI-010 the curl commands quote the header in double quotes so the shell expands $TROVE_TOKEN', async () => {
+    const { root } = await open({ repo: 'generic-local', path: 'readme.txt', tab: 'api' });
+    const blocks = Array.from(root.querySelectorAll('pre.code-block')).map((e) => e.textContent ?? '');
+    const commands = blocks.filter((b) => b.startsWith('curl'));
+    expect(commands.length).toBe(2);
+    for (const c of commands) {
+      expect(c).toContain('-H "Authorization: Bearer $TROVE_TOKEN"');
+      expect(c).not.toContain("'Authorization: Bearer $TROVE_TOKEN'");
+    }
+    expect(commands[0]).toMatch(/ 'https:\/\/trove\.example\.net\/api\/v1\/repositories\/generic-local\/items\?path=readme\.txt'$/);
+    expect(commands[1]).toMatch(/^curl -L -O -H /);
+  });
+
   it('R-UI-010 an unknown repository or path shows the not-found error and passes the accessibility check', async () => {
     const { root } = await open({ repo: 'nope', path: 'a/b.txt' });
     expect(text(root)).toContain('does not exist');

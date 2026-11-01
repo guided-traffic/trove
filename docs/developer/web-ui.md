@@ -325,6 +325,7 @@ feeds the two live regions of `<trove-notices>`: `status` is polite, `alert` is 
 `BroadcastChannel`. `authGuard` loads the session and sends an unauthenticated caller to `/login?returnTo=<route>` unless
 `login-options` allows anonymous access. `safeReturnTo` keeps only server-relative paths. The sign-in screen builds
 `return_to=/ui/<locale><route>` (R-AUTH-009) and appends `purpose=reauth` for a re-authentication.
+`has(capability)` asks for a capability; `hasRole(role)` asks for a system role of `authz/me` and is for the operations the server checks as a role, not as a capability (creating and rotating the token of a service account needs the administrator role). A control follows what the handler checks (R-UI-005): never a capability that merely sounds related.
 
 **Secrets** never enter these services (R-UI-043): token values live in component signals only. `core/storage.ts` is for non-secret
 convenience data and answers as if empty when the browser blocks storage.

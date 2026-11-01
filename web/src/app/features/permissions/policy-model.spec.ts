@@ -1,5 +1,5 @@
 import { matchName, matchPath, verdict } from './glob';
-import { diffPolicy, expandActions, formFromPolicy, inputFromForm, newRow } from './policy-model';
+import { actionHelp, diffPolicy, expandActions, formFromPolicy, inputFromForm, newRow } from './policy-model';
 import { samplePolicy } from '../../api/testing/access-fakes';
 
 describe('pattern syntax (R-AUTHZ-005)', () => {
@@ -83,5 +83,17 @@ describe('policy form and diff (R-UI-027)', () => {
     const form = { ...formFromPolicy(stored), name: ' team-x ' };
     expect(inputFromForm(form, true).name).toBe('team-x');
     expect('name' in inputFromForm(form, false)).toBe(false);
+  });
+});
+
+describe('action help (R-AUTHZ-006)', () => {
+  it('R-AUTHZ-006 manage is content administration; repository settings need repositories:write-config', () => {
+    const help = actionHelp('manage');
+    expect(help).not.toContain("repository's settings.");
+    expect(help).toContain('package owners');
+    expect(help).toContain('shadowing');
+    expect(help).toContain('claims');
+    expect(help).toContain('cache');
+    expect(help).toContain('repositories:write-config');
   });
 });

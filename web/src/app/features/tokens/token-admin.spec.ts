@@ -1,5 +1,6 @@
 import { TokensApi } from '../../api/tokens-api';
 import { FakeTokensApi, SECRET_VALUE, sampleToken } from '../../api/testing/access-fakes';
+import { Notifier } from '../../core/notifier';
 import { buttonByText, openFilters, renderScreen, settle, storedText, text, typeInto, sleep } from '../../testing/screen';
 import { seriousViolations } from '../../testing/axe';
 import { TokenAdmin } from './token-admin';
@@ -90,6 +91,32 @@ describe('Token administration (R-UI-030)', () => {
     expect((root.querySelector('input[name="value"]') as HTMLInputElement).value).toBe('');
     expect(storedText()).not.toContain('trv_');
     expect(root.innerHTML).not.toContain(SECRET_VALUE);
+  });
+
+  const revokeValue = async (revoked: { id: string; owner: string } | null) => {
+    const r = await renderScreen(TokenAdmin, {
+      setup: (api) => {
+        (api(TokensApi) as FakeTokensApi).revokedByValue = revoked;
+      },
+    });
+    typeInto(r.root, 'Token value', SECRET_VALUE);
+    await settle(r.fixture);
+    buttonByText(r.root, 'Revoke token').click();
+    await settle(r.fixture);
+    return r.get(Notifier).notices().map((n) => n.text);
+  };
+
+  it('R-UI-043 an administrator who receives the revoked token is told whose token it was', async () => {
+    expect(await revokeValue({ id: '00000000-0000-7000-8000-0000000000a1', owner: 'alice' })).toEqual([
+      'The token of alice was revoked.',
+    ]);
+  });
+
+  it('R-UI-043 the empty 202 (unknown value or no admin role, Q-AUTH-6) is not reported as a revocation', async () => {
+    const notices = await revokeValue(null);
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).not.toContain('was revoked');
+    expect(notices[0]).toContain('does not say whether');
   });
 
   it('R-UI-005 without tokens:revoke there are no revoke controls', async () => {

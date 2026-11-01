@@ -8512,8 +8512,8 @@
         <note category="location">src/app/features/permissions/policy-model.ts:28</note>
       </notes>
       <segment>
-        <source>Manage the repository&apos;s settings.</source>
-        <target>Die Einstellungen des Repositorys verwalten.</target>
+        <source>Administer content: package owners, the shadowing override, namespace claims and cache operations. Repository settings need repositories:write-config.</source>
+        <target>Inhalte verwalten: Paketeigentümer, die Übersteuerung der Shadowing-Prüfung, Namensraum-Claims und Cache-Operationen. Die Einstellungen eines Repositorys erfordern die Berechtigung repositories:write-config.</target>
       </segment>
     </unit>
     <unit id="policy.diff.description">
@@ -10301,6 +10301,15 @@
         <target>Das Token von <ph id="0" equiv="owner" disp="revoked.owner"/> wurde widerrufen.</target>
       </segment>
     </unit>
+    <unit id="tokens-admin.value-accepted">
+      <notes>
+        <note category="location">src/app/features/tokens/token-admin.ts:156</note>
+      </notes>
+      <segment>
+        <source>The request was accepted. If the value is a token, it is revoked; this answer does not say whether it was one.</source>
+        <target>Die Anfrage wurde angenommen. Wenn der Wert ein Token ist, wird es widerrufen; die Antwort sagt nicht, ob es eines war.</target>
+      </segment>
+    </unit>
     <unit id="rotate.title">
       <notes>
         <note category="location">src/app/features/tokens/token-manager.ts:35,36</note>
@@ -11724,6 +11733,24 @@
       <segment>
         <source>Actions</source>
         <target>Aktionen</target>
+      </segment>
+    </unit>
+    <unit id="token-form.endpoints">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:125,126</note>
+      </notes>
+      <segment>
+        <source>Endpoints</source>
+        <target>Endpunkte</target>
+      </segment>
+    </unit>
+    <unit id="token-form.endpoints-hint">
+      <notes>
+        <note category="location">src/app/shared/access/token-form.ts:127,130</note>
+      </notes>
+      <segment>
+        <source> Valid only on the endpoints you tick. Tick none and the token is accepted wherever its type is accepted. A further endpoint accepts only service-account tokens bound to it. </source>
+        <target> Gilt nur auf den angekreuzten Endpunkten. Ohne Auswahl wird das Token überall akzeptiert, wo sein Typ akzeptiert wird. Ein weiterer Endpunkt akzeptiert nur Dienstkonto-Tokens, die an ihn gebunden sind. </target>
       </segment>
     </unit>
     <unit id="token-form.cancel">

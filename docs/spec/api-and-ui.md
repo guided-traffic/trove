@@ -3390,7 +3390,11 @@ Priority: **MVP** · Covers: trove-only
 
 - List and editor: name, description, owners (P1), groups, status with disable and enable.
 - Tokens tab: issue (scope and expiry as in R-UI-029, one-time display, recent authentication), list,
-  revoke one or all.
+  revoke one or all. The server lets only the administrator role issue and rotate the tokens of a
+  service account ([authorization.md](authorization.md) R-AUTH-027, R-AUTH-030); the tab offers
+  **Create token** and **Rotate** to that role only (`authz/me` `roles`), not to a holder of
+  `identities:write` alone, who would get 403. Revoking follows `tokens:revoke`.
+- The token form offers the binding to endpoints where the caller may read them (Q-UI-91).
 - A hint explains when to use one: CI systems without OIDC exchange, long-running automation.
 
 Acceptance criteria:
@@ -3416,7 +3420,12 @@ Priority: **MVP** · Covers: UI-039, UI-040
   patterns with syntax help and a tester field ("Does `@team-a/ui` match?"); actions with a one-line
   explanation each.
 - Preview panel fed by `POST /api/v1/authz/validate-policy` (debounced 500 ms): covered repositories,
-  errors, warnings.
+  errors, warnings. "Try it" answers from the draft alone and applies the server's rule for the
+  built-in principal: `authenticated` covers users, not service accounts, CI identities or anonymous
+  (R-AUTHZ-030, Q-AUTHZ-3).
+- The one-line help of the actions says what each covers; `manage` is the administration of content
+  (package owners, the override of the shadowing check, namespace claims, cache operations), and
+  the settings of a repository need the capability `repositories:write-config`.
 - Save shows a diff against the loaded revision (principals, resources and actions added or removed),
   then sends PUT with `If-Match`; recent authentication is handled as in R-UI-042.
 - Delegated managers (P1) see only the entries the API lets them change.
@@ -3473,7 +3482,8 @@ Priority: **MVP** · Covers: UI-053, AUTHN-039, AUTHN-040
 - Personal tokens: list with description, scope summary, created, expires and last used; tokens
   expiring within 7 days are marked. Create dialog: description (required), expiry (presets and a
   custom date, bounded by R-AUTH-040), scope (all own permissions, or restricted to repositories and
-  actions; grammar of R-AUTH-024). Recent authentication applies. The result is shown once with a
+  actions; grammar of R-AUTH-024) and, for a caller with `endpoints:read`, the endpoints the token
+  is bound to (Q-UI-91). Recent authentication applies. The result is shown once with a
   copy button and the notice that it cannot be shown again. Revoke and rotate with confirmation;
   rotate is P1 and, like creation, needs recent authentication (R-AUTH-030).
 - Sessions (`/api/v1/users/me/sessions`): list with created, last seen, address, user agent and
@@ -3499,7 +3509,9 @@ Priority: **MVP** · Covers: UI-041, TOK-026
 - CI tokens come from `/api/v1/ci/issuances` with job context (project, pipeline, job, mapping) and
   "Revoke matching" by project or pipeline.
 - "Revoke by value": a field to paste a leaked token; the value is sent once to
-  `POST /api/v1/tokens/revoke` and cleared.
+  `POST /api/v1/tokens/revoke` and cleared. The screen says only what the answer supports (Q-UI-92):
+  after a `200` (administrator) which token of which owner was revoked, after the empty `202`
+  that the request was accepted and that the answer does not say whether the value was a token.
 
 Acceptance criteria:
 
@@ -5598,6 +5610,42 @@ Status: **Decided by the development agent** — selected from the options below
 screen gains a help need its manual page does not answer, for example with a fragment per tab.
 
 **Applied in the spec:** R-UI-002, R-UI-050.
+
+### Q-UI-91 · The endpoint binding in the token forms
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+A token is bound to endpoints through `scope.endpoints` ([endpoints.md](endpoints.md) R-EP-011); a further endpoint accepts only service-account tokens bound to it (Q-EP-10). The forms had no field, so the binding needed the API or `trove admin token`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Record the gap as decided | The binding stays an API and CLI matter | No change | The customer-endpoint flow of Q-EP-10 needs a bound token per customer; an administrator who works in the UI has no way to issue one |
+| (b) A field in both token forms, fed by `GET /api/v1/endpoints`, shown with `endpoints:read` | One checkbox per configured endpoint (inert ones left out); none ticked leaves the token unbound; the selection joins `scope.endpoints` of either scope kind | The list exists and the scope already carries the field; the server still validates every name (`400 invalid_scope`) | A caller without `endpoints:read` cannot bind from the UI |
+| (c) A free-text field in the service-account form only | Names typed by hand | No dependency on the list | Typos are found only by the server; the personal form has the same need on an endpoint with other token types |
+
+**Choice:** (b).
+
+**Rationale:** The API gives the UI what it needs, and the field changes only where a token is accepted, never what it may do. A caller without `endpoints:read` sees no field and issues an unbound token, which is the default of R-EP-011. The development agent revisits this if an endpoint can bind tokens of a user to a different set than the endpoint list shows, or if the list grows beyond what checkboxes carry.
+
+**Applied in the spec:** R-UI-026, R-UI-029; [endpoints.md](endpoints.md) R-EP-011 is unchanged.
+
+### Q-UI-92 · What "Revoke by value" says after the empty 202
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+`POST /api/v1/tokens/revoke` answers `200` with the token's id and owner to an administrator and an empty `202` to everyone else and for an unknown value (R-AUTH-029, Q-AUTH-6: no existence oracle). The screen built "The token of … was revoked" from a body the `202` does not have.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The same sentence in both cases | "Revoked." | Simple | False for an unknown value; the screen would be the oracle's opposite, a claim the server does not make |
+| (b) Name the owner after a `200`, a neutral sentence after a `202` | "The token of alice was revoked." / "The request was accepted. If the value is a token, it is revoked; this answer does not say whether it was one." | Says only what the answer supports; no new oracle | The user without the admin role gets no confirmation that the token existed |
+| (c) Show the sentence only for an administrator and nothing otherwise | Silence after a `202` | No wrong claim | A user who pasted a leaked value cannot tell the request arrived |
+
+**Choice:** (b).
+
+**Rationale:** The screen reports the HTTP answer, not a guess about the database. The development agent revisits this if the server's answer for non-administrators changes.
+
+**Applied in the spec:** R-UI-030.
 
 ### Q-API-16 · A `limit` above the maximum is clamped
 

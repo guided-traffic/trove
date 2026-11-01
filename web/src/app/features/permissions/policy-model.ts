@@ -25,7 +25,7 @@ export function actionHelp(action: string): string {
     case 'delete':
       return $localize`:@@policy.action.delete:Delete files and versions.`;
     default:
-      return $localize`:@@policy.action.manage:Manage the repository's settings.`;
+      return $localize`:@@policy.action.manage:Administer content: package owners, the shadowing override, namespace claims and cache operations. Repository settings need repositories:write-config.`;
   }
 }
 

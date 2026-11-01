@@ -1,8 +1,10 @@
-import { Component, computed, effect, input, output, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { ApiError } from '../../api/problem';
+import { EndpointsApi } from '../../api/endpoints-api';
 import { CreateTokenRequest } from '../../api/tokens-api';
+import { SessionStore } from '../../core/session-store';
 import { SelectField, SelectOption, TextField } from './fields';
 import { fieldMessage } from '../field-errors';
 
@@ -28,6 +30,7 @@ export interface TokenDraft {
   readonly repositories: string;
   readonly packages: string;
   readonly actions: readonly string[];
+  readonly endpoints: readonly string[];
 }
 
 /**
@@ -35,7 +38,9 @@ export interface TokenDraft {
  * lifetime (presets, a custom date, or "never" where the owner may have a non-expiring token) and
  * scope (everything the owner may do, or repositories and actions; grammar of R-AUTH-024). It
  * validates what it can before the request and shows server field errors next to the fields. The
- * idempotency key is the parent's, generated when the form opens.
+ * idempotency key is the parent's, generated when the form opens. Where the caller may read the
+ * endpoints (`endpoints:read`), the form offers the binding of the token to endpoints
+ * (`scope.endpoints`, R-EP-011, Q-UI-91); none chosen leaves the token unbound.
  */
 @Component({
   selector: 'trove-token-form',
@@ -115,6 +120,19 @@ export interface TokenDraft {
         }
       </fieldset>
 
+      @if (endpointNames().length > 0) {
+        <fieldset class="endpoints">
+          <legend i18n="@@token-form.endpoints">Endpoints</legend>
+          <p class="hint" i18n="@@token-form.endpoints-hint">
+            Valid only on the endpoints you tick. Tick none and the token is accepted wherever its type is
+            accepted. A further endpoint accepts only service-account tokens bound to it.
+          </p>
+          @for (e of endpointNames(); track e) {
+            <mat-checkbox [checked]="endpoints().includes(e)" (change)="toggleEndpoint(e, $event.checked)">{{ e }}</mat-checkbox>
+          }
+        </fieldset>
+      }
+
       <div class="row">
         <button mat-flat-button type="submit" [disabled]="busy()">{{ submitLabel() }}</button>
         <button mat-button type="button" (click)="cancelled.emit()" i18n="@@token-form.cancel">
@@ -138,7 +156,14 @@ export interface TokenDraft {
       inline-size: 100%;
       box-sizing: border-box;
     }
-    .actions {
+    .hint {
+      flex-basis: 100%;
+      margin: 0;
+      color: var(--mat-sys-on-surface-variant);
+      font: var(--mat-sys-body-small);
+    }
+    .actions,
+    .endpoints {
       display: flex;
       flex-wrap: wrap;
       gap: var(--trove-space-1) var(--trove-space-3);
@@ -177,6 +202,9 @@ export class TokenForm {
   /** The current non-secret form content, for the draft kept across re-authentication. */
   readonly draft = output<TokenDraft>();
 
+  private readonly endpointsApi = inject(EndpointsApi);
+  private readonly session = inject(SessionStore);
+
   protected readonly actionList = TOKEN_ACTIONS;
   protected readonly description = signal('');
   protected readonly lifetime = signal('default');
@@ -185,6 +213,9 @@ export class TokenForm {
   protected readonly repositories = signal('');
   protected readonly packages = signal('');
   protected readonly actions = signal<readonly TokenAction[]>(['read']);
+  /** The configured endpoints the token can be bound to; empty when the caller cannot read them. */
+  protected readonly endpointNames = signal<readonly string[]>([]);
+  protected readonly endpoints = signal<readonly string[]>([]);
   private readonly localErrors = signal<Readonly<Record<string, string>>>({});
 
   protected readonly lifetimeOptions = computed<readonly SelectOption[]>(() => [
@@ -200,6 +231,13 @@ export class TokenForm {
   ]);
 
   constructor() {
+    if (this.session.has('endpoints:read')) {
+      this.endpointsApi
+        .list()
+        .then((list) => this.endpointNames.set(list.filter((e) => !e.inert).map((e) => e.name)))
+        // Without the list the token stays unbound; the server still checks every name it is given.
+        .catch(() => undefined);
+    }
     effect(() => {
       const d = this.restore();
       if (!d) return;
@@ -210,6 +248,7 @@ export class TokenForm {
         this.restricted.set(d.restricted);
         this.repositories.set(d.repositories);
         this.packages.set(d.packages);
+        this.endpoints.set(d.endpoints ?? []);
         this.actions.set(d.actions.filter((a): a is TokenAction => TOKEN_ACTIONS.includes(a as TokenAction)));
       });
     });
@@ -228,6 +267,10 @@ export class TokenForm {
     this.actions.update((list) => (on ? [...new Set([...list, action])] : list.filter((a) => a !== action)));
   }
 
+  protected toggleEndpoint(name: string, on: boolean): void {
+    this.endpoints.update((list) => (on ? [...new Set([...list, name])] : list.filter((n) => n !== name)));
+  }
+
   /** Emits the current content as a draft; the parent keeps it when re-authentication interrupts. */
   currentDraft(): TokenDraft {
     return {
@@ -238,6 +281,7 @@ export class TokenForm {
       repositories: this.repositories(),
       packages: this.packages(),
       actions: this.actions(),
+      endpoints: this.endpoints(),
     };
   }
 
@@ -289,6 +333,7 @@ export class TokenForm {
     } else {
       request.scope = { inherit: true };
     }
+    if (this.endpoints().length > 0) request.scope = { ...request.scope, endpoints: [...this.endpoints()] };
     this.submitted.emit(request);
   }
 }

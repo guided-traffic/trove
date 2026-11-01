@@ -495,6 +495,8 @@ export class FakeTokensApi extends TokensApi {
   failure: ApiError | null = null;
   lastFilters: TokenFilters | null = null;
   lastRequest: CreateTokenRequest | null = null;
+  /** The answer of revocation by value: the token for an administrator, `null` for the empty 202. */
+  revokedByValue: RevokedToken | null = { id: '00000000-0000-7000-8000-0000000000a1', owner: 'alice' };
 
   private fail(): void {
     if (this.failure) {
@@ -574,10 +576,10 @@ export class FakeTokensApi extends TokensApi {
     this.tokenList = this.tokenList.map((t) => (t.id === id ? { ...t, state: 'revoked' } : t));
   }
 
-  override async revokeByValue(value: string): Promise<RevokedToken> {
+  override async revokeByValue(value: string): Promise<RevokedToken | null> {
     this.fail();
     this.calls.push(`revokeByValue ${value.length}`);
-    return { id: '00000000-0000-7000-8000-0000000000a1', owner: 'alice' };
+    return this.revokedByValue;
   }
 
   override async revokeAllOfUser(username: string): Promise<void> {

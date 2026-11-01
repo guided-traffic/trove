@@ -164,13 +164,18 @@ export class TokenManager {
     const s = this.scope();
     return s.kind === 'own' ? 'me' : s.kind === 'user' ? s.name : `sa:${s.name}`;
   });
+  /**
+   * The server lets the administrator role create and rotate the tokens of a service account (or a
+   * token of the account itself, which is no screen); `identities:write` is not enough (R-AUTH-027,
+   * R-AUTH-030), so a security administrator would get 403.
+   */
   protected readonly canCreate = computed(() => {
     const s = this.scope();
-    return s.kind === 'own' || (s.kind === 'service-account' && this.session.has('identities:write'));
+    return s.kind === 'own' || (s.kind === 'service-account' && this.session.hasRole('admin'));
   });
   protected readonly canRotate = computed(() => {
     const s = this.scope();
-    return s.kind === 'own' || (s.kind === 'service-account' && this.session.has('identities:write'));
+    return s.kind === 'own' || (s.kind === 'service-account' && this.session.hasRole('admin'));
   });
   protected readonly canRevoke = computed(() => this.scope().kind === 'own' || this.session.has('tokens:revoke'));
   protected readonly canRevokeAll = computed(() => this.canRevoke());

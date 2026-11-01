@@ -149,7 +149,12 @@ export class TokenAdmin {
     this.valueError.set(null);
     try {
       const revoked = await this.api.revokeByValue(value);
-      this.notifier.status($localize`:@@tokens-admin.value-revoked:The token of ${revoked.owner}:owner: was revoked.`);
+      // Only the administrator's 200 names a token; the empty 202 says nothing about the value (Q-AUTH-6).
+      this.notifier.status(
+        revoked
+          ? $localize`:@@tokens-admin.value-revoked:The token of ${revoked.owner}:owner: was revoked.`
+          : $localize`:@@tokens-admin.value-accepted:The request was accepted. If the value is a token, it is revoked; this answer does not say whether it was one.`,
+      );
       await this.apply();
     } catch (e) {
       this.valueError.set(asApiError(e));

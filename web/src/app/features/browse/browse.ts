@@ -50,6 +50,9 @@ type Detail =
 const CLASS_ORDER: Record<string, number> = { virtual: 0, local: 1, remote: 2 };
 const TABS = ['general', 'statistics', 'api'] as const;
 
+/** A POSIX shell word for `value`: single quotes, with an embedded single quote closed and escaped. */
+const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
+
 /**
  * The file tree (R-UI-010): the readable repositories at the root, children loaded lazily in pages
  * of `BROWSER_PAGE_SIZE` with a "Load more" entry, details of the selection next to it. The
@@ -201,11 +204,11 @@ export class Browse {
   );
   protected readonly curl = computed(() => {
     const item = this.item();
-    return item ? `curl -H 'Authorization: Bearer $TROVE_TOKEN' '${item.itemUrl}'` : '';
+    return item ? `curl -H "Authorization: Bearer $TROVE_TOKEN" ${shellQuote(item.itemUrl)}` : '';
   });
   protected readonly downloadCurl = computed(() => {
     const url = this.item()?.downloadUrl;
-    return url ? `curl -L -O -H 'Authorization: Bearer $TROVE_TOKEN' '${url}'` : '';
+    return url ? `curl -L -O -H "Authorization: Bearer $TROVE_TOKEN" ${shellQuote(url)}` : '';
   });
   protected readonly classLabel = (cls: string | undefined): string => {
     switch (cls) {

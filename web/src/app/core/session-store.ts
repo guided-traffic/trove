@@ -69,6 +69,11 @@ export class SessionStore {
     return this.capabilities().includes(capability);
   }
 
+  /** Whether the caller holds the system role (`authz/me` `roles`), for what the server checks as a role. */
+  hasRole(role: AuthzMe['roles'][number]): boolean {
+    return (this._me()?.roles ?? []).includes(role);
+  }
+
   /** Loads `whoami` and `authz/me` once; concurrent calls share the request. */
   load(): Promise<void> {
     if (this._state() === 'authenticated' || this._state() === 'anonymous') {

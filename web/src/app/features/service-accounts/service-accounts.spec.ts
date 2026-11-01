@@ -1,6 +1,8 @@
 import { IdentityApi } from '../../api/identity-api';
 import { TokensApi } from '../../api/tokens-api';
-import { FakeIdentityApi, FakeTokensApi, SECRET_VALUE, problem } from '../../api/testing/access-fakes';
+import { FakeIdentityApi, FakeTokensApi, SECRET_VALUE, problem, sampleToken } from '../../api/testing/access-fakes';
+import { AuthzMe, SessionApi } from '../../api/session-api';
+import { FakeSessionApi } from '../../api/testing/fakes';
 import { buttonByText, renderScreen, settle, storedText, text, typeInto, sleep } from '../../testing/screen';
 import { seriousViolations } from '../../testing/axe';
 import { ServiceAccountDetail } from './service-account-detail';
@@ -92,5 +94,63 @@ describe('Service accounts (R-UI-026)', () => {
     expect(text(root)).toContain('longer than the maximum');
     expect(root.querySelector('trove-token-form')).toBeTruthy();
     expect(root.querySelector('trove-token-secret')).toBeNull();
+  });
+
+  const asRole = (roles: AuthzMe['roles'], capabilities: string[]) => ({
+    inputs: { name: 'ci-bot' },
+    capabilities,
+    setup: (api: <A>(t: abstract new (...a: never[]) => A) => A) => {
+      const me = api(SessionApi) as FakeSessionApi;
+      me.meResult = { roles, capabilities };
+      (api(TokensApi) as FakeTokensApi).tokenList = [
+        sampleToken({ id: 'sat-1', description: 'nightly', type: 'sat', owner: { kind: 'service_account', name: 'ci-bot' } }),
+      ];
+    },
+  });
+
+  it('R-AUTH-027 a security administrator (identities:write, no admin role) sees no Create token or Rotate for a service account', async () => {
+    const { root } = await renderScreen(
+      ServiceAccountDetail,
+      asRole(['security-admin'], ['identities:read', 'identities:write', 'tokens:read', 'tokens:revoke', 'endpoints:read']),
+    );
+    expect(root.textContent).not.toContain('Create token');
+    expect(root.textContent).not.toContain('Rotate');
+    // Revoking is a capability (tokens:revoke) the server checks as well.
+    expect(root.querySelector('trove-token-table')).toBeTruthy();
+  });
+
+  it('R-AUTH-027 the admin role sees Create token and Rotate', async () => {
+    const { root } = await renderScreen(
+      ServiceAccountDetail,
+      asRole(['admin'], ['identities:read', 'identities:write', 'tokens:read', 'tokens:revoke']),
+    );
+    expect(root.textContent).toContain('Create token');
+    expect(root.textContent).toContain('Rotate');
+  });
+
+  it('R-EP-011 the token form binds a token to the endpoints chosen, and leaves it unbound otherwise', async () => {
+    const { fixture, root, get } = await renderScreen(ServiceAccountDetail, { inputs: { name: 'ci-bot' } });
+    buttonByText(root, 'Create token').click();
+    await settle(fixture);
+    const form = root.querySelector('trove-token-form') as HTMLElement;
+    expect(text(form)).toContain('Endpoints');
+    typeInto(form, 'Description', 'customer acme');
+    const boxes = Array.from(form.querySelectorAll<HTMLInputElement>('.endpoints input[type="checkbox"]'));
+    expect(boxes.map((b) => b.closest('mat-checkbox')?.textContent?.trim())).toEqual(['default', 'customers']);
+    boxes[1]!.click();
+    await settle(fixture);
+    buttonByText(form, 'Create token').click();
+    await settle(fixture);
+    expect((get(TokensApi) as FakeTokensApi).lastRequest?.scope).toEqual({ inherit: true, endpoints: ['customers'] });
+  });
+
+  it('R-EP-011 without endpoints:read the form has no endpoint field', async () => {
+    const { fixture, root } = await renderScreen(
+      ServiceAccountDetail,
+      asRole(['admin'], ['identities:write', 'tokens:read']),
+    );
+    buttonByText(root, 'Create token').click();
+    await settle(fixture);
+    expect(text(root.querySelector('trove-token-form')!)).not.toContain('Endpoints');
   });
 });

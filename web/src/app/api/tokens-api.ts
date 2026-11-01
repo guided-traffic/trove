@@ -36,7 +36,11 @@ export abstract class TokensApi {
   ): Promise<TokenCreated>;
   abstract rotate(id: string, overlapSeconds: number, idempotencyKey: string): Promise<TokenCreated>;
   abstract revoke(id: string): Promise<void>;
-  abstract revokeByValue(value: string): Promise<RevokedToken>;
+  /**
+   * `null` for the empty `202`: the server does not tell whether the value was a token, except to
+   * an administrator, who receives `200` with the token's id and owner (R-AUTH-029, Q-AUTH-6).
+   */
+  abstract revokeByValue(value: string): Promise<RevokedToken | null>;
   abstract revokeAllOfUser(username: string): Promise<void>;
   abstract revokeAllOfServiceAccount(name: string): Promise<void>;
   abstract revokeAllOwn(): Promise<void>;
@@ -78,8 +82,9 @@ export class HttpTokensApi extends TokensApi {
     await this.client.delete(`/api/v1/tokens/${seg(id)}`);
   }
 
-  override async revokeByValue(value: string): Promise<RevokedToken> {
-    return (await this.client.post<RevokedToken>('/api/v1/tokens/revoke', { token: value })).body;
+  override async revokeByValue(value: string): Promise<RevokedToken | null> {
+    const answer = await this.client.post<RevokedToken | null>('/api/v1/tokens/revoke', { token: value });
+    return answer.status === 200 ? answer.body : null;
   }
 
   override async revokeAllOfUser(username: string): Promise<void> {

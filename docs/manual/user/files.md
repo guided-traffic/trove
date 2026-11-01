@@ -31,7 +31,7 @@ The tree works with the keyboard: the arrow keys move and expand, Home and End j
 | A folder | Tab **General** with **Path**, **Kind**, **Created** and **Last changed**, each with the user who did it where known; tab **API** |
 | A file | Tab **General** as for a folder plus **Size**, **Media type** and the checksums **SHA-256**, **SHA-512**, **SHA-1** and **MD5**, each with **Copy checksum**; tab **Statistics** with **Downloads**, **Last download** and **Last downloader**; tab **API** |
 
-Download counts reach the statistics within a minute of a download. If a file's stored content is missing or damaged, **General** says so under **Content**; tell an administrator. The **API** tab shows the selection as the management API describes it and the matching curl requests. **Back to the tree** clears the selection.
+Download counts reach the statistics within a minute of a download. If a file's stored content is missing or damaged, **General** says so under **Content**; tell an administrator. The **API** tab shows the selection as the management API describes it and the matching curl requests. They send the token from the environment variable `TROVE_TOKEN`: the header is in double quotes so that your shell fills in the value, and the address is in single quotes. Set the variable first, without typing the token into a shell that records its history. **Back to the tree** clears the selection.
 
 ## Download a file
 

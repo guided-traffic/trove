@@ -127,7 +127,7 @@ The editor refuses an entry for `anonymous` or `authenticated` with any action o
 
 ### Why can X do Y
 
-The **Try it** section of the preview answers whether a principal may do an action on a repository under the draft. Enter a **Principal** such as `user:alice`, a **Repository** and an **Action**, and select **Explain**. The answer lists the steps: whether the selectors cover the repository, which entry applies (directly, through a group of the user, or through `authenticated`), and whether it holds the action. It ends with **Allowed by this draft** or **Not granted by this draft**, and tells you whether you yourself may do this under the stored policies.
+The **Try it** section of the preview answers whether a principal may do an action on a repository under the draft. Enter a **Principal** such as `user:alice`, a **Repository** and an **Action**, and select **Explain**. The answer lists the steps: whether the selectors cover the repository, which entry applies (directly, through a group of the user, or through `authenticated`), and whether it holds the action. `authenticated` applies to users only, as when a request is decided, so an entry for `authenticated` never allows a service account such as `sa:ci-web`. It ends with **Allowed by this draft** or **Not granted by this draft**, and tells you whether you yourself may do this under the stored policies.
 
 The answer evaluates only the draft. Other policies, token scopes, exposure rules and package ownership are not part of it. To answer the question for all stored policies, filter the policy list by the principal and by the repository.
 

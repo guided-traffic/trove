@@ -217,29 +217,6 @@ Found on 2026-11-01 while writing the manual (`docs/manual`) and the design chan
   every member, so each package answers 404. Done when the token scope covers what the virtual
   repository resolves through, proven by a test through a virtual npm repository;
   `docs/manual/user/client-setup.md` carries a warning to remove.
-- **F-3 · The curl commands of the Browse API tab cannot work** (confirmed). `curl` and `downloadCurl` in
-  [browse.ts](../../web/src/app/features/browse/browse.ts) put `$TROVE_TOKEN` in single quotes, so the
-  shell sends the literal text and the server answers 401. Done when the commands use double quotes,
-  with a spec.
-- **F-4 · The policy preview grants `authenticated` to service accounts** (confirmed). The draft
-  explainer ([policy-explainer.ts](../../web/src/app/api/policy-explainer.ts), `references`) adds
-  `authenticated` for every principal but `anonymous`; the server adds it for users only
-  (`authz/me` in [decide.go](../../internal/authz/decide.go)). **Try it** can show "Allowed by this
-  draft" for an `sa:` principal the server refuses. Done when both apply the same rule, with a spec.
-- **F-5 · The help text of the action `manage` is wrong** (confirmed). [policy-model.ts](../../web/src/app/features/permissions/policy-model.ts)
-  says "Manage the repository's settings."; changing repository configuration needs
-  `repositories:write-config`, while `manage` covers owners, the shadowing override, claims and the
-  cache operations. Done when the text says that, German target included.
-- **F-6 · "Revoke by value" reports a revocation that did not happen** (read). For an unknown value, or a
-  caller without the admin role, the server answers an empty `202`, and the Tokens screen builds
-  "The token of … was revoked" from the missing body. Done when the screen says only what the answer
-  supports.
-- **F-7 · Token actions of a service account are shown to callers who get 403** (read). **Create token**
-  and **Rotate** show for `identities:write`; the server requires the admin role (a security-admin gets
-  403). Done when the UI asks for what the server checks.
-- **F-8 · The token forms have no endpoint field** (read). A token is bound to endpoints only through the
-  API (`scope.endpoints`) or `trove admin token`. Done when the forms offer the binding, or the spec
-  records the gap as decided.
 - **F-9 · The token filter "Not used for (days)" matches every token** (read). The last-used time is never
   recorded. Done when the time is recorded (with a bound on write load) or the filter is removed;
   `docs/manual/admin/tokens.md` says it matches everything.
