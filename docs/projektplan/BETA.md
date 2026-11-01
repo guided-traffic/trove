@@ -27,7 +27,7 @@ version number is expected for it ([ADR-124](../decisions.md#adr-124--releases-s
 | [0 · Specification](#phase-0--specification) | Feature catalog, specification, decisions | — | 🟢 |
 | [1 · Foundation](#phase-1--foundation-m0) | Skeleton, HA-shaped local stack, roles, drain-safe shutdown, TLS everywhere, endpoint foundation | `v0.1.0` | 🟢 |
 | [2 · Access core](#phase-2--access-core-m1) | Login, tokens, permissions, repositories, admin UI | `v0.3.0` | 🟢 |
-| [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | — | 🟡 |
+| [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | — | 🟢 |
 | [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual | — | ⚪ |
 | [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | — | ⚪ |
 | [6 · Vulnerability scanning](#phase-6--vulnerability-scanning-m4b) | Own advisory mirror, findings and vulnerability report, malicious versions blocked, npm and NuGet audits from trove's data | — | ⚪ |
@@ -169,8 +169,19 @@ Details: [roadmap M2](../coverage/roadmap.md#m2--npm) · spec: [formats/npm.md](
   and the drain criterion of the security audit (R-NPM-038), moved to phase 7
 - 🟢 npm e2e: a customer endpoint through its own Ingress lists only exposed versions; hidden versions answer 404
 
+**Open findings of 2026-11-01, fixed in the closing run**
+- 🟢 F-1 to F-16 and F-18 of [promt.md section 8](promt.md#8--open-findings): npm publish snippets, setup tokens through a
+  virtual repository, the browse curl commands, the policy preview for service accounts, the `manage` help, revoke by value,
+  service-account token actions, endpoint binding in the token forms, last use of tokens, the maintenance-mode row, the
+  break-glass password status, the saved UI language, stored versions in the exposure check, underscore IDs in the coverage
+  evidence, allocation-free pattern matching in `Decide`, the help journey with axe in both schemes, the status texts. The
+  code and security reviews of the run found a readable-package leak in the exposure check and the reach of a virtual
+  repository's token scope, and Test and Release found a light accent below 4.5:1; all fixed before release
+- 🟢 Long tests out of the per-change pipeline (owner, 2026-11-01): `failover` and `npm-ha` run in
+  `HA and Performance (nightly)`
+
 **Release**
-- 🟡 the release that closes the phase: `v0.5.0` (2026-10-31) is released with everything above; the phase closes with the release that follows the fix of the open item
+- 🟢 the release that closes the phase (cut by Semantic Release from the commits of 2026-11-01; the version goes into the table)
 
 ## Phase 4 · NuGet (.NET) registry (M3)
 
@@ -190,7 +201,7 @@ Details: [roadmap M3](../coverage/roadmap.md#m3--nuget) · spec: [formats/nuget.
 - ⚪ Package UI and client setup snippets for .NET
 - ⚪ In-app guide for every NuGet variant: local, remote and virtual repositories with the .NET CLI, nuget.exe and Visual Studio, and `nuget.config` (R-UI-049, owner 2026-10-31)
 - ⚪ NuGet on a customer endpoint: version lists, registrations and search list only exposed versions; no push there
-- ⚪ Format contract additions found by the M2 architecture review (roadmap M3, WP3.0): a hook on a remote fill, discovery documents and the URL map for metadata, pass-through and fan-out for search, content on `Volatile` routes, a format that can name only its own repository, rendered-document mechanics in the contract, validation of remote configuration, the format's rules on the raw routes, a typed environment for a format, the dormant methods, the writer-owned eviction signal, no format knowledge in the virtual bridge, one engine value type each, links in refusals, the declared length of a body, a minimal contract, the per-format data-port leaf rule, the real populate decision in the audit event
+- ⚪ Format contract additions found by the M2 architecture review (roadmap M3, WP3.0): a hook on a remote fill, discovery documents and the URL map for metadata, pass-through and fan-out for search, content on `Volatile` routes, a format that can name only its own repository, rendered-document mechanics in the contract, validation of remote configuration, the format's rules on the raw routes, a typed environment for a format, the dormant methods, the writer-owned eviction signal, no format knowledge in the virtual bridge, one engine value type each, links in refusals, the declared length of a body, a minimal contract, the per-format data-port leaf rule, the real populate decision in the audit event; and from the review of 2026-11-01 (WP3.0u to WP3.0w): the addressed repository on member requests through one derivation, stored versions as a method of the view adapter, and a test that the written contract equals the code
 - ⚪ Format contract frozen for all later registries
 
 **Tests**
