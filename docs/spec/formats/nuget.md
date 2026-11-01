@@ -3341,6 +3341,90 @@ Context: the skeleton routes every operation of the table and serves the service
 
 **Applied in the spec:** R-NUGET-002 (the note on the resources). Code: [handlers_stub.go](../../../internal/formats/nuget/handlers_stub.go), [format.go](../../../internal/formats/nuget/format.go) `Inspect`. Tests: `TestR_NUGET_001_AnOperationThatIsNotBuiltAnswers501`, `TestR_NUGET_001_InspectRefusesEveryUploadUntilTheIngestionExists`.
 
+### Q-NUGET-33 · The clients image: one .NET SDK, and nuget.exe on Mono
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-NUGET-027 runs the .NET 10 SDK on Linux and nuget.exe on a Windows runner. The e2e suite runs in kind on Linux, so a
+nuget.exe row there needs a runtime for a .NET Framework executable. The SDK image of the golden vectors
+(`NUGETVECTORS_SDK_IMAGE`) is Ubuntu 24.04, whose `universe` archive carries Mono 6.8.0.105 for amd64 and arm64.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The SDK image plus Mono from its Ubuntu, nuget.exe by version and SHA-256 | `test/e2e/nugetclients/Dockerfile`: `mono-complete` and `ca-certificates-mono` at an exact apt version, `nuget.exe` from dist.nuget.org checked against a digest in `tools/versions.env` | The protocol of nuget.exe (its own HTTP stack, `nuget.config` handling, `-ApiKey`, `search`, `install`) runs against trove on every change, not only on the Windows runner; one base image with the SDK of the vectors; nothing from a third-party apt repository | Mono 6.8 is unmaintained and its TLS stack stops at TLS 1.2 (a listener with `min_version: "1.3"` cannot be reached by it); the apt version is exact, so Ubuntu replacing the package fails the build until the pin is moved |
+| (b) nuget.exe on the Windows runner only | No Mono; the Linux image has `dotnet` only | No unmaintained runtime in CI | The Windows runner is outside the per-change kind suite, so every nuget.exe-specific behavior (the pre-authentication of R-NUGET-001 for clients older than the SDK's, `-ApiKey` header, the symbol push address) is seen only on the closing run |
+| (c) A current Mono from the Mono project's apt repository | A newer runtime | Maintained; TLS 1.3 may work | An apt source outside the pinned images, whose packages cannot be pinned by digest; a second source of base packages in a test image |
+
+**Choice:** (a). The .NET SDK is the image of the golden vectors: `E2E_NUGETCLIENTS_SDK_IMAGE` and `NUGETVECTORS_SDK_IMAGE` are
+the same value and `make versions-check` (`test/e2e/nugetclients/check-pins.mjs`) fails when they differ, so the repository has one
+.NET SDK. nuget.exe is 7.9.0 (the NuGet.Versioning of the vectors is 7.9.0, too), with its SHA-256.
+
+**Rationale:**
+- Verified in this change, on linux/arm64: `nuget help` prints 7.9.0.83 on Mono 6.8.0.105; `nuget install` fetches a package
+  from the counting test upstream over TLS and verifies the dev CA's chain; `nuget search` against the dev edge gets trove's
+  HTTP status, not a certificate error; the same two commands without the CA fail on the certificate
+  (`test/e2e/nugetclients/smoke.sh`, `TestNuGetClients`). Not verified: linux/amd64 (CI's architecture; the Ubuntu package and
+  nuget.exe are the same, the image is not built there yet), and any push, delete or symbol push by nuget.exe on Mono.
+- The Windows row of R-NUGET-027 stays: Mono is a substitute for the protocol coverage per change, not for the platform.
+- The development agent would revisit this if a nuget.exe scenario of the suite fails on Mono and passes on Windows for a reason
+  of the runtime (then that scenario runs on the Windows runner only and the Mono row keeps the rest), if Ubuntu drops Mono
+  (then (b)), or if the suite needs TLS 1.3 on a listener nuget.exe talks to.
+
+**Applied in the spec:** none (R-NUGET-027's table already lists nuget.exe; the Linux row for it is the addition this entry
+describes). Elsewhere: [test/e2e/nugetclients](../../../test/e2e/nugetclients), [tools/versions.env](../../../tools/versions.env),
+[docs/developer/e2e.md](../../developer/e2e.md#the-nuget-clients).
+
+### Q-NUGET-34 · The e2e sets of the NuGet tests
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+`deploy/dev/e2e.sh` runs a set as `go test -run <regexp>`. The npm sets list their test families by name. The NuGet tests are written
+by later packages, and the tests that run only nightly or on the closing run (the HA scenarios, the additions of the last
+run) must not run on every change.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An explicit list per set, as for npm | `^TestNuGet(Clients\|Matrix\|...)` | The set says what it contains | Every new test family edits the script, and a test whose family is not listed is silently not run by any set |
+| (b) `^TestNuGet` with `-skip '^TestNuGet(Closing\|HA)'` | The sets `nuget-closing` (`^TestNuGetClosing`) and `nuget-ha` (`^TestNuGetHA`) take the families the name rule reserves; `nuget` takes the rest | A new test is in the per-change set by being named `TestNuGet...`; the exceptions are two prefixes, not a list | A name decides the tier: a nightly test must start with `TestNuGetClosing` or `TestNuGetHA` |
+| (c) One set per test file | A set per `nuget_*_test.go` | Fine control | A file per set, and the same drift as (a) |
+
+**Choice:** (b). `TROVE_E2E_RUN` replaces both the expression and the skip, so a single subtest can be run by hand. The set
+`nuget-clients` runs `^TestNuGetClients$` alone (the smoke test of the pods).
+
+**Rationale:** the run that finds "matched no test" a failure (`e2e.sh`) cannot find a family that no set names, so the rule must
+be the one that includes by default. The development agent would revisit this if a third tier appears (then a prefix per tier, or a
+list as in (a)).
+
+**Applied in the spec:** none. Elsewhere: [deploy/dev/e2e.sh](../../../deploy/dev/e2e.sh) (marker `M3 nuget-clients`),
+[docs/developer/e2e.md](../../developer/e2e.md#the-nuget-clients).
+
+### Q-NUGET-35 · How the clients pod gets the dev CA, and what a test must set per run
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The dev CA is generated per cluster (cert-manager), so it cannot be in the image. `dotnet` reads its trust from OpenSSL
+(`SSL_CERT_FILE`, `SSL_CERT_DIR`), Mono from its own store (`~/.config/.mono/certs`, filled by `cert-sync`). The pod's root
+filesystem is read-only. NuGet keeps a package folder (`NUGET_PACKAGES`) and an HTTP cache (`NUGET_HTTP_CACHE_PATH`) in the home directory.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The entrypoint builds the trust at pod start | `entrypoint.sh` writes `$SSL_CERT_FILE` (the system roots plus the mounted CA), runs `cert-sync --user` on it, writes a `ready` file that the readiness probe checks, then becomes `fwd` | Every `kubectl exec` of every test finds the trust done; the CA is mounted, never baked; the pod is not ready before both runtimes trust the CA | A pod start takes a few seconds longer (the sync of about 120 roots) |
+| (b) The CA is mounted and each test passes options | `-p:...`/`--ca` flags per call | No start step | `dotnet` and nuget.exe have no option for an extra CA; it would be a wrapper per call, with the sync cost on every Mono invocation |
+| (c) The CA in the image | Built per cluster | No start step | The CA of a recreated cluster differs from the image's; a stale CA looks like a client bug (a stale copy of `.dev/pki/ca.crt` in a checkout showed exactly that while this was built: the clients failed on the certificate of a cluster that had been recreated) |
+
+**Choice:** (a). A test gives every run its own `NUGET_PACKAGES` and `NUGET_HTTP_CACHE_PATH` below `/work`, because the
+default folders are shared by all tests of a pod: a package already unpacked there, or a metadata document in the HTTP cache,
+makes a restore skip the server and the counters of the test upstream (E3.2: one request per `.nupkg`) would count nothing.
+`HOME` stays `/work` (an emptyDir), where Mono keeps its store.
+
+**Rationale:** verified in a pod of the dev cluster (restricted security context, read-only root): both runtimes verify the edge
+and the test upstream, and refuse a certificate without the CA. The development agent would revisit this if a client needs the CA
+in a place this does not reach (a tool that reads `/etc/ssl/certs` directly): the entrypoint would then also write a hashed
+directory for `SSL_CERT_DIR`.
+
+**Applied in the spec:** none. Elsewhere: [test/e2e/nugetclients/entrypoint.sh](../../../test/e2e/nugetclients/entrypoint.sh),
+[docs/developer/e2e.md](../../developer/e2e.md#the-nuget-clients).
+
 ## What this does not cover
 
 ### H-35 · Cached NuGet packages are not checked against an upstream digest

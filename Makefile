@@ -195,7 +195,7 @@ compat-check: $(OASDIFF_BIN) ## R-ARCH-025 (OpenAPI breaking changes) and R-ARCH
 # One version per tool (E0.2): every pin of a tool that is installed on PATH is compared with the
 # pin, so a copy of another version can never be the one a check ran with.
 .PHONY: versions-check
-versions-check: ## One version per tool (E0.2): go, Node, sqlc, oapi-codegen, the linters, the CI tools and the npm client pins against their pins
+versions-check: ## One version per tool (E0.2): go, Node, sqlc, oapi-codegen, the linters, the CI tools and the npm and NuGet client pins against their pins
 	@set -e; fail=0; \
 	have="$$(go env GOVERSION | sed 's/^go//')"; \
 	if [ "$$have" != "$(GO_MOD_GO)" ]; then echo "go: running $$have, go.mod pins $(GO_MOD_GO)"; fail=1; fi; \
@@ -222,6 +222,7 @@ versions-check: ## One version per tool (E0.2): go, Node, sqlc, oapi-codegen, th
 	if docker buildx version >/dev/null 2>&1; then have="$$(docker buildx version | awk '{print $$2}')"; \
 	  if [ "$$have" != "$(BUILDX_VERSION)" ]; then echo "docker buildx: installed $$have, pin is $(BUILDX_VERSION)"; fail=1; fi; fi; \
 	node test/e2e/clients/check-pins.mjs "$(NODE_VERSION)" "$(E2E_CLIENTS_NODE_IMAGE)" || fail=1; \
+	node test/e2e/nugetclients/check-pins.mjs "$(E2E_NUGETCLIENTS_SDK_IMAGE)" "$(NUGETVECTORS_SDK_IMAGE)" "$(E2E_NUGETCLIENTS_MONO_VERSION)" "$(E2E_NUGETCLIENTS_NUGET_EXE_VERSION)" "$(E2E_NUGETCLIENTS_NUGET_EXE_SHA256)" || fail=1; \
 	if [ $$fail -ne 0 ]; then exit 1; fi; \
 	echo "versions ok: go $$(go env GOVERSION), node $(NODE_VERSION), sqlc, oapi-codegen match their pins"
 
@@ -379,7 +380,7 @@ dev-drain: ## Drain a node under k6 load with cursor-persisting jobs; fails on a
 	deploy/dev/drain.sh
 
 .PHONY: e2e
-e2e: ## End-to-end tests on the dev cluster (deploy/dev/e2e.sh); SET=push|failover|access-long|access|full|drain|npm|npm-closing|npm-ha|npm-ha-crash|npm-ha-soak|npm-ha-closing|<go test -run regexp>, default: all but the profile switch
+e2e: ## End-to-end tests on the dev cluster (deploy/dev/e2e.sh); SET=push|failover|access-long|access|full|drain|npm|npm-closing|npm-ha|npm-ha-crash|npm-ha-soak|npm-ha-closing|nuget-clients|nuget|nuget-closing|nuget-ha|<go test -run regexp>, default: all but the profile switch
 	deploy/dev/e2e.sh '$(SET)'
 
 # >>> M2 npm-clients
@@ -387,6 +388,18 @@ e2e: ## End-to-end tests on the dev cluster (deploy/dev/e2e.sh); SET=push|failov
 npm-clients-image: ## Build the image of the npm client matrix (R-NPM-045: npm 10-12, pnpm 10-12, Yarn 4, Yarn 1) into the local Docker; NPM_CLIENTS_IMAGE, default trove-e2e-clients:dev
 	test/e2e/clients/build.sh $(or $(NPM_CLIENTS_IMAGE),trove-e2e-clients:dev)
 # <<< M2 npm-clients
+
+# >>> M3 nuget-clients
+# The NuGet clients image (R-NUGET-027: the .NET 10 SDK and nuget.exe on Mono, test/e2e/nugetclients, docs/developer/e2e.md#the-nuget-clients)
+# and its smoke test. Edit only between the markers.
+.PHONY: nuget-clients-image
+nuget-clients-image: ## Build the NuGet clients image (dotnet of the pinned SDK, nuget.exe on Mono) into the local Docker; NUGET_CLIENTS_IMAGE, default trove-e2e-nugetclients:dev
+	test/e2e/nugetclients/build.sh $(or $(NUGET_CLIENTS_IMAGE),trove-e2e-nugetclients:dev)
+
+.PHONY: nuget-clients-smoke
+nuget-clients-smoke: nuget-clients-image nuget-stub-image ## Run the NuGet clients image like a pod against the counting NuGet test upstream: both runtimes, the CA bundle, TLS verified and refused (no cluster)
+	test/e2e/nugetclients/smoke.sh $(or $(NUGET_CLIENTS_IMAGE),trove-e2e-nugetclients:dev)
+# <<< M3 nuget-clients
 
 # >>> M2 npm-fuzz
 # The fuzz run of the closing phase (roadmap M2, E2.6): npm's Match and Inspect with the R-ARCH-028 limits checked on

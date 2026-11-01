@@ -1,0 +1,3 @@
+#!/bin/sh
+# The nuget.exe row of R-NUGET-027 (E2E_NUGETCLIENTS_NUGET_EXE_VERSION in tools/versions.env), run on Mono.
+exec mono /opt/nuget/nuget.exe "$@"

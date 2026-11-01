@@ -27,6 +27,13 @@
 #   e2e.sh npm-ha-soak  the pod crash with ten force-deletes over 20 minutes, then the npm load scripts of R-ARCH-027
 #                       (perf/k6/npm.js, reported); the nightly Performance workflow runs it. npm-ha-closing runs npm-ha,
 #                       npm-ha-soak and the Valkey outage in one go
+#   e2e.sh nuget-clients  the smoke test of the NuGet client pods (R-NUGET-027: dotnet and nuget.exe run, the base URL reaches the
+#                       cluster with a verified certificate); builds the clients image and starts the pods, which stay up
+#   e2e.sh nuget-clients-down  removes the NuGet client pods
+#   e2e.sh nuget        the NuGet acceptance tests (every TestNuGet... except TestNuGetClosing... and TestNuGetHA...), the counting
+#                       NuGet test upstream and three client pods; CI: job e2e-nuget
+#   e2e.sh nuget-closing  TestNuGetClosing...: the additions of the run that closes the phase (dispatch with closing=true)
+#   e2e.sh nuget-ha     TestNuGetHA...: drain and failover under the NuGet load (nightly HA and Performance workflow)
 #   e2e.sh <regex>      any other argument is a `go test -run` expression
 #
 # Environment: TROVE_DEV_HTTP_PORT (the port the cluster was created with; read back from the node),
@@ -36,6 +43,8 @@
 # The npm client pods (set clients): TROVE_E2E_NPM_CLIENTS_PODS (how many, default 1), TROVE_E2E_NPM_CLIENTS_TARGET
 # (host:port the forwarder in each pod relays to, default the in-cluster HAProxy Ingress HTTPS port),
 # TROVE_E2E_NPM_CLIENTS_IMAGE_BUILD=0 (use the image already built locally instead of rebuilding it).
+# The NuGet client pods (sets nuget*): TROVE_E2E_NUGET_CLIENTS_PODS, TROVE_E2E_NUGET_CLIENTS_TARGET and
+# TROVE_E2E_NUGET_CLIENTS_IMAGE_BUILD=0 as for npm; TROVE_E2E_NUGETSTUB=1 deploys the counting NuGet test upstream.
 set -euo pipefail
 # shellcheck source=deploy/dev/lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -61,6 +70,17 @@ case "$set_name" in
   # the public registry. Started by the workflow only when it is dispatched with closing=true (Q-NPM-46).
   npm-closing) run='^TestNPMClosing'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NPM_CLOSING=1 ;;
   # <<< M2 npm-clients
+  # >>> M3 nuget-clients
+  # The NuGet client pods (R-NUGET-027, docs/developer/e2e.md#the-nuget-clients): the smoke test of the clients alone, and
+  # the NuGet acceptance tests (test/e2e/nuget_*_test.go, every test named TestNuGet...) with the counting test upstream and
+  # three client pods. The closing and nightly tests (TestNuGetClosing..., TestNuGetHA...) are sets of their own and are
+  # skipped by `nuget` (Q-NUGET-34). CI runs `nuget` as the job e2e-nuget on every change.
+  nuget-clients) run='^TestNuGetClients$'; NUGET_CLIENTS=1 ;;
+  nuget-clients-down) NUGET_CLIENTS=down ;;
+  nuget) run='^TestNuGet'; skip='^TestNuGet(Closing|HA)'; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NUGETSTUB=1 ;;
+  nuget-closing) run='^TestNuGetClosing'; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NUGETSTUB=1 TROVE_E2E_NUGET_CLOSING=1 ;;
+  nuget-ha) run='^TestNuGetHA'; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NUGETSTUB=1 ;;
+  # <<< M3 nuget-clients
   # Drain and failover under npm load (E2.11, test/e2e/npm_ha_test.go): drain variant A of R-HA-059, the PostgreSQL
   # switchover and the Valkey failover of R-HA-052 under eight npm ci loops, a publish loop and k6 (CI: e2e-npm leg
   # npm-ha of the nightly HA and Performance workflow); the pod crash in a set of its own (npm-ha-crash, three force-deletes,
@@ -76,6 +96,9 @@ esac
 
 # TROVE_E2E_RUN replaces the expression of any set (a single subtest while developing: TROVE_E2E_RUN='^TestNPMMatrix/rows/R-NPM-045_E2.1_npm11').
 run="${TROVE_E2E_RUN:-${run:-}}"
+# A set may skip tests (go test -skip); TROVE_E2E_RUN names the tests itself, so it drops the skip.
+skip="${skip:-}"
+[ -z "${TROVE_E2E_RUN:-}" ] || skip=
 
 EDGE_PORT="$(docker port "${CLUSTER}-control-plane" 30443/tcp 2>/dev/null | head -1 | sed 's/.*://' || true)"
 EDGE_PORT="${EDGE_PORT:-$DEV_HTTP_PORT}"
@@ -143,6 +166,28 @@ if [ "${TROVE_E2E_NPMSTUB:-0}" = "1" ]; then
   export TROVE_E2E_NPMSTUB_HOST="npmstub.$NS.svc"
 fi
 # <<< M2 npm-stub
+
+# >>> M3 nuget-stub
+# ── the counting NuGet test upstream ─────────────────────────────────────────
+# TROVE_E2E_NUGETSTUB=1 builds the image of test/nugetstub (make nuget-stub-image), loads it into kind and (re)starts
+# the stub of deploy/dev/nugetstub.yaml: Services nugetstub.<ns>.svc (index, registrations) and nugetstub-content.<ns>.svc
+# (flat container, search) on 443 in front of one pod, TLS from the dev CA, control token in Secret trove-nugetstub. The
+# tests read TROVE_E2E_NUGETSTUB_HOST (the API host; the upstream URL of a remote repository is
+# https://$TROVE_E2E_NUGETSTUB_HOST/v3/index.json) and TROVE_E2E_NUGETSTUB_CONTENT_HOST (the second host, which the
+# repository names in its extraHosts, R-NUGET-014). trove trusts the dev CA for upstreams through
+# proxy.outbound.tls.ca_files (values-dev.yaml). Nothing here runs without the switch.
+if [ "${TROVE_E2E_NUGETSTUB:-0}" = "1" ]; then
+  log "building the NuGet test upstream image for linux/$ARCH"
+  (cd "$REPO_ROOT" && make --no-print-directory nuget-stub-image IMAGE_ARCH="$ARCH") >"$OUT/nugetstub-image.log" 2>&1 || { tail -20 "$OUT/nugetstub-image.log" >&2; die "NuGet test upstream image build failed"; }
+  kind load docker-image trove-e2e-nugetstub:dev --name "$CLUSTER" >"$OUT/nugetstub-load.log" 2>&1 || { tail -20 "$OUT/nugetstub-load.log" >&2; die "kind load of the NuGet test upstream failed"; }
+  log "starting the NuGet test upstream"
+  render "$DEV_DIR/nugetstub.yaml" | kn apply -f - >/dev/null
+  kn wait --for=condition=Ready certificate/trove-nugetstub-tls --timeout=3m >/dev/null
+  kn rollout restart deployment/trove-nugetstub >/dev/null   # same tag, new image content
+  kn rollout status deployment/trove-nugetstub --timeout=3m >/dev/null || { kn describe pod -l app.kubernetes.io/name=trove-nugetstub >&2; die "the NuGet test upstream did not become ready"; }
+  export TROVE_E2E_NUGETSTUB_HOST="nugetstub.$NS.svc" TROVE_E2E_NUGETSTUB_CONTENT_HOST="nugetstub-content.$NS.svc"
+fi
+# <<< M3 nuget-stub
 
 # ── the tests ────────────────────────────────────────────────────────────────
 # The whole path is TLS (R-ARCH-035): the edge serves the dev CA's certificate for localhost, and the
@@ -244,10 +289,74 @@ if [ "${NPM_CLIENTS:-}" = 1 ]; then
 fi
 # <<< M2 npm-clients
 
+# >>> M3 nuget-clients
+# The client pods of the NuGet acceptance tests (R-NUGET-027, docs/developer/e2e.md#the-nuget-clients), built like the npm
+# ones: fwd is PID 1 behind entrypoint.sh, which first builds the trust of .NET and Mono from the mounted dev CA (the
+# bundle at SSL_CERT_FILE, the Mono store below HOME) and then marks the pod ready. The clients run through
+# `kubectl exec <pod> -- dotnet|nuget ...`; every test sets NUGET_PACKAGES and NUGET_HTTP_CACHE_PATH below /work.
+NUGET_CLIENTS_IMAGE="trove-e2e-nugetclients:dev"
+NUGET_CLIENTS_LABEL="app.kubernetes.io/component=e2e-nuget-client"
+NUGET_CLIENTS_PREFIX="trove-e2e-nuget-"
+NUGET_CLIENTS_COUNT="${TROVE_E2E_NUGET_CLIENTS_PODS:-${NUGET_CLIENTS_DEFAULT_PODS:-1}}"
+
+nuget_clients_down() {
+  kn delete pod -l "$NUGET_CLIENTS_LABEL" --ignore-not-found --wait=true >/dev/null
+  kn delete configmap trove-e2e-nuget-ca --ignore-not-found >/dev/null
+}
+
+nuget_clients_up() {
+  local target="${TROVE_E2E_NUGET_CLIENTS_TARGET:-haproxy-ingress.ingress-controller.svc.cluster.local:443}" i
+  [ -n "${CA_FILE:-}" ] && [ -s "$CA_FILE" ] || die "the client pods verify the edge against the dev CA, which is missing (TROVE_DEV_CA_FILE, TROVE_DEV_SCHEME=https; run make dev-up)"
+  if [ "${TROVE_E2E_NUGET_CLIENTS_IMAGE_BUILD:-1}" != 0 ]; then
+    "$REPO_ROOT/test/e2e/nugetclients/build.sh" "$NUGET_CLIENTS_IMAGE" >"$OUT/nuget-clients-image.log" 2>&1 || { tail -20 "$OUT/nuget-clients-image.log" >&2; die "NuGet clients image build failed"; }
+  fi
+  kind load docker-image "$NUGET_CLIENTS_IMAGE" --name "$CLUSTER" >"$OUT/nuget-clients-load.log" 2>&1 || { tail -20 "$OUT/nuget-clients-load.log" >&2; die "kind load failed"; }
+  nuget_clients_down
+  kn create configmap trove-e2e-nuget-ca --from-file=ca.crt="$CA_FILE" >/dev/null
+  log "starting $NUGET_CLIENTS_COUNT NuGet client pod(s) forwarding localhost:$EDGE_PORT to $target"
+  for i in $(seq 0 $((NUGET_CLIENTS_COUNT - 1))); do
+    jq -n --arg name "${NUGET_CLIENTS_PREFIX}${i}" --arg ns "$NS" --arg image "$NUGET_CLIENTS_IMAGE" \
+      --arg listen "127.0.0.1:$EDGE_PORT" --arg target "$target" '
+      { apiVersion: "v1", kind: "Pod",
+        metadata: { name: $name, namespace: $ns, labels: { "app.kubernetes.io/name": "trove-e2e", "app.kubernetes.io/component": "e2e-nuget-client" } },
+        spec: {
+          terminationGracePeriodSeconds: 5,
+          nodeSelector: { "node-role.kubernetes.io/control-plane": "" },
+          tolerations: [{ key: "node-role.kubernetes.io/control-plane", operator: "Exists", effect: "NoSchedule" }],
+          automountServiceAccountToken: false,
+          # the host of the customers endpoint (values-dev.yaml) is the forwarder too: R-NUGET-034 uses its registry URLs unchanged
+          hostAliases: [{ ip: "127.0.0.1", hostnames: ["packages.trove.localhost"] }],
+          securityContext: { runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: { type: "RuntimeDefault" } },
+          containers: [{
+            name: "clients", image: $image, imagePullPolicy: "IfNotPresent",
+            args: ["-listen", $listen, "-to", $target, "-target-file", "/tmp/target"],
+            env: [{ name: "TROVE_CA_FILE", value: "/etc/trove-ca/ca.crt" }, { name: "SSL_CERT_FILE", value: "/tmp/trove-ca/bundle.crt" }],
+            readinessProbe: { exec: { command: ["test", "-f", "/tmp/trove-ca/ready"] }, periodSeconds: 2 },
+            securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } },
+            volumeMounts: [
+              { name: "ca", mountPath: "/etc/trove-ca", readOnly: true },
+              { name: "work", mountPath: "/work" },
+              { name: "tmp", mountPath: "/tmp" } ] }],
+          volumes: [
+            { name: "ca", configMap: { name: "trove-e2e-nuget-ca" } },
+            { name: "work", emptyDir: { sizeLimit: "4Gi" } },
+            { name: "tmp", emptyDir: { sizeLimit: "512Mi" } } ] } }' \
+      | kn apply -f - >/dev/null
+  done
+  kn wait --for=condition=Ready pod -l "$NUGET_CLIENTS_LABEL" --timeout=180s >/dev/null || { kn describe pod -l "$NUGET_CLIENTS_LABEL" >&2; die "the NuGet client pods did not become ready"; }
+}
+
+if [ "${NUGET_CLIENTS:-}" = down ]; then nuget_clients_down; log "NuGet client pods removed"; exit 0; fi
+if [ "${NUGET_CLIENTS:-}" = 1 ]; then
+  nuget_clients_up
+  export TROVE_E2E_NUGET_CLIENTS_POD_PREFIX="$NUGET_CLIENTS_PREFIX" TROVE_E2E_NUGET_CLIENTS_PODS="$NUGET_CLIENTS_COUNT"
+fi
+# <<< M3 nuget-clients
+
 log "go test -tags e2e -run '$run' (report: .out/test-e2e.json, artifacts: $OUT)"
 cd "$REPO_ROOT"
 set -o pipefail
-if ! go test -count=1 -tags e2e -timeout "${TROVE_E2E_TIMEOUT:-90m}" -json -run "$run" ./test/e2e \
+if ! go test -count=1 -tags e2e -timeout "${TROVE_E2E_TIMEOUT:-90m}" -json -run "$run" ${skip:+-skip "$skip"} ./test/e2e \
   | tee "$REPO_ROOT/.out/test-e2e.json" \
   | jq -r --unbuffered 'select(.Action=="output") | .Output' | { grep -v -E '^(=== |PASS$)' || true; }; then
   log "e2e FAILED (report: .out/test-e2e.json, artifacts: $OUT)"

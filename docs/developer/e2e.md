@@ -110,6 +110,13 @@ make e2e SET=npm-ha-crash    # E2.11: the pod crash under the npm load, three fo
 make e2e SET=npm-ha-soak     # the pod crash with ten force-deletes over 20 minutes, then perf/k6/npm.js (nightly)
 make e2e SET=npm-ha-closing  # npm-ha, npm-ha-soak and the 5-minute Valkey outage under the npm load (the closing run's leg)
 make npm-clients-image       # only build the image into the local Docker
+make e2e SET=nuget-clients   # build the NuGet clients image, start the client pods, run the smoke test (the pods stay up)
+make e2e SET=nuget-clients-down  # remove the NuGet client pods
+make e2e SET=nuget           # every TestNuGet... but TestNuGetClosing... and TestNuGetHA...; the test upstream and three client pods (Q-NUGET-34)
+make e2e SET=nuget-closing   # the additions of the closing run (TestNuGetClosing...; exports TROVE_E2E_NUGET_CLOSING=1)
+make e2e SET=nuget-ha        # TestNuGetHA...: drain and failover under the NuGet load (nightly)
+make nuget-clients-image     # only build the NuGet clients image into the local Docker
+make nuget-clients-smoke     # the image like a pod against the counting NuGet test upstream, without a cluster
 make fuzz-npm FUZZ=FuzzMatch FUZZTIME=1m   # npm's fuzz targets (CI: 30 minutes, closing run only)
 ```
 
@@ -1146,10 +1153,86 @@ stub.SetMode(nugetstub.Mode{DelayMS: map[string]int{"all": 2000}})
 stub.Publish("Contoso.Util", "2.2.0", nil)
 ```
 
-### Not wired yet
+### In the cluster
 
-`make nuget-stub-image`, the apply step in `deploy/dev/e2e.sh` (`TROVE_E2E_NUGETSTUB=1`, [deploy/dev/nugetstub.yaml](../../deploy/dev/nugetstub.yaml))
-and the CI jobs are described in the work-package hand-over and added with the e2e work package; the manifest is not applied by any script yet.
+[deploy/dev/nugetstub.yaml](../../deploy/dev/nugetstub.yaml): the Services `nugetstub` (API host: index, registrations) and
+`nugetstub-content` (content host: flat container, search) on 443 in front of one pod (the counters are in memory), a certificate
+of the dev CA for both names, the control token in Secret `trove-nugetstub` (key `control-token`), TCP probes (an HTTP probe would
+be counted). `deploy/dev/e2e.sh` (marker `M3 nuget-stub`) builds the image (`make nuget-stub-image`), loads it, applies the
+manifest and restarts the Deployment when `TROVE_E2E_NUGETSTUB=1` (the sets `nuget`, `nuget-closing` and `nuget-ha` export it), and
+exports `TROVE_E2E_NUGETSTUB_HOST` (`nugetstub.<ns>.svc`) and `TROVE_E2E_NUGETSTUB_CONTENT_HOST` (`nugetstub-content.<ns>.svc`).
+
+- The upstream URL of a remote repository under test is `https://$TROVE_E2E_NUGETSTUB_HOST/v3/index.json`; its `extraHosts`
+  name `$TROVE_E2E_NUGETSTUB_CONTENT_HOST` (R-NUGET-014), because the index names that second host for the files and the search.
+- trove trusts the dev CA for upstreams through `proxy.outbound.tls.ca_files` ([values-dev.yaml](../../deploy/dev/values-dev.yaml): the
+  `ca.crt` of Secret `trove-keycloak-tls`, which cert-manager fills with the dev CA that signs the stub's certificate). Nothing was
+  added for NuGet.
+- Verified on the dev cluster (2026-11-01): the stub starts, a client pod of the NuGet image restores and installs `Contoso.Util`
+  from `https://nugetstub.trove.svc/v3/index.json` with both clients (so the CA, the two Services and the name in the documents
+  work from inside the cluster), and the `ca.crt` of Secret `trove-keycloak-tls` is the dev CA. Not verified: a fetch by a trove
+  replica (the cluster ran a release without the NuGet format).
+
+The CI jobs for the stub's reference check are added with the CI work package.
+
+## The NuGet clients
+
+The Linux rows of [R-NUGET-027](../spec/formats/nuget.md#r-nuget-027--acceptance-test-suite) run the .NET 10 SDK (`dotnet`) and
+nuget.exe against the `scatter` profile, from pods built like the npm client pods. Decisions:
+[Q-NUGET-33](../spec/formats/nuget.md#q-nuget-33--the-clients-image-one-net-sdk-and-nugetexe-on-mono) (what is in the image),
+[Q-NUGET-34](../spec/formats/nuget.md#q-nuget-34--the-e2e-sets-of-the-nuget-tests) (the sets),
+[Q-NUGET-35](../spec/formats/nuget.md#q-nuget-35--how-the-clients-pod-gets-the-dev-ca-and-what-a-test-must-set-per-run) (trust and state).
+
+```
+test/e2e/nugetclients/
+  Dockerfile       FROM the pinned .NET SDK image; Mono at an exact apt version; nuget.exe by version and SHA-256 (a build stage)
+  bin/nuget        the nuget.exe row: `mono /opt/nuget/nuget.exe "$@"` (`dotnet` is the SDK's own)
+  entrypoint.sh    PID 1: builds the trust of .NET and Mono from the mounted dev CA, writes the ready file, becomes fwd
+  build.sh         builds fwd (the forwarder of the npm clients, test/e2e/clients/fwd) and the image (make nuget-clients-image, e2e.sh)
+  smoke.sh         the image as a pod against the counting test upstream, no cluster (make nuget-clients-smoke)
+  check-pins.mjs   what make versions-check verifies about the pins and the Dockerfile
+```
+
+- **The pins live once** in [tools/versions.env](../../tools/versions.env): `E2E_NUGETCLIENTS_SDK_IMAGE` (the same value as
+  `NUGETVECTORS_SDK_IMAGE`: one .NET SDK), `E2E_NUGETCLIENTS_MONO_VERSION` (exact apt version, `6.8.0.105+dfsg-3.6ubuntu2`),
+  `E2E_NUGETCLIENTS_NUGET_EXE_VERSION` and `_SHA256`. `make versions-check` runs `check-pins.mjs`: the SDK tag is a .NET 10
+  tag and equals the vectors' pin, the Mono version and the digest have their shapes, the Dockerfile takes every pin as a build
+  argument without a default and has no `FROM` but the pinned image, and `bin/nuget` runs the file the Dockerfile installs.
+  A new nuget.exe is a new version and its SHA-256 in one edit (`curl -L https://dist.nuget.org/win-x86-commandline/v<ver>/nuget.exe | shasum -a 256`);
+  the build fails on a digest that does not match.
+- **Mono is the Ubuntu package** of the SDK image (24.04: 6.8.0.105), `mono-complete` plus `ca-certificates-mono` for `cert-sync`.
+  The apt version is exact, so a superseded package fails the build. Mono's TLS stack ends at TLS 1.2: a listener with
+  `min_version: "1.3"` is not reachable by nuget.exe here (the defaults are 1.2). Verified: nuget.exe 7.9.0.83 starts, installs from
+  the test upstream and reaches the dev edge through the forwarder (linux/arm64). Not verified: linux/amd64, push, delete and the
+  symbol push by nuget.exe on Mono.
+- **Trust.** `entrypoint.sh` writes `$SSL_CERT_FILE` (`/tmp/trove-ca/bundle.crt`: the system roots plus the CA mounted at
+  `/etc/trove-ca/ca.crt`), runs `cert-sync --user` on it (the Mono store below `$HOME/.config/.mono/certs`, `HOME=/work`), then writes
+  `/tmp/trove-ca/ready`, which the readiness probe checks, and executes `fwd`. The pod sets `SSL_CERT_FILE` in its environment,
+  so every `kubectl exec` has it. `smoke.sh` checks both runtimes both ways: with the CA a restore and an install succeed over
+  TLS, without it (system roots only; an empty Mono store) both fail on the certificate.
+- **State per test.** `NUGET_PACKAGES` (the global packages folder) and `NUGET_HTTP_CACHE_PATH` default to folders in `HOME`
+  that all tests of a pod share; a package or document found there never reaches the server. A test sets both to a new directory
+  below `/work` (and uses `-NoCache` / `--no-cache` where it must also bypass the in-process cache) before it counts requests.
+  `DOTNET_CLI_TELEMETRY_OPTOUT`, `DOTNET_NOLOGO`, `DOTNET_SKIP_FIRST_TIME_EXPERIENCE`, `DOTNET_SKIP_WORKLOAD_INTEGRITY_CHECK`
+  (without it `dotnet` prints a workload warning on a read-only install) and `NUGET_XMLDOC_MODE=skip` are set in the image.
+- **The base URL is the real one**, as for npm: `fwd -listen 127.0.0.1:<edge port> -to <target>` is the only process; the clients
+  use `https://localhost:<port>/api/nuget/<key>/v3/index.json` and verify `localhost` against the dev CA. The pod also maps
+  `packages.trove.localhost` to the forwarder (the customers endpoint of the dev profile). `TROVE_E2E_NUGET_CLIENTS_PODS` (default 1;
+  3 for the sets `nuget*`), `TROVE_E2E_NUGET_CLIENTS_TARGET` and `TROVE_E2E_NUGET_CLIENTS_IMAGE_BUILD=0` act as their npm
+  counterparts. The pods are `trove-e2e-nuget-<i>`, the ConfigMap with the CA `trove-e2e-nuget-ca`; the tests read
+  `TROVE_E2E_NUGET_CLIENTS_POD_PREFIX` and `TROVE_E2E_NUGET_CLIENTS_PODS`.
+- **Running a client.** `kubectl -n trove exec trove-e2e-nuget-0 -- dotnet --version`, `... -- nuget help`. The Go side is
+  `nugetClientExec` (output, fails the test on a non-zero exit) and `nugetClientTry` (output of both streams plus the error, for a
+  command expected to fail) in [nuget_clients_test.go](../../test/e2e/nuget_clients_test.go). `dotnet package search` hides the
+  HTTP status of a failing source; `dotnet restore` prints it (`NU1301 ... 401 (Unauthorized)`), and `dotnet` exits 0 on some
+  failures, so a test reads the output as well as the exit code.
+- **The smoke test.** `TestNuGetClients` has three subtests: `dotnet --version` equals the tag of `E2E_NUGETCLIENTS_SDK_IMAGE`,
+  `nuget help` starts with `NuGet Version: <pinned>.`, and both clients, asked for a source on the dev edge, get an HTTP status of
+  trove (401 or 404) and no certificate error. Without the change (no pod, wrong CA) the third subtest fails with the certificate error
+  of the clients: seen on 2026-11-01 when `.dev/pki/ca.crt` was the CA of a cluster that had been recreated.
+- **A stale CA looks like a client bug.** `.dev/pki/ca.crt` is written by `up.sh` and is not refreshed when the cluster is
+  recreated another way; compare with `kubectl -n trove get secret trove-dev-ca -o jsonpath='{.data.ca\.crt}' | base64 -d`, or set
+  `TROVE_DEV_CA_FILE`.
+- **Not built.** The Windows row (nuget.exe and the SDK on a Windows runner), Visual Studio (manual), and the CI job `e2e-nuget`.
 
 ## Extension checklist
 

@@ -180,6 +180,7 @@ trove/
 │   └── e2e/                  # build tag `e2e`: M0 scenarios (e03 to e16, e99), the M1 access-core scenarios (e1_01 login,
 │                             # e1_08 rate limits, e1_11 scatter, e1_13 transfer, e1_14 exposure), m1_env_test.go; k6 load script
 │                             # clients/: the npm client matrix image (R-NPM-045), npm_clients_test.go
+│                             # nugetclients/: the NuGet clients image (.NET SDK, nuget.exe on Mono; R-NUGET-027), nuget_clients_test.go
 ├── perf/                     # data of the performance tests: npm/reference (package.json, package-lock.json), see perf/README.md
 ├── .github/
 │   ├── workflows/            # release.yml (Test and Release), build.yml (Release Docker & Helm), renovate.yml

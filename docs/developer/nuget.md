@@ -134,8 +134,11 @@ kept regression input. No CI leg runs these yet (the npm legs run on the closing
 
 [test/nugetstub](../../test/nugetstub) is the NuGet counterpart of the npm stub: a generated corpus, both service hosts on one listener,
 registration hives, flat container, search, weak ETags, per-host counters and fault modes. The section "The counting NuGet test upstream" in
-[e2e.md](e2e.md) describes it; `make nuget-stub-image` builds its image. The deploy wiring (a `TROVE_E2E_NUGETSTUB` block in
-`deploy/dev/e2e.sh` next to the npm one, `extraHosts` for the content service, the dev CA in `proxy.outbound.tls.ca_files`) is not done.
+[e2e.md](e2e.md) describes it; `make nuget-stub-image` builds its image. `deploy/dev/e2e.sh` deploys it when `TROVE_E2E_NUGETSTUB=1` (marker `M3 nuget-stub`; the sets
+`nuget`, `nuget-closing` and `nuget-ha` set it) and exports `TROVE_E2E_NUGETSTUB_HOST` and `TROVE_E2E_NUGETSTUB_CONTENT_HOST`; the dev CA is
+already in `proxy.outbound.tls.ca_files` of the dev profile, and a remote repository under test names the content host in its
+`extraHosts` ([e2e.md](e2e.md#in-the-cluster-1)). The clients that talk to trove are the image of [test/e2e/nugetclients](../../test/e2e/nugetclients)
+(`make nuget-clients-image`, `make nuget-clients-smoke`; [e2e.md](e2e.md#the-nuget-clients)).
 
 ## What the contract gives the format
 
