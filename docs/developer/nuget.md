@@ -147,5 +147,5 @@ registration hives, flat container, search, weak ETags, per-host counters and fa
 | Links in a refusal (the service-index URL of a 404) | `formats.RefusalFrom(r)` (Q-ARCH-263) |
 | Spool a multipart part with its own length | `IngestOptions.Length` (Q-ARCH-264) |
 | A snippet per shell, `dotnet add package <id> --version <v>` | `SetupTemplate.VersionSpec`, the `powershell` and `cmd` languages (Q-API-187 to Q-API-189) |
-| `X-NuGet-ApiKey` accepted as a credential | `Route.APIKey` (declared; the authentication stage does not read it yet, Q-ARCH-266) |
+| `X-NuGet-ApiKey` accepted as a credential | `APIKey: true` on the push, delete, relist and symbol-push routes; the authentication stage reads the header only there, through the dispatcher's match, and never takes the session cookie there (Q-ARCH-266, Q-AUTH-186, Q-AUTH-187; [identity.md](identity.md#request-path)) |
 | `checksumPolicy: require` refused | `catalog.Facts.ChecksumRequireUnsupported` (Q-ARCH-269) |

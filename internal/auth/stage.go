@@ -47,7 +47,7 @@ type AnonymousSettings interface {
 
 // Options configure [New].
 type Options struct {
-	// Tokens validates Bearer and Basic credentials.
+	// Tokens validates Bearer, Basic and API-key credentials.
 	Tokens token.Validator
 	// Uses records the last use of a token once the whole authentication has
 	// succeeded (R-AUTH-031). It is an explicit input and not found on Tokens, so
@@ -72,6 +72,10 @@ type Options struct {
 	ClientAddr func(*http.Request) netip.Addr
 	// BasicEnabled is auth.clients.basic.enabled.
 	BasicEnabled bool
+	// APIKeyHeader is auth.clients.nuget_api_key_header: the stage examines
+	// [HeaderAPIKey] on the routes of [EndpointRules.APIKeyRoute]. Off, the header
+	// is never read and only Authorization applies there (R-AUTH-033).
+	APIKeyHeader bool
 	Metrics      *principal.Metrics
 	Log          *slog.Logger
 }
@@ -105,15 +109,83 @@ func (s *Stage) Authenticate(r *http.Request, ep EndpointRules) (Result, error) 
 		// credential for this stage (R-AUTH-001).
 		return anonymousResult(), nil
 	}
+	route := routeAnswer{ask: ep.APIKeyRoute, r: r}
+	if raw, ok := s.apiKey(r, &route); ok {
+		return s.byToken(r, ep, raw, MethodAPIKey, "")
+	}
 	if raw, method, user, present := credentialHeader(r); present {
 		return s.byToken(r, ep, raw, method, user)
 	}
 	if ep.AcceptsSession && s.o.Sessions != nil && sessionAllowed(r) {
-		if c, err := r.Cookie(SessionCookie); err == nil && c.Value != "" {
+		// The cookie is never a credential on an API-key route, whatever the
+		// method (R-NUGET-012, Q-AUTH-187).
+		if c, err := r.Cookie(SessionCookie); err == nil && c.Value != "" && !route.is() {
 			return s.bySession(r, c.Value)
 		}
 	}
 	return s.noCredential(ctx, r, ep)
+}
+
+// routeAnswer asks [EndpointRules.APIKeyRoute] at most once per request, and only
+// when a credential depends on the answer: a well-formed token in the API-key
+// header, or a session cookie the path rule would accept. A request with neither,
+// which is nearly every request, costs no route match.
+type routeAnswer struct {
+	ask   func(*http.Request) bool
+	r     *http.Request
+	asked bool
+	yes   bool
+}
+
+func (q *routeAnswer) is() bool {
+	if !q.asked {
+		q.asked = true
+		q.yes = q.ask != nil && q.ask(q.r)
+	}
+	return q.yes
+}
+
+// apiKey returns the token of the API-key header (R-AUTH-001 item 1, R-AUTH-033)
+// on a route that declares the header. A value that holds no well-formed token -
+// the placeholder "az" some setups pass where no key is configured - is ignored
+// and the Authorization header applies; so is the header on every other route,
+// and everywhere while auth.clients.nuget_api_key_header is off. Only the first
+// header line is read, as for Authorization.
+func (s *Stage) apiKey(r *http.Request, route *routeAnswer) (string, bool) {
+	if !s.o.APIKeyHeader {
+		return "", false
+	}
+	raw := apiKeyToken(r.Header.Get(HeaderAPIKey))
+	if raw == "" || !route.is() {
+		return "", false
+	}
+	return raw, true
+}
+
+// apiKeyToken is the trove token an API-key header value carries: the whole value,
+// or its part after the last ':' (the "<user>:<token>" convention of older setup
+// templates, whose username is ignored), when that passes the syntax step of
+// R-AUTH-023 (prefix, length, alphabet, checksum). "" when the value carries none.
+func apiKeyToken(v string) string {
+	v = strings.TrimSpace(v)
+	if _, err := token.Check(v); err == nil {
+		return v
+	}
+	if i := strings.LastIndexByte(v, ':'); i >= 0 {
+		if _, err := token.Check(v[i+1:]); err == nil {
+			return v[i+1:]
+		}
+	}
+	return ""
+}
+
+// metricMethod is the method label of trove_auth_attempts_total, in the vocabulary
+// of the request log (R-OPS-015): the API key is nuget_apikey.
+func metricMethod(m Method) string {
+	if m == MethodAPIKey {
+		return "nuget_apikey"
+	}
+	return string(m)
 }
 
 func anonymousResult() Result {
@@ -124,7 +196,7 @@ func anonymousResult() Result {
 }
 
 func (s *Stage) fail(method Method, reason string, err error) (Result, error) {
-	s.o.Metrics.Attempt(string(method), "failure", reason)
+	s.o.Metrics.Attempt(metricMethod(method), "failure", reason)
 	return Result{}, err
 }
 
@@ -225,7 +297,7 @@ func (s *Stage) byToken(r *http.Request, ep EndpointRules, raw string, method Me
 	if s.o.Uses != nil {
 		s.o.Uses.NoteUse(info.ID, sourceOf(r, s.clientAddr(r)).ClientAddr)
 	}
-	s.o.Metrics.Attempt(string(method), "success", "")
+	s.o.Metrics.Attempt(metricMethod(method), "success", "")
 	return Result{
 		Principal: info.Owner,
 		Groups:    groups,

@@ -10,18 +10,25 @@ import (
 
 // Method is the credential source that proved the principal (R-AUTH-001). The
 // values match httpserver.AuthMethod. The stage evaluates only the first source
-// present, in this order: [MethodAPIKey], then the Authorization header
+// present, in this order: [MethodAPIKey] (on the routes of
+// [EndpointRules.APIKeyRoute] only), then the Authorization header
 // ([MethodBearer] or [MethodBasic]), then [MethodSession], then none.
 type Method string
 
 // The credential sources.
 const (
-	MethodNone    Method = ""
+	MethodNone Method = ""
+	// MethodAPIKey is a trove token in [HeaderAPIKey] (R-AUTH-033).
 	MethodAPIKey  Method = "api_key"
 	MethodBearer  Method = "bearer"
 	MethodBasic   Method = "basic"
 	MethodSession Method = "session"
 )
+
+// HeaderAPIKey is the NuGet API-key header (R-AUTH-001 item 1, R-AUTH-033). The
+// stage examines it on the routes that declare it while
+// auth.clients.nuget_api_key_header is on ([Options.APIKeyHeader]).
+const HeaderAPIKey = "X-NuGet-ApiKey" //nolint:gosec // G101: a header name, not a credential
 
 // Credential is what proved the principal: IDs and states only.
 type Credential struct {
@@ -65,6 +72,15 @@ type EndpointRules struct {
 	// anonymous switches say, because the operation's own declaration decides
 	// (R-AUTH-037 "Always unauthenticated", R-API-008). Nil: none is.
 	PublicRoute func(*http.Request) bool
+	// APIKeyRoute reports whether the request matches a package-protocol route that
+	// declares the API-key header (formats.Route.APIKey: NuGet's push, delete, relist
+	// and symbol push, R-NUGET-012). Only there is [HeaderAPIKey] examined, before
+	// Authorization (R-AUTH-001 item 1, R-AUTH-033), and there the session cookie is
+	// never accepted, whatever the method (Q-AUTH-187). The composition root hands
+	// the dispatcher's own match of the route, so the stage and the dispatcher agree
+	// on it (Q-AUTH-186). The stage asks it only when a credential depends on the
+	// answer. Nil: no route is.
+	APIKeyRoute func(*http.Request) bool
 	// Refused, when set, is told of every request the endpoint's rules refused
 	// (R-EP-010): a token type the endpoint does not accept, a token bound
 	// elsewhere or an unbound token where only bound ones are accepted, and a

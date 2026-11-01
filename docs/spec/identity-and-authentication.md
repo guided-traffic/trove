@@ -89,6 +89,9 @@ The stage MUST select the credential in this order and MUST evaluate only the fi
 
 1. **NuGet API key.** This applies only on the NuGet push, delete and relist endpoints that
    [formats/nuget.md](formats/nuget.md) marks as API-key endpoints. Selection follows R-AUTH-033.
+   An endpoint is one by the declaration of its route (`Route.APIKey`,
+   [architecture.md](architecture.md) R-ARCH-008, Q-ARCH-266); the stage, which runs before the
+   dispatcher, learns it from the dispatcher's own match of the request (Q-AUTH-186).
 2. **`Authorization` header.** Either `Bearer <token>` ([RFC 6750](https://www.rfc-editor.org/rfc/rfc6750)
    §2.1) or `Basic base64(<any username>:<token>)`
    ([RFC 7617](https://www.rfc-editor.org/rfc/rfc7617)). The Basic username is recorded for
@@ -97,7 +100,8 @@ The stage MUST select the credential in this order and MUST evaluate only the fi
    method, with the CSRF rules of R-AUTH-012. On `/files/…` it is accepted for `GET` and `HEAD`, and for `PUT` and
    `DELETE` under the same CSRF rules, because the UI's deploy dialog and item actions use them
    ([api-and-ui.md](api-and-ui.md) R-API-006, R-UI-012). On `/api/<format>/…` it is accepted for
-   `GET` and `HEAD` only. Everywhere else it is ignored, and so is it on
+   `GET` and `HEAD` only, and never on an API-key endpoint, whatever its method (Q-AUTH-187).
+   Everywhere else it is ignored, and so is it on
    `GET /api/v1/auth/login-options`, which the sign-in screen reads (Q-AUTH-177).
 4. **No credential.** The request becomes anonymous if R-AUTH-037 allows it; otherwise it is
    unauthenticated.
@@ -2474,6 +2478,16 @@ endpoint routes themselves belong to the format pages.
   and the `Authorization` header applies.
 - With `auth.clients.nuget_api_key_header: false`, `X-NuGet-ApiKey` is never examined and only
   the `Authorization` header applies.
+- Only the first `X-NuGet-ApiKey` header line is read, as for `Authorization`; whitespace around the
+  value is not part of it. A value that carries no well-formed token is not a credential, so it is
+  neither validated nor counted by the failed-credential throttle (R-AUTH-038).
+- A token in the header passes the same steps as a `Bearer` token: the endpoint's token rules
+  (R-EP-010, R-EP-011), validation, the throttle, the last use (R-AUTH-031). The principal's
+  credential method is `api_key`, which the audit event records (R-AUTH-041); the request log and
+  `trove_auth_attempts_total` name it `nuget_apikey`
+  ([operations-and-observability.md](operations-and-observability.md) R-OPS-015).
+- The session cookie is never a credential on an API-key endpoint (R-AUTH-001 item 3,
+  Q-AUTH-187), so a cross-site `POST` relist from a signed-in browser is unauthenticated.
 
 The NuGet clients send the API key and the source credentials independently, so both
 conventions work. When a request carries both a token API key and Basic credentials, the API
@@ -5064,6 +5078,57 @@ up as a hot read, then with a short cache of its own that `Validate` does not re
 
 **Applied in the spec:** R-UI-045 (the locale redirect reads the session without keeping it). Code: `Store.peekLookup` in `internal/auth/session/store.go`.
 Test: `TestR_AUTH_023_PeekLeavesTheCacheAsItFound`.
+
+### Q-AUTH-186 · The stage learns an API-key route from the dispatcher's own match
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-AUTH-001 item 1 examines `X-NuGet-ApiKey` only on the API-key endpoints, and a route declares that it is one (`Route.APIKey`,
+Q-ARCH-266). The authentication stage is stage 6 of the chain and runs before the router hands the request to the dispatcher, which is where the
+route is matched (R-ARCH-005). The stage therefore has to learn the route before it authenticates, without learning NuGet's paths and without
+importing the format layer, which sits above it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A route predicate on `EndpointRules` (`APIKeyRoute`), wired by the composition root to `Dispatcher.APIKeyRoute`, which runs the dispatcher's own steps up to the match: the endpoint's surface, the prefix, the key shape, the clean path, `Format.Match` (chosen) | The stage asks the question only when the answer decides a credential: a token-shaped value in the header, or a session cookie the path rule would accept | Format-neutral; one matcher, so the stage and the dispatcher cannot disagree on the route; the pattern of `PublicRoute` for the management API; a request without the header pays nothing | A request with a token-shaped key is matched twice (once for the stage, once to serve it) |
+| (b) The stage pre-matches NuGet's publish paths itself | A list of path shapes in `internal/auth` | No new seam | A second route table in the wrong layer that drifts from the routes (the reason Q-ARCH-266 rejected a path list) |
+| (c) Authenticate inside the dispatcher for format routes, after the match | The dispatcher calls the stage | One match | Two places authenticate; the rate limits of step 7, which run before the dispatcher, bucket a package request by the principal of stage 6 (R-ARCH-005, [api-and-ui.md](api-and-ui.md)) |
+| (d) Examine the header on every `/api/<format>/` request | No route knowledge | Simplest | Contradicts R-NUGET-012 ("only there"): a token in the header would become a credential on downloads and documents no client sends it to |
+
+**Choice:** (a). The predicate is answered once per request at most (`routeAnswer` in the stage). It ignores the repository: whether the key names a
+repository of the format is decided after authentication, as on every route, so a key on a push to a repository of another format is validated and the
+request then answers `404`. A format without an API-key route costs a map lookup; a replica without the format host (the shell profile) has no predicate.
+
+**Rationale:** the route's declaration is the one fact, and the dispatcher is the one place that turns a request into a route; asking it keeps both true.
+The development agent would revisit this if the double match of a push showed in a profile, then by handing the matched route from the chain to the
+dispatcher instead of matching again.
+
+**Applied in the spec:** R-AUTH-001 item 1, R-AUTH-033 (the API-key rule), R-NUGET-012, R-ARCH-005 step 6, Q-ARCH-266 (its revisit). Code: `auth.EndpointRules.APIKeyRoute`, `auth.Options.APIKeyHeader`,
+`auth.HeaderAPIKey`, `Stage.apiKey` in `internal/auth/stage.go`, `Dispatcher.APIKeyRoute` in `internal/api/dispatch/dispatcher.go`, `App.apiKeyRoute` in
+`internal/app/wire_identity.go`. Tests: `TestR_AUTH_033_TheAPIKeyRule`, `TestR_NUGET_012_TheRouteIsAskedOnlyWhenACredentialDependsOnIt`,
+`TestR_NUGET_012_TheDispatcherNamesTheRoutesThatTakeTheAPIKey`, `TestR_AUTH_033_TheAPIKeyOnARunningReplica` (`test/integration/apikey`).
+
+### Q-AUTH-187 · The session cookie is refused on an API-key route by its declaration, not only by its method
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-012 says the cookie is accepted for `GET` and `HEAD` only and never on API-key endpoints, because a cross-site form can send `POST`,
+which is the relist method. The path rule of R-AUTH-001 item 3 already ignores the cookie for every unsafe method on `/api/<format>/`, and NuGet's
+API-key routes are `PUT`, `DELETE` and `POST`. Nothing ties the second sentence to the first: a format may declare `APIKey` on any method.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Rely on the method rule | As built before | No code | "Never on API-key endpoints" holds by NuGet's choice of methods, not by a rule; a later route breaks it silently |
+| (b) The stage refuses the cookie on a route that declares the key, whatever the method (chosen) | The cookie branch asks the route predicate of Q-AUTH-186 once a cookie the path rule accepts is present | The sentence of R-NUGET-012 is a rule of the stage; a test covers a `GET` that declares the key | A browser `GET` with a cookie on a package route costs one route match |
+| (c) `Register` refuses `APIKey` on a safe method | A contract check | Caught at start | A check in the format contract for a rule of the stage; it does not express "never" |
+
+**Choice:** (b). The `POST` relist with only a cookie answers `401` either way; (b) keeps it so for any route a format declares.
+
+**Rationale:** the rule should be where the credential is selected. The development agent would revisit this if browser downloads of package routes
+showed the extra match in a profile, then with (c) instead.
+
+**Applied in the spec:** R-AUTH-001 item 3, R-AUTH-033, R-NUGET-012 (session cookie). Code: `Stage.Authenticate` in `internal/auth/stage.go`. Tests:
+`TestR_NUGET_012_NoSessionCookieOnAnAPIKeyRoute`, `TestR_NUGET_012_ASessionCookieIsNoCredentialOnAnAPIKeyRoute` (`test/integration/apikey`).
 
 ### Q-AUTH-79 · How the end-to-end tests drive the browser login of E1.1 and disable the break-glass account
 

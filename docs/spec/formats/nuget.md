@@ -1051,12 +1051,14 @@ NuGet contributes:
   R-AUTH-033: a well-formed token as the whole value or after the last `:` (the
   `<username>:<secret>` convention of older client setup templates) is the credential; any other
   value (a placeholder such as `az` that some CI snippets pass) is ignored and the
-  `Authorization` header applies.
+  `Authorization` header applies. The four routes declare it (`Route.APIKey`), and the
+  authentication stage learns the declaration from the dispatcher's match of the request
+  ([identity-and-authentication.md](../identity-and-authentication.md) Q-AUTH-186).
 - **Basic and Bearer.** `Authorization: Basic` with any username and a trove token as password,
   and `Authorization: Bearer <token>`, on every NuGet endpoint (INV-8).
 - **Session cookie.** Accepted for GET and HEAD only (R-AUTH-001), so a browser on the UI can
-  download a package; never on API-key endpoints. A cross-site form can send `POST`, which is the
-  relist method; it carries no credential trove accepts.
+  download a package; never on API-key endpoints, whatever their method (Q-AUTH-187). A cross-site
+  form can send `POST`, which is the relist method; it carries no credential trove accepts.
 - **Challenge.** A 401 on a NuGet endpoint carries exactly `WWW-Authenticate: Basic
   realm="trove"`. This page sets the challenge for its endpoints (R-AUTHZ-016 allows format
   pages to): NuGet clients answer Basic, and offering NTLM or Negotiate besides Basic would make

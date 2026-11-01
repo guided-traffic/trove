@@ -18,6 +18,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/guided-traffic/trove/internal/api/edge"
@@ -60,6 +61,9 @@ const cacheViewSuffix = "~cache"
 type Dispatcher struct {
 	o       Options
 	formats map[string]formats.Format
+	// keyed holds the IDs of the formats with a route that declares the API-key
+	// header ([Dispatcher.APIKeyRoute]).
+	keyed map[string]bool
 }
 
 // New creates the dispatcher over the formats that have routes.
@@ -75,13 +79,47 @@ func New(o Options) (*Dispatcher, error) {
 	if o.Formats == nil {
 		o.Formats = formats.List
 	}
-	d := &Dispatcher{o: o, formats: map[string]formats.Format{}}
+	d := &Dispatcher{o: o, formats: map[string]formats.Format{}, keyed: map[string]bool{}}
 	for _, f := range o.Formats() {
-		if len(f.Routes()) > 0 {
-			d.formats[string(f.Descriptor().ID)] = f
+		routes := f.Routes()
+		if len(routes) == 0 {
+			continue
 		}
+		id := string(f.Descriptor().ID)
+		d.formats[id] = f
+		d.keyed[id] = slices.ContainsFunc(routes, func(r formats.Route) bool { return r.APIKey })
 	}
 	return d, nil
+}
+
+// APIKeyRoute reports whether the request reaches a route that declares
+// [formats.Route.APIKey] (Q-ARCH-266). The authentication stage runs before the
+// dispatcher and asks it to know where the API-key header is a credential
+// (R-AUTH-001 item 1, Q-AUTH-186). The answer is the dispatcher's own: the
+// endpoint's surface, the prefix, the key shape, the clean path and the format's
+// Match, the steps [Dispatcher.ServeHTTP] takes before the coarse check, so the
+// stage and the dispatcher agree on the route. It reads the request line only;
+// whether the key names a repository of the format is decided after
+// authentication, as on every route. A format without such a route costs a map
+// lookup.
+func (d *Dispatcher) APIKeyRoute(r *http.Request) bool {
+	id, key, rest, ok := splitPath(r.URL.EscapedPath())
+	f := d.formats[id]
+	if !ok || f == nil || !d.keyed[id] {
+		return false
+	}
+	if ep := httpserver.EndpointFrom(r.Context()); ep != nil &&
+		(!ep.Serves(config.SurfacePackages) || !ep.Serves(httpserver.FamilyOfPath(r.URL.Path))) {
+		return false
+	}
+	if !repository.ValidKeyShape(strings.TrimSuffix(key, cacheViewSuffix)) || strings.HasPrefix(rest, "/") {
+		return false
+	}
+	if _, err := repository.CleanPath(rest); err != nil {
+		return false
+	}
+	route, _, err := f.Match(r.Method, rest)
+	return err == nil && route.APIKey
 }
 
 // Prefixes returns the format IDs the dispatcher serves, sorted.

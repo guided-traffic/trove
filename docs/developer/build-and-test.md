@@ -266,7 +266,9 @@ repository operations, with the users, grants and anonymous switch of `webenv_te
 [endpoints](../../test/integration/endpoints) (three replicas behind a dispatcher, Valkey
 running and stopped, requests on the default and the further endpoints), [api](../../test/integration/api) (the
 conventions on a test resource registered through `Extra`, the cluster-wide rate limits, the system operations with a
-web replica that enqueues and a worker replica that executes, key rings that differ between replicas), and
+web replica that enqueues and a worker replica that executes, key rings that differ between replicas),
+[apikey](../../test/integration/apikey) (the API-key credential on a test format whose push, delete and relist declare
+`Route.APIKey`: the stage, the dispatcher's match, the audit, the request log and the metrics), and
 [repository](../../test/integration/repository) (the service, the snapshot, the deletion job on a worker). The
 repository suite builds one component next to the replicas, the counting reader of `probe_test.go`, because the number
 of transactions a reader starts is visible only on its runner. Suites that need a seam inside a component keep the

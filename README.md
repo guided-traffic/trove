@@ -143,6 +143,7 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 | `X-Trove-Replica` | the instance name, on responses where `server.replica_header` allows it (default `authenticated`) | yes (`internal/httpserver/chain.go`) |
 | `X-Forwarded-For` or `Forwarded` | the family the edge rewrites: exactly one, chosen by `server.forwarded_header`; the other is never read | yes (`internal/httpserver/clientaddr.go`) |
 | `Authorization` | `Bearer <token>` with a `trv_pat_` or `trv_sat_` value (`trv_cit_` is reserved until the CI exchange). The status code of a refused value is not restated here | yes (`internal/auth/stage.go`) |
+| `X-NuGet-ApiKey` | `<token>` or `<any>:<token>`, read first and only on a route that declares the API key (NuGet's push, delete, relist and symbol push) while `auth.clients.nuget_api_key_header` is on; a value without a well-formed token, such as `az`, is ignored and `Authorization` applies | yes (`internal/auth/stage.go`); the NuGet routes are not registered yet |
 | `X-CSRF-Token` | the value of the `__Host-trv_csrf` cookie, on a state-changing request that the session cookie authenticates; with a same-origin `Origin` or `Sec-Fetch-Site`. Failure: `403 csrf_failed` | yes (`internal/auth/session`) |
 | `Idempotency-Key` | on a create: a replay answers the stored outcome; the same key with another body answers `422 idempotency_key_reused`, a concurrent duplicate `409 idempotency_in_progress` | yes (`internal/api/v1/idempotency.go`) |
 | `If-Match`, `If-None-Match` | the ETag of a resource on `PUT` and `PATCH`; `If-Match` is required there, and `If-Match: *` is the explicit blind write. `If-None-Match: *` on `/files/` makes a deploy create-only | yes (`internal/api/v1`, `internal/api/rawfiles/conditional.go`) |
@@ -981,7 +982,7 @@ auth:
   clients:
     basic:
       enabled: true                     # default; off breaks NuGet restore and _auth users
-    nuget_api_key_header: true          # default; read on the NuGet API-key endpoints (their milestone is M2)
+    nuget_api_key_header: true          # default; X-NuGet-ApiKey is a credential on the routes that declare it (push, delete, relist)
   rate_limit:
     failures_per_address: 300           # default; rejected credentials per minute and client address, cluster-wide
     starts_per_address: 30              # default; requests to the unauthenticated row-creating endpoints per minute and address
@@ -1074,6 +1075,7 @@ ui:
 | `secrets.encryption_key_files` | empty (required) | Keys are read once at start-up; a rotated key file takes effect after a restart. | [H-55](docs/spec/architecture.md), [data and secret flow](docs/security/data-and-secret-flow.md) |
 | `auth.break_glass.enabled`, `auth.break_glass.password_file` | `true`, empty | Without a password file the account is unusable, not open. With `secrets.breakGlass` it is the local administrator that holds system administration without a role binding. The password is a file, never inline. | [login](docs/developer/login.md), [Q-AUTH-33](docs/spec/identity-and-authentication.md#q-auth-33--an-enabled-break-glass-account-without-a-password-file) |
 | `auth.clients.basic.enabled` | `true` | Basic authentication for NuGet restore and the `_auth` users. Off breaks those clients; a Basic request with a password is refused either way. | [identity](docs/developer/identity.md) |
+| `auth.clients.nuget_api_key_header` | `true` | A token in `X-NuGet-ApiKey` is the credential of a push, delete or relist and decides over `Authorization`; a rejected one is `401` without fallback. Off, only `Authorization` counts there. A damaged key falls back to the source credentials. | [tokens and credentials](docs/security/tokens-and-credentials.md#credential-sources-and-precedence), [H-332](docs/security/tokens-and-credentials.md#h-332--a-broken-token-in-the-api-key-header-falls-back-to-the-source-credentials) |
 | `auth.anonymous.allowed` | `true` | The operator's ceiling for the runtime `anonymousAccess` switch. `false` refuses anonymous access whatever the runtime setting says. | [identity](docs/developer/identity.md), [Q-AUTH-19](docs/spec/identity-and-authentication.md#q-auth-19--which-unauthenticated-requests-the-stage-lets-through) |
 | `authz.hide_existence` | `true` | A refused read answers 404, indistinguishable from a missing resource. `false` answers 403 for a resource that exists, for troubleshooting only. A repository's `hideExistence` overrides it. | [permissions](docs/security/permissions.md) |
 | `api.rate_limits.exempt_admins` | `false` | Callers who hold the admin capability bypass the rate limits. | [API edge](docs/security/api-edge.md) |

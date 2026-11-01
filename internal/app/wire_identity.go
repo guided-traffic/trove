@@ -183,6 +183,7 @@ func (a *App) wireAuth(_ context.Context, id identityArea, ss sessionsArea, lim 
 	stage := auth.New(auth.Options{
 		Tokens: id.tokens, Sessions: ss.store, Principals: id.principals, Settings: id.settings, Limiter: lim.failures,
 		ExemptCIDRs: cfg.RateLimit.ExemptPrefixes(), ClientAddr: clientAddr, BasicEnabled: cfg.Clients.Basic.Enabled,
+		APIKeyHeader: cfg.Clients.NuGetAPIKeyHeader,
 		// The token service validates and records the last use; it is checked above.
 		Uses:    id.tokens,
 		Metrics: id.metrics, Log: a.log.With("component", "auth"),
@@ -199,6 +200,7 @@ func (a *App) wireShell(context.Context) (shellArea, error) {
 	}
 	stage := auth.New(auth.Options{
 		Tokens: emptyTokens{}, Settings: anonymousOn{}, BasicEnabled: a.cfg.Auth.Clients.Basic.Enabled, ClientAddr: clientAddr, Log: a.log,
+		APIKeyHeader: a.cfg.Auth.Clients.NuGetAPIKeyHeader,
 	})
 	return shellArea{auth: authArea{stage: stage, publicOps: publicOps}}, nil
 }
@@ -256,6 +258,18 @@ func (a *App) publicRoute(rt *endpointRuntime) func(*http.Request) bool {
 		}
 		return a.authStage().publicOps[rt.router.Pattern(r)]
 	}
+}
+
+// apiKeyRoute tells the stage which requests reach a format route that declares
+// the API-key header (R-AUTH-001 item 1, Q-AUTH-186): the dispatcher's own match,
+// asked before the dispatcher runs. A replica without the format host (the shell
+// profile) serves no format route, so no request is one.
+func (a *App) apiKeyRoute() func(*http.Request) bool {
+	disp := part[formatHostArea](a.parts).disp
+	if disp == nil {
+		return nil
+	}
+	return disp.APIKeyRoute
 }
 
 // emptyTokens is the token store of a replica without a database: no token is
@@ -333,6 +347,7 @@ func (a *App) authServices() v1.AuthServices {
 func (a *App) authenticate(rt *endpointRuntime) func(*http.Request) (httpserver.Principal, error) {
 	rules := endpointRules(rt)
 	rules.PublicRoute = a.publicRoute(rt)
+	rules.APIKeyRoute = a.apiKeyRoute()
 	rules.Refused = a.credentialRefused(rt)
 	stage := a.authStage().stage
 	return withMinEpoch(func(r *http.Request) (httpserver.Principal, error) {

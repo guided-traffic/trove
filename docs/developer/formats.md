@@ -120,6 +120,7 @@ recorded. What the engine does with them is in [proxy.md](proxy.md#what-a-format
 
 ```text
 chain 1-7 (recovery, trace, log, in-flight, address and host, authentication, rate limit)
+     authentication asks Dispatcher.APIKeyRoute (steps 1-4 below, then Route.APIKey) where the API-key header decides (Q-AUTH-186)
   -> dispatch.Dispatcher.ServeHTTP
      1  split /api/<id>/<key>/<rest>; key shape; rest stays escaped
      2  a family of its own below the prefix (npm's exchange) only where the endpoint's surface holds it
@@ -262,7 +263,7 @@ cannot hold the host when it is created (Q-ARCH-210).
 |---|---|
 | [formats_test.go](../../internal/formats/formats_test.go), [serve_test.go](../../internal/formats/serve_test.go) | `Register`'s start-up checks (R-ARCH-010), `MatchRoutes`, `Template`, `ServeRoute` (R-ARCH-007, R-ARCH-023, R-ARCH-028) |
 | [internal/httpserver/content](../../internal/httpserver/content/content_test.go) | The header sets of the three kinds and that the handler cannot weaken them |
-| [dispatcher_test.go](../../internal/api/dispatch/dispatcher_test.go) | Routing, the order of the checks, the class rules, the chain's refusals in the format's shape (fakes, no database) |
+| [dispatcher_test.go](../../internal/api/dispatch/dispatcher_test.go), [apikey_test.go](../../internal/api/dispatch/apikey_test.go) | Routing, the order of the checks, the class rules, the chain's refusals in the format's shape; `APIKeyRoute` names exactly the routes the dispatcher then serves that declare `APIKey` (fakes, no database) |
 | [formathost_test.go](../../internal/formathost/formathost_test.go) | Data-port bindings (Q-ARCH-193), `Authorize`, the fail-closed `Claim`, links, renditions |
 | [format_enums_test.go](../../internal/api/v1/format_enums_test.go) | `TestR_ARCH_010_PerClassFormatEnums`: the OpenAPI enums equal the registry |
 | [formattest](../../internal/formats/formattest/) (`host_test.go`, `kit_test.go`), [testformat](../../internal/formats/formattest/testformat/format_test.go), [crafted](../../internal/formats/formattest/crafted/crafted_test.go) | The in-memory `Host` against the rules of the production writer, the kit's skip and fixture rules, every check failing on its named defect, the generators producing what they claim |

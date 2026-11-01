@@ -90,7 +90,7 @@ Rules that follow:
 ```text
 request ─► chain stage 6 (httpserver.Chain.Authenticate)
             app.authenticate(rt)  ── endpointRules(rt) ──► auth.Authenticator.Authenticate(r, rules)
-              1. NuGet API key (M2)   2. Authorization: Bearer|Basic -> token.Validator
+              1. NuGet API key (on a route that declares it, rules.APIKeyRoute)   2. Authorization: Bearer|Basic -> token.Validator
               3. session cookie -> session.Validator (+ CSRF)   4. none -> anonymous if allowed
               a present credential that is invalid -> 401 (never falls through)
             principalFromResult(res) ──► httpserver.Principal ──► WithPrincipal(ctx)

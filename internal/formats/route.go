@@ -114,11 +114,12 @@ type Route struct {
 	// (npm's scoped names). It receives the escaped repository-relative path.
 	Match   func(escapedPath string) (Params, bool)
 	Handler HandlerFunc
-	// APIKey marks a route that accepts a credential in the format's API-key header
+	// APIKey marks a route that accepts a credential in the API-key header
 	// (NuGet's X-NuGet-ApiKey, R-NUGET-012) besides Authorization. The authentication
-	// stage examines the header only on a route that declares it, and first
-	// (Q-ARCH-266); the field does not name the header, which is
-	// auth.nuget_api_key_header.
+	// stage examines the header only on a route that declares it, and first, and
+	// never accepts the session cookie there (Q-ARCH-266, Q-AUTH-186, Q-AUTH-187);
+	// it learns the route from the dispatcher's match. The field does not name the
+	// header; auth.clients.nuget_api_key_header switches its examination off.
 	APIKey bool
 }
 

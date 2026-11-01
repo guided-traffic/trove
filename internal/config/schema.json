@@ -362,7 +362,7 @@
             },
             "nuget_api_key_header": {
               "default": true,
-              "description": "Examine X-NuGet-ApiKey on the NuGet API-key endpoints (M2).",
+              "description": "Examine X-NuGet-ApiKey on the routes that declare the API key: NuGet push, delete, relist (R-AUTH-033).",
               "type": "boolean",
               "x-trove-env": "TROVE_AUTH_CLIENTS_NUGET_API_KEY_HEADER"
             }

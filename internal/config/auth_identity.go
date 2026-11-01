@@ -58,7 +58,7 @@ type AuthAnonymous struct {
 // AuthClients switches client authentication forms (R-AUTH-033).
 type AuthClients struct {
 	Basic             AuthClientBasic `yaml:"basic"`
-	NuGetAPIKeyHeader bool            `yaml:"nuget_api_key_header" default:"true" doc:"Examine X-NuGet-ApiKey on the NuGet API-key endpoints (M2)."`
+	NuGetAPIKeyHeader bool            `yaml:"nuget_api_key_header" default:"true" doc:"Examine X-NuGet-ApiKey on the routes that declare the API key: NuGet push, delete, relist (R-AUTH-033)."`
 }
 
 // AuthClientBasic switches Basic presentation of a token.

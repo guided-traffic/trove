@@ -28,14 +28,14 @@ the decisions of this area are Q-AUTH-18 to Q-AUTH-22 and Q-AUTH-41 to Q-AUTH-48
 | [internal/audit/events_identity.go](../../internal/audit/events_identity.go) | The identity event types with their data schemas and journal flags |
 | [internal/cluster/valkey_tokseen.go](../../internal/cluster/valkey_tokseen.go) | `TokenSeen`: the throttle-exemption marker (key family `tokseen`) |
 | [internal/meta/postgres/queries/identity.sql](../../internal/meta/postgres/queries/identity.sql) | Every identity query; parameters are plain Go types because the packages above import no driver |
-| [internal/app/wire_identity.go](../../internal/app/wire_identity.go) | The composition: `wireIdentity`, `registerIdentityJobs`, `publicRoute` |
+| [internal/app/wire_identity.go](../../internal/app/wire_identity.go) | The composition: `wireIdentity`, `registerIdentityJobs`, `publicRoute`, `apiKeyRoute` (the dispatcher's answer to "is this an API-key route", Q-AUTH-186) |
 
 ### internal/auth
 
 | File | Responsibility |
 |---|---|
-| `auth.go` | The contract: `Authenticator`, `Result`, `Credential`, `EndpointRules` (with `PublicRoute`) |
-| `stage.go` | `Stage.Authenticate`: credential selection and precedence, endpoint rules, anonymous, challenges, error mapping |
+| `auth.go` | The contract: `Authenticator`, `Result`, `Credential`, `EndpointRules` (with `PublicRoute` and `APIKeyRoute`), `HeaderAPIKey` |
+| `stage.go` | `Stage.Authenticate`: credential selection and precedence (the API key first on the routes that declare it), endpoint rules, anonymous, challenges, error mapping |
 | `limiter.go` | `FailureLimiter` (the narrow limiter interface), `LocalLimiter`, the per-request throttle |
 
 ### internal/auth/principal
@@ -70,13 +70,15 @@ the decisions of this area are Q-AUTH-18 to Q-AUTH-22 and Q-AUTH-41 to Q-AUTH-48
 ```text
 request ─► chain stage 6 ─► app.authenticate ─► auth.Stage.Authenticate(r, rules)
   exchange route (POST)            ─► anonymous, Authorization not read
+  X-NuGet-ApiKey with a well-formed token (whole value or after the last ':'), Options.APIKeyHeader on,
+    and rules.APIKeyRoute(r) true  ─► the same token path as Bearer, method api_key   (any other value: ignored)
   Authorization present            ─► Bearer | Basic(any:token) ─► token.Check (syntax, endpoint type rule, no DB)
                                       ─► token.Service.Check(raw, Request{Throttle, Source})
                                            cache hit (gate open)          ─► Info
                                            throttle Exceeded? marker?     ─► 429 or continue
                                            PostgreSQL join with the owner ─► Info | ErrUnknown|Revoked|Expired|Owner
                                       ─► endpoint binding rules, groups from principal.Store
-  session cookie, path rule        ─► session.Validator (+ CSRF)           (nil: ignored)
+  session cookie, path rule, not an API-key route ─► session.Validator (+ CSRF)   (nil: ignored)
   nothing                          ─► anonymous | 401 credentials_required
 ```
 
@@ -97,7 +99,15 @@ request ─► chain stage 6 ─► app.authenticate ─► auth.Stage.Authentic
   exchange, the npm login start, `GET`/`HEAD` of `/` and `/ui/…`) or when `EndpointRules.PublicRoute` says the matched
   management operation is declared public (Q-AUTH-19). An endpoint that allows no anonymous request (a further endpoint
   by default, R-EP-010) answers every request without a credential with the same 401, the always-open routes included.
-- Not built: the NuGet API-key source (M2) and the GitLab job-token extension point (M4).
+- The NuGet API key (R-AUTH-033, Q-AUTH-186, Q-AUTH-187): `X-NuGet-ApiKey` is read only while `auth.clients.nuget_api_key_header` is on
+  (`Options.APIKeyHeader`) and only on a request for which `EndpointRules.APIKeyRoute` answers true. The composition root wires it to
+  `Dispatcher.APIKeyRoute` ([dispatcher.go](../../internal/api/dispatch/dispatcher.go)), which runs the dispatcher's own steps up to
+  `Format.Match` and reports `Route.APIKey`; the shell profile has no dispatcher and so no API-key route. The stage asks at most once per request
+  (`routeAnswer`), and only for a token-shaped header value or a session cookie the path rule would accept. The value is a token as a whole or after
+  its last `:`; anything else (`az`) is ignored and `Authorization` applies; a token there is validated like a Bearer token, and a rejected one is a
+  401 that never falls back. On an API-key route the session cookie is never a credential. The metric label is `nuget_apikey`, the principal's method
+  `api_key`. The integration test is [test/integration/apikey](../../test/integration/apikey/apikey_test.go), on a test format with NuGet-shaped routes.
+- Not built: the GitLab job-token extension point (M4).
 - Last use (R-AUTH-031, Q-AUTH-178): the stage calls `Service.NoteUse` through its explicit `auth.Options.Uses` (Q-AUTH-183) once the whole
   authentication succeeded, after the endpoint binding and the owner's groups, cache hit or not; `Check` notes nothing
   ([lastused.go](../../internal/auth/token/lastused.go)). The buffer is a map from token ID to the latest time and address, under
@@ -301,7 +311,8 @@ update R-AUTH-024.
 
 ## Contract additions
 
-Additive changes to the shared contracts (no consumer breaks): `auth.EndpointRules.PublicRoute`;
+Additive changes to the shared contracts (no consumer breaks): `auth.EndpointRules.PublicRoute`; `auth.EndpointRules.APIKeyRoute`,
+`auth.Options.APIKeyHeader`, `auth.HeaderAPIKey` and `dispatch.Dispatcher.APIKeyRoute` (Q-AUTH-186);
 `principal.LoginClaims` gained `Issuer`, `EmailVerified`, `GroupSync`, `ClaimState`, `KeepOnMissing`, `CreateGroups`, `JIT`,
 `SyncUsername`, `Source` (Q-AUTH-21); the codes `non_expiring_restricted`, `token_limit_reached`,
 `derivation_exceeds_parent`, `description_required`, `not_a_token`, `username_invalid` in `internal/errs/codes.go`.

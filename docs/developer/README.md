@@ -173,7 +173,7 @@ trove/
 │   ├── helm/trove/           # the chart: templates/, values.yaml, values.schema.json, ci/ value sets
 │   └── dev/                  # the local profile: kind, HAProxy Ingress, cert-manager, CloudNativePG, valkey-operator, internal-secrets-operator, SeaweedFS, scripts
 ├── test/
-│   ├── integration/          # build tag `integration`: area folders with an env_test.go: api/, audit/, authz/, endpoints/, files/,
+│   ├── integration/          # build tag `integration`: area folders with an env_test.go: api/, apikey/, audit/, authz/, endpoints/, files/,
 │   │                         # identity/, login/, repository/, tls/, coordination/, postgres/, server/ (each creates its own database)
 │   ├── chart/                # build tag `chart`: render assertions and the lint script
 │   ├── npmstub/              # the counting npm test upstream (TLS only): stub, corpus/ (700 synthetic packages), recorded set, cmd/npmstub, Containerfile

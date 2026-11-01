@@ -38,7 +38,9 @@ type AuthMethod string
 const (
 	// MethodNone is the anonymous request.
 	MethodNone AuthMethod = ""
-	// MethodAPIKey is the NuGet API key header (R-AUTH-033); reserved for M2.
+	// MethodAPIKey is a trove token in the NuGet API-key header X-NuGet-ApiKey,
+	// read only on a route that declares it (R-AUTH-033, Q-AUTH-186). The audit
+	// records it as api_key; the request log and the metrics name it nuget_apikey.
 	MethodAPIKey AuthMethod = "api_key"
 	// MethodBearer is "Authorization: Bearer <token>".
 	MethodBearer AuthMethod = "bearer"

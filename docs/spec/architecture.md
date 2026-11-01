@@ -702,7 +702,10 @@ Middleware, outermost first:
    `POST` to an exchange endpoint, at the host root or below a registry URL. There the
    `Authorization` header carries an ID token, the stage does not evaluate it, and the request
    reaches the handler unauthenticated
-   ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-001).
+   ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-001). Whether a
+   package request reaches a route that declares the API-key header (`Route.APIKey`, R-ARCH-008)
+   the stage learns from the format dispatcher's own match, before the dispatcher runs
+   ([identity-and-authentication.md](identity-and-authentication.md) Q-AUTH-186).
 7. The endpoint's rate-limit class, on every route of a further endpoint
    ([endpoints.md](endpoints.md) R-EP-015), then the rate limits on `/api/v1/`, `/files/`, the
    package protocols under `/api/<format>/` and `/auth/` ([api-and-ui.md](api-and-ui.md)). Their
@@ -7078,15 +7081,17 @@ Context: NuGet clients send the credential of a push, an unlist and a relist in 
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) `Route.APIKey bool`, consumed by the stage that matches the route (chosen) | The format declares it per route; the header name stays `auth.nuget_api_key_header` | The set of routes is the format's own fact, next to the route; a test over the route table shows it | The stage must learn the route before it authenticates (the later stage change, WP3.0x) |
+| (a) `Route.APIKey bool`, consumed by the stage that matches the route (chosen) | The format declares it per route; the field names no header: the header is `X-NuGet-ApiKey`, switched by `auth.clients.nuget_api_key_header` | The set of routes is the format's own fact, next to the route; a test over the route table shows it | The stage must learn the route before it authenticates (the later stage change, WP3.0x) |
 | (b) A list of paths in the auth configuration | The stage matches paths | No contract field | A second table that drifts from the routes |
 | (c) The header on every NuGet route | The stage examines it everywhere | Simple | A credential header on a download route that no client sends there; R-NUGET-012 limits it to the API-key endpoints |
 
 **Choice:** (a). This change adds the field and its documentation only; no stage reads it yet.
 
 **Rationale:** whether a route takes an API key is a property of the protocol operation. The development agent revisits this when the stage change lands.
+The stage change landed with Q-AUTH-186 (the stage learns the declaration from the dispatcher's match) and Q-AUTH-187 (no session cookie on a route that
+declares it) in [identity-and-authentication.md](identity-and-authentication.md); the choice stands.
 
-**Applied in the spec:** R-ARCH-008 (`Route.APIKey`). Code: `internal/formats/route.go`.
+**Applied in the spec:** R-ARCH-008 (`Route.APIKey`). Code: `internal/formats/route.go`, read by `Dispatcher.APIKeyRoute` (`internal/api/dispatch`).
 
 ### Q-ARCH-267 · A format inspects a fetched artifact before it is stored, and no byte goes out before it did
 

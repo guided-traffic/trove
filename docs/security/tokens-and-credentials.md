@@ -13,13 +13,24 @@ invalid one is a 401 that never falls through to a lower source or to anonymous:
 
 | Order | Source | Rule |
 |---|---|---|
-| 1 | `Authorization: Bearer <token>` or `Basic base64(<any>:<token>)` | The value must be a trove token (prefix, length 57, base62, CRC-32). A JWT, an identity-provider token or a password, the break-glass password included, is refused at the syntax step without a database query. The Basic username is recorded and ignored. `auth.clients.basic.enabled: false` refuses Basic. |
-| 2 | Session cookie `__Host-trv_session` | Only where the endpoint's surface holds `ui` and the path allows it (`/api/v1/` all methods, `/files/` GET HEAD PUT DELETE, `/api/<format>/` GET HEAD); CSRF is the session validator's. A replica without a session validator ignores the cookie. |
-| 3 | none | Anonymous only if the endpoint, `auth.anonymous.allowed` and the runtime switch `anonymousAccess` allow it, and never an unsafe method on `/api/v1/`; or a route that is always open or declared public. |
+| 1 | `X-NuGet-ApiKey: <token>` or `<any>:<token>` | Only on a route that declares the API key (`Route.APIKey`: NuGet's push, delete, relist and symbol push) and only while `auth.clients.nuget_api_key_header` is on. The value, or its part after the last `:`, must pass the syntax step to be a credential; any other value (the placeholder `az`) is ignored and order 2 applies. A token there decides over `Authorization`, even of another principal. |
+| 2 | `Authorization: Bearer <token>` or `Basic base64(<any>:<token>)` | The value must be a trove token (prefix, length 57, base62, CRC-32). A JWT, an identity-provider token or a password, the break-glass password included, is refused at the syntax step without a database query. The Basic username is recorded and ignored. `auth.clients.basic.enabled: false` refuses Basic. |
+| 3 | Session cookie `__Host-trv_session` | Only where the endpoint's surface holds `ui` and the path allows it (`/api/v1/` all methods, `/files/` GET HEAD PUT DELETE, `/api/<format>/` GET HEAD), and never on a route that declares the API key, whatever its method; CSRF is the session validator's. A replica without a session validator ignores the cookie. |
+| 4 | none | Anonymous only if the endpoint, `auth.anonymous.allowed` and the runtime switch `anonymousAccess` allow it, and never an unsafe method on `/api/v1/`; or a route that is always open or declared public. |
 
-The NuGet API-key source and the GitLab job-token extension point are not evaluated; no credential is read from a query
-parameter or a path. An exchange route (`POST` of the CI exchange and the two npm exchanges) receives the ID token in
-`Authorization` and the stage does not read it.
+The stage runs before the dispatcher, so it learns whether a request reaches an API-key route from the dispatcher's own match
+(`EndpointRules.APIKeyRoute`, wired to `Dispatcher.APIKeyRoute` in [wire_identity.go](../../internal/app/wire_identity.go),
+Q-AUTH-186): the endpoint's surface, the prefix, the key shape, the clean path and the format's `Match`. The header is therefore
+not a credential on a download, a document, the management API, `/files/`, or an endpoint without the package surface. A token
+in the header passes the endpoint's token rules, the throttle and the last-use record exactly like a Bearer token; the
+principal's method is `api_key` in the audit event and `nuget_apikey` in the request log and `trove_auth_attempts_total`. The
+cookie rule makes a cross-site `POST` relist from a signed-in browser unauthenticated (Q-AUTH-187). A page cannot send
+`X-NuGet-ApiKey` across sites either: the header needs a CORS preflight, and trove answers preflights only under `/api/v1/` and
+never allows that header ([cors.go](../../internal/api/v1/cors.go)); a page would also need the token itself.
+
+The GitLab job-token extension point is not evaluated; no credential is read from a query parameter or a path. An exchange
+route (`POST` of the CI exchange and the two npm exchanges) receives the ID token in `Authorization` and the stage does not
+read it.
 
 A token type the endpoint does not accept, and a token bound to other endpoints or an unbound one on an endpoint that
 accepts only bound tokens, is `invalid_token`. The response never says whether a token was unknown, revoked or expired
@@ -236,3 +247,17 @@ until the user leaves the route or changes the repository. The protection is the
 `script-src 'self'`, [internal/webui/csp.go](../../internal/webui/csp.go)) and the component-local handling above. A browser extension,
 a script that the policy lets through, and a shoulder surfer are outside it. Creating the token with the narrow scope and the short
 lifetime of the page limits what such a reader gets.
+
+### H-332 · A broken token in the API-key header falls back to the source credentials
+
+Component: the API-key rule of the stage (`apiKeyToken` in [stage.go](../../internal/auth/stage.go), R-AUTH-033). Subject: NuGet pushes,
+deletes and relists from a client configured with an API key and with source credentials of another principal, for example a CI job
+whose `--api-key` is a deploy-only service-account token while its `nuget.config` holds a personal token for restores. Dormant until
+such a client sends an API key that only looks like a token: truncated, mistyped, or with a checksum that does not match. R-AUTH-033
+treats every value without a well-formed token as a placeholder like `az`, so the stage ignores it and the Basic credentials decide:
+the push succeeds as the other principal, with that principal's grants; the first push of an ID claims it for the owner that principal's grant designates
+([authorization.md](../spec/authorization.md) R-AUTHZ-018), and the audit event names that principal with
+method `basic`. Nothing is refused and nothing is counted, so the client sees no error. The caller gains no right it did not already
+hold, since both credentials are its own; what it loses is the separation it configured. What makes it real: two credentials of
+different principals in one client and a damaged API key. An audit query for pushes with method `basic` from a pipeline that is meant
+to push with an API key shows it; one credential per client avoids it.
