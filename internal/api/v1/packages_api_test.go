@@ -109,9 +109,10 @@ func setupServerAs(t *testing.T, baseURL string, deploy bool, authn func(*http.R
 	local := repository.Repository{Key: "npm-local", Class: repository.Local, Format: "npm"}
 	remote := repository.Repository{Key: "npm-remote", Class: repository.Remote, Format: "npm"}
 	repos := packagesReader{repos: map[string]repository.Repository{
-		"npm-local":  local,
-		"npm-remote": remote,
-		"files":      {Key: "files", Class: repository.Local, Format: "generic"},
+		"npm-local":   local,
+		"npm-remote":  remote,
+		"files":       {Key: "files", Class: repository.Local, Format: "generic"},
+		"nuget-local": {Key: "nuget-local", Class: repository.Local, Format: "nuget"},
 		"npm-all": repository.Assemble(repository.Repository{Key: "npm-all", Class: repository.Virtual, Format: "npm"},
 			[]repository.Repository{local, remote}, &local, 0),
 		"npm-readonly": repository.Assemble(repository.Repository{Key: "npm-readonly", Class: repository.Virtual, Format: "npm"},

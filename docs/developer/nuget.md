@@ -1,6 +1,6 @@
 # The NuGet format
 
-Status: the NuGet format is registered with its skeleton (phase 4, WP3.1c): the route table of the whole NuGet v3 protocol, the matching
+Status: the package screens, the setup snippets and the guide of the format are written (phase 4, WP3.1h; see "The package view, the setup snippets and the guide" below). The format is registered with its skeleton (phase 4, WP3.1c): the route table of the whole NuGet v3 protocol, the matching
 and the classification of paths, the service index, the error shape, the settings and the configuration section, and the data port interface.
 The push, the unlist, the relist and the delete are built ([the write side](#the-write-side)). The operations behind the other routes - package content, registrations, search, the symbol resources - are written by
 the work packages that own them and answer 501 `nuget_not_implemented` until then ([handlers_stub.go](../../internal/formats/nuget/handlers_stub.go)).
@@ -22,9 +22,12 @@ imports the format contract and the leaf packages below, and reaches its tables 
 | [settings.go](../../internal/formats/nuget/settings.go), [settings.schema.json](../../internal/formats/nuget/settings.schema.json) | The `nuget` member of a repository document: `deleteMode`, `forwardSearch`; `settingsOf` |
 | [bind.go](../../internal/formats/nuget/bind.go) | `Bind`: the `nuget` section of the configuration per Host; `archiveLimits` maps `nuget.archive` onto `nupkg.Limits` |
 | [store.go](../../internal/formats/nuget/store.go) | The data port interface `Store`; the block `>>> M3 nuget-read` holds the reads of the document and search packages |
+| [view.go](../../internal/formats/nuget/view.go) | The `ViewAdapter` of the package screens: `Compare`, `Describe`, `Find`, `Withheld`, `Stored`, and `viewPort`, the part of the data port it reads (Q-NUGET-48) |
+| [setup.go](../../internal/formats/nuget/setup.go) | `clients` (dotnet, nuget, visual-studio) and `SetupTemplates` (Q-NUGET-49) |
+| [guide.go](../../internal/formats/nuget/guide.go), [guide/](../../internal/formats/nuget/guide) | `Guide` and its Markdown templates, one file per section (Q-NUGET-50) |
 | [exposure.go](../../internal/formats/nuget/exposure.go) | The exposure adapter: packages and versions, no tags; NuGet's range grammar. The filter of the documents is written with them (R-NUGET-034, H-295) |
 | [handlers_stub.go](../../internal/formats/nuget/handlers_stub.go) | One method per route that is not built; the package that builds it moves the method into a file of its own |
-| [nugettest](../../internal/formats/nuget/nugettest/store.go) | The in-memory twin of the port, for the conformance kit and unit tests |
+| [nugettest](../../internal/formats/nuget/nugettest/store.go), [view.go](../../internal/formats/nuget/nugettest/view.go) | The in-memory twin of the port, for the conformance kit and unit tests; it records the versions `InsertVersion` is handed and answers the view reads over them |
 
 ### Two kinds of path
 
@@ -64,7 +67,7 @@ classes that serve them.
 2. Read the replica's settings with `f.replicaOf(rq.Host)`; read the repository's member with `settingsOf(rq.Repo.Config)`.
 3. Map the route to canonical paths with `CanonicalPath`, never by string surgery on `rq.Path`.
 4. Answer errors with `errs` codes; `WriteError` renders them. Add a `ContentCase` with the real status to [conformance_test.go](../../internal/formats/nuget/conformance_test.go).
-5. Drop the check from `Skip` in the fixture when its subject exists (ingestion: checks 6 and 9; the remote and virtual adapters: 4 and 5; clients and templates: 8; the view: 11).
+5. Drop the check from `Skip` in the fixture when its subject exists (ingestion: checks 6 and 9; the remote and virtual adapters: 4 and 5). Checks 8 (clients, templates, guide) and 11 (view) run; the fixture's `View.Seed` stores versions through the `PackageWriter` and the twin's `InsertVersion`, which the ingestion replaces by a push.
 
 ### Data port and tables
 
@@ -72,7 +75,7 @@ The port is `nuget.Store`; the implementation is [internal/formatdata/nuget](../
 [nuget_local.sql](../../internal/meta/postgres/queries/nuget_local.sql)); its `Search` answers `nuget_not_implemented` until the search package replaces
 [search.go](../../internal/formatdata/nuget/search.go). The package also registers the four tables of migration 00017 with the
 backup ([tables.go](../../internal/formatdata/nuget/tables.go)); [cmd/trove/registry.go](../../cmd/trove/registry.go) links it for `trove migrate`. The reads the document and
-search packages need are typed in [rows/read.go](../../internal/formats/nuget/rows/read.go).
+search packages need are typed in [rows/read.go](../../internal/formats/nuget/rows/read.go). The reads of the package screens are typed in [rows/view.go](../../internal/formats/nuget/rows/view.go).
 
 ### Settings and configuration
 
@@ -80,11 +83,28 @@ The member `nuget` of a repository document holds `deleteMode` (`unlist` default
 arrive with R-NUGET-022 and R-NUGET-023 (Q-NUGET-31). The system file has `nuget.archive`, `nuget.registration` and `nuget.search`
 ([configuration.md](configuration.md#m2-keys)). The metadata period of Q-NUGET-2 is the generic `cache.metadataTtlSeconds` of a remote repository with the format's default of 300 s.
 
+### The package view, the setup snippets and the guide
+
+**The view** (WP3.1h) is `Format.View()`. It reads through `viewPort`, an interface of its own that the bound data port also implements, as npm's does: `ViewSummaries`, `ViewDetails`, `ViewFind`
+and `ViewStored`, written in [formatdata/nuget/view.go](../../internal/formatdata/nuget/view.go) over [nuget_view.sql](../../internal/meta/postgres/queries/nuget_view.sql). The README is not a column:
+`ViewDetails` opens the version's `.nupkg` through `Options.Blobs` (a `BlobReader`, ranged reads over the blob; [wire_nuget_blobs.go](../../internal/app/wire_nuget_blobs.go) binds it to the blob store) and
+reads the file the `.nuspec` names with the `nupkg` leaf. A missing file, one over 1 MiB and one that is not UTF-8 are no README; a failing object store is an error, so that it is not cached as an absent README.
+The members of `metadata`, the ordering of `Stored` and the empty `Withheld` are decided in Q-NUGET-48.
+
+**The setup snippets** are `SetupTemplates()`: configure, install and, for `dotnet` and `nuget`, publish; Visual Studio has the `nuget.config` and the `PackageReference`. A credential part sits inside
+`{{if .RequiresAuth}}` and spells the token reference of the language of its template (Q-NUGET-49). To change a command, change the template, the expectation in `setup_test.go`
+(`TestR_NUGET_026_TheCommandsAreTheOnesOfTheSpecification`) and the one in [guide_nuget_test.go](../../internal/api/v1/guide_nuget_test.go), which renders it through the API with all three credential modes.
+
+**The guide** is `guideSections()`, one Markdown file per section in [guide/](../../internal/formats/nuget/guide) (the same template language as npm's, over `formats.GuideData`). `Guide()` returns the sections of the classes the
+descriptor lists, so the remote and virtual text is tested (`guide_test.go` renders all three classes) and reachable the day the class registers. The troubleshooting table is checked row by row against the problem
+catalog and the status each code answers with; a code of the push that the ingestion has not registered yet is accepted with its specified status (`pendingCodes` in `guide_test.go`: delete an entry
+when the code exists). To add a section: a file in `guide/`, a line in `guideSections()`, and, if it is a required topic, the kit refuses a class or client without it.
+
 ### Tests
 
-`go test ./internal/formats/nuget/` runs the conformance kit (checks 1, 2, 3, 6, 7, 9 and 10 run; the others are skipped with their reason, and the kit refuses a skip once the format has what a check
+`go test ./internal/formats/nuget/` runs the conformance kit (checks 1, 2, 3, 6, 7, 8, 9, 10 and 11 run; the others are skipped with their reason, and the kit refuses a skip once the format has what a check
 is about), the route and matching tables, the classification, the error shape and the service index. [test/integration/nuget](../../test/integration/nuget) creates repositories through the management
-API, reads the service index over HTTP with every credential form, and asserts the 404, 405, 409 and 501 answers.
+API, reads the service index over HTTP with every credential form, and asserts the 404, 405, 409 and 501 answers; [view_store_test.go](../../test/integration/nuget/view_store_test.go) runs the view reads against PostgreSQL and [view_api_test.go](../../test/integration/nuget/view_api_test.go) the package screens of the management API over NuGet rows.
 
 ## Leaf packages
 

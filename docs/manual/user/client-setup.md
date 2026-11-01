@@ -9,7 +9,7 @@ trove gives you the configuration for your installation in four places. All of t
 | Place | How to open it | What it gives you |
 |---|---|---|
 | **Client setup** | User menu › **Client setup**, or **Set up your client for this repository** on a package page | Configuration snippets in the tabs **Configure**, **Install** and **Publish**, with a choice of credentials |
-| **Guides** | **Packages and files › Guides** | The full guide of a client: what the repository class is, configuring, signing in, installing, publishing, dist-tags and unpublish, security audit, lockfiles, troubleshooting |
+| **Guides** | **Packages and files › Guides** | The full guide of a client: what the repository class is, configuring, signing in, installing, publishing, dist-tags or unlisting, security audit, lockfiles, troubleshooting |
 | **How to use** | A tab on the screen of a repository (a section, if you may use the repository but not see its configuration) | The guide of that one repository, with a choice of client and links **Open the client setup** and **Open in the guides** |
 | **Install** panel | On the page of a package | The install command of the selected version for the client and repository you choose |
 
@@ -31,7 +31,7 @@ Every repository has one client address, built from the configured address of th
 | Package type | Address | Example |
 |---|---|---|
 | npm | `<base URL>/api/npm/<repository key>/` | `https://trove.example.com/api/npm/npm-all/` |
-| NuGet | `<base URL>/api/nuget/<repository key>/v3/index.json` | `https://trove.example.com/api/nuget/nuget-all/v3/index.json` |
+| NuGet | `<base URL>/api/nuget/<repository key>/v3/index.json` (the service index) | `https://trove.example.com/api/nuget/nuget-all/v3/index.json` |
 | Generic | `<base URL>/files/<repository key>/` | `https://trove.example.com/files/generic-local/` |
 
 The trailing slash belongs to the address of npm and generic repositories; a NuGet address ends in `index.json`. Which class of repository to use:
@@ -50,13 +50,13 @@ The trailing slash belongs to the address of npm and generic repositories; a NuG
 4. Under **Credentials**, choose how the snippets sign in (next section). Without a session this step only says that the snippets contain no authentication.
 5. Copy the snippets from the tabs **Configure**, **Install** and **Publish** with **Copy snippet**, or save a configuration file with **Download**.
 
-The **Publish** tab shows how to publish through the repository you chose, once for your client: `npm publish --registry <address>`, `pnpm publish --registry <address>`, `yarn publish --registry <address>` for Yarn Classic, or `npmPublishRegistry: "<address>"` in `.yarnrc.yml` for Yarn Berry. The address is the one of the repository you chose; for a virtual repository the publish reaches its default deployment target. The tab has no snippet when you cannot publish: for a remote repository, for a virtual repository without a default deployment target, and when you do not hold the deploy permission on the target. The hint of step 3 tells you which case it is; the guide's section **Publish a package** has the rest of the commands.
+The **Publish** tab shows how to publish through the repository you chose, once for your client: `npm publish --registry <address>`, `pnpm publish --registry <address>`, `yarn publish --registry <address>` for Yarn Classic, `npmPublishRegistry: "<address>"` in `.yarnrc.yml` for Yarn Berry, or `dotnet nuget push` and `nuget push` with the service index of the repository as the source and the token as the API key for NuGet (Visual Studio has no push). The address is the one of the repository you chose; for a virtual repository the publish reaches its default deployment target. The tab has no snippet when you cannot publish: for a remote repository, for a virtual repository without a default deployment target, and when you do not hold the deploy permission on the target. The hint of step 3 tells you which case it is; the guide's section **Publish a package** has the rest of the commands.
 
 ### Credentials
 
 | Option | What the snippets contain | Notes |
 |---|---|---|
-| **Reference an environment variable** (default) | `${TROVE_TOKEN}`, which the client expands when it runs | No secret on the page; the file can be committed. The link **Create a token to put into the variable** opens your personal tokens |
+| **Reference an environment variable** (default) | `${TROVE_TOKEN}`, which the client expands when it runs (`%TROVE_TOKEN%` in a `nuget.config` and in cmd, `$env:TROVE_TOKEN` in PowerShell) | No secret on the page; the file can be committed. The link **Create a token to put into the variable** opens your personal tokens |
 | **Create a token for this setup** | A new personal token, written into the snippets | See below |
 | **Use a token I already have** | The token you paste | The value stays in the browser and is never sent to the server |
 
@@ -106,33 +106,55 @@ npm whoami
 
 ## Configure a NuGet client
 
-The Client setup page always shows the `index.json` address of the repository, never an older NuGet v2 address. The clients take it like this:
+NuGet clients take the address of the **service index**, the `v3/index.json` address of the repository, as a package source. trove serves NuGet v3 only; a v2 address is answered with `404` and the message names the service index to use.
 
-| Client | Where the source is configured | Credential |
+| Client | How to configure it | Credential |
 |---|---|---|
-| .NET CLI | `dotnet nuget add source` writes it into your user configuration; or a `nuget.config` next to the solution | `--password` with the token; on Linux and macOS add `--store-password-in-clear-text`, because the .NET CLI cannot encrypt the password there |
-| nuget.exe | `nuget sources add`, or a `nuget.config` | `-Password` with the token |
-| Visual Studio | Tools, NuGet Package Manager, Package Manager Settings, Package Sources | any user name; the token as the password at the sign-in prompt |
+| .NET CLI (`dotnet`) | `dotnet nuget add source <service index> --name trove …` writes the user-level `NuGet.Config`; a `nuget.config` next to the solution applies to that solution | `--username trove --password "${TROVE_TOKEN}" --store-password-in-clear-text`, or `%TROVE_TOKEN%` in the file |
+| nuget.exe | `nuget sources add -Name trove -Source <service index> …`, or the `nuget.config` | `-Username trove -Password %TROVE_TOKEN%` (PowerShell: `$env:TROVE_TOKEN`); on Mono, Linux and macOS add `-StorePasswordInClearText` |
+| Visual Studio | The `nuget.config` next to the solution file, or Tools › NuGet Package Manager › Package Manager Settings › Package Sources | `%TROVE_TOKEN%` in the file, read from the environment Visual Studio started in; or the credential prompt (any user name, the token as the password) |
 
-The `nuget.config` the page offers starts with `<clear />`, which removes every other package source. Every package then comes through the trove repository (use a virtual repository that includes a nuget.org remote), and a package of the same name on a public source cannot slip in. It reads the token from the environment variable `%TROVE_TOKEN%`, which works on every operating system:
+The credential parts appear when the repository is not open to anonymous readers. The user name is not checked; the snippets use `trove`. On Linux and macOS NuGet cannot encrypt a stored password, so the command-line form needs `--store-password-in-clear-text`, and the token your shell expands is then written into the user-level file; the `nuget.config` form keeps the reference `%TROVE_TOKEN%`, which NuGet expands from the environment on every operating system, and can be committed. A `nuget.config` for a virtual repository looks like this:
 
 ```xml
-<!-- example: the virtual repository nuget-all -->
+<?xml version="1.0" encoding="utf-8"?>
 <configuration>
   <packageSources>
     <clear />
-    <add key="trove" value="https://trove.example.com/api/nuget/nuget-all/v3/index.json" />
+    <add key="trove" value="https://trove.example.com/api/nuget/nuget-all/v3/index.json" protocolVersion="3" />
   </packageSources>
-  <packageSourceCredentials>
+  <packageSourceCredentials>   <!-- only when the repository is not open to anonymous readers -->
     <trove>
-      <add key="Username" value="alice" />
+      <add key="Username" value="trove" />
       <add key="ClearTextPassword" value="%TROVE_TOKEN%" />
     </trove>
   </packageSourceCredentials>
 </configuration>
 ```
 
-The user name is not checked; the token is. To publish, `dotnet nuget push <id>.<version>.nupkg --source <address> --api-key "${TROVE_TOKEN}"` sends the token as the API key; the **Publish** tab fills in the address of the repository that receives uploads. Visual Studio has no **Publish** snippet.
+`<clear />` removes every other source, nuget.org among them, so every package resolves through trove and a package of the same ID on a public source cannot slip in; put a remote repository for nuget.org into the virtual repository to keep public packages. Where several sources are unavoidable, say with package source mapping which source may serve which ID prefix; the guide shows the element. Sign the client in as for npm: put a [personal access token](access-tokens.md) into `TROVE_TOKEN` before the client runs.
+
+## Restore, push and maintain NuGet packages
+
+| Task | .NET CLI | nuget.exe |
+|---|---|---|
+| Add a package | `dotnet add package <id> --version <version>` | `nuget install <id> -Version <version> -Source trove` |
+| Restore | `dotnet restore` (`--no-http-cache` after a push) | `nuget restore` |
+| Restore from the lock file | `dotnet restore --locked-mode` | `nuget restore -LockedMode` |
+| Push | `dotnet nuget push <file>.nupkg --source <service index> --api-key "${TROVE_TOKEN}"` | `nuget push <file>.nupkg -Source <service index> -ApiKey %TROVE_TOKEN%` |
+| Unlist or delete | `dotnet nuget delete <id> <version> --source <service index> --api-key "${TROVE_TOKEN}" --non-interactive` | `nuget delete <id> <version> -Source <service index> -ApiKey %TROVE_TOKEN%` |
+
+Visual Studio adds packages through Manage NuGet Packages, with the source chosen at the top right, or through a `PackageReference` in the project file; it does not push. What each needs and how the classes behave:
+
+- **Permissions.** Restoring needs read, pushing and relisting deploy, unlisting and deleting delete. The token goes in as the API key for push, unlist, relist and delete, and as the password for everything else. Through a virtual repository you also need read on the members you restore from.
+- **Local repositories** accept an ID and version once: pushing the same version with other bytes answers `409` `nuget_version_exists`, and pushing the same file again succeeds without a change, which is what makes a push safe to repeat. A version that was deleted for good is blocked for ever (`409` `nuget_version_deleted`).
+- **Unlisting** is what `dotnet nuget delete` does by default: search no longer offers the version, but it stays downloadable and a project that names it keeps restoring. Whether the command deletes for good is the repository's `deleteMode`, which its settings page shows. NuGet clients have no command to list a version again; the guide shows the request.
+- **Remote repositories** take no writes (`405`). They serve and cache what their upstream serves; the version lists and registrations are refreshed after the metadata period, five minutes unless the repository sets another.
+- **Virtual repositories** send push, unlist, relist and delete to their deployment target; without one they answer `405` `no_deploy_target`.
+- **IDs.** The first push of an ID to a local repository records its owners and, by default, claims it: virtual repositories that contain the local repository then never take a public package of that ID from their remote members. The first push of an ID that a remote member already serves needs the manage permission (`403` `shadows_remote_package` otherwise).
+- **Not available in this version:** NuGet v2 addresses, and the symbol server.
+
+A failed `dotnet nuget push` or `nuget push` prints the status and the reason phrase only; the code of the answer is in the body that `curl` shows, and the guide's troubleshooting table lists each code with its status. The guide of your client and repository names the exact limits and client messages (`NU1301`, `NU1101`, `NU1102`).
 
 On the package page a NuGet package shows its ID in the casing of its first publish, its dependencies by target framework on the **Metadata** tab, and the banner **Unlisted.** for a version its publisher unlisted: that version is missing from search and is still downloaded when a project asks for exactly it.
 
@@ -164,8 +186,9 @@ The guide of your client and repository names the exact limits, notices and clie
 - **npm** and **Yarn Classic** record the address and integrity of every tarball. The addresses lie under the repository the install went through, and an install from the lockfile fetches them directly, whatever the configuration says now. To move an npm lockfile to another repository that serves the same versions, replace the old address by the new one in it; the integrity values stay valid.
 - **pnpm** checks every tarball against the integrity in `pnpm-lock.yaml`.
 - **Yarn Berry** writes no registry addresses into `yarn.lock`, so pointing `npmRegistryServer` elsewhere needs no change to the lockfile.
+- **NuGet** records the resolved version and the content hash of every package in `packages.lock.json` (switched on with `RestorePackagesWithLockFile`), and no source address, so a lock file moves to another repository that serves the same bytes; `dotnet restore --locked-mode` restores exactly what it names. NuGet v3 announces no digest of its own, so the hash in the lock file is your check against a changed upstream.
 
-The integrity values stay valid because a version's bytes never change in a local repository, and a remote repository stores a tarball only when it matches the integrity its upstream announces. By default, a version the upstream withdrew answers `404` through remote and virtual repositories, also for an install from a lockfile. `EINTEGRITY` usually means the lockfile was written against a registry that served other bytes for the version.
+The integrity and hash values stay valid because a version's bytes never change in a local repository, and a remote npm repository stores a tarball only when it matches the integrity its upstream announces. By default, a version the upstream withdrew answers `404` through remote and virtual repositories, also for an install from a lockfile. `EINTEGRITY` usually means the lockfile was written against a registry that served other bytes for the version.
 
 ## Download and upload files with curl
 

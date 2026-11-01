@@ -53,7 +53,7 @@ func (sidecar) PackageDocumentPath(string) (formats.Path, bool) {
 // a binding missing or wrong (typed wiring).
 func TestQ_ARCH_193_AMissingDataPortBindingIsAStartupError(t *testing.T) {
 	t.Run("the formats of this build pass with the bindings the root makes", func(t *testing.T) {
-		ports, err := formatPorts(noRunner{}, audit.Nop{})
+		ports, err := formatPorts(noRunner{}, audit.Nop{}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

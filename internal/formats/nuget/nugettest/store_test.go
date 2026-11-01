@@ -25,7 +25,7 @@ func (t *fakeTx) rollBack() {
 	}
 }
 
-func version(id, v string, sha byte, opts ...func(*rows.VersionInput)) rows.VersionInput {
+func versionRow(id, v string, sha byte, opts ...func(*rows.VersionInput)) rows.VersionInput {
 	in := rows.VersionInput{
 		RepoID: 1, VersionID: int64(sha), LowerID: id, DeclaredID: id, OriginalVersion: v, LowerVersion: v, SortKey: []byte(v),
 		SHA512: []byte{sha, sha}, Origin: rows.OriginPush, Files: []rows.File{{Path: id + "/" + v, SHA256: hex.EncodeToString([]byte{sha}), Size: 1}},
@@ -43,7 +43,7 @@ func TestR_NUGET_006_ATwinWriteLeavesNoTraceWhenItsTransactionRollsBack(t *testi
 	ctx := context.Background()
 	s := New()
 	tx := &fakeTx{}
-	if err := s.InsertVersion(ctx, tx, version("acme.widgets", "1.0.0", 1)); err != nil {
+	if err := s.InsertVersion(ctx, tx, versionRow("acme.widgets", "1.0.0", 1)); err != nil {
 		t.Fatal(err)
 	}
 	if _, found, _ := s.VersionFacts(ctx, 1, "acme.widgets", "1.0.0"); !found {
@@ -62,7 +62,7 @@ func TestR_NUGET_006_ATwinWriteLeavesNoTraceWhenItsTransactionRollsBack(t *testi
 func TestR_NUGET_006_ATwinTombstoneReadsTheDigestOfTheRemovedBlobAndOutlivesTheVersion(t *testing.T) {
 	ctx := context.Background()
 	s := New()
-	in := version("acme.widgets", "1.0.0", 1)
+	in := versionRow("acme.widgets", "1.0.0", 1)
 	if err := s.InsertVersion(ctx, &fakeTx{}, in); err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestR_NUGET_007_ATwinListsAndUnlists(t *testing.T) {
 	s := New()
 	for i, v := range []string{"1.0.0", "1.1.0", "2.0.0-beta"} {
 		pre := v == "2.0.0-beta"
-		if err := s.InsertVersion(ctx, &fakeTx{}, version("acme.widgets", v, byte(i+1), func(in *rows.VersionInput) { in.IsPrerelease = pre })); err != nil {
+		if err := s.InsertVersion(ctx, &fakeTx{}, versionRow("acme.widgets", v, byte(i+1), func(in *rows.VersionInput) { in.IsPrerelease = pre })); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -130,10 +130,10 @@ func TestR_NUGET_007_ATwinListsAndUnlists(t *testing.T) {
 func TestR_NUGET_006_ATwinRefusesASecondRowForOneNumberAndPromotesOnlyReservations(t *testing.T) {
 	ctx := context.Background()
 	s := New()
-	if err := s.InsertVersion(ctx, &fakeTx{}, version("acme.widgets", "1.0.0", 1)); err != nil {
+	if err := s.InsertVersion(ctx, &fakeTx{}, versionRow("acme.widgets", "1.0.0", 1)); err != nil {
 		t.Fatal(err)
 	}
-	err := s.InsertVersion(ctx, &fakeTx{}, version("acme.widgets", "1.0.0", 2))
+	err := s.InsertVersion(ctx, &fakeTx{}, versionRow("acme.widgets", "1.0.0", 2))
 	if e, ok := errs.As(err); !ok || e.Code != errs.CodeNuGetVersionExists {
 		t.Errorf("second row = %v, want nuget_version_exists", err)
 	}

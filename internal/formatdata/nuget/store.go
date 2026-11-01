@@ -47,6 +47,9 @@ type Options struct {
 	// item store (a protocol delete, a raw delete) knows the principal's id and nothing
 	// else; the actor of the request completes the event. nil keeps what the format passed.
 	Actor func(ctx context.Context) audit.Actor
+	// Blobs gives the package view ranged reads over a stored package, to read the README
+	// file it holds (view.go). nil leaves the view without README text.
+	Blobs BlobReader
 }
 
 // Store implements the data port of the NuGet format.

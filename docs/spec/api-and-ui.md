@@ -1478,6 +1478,10 @@ remain as their owners define them.)
   The members of npm's `metadata` that the UI reads are `distTags`, `dependencies`, `devDependencies`,
   `peerDependencies`, `optionalDependencies`, `engines` (name to string), `authors`, `homepage`,
   `repositoryUrl`, `bugsUrl` and `deprecated`; a member that does not apply is absent (Q-API-159).
+  NuGet's `metadata` has `id` (the casing of this version's `.nuspec`), `listed`, `title`, `summary`, `releaseNotes`,
+  `copyright`, `language`, `minClientVersion`, `licenseUrl`, `homepage`, `repositoryUrl`, `authors`, `tags`, `packageTypes`,
+  `dependencyGroups` (per target framework) and, when true, `requireLicenseAcceptance` and `developmentDependency`; its
+  README is the file the `.nuspec` names, read out of the stored package (Q-NUGET-48).
 - The `versions` list entries hold `version`, `prerelease`, `publishedAt`, `sizeBytes`, `repositories`
   (keys the caller may read) and `downloadCount`. The details and the README answer carry a strong `ETag`
   and honour `If-None-Match`; the README tag covers the README source, the renderer version and the hash of
@@ -3119,8 +3123,11 @@ encrypt stored passwords):
 
 ```shell
 dotnet nuget add source "https://trove.example.com/api/nuget/nuget-all/v3/index.json" \
-  --name trove --username "<username>" --password "${TROVE_TOKEN}" --store-password-in-clear-text
+  --name trove --username trove --password "${TROVE_TOKEN}" --store-password-in-clear-text
 ```
+
+The snippets of the UI write the credential part only for a repository that is not anonymously readable, and the fixed user
+name `trove`; the exact shapes per client and shell are in [formats/nuget.md](formats/nuget.md) R-NUGET-026 (Q-NUGET-49).
 
 Repository `nuget.config`. `%VAR%` references work on every operating system, and `<clear />`
 removes other sources, so every package resolves through trove (the virtual repository includes a
@@ -3136,14 +3143,14 @@ nuget.org remote) and a same-named package on a public source cannot slip in
   </packageSources>
   <packageSourceCredentials>
     <trove>
-      <add key="Username" value="<username>" />
+      <add key="Username" value="trove" />
       <add key="ClearTextPassword" value="%TROVE_TOKEN%" />
     </trove>
   </packageSourceCredentials>
 </configuration>
 ```
 
-NuGet CLI: `nuget sources add -Name trove -Source "https://trove.example.com/api/nuget/nuget-all/v3/index.json" -Username "<username>" -Password "<token>"`.
+NuGet CLI: `nuget sources add -Name trove -Source "https://trove.example.com/api/nuget/nuget-all/v3/index.json" -Username trove -Password "<token>"`.
 Visual Studio: add a package source with name and service-index URL in the NuGet package manager
 options; at the credential prompt enter any user name and the token as password.
 
@@ -3152,12 +3159,12 @@ options; at the credential prompt enter any user name and the token as password.
 | Install | `dotnet add package <id> --version <version>`; `dotnet restore` |
 | Publish | `dotnet nuget push <id>.<version>.nupkg --source "https://trove.example.com/api/nuget/nuget-local/v3/index.json" --api-key "${TROVE_TOKEN}"` (the token travels as `X-NuGet-ApiKey`, INV-8; a `.snupkg` next to the package is pushed with it, [formats/nuget.md](formats/nuget.md)) |
 
-The username is not checked (INV-8); the snippet fills in the caller's name for readability.
+The username is not checked (INV-8); the snippets use the fixed name `trove`.
 
 The UI's client table offers three clients for NuGet: `dotnet`, `nuget` (nuget.exe) and `visual-studio` (Q-UI-94). Visual Studio
 has a configure and an install snippet and none for publishing.
-PowerShell and Chocolatey instructions need NuGet v2, which is P2 (INV-14), and are not offered in
-the MVP.
+PowerShellGet and Chocolatey instructions need NuGet v2, which is P2 (INV-14), and are not offered in
+the MVP; the `dotnet` and `nuget.exe` commands also come in PowerShell syntax.
 
 Acceptance criteria (CI end-to-end, .NET SDK container, real token in `TROVE_TOKEN`):
 

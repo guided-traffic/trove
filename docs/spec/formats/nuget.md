@@ -1881,14 +1881,27 @@ always use the `index.json` URL, never a v2 address, and show per repository:
 ```shell
 # .NET CLI; on Linux and macOS the password must be stored in clear text
 dotnet nuget add source https://trove.example.com/api/nuget/nuget-all/v3/index.json \
-  --name trove --username token --password "$TROVE_TOKEN" --store-password-in-clear-text
+  --name trove --username trove --password "$TROVE_TOKEN" --store-password-in-clear-text
 dotnet restore
-dotnet nuget push bin/Release/Acme.Widgets.1.2.3.nupkg --source trove --api-key "$TROVE_TOKEN"
+dotnet nuget push bin/Release/Acme.Widgets.1.2.3.nupkg --source https://trove.example.com/api/nuget/nuget-local/v3/index.json --api-key "$TROVE_TOKEN"
 
 # nuget.exe
-nuget sources add -Name trove -Source https://trove.example.com/api/nuget/nuget-all/v3/index.json -Username token -Password %TROVE_TOKEN%
-nuget push Acme.Widgets.1.2.3.nupkg -Source trove -ApiKey %TROVE_TOKEN%
+nuget sources add -Name trove -Source https://trove.example.com/api/nuget/nuget-all/v3/index.json -Username trove -Password %TROVE_TOKEN%
+nuget push Acme.Widgets.1.2.3.nupkg -Source https://trove.example.com/api/nuget/nuget-local/v3/index.json -ApiKey %TROVE_TOKEN%
 ```
+
+Which snippets exist, as built (Q-NUGET-49): per client a configure, an install and, for the two command line clients, a
+publish template; the snippets of the UI and of the guide are these templates rendered for a repository. The credential
+parts (`--username … --password …`, `-Username … -Password …`, the `packageSourceCredentials` block) are written only for a
+repository that is not anonymously readable, in the token spelling of the template's language: `%TROVE_TOKEN%` in a
+`nuget.config` and in cmd, `${TROVE_TOKEN}` in a POSIX shell, `$env:TROVE_TOKEN` in PowerShell. The user name is the fixed
+`trove` (the server accepts any, R-NUGET-012). The `dotnet` snippets exist for a POSIX shell and for PowerShell, the
+`nuget.exe` snippets for cmd and PowerShell, and all three clients get the `nuget.config` below as a file; Visual Studio gets
+the `nuget.config` and the `PackageReference` of a project (`<PackageReference Include="acme.widgets" Version="1.2.3" />`) and
+nothing else, because it has no command line. A publish snippet names the repository the reader chose and carries the token
+as the API key. `dotnet add package <id> --version <version>` and `nuget install <id> -Version <version> -Source trove` are
+the install snippets; `nuget sources add` leaves the clear-text switch out because nuget.exe on Windows encrypts the password
+and the guide says that Mono, Linux and macOS need `-StorePasswordInClearText`.
 
 `nuget.config` for a repository checkout (values # example; `%TROVE_TOKEN%` is expanded from the
 environment on every platform):
@@ -1902,12 +1915,15 @@ environment on every platform):
   </packageSources>
   <packageSourceCredentials>
     <trove>
-      <add key="Username" value="token" />
+      <add key="Username" value="trove" />
       <add key="ClearTextPassword" value="%TROVE_TOKEN%" />
     </trove>
   </packageSourceCredentials>
 </configuration>
 ```
+
+(`packageSourceCredentials` is written for a repository that needs a credential; for an anonymously readable one the file ends
+after `packageSources`.)
 
 - The instructions recommend one source, the virtual repository, with `<clear />`, so clients do
   not also query nuget.org directly. Where several sources are unavoidable they show NuGet's
@@ -1931,6 +1947,12 @@ environment on every platform):
   table of NuGet's answers. Its configure and install sections attach the snippets of this requirement, and kit check 8
   fails the format without the guide ([architecture.md](../architecture.md) R-ARCH-010). The guides area and the
   repository screen show it without a new screen.
+  As built (Q-NUGET-50): the sections are `what` (one per class), `configure`, `authenticate`, `install`, `publish`,
+  `maintain`, `lockfiles`, `endpoint` and `troubleshooting`; `publish` and `maintain` are written for the two command
+  line clients only, `Guide()` returns the sections of the classes the descriptor lists, and the sections of the other
+  classes are in the code from the start and appear with their class. The troubleshooting table names a code of the
+  problem catalog under its status in every row. The version hidden on a customer endpoint, `NU1102`, and the
+  `NU1101` of an ID that is not exposed at all are in the section `endpoint`.
 
 Acceptance criteria:
 
@@ -3710,6 +3732,66 @@ Context: the skeleton declared `Search(ctx, SearchQuery) ([]SearchHit, error)` a
 **Rationale:** it keeps the format free of SQL and the data port free of the permission model. The development agent revisits this if a second listing needs the same scan (autocomplete, R-NUGET-011), when the scan moves next to the shared code.
 
 **Applied in the spec:** none (the port is not specified). Code: [store.go](../../../internal/formats/nuget/store.go), [read.go](../../../internal/formats/nuget/rows/read.go), [search.go](../../../internal/formatdata/nuget/search.go). Tests: the integration tests of Q-NUGET-45 and Q-NUGET-46, which run the three statements.
+
+### Q-NUGET-48 · What the package screens read of a NuGet version, and where the README comes from
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the package screens of [api-and-ui.md](../api-and-ui.md) R-API-029 show a package under its original ID casing, a description, keywords, licenses, a README and a format-specific `metadata` object (the UI reads npm's members; the schema of the others is the format page's). The NuGet tables hold the metadata of a version as JSON (R-NUGET-005), not a README: the README is a file inside the `.nupkg` that the `.nuspec` names. R-NUGET-024 extracts it into a generated item, but that requirement is P1 and the ingestion of M3 does not write the item.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Read the file out of the stored `.nupkg` when the README is asked for (chosen) | The data port opens the lead item's blob with ranged reads (the central directory, then the one entry), through a reader the composition root binds | Works for pushed and cached packages from M3 on; no column, no item and no write path; the same `nupkg` leaf that ingests reads it; only the README tab pays | A README view costs a few ranged reads of the object store; `hasReadme` is "the `.nuspec` names a README file", so a file that is missing, larger than 1 MiB or not UTF-8 gives `hasReadme: true` and a `404` README |
+| (b) The generated `.embedded/readme` item of R-NUGET-024 | The ingestion extracts the file; the view reads the item | Cheap, and `hasReadme` is exact | P1: nothing writes the item in M3, so no package would have a README; the view would need an item reader as well |
+| (c) The README text in `nuget_version.metadata` | The ingestion copies up to 1 MiB into the JSON | One SQL read | Every registration and search read carries it; a restore or a reindex rewrites it |
+
+**Choice:** (a), with these rules for the rest of the view:
+
+- The description is the `.nuspec` `description`, the `summary` when there is none; the keywords are the `tags`; the licenses are the license expression when the license element is of type `expression`, and none for a license file or a bare `licenseUrl`.
+- `metadata` holds `id` (the declared casing of this version), `listed`, `title`, `summary`, `releaseNotes`, `copyright`, `language`, `minClientVersion`, `licenseUrl`, `homepage` (`projectUrl`), `repositoryUrl`, `authors` (the authors string split at commas), `tags`, `packageTypes` (the names), `dependencyGroups` (`[{"targetFramework", "dependencies": [{"id", "range"}]}]`, a flat dependency list being one group without a framework) and, when true, `requireLicenseAcceptance` and `developmentDependency`; a member that does not apply is absent. `authors`, `homepage` and `repositoryUrl` are the names the UI already reads for npm.
+- Versions order by `version.Compare`; two spellings NuGet treats as one version (the case of a label) are broken by the string, so the order is total as check 11 demands.
+- `Stored` lists every live version of the ID, listed or not, in the URL form: newest arrival first for a local repository (the version id grows with every insert), newest published first for a remote one (the version id breaks a tie). A remote repository lists the versions it has cached, as the packages API does (R-API-029: remote repositories contribute their cached versions only); the version list of the upstream is a cached document and not a row. A virtual repository stores nothing.
+- `Withheld` is empty: NuGet withholds no stored version. A removed version has no row but its tombstone (R-NUGET-006), and the replay of a restore reports the versions it would revive without touching them (Q-NUGET-10).
+
+**Rationale:** (a) is the only option that gives M3 a README without a second ingestion path, and the cost lands on the one tab that needs it. The deviation of `hasReadme` is small and visible (an empty README tab); the exact answer needs the flag the P1 extraction can write when it lands, and the development agent would revisit this then: R-NUGET-024 can make `hasReadme` exact by writing the item and the view can read that instead. The ranged reads are not verified against the blob digest ([storage.md](../storage.md) R-STOR-013 verifies full reads only); the text is rendered by the sanitizer of R-UI-008, never executed.
+
+**Applied in the spec:** none in a requirement; this block is the schema of the `metadata` object that [api-and-ui.md](../api-and-ui.md) R-API-029 leaves to the format page. Code: [view.go](../../../internal/formats/nuget/view.go), [formatdata/nuget/view.go](../../../internal/formatdata/nuget/view.go), [nuget_view.sql](../../../internal/meta/postgres/queries/nuget_view.sql), [wire_nuget_blobs.go](../../../internal/app/wire_nuget_blobs.go). Tests: `TestR_API_029_NuGetDescribesSummaryAndDetails`, `TestR_EP_016_NuGetStoredListsWhatTheRepositoryServes`, `TestQ_NUGET_48_TheDataPortReadsTheViewFromPostgreSQL`, `TestR_API_029_NuGetPackagesAreListedAndDescribed`.
+
+### Q-NUGET-49 · The setup snippets: one command or file per client, the credential only where it is needed
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-026 and R-UI-018 fix the commands. The core rewrites the token reference of a template by the reader's credential mode and, for a reader without credentials, drops every line that holds a reference (R-API-030). A NuGet command is one line with a continuation; dropping the line that holds `--password` leaves the line before it ending in a backslash, and dropping the `ClearTextPassword` line of a `nuget.config` leaves a source with a user name and no password. The user name is not checked (R-NUGET-012); `SetupData.Username` is not filled by the API, and the kit's check 8 refuses the word "token" in a template.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The credential part is conditional on `RequiresAuth`, with a fixed user name `trove` (chosen) | The `--username … --password …` part, its nuget.exe counterpart and the `packageSourceCredentials` block sit inside a conditional on `RequiresAuth`; the API clears `RequiresAuth` for credentials=none | One command per snippet, as the specification shows; an anonymous reader and a repository open to anonymous readers get a complete command and a valid file; no dropped-line case | A repository open to anonymous readers gets a snippet without credential even when the reader asked for the environment reference (a restore needs none; a push carries the API key) |
+| (b) Always the credential, as npm's `.npmrc` | The credential is on a line of its own | The same shape for every reader | For credentials=none the line goes and leaves a dangling continuation or a source with a user name only |
+| (c) Two commands: `add source`, then `update source … --username … --password …` | The credential line is a command of its own | Drops cleanly | Two commands where the specification shows one; `update source` is a different command to explain |
+
+**Choice:** (a). The user name is the fixed `trove` (the specification's earlier `token` is a word check 8 refuses in a template, and `<username>` would need the API to fill a field it does not). The `dotnet` snippets come for a POSIX shell and for PowerShell, the `nuget.exe` snippets for cmd and PowerShell, each in the token spelling of its language (Q-API-187 to Q-API-189); the `nuget.config` is a file template for all three clients. Visual Studio has the `nuget.config` and the `PackageReference` of a project: the install template places the version through `VersionSpec` as `" Version="<version>`, which closes the `Include` attribute and opens the `Version` attribute, so the API's one substitution yields `<PackageReference Include="acme.widgets" Version="1.2.3" />`. The publish snippet names the repository the reader chose (a virtual repository forwards the push) and carries the token as the API key.
+
+**Rationale:** the failure of (b) and (c) is in the one case the snippets exist for: a copy that works. (a) keeps the specification's single command and moves the decision to the data the API already clears. The development agent would revisit this if users of anonymously readable repositories need the credential in the file for pushes: the API key travels with the command, so none has asked. A push with `credentials=none` is one line that holds the reference and is dropped whole; a signed-in reader who asks for that gets an empty publish snippet (the guide's publish section is empty for an anonymous reader anyway).
+
+**Applied in the spec:** R-NUGET-026 (the commands and the paragraph "Which snippets exist, as built"); [api-and-ui.md](../api-and-ui.md) R-UI-018. Code: [setup.go](../../../internal/formats/nuget/setup.go). Tests: `TestR_NUGET_026_TheTemplatesSpellTheCredentialInTheirOwnSyntax`, `TestR_NUGET_026_TheNuGetConfigIsWellFormed`, `TestR_NUGET_026_TheCommandsAreTheOnesOfTheSpecification`, `TestR_NUGET_026_TheInstallTemplatesTakeAVersion`, `TestR_NUGET_026_TheSetupSnippetsOfEveryClient`, `TestR_NUGET_026_TheSetupWithoutACredential`.
+
+### Q-NUGET-50 · The guide: its sections, its clients, and the classes that are not registered yet
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-049 and R-UI-019 want a guide for every class and every client the format supports, from the phase the format ships. The descriptor lists the class `local` only until the adapters of the others exist (Q-NUGET-28), and check 8 fails a guide section written for a class the descriptor does not list. Visual Studio has no command to push, unlist, relist or delete. The audit topic of the npm guide has no NuGet counterpart before the vulnerability information of R-NUGET-023 (P1).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Write all three classes now; `Guide()` returns the sections of the registered classes (chosen) | `guideSections()` holds the text of every class; `Guide()` drops a class the descriptor does not list from a section's classes, and a section left without class | The text exists and is tested from the first day (the tests render all three classes); the remote and virtual class need no guide work when they land; check 8 passes | The remote and virtual text cannot be reached through the API until the class is registered |
+| (b) Write the text of a class with its adapter | The sections are added in WP3.2a and WP3.2c | Nothing unreachable in the code | Contradicts R-UI-019 for the phase in which the format ships its guide; the class text is written without the whole format around it |
+| (c) Declare the classes in the descriptor now | The descriptor lists three classes | The guide is reachable for all | `formats.Validate` refuses a class without an adapter (Q-NUGET-28) |
+
+**Choice:** (a). The sections are `what` (one per class), `configure`, `authenticate`, `install`, `publish`, `maintain`, `lockfiles`, `endpoint` and `troubleshooting`; no `audit` section. `publish` and `maintain` are written for `dotnet` and `nuget` only, for the classes `local` and `virtual`. The troubleshooting table names the codes of the push (`nuget_version_exists`, `nuget_version_deleted`, `nuget_version_reserved`) with the status the specification gives them; the test accepts a code that the ingestion has not registered yet with that status and checks it like any other once it is.
+
+**Rationale:** the guide is the user's documentation of the format; the text for a class must not wait for the code of the class. The development agent would revisit this when the remote and virtual adapters land: the change that lists the class deletes nothing here, and the kit then covers the class's sections as well.
+
+**Applied in the spec:** R-NUGET-026 (the guide bullet). Code: [guide.go](../../../internal/formats/nuget/guide.go), [guide/](../../../internal/formats/nuget/guide). Tests: `TestR_UI_049_NuGetHasAGuideForEveryVariant`, `TestR_UI_049_TheNuGetTroubleshootingCodesAreTroves`, `TestR_UI_049_EveryCodeTheNuGetGuideNamesExists`, `TestR_NUGET_026_TheGuideStatesTheDefaults`, `TestR_UI_049_TheNuGetGuideShowsTheSnippetsOfTheClientSetup`.
 
 ## What this does not cover
 

@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/formattest"
+	"github.com/guided-traffic/trove/internal/formats/nuget/rows"
 )
 
 // nugetChanges are the writes of check 9: every hook and every route that changes package
@@ -98,6 +100,38 @@ func canonicalOf(f *Format) func(string) (string, bool) {
 	}
 }
 
+// seedVersions stores a package at the versions, in this order, the way a push stores them: the
+// package row and the version rows of the core through the writer of the Host, the NuGet row
+// through the data port (the ingestion pipeline of R-NUGET-005 is WP3.1e; its Store calls are
+// these two). The last version is the newest arrival.
+func seedVersions(lowerID string, versions ...string) func(h *formattest.Host) error {
+	return func(h *formattest.Host) error {
+		store := h.FormatData(ID).(interface {
+			InsertVersion(context.Context, formats.Tx, rows.VersionInput) error
+		})
+		ctx := context.Background()
+		return h.Write(ctx, nil, func(tx formats.Tx, w formats.PackageWriter) error {
+			pkg, _, err := w.EnsureLocked(ctx, h.Ref(), lowerID, lowerID)
+			if err != nil {
+				return err
+			}
+			for i, v := range versions {
+				id, err := w.InsertVersion(ctx, pkg, formats.NewVersion{Version: v, DisplayVersion: v})
+				if err != nil {
+					return err
+				}
+				if err := store.InsertVersion(ctx, tx, rows.VersionInput{
+					RepoID: h.Ref().ID, VersionID: int64(id), LowerID: lowerID, DeclaredID: lowerID, OriginalVersion: v, LowerVersion: v,
+					PublishedAt: time.Date(2026, 1, 1, 0, i, 0, 0, time.UTC), PackageTypes: []string{"dependency"}, Metadata: []byte(`{}`),
+				}); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
+}
+
 // conformance is the fixture of the NuGet format for the kit (R-ARCH-010). The skeleton
 // serves the service index and answers 501 for every other route, so checks 4 and 5 have no
 // adapter to run over (the remote and the virtual class join with their adapters, Q-NUGET-28)
@@ -157,11 +191,16 @@ func conformance(f *Format) formattest.Fixture {
 			{Spellings: []string{"Acme.Widgets", "acme.widgets", "ACME.WIDGETS"}},
 			{Spellings: []string{"Newtonsoft.Json", "newtonsoft.json"}},
 		},
+		// The arrival order is not the version order, so a Stored that sorts by version fails.
+		View: &formattest.ViewFixture{
+			Versions: []string{"1.0.0", "1.10.0", "1.2.0", "2.0.0-beta.1", "2.0.0"},
+			Package:  "view.sample",
+			Seed:     seedVersions("view.sample", "1.0.0", "1.10.0", "1.2.0", "2.0.0-beta.1", "2.0.0"),
+		},
+		OptionNames: []string{"--password", "--store-password-in-clear-text", "-Password", "ClearTextPassword", "TROVE_TOKEN"},
 		Skip: map[formattest.Check]string{
 			formattest.CheckRewrite: "the remote class and its adapter are WP3.2a (Q-NUGET-28)",
 			formattest.CheckMerge:   "the virtual class and its adapter are WP3.2c (Q-NUGET-28)",
-			formattest.CheckSetup:   "clients, setup templates and the guide are WP3.1h",
-			formattest.CheckView:    "the package view adapter is WP3.1h",
 		},
 	}
 }
@@ -189,8 +228,9 @@ func seedWidgets(h *formattest.Host) error {
 }
 
 // TestR_ARCH_010_Conformance runs the conformance kit over the NuGet format: route
-// ambiguity (check 1), path traversal (2), classification (3), content headers (7) and
-// package names (10) run; the others are skipped with their reason.
+// ambiguity (check 1), path traversal (2), classification (3), the setup templates and the
+// guide (8), content headers (7), package names (10) and the view adapter (11) run; the others
+// are skipped with their reason.
 func TestR_ARCH_010_Conformance(t *testing.T) {
 	f := New()
 	formattest.Run(t, f, conformance(f))

@@ -174,9 +174,8 @@ func TestR_API_053_TheGuideOfAFormat(t *testing.T) {
 		t.Errorf("%+v", conf)
 	}
 	for q, want := range map[string]int{
-		"/api/v1/formats/maven/guide?class=local&client=mvn": 404,
-		// NuGet is registered and has no clients until WP3.1h: no client is offered, so the answer is 400.
-		"/api/v1/formats/nuget/guide?class=local&client=dotnet":  400,
+		"/api/v1/formats/maven/guide?class=local&client=mvn":     404,
+		"/api/v1/formats/nuget/guide?class=local&client=dotnet":  200,
 		"/api/v1/formats/npm/guide?class=bogus&client=npm":       400,
 		"/api/v1/formats/npm/guide?class=local&client=bun":       400,
 		"/api/v1/formats/generic/guide?class=local&client=curl":  200,

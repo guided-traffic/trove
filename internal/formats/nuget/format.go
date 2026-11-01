@@ -100,6 +100,7 @@ func (f *Format) Descriptor() formats.Descriptor {
 		},
 		ContractVersion:  formats.ContractVersion,
 		Names:            names{},
+		Clients:          clients(),
 		PropertyPrefix:   "nuget.",
 		MaxDocumentBytes: MaxDocumentBytes,
 		// The bounds R-NUGET-005 and R-ARCH-028 give a .nuspec: 1 MiB and a compression ratio

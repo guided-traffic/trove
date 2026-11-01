@@ -56,6 +56,7 @@ type Store struct {
 	blobs    map[string][]byte // hex SHA-256 -> SHA-512
 	symbols  map[int64]int64
 	revs     map[string]int64
+	view     viewState
 
 	// Revisions answers packages.rev_seq and packages.display_name of a package for the
 	// documents the twin returns, which the database reads in the same statement. A test
@@ -119,6 +120,7 @@ func (s *Store) insert(in rows.VersionInput) *verRec {
 	rec := &verRec{in: in, listed: true, publishedBy: in.Audit.Actor.ID}
 	s.versions[vkey{in.RepoID, in.LowerID, in.LowerVersion}] = rec
 	s.byID[in.VersionID] = rec
+	s.record(in)
 	for _, f := range in.Files {
 		if f.SHA256 != "" && len(in.SHA512) > 0 {
 			s.blobs[f.SHA256] = in.SHA512
@@ -172,6 +174,7 @@ func (s *Store) InsertVersion(_ context.Context, tx formats.Tx, in rows.VersionI
 		defer s.mu.Unlock()
 		delete(s.versions, k)
 		delete(s.byID, in.VersionID)
+		s.drop(in.VersionID)
 		s.revs[rev]--
 		if in.Origin != rows.OriginCache {
 			s.Published, s.Journal = s.Published[:published], s.Journal[:published]
@@ -208,6 +211,7 @@ func (s *Store) InsertTombstone(_ context.Context, tx formats.Tx, in rows.Tombst
 	delete(s.versions, k)
 	if gone != nil {
 		delete(s.byID, gone.in.VersionID)
+		s.drop(gone.in.VersionID)
 	}
 	n := len(s.Tombstones)
 	s.Tombstones = append(s.Tombstones, in)
@@ -292,11 +296,13 @@ func (s *Store) SetListed(_ context.Context, tx formats.Tx, in rows.ListingInput
 		return false, nil
 	}
 	rec.listed = in.Listed
+	s.setListed(in.VersionID, in.Listed)
 	s.Listings = append(s.Listings, in)
 	undo(tx, func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		rec.listed = !in.Listed
+		s.setListed(in.VersionID, !in.Listed)
 		s.Listings = s.Listings[:len(s.Listings)-1]
 	})
 	return true, nil
