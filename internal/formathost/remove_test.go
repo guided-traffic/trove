@@ -15,8 +15,8 @@ import (
 
 // TestR_REPO_020_PackageChangedIsThePayloadOfTheEngine: the payload the package writer
 // attaches to metadata_changed (catalog.PackageChanged, declared once in a leaf because
-// the engine and the contract may not import each other) is the one the engine parses,
-// and the area is the one the cluster registers.
+// the engine and the contract may not import each other) is the one the engine parses (virtual.PackageChanged
+// delegates to it), and the area is the one the cluster registers.
 func TestR_REPO_020_PackageChangedIsThePayloadOfTheEngine(t *testing.T) {
 	for _, name := range []string{"lodash", "@acme/ui", "JSONStream", ""} {
 		for _, id := range []int64{0, 1, 4096} {

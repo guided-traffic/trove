@@ -2,7 +2,6 @@ package virtual
 
 import (
 	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"strconv"
 	"strings"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/cluster"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/proxy/invalidation"
 )
 
@@ -146,27 +146,14 @@ func onMergedChange(c *cache.Cache[mergedKey, *mergedEntry], area string, _ int,
 }
 
 // PackageChanged is the payload of the signal area metadata_changed (R-REPO-020): the id of the
-// repository whose metadata changed and the SHA-256 of the normalized package name. The publisher
-// of a local change and the remote engine after a refresh with new content publish it after their
-// commit.
-func PackageChanged(repoID int64, name string) string {
-	sum := sha256.Sum256([]byte(name))
-	return strconv.FormatInt(repoID, 10) + ":" + hex.EncodeToString(sum[:])
-}
+// repository whose metadata changed and the SHA-256 of the normalized package name. It is
+// [catalog.PackageChanged], declared once in a leaf: the package writer of the Host attaches it
+// after the commit of a change, and the remote engine after a refresh with new content.
+func PackageChanged(repoID int64, name string) string { return catalog.PackageChanged(repoID, name) }
 
 // parsePackageChanged is the inverse of PackageChanged.
 func parsePackageChanged(s string) (repoID int64, pkg [32]byte, ok bool) {
-	id, hash, found := strings.Cut(s, ":")
-	if !found {
-		return 0, pkg, false
-	}
-	n, err := strconv.ParseInt(id, 10, 64)
-	raw, herr := hex.DecodeString(hash)
-	if err != nil || herr != nil || len(raw) != len(pkg) {
-		return 0, pkg, false
-	}
-	copy(pkg[:], raw)
-	return n, pkg, true
+	return catalog.ParsePackageChanged(s)
 }
 
 // onMetadataChanged drops the entries that contain the changed member and are of the changed
