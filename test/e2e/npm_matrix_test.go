@@ -46,13 +46,15 @@ func setupSnippet(t testing.TB, row, host, repo string) (file, content string) {
 	regURL := registryURL(t, host, repo)
 	data := formats.SetupData{
 		RegistryURL: regURL, Repository: repo, Endpoint: "default",
-		RegistryKey: strings.TrimPrefix(regURL, "https:"), RequiresAuth: true,
+		RequiresAuth: true,
 	}
 	for _, tpl := range npm.New().SetupTemplates() {
 		if tpl.ID != id {
 			continue
 		}
-		tm, err := template.New(tpl.ID).Option("missingkey=error").Parse(tpl.Template)
+		tm, err := template.New(tpl.ID).Option("missingkey=error").Funcs(template.FuncMap{
+			"schemeless": func(u string) string { return strings.TrimPrefix(u, "https:") },
+		}).Parse(tpl.Template)
 		if err != nil {
 			t.Fatal(err)
 		}

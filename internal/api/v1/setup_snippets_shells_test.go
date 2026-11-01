@@ -142,8 +142,10 @@ func TestR_API_030_SchemelessDropsTheSchemeOfTheRegistryURL(t *testing.T) {
 		}
 	}
 	ss := mustRender(t, setupInput{
-		Templates: []formats.SetupTemplate{{ID: "n.rc.configure", Client: "n", Section: "configure", Lang: "ini", File: ".rc",
-			Template: "{{schemeless .RegistryURL}}:token=" + formats.SetupTokenRef + "\n"}},
+		Templates: []formats.SetupTemplate{{
+			ID: "n.rc.configure", Client: "n", Section: "configure", Lang: "ini", File: ".rc",
+			Template: "{{schemeless .RegistryURL}}:token=" + formats.SetupTokenRef + "\n",
+		}},
 		Client: "n", Credentials: credEnv, TokenEnvVar: "TROVE_TOKEN", Data: testData(),
 	})
 	if len(ss) != 1 || !strings.HasPrefix(ss[0].Content, "//trove.example.com/api/npm/npm-all/:token=") {
