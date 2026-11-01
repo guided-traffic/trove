@@ -122,7 +122,12 @@ func TestR_NPM_007_ASlowPublishOf200MiB(t *testing.T) {
 			select {
 			case <-bodySent:
 			default:
-				n, err := e.st.TryNumber(`SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND state LIKE 'idle in transaction%'`)
+				// A transaction held across the body stays idle for seconds; the round trips of
+				// BEGIN, a statement and COMMIT of the replica's background work (change log,
+				// leases, the last-use flush) leave a connection idle in transaction for
+				// milliseconds, which a 50 ms sample can catch and which says nothing about the
+				// publish.
+				n, err := e.st.TryNumber(`SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND state LIKE 'idle in transaction%' AND state_change < now() - interval '1 second'`)
 				if err == nil && n > idle.Load() {
 					idle.Store(n)
 				}
