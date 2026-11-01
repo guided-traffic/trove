@@ -2536,7 +2536,7 @@ Priority: **MVP** · Covers: RMT-022
 | `integrity.checksumPolicy` | Behavior |
 |---|---|
 | `verify-if-available` (default) | A mismatch refuses the artifact. Without an announced digest the computed digests are recorded and the artifact is accepted. |
-| `require` | Also refuses an artifact without an announced SHA-256 or stronger digest. |
+| `require` | Also refuses an artifact without an announced SHA-256 or stronger digest. A format whose upstream announces none (NuGet before R-NUGET-029) declares the policy unsupported in the catalog (`ChecksumRequireUnsupported`); creating or updating a remote repository of it with `require` answers 422 `not_applicable` at `/remote/integrity/checksumPolicy` (Q-ARCH-269). |
 | `ignore` | Announced digests are not compared. |
 | `pass-through` | As `ignore`; for formats with separate checksum files, the upstream's checksum files are served unchanged. |
 
@@ -2612,9 +2612,9 @@ Priority: **MVP** · Covers: trove-only
   format derives from `url` and the canonical path, nothing is recorded; otherwise the mapping is
   recorded in `remote_url_map` when the document is parsed. The server MUST NOT derive an upstream
   host from a client request path: no client can choose the host trove fetches from.
-  *Status (milestone M2):* the engine reads the map to address an artifact; a metadata path is addressed from the
-  repository's `url` alone, and recording a mapping for a metadata path has no reader yet. The reader for metadata (the
-  non-inlined registration pages of NuGet) is a contract addition of roadmap M3 (Q-ARCH-233).
+  The engine reads the map for a metadata path as it does for an artifact (a page of a listing that the index does
+  not inline: the registration pages of NuGet), and applies the host rule below to the recorded URL. A format whose
+  addressing follows a discovery document gets that document resolved first (R-NUGET-014, Q-ARCH-268).
 - The map follows the stored document: a fill that kept the stored document, or whose upsert
   lost to a newer one (R-REPO-026), records no mapping, so the map and the document always
   describe one document (Q-REPO-119, R-NPM-024).

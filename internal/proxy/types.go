@@ -136,8 +136,9 @@ type Request struct {
 	// AlwaysVerify makes Expected binding whatever integrity.checksumPolicy says (a
 	// format whose protocol addresses by digest, npm: R-REPO-041).
 	AlwaysVerify bool
-	// MaxBytes bounds a document or artifact below the repository's and the system's
-	// limits (a format's MaxDocumentBytes); 0 keeps them.
+	// MaxBytes bounds a metadata document below the repository's and the system's
+	// limits (a format's MaxDocumentBytes); 0 keeps them. An artifact is bounded by
+	// the repository's and the system's limits alone.
 	MaxBytes int64
 	Adapter  Adapter
 	Caller   CallerFacts
@@ -315,6 +316,24 @@ type Adapter interface {
 	// OwnPath reports whether a path belongs to the package: the URL map records
 	// only such paths (R-REPO-043).
 	OwnPath(pkg, path string) bool
+	// DiscoveryDocument names the metadata document the format's upstream addressing
+	// follows (the service index of NuGet); ok is false for a format that derives every
+	// upstream URL from the repository's URL and the path alone. The engine resolves the
+	// document like any other metadata document before it builds the upstream request of
+	// every other path (R-REPO-025, WP3.0b).
+	DiscoveryDocument() (path, variant string, ok bool)
+	// Discover parses the stored discovery document and returns the adapter that builds
+	// the upstream requests, and takes part in every later step of the fetch, with the
+	// parsed data. An error answers the fetch with 502.
+	Discover(ctx context.Context, doc []byte) (Adapter, error)
+	// InspectsFill says that the format has a hook for the artifact at path: the engine
+	// then holds back every byte of it until [Adapter.InspectFill] has run.
+	InspectsFill(path string) bool
+	// InspectFill is the hook: it receives the spooled artifact after the digest check and
+	// before the item commit, outside any transaction. The payload it returns reaches the
+	// storage hook of the commit; its error is the fetch's answer (502 unless it is an
+	// *errs.Error of another class) and nothing is stored.
+	InspectFill(ctx context.Context, path string, sp *items.Spooled) (payload any, err error)
 }
 
 // ExpectedTypes is an optional interface of an [Adapter]: it declares a media type

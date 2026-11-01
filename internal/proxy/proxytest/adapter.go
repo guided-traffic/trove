@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/proxy"
 )
@@ -42,6 +43,11 @@ func Package(path string) string {
 // A document body may carry URL-map lines, `map <path> <upstream url>`, which
 // PrepareFill returns as mappings, so a test can show the own-package rule of
 // R-REPO-043.
+//
+// With Discovery set the adapter has a discovery document at that path; its body is the line
+// `base <prefix>`, and every other path is then requested below <prefix>, so a test can show that
+// the engine resolved the document first and that the adapter used what it parsed. With Inspect
+// set the adapter has a fill hook for every artifact.
 type Adapter struct {
 	// Removal is TracksVersionRemoval: the format's rule replaces the generic
 	// gone-package rule.
@@ -55,8 +61,13 @@ type Adapter struct {
 	// Expected declares media types expected for a path, as "<path> <media type>"
 	// (proxy.ExpectedTypes).
 	Expected map[string]bool
+	// Discovery is the canonical path of the discovery document; "" for none.
+	Discovery string
+	// Inspect, when set, is the fill hook of every artifact path (InspectFill). Its payload is
+	// handed to the storage hook; its error is the fetch's answer.
+	Inspect func(path string, sp *items.Spooled) (any, error)
 
-	requests, accepts, prepares, fills atomic.Int64
+	requests, accepts, prepares, fills, inspects, discovers atomic.Int64
 
 	mu     sync.Mutex
 	events []proxy.FillEvent
@@ -131,6 +142,49 @@ func (a *Adapter) OwnPath(pkg, path string) bool { return pkg != "" && Package(p
 
 // ExpectsType declares the media types of Expected.
 func (a *Adapter) ExpectsType(path, mediaType string) bool { return a.Expected[path+" "+mediaType] }
+
+// DiscoveryDocument is Discovery.
+func (a *Adapter) DiscoveryDocument() (string, string, bool) {
+	return a.Discovery, "", a.Discovery != ""
+}
+
+// Discover reads the `base <prefix>` line of the document and returns the adapter that requests
+// every other path below the prefix.
+func (a *Adapter) Discover(_ context.Context, doc []byte) (proxy.Adapter, error) {
+	a.discovers.Add(1)
+	for _, line := range bytes.Split(doc, []byte("\n")) {
+		if f := strings.Fields(string(line)); len(f) == 2 && f[0] == "base" {
+			return &discovered{Adapter: a, base: f[1]}, nil
+		}
+	}
+	return nil, errs.E(errs.UpstreamFailed, errs.CodeUpstreamError, "the discovery document names no base")
+}
+
+// InspectsFill is true when Inspect is set.
+func (a *Adapter) InspectsFill(string) bool { return a.Inspect != nil }
+
+// InspectFill runs Inspect.
+func (a *Adapter) InspectFill(_ context.Context, path string, sp *items.Spooled) (any, error) {
+	a.inspects.Add(1)
+	return a.Inspect(path, sp)
+}
+
+// discovered is the adapter bound to a parsed discovery document.
+type discovered struct {
+	*Adapter
+	base string
+}
+
+// UpstreamRequest requests the path below the discovered base.
+func (d *discovered) UpstreamRequest(ctx context.Context, b proxy.UpstreamBase, path, variant string) (*http.Request, error) {
+	return d.Adapter.UpstreamRequest(ctx, b, d.base+path, variant)
+}
+
+// Discovers is the number of discovery documents the adapter parsed.
+func (a *Adapter) Discovers() int { return int(a.discovers.Load()) }
+
+// Inspects is the number of InspectFill calls.
+func (a *Adapter) Inspects() int { return int(a.inspects.Load()) }
 
 // Requests is the number of upstream requests the adapter built.
 func (a *Adapter) Requests() int { return int(a.requests.Load()) }

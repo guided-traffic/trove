@@ -19,6 +19,9 @@ type RemoteContext struct {
 	Upstream *url.URL
 	// Settings is the format's member of the repository document.
 	Settings json.RawMessage
+	// Discovery is what [Discoverer.ParseDiscovery] returned for the stored discovery document: nil for a
+	// format without one, and for the request of the discovery document itself.
+	Discovery any
 }
 
 // Prepared is what PrepareFill derived from a fetched document outside any
@@ -111,6 +114,51 @@ type RemoteAdapter interface {
 	// what [RemoteBase] answers. They were optional interfaces found by type assertion; they are
 	// methods of the contract so that a format cannot forget them unnoticed (Q-ARCH-254).
 	BeforeArtifact(ctx context.Context, h Host, rq *Request, p Path) (Digests, error)
+}
+
+// Discoverer is an optional interface of a [RemoteAdapter]: the format's upstream addressing follows a
+// discovery document, such as the service index of NuGet (R-NUGET-014). Register reads it off the adapter
+// once ([RemoteCapabilities]).
+//
+// The engine resolves the document before it asks [RemoteAdapter.UpstreamRequest] for any other path: as a
+// metadata document of the repository, stored, revalidated and collapsed like every other, ahead of the
+// fetch's slot. It parses it with ParseDiscovery and hands the result to every call of that fetch as
+// [RemoteContext.Discovery]. The request for the document itself carries none.
+type Discoverer interface {
+	// DiscoveryDocument names the document: its canonical path and stored variant.
+	DiscoveryDocument() (p Path, variant string, ok bool)
+	// ParseDiscovery turns the stored document into the data the adapter's other calls read. It runs
+	// outside every transaction. An error answers the fetch with 502. The result is shared by requests
+	// that run at once and must not be changed.
+	ParseDiscovery(ctx context.Context, rc RemoteContext, doc []byte) (any, error)
+}
+
+// FillInspector is an optional interface of a [RemoteAdapter]: the format inspects an artifact it fetched
+// before it is stored (R-NUGET-015). Register reads it off the adapter once ([RemoteCapabilities]).
+//
+// The hook runs after the digest check and before the item commit, outside any transaction. No byte of an
+// artifact with a hook reaches a client before the hook accepted it: the request that leads the fetch is
+// served from the stored entry like every request that waited, so a refusal answers all of them.
+type FillInspector interface {
+	// InspectsFill declares the hook for the artifact at p; false stores and serves it as any artifact.
+	InspectsFill(p Path) bool
+	// InspectFill reads the spooled artifact (limits as for [Format.Inspect]). Its result reaches OnCommit
+	// as [CommitEvent.Inspection]. An error is the answer to every request of the flight, 502 unless it is
+	// an *errs.Error of another class, and nothing is stored: no blob, no item, no entry, no negative entry.
+	InspectFill(ctx context.Context, rc RemoteContext, p Path, sp Spooled) (*Inspection, error)
+}
+
+// RemoteCaps are the optional interfaces a format's remote adapter implements, as Register found them.
+// A field is nil for a capability the adapter does not have.
+type RemoteCaps struct {
+	Discovery Discoverer
+	Fill      FillInspector
+}
+
+// RemoteCapabilities returns the capabilities Register recorded for a format; the zero value for an ID that
+// is not registered.
+func RemoteCapabilities(id ID) RemoteCaps {
+	return CapabilitiesFor(id).Remote
 }
 
 // RemoteBase gives a RemoteAdapter the defaults of the methods most formats leave alone:

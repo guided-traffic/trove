@@ -207,6 +207,9 @@ type ItemsRestorer interface {
 type Capabilities struct {
 	// ItemsRestorer is the restore hook; nil for a format without one.
 	ItemsRestorer ItemsRestorer
+	// Remote are the optional interfaces of the format's remote adapter (the fill
+	// hook and the discovery document); the zero value for a format without them.
+	Remote RemoteCaps
 }
 
 // CapabilitiesOf reads the capabilities off a format. It is the one function of the
@@ -216,6 +219,10 @@ func CapabilitiesOf(f Format) Capabilities {
 	var c Capabilities
 	if r, ok := f.(ItemsRestorer); ok {
 		c.ItemsRestorer = r
+	}
+	if ra := f.Remote(); ra != nil {
+		c.Remote.Discovery, _ = ra.(Discoverer)
+		c.Remote.Fill, _ = ra.(FillInspector)
 	}
 	return c
 }

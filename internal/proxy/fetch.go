@@ -15,6 +15,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/outbound"
 	"github.com/guided-traffic/trove/internal/proxy/upstream"
 )
@@ -77,6 +78,9 @@ func (f *fetcher) run(ctx context.Context) flightResult {
 		return flightResult{err: errs.E(errs.UpstreamFailed, errs.CodeUpstreamDigestMissing,
 			"The upstream announces no SHA-256 or stronger digest for the item, which "+rem.Repo.Key+" requires.")}
 	}
+	if err := f.discover(ctx); err != nil {
+		return flightResult{err: err}
+	}
 	cl, err := e.o.Clients.For(ctx, rem.Repo, rem.Settings)
 	if err != nil {
 		return flightResult{err: err}
@@ -117,6 +121,54 @@ func (f *fetcher) run(ctx context.Context) flightResult {
 	return res
 }
 
+// systemPopulate is the populate check of a request the engine makes for itself, with no
+// caller behind it: the discovery document a probe needs.
+type systemPopulate struct{}
+
+func (systemPopulate) May(context.Context) bool              { return true }
+func (systemPopulate) Deny(context.Context) error            { return nil }
+func (systemPopulate) Record(context.Context, meta.Tx) error { return nil }
+func (systemPopulate) Endpoint() (string, bool)              { return "", true }
+
+// discover resolves the discovery document of a format whose upstream addressing follows
+// one (WP3.0b) and binds the parsed data to the fetch's adapter. The document is an
+// ordinary metadata entry of the repository: stored, fresh or revalidated, collapsed and
+// counted like every other, and it is resolved before the fetch takes its slot, so a
+// repository limited to one concurrent fetch cannot wait for itself. The caller's
+// populate check applies: a caller that may not fill the cache gets the stored document
+// or the refusal. A request for the discovery document itself needs no discovery.
+func (f *fetcher) discover(ctx context.Context) error {
+	rq := f.rq
+	path, variant, ok := rq.Adapter.DiscoveryDocument()
+	if !ok || (rq.Path == path && rq.Variant == variant) {
+		return nil
+	}
+	pop := rq.Populate
+	if pop == nil {
+		pop = systemPopulate{}
+	}
+	doc, err := f.e.Metadata(ctx, Request{
+		Remote: rq.Remote, Path: path, Variant: variant, Kind: Metadata, Mode: rq.Mode, Populate: pop,
+		MaxBytes: rq.MaxBytes, Adapter: rq.Adapter, Caller: rq.Caller,
+	})
+	if err != nil {
+		return err
+	}
+	if doc == nil || doc.Status.Negative || doc.Bytes == nil {
+		return errs.E(errs.UpstreamFailed, errs.CodeUpstreamError, "The upstream of "+rq.Remote.Repo.Key+" has no discovery document, so the addresses of its resources are unknown.")
+	}
+	b, err := doc.Bytes(ctx)
+	if err != nil {
+		return err
+	}
+	bound, err := rq.Adapter.Discover(ctx, b)
+	if err != nil {
+		return asUpstreamError(err)
+	}
+	f.rq.Adapter = bound
+	return nil
+}
+
 // request builds the upstream request: the format's, with the foreign-host check,
 // the identity encoding and the validators of the stored copy.
 func (f *fetcher) request(ctx context.Context) (*http.Request, error) {
@@ -126,18 +178,19 @@ func (f *fetcher) request(ctx context.Context) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
-	if rq.Kind == Artifact {
-		mapped, err := f.e.upstreamURL(ctx, rem.id, rq.Path)
-		if err != nil {
-			return nil, err
+	// The URL map holds the upstream URL a document named for a path of the same package
+	// (R-REPO-043): an artifact's, and a metadata document's, such as a page of a listing
+	// that the index does not inline (WP3.0b). The foreign-host check below applies to it.
+	mapped, err := f.e.upstreamURL(ctx, rem.id, rq.Path)
+	if err != nil {
+		return nil, err
+	}
+	if mapped != "" {
+		u, err := url.Parse(mapped)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+			return nil, errs.E(errs.UpstreamFailed, errs.CodeUpstreamError, "The recorded upstream URL of the item is not usable.")
 		}
-		if mapped != "" {
-			u, err := url.Parse(mapped)
-			if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
-				return nil, errs.E(errs.UpstreamFailed, errs.CodeUpstreamError, "The recorded upstream URL of the item is not usable.")
-			}
-			req.URL, req.Host = u, ""
-		}
+		req.URL, req.Host = u, ""
 	}
 	if err := f.cl.Allowed(req.URL); err != nil {
 		return nil, err
@@ -312,7 +365,7 @@ func (f *fetcher) limit() int64 {
 			lim = *v
 		}
 	}
-	if f.rq.MaxBytes > 0 && (lim <= 0 || f.rq.MaxBytes < lim) {
+	if f.rq.Kind == Metadata && f.rq.MaxBytes > 0 && (lim <= 0 || f.rq.MaxBytes < lim) {
 		lim = f.rq.MaxBytes
 	}
 	return lim

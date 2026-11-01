@@ -198,6 +198,9 @@ func (e *Engine) checkAnnounced(ctx context.Context, rq Request, it items.Item) 
 func (e *Engine) head(ctx context.Context, rq Request, w http.ResponseWriter) error {
 	rem := rq.Remote
 	f := &fetcher{e: e, rq: rq, st: &reqState{role: roleLeader}, fl: &flight{done: make(chan struct{})}}
+	if err := f.discover(ctx); err != nil {
+		return err
+	}
 	cl, err := e.o.Clients.For(ctx, rem.Repo, rem.Settings)
 	if err != nil {
 		return err
@@ -260,8 +263,13 @@ func (f *fetcher) artifact(ctx context.Context, resp *http.Response, idle *atomi
 	// The leader's own client gets the body while it arrives only when the upstream
 	// announced its length: a body of unknown length can cross the size limit after
 	// the status line is out, and R-REPO-040 owes the client a 502, not a cut transfer.
+	//
+	// An artifact that the format inspects before it is stored (the fill hook) reaches no
+	// client before the hook ran: the leader is served from the stored entry like every
+	// request that waited, so a refusal answers 502 to all of them (WP3.0a).
+	hook := rq.Adapter.InspectsFill(rq.Path)
 	var tee *stream
-	if f.st.stream != nil && resp.ContentLength >= 0 {
+	if f.st.stream != nil && resp.ContentLength >= 0 && !hook {
 		tee = f.st.stream
 		tee.begin(resp.Header.Get("Content-Type"), resp.ContentLength, CacheStatus{Forwarded: "uri-miss", FwdStatus: resp.StatusCode, Stored: true}.Header())
 	}
@@ -279,12 +287,18 @@ func (f *fetcher) artifact(ctx context.Context, resp *http.Response, idle *atomi
 	if verify(rq, sp.Digests) != verdictOK {
 		return f.integrityMismatch(ctx, sp)
 	}
+	var payload any
+	if hook {
+		if payload, err = rq.Adapter.InspectFill(ctx, rq.Path, sp); err != nil {
+			return f.fillRefused(err, resp.StatusCode)
+		}
+	}
 	var changed [32]byte
 	declared := items.Expected{SHA256: rq.Expected.SHA256, SHA512: rq.Expected.SHA512, SHA1: rq.Expected.SHA1}
 	final := stripUser(f.finalURL(resp))
 	_, err = e.o.Items.Commit(ctx, items.CommitSpec{
 		Repo: rem.Repo, Path: repository.Cleaned{Path: rq.Path}, Spooled: sp, MediaType: resp.Header.Get("Content-Type"),
-		Declared: declared, Origin: items.OriginFill, UpstreamURL: final, MayOverwrite: true,
+		Declared: declared, Origin: items.OriginFill, UpstreamURL: final, MayOverwrite: true, Payload: payload,
 		Actor: auditActor(rq.Caller), Source: rq.Caller.Source, Endpoint: rq.Caller.Endpoint,
 		Extra: f.artifactEntry(sp, resp, final, &changed),
 	})
@@ -293,6 +307,9 @@ func (f *fetcher) artifact(ctx context.Context, resp *http.Response, idle *atomi
 		return f.digestChanged(ctx, sp, changed)
 	case err != nil:
 		if ee, ok := errs.As(err); ok && ee.Code == errs.CodeObjectStoreUnavail {
+			if hook && f.st.stream != nil && resp.ContentLength >= 0 {
+				tee = f.replay(sp, resp) // inspected and verified, so the leader's client may have it now
+			}
 			return f.passThrough(tee)
 		}
 		return flightResult{err: err}
@@ -302,6 +319,25 @@ func (f *fetcher) artifact(ctx context.Context, resp *http.Response, idle *atomi
 	}
 	f.box.set(CacheStatus{Forwarded: "uri-miss", FwdStatus: resp.StatusCode, Stored: true}.Header())
 	return flightResult{stored: true, status: resp.StatusCode}
+}
+
+// fillRefused ends a fetch whose fill hook refused the artifact: nothing is stored, no
+// negative entry is written, the circuit does not count it (the upstream answered; it
+// answered with something else than was asked) and every request of the flight gets the
+// refusal, 502 unless the hook named another answer (WP3.0a).
+func (f *fetcher) fillRefused(err error, status int) flightResult {
+	f.e.log.Warn("the format refused a fetched artifact", "repo", f.rq.Remote.Repo.Key, "path", f.rq.Path, "error", err)
+	return flightResult{err: asUpstreamError(err), status: status}
+}
+
+// replay hands the spooled body to the leader's client: the artifact could not be stored
+// because the object store is unavailable and the client was held back for the fill
+// hook, which has accepted the body.
+func (f *fetcher) replay(sp *items.Spooled, resp *http.Response) *stream {
+	tee := f.st.stream
+	tee.begin(resp.Header.Get("Content-Type"), resp.ContentLength, CacheStatus{Forwarded: "uri-miss", FwdStatus: resp.StatusCode, Stored: true}.Header())
+	_, _ = io.Copy(tee, sp.Reader()) // the stream drops a client that went away and never fails
+	return tee
 }
 
 // teeWriter returns the stream as an io.Writer, nil when there is none (a nil

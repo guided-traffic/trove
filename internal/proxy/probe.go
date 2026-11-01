@@ -19,8 +19,10 @@ import (
 //     its egress rules, TLS verification, credentials, redirect rules, limits and
 //     fetch slots. 2xx is Served, 404 and 410 are NotServed, and every other outcome
 //     is Undetermined. The outcome counts toward the circuit like any upstream
-//     request. The probe stores nothing, neither an entry nor a negative entry, and
-//     reads no negative entry: a value from Valkey may make trove refuse, never admit
+//     request. The probe stores nothing, neither an entry nor a negative entry (but for
+//     the discovery document of a format whose addressing follows one, which it resolves
+//     like any request does, as the system: the address of the package document is
+//     unknown without it), and reads no negative entry: a value from Valkey may make trove refuse, never admit
 //     a write (R-ARCH-030).
 func (e *Engine) Probe(ctx context.Context, rem Remote, path string, a Adapter) (ProbeResult, error) {
 	if e.offline(rem) {
@@ -36,6 +38,9 @@ func (e *Engine) Probe(ctx context.Context, rem Remote, path string, a Adapter) 
 	f := &fetcher{
 		e: e, rq: Request{Remote: rem, Path: path, Kind: Metadata, Adapter: a, Caller: CallerFacts{Principal: "system"}},
 		st: &reqState{role: "probe"}, fl: &flight{done: make(chan struct{})},
+	}
+	if err := f.discover(ctx); err != nil {
+		return ProbeResult{Outcome: Undetermined, RetryAfter: retryOf(flightResult{err: err})}, nil //nolint:nilerr // an unknown address decides nothing
 	}
 	cl, err := e.o.Clients.For(ctx, rem.Repo, rem.Settings)
 	if err != nil {

@@ -16,6 +16,17 @@ transport failure is classified as a fetch's and an egress or TLS refusal is a s
 nor moved, because the provider may be another host than the upstream (Q-NPM-62). An offline repository answers `proxy.ErrOffline` (`formats.ErrOffline`)
 and sends nothing; the upstream log record has no `flight_role`. npm: [npm.md](npm.md).
 
+Two capabilities only some formats have are optional interfaces of the adapter, read off it once by `formats.Register` into `formats.RemoteCaps`
+(`formats.RemoteCapabilities(id)`), and adapted by `formathost` to `proxy.Adapter` (Q-ARCH-267, Q-ARCH-268):
+
+| Interface | The format says | The engine does |
+|---|---|---|
+| `formats.Discoverer` | `DiscoveryDocument()` names a metadata document (NuGet's service index); `ParseDiscovery` parses it | `fetcher.discover` resolves it with `Engine.Metadata` before the fetch takes its slot (also for a `HEAD` and a probe), `Adapter.Discover` returns the adapter bound to the parsed data, and every call of the fetch gets it as `RemoteContext.Discovery`; the request for the document itself has none |
+| `formats.FillInspector` | `InspectsFill(p)` declares the hook for a path; `InspectFill` reads the spooled artifact | no stream for the leader's client; the hook runs after the digest check and before the commit; its result is `CommitSpec.Payload`, which `formathost` turns into `CommitEvent.Inspection`; its error is the answer of every request of the flight, 502, and nothing is stored |
+
+The URL map (`remote_url_map`) addresses a metadata path as it does an artifact (the non-inlined page of a listing), under the same foreign-host rule.
+`Request.MaxBytes` (a format's `MaxDocumentBytes`) bounds a metadata document only.
+
 ## The upstream clients
 
 Package [internal/proxy/upstream](../../internal/proxy/upstream/): the HTTP client of each remote repository, the credentials it
@@ -351,8 +362,9 @@ replica never calls `Acquire`; it waits for another replica's flight and fetches
 entry whose `validated_at` differs from the one the request read first as fresh, so a period of 0 does not make every waiter fetch again.
 `flight_role` is defined in Q-REPO-92.
 
-The leader's own client is streamed (`stream`) only when the upstream announced a length and the request is a plain `GET`; the last 64 KiB
-wait for the commit. A failure after the status line is `panic(http.ErrAbortHandler)` in the handler goroutine, which the format dispatcher
+The leader's own client is streamed (`stream`) only when the upstream announced a length, the request is a plain `GET` and the format declares no fill
+hook for the path (`Adapter.InspectsFill`); the last 64 KiB wait for the commit. With a hook the leader is served from the stored entry like a waiter
+(no byte before `InspectFill` accepted), and with the object store down the accepted body is replayed from the spool (`fetcher.replay`). A failure after the status line is `panic(http.ErrAbortHandler)` in the handler goroutine, which the format dispatcher
 lets through. The stream is the request's, not the flight's: `detach` ends its share before the handler returns.
 
 ### State per replica (R-ARCH-032, R-REPO-049)
@@ -396,6 +408,8 @@ virtual request records its allowed populate event with the grant reason of the 
 | unit | [proxy_test.go](../../internal/proxy/proxy_test.go) | the URL builder (`%2e%2e`, `a b`), the `Cache-Status` forms, digest policies, the withheld tail, the size limit, the idle timeout, slot shares, the classification table, the negative readers, `withStatus` |
 | unit | [remote_test.go](../../internal/formathost/remote_test.go) | mode, settings member, currency of the bridge |
 | unit | [fillrefused_test.go](../../internal/proxy/fillrefused_test.go) | `FillRefused` counts per endpoint (R-EP-019) |
+| unit | [remote_caps_test.go](../../internal/formathost/remote_caps_test.go), [remote_caps_test.go](../../internal/formats/remote_caps_test.go) | the adapter binds the parsed discovery data without changing the adapter it was called on; the hook is declared per path, reads the spooled body and its inspection travels as the commit payload; `Register` records the optional interfaces |
+| integration | [hook_test.go](../../test/integration/proxy/hook_test.go) | R-NUGET-015 at the engine: a refusal answers 502 to 40 concurrent requests and stores nothing, no byte before the hook accepted (with a control that streams without one), the object store down, the payload at the storage hook; R-NUGET-014: the discovery document is resolved once, a repository with one fetch slot does not wait for itself, a missing, unparsable or unpopulatable document; R-REPO-043: a mapped metadata path and its foreign host; the metadata-only bound |
 | integration | [test/integration/proxy](../../test/integration/proxy/) | R-REPO-025 order and download order (R-ARCH-013); R-REPO-026 on two replicas (100 requests, killed and cancelled holders, draining, polling without messages, foreign locks, duplicate fills); R-REPO-027 to R-REPO-032; R-REPO-040 to R-REPO-043; R-REPO-047, R-OPS-011; R-AUTHZ-008 and R-EP-019 at the engine |
 | integration | [cachefill_test.go](../../test/integration/endpoints/cachefill_test.go) | R-EP-019 through the whole request path (dispatcher, Host populate check, engine) on a replica with a further endpoint and a counting upstream |
 
@@ -406,7 +420,10 @@ wrapper. Not tested here: the criteria with a `sourceNetwork` on two pods (R-REP
 ### Decisions
 
 [Q-REPO-92 to Q-REPO-99](../spec/repositories-and-proxy.md#q-repo-92--the-role-of-an-upstream-request-in-the-flight-is-how-its-request-came-to-send-it),
-[Q-ARCH-200 to Q-ARCH-204](../spec/architecture.md#q-arch-200--the-engine-takes-a-format-through-its-own-adapter-and-the-populate-check-through-an-interface).
+[Q-ARCH-200 to Q-ARCH-204](../spec/architecture.md#q-arch-200--the-engine-takes-a-format-through-its-own-adapter-and-the-populate-check-through-an-interface),
+[Q-ARCH-267](../spec/architecture.md#q-arch-267--a-format-inspects-a-fetched-artifact-before-it-is-stored-and-no-byte-goes-out-before-it-did),
+[Q-ARCH-268](../spec/architecture.md#q-arch-268--upstream-addressing-follows-a-discovery-document-the-engine-resolves-and-the-url-map-holds-metadata-paths),
+[Q-ARCH-269](../spec/architecture.md#q-arch-269--a-format-can-declare-that-checksumpolicy-require-is-unsupported).
 
 ### Security notes
 
@@ -417,3 +434,7 @@ wrapper. Not tested here: the criteria with a `sourceNetwork` on two pods (R-REP
 - A value read from Valkey (a negative entry, a lock) can only make a request answer 404 or wait at most `proxy.fetch_wait_timeout_seconds`;
   the probe of a shadowing check reads neither (R-ARCH-030).
 - A refused fill (`populate_not_permitted`, an endpoint without `cache_fill`) writes no negative entry and sends no request.
+- A format with a fill hook has no unverified or uninspected byte on the wire: nothing leaves before `InspectFill` accepted the body, so a package whose
+  declared identity differs from the requested one (R-NUGET-015) is refused for the leader as for every waiter and never stored.
+- The discovery document is trusted as far as any upstream metadata is: the addresses it names pass `Client.Allowed` (the upstream origin or an
+  `extraHosts` entry) before a request is sent, and the document of a caller who may not fill the cache is only read when it is already stored.

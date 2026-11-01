@@ -1233,6 +1233,37 @@ type RemoteAdapter interface {
 	BeforeArtifact(ctx context.Context, h Host, rq *Request, p Path) (Digests, error)
 }
 
+// Two optional interfaces of a RemoteAdapter, read off the adapter once, when the format registers (Q-ARCH-267,
+// Q-ARCH-268). A capability only some formats have is an optional interface and not a method with a default
+// (Q-ARCH-254), so a format that does not need it changes nothing.
+
+// Discoverer: the format's upstream addressing follows a discovery document (R-NUGET-014). The engine resolves it
+// as a metadata document of the repository before it asks UpstreamRequest for any other path, parses it with
+// ParseDiscovery and gives the result to every call of that fetch as RemoteContext.Discovery. The request for the
+// document itself carries none.
+type Discoverer interface {
+	DiscoveryDocument() (p Path, variant string, ok bool)
+	ParseDiscovery(ctx context.Context, rc RemoteContext, doc []byte) (any, error)
+}
+
+// FillInspector: the format inspects an artifact it fetched before it is stored (R-NUGET-015). InspectFill runs after
+// the digest check and before the item commit, outside any transaction; no byte of an artifact with a hook reaches a
+// client before it accepted it. Its result becomes CommitEvent.Inspection; its error is the answer to every request
+// of the flight, 502 unless it is an *errs.Error of another class, and nothing is stored.
+type FillInspector interface {
+	InspectsFill(p Path) bool
+	InspectFill(ctx context.Context, rc RemoteContext, p Path, sp Spooled) (*Inspection, error)
+}
+
+// RemoteCaps are the optional interfaces Register found on a format's remote adapter; a field is nil for one the
+// adapter lacks. They are the Remote field of Capabilities, and RemoteCapabilities returns them by format ID.
+type RemoteCaps struct {
+	Discovery Discoverer
+	Fill      FillInspector
+}
+
+func RemoteCapabilities(id ID) RemoteCaps
+
 type VirtualAdapter interface {
 	Strategy(p Path) Strategy
 	// Merge combines member documents. Each part carries its member's tier and position, so the format
@@ -1275,6 +1306,7 @@ type ItemsRestorer interface {
 // interface and a field here (R-ARCH-025).
 type Capabilities struct {
 	ItemsRestorer ItemsRestorer // nil for a format without a restore hook
+	Remote        RemoteCaps    // the optional interfaces of the remote adapter (WP3.0a, WP3.0b)
 }
 
 // CapabilitiesOf reads the capabilities off a format: the one place that asserts to an interface of this package.
@@ -1398,7 +1430,9 @@ Supporting types of the blocks, named here so that the contract has no type the 
 `CacheStatus`) are what a remote adapter reads and hands over; `Currency` says how current a document is after
 `EnsureCurrent` (Q-NPM-13); `RemovedItem` is an item a removal took away, with its version; `ItemsEvent` is what the removal hook and the restore hook learn; `ShadowPair` names a
 virtual repository and the remote member that serves a package (R-REPO-048); `RemoteBase` gives a `RemoteAdapter` the
-defaults of `ExpectsType` and `BeforeArtifact` to embed.
+defaults of `ExpectsType` and `BeforeArtifact` to embed; `RemoteContext` carries the repository, the upstream URL, the
+format's settings and, once the engine resolved the discovery document of a `Discoverer`, its parsed form in
+`Discovery` (Q-ARCH-268).
 
 The blocks above are held equal to the code: `TestR_ARCH_008_TheWrittenContractEqualsTheCode`
 (`internal/formats/contract_spec_test.go`) parses the Go blocks of R-ARCH-008 and R-ARCH-009 and compares every type
@@ -1884,7 +1918,11 @@ The order on a miss:
    `cluster.FlightLock` (R-ARCH-033), both per the collapse protocol of the proxy page (INV-11).
    While Valkey is unavailable, only the single-flight within the replica applies.
 2. `RemoteAdapter.UpstreamRequest` builds the request. A client from `internal/outbound`
-   (R-ARCH-022) sends it.
+   (R-ARCH-022) sends it. For a format whose addressing follows a discovery document (`Discoverer`, R-NUGET-014),
+   the engine first resolves that document as a metadata document of the repository, before the fetch takes its
+   slot, parses it with `ParseDiscovery` and gives the result to every later call of the fetch as
+   `RemoteContext.Discovery`; the request for the document itself carries none (Q-ARCH-268). The URL map
+   (R-REPO-043) addresses metadata paths as it does artifacts.
 3. `RemoteAdapter.AcceptResponse` checks status and declared type before any byte is stored or
    sent.
 4. The body enters the upload pipeline of [storage.md](storage.md): spool and single-pass digests.
@@ -1892,7 +1930,11 @@ The order on a miss:
    verified and, for a stored artifact, until the entry has committed
    ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-041). No client therefore
    completes an unverified download, or one whose bytes a duplicate flight's commit has refused.
-   Waiters are served from the stored entry.
+   Waiters are served from the stored entry. A format that inspects what it fetches declares a fill hook
+   (`FillInspector`, R-NUGET-015): for such an artifact no byte goes to any client, the leader's included, until
+   `InspectFill` has accepted the spooled body after the digest check and before the commit. The leader is then
+   served from the stored entry like a waiter, so a refusal answers all of them with 502 and leaves no blob, no item,
+   no entry and no negative entry; the inspection becomes `CommitEvent.Inspection` (Q-ARCH-267).
 5. One short transaction stores the blob reference and the cache entry.
 6. The lock is released and the fill outcome is published on the flight's channel (R-ARCH-033).
    No database transaction is open, and no PostgreSQL connection is held, while bytes are
@@ -7014,6 +7056,60 @@ Context: NuGet clients send the credential of a push, an unlist and a relist in 
 **Rationale:** whether a route takes an API key is a property of the protocol operation. The development agent revisits this when the stage change lands.
 
 **Applied in the spec:** R-ARCH-008 (`Route.APIKey`). Code: `internal/formats/route.go`.
+### Q-ARCH-267 · A format inspects a fetched artifact before it is stored, and no byte goes out before it did
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: NuGet parses every cached `.nupkg` like an upload and refuses one whose declared identity differs from the requested one with 502 `upstream_package_mismatch` (R-NUGET-015). The engine streamed the artifact to the leader's client while it spooled, withholding only the last 64 KiB until the commit (`internal/proxy/artifact.go`), so a refusal after the body arrived could no longer answer 502: the status line was out and the connection was cut. NuGet v3 announces no content digest (H-35), so the declared identity is the only check.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An optional interface `FillInspector` of the remote adapter, read at `Register`; for a path it declares, the engine does not stream to the leader and runs the hook between the digest check and the commit (chosen) | `InspectsFill(p)` and `InspectFill(ctx, rc, p, sp)`; the result travels as `CommitEvent.Inspection`, the error is the flight's answer | A refusal answers 502 to every request of the flight and leaves nothing; a format without the interface changes nothing (npm streams as before); the capability is a fact of the adapter, not a flag of the core | The leader of a hooked artifact waits for the whole transfer before its first byte, as a waiter does |
+| (b) A method of `RemoteAdapter` with a default in `RemoteBase` | Same hook, but every adapter has the method | The kit sees a missing method | Q-ARCH-254 made methods of what every remote format answers; only some formats inspect, and npm's and the test format's adapters would have to embed `RemoteBase` for a capability they never use |
+| (c) Keep streaming and reserve the 502 for a failure before the first byte | The hook runs after the tail was withheld | No latency change | The hook needs the whole body; it cannot run before the first byte leaves, so a refusal would be a cut transfer, which R-REPO-040 refuses for the same reason |
+
+**Choice:** (a). The interface is `formats.FillInspector`; `Register` reads it off the adapter once into `formats.RemoteCaps`, and `formathost` reads `formats.RemoteCapabilities(id)`, so the rule of Q-ARCH-254 (no assertion to a contract interface outside `Register`) holds. The engine asks `proxy.Adapter.InspectsFill(path)` after `AcceptResponse`; when true it starts no stream for the leader, runs `InspectFill` on the spooled artifact (outside any transaction, after the digest check) and puts the result into `CommitSpec.Payload`, which `formathost` wraps like an upload's inspection so that `OnCommit` sees it as `CommitEvent.Inspection`. A refusal returns `flightResult{err}`: no blob, item, entry or negative entry, no circuit failure (the upstream answered), the same 502 for the leader and every waiter of the flight. A refused package is logged by the engine; the format counts its own refusals (R-NUGET-028). With the object store unavailable, the verified and inspected body is replayed to the leader's client from the spool (the pass-through of R-REPO-025), so the hook costs no availability. Across replicas the protocol of R-REPO-026 step 4 stands: the holder of the flight failed, so a replica that waited fetches for itself, and a deterministic refusal costs one upstream request per replica at most.
+
+**Rationale:** the hook is the only way to keep both "no unverified byte" (R-REPO-041) and "a refusal answers 502". Latency is the price: the leader of a `.nupkg` now waits for the transfer like its waiters do. The development agent revisits this when a second format needs the hook for large artifacts where that wait matters, then with an incremental inspection that can refuse early.
+
+**Applied in the spec:** R-ARCH-008 (the `FillInspector` and `RemoteCaps` block), R-ARCH-013 (step 4), R-NUGET-015. Code: `internal/formats/remote.go`, `internal/formats/formats.go` (`Register`), `internal/formathost/remote.go`, `internal/proxy/artifact.go`, `internal/proxy/types.go`, `internal/proxy/proxytest/adapter.go`. Tests: `TestFillHook` (`test/integration/proxy`), `TestR_ARCH_008_RegisterReadsTheOptionalInterfacesOfARemoteAdapter`, `TestR_NUGET_015_AdapterRunsTheFillHook`.
+
+### Q-ARCH-268 · Upstream addressing follows a discovery document the engine resolves, and the URL map holds metadata paths
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a NuGet remote addresses nothing by the repository URL and a path. Every resource URL comes from the upstream's service index (`PackageBaseAddress`, the registration hive), and a registration index names pages the engine cannot derive (R-NUGET-014, R-NUGET-015). The engine built every upstream URL from `UpstreamBase` alone and read the URL map for artifacts only (`internal/proxy/fetch.go`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An optional interface `Discoverer`; the engine resolves the named document as a metadata entry before the fetch takes its slot, the adapter parses it, and the result reaches every call of the fetch as `RemoteContext.Discovery`; the URL map applies to metadata paths (chosen) | `DiscoveryDocument()` names path and variant, `ParseDiscovery` parses | The document is an ordinary cache entry: stored, revalidated, collapsed, counted, stale-served, shared by all replicas; one code path for the fetch of any path | The engine fetches a second document before the first; the parse repeats for every fetch |
+| (b) The format fetches the document itself through `Host.Remote()` inside `UpstreamRequest` | No engine change | Nothing | The engine is inside a flight with a slot held: a nested fetch deadlocks a repository limited to one concurrent fetch, and the document would bypass the circuit, the populate check and the metrics |
+| (c) The format stores the discovered addresses in its own rows at fill | The service index's `PrepareFill`/`OnFill` writes a table | Parsing happens once | A second copy of a cache entry that the invalidation set (R-REPO-045) and the flush do not reach; the format needs a data port for it |
+
+**Choice:** (a). `formats.Discoverer` (`DiscoveryDocument`, `ParseDiscovery`), read at `Register`. In the engine `fetcher.discover` runs at the start of a fetch, a `HEAD`, and a probe, before the slot: it calls `Engine.Metadata` for the document with the request's mode, populate check and caller, so a caller that may not fill the cache gets a stored document or the refusal, and the document is `Stale`-served by the ordinary rules; `proxy.Adapter.Discover` returns the adapter bound to the parsed data, which `UpstreamRequest`, `PrepareFill`, `OnFill`, `InspectFill` and the mapping recorder of the fetch all use. A request for the discovery document itself carries no discovery. A missing, unparsable or unreachable document answers 502 (or the engine's own refusal: offline, circuit, populate) and no other request is sent. A probe resolves the document as the system with an allow-all populate check, because the address of the package document is unknown without it; the stored document is the one exception to "a probe stores nothing". `request()` reads `remote_url_map` for every path, not for artifacts only, and the foreign-host rule applies to the mapped URL as to any other. Alongside, `Request.MaxBytes` (a format's `MaxDocumentBytes`) now bounds metadata only: it bounded artifacts too, which would have refused a `.nupkg` above the document limit.
+
+**Rationale:** the discovery document is data of the upstream, and the engine already owns the caching of upstream data. Known limit: the populate event that the fill of the discovery document records carries the coordinate of the request that needed it (the artifact path), not the document's. The development agent revisits this when the audit trail needs the document's own path, then with a coordinate built by the format.
+
+**Applied in the spec:** R-ARCH-008 (the `Discoverer` block, `RemoteContext`), R-ARCH-013 (step 2), R-REPO-043 (the URL-map status note), R-NUGET-014. Code: `internal/formats/remote.go`, `internal/formats/formats.go`, `internal/formathost/remote.go`, `internal/proxy/fetch.go`, `internal/proxy/probe.go`, `internal/proxy/artifact.go`, `internal/proxy/types.go`. Tests: `TestDiscoveryDocument`, `TestFetchBounds` (`test/integration/proxy`), `TestR_NUGET_014_AdapterBindsTheParsedDiscoveryDocument`.
+
+### Q-ARCH-269 · A format can declare that `checksumPolicy: require` is unsupported
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `require` refuses an artifact without an announced SHA-256 or stronger digest (R-REPO-041). NuGet v3 announces none until R-NUGET-029 (P1), so a NuGet remote with `require` would refuse every package at its first fetch with 502 `upstream_digest_missing`; the configuration was accepted and failed only at use.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A catalog fact `ChecksumRequireUnsupported`; the repository validation answers 422 `not_applicable` at the member (chosen) | One bool in `catalog.Facts`, one condition in `remoteResolver.integrity` | The refusal is at create and update, named by pointer, like the other settings not available yet; zero value keeps npm and the generic format as they are; R-NUGET-029 turns it off by deleting one line | A format fact for one setting |
+| (b) Refuse at the first fetch (the behaviour of today) | None | No change | The error shows when a build runs, not when the repository is configured |
+| (c) A callback of the format that validates the whole remote section | A validation hook with the probe's answer | Room for the probe check (WP3.0g rest) | A hook for one fact; the probe check is a separate decision (Q-NUGET-14) |
+
+**Choice:** (a). The probe check of WP3.0g (R-NUGET-014's 422 when the service index lacks `PackageBaseAddress/3.0.0`) is not built here and is decided in Q-NUGET-14: the first fetch answers 502 `upstream_error` through `ParseDiscovery`, and the upstream test of R-REPO-024 shows the same.
+
+**Rationale:** the fact is cheap, local and reversible. The development agent revisits this when R-NUGET-029 supplies digests, then by clearing the fact in the NuGet descriptor.
+
+**Applied in the spec:** R-REPO-041 (the table row of `require`). Code: `internal/formats/catalog/catalog.go`, `internal/repository/validate_remote.go`. Tests: `TestR_REPO_041_ChecksumRequireIsRefusedForAFormatWithoutAnnouncedDigests`.
+
 ### Q-ARCH-273 · How is the OpenAPI breaking-change checker pinned and run?
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.

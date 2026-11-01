@@ -277,16 +277,33 @@ type adapter struct {
 	ref      formats.RepoRef
 	deps     Deps
 	settings json.RawMessage
+	// caps are the optional interfaces Register found on the format's remote adapter.
+	caps formats.RemoteCaps
+	// disc is what the discovery document parsed to; nil until [adapter.Discover] bound it.
+	disc any
 }
 
 func newAdapter(f formats.Format, repo *repository.Repository, ref formats.RepoRef, deps Deps) *adapter {
-	return &adapter{f: f, ra: f.Remote(), repo: repo, ref: ref, deps: deps, settings: formatSettings(repo.Config, f.Descriptor().ID)}
+	return &adapter{
+		f: f, ra: f.Remote(), repo: repo, ref: ref, deps: deps, settings: formatSettings(repo.Config, f.Descriptor().ID),
+		caps: formats.RemoteCapabilities(f.Descriptor().ID),
+	}
 }
 
 var _ proxy.Adapter = (*adapter)(nil)
 
 func (a *adapter) context(base proxy.UpstreamBase) formats.RemoteContext {
-	return formats.RemoteContext{Repo: a.repo, Upstream: base.URL, Settings: a.settings}
+	return formats.RemoteContext{Repo: a.repo, Upstream: base.URL, Settings: a.settings, Discovery: a.disc}
+}
+
+// remoteContext is the context of a call that runs without the engine's client at hand: the
+// upstream URL is the repository's own.
+func (a *adapter) remoteContext() formats.RemoteContext {
+	rc := formats.RemoteContext{Repo: a.repo, Settings: a.settings, Discovery: a.disc}
+	if u, err := repoUpstream(a.repo); err == nil {
+		rc.Upstream = u
+	}
+	return rc
 }
 
 func (a *adapter) UpstreamRequest(ctx context.Context, b proxy.UpstreamBase, path, variant string) (*http.Request, error) {
@@ -298,11 +315,7 @@ func (a *adapter) AcceptResponse(path string, resp *http.Response) error {
 }
 
 func (a *adapter) PrepareFill(ctx context.Context, path, variant string, body io.ReaderAt, size int64) (proxy.Prepared, error) {
-	rc := formats.RemoteContext{Repo: a.repo, Settings: a.settings}
-	if u, err := repoUpstream(a.repo); err == nil {
-		rc.Upstream = u
-	}
-	p, err := a.ra.PrepareFill(ctx, rc, formats.Path{Path: path}, variant, body, size)
+	p, err := a.ra.PrepareFill(ctx, a.remoteContext(), formats.Path{Path: path}, variant, body, size)
 	if err != nil {
 		return proxy.Prepared{}, err
 	}
@@ -351,6 +364,74 @@ func (a *adapter) PackageDocumentPath(name string) (string, bool) {
 // records only those (R-REPO-043).
 func (a *adapter) OwnPath(pkg, path string) bool {
 	return pkg != "" && a.f.Classify(formats.Path{Path: path}).Package == pkg
+}
+
+// DiscoveryDocument implements [proxy.Adapter] over the format's [formats.Discoverer].
+func (a *adapter) DiscoveryDocument() (string, string, bool) {
+	if a.caps.Discovery == nil {
+		return "", "", false
+	}
+	p, variant, ok := a.caps.Discovery.DiscoveryDocument()
+	return p.Path, variant, ok
+}
+
+// Discover implements [proxy.Adapter]: the adapter for the rest of the fetch carries the parsed document.
+func (a *adapter) Discover(ctx context.Context, doc []byte) (proxy.Adapter, error) {
+	if a.caps.Discovery == nil {
+		return a, nil
+	}
+	d, err := a.caps.Discovery.ParseDiscovery(ctx, a.remoteContext(), doc)
+	if err != nil {
+		return nil, err
+	}
+	bound := *a
+	bound.disc = d
+	return &bound, nil
+}
+
+// InspectsFill implements [proxy.Adapter] over the format's [formats.FillInspector].
+func (a *adapter) InspectsFill(path string) bool {
+	return a.caps.Fill != nil && a.caps.Fill.InspectsFill(formats.Path{Path: path})
+}
+
+// InspectFill implements [proxy.Adapter]: the format reads the spooled artifact and its
+// inspection travels to its OnCommit the way an upload's does.
+func (a *adapter) InspectFill(ctx context.Context, path string, sp *items.Spooled) (any, error) {
+	if a.caps.Fill == nil {
+		return nil, nil
+	}
+	ins, err := a.caps.Fill.InspectFill(ctx, a.remoteContext(), formats.Path{Path: path}, fillSpool{sp})
+	if err != nil {
+		return nil, err
+	}
+	if ins == nil {
+		return nil, nil
+	}
+	return &commitPayload{inspection: ins}, nil
+}
+
+// fillSpool is the spooled artifact of a fill as the format sees it.
+type fillSpool struct{ s *items.Spooled }
+
+var _ formats.Spooled = fillSpool{}
+
+func (p fillSpool) Digests() formats.Digests {
+	return formats.Digests{
+		SHA256: append([]byte(nil), p.s.SHA256[:]...), SHA512: append([]byte(nil), p.s.SHA512[:]...),
+		SHA1: append([]byte(nil), p.s.SHA1[:]...), MD5: append([]byte(nil), p.s.MD5[:]...),
+	}
+}
+
+func (p fillSpool) Size() int64 { return p.s.Size }
+
+func (p fillSpool) Open() (io.ReadCloser, error) { return io.NopCloser(p.s.Reader()), nil }
+
+func (p fillSpool) ReaderAt() (io.ReaderAt, error) {
+	ra, ok := p.s.Section(0, p.s.Size).(io.ReaderAt)
+	if !ok {
+		return nil, errs.E(errs.Internal, errs.CodeInternal, "The spooled body cannot be read at an offset.")
+	}
+	return ra, nil
 }
 
 // repoUpstream parses the upstream URL of a remote repository.

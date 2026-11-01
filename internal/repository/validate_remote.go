@@ -401,6 +401,10 @@ func (r *remoteResolver) integrity(s *RemoteSettings, in remoteInput) {
 	}
 	r.oneOf("/remote/integrity/checksumPolicy", s.Integrity.ChecksumPolicy,
 		ChecksumVerifyIfAvailable, ChecksumRequire, ChecksumIgnore, ChecksumPassThrough)
+	if s.Integrity.ChecksumPolicy == ChecksumRequire && r.info.ChecksumRequireUnsupported {
+		r.notApplicable("/remote/integrity/checksumPolicy",
+			"the "+string(r.info.ID)+" format's upstream announces no digest to verify against, so \"require\" would refuse every artifact")
+	}
 	if len(s.Integrity.AllowedContentTypes) > maxContentTypes {
 		r.v.add("/remote/integrity/allowedContentTypes", codeOutOfRange, "at most "+strconv.Itoa(maxContentTypes)+" entries")
 	}

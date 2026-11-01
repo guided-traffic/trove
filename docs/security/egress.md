@@ -120,6 +120,16 @@ contacted. `Client.Allowed` ([client.go](../../internal/proxy/upstream/client.go
 neither the upstream's nor in `extraHosts` (`502 foreign_host_denied`), and one that leaves an `https` upstream for `http` (`502
 insecure_redirect`, as a redirect to `http` is refused), before any address is resolved (Q-ARCH-224).
 
+## Addresses that come from upstream documents
+
+The engine builds the upstream URL of a fetch from three sources, and each passes `Client.Allowed` ([proxy/fetch.go](../../internal/proxy/fetch.go),
+`request`) before a request is sent: the repository's URL and the canonical path; the URL map (`remote_url_map`), which names the URL a document
+recorded for a path of its own package, for an artifact and for a metadata path alike (R-REPO-043); and, for a format whose addressing follows a
+discovery document, the addresses that document names (the format's adapter reads them from the parsed document the engine hands it,
+Q-ARCH-268). No client path chooses a host. A discovery document is a cache entry like any other: a caller who may not fill the cache never causes
+its fetch, and a probe of the shadowing check resolves it as the system, so a first publish can cause one request to the upstream's discovery
+document and store it.
+
 ## What this does not cover
 
 ### H-78 · The NAT64 check knows only the well-known prefix

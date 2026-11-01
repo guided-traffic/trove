@@ -398,6 +398,8 @@ type replicaOpts struct {
 	upstreamLog io.Writer
 	// ups are further upstreams the replica trusts.
 	ups []*proxytest.Upstream
+	// hooks are the storage hooks of the item store; nil runs none.
+	hooks items.Hooks
 }
 
 // replica is one in-process web replica.
@@ -473,7 +475,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	if r.blobs, err = blob.New(cfg, r.obj, r.db, blob.WithLogger(quiet), blob.WithWaitPoll(25*time.Millisecond)); err != nil {
 		t.Fatal(err)
 	}
-	if r.items, err = items.New(items.Options{Runner: r.db, Blobs: r.blobs, Recorder: r.rec, Storage: cfg, Log: quiet}); err != nil {
+	if r.items, err = items.New(items.Options{Runner: r.db, Blobs: r.blobs, Recorder: r.rec, Storage: cfg, Hooks: o.hooks, Log: quiet}); err != nil {
 		t.Fatal(err)
 	}
 

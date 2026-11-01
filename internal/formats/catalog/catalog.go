@@ -96,6 +96,12 @@ type Facts struct {
 	// exist for the format.
 	DefaultMetadataTTLSeconds *int
 	DefaultNotFoundTTLSeconds *int
+	// ChecksumRequireUnsupported is true for a format whose upstream announces no digest the
+	// engine could verify an artifact against, so that `integrity.checksumPolicy: require` could
+	// only ever refuse every artifact. A remote repository of the format cannot be created or
+	// updated with that policy: 422 not_applicable (R-REPO-041, R-NUGET-015). False: the
+	// policy is supported, which is what every format that announces digests holds.
+	ChecksumRequireUnsupported bool
 	// PatternSubject is what include and exclude patterns match.
 	PatternSubject PatternSubject
 	// PackageNames is true for a format whose content has package names:
