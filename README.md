@@ -5,10 +5,13 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/guided-traffic/trove)](https://goreportcard.com/report/github.com/guided-traffic/trove)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-> **Status: pre-release, access core milestone (M1) built: login, tokens, permission policies, endpoints and exposure rules, generic repositories with raw transfer, audit and the admin UI.** The platform of M0 (the binary, its configuration,
-> the PostgreSQL and Valkey connections, replica coordination, the S3 blob layer, the TLS of every connection, the system API,
-> the ops endpoints and the Helm chart) is built and tested. Not built yet: the npm and NuGet protocols, GitLab CI federation,
-> the pull-through proxy and backup and restore. Everything else is the target design in [docs/spec/](docs/spec/README.md). `v0.1.0` is the
+> **Status: pre-release. Phases 1 to 3 are built (milestones M0 to M2).** The platform: the binary, its configuration, the PostgreSQL
+> and Valkey connections, replica coordination, the S3 blob layer, the TLS of every connection, the system API, the ops endpoints
+> and the Helm chart. The access core: OIDC login, own tokens, permission policies, endpoints and exposure rules, generic
+> repositories with raw transfer, audit, the admin UI and the in-app manual. The npm registry: local, remote (pull-through) and
+> virtual repositories, the package screens, client setup, npm on customer endpoints, the security audit and the in-app guides. One open item of phase 3: the npm load in the drain and failover tests is not reliable yet.
+> Not built yet: the NuGet protocols, GitLab CI federation, vulnerability scanning, backup and restore, and the HA hardening of
+> phase 7. Everything else is the target design in [docs/spec/](docs/spec/README.md). `v0.1.0` is the
 > last release made before the switch to the organisation's CI and release standard; it was published to `ghcr.io`. Releases
 > from now on are cut by Semantic Release from the conventional commits on `main`, and published to Docker Hub and to the chart
 > repository ([releasing](docs/developer/releasing.md)).
@@ -26,7 +29,7 @@ restart.
 
 ```mermaid
 flowchart LR
-  cl["Clients<br/>curl, browser, package managers (planned)"]
+  cl["Clients<br/>curl, browser, npm, pnpm, Yarn"]
   subgraph k8s["Kubernetes (Helm chart)"]
     edge["Ingress controller<br/>HAProxy Ingress, HTTPS to the backend"]
     svc["Service trove<br/>web pods"]
@@ -36,7 +39,7 @@ flowchart LR
   end
   pg[("PostgreSQL<br/>CloudNativePG, system of record")]
   vk[("Valkey with Sentinel<br/>shared ephemeral state")]
-  s3[("S3-compatible storage<br/>blob store (no package uses it yet)")]
+  s3[("S3-compatible storage<br/>blob store: package and file content")]
 
   cl -->|TLS| edge -->|TLS| svc --> web
   web -->|TLS| pg
@@ -80,9 +83,19 @@ Built (M1, access core):
 - 🖥️ **Admin UI.** The Angular application, embedded in the binary: sign-in, the file tree, repositories, users, groups, service accounts, tokens, policies, endpoints, audit and the system status, in a light and a dark scheme. See [web UI](docs/developer/web-ui.md) and [design language](docs/developer/design-language.md).
 - ❓ **Manual in the product.** The user and administrator manual is embedded in the binary and opens from the "?" of the top bar, on the page of the current screen. See [docs/manual](docs/manual/README.md).
 
-Planned, not built (see the [roadmap](docs/coverage/roadmap.md)): the npm and NuGet protocols with local, remote and virtual repositories;
-remote and virtual repositories for the generic format; GitLab CI OIDC federation; the pull-through proxy; backup and restore; the UI
-screens of packages, search, trash, builds, setup, webhooks, CI identity and projects.
+Built (M2, npm registry):
+
+- 📦 **npm local repositories.** Publish, package documents, dist-tags, unpublish, `whoami` and `ping`, for npm, pnpm, Yarn Classic and Yarn Berry. See [npm](docs/developer/npm.md).
+- 🔁 **npm remote repositories.** A pull-through proxy of the public npm registry, with tarball URL rewriting, request collapsing through Valkey, metadata and negative caches, and stale metadata while the upstream is down. See [proxy](docs/developer/proxy.md).
+- 🧩 **npm virtual repositories.** Merged package documents and dist-tags over several members, writes through one deployment target, namespace claims against dependency confusion. See [virtual](docs/developer/virtual.md).
+- 🛡️ **npm security audit.** `npm audit`, `pnpm audit` and `yarn npm audit` through remote and virtual repositories. The audit request is forwarded to the provider (the upstream by default) and never cached. See [npm](docs/developer/npm.md).
+- 🌐 **npm on customer endpoints.** Package documents and dist-tags list only the versions an endpoint exposes; a hidden version answers `404`. See [endpoints](docs/developer/endpoints.md).
+- 🖼️ **Package screens and client setup.** The package list and detail with the README, an install panel, client setup snippets, and repository settings rendered from the format's schema. See [packages](docs/developer/packages.md) and [web UI](docs/developer/web-ui.md).
+- 📖 **In-app guides.** A guide for every npm variant (local, remote and virtual) with npm, pnpm, Yarn Berry and Yarn Classic, in the UI's guides area. See [npm](docs/developer/npm.md) and [web UI](docs/developer/web-ui.md).
+
+Not built yet (see the [roadmap](docs/coverage/roadmap.md)): the NuGet protocol with local, remote and virtual repositories; GitLab CI OIDC federation;
+vulnerability scanning; backup and restore and the HA hardening of phase 7; remote and virtual repositories for the generic format; the UI
+screens of search, trash, builds, webhooks, CI identity and projects.
 
 ## 📛 Naming conventions
 
@@ -112,7 +125,8 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 | `/auth/oidc/{providerId}/start`, `/auth/oidc/{providerId}/callback` | GET | yes (M1; [login](docs/developer/login.md)) |
 | `/auth/local/login`, `/auth/logout` | POST | yes (M1; the break-glass login and logout) |
 | `/api/v1/…` (the management API) | see the [API families](#management-api) | yes (M1; [api/openapi.yaml](api/openapi.yaml)) |
-| `/api/<format>/<repoKey>/…`, `/ui/{locale}/…` | — | planned ([INV-6](docs/spec/README.md)) |
+| `/api/<format>/<repoKey>/…` | per route (npm: GET, PUT, DELETE, POST) | yes, npm (M2; [dispatcher](internal/api/dispatch/dispatcher.go)) |
+| `/ui/{locale}/…` | GET, HEAD | yes, locales `en` and `de` ([webui](internal/webui/webui.go)) |
 
 ### Headers
 
@@ -181,14 +195,15 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 | Client names | `trove:<instance>:pubsub` (Pub/Sub), `trove:<instance>:probe` (Sentinel probe) | yes (`internal/cluster/valkey_pubsub.go`, `valkey_sentinel.go`) |
 | Rate limits | `<key_prefix><keyspace>:rl:v1:<…>`, family `rl` with a 24 h expiry (`internal/cluster/valkey_keys.go`, `valkey_ratelimit.go`) | yes |
 | Token-seen markers | `<key_prefix><keyspace>:tokseen:v1:<…>`, family `tokseen`, expiry bounded by `MaxTokenSeenWindow` (`valkey_keys.go`) | yes |
-| Negative cache, flight locks | `…:neg:v1:…`, `…:lock:fetch:v1:…` | planned (R-ARCH-030); not registered in `valkey_keys.go` |
+| Negative cache, flight locks, fill channel | `…:neg:v1:…`, `…:lock:fetch:v1:…`, the `fill` channel | yes ([valkey_keys.go](internal/cluster/valkey_keys.go)) |
 
 ### Object storage
 
 | Name | Pattern | Built |
 |---|---|---|
-| Blob object | `<prefix>/sha256/<h0h1>/<h2h3>/<64 hex>`; `<prefix>` defaults to `trove` (`storage.s3.prefix`) | yes (`internal/blob/key.go`); no package writes blobs yet |
-| Probe, upload staging, revocation journal | `<prefix>/_probe/…`, `<prefix>/_uploads/…`, `<prefix>/_journal/revocations/…` | planned ([R-STOR-001](docs/spec/storage.md)) |
+| Blob object | `<prefix>/sha256/<h0h1>/<h2h3>/<64 hex>`; `<prefix>` defaults to `trove` (`storage.s3.prefix`) | yes (`internal/blob/key.go`); npm publish, the generic `/files/` writes and the pull-through cache store their content here |
+| Readiness probe | `<prefix>/_probe/health`, a `HEAD` | yes (`internal/app/wire_blob.go`) |
+| Upload staging, revocation journal | `<prefix>/_uploads/…`, `<prefix>/_journal/revocations/…` | planned ([R-STOR-001](docs/spec/storage.md)) |
 
 ### PostgreSQL
 
@@ -380,21 +395,19 @@ Sentinels over TLS, SeaweedFS, the Ingress controller and the chart with `web` a
 make dev-up                          # example: TROVE_DEV_HTTP_PORT=18080 make dev-up if 8080 is taken
 ```
 
-The profile is changing to the owner's stack in this milestone. The state of each part is in
-[local-profile.md](docs/developer/local-profile.md). Today the edge is plain HTTP on `localhost` (`tls.enabled: false` in the dev
-values). **Pending:** the edge is HTTPS on `localhost` with the dev CA in `.dev/`, served by HAProxy Ingress; Valkey comes from the
-valkey-operator and its Secrets from internal-secrets-operator; the dev Valkey manifests and `valkey-certs.sh` are replaced.
+The profile runs the owner's stack: HAProxy Ingress as the edge, cert-manager with the dev CA, CloudNativePG, the valkey-operator
+and internal-secrets-operator. The edge serves HTTPS on `localhost` with a certificate of the dev CA, written to `.dev/pki/ca.crt`.
+The state of each part, and what is still pending, is in [local-profile.md](docs/developer/local-profile.md).
 
-**2. Verify through the edge** on `http://localhost:8080` (or your `TROVE_DEV_HTTP_PORT`). The dev values set
-`system.bootstrap_anonymous_read`, a development-only switch, so the replica list reads without a credential:
+**2. Verify through the edge** on `https://localhost:8080` (or your `TROVE_DEV_HTTP_PORT`), trusting the dev CA in `.dev/pki/ca.crt`.
+The dev values set `system.bootstrap_anonymous_read`, a development-only switch, so the replica list reads without a credential:
 
 ```shell
-curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/api/v1/system/ping      # example: 200
-curl -s http://localhost:8080/api/v1/system/replicas                                    # example: the web and worker replicas
+curl -s --cacert .dev/pki/ca.crt -o /dev/null -w '%{http_code}\n' https://localhost:8080/api/v1/system/ping   # example: 200
+curl -s --cacert .dev/pki/ca.crt https://localhost:8080/api/v1/system/replicas                                 # example: the web and worker replicas
 ```
 
-Pending: the same two requests over `https://localhost:<port>` with `curl --cacert .dev/<dev CA file>` once the edge serves TLS.
-The exact path of the CA file is set when the dev profile switches; it is not in `local-profile.md` yet.
+Trusting the CA system-wide is your choice; [local-profile.md](docs/developer/local-profile.md#trusting-the-dev-ca) shows the command.
 
 **First sign-in, first repository, first file (M1).** These steps use a release install with the login values below. The
 password and the client secret are files of existing Secrets; the chart never creates them.
@@ -441,7 +454,7 @@ Verify the session and the principal: `curl -s -b jar.txt https://trove.example.
 principal, and its `principal.kind` is `break_glass` for this account (the kinds are listed in Q-AUTH-44 of [the identity spec](docs/spec/identity-and-authentication.md#q-auth-44--the-shape-of-whoami)).
 
 Not verified in this pass: no stack was started for these steps. The request shapes come from the OpenAPI document and the
-login code. The dev profile still serves plain HTTP, and the `__Host-` cookies need HTTPS. Whether a break-glass session may
+login code. The dev edge serves HTTPS (`tls.enabled: true` in the dev values), which the `__Host-` cookies need. Whether a break-glass session may
 mint a personal token is not checked against its code path.
 
 **3. Run the integration tests** against their own stack (PostgreSQL, PgBouncer, Valkey with Sentinel, SeaweedFS), not
@@ -466,10 +479,10 @@ make integration-up && make test-integration
 
 ## 📖 Full reference
 
-Every public interface of M1 is listed once here: the command line, every configuration key of `internal/config`, the
+Every public interface of M0 and M1 is listed once here: the command line, every configuration key of `internal/config`, the
 management API by family, the system API and the ops endpoints, and the Helm values. The configuration keys are generated from the struct tags in
 [internal/config](internal/config/); [schema.json](internal/config/schema.json) is the generated JSON Schema. A value marked
-`# default` is the default of its struct tag or of the code path that applies it; a value marked `# example` is illustrative.
+`# default` is the default of its struct tag or of the code path that applies it; a value marked `# example` is illustrative. The M2 keys of the remote engine, the virtual engine and npm are in [configuration.md](docs/developer/configuration.md#m2-keys), and the npm routes in [npm.md](docs/developer/npm.md).
 
 ### Command line
 
@@ -1059,7 +1072,7 @@ ui:
 
 ### Management API
 
-The operations below are the paths of [api/openapi.yaml](api/openapi.yaml), grouped by family, as M1 declares them. The
+The operations below are the paths of [api/openapi.yaml](api/openapi.yaml), grouped by family, as the document declares them. The
 document is the source: `GET /api/v1/openapi.json` serves it, and the operations declare their capability in an
 `x-trove-permission` block; `Document.CheckRoutes` checks the routes against the document at start-up. The table lists every operation with its
 `x-trove-permission` and whether it requires a recent sign-in (`x-trove-recent-auth`, R-API-007).

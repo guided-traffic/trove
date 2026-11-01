@@ -301,7 +301,7 @@ form of the `x-trove-permission` of each operation (R-API-008).
   | error codes | `already_exists` (not `conflict`) for a policy name that exists |
 
 - **Operations.** The operationIds, methods, paths and permissions are the tables of [authorization.md](authorization.md#management-operations)
-  and [audit.md](audit.md#management-operations); the UI wave builds on them.
+  and [audit.md](audit.md#management-operations); the admin UI builds on them.
 - **Test support.** [test/integration/stack](../../test/integration/stack) builds a migrated database and in-process web replicas with
   the real chain, handlers, engine, audit writer and store, for tests that cross the authorization and audit APIs; authentication is a
   header (`X-Test-Person`) and Valkey is not part of it.

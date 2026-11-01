@@ -1,8 +1,10 @@
 # trove documentation
 
-Status: specification phase. Nothing described in these pages is implemented yet.
+Status: phases 1 to 3 are built: the platform (M0), the access core (M1) and the npm registry with its remote and virtual
+repositories (M2). NuGet, GitLab CI federation, vulnerability scanning and backup and restore are specified and not built yet.
 
-This page maps the documentation. The project currently consists of documents only. Four parts
+This page maps the documentation. The project is a Go binary with an embedded Angular UI; these documents describe it and
+the target design. Four parts
 build on each other, and each part has its own stable ID scheme, so any statement can be traced
 from the capability through the design to the decision behind it.
 

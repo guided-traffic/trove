@@ -313,4 +313,3 @@ go test -tags integration -race ./test/integration/coordination/...
 
 - The Kubernetes parts of E0.6, E0.13 and E0.14 (force-deleted pod, `dev-failover`, k6 under a node drain) belong to the e2e harness.
 - A PostgreSQL failover under load and Valkey failover during propagation are not exercised at this level; the poll's behaviour after one is covered by the regression tests.
-- The wiring in `internal/app` is described in the work package summary and not yet in the code (WIRING POINT comments in `app.go`).

@@ -232,7 +232,8 @@ The three keys that carry a unit in their name (`lock_poll_interval_ms`, `fetch_
 `queue_timeout_seconds`) are integers because the specification names them so (Q-REPO-85); code reads them through
 `Proxy.LockPollInterval()`, `Proxy.FetchWaitTimeout()` and `Proxy.QueueTimeout()`. Every other duration is a
 `time.Duration`, every size a `ByteSize` (a plain integer is bytes). Not in the tree yet, because their requirements are
-P1 or later: `npm.trusted_publishing` and the `npm.audit` forwarding. `proxy.global_offline` is only the configuration side of
+P1 or later: `npm.trusted_publishing`. The `npm.audit` forwarding is built, as a setting of each remote repository (the `npm` member
+of the repository document, [settings.go](../../internal/formats/npm/settings.go)), not a key of this file. `proxy.global_offline` is only the configuration side of
 R-REPO-031; the runtime switch and its table (`proxy_offline_switch`) are not built.
 `config_as_code` has only `secrets_dir` so far: the secret references of remote repositories need it, and the keys of the
 document mechanism (`files`, `mode`, `lock_managed_objects`, R-OPS-029, P1) arrive with it.

@@ -1,12 +1,12 @@
 # Developer documentation
 
-Status: the access core (M1) is built on top of the foundation (M0). The repository holds the Go binary,
+Status: phases 1 to 3 are built: the foundation (M0), the access core (M1) and the npm registry (M2). The repository holds the Go binary,
 its configuration, the database and cache layers, the S3 blob layer, the system and management APIs, the ops
 endpoints, the OIDC login and the break-glass account, the tokens, the permission policies and the grant index,
-the endpoints and exposure rules, the generic repository format with raw transfer under `/files/`, the audit
-trail, the Angular admin UI, the Helm chart, the local development profile on kind, the integration, end-to-end
-and chart tests, and the CI workflows. No package format beyond the generic format, no GitLab CI federation,
-no pull-through proxy and no backup exists yet. Everything marked *planned* below is the target design in
+the endpoints and exposure rules, the generic repository format with raw transfer under `/files/`, the npm format with its local, remote (pull-through proxy) and virtual repositories, the audit
+trail, the Angular admin UI with the package screens, client setup and the in-app manual, the Helm chart, the local development profile on kind, the integration, end-to-end
+and chart tests, and the CI workflows. No NuGet format, no GitLab CI federation,
+no vulnerability scanning and no backup exists yet. Everything marked *planned* below is the target design in
 [docs/spec/](../spec/README.md).
 
 ## What to have in your head first
@@ -60,7 +60,7 @@ no pull-through proxy and no backup exists yet. Everything marked *planned* belo
 | [proxy.md](proxy.md) | The pull-through proxy: the upstream clients of remote repositories (settings applied to the outbound client, credentials, secret references, the client cache, the foreign-host check, the upstream test); the engine adds its sections |
 | [virtual.md](virtual.md) | Virtual repositories: members, deploy target and pin rules as rows, namespace claims and their API, the routing (`Route`, `AutoClaim`, `ExposureSet`), the detach of a deleted member; the virtual engine (`Plan`, tiers, the merged-metadata cache, the shadowing check, the explanation API) and the seam to bind the proxy engine to |
 | [packages.md](packages.md) | The package screens' API: the read model across repositories (`internal/packages/view`), the visibility filter (`authz.ReadScoper`) and the statements that count with it, the format's `ViewAdapter`, the README renderer (`internal/packages/readme`), the client setup snippets and the tests that pin them (R-API-029, R-API-030, R-UI-008, Q-API-164 to Q-API-168) |
-| [npm.md](npm.md) | The npm format: the route table, classification, error shape, publish, the data port and the leaf libraries `name`, `semver`, `manifest`, `tarball`, `publish` (R-NPM-001 to R-NPM-008, R-NPM-041, R-NPM-043, R-NPM-044, R-ARCH-028); the package documents with their validators and rendition cache, tarballs and the serve-time check, dist-tags, unpublish and the removal hooks, whoami and ping (R-NPM-009 to R-NPM-017, R-NPM-019, R-NPM-047); deprecate and the remote and virtual classes are added as they are built |
+| [npm.md](npm.md) | The npm format: the route table, classification, error shape, publish, the data port and the leaf libraries `name`, `semver`, `manifest`, `tarball`, `publish` (R-NPM-001 to R-NPM-008, R-NPM-041, R-NPM-043, R-NPM-044, R-ARCH-028); the package documents with their validators and rendition cache, tarballs and the serve-time check, dist-tags, unpublish and the removal hooks, whoami and ping (R-NPM-009 to R-NPM-017, R-NPM-019, R-NPM-047); the remote and virtual classes are in its sections; deprecate (P1) is not built |
 | [proxy.md](proxy.md) | The pull-through proxy: the cache invalidation of remote repositories (rows, the per-replica matcher the engine asks, the invalidate and entry-list operations, the fold task); the engine sections are added as it is built |
 | [login.md](login.md) | The OIDC login, the server-side session, CSRF, logout and the break-glass account: files, flows, seams to the identity, api and audit areas, configuration, tests |
 | [identity.md](identity.md) | Principals, groups, service accounts, tokens, the authentication stage, caches and revocation propagation, the failed-credential throttle |
@@ -197,9 +197,9 @@ chain stores is in [internal/httpserver/principal.go](../../internal/httpserver/
 
 M2 starts with its schema: the tables of the remote engine, the virtual engine, claims, ownership and npm exist
 ([database.md](database.md#m2-tables)), with their configuration keys ([configuration.md](configuration.md#m2-keys)), change
-areas and layer rows in `internal/archtest`. Planned, from [R-ARCH-003](../spec/architecture.md): the package formats
-(`internal/formats/npm`, `nuget`), the remote fetch engine (`internal/proxy/`), the virtual engine (`internal/virtual/`) and
-the format stores (`internal/formatdata/`) do not exist yet.
+areas and layer rows in `internal/archtest`. Built, from [R-ARCH-003](../spec/architecture.md): the npm format (`internal/formats/npm`), its store
+(`internal/formatdata/npm`), the remote fetch engine (`internal/proxy/`) and the virtual engine (`internal/virtual/`).
+Not built yet: the NuGet format (`internal/formats/nuget`).
 
 ## Test tiers
 

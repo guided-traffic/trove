@@ -5,9 +5,10 @@ role-binding store, the token-scope ceiling, the epochs of `Trove-Authz-Min-Epoc
 management operations over them (policies, role bindings, the checks of the caller; [below](#management-operations)). M2
 adds the populate check and `MemberUsable` ([below](#the-populate-check-and-memberusable)) and package ownership: the check
 and the claim in a writer's commit transaction, the owner operations of R-AUTHZ-019 with their HTTP operations, the
-deletion hook ([below](#package-ownership)). Not built yet: the callers of the populate check (the remote and virtual
-engines) and of the ownership check (the format writers), CI inline grants and the CI project owner, the
-shadowing check, projects and delegated management, and the effective-permissions and explain operations of R-AUTHZ-024,
+deletion hook ([below](#package-ownership)). The callers are the remote engine's populate check, through
+[formathost/remote.go](../../internal/formathost/remote.go), the virtual engine's `MemberUsableOn` ([virtual/engine.go](../../internal/virtual/engine.go)),
+and the format writers' ownership check in their commit ([formathost/writer.go](../../internal/formathost/writer.go)). Not built yet:
+CI inline grants and the CI project owner, projects and delegated management, and the effective-permissions and explain operations of R-AUTHZ-024,
 which are P1 (Q-AUTHZ-27).
 
 The specification is [authorization.md](../spec/authorization.md); this page says where each rule lives in the code. The

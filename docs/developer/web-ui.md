@@ -521,7 +521,7 @@ Conventions these screens follow:
 - What the API lacks for the catalog screens, and the UI works around (Q-UI-15, Q-UI-18, Q-UI-19): the values of `ui.browser.page_size` and
   `ui.deploy.max_upload_bytes`; a creation time and a sort by creation on the repository summary view; a flag for
   formats with tags in the descriptor.
-- The tree does not label the members of a virtual repository ("resolves from") or the cache of a remote one: M1 has neither class. Copy, move, properties and the trash can are P1.
+- The tree does not label the members of a virtual repository ("resolves from") or the cache of a remote one: the generic format has neither class (npm has both). Copy, move, properties and the trash can are P1.
 - The repository settings forms cover the generic members and the format member rendered from the format's schema
   ([above](#the-repository-settings-form-rendered-from-the-formats-schema)). The wizard has no fields for the upstream of a remote repository (an npm remote
   is created with the format's default upstream) or for the members of a virtual one; NuGet's `deleteMode` view, upstream presets, "Test connection", the

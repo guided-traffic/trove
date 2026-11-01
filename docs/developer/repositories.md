@@ -12,7 +12,7 @@ else is decided in the domain.
 Milestone M1 implements the local class of the generic format only. Since M2 the remote settings (R-REPO-024, R-REPO-033),
 their secrets and the upstream test are built for any format that registers the remote class (see "Remote settings"), and the
 virtual class (members, deploy target, pin rules, claims and their routing) is built and described in
-[virtual.md](virtual.md); the pull-through engine and the rest of R-REPO-024 to R-REPO-049 are specified and not built.
+[virtual.md](virtual.md); the pull-through engine is built too ([proxy.md](proxy.md)). Which requirements of R-REPO-024 to R-REPO-049 it covers is in the [coverage checklist](../coverage/README.md).
 
 ## Files
 

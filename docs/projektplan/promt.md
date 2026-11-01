@@ -281,14 +281,3 @@ Found on 2026-11-01 while writing the manual (`docs/manual`) and the design chan
   which Homebrew reports as too old for Xcode 27
   (`sudo softwareupdate --install "Command Line Tools for Xcode 27.2-27.2"`, no restart).
   Machine-level: the owner runs these; a run does not change the machine.
-
-### Stale documentation
-
-- **F-18 · Status texts describe an earlier state** (confirmed for docs/README.md, docs/developer/README.md and the
-  README's planned list and path table; read for the README's status block and endpoints.md). [docs/README.md](../README.md) says "Nothing
-  described in these pages is implemented yet"; [docs/developer/README.md](../developer/README.md) says no
-  format beyond generic and no proxy exist; the root [README.md](../../README.md) lists npm, the proxy and
-  the setup screens as planned, its URL path table marks `/api/<format>/…` and `/ui/{locale}/…` as planned,
-  and its status block says no package uses S3; the intro of
-  [docs/developer/endpoints.md](../developer/endpoints.md) says the endpoint screen and the filtering of npm
-  remote and virtual documents are not built. Done when each states what phases 1 to 3 built.

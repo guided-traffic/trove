@@ -9,8 +9,8 @@ deciding ([items.md](items.md)), [internal/files](../../internal/files/) is the 
 over it, and [internal/api/rawfiles](../../internal/api/rawfiles/) is the `/files/` handler, with the content response in
 [internal/api/edge](../../internal/api/edge/). [items_api.go](../../internal/api/v1/items_api.go) holds the management operations,
 the statements are in [queries/files.sql](../../internal/meta/postgres/queries/files.sql). The security view is
-[file-transfer.md](../security/file-transfer.md). Milestone M1 serves the local class of the generic format; remote and
-virtual repositories are specified and not built, and the trash can, copy and move, properties, deploy by checksum and
+[file-transfer.md](../security/file-transfer.md). Milestone M1 serves the local class of the generic format; the generic format has no remote or virtual class (npm has both,
+see [npm.md](npm.md)), and the trash can, copy and move, properties, deploy by checksum and
 quotas are P1.
 
 ## What has to be in your head first

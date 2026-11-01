@@ -285,7 +285,7 @@ builder the architecture test allows to assemble SQL text.
 
 Columns added to `repositories`: `lifecycle` (`active`, `deleting`), `config_version` (ETag, registered),
 `created_by`, `updated_by` (plain uuid), `last_activity_at`, and the constraint `repositories_key_dots`. The row of the
-change area `repo_config` is seeded. `claims_version` arrives with 00015 (M2) and `project_id` later (Q-REPO-11). The authorization
+change area `repo_config` is seeded. `claims_version` is added by 00015 (M2) and `project_id` later (Q-REPO-11). The authorization
 settings of a repository (`cacheFillAction`, `packageOwnership`, `requireAuthentication`, `hideExistence`) stay in
 `config` (R-REPO-004).
 

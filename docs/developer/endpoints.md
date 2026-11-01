@@ -7,8 +7,8 @@ of R-EP-017 (M1, WP1.9): the credential rules per endpoint, endpoint-bound token
 decision point, the rate-limit class, and the endpoint and exposure-rule operations. M2 (WP2.9) adds the package formats
 on an endpoint ([R-EP-018, R-EP-019](#package-formats-on-an-endpoint-r-ep-018-r-ep-019)): the exposure view in the request's
 endpoint facts, npm's exposure adapter and the filter of its local documents, member names on endpoints with rules, and
-the cache-fill refusal in the remote and the virtual engine. Not built yet: the endpoint screen (the UI wave), the filter of
-npm's remote and virtual documents (they call `FilterDocument` when those classes are built), the stored versions in the dry
+the cache-fill refusal in the remote and the virtual engine. The endpoint screen (`web/src/app/features/endpoints`) and the filter of
+npm's remote and virtual documents are built too (they call `FilterDocument`). Not built yet: the stored versions in the dry
 run, and the replay of the journaled exposure changes (R-EP-020, M5; the events carry their journal entries from now on).
 The security view is [security/endpoints-and-exposure.md](../security/endpoints-and-exposure.md).
 
@@ -253,8 +253,8 @@ share divides by `replicaCount` (replica_count.go; the one count of every limite
 `<endpoint>\x00token:<id>` (or the principal, or `addr:<client>` for an anonymous request and for `key: address`), so two
 endpoints of one class have separate budgets. Every answer of a limited endpoint carries `RateLimit-Policy` and
 `RateLimit` with the class `endpoint:<class>`; the management API's classes add their members to the same fields. A
-refusal is `429 rate_limited` with `Retry-After` as problem+json; the format's error shape on package protocols comes
-with the first format that has routes (M2).
+refusal is `429 rate_limited` with `Retry-After`, as problem+json; on a package protocol it takes the format's own error shape
+(npm's, registered per format by `registerShape` in [dispatch/errors.go](../../internal/api/dispatch/errors.go)).
 
 ## Management API (R-EP-016, R-EP-017)
 
@@ -279,7 +279,7 @@ with the first format that has routes (M2).
 - The idempotent create learns its epoch in the commit hook and hands it to the stored outcome through `Outcome.Finish`
   (`finishEpoch`), so the first answer and every replay carry `Trove-Authz-Epoch` (Q-API-44).
 - `PATCH` computes the merge on the stored rule and writes conditional on that revision, also for `If-Match: *` (Q-EP-26).
-- **For the UI wave (endpoint screen, rule editor and preview):** the list is `listEndpoints` (inert names flagged,
+- **The endpoint screen (rule editor and preview) uses these operations:** the list is `listEndpoints` (inert names flagged,
   `ruleCount`, `configuration` for the read-only panel); the rule table is `listExposureRules` with `enabled` from the
   representation and `patchExposureRule {"enabled": …}` for a toggle; the editor loads with `getExposureRule` (keep the
   `ETag`), saves with `replaceExposureRule` and `If-Match`, creates with `createExposureRule` (send an `Idempotency-Key`),
