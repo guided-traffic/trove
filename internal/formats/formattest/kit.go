@@ -11,7 +11,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/formattest/crafted"
 )
 
-// Check is one of the ten checks of R-ARCH-010, numbered as the spec numbers them.
+// Check is one of the eleven checks of R-ARCH-010, numbered as the spec numbers them.
 type Check int
 
 // The checks.
@@ -26,8 +26,9 @@ const (
 	CheckSetup
 	CheckRevision
 	CheckNames
+	CheckView
 
-	lastCheck = CheckNames
+	lastCheck = CheckView
 )
 
 // name is the short name of the check.
@@ -53,6 +54,8 @@ func (c Check) name() string {
 		return "revision"
 	case CheckNames:
 		return "package names"
+	case CheckView:
+		return "package view"
 	}
 	return "unknown"
 }
@@ -97,6 +100,8 @@ type Fixture struct {
 	NoRevision map[string]string
 	// Names are the sample package names of check 10.
 	Names []NameCase
+	// View is the fixture of check 11: sample versions and a package to seed.
+	View *ViewFixture
 	// OptionNames are literal client option names a setup template may spell
 	// although they contain "token", "password" or "_auth" (check 8): the option's
 	// name, never a value.
@@ -195,6 +200,19 @@ type ChangeCase struct {
 	Do func(ctx context.Context, h *Host) error
 }
 
+// ViewFixture is the fixture of check 11, for a format with a view adapter.
+type ViewFixture struct {
+	// Versions are sample normalized versions of the format: at least three, all different.
+	// Compare must order them totally. Seed stores them in this order, so the last one is
+	// the newest arrival.
+	Versions []string
+	// Package is the normalized name of the package Seed stores.
+	Package string
+	// Seed stores Package at every one of Versions, in that order, in the Host's repository
+	// (a local one), the way a client would publish them; no version is withheld.
+	Seed func(h *Host) error
+}
+
 // NameCase is one package name in its spellings (check 10).
 type NameCase struct {
 	// Spellings are different spellings of one package name: they must normalize to
@@ -231,7 +249,7 @@ func (r Report) Failed() []Check {
 	return out
 }
 
-// Evaluate runs the ten checks over a format and returns what they found. It is
+// Evaluate runs the checks over a format and returns what they found. It is
 // what Run reports through a test; the kit's own tests use it to assert that a
 // defective format fails the check the spec names.
 func Evaluate(f formats.Format, fx Fixture) Report {
@@ -300,6 +318,8 @@ func runCheck(c Check, f formats.Format, fx Fixture) (res Result) {
 		r.revision()
 	case CheckNames:
 		r.names()
+	case CheckView:
+		r.view()
 	}
 	return res
 }
@@ -348,6 +368,8 @@ func (r *run) skipProblem(c Check, reason string) string {
 		return fmt.Sprintf("%s is skipped (%s) and the format has clients, setup templates or a guide", c, reason)
 	case c == CheckNames && r.d.PackageNames:
 		return fmt.Sprintf("%s is skipped (%s) and the format has package names", c, reason)
+	case c == CheckView && r.f.View() != nil:
+		return fmt.Sprintf("%s is skipped (%s) and the format has a view adapter", c, reason)
 	}
 	return ""
 }

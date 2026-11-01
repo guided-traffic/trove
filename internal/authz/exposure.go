@@ -61,7 +61,7 @@ type ExposureRuleInput struct {
 	Paths       PatternLists
 	Versions    VersionLists
 	Prereleases bool
-	DistTags    PatternLists
+	Tags        PatternLists
 }
 
 // ExposureRule is a stored rule as the API returns it.
@@ -92,7 +92,7 @@ type ruleDims struct {
 	Paths       PatternLists
 	Versions    VersionLists
 	Prereleases bool
-	DistTags    PatternLists
+	Tags        PatternLists
 }
 
 // compiledRule is a rule as the ceiling evaluates it.
@@ -142,7 +142,7 @@ func decodeDims(packages, paths, versions string, prereleases bool, tags string)
 			return d, fmt.Errorf("versions: %w", err)
 		}
 	}
-	if d.DistTags, err = decodeLists(tags); err != nil {
+	if d.Tags, err = decodeLists(tags); err != nil {
 		return d, fmt.Errorf("distTags: %w", err)
 	}
 	return d, nil
@@ -163,7 +163,7 @@ func compileRule(id, name string, revision int64, enabled bool, d ruleDims, name
 	if r.versions, err = compileSet(dimPackage, d.Versions.Include, d.Versions.Exclude, nil); err != nil {
 		return nil, fmt.Errorf("versions: %w", err)
 	}
-	if r.tags, err = compileSet(dimPackage, d.DistTags.Include, d.DistTags.Exclude, nil); err != nil {
+	if r.tags, err = compileSet(dimPackage, d.Tags.Include, d.Tags.Exclude, nil); err != nil {
 		return nil, fmt.Errorf("distTags: %w", err)
 	}
 	if d.Versions.Range != nil {

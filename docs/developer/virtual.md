@@ -197,6 +197,7 @@ what it needs of its neighbours it declares as interfaces ([Q-REPO-111](../spec/
 |---|---|
 | [types.go](../../internal/virtual/types.go) | `Descriptor`, `Caller`, `Plan`, `Member`, `Part`, `Merged`, `Strategy`, `Tier` and the seams: `Router`, `Decider`, `Locals`, `Remotes`, `Tiers`, `Merger` |
 | [engine.go](../../internal/virtual/engine.go) | `Options`, `New`, `Start`/`Stop` (the `metadata_changed` subscription), `Plan`, `planFingerprint`, `DeployTarget` |
+| [internal/formathost/virtual.go](../../internal/formathost/virtual.go) | `tiers.forMember`: the request for a member of the addressed virtual repository, made with `Request.Member` so that the member's decisions (read check, populate check, revalidation) carry the addressed key (Q-ARCH-252); `virtual.RemoteCall.Addressed` is the same repository on the engine's call |
 | [artifact.go](../../internal/virtual/artifact.go) | `Artifact`: the three tiers, `Trove-Resolved-From`, the 404-or-failure rule of step 7, the failure after the first byte |
 | [metadata.go](../../internal/virtual/metadata.go) | `Metadata`: strategy, cache lookup and validation, `build` (one goroutine per member), `mergeFingerprint`, `firstMatch` |
 | [mcache.go](../../internal/virtual/mcache.go) | the registered cache `merged_metadata`: key, entry, `weigh`, `onMergedChange`, the payload of `metadata_changed` |

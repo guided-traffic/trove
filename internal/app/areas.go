@@ -16,6 +16,7 @@ import (
 	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/files"
+	"github.com/guided-traffic/trove/internal/formathost"
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
@@ -95,6 +96,14 @@ type infra struct {
 // keyRingArea is the result of the key-ring canary: the ring matches the
 // database. It carries nothing; a step that needs the ring checked takes it.
 type keyRingArea struct{}
+
+// formatPortsArea is the data ports of the formats, bound and checked against the
+// registry, and the view adapters over them: the package screens read through the
+// adapters and the exposure check lists stored versions through them.
+type formatPortsArea struct {
+	bindings *formathost.Bindings
+	views    *formathost.ViewAdapters
+}
 
 // exposureArea is the exposure ceiling the decision point applies and the rule
 // service of the endpoint operations (R-EP-013, R-EP-016).

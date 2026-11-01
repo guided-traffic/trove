@@ -66,10 +66,13 @@ SELECT pv.version::text AS version
  LIMIT sqlc.arg(max_rows)::int;
 
 -- name: NPMViewStoredRemote :many
--- The versions a remote repository lists of a package, from the cached document,
--- newest published first (unknown times last), at most max_rows.
+-- The versions a remote repository serves of a package, from the cached document,
+-- newest published first (unknown times last), at most max_rows. A version the document
+-- no longer lists is served only with serveRemovedVersions (R-NPM-026).
 SELECT v.version::text AS version
   FROM npm_remote_versions v
- WHERE v.repo_id = sqlc.arg(repo_id)::bigint AND v.name = sqlc.arg(name)::text AND v.listed
+  JOIN repositories r ON r.id = v.repo_id
+ WHERE v.repo_id = sqlc.arg(repo_id)::bigint AND v.name = sqlc.arg(name)::text
+   AND (v.listed OR COALESCE(r.config #>> '{npm,serveRemovedVersions}', '') = 'true')
  ORDER BY v.published_at DESC NULLS LAST, v.version DESC
  LIMIT sqlc.arg(max_rows)::int;

@@ -81,7 +81,7 @@ func TestR_ARCH_024_AMissingPrerequisiteIsAStartupError(t *testing.T) {
 		// dropped area -> the area that needs what it builds
 		needs := map[Area]Area{
 			AreaKeys: AreaBlob, AreaPostgres: AreaAudit, AreaAudit: AreaInfra, AreaBlob: AreaInfra, AreaValkey: AreaCoordination,
-			AreaCoordination: AreaInfra, AreaInfra: AreaKeyRing, AreaExposure: AreaRepository, AreaRepository: AreaVirtual, AreaInvalidation: AreaProxy,
+			AreaCoordination: AreaInfra, AreaInfra: AreaKeyRing, AreaFormatPorts: AreaExposure, AreaExposure: AreaRepository, AreaRepository: AreaVirtual, AreaInvalidation: AreaProxy,
 			AreaIdentity: AreaAuthz, AreaAuthz: AreaOwnership, AreaFiles: AreaProxyEngine, AreaLimits: AreaProxyEngine, AreaProxy: AreaProxyEngine, AreaProxyEngine: AreaVirtualEngine, AreaSessions: AreaLogin,
 		}
 		base, _ := SubsystemsFor("web")
@@ -143,8 +143,8 @@ func TestR_ARCH_024_AMissingPrerequisiteIsAStartupError(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "no virtual engine") {
 			t.Fatalf("format host without the virtual engine: %v", err)
 		}
-		_, err = (&App{}).wirePackagesAPI(t.Context(), infra{}, authzArea{}, repositoryArea{}, formatHostArea{})
-		if err == nil || !strings.HasPrefix(err.Error(), "packages-api: no format host, no decision point, no repository reader") {
+		_, err = (&App{}).wirePackagesAPI(t.Context(), infra{}, authzArea{}, repositoryArea{}, formatHostArea{}, formatPortsArea{})
+		if err == nil || !strings.HasPrefix(err.Error(), "packages-api: no format host, no decision point, no repository reader, no format view adapters") {
 			t.Fatalf("package services without their inputs: %v", err)
 		}
 	})

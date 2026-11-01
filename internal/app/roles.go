@@ -39,6 +39,9 @@ const (
 const (
 	// AreaKeyRing is the start-up canary of the key ring (R-ARCH-021).
 	AreaKeyRing Area = "keyring"
+	// AreaFormatPorts is the data ports of the formats and the view adapters over them. The
+	// rule service lists a package's stored versions through them, so they exist before it.
+	AreaFormatPorts Area = "formatports"
 	// AreaExposure is the endpoint exposure ceiling and the rule service (R-EP-013).
 	AreaExposure Area = "exposure"
 	// AreaRepository is the repository snapshot and the write side (R-ARCH-011).

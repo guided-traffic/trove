@@ -99,12 +99,14 @@ func (f *Format) forwarder(ctx context.Context, rq *formats.Request) (*auditForw
 			if m.Class != formats.Remote || m.Disabled || !s.Forward {
 				continue
 			}
-			mrq := *rq
-			mrq.Repo = m
-			if err := rq.Host.Authorize(ctx, &mrq, formats.Target{Actions: []formats.Action{formats.ActionRead}}); err != nil {
+			mrq, err := rq.Member(m)
+			if err != nil {
 				return nil, err
 			}
-			return &auditForwarder{rq: &mrq, set: s, virtualID: rq.RepoRef().ID}, nil
+			if err := rq.Host.Authorize(ctx, mrq, formats.Target{Actions: []formats.Action{formats.ActionRead}}); err != nil {
+				return nil, err
+			}
+			return &auditForwarder{rq: mrq, set: s, virtualID: rq.RepoRef().ID}, nil
 		}
 	}
 	return nil, auditUnavailable(rq.Repo.Key)

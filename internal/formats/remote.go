@@ -76,27 +76,6 @@ type FillEvent struct {
 	Data     any
 }
 
-// TypeExpecter is an optional interface of a RemoteAdapter: it declares the media
-// types the format expects for a path, which the engine then does not block even when
-// integrity.blockUnexpectedContentTypes lists them (R-REPO-042).
-type TypeExpecter interface {
-	ExpectsType(p Path, mediaType string) bool
-}
-
-// ArtifactGate is an optional interface of a RemoteAdapter: before the engine looks at
-// or fetches an artifact for a request, the format decides whether its stored marks
-// allow it and which digests its metadata announces for it. The host calls it on every
-// road to a remote artifact: the format's own route and a remote member of a virtual
-// repository (R-NPM-025, R-NPM-026, Q-NPM-13).
-type ArtifactGate interface {
-	// BeforeArtifact runs on the request addressed to the remote repository (for a member
-	// of a virtual repository, a copy of the request addressed to the member). It may
-	// revalidate the format's document through h.Remote(), unless rq.CacheView is set. An
-	// errs.NotFound refuses the artifact. The digests are those the engine verifies a
-	// download against; none known is the zero value.
-	BeforeArtifact(ctx context.Context, h Host, rq *Request, p Path) (Digests, error)
-}
-
 // RemoteAdapter is what a format contributes to the remote engine (R-ARCH-008).
 type RemoteAdapter interface {
 	// UpstreamRequest maps a repository path to the upstream request.
@@ -117,6 +96,33 @@ type RemoteAdapter interface {
 	// TracksVersionRemoval says that the format's removal marks replace the
 	// generic gone-package rule (R-REPO-029); npm true.
 	TracksVersionRemoval() bool
+	// ExpectsType declares the media types the format expects for a path, which the engine
+	// then does not block even when integrity.blockUnexpectedContentTypes lists them
+	// (R-REPO-042). A format that declares nothing embeds [RemoteBase] and expects nothing.
+	ExpectsType(p Path, mediaType string) bool
+	// BeforeArtifact runs before the engine looks at or fetches an artifact for a request: the
+	// format decides whether its stored marks allow it and which digests its metadata announces
+	// for it. The host calls it on every road to a remote artifact: the format's own route and
+	// a remote member of a virtual repository (R-NPM-025, R-NPM-026, Q-NPM-13). It runs on the
+	// request addressed to the remote repository (for a member of a virtual repository, the
+	// request derived through [Request.Member]) and may revalidate the format's document through
+	// h.Remote(), unless rq.CacheView is set. An errs.NotFound refuses the artifact. The digests
+	// are those the engine verifies a download against; none known is the zero value, which is
+	// what [RemoteBase] answers. They were optional interfaces found by type assertion; they are
+	// methods of the contract so that a format cannot forget them unnoticed (Q-ARCH-254).
+	BeforeArtifact(ctx context.Context, h Host, rq *Request, p Path) (Digests, error)
+}
+
+// RemoteBase gives a RemoteAdapter the defaults of the methods most formats leave alone:
+// no expected media types and no artifact gate. Embed it.
+type RemoteBase struct{}
+
+// ExpectsType expects no media type.
+func (RemoteBase) ExpectsType(Path, string) bool { return false }
+
+// BeforeArtifact allows every artifact and announces no digest.
+func (RemoteBase) BeforeArtifact(context.Context, Host, *Request, Path) (Digests, error) {
+	return Digests{}, nil
 }
 
 // CacheStatus is what the remote engine reports for the Cache-Status header.

@@ -559,6 +559,35 @@ func TestSubjectConstruction(t *testing.T) {
 	})
 }
 
+func TestContractAssertions(t *testing.T) {
+	t.Run("R-ARCH-008 an assertion or a type-switch case to an interface of internal/formats is named outside Register", func(t *testing.T) {
+		pkgs, err := LoadTyped(fixtureDir(t, "contract"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		vs := CheckContractAssertions("example.test/fix", pkgs)
+		got := map[string]bool{}
+		for _, v := range vs {
+			got[v.From+" "+v.To] = true
+			if v.Rule != "R-ARCH-008" {
+				t.Errorf("rule %s, want R-ARCH-008", v.Rule)
+			}
+		}
+		for _, want := range []string{
+			"internal/host/assert.go formats.Gate in internal/host.assertGate",
+			"internal/host/switch.go formats.Gate in internal/host.switchGate",
+			"internal/formats/formats.go formats.Gate in internal/formats.Other",
+		} {
+			if !got[want] {
+				t.Errorf("%q not named:\n%s", want, strings.Join(Strings(vs), "\n"))
+			}
+		}
+		if len(vs) != 3 {
+			t.Errorf("%d violations, want 3 (Register, the standard library, anonymous interfaces and structs are fine):\n%s", len(vs), strings.Join(Strings(vs), "\n"))
+		}
+	})
+}
+
 func TestRealTree(t *testing.T) {
 	t.Run("R-ARCH-002 the layer and import rules hold on the current tree", func(t *testing.T) {
 		_, module, pkgs := realTree(t)
@@ -601,6 +630,14 @@ func TestRealTree(t *testing.T) {
 			t.Fatal(err)
 		}
 		wantClean(t, CheckSubjectConstruction(module, pkgs))
+	})
+	t.Run("R-ARCH-008 no type assertion to an interface of internal/formats outside Register", func(t *testing.T) {
+		root, module, _ := realTree(t)
+		pkgs, err := LoadTyped(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantClean(t, CheckContractAssertions(module, pkgs))
 	})
 	t.Run("R-ARCH-018 no LISTEN or NOTIFY, no change-log write outside internal/cluster, no session-level SQL, no assembled SQL", func(t *testing.T) {
 		root, _, _ := realTree(t)

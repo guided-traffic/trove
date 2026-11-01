@@ -199,7 +199,7 @@ func (p *callPopulate) Deny(context.Context) error {
 func (p *callPopulate) Record(ctx context.Context, tx meta.Tx) error {
 	c := authz.Coordinate{
 		Repository: p.rc.Remote.Key, Class: repository.Remote, Format: p.rc.Remote.Format, Kind: authz.KindWrite,
-		Path: p.rc.Path, Package: p.info.Package, Version: p.info.Version, Addressed: p.rc.Via.Key,
+		Path: p.rc.Path, Package: p.info.Package, Version: p.info.Version, Addressed: p.rc.Addressed.Key,
 		Actions: []formats.Action{formats.ActionRead},
 	}
 	return p.d.RecordAllowed(ctx, tx, p.rc.Subject, c, authz.Decision{Outcome: authz.Allow, Reason: authz.ReasonAllowGrant, Target: p.rc.Remote.Key})

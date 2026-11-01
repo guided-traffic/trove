@@ -1,7 +1,7 @@
 // Package testformat is the conformance kit's own test format: a small, complete
 // package format (routes, hooks, a data port, a remote and a virtual adapter,
-// setup templates) that passes all ten checks of R-ARCH-010, and a set of named
-// defects, each of which breaks exactly the rule one check exists for. The kit's
+// setup templates) that passes the checks of R-ARCH-010 (it has no package screens, so check 11
+// is skipped; the kit's own tests give it a view adapter), and a set of named defects, each of which breaks exactly the rule one check exists for. The kit's
 // negative tests run the defective variants through formattest.Evaluate and assert
 // that the check the spec names fails (the acceptance criteria of R-ARCH-010).
 //
@@ -791,6 +791,13 @@ func (remoteAdapter) OnFill(context.Context, formats.Tx, formats.FillEvent) (for
 }
 
 func (remoteAdapter) TracksVersionRemoval() bool { return false }
+
+// ExpectsType and BeforeArtifact are the defaults of the contract.
+func (remoteAdapter) ExpectsType(formats.Path, string) bool { return false }
+
+func (remoteAdapter) BeforeArtifact(context.Context, formats.Host, *formats.Request, formats.Path) (formats.Digests, error) {
+	return formats.Digests{}, nil
+}
 
 // Rewrite points every download link of the document at this registry. The
 // output is JSON with sorted keys, so two runs agree, and a document that was

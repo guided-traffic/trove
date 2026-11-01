@@ -111,7 +111,8 @@ is what **Create a token for this setup** creates, used to pass the gate and be 
 `scopeAdmitsThrough` in [decide.go](../../internal/authz/decide.go) lifts that refusal under four conditions, all required:
 
 1. the action is `read`;
-2. the coordinate carries the virtual repository the client addressed (`Coordinate.Addressed`), which the virtual tiers set for every member request (`formats.Request.Via`, so the populate check of a remote member and the revalidation of a stale member document included, Q-AUTHZ-165);
+2. the coordinate carries the virtual repository the client addressed (`Coordinate.Addressed`), which the virtual tiers set for every member request (`formats.Request.Addressed()`, set only by `Request.Member`, so the populate check of a remote member and the revalidation of a stale member document included, Q-AUTHZ-165);
+   A read that stands for a write (`GET {name}?write=true` on a virtual repository, R-NPM-029) is derived with `Request.WriteTarget` and carries no addressed repository, so the lift never applies to it: the scope must name the deployment target (Q-ARCH-252).
 3. that repository reaches the member, directly or through nested virtual repositories (`Index.reaches`);
 4. a scope element that lists the key of the virtual repository exactly admits `read` on it for the same package and path, so the element's `packages` and `paths` still narrow. A class selector (`@any-virtual`) or a key glob that covers the repository does not lift (Q-AUTHZ-164).
 
@@ -275,4 +276,4 @@ All of this stays inside the owner's own rights; the bound is the owner, the lif
 
 ### H-327 · The walk over nested virtual repositories has no visited set
 
-`Index.reaches` and `anonReadsAllMembers` ([decide.go](../../internal/authz/decide.go)) walk members recursively with a depth bound of 16 and no visited set. Dormant today: a virtual repository cannot contain another one ([members.go](../../internal/repository/members.go) refuses it). Before nested virtual repositories (R-REPO-018) arrive, the walk needs a visited set or a precomputed member closure, and `Addressed` (`formats.Request.Via`) must stay the outermost repository, because the scope lift names the repository the client addressed.
+`Index.reaches` and `anonReadsAllMembers` ([decide.go](../../internal/authz/decide.go)) walk members recursively with a depth bound of 16 and no visited set. Dormant today: a virtual repository cannot contain another one ([members.go](../../internal/repository/members.go) refuses it). Before nested virtual repositories (R-REPO-018) arrive, the walk needs a visited set or a precomputed member closure, and `Addressed` (`formats.Request.Addressed()`) must stay the outermost repository, because the scope lift names the repository the client addressed.

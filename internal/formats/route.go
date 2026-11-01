@@ -2,6 +2,7 @@ package formats
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -277,13 +278,16 @@ func MatchRoutes(routes []Route, method, escapedPath string) (*Route, Params, er
 // check. It is built by the dispatcher and is immutable for the handler.
 type Request struct {
 	*http.Request
-	// Repo is the addressed repository, an immutable snapshot entry.
+	// Repo is the repository this request acts on, an immutable snapshot entry: the
+	// repository the client addressed or, on a request derived through [Request.Member]
+	// or [Request.WriteTarget], the member or deployment target the call is made for.
+	// [Request.Addressed] names the repository the client addressed.
 	Repo *repository.Repository
-	// Via is the virtual repository the client addressed when Repo is a member that
-	// resolution consults on its behalf, "" otherwise. It becomes the Addressed of the
-	// member's decisions (R-AUTHZ-015), so that the populate check and the exposure
-	// follow the repository the client named (Q-EP-11, Q-AUTHZ-163).
-	Via    string
+	// via is the virtual repository the client addressed when Repo is a member that
+	// resolution consults on its behalf, "" otherwise. Only Member sets it and only
+	// Addressed reads it, so no format can name another repository as the addressed one
+	// (R-AUTHZ-015, Q-EP-11, Q-AUTHZ-163, Q-ARCH-252).
+	via    string
 	Route  *Route
 	Params Params
 	// Path is the canonical repository path (repository.CleanPath); Escaped is the
@@ -399,6 +403,49 @@ type PathInfo struct {
 	// RoutingName is the name a format derives for an artifact that belongs to no
 	// package, so that patterns, claims and pin rules can protect it.
 	RoutingName string
+}
+
+// Addressed is the key of the repository the client addressed: the outermost virtual
+// repository on a request derived for one of its members, the request's own repository
+// otherwise. It is the Addressed of every decision about the request (R-AUTHZ-015), so
+// the populate check, the exposure and the lift of a scope that names the virtual
+// repository follow what the client named (Q-EP-11, Q-AUTHZ-163).
+func (rq *Request) Addressed() string {
+	if rq.via != "" {
+		return rq.via
+	}
+	return rq.Repo.Key
+}
+
+// Member returns a copy of the request made for a member of the repository the request
+// acts on: Repo is the member, and the addressed repository stays the outermost one the
+// client named. A repository that is not a member of rq.Repo is refused, so a request can
+// never be given the standing of a virtual repository it does not belong to.
+func (rq *Request) Member(m *repository.Repository) (*Request, error) {
+	if m == nil || !slices.ContainsFunc(rq.Repo.Members(), func(x repository.Repository) bool { return x.Key == m.Key }) {
+		key := ""
+		if m != nil {
+			key = m.Key
+		}
+		return nil, errs.E(errs.Internal, errs.CodeInternal, "A repository that is not a member was asked for as a member.",
+			errs.WithCause(fmt.Errorf("%q is not a member of %q", key, rq.Repo.Key)))
+	}
+	c := *rq
+	c.Repo = m
+	c.via = rq.Addressed()
+	return &c, nil
+}
+
+// WriteTarget returns a copy of the request made for the deployment target of the
+// virtual repository, for a read that stands for the write (R-NPM-029). It carries no
+// addressed repository: such a read is decided on the target itself, so a scope must
+// name the target and the lift of a scope on the virtual repository does not apply
+// (Q-AUTHZ-163 lifts reads only).
+func (rq *Request) WriteTarget(target *repository.Repository) *Request {
+	c := *rq
+	c.Repo = target
+	c.via = ""
+	return &c
 }
 
 // RepoRef is the addressed repository as the Host's calls name it: the numeric id

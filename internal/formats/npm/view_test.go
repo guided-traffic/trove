@@ -159,8 +159,11 @@ func (f *fakeViewPort) ViewWithheld(context.Context, []string) ([]int64, error) 
 	return f.withheld, nil
 }
 
-func (f *fakeViewPort) ViewStored(_ context.Context, repoID int64, name string, remote bool, _ int) ([]string, map[string]string, error) {
-	f.stored = append(f.stored, storedCall{repoID: repoID, name: name, remote: remote})
+func (f *fakeViewPort) ViewStored(_ context.Context, repoID int64, name string, remote bool, _ int, tags bool) ([]string, map[string]string, error) {
+	f.stored = append(f.stored, storedCall{repoID: repoID, name: name, remote: remote, tags: tags})
+	if !tags {
+		return []string{"1.0.0", "2.0.0"}, nil, nil
+	}
 	return []string{"1.0.0", "2.0.0"}, map[string]string{"latest": "2.0.0"}, nil
 }
 
@@ -168,23 +171,24 @@ type storedCall struct {
 	repoID int64
 	name   string
 	remote bool
+	tags   bool
 }
 
 func TestR_EP_016_NPMAdapterListsStoredVersions(t *testing.T) {
 	port := &fakeViewPort{}
 	a, ports := viewAdapter{}, fakePorts{port}
 	ctx := context.Background()
-	got, err := a.Stored(ctx, ports, formats.RepoRef{ID: 7, Class: formats.Local}, "@acme/sdk", 10)
-	if err != nil || !got.Listed || !slices.Equal(got.Versions, []string{"1.0.0", "2.0.0"}) || got.Tags["latest"] != "2.0.0" {
+	got, err := a.Stored(ctx, ports, formats.StoredQuery{Repo: formats.RepoRef{ID: 7, Class: formats.Local}, Package: "@acme/sdk", Limit: 10, Tags: true})
+	if err != nil || !slices.Equal(got.Versions, []string{"1.0.0", "2.0.0"}) || got.Tags["latest"] != "2.0.0" {
 		t.Fatalf("hosted: %+v %v", got, err)
 	}
-	if _, err = a.Stored(ctx, ports, formats.RepoRef{ID: 8, Class: formats.Remote}, "left-pad", 10); err != nil {
-		t.Fatal(err)
+	if got, err = a.Stored(ctx, ports, formats.StoredQuery{Repo: formats.RepoRef{ID: 8, Class: formats.Remote}, Package: "left-pad", Limit: 10}); err != nil || len(got.Tags) != 0 {
+		t.Fatalf("remote without the tags: %+v %v", got, err)
 	}
-	if want := []storedCall{{7, "@acme/sdk", false}, {8, "left-pad", true}}; !slices.Equal(port.stored, want) {
+	if want := []storedCall{{7, "@acme/sdk", false, true}, {8, "left-pad", true, false}}; !slices.Equal(port.stored, want) {
 		t.Fatalf("the port was asked %+v, want %+v", port.stored, want)
 	}
-	if got, err = a.Stored(ctx, ports, formats.RepoRef{ID: 9, Class: formats.Virtual}, "x", 10); err != nil || got.Listed || len(got.Versions) != 0 || len(port.stored) != 2 {
+	if got, err = a.Stored(ctx, ports, formats.StoredQuery{Repo: formats.RepoRef{ID: 9, Class: formats.Virtual}, Package: "x", Limit: 10}); err != nil || len(got.Versions) != 0 || len(port.stored) != 2 {
 		t.Fatalf("a virtual repository stores nothing of its own: %+v %v", got, err)
 	}
 }

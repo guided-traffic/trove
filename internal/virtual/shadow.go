@@ -186,7 +186,7 @@ func (r *Resolver) serves(ctx context.Context, c Caller, x Exposure, name, docPa
 		return shadowResult{outcome: NotServed}
 	}
 	pr, err := r.o.Remotes.Probe(ctx, RemoteCall{
-		Remote: x.Remote, Via: x.Virtual, Path: docPath, Package: name, Subject: c.Subject, Endpoint: c.Subject.Endpoint,
+		Remote: x.Remote, Addressed: x.Virtual, Path: docPath, Package: name, Subject: c.Subject, Endpoint: c.Subject.Endpoint,
 	})
 	if err != nil {
 		if ctx.Err() != nil {

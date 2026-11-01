@@ -38,6 +38,24 @@ const (
 	AreaFormatHost Area = "formathost"
 )
 
+// wireFormatPorts binds the data ports of the formats and builds the view adapters over them. It
+// comes before the exposure area: the rule service takes the adapters as its source of stored
+// versions (R-EP-016, Q-EP-67, Q-ARCH-253), so it needs no setter afterwards.
+func (a *App) wireFormatPorts(_ context.Context, in infra) (formatPortsArea, error) {
+	if err := requireInputs(AreaFormatPorts, given("database", in.db), given("audit recorder", in.rec)); err != nil {
+		return formatPortsArea{}, err
+	}
+	ports, err := formatPorts(in.db, in.rec)
+	if err != nil {
+		return formatPortsArea{}, err
+	}
+	b, err := bindFormatPorts(formats.List(), ports)
+	if err != nil {
+		return formatPortsArea{}, err
+	}
+	return formatPortsArea{bindings: b, views: formathost.NewViewAdapters(formats.List(), b)}, nil
+}
+
 // formatsArea is what the hooks and the seam are made of. The seam reads the Host
 // when a request needs it (a.host); the Host does not exist on a worker, which
 // serves no request.
@@ -123,17 +141,12 @@ type hostBinder interface {
 // ownership (R-AUTHZ-018) and the namespace auto claim (R-REPO-023) are bound to
 // the seams of the package writer; a seam that is not bound makes the writer refuse
 // the claim, so a publish is never let through unchecked (fail closed).
-func (a *App) wireFormats(_ context.Context, in infra, vr virtualArea, ow ownershipArea) (formatsArea, error) {
+func (a *App) wireFormats(_ context.Context, in infra, fp formatPortsArea, vr virtualArea, ow ownershipArea) (formatsArea, error) {
+	if err := requireInputs(AreaFormats, given("format data ports", fp.bindings)); err != nil {
+		return formatsArea{}, err
+	}
 	catalog.Default().Freeze()
-	ports, err := formatPorts(in.db, in.rec)
-	if err != nil {
-		return formatsArea{}, err
-	}
-	b, err := bindFormatPorts(formats.List(), ports)
-	if err != nil {
-		return formatsArea{}, err
-	}
-	d := formathost.Deps{Bindings: b, Changes: in.changes, Signals: in.signals, Jobs: in.queue}
+	d := formathost.Deps{Bindings: fp.bindings, Changes: in.changes, Signals: in.signals, Jobs: in.queue}
 	// A nil pointer in an interface would not be nil: a seam is set only where its
 	// component exists.
 	if ow.service != nil {

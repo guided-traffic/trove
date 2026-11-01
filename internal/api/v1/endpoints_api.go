@@ -37,6 +37,11 @@ type EndpointServices struct {
 	// Authorizer decides read on the repository of check-exposure, through its
 	// per-request form; nil refuses.
 	Authorizer authz.Decider
+	// Scoper is the unaudited read scope of the caller, which check-exposure uses to
+	// keep from a listing of stored versions what the caller may not read (Q-EP-62).
+	// Nil lists nothing: the check then answers "listed" with no versions and no tags
+	// (Q-EP-66).
+	Scoper authz.ReadScoper
 }
 
 func (s *Server) exposure() (*authz.ExposureService, error) {
@@ -71,7 +76,7 @@ type exposureRuleDoc struct {
 	Paths       *exposurePatterns `json:"paths"`
 	Versions    *exposureVersions `json:"versions"`
 	Prereleases bool              `json:"prereleases"`
-	DistTags    *exposurePatterns `json:"distTags"`
+	Tags        *exposurePatterns `json:"distTags"`
 
 	Endpoint  string     `json:"endpoint"`
 	Inert     bool       `json:"inert"`
@@ -105,7 +110,7 @@ func orEmpty(l []string) []string {
 func (d exposureRuleDoc) input() authz.ExposureRuleInput {
 	in := authz.ExposureRuleInput{
 		Name: d.Name, Description: d.Description, Repository: d.Repository, Enabled: d.Enabled == nil || *d.Enabled,
-		Packages: listsOf(d.Packages), Paths: listsOf(d.Paths), Prereleases: d.Prereleases, DistTags: listsOf(d.DistTags),
+		Packages: listsOf(d.Packages), Paths: listsOf(d.Paths), Prereleases: d.Prereleases, Tags: listsOf(d.Tags),
 	}
 	if d.Versions != nil {
 		in.Versions = authz.VersionLists{Include: d.Versions.Include, Exclude: d.Versions.Exclude, Range: d.Versions.Range}
@@ -120,7 +125,7 @@ func docOfRule(r authz.ExposureRule) exposureRuleDoc {
 		Name: r.Name, Description: r.Description, Repository: r.Repository, Enabled: &enabled,
 		Packages: patternsOf(r.Packages), Paths: patternsOf(r.Paths),
 		Versions:    &exposureVersions{Include: orEmpty(r.Versions.Include), Exclude: orEmpty(r.Versions.Exclude), Range: r.Versions.Range},
-		Prereleases: r.Prereleases, DistTags: patternsOf(r.DistTags),
+		Prereleases: r.Prereleases, Tags: patternsOf(r.Tags),
 		Endpoint: r.Endpoint, Inert: r.Inert, Warnings: orEmpty(r.Warnings), Revision: r.Revision,
 		CreatedAt: &created, CreatedBy: optString(r.CreatedBy), UpdatedAt: &updated, UpdatedBy: optString(r.UpdatedBy),
 	}
@@ -542,7 +547,7 @@ type exposureCheckResult struct {
 	Reason         string         `json:"reason"`
 	Versions       []checkVersion `json:"versions"`
 	Paths          []checkPath    `json:"paths"`
-	DistTags       []checkTag     `json:"distTags"`
+	Tags           []checkTag     `json:"distTags"`
 	Fingerprint    string         `json:"exposureFingerprint"`
 	Warnings       []string       `json:"warnings"`
 }
@@ -584,12 +589,10 @@ func (s *Server) CheckExposure(w http.ResponseWriter, r *http.Request, endpoint 
 		return
 	}
 	q := authz.ExposureCheckInput{Repository: in.Repository, Package: in.Package, Versions: in.Versions, Paths: in.Paths}
-	// The repository-level read above matches any package pattern of a grant, so a check
-	// that lists stored versions and tags decides per package and version (Q-EP-62).
-	ctx := r.Context()
-	q.MayRead = func(pkg, version string) bool {
-		c := authz.Coordinate{Repository: in.Repository, Kind: authz.KindMetadata, Package: pkg, Version: version, Actions: []authz.Action{authz.Read}}
-		return acc.Decide(ctx, c).Err() == nil
+	q.MayRead, err = s.checkReadFilter(r.Context(), acc, in.Repository)
+	if err != nil {
+		httpserver.Problem(w, r, err)
+		return
 	}
 	if in.Rule != nil {
 		draft := in.Rule.input()
@@ -601,6 +604,24 @@ func (s *Server) CheckExposure(w http.ResponseWriter, r *http.Request, endpoint 
 		return
 	}
 	writeJSON(w, r, http.StatusOK, checkResultOf(res))
+}
+
+// checkReadFilter is what a check that lists stored versions and tags may show the caller. The
+// repository-level read of requireRead matches any package pattern of a grant, so the listing
+// decides per package and version (Q-EP-62). It asks the unaudited read scope, as the package
+// screens do: the check lists rows and no client requested a refused version, so a decision per
+// row would write an audit event and count a denial for each of up to a thousand versions
+// (Q-EP-66). The versions the request names are not decided at all (the service skips the
+// filter then). Without a scope the filter is nil and nothing is listed.
+func (s *Server) checkReadFilter(ctx context.Context, acc *edge.Access, repo string) (authz.MayRead, error) {
+	if s.o.Endpoints.Scoper == nil {
+		return nil, nil
+	}
+	rs, err := s.o.Endpoints.Scoper.ReadScopeOn(ctx, acc.Index(), acc.Subject, []string{repo})
+	if err != nil {
+		return nil, err
+	}
+	return func(pkg, version string) bool { return rs.MayRead(repo, pkg, version) }, nil
 }
 
 // requireRead decides read on the repository for the caller, under the ceiling of
@@ -628,13 +649,13 @@ func checkResultOf(res authz.ExposureCheckResult) exposureCheckResult {
 		Endpoint: res.Endpoint, Repository: res.Repository, Mode: res.Mode, Package: optString(res.Package),
 		PackageExposed: res.Exposed, Rule: optString(res.Rule), Reason: res.Reason,
 		Versions: make([]checkVersion, 0, len(res.Versions)), Paths: make([]checkPath, 0, len(res.Paths)),
-		DistTags: make([]checkTag, 0, len(res.DistTags)), Fingerprint: res.Fingerprint, Warnings: orEmpty(res.Warnings),
+		Tags: make([]checkTag, 0, len(res.Tags)), Fingerprint: res.Fingerprint, Warnings: orEmpty(res.Warnings),
 	}
 	for _, v := range res.Versions {
 		out.Versions = append(out.Versions, checkVersion{Version: v.Value, Exposed: v.Exposed, Rule: optString(v.Rule), Reason: v.Reason})
 	}
-	for _, t := range res.DistTags {
-		out.DistTags = append(out.DistTags, checkTag{Tag: t.Tag, Version: t.Version, Visible: t.Visible})
+	for _, t := range res.Tags {
+		out.Tags = append(out.Tags, checkTag{Tag: t.Tag, Version: t.Version, Visible: t.Visible})
 	}
 	for _, p := range res.Paths {
 		out.Paths = append(out.Paths, checkPath{Path: p.Value, Exposed: p.Exposed, Rule: optString(p.Rule), Reason: p.Reason})

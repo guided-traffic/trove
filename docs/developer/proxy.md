@@ -6,8 +6,8 @@ path, the flights, the circuit, the fill). Code: [internal/proxy](../../internal
 
 ## What a format adds to the engine
 
-A format's `RemoteAdapter` may also implement `formats.TypeExpecter` (media types the engine does not block, R-REPO-042) and `formats.ArtifactGate` (`BeforeArtifact`: the format's marks and
-the digests its metadata announces, run before every road to a remote artifact, including the cached tier of a remote member of a virtual repository; Q-NPM-33). `FillEvent.FetchedAt` is the
+A format's `RemoteAdapter` also answers `ExpectsType` (media types the engine does not block, R-REPO-042) and `BeforeArtifact` (the format's marks and
+the digests its metadata announces, run before every road to a remote artifact, including the cached tier of a remote member of a virtual repository; Q-NPM-33); both have defaults in the embeddable `formats.RemoteBase` (they were optional interfaces found by type assertion, Q-ARCH-254). `FillEvent.FetchedAt` is the
 `fetched_at` the upsert writes, so a format that records facts decides with the comparison the upsert uses (Q-NPM-32); a fill whose format keeps the stored document renews the entry that is
 there. `Request.CacheView` is set by the dispatcher from `<key>~cache`, and `Host.Authorize` refuses a name a global claim covers on a remote repository (Q-NPM-37).
 `RemoteFetcher.Exchange` sends one request of a format through a remote's upstream client outside the cache, the advisory request of an npm audit

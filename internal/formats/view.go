@@ -44,29 +44,42 @@ type ViewAdapter interface {
 	// that the format does not serve, for example a version a restore's replay
 	// tombstoned (R-NPM-047). The screens list none of them.
 	Withheld(ctx context.Context, ports DataPorts, repos []string) ([]VersionID, error)
+	// Stored returns at most q.Limit of the versions the repository serves of the
+	// package, newest first, and, when q.Tags is set, its tags (R-EP-016, Q-EP-61).
+	//
+	// "Serves" means answerable by a request for the exact version: an unlisted version
+	// the repository still serves counts, so does a deprecated one; a version the format
+	// withholds (see Withheld) does not. "Newest first" is arrival time for a hosted
+	// repository, publish time for a remote one (unknown times last), and for a format
+	// with neither Compare descending.
+	//
+	// The host calls it for local and remote repositories only. A package the
+	// repository does not hold is the empty answer, not an error.
+	Stored(ctx context.Context, ports DataPorts, q StoredQuery) (Stored, error)
 }
 
-// StoredLister is implemented by the view adapter of a format that can say what
-// one repository stores under one package name: the dry run of an endpoint's
-// exposure rules lists these versions when the request names none
-// (R-EP-016, Q-EP-61). It is optional; a format without it lists none.
-type StoredLister interface {
-	// Stored returns at most limit of the versions the repository serves of the
-	// package, newest first, and, for a format with tags, its tags (tag to
-	// version). A hosted repository lists its live versions, a remote one the
-	// versions of its cached document; the package is a normalized name. A package
-	// the repository does not hold is the empty answer, not an error.
-	Stored(ctx context.Context, ports DataPorts, repo RepoRef, pkg string, limit int) (Stored, error)
+// StoredQuery asks what one repository stores under one package name.
+type StoredQuery struct {
+	// Repo is a local or a remote repository; the host never asks for a virtual one,
+	// which stores nothing of its own.
+	Repo RepoRef
+	// Package is the normalized package name.
+	Package string
+	// Limit bounds the versions returned; the host asks for one more than it judges
+	// so that it can tell a cut list from a complete one.
+	Limit int
+	// Tags says whether the answer needs the tags. It is true only for a format whose
+	// catalog entry has tags (catalog.Exposure.Tags); an adapter reads nothing for
+	// them otherwise.
+	Tags bool
 }
 
-// Stored is the answer of [StoredLister].
+// Stored is the answer of [ViewAdapter.Stored].
 type Stored struct {
-	// Listed is false when the repository cannot say what it stores of a package
-	// (a virtual repository stores nothing of its own), which is not the same as a
-	// package it does not hold.
-	Listed   bool
+	// Versions are the normalized versions the repository serves, newest first.
 	Versions []string
-	Tags     map[string]string
+	// Tags maps a tag to the version it points to; empty unless the query asked.
+	Tags map[string]string
 }
 
 // ViewVersion names a stored version for the adapter.

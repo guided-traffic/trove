@@ -242,13 +242,13 @@ type Locals interface {
 // RemoteCall names one request to the remote engine.
 type RemoteCall struct {
 	Remote repository.Repository
-	// Via is the virtual repository the request was addressed to.
-	Via      repository.Repository
-	Path     string
-	Variant  string
-	Package  string
-	Subject  authz.Subject
-	Endpoint string
+	// Addressed is the virtual repository the request was addressed to.
+	Addressed repository.Repository
+	Path      string
+	Variant   string
+	Package   string
+	Subject   authz.Subject
+	Endpoint  string
 	// MayFill is the populate check for this caller (R-AUTHZ-008). Without it the engine
 	// serves what the cache holds, an expired document included, and never contacts the
 	// upstream; a path the cache lacks answers NotFound or populate_not_permitted, which resolution

@@ -6,7 +6,6 @@ import (
 	"maps"
 	"regexp"
 	"slices"
-	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -52,6 +51,10 @@ type ExposureServiceOptions struct {
 	// Ceiling holds the configured endpoints and their modes, and the format
 	// support (R-EP-001, R-EP-018).
 	Ceiling *ExposureCeiling
+	// Stored lists the versions and tags a repository stores of a package, for the
+	// check that names no versions (R-EP-016, Q-EP-61, Q-EP-66). Nil lists nothing:
+	// every repository then answers [WarnStoredVersionsNotListed].
+	Stored StoredPackages
 }
 
 // StoredRepo names the repository a check lists the stored versions of.
@@ -74,15 +77,19 @@ type StoredPackage struct {
 }
 
 // MayRead says whether the caller of a check may read a package (version empty) or
-// one version of it; the package is the normalized name.
+// one version of it; the package is the normalized name. It is the unaudited read
+// scope of the caller ([ReadScope.MayRead]): a check asks about rows it lists, and no
+// client requested a refused version.
 type MayRead func(pkg, version string) bool
 
 // StoredPackages lists the versions and tags a repository stores of a package, for
 // the check of an endpoint's exposure rules that names no versions (R-EP-016,
-// Q-EP-61). The format owns the answer; a build without one lists nothing.
+// Q-EP-61). The format owns the answer through its view adapter.
 type StoredPackages interface {
-	// Stored returns at most limit versions, newest first, and the tags of the package.
-	Stored(ctx context.Context, repo StoredRepo, pkg string, limit int) (StoredPackage, error)
+	// Stored returns at most limit versions, newest first, and, when withTags is set,
+	// the tags of the package. Listed is false for a repository that cannot say what
+	// it stores (a virtual one) and for a format without a view adapter.
+	Stored(ctx context.Context, repo StoredRepo, pkg string, limit int, withTags bool) (StoredPackage, error)
 }
 
 // MaxCheckStored bounds the stored versions, and the tags, one check judges; the
@@ -103,19 +110,7 @@ const (
 // HTTP operations are thin handlers over it that add paging, ETags and
 // idempotency.
 type ExposureService struct {
-	o      ExposureServiceOptions
-	stored atomic.Pointer[StoredPackages]
-}
-
-// SetStored installs the source of stored versions. The formats are built after
-// the exposure rules, because the decision point needs the rules first, so the
-// source arrives later; until then a check lists no stored versions.
-func (s *ExposureService) SetStored(p StoredPackages) {
-	if p == nil {
-		s.stored.Store(nil)
-		return
-	}
-	s.stored.Store(&p)
+	o ExposureServiceOptions
 }
 
 // NewExposureService creates the service.
@@ -205,7 +200,7 @@ func (s *ExposureService) ruleOf(r ruleRow) (ExposureRule, error) {
 	out := ExposureRule{
 		ExposureRuleInput: normInput(ExposureRuleInput{
 			Name: r.Name, Description: r.Description, Repository: r.Repository, Enabled: r.Enabled,
-			Packages: d.Packages, Paths: d.Paths, Versions: d.Versions, Prereleases: d.Prereleases, DistTags: d.DistTags,
+			Packages: d.Packages, Paths: d.Paths, Versions: d.Versions, Prereleases: d.Prereleases, Tags: d.Tags,
 		}),
 		ID: r.ID, Endpoint: r.Endpoint, RepositoryID: r.RepoID, Format: r.Format, Class: repository.Class(r.Class),
 		Revision:  r.Revision,
@@ -317,7 +312,7 @@ func normInput(in ExposureRuleInput) ExposureRuleInput {
 		}
 		return l
 	}
-	in.Packages, in.Paths, in.DistTags = norm(in.Packages), norm(in.Paths), norm(in.DistTags)
+	in.Packages, in.Paths, in.Tags = norm(in.Packages), norm(in.Paths), norm(in.Tags)
 	if in.Versions.Include == nil {
 		in.Versions.Include = []string{}
 	}
@@ -366,8 +361,8 @@ func validateSyntax(in ExposureRuleInput, prefix string) []ProblemField {
 	checkList("/paths/exclude", in.Paths.Exclude, path)
 	checkList("/versions/include", in.Versions.Include, name)
 	checkList("/versions/exclude", in.Versions.Exclude, name)
-	checkList("/distTags/include", in.DistTags.Include, name)
-	checkList("/distTags/exclude", in.DistTags.Exclude, name)
+	checkList("/distTags/include", in.Tags.Include, name)
+	checkList("/distTags/exclude", in.Tags.Exclude, name)
 	if r := in.Versions.Range; r != nil && utf8.RuneCountInString(*r) > maxExposureRange {
 		add("/versions/range", errs.CodeInvalidVersionRange, fmt.Sprintf("a range has at most %d characters", maxExposureRange))
 	}
@@ -396,7 +391,7 @@ func (s *ExposureService) validateForFormat(in ExposureRuleInput, format, prefix
 	if !f.Versions && in.Prereleases {
 		add("/prereleases", errs.CodeDimensionNotSupported, fmt.Sprintf("%s repositories have no versions", format))
 	}
-	if !f.Tags && len(in.DistTags.Include)+len(in.DistTags.Exclude) > 0 {
+	if !f.Tags && len(in.Tags.Include)+len(in.Tags.Exclude) > 0 {
 		add("/distTags", errs.CodeDimensionNotSupported, fmt.Sprintf("%s repositories have no tags", format))
 	}
 	if f.Versions && in.Versions.Range != nil {
@@ -440,7 +435,7 @@ func (s *ExposureService) resolve(ctx context.Context, qs *q.Queries, in Exposur
 	if err := problemError(ps); err != nil {
 		return rr, err
 	}
-	rr.dims = ruleDims{Packages: in.Packages, Paths: in.Paths, Versions: in.Versions, Prereleases: in.Prereleases, DistTags: in.DistTags}
+	rr.dims = ruleDims{Packages: in.Packages, Paths: in.Paths, Versions: in.Versions, Prereleases: in.Prereleases, Tags: in.Tags}
 	return rr, nil
 }
 
@@ -454,14 +449,14 @@ type exposureState struct {
 	Paths       PatternLists `json:"paths"`
 	Versions    VersionLists `json:"versions"`
 	Prereleases bool         `json:"prereleases"`
-	DistTags    PatternLists `json:"distTags"`
+	Tags        PatternLists `json:"distTags"`
 }
 
 func stateOfRule(in ExposureRuleInput) *exposureState {
 	in = normInput(in)
 	return &exposureState{
 		Enabled: in.Enabled, Packages: in.Packages, Paths: in.Paths, Versions: in.Versions,
-		Prereleases: in.Prereleases, DistTags: in.DistTags,
+		Prereleases: in.Prereleases, Tags: in.Tags,
 	}
 }
 
@@ -480,7 +475,7 @@ func changedMembers(before, after ExposureRuleInput) []string {
 		{"paths", b.Paths, a.Paths},
 		{"versions", b.Versions, a.Versions},
 		{"prereleases", b.Prereleases, a.Prereleases},
-		{"distTags", b.DistTags, a.DistTags},
+		{"distTags", b.Tags, a.Tags},
 	} {
 		if !eq(m.x, m.y) {
 			out = append(out, m.name)
@@ -568,7 +563,7 @@ func (s *ExposureService) Create(ctx context.Context, tx meta.Tx, actor Subject,
 	rows, err := qs.EndpointsInsertRule(ctx, q.EndpointsInsertRuleParams{
 		ID: newID(), Endpoint: endpoint, Name: rr.in.Name, Description: rr.in.Description, RepoID: rr.repoID,
 		Enabled: rr.in.Enabled, Packages: mustText(rr.dims.Packages), Paths: mustText(rr.dims.Paths),
-		Versions: mustText(rr.dims.Versions), Prereleases: rr.dims.Prereleases, DistTags: mustText(rr.dims.DistTags),
+		Versions: mustText(rr.dims.Versions), Prereleases: rr.dims.Prereleases, DistTags: mustText(rr.dims.Tags),
 		Actor: actorID(actor),
 	})
 	if err != nil {
@@ -631,7 +626,7 @@ func (s *ExposureService) Replace(ctx context.Context, actor Subject, endpoint, 
 		rows, err := qs.EndpointsUpdateRule(ctx, q.EndpointsUpdateRuleParams{
 			Description: rr.in.Description, Enabled: rr.in.Enabled, Packages: mustText(rr.dims.Packages),
 			Paths: mustText(rr.dims.Paths), Versions: mustText(rr.dims.Versions), Prereleases: rr.dims.Prereleases,
-			DistTags: mustText(rr.dims.DistTags), Actor: actorID(actor), Endpoint: endpoint, Name: name, Expected: expected,
+			DistTags: mustText(rr.dims.Tags), Actor: actorID(actor), Endpoint: endpoint, Name: name, Expected: expected,
 		})
 		if err != nil {
 			return err
@@ -727,10 +722,10 @@ type ExposureCheckInput struct {
 	// (R-EP-017, Q-EP-18). It is validated like a write and stored nowhere.
 	Draft *ExposureRuleInput
 	// MayRead decides whether the caller may read a package, and a version of it. A
-	// check that lists the stored versions and tags (Versions empty) shows only
-	// what it admits, and answers for a package it refuses exactly as for one the
-	// repository does not hold (Q-EP-62). Nil admits everything (a caller that has
-	// no subject, such as a test).
+	// check that lists the stored versions and tags shows only what it admits, and
+	// answers for a package it refuses exactly as for one the repository does not
+	// hold (Q-EP-62). Nil admits nothing: the answer is "listed" with no versions and
+	// no tags, so a caller without a read scope learns nothing (fail closed, Q-EP-66).
 	MayRead MayRead
 }
 
@@ -759,8 +754,8 @@ type ExposureCheckResult struct {
 	Rule, Reason string
 	Versions     []ExposureCheckItem
 	Paths        []ExposureCheckItem
-	// DistTags are the tags of the package for a format with tags, sorted by name.
-	DistTags []ExposureCheckTag
+	// Tags are the tags of the package for a format with tags, sorted by name.
+	Tags []ExposureCheckTag
 	// Fingerprint is the exposure fingerprint of the stored rules (R-EP-018).
 	Fingerprint string
 	Warnings    []string
@@ -859,54 +854,62 @@ func (s *ExposureService) Check(ctx context.Context, endpoint string, in Exposur
 	}
 	// The versions and tags come from the format, outside the transaction above: the
 	// format reads its own tables through its own transaction.
-	res.Versions = make([]ExposureCheckItem, 0, len(in.Versions))
-	res.DistTags = []ExposureCheckTag{}
-	versions := in.Versions
-	if held.f.Versions && in.Package != "" {
-		sp, err := s.storedOf(ctx, held.repo, in.Package, held.names, in.MayRead)
-		if err != nil {
-			return res, err
-		}
-		truncated := false
-		if len(versions) == 0 {
-			// The request names none: judge what the repository stores (Q-EP-61).
-			versions = sp.Versions
-			switch {
-			case !sp.Listed:
-				res.Warnings = append(res.Warnings, WarnStoredVersionsNotListed)
-			case len(versions) > MaxCheckStored:
-				versions = versions[:MaxCheckStored]
-				truncated = true
-			}
-		}
-		tags := slices.Sorted(maps.Keys(sp.Tags))
-		if len(tags) > MaxCheckStored {
-			tags, truncated = tags[:MaxCheckStored], true
-		}
-		if truncated {
-			res.Warnings = append(res.Warnings, WarnStoredVersionsTruncated)
-		}
-		for _, tag := range tags {
-			// A tag stays in a filtered document when a rule admits its name and the
-			// version it points to is exposed (ExposureView.Tag).
-			target := sp.Tags[tag]
-			visible := res.Mode == ExposureModeAll
-			if !visible {
-				pointed, _, _ := held.judge(exposureItem{pkg: in.Package, version: target})
-				visible = pointed && admitsItem(held.rules, exposureItem{pkg: in.Package, tag: tag}, held.f.Versioning)
-			}
-			res.DistTags = append(res.DistTags, ExposureCheckTag{Tag: tag, Version: target, Visible: visible})
-			// The version a tag points to is always judged, whatever the cut kept.
-			if len(in.Versions) == 0 && !slices.Contains(versions, target) {
-				versions = append(slices.Clone(versions), target)
-			}
-		}
+	versions, err := s.checkStored(ctx, in, held, &res)
+	if err != nil {
+		return res, err
 	}
 	for _, v := range versions {
 		ok, rule, reason := held.judge(exposureItem{pkg: in.Package, version: v})
 		res.Versions = append(res.Versions, ExposureCheckItem{Value: v, Exposed: ok, Rule: rule, Reason: reason})
 	}
 	return res, nil
+}
+
+// checkStored is the part of a check that asks the source: it fills the tag verdicts and the
+// warnings of res and returns the versions to judge, the ones the request named or, when it named
+// none, the ones the repository stores (Q-EP-61).
+func (s *ExposureService) checkStored(ctx context.Context, in ExposureCheckInput, held checkHeld, res *ExposureCheckResult) ([]string, error) {
+	res.Versions = make([]ExposureCheckItem, 0, len(in.Versions))
+	res.Tags = []ExposureCheckTag{}
+	if !held.f.Versions || in.Package == "" {
+		return in.Versions, nil
+	}
+	// The request names versions: only the tags are needed from the source (the verdict on a
+	// named version needs no listing), and no version is decided for the read scope.
+	named := len(in.Versions) > 0
+	sp, cut, err := s.storedOf(ctx, held.repo, in.Package, held.names, storedWant{versions: !named, tags: held.f.Tags}, in.MayRead)
+	if err != nil {
+		return nil, err
+	}
+	versions := in.Versions
+	if !named {
+		versions = sp.Versions
+		if !sp.Listed {
+			res.Warnings = append(res.Warnings, WarnStoredVersionsNotListed)
+		}
+	}
+	for _, tag := range slices.Sorted(maps.Keys(sp.Tags)) {
+		target := sp.Tags[tag]
+		res.Tags = append(res.Tags, ExposureCheckTag{Tag: tag, Version: target, Visible: tagVisible(held, res.Mode, in.Package, tag, target)})
+		// The version a tag points to is always judged, whatever the cut kept.
+		if !named && !slices.Contains(versions, target) {
+			versions = append(slices.Clone(versions), target)
+		}
+	}
+	if cut {
+		res.Warnings = append(res.Warnings, WarnStoredVersionsTruncated)
+	}
+	return versions, nil
+}
+
+// tagVisible: a tag stays in a filtered document when a rule admits its name and the version it
+// points to is exposed (ExposureView.Tag).
+func tagVisible(held checkHeld, mode, pkg, tag, target string) bool {
+	if mode == ExposureModeAll {
+		return true
+	}
+	pointed, _, _ := held.judge(exposureItem{pkg: pkg, version: target})
+	return pointed && admitsItem(held.rules, exposureItem{pkg: pkg, tag: tag}, held.f.Versioning)
 }
 
 // checkHeld is what the transaction of a check hands to the part that lists the
@@ -920,42 +923,67 @@ type checkHeld struct {
 	judge func(exposureItem) (bool, string, string)
 }
 
+// storedWant says what a check needs of the source.
+type storedWant struct {
+	// versions: the request named none, so the stored versions are judged.
+	versions bool
+	// tags: the format has tags (catalog.Exposure.Tags).
+	tags bool
+}
+
 // storedOf asks the source what the repository stores of the package and keeps
-// what the caller may read. A build or a replica without a source, and a package
-// name the format does not accept, answer the empty, unlisted package. A package
-// the caller may not read answers as one the repository does not hold, with the
-// same "listed" state and no versions or tags, so the answer is no oracle for the
-// names the repository holds (Q-EP-62). A version the caller may not read is
-// dropped, and a tag that points to one is dropped with it, as the package
-// screens do.
-func (s *ExposureService) storedOf(ctx context.Context, repo q.EndpointsRepositoryByKeyRow, pkg string, names catalog.Names, may MayRead) (StoredPackage, error) {
-	src := s.stored.Load()
-	if src == nil {
-		return StoredPackage{}, nil
+// what the caller may read. A service without a source, a format without a view
+// adapter and a package name the format does not accept answer the empty package;
+// the first two unlisted. A package the caller may not read answers as one the
+// repository does not hold, with the same "listed" state and no versions or tags,
+// so the answer is no oracle for the names the repository holds (Q-EP-62). A
+// version the caller may not read is dropped, and a tag that points to one is
+// dropped with it, as the package screens do; a nil may reads nothing (Q-EP-66).
+//
+// cut says that the source held more than [MaxCheckStored] versions or tags,
+// decided on what it returned before the read filter dropped any, so that a list
+// the filter made short does not look complete. At most MaxCheckStored versions
+// and tags are returned.
+func (s *ExposureService) storedOf(ctx context.Context, repo q.EndpointsRepositoryByKeyRow, pkg string, names catalog.Names, want storedWant, may MayRead) (sp StoredPackage, cut bool, err error) {
+	if s.o.Stored == nil {
+		return StoredPackage{}, false, nil
 	}
 	if names != nil {
 		norm, ok := names.Normalize(pkg)
 		if !ok {
-			return StoredPackage{Listed: true}, nil
+			return StoredPackage{Listed: true}, false, nil
 		}
 		pkg = norm
 	}
-	sp, err := (*src).Stored(ctx, StoredRepo{ID: repo.ID, Key: repo.Key, Format: repo.Format, Class: repo.Class}, pkg, MaxCheckStored+1)
-	if err != nil || may == nil {
-		return sp, err
+	sp, err = s.o.Stored.Stored(ctx, StoredRepo{ID: repo.ID, Key: repo.Key, Format: repo.Format, Class: repo.Class}, pkg, MaxCheckStored+1, want.tags)
+	if err != nil {
+		return sp, false, err
 	}
-	if !may(pkg, "") {
-		return StoredPackage{Listed: sp.Listed}, nil
+	if !want.versions {
+		sp.Versions = nil
 	}
-	sp.Versions = slices.DeleteFunc(slices.Clone(sp.Versions), func(v string) bool { return !may(pkg, v) })
+	if !want.tags {
+		sp.Tags = nil
+	}
+	cut = len(sp.Versions) > MaxCheckStored || len(sp.Tags) > MaxCheckStored
+	if may == nil || !may(pkg, "") {
+		return StoredPackage{Listed: sp.Listed}, false, nil
+	}
+	if want.versions {
+		sp.Versions = slices.DeleteFunc(slices.Clone(sp.Versions), func(v string) bool { return !may(pkg, v) })
+		sp.Versions = sp.Versions[:min(len(sp.Versions), MaxCheckStored)]
+	}
 	tags := map[string]string{}
-	for tag, v := range sp.Tags {
-		if may(pkg, v) {
+	for _, tag := range slices.Sorted(maps.Keys(sp.Tags)) {
+		if len(tags) == MaxCheckStored {
+			break
+		}
+		if v := sp.Tags[tag]; may(pkg, v) {
 			tags[tag] = v
 		}
 	}
 	sp.Tags = tags
-	return sp, nil
+	return sp, cut, nil
 }
 
 // withDraft validates the draft of the rule editor and puts it in place of the

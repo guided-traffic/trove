@@ -73,9 +73,10 @@ func (f *Format) virtualWriteDocument(ctx context.Context, rq *formats.Request, 
 	if err != nil {
 		return err
 	}
-	trq := *rq
-	trq.Repo = target
-	st, _, err := f.authorizeRead(ctx, &trq, n, "")
+	// A read that stands for the write is named in the scope itself: the request for the target
+	// carries no addressed virtual repository (Q-ARCH-252).
+	trq := rq.WriteTarget(target)
+	st, _, err := f.authorizeRead(ctx, trq, n, "")
 	if err != nil {
 		return err
 	}

@@ -24,15 +24,19 @@ import (
 // endpoints and their exposure modes, and the rule service on it. The decision
 // point applies the ceiling, and the repository's delete hook records the rules a
 // deletion takes with it (H-164), so both come before them.
-func (a *App) wireExposure(_ context.Context, in infra) (exposureArea, error) {
+func (a *App) wireExposure(_ context.Context, in infra, fp formatPortsArea) (exposureArea, error) {
 	modes := map[string]string{}
 	for _, e := range a.cfg.Server.ResolveEndpoints() {
 		modes[e.Name] = e.Exposure
 	}
 	ceiling := authz.NewExposureCeiling(modes, catalog.Default())
-	rules := authz.NewExposureService(authz.ExposureServiceOptions{
-		DB: in.db, Changes: in.changes, Recorder: in.rec, Ceiling: ceiling,
-	})
+	o := authz.ExposureServiceOptions{DB: in.db, Changes: in.changes, Recorder: in.rec, Ceiling: ceiling}
+	// The check lists a package's stored versions through the formats' view adapters (R-EP-016,
+	// Q-EP-61); a typed nil would not be nil in the interface.
+	if fp.views != nil {
+		o.Stored = fp.views
+	}
+	rules := authz.NewExposureService(o)
 	return exposureArea{ceiling: ceiling, rules: rules}, nil
 }
 
@@ -145,6 +149,6 @@ func (a *App) credentialRefused(rt *endpointRuntime) func(*http.Request, auth.Re
 func (a *App) endpointServices() v1.EndpointServices {
 	return v1.EndpointServices{
 		Endpoints: a.cfg.Server.ResolveEndpoints(), RateLimits: a.cfg.Server.EndpointRateLimits,
-		Exposure: part[exposureArea](a.parts).rules, Authorizer: a.decider(),
+		Exposure: part[exposureArea](a.parts).rules, Authorizer: a.decider(), Scoper: a.readScoper(),
 	}
 }

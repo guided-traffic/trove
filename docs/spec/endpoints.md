@@ -2069,7 +2069,7 @@ spec had written "no format of M1 has versions" and npm has since been built.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) The format's view adapter lists them (chosen) | An optional `formats.StoredLister` on the view adapter: `Stored(repo, package)` returns the versions and tags; the app bridges it to `authz.StoredPackages`, and the check calls it after its transaction | The format reads its own tables through its own data port (R-ARCH-008); the check stays free of format SQL; a format without it lists nothing and says so | One more optional interface and a late-bound source on the rule service |
+| (a) The format's view adapter lists them (chosen) | `ViewAdapter.Stored(ports, query)` returns the versions and tags (first built as an optional `formats.StoredLister`; a method of the contract since Q-ARCH-253); `formathost.ViewAdapters` is the `authz.StoredPackages` of the rule service, and the check calls it after its transaction | The format reads its own tables through its own data port (R-ARCH-008); the check stays free of format SQL | A source on the rule service |
 | (b) The check reads the generic `packages` and `package_versions` rows itself | One statement in the endpoints queries | No new interface | Dist-tags and tombstones are npm tables, so the check would carry npm SQL; remote repositories have no generic rows |
 | (c) Change the contract and the label: only the versions sent are judged | Remove the sentence | No code | The editor's preview shows nothing without typing every version, which is what the preview is for |
 
@@ -2086,8 +2086,9 @@ knows the format's tables. The development agent would revisit this when a virtu
 merge of their versions and tags in the order of the resolution, R-REPO-048), or when a second format with versions is built.
 
 **Applied in the spec:** R-EP-016 (the `check-exposure` row and bullet), Q-EP-19. Code: `internal/authz/exposure_service.go`
-(`Check`, `StoredPackages`), `internal/formats/view.go` (`StoredLister`), `internal/formats/npm/view.go` (`Stored`),
-`internal/formatdata/npm/view.go` (`ViewStored`), `internal/app/stored_packages.go`.
+(`Check`, `StoredPackages`), `internal/formats/view.go` (`ViewAdapter.Stored`), `internal/formats/npm/view.go` (`Stored`),
+`internal/formatdata/npm/view.go` (`ViewStored`), `internal/formathost/view.go` (the bridge; `internal/app/stored_packages.go` is gone, Q-ARCH-253).
+Amended by Q-EP-66 (the read filter) and Q-EP-67 (what is listed).
 
 ### Q-EP-64 · Pattern matching in the decision path allocates nothing, and a literal lead refuses before any state is built
 
@@ -2187,7 +2188,43 @@ contract named ("the order they arrived") was not the one a remote repository re
 development agent would revisit this when a rule needs a verdict for the oldest versions, then with a paged listing.
 
 **Applied in the spec:** R-EP-016 (the `check-exposure` bullet), Q-EP-61. Code: `NPMViewStoredLocal` and `NPMViewStoredRemote`,
-`ExposureService.Check`, `formats.StoredLister` (`limit`).
+`ExposureService.Check`, `formats.ViewAdapter.Stored` (`StoredQuery.Limit`). Amended by Q-EP-66 and Q-EP-67.
+
+### Q-EP-66 · A check reads the caller's unaudited read scope, decides no version the request named, and judges a cut before it filters
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `check-exposure` called `acc.Decide` (the audited decision) for every stored version and every tag target: up to 1,001 decisions per check, each one writing `read_allowed` with `authz.audit.reads: all` and, on an endpoint with rules, one `authz.denied` and one `exposureHidden` count per hidden version, also when the caller had named the versions. A nil `MayRead` admitted every version. The truncation warning was decided on the list after the read filter, so a list the filter had made short looked complete (found in the review of 2026-11-01).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The package screens' unaudited read scope; no decision for named versions; the cut is judged before the filter; a nil filter lists nothing (chosen) | `ReadScopeOn` once per check, `ReadScope.MayRead` per row (the decision of `DecideOn` without the audit event and the counters, `internal/authz/visible.go`); `EndpointServices.Scoper` carries it; `storedOf` reports whether the source returned more than `MaxCheckStored` rows, and the warning follows that | The check is the same kind of listing as the package screens and is treated as one; one scope per check; fail closed | None found |
+| (b) Keep the audited decision, batch it | One event | Audit of every row | A thousand rows are not a thousand requests of the client |
+| (c) Skip the filter | — | Simple | Leaks names and versions the caller may not read (Q-EP-62) |
+
+**Choice:** (a). A caller that named the versions gets verdicts for exactly those (they are the caller's own strings) and only the tags are filtered, by the version each points to. Without a scoper the check answers "listed" with no versions and no tags. At most `MaxCheckStored` versions and tags are returned, and `stored_versions_truncated` is set when the source held more.
+
+**Rationale:** the check is a dry run, not a read of a version. The development agent revisits this if an audit trail of dry runs is wanted: one event per check, not per row.
+
+**Applied in the spec:** R-EP-016 (the `check-exposure` bullet), Q-EP-62. Code: `internal/api/v1/endpoints_api.go` (`checkReadFilter`, `EndpointServices.Scoper`), `internal/authz/exposure_service.go` (`storedOf`, `checkStored`). Tests: `TestR_EP_016_TheExposureCheckKeepsFromTheListingWhatTheReadScopeRefuses`, `TestR_EP_016_TheExposureCheckWritesNoDecisionPerListedVersion`, `TestR_EP_016_TheExposureCheckWithoutAReadScopeListsNothing` (api/v1), `TestR_EP_016_StoredOfShowsOnlyWhatTheCallerMayRead`, `TestR_EP_016_ATruncationIsJudgedBeforeTheReadFilter` (authz).
+
+### Q-EP-67 · What `Stored` lists: what is served, newest first, tags only for a format with tags
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-EP-61 and Q-EP-63 said "the versions the repository serves, newest first" without saying what either word means, and the remote statement listed only `listed` versions although a repository with `serveRemovedVersions: true` serves the others by exact version (R-NPM-026).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) "Serves" is answerable by an exact-version request; "newest" is arrival, publish time or `Compare` (chosen) | Unlisted versions of a remote repository count when it serves removed versions; deprecated versions always count; a version the format withholds does not; hosted: arrival (row id) descending; remote: publish time descending, unknown times last, then version descending; a format with neither: `Compare` descending | The preview shows what a consumer can install | A remote repository's list depends on its setting |
+| (b) Only listed versions | As built | Simple | The verdict is missing for a version a lockfile install still gets |
+| (c) Always `Compare` descending | One order | Same across classes | Not "what arrived", which the manual says |
+
+**Choice:** (a), in the doc comment of `formats.ViewAdapter.Stored` and in kit check 11. The tags are read only when `catalog.Exposure.Tags` is true (`StoredQuery.Tags`). `NPMViewStoredRemote` returns `listed OR serveRemovedVersions`.
+
+**Rationale:** the verdict of a check should match the answer of the route. The development agent revisits this when a format has a third notion of newest.
+
+**Applied in the spec:** R-EP-016, Q-EP-61, Q-EP-63. Code: `internal/formats/view.go`, `internal/formats/npm/view.go`, `internal/formatdata/npm/view.go`, `internal/meta/postgres/queries/npm_view.sql`. Tests: `TestR_EP_016_NPMAdapterListsStoredVersions`, `TestR_ARCH_010_Check11ViewAdapter`.
 
 ## What this does not cover
 

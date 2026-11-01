@@ -1098,6 +1098,9 @@ type Descriptor struct {
 	Limits           Limits          // tightenings of the defaults of R-ARCH-028
 	RepositoryIndex  bool            // has repository-wide derived indexes; enables the per-repository revision (R-ARCH-012)
 	DataPort         reflect.Type    // the interface type of the format's side-table port; nil without side tables (Q-ARCH-193)
+	// VerifyAnnouncedDigests: the protocol addresses artifacts by the digests its metadata announces, so a remote fill
+	// compares them whatever integrity.checksumPolicy says (R-REPO-041: npm always verifies, R-NPM-026).
+	VerifyAnnouncedDigests bool
 }
 
 type Route struct {
@@ -1105,18 +1108,24 @@ type Route struct {
 	Method   string
 	Template string   // documentation form and default matcher, e.g. "/{package}/-/{file}"; "{rest...}" takes the tail
 	Examples []string // escaped paths this route must match and no other route of its method may (check 1)
-	Action   Action   // coarse check before the body is read
+	Action   authz.Action // coarse check before the body is read
 	Kind     RouteKind // Download, Metadata, Computed, Upload, Delete, Admin, Volatile
 	Classes  []Class  // the classes that serve the route; empty is every class of the format
 	Match    func(escapedPath string) (Params, bool) // overrides the template for a grammar it cannot state
 	Handler  HandlerFunc
 }
 
+// ServesClass reports whether the route serves repositories of a class (Classes empty: every class).
+func (r *Route) ServesClass(c Class) bool
+
 type HandlerFunc func(ctx context.Context, rq *Request, w http.ResponseWriter) error
 
 type Request struct {
 	*http.Request
-	Repo     *repository.Repository // the addressed repository, an immutable snapshot entry
+	// Repo is the repository this request acts on: the one the client addressed or, on a request derived through
+	// Member or WriteTarget, the member or deployment target the call is made for. Addressed names the one the client
+	// addressed. The addressed key itself (the unexported field via) is set only by Member (Q-ARCH-252).
+	Repo     *repository.Repository // an immutable snapshot entry
 	Route    *Route
 	Params   Params
 	Path     Path                   // canonical repository path (R-ARCH-005)
@@ -1124,8 +1133,27 @@ type Request struct {
 	Subject  authz.Subject          // who acts, and on which endpoint (Subject.Endpoint, Q-EP-20)
 	Index    *authz.Index           // the index the request began on; every decision of the request runs on it
 	Endpoint EndpointFacts          // Name, Rules, CacheFill, ExposureFingerprint: derived from the listener's endpoint
-	Host     Host
+	CacheView bool                 // the request addressed the cache view of a remote repository, "<key>~cache" (R-REPO-032)
+	Host     Host                  // shadows http.Request.Host on purpose: no handler reads the Host header (R-ARCH-006)
+	Log      *slog.Logger          // request-scoped; nil logs to slog's default
+	HostState any                  // belongs to the Host implementation (the decisions to record in the write's transaction); a format never reads or sets it
 }
+
+// Addressed is the key of the repository the client addressed: the outermost virtual repository on a request derived for
+// one of its members, the request's own repository otherwise. Every coordinate the Host builds carries it as
+// Coordinate.Addressed (R-AUTHZ-015, Q-AUTHZ-165).
+func (rq *Request) Addressed() string
+
+// Member returns a copy of the request made for a member of rq.Repo: Repo is the member, the addressed key stays the
+// outermost one. A repository that is no member is refused with an internal error.
+func (rq *Request) Member(m *repository.Repository) (*Request, error)
+
+// WriteTarget returns a copy made for the deployment target, for a read that stands for the write (R-NPM-029). It
+// carries no addressed virtual repository: such a read is decided on the target, which a scope must name itself.
+func (rq *Request) WriteTarget(target *repository.Repository) *Request
+
+// RepoRef is Repo as the Host's calls name it: the numeric id of its row, key, class and format.
+func (rq *Request) RepoRef() RepoRef
 
 // Target is what a format asks the decision point inside the addressed repository. The host completes the
 // coordinate (repository, class, format, the kind of the route), so a format names neither another repository
@@ -1144,6 +1172,10 @@ const (
 	PathComputed                     // rendered by trove from stored rows, never fetched
 	PathVolatile                     // passed through, never cached (search, advisory queries)
 )
+
+// RequestKind maps a path kind to the request kind of R-REPO-003; String names it.
+func (k PathKind) RequestKind() RequestKind
+func (k PathKind) String() string
 
 // PathInfo is the format's R-REPO-003 descriptor of a canonical path.
 type PathInfo struct {
@@ -1178,6 +1210,14 @@ type RemoteAdapter interface {
 	Rewrite(ctx context.Context, rc RemoteContext, p Path, doc []byte, links LinkBuilder) ([]byte, error)
 	// TracksVersionRemoval says that the format's removal marks replace the generic gone-package rule (R-REPO-029).
 	TracksVersionRemoval() bool
+	// ExpectsType declares the media types the format expects for a path; the engine does not block them (R-REPO-042).
+	ExpectsType(p Path, mediaType string) bool
+	// BeforeArtifact runs before the engine looks at or fetches an artifact (also for a remote member of a virtual
+	// repository, on the request derived through Member): the format decides whether its stored marks allow it and
+	// which digests its metadata announces (R-NPM-025, R-NPM-026, Q-NPM-13). Both have defaults in the embeddable
+	// RemoteBase. They were optional interfaces found by type assertion; they are methods of the contract so that a
+	// format cannot forget them unnoticed (Q-ARCH-254).
+	BeforeArtifact(ctx context.Context, h Host, rq *Request, p Path) (Digests, error)
 }
 
 type VirtualAdapter interface {
@@ -1232,10 +1272,95 @@ type GuideSection struct {
 	Markdown string  // text/template over GuideData; the only credential it may spell is SetupTokenRef
 }
 
+// AppliesTo reports whether the section is written for a class and a client ("" for no client).
+func (g GuideSection) AppliesTo(class Class, client string) bool
+
+// ViewAdapter is a format's part of the package screens (api-and-ui.md R-API-029) and of the dry run of the exposure
+// rules (endpoints.md R-EP-016). It reads through the format's data port and runs no SQL.
+type ViewAdapter interface {
+	// Compare is a total order over the versions the format stores (negative: a is older than b); a string that is no
+	// version sorts before every version, and equal strings compare equal.
+	Compare(a, b string) int
+	Prerelease(version string) bool
+	Describe(ctx context.Context, ports DataPorts, vs []ViewVersion, want ViewFields, visible func(version string) bool) (map[VersionID]ViewData, error)
+	Find(ctx context.Context, ports DataPorts, f ViewFind, limit int) ([]VersionID, error)
+	// Withheld returns the ids of the stored versions the format does not serve (R-NPM-047).
+	Withheld(ctx context.Context, ports DataPorts, repos []string) ([]VersionID, error)
+	// Stored returns at most q.Limit of the versions a local or a remote repository serves of the package, newest
+	// first, and the tags when q.Tags is set (Q-EP-67). "Serves" means answerable by a request for the exact version:
+	// an unlisted version the repository still serves counts, a deprecated one counts, a withheld one does not.
+	// "Newest first" is arrival time for a hosted repository, publish time for a remote one (unknown last), and for a
+	// format with neither Compare descending. A package the repository does not hold is the empty answer.
+	Stored(ctx context.Context, ports DataPorts, q StoredQuery) (Stored, error)
+}
+
+type DataPorts interface{ FormatData(id ID) any } // the part of Host the view reads format data through
+
+// StoredQuery asks what one repository stores under one package name; Tags is true only for a format whose catalog
+// entry has tags (catalog.Exposure.Tags).
+type StoredQuery struct {
+	Repo    RepoRef // local or remote; the host never asks for a virtual repository
+	Package string  // normalized
+	Limit   int
+	Tags    bool
+}
+
+type Stored struct {
+	Versions []string          // newest first
+	Tags     map[string]string // tag to version; empty unless asked
+}
+
+type (
+	ViewVersion struct {
+		ID      VersionID
+		Repo    RepoRef
+		Package string
+		Version string
+	}
+	ViewFind struct {
+		Repos   []string
+		Text    string
+		Keyword string
+	}
+	ViewData struct {
+		Description string
+		Keywords    []string
+		Licenses    []string
+		HasReadme   bool
+		Metadata    map[string]any
+		Readme      string
+		ReadmeFile  string
+	}
+	ViewFields uint8
+)
+
+const (
+	ViewSummary ViewFields = 1 << iota // description and keywords
+	ViewDetails                        // adds the licenses, whether a README exists and the metadata
+	ViewReadme                         // adds the README text and its file name
+)
+
+// Has reports whether f includes every field of o.
+func (f ViewFields) Has(o ViewFields) bool
+
 // GuideData: SetupData plus Class, Client, PublishTarget (only when the reader may deploy there), Anonymous,
 // ExposureRules (the endpoint serves under exposure rules) and TokenEnvVar (a variable name). No credential field.
 // formats.ExecuteGuide parses and runs a section; the API and the kit both call it.
 ```
+
+Supporting types of the blocks, named here so that the contract has no type the spec does not know
+(`TestR_ARCH_008_EveryExportedTypeOfTheContractIsNamedInTheSpec`): `PackageID` is the id of a package row;
+`URLMapping` (path and upstream URL) and `RemoteDocument` (a stored or fetched upstream document with its times and
+`CacheStatus`) are what a remote adapter reads and hands over; `Currency` says how current a document is after
+`EnsureCurrent` (Q-NPM-13); `RemovedItem` is an item a removal took away, with its version; `ShadowPair` names a
+virtual repository and the remote member that serves a package (R-REPO-048); `RemoteBase` gives a `RemoteAdapter` the
+defaults of `ExpectsType` and `BeforeArtifact` to embed.
+
+The blocks above are held equal to the code: `TestR_ARCH_008_TheWrittenContractEqualsTheCode`
+(`internal/formats/contract_spec_test.go`) parses the Go blocks of R-ARCH-008 and R-ARCH-009 and compares every type
+they declare (exported fields, interface methods, aliases), the methods the code attaches to it, the functions and
+the constants with the package, and fails with one line per difference (Q-ARCH-254). The unexported field `via` of
+`Request` is not part of the contract.
 
 Normative rules:
 - `Descriptor().Classes` is the single source of truth for the classes a format supports. Creating
@@ -1485,7 +1610,13 @@ own tests:
    in-memory `Host`.
 10. For every sample package name the kit ships, `PackageDocumentPath` returns a path that `Match`
     resolves to a `GET` route, and two spellings of the same normalized name yield the same path.
-11. From M4b, for a format that implements `VulnerabilityAdapter`: the matching corpus of
+11. For a format with a view adapter (`View()` is not nil): `Compare` is a total order over the fixture's sample
+    versions (reflexive, antisymmetric, transitive, never equal for two different versions, and a string that is no
+    version sorts before every version); `Withheld` and `Stored` answer an empty repository of the local and the remote
+    class, and a package it does not hold, without an error and without a version; over a package the fixture seeds,
+    `Stored` lists exactly the versions the repository serves, newest arrival first, within its limit, with tags only
+    when the query asks for them, and `Withheld` lists none of them (Q-ARCH-253, Q-EP-67).
+12. From M4b, for a format that implements `VulnerabilityAdapter`: the matching corpus of
     [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-009 (the event table test and the
     frozen real-record corpus) gives the expected results (Q-VULN-15).
 
@@ -1494,14 +1625,14 @@ has no routes, no clients and no package names); a skip without a reason fails t
 later class cannot pass a check vacuously. The kit also refuses a skip that the format contradicts:
 checks 1, 3 and 7 on a format that has routes, check 4 on one with a remote adapter, check 5 with a
 virtual adapter, check 8 with clients, setup templates or a guide, check 10 with package names, check 11
-with a vulnerability adapter. Check 2 is
+with a view adapter, check 12 with a vulnerability adapter. Check 2 is
 never skipped. A check with nothing to run over (an empty fixture) fails unless it is skipped.
 
 A format runs the kit as `formattest.Run(t, format, formattest.Fixture{…})` in its own test; one
 subtest per check is named `R-ARCH-010 check N <name>`. The fixture holds what the format alone can
 state: extra paths for checks 2 and 3, upstream documents for 4, member documents for 5, the crafted
 uploads for 6 (`InspectTarGz`, `InspectZip`, `InspectJSON` and `InspectXML` give the standard ones),
-requests for 7, changes for 9 and sample names for 10. The kit derives the rest from the format. It
+requests for 7, changes for 9, sample names for 10 and the sample versions, a package name and a seed for 11. The kit derives the rest from the format. It
 requires a content case for every `Download`, `Metadata`, `Computed` and `Volatile` route, and a
 change case, or a reasoned `NoRevision` entry, for every `Upload`, `Delete` and `Admin` route.
 `formattest.Evaluate` returns the same results without a `testing.T`; the kit's own tests use it to
@@ -6527,6 +6658,78 @@ underscore form is ambiguous with trailing words, and tests move to the hyphen f
 
 **Applied in the spec:** [docs/developer/coverage.md](../developer/coverage.md) ("Implementation status: the test-naming rule"),
 [docs/developer/build-and-test.md](../developer/build-and-test.md). Code: `idsIn`, `underscoreID`, `startsUnderscoreID` in `internal/tools/coverage/evidence.go`.
+
+### Q-ARCH-252 · A member request is derived, and the addressed repository cannot be named by a format
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `formats.Request.Via` (the virtual repository the client addressed) was an exported, writable field. Two places built member requests by copying the request and setting `Repo` (`tiers.forMember` in `formathost/virtual.go`, and the audit forwarder and `virtualWriteDocument` of npm), and two places turned the field into `Coordinate.Addressed` (`populateCoordinate`; `coordinate()` did not, so the read check of the audit forwarder's member was decided without the addressed repository and a token scoped to the virtual repository by its exact key was refused, fail closed). Q-AUTHZ-165 named the revisit condition: "if member requests are built at more than one place". It was met (found in the architecture review of 2026-11-01).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Unexport the field; `Addressed()`, `Member(m)` and `WriteTarget(t)` (chosen) | `via` is set only by `Member`, which copies the request, sets `Repo`, keeps the outermost addressed key and refuses a repository that is no member of `rq.Repo`; `Addressed()` is the key (the request's own repository when not derived) and the one thing both coordinate builders read; the re-target of a read that stands for a write has its own method, without the key | A format cannot name another repository as the addressed one; the forwarder is correct by construction; the difference between a member and a write target is visible in the code | Two derivation methods on the frozen surface |
+| (b) Keep `Via` exported, document it | Comment only | No change | The field freezes with the contract; any format can set it and so lend a request the standing of a virtual repository it does not belong to |
+| (c) Carry the key in the context | `context.WithValue` | No field | An invisible input to a security decision |
+
+**Choice:** (a). `Member` checks membership against `rq.Repo.Members()`, so a request derived once more (a member of a member, R-REPO-018, not built) keeps the first key because `Addressed()` is read from the request it derives from. `WriteTarget` clears the key: a write-intent read (`GET {name}?write=true`, R-NPM-029) is decided on the deployment target itself, so the scope must name the target and the lift of Q-AUTHZ-163, which is for reads through a virtual repository only, does not apply. `virtual.RemoteCall.Via` is renamed `Addressed`, so the concept has one name (`Request.Addressed`, `RemoteCall.Addressed`, `Coordinate.Addressed`).
+
+**Rationale:** a decision about a member must be made on what the client named, and only the host may say what that is. The development agent revisits this when nested virtual repositories are built: `Member` then walks the closure instead of the direct members.
+
+**Applied in the spec:** R-ARCH-008 (the `Request` block with `Addressed`, `Member`, `WriteTarget`, `CacheView`, `Log`, `HostState`), Q-AUTHZ-165 (amended). Code: `internal/formats/route.go`, `internal/formathost/virtual.go` (`forMember`), `internal/formathost/host.go` (`coordinate`), `internal/formathost/remote.go` (`populateCoordinate`), `internal/formats/npm/handlers_audit.go`, `handlers_virtual.go`, `internal/virtual/types.go` (`RemoteCall.Addressed`). Tests: `TestR_AUTHZ_013_AMemberRequestCarriesTheOutermostAddressedKeyIntoBothCoordinates`, `TestR_AUTHZ_013_TheOutermostAddressedKeyIsKeptOnADerivedRequest`, `TestR_AUTHZ_013_AMemberRequestIsRefusedForARepositoryThatIsNoMember`, `TestR_AUTHZ_013_TheDeployTargetReadCarriesNoAddressedKey` (formathost), `TestR_AUTHZ_013_TheAuditForwarderAsksForTheMemberOnBehalfOfTheAddressedVirtualRepository` (npm), `TestR_AUTHZ_013_ASetupTokenRunsTheAuditThroughTheVirtualRepository` (integration).
+
+### Q-ARCH-253 · The stored versions are a method of the view contract, and the source is built before the rule service
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-EP-61 made `Stored` an optional interface (`formats.StoredLister`) found by a type assertion in `internal/app`, bridged to `authz.StoredPackages` there and installed on the rule service afterwards (`SetStored`, an atomic pointer), because the formats were built after the rules. Q-ARCH-235 decided the opposite for `Guide`: a capability every format with the feature must have is a method of the contract, so the kit can fail a format that forgets it. The same review found that "newest" and "serves" were defined nowhere, that `Tags` was read for every format, and that a nil `MayRead` admitted everything.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Stored` is a method of `ViewAdapter`; the bridge is `formathost.ViewAdapters`; a new wiring area `formatports` builds the data ports and the adapters before the exposure area; `ExposureServiceOptions.Stored` is a constructor input (chosen) | `ViewAdapter.Stored(ctx, ports, StoredQuery)`; `ViewAdapters` implements `authz.StoredPackages` and calls it for local and remote repositories only (a virtual one and a format without an adapter answer unlisted); `SetStored` and its atomic pointer are gone; the packages area takes the same adapters | One mechanism for every capability of the view; the kit checks it (check 11); no late-bound state | A wiring area more; the data ports are bound one step earlier |
+| (b) Keep the optional interface, move only the bridge | Smaller change | No area | The type assertion stays; the kit cannot fail a format that has screens and cannot list |
+| (c) Build the rule service late | `wireExposure` after the formats | No new area | The repository delete hook and the decision point need the rule service before the formats exist (a cycle) |
+
+**Choice:** (a). `StoredQuery.Tags` is set only when the catalog says the format has tags (`catalog.Exposure.Tags`), so an adapter reads nothing for them otherwise; `ViewAdapter.Stored` defines "newest first" and "serves" in its comment and in Q-EP-67. Kit check 11 (`R-ARCH-010`) holds the view adapter: `Compare` is a total order over the fixture's sample versions, `Withheld` and `Stored` answer an empty repository and an unknown package without an error, and over a seeded package `Stored` lists exactly what the repository serves, newest arrival first, within its limit, with tags only when asked. The vulnerability check of M4b, which the spec numbered 11, becomes 12 (it is not built). Q-ARCH-236 had rejected an eleventh check to avoid that renumbering; the view adapter is a contract of its own and does not fit check 8.
+
+**Rationale:** the review's point was that the contract was written in three places (a method, an optional interface, a bridge). The development agent revisits this when a second format with a view is built and the kit's sample cannot express its order.
+
+**Applied in the spec:** R-ARCH-008 (the `ViewAdapter` block), R-ARCH-010 (check 11), Q-EP-61 and Q-EP-63 (amended), Q-EP-66, Q-EP-67. Code: `internal/formats/view.go`, `internal/formathost/view.go`, `internal/formathost/bind.go` (`FormatData`), `internal/app/wire_formats.go` (`wireFormatPorts`), `internal/app/wire_exposure.go`, `internal/authz/exposure_service.go`, `internal/formats/formattest/checks_view.go`, `internal/formats/npm/npmtest/view.go`. Tests: `TestR_EP_016_ViewAdaptersListStoredVersionsOfLocalAndRemoteRepositories`, `TestR_ARCH_010_Check11ViewAdapter`, `TestR_ARCH_010_Conformance` (npm, check 11), `TestR_EP_016_NPMAdapterListsStoredVersions`.
+
+### Q-ARCH-254 · The written contract equals the code, and a capability is not found by a type assertion
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the R-ARCH-008 block lacked `CacheView`, `Log`, `HostState` and `VerifyAnnouncedDigests`, and the spec said "Action" where the field is `authz.Action`; nothing compared them. Two places in `formathost` asked a remote adapter what else it could do (`formats.ArtifactGate`, `formats.TypeExpecter`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A test parses the Go blocks of R-ARCH-008/009 and compares them with the package; an archtest rule bans the assertion; the two optional interfaces become methods of `RemoteAdapter` with defaults in `RemoteBase` (chosen) | `TestR_ARCH_008_TheWrittenContractEqualsTheCode`: for every type the blocks declare, the exported fields and interface methods, the methods the code attaches, the functions and constants; `TestR_ARCH_008_EveryExportedTypeOfTheContractIsNamedInTheSpec`; `archtest.CheckContractAssertions` fails an assertion or a type-switch case to an interface of `internal/formats` outside `Register` | A drift fails with one line per difference at the commit that causes it; a capability cannot be forgotten silently | The blocks are parsed, so they stay valid Go |
+| (b) Generate the block from the code | A generator | No drift | The block is prose-annotated; the generator would drop the comments the contract needs |
+| (c) Record the two capabilities at `Register` | A struct of capabilities | Format code stays unchanged | A second place to know; the kit could not fail a missing one |
+
+**Choice:** (a). Neither assertion was a genuine extension point: `TypeExpecter` and `ArtifactGate` are what every remote format answers (npm implements both, others need the defaults), so they are `RemoteAdapter.ExpectsType` and `RemoteAdapter.BeforeArtifact`, and the interfaces are gone. The rule's allow-list holds `internal/formats.Register` only, with its reason, and takes further entries with a comment. The anonymous `interface{ Gate(...) }` assertion on the remote fetcher in `formathost/virtual.go` is an interface of `formathost`, not of the contract; the rule does not cover it.
+
+**Rationale:** the contract freezes at the end of M3 (E3.3); this is the cheapest moment to make the written and the compiled contract one thing. The development agent revisits this when a block needs a construct the parser rejects, then with a golden file.
+
+**Applied in the spec:** R-ARCH-008 (blocks and the paragraph after them), R-ARCH-010. Code: `internal/formats/contract_spec_test.go`, `internal/archtest/contract.go`, `internal/formats/remote.go`, `internal/formathost/remote.go`, `internal/formats/npm/remote.go`. Tests: `TestContractAssertions`, `TestRealTree`.
+
+### Q-ARCH-255 · Shared code says tags, not dist-tags
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the exposure rules and the check use "dist-tags", an npm word, as a Go identifier in shared code (`authz.ExposureRuleInput.DistTags`, `ExposureCheckResult.DistTags`, `ruleDims.DistTags`, the fields of the management API's rule and check types), while the catalog speaks of `Exposure.Tags` and the API of `distTags`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Rename the Go identifiers to `Tags`; leave the JSON name `distTags`, the database column `dist_tags` and the generated types (chosen) | `Tags` in `internal/authz` and `internal/api/v1` | No format word in shared code; no change a client or a migration sees | The wire name and the column keep the npm word |
+| (b) Rename everything | JSON, column, OpenAPI | One word | A breaking API change before 1.0 for a naming reason; a migration |
+| (c) Leave it | — | No work | Every second format with tags inherits the npm word |
+
+**Choice:** (a). The public API field `distTags` stays (R-API-003 compatibility); the column and the sqlc-generated rows stay as the schema names them (`dist_tags`); `ruleRow` mirrors the sqlc row and keeps the column's name.
+
+**Rationale:** the Go names are the part a second format reads. The development agent revisits this with the OpenAPI revision that adds a second format with tags.
+
+**Applied in the spec:** none (no behaviour). Code: `internal/authz/exposure.go`, `exposure_service.go`, `internal/api/v1/endpoints_api.go`.
 
 ## What this does not cover
 

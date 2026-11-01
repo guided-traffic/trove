@@ -78,3 +78,28 @@ func TestR_AUTHZ_013_ASetupTokenFillsAndReadsARemoteMemberThroughTheVirtualRepos
 		t.Errorf("the remote member addressed directly: %d %.200s", direct.Status, direct.Body)
 	}
 }
+
+// TestR_AUTHZ_013_ASetupTokenRunsTheAuditThroughTheVirtualRepository: the forwarding member of a
+// virtual repository is asked for read on behalf of the virtual repository the client
+// addressed, so the token of the setup page, scoped to that repository by its exact key, runs
+// `npm audit` through it. The member addressed directly stays outside the scope (Q-ARCH-252).
+func TestR_AUTHZ_013_ASetupTokenRunsTheAuditThroughTheVirtualRepository(t *testing.T) {
+	r := newRemoteEnv(t, remoteOptions{})
+	rep := r.start(1)[0]
+	if a := r.view(rep, rRemote, "lodash", r.tokA); a.Status != 200 {
+		t.Fatalf("fetch lodash: %d %s", a.Status, a.Body)
+	}
+	r.stub.Reset()
+	tok := r.st.Token(r.alice, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{rAll}, Actions: []string{"read"}}}})
+
+	a := r.postAudit(rep, rAll, tok, `{"lodash":["4.17.20"]}`, false)
+	if a.Status != 200 {
+		t.Fatalf("the audit through %s: %d %s", rAll, a.Status, a.Body)
+	}
+	if got := askedOf(t, r.stub.Audits(), 0); strings.Join(got, ",") != "lodash" {
+		t.Fatalf("the provider was asked about %v", got)
+	}
+	if direct := r.postAudit(rep, rRemote, tok, `{"lodash":["4.17.20"]}`, false); direct.Status != 404 {
+		t.Errorf("the audit addressed to the remote member directly: %d %s", direct.Status, direct.Body)
+	}
+}

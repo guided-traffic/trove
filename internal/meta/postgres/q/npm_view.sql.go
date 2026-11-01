@@ -160,7 +160,9 @@ func (q *Queries) NPMViewStoredLocal(ctx context.Context, arg NPMViewStoredLocal
 const nPMViewStoredRemote = `-- name: NPMViewStoredRemote :many
 SELECT v.version::text AS version
   FROM npm_remote_versions v
- WHERE v.repo_id = $1::bigint AND v.name = $2::text AND v.listed
+  JOIN repositories r ON r.id = v.repo_id
+ WHERE v.repo_id = $1::bigint AND v.name = $2::text
+   AND (v.listed OR COALESCE(r.config #>> '{npm,serveRemovedVersions}', '') = 'true')
  ORDER BY v.published_at DESC NULLS LAST, v.version DESC
  LIMIT $3::int
 `
@@ -171,8 +173,9 @@ type NPMViewStoredRemoteParams struct {
 	MaxRows int32
 }
 
-// The versions a remote repository lists of a package, from the cached document,
-// newest published first (unknown times last), at most max_rows.
+// The versions a remote repository serves of a package, from the cached document,
+// newest published first (unknown times last), at most max_rows. A version the document
+// no longer lists is served only with serveRemovedVersions (R-NPM-026).
 func (q *Queries) NPMViewStoredRemote(ctx context.Context, arg NPMViewStoredRemoteParams) ([]string, error) {
 	rows, err := q.db.Query(ctx, nPMViewStoredRemote, arg.RepoID, arg.Name, arg.MaxRows)
 	if err != nil {

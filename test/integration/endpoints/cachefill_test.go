@@ -89,7 +89,7 @@ func (relayFormat) WriteError(w http.ResponseWriter, r *http.Request, err error)
 }
 
 // relayRemote fetches a path below the upstream URL.
-type relayRemote struct{}
+type relayRemote struct{ formats.RemoteBase }
 
 func (relayRemote) UpstreamRequest(ctx context.Context, rc formats.RemoteContext, p formats.Path, _ string) (*http.Request, error) {
 	return http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(rc.Upstream.String(), "/")+"/"+p.Path, nil)

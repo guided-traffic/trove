@@ -80,6 +80,16 @@ func (a *App) decider() authz.Decider {
 	return e
 }
 
+// readScoper is the decision point as the unaudited read scope of a listing (authz.ReadScoper);
+// nil on a replica without the authz area.
+func (a *App) readScoper() authz.ReadScoper {
+	e := part[authzArea](a.parts).engine
+	if e == nil {
+		return nil
+	}
+	return e
+}
+
 // authzServices are the services the permission operations of the management API
 // use; a member is nil on a replica without the authz area.
 func (a *App) authzServices() v1.AuthzServices {

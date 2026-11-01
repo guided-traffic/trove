@@ -33,6 +33,7 @@ func conformance() formattest.Fixture {
 			formattest.CheckHeaders:   "no routes: the content headers of /files/ are tested with the generic layer (R-STOR-012)",
 			formattest.CheckRevision:  "no package rows: the format writes none and keeps no hook",
 			formattest.CheckNames:     "no package names",
+			formattest.CheckView:      "no package screens: the format has no view adapter, its files are listed by the generic layer",
 		},
 	}
 }
@@ -47,7 +48,7 @@ func TestR_ARCH_010_Conformance(t *testing.T) {
 // class or package names fails them.
 func TestR_ARCH_010_ConformanceSkipsAreHonest(t *testing.T) {
 	rep := formattest.Evaluate(Format{}, conformance())
-	for c := formattest.CheckAmbiguity; c <= formattest.CheckNames; c++ {
+	for c := formattest.CheckAmbiguity; c <= formattest.CheckView; c++ {
 		res := rep.Result(c)
 		switch c {
 		case formattest.CheckTraversal, formattest.CheckClassify, formattest.CheckSetup:

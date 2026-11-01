@@ -115,10 +115,11 @@ func (s *Store) ViewWithheld(ctx context.Context, repos []string) ([]int64, erro
 }
 
 // ViewStored lists the versions a repository serves of a package and, for a hosted
-// repository, its dist-tags (the dry run of the exposure rules, R-EP-016). A remote
-// repository lists the versions of its cached document; the tags of that document
-// are not stored in a column, so it reports none.
-func (s *Store) ViewStored(ctx context.Context, repoID int64, name string, remote bool, limit int) ([]string, map[string]string, error) {
+// repository, its dist-tags when withTags is set (the dry run of the exposure rules,
+// R-EP-016). A remote repository lists the versions of its cached document, an
+// unlisted one too when the repository serves removed versions; the tags of that
+// document are not stored in a column, so it reports none.
+func (s *Store) ViewStored(ctx context.Context, repoID int64, name string, remote bool, limit int, withTags bool) ([]string, map[string]string, error) {
 	maxRows := int32(min(max(limit, 0), math.MaxInt32))
 	var versions []string
 	var tags map[string]string
@@ -133,6 +134,9 @@ func (s *Store) ViewStored(ctx context.Context, repoID int64, name string, remot
 		}
 		if versions, err = qs.NPMViewStoredLocal(ctx, q.NPMViewStoredLocalParams{RepoID: repoID, Name: name, MaxRows: maxRows}); err != nil {
 			return err
+		}
+		if !withTags {
+			return nil
 		}
 		rs, err := qs.NPMDistTags(ctx, q.NPMDistTagsParams{RepoID: repoID, Name: name})
 		if err != nil || len(rs) == 0 {

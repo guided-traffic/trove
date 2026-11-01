@@ -21,7 +21,7 @@ type viewPort interface {
 	ViewDetails(ctx context.Context, ids []int64, withReadme bool) ([]rows.ViewDetail, error)
 	ViewFind(ctx context.Context, repos []string, text, keyword string, limit int) ([]int64, error)
 	ViewWithheld(ctx context.Context, repos []string) ([]int64, error)
-	ViewStored(ctx context.Context, repoID int64, name string, remote bool, limit int) ([]string, map[string]string, error)
+	ViewStored(ctx context.Context, repoID int64, name string, remote bool, limit int, tags bool) ([]string, map[string]string, error)
 }
 
 // View returns the format's part of the package screens (R-API-029).
@@ -29,24 +29,24 @@ func (f *Format) View() formats.ViewAdapter { return viewAdapter{} }
 
 type viewAdapter struct{}
 
-var (
-	_ formats.ViewAdapter  = viewAdapter{}
-	_ formats.StoredLister = viewAdapter{}
-)
+var _ formats.ViewAdapter = viewAdapter{}
 
 // Stored lists what the repository serves of the package (R-EP-016): the versions
-// of a hosted repository with its dist-tags, the cached versions of a remote one.
-// A virtual repository stores nothing of its own, so it lists none.
-func (viewAdapter) Stored(ctx context.Context, ports formats.DataPorts, repo formats.RepoRef, pkg string, limit int) (formats.Stored, error) {
-	if repo.Class != formats.Local && repo.Class != formats.Remote {
+// of a hosted repository in arrival order, newest first, with its dist-tags when
+// asked, the versions of the cached document of a remote one, newest published
+// first. An unlisted version of a remote repository counts when the repository
+// serves removed versions (R-NPM-026); a deprecated version always counts. A
+// virtual repository stores nothing of its own, so it lists none.
+func (viewAdapter) Stored(ctx context.Context, ports formats.DataPorts, q formats.StoredQuery) (formats.Stored, error) {
+	if q.Repo.Class != formats.Local && q.Repo.Class != formats.Remote {
 		return formats.Stored{}, nil
 	}
 	p, err := portOf(ports)
 	if err != nil {
 		return formats.Stored{}, err
 	}
-	versions, tags, err := p.ViewStored(ctx, repo.ID, pkg, repo.Class == formats.Remote, limit)
-	return formats.Stored{Listed: err == nil, Versions: versions, Tags: tags}, err
+	versions, tags, err := p.ViewStored(ctx, q.Repo.ID, q.Package, q.Repo.Class == formats.Remote, q.Limit, q.Tags)
+	return formats.Stored{Versions: versions, Tags: tags}, err
 }
 
 func portOf(ports formats.DataPorts) (viewPort, error) {

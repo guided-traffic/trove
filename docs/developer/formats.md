@@ -15,6 +15,12 @@ their own sections below: [Conformance kit](#conformance-kit) and [Untrusted con
   ([imports.go](../../internal/archtest/imports.go)) lets a format import the contract, `formats/catalog`, `formats/untrusted`, `errs`,
   `config` and `observability`. Core types reach it as aliases of the contract (`formats.Action`, `formats.Path`, `formats.Tx`) and
   as fields of the request (`rq.Subject`, `rq.Index`, `rq.Repo`), so it never names `authz`, `repository` or `meta`.
+
+**Requests for members and targets.** `rq.Repo` is the repository the call acts on; `rq.Addressed()` is the key the client addressed (a virtual repository on a request
+for one of its members, else `rq.Repo.Key`) and the `Coordinate.Addressed` of every decision the Host makes about the request. A format never sets it: it derives a request
+with `rq.Member(m)` (a member of `rq.Repo`; refused for a repository that is none; the audit forwarder of npm does so) or `rq.WriteTarget(t)` (a read that stands for a
+write, `GET {name}?write=true`: no addressed key, so a token scope has to name the deployment target). The unexported field behind it is the only state, and the
+only writer is `Member` (Q-ARCH-252, [Q-AUTHZ-165](../spec/authorization.md)).
 - **A format runs no SQL.** Its generic package rows go through the `PackageWriter` the event or `Host.Write` hands it; its own side
   tables go through a data port it declares (`Descriptor.DataPort`), implemented by a domain package
   (`internal/formatdata/<id>`) and bound by the composition root ([Q-ARCH-193](../spec/architecture.md#decisions)). The `Tx` it
@@ -59,7 +65,7 @@ their own sections below: [Conformance kit](#conformance-kit) and [Untrusted con
 |---|---|
 | [internal/formats/catalog](../../internal/formats/catalog/) | The facts of every format, the name rule, the exposure facts and the compiled settings schema with `Entry.ValidateSettings` (a leaf layer); `Register` fills it |
 | [internal/formats/untrusted](../../internal/formats/untrusted/) | `Limits`, `DefaultLimits`, `Tighten`, and the bounded readers of R-ARCH-028 (see [Untrusted content](#untrusted-content)) |
-| [internal/formats/formattest](../../internal/formats/formattest/) | The conformance kit: the in-memory `Host`, the ten checks, the fuzz helpers (see [Conformance kit](#conformance-kit)); `crafted/` generates the hostile inputs, `testformat/` is the kit's own format with one named defect per check |
+| [internal/formats/formattest](../../internal/formats/formattest/) | The conformance kit: the in-memory `Host`, the eleven checks, the fuzz helpers (see [Conformance kit](#conformance-kit)); `crafted/` generates the hostile inputs, `testformat/` is the kit's own format with one named defect per check |
 | [internal/formats/generic](../../internal/formats/generic/) | The generic format: no routes, `Classify`, a paths-only exposure adapter, the curl setup templates ([setup.go](../../internal/formats/generic/setup.go)) and the guide of curl ([guide.go](../../internal/formats/generic/guide.go), [guide/](../../internal/formats/generic/guide/)) |
 | [internal/formats/all](../../internal/formats/all/all.go) | Registers every format at compile time (R-ARCH-010) |
 | [internal/httpserver/content](../../internal/httpserver/content/content.go) | The content-header wrapper (`File`, `Index`, `Document`); `httpserver.ContentWriterFor` is the request-aware call |
@@ -76,11 +82,14 @@ listed on the screens. The adapter orders the versions (`Compare`, `Prerelease`)
 (`Describe`: description, keywords, licenses, the README flag, the metadata and, when asked, the README), answers the two searches that need the format's
 data (`Find`) and names the stored versions it does not serve (`Withheld`). It runs no SQL: it reaches its tables through the data port the host hands it
 (`formats.DataPorts`, the part of `Host` that is `FormatData`). `Validate` refuses a view without package names. The read model that calls the adapter, and
-the bridge to it (`formathost.NewViewAdapters`), are in [packages.md](packages.md). To give a format a view: implement the five methods in `view.go` of the
+the bridge to it (`formathost.NewViewAdapters`), are in [packages.md](packages.md). To give a format a view: implement the six methods in `view.go` of the
 format, add the statements to the format's data package and the matching methods to its port, and add the port interface the adapter asserts (`viewPort` in
-[npm view.go](../../internal/formats/npm/view.go)). An adapter may also implement the optional `formats.StoredLister` (`Stored`): what one repository stores of one
-package, its versions and tags. The dry run of an endpoint's exposure rules calls it when a check names no versions (R-EP-016, Q-EP-61; the bridge is
-[internal/app/stored_packages.go](../../internal/app/stored_packages.go)); a format without it lists nothing and the check says so.
+[npm view.go](../../internal/formats/npm/view.go)). `Stored` is the sixth method: what one local or remote repository serves of one package, newest first (arrival for a hosted repository, publish time for a
+remote one, otherwise `Compare` descending), and its tags only when the query asks (the catalog says the format has tags). "Serves" means answerable by a request for
+the exact version, so unlisted and deprecated versions count and withheld ones do not (Q-EP-67). The dry run of an endpoint's exposure rules calls it when a check
+names no versions (R-EP-016, Q-EP-61); the bridge is `formathost.ViewAdapters.Stored`, which is the `authz.StoredPackages` of the rule service, and it asks neither a
+virtual repository nor a format without an adapter. Kit check 11 holds the adapter (`Compare` a total order over the fixture's sample versions, `Withheld` and
+`Stored` over an empty repository and over a seeded package).
 
 ## The registry
 
@@ -288,7 +297,7 @@ The fixture ([kit.go](../../internal/formats/formattest/kit.go)) holds what only
 | `OptionNames` | 8 | Literal client option names a template may spell although they contain `token`, `password` or `_auth` |
 | `Skip` | all | The checks that do not apply, each with the reason |
 
-### The ten checks
+### The eleven checks
 
 | # | The kit does | Fails when |
 |---|---|---|
@@ -339,7 +348,7 @@ kit's cases, and a format may answer such an input with its own 400.
 
 ### The test format and its defects
 
-[testformat](../../internal/formats/formattest/testformat/format.go) is a complete small format that passes all ten checks (`testformat.New()` with `testformat.Fixture()`), and a named
+[testformat](../../internal/formats/formattest/testformat/format.go) is a complete small format that passes the checks (`testformat.New()` with `testformat.Fixture()`; it has no package screens, so check 11 is skipped there and the kit's own tests give it a view adapter, `kit_view_test.go`), and a named
 `Defect` per check that breaks the rule the check exists for (`AmbiguousRoutes`, `CleaningMatch`, `ContentMetadata`, `NondeterministicRewrite`, `UpstreamLeak`, `MergeLastWins`,
 `InspectAccepts`, `InspectWrongKind`, `InspectHeap`, `TarballVolatile`, `TemplateCredential`, `NoInstallTemplate`, `NoGuide`, `GuideCredential`, `TagWithoutRevision`,
 `NamesCaseSensitive`, `WrongDocumentPath`). [format_test.go](../../internal/formats/formattest/testformat/format_test.go) asserts that each defect fails the check the spec names, plus the checks that cannot

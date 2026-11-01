@@ -42,7 +42,7 @@ and logs a warning. A `worker` has no socket on `:8080`; a test proves it
 
 A role also has wiring **areas** (`Subsystems.Areas`), which are the steps of the list that run in it. Every serving
 role has the infrastructure areas (`keys`, `postgres`, `audit`, `blob`, `valkey`, `coordination`, `infra`) and the domain
-areas of its jobs (`keyring`, `exposure`, `repository`, `virtual`, `invalidation`, `proxy`, `identity`, `authz`, `ownership`, `formats`, `files`); a role with a
+areas of its jobs (`keyring`, `formatports` (the data ports of the formats and the view adapters over them, before `exposure` because the rule service takes the adapters as its source of stored versions, Q-ARCH-253), `exposure`, `repository`, `virtual`, `invalidation`, `proxy`, `identity`, `authz`, `ownership`, `formats`, `files`); a role with a
 client listener (`web`, `all`) has the areas of the listener on top (`limits`, `sessions`, `login`, `auth`, `endpoints`,
 `api`, `formathost`). A `worker` therefore runs the deletion, token and fold jobs on the same services a web replica has, and builds no
 session store, login or limiter. The **shell

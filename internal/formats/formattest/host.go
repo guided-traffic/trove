@@ -103,6 +103,9 @@ type Host struct {
 type AuthorizeCall struct {
 	Route  string
 	Target formats.Target
+	// Repo is the repository the request acted on and Addressed the repository the client
+	// addressed (they differ on a request derived for a member, Q-ARCH-252).
+	Repo, Addressed string
 }
 
 // ClaimCall is one call of PackageWriter.Claim.
@@ -224,7 +227,7 @@ func (h *Host) id() int64 {
 // Authorize implements formats.Host.
 func (h *Host) Authorize(_ context.Context, rq *formats.Request, t formats.Target) error {
 	h.mu.Lock()
-	h.authz = append(h.authz, AuthorizeCall{Route: rq.Route.Name, Target: t})
+	h.authz = append(h.authz, AuthorizeCall{Route: rq.Route.Name, Target: t, Repo: rq.Repo.Key, Addressed: rq.Addressed()})
 	h.mu.Unlock()
 	if h.opts.Allow != nil {
 		return h.opts.Allow(t)

@@ -165,6 +165,9 @@ func Fixture() formattest.Fixture {
 			{Spellings: []string{"left-pad", "Left-Pad", "LEFT-PAD"}},
 			{Spellings: []string{"@scope/name", "@Scope/Name"}},
 		},
+		Skip: map[formattest.Check]string{
+			formattest.CheckView: "the test format has no package screens; the kit's own tests give it a view adapter (kit_view_test.go)",
+		},
 	}
 }
 

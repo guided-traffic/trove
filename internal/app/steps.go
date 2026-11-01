@@ -153,6 +153,7 @@ func wiringSteps() []step {
 		newStep(AreaCoordination, everyRole, (*App).wireCoordination),
 		newStep(AreaInfra, everyRole, (*App).wireInfra),
 		newStep(AreaKeyRing, everyRole, (*App).wireKeyRing),
+		newStep(AreaFormatPorts, everyRole, (*App).wireFormatPorts),
 		newStep(AreaExposure, everyRole, (*App).wireExposure),
 		newStep(AreaRepository, everyRole, (*App).wireRepository),
 		newStep(AreaVirtual, everyRole, (*App).wireVirtual),

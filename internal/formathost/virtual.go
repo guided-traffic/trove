@@ -157,13 +157,10 @@ type tiers struct {
 
 var _ virtual.Tiers = tiers{}
 
-func (t tiers) forMember(m virtual.Member) *formats.Request {
-	c := *t.rq
-	c.Repo = &m.Repo
-	if c.Via == "" {
-		c.Via = t.rq.Repo.Key
-	}
-	return &c
+// forMember is the request made for a member of the addressed virtual repository: the Addressed
+// of its decisions stays the repository the client named (Q-AUTHZ-165, Q-ARCH-252).
+func (t tiers) forMember(m virtual.Member) (*formats.Request, error) {
+	return t.rq.Member(&m.Repo)
 }
 
 func (t tiers) serve(ctx context.Context, it formats.Item) virtual.Hit {
@@ -195,7 +192,10 @@ func (t tiers) Local(ctx context.Context, m virtual.Member, _ virtual.Descriptor
 }
 
 func (t tiers) RemoteCached(ctx context.Context, m virtual.Member, _ virtual.Descriptor) (virtual.Hit, bool, error) {
-	member := t.forMember(m)
+	member, err := t.forMember(m)
+	if err != nil {
+		return nil, false, err
+	}
 	it, ok, err := t.rq.Host.Remote().Cached(ctx, member, t.p)
 	if err != nil || !ok {
 		return nil, false, err
@@ -216,7 +216,11 @@ func (t tiers) RemoteCached(ctx context.Context, m virtual.Member, _ virtual.Des
 }
 
 func (t tiers) RemoteFetch(ctx context.Context, m virtual.Member, _ virtual.Descriptor, w http.ResponseWriter) (bool, error) {
-	err := t.rq.Host.Remote().Artifact(ctx, t.forMember(m), t.p, formats.Digests{}, w)
+	member, err := t.forMember(m)
+	if err != nil {
+		return false, err
+	}
+	err = t.rq.Host.Remote().Artifact(ctx, member, t.p, formats.Digests{}, w)
 	return err == nil, err
 }
 

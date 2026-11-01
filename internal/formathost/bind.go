@@ -52,6 +52,10 @@ func (b *Bindings) Get(id formats.ID) any {
 	return b.by[id]
 }
 
+// FormatData implements [formats.DataPorts]: the package view of a format reads its
+// side tables through it, before the Host exists (Q-ARCH-253).
+func (b *Bindings) FormatData(id formats.ID) any { return b.Get(id) }
+
 // Check verifies the bindings against the descriptors of the given formats: every
 // DataPort has a binding that implements it, and no binding is left over. The
 // error names every format at fault, so a start-up failure says what to bind.

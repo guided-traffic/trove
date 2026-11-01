@@ -256,7 +256,7 @@ func (r *Resolver) remoteSlot(ctx context.Context, c Caller, p *Plan, m Merger, 
 // call names a request to a remote member.
 func (r *Resolver) call(c Caller, v repository.Repository, mem Member, d Descriptor) RemoteCall {
 	return RemoteCall{
-		Remote: mem.Repo, Via: v, Path: d.Path, Variant: d.Variant, Package: d.Package,
+		Remote: mem.Repo, Addressed: v, Path: d.Path, Variant: d.Variant, Package: d.Package,
 		Subject: c.Subject, Endpoint: c.Subject.Endpoint, MayFill: mem.MayFill,
 	}
 }

@@ -162,6 +162,7 @@ func coordinate(rq *formats.Request, t formats.Target) authz.Coordinate {
 	return authz.Coordinate{
 		Repository: rq.Repo.Key, Class: rq.Repo.Class, Format: rq.Repo.Format,
 		Kind: rq.Route.Kind.RequestKind(), Path: t.Path, Package: t.Package, Version: t.Version, Actions: t.Actions,
+		Addressed: rq.Addressed(),
 	}
 }
 

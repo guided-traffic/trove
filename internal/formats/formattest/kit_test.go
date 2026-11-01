@@ -94,6 +94,7 @@ func TestR_ARCH_010_KitSkips(t *testing.T) {
 		formattest.CheckMerge: "no virtual class", formattest.CheckInspect: "Inspect reads no archive",
 		formattest.CheckHeaders: "no routes", formattest.CheckSetup: "no clients",
 		formattest.CheckRevision: "no package rows", formattest.CheckNames: "no package names",
+		formattest.CheckView: "no package screens",
 	}
 	fx := formattest.Fixture{
 		Paths: []formattest.PathCase{{Path: "a/b.bin", Want: formats.PathInfo{Kind: formats.Content}}},
@@ -126,7 +127,7 @@ func TestR_ARCH_010_KitSkips(t *testing.T) {
 		rep := formattest.Evaluate(bare{}, formattest.Fixture{})
 		want := []formattest.Check{
 			formattest.CheckAmbiguity, formattest.CheckClassify, formattest.CheckRewrite, formattest.CheckMerge, formattest.CheckInspect,
-			formattest.CheckHeaders, formattest.CheckSetup, formattest.CheckRevision, formattest.CheckNames,
+			formattest.CheckHeaders, formattest.CheckSetup, formattest.CheckRevision, formattest.CheckNames, formattest.CheckView,
 		}
 		got := rep.Failed()
 		if len(got) != len(want) {

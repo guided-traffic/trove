@@ -35,11 +35,11 @@ func (f *fixture) exposure(d ruleDef) *fixture {
 	if d.revision == 0 {
 		d.revision = 1
 	}
-	n := normInput(ExposureRuleInput{Packages: d.dims.Packages, Paths: d.dims.Paths, Versions: d.dims.Versions, DistTags: d.dims.DistTags})
+	n := normInput(ExposureRuleInput{Packages: d.dims.Packages, Paths: d.dims.Paths, Versions: d.dims.Versions, Tags: d.dims.Tags})
 	f.s.Exposure = append(f.s.Exposure, q.EndpointsExposureBuildRow{
 		ID: "rule-" + d.endpoint + "-" + d.name, Endpoint: d.endpoint, Name: d.name, RepoID: id, Enabled: !d.disabled,
 		Packages: mustText(n.Packages), Paths: mustText(n.Paths), Versions: mustText(n.Versions),
-		Prereleases: d.dims.Prereleases, DistTags: mustText(n.DistTags), Revision: d.revision,
+		Prereleases: d.dims.Prereleases, DistTags: mustText(n.Tags), Revision: d.revision,
 	})
 	return f
 }
@@ -132,8 +132,8 @@ func ptr[T any](v T) *T { return &v }
 func TestR_EP_012_RuleMatching(t *testing.T) {
 	compile := func(t *testing.T, d ruleDims, enabled bool) *compiledRule {
 		t.Helper()
-		n := normInput(ExposureRuleInput{Packages: d.Packages, Paths: d.Paths, Versions: d.Versions, DistTags: d.DistTags})
-		d.Packages, d.Paths, d.Versions, d.DistTags = n.Packages, n.Paths, n.Versions, n.DistTags
+		n := normInput(ExposureRuleInput{Packages: d.Packages, Paths: d.Paths, Versions: d.Versions, Tags: d.Tags})
+		d.Packages, d.Paths, d.Versions, d.Tags = n.Packages, n.Paths, n.Versions, n.Tags
 		r, err := compileRule("id", "r", 1, enabled, d, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -213,7 +213,7 @@ func TestR_EP_012_RuleMatching(t *testing.T) {
 		}
 	})
 	t.Run("R-EP-012 a tag is visible when the rule admits the tag name", func(t *testing.T) {
-		r := compile(t, ruleDims{DistTags: PatternLists{Include: []string{"latest", "lts"}}, Prereleases: true}, true)
+		r := compile(t, ruleDims{Tags: PatternLists{Include: []string{"latest", "lts"}}, Prereleases: true}, true)
 		for tag, want := range map[string]bool{"latest": true, "lts": true, "next": false} {
 			if got := admitsItem([]*compiledRule{r}, exposureItem{pkg: "p", tag: tag}, semverish{}); got != want {
 				t.Errorf("%s: %v", tag, got)
@@ -224,8 +224,8 @@ func TestR_EP_012_RuleMatching(t *testing.T) {
 
 func TestR_EP_016_ExplainReasons(t *testing.T) {
 	mk := func(name string, enabled bool, d ruleDims) *compiledRule {
-		n := normInput(ExposureRuleInput{Packages: d.Packages, Paths: d.Paths, Versions: d.Versions, DistTags: d.DistTags})
-		d.Packages, d.Paths, d.Versions, d.DistTags = n.Packages, n.Paths, n.Versions, n.DistTags
+		n := normInput(ExposureRuleInput{Packages: d.Packages, Paths: d.Paths, Versions: d.Versions, Tags: d.Tags})
+		d.Packages, d.Paths, d.Versions, d.Tags = n.Packages, n.Paths, n.Versions, n.Tags
 		r, err := compileRule("id-"+name, name, 1, enabled, d, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -429,7 +429,7 @@ func TestR_EP_018_ExposureView(t *testing.T) {
 	f.exposure(ruleDef{endpoint: "customers", name: "acme-sdk", repo: "npm-fixture", dims: ruleDims{
 		Packages: PatternLists{Include: []string{"@acme/sdk", "@acme/sdk-*"}, Exclude: []string{"@acme/sdk-internal"}},
 		Versions: VersionLists{Exclude: []string{"2.0.1"}, Range: ptr(">=2.0.0")},
-		DistTags: PatternLists{Include: []string{"latest", "lts"}},
+		Tags:     PatternLists{Include: []string{"latest", "lts"}},
 	}})
 	f.exposure(ruleDef{endpoint: "customers", name: "nuget", repo: "nuget-local", dims: ruleDims{}})
 	e := newTestEngine(t, f, func(o *Options) { o.Ceiling = exposureCeiling() })
@@ -638,7 +638,7 @@ func TestR_EP_012_Validation(t *testing.T) {
 	t.Run("R-EP-014 R-EP-018 the dimensions a format supports", func(t *testing.T) {
 		in := ExposureRuleInput{
 			Name: "r", Repository: "generic-local", Packages: PatternLists{Include: []string{"x"}},
-			Versions: VersionLists{Include: []string{"1.*"}}, Prereleases: true, DistTags: PatternLists{Include: []string{"latest"}},
+			Versions: VersionLists{Include: []string{"1.*"}}, Prereleases: true, Tags: PatternLists{Include: []string{"latest"}},
 		}
 		want := []string{"/packages dimension_not_supported", "/versions dimension_not_supported", "/prereleases dimension_not_supported", "/distTags dimension_not_supported"}
 		if got := codes(s.validateForFormat(in, "generic", "")); !slices.Equal(got, want) {

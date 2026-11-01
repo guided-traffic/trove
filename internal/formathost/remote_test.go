@@ -136,6 +136,13 @@ func TestR_REPO_023_ARemoteRepositoryRefusesANameAGlobalClaimCoversEvenWhenAddre
 
 type typedRemote struct{ formats.RemoteAdapter }
 
+// declaresNothing is a remote adapter that embeds the defaults of the contract.
+type declaresNothing struct{ formats.RemoteAdapter }
+
+func (declaresNothing) ExpectsType(p formats.Path, mediaType string) bool {
+	return formats.RemoteBase{}.ExpectsType(p, mediaType)
+}
+
 func (typedRemote) ExpectsType(p formats.Path, mediaType string) bool {
 	return p.Path == "doc" && mediaType == "text/html"
 }
@@ -145,7 +152,7 @@ func TestR_REPO_042_TheExpectedTypesOfTheFormatReachTheEngine(t *testing.T) {
 	if !a.ExpectsType("doc", "text/html") || a.ExpectsType("other", "text/html") {
 		t.Fatal("the adapter does not forward the format's declaration")
 	}
-	if (&adapter{ra: struct{ formats.RemoteAdapter }{}}).ExpectsType("doc", "text/html") {
+	if (&adapter{ra: declaresNothing{}}).ExpectsType("doc", "text/html") {
 		t.Fatal("a format that declares nothing expects nothing")
 	}
 }

@@ -29,11 +29,7 @@ func (f *Format) Remote() formats.RemoteAdapter { return remoteAdapter{f: f} }
 
 type remoteAdapter struct{ f *Format }
 
-var (
-	_ formats.RemoteAdapter = remoteAdapter{}
-	_ formats.ArtifactGate  = remoteAdapter{}
-	_ formats.TypeExpecter  = remoteAdapter{}
-)
+var _ formats.RemoteAdapter = remoteAdapter{}
 
 // TracksVersionRemoval is true: npm's removal marks (npm_remote_versions.listed)
 // replace the generic gone-package rule (R-REPO-029, R-NPM-026).

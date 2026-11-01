@@ -83,7 +83,7 @@ func TestR_EP_013_ExposureCeilingFromConfiguration(t *testing.T) {
 		"mirror":    {Listen: ":8444", BaseURL: "https://mirror.example.com", Exposure: "all"},
 	}
 	a := &App{cfg: cfg}
-	ex, err := a.wireExposure(t.Context(), infra{})
+	ex, err := a.wireExposure(t.Context(), infra{}, formatPortsArea{})
 	if err != nil {
 		t.Fatal(err)
 	}

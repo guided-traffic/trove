@@ -93,7 +93,7 @@ func TestR_NPM_024_UpstreamRequests(t *testing.T) {
 	if _, err := a.UpstreamRequest(context.Background(), rc, formats.Path{Path: "-/ping"}, ""); err == nil {
 		t.Error("a protocol operation was mapped to an upstream request")
 	}
-	x := a.(formats.TypeExpecter)
+	x := a
 	if !x.ExpectsType(formats.Path{Path: "lodash"}, "application/json") || x.ExpectsType(formats.Path{Path: "lodash"}, "text/html") ||
 		!x.ExpectsType(formats.Path{Path: "lodash/-/lodash-1.0.0.tgz"}, "application/octet-stream") {
 		t.Error("the expected media types")
@@ -243,7 +243,7 @@ func TestR_NPM_025_TheGateRevalidatesAStaleDocumentAndAppliesTheMarks(t *testing
 	ctx := context.Background()
 	eng := &scriptedRemote{}
 	h, twin, f := remoteHost(t, eng)
-	gate := f.Remote().(formats.ArtifactGate)
+	gate := f.Remote()
 	path := formats.Path{Path: "evil/-/evil-1.0.1.tgz"}
 	rq := requestFor(t, h, "evil/-/evil-1.0.1.tgz")
 

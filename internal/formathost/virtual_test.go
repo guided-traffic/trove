@@ -203,7 +203,7 @@ func newBridge(t *testing.T) *bridge {
 		t.Fatal(err)
 	}
 	host := fakeHost{items: &fakeItems{}, remote: &fakeRemote{}}
-	v := vt.VirtualRepo(9, "all", 7200, nil)
+	v := vt.VirtualRepo(9, "all", 7200, nil, vt.LocalRepo(1, "member-local"), vt.RemoteRepo(2, "member-remote"))
 	v.Format = "virtfmt"
 	rq := &formats.Request{
 		Request:  httptest.NewRequest(http.MethodGet, "/api/virtfmt/all/x", nil),

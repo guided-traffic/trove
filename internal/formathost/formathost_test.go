@@ -172,6 +172,7 @@ func TestR_ARCH_009_AuthorizeCompletesTheCoordinate(t *testing.T) {
 	want := authz.Coordinate{
 		Repository: "key", Class: repository.Local, Format: "probe", Kind: authz.KindArtifact,
 		Path: "left-pad/-/x.tgz", Package: "left-pad", Version: "1.0.0", Actions: []authz.Action{authz.Read},
+		Addressed: "key",
 	}
 	if !reflect.DeepEqual(d.got, want) {
 		t.Fatalf("coordinate = %+v\nwant         %+v", d.got, want)
