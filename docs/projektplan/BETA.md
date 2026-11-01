@@ -259,10 +259,16 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
 **High availability**
 - ⚪ Failure suite: pod crash, PostgreSQL switchover and failover, Valkey failover and outage, S3 outage, node loss
 - ⚪ Node drain under npm and NuGet load with zero failed requests
-- 🟡 npm load in the drain and failover tests reliably green (moved from phase 3, owner 2026-11-01): the leg `npm-ha`
-  passed once (run 41231246904); in runs 41235811145 and 41253578143 `web` pods of the 1 GiB dev profile were OOMKilled under
-  the drain's npm load although the memory guard is on, and in run 41322837920 the drain answered 30,041 of 59,558 k6 requests
-  with `503` or a timeout and counted a shutdown release as a job attempt. Open: the root cause and the fix
+- 🟡 npm load in the drain and failover tests reliably green (moved from phase 3, owner 2026-11-01). Diagnosis of
+  2026-11-01: `make e2e SET=npm-ha` passes on a 17-CPU kind cluster (drain: 40,894 k6 requests, 0 failures, every job at
+  attempt 1); with the kind nodes held to 6 CPUs the drain gets 1,062 `503`s, all `memory_slots` shedding of Q-ARCH-240 (no
+  OOM, heap 111 MB), and the PostgreSQL switchover fails too. The scenario needs about 12 cores. In CI run 41322837920 the
+  whole runner stalled for 40 s (worker loop silent, every backend timing out at once), the edge had no ready backend, leases
+  expired and the reaper counted the attempts (no counting defect). CPU profile of a `web` pod: 57 % in the virtual tarball
+  path, 35 % TLS writes, 30 % per-tarball PostgreSQL reads (`TarballFacts`, `items.read`, `proxy.getEntry`, `Tombstoned`).
+  Open: a per-replica cache of the immutable tarball facts, shedding by memory in use instead of a worst case per request
+  (after measuring a held download), the full settle deadline for the release writes at shutdown, and a load the runner
+  can carry
 - ⚪ The drain criterion of the security audit (R-NPM-038, moved from phase 3): the `web` pod that forwards an `npm audit`
   to a provider answering after 20 s is deleted 1 s in; `npm audit` succeeds and no pod gets `SIGKILL`
 - ⚪ The default of `health.shutdown_drain_delay` (5 s, proposed) set from the endpoint-removal time of the target Ingress measured under load; the dev profile needs 15 s on the CI runners (Actions run 41241903588)

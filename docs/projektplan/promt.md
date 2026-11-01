@@ -211,6 +211,14 @@ Found on 2026-11-01 while writing the manual (`docs/manual`) and the design chan
 
 ### Tests and tools
 
+- **F-19 · The failover set is red on the CI runners** (read, from the artifacts of run 41332313390, job `e2e on kind
+  (failover)`). `pg-kill.sh` took 296 s to recover; the CloudNativePG operator failed its readiness and liveness probes for
+  about 6 minutes, restarted three times and refused the webhook call of `pg-stop.sh`, so the later subtests ran without a
+  database. A `web` pod and both `worker` pods exited 1 and restarted once (no OOM; cause not established). The same kind of
+  CPU starvation as the npm-ha diagnosis in BETA.md phase 7. Since 2026-11-01 the set runs in `HA and Performance
+  (nightly)`. Done when the set is green there, or the exits of the trove pods are explained and fixed and the rest is shown
+  to be the runner's.
+
 - **F-17 · Leftovers of old tool versions on the owner's machine that need an admin password** (confirmed).
   On 2026-11-01 helm (4.3.1), kubectl (1.37.2), docker buildx (0.38.1), kind (0.33.0) and Node.js (26.13.0)
   were brought to their pins through Homebrew, and `make versions-check` prints `versions ok`. Left: two
