@@ -22,32 +22,8 @@ func stub(what string) formats.HandlerFunc {
 	return func(context.Context, *formats.Request, http.ResponseWriter) error { return notImplemented(what) }
 }
 
-func (f *Format) handleFlatIndex(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("the flat-container version list")(ctx, rq, w)
-}
-
-func (f *Format) handleNupkg(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("the package download")(ctx, rq, w)
-}
-
-func (f *Format) handleNuspec(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("the .nuspec download")(ctx, rq, w)
-}
-
 func (f *Format) handleEmbedded(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
 	return stub("the embedded files (P1, R-NUGET-024)")(ctx, rq, w)
-}
-
-func (f *Format) handleRegistrationIndex(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("the registration index")(ctx, rq, w)
-}
-
-func (f *Format) handleRegistrationPage(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("the registration page")(ctx, rq, w)
-}
-
-func (f *Format) handleRegistrationLeaf(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("the registration leaf")(ctx, rq, w)
 }
 
 func (f *Format) handleSearch(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {

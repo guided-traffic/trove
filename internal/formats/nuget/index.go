@@ -8,9 +8,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/guided-traffic/trove/internal/formats"
+	"github.com/guided-traffic/trove/internal/formats/nuget/document"
 )
 
 // RenderVersion is the version of the rendering of the documents of this format. It is part
@@ -100,18 +100,10 @@ func indexETag(rq *formats.Request, base string, publish bool) string {
 // ifNoneMatch reports whether an If-None-Match header holds the ETag, by the weak
 // comparison of RFC 9110 section 8.8.3.2. The wildcard never matches: a 200 costs bytes and
 // never correctness.
-func ifNoneMatch(header, etag string) bool {
-	want := strings.TrimPrefix(etag, "W/")
-	for _, part := range strings.Split(header, ",") {
-		if strings.TrimPrefix(strings.TrimSpace(part), "W/") == want {
-			return true
-		}
-	}
-	return false
-}
+func ifNoneMatch(header, etag string) bool { return document.IfNoneMatch(header, etag) }
 
 // jsonContentType is the Content-Type of every JSON document of the protocol (R-NUGET-002).
-const jsonContentType = "application/json; charset=utf-8"
+const jsonContentType = document.ContentType
 
 // handleIndex serves the service index at its three spellings with one body (R-NUGET-001,
 // R-NUGET-002). It is static per repository: nothing is read from storage, so the permission

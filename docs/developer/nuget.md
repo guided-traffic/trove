@@ -192,3 +192,40 @@ Not built here: the upload of the management API, copy and move (they reach `OnC
 Tests: `go test ./internal/formats/nuget/ ./internal/formats/nuget/nugettest/ ./internal/formatdata/nuget/` (push, unlist, delete, hooks and the kit's checks 6 and 9 with the twin),
 and [test/integration/nuget](../../test/integration/nuget) `push_test.go` against PostgreSQL and the object store (the rows, the events, the outbox, the replica counter, two replicas,
 concurrent pushes, a push racing a delete).
+
+## Rendered documents and package files
+
+The version list of the flat container, the three registration documents (index, page, leaf) in three hives, and the `.nupkg` and `.nuspec` of a version are
+served for local repositories (R-NUGET-008, R-NUGET-009). They read through the `Store` port and the Host's package rows, and write nothing.
+
+| File | Responsibility |
+|---|---|
+| [documents.go](../../internal/formats/nuget/documents.go) | `serveDocument`: the read permission on the ID, the exposure view, the revision lookup, the weak validator and the 304, the rendition cache, gzip, the reply; `docSpec` describes one document; `viewOf` is the exposure view of the request |
+| [handlers_flat.go](../../internal/formats/nuget/handlers_flat.go) | `handleFlatIndex` (the version list), `handleNupkg`, `handleNuspec` through `serveFile` (stat, serve with the protocol's media type) |
+| [handlers_registration.go](../../internal/formats/nuget/handlers_registration.go) | `handleRegistrationIndex`, `…Page`, `…Leaf`: one `Store.Registration` read, `registration.Visible` for the hive and the exposure, then `registration.Doc` |
+| [document](../../internal/formats/nuget/document/document.go) | The helpers every rendered document shares: `Marshal` (deterministic JSON), `Timestamp`, `VersionList`, `Gzip`, `AcceptsGzip`, `Inputs.ETag`, `IfNoneMatch`, `Reply.Write` (headers, HEAD without a body, the length of the variant sent) |
+| [registration](../../internal/formats/nuget/registration) | `Doc.Index`, `Doc.Page`, `Doc.Leaf`, `Visible` (hive and exposure filter), `Hive`, `Paging`, `Feed` (the URLs), `ParseMetadata` (the stored object) |
+
+Both packages are plain edge packages, not layer leaves: the format is their only caller, and `registration` imports `rows`, `id`, `version` and `document`.
+
+The path of a document request:
+
+1. `Authorize(read)` on the ID, then the exposure view: a package the endpoint does not expose is a 404.
+2. One `Packages().Package` lookup gives `packages.rev_seq`. The validator is computed from it and the other inputs of `document.Inputs` without rendering, and `If-None-Match`
+   answers 304 here, reading no rows.
+3. The replica's rendition cache is asked under a key with the same inputs and the coding; a gzip hit is made from a cached identity rendition.
+4. On a miss the `Store` is read (`Versions` for the list, `Registration` for the hives), the document is rendered, both codings are cached, and the rows' own revision replaces
+   the looked-up one in key and validator when a write raced the lookup.
+
+Things to know when changing a document:
+
+- A member that changes a document's bytes without changing its inputs needs `RenderVersion` (index.go) raised. A new nuget setting that changes the bytes must join `docSpec.settings`.
+- Documents are structs, never maps; the order of the members is the order of the sketch in R-NUGET-009, and the golden documents in
+  [registration/testdata](../../internal/formats/nuget/registration/testdata) pin it (`go test ./internal/formats/nuget/registration -update` rewrites them; read the diff).
+- The registration reads `nuget_version.metadata` with the keys of the table in R-NUGET-005 (Q-NUGET-43). The writer of the row (`rows.VersionInput.Metadata`) must produce
+  `title`, `summary`, `description`, `language`, `authors`, `tags` (a list), `projectUrl`, `iconUrl`, `licenseUrl`, `license{type,version,value}`,
+  `requireLicenseAcceptance`, `minClientVersion` and `dependencyGroups[{targetFramework, dependencies[{id, version}]}]`; a damaged object makes the document a 500.
+- The remote and virtual classes are not served here. A handler for them switches on `rq.Repo.Class` before `serveDocument`; `registration.Doc.Extras` carries the pass-through
+  `deprecation` and `vulnerabilities` of an upstream entry.
+- Tests: the fixture in [documents_fixture_test.go](../../internal/formats/nuget/documents_fixture_test.go) is a Host of the kit over a `docStore` (the twin, with the two document
+  reads) and commits versions the way a write does, raising the revision. It is the place to start a test of a document.

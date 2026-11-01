@@ -212,9 +212,7 @@ func TestR_NUGET_002_TheETagFollowsItsInputs(t *testing.T) {
 func TestR_NUGET_001_AnOperationThatIsNotBuiltAnswers501(t *testing.T) {
 	h := newHost(t, formattest.HostOptions{})
 	for _, c := range []struct{ method, path string }{
-		{http.MethodGet, "v3/flatcontainer/acme.widgets/index.json"},
-		{http.MethodGet, "v3/flatcontainer/acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg"},
-		{http.MethodGet, "v3/registration-semver2/acme.widgets/index.json"},
+		{http.MethodGet, "v3/flatcontainer/acme.widgets/1.2.3/readme"},
 		{http.MethodGet, "v3/search"},
 		{http.MethodPut, "v3/symbolpackage"},
 	} {

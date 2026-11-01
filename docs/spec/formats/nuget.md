@@ -810,6 +810,8 @@ permission `read` on the ID:
   M4b, one exception: a version blocked by [vulnerability-scanning.md](../vulnerability-scanning.md)
   R-VULN-015 stays listed and its package file answers 403 `vulnerability_blocked`
   ([H-311](../vulnerability-scanning.md#h-311--a-block-refuses-the-download-not-the-resolution-or-an-earlier-install)).
+- The media type of the package is `application/octet-stream` and that of the `.nuspec`
+  `application/xml`, whatever the item row recorded (Q-NUGET-44).
 - Package files are served like every item (R-STOR-012: `Range`, conditional requests, streaming).
   Through a virtual repository the response carries `Trove-Resolved-From` (R-REPO-019).
 - `.nuspec` responses carry the package-content headers of the [Security notes](#security-notes).
@@ -849,7 +851,11 @@ Documents per hive `<hive>`:
   without `items` and fetched from their own URL. With the defaults this reproduces nuget.org's
   heuristic: 65 to 127 versions give two inlined pages.
 - `lower` and `upper` are URL-form versions (inclusive). A page URL is answered with the visible
-  leaves inside its bounds at request time, so a page URL from an older index stays valid.
+  leaves inside its bounds at request time, so a page URL from an older index stays valid. Bounds
+  that are no range (a bound that is no version, `lower` above `upper`) are 404; a range with no
+  visible version is a page with `"count": 0` and an empty `items`, while an ID with no visible
+  version in the hive is 404 for every document (Q-NUGET-42). The `@id` of the page is built from
+  the bounds in URL form, whatever spelling the request used.
 - Leaf object in a page: `@id` (leaf URL), `catalogEntry` (object), `packageContent` (flat
   container `.nupkg` URL), `registration` (index URL).
 - Catalog entry mapping:
@@ -860,13 +866,22 @@ Documents per hive `<hive>`:
 | `id` | `declared_id` |
 | `version` | full normalized version |
 | `listed` | always emitted |
-| `published` | `published_at`, ISO 8601 UTC |
+| `published` | `published_at`, ISO 8601 UTC in whole seconds (`2026-10-28T09:14:03Z`, cut and not rounded; Q-NUGET-41) |
 | `packageContent` | flat container `.nupkg` URL (legacy duplicate) |
-| `authors`, `description`, `iconUrl`, `language`, `licenseUrl`, `minClientVersion`, `projectUrl`, `requireLicenseAcceptance`, `summary`, `tags`, `title` | from `metadata`; absent values omitted |
+| `authors`, `description`, `iconUrl`, `language`, `licenseUrl`, `minClientVersion`, `projectUrl`, `requireLicenseAcceptance`, `summary`, `tags`, `title` | from `metadata`; absent values omitted; `requireLicenseAcceptance` is shown when the row holds it, `tags` as a list (Q-NUGET-43) |
 | `licenseExpression` | `license` value when its type is `expression` |
 | `dependencyGroups` | per group `targetFramework` (verbatim, omitted when absent) and `dependencies` with `id`, `range` (verbatim; omitted when the `.nuspec` gave none) and `registration` (the dependency's index URL in the same hive of the same repository; omitted, as the protocol allows, when the dependency ID is outside the ASCII local rule of R-NUGET-003) |
 | `deprecation`, `vulnerabilities` | omitted for local packages; passed through for remote ones (R-NUGET-015) |
 | `readmeUrl` | omitted; README access is R-NUGET-024 |
+
+- Bytes. A document is written with its members in a fixed order: the order of the sketch below
+  (a catalog entry: `@id`, `id`, `version`, then the members taken from `metadata` in alphabetical
+  order, then `listed`, `published`, `packageContent`, `dependencyGroups`, `deprecation`,
+  `vulnerabilities`), compact, with HTML characters unescaped. Nothing in a document depends on a
+  map's order, on the replica or on a clock (R-NUGET-030). The hives `registration-gz/` and
+  `registration-semver2/` answer with `Vary: Accept-Encoding`; gzip is chosen only when the client
+  lists `gzip` with a quality above zero, and a wildcard is not consent (Q-NUGET-44). The standalone
+  leaf document holds `@id`, `listed`, `packageContent`, `published` and `registration`.
 
 - A registration index offers no way to discover IDs; unknown IDs answer 404.
 - The registration resource carries no owners or download counts; those are search's
@@ -3517,6 +3532,93 @@ directory for `SSL_CERT_DIR`.
 
 **Applied in the spec:** none. Elsewhere: [test/e2e/nugetclients/entrypoint.sh](../../../test/e2e/nugetclients/entrypoint.sh),
 [docs/developer/e2e.md](../../developer/e2e.md#the-nuget-clients).
+
+### Q-NUGET-41 · The instant a document shows: whole seconds, UTC
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `published` appears in every catalog entry and leaf (R-NUGET-009). PostgreSQL keeps `published_at` to the microsecond; the replicas must send the same bytes for the same rows (R-NUGET-030), and the spec's own sketch shows `2026-10-28T09:14:03Z`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Whole seconds, UTC, `Z`, cut (chosen) | `2026-10-28T09:14:03Z` | Matches the sketch; one spelling whatever the zone or the driver; a time never reads later than it was | Two pushes within a second show the same instant |
+| (b) Milliseconds | `2026-10-28T09:14:03.987Z` | Finer | A fraction no client uses; the sketch changes |
+| (c) The stored microseconds | `…03.987654Z` | Lossless | Trailing zeros are trimmed or not depending on the formatter, a second way to differ between releases |
+| (d) An offset (`+00:00`) as nuget.org writes it | `2026-10-28T09:14:03+00:00` | Looks like nuget.org's | Two spellings of UTC to keep apart; the clients parse both |
+
+**Choice:** (a).
+
+**Rationale:**
+- The order of versions comes from the version rules, never from `published`, so no client needs finer resolution than a person reading the date.
+- Cutting and not rounding means a document never shows a time later than the commit.
+- The development agent would revisit this if a NuGet client orders by `published` and two pushes within a second matter.
+
+**Applied in the spec:** R-NUGET-009 (the `published` row). Code: [document.go](../../../internal/formats/nuget/document/document.go) `Timestamp`. Tests: `TestR_NUGET_030_TimestampIsFixedPrecision`.
+
+### Q-NUGET-42 · What a registration page URL answers
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-009 says a page URL is answered with the visible leaves inside its bounds at request time, so a URL from an older index stays valid. It does not say what happens when no leaf is inside, or when the bounds are no range.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A page for every range of an ID that has a visible version; 404 for bounds that are no range (chosen) | `lower`..`upper` inclusive, `count` 0 and an empty `items` when none is inside; `@id`, `lower`, `upper` in URL form | A URL from an older index never turns into an error because a version was deleted; the answer is the truth about the range | Any range of an existing ID answers 200 |
+| (b) 404 when no leaf is inside | The page exists only while it holds a leaf | A URL that names nothing is an error | A client holding an older index fails its restore at the deletion of the last version of a page, and an ID's document turns on and off with deletions |
+| (c) Only the bounds of the current index answer | A page is the page of the index being served | Strictest | Every push changes the bounds and breaks the pages of every cached index |
+
+**Choice:** (a).
+
+**Rationale:**
+- It is the only option that keeps the promise of R-NUGET-009 for a delete, which is the one change that can empty a page.
+- The extra 200s cost one read of rows the replica reads anyway for any other document of the ID.
+- The development agent would revisit this if a client probes page URLs to find out whether an ID exists.
+
+**Applied in the spec:** R-NUGET-009 (paging). Code: [registration.go](../../../internal/formats/nuget/registration/registration.go) `Doc.Page`. Tests: `TestR_NUGET_009_PageBoundsAreAnsweredAtRequestTime`, `TestR_NUGET_034_DocumentsOnAnEndpointWithExposureRules`.
+
+### Q-NUGET-43 · What a catalog entry takes from the stored metadata
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `nuget_version.metadata` is a JSON object (R-NUGET-005) written at ingestion and rewritten by the reindex (R-NUGET-025); the registration documents render from it. The table of R-NUGET-005 names its keys but not what a registration does with an absent boolean, an empty group or an ID it cannot link.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A typed read of the documented keys, and absent stays absent (chosen) | `requireLicenseAcceptance` is shown only when the row holds it; a dependency group is kept with its `targetFramework` even when it has no dependency, and `{}` for a group with neither; `tags` is a list (a string is split on white space); `dependencies[].version` is the `range`; unknown keys are ignored; a damaged object is a 500 | Matches "absent values omitted"; an empty group keeps its meaning (the package needs nothing on that framework); a later release can add a key | A client that expects `requireLicenseAcceptance` always finds it absent for a package whose row lacks it |
+| (b) Always emit `requireLicenseAcceptance` and an empty `dependencyGroups` as nuget.org does | Defaults filled in | Looks like nuget.org's | Documents show values the package never declared |
+| (c) Pass the stored object through | The registration is the row | No mapping to keep | The row's keys (`releaseNotes`, `copyright`, `repository`, …) leak into a protocol that did not ask for them, and a key rename of the row changes the protocol |
+
+**Choice:** (a). The keys are the ones of the table in R-NUGET-005.
+
+**Rationale:**
+- NuGet clients read an absent `requireLicenseAcceptance` as false and an absent `dependencies` as none, so omission costs nothing and declares nothing that was not declared.
+- A group without a framework and without dependencies still tells a client something, so it stays.
+- The reader is the contract with the writer: the work that writes the row must produce these keys, and the reindex repairs a row that does not.
+- The development agent would revisit this if a client is found that requires the always-present members.
+
+**Applied in the spec:** R-NUGET-009 (catalog entry mapping). Code: [metadata.go](../../../internal/formats/nuget/registration/metadata.go), [registration.go](../../../internal/formats/nuget/registration/registration.go). Tests: `TestR_NUGET_009_CatalogEntryFields`, `TestR_NUGET_009_ParseMetadata`, `TestR_NUGET_009_GoldenDocuments`.
+
+### Q-NUGET-44 · How a document and a package file are delivered
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-002 fixes the weak validator and R-NUGET-009 the gzip hives; three details are left to the code: when gzip is chosen, whether a document carries a freshness lifetime, and which media type a package file has when the item row recorded another.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) gzip on explicit consent; no `Cache-Control` on documents; the media type of the protocol on files (chosen) | A wildcard in `Accept-Encoding` is not consent; the plain hive never compresses; a document is revalidated with its ETag; `.nupkg` is `application/octet-stream` and `.nuspec` `application/xml` | Every client reads the identity coding; a stale document cannot be served from a cache without asking; the type does not depend on who stored the item | One request per document and restore when the client's own cache has expired (NuGet keeps its HTTP cache for 30 minutes) |
+| (b) A wildcard counts as consent | `Accept-Encoding: *` gets gzip | Fewer bytes for a client that never sends it anyway | A client that lists `*` may not read gzip |
+| (c) `Cache-Control: private, max-age=N` on documents | As the npm documents do | Fewer requests | A client would keep a version list after a push for N seconds; a restore right after a push misses the version (R-NUGET-030's push-then-restore flow) |
+| (d) The media type recorded in the item row | Whatever ingestion stored | One source | A row written by a restore or a reindex with another type changes the protocol |
+
+**Choice:** (a). The validator's inputs are the render version, the repository and package ids, `packages.rev_seq`, the document, the key the document is served under, the base URL, the endpoint with its exposure fingerprint, the repository's configuration version and the paging settings; the content coding is not one.
+
+**Rationale:**
+- The push-then-restore flows of R-NUGET-030 cannot tolerate a lifetime on the version list.
+- The paging settings are inputs because they change the bytes of an index, and a replica with other settings must not answer 304 for them.
+- The development agent would revisit this if the cost of revalidation is measurable on a restore of a large graph; the answer would be a short lifetime on the registration pages only.
+
+**Applied in the spec:** R-NUGET-008 (media types), R-NUGET-009 (bytes). Code: [documents.go](../../../internal/formats/nuget/documents.go), [handlers_flat.go](../../../internal/formats/nuget/handlers_flat.go), [document.go](../../../internal/formats/nuget/document/document.go). Tests: `TestR_NUGET_002_WeakETagIsSharedByGzipAndIdentity`, `TestR_NUGET_009_GzipHivesNegotiateAndThePlainHiveNever`, `TestR_NUGET_008_FilesOfAVersion`, `TestR_NUGET_009_PagingFollowsTheSettings`.
 
 ## What this does not cover
 

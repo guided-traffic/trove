@@ -9,7 +9,6 @@ import (
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/formattest"
-	"github.com/guided-traffic/trove/internal/formats/nuget/nugettest"
 )
 
 // nugetChanges are the writes of check 9: every hook and every route that changes package
@@ -110,7 +109,7 @@ func conformance(f *Format) formattest.Fixture {
 	return formattest.Fixture{
 		Host: func() formattest.HostOptions {
 			return formattest.HostOptions{
-				Data:     nugettest.New(),
+				Data:     newDocStore(),
 				Resolver: shadowResolver{out: formats.ShadowOutcome{Proceed: true}},
 				Subject:  authz.Subject{Kind: "user", ID: "11111111-1111-1111-1111-111111111111", Name: "alice"},
 			}
@@ -138,13 +137,13 @@ func conformance(f *Format) formattest.Fixture {
 			{Name: "service index", Path: "v3/index.json"},
 			{Name: "service index with a slash", Path: "v3/"},
 			{Name: "service index without a slash", Path: "v3"},
-			{Name: "version list", Path: feed("flatcontainer/acme.widgets/index.json"), Status: notBuilt},
-			{Name: "package", Path: feed("flatcontainer/acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg"), Status: notBuilt},
-			{Name: "nuspec", Path: feed("flatcontainer/acme.widgets/1.2.3/acme.widgets.nuspec"), Status: notBuilt},
+			{Name: "version list", Path: feed("flatcontainer/acme.widgets/index.json"), Seed: seedWidgets},
+			{Name: "package", Path: feed("flatcontainer/acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg"), Seed: seedWidgets},
+			{Name: "nuspec", Path: feed("flatcontainer/acme.widgets/1.2.3/acme.widgets.nuspec"), Seed: seedWidgets},
 			{Name: "embedded file", Path: feed("flatcontainer/acme.widgets/1.2.3/readme"), Status: notBuilt},
-			{Name: "registration index", Path: feed("registration-semver2/acme.widgets/index.json"), Status: notBuilt},
-			{Name: "registration page", Path: feed("registration-gz/acme.widgets/page/1.0.0/2.0.0.json"), Status: notBuilt},
-			{Name: "registration leaf", Path: feed("registration/acme.widgets/1.2.3.json"), Status: notBuilt},
+			{Name: "registration index", Path: feed("registration-semver2/acme.widgets/index.json"), Seed: seedWidgets},
+			{Name: "registration page", Path: feed("registration-gz/acme.widgets/page/1.0.0/2.0.0.json"), Seed: seedWidgets},
+			{Name: "registration leaf", Path: feed("registration/acme.widgets/1.2.3.json"), Seed: seedWidgets},
 			{Name: "search", Path: feed("search"), Status: notBuilt},
 			{Name: "autocomplete", Path: feed("autocomplete"), Status: notBuilt},
 			{Name: "symbols", Path: feed("symbols/acme.widgets.pdb/0123456789abcdef0123456789abcdefFFFFFFFF/acme.widgets.pdb"), Status: notBuilt},
@@ -164,6 +163,18 @@ func conformance(f *Format) formattest.Fixture {
 			formattest.CheckView:    "the package view adapter is WP3.1h",
 		},
 	}
+}
+
+// seedWidgets stores version 1.2.3 of acme.widgets with its files, the state the content cases
+// of the documents and the files read.
+func seedWidgets(h *formattest.Host) error {
+	st := h.FormatData(ID).(*docStore)
+	st.bind(h)
+	if err := st.commit(h, "acme.widgets", registrationVersion("Acme.Widgets", "1.2.3", true, `{"description":"Widget primitives."}`)); err != nil {
+		return err
+	}
+	putFiles(h)
+	return nil
 }
 
 // TestR_ARCH_010_Conformance runs the conformance kit over the NuGet format: route
