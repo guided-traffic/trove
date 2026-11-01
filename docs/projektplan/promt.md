@@ -80,7 +80,11 @@ Hard rules, also for every subagent (put them into every subagent prompt):
    unavoidable, run them with `isolation: "worktree"` and merge their branches afterwards.
 4. Resume rule: for a 🟡 phase, compare the checklist with the code and with `git log` since the
    last tag, keep what is done and tested, and plan only the rest.
-5. Set the phase row and the started items to 🟡 in BETA.md or FULL.md.
+5. Open findings: plan every finding of [section 8](#8--open-findings) as a work package of this run,
+   in front of the phase's own packages. Before fixing one, reproduce it (a failing test first); a
+   finding that does not reproduce is removed with a one-line reason in the commit message. Remove each
+   finding from section 8 in the commit that fixes it.
+6. Set the phase row and the started items to 🟡 in BETA.md or FULL.md.
 
 ## 3 · Build with subagents
 
@@ -190,3 +194,97 @@ open items; the next phase.
 If the run cannot finish the phase (for example because the context runs out), leave it
 resumable: commit and push the finished, green work packages, keep the phase and its open items at
 🟡 in the plan, and report precisely what is done and what is left. The next run picks it up.
+
+## 8 · Open findings
+
+Defects and gaps found outside a phase, waiting for a run (step 2, item 5). Each entry names where it
+is, what was seen and how far it is confirmed: **confirmed** means checked in the code by the
+development agent, **read** means found by reading the code and not reproduced. Add new findings
+here; remove a finding in the commit that fixes it.
+
+Found on 2026-11-01 while writing the manual (`docs/manual`) and the design change of Q-UI-88:
+
+### UI defects
+
+- **F-1 · The npm Publish tab of the client setup page is empty** (read). The npm format has no
+  publish setup templates, so `/setup` shows "You cannot publish…" for npm, and for a virtual
+  repository the "no default deployment target" text even when it has one. The specs do not notice,
+  because the UI fake serves npm publish snippets ([fakes-packages.ts](../../web/src/app/api/testing/fakes-packages.ts)).
+  Done when the server delivers the npm publish snippets (R-API-030), the fake matches the server and
+  `docs/manual/user/client-setup.md` no longer says the tab has no snippet.
+- **F-2 · A setup token for a virtual repository likely reads nothing** (read). **Create a token for
+  this setup** scopes the token to `read` on the virtual repository only; the scope is checked against
+  every member, so each package answers 404. Done when the token scope covers what the virtual
+  repository resolves through, proven by a test through a virtual npm repository;
+  `docs/manual/user/client-setup.md` carries a warning to remove.
+- **F-3 · The curl commands of the Browse API tab cannot work** (confirmed). `curl` and `downloadCurl` in
+  [browse.ts](../../web/src/app/features/browse/browse.ts) put `$TROVE_TOKEN` in single quotes, so the
+  shell sends the literal text and the server answers 401. Done when the commands use double quotes,
+  with a spec.
+- **F-4 · The policy preview grants `authenticated` to service accounts** (confirmed). The draft
+  explainer ([policy-explainer.ts](../../web/src/app/api/policy-explainer.ts), `references`) adds
+  `authenticated` for every principal but `anonymous`; the server adds it for users only
+  (`authz/me` in [decide.go](../../internal/authz/decide.go)). **Try it** can show "Allowed by this
+  draft" for an `sa:` principal the server refuses. Done when both apply the same rule, with a spec.
+- **F-5 · The help text of the action `manage` is wrong** (confirmed). [policy-model.ts](../../web/src/app/features/permissions/policy-model.ts)
+  says "Manage the repository's settings."; changing repository configuration needs
+  `repositories:write-config`, while `manage` covers owners, the shadowing override, claims and the
+  cache operations. Done when the text says that, German target included.
+- **F-6 · "Revoke by value" reports a revocation that did not happen** (read). For an unknown value, or a
+  caller without the admin role, the server answers an empty `202`, and the Tokens screen builds
+  "The token of … was revoked" from the missing body. Done when the screen says only what the answer
+  supports.
+- **F-7 · Token actions of a service account are shown to callers who get 403** (read). **Create token**
+  and **Rotate** show for `identities:write`; the server requires the admin role (a security-admin gets
+  403). Done when the UI asks for what the server checks.
+- **F-8 · The token forms have no endpoint field** (read). A token is bound to endpoints only through the
+  API (`scope.endpoints`) or `trove admin token`. Done when the forms offer the binding, or the spec
+  records the gap as decided.
+- **F-9 · The token filter "Not used for (days)" matches every token** (read). The last-used time is never
+  recorded. Done when the time is recorded (with a bound on write load) or the filter is removed;
+  `docs/manual/admin/tokens.md` says it matches everything.
+- **F-10 · System status shows a maintenance mode that does not exist** (confirmed). The handler always sets
+  `MaintenanceMode = "normal"` ([handlers.go](../../internal/api/v1/handlers.go)). Done when the mode is
+  real or not shown; `docs/manual/admin/limitations.md` lists it.
+- **F-11 · The break-glass status shows "Enabled." without a password file** (read). Every local sign-in is
+  then refused while the settings screen looks fine. Done when the status names the missing password.
+
+### Server and API defects
+
+- **F-12 · The saved language is not used for `/ui/` without a locale** (confirmed). `webui.Options.Preference`
+  exists ([webui.go](../../internal/webui/webui.go)) but `startClient` in [app.go](../../internal/app/app.go)
+  does not set it, so the browser's language wins over the stored one. Done when it is wired, with a test.
+- **F-13 · The exposure check does not list stored versions** (read). The rule editor says "Versions to test
+  (one per line, empty for the stored ones)" and `api/openapi.yaml` says an absent list means the stored
+  versions; `ExposureService.Check` ([exposure_service.go](../../internal/authz/exposure_service.go)) judges
+  only the versions sent, and `distTags` in the answer is always empty. Done when code, contract and label
+  agree.
+
+### Tests and tools
+
+- **F-14 · Test names with underscores give no coverage evidence** (confirmed). The coverage generator reads
+  IDs with hyphens only (`idsIn` in [evidence.go](../../internal/tools/coverage/evidence.go)), so
+  `TestR_API_053_…` and `TestR_API_054_…` count for nothing and R-API-053 and R-API-054 are missing from
+  `docs/coverage/implemented.txt` although their tests pass. Done when those tests carry the ID in a form the
+  generator reads (or the generator reads both) and the evidence is refreshed (`make coverage-refresh`).
+- **F-15 · `TestR_EP_013_CeilingPerformance` misses its 1 ms target under a full `go test ./...`** (confirmed
+  once: p99 1.0995 ms; it passed three times run alone). Find the cause (contention with parallel packages,
+  allocation in `Decide`) and fix it; do not retry it to green (rule 7).
+- **F-16 · No browser journey visits the help area, and the new palette has not been through the browser
+  tier's colour-contrast check** (confirmed). Done when a journey opens `/help` and a page from the "?" and
+  axe passes with `color-contrast` in the light (English) and the dark (German) scheme.
+- **F-17 · Two Helm versions on the owner's machine** (confirmed). A render used Homebrew's `helm` 3.21.3
+  instead of the pin `HELM_VERSION=v4.3.1` in [versions.env](../../tools/versions.env). Machine-level: name the
+  command to the owner (`which -a helm`; `brew uninstall helm`; install the pinned version the way
+  `make versions-check` expects), do not change the machine.
+
+### Stale documentation
+
+- **F-18 · Status texts describe an earlier state** (confirmed for docs/README.md, docs/developer/README.md and the
+  README's planned list and path table; read for the README's status block and endpoints.md). [docs/README.md](../README.md) says "Nothing
+  described in these pages is implemented yet"; [docs/developer/README.md](../developer/README.md) says no
+  format beyond generic and no proxy exist; the root [README.md](../../README.md) lists npm, the proxy and
+  the setup screens as planned, its URL path table marks `/api/<format>/…` and `/ui/{locale}/…` as planned,
+  and its status block says no package uses S3; the intro of
+  [docs/developer/endpoints.md](../developer/endpoints.md) says the endpoint screen and the filtering of npm
+  remote and virtual documents are not built. Done when each states what phases 1 to 3 built.
