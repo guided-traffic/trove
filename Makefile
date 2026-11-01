@@ -418,3 +418,37 @@ npm-reference: npm-stub-image ## Regenerate perf/npm/reference (package.json, pa
 npm-reference-check: npm-stub-image ## Fail when perf/npm/reference differs from a regeneration (the corpus is deterministic)
 	NPM_STUB_IMAGE=$(NPM_STUB_IMAGE) perf/npm/reference.sh --check
 # <<< M2 npm-stub
+
+# >>> M3 nuget
+# The NuGet format's fuzz targets (id, version, nupkg, nuspec; R-NUGET-003, R-NUGET-005, R-ARCH-028), the golden vectors
+# of the version and ID rules generated with NuGet.Versioning (tools/nugetvectors, R-NUGET-003) and the counting NuGet
+# test upstream (test/nugetstub, docs/developer/e2e.md). Edit only between the markers.
+NUGET_FUZZ_TARGETS ?= nupkg:FuzzR_ARCH_028_Inspect nuspec:FuzzR_NUGET_005_Nuspec version:FuzzNormalize version:FuzzCompare version:FuzzRange id:FuzzID
+NUGET_FUZZTIME ?= 5m
+NUGET_STUB_IMAGE ?= trove-e2e-nugetstub:dev
+NUGET_VECTORS := internal/formats/nuget/version/testdata/vectors.json
+
+.PHONY: fuzz-nuget
+fuzz-nuget: ## Fuzz every NuGet target (NUGET_FUZZ_TARGETS, package:Target pairs) for NUGET_FUZZTIME each (default 5m); a failing input stays in the package's testdata/fuzz
+	@set -e; for t in $(NUGET_FUZZ_TARGETS); do pkg=$${t%%:*}; fz=$${t##*:}; \
+	  echo "fuzz $$pkg $$fz for $(NUGET_FUZZTIME)"; \
+	  go test ./internal/formats/nuget/$$pkg -run '^$$' -fuzz "^$$fz\$$" -fuzztime $(NUGET_FUZZTIME); \
+	done
+
+.PHONY: nuget-vectors
+nuget-vectors: ## Regenerate the golden vectors of the version and ID rules with NuGet.Versioning in the pinned .NET SDK image (needs Docker; DOTNET=local uses a local dotnet)
+	tools/nugetvectors/generate.sh
+
+.PHONY: nuget-vectors-check
+nuget-vectors-check: ## Fail when the committed golden vectors differ from a regeneration (needs Docker)
+	@mkdir -p .out
+	tools/nugetvectors/generate.sh .out/nuget-vectors.json
+	cmp .out/nuget-vectors.json $(NUGET_VECTORS) || { echo "$(NUGET_VECTORS) differs from a regeneration: run make nuget-vectors"; exit 1; }
+
+.PHONY: nuget-stub-image
+nuget-stub-image: ## Build the counting NuGet test upstream image (NUGET_STUB_IMAGE, IMAGE_ARCH) on the release base image
+	@mkdir -p .out/nugetstub
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(IMAGE_ARCH) go build -trimpath -ldflags '-s -w' -o .out/nugetstub/nugetstub-linux-$(IMAGE_ARCH) ./test/nugetstub/cmd/nugetstub
+	docker buildx build --load --platform linux/$(IMAGE_ARCH) --build-arg RUNTIME_BASE_IMAGE=$(RUNTIME_BASE_IMAGE) \
+	  -f test/nugetstub/Containerfile -t $(NUGET_STUB_IMAGE) .out/nugetstub
+# <<< M3 nuget

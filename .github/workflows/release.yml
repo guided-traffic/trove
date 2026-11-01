@@ -261,6 +261,21 @@ jobs:
       - name: make generate-check
         run: make generate-check
 
+  # The golden vectors of the NuGet version, range and ID rules regenerated with NuGet.Versioning in the pinned
+  # .NET SDK image (tools/nugetvectors, R-NUGET-003) and compared with the committed file.
+  nuget-vectors:
+    name: nuget vectors (R-NUGET-003)
+    runs-on: self-hosted
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: make nuget-vectors-check
+        run: make nuget-vectors-check
+
   build-no-node:
     name: build without Node.js (E0.1)
     runs-on: self-hosted
@@ -1337,7 +1352,7 @@ jobs:
   semantic-release:
     name: Semantic Release
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [versions, lint, gosec, govulncheck, cyclomatic-complexity, generate, build-no-node, unit, web, malware-scan, chart, image, container-scan, integration, s3-conformance, e2e, e2e-npm, workflows, compat, coverage, coverage-evidence, coverage-report, release-tooling]
+    needs: [versions, lint, gosec, govulncheck, cyclomatic-complexity, generate, nuget-vectors, build-no-node, unit, web, malware-scan, chart, image, container-scan, integration, s3-conformance, e2e, e2e-npm, workflows, compat, coverage, coverage-evidence, coverage-report, release-tooling]
     runs-on: self-hosted
     timeout-minutes: 30
     steps:

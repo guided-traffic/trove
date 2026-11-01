@@ -25,6 +25,7 @@ Node.js from `web/.nvmrc`, and the pinned helm, kubectl, kind and Docker Buildx.
 | Vulnerability Check | `make vuln` | govulncheck (pinned) over the module |
 | Cyclomatic Complexity | `make cyclo` | gocyclo (pinned), fails above `CYCLO_THRESHOLD`; the job summary lists the 20 most complex functions with `make -s cyclo-report` |
 | generate (E0.1) | `make generate-check` | `go generate`, then `git diff --exit-code` and a check for generated files that are not committed |
+| nuget vectors (R-NUGET-003) | `make nuget-vectors-check` | regenerates the golden vectors of the NuGet version, range and ID rules with NuGet.Versioning in the pinned .NET SDK image (`NUGETVECTORS_SDK_IMAGE`, `NUGET_VERSIONING_VERSION`) and compares them with the committed file; needs Docker |
 | build without Node.js (E0.1) | `make build` | with every Node.js executable off `PATH`; `file` must say *statically linked*, `go version -m` must record `CGO_ENABLED=0` |
 | unit tests | `make test` | the race detector; uploads `.out/test-unit.json` (`test-unit`) and `.out/coverage/unit.out` (`profile-unit`) |
 | web (Angular) | `make web-ci`, `make web-lint`, `make web-test`, `make web-embed` | `npm ci` (fails when `package.json` and the lockfile disagree), ESLint and the R-UI-046 rules, the Angular unit tests, the production build embedded into `internal/webui/dist` |
@@ -133,6 +134,8 @@ git fetch --tags && make compat-check   # R-ARCH-025 and R-ARCH-026 against the 
 make image VERSION=dev && make dev-up && make e2e SET=push && make dev-down
 make image VERSION=dev && make dev-up && make e2e SET=npm && make dev-down   # TROVE_DEV_HTTP_PORT=8080 is the port of the committed reference lockfile; any port works
 make fuzz-npm FUZZ=FuzzMatch FUZZTIME=1m
+make nuget-vectors-check                # needs Docker; make nuget-vectors writes the file
+make fuzz-nuget NUGET_FUZZTIME=1m       # the six NuGet fuzz targets, one minute each (not a CI leg yet)
 ```
 
 ### The run that closes a phase
