@@ -56,6 +56,9 @@ func (e *wenv) replica(name string, env ...string) *testenv.Replica {
 type pkgSpec struct {
 	id, version, description string
 	symbols                  bool
+	// title, tags and deps put the members the documents and the search read into the .nuspec.
+	title, tags string
+	deps        bool
 }
 
 // nupkg builds a package archive. The description makes two builds of one version differ.
@@ -68,9 +71,19 @@ func nupkg(t testing.TB, s pkgSpec) []byte {
 	if s.symbols {
 		types = `<packageTypes><packageType name="SymbolsPackage"/></packageTypes>`
 	}
+	extra := types
+	if s.title != "" {
+		extra += "<title>" + s.title + "</title>"
+	}
+	if s.tags != "" {
+		extra += "<tags>" + s.tags + "</tags>"
+	}
+	if s.deps {
+		extra += `<dependencies><group targetFramework="net8.0"><dependency id="Contoso.Util" version="[1.0.0, 2.0.0)"/></group></dependencies>`
+	}
 	nuspec := fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd"><metadata><id>%s</id><version>%s</version><authors>Acme</authors><description>%s</description>%s</metadata></package>`,
-		s.id, s.version, s.description, types)
+		s.id, s.version, s.description, extra)
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	for name, body := range map[string]string{s.id + ".nuspec": nuspec, "lib/net8.0/" + s.id + ".dll": "MZ" + s.version + s.description} {
