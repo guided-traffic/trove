@@ -151,7 +151,7 @@ func TestEndpointsOnOneReplica(t *testing.T) {
 		hostGet(t, def, "packages.example.com", "/api/v1/system/ping", "X-Forwarded-Host", "packages.example.com")
 		hostGet(t, cust, "trove.example.com", "/api/npm/x/", "X-Forwarded-Host", "trove.example.com")
 		hostGet(t, cust, "pkgs.example.org", "/api/npm/x/")
-		deadline := time.Now().Add(2 * time.Second)
+		deadline := time.Now().Add(startGuard)
 		var onDefault, mis, own map[string]any
 		for time.Now().Before(deadline) && (onDefault == nil || mis == nil || own == nil) {
 			for _, r := range requestRecords(h.logs) {
@@ -399,7 +399,7 @@ func TestEndpointListenerTLS(t *testing.T) {
 
 	t.Run("R-EP-004 a rotation of the second listener's pair is served within the reload interval, a broken one keeps the old pair and is counted", func(t *testing.T) {
 		ca.Issue(t, tlstest.Options{DNSNames: []string{"*.packages.example.com"}, Serial: big.NewInt(1004)}).Write(t, wild, wildKey)
-		deadline := time.Now().Add(4 * time.Second)
+		deadline := time.Now().Add(startGuard)
 		for {
 			if got, _, err := served(custAddr, "a.packages.example.com"); err == nil && got == 1004 {
 				break

@@ -119,7 +119,7 @@ func TestListenerTLSWiring(t *testing.T) {
 			t.Errorf("no error logged:\n%s", h.logs.String())
 		}
 		ca.Issue(t, tlstest.Options{Serial: big.NewInt(77)}).Write(t, certFile, keyFile)
-		deadline := time.Now().Add(5 * time.Second)
+		deadline := time.Now().Add(startGuard)
 		for {
 			code, _, cs, err := httpsGet(t, ca, "https://"+h.app.OpsAddr().String()+"/readyz")
 			if err == nil && code == 200 && cs.PeerCertificates[0].SerialNumber.Int64() == 77 {

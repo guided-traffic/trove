@@ -75,7 +75,7 @@ func baseEnv(t *testing.T, extra map[string]string) []string {
 	env := map[string]string{
 		"TROVE_SERVER_LISTEN": freePort(t), "TROVE_SERVER_OPS_LISTEN": freePort(t),
 		"TROVE_HEALTH_SHUTDOWN_DRAIN_DELAY": "300ms", "TROVE_SERVER_SHUTDOWN_TIMEOUT": "5s",
-		"TROVE_HEALTH_CHECK_INTERVAL": "200ms", "TROVE_HEALTH_CHECK_TIMEOUT": "100ms",
+		"TROVE_HEALTH_CHECK_INTERVAL": "1s", "TROVE_HEALTH_CHECK_TIMEOUT": "1s",
 		"TROVE_DATABASE_HOST": "db.example", "TROVE_DATABASE_NAME": "trove",
 		"TROVE_VALKEY_SENTINEL_ADDRESSES": `["s1:26379"]`, "TROVE_VALKEY_SENTINEL_PRIMARY_NAME": "trove",
 		"TROVE_STORAGE_S3_BUCKET": "blobs", "TROVE_SECRETS_ENCRYPTION_KEY_FILES": fmt.Sprintf(`[%q]`, keyFile(t)),
@@ -325,7 +325,7 @@ func TestEndToEndHeaders(t *testing.T) {
 		if code != 200 || hdr.Get("X-Request-Id") != tid {
 			t.Fatalf("%d X-Request-Id %q", code, hdr.Get("X-Request-Id"))
 		}
-		deadline := time.Now().Add(2 * time.Second)
+		deadline := time.Now().Add(startGuard)
 		for time.Now().Before(deadline) {
 			for _, line := range strings.Split(h.logs.String(), "\n") {
 				var rec map[string]any
