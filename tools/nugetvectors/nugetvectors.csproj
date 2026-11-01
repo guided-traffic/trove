@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Golden-vector generator of internal/formats/nuget/{version,id} (R-NUGET-003).
+    NuGetVersioningVersion is not defaulted here: generate.sh passes the pin of
+    tools/versions.env (NUGET_VERSIONING_VERSION), so there is exactly one pin.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NuGet.Versioning" Version="[$(NuGetVersioningVersion)]" />
+  </ItemGroup>
+
+</Project>
