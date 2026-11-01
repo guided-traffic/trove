@@ -134,14 +134,14 @@ func (s *docStore) commit(h *formattest.Host, lowerID string, vs ...rows.Registr
 		if _, ok := s.display[lowerID]; !ok {
 			s.display[lowerID] = v.DeclaredID
 		}
-		s.Store.Seed(rows.VersionInput{
+		s.Seed(rows.VersionInput{
 			RepoID: h.Ref().ID, VersionID: s.nextID, LowerID: lowerID, DeclaredID: v.DeclaredID,
 			OriginalVersion: v.FullVersion, LowerVersion: v.LowerVersion, SortKey: version.MustParse(v.LowerVersion).SortKey(), FullVersion: v.FullVersion,
 			IsPrerelease: v.IsPrerelease, IsSemver2: v.IsSemver2, PublishedAt: v.PublishedAt,
 			PackageTypes: v.PackageTypes, Metadata: v.Metadata, Origin: rows.OriginPush,
 		})
 		if !v.Listed {
-			s.Store.SetListed(context.Background(), nil, rows.ListingInput{VersionID: s.nextID, Listed: false})
+			s.SetListed(context.Background(), nil, rows.ListingInput{VersionID: s.nextID, Listed: false})
 		}
 	}
 	return nil
