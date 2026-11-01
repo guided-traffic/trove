@@ -3973,7 +3973,7 @@ Priority: **MVP** · Covers: trove-only
   `ui.default_locale`. Switching the language in the user menu stores the preference and reloads the
   same route under the other locale. The preference applies to a request for `/ui/` or a UI route
   without a locale from a browser that holds a valid session cookie; the redirect reads the cookie
-  itself, because the authentication stage ignores it on `/ui/` (Q-API-184). A request without a
+  itself, read-only, because the authentication stage ignores it on `/ui/` (Q-API-184). A request without a
   session, with an ended one, or whose preference cannot be read follows `Accept-Language`.
 - Dates, numbers, file sizes (binary units such as MiB with the locale's decimal separator) and
   relative times are formatted with Angular's locale data and `Intl`.
@@ -6442,11 +6442,11 @@ R-AUTH-001 item 3 and ignores it on `/ui/`, so the principal of a `/ui/` request
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) The redirect validates the cookie itself (chosen) | `Preference` reads `__Host-trv_session`, validates it with the session store, reads the stored locale of that user | Nothing else changes: the stage still ignores the cookie on `/ui/`; the same validation as everywhere else, so an ended or forged cookie names nobody | One session validation and one read of `user_preferences` per request for a locale-less UI path, which is a redirect, not a page |
+| (a) The redirect peeks at the session itself (chosen) | `Preference` reads `__Host-trv_session`, resolves it with the read-only `Store.Peek` (the lookup, the freshness gate and the deadline check of `Validate`, without its writes), reads the stored locale of that user | Nothing else changes: the stage still ignores the cookie on `/ui/`; the same lookup and deadlines as everywhere else, so an ended or forged cookie names nobody; a redirect writes nothing: it does not extend the idle deadline, end an expired session or end the break-glass sessions of a disabled account | One session validation and one read of `user_preferences` per request for a locale-less UI path, which is a redirect, not a page |
 | (b) Let the stage accept the session cookie on `GET /ui/` | `sessionAllowed` returns true for the UI shell | The principal is there for any later UI code | An invalid cookie would answer `401 session_expired` for the UI shell, the dead-cookie lock-out of Q-AUTH-177 |
 | (c) Keep a `locale` cookie the UI sets | The redirect reads a plain cookie | No lookup | A second source of truth next to the preference, and a cookie that stays after the user changes the preference elsewhere |
 
-**Choice:** (a). The function is bounded by two seconds; a failing session store or database, an unreadable row, a user without a
+**Choice:** (a). `Validate` touches `last_seen_at`, ends expired sessions and ends break-glass sessions where the account is disabled, and a redirect to a page must do none of that, so `Peek` exists for it. The function is bounded by two seconds, which holds for the request that starts a shared lookup too (Q-AUTH-181); a failing session store or database, an unreadable row, a user without a
 stored locale and a locale the build does not serve all fall back to `Accept-Language`. A replica without a session store (the
 shell profile) sets no preference function.
 
@@ -6454,8 +6454,28 @@ shell profile) sets no preference function.
 that Q-AUTH-177 removed. The development agent would revisit this if the redirect of `/ui/` showed up as a hot path, then with a short
 cache keyed by the session hash.
 
-**Applied in the spec:** R-UI-045 (locale choice and acceptance criteria). Code: `internal/app/ui_locale.go`, `startClient` in
+**Applied in the spec:** R-UI-045 (locale choice and acceptance criteria). Code: `Store.Peek` in `internal/auth/session/store.go`, `internal/app/ui_locale.go`, `startClient` in
 `internal/app/app.go`.
+
+### Q-API-185 · The ETag of the authentication settings follows the status, and a write takes only the revision
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the ETag of `GET /api/v1/settings/auth` was the revision of the settings row, and `If-None-Match` was answered before the read-only
+status was computed. The status changes without the row (a lockout, a provider's discovery document, and now the state of the break-glass
+password), so a client holding the tag was told `304` about a status that had moved.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The tag is `"<revision>-<digest of the status>"`; a write reads the revision only (chosen) | The status is computed first; `PATCH` takes the number before the first `-` of the `If-Match` | A moved status is a new tag; the tag from a `GET` still works as `If-Match`, whatever the status did meanwhile | A client sees tags that change without a write |
+| (b) Never answer 304 | Drop the conditional GET | Simple | The screen polls the document |
+| (c) Include the status in the write's precondition | `If-Match` fails when the status moved | Strict | A lockout would make a save fail with 412 although no setting changed |
+
+**Choice:** (a). **Rationale:** the revision is the precondition of a write, the digest only the validator of a read. The development agent would
+revisit this if the status held per-replica values that differ between replicas (the discovery state does), then by leaving those out of the digest.
+
+**Applied in the spec:** R-AUTH-040 (read), `api/openapi.yaml` (`getAuthSettings`). Code: `settingsETag` and `settingsRevision` in
+`internal/api/v1/authsettings_api.go`.
 
 ## What this does not cover
 

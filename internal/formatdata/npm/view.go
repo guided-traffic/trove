@@ -118,7 +118,8 @@ func (s *Store) ViewWithheld(ctx context.Context, repos []string) ([]int64, erro
 // repository, its dist-tags (the dry run of the exposure rules, R-EP-016). A remote
 // repository lists the versions of its cached document; the tags of that document
 // are not stored in a column, so it reports none.
-func (s *Store) ViewStored(ctx context.Context, repoID int64, name string, remote bool) ([]string, map[string]string, error) {
+func (s *Store) ViewStored(ctx context.Context, repoID int64, name string, remote bool, limit int) ([]string, map[string]string, error) {
+	maxRows := int32(min(max(limit, 0), math.MaxInt32))
 	var versions []string
 	var tags map[string]string
 	err := s.o.DB.InTx(ctx, func(tx meta.Tx) error {
@@ -127,10 +128,10 @@ func (s *Store) ViewStored(ctx context.Context, repoID int64, name string, remot
 			return err
 		}
 		if remote {
-			versions, err = qs.NPMViewStoredRemote(ctx, q.NPMViewStoredRemoteParams{RepoID: repoID, Name: name})
+			versions, err = qs.NPMViewStoredRemote(ctx, q.NPMViewStoredRemoteParams{RepoID: repoID, Name: name, MaxRows: maxRows})
 			return err
 		}
-		if versions, err = qs.NPMViewStoredLocal(ctx, q.NPMViewStoredLocalParams{RepoID: repoID, Name: name}); err != nil {
+		if versions, err = qs.NPMViewStoredLocal(ctx, q.NPMViewStoredLocalParams{RepoID: repoID, Name: name, MaxRows: maxRows}); err != nil {
 			return err
 		}
 		rs, err := qs.NPMDistTags(ctx, q.NPMDistTagsParams{RepoID: repoID, Name: name})

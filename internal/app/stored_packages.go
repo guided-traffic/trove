@@ -33,12 +33,12 @@ func newStoredPackages(fs []formats.Format, ports formats.DataPorts) *storedPack
 }
 
 // Stored implements [authz.StoredPackages].
-func (s *storedPackages) Stored(ctx context.Context, repo authz.StoredRepo, pkg string) (authz.StoredPackage, error) {
+func (s *storedPackages) Stored(ctx context.Context, repo authz.StoredRepo, pkg string, limit int) (authz.StoredPackage, error) {
 	l, ok := s.byFormat[repo.Format]
 	if !ok {
 		return authz.StoredPackage{}, nil
 	}
-	st, err := l.Stored(ctx, s.ports, formats.RepoRef{ID: repo.ID, Key: repo.Key, Class: formats.Class(repo.Class), Format: formats.ID(repo.Format)}, pkg)
+	st, err := l.Stored(ctx, s.ports, formats.RepoRef{ID: repo.ID, Key: repo.Key, Class: formats.Class(repo.Class), Format: formats.ID(repo.Format)}, pkg, limit)
 	if err != nil {
 		return authz.StoredPackage{}, fmt.Errorf("stored versions of %s in %s: %w", pkg, repo.Key, err)
 	}

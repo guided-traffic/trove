@@ -1,14 +1,19 @@
 package v1
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/auth/oidc"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/config"
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
 
@@ -78,7 +83,33 @@ func breakGlassPassword(cfg config.AuthBreakGlass, login LoginService) oidc.Pass
 	case cfg.PasswordFile == "":
 		return oidc.PasswordNotConfigured
 	}
-	return oidc.PasswordOK
+	// A file is configured but this replica has no login service to say whether it
+	// holds a usable password; "ok" would be a claim nobody checked.
+	return oidc.PasswordUnusable
+}
+
+// settingsETag is the entity tag of the settings document: the revision of the
+// settings row and a digest of the read-only status, which changes without the row
+// (a lockout, a provider's discovery, the state of the break-glass password), so a
+// client that holds the tag is not told 304 about a status that moved. A write
+// takes only the revision out of it ([settingsRevision]).
+func settingsETag(revision int64, status gen.AuthSettingsStatus) string {
+	raw, _ := json.Marshal(status)
+	sum := sha256.Sum256(raw)
+	return ETag(revision, hex.EncodeToString(sum[:6]))
+}
+
+// settingsRevision reads the revision out of an If-Match that carries the tag of
+// [settingsETag]; the status digest is not a precondition of a write.
+func settingsRevision(p Precondition) int64 {
+	if !p.Present || p.Any {
+		return errs.AnyRevision
+	}
+	num, _, _ := strings.Cut(p.Tag[1:len(p.Tag)-1], "-")
+	if n, err := strconv.ParseInt(num, 10, 64); err == nil && n >= 1 {
+		return n
+	}
+	return 0 // a tag the server never issued matches nothing
 }
 
 // GetAuthSettings implements GET /api/v1/settings/auth. It reads PostgreSQL, not
@@ -94,16 +125,16 @@ func (s *Server) GetAuthSettings(w http.ResponseWriter, r *http.Request, _ gen.G
 		failIdentity(w, r, err)
 		return
 	}
-	tag := ETag(row.Revision, "")
-	if NotModified(w, r, tag) {
-		return
-	}
 	out, err := s.authSettings(r, row)
 	if err != nil {
 		failIdentity(w, r, err)
 		return
 	}
-	SetETag(w, row.Revision, "")
+	tag := settingsETag(row.Revision, out.Status)
+	if NotModified(w, r, tag) {
+		return
+	}
+	w.Header().Set("ETag", tag)
 	writeJSON(w, r, http.StatusOK, out)
 }
 
@@ -162,7 +193,7 @@ func (s *Server) UpdateAuthSettings(w http.ResponseWriter, r *http.Request, _ ge
 			p.SATDefaultTTL, p.SATMaxTTL = duration(t.SAT.DefaultTTLSeconds), duration(t.SAT.MaxTTLSeconds)
 		}
 	}
-	p.Expected = expectedRevision(pre)
+	p.Expected = settingsRevision(pre)
 	row, err := s.o.Auth.Settings.Update(r.Context(), s.caller(r), p)
 	if err != nil {
 		failIdentity(w, r, err)
@@ -173,6 +204,6 @@ func (s *Server) UpdateAuthSettings(w http.ResponseWriter, r *http.Request, _ ge
 		failIdentity(w, r, err)
 		return
 	}
-	SetETag(w, row.Revision, "")
+	w.Header().Set("ETag", settingsETag(row.Revision, out.Status))
 	writeJSON(w, r, http.StatusOK, out)
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
@@ -113,6 +114,13 @@ func TestR_EP_018_FormatsOnAnEndpointWithRules(t *testing.T) {
 	e.stack.Repository("npm-virtual", "virtual", "npm", "{}")
 	acme := testenv.Person{ID: e.acmeID, Kind: "service_account"}
 	e.stack.Policy("formats-read", []string{"read"}, []string{"opaque-local", "npm-customers", "npm-virtual"}, acme)
+	// plat is a repository-admin (endpoints:read, no content bypass) who may read npm-customers only for @platform/*.
+	plat := e.stack.User("plat")
+	e.stack.Bind("repository-admin", plat)
+	e.stack.Policy("platform-read", []string{"read"}, []string{"npm-customers"}, plat)
+	e.stack.Exec(`INSERT INTO authz_policy_pattern (policy_id, dimension, mode, pattern)
+		SELECT id, 'package', 'include', '@platform/*' FROM authz_policy WHERE name = 'platform-read'`)
+	platPAT := e.stack.Token(plat, scope.Scope{Inherit: true, System: []string{"endpoints:read"}})
 	r := e.start("a")
 
 	t.Run("R-EP-018 the format is served on the default endpoint", func(t *testing.T) {
@@ -214,13 +222,13 @@ func TestR_EP_018_FormatsOnAnEndpointWithRules(t *testing.T) {
 			if a.Status != http.StatusOK || json.Unmarshal(a.Body, &res) != nil {
 				t.Fatalf("%d %s", a.Status, a.Body)
 			}
-			// The trashed 2.2.0 and the tombstoned 3.0.0 are not stored versions any more.
+			// Newest first. The trashed 2.2.0 and the tombstoned 3.0.0 are not stored versions any more.
 			want := []verdict{
-				{"1.9.0", false, "out_of_range"},
-				{"2.0.0", true, "exposed"},
-				{"2.0.1", false, "version_excluded"},
-				{"2.1.0-rc.1", false, "prerelease"},
 				{"2.1.0", true, "exposed"},
+				{"2.1.0-rc.1", false, "prerelease"},
+				{"2.0.1", false, "version_excluded"},
+				{"2.0.0", true, "exposed"},
+				{"1.9.0", false, "out_of_range"},
 			}
 			if len(res.Versions) != len(want) {
 				t.Fatalf("%s: %s", body, a.Body)
@@ -260,6 +268,34 @@ func TestR_EP_018_FormatsOnAnEndpointWithRules(t *testing.T) {
 		res.Versions, res.DistTags = nil, nil
 		if a.Status != http.StatusOK || json.Unmarshal(a.Body, &res) != nil || len(res.Versions) != 0 || len(res.DistTags) != 0 {
 			t.Fatalf("%d %s", a.Status, a.Body)
+		}
+	})
+	t.Run("R-EP-016 Q-EP-62 a check lists the stored versions and tags only of packages the caller may read", func(t *testing.T) {
+		const repo = `(SELECT id FROM repositories WHERE key = 'npm-customers')`
+		e.stack.Exec(`INSERT INTO packages (repo_id, name, display_name) VALUES (` + repo + `, '@platform/sdk', '@platform/sdk')`)
+		pkg := `(SELECT id FROM packages WHERE repo_id = ` + repo + ` AND name = '@platform/sdk')`
+		e.stack.Exec(`INSERT INTO package_versions (package_id, version, display_version) VALUES (` + pkg + `, '1.0.0', '1.0.0')`)
+		e.stack.Exec(`INSERT INTO npm_packages (package_id, repo_id, name_fold, dist_tags) VALUES (` + pkg + `, ` + repo + `, '@platform/sdk', '{"latest":"1.0.0"}')`)
+		// @acme/sdk, seeded above with versions and tags, is a package the caller may not read.
+		check := func(pkgName string) (versions, tags int, body string) {
+			a := e.send(r.def, "trove.test", "POST", "/api/v1/endpoints/customers/check-exposure", platPAT,
+				[]byte(`{"repository":"npm-customers","package":"`+pkgName+`"}`))
+			var res struct {
+				Versions []json.RawMessage `json:"versions"`
+				DistTags []json.RawMessage `json:"distTags"`
+			}
+			if a.Status != http.StatusOK || json.Unmarshal(a.Body, &res) != nil {
+				t.Fatalf("%s: %d %s", pkgName, a.Status, a.Body)
+			}
+			return len(res.Versions), len(res.DistTags), strings.ReplaceAll(string(a.Body), pkgName, "PKG")
+		}
+		if v, tg, body := check("@platform/sdk"); v != 1 || tg != 1 {
+			t.Fatalf("the readable package lists %d versions and %d tags: %s", v, tg, body)
+		}
+		vh, th, held := check("@acme/sdk")
+		vm, tm, missing := check("@acme/sdk-none") // admitted by the same rule, held by no one
+		if vh != 0 || th != 0 || vm != 0 || tm != 0 || held != missing {
+			t.Fatalf("a package the caller may not read must answer as one the repository does not hold:\n%s\n%s", held, missing)
 		}
 	})
 }

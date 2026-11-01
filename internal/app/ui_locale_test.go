@@ -18,7 +18,7 @@ type fakeSessions struct {
 	err   error
 }
 
-func (f fakeSessions) Validate(_ context.Context, cookie string) (session.Info, error) {
+func (f fakeSessions) Peek(_ context.Context, cookie string) (session.Info, error) {
 	if f.err != nil || cookie != f.valid {
 		return session.Info{}, errors.Join(session.ErrInvalid, f.err)
 	}

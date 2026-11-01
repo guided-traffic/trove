@@ -138,19 +138,32 @@ func (c *lastUsedComponent) Start(context.Context) error {
 	return nil
 }
 
-func (c *lastUsedComponent) Stop(context.Context) error {
+func (c *lastUsedComponent) Stop(ctx context.Context) error {
 	c.mu.Lock()
 	cancel, done := c.cancel, c.done
 	c.mu.Unlock()
-	if cancel != nil {
-		cancel()
-		<-done
+	if cancel == nil {
+		return nil
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 	return nil
 }
 
-// Flush writes the pending last-used times; Sync is the same for a running replica.
-func (c *lastUsedComponent) Flush(ctx context.Context) error { return c.tokens.FlushLastUsed(ctx) }
+// Flush is the flush of the shutdown (R-ARCH-024 step 6): it ends the loop and
+// waits for the batch the loop may be writing, then writes what is left, so a
+// slow periodic flush neither loses its batch nor races the final one. The
+// shutdown calls Flush before Stop, and Stop may be called again.
+func (c *lastUsedComponent) Flush(ctx context.Context) error {
+	if err := c.Stop(ctx); err != nil {
+		return err
+	}
+	return c.tokens.FlushLastUsed(ctx)
+}
 
 // Sync is Flush for a running replica (App.Flush).
 func (c *lastUsedComponent) Sync(ctx context.Context) error { return c.tokens.FlushLastUsed(ctx) }

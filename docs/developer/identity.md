@@ -98,12 +98,14 @@ request ─► chain stage 6 ─► app.authenticate ─► auth.Stage.Authentic
   management operation is declared public (Q-AUTH-19). An endpoint that allows no anonymous request (a further endpoint
   by default, R-EP-010) answers every request without a credential with the same 401, the always-open routes included.
 - Not built: the NuGet API-key source (M2) and the GitLab job-token extension point (M4).
-- Last use (R-AUTH-031, Q-AUTH-178): `Service.Check` calls `noteUse` on every success, cache hit or not
+- Last use (R-AUTH-031, Q-AUTH-178): the stage calls `Service.NoteUse` (the optional `auth.UseNoter`) once the whole
+  authentication succeeded, after the endpoint binding and the owner's groups, cache hit or not; `Check` notes nothing
   ([lastused.go](../../internal/auth/token/lastused.go)). The buffer is a map from token ID to the latest time and address, under
   a mutex; `FlushLastUsed` takes it and writes one statement (`IdentityTouchTokensLastUsed`, rows locked in ID order, a row changes
   only when it is `auth.tokens.last_used_granularity` behind). A failed batch is dropped and counted
   (`trove_auth_lastused_flush_failures_total`). `lastUsedComponent` in [wire_identity.go](../../internal/app/wire_identity.go) runs
-  the 60 s loop (`RunLastUsed`) and is a `Flusher`, so the shutdown writes what is left before the pools close. The integration test
+  the 60 s loop (`RunLastUsed`, whose flush runs under `context.WithoutCancel`) and is a `Flusher`: its `Flush` ends the loop, waits for the batch in
+  flight and then writes what is left, before the pools close. The statement caps the time at `now()` (Q-AUTH-180). The integration test
   is `TestR_AUTH_031_LastUsedIsRecordedInBatches` in [test/integration/identity/lastused_test.go](../../test/integration/identity/lastused_test.go).
 
 ## Caches and revocation propagation

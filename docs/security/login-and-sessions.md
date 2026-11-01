@@ -166,6 +166,20 @@ default says enabled and finds out during the outage that needs it. The replica 
 status names the cause for an administrator who looks (`status.breakGlass.passwordStatus` is `not_configured`, or `unusable` after a
 rotated file that holds no usable password, Q-AUTH-179), and the member carries no part of the password.
 
+### H-328 · Well-formed random session cookies each cost an indexed query and are not counted as failed credentials
+
+Stage: the session lookup of the authentication stage (`bySession`, [stage.go](../../internal/auth/stage.go)) and of the redirect of `/ui/`
+([ui_locale.go](../../internal/app/ui_locale.go)); [store.go](../../internal/auth/session/store.go) `Store.lookup`, `WellFormed` in
+[cookie.go](../../internal/auth/session/cookie.go). Subject: the database. Live on every client listener, from any address.
+
+A cookie of the right length and alphabet passes `WellFormed`, so it is looked up: a cache miss reads `ui_session` by the hash of the secret (one
+indexed query), and a lookup that finds no live session is not cached (`errGone`). The session path of the stage does not count the failure
+toward the credential-failure throttle of R-AUTH-038, which counts rejected tokens only. A flood of random cookies from one or many addresses
+therefore costs one indexed query each, bounded only by the listener's request limits and the pool. Since the redirect of `/ui/` (Q-API-184)
+looks the cookie up too, and that path is open to every request, it is a second way in. The query is cheap and the pool is bounded, so this is
+load and not exposure: no cookie can be guessed (256 bits), and a refused cookie answers the same `401 session_expired` whatever it was. What makes
+it real is a deployment without an edge rate limit in front of the client listener.
+
 ### H-210 · Anyone who reaches the local login can keep the break-glass account locked
 
 Stage: `POST /auth/local/login` ([login.go](../../internal/api/login/login.go), [breakglass.go](../../internal/auth/oidc/breakglass.go)). Subject: the recovery path. Live

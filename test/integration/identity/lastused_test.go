@@ -79,3 +79,27 @@ func TestR_AUTH_031_LastUsedIsRecordedInBatches(t *testing.T) {
 		t.Fatalf("a use inside the granularity changed the row: %v -> %v", first, second)
 	}
 }
+
+// TestR_AUTH_031_AReplicaWithAFastClockDoesNotFreezeTheColumn: the time written is the
+// replica's wall clock, so one whose clock runs an hour ahead must not leave
+// last_used_at in the future, where every later, correct use would look older than
+// the granularity allows and be dropped.
+func TestR_AUTH_031_AReplicaWithAFastClockDoesNotFreezeTheColumn(t *testing.T) {
+	e := newEnv(t)
+	fast := e.newReplica("fast", replicaOpts{now: func() time.Time { return time.Now().Add(time.Hour) }})
+	pat := fast.pat(fast.user("alice"))
+	ctx := context.Background()
+	if _, err := fast.bearer(pat.Secret, "/api/v1/auth/whoami"); err != nil {
+		t.Fatal(err)
+	}
+	if err := fast.tokens.FlushLastUsed(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var ahead bool
+	if err := e.admin.QueryRow(ctx, `SELECT last_used_at > now() FROM api_token WHERE id = $1::uuid`, pat.Record.ID).Scan(&ahead); err != nil {
+		t.Fatal(err)
+	}
+	if ahead {
+		t.Fatal("last_used_at is in the future: the clamp to the database clock is missing")
+	}
+}

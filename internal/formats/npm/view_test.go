@@ -159,7 +159,7 @@ func (f *fakeViewPort) ViewWithheld(context.Context, []string) ([]int64, error) 
 	return f.withheld, nil
 }
 
-func (f *fakeViewPort) ViewStored(_ context.Context, repoID int64, name string, remote bool) ([]string, map[string]string, error) {
+func (f *fakeViewPort) ViewStored(_ context.Context, repoID int64, name string, remote bool, _ int) ([]string, map[string]string, error) {
 	f.stored = append(f.stored, storedCall{repoID: repoID, name: name, remote: remote})
 	return []string{"1.0.0", "2.0.0"}, map[string]string{"latest": "2.0.0"}, nil
 }
@@ -174,17 +174,17 @@ func TestR_EP_016_NPMAdapterListsStoredVersions(t *testing.T) {
 	port := &fakeViewPort{}
 	a, ports := viewAdapter{}, fakePorts{port}
 	ctx := context.Background()
-	got, err := a.Stored(ctx, ports, formats.RepoRef{ID: 7, Class: formats.Local}, "@acme/sdk")
+	got, err := a.Stored(ctx, ports, formats.RepoRef{ID: 7, Class: formats.Local}, "@acme/sdk", 10)
 	if err != nil || !got.Listed || !slices.Equal(got.Versions, []string{"1.0.0", "2.0.0"}) || got.Tags["latest"] != "2.0.0" {
 		t.Fatalf("hosted: %+v %v", got, err)
 	}
-	if _, err = a.Stored(ctx, ports, formats.RepoRef{ID: 8, Class: formats.Remote}, "left-pad"); err != nil {
+	if _, err = a.Stored(ctx, ports, formats.RepoRef{ID: 8, Class: formats.Remote}, "left-pad", 10); err != nil {
 		t.Fatal(err)
 	}
 	if want := []storedCall{{7, "@acme/sdk", false}, {8, "left-pad", true}}; !slices.Equal(port.stored, want) {
 		t.Fatalf("the port was asked %+v, want %+v", port.stored, want)
 	}
-	if got, err = a.Stored(ctx, ports, formats.RepoRef{ID: 9, Class: formats.Virtual}, "x"); err != nil || got.Listed || len(got.Versions) != 0 || len(port.stored) != 2 {
+	if got, err = a.Stored(ctx, ports, formats.RepoRef{ID: 9, Class: formats.Virtual}, "x", 10); err != nil || got.Listed || len(got.Versions) != 0 || len(port.stored) != 2 {
 		t.Fatalf("a virtual repository stores nothing of its own: %+v %v", got, err)
 	}
 }

@@ -51,12 +51,12 @@ type ViewAdapter interface {
 // exposure rules lists these versions when the request names none
 // (R-EP-016, Q-EP-61). It is optional; a format without it lists none.
 type StoredLister interface {
-	// Stored returns the versions the repository serves of the package, in the
-	// order of their arrival, and, for a format with tags, its tags (tag to
+	// Stored returns at most limit of the versions the repository serves of the
+	// package, newest first, and, for a format with tags, its tags (tag to
 	// version). A hosted repository lists its live versions, a remote one the
 	// versions of its cached document; the package is a normalized name. A package
 	// the repository does not hold is the empty answer, not an error.
-	Stored(ctx context.Context, ports DataPorts, repo RepoRef, pkg string) (Stored, error)
+	Stored(ctx context.Context, ports DataPorts, repo RepoRef, pkg string, limit int) (Stored, error)
 }
 
 // Stored is the answer of [StoredLister].

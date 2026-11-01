@@ -59,7 +59,9 @@ type Service struct {
 	tokens  *cache.Cache[[32]byte, cachedToken]
 	flights principal.Flights[[32]byte, cachedToken]
 	used    lastUsed
-	log     *slog.Logger
+	// lastUsedEvery is the interval of RunLastUsed; zero means LastUsedFlushInterval.
+	lastUsedEvery time.Duration
+	log           *slog.Logger
 }
 
 var _ Validator = (*Service)(nil)

@@ -234,6 +234,44 @@ func (s *Store) Validate(ctx context.Context, cookie string) (Info, error) {
 	return e.info(), nil
 }
 
+// Peek resolves a session cookie like [Store.Validate] but changes nothing: it
+// does not move the idle deadline (no touch), does not end a session whose
+// deadline has passed, and does not end the break-glass sessions of a disabled
+// account; it reports such a session as ErrInvalid and leaves the row to the
+// next request that may write. It is for the reads that must not extend a
+// session, such as the choice of the UI language on a redirect (Q-API-184).
+func (s *Store) Peek(ctx context.Context, cookie string) (Info, error) {
+	if !WellFormed(cookie) {
+		return Info{}, ErrInvalid
+	}
+	key := string(Hash(cookie))
+	e, err := s.lookup(ctx, key)
+	if errors.Is(err, errGone) {
+		return Info{}, ErrInvalid
+	}
+	if err != nil {
+		return Info{}, err
+	}
+	if now := time.Now(); !now.Before(e.absDeadline) || !now.Before(e.seen().Add(e.idle)) {
+		// The replica's view says the session ended; only the row can say it did not.
+		fresh, err := s.fill(ctx, key)
+		if errors.Is(err, errGone) {
+			return Info{}, ErrInvalid
+		}
+		if err != nil {
+			return Info{}, err
+		}
+		if now = time.Now(); !now.Before(fresh.absDeadline) || !now.Before(fresh.seen().Add(fresh.idle)) {
+			return Info{}, ErrInvalid
+		}
+		e = fresh
+	}
+	if e.breakGlass && !s.o.BreakGlass.Enabled {
+		return Info{}, ErrInvalid
+	}
+	return e.info(), nil
+}
+
 // lookup answers from the cache while the change log is fresh (Q-AUTH-10) and
 // from PostgreSQL otherwise, sharing one query per credential.
 func (s *Store) lookup(ctx context.Context, key string) (*entry, error) {
@@ -282,40 +320,41 @@ func (s *Store) shared(ctx context.Context, key string) (*entry, error) {
 
 // flightFillTimeout bounds the query of a shared lookup. It runs without the
 // cancellation of the request that started it, because the requests that joined
-// it must not fail with that request's cancellation.
+// it must not fail with that request's cancellation; every request waits for it
+// under its own context.
 const flightFillTimeout = 10 * time.Second
 
 func (s *Store) sharedFill(ctx context.Context, key string, fill func(context.Context, string) (*entry, error)) (*entry, error) {
 	s.fmu.Lock()
-	if f, ok := s.flights[key]; ok && time.Since(f.started) < s.o.RevocationBound {
-		s.fmu.Unlock()
-		select {
-		case <-f.done:
-			if f.err != nil {
-				return nil, f.err
+	f, ok := s.flights[key]
+	if !ok || time.Since(f.started) >= s.o.RevocationBound {
+		f = &flight{started: time.Now(), done: make(chan struct{})}
+		s.flights[key] = f
+		// The query runs on its own, with its own bound: the request that started it
+		// waits for it like the ones that join it, and stops waiting when its own
+		// context ends, without taking the others' answer with it.
+		go func() {
+			fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), flightFillTimeout)
+			f.e, f.err = fill(fctx, key)
+			cancel()
+			close(f.done)
+			s.fmu.Lock()
+			if s.flights[key] == f {
+				delete(s.flights, key)
 			}
-			return f.e.copyForRequest(), nil
-		case <-ctx.Done():
-			return nil, ctx.Err()
+			s.fmu.Unlock()
+		}()
+	}
+	s.fmu.Unlock()
+	select {
+	case <-f.done:
+		if f.err != nil {
+			return nil, f.err
 		}
+		return f.e.copyForRequest(), nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
-	f := &flight{started: time.Now(), done: make(chan struct{})}
-	s.flights[key] = f
-	s.fmu.Unlock()
-
-	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), flightFillTimeout)
-	f.e, f.err = fill(fctx, key)
-	cancel()
-	close(f.done)
-	s.fmu.Lock()
-	if s.flights[key] == f {
-		delete(s.flights, key)
-	}
-	s.fmu.Unlock()
-	if f.err != nil {
-		return nil, f.err
-	}
-	return f.e.copyForRequest(), nil
 }
 
 // copyForRequest gives each request of a shared flight its own kept value.

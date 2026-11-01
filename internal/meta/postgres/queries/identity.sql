@@ -401,9 +401,11 @@ SELECT t.id::text AS id, t.type, t.hint, t.principal_id::text AS owner_id, p.kin
 -- One flush of the last-used buffer (R-AUTH-031). A JSON array of {"id", "at", "addr"}.
 -- The row changes only when it has no last use or the new one is a granularity
 -- newer, so a token costs one write per granularity however many replicas saw it.
+-- The time is the replica's clock, clamped to the database's now(), so a replica whose
+-- clock runs ahead cannot leave a time in the future that later uses would never beat.
 -- The rows are locked in id order, so two replicas flushing together cannot deadlock.
 WITH u AS (
-    SELECT (e ->> 'id')::uuid AS id, (e ->> 'at')::timestamptz AS at, NULLIF(e ->> 'addr', '')::inet AS addr
+    SELECT (e ->> 'id')::uuid AS id, least((e ->> 'at')::timestamptz, now()) AS at, NULLIF(e ->> 'addr', '')::inet AS addr
       FROM jsonb_array_elements(sqlc.arg(uses)::text::jsonb) AS e
 ), due AS (
     SELECT t.id

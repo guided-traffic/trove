@@ -7,10 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/auth/oidc"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/config"
+	"github.com/guided-traffic/trove/internal/errs"
 )
 
 type fakeLogin struct{ password oidc.PasswordStatus }
@@ -61,6 +63,7 @@ func TestR_AUTH_040_BreakGlassStatusNamesTheMissingPassword(t *testing.T) {
 		{"enabled without a password file and without a login service", enabled(""), nil, "not_configured"},
 		{"a password file the replica could not use", enabled("/run/secrets/bg"), fakeLogin{password: oidc.PasswordUnusable}, "unusable"},
 		{"a usable password", enabled("/run/secrets/bg"), fakeLogin{password: oidc.PasswordOK}, "ok"},
+		{"a file and no login service to check it", enabled("/run/secrets/bg"), nil, "unusable"},
 		{"the account is disabled", config.AuthBreakGlass{Username: "admin"}, fakeLogin{password: oidc.PasswordNotApplicable}, "not_applicable"},
 	} {
 		t.Run("R-AUTH-040 "+tc.name, func(t *testing.T) {
@@ -69,5 +72,31 @@ func TestR_AUTH_040_BreakGlassStatusNamesTheMissingPassword(t *testing.T) {
 				t.Fatalf("status.breakGlass = %v, want passwordStatus %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestR_AUTH_040_TheETagFollowsTheStatusAndAWriteTakesOnlyTheRevision(t *testing.T) {
+	var a, b gen.AuthSettingsStatus
+	b.BreakGlass.PasswordStatus = gen.AuthSettingsStatusBreakGlassPasswordStatusNotConfigured
+	if settingsETag(7, a) == settingsETag(7, b) {
+		t.Fatal("a change of the status left the ETag as it was: a client would be told 304 about a stale status")
+	}
+	again := a
+	if settingsETag(7, a) != settingsETag(7, again) || settingsETag(7, a) == settingsETag(8, a) {
+		t.Fatal("the tag must be stable for one revision and status, and move with the revision")
+	}
+	for _, tc := range []struct {
+		ifMatch string
+		want    int64
+	}{{settingsETag(7, b), 7}, {`"7"`, 7}, {"*", errs.AnyRevision}, {`"junk-x"`, 0}} {
+		r := httptest.NewRequestWithContext(context.Background(), "PATCH", "/", nil)
+		r.Header.Set("If-Match", tc.ifMatch)
+		pre, err := ParseIfMatch(r)
+		if err != nil || settingsRevision(pre) != tc.want {
+			t.Errorf("If-Match %s: revision %d (%v), want %d", tc.ifMatch, settingsRevision(pre), err, tc.want)
+		}
+	}
+	if settingsRevision(Precondition{}) != errs.AnyRevision {
+		t.Error("no header means no revision condition")
 	}
 }

@@ -95,7 +95,6 @@ func (s *Service) Check(ctx context.Context, raw string, req Request) (Info, err
 	if gateOpen {
 		if ct, ok := s.tokens.Get(hash); ok {
 			if ct.info.ExpiresAt == nil || s.o.Now().Before(*ct.info.ExpiresAt) {
-				s.noteUse(ct.info.ID, req.Source.ClientAddr)
 				return ct.info, nil
 			}
 			s.tokens.Remove(hash) // expired since the fill: the database path logs the rejection
@@ -127,7 +126,6 @@ func (s *Service) Check(ctx context.Context, raw string, req Request) (Info, err
 			s.log.Debug("token marker not written", "err", err)
 		}
 	}
-	s.noteUse(ct.info.ID, req.Source.ClientAddr)
 	return ct.info, nil
 }
 

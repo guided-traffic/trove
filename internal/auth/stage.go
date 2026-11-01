@@ -33,6 +33,13 @@ type TokenValidator interface {
 	Check(ctx context.Context, raw string, req token.Request) (token.Info, error)
 }
 
+// UseNoter records that a token authenticated a request (R-AUTH-031). The stage
+// calls it only when the whole authentication succeeded; a validator that does not
+// implement it records nothing.
+type UseNoter interface {
+	NoteUse(tokenID, clientAddr string)
+}
+
 // AnonymousSettings reads the runtime anonymous switch (R-AUTH-037, R-AUTH-040).
 // *token.SettingsStore implements it.
 type AnonymousSettings interface {
@@ -211,6 +218,9 @@ func (s *Stage) byToken(r *http.Request, ep EndpointRules, raw string, method Me
 		return Result{}, err
 	}
 	sc := info.Scope
+	if n, ok := s.o.Tokens.(UseNoter); ok {
+		n.NoteUse(info.ID, sourceOf(r, s.clientAddr(r)).ClientAddr)
+	}
 	s.o.Metrics.Attempt(string(method), "success", "")
 	return Result{
 		Principal: info.Owner,

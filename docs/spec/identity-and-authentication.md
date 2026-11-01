@@ -2361,13 +2361,18 @@ NuGet API-key presentations count alike.
 **Write strategy.** Writes are coarsened and batched:
 
 - each replica aggregates uses in memory. Requests write this buffer and never read it, so it is
-  per-replica state that no answer depends on (R-AUTH-042);
+  per-replica state that no answer depends on (R-AUTH-042). A use is noted by the authentication
+  stage once the whole authentication has succeeded, after the endpoint binding and the groups of
+  the owner (R-EP-011), so a token that is refused is not a use (Q-AUTH-180);
 - it flushes every 60 s, and at shutdown before the pools close
   ([architecture.md](architecture.md) R-ARCH-024), with one `UPDATE … WHERE last_used_at IS NULL
   OR last_used_at < $ts − granularity`. The condition keeps each token's row at one change per
-  `granularity`, whatever the number of replicas that saw it;
+  `granularity`, whatever the number of replicas that saw it. `$ts` is the replica's clock capped at
+  the database's `now()`, so a replica whose clock runs ahead cannot leave a time that later uses
+  never beat (Q-AUTH-180);
 - updates are best effort. A failed flush is dropped and counted in a metric, and never fails a
-  request. A replica killed without a drain loses at most one interval of uses.
+  request. A replica killed without a drain loses at most one interval of uses. At shutdown the
+  loop is ended and its batch in flight finished before the final flush (Q-AUTH-180).
 
 **Use.** `lastUsedBefore` in R-AUTH-028 finds stale tokens: a token that was never used, and one
 last used before the instant. A token that was never used has `lastUsedAt: null`. The token screens
@@ -3283,7 +3288,7 @@ list of authentication state; a new kind needs a row here before it ships:
 | npm web login and device login: approval, poll pacing, refused polls (R-AUTH-034, R-AUTH-036) | `cli_login` | nothing | none | unaffected |
 | UI sessions, CSRF hashes, idle deadline (R-AUTH-010) | `ui_session` | cache entries (R-AUTH-023); per session the newest `last_seen_at` it has read, a lower bound of the row that only saves touch statements | change messages only | revocation bound kept by the change-log poll |
 | Tokens, principal status, memberships, runtime settings | PostgreSQL | cache entries (R-AUTH-023) | change messages only | same |
-| Credential lookups while the freshness gate bypasses the caches (R-AUTH-023) | PostgreSQL | a query shared by concurrent requests for at most `auth.revocation_bound`; nothing outlives it | none | unaffected |
+| Credential lookups while the freshness gate bypasses the caches (R-AUTH-023) | PostgreSQL | a query shared by concurrent requests for at most `auth.revocation_bound`, each waiting under its own context (Q-AUTH-181); nothing outlives it | none | unaffected |
 | Break-glass lockout and rotation hold (R-AUTH-014, R-AUTH-038) | `auth_lockout` | nothing | none | unaffected |
 | Failed-credential throttle, flow starts, wrong device codes (R-AUTH-038) | none: disposable counters | fallback buckets while Valkey is unavailable | the counters | per-replica shares of each limit |
 | Throttle exemption of recently validated credentials (R-AUTH-038) | none | its own cache | markers | only its own cache exempts |
@@ -4920,8 +4925,8 @@ refused with `403 local_login_disabled`, while the settings screen said "Enabled
 | (c) Show the problem only in the log | The start-up warning of Q-AUTH-33 exists | Nothing to add | The settings screen is where an operator looks, and the log line is gone after a rotation |
 
 **Choice:** (a). The value is the state of this replica: `unusable` is possible after a rotation that the replica noticed, and another
-replica may not have noticed it yet. The member is read-only status, part of the already administrator-only settings document; it
-carries no part of the password, its length or its hash. The screen shows the missing password as an error with the key to set, and
+replica may not have noticed it yet. The member is read-only status, part of the settings document, which the holders of `settings:read` (`admin`, `security-admin`, `auditor`) can read; it
+carries no part of the password, its length or its hash. Without a login service on the replica that answers, a configured file is reported as `unusable`, because nobody checked it. The screen shows the missing password as an error with the key to set, and
 the unusable one with the effect (every local sign-in refused until the file is fixed).
 
 **Rationale:** the member answers the question the operator has when a sign-in is refused, without exposing anything that helps an
@@ -4930,6 +4935,49 @@ this if replicas disagree often enough to need a per-replica list.
 
 **Applied in the spec:** R-AUTH-040 (the `status.breakGlass` member), `api/openapi.yaml` (`AuthSettingsStatus`). Code:
 `oidc.Service.BreakGlassPassword`, `authsettings_api.go`, `web/src/app/features/settings/auth-settings.html`.
+
+### Q-AUTH-180 · What counts as a use of a token, and whose clock writes it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-AUTH-178 records the last use. Three details decide whether the column can be trusted. `Check` noted the use before the stage
+applied the endpoint binding and read the owner's groups, so a stolen token tried on an endpoint it is not bound to moved `last_used_at`
+and `last_used_addr`. The flush loop ran on its own context, which `Stop` cancelled, so a slow periodic batch in flight at shutdown could be
+lost. And the time written was the replica's wall clock, so a replica whose clock runs ahead left a time that every later, correct use looked
+older than.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The stage notes the use after the whole authentication; the shutdown ends the loop and waits for it; the statement caps the time at `now()` (chosen) | `NoteUse(id, addr)` on the validator, called by the stage after the binding and groups succeed; `Flush` cancels the loop and waits, the loop writes under `context.WithoutCancel` with a 10 s bound; `least(u.at, now())` | "Every successful authentication" stays true and means what the stage accepted; no batch is cancelled by the shutdown; one clock decides the order | The validator has a second method the stage asks for |
+| (b) Keep noting in `Check` and undo on refusal | A decrement path | None | A buffer that must be rolled back; a refused token still races the flush |
+| (c) Use the database clock only | Stamp the time in SQL | One clock | The buffer would lose the moment of the use; a flush minutes later would stamp the flush time |
+
+**Choice:** (a). A validator that does not implement `NoteUse` records nothing (the shell profile); `Service.Validate`, which has no stage, notes
+nothing either. The cap only matters for a clock that is ahead; a clock that is behind writes an older time, which is true to its own view.
+
+**Rationale:** the stage is the only place that knows the authentication succeeded, and the statement is the only place that knows both
+clocks. The development agent would revisit this if a second consumer of `Check` needed the use noted.
+
+**Applied in the spec:** R-AUTH-031 (write strategy). Code: `internal/auth/stage.go` (`UseNoter`), `internal/auth/token/lastused.go`,
+`internal/app/wire_identity.go` (`lastUsedComponent.Flush`), the statement `IdentityTouchTokensLastUsed`.
+
+### Q-AUTH-181 · Every request waits for a shared session lookup under its own context
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: while the change log is stale the session store shares one query per cookie between concurrent requests (R-AUTH-023). The
+request that started the query ran it inline on a context cut loose from its own cancellation with a 10 s bound, so it alone ignored its
+deadline, while the requests that joined respected theirs. A bound of 2 s on a read of the stored locale (Q-API-184), and the deadline of
+any request, did not hold for the one that happened to start the lookup.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The query runs in its own goroutine; every request, the starter too, waits under its own context (chosen) | The shared query keeps the detached 10 s bound and finishes for the others | One rule for all requests of a flight; a cancelled starter no longer holds its caller | A goroutine per started flight |
+| (b) Give the starter the request context | The query is cancelled with its starter | No goroutine | The joiners fail with the starter's cancellation, the case the detached context exists to prevent |
+
+**Choice:** (a). **Rationale:** the flight is shared state, so it must not belong to one request. The development agent would revisit this if
+the goroutines showed up in a profile, then with a small worker. **Applied in the spec:** R-AUTH-023 (the shared lookup). Code:
+`Store.sharedFill` in `internal/auth/session/store.go`.
 
 ### Q-AUTH-79 · How the end-to-end tests drive the browser login of E1.1 and disable the break-glass account
 

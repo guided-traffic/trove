@@ -2053,7 +2053,7 @@ paths:
             format: date-time
         - name: lastUsedBefore
           in: query
-          description: Finds stale tokens. Last-use tracking is not recorded yet, so a token that was never used has no `lastUsedAt`.
+          description: Finds stale tokens, those last used before the instant and those never used (`lastUsedAt` null). The last use is written in batches, at most once per `auth.tokens.last_used_granularity` (R-AUTH-031), so it can be a few minutes behind.
           schema:
             type: string
             format: date-time
@@ -2515,8 +2515,10 @@ paths:
       summary: Read the runtime authentication settings
       description: |
         The effective runtime values, the YAML ceilings they are bound by, and read-only status: providers with their
-        discovery state, the break-glass account, session timeouts and the client switches (R-AUTH-040). `ETag` is the
-        tag for `PATCH`.
+        discovery state, the break-glass account and the state of its password, session timeouts and the client switches
+        (R-AUTH-040). `ETag` is the tag for `PATCH`: the revision of the settings and a digest of the read-only status, which
+        can change without a write (a lockout, a provider's discovery), so `If-None-Match` is never answered `304` for a
+        status that moved. A write takes only the revision out of the tag (Q-API-185).
       x-trove-permission:
         permission: settings:read
       parameters:
@@ -5148,12 +5150,15 @@ paths:
         validated like a write (Q-EP-18). Needs `endpoints:read` and `read` on the repository; a
         repository the caller cannot read answers `404` like a missing one. Generic repositories are
         checked through `paths`. For a format with versions, a request that names a package and no
-        `versions` (absent or empty) judges the versions the repository stores of that package and
-        answers the package's tags in `distTags` (Q-EP-61): a hosted repository lists its live
+        `versions` (absent or empty) judges the versions the repository stores of that package, newest first,
+        and answers the package's tags in `distTags` (Q-EP-61). The caller sees only what it may read
+        (Q-EP-62): a package it may not read answers exactly as one the repository does not hold, a version it may
+        not read is left out, and so is a tag that points to one. A hosted repository lists its live
         versions, a remote one the versions of its cached document (its tags are not stored, so none
         are listed), and a virtual repository stores nothing of its own, so the answer carries the
-        warning `stored_versions_not_listed`. More than 1,000 stored versions are cut and the answer
-        carries `stored_versions_truncated`. A tag is visible when a rule admits its name and the
+        warning `stored_versions_not_listed`. The newest 1,000 versions and the first 1,000 tags (by name) are judged,
+        the rest is cut and the answer carries `stored_versions_truncated` (Q-EP-63); the version a tag points to is
+        always judged. A tag is visible when a rule admits its name and the
         version it points to is exposed. `distTags` is filled whenever a package of a format with
         tags is named, also when `versions` are sent.
       x-trove-permission:
@@ -9501,7 +9506,7 @@ components:
         versions:
           type: array
           maxItems: 1000
-          description: Versions of the package. For a format with versions, an absent or empty list means the versions the repository stores of the package, in the order they arrived (Q-EP-61).
+          description: Versions of the package. For a format with versions, an absent or empty list means the versions the repository stores of the package that the caller may read, newest first (Q-EP-61, Q-EP-62, Q-EP-63).
           items:
             type: string
         paths:

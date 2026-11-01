@@ -575,14 +575,22 @@ func (s *Server) CheckExposure(w http.ResponseWriter, r *http.Request, endpoint 
 			err = errs.E(errs.Invalid, errs.CodeValidation, "The check is invalid.", errs.WithFields(fields...))
 		}
 	}
+	var acc *edge.Access
 	if err == nil {
-		err = s.requireRead(r.Context(), in.Repository)
+		acc, err = s.requireRead(r.Context(), in.Repository)
 	}
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
 	}
 	q := authz.ExposureCheckInput{Repository: in.Repository, Package: in.Package, Versions: in.Versions, Paths: in.Paths}
+	// The repository-level read above matches any package pattern of a grant, so a check
+	// that lists stored versions and tags decides per package and version (Q-EP-62).
+	ctx := r.Context()
+	q.MayRead = func(pkg, version string) bool {
+		c := authz.Coordinate{Repository: in.Repository, Kind: authz.KindMetadata, Package: pkg, Version: version, Actions: []authz.Action{authz.Read}}
+		return acc.Decide(ctx, c).Err() == nil
+	}
 	if in.Rule != nil {
 		draft := in.Rule.input()
 		q.Draft = &draft
@@ -597,18 +605,22 @@ func (s *Server) CheckExposure(w http.ResponseWriter, r *http.Request, endpoint 
 
 // requireRead decides read on the repository for the caller, under the ceiling of
 // the endpoint the subject carries (R-AUTHZ-015), on the index the request holds;
-// the refusal is that of R-AUTHZ-016.
-func (s *Server) requireRead(ctx context.Context, repo string) error {
+// the refusal is that of R-AUTHZ-016. It returns the holder for the decisions that
+// follow on the same index.
+func (s *Server) requireRead(ctx context.Context, repo string) (*edge.Access, error) {
 	d := s.o.Endpoints.Authorizer
 	if d == nil {
-		return errs.E(errs.Forbidden, errs.CodeForbidden, "The operation is not permitted.")
+		return nil, errs.E(errs.Forbidden, errs.CodeForbidden, "The operation is not permitted.")
 	}
 	acc, err := edge.Resolve(ctx, d, SubjectFrom(ctx), repo)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	c := authz.Coordinate{Repository: repo, Kind: authz.KindMetadata, Actions: []authz.Action{authz.Read}}
-	return acc.Decide(ctx, c).Err()
+	if err := acc.Decide(ctx, c).Err(); err != nil {
+		return nil, err
+	}
+	return acc, nil
 }
 
 func checkResultOf(res authz.ExposureCheckResult) exposureCheckResult {

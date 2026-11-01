@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/auth/principal"
+	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/auth/session"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/errs"
@@ -24,7 +25,15 @@ type fakeTokens struct {
 	known  map[string]token.Info
 	errFor map[string]error
 	calls  atomic.Int64
+	noted  []string
 	// throttleAfter makes Check consult the throttle like the real validator.
+}
+
+// NoteUse records the uses the stage reports as successful authentications.
+func (f *fakeTokens) NoteUse(id, addr string) {
+	f.mu.Lock()
+	f.noted = append(f.noted, id+"@"+addr)
+	f.mu.Unlock()
 }
 
 func (f *fakeTokens) Validate(ctx context.Context, raw string) (token.Info, error) {
@@ -403,6 +412,28 @@ func TestR_EP_010_EndpointRules(t *testing.T) {
 		_, err := s.Authenticate(req("GET", "/api/npm/x/y", "Authorization", "Bearer "+pat), ep)
 		wantErr(t, err, 401, errs.CodeInvalidToken)
 	})
+}
+
+// TestR_AUTH_031_OnlyASuccessfulAuthenticationIsAUse: a token that the stage refuses for
+// its endpoint binding, or whose groups cannot be read, is not a use; a stolen bound
+// token tried on the wrong endpoint must not move last_used_at or last_used_addr.
+func TestR_AUTH_031_OnlyASuccessfulAuthenticationIsAUse(t *testing.T) {
+	sat := newToken(t, token.TypeSAT)
+	ft := &fakeTokens{known: map[string]token.Info{sat: {ID: "t1", Type: token.TypeSAT, Owner: alice, Scope: scope.Scope{Inherit: true, Endpoints: []string{"customers"}}}}}
+	s := newStage(ft, Options{ClientAddr: clientAddr("203.0.113.9")})
+	_, err := s.Authenticate(req("GET", "/api/npm/x/y", "Authorization", "Bearer "+sat), defaultRules())
+	wantErr(t, err, 401, errs.CodeInvalidToken)
+	if len(ft.noted) != 0 {
+		t.Fatalf("a token refused for its binding was noted as used: %v", ft.noted)
+	}
+	ep := defaultRules()
+	ep.Name = "customers"
+	if _, err := s.Authenticate(req("GET", "/api/npm/x/y", "Authorization", "Bearer "+sat), ep); err != nil {
+		t.Fatal(err)
+	}
+	if len(ft.noted) != 1 || ft.noted[0] != "t1@203.0.113.9" {
+		t.Fatalf("a successful authentication is noted once with the client address: %v", ft.noted)
+	}
 }
 
 func TestR_AUTH_033_BasicSwitch(t *testing.T) {

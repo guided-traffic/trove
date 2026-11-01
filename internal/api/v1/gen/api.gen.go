@@ -2700,7 +2700,7 @@ type ExposureCheckRequest struct {
 	// every other member has the default shown.
 	Rule *ExposureRule `json:"rule,omitempty"`
 
-	// Versions Versions of the package. For a format with versions, an absent or empty list means the versions the repository stores of the package, in the order they arrived (Q-EP-61).
+	// Versions Versions of the package. For a format with versions, an absent or empty list means the versions the repository stores of the package that the caller may read, newest first (Q-EP-61, Q-EP-62, Q-EP-63).
 	Versions *[]string `json:"versions,omitempty"`
 }
 
@@ -5320,7 +5320,7 @@ type ListTokensParams struct {
 	ExpiresBefore *time.Time             `form:"expiresBefore,omitempty" json:"expiresBefore,omitempty"`
 	ExpiresAfter  *time.Time             `form:"expiresAfter,omitempty" json:"expiresAfter,omitempty"`
 
-	// LastUsedBefore Finds stale tokens. Last-use tracking is not recorded yet, so a token that was never used has no `lastUsedAt`.
+	// LastUsedBefore Finds stale tokens, those last used before the instant and those never used (`lastUsedAt` null). The last use is written in batches, at most once per `auth.tokens.last_used_granularity` (R-AUTH-031), so it can be a few minutes behind.
 	LastUsedBefore *time.Time `form:"lastUsedBefore,omitempty" json:"lastUsedBefore,omitempty"`
 
 	// Limit Page size, 1 to `api.page_size_max` (R-API-010).

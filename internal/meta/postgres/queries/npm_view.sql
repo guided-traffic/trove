@@ -56,17 +56,20 @@ SELECT pv.id
 
 -- name: NPMViewStoredLocal :many
 -- The versions a hosted repository serves of a package: live, not tombstoned, in
--- the order of their arrival (the dry run of the exposure rules, R-EP-016).
+-- newest first, at most max_rows (the dry run of the exposure rules, R-EP-016).
 SELECT pv.version::text AS version
   FROM package_versions pv
   JOIN packages p ON p.id = pv.package_id
  WHERE p.repo_id = sqlc.arg(repo_id)::bigint AND p.name = sqlc.arg(name)::text AND pv.trashed_at IS NULL
    AND NOT EXISTS (SELECT 1 FROM npm_tombstones t WHERE t.repo_id = p.repo_id AND t.name = p.name AND t.version = pv.version)
- ORDER BY pv.id;
+ ORDER BY pv.id DESC
+ LIMIT sqlc.arg(max_rows)::int;
 
 -- name: NPMViewStoredRemote :many
--- The versions a remote repository lists of a package, from the cached document.
+-- The versions a remote repository lists of a package, from the cached document,
+-- newest published first (unknown times last), at most max_rows.
 SELECT v.version::text AS version
   FROM npm_remote_versions v
  WHERE v.repo_id = sqlc.arg(repo_id)::bigint AND v.name = sqlc.arg(name)::text AND v.listed
- ORDER BY v.version;
+ ORDER BY v.published_at DESC NULLS LAST, v.version DESC
+ LIMIT sqlc.arg(max_rows)::int;

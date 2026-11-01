@@ -15,9 +15,10 @@ import (
 // /ui/: a slow database turns into the browser's language, never into a slow redirect.
 const uiPreferenceTimeout = 2 * time.Second
 
-// localeSessions resolves a session cookie (*session.Store).
+// localeSessions resolves a session cookie without changing the session
+// (*session.Store).
 type localeSessions interface {
-	Validate(ctx context.Context, cookie string) (session.Info, error)
+	Peek(ctx context.Context, cookie string) (session.Info, error)
 }
 
 // uiLocalePreference is webui.Options.Preference (R-UI-001, R-API-021): the
@@ -25,8 +26,11 @@ type localeSessions interface {
 // session, a user without a stored locale, and any failure, so that
 // Accept-Language decides. The authentication stage ignores the session cookie on
 // /ui/ (R-AUTH-001 item 3), so this reads it itself and takes the same
-// validation as the stage: an ended, expired or forged cookie names nobody.
-// Nothing is written, and the answer of /ui/ carries Vary and no-store already.
+// lookup and deadline rules as the stage: an ended, expired or forged cookie names
+// nobody. It peeks: a redirect must not extend the idle deadline of a session,
+// end an expired one or end the break-glass sessions of a disabled account
+// (Q-API-184), so nothing is written. The answer of /ui/ carries Vary and
+// no-store already.
 func uiLocalePreference(sessions localeSessions, locale func(ctx context.Context, userID string) (string, error), log *slog.Logger) func(*http.Request) string {
 	if sessions == nil || locale == nil {
 		return nil
@@ -38,7 +42,7 @@ func uiLocalePreference(sessions localeSessions, locale func(ctx context.Context
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), uiPreferenceTimeout)
 		defer cancel()
-		info, err := sessions.Validate(ctx, c.Value)
+		info, err := sessions.Peek(ctx, c.Value)
 		if err != nil {
 			return ""
 		}

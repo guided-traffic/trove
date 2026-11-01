@@ -279,6 +279,8 @@ type replicaOpts struct {
 	// auditDB also writes the events to the audit_event table (the real writer),
 	// next to the in-memory capture.
 	auditDB bool
+	// now replaces the clock of the token service (a replica whose clock is wrong).
+	now func() time.Time
 }
 
 // replica is one in-process replica: pools, change log, caches and the identity
@@ -399,7 +401,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	}
 	r.tokens = token.NewService(token.ServiceOptions{
 		DB: r.db, Notifier: r.changes, Recorder: r.recorder, Principals: r.principals, Settings: r.settings, Cache: r.caches, Gate: gate,
-		Tokens: r.tokenCfg, Recent: recent, Metrics: metrics, Log: quiet,
+		Tokens: r.tokenCfg, Recent: recent, Metrics: metrics, Log: quiet, Now: o.now,
 		Scope: scope.Options{Action: func(string) bool { return true }, SystemItem: func(s string) bool { return s == "identities:read" }},
 	})
 	r.manager = principal.NewManager(principal.ManagerOptions{DB: r.db, Notifier: r.changes, Recorder: r.recorder, BreakGlassName: "breakglass"})

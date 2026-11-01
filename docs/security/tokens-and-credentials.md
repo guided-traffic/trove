@@ -64,13 +64,25 @@ Every successful authentication by a token, from the cache or from PostgreSQL, n
 in a per-replica map ([lastused.go](../../internal/auth/token/lastused.go)); nothing on the request path reads it, so it cannot
 change an answer. The map holds no token value or hash. A component flushes it every 60 s and at shutdown with one statement that
 changes a token's row only when it has no last use or the new one is `auth.tokens.last_used_granularity` (5 m by default) newer, so
-the write load follows the number of tokens, not of requests. The client address is the one the trusted-proxy rule of the chain
+the write load follows the number of tokens, not of requests. The use is noted by the authentication stage once the whole authentication has
+succeeded, so a bound token that is refused on the wrong endpoint, or whose owner's groups cannot be read, leaves no trace in the column
+(Q-AUTH-180). The time is capped at the database's clock, so a replica with a fast clock cannot freeze the column; the shutdown waits for the
+batch the loop is writing before the final flush. The client address is the one the trusted-proxy rule of the chain
 resolved (a forwarded header from a peer outside `server.trusted_proxies` is not believed), with an IPv6 zone removed because the
 `inet` column cannot hold it. A failed flush is dropped and counted in `trove_auth_lastused_flush_failures_total`; a replica killed
 without a drain loses the uses of its last minute, so the time and address are approximate evidence of a use, which is what
 [H-19](../spec/identity-and-authentication.md#h-19--tokens-are-bearer-credentials) asks of it, and not an audit record: the audit trail
 holds the rejections and the content events, not every successful use. The filter `lastUsedBefore` and the token screens read
 the columns.
+
+**Personal data.** `last_used_addr` is the client address of the latest recorded use of a token and is tied to the token's owner, so it is
+personal data about that principal. It is read by the owner (their own tokens) and by the holders of `tokens:read` (`admin`, `security-admin`,
+`auditor`; [tokens_api.go](../../internal/api/v1/tokens_api.go)), in the token lists and on a token, and by nobody else; it is not part of an
+audit event. It is kept as long as the token row: the next recorded use overwrites it (at most once per `auth.tokens.last_used_granularity`),
+and the row is deleted by the `token-cleanup` task `auth.tokens.retention_after_end` after the token expired or was revoked
+([identity.sql](../../internal/meta/postgres/queries/identity.sql), `IdentityDeleteExpiredTokens`). A service-account token without an expiry that is
+never revoked therefore keeps its last address indefinitely; revoke it, or delete the service account, to remove it. Deleting the owner deletes
+the row (`ON DELETE CASCADE`).
 
 ## Throttle, markers and rate limits
 

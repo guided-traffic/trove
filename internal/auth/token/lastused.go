@@ -52,9 +52,12 @@ func (b *lastUsed) take() map[string]use {
 	return batch
 }
 
-// noteUse records that the token authenticated a request now. It takes a lock
-// for a map write and does nothing else.
-func (s *Service) noteUse(id, clientAddr string) {
+// NoteUse records that the token authenticated a request now. The authentication
+// stage calls it once the whole authentication has succeeded, after the checks
+// that come after the token's own (the endpoint binding, the owner's groups), so a
+// token that is refused is not a use (R-AUTH-031). It takes a lock for a map
+// write and does nothing else.
+func (s *Service) NoteUse(id, clientAddr string) {
 	if id == "" {
 		return
 	}
@@ -112,17 +115,30 @@ func (s *Service) FlushLastUsed(ctx context.Context) error {
 	return nil
 }
 
-// RunLastUsed flushes every LastUsedFlushInterval until ctx ends. The caller
-// flushes once more at shutdown (R-ARCH-024 step 6).
+// lastUsedFlushTimeout bounds one flush of the loop. The flush runs without the
+// cancellation of the loop's context, so ending the loop never cancels a batch
+// that is being written; RunLastUsed returns only after it.
+const lastUsedFlushTimeout = 10 * time.Second
+
+// RunLastUsed flushes every LastUsedFlushInterval until ctx ends, and returns when
+// the flush in flight, if any, has finished. The caller flushes once more at
+// shutdown (R-ARCH-024 step 6).
 func (s *Service) RunLastUsed(ctx context.Context) {
-	t := time.NewTicker(LastUsedFlushInterval)
+	every := s.lastUsedEvery
+	if every <= 0 {
+		every = LastUsedFlushInterval
+	}
+	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if err := s.FlushLastUsed(ctx); err != nil {
+			fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), lastUsedFlushTimeout)
+			err := s.FlushLastUsed(fctx)
+			cancel()
+			if err != nil {
 				s.log.Warn("token last-used times were not written; the next use records them again", "error", err)
 			}
 		}

@@ -1006,7 +1006,10 @@ Priority: **MVP** · Covers: trove-only
 - `check-exposure` transfers no content and contacts no upstream; for a remote repository it reports
   the cached versions only. A request that names a package of a format with versions and no
   `versions` (absent or empty) judges the versions the repository stores of the package, and for a
-  format with tags answers its tags with their visibility (`distTags`; Q-EP-61). Reasons: `exposed`, `no_rule`, `rule_disabled`, `package_excluded`,
+  format with tags answers its tags with their visibility (`distTags`; Q-EP-61). It lists only what
+  the caller may read: a package the caller may not read answers as one the repository does not
+  hold, and a version, or a tag that points to one, the caller may not read is left out (Q-EP-62).
+  The newest 1,000 versions and the first 1,000 tags are judged (Q-EP-63). Reasons: `exposed`, `no_rule`, `rule_disabled`, `package_excluded`,
   `path_excluded`, `version_excluded`, `out_of_range`, `prerelease`, `tag_excluded`.
 - **Capabilities.** `endpoints:read` and `endpoints:write` join the capability table of
   [authorization.md](authorization.md) R-AUTHZ-010: `admin` and `security-admin` hold both,
@@ -2065,7 +2068,7 @@ spec had written "no format of M1 has versions" and npm has since been built.
 | (b) The check reads the generic `packages` and `package_versions` rows itself | One statement in the endpoints queries | No new interface | Dist-tags and tombstones are npm tables, so the check would carry npm SQL; remote repositories have no generic rows |
 | (c) Change the contract and the label: only the versions sent are judged | Remove the sentence | No code | The editor's preview shows nothing without typing every version, which is what the preview is for |
 
-**Choice:** (a). For npm a hosted repository lists its live, not tombstoned versions in the order they arrived, with its dist-tags; a
+**Choice:** (a). For npm a hosted repository lists its live, not tombstoned versions, newest first, with its dist-tags; a
 remote repository lists the versions of its cached document (`listed`) and no tags, because the tags of that document are not
 stored in a column; a virtual repository stores nothing of its own, so the answer carries the warning `stored_versions_not_listed`
 and no versions. More than 1,000 versions are cut with `stored_versions_truncated`. An empty `versions` list means the same as an
@@ -2129,6 +2132,57 @@ shared machine also holds the time the scheduler gave the core to another proces
 needs it. The development agent would revisit the choice if `Decide` gains a wait (a lock, a fetch): then wall time is the honest measure.
 
 **Applied in the spec:** R-EP-013 ("Performance"); [docs/developer/authorization.md](../developer/authorization.md). Code: `threadCPU` in `internal/authz/cputime_unix_test.go` and `cputime_other_test.go`.
+
+### Q-EP-62 · A check lists the stored versions and tags only of packages the caller may read
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the check needs `endpoints:read` and `read` on the repository, decided on a coordinate without a package, which matches the package
+patterns of any grant (R-AUTHZ-005: a repository-level coordinate lists, and the listing is filtered per item). Q-EP-61 made the check list
+the stored versions and tags, and it listed them unfiltered. A repository administrator (`endpoints:read`, no `content:bypass`) who may read
+a repository only for `@platform/*` therefore learned every version and tag of `@finance/ledger`, which packages exist (the answer for a name
+the repository does not hold was empty), and, on a remote repository, which upstream packages were cached; a token whose scope restricts
+packages was no different.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A per-package and per-version read check on the listing (chosen) | `ExposureCheckInput.MayRead` decides `read` on the coordinate with the normalized package, and the version; a refused package answers like one the repository does not hold, a refused version and the tags that point to it are dropped | The rule of the package screens (`formats.ViewAdapter`, `visibleTags`); no oracle for the names the repository holds | One decision per version of a listing (at most 1,001) |
+| (b) Require read on the package up front and answer 404 | The check refuses | Simple | A 404 for a package that exists and one that does not differ only if the check is answered for both the same way; and a rule editor would lose the preview of a package the author may not read, which is the point of the check |
+| (c) List only for a caller who holds `content:bypass` | An administrator-only listing | Small | The repository administrators who write the rules could not preview them |
+
+**Choice:** (a). The decision runs on the holder of the request, so the endpoint ceiling, the token scope and the grants apply. The refused
+package keeps the `listed` state of the repository, so a virtual repository still says `stored_versions_not_listed` for every name, held or not.
+Versions named in the request are judged as sent, because they reveal only the rules, which the caller may read with `endpoints:read`.
+
+**Rationale:** the listing is the only part of the check that reads stored data, and it follows the rule that every listing of stored data follows.
+The development agent would revisit this if per-version decisions became a cost, by deciding the package once and the versions only for a
+format that restricts by version.
+
+**Applied in the spec:** R-EP-016 (the `check-exposure` bullet). Code: `ExposureService.storedOf` and `ExposureCheckInput.MayRead` in
+`internal/authz/exposure_service.go`, `CheckExposure` in `internal/api/v1/endpoints_api.go`. Test: the narrowed caller in
+`test/integration/endpoints/formats_test.go`.
+
+### Q-EP-63 · A check keeps the newest versions, bounds the tags and always judges what a tag points to
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-EP-61 cut a long list at 1,000 after reading all of it, from the oldest version (hosted rows by ID ascending, remote rows by version
+as text), so the cut kept the wrong end, `latest` could point to a version outside the list, the tags were not bounded, and the order the
+contract named ("the order they arrived") was not the one a remote repository returned.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Newest first, limited in the statement; the tags' targets are always judged; the tags are bounded (chosen) | `ORDER BY` newest first and `LIMIT MaxCheckStored+1` in both statements (hosted by row ID, remote by `published_at` with unknown times last); the check asks for one more than it judges to see a cut; it adds a tag's version to the list when the cut left it out; it keeps the first 1,000 tags by name | The versions that matter are the newest; the work is bounded in the database; a tag never points at an unjudged version | A very old version is only judged when named |
+| (b) Keep reading all and cut in the check | As built | None | An unbounded read per check |
+| (c) Refuse a package with more than 1,000 versions | `422` | Exact | The preview of a large package is the case it is for |
+
+**Choice:** (a). The contract says "newest first" and the manual says so.
+
+**Rationale:** a preview of a rule answers "what would a consumer see now", and the newest versions are what a consumer installs. The
+development agent would revisit this when a rule needs a verdict for the oldest versions, then with a paged listing.
+
+**Applied in the spec:** R-EP-016 (the `check-exposure` bullet), Q-EP-61. Code: `NPMViewStoredLocal` and `NPMViewStoredRemote`,
+`ExposureService.Check`, `formats.StoredLister` (`limit`).
 
 ## What this does not cover
 
