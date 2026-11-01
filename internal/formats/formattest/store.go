@@ -729,6 +729,8 @@ type MemRemote struct {
 	Artifacts map[string][]byte
 	// Exchanges answers Exchange; nil answers it with [formats.ErrOffline].
 	Exchanges func(ctx context.Context, rq *formats.Request, x formats.Exchange) (*http.Response, error)
+	// Queries answers Query; nil answers it with [formats.ErrOffline].
+	Queries func(ctx context.Context, rq *formats.Request, q formats.Query) (*formats.QueryResult, error)
 
 	note func([]byte)
 }
@@ -784,6 +786,17 @@ func (m *MemRemote) EntryState(_ context.Context, _ *formats.Request, p formats.
 	_, ok := m.Docs[p.Path]
 	return formats.EntryState{Stored: ok}, nil
 }
+
+// Query answers with Queries, or with [formats.ErrOffline].
+func (m *MemRemote) Query(ctx context.Context, rq *formats.Request, q formats.Query) (*formats.QueryResult, error) {
+	if m.Queries == nil {
+		return nil, formats.ErrOffline
+	}
+	return m.Queries(ctx, rq, q)
+}
+
+// Gate allows every artifact: the fake has no marks.
+func (m *MemRemote) Gate(context.Context, *formats.Request, formats.Path) error { return nil }
 
 func (m *MemRemote) Exchange(ctx context.Context, rq *formats.Request, x formats.Exchange) (*http.Response, error) {
 	if m.Exchanges == nil {

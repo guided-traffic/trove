@@ -3983,7 +3983,7 @@ Priority: **MVP** · Covers: HA-052
   and a heap gate in step 4 of the chain ([architecture.md](architecture.md) R-ARCH-005,
   Q-ARCH-240). A replica that the CPU cannot keep up with answers the excess `503 server_busy`
   instead of collecting requests until the memory runs out. `server.max_in_flight` stays an upper
-  bound; with the chart's 2 GiB and the default caches the 1,204 memory slots bind first (Q-ARCH-243). The chart refuses a `web` pod
+  bound; with the chart's 2 GiB and the default caches the 1,191 memory slots bind first (Q-ARCH-243, Q-ARCH-270). The chart refuses a `web` pod
   without a memory limit and one whose limit admits fewer than 64 requests (R-HA-029, Q-HA-70).
 - Buffers are bounded so that memory does not scale with transfer size: streaming bodies, spool
   instead of memory above `storage.spool.memory_threshold`, bounded metadata documents (format pages

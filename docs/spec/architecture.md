@@ -378,7 +378,7 @@ connection through an edge proxy that balances per request.
 | Negative cache of unknown repository keys (R-ARCH-011 step 2) | Until evicted, at most `SafetyTTL` | A copy of a PostgreSQL miss. Every `repo_config` change evicts it on every replica within the bound of R-ARCH-018, so a new repository answers `404` on a replica only if that replica missed the key shortly before the creation, and for at most that bound ([api-and-ui.md](api-and-ui.md) R-API-052). |
 | Negative-cache L1 (R-ARCH-030) | At most the checked lifetime of the Valkey entry it copies | A copy of an upstream `404` or `410`, not of PostgreSQL state. Any replica may answer from such an entry or ask the upstream within `notFoundTtlSeconds` ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-028), so both answers are the same contract; an invalidation applies to the L1 as to Valkey. |
 | Caches of external documents: OIDC discovery and JWKS of the login providers ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-004) | Until their refresh | A copy of what the provider publishes. An unknown `kid` makes the replica refetch, at most once per provider and replica per 60 s, so right after a provider signs with a new key, one replica may reject a login that another accepts, for at most that throttle. A provider that publishes a key before signing with it never opens this window. The GitLab issuer keys live in PostgreSQL and are a registered cache above ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-003). On an unknown `kid`, a CI issuer re-reads its `ci_issuer_keys` row at most once per issuer and replica per `cluster.epoch_poll_interval`, then refetches under the same kind of per-replica throttle (`ci.signing_keys.unknown_kid_refresh_interval`). A key that any replica has stored is accepted on every replica within one poll interval, and a forged `kid` costs no PostgreSQL query of its own ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-003, Q-CI-12). |
-| Forwarded NuGet search results ([formats/nuget.md](formats/nuget.md) R-NUGET-016) | At most `nuget.search.remote_result_ttl` | A copy of an upstream answer, stored unfiltered; patterns, claims and permissions are applied on every use. Any replica may answer from its copy or ask the upstream within the period, so both answers meet the same contract. |
+| Pass-through answers of remote repositories, the registered cache `proxy_query_results` (R-ARCH-013 step 6, Q-ARCH-270): the forwarded NuGet search results ([formats/nuget.md](formats/nuget.md) R-NUGET-016) | At most the period the format asks (`nuget.search.remote_result_ttl`), and never more than one hour | A copy of an upstream answer, stored unfiltered; patterns, claims and permissions are applied on every use. Any replica may answer from its copy or ask the upstream within the period, so both answers meet the same contract. |
 | Break-glass verifier and OIDC client secrets read from Secret files, and the loaded break-glass file content ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-004, R-AUTH-014) | Until the file changes | Replicas switch at different moments on a rotation. The session end of a break-glass rotation is one PostgreSQL transaction, so no replica keeps a session that another has ended (R-AUTH-014, Q-AUTH-14). |
 | Pending-flow count ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-038) | At most 5 s old | A copy of a PostgreSQL count that bounds a `503` decision. |
 | Per session, the newest `last_seen_at` a replica has read ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-010) | While the replica holds the session | A lower bound of the row that only saves touch statements and never decides an end; the session's deadlines are decided from its row. |
@@ -719,12 +719,12 @@ a replica admits is bounded by its memory as well as by `max_in_flight`:
 - **Memory slots.** A request holds one slot from step 4 to its end. The replica has
   ⌊(0.8 × `L` − cache budgets) ÷ request bytes⌋ slots, at least one; the cache budgets are what the
   replica's caches hold when full, `cache.rendition_bytes`, `proxy.metadata_cache_bytes` and
-  `proxy.merged_metadata_cache_bytes` (640 MiB with the defaults, Q-ARCH-243). The request bytes are what one download may hold
+  `proxy.merged_metadata_cache_bytes` and `proxy.query_cache_bytes` (648 MiB with the defaults, Q-ARCH-243, Q-ARCH-270). The request bytes are what one download may hold
   (Q-ARCH-241): the buffer of a verified download (`storage.download.buffer_size`, at least twice
   `storage.download.hold_back` and 4 KiB, rounded up to a power of two), the object store's receive
   window `storage.s3.http.receive_window` and 128 KiB for the rest (connection, TLS state, stacks,
   the object-store call), 640 KiB with the defaults. With the default caches a 1 GiB container (`L` = 870 MiB) has
-  90 slots and the chart's default of 2 GiB 1,204; without caches 1 GiB has 1,114 and 256 MiB 278. The slots bound a burst that arrives
+  77 slots and the chart's default of 2 GiB 1,191; without caches 1 GiB has 1,114 and 256 MiB 278. The slots bound a burst that arrives
   faster than a GC cycle can show it. An endpoint admits the smaller of its `max_in_flight` and the
   slots the replica has left.
 - **Heap gate.** Every 50 ms the guard reads the live heap of the last GC cycle plus the goroutine
@@ -1231,6 +1231,10 @@ type RemoteAdapter interface {
 	// RemoteBase. They were optional interfaces found by type assertion; they are methods of the contract so that a
 	// format cannot forget them unnoticed (Q-ARCH-254).
 	BeforeArtifact(ctx context.Context, h Host, rq *Request, p Path) (Digests, error)
+	// UpstreamQuery maps a pass-through Query to the upstream request (R-ARCH-013 step 6): a GET or HEAD without a
+	// body, whose method and URL are the key of the cached answer. The default in RemoteBase refuses, for a format
+	// with no Volatile route that is passed through.
+	UpstreamQuery(ctx context.Context, rc RemoteContext, q Query) (*http.Request, error)
 }
 
 // Two optional interfaces of a RemoteAdapter, read off the adapter once, when the format registers (Q-ARCH-267,
@@ -1272,6 +1276,11 @@ type VirtualAdapter interface {
 	// LocalDocument renders a local member's document from its rows (R-ARCH-012) for the core's
 	// merged-metadata cache (R-ARCH-015 step 3), so no format code orchestrates that cache.
 	LocalDocument(ctx context.Context, rq *Request, member RepoRef, p Path, variant string) (doc []byte, rev RevSeq, found bool, err error)
+	// ArtifactPrefix is the prefix, with a trailing slash, below which a remote member keeps the cached artifacts of a
+	// package: the directory its versions live in, which the merge lists to find the versions whose artifact is cached
+	// (R-AUTHZ-008). Only the format knows it: npm's tarballs are below the document of the package, NuGet's below the
+	// directory of its version list. "" says that the cached artifacts are not below one prefix per package.
+	ArtifactPrefix(name string) string
 }
 
 type Strategy uint8
@@ -1430,9 +1439,19 @@ Supporting types of the blocks, named here so that the contract has no type the 
 `CacheStatus`) are what a remote adapter reads and hands over; `Currency` says how current a document is after
 `EnsureCurrent` (Q-NPM-13); `RemovedItem` is an item a removal took away, with its version; `ItemsEvent` is what the removal hook and the restore hook learn; `ShadowPair` names a
 virtual repository and the remote member that serves a package (R-REPO-048); `RemoteBase` gives a `RemoteAdapter` the
-defaults of `ExpectsType` and `BeforeArtifact` to embed; `RemoteContext` carries the repository, the upstream URL, the
+defaults of `ExpectsType`, `BeforeArtifact` and `UpstreamQuery` to embed; `RemoteContext` carries the repository, the upstream URL, the
 format's settings and, once the engine resolved the discovery document of a `Discoverer`, its parsed form in
 `Discovery` (Q-ARCH-268).
+
+The request types of the pass-through and of the fan-out over the members of a virtual repository are in `RemoteFetcher` and
+`Resolver`, which the blocks leave to the code and name here (Q-ARCH-270, Q-ARCH-271, Q-ARCH-272). `RemoteFetcher.Query` takes a
+`Query` (the repository path of a `Volatile` request, its already normalised parameters and the period its answer is kept) and
+returns a `QueryResult` (the upstream's answer as received, shared with the cache); `RemoteFetcher.Gate` runs
+`RemoteAdapter.BeforeArtifact` without fetching, for the cached tier of a remote member of a virtual repository.
+`Resolver.Plan` returns a `VirtualPlan` of `PlannedMember`s (member, tier, position, whether the caller may fill it);
+`Resolver.KeepsAway` answers whether a claim, pin rule or exclude pattern keeps a search term away from a member;
+`Resolver.ReadScope` returns the caller's `ReadScope` for the rows of a listing, whose `ReadShape` says per repository whether
+every row, none or only the rows `MayRead` allows can be read.
 
 The blocks above are held equal to the code: `TestR_ARCH_008_TheWrittenContractEqualsTheCode`
 (`internal/formats/contract_spec_test.go`) parses the Go blocks of R-ARCH-008 and R-ARCH-009 and compares every type
@@ -1541,8 +1560,8 @@ type Host interface {
 	Ingest() Ingestor            // upload pipeline of storage.md: admission, spool, digests, commit; Commit takes the request's other files as Companions, in one transaction (Q-ARCH-228)
 	Items() ItemStore            // repository paths <-> blobs, Range and conditional reads (storage.md)
 	Packages() PackageStore      // package and version rows behind the package view (FMT-007)
-	Remote() RemoteFetcher       // remote engine (repositories-and-proxy.md); Exchange sends one request through a remote's upstream client outside the cache (Q-NPM-62)
-	Resolver() Resolver          // virtual resolution (repositories-and-proxy.md)
+	Remote() RemoteFetcher       // remote engine (repositories-and-proxy.md); Exchange sends one request through a remote's upstream client outside the cache (Q-NPM-62); Query passes a Volatile request through with a registered per-replica cache (Q-ARCH-270); Gate runs the artifact gate without fetching (Q-ARCH-272)
+	Resolver() Resolver          // virtual resolution (repositories-and-proxy.md); Plan, KeepsAway and ReadScope serve a format that fans a request out over the members (Q-ARCH-271)
 	Links(rq *Request) LinkBuilder // absolute URLs on the response base URL of rq's endpoint and host (R-ARCH-006)
 	Renditions() RenditionCache  // rendered documents (R-ARCH-012), keyed by a struct the core hashes
 	FormatData(id ID) any        // the data port bound to a format (Q-ARCH-193); nil without Descriptor.DataPort
@@ -1884,10 +1903,16 @@ Steps 1 to 5 are those of R-ARCH-011. The semantics of each later step, its sett
 status codes are owned by [repositories-and-proxy.md](repositories-and-proxy.md). This requirement
 fixes their order and the components involved.
 
-6. `Format.Classify`. A `Volatile` path passes through without being stored.
-   *Status (milestone M2):* the remote engine fetches artifacts and metadata only, and no route of npm is `Volatile`, so no
-   pass-through exists in the code. It arrives with the contract additions NuGet's search needs (a query on the remote fetcher
-   with an engine-owned cache, and the member fan-out of a virtual repository), roadmap M3 (Q-ARCH-233).
+6. `Format.Classify`. A `Volatile` path passes through without being stored: the format calls `Host.Remote().Query`, and the
+   engine sends the request `RemoteAdapter.UpstreamQuery` builds through the repository's client, with the egress rules, trust
+   store, redirect rules and credential policy of a fetch (steps 2 and 3 below), under the repository's fetch slots and
+   circuit, and keeps the answer, as received, in the registered per-replica cache `proxy_query_results` for the period the
+   format asks (at most one hour; Q-ARCH-270). A current copy is served to every caller without contacting the upstream. A
+   repository that may not contact its upstream (offline, `proxy.global_offline`, the cache view, `only-if-cached`) or a caller
+   who may not fill it (R-AUTHZ-008, R-EP-019) is served from that cache only, and a miss answers `formats.ErrOffline`, which
+   the format turns into its own cache-only answer. Identical queries in flight on one replica wait for one contact. The
+   answer is stored as neither a cache entry nor an item, and a missing resource at the upstream writes no negative entry.
+   *Status (milestone M3):* built (WP3.0c). No route of npm is `Volatile`; the first user is NuGet's search (R-NUGET-016).
 7. The proxy looks up the cache entry in PostgreSQL, and on a miss the negative entry in its
    in-process L1 and then in Valkey (R-ARCH-030). Without Valkey, only the L1 answers. The outcomes
    are owned by the proxy page; the codes shown are those it uses:
@@ -6028,6 +6053,7 @@ re-check is for the window between the first decision and the commit. The develo
 long body.
 
 **Applied in the spec:** R-AUTHZ-015 reads unchanged.
+
 ### Q-ARCH-209 · What typed wiring makes a start-up error
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -6706,7 +6732,7 @@ Status: **Decided by the development agent** — selected from the options below
 
 Context: the closing run of phase 3 (Actions run 41235811145, leg `npm-ha-closing`, two kind clusters on one runner) had `web` pods
 OOMKilled under the npm load although the memory guard of Q-ARCH-240 was on. The slots shared 80 % of the Go limit among requests, but the
-rendition cache (256 MiB), the merged-metadata cache (256 MiB) and the proxy's metadata cache (128 MiB) hold up to 640 MiB of the same heap
+rendition cache (256 MiB), the merged-metadata cache (256 MiB) and the proxy's metadata cache (128 MiB) hold up to 640 MiB of the same heap (the pass-through cache of Q-ARCH-270 adds 8 MiB to that budget)
 once full; with the dev profile's 1 GiB limit, full caches and 1,114 admitted downloads needed more than the pod had. The heap gate closes only
 at a GC cycle, after the admitted requests have already allocated.
 
@@ -7056,6 +7082,7 @@ Context: NuGet clients send the credential of a push, an unlist and a relist in 
 **Rationale:** whether a route takes an API key is a property of the protocol operation. The development agent revisits this when the stage change lands.
 
 **Applied in the spec:** R-ARCH-008 (`Route.APIKey`). Code: `internal/formats/route.go`.
+
 ### Q-ARCH-267 · A format inspects a fetched artifact before it is stored, and no byte goes out before it did
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -7109,6 +7136,60 @@ Context: `require` refuses an artifact without an announced SHA-256 or stronger 
 **Rationale:** the fact is cheap, local and reversible. The development agent revisits this when R-NUGET-029 supplies digests, then by clearing the fact in the NuGet descriptor.
 
 **Applied in the spec:** R-REPO-041 (the table row of `require`). Code: `internal/formats/catalog/catalog.go`, `internal/repository/validate_remote.go`. Tests: `TestR_REPO_041_ChecksumRequireIsRefusedForAFormatWithoutAnnouncedDigests`.
+
+### Q-ARCH-270 · A pass-through answer is cached by the engine, per replica, in a registered cache the format only sizes by period
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-ARCH-013 step 6 says that a `Volatile` path passes through without being stored, and no code did it: the remote engine fetches artifacts and metadata documents only. NuGet's search (R-NUGET-016) forwards a query to the upstream and wants the answer kept for a short period, unfiltered, so that a claim or a grant change acts on cached results at once (Q-NUGET-8). Open were who owns the cache, what it is keyed by, who may make the engine contact the upstream, and what counts toward the memory budget.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The engine owns one registered cache, keyed by repository, configuration version, method and the upstream URL; the format passes the period per call; the size is `proxy.query_cache_bytes` (chosen) | `RemoteFetcher.Query`, `proxy.Engine.Query`, cache `proxy_query_results` in area `repo_config`, filled by `Cache.Load` (the fill rule of R-ARCH-018), identical queries collapsed in process | Egress, credential policy, slots, circuit, metrics and the audit events of a failed contact are the fetch's, once; every future `Volatile` route (a second format's search) gets the cache without writing one; the cache is in the R-ARCH-032 table and the archtest rules for state apply | A format cannot size its own cache; `nuget.search.remote_result_cache_bytes` of Q-NUGET-8 becomes a proxy key (Q-NUGET-16) |
+| (b) The format owns its cache | A map or a registered cache inside `formats/nuget` | The format chooses the size | Every format repeats the egress, circuit and collapse logic or skips it; the format would need the upstream client, which the contract hides (R-ARCH-009) |
+| (c) `Exchange` plus a format cache | The existing `Exchange` sends the request outside the cache | No engine change | `Exchange` reads and moves no circuit and takes no slot by design (Q-NPM-62): a search storm would bypass R-REPO-040 and a dead upstream would never open the circuit |
+
+**Choice:** (a), with these rules. A current copy is served to any caller and in any offline mode, because it is the upstream's answer as received and what a caller may see of it is the format's to filter. Without a copy the engine contacts the upstream only when the repository is online, the request is not the cache view or `only-if-cached`, and the populate check allows it (R-AUTHZ-008, R-EP-019: a read-only endpoint's upstream contacts stay prevented and are counted in `trove_endpoint_cache_fill_refused_total`); otherwise it answers `ErrOffline`. The URL must be on the upstream's host or on an `extraHosts` entry (R-REPO-043), so a discovery document cannot steer a search to an arbitrary host, and the client's hop policy alone adds a credential. A 2xx counts toward the circuit as a success and a failure as a fetch's does; a 404 or 410 counts for nothing and writes no negative entry. An expired entry is not served stale. The period is cut to one hour, which is the cache's `SafetyTTL`. `proxy.query_cache_bytes` defaults to 8 MiB, `0` turns the cache off, and the budget is part of the cache budgets of the memory slots (R-ARCH-005, Q-ARCH-243), which moves their default sum from 640 to 648 MiB. The default is not the 32 MiB Q-NUGET-8 proposed: with 32 MiB a pool pod with a 1 GiB limit admits 38 concurrent requests, below the floor of 64 that the chart enforces (R-HA-029), and with 8 MiB it admits 77; the size is an operator key, and the development agent revisits the default with the measured size of a search page once NuGet's search runs against a real upstream. Metrics are the fetch's, with `kind="query"` on `trove_remote_cache_lookups_total`.
+
+**Rationale:** the pass-through is the same act as a fetch, minus the store; building it beside the fetch keeps one set of rules for what may leave the replica. The development agent revisits this when a `Volatile` route needs a body (a POST search), which the key would have to include, or when the upstream rate-limits forwarded searches, which is Q-NUGET-8's condition.
+
+**Applied in the spec:** R-ARCH-013 step 6, R-ARCH-032 (the row of the pass-through answers), R-ARCH-005 (the budgets), R-REPO-025 (the bullet after the metadata bytes), R-NUGET-016, R-NUGET-028, R-OPS metrics (`kind`). Code: `internal/proxy/query.go`, `internal/formathost/query.go`, `internal/formats/remote.go`, `internal/config/outbound.go`, `internal/app/memory.go`, `deploy/helm/trove/templates/_validate.tpl`. Tests: `TestR_ARCH_013_Query*` in `test/integration/proxy`, `TestR_ARCH_013_QueryThroughTheHost`.
+
+### Q-ARCH-271 · The fan-out over the members of a virtual repository is three methods of the Resolver
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: NuGet's merged search (R-NUGET-018) queries the members of a virtual repository itself, local members from their rows and remote members through `Query`. A format that reads `rq.Repo.Members()` would skip the per-member read check (R-AUTHZ-009 rule 2), the pin rules, the claims and the populate right, and could not tell which claims keep a search term away from a member (R-NUGET-016 withheld queries).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Resolver.Plan`, `Resolver.KeepsAway`, `Resolver.ReadScope` (chosen) | The plan is the engine's R-REPO-019 steps 1 to 5 for the caller; the other two answer the withheld-term and the listing questions | The format receives members the caller may read, in order, with tier and fill right, and can neither name another repository nor see a claim; the virtual engine stays the one place that decides | Three methods more in the frozen contract |
+| (b) The members and the decision point through `Host` | `Host.Members(rq)`, `Host.ReadScope` | One interface | The Host would answer virtual questions; `Plan` needs the engine's route, claims and fingerprint |
+| (c) The format filters with `Authorize` per member | Authorize per member and package | No new method | An audit event per member and row for a listing; `Authorize` decides a request's repository and cannot name a member (Q-ARCH-189) |
+
+**Choice:** (a). `Plan` returns `VirtualPlan{Admitted, Members []PlannedMember{Member, Tier, Position, MayFill}}`; a member the caller cannot read is absent. `KeepsAway(rq, member, term)` takes a member of the plan, or the request's own repository when it is not virtual, and refuses any other repository, so a format cannot probe the claims of one it has nothing to do with. `ReadScope(rq, repos)` is the decision point's unaudited read scope (R-API-029, Q-EP-66): no event is written for rows a listing found itself. The shapes of `internal/authz` are converted, not aliased, because `formats` imports no data package.
+
+**Rationale:** these are the three questions a fan-out asks that only the engine can answer. The development agent revisits the placement of `ReadScope`, which is not virtual, when a listing format that has no virtual class needs it, and moves it to the Host then.
+
+**Applied in the spec:** R-ARCH-008 (the Host block comment and the supporting types), R-NUGET-018 step 1. Code: `internal/formats/virtual.go`, `internal/formathost/virtual.go`, `internal/virtual/engine.go`. Tests: `TestR_NUGET_018_BridgePlan`, `TestR_NUGET_016_BridgeKeepsAway`, `TestR_API_029_BridgeReadScope`.
+
+### Q-ARCH-272 · The virtual bridge knows no format layout, and the artifact gate is a method of the remote fetcher
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `formathost/virtual.go` derived the directory of a package's cached artifacts from the document path, with a case for a file called `index.json` (NuGet's version list), and reached the format's artifact gate through an anonymous interface asserted on whatever `Host.Remote()` returned. A wrapper around the fetcher would have dropped the gate without a compile error, and a withdrawn version would have been served from a cached tier.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `VirtualAdapter.ArtifactPrefix(name)` and `RemoteFetcher.Gate` (chosen) | Both are methods; the bridge calls them | A format cannot forget either unnoticed; no layout in shared code; the archtest rule of Q-ARCH-254 has nothing left to find | A required method on `VirtualAdapter` (no default); testformat and npm gain one |
+| (b) A default in a `VirtualBase` and an optional interface | Found at `Register` | Formats with the standard layout write nothing | Two layouts hide behind the default; an optional capability is the thing Q-ARCH-254 removed |
+| (c) A catalog fact "artifacts below the directory of the document" | Declarative | No code | A third layout needs a new fact; the answer depends on the name's folding, which is code |
+
+**Choice:** (a). `ArtifactPrefix` returns "" for a format whose cached artifacts are not below one prefix per package, and the merge then lists no cached version. `Gate` is the fetcher's own method (the host's wrapper implements it over `RemoteAdapter.BeforeArtifact`), and a Host without the remote engine refuses it, so a gate that cannot run never lets an artifact pass.
+
+**Rationale:** both were decisions about a format taken in code that knows none. The development agent revisits (b) when a third format has the same layout as npm.
+
+**Applied in the spec:** R-ARCH-008 (blocks), R-NPM-026 (no change in behaviour). Code: `internal/formats/virtual.go`, `internal/formats/remote.go`, `internal/formathost/virtual.go`, `internal/formathost/remote.go`, `internal/formats/npm/virtual.go`, `internal/formats/formattest/`. Tests: `TestR_NUGET_018_TheDirectoryOfCachedVersionsComesFromTheVirtualAdapter`, `TestR_NPM_026_ACachedArtifactOfARemoteMemberMeetsTheGate`.
 
 ### Q-ARCH-273 · How is the OpenAPI breaking-change checker pinned and run?
 

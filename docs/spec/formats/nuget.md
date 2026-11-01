@@ -1315,14 +1315,16 @@ Priority: **MVP** · Covers: PKG-NUGET-024, PKG-NUGET-028
   repository, on the remote directly the `global` claims when remote refusal is on). A term is also
   protected when it equals the literal part of such a prefix pattern without the `*` and without a
   trailing `.`, `-` or `_` (for `Acme.*`: `acme`). Include patterns do not protect terms: they
-  restrict what a remote serves, not what is sensitive. The check uses the in-memory claim trie of
-  R-REPO-023 and adds no database query. Every replica keeps that trie current from the
+  restrict what a remote serves, not what is sensitive. The check is `Resolver.KeepsAway` ([architecture.md](../architecture.md) Q-ARCH-271); it uses
+  the in-memory claim trie of R-REPO-023 and adds no database query. Every replica keeps that trie current from the
   PostgreSQL change log (area `claims`, [architecture.md](../architecture.md) R-ARCH-018), so after a
   claim change two replicas can disagree about one query for at most that propagation bound, with
   or without Valkey. Withheld requests are counted (R-NUGET-028).
-- Forwarded responses are kept in the registered in-process cache `nuget_remote_search` of each
-  `web` replica (Q-NUGET-8, [architecture.md](../architecture.md) R-ARCH-018), for
-  `nuget.search.remote_result_ttl` and within `nuget.search.remote_result_cache_bytes`.
+- Forwarded responses are kept in the engine's registered in-process cache `proxy_query_results` of
+  each `web` replica (Q-NUGET-8, Q-NUGET-16, [architecture.md](../architecture.md) R-ARCH-013 step 6,
+  R-ARCH-018, Q-ARCH-270), for `nuget.search.remote_result_ttl` and within `proxy.query_cache_bytes`
+  (8 MiB by default). The plug-in calls `Host.Remote().Query` with the path, the clamped parameters
+  and the period; the engine owns the request, the cache, the circuit and the metrics.
   - The key is the remote repository and the upstream request URL with its parameters. The entry is
     the upstream response as received.
   - Pattern, claim, pin-rule and permission filtering and the URL rewriting run on every use, so a
@@ -1346,8 +1348,9 @@ Configuration (system file):
 ```yaml
 nuget:
   search:
-    remote_result_ttl: 60s                 # default (proposed)
-    remote_result_cache_bytes: 33554432    # default (proposed), 32 MiB per web replica
+    remote_result_ttl: 60s                 # default (proposed); the engine cuts it to one hour
+proxy:
+  query_cache_bytes: 8388608               # default, 8 MiB per web replica; 0 turns the cache off (Q-NUGET-16)
 ```
 
 Acceptance criteria:
@@ -1446,9 +1449,11 @@ Search through a virtual repository merges the result lists of the members that 
 R-REPO-019's filtering:
 
 1. Each member is queried in parallel with the request's filters, `skip=0` and
-   `take = min(skip + take, virtualMergeWindow)`. Local members use R-NUGET-010, remote members
-   R-NUGET-016, including its withheld-query rule evaluated with this virtual repository's claims
-   and pin rules.
+   `take = min(skip + take, virtualMergeWindow)`. The members are those of `Resolver.Plan`, which
+   leaves out every member the caller cannot read and says which remote members the caller may
+   fill; rows are kept by the caller's `Resolver.ReadScope` (architecture.md Q-ARCH-271). Local
+   members use R-NUGET-010, remote members R-NUGET-016, including its withheld-query rule evaluated
+   with this virtual repository's claims and pin rules.
 2. Results of a remote member are removed for every ID that this virtual repository's pin rules
    or claims keep away from that member (R-REPO-023, as in R-NUGET-017): an ID whose selected pin
    rule does not name the member, or, without a pin rule, an ID that a claim in effect here
@@ -1934,7 +1939,7 @@ Event catalog, schema and metric conventions are owned by
   `trove_nuget_symbol_index_lag_seconds` (age of the oldest symbol package without `indexed_at`,
   R-NUGET-021) and `trove_nuget_symbol_index_failures_total{repository,reason}` (packages that
   ended with `index_error`). The forwarded-search cache reports through the core's
-  `trove_cache_requests_total{cache="nuget_remote_search"}`.
+  `trove_cache_requests_total{cache="proxy_query_results"}`.
 - `package.published` and `package.deleted` of local NuGet repositories go to the revocation
   journal of [ha-and-helm.md](../ha-and-helm.md) R-HA-054, with the entry of R-NUGET-033. Both
   event types are shared with npm, which journals neither ([formats/npm.md](npm.md) Q-NPM-12), and
@@ -1999,9 +2004,10 @@ requests on a replica:
 | Reindex and symbol indexing (P1) | jobs | The job row and its `checkpoint`, or `indexed_at` (R-NUGET-025, R-NUGET-021) |
 
 - `X-NuGet-Session-Id` is only logged (R-NUGET-002), and nothing is keyed on it.
-- The plug-in adds one kind of per-replica state to the table of R-ARCH-032: the cache of forwarded
-  search results (R-NUGET-016, Q-NUGET-8). It declares no package-level mutable variable. Every
-  other cache it uses is a registered core cache keyed by `rev_seq`, a stored digest or an epoch.
+- The plug-in adds one kind of per-replica state to the table of R-ARCH-032: the forwarded search
+  results (R-NUGET-016, Q-NUGET-8), kept in the engine's registered cache `proxy_query_results`
+  (Q-NUGET-16). It declares no package-level mutable variable. Every other cache it uses is a
+  registered core cache keyed by `rev_seq`, a stored digest or an epoch.
 - **Same answer on every replica.** A rendered NuGet document (service index, version list,
   registration index, page and leaf) or search response is a function of these inputs only:
   - PostgreSQL rows and stored upstream documents;
@@ -2841,6 +2847,65 @@ Context: R-NUGET-005 let `PUT /files/<repoKey>/{lower_id}/{lower_version}/...nup
 
 **Applied in the spec:** R-NUGET-005 (the opening paragraph and the raw deploy bullet), R-NUGET-003 (the local rule), the immutability rule of R-NUGET-006. Code: none (the seam already behaves so); the test of the deviation is `TestR_STOR_007_RawDeployIntoAFormatRepositoryIsRefused`'s NuGet case, which belongs to the format's integration tests (roadmap WP3.4).
 
+### Q-NUGET-16 · The forwarded-search cache is the engine's, sized by a proxy key
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Q-NUGET-8 put the forwarded search results in a registered cache `nuget_remote_search` sized by
+`nuget.search.remote_result_cache_bytes`. The engine now passes `Volatile` requests through with a
+cache of its own ([architecture.md](../architecture.md) Q-ARCH-270), registered at the start of the
+process, before any format reads its configuration.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One engine cache `proxy_query_results`, sized by `proxy.query_cache_bytes`; the period stays `nuget.search.remote_result_ttl`, handed per call (chosen) | The format sets what only it knows, the period of its answers | One cache and one budget in the memory guard; the search of a second format shares it | The size key is not under `nuget.search` |
+| (b) The format key sizes the engine cache | `Bind` hands the size to the engine | One key under `nuget.search` | The engine registers its caches at New, before the formats are bound; a second format with its own key could not share one cache |
+| (c) Two caches | The engine's for the engine, the format's for the format | No change to Q-NUGET-8 | The same bytes twice, and a second set of egress and circuit rules |
+
+**Choice:** (a). The cache is `proxy_query_results`, the size `proxy.query_cache_bytes` (8 MiB; Q-NUGET-8
+proposed 32 MiB, which the memory guard of Q-ARCH-270 does not leave room for), the period `nuget.search.remote_result_ttl` (60 s). The key of the
+cache is the repository, its configuration version and the method and URL of the upstream request,
+so the entry is the upstream response as received, filtered and rewritten on every use, and a change
+of the repository's configuration flushes its entries (area `repo_config`).
+
+**Rationale:** Q-NUGET-8's reasoning (no shared state, filter on use, flush on configuration
+change) is unchanged; only the owner of the bytes moves. The development agent revisits this when a
+format needs a cache budget of its own for a different kind of answer.
+
+**Applied in the spec:** R-NUGET-016 (the cache, the configuration block), R-NUGET-028 (the metric
+label), R-NUGET-030's list of per-replica state. Q-NUGET-8 stands for the choice of a per-replica
+cache; its cache name and size key are replaced by this decision.
+
+### Q-NUGET-17 · The withheld-query rule is evaluated by the core, on terms
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-NUGET-016 withholds a query when a term is protected: a claim, a pin rule or an exclude pattern
+would keep a package of that name away from the remote, or the term is the literal stem of a prefix
+pattern. The plug-in splits `q` into terms; the patterns, claims and pin rules are the core's and
+the format sees none of them (R-ARCH-009).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Resolver.KeepsAway(member, term)` in the core, reading the claim index and the compiled patterns (chosen) | The format asks per term and member; the stems are looked up in the claim trie and in the pin rules | No pattern leaves the core; no database query; the same claim index as routing, so a claim change reaches it within the bound of R-ARCH-018 | The core knows the stem rule, a search idea |
+| (b) The plug-in reads the claims through a list | A method that lists patterns | The rule is the plug-in's | Every claim, pin rule and exclude pattern of the installation would be visible to format code; a second evaluation of the matcher of R-AUTHZ-005 |
+| (c) Probe with names | Ask `Plan` for `term + "."` and so on | No new method | Not a name of the format; an unfoldable name drops every remote (fail closed), so every term would be protected |
+
+**Choice:** (a). A term that is no name of the format keeps nothing away. Include patterns do not
+protect a term: they restrict what a repository serves. Through a virtual repository, a pin rule
+that does not list the member, or, without a pin rule, a claim in effect there that the member does
+not hold, keeps the name away; a prefix pattern of either keeps its stem away. On a remote addressed
+directly, a global claim does so while the remote refusal is on (R-REPO-023). The member's own
+exclude patterns apply in both cases. The stems of a pattern are its literal part with or without one
+trailing `.`, `-` or `_`.
+
+**Rationale:** the format passes names it folds with its own rule, and the core compares them with
+patterns folded by the same rule, so the two cannot disagree on spelling. The development agent
+revisits this when a second format wants another notion of a stem.
+
+**Applied in the spec:** R-NUGET-016 (the withheld queries name `Resolver.KeepsAway`). Code:
+`internal/repository/withheld.go`, `internal/virtual/engine.go`, `internal/formathost/virtual.go`.
+Tests: `TestR_REPO_023_KeepsAwayAWithheldTerm`, `TestR_NUGET_016_BridgeKeepsAway`.
 ### Q-NUGET-20 · Dependency version ranges are parsed without floating versions
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.

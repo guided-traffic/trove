@@ -3,8 +3,8 @@ package formathost
 import (
 	"context"
 	"net/http"
-	"path"
 
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/items"
@@ -25,25 +25,28 @@ type VirtualEngine interface {
 	Metadata(ctx context.Context, c virtual.Caller, p *virtual.Plan, m virtual.Merger) (*virtual.Merged, error)
 	DeployTarget(v repository.Repository) (repository.Repository, error)
 	ShadowCheck(ctx context.Context, c virtual.Caller, local repository.Repository, name, docPath string) (virtual.ShadowOutcome, error)
+	KeepsAway(ctx context.Context, v *repository.Repository, member repository.Repository, term string) (bool, error)
 }
 
 var _ VirtualEngine = (*virtual.Resolver)(nil)
 
-// NewResolver builds the Resolver a Host hands to formats over the virtual engine. formats finds a
-// registered format; nil is formats.Lookup.
-func NewResolver(engine VirtualEngine, find func(id string) (formats.Format, bool)) (formats.Resolver, error) {
+// NewResolver builds the Resolver a Host hands to formats over the virtual engine. scoper is the
+// decision point as the unaudited read scope of a listing; nil makes ReadScope refuse. formats
+// finds a registered format; nil is formats.Lookup.
+func NewResolver(engine VirtualEngine, scoper authz.ReadScoper, find func(id string) (formats.Format, bool)) (formats.Resolver, error) {
 	if engine == nil {
 		return nil, errs.E(errs.Internal, errs.CodeInternal, "formathost: no virtual engine")
 	}
 	if find == nil {
 		find = formats.Lookup
 	}
-	return &resolver{e: engine, find: find}, nil
+	return &resolver{e: engine, scoper: scoper, find: find}, nil
 }
 
 type resolver struct {
-	e    VirtualEngine
-	find func(id string) (formats.Format, bool)
+	e      VirtualEngine
+	scoper authz.ReadScoper
+	find   func(id string) (formats.Format, bool)
 }
 
 var _ formats.Resolver = (*resolver)(nil)
@@ -103,6 +106,74 @@ func (r *resolver) Metadata(ctx context.Context, rq *formats.Request, p formats.
 	}
 	return &formats.Merged{Bytes: m.Bytes, MergeFingerprint: m.MergeFingerprint, Partial: m.Partial, CacheStatus: m.CacheStatus}, nil
 }
+
+// Plan implements [formats.Resolver]: the engine's plan, without the engine's types.
+func (r *resolver) Plan(ctx context.Context, rq *formats.Request, p formats.Path, info formats.PathInfo) (*formats.VirtualPlan, error) {
+	plan, err := r.e.Plan(ctx, callerOf(rq), *rq.Repo, descriptorOf(rq, p, info, ""))
+	if err != nil {
+		return nil, err
+	}
+	out := &formats.VirtualPlan{Admitted: plan.Admitted, Members: make([]formats.PlannedMember, 0, len(plan.Members))}
+	for _, m := range plan.Members {
+		tier := formats.TierRemote
+		if m.Local() {
+			tier = formats.TierLocal
+		}
+		out.Members = append(out.Members, formats.PlannedMember{Member: memberRef(m), Tier: tier, Position: m.Position, MayFill: m.MayFill})
+	}
+	return out, nil
+}
+
+// KeepsAway implements [formats.Resolver]. The member is looked up among the members of the
+// request's virtual repository, or is the request's own repository; a repository the request has
+// nothing to do with is refused, so a format cannot probe the claims of another one.
+func (r *resolver) KeepsAway(ctx context.Context, rq *formats.Request, member formats.RepoRef, term string) (bool, error) {
+	var via *repository.Repository
+	target := *rq.Repo
+	if rq.Repo.Class == repository.Virtual {
+		via = rq.Repo
+		found := false
+		for _, m := range rq.Repo.Members() {
+			if m.Key == member.Key {
+				target, found = m, true
+				break
+			}
+		}
+		if !found {
+			return false, errs.E(errs.Internal, errs.CodeInternal, "The repository is not a member of the request's virtual repository.")
+		}
+	} else if member.Key != rq.Repo.Key {
+		return false, errs.E(errs.Internal, errs.CodeInternal, "The repository is not the request's repository.")
+	}
+	return r.e.KeepsAway(ctx, via, target, term)
+}
+
+// ReadScope implements [formats.Resolver]: the decision point's unaudited read scope.
+func (r *resolver) ReadScope(ctx context.Context, rq *formats.Request, repos []string) (formats.ReadScope, error) {
+	if r.scoper == nil {
+		return nil, errNoResolver()
+	}
+	rs, err := r.scoper.ReadScopeOn(ctx, rq.Index, rq.Subject, repos)
+	if err != nil {
+		return nil, err
+	}
+	return readScope{rs: rs}, nil
+}
+
+// readScope converts the decision point's shapes to the contract's.
+type readScope struct{ rs authz.ReadScope }
+
+func (s readScope) Shape(repo string) formats.ReadShape {
+	switch s.rs.Shape(repo) {
+	case authz.ReadAll:
+		return formats.ReadAll
+	case authz.ReadRows:
+		return formats.ReadRows
+	}
+	return formats.ReadNone
+}
+
+func (s readScope) MayRead(repo, pkg, version string) bool { return s.rs.MayRead(repo, pkg, version) }
 
 // DeployTarget implements [formats.Resolver].
 func (r *resolver) DeployTarget(_ context.Context, rq *formats.Request) (*repository.Repository, error) {
@@ -202,12 +273,8 @@ func (t tiers) RemoteCached(ctx context.Context, m virtual.Member, _ virtual.Des
 	}
 	// The format's marks apply to a cached artifact as well: a stale document is
 	// revalidated first and a withdrawn version is refused (Q-NPM-13, R-NPM-026).
-	if g, ok := t.rq.Host.Remote().(interface {
-		Gate(context.Context, *formats.Request, formats.Path) error
-	}); ok {
-		if err := g.Gate(ctx, member, t.p); err != nil {
-			return nil, false, err
-		}
+	if err := t.rq.Host.Remote().Gate(ctx, member, t.p); err != nil {
+		return nil, false, err
 	}
 	if ok, err := t.servable(ctx, it); !ok || err != nil {
 		return nil, false, err
@@ -259,20 +326,13 @@ func (m merger) Merge(ctx context.Context, _ virtual.Descriptor, parts []virtual
 	return m.a.Merge(ctx, m.rq, m.p, docs)
 }
 
-// ArtifactPrefix is the prefix of the cached artifacts of a package: its document's path, or the
-// directory of it when the document is an index.json (NuGet's version list), with a slash. A
-// format whose artifacts live elsewhere has no cached versions in a merge and gets the restricted
-// reading only for the versions it lists itself.
+// ArtifactPrefix is the prefix of the cached artifacts of a package, which the format's virtual
+// adapter names: the bridge knows no layout of any format (WP3.0l).
 func (m merger) ArtifactPrefix(d virtual.Descriptor) string {
-	doc, ok := m.f.PackageDocumentPath(d.Package)
-	if !ok || doc.Path == "" {
+	if d.Package == "" {
 		return ""
 	}
-	base := doc.Path
-	if path.Base(base) == "index.json" {
-		base = path.Dir(base)
-	}
-	return base + "/"
+	return m.a.ArtifactPrefix(d.Package)
 }
 
 // CachedVersion names the version a cached artifact path belongs to, by the format's own

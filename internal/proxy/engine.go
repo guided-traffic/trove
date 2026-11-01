@@ -103,6 +103,9 @@ type Engine struct {
 
 	state   *cache.Cache[int64, *repoState]
 	mdBytes *cache.Cache[[32]byte, []byte]
+	// queries holds the answers of pass-through queries (query.go); nil when
+	// proxy.query_cache_bytes is 0.
+	queries *cache.Cache[queryKey, *queryEntry]
 
 	base   context.Context
 	cancel context.CancelFunc
@@ -112,6 +115,9 @@ type Engine struct {
 
 	fmu     sync.Mutex
 	flights map[string]*flight
+
+	qmu    sync.Mutex
+	qcalls map[queryKey]*queryCall
 
 	keys sync.Map // repository id -> key, for the gauge of repositories no request touched
 
@@ -124,7 +130,8 @@ type Engine struct {
 }
 
 // New creates the engine and registers its caches (R-ARCH-032): the per-repository
-// state, the negative L1 and the bytes of documents by digest.
+// state, the negative L1, the bytes of documents by digest and the answers of
+// pass-through queries.
 func New(o Options) (*Engine, error) {
 	switch {
 	case o.Runner == nil:
@@ -161,7 +168,7 @@ func New(o Options) (*Engine, error) {
 		o: o, log: o.Log, m: newMetrics(o.Metrics),
 		slots:   newSlots(o.Config.MaxConcurrentFetches, o.Replicas),
 		flights: map[string]*flight{}, probes: map[int64]*atomic.Bool{}, ensured: map[int64]bool{},
-		throttled: map[string]time.Time{},
+		throttled: map[string]time.Time{}, qcalls: map[queryKey]*queryCall{},
 	}
 	e.base, e.cancel = context.WithCancel(context.Background())
 	e.state = cache.Register(o.Caches, CacheState, cache.Options[int64, *repoState]{
@@ -180,6 +187,7 @@ func New(o Options) (*Engine, error) {
 			SafetyTTL: 24 * time.Hour, // content-addressed: it cannot go stale, the bound is the rule's
 		})
 	}
+	e.registerQueries()
 	return e, nil
 }
 

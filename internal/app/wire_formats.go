@@ -182,7 +182,7 @@ func (a *App) wireFormatHost(_ context.Context, in infra, fm formatsArea, repo r
 		return formatHostArea{}, err
 	}
 	// The virtual engine is the Host's Resolver (virtual resolution as a format meets it).
-	resolver, err := formathost.NewResolver(ve.engine, nil)
+	resolver, err := formathost.NewResolver(ve.engine, a.readScoper(), nil)
 	if err != nil {
 		return formatHostArea{}, err
 	}

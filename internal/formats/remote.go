@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
@@ -114,6 +115,10 @@ type RemoteAdapter interface {
 	// what [RemoteBase] answers. They were optional interfaces found by type assertion; they are
 	// methods of the contract so that a format cannot forget them unnoticed (Q-ARCH-254).
 	BeforeArtifact(ctx context.Context, h Host, rq *Request, p Path) (Digests, error)
+	// UpstreamQuery maps a pass-through [Query] to the upstream request (R-ARCH-013 step 6): a GET
+	// or HEAD without a body, whose method and URL are the key of the cached answer. A format
+	// whose routes are not Volatile embeds [RemoteBase], whose default refuses.
+	UpstreamQuery(ctx context.Context, rc RemoteContext, q Query) (*http.Request, error)
 }
 
 // Discoverer is an optional interface of a [RemoteAdapter]: the format's upstream addressing follows a
@@ -162,8 +167,13 @@ func RemoteCapabilities(id ID) RemoteCaps {
 }
 
 // RemoteBase gives a RemoteAdapter the defaults of the methods most formats leave alone:
-// no expected media types and no artifact gate. Embed it.
+// no expected media types, no artifact gate and no pass-through query. Embed it.
 type RemoteBase struct{}
+
+// UpstreamQuery refuses: the format has no Volatile route that is passed through.
+func (RemoteBase) UpstreamQuery(context.Context, RemoteContext, Query) (*http.Request, error) {
+	return nil, errs.E(errs.Internal, errs.CodeInternal, "The format passes no query through to an upstream.")
+}
 
 // ExpectsType expects no media type.
 func (RemoteBase) ExpectsType(Path, string) bool { return false }
@@ -240,6 +250,46 @@ type RemoteFetcher interface {
 	// transaction; ctx bounds it. A repository that may not contact its upstream answers
 	// [ErrOffline] and sends nothing. The caller closes the response body.
 	Exchange(ctx context.Context, rq *Request, x Exchange) (*http.Response, error)
+	// Query passes a Volatile request through to the upstream of the remote repository rq
+	// addresses (R-ARCH-013 step 6): the engine sends it through the repository's client under
+	// its egress rules, credential policy, fetch slots and circuit, and keeps the answer, as
+	// received, in a registered per-replica cache for q.TTL. The answer is stored as neither a
+	// cache entry nor an item. A repository that may not contact its upstream, and a caller who
+	// may not fill it, are served from the cache only; a miss answers [ErrOffline] and sends
+	// nothing. A missing resource at the upstream is errs.NotFound.
+	Query(ctx context.Context, rq *Request, q Query) (*QueryResult, error)
+	// Gate runs [RemoteAdapter.BeforeArtifact] for a request addressed to a remote repository
+	// without fetching: the check a remote member of a virtual repository meets before its
+	// cached artifact is served (the second tier never asks the upstream for the artifact, but a
+	// stale document may have to be revalidated first, Q-NPM-13, R-NPM-026). It is a method of
+	// the fetcher, so that a wrapper around a fetcher cannot drop the gate unnoticed.
+	Gate(ctx context.Context, rq *Request, p Path) error
+}
+
+// Query is one Volatile request a format passes through to an upstream: a package search.
+type Query struct {
+	// Path is the repository path of the request: "v3/search".
+	Path Path
+	// Params are the parameters to forward, already limited, clamped and normalised by the
+	// format. The cached answer is found under the upstream request the adapter builds from
+	// them, so equal parameters share one answer.
+	Params url.Values
+	// TTL is how long the answer is kept; 0 keeps nothing. The engine cuts it to one hour.
+	TTL time.Duration
+}
+
+// QueryResult is the upstream's answer to a [Query].
+type QueryResult struct {
+	// ContentType is the Content-Type of the answer.
+	ContentType string
+	// Body is the answer as received, shared with the cache: a format must not change it, and
+	// filters and rewrites a copy on every use.
+	Body []byte
+	// FetchedAt is when the upstream answered.
+	FetchedAt time.Time
+	// Cached says the answer came from the replica's cache; Collapsed that it is the result of
+	// another request's contact of the upstream.
+	Cached, Collapsed bool
 }
 
 // Exchange is one request a format sends to an upstream service on a client's behalf:
@@ -255,6 +305,8 @@ type Exchange struct {
 	Body   []byte
 }
 
-// ErrOffline is the answer of [RemoteFetcher.Exchange] for a remote repository in offline
-// mode, and for every one while proxy.global_offline is on (R-REPO-030, R-REPO-031).
+// ErrOffline is the answer of [RemoteFetcher.Exchange] and of [RemoteFetcher.Query] for a remote
+// repository in offline mode, and for every one while proxy.global_offline is on (R-REPO-030,
+// R-REPO-031); Query answers it as well for a caller who may not fill the repository and for the
+// cache view.
 var ErrOffline = errors.New("formats: the remote repository may not contact its upstream")

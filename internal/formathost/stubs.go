@@ -48,7 +48,27 @@ func (unsupportedRemote) Exchange(context.Context, *formats.Request, formats.Exc
 	return nil, errNoRemote()
 }
 
+func (unsupportedRemote) Query(context.Context, *formats.Request, formats.Query) (*formats.QueryResult, error) {
+	return nil, errNoRemote()
+}
+
+func (unsupportedRemote) Gate(context.Context, *formats.Request, formats.Path) error {
+	return errNoRemote()
+}
+
 type unsupportedResolver struct{}
+
+func (unsupportedResolver) Plan(context.Context, *formats.Request, formats.Path, formats.PathInfo) (*formats.VirtualPlan, error) {
+	return nil, errNoResolver()
+}
+
+func (unsupportedResolver) KeepsAway(context.Context, *formats.Request, formats.RepoRef, string) (bool, error) {
+	return false, errNoResolver()
+}
+
+func (unsupportedResolver) ReadScope(context.Context, *formats.Request, []string) (formats.ReadScope, error) {
+	return nil, errNoResolver()
+}
 
 func (unsupportedResolver) Artifact(context.Context, *formats.Request, formats.Path, formats.PathInfo, http.ResponseWriter) error {
 	return errNoResolver()

@@ -1585,6 +1585,13 @@ execute these steps in order:
   one replica answer differently from another (INV-18, R-REPO-049). It is never shared through
   Valkey ([architecture.md](architecture.md) R-ARCH-030). Its size is `proxy.metadata_cache_bytes`
   (128 MiB by default); a document above an eighth of it is not kept.
+- A `Volatile` request of a format (a package search) is passed through to the upstream and not stored: the engine keeps the
+  upstream's answer, as received, in the registered per-replica cache `proxy_query_results` for the period the format asks, at most
+  one hour, within `proxy.query_cache_bytes` (8 MiB by default; `0` turns the cache off). The request takes a fetch slot, meets the
+  circuit and the egress, TLS, redirect and credential rules of any fetch, and its host must be the upstream's or an `extraHosts`
+  entry; a copy that is current is served without contacting the upstream, to every caller. Without one, a repository that is offline,
+  the cache view, `only-if-cached` and a caller who may not populate (R-AUTHZ-008, R-EP-019) send nothing, and the format answers from
+  its own cache-only form. A 404 or 410 writes no negative entry (architecture.md R-ARCH-013 step 6, Q-ARCH-270).
 
 Data model:
 

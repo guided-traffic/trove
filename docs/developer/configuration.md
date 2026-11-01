@@ -177,9 +177,9 @@ storage:
 ```
 
 Memory slots = ⌊(0.8 × Go limit − cache budgets) ÷ (class of max(`buffer_size`, 2 × `hold_back`, 4 KiB) + `receive_window` + 128 KiB)⌋,
-at least 1. The cache budgets are `cache.rendition_bytes` + `proxy.metadata_cache_bytes` + `proxy.merged_metadata_cache_bytes`, 640 MiB
-by default ([Q-ARCH-243](../spec/architecture.md#q-arch-243--the-memory-slots-leave-the-caches-byte-budgets-aside)): 90 for a 1 GiB
-container, 1,204 for 2 GiB; without caches 278 for 256 MiB and 1,114 for 1 GiB. The 80 % and 70 % of the heap gate are constants
+at least 1. The cache budgets are `cache.rendition_bytes` + `proxy.metadata_cache_bytes` + `proxy.merged_metadata_cache_bytes` + `proxy.query_cache_bytes`, 648 MiB
+by default ([Q-ARCH-243](../spec/architecture.md#q-arch-243--the-memory-slots-leave-the-caches-byte-budgets-aside)): 77 for a 1 GiB
+container, 1,191 for 2 GiB; without caches 278 for 256 MiB and 1,114 for 1 GiB. The 80 % and 70 % of the heap gate are constants
 ([Q-ARCH-240](../spec/architecture.md#q-arch-240--a-replica-admits-what-its-memory-holds-memory-slots-and-a-heap-gate-in-step-4)).
 
 ## M2 keys
@@ -205,6 +205,7 @@ proxy:
     - application/xhtml+xml
   metadata_cache_bytes: 128MiB       # default; 0 turns the cache off, per replica: served metadata documents by blob digest (R-REPO-025)
   merged_metadata_cache_bytes: 256MiB  # default; 0 turns the cache off, per replica (R-REPO-020)
+  query_cache_bytes: 8MiB            # default; 0 turns the cache off, per replica: answers of pass-through queries, e.g. a forwarded search (R-ARCH-013 step 6, Q-ARCH-270)
   claims:
     remote_refusal: true             # default (R-REPO-023)
 npm:

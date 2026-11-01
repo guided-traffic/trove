@@ -26,6 +26,14 @@ Two capabilities only some formats have are optional interfaces of the adapter, 
 
 The URL map (`remote_url_map`) addresses a metadata path as it does an artifact (the non-inlined page of a listing), under the same foreign-host rule.
 `Request.MaxBytes` (a format's `MaxDocumentBytes`) bounds a metadata document only.
+`RemoteFetcher.Query` passes a `Volatile` request (a package search) through and keeps its answer for the period the format asks
+(`Engine.Query` in [query.go](../../internal/proxy/query.go), R-ARCH-013 step 6, Q-ARCH-270). The format's `RemoteAdapter.UpstreamQuery` builds the upstream
+request and `AcceptResponse` checks the response; the engine owns everything else. Unlike `Exchange` it takes the repository's fetch slot, is refused while
+the circuit is open (503 `upstream_assumed_offline`) and counts a 2xx as a success and a transport or 5xx failure toward the circuit as a fetch does; the URL
+must be on the upstream's host or an `extraHosts` entry (`Allowed`), and an egress or TLS refusal is the same security event. A 404 or 410 is `errs.NotFound`
+and writes no negative entry. Without a current copy, a repository that may not contact its upstream (offline, `proxy.global_offline`, the cache view,
+`only-if-cached`) and a caller whose populate check refuses (R-AUTHZ-008, R-EP-019: counted in `trove_endpoint_cache_fill_refused_total`) get
+`formats.ErrOffline` and no request leaves. A current copy is served to every caller; `QueryResult.Body` is shared with the cache and must not be changed.
 
 ## The upstream clients
 
@@ -345,6 +353,7 @@ flowchart TD
 | [flight.go](../../internal/proxy/flight.go) | the in-process flight, `lead` (Acquire, Wait, re-check, bypass), `recheck` |
 | [fetch.go](../../internal/proxy/fetch.go), [classify.go](../../internal/proxy/classify.go) | one fetch: slots, circuit, request, the retry, classification of the outcome (R-REPO-029 table) |
 | [exchange.go](../../internal/proxy/exchange.go) | `Exchange`: one request of a format outside the cache, through the repository's client, without slot or circuit (Q-NPM-62) |
+| [query.go](../../internal/proxy/query.go) | `Query`: the pass-through of a `Volatile` request under slot, circuit and egress rules, the registered cache `proxy_query_results`, the in-process collapse of identical queries (Q-ARCH-270) |
 | [state.go](../../internal/proxy/state.go) | the per-repository state cache (circuit, gone documents), the probe slot, `markGone` |
 | [negative.go](../../internal/proxy/negative.go) | the negative L1 and its readers' validation (R-REPO-028) |
 | [integrity.go](../../internal/proxy/integrity.go), [body.go](../../internal/proxy/body.go) | digests, the withheld tail (`stream`), the size limit, the idle timeout of a body |
@@ -374,7 +383,8 @@ lets through. The stream is the request's, not the flight's: `detach` ends its s
 | circuit and gone documents of a repository | cache `proxy_upstream_state`, area `upstream_state` | a change reloads the repository in the background; the writer takes the state from `RETURNING` |
 | negative L1 | cache `proxy_negative_l1` (`proxy.negative_l1_entries`) | nothing: readers validate window and invalidations |
 | bytes of metadata by digest | cache `proxy_metadata_bytes` (`proxy.metadata_cache_bytes`) | nothing: content-addressed |
-| flights, probe slots, fetch slots | plain fields of the engine | end with the process |
+| answers of pass-through queries | cache `proxy_query_results` (`proxy.query_cache_bytes`, 8 MiB; entries live at most the period of the call and one hour), area `repo_config` | a change of the repository drops its entries; the key carries `config_version`, and a fill that a change overtook is not stored (`Cache.Load`) |
+| flights, query calls, probe slots, fetch slots | plain fields of the engine | end with the process |
 
 ### The fill
 
@@ -410,6 +420,7 @@ virtual request records its allowed populate event with the grant reason of the 
 | unit | [fillrefused_test.go](../../internal/proxy/fillrefused_test.go) | `FillRefused` counts per endpoint (R-EP-019) |
 | unit | [remote_caps_test.go](../../internal/formathost/remote_caps_test.go), [remote_caps_test.go](../../internal/formats/remote_caps_test.go) | the adapter binds the parsed discovery data without changing the adapter it was called on; the hook is declared per path, reads the spooled body and its inspection travels as the commit payload; `Register` records the optional interfaces |
 | integration | [hook_test.go](../../test/integration/proxy/hook_test.go) | R-NUGET-015 at the engine: a refusal answers 502 to 40 concurrent requests and stores nothing, no byte before the hook accepted (with a control that streams without one), the object store down, the payload at the storage hook; R-NUGET-014: the discovery document is resolved once, a repository with one fetch slot does not wait for itself, a missing, unparsable or unpopulatable document; R-REPO-043: a mapped metadata path and its foreign host; the metadata-only bound |
+| integration | [query_test.go](../../test/integration/proxy/query_test.go) | the pass-through: cache, period, collapse, offline and fill refusal, circuit, foreign host and credentials, flush by `repo_config`, two replicas, through the `Host` |
 | integration | [test/integration/proxy](../../test/integration/proxy/) | R-REPO-025 order and download order (R-ARCH-013); R-REPO-026 on two replicas (100 requests, killed and cancelled holders, draining, polling without messages, foreign locks, duplicate fills); R-REPO-027 to R-REPO-032; R-REPO-040 to R-REPO-043; R-REPO-047, R-OPS-011; R-AUTHZ-008 and R-EP-019 at the engine |
 | integration | [cachefill_test.go](../../test/integration/endpoints/cachefill_test.go) | R-EP-019 through the whole request path (dispatcher, Host populate check, engine) on a replica with a further endpoint and a counting upstream |
 

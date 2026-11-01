@@ -28,7 +28,12 @@ const documentVariant = "full"
 // Remote returns the format's remote adapter.
 func (f *Format) Remote() formats.RemoteAdapter { return remoteAdapter{f: f} }
 
-type remoteAdapter struct{ f *Format }
+// remoteAdapter embeds the defaults of the contract: npm has no Volatile route that is passed
+// through to an upstream (the audit goes through Exchange), so UpstreamQuery refuses.
+type remoteAdapter struct {
+	formats.RemoteBase
+	f *Format
+}
 
 var _ formats.RemoteAdapter = remoteAdapter{}
 

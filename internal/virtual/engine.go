@@ -214,6 +214,13 @@ func boolByte(v bool) byte {
 	return 0
 }
 
+// KeepsAway reports whether the claims, pin rules and exclude patterns in effect in v (nil for a
+// repository addressed directly) keep a search term away from a member (R-NUGET-016, R-NUGET-018
+// step 2). It reads the replica's claim index and decides nothing about the caller.
+func (r *Resolver) KeepsAway(ctx context.Context, v *repository.Repository, member repository.Repository, term string) (bool, error) {
+	return r.o.Router.KeepsAway(ctx, v, member, term)
+}
+
 // DeployTarget is the repository a write to the virtual repository goes to (R-REPO-021,
 // R-AUTHZ-009 rule 5): 405 no_deploy_target when there is none, and 404 when the target is
 // disabled or being deleted, like any request to it.

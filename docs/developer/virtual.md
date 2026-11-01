@@ -274,9 +274,25 @@ engine requires:
   mirror from being offered a version it cannot download.
 - The merged bytes hold no absolute link: the format rewrites links to the response base URL after the cache, which is why the base URL is not in
   the key.
-- `ArtifactPrefix` is derived by `formathost` from `Format.PackageDocumentPath` (the document's path, or its directory when the document is an
-  `index.json`, then a slash) and the version of a cached path from `Format.Classify`; a format whose cached artifacts live elsewhere has no
-  cached versions in a merge.
+- `ArtifactPrefix` is the virtual adapter's (`VirtualAdapter.ArtifactPrefix(name)`, Q-ARCH-272): the bridge knows no layout. npm answers the name and a slash,
+  NuGet will answer the directory of its version list. The version of a cached path is read from `Format.Classify`; a format that answers "" has no cached
+  versions in a merge.
+
+### The fan-out of a format that queries the members itself
+
+A format whose request is not a document of one package (NuGet's search, R-NUGET-018) asks the `Resolver` instead of reading `rq.Repo.Members()`
+(Q-ARCH-271; bridge in [virtual.go](../../internal/formathost/virtual.go)):
+
+| Method | Answers | Behind it |
+|---|---|---|
+| `Plan(rq, path, info)` | the members that take part for this caller, in resolution order, each with tier, position and `MayFill`; `Admitted` false when the virtual repository's patterns refuse the request | `Resolver.Plan`: the route, then the per-member read and populate check |
+| `KeepsAway(rq, member, term)` | whether a claim, pin rule or exclude pattern keeps the term, or the stem of a prefix pattern, away from the member (R-NUGET-016, Q-NUGET-17) | `Router.KeepsAway`, [withheld.go](../../internal/repository/withheld.go): the claim index and the compiled patterns, no query |
+| `ReadScope(rq, repos)` | the unaudited read scope of the caller for a listing: `ReadAll`, `ReadRows` (ask `MayRead` per package) or `ReadNone` | `authz.ReadScoper` (`NewResolver` takes it) |
+
+`KeepsAway` refuses a member that is neither of the request's virtual repository nor the request's own repository. A term that is no name of the format
+keeps nothing away, include patterns do not protect, and a global claim keeps a name from a remote addressed directly only while `proxy.claims.remote_refusal` is on.
+The members of the plan whose `Tier` is remote are queried with `Host.Remote().Query` on `rq.Member(...)`, which is how the populate check, the credential and the
+cache key follow the member ([proxy.md](proxy.md)).
 
 ### The shadowing check
 
@@ -308,6 +324,7 @@ type Router interface {
 	RemoteRefused(ctx, remote repository.Repository, name string, via *repository.Repository) (bool, error)
 	CoveredByOwnClaim(ctx, local repository.Repository, name string) (bool, error)
 	ExposureSet(ctx, local repository.Repository, name string) ([]repository.Exposure, error)
+	KeepsAway(ctx, via *repository.Repository, member repository.Repository, term string) (bool, error) // withheld search terms, Q-NUGET-17
 }
 // Decider: authz.Decider implements it.
 type Decider interface {

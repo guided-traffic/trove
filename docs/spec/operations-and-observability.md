@@ -919,7 +919,7 @@ HTTP duration histograms use the buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.
 | `trove_http_transfers_cut_total` | counter | `direction` | Transfers cut at the shutdown deadline ([architecture.md](architecture.md) R-ARCH-024, Q-ARCH-18) |
 | `trove_repository_requests_total` | counter | `repo`, `format`, `class`, `operation` (download, upload, metadata, delete, search), `outcome` (success, not_found, denied, error) | Package-protocol and raw-file operations per repository |
 | `trove_repository_transferred_bytes_total` | counter | `repo`, `format`, `class`, `direction` (in, out) | Bytes per repository |
-| `trove_remote_cache_lookups_total` | counter | `repo`, `kind` (metadata, artifact), `result` (hit, miss, stale, negative_hit) | Pull-through cache outcomes (INV-11) |
+| `trove_remote_cache_lookups_total` | counter | `repo`, `kind` (metadata, artifact, query), `result` (hit, miss, stale, negative_hit) | Pull-through cache outcomes (INV-11) |
 | `trove_remote_upstream_requests_total` | counter | `repo`, `code` (status code or `error`) | Requests sent to an upstream |
 | `trove_remote_upstream_request_duration_seconds` | histogram | `repo` | Upstream response time including body |
 | `trove_remote_upstream_up` | gauge | `repo` | 1 while the upstream counts as reachable, 0 while it is treated as unreachable ([repositories-and-proxy.md](repositories-and-proxy.md)) |

@@ -29,6 +29,8 @@ type Router struct {
 	Exposure map[string][]repository.Exposure
 	// Refused lists the remote keys that refuse a name.
 	Refused map[string]bool
+	// Away lists "<member key>/<term>" pairs KeepsAway answers true for.
+	Away map[string]bool
 	// Routes counts the calls of Route.
 	Routes int
 }
@@ -63,6 +65,13 @@ func (r *Router) CoveredByOwnClaim(_ context.Context, local repository.Repositor
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.Covered[local.Key+"/"+name], nil
+}
+
+// KeepsAway implements virtual.Router.
+func (r *Router) KeepsAway(_ context.Context, _ *repository.Repository, member repository.Repository, term string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.Away[member.Key+"/"+term], nil
 }
 
 // ExposureSet implements virtual.Router.

@@ -591,7 +591,7 @@ func (f Format) OnItemsRestored(ctx context.Context, _ formats.Tx, e formats.Ite
 }
 
 // Remote implements formats.Format.
-func (f Format) Remote() formats.RemoteAdapter { return remoteAdapter{f} }
+func (f Format) Remote() formats.RemoteAdapter { return remoteAdapter{f: f} }
 
 // Virtual implements formats.Format.
 func (f Format) Virtual() formats.VirtualAdapter { return virtualAdapter{f} }
@@ -816,7 +816,10 @@ func (f Format) all(ctx context.Context, rq *formats.Request, w http.ResponseWri
 }
 
 // remoteAdapter rewrites the documents of an upstream.
-type remoteAdapter struct{ f Format }
+type remoteAdapter struct {
+	formats.RemoteBase
+	f Format
+}
 
 func (remoteAdapter) UpstreamRequest(ctx context.Context, rc formats.RemoteContext, p formats.Path, _ string) (*http.Request, error) {
 	return http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(rc.Upstream.String(), "/")+"/"+p.Path, nil)
@@ -919,6 +922,9 @@ func (a virtualAdapter) Merge(_ context.Context, _ *formats.Request, _ formats.P
 	}
 	return json.Marshal(map[string]any{"versions": versions})
 }
+
+// ArtifactPrefix: the artifacts of a package are below the path of its document.
+func (a virtualAdapter) ArtifactPrefix(name string) string { return name + "/" }
 
 func (a virtualAdapter) LocalDocument(ctx context.Context, rq *formats.Request, _ formats.RepoRef, p formats.Path, _ string) ([]byte, formats.RevSeq, bool, error) {
 	doc, found, err := a.f.document(ctx, rq, a.f.norm(p.Path))

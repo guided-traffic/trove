@@ -212,6 +212,10 @@ type Router interface {
 	RemoteRefused(ctx context.Context, remote repository.Repository, name string, via *repository.Repository) (bool, error)
 	CoveredByOwnClaim(ctx context.Context, local repository.Repository, name string) (bool, error)
 	ExposureSet(ctx context.Context, local repository.Repository, name string) ([]repository.Exposure, error)
+	// KeepsAway reports whether the claims, pin rules and exclude patterns in effect keep a search
+	// term away from a member; via is the virtual repository the request was addressed to, nil for
+	// a repository addressed directly (R-NUGET-016 withheld queries).
+	KeepsAway(ctx context.Context, via *repository.Repository, member repository.Repository, term string) (bool, error)
 }
 
 var _ Router = (*repository.Routing)(nil)

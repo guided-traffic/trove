@@ -23,10 +23,15 @@ import (
 type virtAdapter struct {
 	strategy formats.Strategy
 	gotParts []formats.MemberDocument
-	gotVar   string
+	// dir is put before the package in the artifact prefix.
+	dir    string
+	gotVar string
 }
 
 func (a *virtAdapter) Strategy(formats.Path) formats.Strategy { return a.strategy }
+
+// ArtifactPrefix: the format's own layout, a directory the test can change.
+func (a *virtAdapter) ArtifactPrefix(name string) string { return a.dir + name + "/" }
 
 func (a *virtAdapter) Merge(_ context.Context, _ *formats.Request, _ formats.Path, parts []formats.MemberDocument) ([]byte, error) {
 	a.gotParts = parts
@@ -92,10 +97,29 @@ type fakeEngine struct {
 	docPath  string
 	target   repository.Repository
 	targetOK bool
+	// plans, when set, is the plan Plan answers.
+	plans *virtual.Plan
+	// away answers KeepsAway per "<member key>/<term>"; gotAway records the last call.
+	away    map[string]bool
+	gotAway struct {
+		via    *repository.Repository
+		member repository.Repository
+		term   string
+	}
+}
+
+func (e *fakeEngine) KeepsAway(_ context.Context, via *repository.Repository, member repository.Repository, term string) (bool, error) {
+	e.gotAway.via, e.gotAway.member, e.gotAway.term = via, member, term
+	return e.away[member.Key+"/"+term], nil
 }
 
 func (e *fakeEngine) Plan(_ context.Context, c virtual.Caller, v repository.Repository, d virtual.Descriptor) (*virtual.Plan, error) {
 	e.caller, e.plan = c, d
+	if e.plans != nil {
+		p := *e.plans
+		p.Virtual, p.Descriptor = v, d
+		return &p, nil
+	}
 	return &virtual.Plan{Virtual: v, Descriptor: d, Admitted: true}, nil
 }
 
@@ -160,6 +184,14 @@ type fakeRemote struct {
 	formats.RemoteFetcher
 	cachedFor, fetchedFor string
 	cachedErr, fetchErr   error
+	// gateErr is the refusal of the format's artifact gate; gatedFor records the request it ran for.
+	gateErr  error
+	gatedFor string
+}
+
+func (f *fakeRemote) Gate(_ context.Context, rq *formats.Request, _ formats.Path) error {
+	f.gatedFor = rq.Repo.Key
+	return f.gateErr
 }
 
 func (f *fakeRemote) Cached(_ context.Context, rq *formats.Request, p formats.Path) (formats.Item, bool, error) {
@@ -198,7 +230,7 @@ func newBridge(t *testing.T) *bridge {
 	ad := &virtAdapter{strategy: formats.Merge}
 	f := virtFormat{a: ad, refuse: map[string]error{}}
 	eng := &fakeEngine{}
-	r, err := NewResolver(eng, func(id string) (formats.Format, bool) { return f, id == "virtfmt" })
+	r, err := NewResolver(eng, nil, func(id string) (formats.Format, bool) { return f, id == "virtfmt" })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +248,7 @@ func newBridge(t *testing.T) *bridge {
 }
 
 func TestNewResolverNeedsAnEngine(t *testing.T) {
-	if _, err := NewResolver(nil, nil); err == nil {
+	if _, err := NewResolver(nil, nil, nil); err == nil {
 		t.Fatal("accepted no engine")
 	}
 }
@@ -336,6 +368,9 @@ func TestR_ARCH_015_BridgeMetadata(t *testing.T) {
 		if got := mg.ArtifactPrefix(virtual.Descriptor{Package: "@acme/util"}); got != "@acme/util/" {
 			t.Errorf("prefix = %q", got)
 		}
+		if got := mg.ArtifactPrefix(virtual.Descriptor{}); got != "" {
+			t.Errorf("a path without a package has the prefix %q", got)
+		}
 		if got := mg.CachedVersion("lodash/-/4.17.21.tgz"); got != "4.17.21" {
 			t.Errorf("version = %q", got)
 		}
@@ -407,3 +442,134 @@ func TestR_REPO_048_BridgeShadowCheck(t *testing.T) {
 		}
 	})
 }
+
+// The directory of a package's cached artifacts is the virtual adapter's to name; the bridge
+// derives it from no document path (WP3.0l, R-NUGET-018).
+func TestR_NUGET_018_TheDirectoryOfCachedVersionsComesFromTheVirtualAdapter(t *testing.T) {
+	b := newBridge(t)
+	b.ad.dir = "v3-flatcontainer/"
+	p := formats.Path{Path: "lodash"}
+	if _, err := b.r.Metadata(t.Context(), b.rq, p, b.format.Classify(p), "full"); err != nil {
+		t.Fatal(err)
+	}
+	if got := b.eng.merger.ArtifactPrefix(virtual.Descriptor{Package: "acme.widgets"}); got != "v3-flatcontainer/acme.widgets/" {
+		t.Fatalf("prefix = %q: the bridge did not ask the adapter", got)
+	}
+}
+
+// A cached artifact of a remote member meets the format's gate through the typed path of the
+// fetcher; a refusal of the gate ends the tier, so a withdrawn version is never served (R-NPM-026).
+func TestR_NPM_026_ACachedArtifactOfARemoteMemberMeetsTheGate(t *testing.T) {
+	b := newBridge(t)
+	p := formats.Path{Path: "left-pad/-/1.0.0.tgz"}
+	if err := b.r.Artifact(t.Context(), b.rq, p, b.format.Classify(p), httptest.NewRecorder()); err != nil {
+		t.Fatal(err)
+	}
+	remote := virtual.Member{Repo: vt.RemoteRepo(2, "member-remote"), ID: 2}
+	if _, ok, err := b.eng.tiers.RemoteCached(t.Context(), remote, b.eng.plan); !ok || err != nil || b.host.remote.gatedFor != "member-remote" {
+		t.Fatalf("ok %v err %v gated for %q", ok, err, b.host.remote.gatedFor)
+	}
+	b.host.remote.gateErr = errs.E(errs.NotFound, errs.CodeNotFound, "The version is withdrawn.")
+	if hit, ok, err := b.eng.tiers.RemoteCached(t.Context(), remote, b.eng.plan); ok || hit != nil || err == nil {
+		t.Fatalf("a withdrawn version was served: ok %v err %v", ok, err)
+	}
+}
+
+func TestR_NUGET_018_BridgePlan(t *testing.T) {
+	b := newBridge(t)
+	b.eng.plans = &virtual.Plan{Admitted: true, Members: []virtual.Member{
+		{Repo: vt.LocalRepo(1, "member-local"), ID: 1, Position: 0},
+		{Repo: vt.RemoteRepo(2, "member-remote"), ID: 2, Position: 1, MayFill: true},
+	}}
+	p := formats.Path{Path: "v3/search"}
+	plan, err := b.r.Plan(t.Context(), b.rq, p, formats.PathInfo{Kind: formats.PathVolatile})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []formats.PlannedMember{
+		{Member: formats.RepoRef{Key: "member-local", Class: formats.Local}, Tier: formats.TierLocal, Position: 0},
+		{Member: formats.RepoRef{Key: "member-remote", Class: formats.Remote}, Tier: formats.TierRemote, Position: 1, MayFill: true},
+	}
+	if !plan.Admitted || !slices.EqualFunc(plan.Members, want, func(a, b formats.PlannedMember) bool {
+		return a.Member.Key == b.Member.Key && a.Member.Class == b.Member.Class && a.Tier == b.Tier && a.Position == b.Position && a.MayFill == b.MayFill
+	}) {
+		t.Fatalf("plan = %+v", plan)
+	}
+	if d := b.eng.plan; d.Kind != catalog.KindSearch || d.Path != "v3/search" {
+		t.Fatalf("descriptor = %+v", d)
+	}
+}
+
+func TestR_NUGET_016_BridgeKeepsAway(t *testing.T) {
+	b := newBridge(t)
+	remote := formats.RepoRef{ID: 2, Key: "member-remote", Class: formats.Remote, Format: "virtfmt"}
+	b.eng.away = map[string]bool{"member-remote/acme": true}
+	t.Run("through a virtual repository the question is asked with it and the member", func(t *testing.T) {
+		if away, err := b.r.KeepsAway(t.Context(), b.rq, remote, "acme"); err != nil || !away {
+			t.Fatalf("away %v err %v", away, err)
+		}
+		if g := b.eng.gotAway; g.via == nil || g.via.Key != "all" || g.member.Key != "member-remote" || g.term != "acme" {
+			t.Fatalf("asked %+v", g)
+		}
+		if away, _ := b.r.KeepsAway(t.Context(), b.rq, remote, "other"); away {
+			t.Fatal("a term nothing protects is kept away")
+		}
+	})
+	t.Run("a repository that is no member is refused", func(t *testing.T) {
+		stranger := formats.RepoRef{ID: 9, Key: "stranger", Class: formats.Remote, Format: "virtfmt"}
+		if _, err := b.r.KeepsAway(t.Context(), b.rq, stranger, "acme"); err == nil {
+			t.Fatal("the claims of a repository outside the request were probed")
+		}
+	})
+	t.Run("a remote repository addressed directly is asked without a virtual repository", func(t *testing.T) {
+		r := vt.RemoteRepo(2, "member-remote")
+		r.Format = "virtfmt"
+		rq := *b.rq
+		rq.Repo = &r
+		if away, err := b.r.KeepsAway(t.Context(), &rq, remote, "acme"); err != nil || !away || b.eng.gotAway.via != nil {
+			t.Fatalf("away %v err %v via %v", away, err, b.eng.gotAway.via)
+		}
+		other := formats.RepoRef{Key: "elsewhere", Class: formats.Remote}
+		if _, err := b.r.KeepsAway(t.Context(), &rq, other, "acme"); err == nil {
+			t.Fatal("a direct request asked about another repository")
+		}
+	})
+}
+
+func TestR_API_029_BridgeReadScope(t *testing.T) {
+	scope := fixedScope{"all-repo": authz.ReadAll, "rows-repo": authz.ReadRows}
+	t.Run("the shapes and the row decision of the decision point reach the format", func(t *testing.T) {
+		b := newBridge(t)
+		r, err := NewResolver(b.eng, fixedScoper{scope}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := r.ReadScope(t.Context(), b.rq, []string{"all-repo", "rows-repo", "none-repo"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Shape("all-repo") != formats.ReadAll || got.Shape("rows-repo") != formats.ReadRows || got.Shape("none-repo") != formats.ReadNone {
+			t.Fatalf("shapes: %v %v %v", got.Shape("all-repo"), got.Shape("rows-repo"), got.Shape("none-repo"))
+		}
+		if !got.MayRead("rows-repo", "acme", "1.0.0") || got.MayRead("rows-repo", "secret", "") {
+			t.Fatal("the row decision did not reach the format")
+		}
+	})
+	t.Run("a resolver without a decision point refuses", func(t *testing.T) {
+		b := newBridge(t)
+		if _, err := b.r.ReadScope(t.Context(), b.rq, []string{"x"}); err == nil {
+			t.Fatal("a listing was scoped by nothing")
+		}
+	})
+}
+
+type fixedScoper struct{ s fixedScope }
+
+func (f fixedScoper) ReadScopeOn(context.Context, *authz.Index, authz.Subject, []string) (authz.ReadScope, error) {
+	return f.s, nil
+}
+
+type fixedScope map[string]authz.ReadShape
+
+func (f fixedScope) Shape(key string) authz.ReadShape { return f[key] }
+func (f fixedScope) MayRead(_, pkg, _ string) bool    { return pkg != "secret" }

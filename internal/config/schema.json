@@ -1812,6 +1812,16 @@
           },
           "type": "object"
         },
+        "query_cache_bytes": {
+          "default": "8MiB",
+          "description": "Per replica: the answers of pass-through queries to the upstreams of remote repositories, such as a package search (R-ARCH-013 step 6); an answer above the whole budget is not kept; 0 turns the cache off.",
+          "type": [
+            "string",
+            "integer"
+          ],
+          "x-trove-env": "TROVE_PROXY_QUERY_CACHE_BYTES",
+          "x-trove-type": "bytes"
+        },
         "queue_timeout_seconds": {
           "default": 10,
           "description": "How long a fetch waits for a free slot before it answers 503 with Retry-After: 5; 0 refuses at once (R-REPO-040).",

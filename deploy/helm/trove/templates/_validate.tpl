@@ -193,7 +193,7 @@ serve a handful of clients at once.
 {{- end -}}
 {{- $perRequest := include "trove.requestBytes" . | int64 -}}
 {{- $ratio := dig "runtime" "memory_limit_ratio" 0.85 $cfg | float64 -}}
-{{- $reserved := add (include "trove.bytes" (dig "cache" "rendition_bytes" "256MiB" $cfg) | int64) (include "trove.bytes" (dig "proxy" "metadata_cache_bytes" "128MiB" $cfg) | int64) (include "trove.bytes" (dig "proxy" "merged_metadata_cache_bytes" "256MiB" $cfg) | int64) -}}
+{{- $reserved := add (include "trove.bytes" (dig "cache" "rendition_bytes" "256MiB" $cfg) | int64) (include "trove.bytes" (dig "proxy" "metadata_cache_bytes" "128MiB" $cfg) | int64) (include "trove.bytes" (dig "proxy" "merged_metadata_cache_bytes" "256MiB" $cfg) | int64) (include "trove.bytes" (dig "proxy" "query_cache_bytes" "8MiB" $cfg) | int64) -}}
 {{- range $p := $pods -}}
 {{- $mem := dig "limits" "memory" "" ($p.r.resources | default dict) -}}
 {{- if not $mem -}}
@@ -201,7 +201,7 @@ serve a handful of clients at once.
 {{- end -}}
 {{- $slots := floor (divf (subf (mulf 0.8 $ratio (include "trove.quantityBytes" $mem | float64)) $reserved) $perRequest) | int64 -}}
 {{- if lt $slots 64 -}}
-{{- fail (printf "trove: %s.resources.limits.memory (%v) admits %d concurrent requests, fewer than 64: (0.8 × config.runtime.memory_limit_ratio (%v) × the limit − %d bytes of cache budgets) / %d bytes per request (config.cache.rendition_bytes, config.proxy.metadata_cache_bytes and merged_metadata_cache_bytes; config.storage.download.buffer_size and hold_back, config.storage.s3.http.receive_window; R-ARCH-005); raise the limit or lower those values" $p.key $mem $slots $ratio $reserved $perRequest) -}}
+{{- fail (printf "trove: %s.resources.limits.memory (%v) admits %d concurrent requests, fewer than 64: (0.8 × config.runtime.memory_limit_ratio (%v) × the limit − %d bytes of cache budgets) / %d bytes per request (config.cache.rendition_bytes, config.proxy.metadata_cache_bytes, merged_metadata_cache_bytes and query_cache_bytes; config.storage.download.buffer_size and hold_back, config.storage.s3.http.receive_window; R-ARCH-005); raise the limit or lower those values" $p.key $mem $slots $ratio $reserved $perRequest) -}}
 {{- end -}}
 {{- end -}}
 

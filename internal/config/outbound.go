@@ -31,6 +31,7 @@ type Proxy struct {
 	BlockedContentTypes      []string    `yaml:"blocked_content_types" default:"[\"text/html\",\"application/xhtml+xml\"]" doc:"Media types an upstream answer may not have where integrity.blockUnexpectedContentTypes is true (R-REPO-042); lower-case type/subtype without parameters."`
 	MetadataCacheBytes       ByteSize    `yaml:"metadata_cache_bytes" default:"128MiB" validate:"min=0" doc:"Per replica: the bytes of recently served metadata documents of remote repositories by blob digest, so a fresh hit costs no object-store round trip (R-REPO-025); a document above an eighth of it is not kept; 0 turns the cache off."`
 	MergedMetadataCacheBytes ByteSize    `yaml:"merged_metadata_cache_bytes" default:"256MiB" validate:"min=0" doc:"Per replica: merged package documents of virtual repositories (R-REPO-020); 0 turns the cache off."`
+	QueryCacheBytes          ByteSize    `yaml:"query_cache_bytes" default:"8MiB" validate:"min=0" doc:"Per replica: the answers of pass-through queries to the upstreams of remote repositories, such as a package search (R-ARCH-013 step 6); an answer above the whole budget is not kept; 0 turns the cache off."`
 	Claims                   ProxyClaims `yaml:"claims"`
 
 	// <<< M2 proxy

@@ -40,6 +40,16 @@ func (a virtualAdapter) Strategy(p formats.Path) formats.Strategy {
 	return formats.FirstMatch
 }
 
+// ArtifactPrefix: the tarballs of a package are cached below the path of its document
+// (`left-pad/-/left-pad-1.3.0.tgz`, `@acme/util/-/util-1.0.0.tgz`).
+func (a virtualAdapter) ArtifactPrefix(pkg string) string {
+	n, err := name.Parse(pkg)
+	if err != nil {
+		return ""
+	}
+	return n.String() + "/"
+}
+
 // LocalDocument renders the full document of a local member from its rows, with the
 // neutral tarball address, and returns the revision it was rendered at (R-ARCH-015). A
 // member without a live version holds no document; its revision is that of its package

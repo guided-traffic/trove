@@ -38,10 +38,10 @@ func applyMemoryLimit(rt config.Runtime, environ []string) (int64, string) {
 }
 
 // cacheBudgets is what the per-replica caches hold when they are full, which the
-// memory slots leave aside (Q-ARCH-243): the rendition cache and the two metadata
-// caches of the proxy and virtual engines.
+// memory slots leave aside (Q-ARCH-243): the rendition cache, the two metadata
+// caches of the proxy and virtual engines and the cache of pass-through answers.
 func cacheBudgets(c *config.Config) int64 {
-	return int64(c.Cache.RenditionBytes) + int64(c.Proxy.MetadataCacheBytes) + int64(c.Proxy.MergedMetadataCacheBytes)
+	return int64(c.Cache.RenditionBytes) + int64(c.Proxy.MetadataCacheBytes) + int64(c.Proxy.MergedMetadataCacheBytes) + int64(c.Proxy.QueryCacheBytes)
 }
 
 // requestMemory is what one request may hold, for the memory slots
@@ -81,7 +81,7 @@ func (a *App) startMemoryGuard(ctx context.Context) *httpserver.MemoryGuard {
 	}
 	a.tele.metrics.MemorySlotsInUse(g.InUse)
 	if float64(reserved) >= 0.8*float64(limit) {
-		a.log.Error("the caches' byte budgets take the memory the requests need: one request at a time is admitted; lower cache.rendition_bytes, proxy.metadata_cache_bytes and proxy.merged_metadata_cache_bytes or raise the memory limit",
+		a.log.Error("the caches' byte budgets take the memory the requests need: one request at a time is admitted; lower cache.rendition_bytes, proxy.metadata_cache_bytes, proxy.merged_metadata_cache_bytes and proxy.query_cache_bytes or raise the memory limit",
 			"cache_budget_bytes", reserved, "go_memory_limit_bytes", limit)
 	}
 	a.log.Info("memory limit", "go_memory_limit_bytes", limit, "source", source, "memory_slots", g.Slots(), "request_bytes", per, "cache_budget_bytes", reserved)

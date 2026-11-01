@@ -30,6 +30,7 @@ type RemoteEngine interface {
 	EnsureCurrent(ctx context.Context, rq proxy.Request, restoredAt time.Time) (*proxy.Document, proxy.Currency, error)
 	EntryState(ctx context.Context, repoID int64, path string) (proxy.EntryState, error)
 	Exchange(ctx context.Context, rem proxy.Remote, req *http.Request, caller proxy.CallerFacts) (*http.Response, error)
+	Query(ctx context.Context, rq proxy.QueryRequest) (*proxy.QueryResponse, error)
 }
 
 var _ RemoteEngine = (*proxy.Engine)(nil)
@@ -90,10 +91,10 @@ func (r *remote) gate(ctx context.Context, rq *formats.Request, p formats.Path) 
 	return f.Remote().BeforeArtifact(ctx, r.h, rq, p)
 }
 
-// Gate runs the format's BeforeArtifact for a request addressed to a remote repository; it is
-// the check a remote member of a virtual repository meets before its cached artifact is
-// served (the second tier never asks the upstream for the artifact, but a stale document may
-// have to be revalidated first, Q-NPM-13). A format without a gate allows everything.
+// Gate implements [formats.RemoteFetcher]: the format's BeforeArtifact for a request addressed to
+// a remote repository, the check a remote member of a virtual repository meets before its cached
+// artifact is served (the second tier never asks the upstream for the artifact, but a stale
+// document may have to be revalidated first, Q-NPM-13). A format without a gate allows everything.
 func (r *remote) Gate(ctx context.Context, rq *formats.Request, p formats.Path) error {
 	_, err := r.gate(ctx, rq, p)
 	return err

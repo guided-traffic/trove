@@ -400,6 +400,10 @@ type replicaOpts struct {
 	ups []*proxytest.Upstream
 	// hooks are the storage hooks of the item store; nil runs none.
 	hooks items.Hooks
+	// secrets and env give the clients the credential of a repository: the stored references
+	// and the environment they name.
+	secrets upstream.SecretSource
+	env     func(string) (string, bool)
 }
 
 // replica is one in-process web replica.
@@ -490,6 +494,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	}
 	clients, err := upstream.New(upstream.Options{
 		Factory: factory, Caches: r.caches, Proxy: pcfg, SafetyTTL: time.Minute, Log: quiet,
+		Store: o.secrets, LookupEnv: o.env,
 	})
 	if err != nil {
 		t.Fatal(err)

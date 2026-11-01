@@ -65,6 +65,13 @@ type VirtualAdapter interface {
 	// for R-ARCH-015 step 3; the core's merged-metadata cache calls it, so no format
 	// code orchestrates that cache (C-9).
 	LocalDocument(ctx context.Context, rq *Request, member RepoRef, p Path, variant string) (doc []byte, rev RevSeq, found bool, err error)
+	// ArtifactPrefix is the prefix, with a trailing slash, below which a remote member keeps the
+	// cached artifacts of a package: the directory its versions live in, which the merge lists to
+	// find the versions whose artifact is cached (R-AUTHZ-008). It is the format's to say because
+	// only the format knows where its artifacts are: npm's tarballs are below the document of the
+	// package, NuGet's below the directory of its version list. "" says that the format's cached
+	// artifacts are not below one prefix per package, and a merge then lists no cached version.
+	ArtifactPrefix(name string) string
 }
 
 // Merged is the result of merging a virtual repository's members.
@@ -101,8 +108,73 @@ type ShadowPair struct {
 	Virtual, Remote string
 }
 
+// PlannedMember is a member that takes part in a request to a virtual repository.
+type PlannedMember struct {
+	Member RepoRef
+	// Tier is TierLocal for a local member and TierRemote for a remote one.
+	Tier Tier
+	// Position is the member's place in the resolution order (R-REPO-019 step 5).
+	Position int
+	// MayFill says that the caller may bring content into this member's cache (R-AUTHZ-008); it is
+	// false for a member that is not remote. A fan-out to a remote member contacts its upstream
+	// only when it is true.
+	MayFill bool
+}
+
+// VirtualPlan is R-REPO-019 steps 1 to 5 for one caller: the members that take part, after the
+// repository's patterns, the pin rules and claims, and the per-member read check
+// (R-AUTHZ-009 rule 2).
+type VirtualPlan struct {
+	// Admitted is false when the virtual repository's own patterns refuse the request; Members is
+	// then empty.
+	Admitted bool
+	// Members are the members the caller may read, in resolution order.
+	Members []PlannedMember
+}
+
+// ReadShape is how a caller's read of the packages of one repository is decided.
+type ReadShape uint8
+
+const (
+	// ReadNone: no package of the repository can be read by the caller; a virtual repository
+	// holds none of its own.
+	ReadNone ReadShape = iota
+	// ReadAll: every package and version of the repository can be read; MayRead need not be asked.
+	ReadAll
+	// ReadRows: the decision depends on the package and the version; MayRead decides each.
+	ReadRows
+)
+
+// ReadScope is the read scope of one caller on the request's index for a listing (search,
+// autocomplete) that names packages of several repositories. It is the unaudited form of the read
+// decision: a listing asks it about rows it found itself, so no client has requested a refused
+// resource and no denial is recorded. A listing keeps only the rows the scope allows, before it
+// counts anything.
+type ReadScope interface {
+	// Shape classifies a repository by key; a key that was not asked for is ReadNone.
+	Shape(repo string) ReadShape
+	// MayRead decides the read of one version of one package of a repository; version may be empty
+	// for a question about the package.
+	MayRead(repo, pkg, version string) bool
+}
+
 // Resolver is virtual resolution as a format meets it (C-5).
 type Resolver interface {
+	// Plan is R-REPO-019 steps 1 to 5 for the request's caller, for a format that fans a request
+	// out to the members itself (the forwarded search of R-NUGET-018): the members that take part
+	// for the name of info, in resolution order, each with its tier, position and whether the
+	// caller may fill it. It makes no request to a member.
+	Plan(ctx context.Context, rq *Request, p Path, info PathInfo) (*VirtualPlan, error)
+	// KeepsAway reports whether a claim, a pin rule or an include/exclude pattern in effect for
+	// the request keeps a search term away from a member: the name term (a normalized package
+	// name) is not served by the member, or term is the literal stem of a prefix pattern that
+	// would keep names away from it (R-NUGET-016 withheld queries). The member is one of
+	// the Plan's, or the repository of a request that is not virtual. It reads the replica's
+	// in-memory index and runs no database query.
+	KeepsAway(ctx context.Context, rq *Request, member RepoRef, term string) (bool, error)
+	// ReadScope is the read scope of the request's caller for the repositories by key, for the
+	// rows of a listing.
+	ReadScope(ctx context.Context, rq *Request, repos []string) (ReadScope, error)
 	// Artifact plans (R-REPO-019 steps 1 to 5) and walks the tiers of step 6,
 	// serving the first hit.
 	Artifact(ctx context.Context, rq *Request, p Path, info PathInfo, w http.ResponseWriter) error
