@@ -121,8 +121,8 @@ func TestFormatMemberNames(t *testing.T) {
 				t.Errorf("%q is a member of the document and not reserved", m)
 			}
 		}
-		if IsReservedMember("nuget") {
-			t.Error("nuget is no member yet")
+		if IsReservedMember("nuget") || !HasFormatMember("nuget") {
+			t.Error("nuget must be the settings member of the NuGet format")
 		}
 	})
 }

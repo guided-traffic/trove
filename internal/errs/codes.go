@@ -295,6 +295,16 @@ const (
 	CodeNuGetInvalidID           = "nuget_invalid_id"
 )
 
+// Codes of the NuGet protocol surface (R-NUGET-001, R-NUGET-015): the 404 of a path
+// that is no NuGet v3 resource (a v2 request shape among them), the 501 of a v3
+// operation that this build does not serve yet, and the 502 of a fetched package
+// whose declared identity is not the one asked for.
+const (
+	CodeNuGetV2Unsupported      = "nuget_v2_unsupported"
+	CodeNuGetNotImplemented     = "nuget_not_implemented"
+	CodeUpstreamPackageMismatch = "upstream_package_mismatch"
+)
+
 // <<< M3 nuget
 
 // CodeInfo documents one code for the problem catalog.
@@ -494,6 +504,9 @@ var registry = []CodeInfo{
 	{CodeNuGetInvalidVersion, Invalid, "Invalid NuGet version", "The version is not a NuGet version trove accepts: one to four numeric parts, an optional pre-release and build metadata, at most 255 bytes as given and normalized."},
 	{CodeNuGetInvalidVersionRange, Invalid, "Invalid NuGet version range", "The version range is not accepted: interval or minimum-version notation of NuGet.Versioning, without a floating version."},
 	{CodeNuGetInvalidID, Invalid, "Invalid NuGet package ID", "The package ID breaks the rules of R-NUGET-003: its length, its characters or its shape."},
+	{CodeNuGetV2Unsupported, NotFound, "NuGet path not served", "The path is no NuGet v3 resource of the repository. NuGet v2 (OData) is not served; the message names the repository's v3 service index, which a client uses as its source URL."},
+	{CodeNuGetNotImplemented, NotImplemented, "NuGet operation not implemented", "The operation is part of the NuGet v3 protocol and is not served by this build of trove yet."},
+	{CodeUpstreamPackageMismatch, UpstreamFailed, "Upstream served another package", "The upstream answered a package request with a .nupkg whose declared ID or version is not the one asked for. Nothing is stored."},
 	// <<< M3 nuget
 }
 

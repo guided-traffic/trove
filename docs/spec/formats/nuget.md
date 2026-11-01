@@ -1,6 +1,6 @@
 # NuGet
 
-Status: specification — not implemented
+Status: specification — in implementation (phase 4): the format skeleton (registration, route table, service index, settings, configuration, error shape) is built; the operations behind the other routes, the data port and the remote and virtual classes are not
 
 This page specifies how trove serves NuGet packages: the NuGet v3 server API for local, remote
 and virtual repositories under `/api/nuget/<repoKey>/`, package ingestion and `.nuspec` parsing,
@@ -68,6 +68,14 @@ name = package ID, lowercased as R-NUGET-003 defines `lower_id`; package-documen
 ID's existence (used by the gone rule of R-REPO-029 and the shadowing probe of R-REPO-048);
 request descriptors as in R-NUGET-015, where symbol files carry a routing name derived from the file
 name in the symbol key.
+
+The skeleton of the format (phase 4, WP3.1c) registers the class `local` alone; `remote` and `virtual`
+join when their adapters exist, each in the change that writes the adapter (Q-NUGET-28), and the format
+enums of the management API follow the registry (Q-API-190). Two kinds of path meet in the format
+and are never mixed: the *protocol path* a client requests below `/api/nuget/<repoKey>/`
+(`v3/flatcontainer/acme.widgets/index.json`) and the *canonical path* of an item or a cache entry
+(`acme.widgets/index.json`, R-NUGET-005, R-NUGET-015). The routes match protocol paths; the descriptors
+(`Classify`) and the package-document path speak canonical paths (Q-NUGET-29).
 
 Endpoint layout. All protocol resources of one repository MUST live below `<feed>/`, so that
 NuGet 6.7 and later, which pre-authenticate only URLs in or below the directory of an
@@ -141,6 +149,10 @@ values it knows, each resource MUST be listed under every alias in the table.
   ([vulnerability-scanning.md](../vulnerability-scanning.md) R-VULN-018).
 - Resources the protocol defines but trove does not implement (catalog, repository signatures,
   package details, owner details, report abuse) MUST NOT be listed.
+- The service index is rendered by `nuget.ServiceIndex` from the repository's base URL, key and class
+  alone. The MVP resources of the table are listed from the skeleton on, although the operations behind
+  them are written by later work packages and answer 501 `nuget_not_implemented` until then
+  (Q-NUGET-32).
 
 HTTP conventions for every NuGet endpoint:
 
@@ -1934,7 +1946,11 @@ Event catalog, schema and metric conventions are owned by
 
 - Handler names for the HTTP metrics: `nuget.index`, `nuget.flatcontainer`, `nuget.registration`,
   `nuget.search`, `nuget.autocomplete`, `nuget.push`, `nuget.delete`, `nuget.relist`,
-  `nuget.symbolpush`, `nuget.symbols`, `nuget.vulnerabilities`.
+  `nuget.symbolpush`, `nuget.symbols`, `nuget.vulnerabilities`. A resource with several operations
+  names its routes by the handler name and, after a dot, the operation: `nuget.flatcontainer.index`,
+  `nuget.flatcontainer.nupkg`, `nuget.flatcontainer.nuspec`, `nuget.flatcontainer.embedded`,
+  `nuget.registration.index`, `nuget.registration.page`, `nuget.registration.leaf`. The route name
+  is the handler label of the request log and of `trove_http_requests_total` (Q-NUGET-30).
 - Format metrics (# example names): `trove_nuget_virtual_member_skipped_total{repository,reason}`,
   `trove_nuget_remote_unparseable_packages_total{repository}`,
   `trove_nuget_search_forward_failures_total{repository}`,
@@ -2996,7 +3012,8 @@ a hot path of a push. The development agent would revisit this if M6 changes the
 
 **Applied in the spec:** R-NUGET-005 notes the CHECKs and indexes under the sketch of
 `nuget_version`; R-NUGET-006 and R-NUGET-020 keep their sketches. Migration `00017_nuget.sql` and
-[tables_m3.go](../../../internal/meta/postgres/tables_m3.go) register all four tables as `data`.
+[tables.go](../../../internal/formatdata/nuget/tables.go) of the data port register all four tables as `data`
+(the lines moved there from `internal/meta/postgres/tables_m3.go` when the format registered).
 
 ### Q-NUGET-20 · Dependency version ranges are parsed without floating versions
 
@@ -3233,6 +3250,94 @@ at once. The npm reference carries a lockfile resolved by the client against the
 
 **Applied in the spec:** none (E3.2 of [roadmap.md](../../coverage/roadmap.md) already states the
 requirement). Elsewhere: [perf/README.md](../../../perf/README.md).
+
+### Q-NUGET-28 · The skeleton registers the class local; remote and virtual join with their adapters
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-001 lists three classes. `formats.Validate` refuses a format that lists a class and returns no adapter for it, and conformance checks 4 (rewrite) and 5 (merge) run over the adapters a format has; a skip is refused once the adapter exists. The remote adapter (discovery document, fill inspection, search forwarding) and the virtual adapter (merge, the artifact prefix) are separate work packages (WP3.2a, WP3.2c).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Classes: [local]` until the adapters exist (chosen) | The remote and virtual classes are added in the change that writes their adapter, with the format enums of the API and the catalog following the registry | The registry never lists a class the format cannot serve; no adapter is written twice; checks 4 and 5 are skipped for what does not exist and start the day the adapter does | The catalog facts that only a remote repository reads (upstream, periods, checksum rule) are declared before the class that reads them |
+| (b) All three classes with adapters that answer 501 | `Remote()` and `Virtual()` return empty adapters | The class list is final from the first day | A repository of a class that serves nothing can be created through the API; the empty adapters must be thrown away; checks 4 and 5 need fixtures for them |
+| (c) All three classes and no adapters | `Validate` panics at registration | None | Not possible |
+
+**Choice:** (a). The facts of a remote repository (`DefaultUpstreamURL`, `DefaultExtraHosts`, the 300 s and 1800 s periods, `ChecksumRequireUnsupported`) and the `forwardSearch` member of the settings are declared now, so that the catalog answers for the whole format from the start and the adapters add no catalog change.
+
+**Rationale:** a class is a promise that a repository of it works. The development agent revisits this when the remote adapter lands (the same change lists `remote` and adds it to the enums) and again for `virtual`.
+
+**Applied in the spec:** R-NUGET-001 (the paragraph after the format registration). Code: [format.go](../../../internal/formats/nuget/format.go) `Descriptor`. Tests: `TestR_NUGET_001_TheDescriptorCarriesTheCatalogFacts`, `TestR_NUGET_001_ARepositoryCanBeCreatedAndItsServiceIndexAnswers` (a remote and a virtual create are refused).
+
+### Q-NUGET-29 · Routes match protocol paths, descriptors speak canonical paths
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: for npm a protocol path and a canonical path are one string (`lodash/-/lodash-1.0.0.tgz`). For NuGet they are not: the flat container serves `v3/flatcontainer/acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg` for the item `acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg` (R-NUGET-005), and the registrations are cache entries at `acme.widgets/.registration/index.json` (R-NUGET-015). Conformance check 3 asks `Classify` about the examples of every route and check 10 asks `Match` for the package-document path of a name; both assumed one string.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Classify` and `PackageDocumentPath` speak canonical paths; the fixture of the kit maps between the two (chosen) | `Fixture.Canonical` maps a route example to its canonical path (check 3), `Fixture.Protocol` maps a canonical package-document path to the path a client requests (check 10); `nuget.CanonicalPath` is the mapping the handlers use | `/files/`, the remote engine and the virtual engine see one kind of path; nothing in the format guesses which kind it was given; npm and generic leave both fields nil | Two optional fields in the fixture of the kit |
+| (b) `Classify` accepts both kinds | A path starting with `v3/` is a protocol path | No kit change | The package ID `v3` has the canonical path `v3/index.json`, which is also the service index: the two cannot be told apart |
+| (c) The canonical path is the protocol path | Items are stored below `v3/flatcontainer/` | No mapping | Contradicts the storage layout of R-NUGET-005 and the raw file address `/files/<key>/acme.widgets/…` of its acceptance criteria |
+
+**Choice:** (a). A route that addresses no stored path (the service index, search, the writes) has no canonical path and is held to its kind alone.
+
+**Rationale:** the kit exists to catch a format that confuses the two, so it has to know there are two. The development agent revisits this when a second format has a protocol prefix of its own.
+
+**Applied in the spec:** R-NUGET-001 (the paragraph after the format registration). Code: [paths.go](../../../internal/formats/nuget/paths.go), [kit.go](../../../internal/formats/formattest/kit.go) (`Fixture.Canonical`, `Fixture.Protocol`), [checks.go](../../../internal/formats/formattest/checks.go). Docs: [formats.md](../../developer/formats.md). Tests: `TestR_ARCH_010_Conformance` of the NuGet package, `TestR_NUGET_001_CanonicalPathOfARoute`.
+
+### Q-NUGET-30 · A route is named by its handler name and, after a dot, its operation
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-028 names eleven handlers for the HTTP metrics. The route name is the handler label of the request log and of `trove_http_requests_total`, and a name is unique in the table of routes. The flat container has four routes (list, package, `.nuspec`, embedded files) and the registrations three (index, page, leaf).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The handler name plus `.operation` where a resource has several routes (chosen) | `nuget.flatcontainer.nupkg`, `nuget.registration.leaf`; a resource with one route keeps its bare name (`nuget.search`) | Unique, greppable, and a prefix match gives the handler name of the table; no change to the contract | The label has more values than the eleven of the table |
+| (b) One route per handler name, dispatching inside | A matcher per resource and a handler that looks at the path | Exactly the names of the table | The route table stops being the list of operations; the coarse check, `Kind` and `Action` differ per operation and a route has one of each |
+| (c) Free names and a mapping to the eleven for the metric | The metric label is derived | Both lists as they are | A second list to keep in step |
+
+**Choice:** (a). Every operation of the table is one route with its own kind and action; the handlers are methods named in the table and live in `handlers_stub.go` until the package that builds them moves them into a file of its own, so the table is written once.
+
+**Applied in the spec:** R-NUGET-028 (the handler names). Code: [routes.go](../../../internal/formats/nuget/routes.go). Tests: `TestR_NUGET_028_RouteNamesAreTheHandlerNames`.
+
+### Q-NUGET-31 · The settings member and the configuration section hold what has a behaviour in the MVP
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the spec names `deleteMode` (R-NUGET-007), `forwardSearch`, `symbolServerUrl` and `vulnerabilityInfo` (R-NUGET-014) as members of the `nuget` member of a repository document, and the keys `nuget.archive.*`, `nuget.registration.*`, `nuget.search.*` in the system file. The schema is `additionalProperties: false` and R-REPO-008 refuses a setting rather than ignoring it. The metadata period of Q-NUGET-2 is the generic `cache.metadataTtlSeconds` of a remote repository (R-REPO-024) with the format's default of 300 s, not a member of `nuget`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The member holds `deleteMode` and `forwardSearch`; `symbolServerUrl` and `vulnerabilityInfo` arrive with R-NUGET-022 and R-NUGET-023 (chosen) | Each later member is an additive change of the schema, of `NugetSettings` and of the equality test | The schema accepts only what some code reads | The schema grows in three steps |
+| (b) All four members now | The P1 members are accepted and stored | The schema is final | An administrator can set `symbolServerUrl` and nothing happens, which R-REPO-008 forbids |
+| (c) The member is an opaque object | No schema | Nothing to keep in step | No validation, no create form, no equality with the document |
+
+**Choice:** (a). The section of the system file is `nuget.archive` (`max_nuspec_bytes` 1 MiB, `max_entries` 65535, `max_uncompressed_bytes` 4 GiB, `max_compression_ratio` 100), `nuget.registration` (`page_size` 64, `inline_below` 128) and `nuget.search` (`default_take` 20, `max_take` 1000, `max_skip` 3000, `remote_result_ttl` 60 s, Q-NUGET-16). The two bounds on what is read into memory (`max_nuspec_bytes`, `max_compression_ratio`) can only be tightened, as R-ARCH-028 says of every format, so their ranges end at the defaults; `default_take` above `max_take` is refused.
+
+**Rationale:** the development agent revisits this with R-NUGET-022 and R-NUGET-023, which add their members in the change that reads them.
+
+**Applied in the spec:** none (R-NUGET-005, R-NUGET-007, R-NUGET-009, R-NUGET-010, R-NUGET-016 already state the keys and defaults). Code: [settings.schema.json](../../../internal/formats/nuget/settings.schema.json), [nuget.go](../../../internal/config/nuget.go). Docs: [configuration.md](../../developer/configuration.md). Tests: `TestNuGetDefaults`, `TestNuGetRanges`, `TestR_ARCH_008_NugetSettingsSchemaEqualsTheOpenAPIMember`.
+
+### Q-NUGET-32 · An operation that is not built answers 501, and an upload is refused
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the skeleton routes every operation of the table and serves the service index; the data port, the ingestion, the documents and search are the work of later packages. Until they exist a request for one of them must answer something, and the roads into a repository that bypass the routes (the upload of the management API, copy and move) must not store a package that has no NuGet rows.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The routes exist and answer 501 `nuget_not_implemented`; `Inspect` refuses every upload (chosen) | The table is final and the kit runs over it; a client reads a failure of the server; the authorization of the coarse check has run | No package is stored without its rows; the later packages replace handlers and edit no table | Resources are listed in the service index that answer 501 for the time between the packages |
+| (b) Leave a route out until its handler exists | The table grows | The service index lists what works | The path answers `nuget_v2_unsupported`, which says the wrong thing, and every package that adds a route changes the table of the others |
+| (c) 404 for the unbuilt | A client reads "no such package" | None | A restore reads "no such package" and moves on to the next source, which hides the gap |
+
+**Choice:** (a). The service index lists the MVP resources of R-NUGET-002 from the start.
+
+**Rationale:** the window is one phase on a development branch. The development agent revisits this if a release is cut with a handler still a stub, which the roadmap does not plan.
+
+**Applied in the spec:** R-NUGET-002 (the note on the resources). Code: [handlers_stub.go](../../../internal/formats/nuget/handlers_stub.go), [format.go](../../../internal/formats/nuget/format.go) `Inspect`. Tests: `TestR_NUGET_001_AnOperationThatIsNotBuiltAnswers501`, `TestR_NUGET_001_InspectRefusesEveryUploadUntilTheIngestionExists`.
 
 ## What this does not cover
 

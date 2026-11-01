@@ -156,6 +156,22 @@ config:
       max_size: 10GiB                   # default (proposed) in storage.md; must fit the spool (R-HA-035)
   metrics:
     auth: none                          # default (proposed): none | static (needs secrets.metricsToken)
+  # The NuGet format (docs/developer/configuration.md, R-NUGET-005, R-NUGET-009, R-NUGET-010, R-NUGET-016). Every key has a default and
+  # is rendered only when set here; the settings of one repository (deleteMode, forwardSearch) are in its document, not in this file.
+  # nuget:
+  #   archive:
+  #     max_nuspec_bytes: 1MiB          # default: 1KiB to 1MiB, can only be tightened (R-ARCH-028)
+  #     max_entries: 65535              # default: entries the central directory of a package may declare
+  #     max_uncompressed_bytes: 4GiB    # default: the sum of the declared sizes of a package
+  #     max_compression_ratio: 100      # default: 1 to 100, of an entry read into memory
+  #   registration:
+  #     page_size: 64                   # default: versions per registration page
+  #     inline_below: 128               # default: a package with fewer visible versions has its pages inlined
+  #   search:
+  #     default_take: 20                # default: at most max_take
+  #     max_take: 1000                  # default
+  #     max_skip: 3000                  # default: a larger skip answers 400
+  #     remote_result_ttl: 60s          # default: how long a forwarded search answer is kept, at most 1h
 
 # ── TLS on trove's own listeners (R-HA-063, R-ARCH-035) ────────────────────
 # The chart never creates the Secret. It holds the keys of a cert-manager TLS Secret (tls.crt,

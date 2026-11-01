@@ -81,6 +81,17 @@ type Fixture struct {
 	Rejects []string
 	// Paths are further paths and what Classify must say of them (check 3).
 	Paths []PathCase
+	// Canonical maps an escaped route example to the canonical repository path Classify
+	// is asked about (check 3). A format whose protocol paths are its canonical paths
+	// (npm, generic) leaves it nil. A format that serves a document below a prefix of its
+	// own (NuGet: "v3/flatcontainer/{id}/index.json" for the canonical "{id}/index.json")
+	// maps the example; ok is false for a route that addresses no canonical path (a
+	// service index, a search), which the check then holds to its kind alone.
+	Canonical func(example string) (p string, ok bool)
+	// Protocol maps a canonical package-document path to the escaped path a client
+	// requests it at (check 10), the inverse of Canonical for the package document. nil:
+	// the canonical path is the protocol path.
+	Protocol func(canonical string) string
 	// Remote is the fixture of check 4: documents Rewrite renders.
 	Remote *RemoteFixture
 	// Merge is the fixture of check 5: member documents Merge combines.

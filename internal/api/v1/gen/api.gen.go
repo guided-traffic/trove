@@ -437,6 +437,7 @@ func (e FormatDescriptorPatternSubject) Valid() bool {
 const (
 	FormatNameGeneric FormatName = "generic"
 	FormatNameNpm     FormatName = "npm"
+	FormatNameNuget   FormatName = "nuget"
 )
 
 // Valid indicates whether the value is a known member of the FormatName enum.
@@ -445,6 +446,8 @@ func (e FormatName) Valid() bool {
 	case FormatNameGeneric:
 		return true
 	case FormatNameNpm:
+		return true
+	case FormatNameNuget:
 		return true
 	default:
 		return false
@@ -683,6 +686,7 @@ func (e JobState) Valid() bool {
 const (
 	LocalFormatNameGeneric LocalFormatName = "generic"
 	LocalFormatNameNpm     LocalFormatName = "npm"
+	LocalFormatNameNuget   LocalFormatName = "nuget"
 )
 
 // Valid indicates whether the value is a known member of the LocalFormatName enum.
@@ -691,6 +695,8 @@ func (e LocalFormatName) Valid() bool {
 	case LocalFormatNameGeneric:
 		return true
 	case LocalFormatNameNpm:
+		return true
+	case LocalFormatNameNuget:
 		return true
 	default:
 		return false
@@ -766,6 +772,24 @@ func (e NpmSettingsLatestStrategy) Valid() bool {
 	case NpmSettingsLatestStrategyHighestMemberLatest:
 		return true
 	case NpmSettingsLatestStrategyNewestPublished:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NugetSettingsDeleteMode.
+const (
+	NugetSettingsDeleteModeDelete NugetSettingsDeleteMode = "delete"
+	NugetSettingsDeleteModeUnlist NugetSettingsDeleteMode = "unlist"
+)
+
+// Valid indicates whether the value is a known member of the NugetSettingsDeleteMode enum.
+func (e NugetSettingsDeleteMode) Valid() bool {
+	switch e {
+	case NugetSettingsDeleteModeDelete:
+		return true
+	case NugetSettingsDeleteModeUnlist:
 		return true
 	default:
 		return false
@@ -3265,6 +3289,26 @@ type NpmSettingsDistTagStrategy string
 // NpmSettingsLatestStrategy Virtual repositories (R-NPM-031). How `latest` is merged.
 type NpmSettingsLatestStrategy string
 
+// NugetSettings The settings of the NuGet format, the `nuget` member of a repository document (R-REPO-004). The document
+// of the format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_NugetSettingsSchemaEqualsTheOpenAPIMember`
+// fails on any difference between the two. A setting that does not apply to the class of the repository
+// answers 422 `not_applicable`. An omitted setting takes its default.
+type NugetSettings struct {
+	// DeleteMode Local repositories (R-NUGET-007, Q-NUGET-1). What the protocol `DELETE` of a package does: `unlist` keeps the
+	// version in the flat container and downloadable, `delete` removes it and writes its tombstone. A delete through
+	// the management API, the UI or `/files/` is always a hard delete.
+	DeleteMode *NugetSettingsDeleteMode `json:"deleteMode,omitempty"`
+
+	// ForwardSearch Remote repositories (R-NUGET-016, Q-NUGET-4). Forward the search and autocomplete requests to the upstream's
+	// search resource; `false` answers from the packages the remote has cached.
+	ForwardSearch *bool `json:"forwardSearch,omitempty"`
+}
+
+// NugetSettingsDeleteMode Local repositories (R-NUGET-007, Q-NUGET-1). What the protocol `DELETE` of a package does: `unlist` keeps the
+// version in the flat container and downloadable, `delete` removes it and writes its tombstone. A delete through
+// the management API, the UI or `/files/` is always a hard delete.
+type NugetSettingsDeleteMode string
+
 // ObjectStoreFacts defines model for ObjectStoreFacts.
 type ObjectStoreFacts struct {
 	Bucket string `json:"bucket"`
@@ -3872,8 +3916,14 @@ type Repository struct {
 	// of the format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_NpmSettingsSchemaEqualsTheOpenAPIMember`
 	// fails on any difference between the two. A setting that does not apply to the class of the repository
 	// answers 422 `not_applicable`. An omitted setting takes its default.
-	Npm            *NpmSettings `json:"npm,omitempty"`
-	PriorityMember *bool        `json:"priorityMember,omitempty"`
+	Npm *NpmSettings `json:"npm,omitempty"`
+
+	// Nuget The settings of the NuGet format, the `nuget` member of a repository document (R-REPO-004). The document
+	// of the format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_NugetSettingsSchemaEqualsTheOpenAPIMember`
+	// fails on any difference between the two. A setting that does not apply to the class of the repository
+	// answers 422 `not_applicable`. An omitted setting takes its default.
+	Nuget          *NugetSettings `json:"nuget,omitempty"`
+	PriorityMember *bool          `json:"priorityMember,omitempty"`
 
 	// Remote The `remote` section of a remote repository (R-REPO-024). Every member is returned, the
 	// defaults of the format applied. Omitted members of a request take their defaults. The password

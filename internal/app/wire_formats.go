@@ -11,10 +11,12 @@ import (
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/files"
 	"github.com/guided-traffic/trove/internal/formatdata/npm"
+	nugetdata "github.com/guided-traffic/trove/internal/formatdata/nuget"
 	"github.com/guided-traffic/trove/internal/formathost"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 	npmformat "github.com/guided-traffic/trove/internal/formats/npm"
+	nugetformat "github.com/guided-traffic/trove/internal/formats/nuget"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/meta"
@@ -86,7 +88,11 @@ func formatPorts(db meta.Runner, rec audit.Recorder) (map[formats.ID]any, error)
 	if err != nil {
 		return nil, fmt.Errorf("formats: npm data port: %w", err)
 	}
-	return map[formats.ID]any{npmformat.ID: st}, nil
+	nuget, err := nugetdata.New(nugetdata.Options{DB: db, Recorder: rec})
+	if err != nil {
+		return nil, fmt.Errorf("formats: nuget data port: %w", err)
+	}
+	return map[formats.ID]any{npmformat.ID: st, nugetformat.ID: nuget}, nil
 }
 
 // bindFormatPorts binds the ports and checks them against the formats: a format that

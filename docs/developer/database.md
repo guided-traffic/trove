@@ -372,16 +372,18 @@ edits a migration of another work package. Query files by owner: `proxy.sql`, `i
 `tables.Register(name, class, Options{CycleBreak})` with classes `Data`, `Blobs`, `Transient`, `Schema`.
 `postgres.CheckTableRegistry` reads the catalog and reports unregistered tables and foreign-key cycles among
 exported tables without a `CycleBreak`. Tables of this package: `tables.go`. Tables created for other packages
-by the first migrations: `tables_m0.go`, by the M1 migrations: `tables_m1.go` and by the M2 migrations: `tables_m2.go` and by the M3 migration: `tables_m3.go`; the owning package deletes its line there when it registers the table
-itself (a duplicate panics at start-up).
+by the first migrations: `tables_m0.go`, by the M1 migrations: `tables_m1.go` and by the M2 migrations: `tables_m2.go`; the owning package deletes its line there when it registers the table
+itself (a duplicate panics at start-up). The tables of the M3 migration are registered by their owner, the NuGet data port
+([tables.go](../../internal/formatdata/nuget/tables.go)); `cmd/trove/registry.go` links that package so that `trove migrate` checks the
+migrated schema against a registry that holds them, and the integration tests that compare the schema with the registry import it
+(`test/integration/postgres/owners_test.go`).
 
 ## M3 tables
 
 Migration [00017_nuget](../../internal/meta/postgres/migrations/00017_nuget.sql) creates every table of the NuGet format
 at once, as an expand file without a backfill, a `no-transaction` header or a `requires-app`; a release that does not
 know NuGet never reads the tables. The M3 binary's `RequiredSchema()` is 17. Every table is registered as data in
-[tables_m3.go](../../internal/meta/postgres/tables_m3.go); the package that owns a table takes the line over in the
-same change. The statements the data port needs at minimum are in
+[tables.go](../../internal/formatdata/nuget/tables.go) of the package that owns it. The statements the data port needs at minimum are in
 [nuget_local.sql](../../internal/meta/postgres/queries/nuget_local.sql); the values that cross the port are in
 [rows](../../internal/formats/nuget/rows/rows.go), a leaf by the rule of R-ARCH-002 (`internal/formats/<id>/rows` imports
 only `errs` and the standard library; `archtest.CheckLayers` enforces it).

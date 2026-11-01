@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/guided-traffic/trove/internal/formats/nuget/settings.schema.json",
+  "title": "NuGet repository settings",
+  "description": "The nuget member of a repository document (R-REPO-004). A member lists the classes it applies to in x-trove-classes; a member of another class is refused as not applicable.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "deleteMode": {
+      "description": "What the protocol DELETE of a package does (R-NUGET-007, Q-NUGET-1): unlist keeps the version in the flat container and downloadable, delete removes it and writes its tombstone. A delete through the management API, the UI or /files/ is always a hard delete.",
+      "type": "string",
+      "enum": ["unlist", "delete"],
+      "default": "unlist",
+      "x-trove-classes": ["local"]
+    },
+    "forwardSearch": {
+      "description": "Forward the search and autocomplete requests of this remote to the upstream's search resource (R-NUGET-016, Q-NUGET-4). false answers from the packages the remote has cached.",
+      "type": "boolean",
+      "default": true,
+      "x-trove-classes": ["remote"]
+    }
+  }
+}

@@ -188,6 +188,35 @@ func TestR_ARCH_010_KitChecksCatchTheirDefects(t *testing.T) {
 			t.Fatalf("got %q", got)
 		}
 	})
+	t.Run("R-NUGET-001 check 3: the canonical path of an example is the one Classify is asked about", func(t *testing.T) {
+		identity := fx
+		identity.Canonical = func(ex string) (string, bool) { return ex, true }
+		if got := messages(formattest.Evaluate(testformat.New(), identity), formattest.CheckClassify); got != "" {
+			t.Fatalf("the identity mapping is refused: %q", got)
+		}
+		skipped := fx
+		skipped.Canonical = func(string) (string, bool) { return "", false }
+		if got := messages(formattest.Evaluate(testformat.New(), skipped), formattest.CheckClassify); got != "" {
+			t.Fatalf("a route without a canonical path is refused: %q", got)
+		}
+		wrong := fx
+		wrong.Canonical = func(string) (string, bool) { return "", true }
+		if got := messages(formattest.Evaluate(testformat.New(), wrong), formattest.CheckClassify); !strings.Contains(got, "not content") {
+			t.Fatalf("a canonical path of another kind passes: %q", got)
+		}
+	})
+	t.Run("R-NUGET-001 check 10: the protocol path of a package document is the one Match is asked about", func(t *testing.T) {
+		identity := fx
+		identity.Protocol = func(c string) string { return c }
+		if got := messages(formattest.Evaluate(testformat.New(), identity), formattest.CheckNames); got != "" {
+			t.Fatalf("the identity mapping is refused: %q", got)
+		}
+		wrong := fx
+		wrong.Protocol = func(string) string { return "no/route/here" }
+		if got := messages(formattest.Evaluate(testformat.New(), wrong), formattest.CheckNames); !strings.Contains(got, "does not match a route") {
+			t.Fatalf("a protocol path that matches no route passes: %q", got)
+		}
+	})
 	t.Run("R-ARCH-010 check 8: a template that does not parse, does not execute, or belongs to no client fails", func(t *testing.T) {
 		base := testformat.New().SetupTemplates()
 		tpl := func(id, client, text string) formats.SetupTemplate {

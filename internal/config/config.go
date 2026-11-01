@@ -41,6 +41,9 @@ type Config struct {
 	NPM NPM `yaml:"npm"`
 	UI  UI  `yaml:"ui"`
 
+	// The M3 sections.
+	NuGet NuGet `yaml:"nuget"`
+
 	// ConfigAsCode holds secrets_dir, which the secret references of M2 use.
 	ConfigAsCode AsCode `yaml:"config_as_code"`
 }

@@ -17,6 +17,17 @@ import (
 // (which the generated clients are built from). Each property, its type, its values and its
 // default must be the same in both; a setting added to one without the other fails here.
 func TestR_ARCH_008_NpmSettingsSchemaEqualsTheOpenAPIMember(t *testing.T) {
+	settingsSchemaEqualsOpenAPI(t, "npm", "NpmSettings")
+}
+
+// TestR_ARCH_008_NugetSettingsSchemaEqualsTheOpenAPIMember is the same comparison for the
+// nuget member (R-NUGET-007, R-NUGET-016).
+func TestR_ARCH_008_NugetSettingsSchemaEqualsTheOpenAPIMember(t *testing.T) {
+	settingsSchemaEqualsOpenAPI(t, "nuget", "NugetSettings")
+}
+
+func settingsSchemaEqualsOpenAPI(t *testing.T, format, schema string) {
+	t.Helper()
 	type property struct {
 		Type       any                 `json:"type" yaml:"type"`
 		Enum       []string            `json:"enum" yaml:"enum"`
@@ -36,17 +47,17 @@ func TestR_ARCH_008_NpmSettingsSchemaEqualsTheOpenAPIMember(t *testing.T) {
 	if err := yaml.Unmarshal(EmbeddedYAML(), &api); err != nil {
 		t.Fatal(err)
 	}
-	entry, ok := catalog.Default().Lookup("npm")
+	entry, ok := catalog.Default().Lookup(format)
 	if !ok || len(entry.SettingsSchema) == 0 {
-		t.Fatal("the npm format registers no settings schema")
+		t.Fatalf("the %s format registers no settings schema", format)
 	}
 	var registered object
 	if err := json.Unmarshal(entry.SettingsSchema, &registered); err != nil {
 		t.Fatal(err)
 	}
-	node, ok := api.Components.Schemas["NpmSettings"]
+	node, ok := api.Components.Schemas[schema]
 	if !ok {
-		t.Fatal("api/openapi.yaml has no schema NpmSettings")
+		t.Fatalf("api/openapi.yaml has no schema %s", schema)
 	}
 	var documented object
 	if err := node.Decode(&documented); err != nil {

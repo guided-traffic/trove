@@ -3659,12 +3659,12 @@ export interface components {
          *     any difference; no list of formats per class is kept by hand anywhere.
          * @enum {string}
          */
-        FormatName: "generic" | "npm";
+        FormatName: "generic" | "npm" | "nuget";
         /**
          * @description The formats whose classes contain `local`. The create form offers these for a local repository.
          * @enum {string}
          */
-        LocalFormatName: "generic" | "npm";
+        LocalFormatName: "generic" | "npm" | "nuget";
         /**
          * @description The formats whose classes contain `remote`. The create form offers these for a remote repository.
          * @enum {string}
@@ -3717,6 +3717,7 @@ export interface components {
                 [key: string]: unknown;
             };
             npm?: components["schemas"]["NpmSettings"];
+            nuget?: components["schemas"]["NugetSettings"];
             /** @enum {string} */
             readonly lifecycle?: "active" | "deleting";
             /** Format: date-time */
@@ -3790,6 +3791,28 @@ export interface components {
                  */
                 maxBodySize: string;
             };
+        };
+        /**
+         * @description The settings of the NuGet format, the `nuget` member of a repository document (R-REPO-004). The document
+         *     of the format's JSON Schema is `settingsSchema` of `GET /api/v1/formats`; `TestR_ARCH_008_NugetSettingsSchemaEqualsTheOpenAPIMember`
+         *     fails on any difference between the two. A setting that does not apply to the class of the repository
+         *     answers 422 `not_applicable`. An omitted setting takes its default.
+         */
+        NugetSettings: {
+            /**
+             * @description Local repositories (R-NUGET-007, Q-NUGET-1). What the protocol `DELETE` of a package does: `unlist` keeps the
+             *     version in the flat container and downloadable, `delete` removes it and writes its tombstone. A delete through
+             *     the management API, the UI or `/files/` is always a hard delete.
+             * @default unlist
+             * @enum {string}
+             */
+            deleteMode: "unlist" | "delete";
+            /**
+             * @description Remote repositories (R-NUGET-016, Q-NUGET-4). Forward the search and autocomplete requests to the upstream's
+             *     search resource; `false` answers from the packages the remote has cached.
+             * @default true
+             */
+            forwardSearch: boolean;
         };
         /** @description What a caller sees who may read a repository but not its configuration (R-REPO-010). */
         RepositoryConsumerView: {

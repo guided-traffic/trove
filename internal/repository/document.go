@@ -60,6 +60,9 @@ type Settings struct {
 	// and to [formatMembers]; formats.Validate refuses a format that declares a schema
 	// and has no member.
 	NPM json.RawMessage `json:"npm,omitempty"`
+	// NuGet is the settings member of the NuGet format (R-NUGET-007, R-NUGET-014), under
+	// the same rules as NPM.
+	NuGet json.RawMessage `json:"nuget,omitempty"`
 
 	// pending are the secret fields of the validated document that still have to
 	// be written to repository_secrets. They carry the plaintext of a request, so
@@ -158,6 +161,7 @@ func (s *Settings) normalize() {
 	// <<< M2 virtual
 	s.Storage = emptyToNil(s.Storage)
 	s.NPM = canonicalObject(emptyToNil(s.NPM))
+	s.NuGet = canonicalObject(emptyToNil(s.NuGet))
 }
 
 // formatMembers are the members of a document that hold the settings of one format,
@@ -165,6 +169,7 @@ func (s *Settings) normalize() {
 func formatMembers() []formatMember {
 	return []formatMember{
 		{"npm", func(s *Settings) json.RawMessage { return s.NPM }},
+		{"nuget", func(s *Settings) json.RawMessage { return s.NuGet }},
 	}
 }
 

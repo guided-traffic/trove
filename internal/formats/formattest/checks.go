@@ -151,6 +151,19 @@ func (r *run) classify() {
 				r.failf("route %q: example %q is no clean path: %v", rt.Name, ex, err)
 				continue
 			}
+			if r.fx.Canonical != nil {
+				// The example is a protocol path; Classify is asked about the canonical path
+				// it stands for. A route that addresses none is held to its kind on the
+				// repository root, which every format classifies as computed.
+				canon, ok := r.fx.Canonical(ex)
+				if !ok {
+					continue
+				}
+				if clean, err = repository.CleanPath(canon); err != nil {
+					r.failf("route %q: the canonical path %q of example %q is no clean path: %v", rt.Name, canon, ex, err)
+					continue
+				}
+			}
 			info := r.f.Classify(clean)
 			switch {
 			case !validPathKind(info.Kind):
@@ -730,6 +743,9 @@ func (r *run) names() {
 				continue
 			}
 			e := EscapePath(p)
+			if r.fx.Protocol != nil {
+				e = r.fx.Protocol(e)
+			}
 			rt, _, err := r.f.Match(http.MethodGet, e)
 			switch {
 			case err != nil:

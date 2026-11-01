@@ -6554,6 +6554,24 @@ Context: `Lang` was `shell`, `ini`, `xml` or `yaml`, and `shell` meant POSIX quo
 
 **Applied in the spec:** R-API-030. Code: `internal/api/v1/setup_snippets.go` (`powershellQuote`, `cmdQuote`, `quoterFor`). Tests: `TestR_API_030_PowerShellAndCmdValuesAreQuoted`.
 
+### Q-API-190 · The NuGet settings are a typed member of the repository document, and the format enums follow the registry
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the repository document has one member per format that has settings, named after the format (R-REPO-004), typed in the OpenAPI document by hand (`NpmSettings`) and compared with the registered schema by a test. NuGet registers its format with the class `local` alone (Q-NUGET-28), and the four enums `FormatName`, `LocalFormatName`, `RemoteFormatName` and `VirtualFormatName` are generated from the registry (R-ARCH-010).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `NugetSettings` beside `NpmSettings`, `Repository.nuget` refers to it, the equality test runs per format, and the enums list `nuget` where the registry does (chosen) | `nuget` is in `FormatName` and `LocalFormatName` and in neither of the other two until its classes exist | The create form offers NuGet for a local repository only; the generated clients carry the member; a setting added to one statement without the other fails the test | A hand-written schema per format |
+| (b) `nuget` in all four enums | The enums are final | None | The create form would offer a class the service refuses, and `TestR_ARCH_010_PerClassFormatEnums` fails |
+| (c) An untyped `nuget` object | `additionalProperties: true` | Nothing to keep in step | The generated clients lose the member's type and the equality with the registered schema is not checked |
+
+**Choice:** (a). The generated types of the web client (`web/src/app/api/generated/schema.d.ts`) are regenerated from the document in the same change.
+
+**Rationale:** the development agent revisits this when the remote adapter lists the class `remote` (the enum, the member's `forwardSearch` description and the test then need no edit beyond the enum).
+
+**Applied in the spec:** R-REPO-004 already states the rule; none. Code: `api/openapi.yaml` (`NugetSettings`, `Repository.nuget`, the format enums), `internal/api/v1/format_settings_test.go`, `internal/repository/document.go` (`Settings.NuGet`, `formatMembers`). Tests: `TestR_ARCH_008_NugetSettingsSchemaEqualsTheOpenAPIMember`, `TestR_ARCH_010_PerClassFormatEnums`, `TestR_NUGET_007_TheNuGetMemberOfADocument`.
+
 ## What this does not cover
 
 

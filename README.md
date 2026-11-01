@@ -93,7 +93,11 @@ Built (M2, npm registry):
 - 🖼️ **Package screens and client setup.** The package list and detail with the README, an install panel, client setup snippets, and repository settings rendered from the format's schema. See [packages](docs/developer/packages.md) and [web UI](docs/developer/web-ui.md).
 - 📖 **In-app guides.** A guide for every npm variant (local, remote and virtual) with npm, pnpm, Yarn Berry and Yarn Classic, in the UI's guides area. See [npm](docs/developer/npm.md) and [web UI](docs/developer/web-ui.md).
 
-Not built yet (see the [roadmap](docs/coverage/roadmap.md)): the NuGet protocol with local, remote and virtual repositories; GitLab CI OIDC federation;
+Built (M3, NuGet skeleton):
+
+- 🧱 **NuGet format registered.** The format `nuget` for local repositories, with the settings `deleteMode` and `forwardSearch`, the `nuget.archive`, `nuget.registration` and `nuget.search` configuration keys, the NuGet v3 route table, the service index at its three spellings, the native one-line error shape and the 404 that points a NuGet v2 client at the v3 service index. The other operations answer `501` until they are built. See [NuGet](docs/developer/nuget.md).
+
+Not built yet (see the [roadmap](docs/coverage/roadmap.md)): the operations of the NuGet protocol (package content, registrations, search, push, unlist, symbols) and its remote and virtual repositories; GitLab CI OIDC federation;
 vulnerability scanning; backup and restore and the HA hardening of phase 7; remote and virtual repositories for the generic format; the UI
 screens of search, trash, builds, webhooks, CI identity and projects.
 
@@ -126,6 +130,9 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 | `/auth/local/login`, `/auth/logout` | POST | yes (M1; the break-glass login and logout) |
 | `/api/v1/…` (the management API) | see the [API families](#management-api) | yes (M1; [api/openapi.yaml](api/openapi.yaml)) |
 | `/api/<format>/<repoKey>/…` | per route (npm: GET, PUT, DELETE, POST) | yes, npm (M2; [dispatcher](internal/api/dispatch/dispatcher.go)) |
+| `/api/nuget/<repoKey>/v3`, `…/v3/`, `…/v3/index.json` | GET, HEAD | yes, the service index of a local repository (M3 skeleton; the same body at the three spellings) |
+| `/api/nuget/<repoKey>/v3/{flatcontainer,registration,registration-gz,registration-semver2,search,autocomplete,package,symbolpackage,symbols}/…` | per route (GET; PUT, DELETE, POST on the publish resources) | routed, answers `501 nuget_not_implemented` until its work package lands ([NuGet](docs/developer/nuget.md#the-routes)) |
+| any other path below `/api/nuget/<repoKey>/` (every NuGet v2 shape) | any | `404 nuget_v2_unsupported`, the message names `…/v3/index.json` of the repository |
 | `/ui/{locale}/…` | GET, HEAD | yes, locales `en` and `de` ([webui](internal/webui/webui.go)) |
 
 ### Headers
@@ -313,7 +320,7 @@ The code registry is [internal/errs/codes.go](internal/errs/codes.go). Every pro
 - Endpoints and exposure: `endpoint_read_only`, `invalid_version_range`, `dimension_not_supported`, `format_not_exposable`, `endpoint_not_configured`, `exposure_rule_limit_reached`
 - Package ownership and populating (M2): `package_owned_by_other_owner`, `last_owner`, `populate_not_permitted`
 - npm (M2): `npm_invalid_name`, `npm_invalid_version`, `npm_invalid_range`, `npm_invalid_tag`, `npm_bad_publish`, `npm_manifest_mismatch`, `npm_too_large`, `npm_class_not_writable`, `npm_version_exists`, `npm_version_unpublished`, `npm_stale_rev`, `npm_not_implemented`, `npm_audit_unavailable`, `npm_invalid_upstream_document`
-- NuGet (M3): `nuget_invalid_package`, `nuget_invalid_version`, `nuget_invalid_version_range`, `nuget_invalid_id`
+- NuGet (M3): `nuget_invalid_package`, `nuget_invalid_version`, `nuget_invalid_version_range`, `nuget_invalid_id`, `nuget_v2_unsupported`, `nuget_not_implemented`, `upstream_package_mismatch`
 - Remote repositories (M2): `upstream_secret_unavailable`, `source_network_unavailable`, `foreign_host_denied`
 - Package content (M2): `content_refused`
 

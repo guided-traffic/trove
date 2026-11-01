@@ -12,7 +12,7 @@ specified in [operations-and-observability.md](../spec/operations-and-observabil
 |---|---|
 | [config.go](../../internal/config/config.go) | the root struct `Config`, one field per section; the `go:generate` line |
 | [process.go](../../internal/config/process.go), [server.go](../../internal/config/server.go) with [tls.go](../../internal/config/tls.go) (`server.tls`, `server.ops_tls`), [database.go](../../internal/config/database.go), [migrate.go](../../internal/config/migrate.go), [runtime.go](../../internal/config/runtime.go), [valkey.go](../../internal/config/valkey.go), [storage.go](../../internal/config/storage.go), [jobs.go](../../internal/config/jobs.go), [cluster.go](../../internal/config/cluster.go), [cache.go](../../internal/config/cache.go), [secrets.go](../../internal/config/secrets.go), [system.go](../../internal/config/system.go), [health.go](../../internal/config/health.go), [log.go](../../internal/config/log.go), [metrics.go](../../internal/config/metrics.go), [trace.go](../../internal/config/trace.go), [audit.go](../../internal/config/audit.go), [maintenance.go](../../internal/config/maintenance.go), [outbound.go](../../internal/config/outbound.go) | one section each (`Process`, `Server`, `Database`, `Migrate`, `Runtime`, `Valkey`, `Storage`, `Jobs`, `Cluster`, `Cache`, `Secrets`, `System`, `Health`, `Log`, `Metrics`, `Tracing`, `Audit`, `Maintenance`, `Proxy` with `Outbound`); the owner of a subsystem edits only its file |
-| [outbound.go](../../internal/config/outbound.go), [npm.go](../../internal/config/npm.go), [ui.go](../../internal/config/ui.go), [config_as_code.go](../../internal/config/config_as_code.go) | the sections of M2: `proxy.*` (inside the `>>> M2 proxy` markers of `Proxy`), `npm`, `ui` (README rendering and client setup) and `config_as_code.secrets_dir`, see [M2 keys](#m2-keys) |
+| [outbound.go](../../internal/config/outbound.go), [npm.go](../../internal/config/npm.go), [nuget.go](../../internal/config/nuget.go) (M3: `nuget.archive`, `nuget.registration`, `nuget.search`), [ui.go](../../internal/config/ui.go), [config_as_code.go](../../internal/config/config_as_code.go) | the sections of M2: `proxy.*` (inside the `>>> M2 proxy` markers of `Proxy`), `npm`, `ui` (README rendering and client setup) and `config_as_code.secrets_dir`, see [M2 keys](#m2-keys) |
 | [schema.go](../../internal/config/schema.go) | `Describe`: flattens the tree into `Key`s, checks tags, derives environment names |
 | [load.go](../../internal/config/load.go) | `Load`: defaults, file, environment, flags; strict matching; secret resolution; validation |
 | [m1.go](../../internal/config/m1.go), [login.go](../../internal/config/login.go), [auth_identity.go](../../internal/config/auth_identity.go), [authz.go](../../internal/config/authz.go) | the sections of the M1 areas (`auth`, `authz`, `api`, `repositories`); in `auth` the login keys `auth.oidc`, `auth.login_page`, `auth.sessions`, `auth.break_glass` ([login.md](login.md#configuration)). `auth.oidc.providers` is a map of nested structs whose keys left out are filled by `AuthOIDCProvider.Defaulted`, not by `default` tags |
@@ -22,7 +22,7 @@ specified in [operations-and-observability.md](../spec/operations-and-observabil
 | [effective.go](../../internal/config/effective.go), [jsonschema.go](../../internal/config/jsonschema.go), [schemagen](../../internal/config/schemagen/main.go), [schema.json](../../internal/config/schema.json) | redacted view, JSON Schema generator and its committed output |
 
 Sections that exist in the specification but have no owner yet are not in the tree: `backup`, `retention`,
-`ci`, `proxy` (apart from the keys listed under [M2 keys](#m2-keys)), `nuget`, `support`,
+`ci`, `proxy` (apart from the keys listed under [M2 keys](#m2-keys)), `support`,
 `config_as_code` (apart from `secrets_dir`), `webhooks`, `mail`, `content_types`. Of `ui`, only the keys under
 [M2 keys](#m2-keys) exist. Strict validation rejects a file that sets them
 until their owner adds the section. The chart must render only keys the tree knows.
@@ -184,7 +184,8 @@ container, 1,191 for 2 GiB; without caches 278 for 256 MiB and 1,114 for 1 GiB. 
 
 ## M2 keys
 
-The keys of the remote engine (`proxy.*` beside `proxy.outbound`), the virtual engine and the npm format. The per-repository
+The keys of the remote engine (`proxy.*` beside `proxy.outbound`), the virtual engine, the npm format and, from M3, the NuGet format
+([nuget.go](../../internal/config/nuget.go), `Config.validateNuGetCoupling`; the symbol and vulnerability keys arrive with R-NUGET-021 and R-NUGET-023). The per-repository
 settings of a remote repository (timeouts, cache periods, `limits.*`) are in the repository document
 ([repositories.md](repositories.md)); the keys here are the system-wide values and bounds. Ranges are enforced by the
 `validate` tags; the rules across keys are in `Proxy.Validate` and in `Config.validateNPMCoupling`.
@@ -217,6 +218,20 @@ npm:
     retry_window: 10m                # default; 0s to 24h, 0s turns the acknowledged retry off
   abbreviated_time: true             # default (R-NPM-011)
   document_max_age: 0s               # default; 0s to 24h (R-NPM-013)
+nuget:
+  archive:
+    max_nuspec_bytes: 1MiB           # default; 1KiB to 1MiB, the limit of R-ARCH-028 can only be tightened (Q-NUGET-25)
+    max_entries: 65535               # default; 1 to 1000000, what the central directory of a package may declare (Q-NUGET-23)
+    max_uncompressed_bytes: 4GiB     # default; 1MiB to 1TiB, the sum of the declared sizes
+    max_compression_ratio: 100       # default; 1 to 100, of an entry read into memory
+  registration:
+    page_size: 64                    # default; 1 to 1000, versions per registration page (R-NUGET-009)
+    inline_below: 128                # default; 1 to 100000, a package with fewer visible versions has its pages inlined
+  search:
+    default_take: 20                 # default; 1 to 1000, at most max_take (R-NUGET-010)
+    max_take: 1000                   # default; 1 to 10000
+    max_skip: 3000                   # default; 0 to 1000000, a larger skip answers 400
+    remote_result_ttl: 60s           # default; 0s to 1h, how long a forwarded search answer is kept (R-NUGET-016, Q-NUGET-16)
 ui:
   readme:
     max_source_bytes: 512KiB         # default; 1KiB to 16MiB, a longer README is cut and flagged (R-UI-008)

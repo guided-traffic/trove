@@ -1608,6 +1608,114 @@
       },
       "type": "object"
     },
+    "nuget": {
+      "additionalProperties": false,
+      "properties": {
+        "archive": {
+          "additionalProperties": false,
+          "properties": {
+            "max_compression_ratio": {
+              "default": 100,
+              "description": "Largest compression ratio of an entry read into memory; at most the 100:1 of R-ARCH-028.",
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_NUGET_ARCHIVE_MAX_COMPRESSION_RATIO"
+            },
+            "max_entries": {
+              "default": 65535,
+              "description": "Most entries the central directory of a package may declare (Q-NUGET-23).",
+              "maximum": 1000000,
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_NUGET_ARCHIVE_MAX_ENTRIES"
+            },
+            "max_nuspec_bytes": {
+              "default": "1MiB",
+              "description": "Largest .nuspec of a package; at most the 1 MiB of R-ARCH-028 (Q-NUGET-25).",
+              "type": [
+                "string",
+                "integer"
+              ],
+              "x-trove-env": "TROVE_NUGET_ARCHIVE_MAX_NUSPEC_BYTES",
+              "x-trove-type": "bytes"
+            },
+            "max_uncompressed_bytes": {
+              "default": "4GiB",
+              "description": "Largest sum of the declared sizes of all entries of a package (Q-NUGET-23).",
+              "type": [
+                "string",
+                "integer"
+              ],
+              "x-trove-env": "TROVE_NUGET_ARCHIVE_MAX_UNCOMPRESSED_BYTES",
+              "x-trove-type": "bytes"
+            }
+          },
+          "type": "object"
+        },
+        "registration": {
+          "additionalProperties": false,
+          "properties": {
+            "inline_below": {
+              "default": 128,
+              "description": "A package with fewer visible versions has every page inlined in its registration index; with more, the pages are fetched from their own URL.",
+              "maximum": 100000,
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_NUGET_REGISTRATION_INLINE_BELOW"
+            },
+            "page_size": {
+              "default": 64,
+              "description": "Versions per registration page.",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_NUGET_REGISTRATION_PAGE_SIZE"
+            }
+          },
+          "type": "object"
+        },
+        "search": {
+          "additionalProperties": false,
+          "properties": {
+            "default_take": {
+              "default": 20,
+              "description": "Results of a search that names no take.",
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_NUGET_SEARCH_DEFAULT_TAKE"
+            },
+            "max_skip": {
+              "default": 3000,
+              "description": "Largest skip; a larger one answers 400.",
+              "maximum": 1000000,
+              "minimum": 0,
+              "type": "integer",
+              "x-trove-env": "TROVE_NUGET_SEARCH_MAX_SKIP"
+            },
+            "max_take": {
+              "default": 1000,
+              "description": "Largest take; a larger one is clamped.",
+              "maximum": 10000,
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_NUGET_SEARCH_MAX_TAKE"
+            },
+            "remote_result_ttl": {
+              "default": "1m",
+              "description": "How long the answer of a forwarded search is kept; 0s keeps none. The engine cuts it to one hour (Q-NUGET-16).",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_NUGET_SEARCH_REMOTE_RESULT_TTL",
+              "x-trove-type": "duration"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
     "process": {
       "additionalProperties": false,
       "properties": {
