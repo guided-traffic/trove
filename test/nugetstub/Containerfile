@@ -1,0 +1,11 @@
+# The image of the counting NuGet test upstream (test/nugetstub/cmd/nugetstub): a static binary on the release
+# image's base, with the synthetic package set compiled in. It is not the release image and is never pushed;
+# `make nuget-stub-image` builds it and deploy/dev/e2e.sh loads it into kind.
+# It serves TLS only: a certificate (or -self-signed) must be given at start.
+ARG RUNTIME_BASE_IMAGE
+FROM ${RUNTIME_BASE_IMAGE}
+ARG TARGETARCH
+COPY nugetstub-linux-${TARGETARCH} /nugetstub
+USER 65532:65532
+EXPOSE 8443
+ENTRYPOINT ["/nugetstub"]

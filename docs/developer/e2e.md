@@ -1064,6 +1064,93 @@ stub (the cluster was in use by another agent), and the pod itself (only the ima
 `make npm-reference` writes [perf/npm/reference](../../perf/npm/reference); [perf/README.md](../../perf/README.md) says
 how and why. `make npm-reference-check` regenerates and diffs; it needs Docker, not the cluster.
 
+## The counting NuGet test upstream
+
+[test/nugetstub](../../test/nugetstub) is the upstream of the NuGet tests (M3, R-NUGET-027): exit criterion E3.2 and the
+upstream criteria of R-NUGET-014 to R-NUGET-016 are read off what it counted. Decisions: Q-NUGET-26 and Q-NUGET-27 in
+[nuget.md](../spec/formats/nuget.md). Like the npm stub it is a Go package (used in-process), a container and a pod of
+the dev cluster, all the same code; it reaches no network and answers TLS only. Its package set is generated in code, so
+nothing of nuget.org is recorded.
+
+| File | Responsibility |
+|---|---|
+| [stub.go](../../test/nugetstub/stub.go) | `Server`: state under one mutex (counters, mode, published, dropped and unlisted versions), `Publish`, `Drop`, `Restore`, `SetListed`, `SetMode`, `Reset`, `ResetAll` |
+| [serve.go](../../test/nugetstub/serve.go) | the request path: count, failure gate, dispatch; documents with a weak `ETag`, `Last-Modified`, 304 and gzip; the files with a strong `ETag` |
+| [docs.go](../../test/nugetstub/docs.go) | the documents: the two hosts of a request (`bases`), service index, version list, registration index, page and leaf, search |
+| [route.go](../../test/nugetstub/route.go) | path to resource kind, package ID and version |
+| [corpus.go](../../test/nugetstub/corpus.go) | the package set (`Default`), version order, the closure of a root set, the roots of the reference solution |
+| [nupkg.go](../../test/nugetstub/nupkg.go) | `.nuspec` and `.nupkg` generation: the same inputs give the same bytes; `PackageHash` |
+| [counts.go](../../test/nugetstub/counts.go) | the counters and their readers: `Nupkgs`, `Nupkg`, `VersionLists`, `Registrations`, `ConditionalRequests`, `Searches`, `Requests`, `Hosts`, `Violations(maxDocuments, maxNupkgs)` |
+| [mode.go](../../test/nugetstub/mode.go) | the failure switches |
+| [control.go](../../test/nugetstub/control.go) | the control API below `/-/stub/` |
+| [tls.go](../../test/nugetstub/tls.go) | `Start` (TLS or nothing), a throwaway CA, a certificate reloaded when its files change |
+| [reference.go](../../test/nugetstub/reference.go) | the files of the reference solution of [perf/nuget](../../perf/README.md) |
+| [cmd/nugetstub](../../test/nugetstub/cmd/nugetstub) | `serve` (default) and `reference` (`-out` writes, `-check` compares) |
+| [Containerfile](../../test/nugetstub/Containerfile) | the image: a static binary on the release base image |
+
+### What it serves
+
+The service index (`/v3/index.json`) names two hosts: the **API host** serves the index and the registrations, the **content
+host** the flat container and the search. One listener answers both. With `-public-url` and `-content-url` the bases are
+fixed. Without them, a request under a loopback name gets API host `127.0.0.1` and content host `localhost` on the same
+port (two hosts without a resolver; a test certificate needs both names), and any other `Host` is used for both.
+
+| Resource | Path | Host | Notes |
+|---|---|---|---|
+| Registrations, identity | `/v3/registration/{id}/…` | API | `RegistrationsBaseUrl` and the `3.0.0-beta`/`3.0.0-rc` aliases |
+| Registrations, gzip | `/v3/registration-gz/{id}/…` | API | `RegistrationsBaseUrl/3.4.0` and `/3.6.0`; compressed when `Accept-Encoding` allows; the weak `ETag` is the same with and without coding |
+| Package content | `/v3-flatcontainer/{id}/index.json`, `/{version}/{id}.{version}.nupkg`, `/{version}/{id}.nuspec` | content | `PackageBaseAddress/3.0.0`; a dropped version keeps its files |
+| Search | `/query?q=&skip=&take=&prerelease=` | content | `SearchQueryService` and aliases; `q=packageid:x` is an exact ID; unlisted versions are left out |
+
+A registration index has pages of 64 leaves. Below 128 versions the pages are inlined (`items`, `@id` `…/index.json#page/lo/hi`);
+from 128 they are listed without `items` and fetched at `…/page/{lower}/{upper}.json`, which is what the package
+`Contoso.Versions` (200 versions, four pages) is for. The other packages: 180 `Contoso.<Area>.<Name>` packages in a
+dependency graph (each depends on two or three earlier ones, with minimum-version ranges of `1.0.0`; every version of a
+package has the same dependencies), `Newtonsoft.Json` 13.0.1 and 13.0.3, `Contoso.Util` 2.0.0 and 2.1.0, and `Other.Pkg` 1.0.0.
+Catalog entries carry `packageHash` (SHA-512, base64), `packageHashAlgorithm` and `packageSize`.
+
+### Counting and switches
+
+Every request except the control API is counted by method, `Host`, escaped path as sent, conditionality and credential
+scheme (never the credential); a request a mode refuses is counted too. `Violations(2, 1)` is the E3.2 check: no document
+path more than twice and no `.nupkg` path more than once, over every host.
+
+`Mode` replaces the previous mode as a whole; `{}` clears it.
+
+| Field | Effect |
+|---|---|
+| `down` | `503`, `reset` (connection cut) or `hang` (held until the client gives up, at most two minutes) |
+| `delay_ms` | by class `index`, `registration`, `flat`, `nupkg`, `search`, `other`, and `all` (added to the class's): `{"all": 2000}` is the upstream that delays every response by 2 s |
+| `not_found`, `gone` | package IDs whose version list, registrations, `.nuspec` and `.nupkg` answer 404 / 410 |
+| `bad_digest` | IDs whose catalog entries announce a `packageHash` the bytes do not have |
+| `wrong_content` | IDs whose `.nupkg` URLs serve `Other.Pkg` instead |
+| `omit_resources` | `@type` prefixes left out of the service index, for example `PackageBaseAddress` |
+| `strict_hosts` | a resource asked from the wrong host answers 404 (only with two distinct hosts) |
+| `require_authorization` | 401 unless `Authorization` equals this value |
+
+The control API (`-control-token-file`, bearer token) has `GET /-/stub/counts`, `POST /-/stub/reset[?all=true]`,
+`GET`/`POST /-/stub/mode`, and `POST /-/stub/publish|drop|restore|unlist|relist` with `{"name","version"}`
+(`dependencies` for publish).
+
+### Use in a Go test
+
+```go
+stub, _ := nugetstub.New(nugetstub.Config{})
+ss, _ := nugetstub.NewSelfSigned("localhost", "127.0.0.1")
+run, _ := stub.Start("127.0.0.1:0", ss.ServerConfig())   // the index is at run.URL + "/v3/index.json"
+defer run.Close()
+// point the remote at run.URL + "/v3/index.json", trust ss.CAPEM, allow 127.0.0.1 and localhost as extra hosts
+c := stub.Counts()
+c.Violations(2, 1)                                         // E3.2: one request per .nupkg
+stub.SetMode(nugetstub.Mode{DelayMS: map[string]int{"all": 2000}})
+stub.Publish("Contoso.Util", "2.2.0", nil)
+```
+
+### Not wired yet
+
+`make nuget-stub-image`, the apply step in `deploy/dev/e2e.sh` (`TROVE_E2E_NUGETSTUB=1`, [deploy/dev/nugetstub.yaml](../../deploy/dev/nugetstub.yaml))
+and the CI jobs are described in the work-package hand-over and added with the e2e work package; the manifest is not applied by any script yet.
+
 ## Extension checklist
 
 - **A new failure case of the npm upstream.** A field in `Mode` ([mode.go](../../test/npmstub/mode.go)) with its

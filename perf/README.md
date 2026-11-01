@@ -8,6 +8,8 @@ perf/
 ├── README.md                    this file
 ├── k6/
 │   └── npm.js                   the targets of R-ARCH-027 an npm client meets (P-1, P-3, P-5, P-7, P-8), against one web replica
+├── nuget/
+│   └── reference/               the NuGet reference solution (Reference.sln, Reference/Reference.csproj, nuget.config), see below
 └── npm/
     ├── reference.sh             writes or checks the reference project below (make npm-reference, make npm-reference-check)
     └── reference/
@@ -58,6 +60,26 @@ When to regenerate: after any change of the corpus generator (its digest test fa
 `TestReferenceLockfileMatchesTheCorpus` ([test/npmstub/lockfile_test.go](../test/npmstub/lockfile_test.go)) runs in
 `make test`: `package.json` equals the corpus's reference project, every locked package exists in the corpus with the
 corpus's integrity and the `npm-all` address, no entry has an install script, and there are at least 500 entries.
+
+## The NuGet reference solution
+
+Exit criterion E3.2 runs three clients at once, each `dotnet restore --no-cache`, against this solution through the virtual
+repository `nuget-all`. At least 100 packages are required in its restore graph; the graph has at least 120, all from the generated
+package set of [test/nugetstub](../test/nugetstub), so the counting test upstream serves every one of them
+([Q-NUGET-27](../docs/spec/formats/nuget.md#q-nuget-27--the-reference-solution-of-e32-how-it-is-built-and-checked)).
+
+| File | What it is |
+|---|---|
+| `nuget/reference/Reference.sln` | one project |
+| `nuget/reference/Reference/Reference.csproj` | `net10.0`, `PackageReference`s on eight roots of the set, each at its latest stable version |
+| `nuget/reference/nuget.config` | `<clear />` and one source, the dev profile's `nuget-all` (`https://localhost:8080/api/nuget/nuget-all/v3/index.json`); the e2e tests pass `--source` instead |
+
+Written by `go run ./test/nugetstub/cmd/nugetstub reference -out perf/nuget/reference`; `-check perf/nuget/reference` compares.
+The files are deterministic. `TestR_NUGET_027_ReferenceSolutionIsCurrent` fails when they differ from a regeneration, and
+`TestR_NUGET_027_ARestoreOfTheReferenceSolution` walks the graph through the stub the way a restore does (every dependency is
+the range `1.0.0`, every version of a package has the same dependencies, so the walk and the client agree) and requires at
+least 100 packages with one request per `.nupkg`. Whether the real client resolves the same graph is what E3.2's e2e run shows.
+No lock file is committed: the .NET SDK is not part of this change's tooling.
 
 ## What is not here yet
 
