@@ -161,14 +161,14 @@ Details: [roadmap M2](../coverage/roadmap.md#m2--npm) · spec: [formats/npm.md](
 - 🟢 In-app guide for every npm variant: local, remote and virtual repositories with npm, pnpm, Yarn Berry and Yarn Classic (owner 2026-10-31)
 
 **Tests**
-- 🟡 npm integration tests: protocol over HTTP, conformance kit, nightly fuzzing of package documents (the 30-minute fuzz legs run in the closing dispatch)
+- 🟢 npm integration tests: protocol over HTTP, conformance kit, nightly fuzzing of package documents (the three 30-minute fuzz legs passed in the closing run 41235811145)
 - 🟢 npm e2e tests: install and publish with npm, pnpm, Yarn Classic and Yarn Berry through local, remote and virtual repositories
-- 🟡 npm e2e: cold cache with three clients at once, upstream down, Valkey stopped, replica killed mid-install (the Valkey-stopped leg runs in the closing dispatch)
-- 🟡 npm load joins the drain and failover tests (green on kind; the CI leg `npm-ha` has not run yet)
+- 🟢 npm e2e: cold cache with three clients at once, upstream down, Valkey stopped, replica killed mid-install (the Valkey-stopped leg passed in the closing run 41235811145)
+- 🟡 npm load joins the drain and failover tests: the CI leg `npm-ha` passed once (run 41231246904) but is not reliable yet; `web` pods of the 1 GiB dev profile are still OOMKilled under the drain's npm load in some runs although the memory guard is on (runs 41235811145 and 41253578143, attempt 2). Open: a heap profile under that load (the merged package documents of `npm ci` are the first suspect), then the fix
 - 🟢 npm e2e: a customer endpoint through its own Ingress lists only exposed versions; hidden versions answer 404
 
 **Release**
-- ⚪ the release that closes the phase (cut by Semantic Release; the version goes into the table)
+- 🟡 the release that closes the phase: `v0.5.0` (2026-10-31) is released with everything above; the phase closes with the release that follows the fix of the open item
 
 ## Phase 4 · NuGet (.NET) registry (M3)
 
