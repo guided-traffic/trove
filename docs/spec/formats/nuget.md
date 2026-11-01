@@ -966,34 +966,51 @@ repository level; results and `totalHits` contain only IDs the caller may read (
 
 | Parameter | Rule |
 |---|---|
-| `q` | query (syntax below); empty or absent returns every package, paged |
+| `q` | query (syntax below); empty or absent returns every package, paged; more than 1,024 bytes or more than 16 terms answers 400 (Q-NUGET-46) |
 | `skip` | default 0; above `max_skip`, negative or not an integer answers 400 |
 | `take` | default `default_take`; above `max_take` is clamped; `0` returns only `totalHits`; negative or not an integer answers 400 |
 | `prerelease` | `true` (case-insensitive) includes pre-release versions; anything else excludes them |
 | `semVerLevel` | R-NUGET-004 |
 | `packageType` | keep packages whose latest visible version declares that type (case-insensitive); a value that is not a valid package type name returns no results; empty means no filter |
 
-Query syntax: terms separated by whitespace; double quotes group a phrase; `field:value` limits a
-term to one field. Supported fields: `id` (ID contains the value), `packageid` (ID equals the
-value), `title`, `tags`, `author`, `description`, `summary`. Other `field:` prefixes are treated as
-free text. Every term must match (AND). A free-text term matches when it is contained in the ID,
-is a prefix of an ID token (tokens split at `.`, `-`, `_` and at lower-to-upper case changes of
-the display name), or matches title, tags, authors, summary or description through `search_doc`.
+Query syntax: terms separated by whitespace; double quotes group a phrase (a quote that is never
+closed runs to the end of the text); `field:value` and `field:"a phrase"` limit a term to one field.
+Supported fields, matched case-insensitively:
 
-Ranking SHOULD put exact ID matches first, then ID prefix matches, then ID token-prefix matches,
-then title, tag and other field matches; inside a rank, more downloads first. Ties MUST be broken
-by `lower_id` ascending so paging is stable. An empty query orders by downloads descending, then
-`lower_id`.
+| Field | The term matches when |
+|---|---|
+| `id` | the lower-case ID contains the value |
+| `packageid` | the lower-case ID equals the value |
+| `version` | the package has a listed version visible under the request's filters that equals the value after the normalization of R-NUGET-003; a value that is no version matches nothing |
+| `title`, `tags`, `author`, `description`, `summary` | the words of that field of the latest visible version start with the words of the value |
+| `owner` | never: a local package has no owners to match (Q-NUGET-46) |
+
+A `field:` prefix that is not in the table leaves the whole word as free text, and a field without a
+value is dropped. Every term must match (AND). A free-text term matches when it is contained in the
+lower-case ID, or when its words, as prefixes in the order written, are found in `search_doc`: an ID
+token (tokens split at `.`, `-`, `_` and at lower-to-upper case changes of the display name, so
+`Newtonsoft.Json` and `NewtonsoftJson` are found by `json`), title, tags, authors, summary or
+description. A package matches by its **latest visible version** (the highest listed, untrashed
+version under `prerelease` and `semVerLevel`): terms and `packageType` are tested against that
+version's row, so what matches is what the result shows (Q-NUGET-46).
+
+Ranking: a package takes the best tier over its free-text terms, in this order: the lower-case ID
+equals the term; the ID starts with it; the ID contains it or an ID token starts with it; any other
+field. Inside a tier, more downloads first (0 for every package until R-STOR-015 ships, so that
+changes nothing yet), and ties are broken by `lower_id` in byte order, so paging is stable on every
+installation whatever its database collation. A query without a free-text term, and so an empty
+query, ranks every package equally: the order is downloads descending, then `lower_id`.
 
 Response: `totalHits` (matching packages, independent of paging) and `data`, one object per
 package whose latest version under the filters is visible:
 
 | Property | Value |
 |---|---|
+| `@id`, `registration` | the index URL in the same hive as `versions[].@id` (below) |
+| `@type` | `Package` |
 | `id` | display name |
 | `version` | full version of the latest visible version |
 | `versions` | every listed version visible under `prerelease` and `semVerLevel`, ascending: `version` (full), `downloads`, `@id` (leaf URL in the `registration-semver2/` hive when `semVerLevel` is 2.0.0 or higher, else in `registration/`) |
-| `registration` | the index URL in the same hive |
 | `description`, `summary`, `title`, `iconUrl`, `licenseUrl`, `projectUrl`, `tags`, `authors` | from the latest visible version |
 | `totalDownloads` | sum of `versions[].downloads` |
 | `packageTypes` | `[{"name": …}]` of the latest visible version; at least `Dependency` |
@@ -1004,11 +1021,23 @@ package whose latest version under the filters is visible:
 - Unlisted versions never appear; a package with no listed visible version is absent.
 - This requirement covers local repositories and the cache-only mode of remote repositories.
   Forwarding to an upstream is R-NUGET-016, merging in virtual repositories R-NUGET-018.
-- Implementation hint: the candidate set comes from `nuget_version` (`search_doc` with prefix
-  matching on its tokens, and the `nuget_version_latest` index for a term that is an ID; no
-  trigram index, Q-NUGET-12), the latest visible version per package from
-  `DISTINCT ON (lower_id) … ORDER BY lower_id, sort_key DESC`; permission filtering, ranking and
-  paging happen in SQL so `totalHits` is exact.
+- **Implementation.** One statement per request reads the latest visible version of every package
+  of the repository (`DISTINCT ON (lower_id) … ORDER BY lower_id, sort_key DESC` over
+  `nuget_version_latest`), tests the terms against that row (`search_doc`, the metadata fields, the
+  ID for the substring tests) and ranks, counts and pages in SQL; no trigram index (Q-NUGET-12). The
+  cost is linear in the packages of the repository, not in the matches: a term in the middle of a
+  word of a description matches nothing, a substring of the ID does (Q-NUGET-46).
+- **What the caller may read** is decided before anything is counted (R-AUTHZ-016), by the shape of
+  the read the decision point reports for the repository (`Resolver.ReadScope`). A caller who reads
+  the repository whole is counted and paged by SQL. A caller whose read depends on the package or
+  the version (a grant with package patterns, a token scope, an endpoint with exposure rules) is
+  served by a scan: the format reads the matches in rank order in batches of 500 with the keys of
+  every listed visible version, asks the decision point about each version, keeps the packages with
+  a readable version, counts them, and keeps only the entries of the requested page. The page is
+  then read once with the readable versions alone, so `version`, `versions`, `packageTypes` and
+  `totalDownloads` never come from a version the caller may not read, and `packageType` is
+  decided on the latest readable version. The scan reaches the last match, so `totalHits` is exact;
+  it stops with 400 when the query matches more than 200,000 packages (Q-NUGET-45).
 
 Configuration (system file):
 
@@ -1031,6 +1060,12 @@ Acceptance criteria:
   the same `totalHits` as `skip=0`.
 - `curl "<feed>/search?q=acme&packageType=DotnetTool"` returns only packages declaring that type.
 - A user whose grant covers only `acme.core` sees `totalHits: 1` for `q=acme`.
+- A user whose grant excludes `acme.widgets` sees `totalHits` without it and pages over the
+  rest; `skip` and `take` count the packages that user may read.
+- `curl "<feed>/search?q=title:%22widget+toolkit%22"` finds `Acme.Widgets` by a phrase in its title,
+  `q=version:1.1.0` finds the packages that have that version, `q=owner:acme` returns nothing.
+- `curl "<feed>/search?q=json"` finds `Newtonsoft.Json` and `NewtonsoftJsonSchema`; `q=tonsoft`
+  finds both by the substring of the ID.
 
 ### R-NUGET-011 · Autocomplete
 Priority: **P1** · Covers: PKG-NUGET-048
@@ -3619,6 +3654,62 @@ Context: R-NUGET-002 fixes the weak validator and R-NUGET-009 the gzip hives; th
 - The development agent would revisit this if the cost of revalidation is measurable on a restore of a large graph; the answer would be a short lifetime on the registration pages only.
 
 **Applied in the spec:** R-NUGET-008 (media types), R-NUGET-009 (bytes). Code: [documents.go](../../../internal/formats/nuget/documents.go), [handlers_flat.go](../../../internal/formats/nuget/handlers_flat.go), [document.go](../../../internal/formats/nuget/document/document.go). Tests: `TestR_NUGET_002_WeakETagIsSharedByGzipAndIdentity`, `TestR_NUGET_009_GzipHivesNegotiateAndThePlainHiveNever`, `TestR_NUGET_008_FilesOfAVersion`, `TestR_NUGET_009_PagingFollowsTheSettings`.
+
+### Q-NUGET-45 · How `totalHits` stays exact for a caller whose reads are decided row by row
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-010 and R-AUTHZ-016 say `totalHits` counts only what the caller may read. The decision point answers a listing through `Resolver.ReadScope`: `ReadAll` (no per-row question), `ReadNone`, or `ReadRows` (a grant with package patterns, a token scope, an endpoint with exposure rules), where `MayRead(repo, package, version)` decides each row in memory. SQL cannot ask it. The answer for `ReadRows` must be exact, must not hold every match in memory, and must not show a version the caller may not read.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Scan in rank order, keep the page, count the rest (chosen) | The store returns the matches in rank order in batches of 500 with the keys and package types of every listed visible version; the format asks `MayRead` per version, counts the packages with a readable version and keeps only the entries of `[skip, skip+take)`; the page is then read once for the readable versions alone. A query that matches more than 200,000 packages answers 400 | `totalHits` is exact; memory is bounded by `take` (at most `nuget.search.max_take`) and one batch; `version`, `versions`, `packageTypes` come from readable versions only; `ReadAll` callers, the common case, keep the cheap SQL count and page | Time is linear in the matches for a `ReadRows` caller; a caller with a narrow grant on a very large repository must narrow the query |
+| (b) Fetch a window of `skip + take` candidates and filter | Read `max_skip + max_take` candidates, drop the unreadable | One statement, constant cost | `totalHits` is not exact, and a page can be short or empty while readable packages follow it |
+| (c) Push the grant into SQL | Pass the include and exclude patterns to the statement | Exact and paged by SQL | A second implementation of the pattern grammar, the token scope and the exposure rules that must agree with the decision point forever (R-API-029 decided against it for the package listing) |
+| (d) Answer without an exact `totalHits` for these callers | `totalHits` is the size of the page | No scan | Breaks R-NUGET-010 and the acceptance criterion `totalHits: 1` |
+
+**Choice:** (a). The bound of 200,000 is the one the package listings use for the same decision (R-API-029): above it the request answers 400 and never a partial count. The latest version a result shows is the latest the caller may read, and the `packageType` filter is decided on that version, so an unreadable newer version neither appears nor changes what the caller sees.
+
+**Rationale:** exactness and the absence of a second grammar outweigh the cost of the scan, which only callers with row-level grants pay, and only on repositories with many matches. The development agent would revisit this if a deployment reports 400 for such callers (the scan would then move into a statement over the readable package names the decision point can hand over), or if profiling shows the scan dominates the CPU of a replica.
+
+**Applied in the spec:** R-NUGET-010 (the implementation paragraphs). Code: [handlers_search.go](../../../internal/formats/nuget/handlers_search.go) `runSearch`, `searchRows`; [search.go](../../../internal/formatdata/nuget/search.go). Tests: `TestR_AUTHZ_016_SearchCountsOnlyWhatTheCallerMayRead`, `TestR_AUTHZ_016_SearchPagesOverTheReadableRowsOnly`, `TestR_AUTHZ_016_TheScanReadsKeysAndFetchesOnlyThePage`, `TestR_AUTHZ_016_ThePackageTypeFilterUsesTheLatestReadableVersion`, `TestR_AUTHZ_016_AScanBeyondItsBoundIsRefusedNotCutShort`, and the integration tests `TestR_AUTHZ_016_TotalHitsCountsWhatTheCallerMayRead`, `TestR_AUTHZ_016_ARowByRowScanCrossesItsBatches`.
+
+### Q-NUGET-46 · What a package is matched by, which fields exist, and how a query is bounded
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-010 says a term matches "through `search_doc`", which is one vector per version, while a result is one object per package. The brief for the work package adds the fields `version:` and `owner:` to the ones in the requirement. Q-NUGET-12 chose token search over a trigram index, which loses a substring in the middle of a token, yet the requirement says a free-text term matches when "contained in the ID". A query is typed by anyone with `read`, and every term costs a test per package.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Match the latest visible version's row; substring by `strpos` on the ID; `version:` over the visible versions; `owner:` never matches; bounds of 1,024 bytes and 16 terms (chosen) | `DISTINCT ON (lower_id)` picks the row, every term is tested on it | What matches is what the result shows (title, tags and description of the latest version); the requirement's "contained in the ID" holds without an extension; the plan is the same for every term | A scan of the latest version of every package of the repository per request; text deep inside a word of a description is not found |
+| (b) Match any version's row, then show the latest | Use the gin index on `search_doc` to find candidate versions | Uses the index | A package is found by a tag its latest version dropped; the result does not show why it matched |
+| (c) Treat `owner:` as free text | The word `owner:alice` is searched in all fields | No field that matches nothing | A search for a person returns packages that happen to contain the word |
+| (d) No bounds on the query | | Nothing to refuse | A request of thousands of terms multiplies the per-package test |
+
+**Choice:** (a). Free text is matched by the ID substring or by the words of the term as prefixes, in the order written (the phrase operator), against the ID tokens (weight A) and the other fields; a field term reads that field of the metadata object. An unknown `field:` prefix stays free text. `owner:` is accepted so that a search for an owner does not turn into a word search, and matches nothing because a local package has no owners (the result has no `owners`). The rank tiers are exact ID, ID prefix, ID substring or token, other fields; ties by `lower_id` in byte order, so the order is the same on every installation whatever the collation of its database.
+
+**Rationale:** one row per package is the only reading under which a result and a match agree. The cost of the scan is linear in the packages of one repository, which a local repository bounds by what its teams publish. The development agent would revisit this if a repository holds so many packages that the statement dominates a replica: the candidate set then returns to the gin index for the terms that are ID tokens and the substring test moves to a trigram index (an expand step, Q-NUGET-12). It would also revisit `owner:` if the requirement grows an owner table to read.
+
+**Applied in the spec:** R-NUGET-010 (the table of fields, the ranking, the bounds, the implementation paragraph and three acceptance criteria). Code: [query.go](../../../internal/formats/nuget/search/query.go), [params.go](../../../internal/formats/nuget/search/params.go), [nuget_search.sql](../../../internal/meta/postgres/queries/nuget_search.sql). Tests: `TestR_NUGET_010_ParseSplitsTheQueryIntoTerms`, `TestR_NUGET_010_ParseBoundsTheNumberOfTerms`, `TestR_NUGET_010_ParamsRefuseWhatIsOutOfBounds`, and the integration tests `TestR_NUGET_010_RankingFollowsExactPrefixTokenAndOtherFields`, `TestR_NUGET_010_IDTokensAndSubstringsMatch`, `TestR_NUGET_010_FieldTermsLimitTheMatch`.
+
+### Q-NUGET-47 · The search port: a count, a page, keys only, and a read of named versions
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the skeleton declared `Search(ctx, SearchQuery) ([]SearchHit, error)` and left the cut to the format. Q-NUGET-45 needs the format to count in two ways and to read the page of a scan with the readable versions alone.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Search` pages (`Offset`, `Limit`), `KeysOnly` leaves the metadata out, `Only` names the versions to read; `SearchCount` counts (chosen) | One method for the page and the scan, one for the count | The port stays two methods; the shared part of the statements is written once per statement | The twin of the port must honour the three query fields |
+| (b) One method that returns every match | The format cuts | One method | Unbounded memory for the common caller |
+| (c) A cursor object the format iterates | `OpenSearch` returns an iterator | Natural for a scan | A stateful value across the port and its transaction |
+
+**Choice:** (a). `Only` replaces the terms and the page: the hits are the packages holding those listed versions, each with those versions alone and `Latest` the highest, so a version the caller may not read cannot reach the result through the metadata of a newer one. The tsquery text is built in the data port from the folded value of a term (letters and digits only, lower case), so no character a user types reaches the query language.
+
+**Rationale:** it keeps the format free of SQL and the data port free of the permission model. The development agent revisits this if a second listing needs the same scan (autocomplete, R-NUGET-011), when the scan moves next to the shared code.
+
+**Applied in the spec:** none (the port is not specified). Code: [store.go](../../../internal/formats/nuget/store.go), [read.go](../../../internal/formats/nuget/rows/read.go), [search.go](../../../internal/formatdata/nuget/search.go). Tests: the integration tests of Q-NUGET-45 and Q-NUGET-46, which run the three statements.
 
 ## What this does not cover
 

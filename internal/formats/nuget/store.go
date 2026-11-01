@@ -80,11 +80,17 @@ type Store interface {
 	// render from (R-NUGET-009): the package's revision and every visible version with
 	// its metadata. found is false for an ID that holds no version.
 	Registration(ctx context.Context, repoID int64, lowerID string) (pkg rows.RegistrationPackage, found bool, err error)
-	// Search returns the packages of a repository that match a query, one hit per
-	// package, in the rank order of R-NUGET-010, each with its latest visible version
-	// and its listed versions (R-NUGET-010). The format keeps the hits the caller may
-	// read and cuts the page.
+	// Search returns the page [q.Offset, q.Offset+q.Limit) of the packages of a repository
+	// that match a query, one hit per package, in the rank order of R-NUGET-010, each with
+	// its latest visible version and its listed versions. With q.KeysOnly the hits carry no
+	// metadata; with q.Only they are the packages holding those versions (see
+	// [rows.SearchQuery]). The format decides what the caller may read: a repository the
+	// caller reads whole is paged here, any other is scanned in pages and cut by the format
+	// (Q-NUGET-45).
 	Search(ctx context.Context, q rows.SearchQuery) ([]rows.SearchHit, error)
+	// SearchCount counts the packages that match a query, whatever its page (R-NUGET-010:
+	// totalHits).
+	SearchCount(ctx context.Context, q rows.SearchQuery) (int, error)
 
 	// <<< M3 nuget-read
 }

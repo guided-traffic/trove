@@ -26,10 +26,6 @@ func (f *Format) handleEmbedded(ctx context.Context, rq *formats.Request, w http
 	return stub("the embedded files (P1, R-NUGET-024)")(ctx, rq, w)
 }
 
-func (f *Format) handleSearch(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("search")(ctx, rq, w)
-}
-
 func (f *Format) handleAutocomplete(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
 	return stub("autocomplete (P1, R-NUGET-011)")(ctx, rq, w)
 }

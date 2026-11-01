@@ -229,3 +229,34 @@ Things to know when changing a document:
   `deprecation` and `vulnerabilities` of an upstream entry.
 - Tests: the fixture in [documents_fixture_test.go](../../internal/formats/nuget/documents_fixture_test.go) is a Host of the kit over a `docStore` (the twin, with the two document
   reads) and commits versions the way a write does, raising the revision. It is the place to start a test of a document.
+
+## Search
+
+The search of a local repository (R-NUGET-010, R-AUTHZ-016; decisions Q-NUGET-45 to Q-NUGET-47) is four pieces.
+
+| Piece | Responsibility |
+|---|---|
+| [internal/formats/nuget/search](../../internal/formats/nuget/search) | `Parse` (terms, phrases, the field prefixes, the folding), `ParseParams` (`skip`, `take`, `prerelease`, `semVerLevel`, `packageType` with the bounds of `nuget.search`), `IDTokens` (the words of an ID that `search_doc` is built from), `Render` (the result document). It imports the rows leaf, `id`, `version`, `errs` and the standard library; it sits in the edge layer with the format, so the data port (a domain package) does not import it. |
+| [handlers_search.go](../../internal/formats/nuget/handlers_search.go) | `handleSearch`, `runSearch`: the read scope of the caller from `Resolver.ReadScope`, then `searchWhole` or `searchRows`. |
+| [internal/meta/postgres/queries/nuget_search.sql](../../internal/meta/postgres/queries/nuget_search.sql) | `NuGetSearchCount`, `NuGetSearchPage` (one page, with or without metadata), `NuGetSearchVersions` (the named versions). Generated into `q/` by `make generate`. |
+| [internal/formatdata/nuget/search.go](../../internal/formatdata/nuget/search.go) | `Store.Search`, `Store.SearchCount`: the terms to JSON with their tsquery texts, the rows to `rows.SearchHit`. |
+
+**The way a request runs.** `ParseParams` answers 400 for what is out of bounds (before anything is read). `ReadScope.Shape` decides the path: `ReadNone` answers an empty result without asking the store;
+`ReadAll` (the caller reads the repository whole) asks `SearchCount` and then `Search` for `[skip, skip+take)`; `ReadRows` scans (Q-NUGET-45). The scan asks `Search` with `KeysOnly` and `Limit` 500 until a batch is short,
+asks `MayRead(repo, lower_id, lower_version)` for every listed visible version, keeps the packages with a readable version, applies the `packageType` filter to the latest readable one, counts them
+and keeps the entries of the requested page. It reads the page with `Search` and `Only`, the readable versions of the page, and puts the hits back in the order of the scan. More than 200,000 matches answer 400.
+The endpoint's exposure rules need no code of their own here: the shape and `MayRead` already contain the endpoint's ceiling.
+
+**What the statements do.** One row per package: the latest visible version (listed, not trashed, under `prerelease` and `semVerLevel`), picked by `DISTINCT ON (lower_id)` over `nuget_version_latest`. The terms are tested on that row:
+free text by `strpos` on `lower_id` or by the term's tsquery on `search_doc`; `id` and `packageid` on `lower_id`; `title`, `tags`, `author`, `description` and `summary` on that key of `nuget_version.metadata`; `version` over the package's visible versions; every
+other field never. The tsquery text is built in `search.go` from letters and digits only (`'acme':* <-> 'widgets':*`), so no operator of the query language reaches PostgreSQL; the weight-A variant ranks an ID-token match.
+Ranking is the best tier over the free-text terms (exact ID 0, ID prefix 1, ID substring or token 2, other fields 3), then `lower_id COLLATE "C"`.
+
+**What `search_doc` must hold.** The statement `NuGetInsertVersion` builds the vector from the parts of `rows.VersionInput`. `IDTokens` of the declared ID is what the ingestion hands over as `IDTokens`, and the reindex job (R-NUGET-025) must use the same function; a
+different split changes which packages `json` finds. The metadata object must carry the keys `title`, `summary`, `description`, `authors`, `tags` (a list or a text), `iconUrl`, `licenseUrl`, `projectUrl` and `packageTypes` (a list of objects with `name`): the result and the field terms read them
+(the decoding ignores the case of a key).
+
+**Tests.** Parser, bounds, tokens and the document: `go test ./internal/formats/nuget/search/`. The handler over a fake port with a fake read scope (paths, paging, the scan, the bound): [handlers_search_test.go](../../internal/formats/nuget/handlers_search_test.go).
+The statements against PostgreSQL, with rows inserted in the shape of `NuGetInsertVersion` and real grants (package include and exclude patterns): [test/integration/nuget/search_test.go](../../test/integration/nuget/search_test.go). When the push road exists, a test of push-then-search joins them.
+
+**Adding a field or a tier.** Parse it in [query.go](../../internal/formats/nuget/search/query.go), add the branch to the `CASE` of both statements (`NuGetSearchCount` and `NuGetSearchPage` carry the same predicate and must stay equal), extend the field table of R-NUGET-010, and add the case to `TestR_NUGET_010_ParseSplitsTheQueryIntoTerms` and `TestR_NUGET_010_FieldTermsLimitTheMatch`.

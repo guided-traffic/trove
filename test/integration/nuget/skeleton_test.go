@@ -260,7 +260,6 @@ func TestR_NUGET_001_OperationsThatAreNotBuiltAnswer501(t *testing.T) {
 	a := e.replica("web-a")
 	for _, path := range []string{
 		"v3/flatcontainer/acme.widgets/1.2.3/readme",
-		"v3/search?q=acme",
 	} {
 		t.Run("R-NUGET-001 "+path, func(t *testing.T) {
 			ans := e.get(a, "nuget-local", path, e.tokReader)

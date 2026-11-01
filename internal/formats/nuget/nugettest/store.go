@@ -389,10 +389,33 @@ func (s *Store) Registration(_ context.Context, repo int64, lowerID string) (row
 // Search matches the terms against the text parts of the packages' visible versions with
 // a case-insensitive substring match: the twin has no text search configuration, so it
 // answers what a test of the format needs (which packages, in which order) and not the
-// ranking of PostgreSQL.
+// ranking of PostgreSQL. It honours the page (Offset, Limit), KeysOnly and Only as the
+// database does.
 func (s *Store) Search(_ context.Context, q rows.SearchQuery) ([]rows.SearchHit, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if len(q.Only) > 0 {
+		return s.only(q), nil
+	}
+	hits := s.matching(q)
+	if q.Offset > 0 {
+		hits = hits[min(q.Offset, len(hits)):]
+	}
+	if q.Limit > 0 && len(hits) > q.Limit {
+		hits = hits[:q.Limit]
+	}
+	return hits, nil
+}
+
+// SearchCount counts the packages the terms and the filters match.
+func (s *Store) SearchCount(_ context.Context, q rows.SearchQuery) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.matching(q)), nil
+}
+
+// matching lists every matching package in ID order, unpaged. The caller holds the lock.
+func (s *Store) matching(q rows.SearchQuery) []rows.SearchHit {
 	byID := map[string][]*verRec{}
 	for k, r := range s.versions {
 		if k.repo == q.RepoID {
@@ -424,13 +447,46 @@ func (s *Store) Search(_ context.Context, q rows.SearchQuery) ([]rows.SearchHit,
 		if !matches(latest.in, id, q.Terms) {
 			continue
 		}
-		hit := rows.SearchHit{LowerID: id, Latest: rows.RegistrationVersion{VersionEntry: entry(latest), PackageTypes: slices.Clone(latest.in.PackageTypes), Metadata: latest.in.Metadata}}
-		for _, r := range visible {
-			hit.Listed = append(hit.Listed, entry(r))
-		}
-		hits = append(hits, hit)
+		hits = append(hits, hit(id, visible, q.KeysOnly))
 	}
-	return hits, nil
+	return hits
+}
+
+// only builds the hits of the listed versions a scan found, each package with those versions alone.
+func (s *Store) only(q rows.SearchQuery) []rows.SearchHit {
+	byID := map[string][]*verRec{}
+	var ids []string
+	for _, ref := range q.Only {
+		r, ok := s.versions[vkey{q.RepoID, ref.LowerID, ref.LowerVersion}]
+		if !ok || !r.listed {
+			continue
+		}
+		if _, seen := byID[ref.LowerID]; !seen {
+			ids = append(ids, ref.LowerID)
+		}
+		byID[ref.LowerID] = append(byID[ref.LowerID], r)
+	}
+	var hits []rows.SearchHit
+	for _, id := range ids {
+		recs := byID[id]
+		sort.Slice(recs, func(i, j int) bool { return bytes.Compare(recs[i].in.SortKey, recs[j].in.SortKey) < 0 })
+		hits = append(hits, hit(id, recs, q.KeysOnly))
+	}
+	return hits
+}
+
+// hit builds the hit of a package from its visible versions, ascending.
+func hit(id string, visible []*verRec, keysOnly bool) rows.SearchHit {
+	latest := visible[len(visible)-1]
+	h := rows.SearchHit{LowerID: id, DisplayName: latest.in.DeclaredID, Latest: rows.RegistrationVersion{VersionEntry: entry(latest), PackageTypes: slices.Clone(latest.in.PackageTypes)}}
+	if !keysOnly {
+		h.Latest.Metadata = latest.in.Metadata
+	}
+	for _, r := range visible {
+		h.Listed = append(h.Listed, entry(r))
+		h.ListedTypes = append(h.ListedTypes, slices.Clone(r.in.PackageTypes))
+	}
+	return h
 }
 
 func matches(in rows.VersionInput, id string, terms []rows.SearchTerm) bool {

@@ -44,7 +44,10 @@ type RegistrationPackage struct {
 }
 
 // SearchQuery is one search over the local rows of a repository (R-NUGET-010). The
-// terms are already split and folded by the format.
+// terms are already split and folded by the format. A package matches when its latest
+// version under Prerelease and SemVer2 (listed, not trashed) satisfies every term and the
+// package type; the matches are in rank order: exact ID, ID prefix, ID token or substring,
+// then the other fields, ties by lower_id.
 type SearchQuery struct {
 	RepoID int64
 	// Terms are ANDed; Field is "" for free text, else a field of the query syntax of
@@ -55,6 +58,21 @@ type SearchQuery struct {
 	// PackageType keeps packages whose latest visible version declares it (lowercased);
 	// "" is no filter.
 	PackageType string
+	// Offset and Limit cut a page out of the matches in rank order. Limit is positive.
+	Offset, Limit int
+	// KeysOnly leaves the metadata of the latest version out of the hits: a scan that
+	// only decides which packages and versions a caller may read asks for no more.
+	KeysOnly bool
+	// Only, when set, replaces the terms, the type and the page: the hits are the packages
+	// holding one of these listed versions, each with those versions alone, and Latest is
+	// the highest of them. The scan that found the versions has applied the terms and the
+	// filters of the query already, and the caller's right to read them.
+	Only []SearchVersion
+}
+
+// SearchVersion names a stored version: the lower-case ID and the URL form of the version.
+type SearchVersion struct {
+	LowerID, LowerVersion string
 }
 
 // SearchTerm is one term of a query.
@@ -69,7 +87,12 @@ type SearchTerm struct {
 // metadata the result shows, and every listed visible version.
 type SearchHit struct {
 	LowerID string
-	Latest  RegistrationVersion
-	// Listed are the listed versions visible under the query, ascending.
-	Listed []VersionEntry
+	// DisplayName is packages.display_name, the casing the result shows as the ID.
+	DisplayName string
+	// Latest is the highest visible version; its metadata is empty for a KeysOnly query.
+	Latest RegistrationVersion
+	// Listed are the listed versions visible under the query, ascending, and ListedTypes
+	// their lowercased package type names, index for index.
+	Listed      []VersionEntry
+	ListedTypes [][]string
 }

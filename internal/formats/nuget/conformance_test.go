@@ -109,8 +109,9 @@ func conformance(f *Format) formattest.Fixture {
 	return formattest.Fixture{
 		Host: func() formattest.HostOptions {
 			return formattest.HostOptions{
-				Data:     newDocStore(),
-				Resolver: shadowResolver{out: formats.ShadowOutcome{Proceed: true}},
+				Data: newDocStore(),
+				// The push reads the shadowing verdict and the search the scope of the caller (R-AUTHZ-016).
+				Resolver: conformanceResolver{shadowResolver: shadowResolver{out: formats.ShadowOutcome{Proceed: true}}, scope: scopeFake{shape: formats.ReadAll}},
 				Subject:  authz.Subject{Kind: "user", ID: "11111111-1111-1111-1111-111111111111", Name: "alice"},
 			}
 		},
@@ -144,7 +145,7 @@ func conformance(f *Format) formattest.Fixture {
 			{Name: "registration index", Path: feed("registration-semver2/acme.widgets/index.json"), Seed: seedWidgets},
 			{Name: "registration page", Path: feed("registration-gz/acme.widgets/page/1.0.0/2.0.0.json"), Seed: seedWidgets},
 			{Name: "registration leaf", Path: feed("registration/acme.widgets/1.2.3.json"), Seed: seedWidgets},
-			{Name: "search", Path: feed("search"), Status: notBuilt},
+			{Name: "search", Path: feed("search")},
 			{Name: "autocomplete", Path: feed("autocomplete"), Status: notBuilt},
 			{Name: "symbols", Path: feed("symbols/acme.widgets.pdb/0123456789abcdef0123456789abcdefFFFFFFFF/acme.widgets.pdb"), Status: notBuilt},
 		},
@@ -163,6 +164,16 @@ func conformance(f *Format) formattest.Fixture {
 			formattest.CheckView:    "the package view adapter is WP3.1h",
 		},
 	}
+}
+
+// conformanceResolver answers the shadowing check of the push and the read scope of the search.
+type conformanceResolver struct {
+	shadowResolver
+	scope formats.ReadScope
+}
+
+func (r conformanceResolver) ReadScope(context.Context, *formats.Request, []string) (formats.ReadScope, error) {
+	return r.scope, nil
 }
 
 // seedWidgets stores version 1.2.3 of acme.widgets with its files, the state the content cases

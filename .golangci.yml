@@ -27,6 +27,9 @@ linters:
     - nilerr
     - copyloopvar
   settings:
+    misspell:
+      ignore-rules:
+        - packageid # the NuGet search field of R-NUGET-010
     revive:
       rules:
         - name: exported
