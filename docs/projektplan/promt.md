@@ -273,10 +273,13 @@ Found on 2026-11-01 while writing the manual (`docs/manual`) and the design chan
 - **F-16 · No browser journey visits the help area, and the new palette has not been through the browser
   tier's colour-contrast check** (confirmed). Done when a journey opens `/help` and a page from the "?" and
   axe passes with `color-contrast` in the light (English) and the dark (German) scheme.
-- **F-17 · Two Helm versions on the owner's machine** (confirmed). A render used Homebrew's `helm` 3.21.3
-  instead of the pin `HELM_VERSION=v4.3.1` in [versions.env](../../tools/versions.env). Machine-level: name the
-  command to the owner (`which -a helm`; `brew uninstall helm`; install the pinned version the way
-  `make versions-check` expects), do not change the machine.
+- **F-17 · Three tools on the owner's machine differ from their pins** (confirmed by `make versions-check`).
+  helm v3.21.3 (Homebrew formula `helm@3`, pin v4.3.1); kubectl v1.36.2 (Homebrew `kubernetes-cli`, pin
+  v1.37.2) with a second kubectl v1.32.2 from Docker Desktop in `/usr/local/bin`; docker buildx
+  v0.28.0-desktop.1 (Docker Desktop's plugin, pin v0.38.1). Machine-level: the owner runs
+  `brew uninstall helm@3 && brew install helm`, `brew upgrade kubernetes-cli`, `sudo rm /usr/local/bin/kubectl`,
+  `brew install docker-buildx` and links its binary into `~/.docker/cli-plugins/`; done when
+  `make versions-check` prints `versions ok`. A run does not change the machine.
 
 ### Stale documentation
 
