@@ -30,14 +30,23 @@ func TestStandingWarnings(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan struct{})
 		go func() { h.app.warnLoop(ctx, 20*time.Millisecond); close(done) }()
-		time.Sleep(200 * time.Millisecond)
+		// The loop repeats every 20 ms; how many repeats a given stretch of wall-clock time holds
+		// depends on the scheduler, so wait for the third one instead of sleeping for a fixed time.
+		var after, anon int
+		for end := time.Now().Add(startGuard); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+			after = strings.Count(h.logs.String(), "server.base_url is not set")
+			anon = strings.Count(h.logs.String(), "system.bootstrap_anonymous_read is true")
+			if after >= before+3 && anon >= 4 {
+				break
+			}
+		}
 		cancel()
 		<-done
-		if after := strings.Count(h.logs.String(), "server.base_url is not set"); after < before+3 {
+		if after < before+3 {
 			t.Fatalf("base_url warning count %d -> %d, want at least 3 repeats", before, after)
 		}
-		if n := strings.Count(h.logs.String(), "system.bootstrap_anonymous_read is true"); n < 4 {
-			t.Fatalf("anonymous-read warning logged %d times", n)
+		if anon < 4 {
+			t.Fatalf("anonymous-read warning logged %d times", anon)
 		}
 	})
 	t.Run("R-OPS-002 bootstrap_anonymous_read warns at start", func(t *testing.T) {

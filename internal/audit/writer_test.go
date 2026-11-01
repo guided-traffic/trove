@@ -118,9 +118,14 @@ func denied(actor, action, repo, path string) Event {
 	}
 }
 
+// settle bounds a wait for something the writer does on its own goroutine. It guards against a
+// writer that never gets there and is not a time budget: a test process that shares its CPUs with
+// hundreds of others takes minutes for what takes milliseconds alone.
+const settle = 30 * time.Second
+
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(settle)
 	for time.Now().Before(deadline) {
 		if cond() {
 			return
@@ -132,7 +137,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 
 func flush(t *testing.T, w *Writer) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), settle)
 	defer cancel()
 	if err := w.Flush(ctx); err != nil {
 		t.Fatalf("Flush: %v", err)
@@ -184,7 +189,7 @@ func TestR_OPS_015_ARecordNeverBlocksAndAFullBufferDropsToTheLog(t *testing.T) {
 	}()
 	select {
 	case <-done:
-	case <-time.After(3 * time.Second):
+	case <-time.After(settle): // 5000 records take 0.2 s alone; a Record that blocks never returns
 		t.Fatal("Record blocked while the sink did not answer")
 	}
 	// The writer holds at most one batch; the buffer holds 10; the rest dropped.
@@ -214,8 +219,10 @@ func TestR_OPS_015_APostgreSQLOutageKeepsTheBatchAndRetries(t *testing.T) {
 	s.mu.Lock()
 	s.failing = nil
 	s.mu.Unlock()
-	clk.add(time.Minute) // past the backoff
-	waitFor(t, "the retry", func() bool { return len(s.stored()) == 1 })
+	// Time passes until the retry happens. The backoff starts when the failed attempt returns, which
+	// can be after this goroutine saw the attempt: a single step of the clock taken before the backoff
+	// began would be undone by it, and the clock would never move again.
+	waitFor(t, "the retry", func() bool { clk.add(time.Minute); return len(s.stored()) == 1 })
 	flush(t, w)
 	if m.recorded.Load() != 1 || m.dropped.Load() != 0 {
 		t.Errorf("recorded %d dropped %d", m.recorded.Load(), m.dropped.Load())

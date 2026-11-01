@@ -47,7 +47,7 @@ func startEndpoints(t *testing.T, role string, extra map[string]string) *harness
 	case <-a.Started():
 	case err := <-a.fatal:
 		t.Fatalf("start-up failed: %v\n%s", err, logs.String())
-	case <-time.After(10 * time.Second):
+	case <-time.After(startGuard):
 		t.Fatalf("not started\n%s", logs.String())
 	}
 	h.ops = "http://" + a.OpsAddr().String()
@@ -264,7 +264,7 @@ func TestEndpointProcesses(t *testing.T) {
 		return m
 	}
 	listening := func(addr string) bool {
-		c, err := net.DialTimeout("tcp", addr, 300*time.Millisecond)
+		c, err := net.DialTimeout("tcp", addr, startGuard) // a refusal is immediate; the bound only guards a starved connect
 		if err == nil {
 			c.Close()
 		}
@@ -340,7 +340,7 @@ func TestEndpointProcesses(t *testing.T) {
 			if !strings.Contains(err.Error(), "endpoint customers") {
 				t.Fatalf("error does not name the endpoint: %v", err)
 			}
-		case <-time.After(5 * time.Second):
+		case <-time.After(startGuard):
 			t.Fatal("start-up did not fail")
 		}
 	})

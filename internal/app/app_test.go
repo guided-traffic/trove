@@ -125,6 +125,12 @@ func holdRoutes(r *httpserver.Router) {
 	})
 }
 
+// startGuard bounds a wait for a start-up that is expected to finish (or to fail) on its own. It
+// guards against a start-up that never ends and is not a time budget: the start-up of a replica
+// took more than 10 s when 300 test processes shared 20 CPUs, so a bound below that fails on a
+// loaded CI runner (docs/developer/build-and-test.md).
+const startGuard = 60 * time.Second
+
 func start(t *testing.T, role string, extra map[string]string) *harness {
 	t.Helper()
 	env := baseEnv(t, extra)
@@ -143,7 +149,7 @@ func start(t *testing.T, role string, extra map[string]string) *harness {
 	case <-a.Started():
 	case err := <-a.fatal:
 		t.Fatalf("start-up failed: %v\n%s", err, logs.String())
-	case <-time.After(10 * time.Second):
+	case <-time.After(startGuard):
 		t.Fatalf("not started\n%s", logs.String())
 	}
 	if a.ClientAddr() != nil {
@@ -291,7 +297,7 @@ func TestListeners(t *testing.T) {
 			if !strings.Contains(err.Error(), "GET /v2/x") {
 				t.Fatalf("error does not name the route: %v", err)
 			}
-		case <-time.After(30 * time.Second): // a guard against a start-up that never fails, not a time budget: a loaded CI runner took more than 5 s
+		case <-time.After(startGuard):
 			t.Fatal("start-up did not fail")
 		}
 	})
