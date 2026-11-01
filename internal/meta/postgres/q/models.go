@@ -374,6 +374,49 @@ type NpmVersion struct {
 	PublishedAt      pgtype.Timestamptz
 }
 
+type NugetSymbolFile struct {
+	RepositoryID int64
+	SymbolKey    string
+	VersionID    int64
+	ItemID       int64
+	PdbKind      string
+	Checksum     []byte
+}
+
+type NugetSymbolPackage struct {
+	VersionID  int64
+	ItemID     int64
+	IndexedAt  pgtype.Timestamptz
+	IndexError pgtype.Text
+}
+
+type NugetTombstone struct {
+	RepositoryID int64
+	LowerID      string
+	LowerVersion string
+	Sha512       []byte
+	DeletedAt    pgtype.Timestamptz
+	DeletedBy    pgtype.UUID
+	Kind         string
+}
+
+type NugetVersion struct {
+	VersionID       int64
+	RepositoryID    int64
+	LowerID         string
+	DeclaredID      string
+	OriginalVersion string
+	SortKey         []byte
+	IsPrerelease    bool
+	IsSemver2       bool
+	Listed          bool
+	PublishedAt     pgtype.Timestamptz
+	PackageTypes    []string
+	Metadata        []byte
+	SearchDoc       interface{}
+	Origin          string
+}
+
 type OidcLoginFlow struct {
 	StateSha256          []byte
 	ProviderID           string

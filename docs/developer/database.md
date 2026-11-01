@@ -372,8 +372,27 @@ edits a migration of another work package. Query files by owner: `proxy.sql`, `i
 `tables.Register(name, class, Options{CycleBreak})` with classes `Data`, `Blobs`, `Transient`, `Schema`.
 `postgres.CheckTableRegistry` reads the catalog and reports unregistered tables and foreign-key cycles among
 exported tables without a `CycleBreak`. Tables of this package: `tables.go`. Tables created for other packages
-by the first migrations: `tables_m0.go`, by the M1 migrations: `tables_m1.go` and by the M2 migrations: `tables_m2.go`; the owning package deletes its line there when it registers the table
+by the first migrations: `tables_m0.go`, by the M1 migrations: `tables_m1.go` and by the M2 migrations: `tables_m2.go` and by the M3 migration: `tables_m3.go`; the owning package deletes its line there when it registers the table
 itself (a duplicate panics at start-up).
+
+## M3 tables
+
+Migration [00017_nuget](../../internal/meta/postgres/migrations/00017_nuget.sql) creates every table of the NuGet format
+at once, as an expand file without a backfill, a `no-transaction` header or a `requires-app`; a release that does not
+know NuGet never reads the tables. The M3 binary's `RequiredSchema()` is 17. Every table is registered as data in
+[tables_m3.go](../../internal/meta/postgres/tables_m3.go); the package that owns a table takes the line over in the
+same change. The statements the data port needs at minimum are in
+[nuget_local.sql](../../internal/meta/postgres/queries/nuget_local.sql); the values that cross the port are in
+[rows](../../internal/formats/nuget/rows/rows.go), a leaf by the rule of R-ARCH-002 (`internal/formats/<id>/rows` imports
+only `errs` and the standard library; `archtest.CheckLayers` enforces it).
+
+| Migration | Area (work package) | Tables | Requirements |
+|---|---|---|---|
+| [00017_nuget](../../internal/meta/postgres/migrations/00017_nuget.sql) | NuGet (WP3.S) | `nuget_version` (with the `search_doc` GIN index and the latest-version index), `nuget_tombstone`, `nuget_symbol_package`, `nuget_symbol_file` (P1) | R-NUGET-005, R-NUGET-006, R-NUGET-020, R-NUGET-021, R-NUGET-033 |
+
+There is no trigram index and no `CREATE EXTENSION` (Q-NUGET-12). `search_doc` is built by `NuGetInsertVersion` with the
+`simple` configuration (Q-NUGET-18). The checks and indexes beyond the specification's sketch are Q-NUGET-19. The
+journal of Q-NUGET-10 is a set of objects, not a table.
 
 ## sqlc
 

@@ -555,13 +555,16 @@ CREATE TABLE nuget_version (
     published_at     timestamptz NOT NULL,
     package_types    text[]      NOT NULL DEFAULT '{dependency}',  -- lowercased names
     metadata         jsonb       NOT NULL,         -- table above
-    search_doc       tsvector    NOT NULL,         -- ID tokens, title, tags, authors, summary, description
+    search_doc       tsvector    NOT NULL,         -- 'simple' configuration, weighted: ID tokens A, title and tags B, authors and summary C, description D (Q-NUGET-18)
     origin           text        NOT NULL CHECK (origin IN ('push', 'upload', 'copy', 'cache'))
 );
 CREATE INDEX nuget_version_latest ON nuget_version (repository_id, lower_id, sort_key DESC) WHERE listed;
 CREATE INDEX nuget_version_search ON nuget_version USING gin (search_doc);
-CREATE INDEX nuget_version_id_trgm ON nuget_version USING gin (lower_id gin_trgm_ops);
 ```
+
+The sketch has no trigram index on `lower_id`: it would need `CREATE EXTENSION pg_trgm`, which no
+migration of trove runs (Q-NUGET-12). The created schema adds CHECKs on the empty IDs and digest
+lengths and the indexes of the foreign keys and the symbol job's queue (Q-NUGET-19).
 
 - Versions whose `package_versions.trashed_at` is set are invisible to every NuGet document.
 - Size, digests and download counts come from `items`, `blobs` and `item_download_stats` of the
@@ -971,8 +974,9 @@ package whose latest version under the filters is visible:
 - Unlisted versions never appear; a package with no listed visible version is absent.
 - This requirement covers local repositories and the cache-only mode of remote repositories.
   Forwarding to an upstream is R-NUGET-016, merging in virtual repositories R-NUGET-018.
-- Implementation hint: the candidate set comes from `nuget_version` (trigram index on `lower_id`,
-  `search_doc`), the latest visible version per package from
+- Implementation hint: the candidate set comes from `nuget_version` (`search_doc` with prefix
+  matching on its tokens, and the `nuget_version_latest` index for a term that is an ID; no
+  trigram index, Q-NUGET-12), the latest visible version per package from
   `DISTINCT ON (lower_id) … ORDER BY lower_id, sort_key DESC`; permission filtering, ranking and
   paging happen in SQL so `totalHits` is exact.
 
@@ -2829,6 +2833,38 @@ R-NUGET-025: a reindex enqueues jobs instead of indexing symbols. R-NUGET-028:
 a row for `nuget-symbol-index` in [architecture.md](../architecture.md) R-ARCH-016's kind table;
 the worker spool note in [ha-and-helm.md](../ha-and-helm.md).
 
+### Q-NUGET-12 · No trigram index on package IDs
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The first sketch of `nuget_version` had `nuget_version_id_trgm`, a GIN index on `lower_id` with
+`gin_trgm_ops`, to answer a search term that is the middle of an ID. The operator class belongs to
+the `pg_trgm` extension. No migration of trove creates an extension today, and an installation on a
+managed PostgreSQL may run the application's migrations with a role that is not allowed to.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Create `pg_trgm` in the migration | `CREATE EXTENSION IF NOT EXISTS pg_trgm` in 00017, the index as sketched | Substring search on IDs is indexed | The first migration that needs a privilege beyond the owner of the schema; an install whose migration role may not create extensions cannot start the release; the extension is a second thing to upgrade and to restore |
+| (b) No trigram index; token search on `search_doc` | `search_doc` carries the ID split at its separators (weight A); a term matches whole tokens and token prefixes (`to_tsquery('simple', 'wid:*')`); a term that is an ID prefix is also served by `nuget_version_latest` | No extension, no privilege; matches how NuGet clients search (words of an ID such as `Newtonsoft`, `Json`); the same GIN index serves title, tags and description | A term in the middle of a token (`tonsoft`) matches nothing; the result list differs from a substring match on those terms |
+| (c) Substring search with `ILIKE '%term%'` and no index | A sequential scan over the repository's rows | Matches everything | Cost grows with the number of versions; every search scans |
+
+**Choice:** (b) — no `CREATE EXTENSION`, no trigram index; search reads `search_doc`.
+
+**Rationale:**
+- A migration that needs more than the schema owner's rights changes what an installation must
+  grant, for a gain on a query shape the clients do not send: the NuGet clients and the gallery
+  search by words, and the protocol defines `q` as a search term, not as a substring.
+- The ID tokens in `search_doc` make `Acme.Widgets` findable by `acme`, `widgets` and `wid`.
+- (c) turns a cosmetic gain into a scan of the largest table of the format.
+- The development agent would revisit this if users report that the middle of an ID must be found,
+  or if a measured search plan shows the token prefix match too slow. The trigram index would then
+  be added in a later expand step that creates the extension and the index, behind a documented
+  privilege requirement.
+
+**Applied in the spec:** R-NUGET-005: the sketch drops `nuget_version_id_trgm`. R-NUGET-010: the
+implementation hint names `search_doc` and `nuget_version_latest` as the candidate sources.
+Migration `00017_nuget.sql` carries no `CREATE EXTENSION`.
+
 ### Q-NUGET-13 · A raw deploy into a NuGet repository answers 409
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -2906,6 +2942,62 @@ revisits this when a second format wants another notion of a stem.
 **Applied in the spec:** R-NUGET-016 (the withheld queries name `Resolver.KeepsAway`). Code:
 `internal/repository/withheld.go`, `internal/virtual/engine.go`, `internal/formathost/virtual.go`.
 Tests: `TestR_REPO_023_KeepsAwayAWithheldTerm`, `TestR_NUGET_016_BridgeKeepsAway`.
+
+### Q-NUGET-18 · The text search configuration and weights of `search_doc`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+`search_doc` is a `tsvector` that search ranks and filters on (R-NUGET-010). It needs a text search
+configuration and a rule for who builds it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `simple` configuration, built in the insert statement from the parts | No stemming, no stop words; ID tokens weight A, title and tags B, authors and summary C, description D; the format hands over the parts, the statement calls `to_tsvector` | A package ID or a tag is not prose: `windows`, `tools` or `is` are searched as written; the same on every installation whatever `default_text_search_config` says; the weights give the ID the highest rank | Descriptions in English are not stemmed (`widget` does not match `widgets`) |
+| (b) `english` configuration | Stemming and stop words | Matches word forms in descriptions | Stems IDs and tags, drops words such as `is` or `the` from a tag search, and fits one language; the result depends on the configuration of the installation unless it is named everywhere |
+| (c) The format builds the vector text | The format renders the `tsvector` literal and the store casts it | The store knows nothing of weights | The store would have to trust a literal; the weights and configuration move into Go and into every writer (push, copy, cache fill, reindex) |
+
+**Choice:** (a) — the `simple` configuration, weights A to D, built by the insert statement
+(`NuGetInsertVersion`) from the parts of `rows.VersionInput`.
+
+**Rationale:** one statement owns the vector, so the push, the copy, the cache fill and the
+reindex (R-NUGET-025) produce the same one. `simple` is the only configuration that does not
+change what an ID or a tag means. The development agent would revisit this if a search
+for a word form of a description is asked for; an additional vector column with the `english`
+configuration, ranked below the ID, would then be an expand step.
+
+**Applied in the spec:** R-NUGET-005: the comment on `search_doc`. The statement is in
+`internal/meta/postgres/queries/nuget_local.sql`.
+
+### Q-NUGET-19 · One schema step for the whole NuGet format, with indexes and CHECKs beyond the sketch
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The tables of the format appear on three pages (R-NUGET-005, R-NUGET-006, R-NUGET-020) and one is
+P1 (`nuget_symbol_file`, R-NUGET-021). The M2 migrations created every table of the milestone at
+once (Q-ARCH-190), so that the generated models change in one place.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One migration, `00017_nuget`, with all four tables | `nuget_version`, `nuget_tombstone`, `nuget_symbol_package` and `nuget_symbol_file`, plus CHECKs and the indexes the foreign keys and the symbol queue need | One expand step; the registry and the backup export classes cover the P1 table from the start (R-NUGET-033); no migration follows in M6 | An empty table until M6 |
+| (b) Without `nuget_symbol_file` | The P1 table arrives with R-NUGET-021 | No unused table | A second step in a later release, the first one that must be applied against replicas of the older release |
+| (c) As the sketch, no extra indexes | Only the primary keys | Smallest file | A delete of an `items` row scans `nuget_symbol_package` and `nuget_symbol_file` for the cascade; the lag metric and the backfill scan the whole symbol table |
+
+**Choice:** (a). Beyond the sketch: CHECKs that `lower_id`, `declared_id`, `original_version`
+and `sort_key` are not empty, that `sha512` has 64 bytes and a symbol `checksum` 32, and that
+`index_error` is at most 1024 characters; the indexes `nuget_symbol_package_item`,
+`nuget_symbol_package_pending` (rows with `indexed_at IS NULL`), `nuget_symbol_file_version` and
+`nuget_symbol_file_item`. `nuget_tombstone` has no foreign key to `package_versions` or `items`,
+because it outlives both (R-NUGET-006). The journal of Q-NUGET-10 is a set of objects, not a table.
+
+**Rationale:** a table that backups must export is cheaper to register once. The extra indexes
+serve the cascades of the foreign keys and the two scans the symbol work does; none of them is on
+a hot path of a push. The development agent would revisit this if M6 changes the shape of
+`nuget_symbol_file`; it would then be an expand step like any other.
+
+**Applied in the spec:** R-NUGET-005 notes the CHECKs and indexes under the sketch of
+`nuget_version`; R-NUGET-006 and R-NUGET-020 keep their sketches. Migration `00017_nuget.sql` and
+[tables_m3.go](../../../internal/meta/postgres/tables_m3.go) register all four tables as `data`.
+
 ### Q-NUGET-20 · Dependency version ranges are parsed without floating versions
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
