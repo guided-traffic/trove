@@ -178,6 +178,12 @@ type Options struct {
 	// Manual is the embedded manual behind the manual operations (manual_api.go);
 	// nil answers them with 503.
 	Manual *manual.Manual
+	// LoadManual produces the manual on the first request that needs it, when Manual
+	// is nil. It must be safe for concurrent use and return the same result every
+	// time (the composition root passes a sync.OnceValues, shared by the endpoints),
+	// so a replica does not render the manual before it is ready (Q-OPS-157). An
+	// error answers the operations with 503.
+	LoadManual func() (*manual.Manual, error)
 	// <<< M2 manual
 }
 

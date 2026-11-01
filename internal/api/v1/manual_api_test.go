@@ -3,8 +3,10 @@ package v1
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	docs "github.com/guided-traffic/trove/docs/manual"
@@ -94,5 +96,50 @@ func TestR_API_054_AnonymousReadersFollowTheAnonymousAccessSetting(t *testing.T)
 	}
 	if w := get(manualServer(t, nil, authed, false), "/api/v1/manual"); w.Code != 503 {
 		t.Errorf("no manual: %d", w.Code)
+	}
+}
+
+// TestR_API_054_TheManualIsLoadedByTheFirstRequestThatNeedsIt: the replica does not
+// render the manual before it is ready (Q-OPS-157); the first operation does, once,
+// and a loader that fails answers 503.
+func TestR_API_054_TheManualIsLoadedByTheFirstRequestThatNeedsIt(t *testing.T) {
+	build := func(load func() (*manual.Manual, error)) http.Handler {
+		doc, err := LoadDocument(EmbeddedYAML())
+		if err != nil {
+			t.Fatal(err)
+		}
+		router := httpserver.NewClientRouter()
+		New(Options{
+			Document: doc, Identity: Identity{Replica: "r", Role: "web"}, Ready: func() bool { return true },
+			Access: allowAll{}, Replicas: fakeReplicas{}, Facts: fakeFacts{},
+			Repositories: RepositoryServices{AnonymousAccess: func(context.Context) (bool, error) { return false, nil }},
+			LoadManual:   load,
+		}).Register(router)
+		res, err := httpserver.NewResolver(nil, "https://trove.example.com", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return httpserver.Chain{Router: router, Resolver: res, Authenticate: authed, Replica: "r", ReplicaHeader: httpserver.ReplicaAuthenticated}.Handler()
+	}
+	loads := 0
+	m, err := manual.Load(docs.Files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := build(sync.OnceValues(func() (*manual.Manual, error) { loads++; return m, nil }))
+	if loads != 0 {
+		t.Fatalf("the manual was loaded when the server was built (%d)", loads)
+	}
+	for i := 0; i < 3; i++ {
+		if w := get(h, "/api/v1/manual"); w.Code != 200 {
+			t.Fatalf("%d %s", w.Code, w.Body.String())
+		}
+	}
+	if loads != 1 {
+		t.Fatalf("the manual was loaded %d times, want once", loads)
+	}
+	failing := build(func() (*manual.Manual, error) { return nil, errors.New("broken") })
+	if w := get(failing, "/api/v1/manual"); w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("a manual that cannot be loaded: %d, want 503", w.Code)
 	}
 }

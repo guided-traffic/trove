@@ -5451,6 +5451,31 @@ The development agent would revisit this when R-OPS-024 is built: the handler th
 **Applied in the spec:** R-OPS-004 (note on the member). Code: `internal/api/v1/handlers.go` (`SystemInfo`),
 `web/src/app/features/system/system-status.html`.
 
+### Q-OPS-157 · The start-up renders the manual on the first request and parses the API document once
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: step 9 of R-ARCH-024 (the client listener) rendered every page of the embedded manual through the README renderer and parsed the management API
+document twice (the authentication area for its public operations, the listener for its route table). Measured with `-race`, the manual was about 1.2 s of
+wall time of 1.7 s for the step, and the document 0.5 s each. On a CPU-limited CI runner with `-race` and other packages building at the same time the step
+took longer than the 10 s the test harness (`start` in `internal/app/app_test.go`) allows, and `TestRoles` "role all …" failed with "not started". A replica
+with a CPU limit pays the same on every start and every rollout before it can answer its probes.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Render the manual on the first request that needs it; parse the document once (chosen) | `v1.Options.LoadManual`, a `sync.OnceValues` shared by the endpoints; `App.apiDocument` | A replica is ready after the work it needs to serve; a manual that cannot be loaded answers the manual operations with 503 and an error log (the test of `internal/manual` loads the same files, so a broken manual never reaches a build) | The first manual request pays the render once (the UI loads the contents on opening the help) |
+| (b) Render in the background after the start | A goroutine | Start-up is short, the first request is warm | CPU competes with the first requests on a limited pod; a failure is found late as well |
+| (c) Raise the timeout of the test | 10 s to 30 s | None | Hides the cost, which a CPU-limited pod pays too |
+
+**Choice:** (a). The manual's pages are static text, so nothing is lost by deferring them; the document is immutable and shared. The start-up check
+(step 10) does not involve either.
+
+**Rationale:** work a replica needs only for an optional feature should not delay its readiness, least of all under a CPU limit. The development agent would
+revisit this if the first manual request showed up in latency reports, then with (b).
+
+**Applied in the spec:** this decision (step 9 of R-ARCH-024 binds the listener without rendering the manual; the text of that step needs no change). Code: `startClient` and `apiDocument` in `internal/app/app.go`,
+`Server.manual` in `internal/api/v1/manual_api.go`. Test: `TestR_API_054_TheManualIsLoadedByTheFirstRequestThatNeedsIt`.
+
 ## What this does not cover
 
 ### H-53 · Span export bypasses the egress address policy

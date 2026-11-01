@@ -67,10 +67,15 @@ func (s *Server) manual(r *http.Request) (*manual.Manual, error) {
 	if err := s.anonymousGate(r.Context()); err != nil {
 		return nil, err
 	}
-	if s.o.Manual == nil {
-		return nil, unavailable("The manual")
+	if s.o.Manual != nil {
+		return s.o.Manual, nil
 	}
-	return s.o.Manual, nil
+	if s.o.LoadManual != nil {
+		if m, err := s.o.LoadManual(); err == nil && m != nil {
+			return m, nil
+		}
+	}
+	return nil, unavailable("The manual")
 }
 
 func manualRef(p *manual.Page) *gen.ManualPageRef {

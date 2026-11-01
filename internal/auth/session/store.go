@@ -248,7 +248,7 @@ func (s *Store) Peek(ctx context.Context, cookie string) (Info, error) {
 		return Info{}, ErrInvalid
 	}
 	key := string(Hash(cookie))
-	e, err := s.lookup(ctx, key)
+	e, err := s.peekLookup(ctx, key)
 	if errors.Is(err, errGone) {
 		return Info{}, ErrInvalid
 	}
@@ -273,6 +273,22 @@ func (s *Store) Peek(ctx context.Context, cookie string) (Info, error) {
 		return Info{}, ErrInvalid
 	}
 	return e.info(), nil
+}
+
+// peekLookup is [Store.lookup] for a read that must leave no trace: it uses a
+// cached entry, but a miss is read from PostgreSQL (sharing the query of
+// concurrent requests) and not kept. An entry cached by a peek would hold its row
+// for the whole SafetyTTL although nothing validated the session since, and a
+// change of the row that sends no message (the time of the last authentication)
+// would reach this replica late.
+func (s *Store) peekLookup(ctx context.Context, key string) (*entry, error) {
+	if s.cache != nil && s.o.Fresh != nil && s.o.Fresh.FreshWithin(s.o.RevocationBound) {
+		if e, ok := s.cache.Get(key); ok {
+			return e, nil
+		}
+		return s.shared(ctx, key)
+	}
+	return s.lookup(ctx, key)
 }
 
 // lookup answers from the cache while the change log is fresh (Q-AUTH-10) and
@@ -334,7 +350,7 @@ type flight struct {
 // bound ago, or starts one. The query then started after every change older
 // than the bound, so sharing keeps the bound; its result is never cached.
 func (s *Store) shared(ctx context.Context, key string) (*entry, error) {
-	return s.sharedFill(ctx, key, s.fill)
+	return s.sharedFill(ctx, key, s.readRow)
 }
 
 // flightFillTimeout bounds the query of a shared lookup. It runs without the

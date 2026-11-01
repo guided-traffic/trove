@@ -176,7 +176,7 @@ func (a *App) wireAuth(_ context.Context, id identityArea, ss sessionsArea, lim 
 		return authArea{}, err
 	}
 	cfg := a.cfg.Auth
-	publicOps, err := publicOperations()
+	publicOps, err := a.publicOperations()
 	if err != nil {
 		return authArea{}, err
 	}
@@ -193,7 +193,7 @@ func (a *App) wireAuth(_ context.Context, id identityArea, ss sessionsArea, lim 
 // wireShell is the shell area: the same stage over an empty token store, so the
 // HTTP shell of the tests has one authentication code path.
 func (a *App) wireShell(context.Context) (shellArea, error) {
-	publicOps, err := publicOperations()
+	publicOps, err := a.publicOperations()
 	if err != nil {
 		return shellArea{}, err
 	}
@@ -205,8 +205,8 @@ func (a *App) wireShell(context.Context) (shellArea, error) {
 
 // publicOperations lists the patterns of the management API operations whose
 // declaration is public, or public by a switch.
-func publicOperations() (map[string]bool, error) {
-	doc, err := v1.LoadDocument(v1.EmbeddedYAML())
+func (a *App) publicOperations() (map[string]bool, error) {
+	doc, err := a.apiDocument()
 	if err != nil {
 		return nil, err
 	}

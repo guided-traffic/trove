@@ -83,6 +83,43 @@ func TestR_AUTH_010_PeekChangesNothing(t *testing.T) {
 	}
 }
 
+// TestR_AUTH_023_PeekLeavesTheCacheAsItFound: a Peek that misses reads the row and
+// does not keep it. A session cached by a read-only peek (the redirect of /ui/ right
+// after a sign-in) would hold its row for the whole SafetyTTL, so a change of the
+// row that sends no message, such as a re-authentication time, would reach this
+// replica late; only the requests that validate fill the cache.
+func TestR_AUTH_023_PeekLeavesTheCacheAsItFound(t *testing.T) {
+	reg, err := cache.NewRegistry(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Store{flights: map[string]*flight{}, o: Options{RevocationBound: time.Minute, Fresh: freshGate{}}}
+	s.cache = registerCache(reg, time.Minute, 10)
+	secret := NewSecret()
+	now := time.Now()
+	reads := 0
+	s.fillHook = func(context.Context, string) (*entry, error) {
+		reads++
+		return &entry{id: "s", principalID: "u", absDeadline: now.Add(time.Hour), idle: time.Hour, lastSeen: time.Now()}, nil
+	}
+	for i := 1; i <= 2; i++ {
+		if info, err := s.Peek(context.Background(), secret); err != nil || info.ID != "s" {
+			t.Fatalf("peek %d: %+v %v", i, info, err)
+		}
+		if n := s.cache.Len(); n != 0 {
+			t.Fatalf("after peek %d the cache holds %d entries: a peek must not fill it", i, n)
+		}
+	}
+	if reads != 2 {
+		t.Fatalf("%d row reads for two peeks of an uncached session", reads)
+	}
+	// An entry that validation cached is used by a peek without a read.
+	s.cache.Set(string(Hash(secret)), &entry{id: "cached", principalID: "u", absDeadline: now.Add(time.Hour), idle: time.Hour, lastSeen: time.Now()})
+	if info, err := s.Peek(context.Background(), secret); err != nil || info.ID != "cached" || reads != 2 {
+		t.Fatalf("a cached session: %+v %v after %d reads", info, err, reads)
+	}
+}
+
 // TestR_AUTH_010_PeekAsksTheRowWhenTheReplicasViewSaysTheSessionEnded: an entry
 // whose idle deadline has passed on this replica may have been touched elsewhere;
 // Peek reads the row (and writes nothing) and answers from it.

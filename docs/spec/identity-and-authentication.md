@@ -5040,6 +5040,31 @@ goroutine that no HTTP server recovers: a panic in the query would end the proce
 signed in, so it should exist once. The development agent would revisit this if a panic ever fired in production, then to find its cause.
 **Applied in the spec:** R-AUTH-010, R-AUTH-023. Code: `entry.live`, `Store.readRow`, `Store.sharedFill`.
 
+### Q-AUTH-185 · A peek uses the session cache and does not fill it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `Store.Peek` (Q-API-184) resolved a cookie through `lookup`, which fills the session cache on a miss. The redirect of `/ui/` right after a
+sign-in therefore cached the session on the replica that answered it, before any request had validated it. The cache holds a row for `auth.tokens.cache_ttl`
+(15 s), and a change of the row that sends no message (the time of the last authentication, which the re-authentication check R-AUTH-011 reads) reaches
+the replica only when the entry expires. The end-to-end test E1.11 ("re-authentication, logout", all three Valkey modes) changes that time in the
+database and expects every replica to refuse a token creation within four seconds; it failed on the replicas whose cache the redirect had filled.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A peek reads a cached entry but a miss is read from PostgreSQL, sharing the query of concurrent peeks, and not kept (chosen) | `Store.peekLookup`; only `Validate` fills the cache | A read-only call leaves the cache as it found it, as it leaves the row; the cache holds what authenticated requests asked for | A peek of an uncached session costs a query each time (the redirect of `/ui/` happens once per page load) |
+| (b) Let a peek fill the cache | As built | One query per session and TTL | The cache is filled by a request that authenticates nobody, and the row it holds can be older than the change that no message announced |
+| (c) Invalidate the entry when the row changes | A message on the re-authentication write | Exact | The product writes the time only by creating a new session, which already sends the message; the case is an out-of-band write |
+
+**Choice:** (a). The real product path is unaffected: a re-authentication creates a session and ends the old one with a message. What (a) removes is
+a cache entry that no authenticated request asked for.
+
+**Rationale:** "changes nothing" should include the cache that later decisions read. The development agent would revisit this if the redirect of `/ui/` showed
+up as a hot read, then with a short cache of its own that `Validate` does not read.
+
+**Applied in the spec:** R-UI-045 (the locale redirect reads the session without keeping it). Code: `Store.peekLookup` in `internal/auth/session/store.go`.
+Test: `TestR_AUTH_023_PeekLeavesTheCacheAsItFound`.
+
 ### Q-AUTH-79 · How the end-to-end tests drive the browser login of E1.1 and disable the break-glass account
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.

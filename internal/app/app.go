@@ -82,6 +82,12 @@ type App struct {
 	// memGuard is the memory guard every endpoint's chain shares (memory.go).
 	memGuard *httpserver.MemoryGuard
 
+	// docOnce, doc and docErr hold the parsed management API document, which the
+	// authentication area and the client listener both need (apiDocument).
+	docOnce sync.Once
+	doc     *v1.Document
+	docErr  error
+
 	started   atomic.Bool
 	startedCh chan struct{}
 	fatal     chan error
@@ -410,12 +416,21 @@ func (a *App) startComponent(ctx context.Context, c Component) error {
 	return nil
 }
 
+// apiDocument parses the management API document once per process: the
+// authentication area reads the public operations from it and the client listener
+// checks its route table against it, and parsing it is a large part of the
+// start-up (Q-OPS-157). It is not changed after it is loaded.
+func (a *App) apiDocument() (*v1.Document, error) {
+	a.docOnce.Do(func() { a.doc, a.docErr = v1.LoadDocument(v1.EmbeddedYAML()) })
+	return a.doc, a.docErr
+}
+
 // startClient builds, for every endpoint this process serves, the router of its
 // surface and its chain, checks the route table and opens the listener (step 9,
 // R-EP-002). Every listener is bound before the replica can become ready.
 func (a *App) startClient() error {
 	cfg := a.cfg
-	doc, err := v1.LoadDocument(v1.EmbeddedYAML())
+	doc, err := a.apiDocument()
 	if err != nil {
 		return err
 	}
@@ -428,11 +443,16 @@ func (a *App) startClient() error {
 		return fmt.Errorf("ui: %w", err)
 	}
 	// The manual is the binary's own text; the test of internal/manual loads the same
-	// files, so a manual that fails here never passed CI.
-	help, err := manual.Load(docsmanual.Files)
-	if err != nil {
-		return fmt.Errorf("manual: %w", err)
-	}
+	// files, so a manual that fails here never passed CI. It is rendered when the first
+	// request needs it, not before the replica is ready: rendering its pages is the
+	// largest cost of the start-up (Q-OPS-157). All endpoints share the one result.
+	help := sync.OnceValues(func() (*manual.Manual, error) {
+		m, err := manual.Load(docsmanual.Files)
+		if err != nil {
+			a.log.Error("the manual could not be loaded; its operations answer 503", "error", err)
+		}
+		return m, err
+	})
 	for _, rt := range a.eps {
 		router := httpserver.NewEndpointRouter(rt.ep)
 		api := v1.New(v1.Options{
@@ -448,7 +468,7 @@ func (a *App) startClient() error {
 			Files: part[filesArea](a.parts).service, FilesDecider: part[filesArea](a.parts).decider,
 			Cache:      a.cacheAPI(),
 			Resolution: a.resolutionExplainer(),
-			Manual:     help,
+			LoadManual: help,
 		})
 		// The router drops the routes of a family the endpoint's surface does not hold.
 		api.Register(router)
