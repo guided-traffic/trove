@@ -1,7 +1,7 @@
 # trove · Full product plan after the beta
 
 **Status:** ⚪ not started · 🟡 in progress or partly done · 🟢 done
-**Last updated:** 2026-10-31
+**Last updated:** 2026-11-01
 
 Everything that goes beyond the beta release in [BETA.md](BETA.md): the beta phase, the remaining
 registry types, and platform features. Releases after the beta are cut by Semantic Release from the
@@ -78,7 +78,8 @@ follow the [roadmap's format order](../coverage/roadmap.md#p1-format-expansion-o
 - ⚪ Spec pages `formats/oci.md` and `formats/docker.md`
 - ⚪ Registry API under `/v2/`, token challenge, chunked uploads across replicas
 - ⚪ Local, remote (Docker Hub and other registries), virtual; multi-architecture images; referrers
-- ⚪ Clients: Docker CLI, Podman, BuildX, ORAS, Cosign
+- ⚪ Clients: Docker CLI, Podman, BuildX, BuildKit (`buildctl`, registry build caches), ORAS, Cosign
+- ⚪ WebAssembly modules as OCI artifacts (`wasm-to-oci`)
 - ⚪ Image vulnerability scanning: operating-system and language packages inside images, with the findings, report and blocking of beta phase 6; the analyser is decided on the spec page ([vulnerability-scanning.md](../spec/vulnerability-scanning.md#deferred))
 - ⚪ Integration tests
 - ⚪ E2E tests: push and pull with Docker and Podman through local, remote and virtual repositories, an upload interrupted by a drain
@@ -185,7 +186,7 @@ all four columns green.
 | NuGet v2 (OData; also Chocolatey, PowerShell) | ⚪ | ⚪ | ⚪ | ⚪ |
 | Gradle (rest), Ivy, sbt | ⚪ | ⚪ | ⚪ | ⚪ |
 | Eclipse P2 (remote) | ⚪ | ⚪ | ⚪ | ⚪ |
-| Model-serving containers (remote) | ⚪ | ⚪ | ⚪ | ⚪ |
+| Model-serving containers, NVIDIA NIM (remote) | ⚪ | ⚪ | ⚪ | ⚪ |
 | Cargo (Rust) | ⚪ | ⚪ | ⚪ | ⚪ |
 | RubyGems | ⚪ | ⚪ | ⚪ | ⚪ |
 | Terraform / OpenTofu registry (modules, providers) | ⚪ | ⚪ | ⚪ | ⚪ |
@@ -201,17 +202,17 @@ all four columns green.
 | Chef | ⚪ | ⚪ | ⚪ | ⚪ |
 | CocoaPods | ⚪ | ⚪ | ⚪ | ⚪ |
 | Bower | ⚪ | ⚪ | ⚪ | ⚪ |
-| Debian | ⚪ | ⚪ | ⚪ | ⚪ |
+| Debian / APT repositories (Debian and Ubuntu; apt, apt-get) | ⚪ | ⚪ | ⚪ | ⚪ |
 | RPM | ⚪ | ⚪ | ⚪ | ⚪ |
 | Alpine Linux | ⚪ | ⚪ | ⚪ | ⚪ |
 | Opkg | ⚪ | ⚪ | ⚪ | ⚪ |
 | Hugging Face models and datasets | ⚪ | ⚪ | ⚪ | ⚪ |
 | Git LFS | ⚪ | ⚪ | ⚪ | ⚪ |
 | Version-control archives (remote) | ⚪ | ⚪ | ⚪ | ⚪ |
-| Editor extension marketplace (remote) | ⚪ | ⚪ | ⚪ | ⚪ |
+| VS Code compatible extension galleries: VS Code, Cursor, Kiro, Windsurf / Devin (remote) | ⚪ | ⚪ | ⚪ | ⚪ |
 | JetBrains IDE plugins (remote) | ⚪ | ⚪ | ⚪ | ⚪ |
-| AI agent plugins | ⚪ | ⚪ | ⚪ | ⚪ |
-| AI agent packages | ⚪ | ⚪ | ⚪ | ⚪ |
+| AI agent plugins (Claude Code, Cursor, Codex, VS Code) | ⚪ | ⚪ | ⚪ | ⚪ |
+| AI agent packages (APM) | ⚪ | ⚪ | ⚪ | ⚪ |
 | Agent skills | ⚪ | ⚪ | ⚪ | ⚪ |
 | Vagrant | ⚪ | ⚪ | ⚪ | ⚪ |
 | Nix | ⚪ | ⚪ | ⚪ | ⚪ |
