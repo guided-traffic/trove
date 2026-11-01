@@ -50,3 +50,31 @@ func TestR_AUTHZ_013_ASetupTokenOfAVirtualRepositoryReadsThroughIt(t *testing.T)
 		t.Errorf("a token of a user who cannot read the member: %d %s", got.Status, got.Body)
 	}
 }
+
+// TestR_AUTHZ_013_ASetupTokenFillsAndReadsARemoteMemberThroughTheVirtualRepository: the
+// populate check of a remote member decides on the virtual repository the client
+// addressed, so the token of the setup page installs a package whose document and tarball
+// are not cached yet, from the upstream, through the virtual repository (Q-AUTHZ-163). The
+// remote member addressed directly stays outside the scope.
+func TestR_AUTHZ_013_ASetupTokenFillsAndReadsARemoteMemberThroughTheVirtualRepository(t *testing.T) {
+	r := newRemoteEnv(t, remoteOptions{})
+	rep := r.start(1)[0]
+	p := upstreamPackage(t, 2)
+	tok := r.st.Token(r.alice, scope.Scope{Repositories: []scope.Grant{{Repositories: []string{rAll}, Actions: []string{"read"}}}})
+
+	doc := r.view(rep, rAll, p.Name, tok)
+	if doc.Status != 200 || len(versionsOf(t, doc)) != len(p.Versions) {
+		t.Fatalf("the document through %s: %d %.300s", rAll, doc.Status, doc.Body)
+	}
+	v := p.Versions[0]
+	got := r.install(rep, tarballsOf(t, doc)[v.Version], tok)
+	if got.Status != 200 || integrityOf(got.Body) != v.Dist.Integrity {
+		t.Fatalf("the uncached tarball through %s: %d %.300s", rAll, got.Status, got.Body)
+	}
+	if from := got.Header.Get("Trove-Resolved-From"); from != rRemote {
+		t.Errorf("Trove-Resolved-From = %q", from)
+	}
+	if direct := r.view(rep, rRemote, p.Name, tok); direct.Status != 404 {
+		t.Errorf("the remote member addressed directly: %d %.200s", direct.Status, direct.Body)
+	}
+}

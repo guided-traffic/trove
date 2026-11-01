@@ -382,6 +382,7 @@ func populateCoordinate(rq *formats.Request, info formats.PathInfo, p formats.Pa
 	return authz.Coordinate{
 		Repository: rq.Repo.Key, Class: rq.Repo.Class, Format: rq.Repo.Format, Kind: rq.Route.Kind.RequestKind(),
 		Path: p.Path, Package: info.Package, Version: info.Version, Actions: []formats.Action{formats.ActionRead},
+		Addressed: rq.Via,
 	}
 }
 

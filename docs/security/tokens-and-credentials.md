@@ -154,10 +154,10 @@ setup answer into a token, which is the one place where the UI handles a token v
 - **A created token is scoped and short-lived.** The page asks for a personal token with `read` on the chosen repository, optionally
   `read` and `deploy` on the setup answer's `publishTarget`, and the lifetime `ui.client_setup.token_ttl` (the answer's `tokenTtlSeconds`),
   through the ordinary token operation: the recent-authentication rule above applies, and the value is shown once.
-  For a virtual repository the scope names only that repository; it reads the members' content through it by the rule of
-  [permissions.md](permissions.md#a-token-scope-on-a-virtual-repository) (Q-AUTHZ-163), bounded by the owner's rights, and the members are not written
-  into the scope, so a reader without `repositories:read-config` can create a working token and no list of members goes stale or leaks
-  (H-326).
+  For a virtual repository the scope names only that repository, by its key; it reads the members' content through it by the rule of
+  [permissions.md](permissions.md#a-token-scope-on-a-virtual-repository) (Q-AUTHZ-163, Q-AUTHZ-164), bounded by the owner's rights. The members are not
+  written into the scope, so a reader without `repositories:read-config` can create a working token and no copied list goes stale. What that
+  reach means for later membership changes, for cache fills and for the member keys a token learns is [H-326](permissions.md#h-326--a-token-scoped-to-a-virtual-repository-by-its-key-reaches-the-members-the-repository-has-when-it-is-used).
 - **A file with a token leaves through a Blob URL** that is revoked right after the click.
 - **The install command panel (R-UI-009) asks for `credentials=none`**, so a command copied from a package page cannot contain a token.
 - **A guide never holds a token** (R-UI-049, R-API-053, Q-API-176). Its snippets are rendered by the setup's code with `credentials=env`, or

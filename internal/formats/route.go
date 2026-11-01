@@ -278,7 +278,12 @@ func MatchRoutes(routes []Route, method, escapedPath string) (*Route, Params, er
 type Request struct {
 	*http.Request
 	// Repo is the addressed repository, an immutable snapshot entry.
-	Repo   *repository.Repository
+	Repo *repository.Repository
+	// Via is the virtual repository the client addressed when Repo is a member that
+	// resolution consults on its behalf, "" otherwise. It becomes the Addressed of the
+	// member's decisions (R-AUTHZ-015), so that the populate check and the exposure
+	// follow the repository the client named (Q-EP-11, Q-AUTHZ-163).
+	Via    string
 	Route  *Route
 	Params Params
 	// Path is the canonical repository path (repository.CleanPath); Escaped is the

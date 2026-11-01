@@ -3,6 +3,7 @@ package authz
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -321,7 +322,7 @@ func (e *Engine) allowedAction(st *evalState, a Action, r *repoInfo, c Coordinat
 // scopeAdmitsThrough is the one extension of the token scope that names a virtual
 // repository (Q-AUTHZ-163): the read of a member that resolution consults on behalf
 // of the virtual repository the client addressed is admitted when the scope admits
-// read on that virtual repository for the same package and path. The member is not
+// read on that virtual repository, named by its exact key, for the same package and path. The member is not
 // readable for the token in any other way, so a scope on a virtual repository does
 // not open its members to a request that addresses them directly, and the grants of
 // the subject still decide first: this only lifts the ceiling, it grants nothing.
@@ -333,7 +334,19 @@ func (e *Engine) scopeAdmitsThrough(st *evalState, a Action, r *repoInfo, repoLe
 	if v == nil || v.Class != repository.Virtual || !st.idx.reaches(v, r.Key, 0) {
 		return false
 	}
-	return e.scopeAdmits(st.sub.Scope, Read, v, repoLevel, c.Package, c.Path)
+	sc := st.sub.Scope
+	if sc == nil || sc.Inherit {
+		return false
+	}
+	// Only an element that names the virtual repository by its exact key lifts: a class
+	// selector or a key glob that happens to cover it does not (Q-AUTHZ-164).
+	exact := &scope.Scope{}
+	for _, el := range sc.Repositories {
+		if slices.Contains(el.Repositories, v.Key) {
+			exact.Repositories = append(exact.Repositories, el)
+		}
+	}
+	return e.scopeAdmits(exact, Read, v, repoLevel, c.Package, c.Path)
 }
 
 // reaches reports whether the virtual repository v resolves through the repository

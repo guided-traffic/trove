@@ -160,6 +160,9 @@ var _ virtual.Tiers = tiers{}
 func (t tiers) forMember(m virtual.Member) *formats.Request {
 	c := *t.rq
 	c.Repo = &m.Repo
+	if c.Via == "" {
+		c.Via = t.rq.Repo.Key
+	}
 	return &c
 }
 

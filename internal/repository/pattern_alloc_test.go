@@ -115,8 +115,8 @@ func randomText(r *rand.Rand, alphabet []string, max int) string {
 // stack buffers.
 func TestR_AUTHZ_015_PatternMatchAgreesWithTheReference(t *testing.T) {
 	r := rand.New(rand.NewPCG(1, 2))
-	patAlpha := []string{"a", "b", "é", "*", "*", "**", "?", "/", "/", `\*`, "-"}
-	inAlpha := []string{"a", "b", "é", "/", "/", "-", "*", "ab"}
+	patAlpha := []string{"a", "b", "é", "\uFFFD", "*", "*", "**", "?", "/", "/", `\*`, "-"}
+	inAlpha := []string{"a", "b", "é", "\xff", "/", "/", "-", "*", "ab"}
 	for _, subject := range []PatternSubject{SubjectName, SubjectPath} {
 		checked := 0
 		for range 20000 {
@@ -184,6 +184,7 @@ func TestR_AUTHZ_015_PatternMatchAllocatesNothing(t *testing.T) {
 func FuzzPatternMatch(f *testing.F) {
 	f.Add("a/*/b/**", "a/x/b/c")
 	f.Add("@a/*", "@a/b")
+	f.Add("\uFFFD*", "\xffa")
 	f.Fuzz(func(t *testing.T, src, in string) {
 		for _, subject := range []PatternSubject{SubjectName, SubjectPath} {
 			p, err := CompilePattern(subject, src)

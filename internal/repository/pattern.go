@@ -57,7 +57,9 @@ func newPattern(subject PatternSubject, segs []patSeg) *Pattern {
 	var b strings.Builder
 	toks := segs[0].toks
 	n := 0
-	for n < len(toks) && toks[n].kind == tokLit {
+	// A literal U+FFFD is not part of the lead: an input with invalid UTF-8 reads as U+FFFD
+	// rune by rune in the matcher, which compares bytes here.
+	for n < len(toks) && toks[n].kind == tokLit && toks[n].r != utf8.RuneError {
 		b.WriteRune(toks[n].r)
 		n++
 	}

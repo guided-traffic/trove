@@ -767,8 +767,10 @@ requirement fixes how the evaluator applies a scope:
 
   A scope element that admits `read` on a virtual repository also admits `read` on the members
   that resolution consults on behalf of that repository (Q-AUTHZ-163): the check of a member
-  carries the virtual repository the client addressed, and when that repository reaches the member
-  and the element admits `read` on it for the same package and path, the scope admits the member.
+  carries the virtual repository the client addressed (`Addressed`; the populate check of a remote
+  member too, Q-AUTHZ-165), and when that repository reaches the member and an element that names
+  it by its exact key admits `read` on it for the same package and path, the scope admits the member.
+  A class selector or a key glob that covers the virtual repository does not lift (Q-AUTHZ-164).
   The member addressed directly, and every action other than `read`, are decided by the scope as
   before; the subject's own grants are evaluated first and are never widened.
 
@@ -3694,11 +3696,45 @@ Context: the token that **Create a token for this setup** (R-UI-016) mints for a
 | (b) The setup page writes the members into the scope | The scope lists `npm-all` and each member | No change to the evaluator | A copy that is stale as soon as a member is added or removed; the page needs the member list, which is configuration (`repositories:read-config`), and a reader without that right could not create a working token |
 | (c) A new scope field, such as `through: ["npm-all"]` | A scope names the virtual repositories whose members it covers | Explicit | A schema and an API change for what R-AUTHZ-009 already means by reading through a virtual repository; every client of the scope API would have to know |
 
-**Choice:** (a). Only `read` is lifted: a virtual repository serves reads from its members, and writes go to the deploy target, which a scope names itself (the setup page adds the target with `deploy` when the user asks for it). Only a request that reaches the member through the virtual repository is lifted: the coordinate must carry the addressed virtual repository and that repository must reach the member. The member addressed directly, a repository that is no member, and every action other than `read` are decided by the scope as before. The element's `packages` and `paths` still narrow, and the grants of the subject are evaluated first and unchanged: the lift removes a refusal by the scope and grants nothing, so a token never reads more than its owner reads through the same virtual repository.
+**Choice:** (a), narrowed by Q-AUTHZ-164 to elements that list the exact key of the virtual repository, with the addressed repository carried on every member request (Q-AUTHZ-165). Only `read` is lifted: a virtual repository serves reads from its members, and writes go to the deploy target, which a scope names itself (the setup page adds the target with `deploy` when the user asks for it). Only a request that reaches the member through the virtual repository is lifted: the coordinate must carry the addressed virtual repository and that repository must reach the member. The member addressed directly, a repository that is no member, and every action other than `read` are decided by the scope as before. The element's `packages` and `paths` still narrow, and the grants of the subject are evaluated first and unchanged: the lift removes a refusal by the scope and grants nothing, so a token never reads more than its owner reads through the same virtual repository.
 
 **Rationale:** the scope of R-AUTHZ-013 is a ceiling of the same kind as the exposure of an endpoint, which also names the repository the client addressed (Q-EP-11) and not its members. Naming the virtual repository is naming the endpoint a client uses. The development agent revisits this if scopes gain a way to name a repository by what it resolves through for another purpose, or if membership changes need to be bound to token lifetimes.
 
 **Applied in the spec:** R-AUTHZ-013 (repository part), R-AUTHZ-009 (rule 2). Security: [tokens-and-credentials.md](../security/tokens-and-credentials.md). Code: `internal/authz/decide.go` (`scopeAdmitsThrough`, `reaches`). Tests: `TestR_AUTHZ_013_AScopeOnAVirtualRepositoryCoversItsMembersWhenReadThroughIt`, `TestR_AUTHZ_013_ASetupTokenOfAVirtualRepositoryReadsThroughIt`.
+
+### Q-AUTHZ-164 · Only a scope element that names the virtual repository by its exact key lifts
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-AUTHZ-163 lets a scope that admits `read` on a virtual repository admit its members for a request that went through it. A scope element names repositories by key, key glob or class selector (R-AUTHZ-004), so `@any-virtual` or `npm-*` would lift for every virtual repository they cover, including ones created after the token.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Exact key only | Only an element whose `repositories` list holds the key of the virtual repository lifts | What the setup page creates; a token reaches the members of the repositories it names and of none that merely match a pattern | A scope of `@any-virtual` finds no package through a virtual repository (it names the endpoint, not the content) |
+| (b) Any selector | As Q-AUTHZ-163 first stated | Uniform | A pattern or class widens a token to members of repositories created later |
+
+**Choice:** (a). `scopeAdmitsThrough` filters the elements to those that list the key and evaluates only them.
+
+**Rationale:** a pattern in a scope is written for the repositories that exist when it is read, and a lift that follows it makes the reach of the token depend on repositories nobody had in mind. The development agent revisits this if a client needs a scope by class to read through virtual repositories; the scope would then list the keys.
+
+**Applied in the spec:** R-AUTHZ-013, Q-AUTHZ-163. Code: `internal/authz/decide.go` (`scopeAdmitsThrough`). Test: `TestR_AUTHZ_013_AScopeOnAVirtualRepositoryCoversItsMembersWhenReadThroughIt`.
+
+### Q-AUTHZ-165 · A member request carries the virtual repository it was made for
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the lift of Q-AUTHZ-163 needs `Addressed` on the coordinate of every decision about a member. The member read check (`MemberUsableOn`) set it; the populate check of a remote member (`MayPopulateOn` in the remote engine, also when `Gate` revalidates a stale member document) was built from the member request without it, so an uncached tarball of a remote member was refused for a token scoped to the virtual repository (authz.denied, then 404 or 403).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Via` on `formats.Request` | The virtual tiers copy the request for the member and set `Via` to the addressed repository; `populateCoordinate` turns it into `Addressed` | One field, set at the one place that builds a member request; the exposure decision on that path follows the addressed repository as Q-EP-11 says | A new field of the request |
+| (b) The populate check looks the virtual repository up | The engine infers it | No new field | Guessing: a member can belong to several virtual repositories |
+
+**Choice:** (a). `Via` stays the outermost repository when virtual repositories nest (R-REPO-018).
+
+**Rationale:** the decision needs the repository the client named, which only the request knows. The development agent revisits this if member requests are built at more than one place.
+
+**Applied in the spec:** R-AUTHZ-009, R-AUTHZ-013. Code: `internal/formats/route.go` (`Request.Via`), `internal/formathost/virtual.go` (`forMember`), `internal/formathost/remote.go` (`populateCoordinate`). Tests: `TestR_AUTHZ_013_ThePopulateCheckOfARemoteMemberFollowsTheAddressedVirtualRepository`, `TestR_AUTHZ_013_ASetupTokenFillsAndReadsARemoteMemberThroughTheVirtualRepository`.
 
 ## What this does not cover
 

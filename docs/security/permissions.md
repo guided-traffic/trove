@@ -111,9 +111,9 @@ is what **Create a token for this setup** creates, used to pass the gate and be 
 `scopeAdmitsThrough` in [decide.go](../../internal/authz/decide.go) lifts that refusal under four conditions, all required:
 
 1. the action is `read`;
-2. the coordinate carries the virtual repository the client addressed (`Coordinate.Addressed`), which is set by the resolver for every member it consults;
+2. the coordinate carries the virtual repository the client addressed (`Coordinate.Addressed`), which the virtual tiers set for every member request (`formats.Request.Via`, so the populate check of a remote member and the revalidation of a stale member document included, Q-AUTHZ-165);
 3. that repository reaches the member, directly or through nested virtual repositories (`Index.reaches`);
-4. a scope element admits `read` on the virtual repository for the same package and path, so the element's `packages` and `paths` still narrow.
+4. a scope element that lists the key of the virtual repository exactly admits `read` on it for the same package and path, so the element's `packages` and `paths` still narrow. A class selector (`@any-virtual`) or a key glob that covers the repository does not lift (Q-AUTHZ-164).
 
 What does not change: the grants of the owner are evaluated before the scope and decide alone whether anything is allowed, so the lift
 removes a refusal by the scope and grants nothing; a token never reads more through the virtual repository than its owner reads
@@ -261,12 +261,18 @@ measure the time of its own requests and who has such a grant. A caller with an 
 nothing for the versions of other repositories. Closing it needs the pattern set compiled into the statement; Q-API-165 names the
 condition for doing so.
 
-### H-326 · A token scoped to a virtual repository follows the membership of the repository
+### H-326 · A token scoped to a virtual repository by its key reaches the members the repository has when it is used
 
-A token whose scope names a virtual repository reads whatever the members of that repository are at the time of the request, as far as
-its owner reads it (Q-AUTHZ-163). Live today for every scope element that admits `read` on a virtual repository, including the tokens the client
-setup page creates; what makes it real is an administrator holding `repositories:write-config` who adds a member to the virtual repository
-after the token was issued: the token then reads that member's content through the virtual repository, within the owner's rights and no
-further. Nothing records the members a token was created with, and the token list does not show the reach. The rights of the owner remain the
-bound, so the case needs an owner who may read the added member; narrowing the owner or the lifetime of the token (30 days by default on
-the setup page) limits it.
+A token with a scope element that lists the key of a virtual repository reads whatever members the repository has at the time of the request, as far as
+its owner reads them (Q-AUTHZ-163, Q-AUTHZ-164). Live today for every such token, including those the client setup page creates. What makes it real:
+
+- An administrator holding `repositories:write-config` adds a member to the virtual repository after the token was issued: the token then reads that member's content through the virtual repository, within the owner's rights and no further. Nothing records the members a token was created with and the token list does not show the reach.
+- Tokens that already named a virtual repository by key when this rule was introduced gained the members' reach once, at deploy, without a re-issue and without an audit event.
+- The lift also lets the populate check fill the cache from the upstream on the token's behalf, for remote members with `cacheFillAction` `read`: such a token causes upstream requests and cache entries that it could not cause before.
+- The key of the member that served a request reaches the token through the `Trove-Resolved-From` header and the resolution explanation ([artifact.go](../../internal/virtual/artifact.go), [engine.go](../../internal/virtual/engine.go), [explain.go](../../internal/virtual/explain.go)), although the token's creator may not hold `repositories:read-config`.
+
+All of this stays inside the owner's own rights; the bound is the owner, the lifetime of the token (30 days by default on the setup page), and the administrators who edit the members. A scope by class or glob never lifts.
+
+### H-327 · The walk over nested virtual repositories has no visited set
+
+`Index.reaches` and `anonReadsAllMembers` ([decide.go](../../internal/authz/decide.go)) walk members recursively with a depth bound of 16 and no visited set. Dormant today: a virtual repository cannot contain another one ([members.go](../../internal/repository/members.go) refuses it). Before nested virtual repositories (R-REPO-018) arrive, the walk needs a visited set or a precomputed member closure, and `Addressed` (`formats.Request.Via`) must stay the outermost repository, because the scope lift names the repository the client addressed.
