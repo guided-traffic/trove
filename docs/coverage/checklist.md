@@ -9,13 +9,13 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 285 of 629 spec requirements are implemented: a passing test names them and no
+**Status.** 305 of 629 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 695 specified (204 of them implemented), 1,544 open.
+**Totals.** 2,239 catalog features on 60 pages: 695 specified (232 of them implemented), 1,544 open.
 629 spec requirements: 524 cover catalog features, 105 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
@@ -26,15 +26,15 @@ end](#requirements-that-cover-no-catalog-feature)).
 
 | Catalog page | Prefix | Features | MVP specified | Specified | Open | Implemented |
 |---|---|---:|---:|---:|---:|---:|
-| [Repositories](#repositories-repo) | `REPO` | 68 | 24 of 24 | 41 | 27 | 19 |
+| [Repositories](#repositories-repo) | `REPO` | 68 | 24 of 24 | 41 | 27 | 20 |
 | [Remote repositories](#remote-repositories-rmt) | `RMT` | 49 | 15 of 15 | 28 | 21 | 14 |
 | [Replication, federation and multi-site topology](#replication-federation-and-multi-site-topology-repl) | `REPL` | 72 | – | 0 | 72 | 0 |
 | [Artifact management](#artifact-management-art) | `ART` | 53 | 10 of 10 | 32 | 21 | 12 |
 | [Search and query language](#search-and-query-language-srch) | `SRCH` | 64 | – | 3 | 61 | 0 |
 | [Builds and CI integration](#builds-and-ci-integration-bld) | `BLD` | 49 | – | 0 | 49 | 0 |
-| [Identity and access](#identity-and-access-iam) | `IAM` | 69 | 21 of 21 | 35 | 34 | 20 |
+| [Identity and access](#identity-and-access-iam) | `IAM` | 69 | 21 of 21 | 35 | 34 | 26 |
 | [Authentication providers and human login](#authentication-providers-and-human-login-authn) | `AUTHN` | 44 | 13 of 13 | 18 | 26 | 10 |
-| [Access tokens](#access-tokens-tok) | `TOK` | 48 | 24 of 24 | 27 | 21 | 19 |
+| [Access tokens](#access-tokens-tok) | `TOK` | 48 | 24 of 24 | 27 | 21 | 25 |
 | [OIDC federation for CI systems](#oidc-federation-for-ci-systems-cioidc) | `CIOIDC` | 40 | 20 of 20 | 31 | 9 | 0 |
 | [Storage and blob providers](#storage-and-blob-providers-stor) | `STOR` | 41 | 12 of 12 | 21 | 20 | 14 |
 | [Retention, cleanup and archiving](#retention-cleanup-and-archiving-ret) | `RET` | 42 | – | 26 | 16 | 0 |
@@ -44,10 +44,10 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Distribution and release lifecycle](#distribution-and-release-lifecycle-dist) | `DIST` | 70 | – | 0 | 70 | 0 |
 | [Security scanning and curation](#security-scanning-and-curation-sec) | `SEC` | 98 | 18 of 18 | 18 | 80 | 0 |
 | [UI inventory](#ui-inventory-ui) | `UI` | 61 | 30 of 30 | 47 | 14 | 1 |
-| [Content API operation catalog](#content-api-operation-catalog-api) | `API` | 166 | 11 of 11 | 67 | 99 | 11 |
+| [Content API operation catalog](#content-api-operation-catalog-api) | `API` | 166 | 11 of 11 | 67 | 99 | 14 |
 | [Operation catalog: administration API](#operation-catalog-administration-api-admapi) | `ADMAPI` | 114 | 34 of 34 | 54 | 60 | 4 |
-| [Package formats: matrix and cross-format behavior](#package-formats-matrix-and-cross-format-behavior-fmt) | `FMT` | 14 | 8 of 8 | 9 | 5 | 4 |
-| [npm package format](#npm-package-format-pkg-npm) | `PKG-NPM` | 62 | 37 of 37 | 52 | 10 | 23 |
+| [Package formats: matrix and cross-format behavior](#package-formats-matrix-and-cross-format-behavior-fmt) | `FMT` | 14 | 8 of 8 | 9 | 5 | 5 |
+| [npm package format](#npm-package-format-pkg-npm) | `PKG-NPM` | 62 | 37 of 37 | 52 | 10 | 34 |
 | [NuGet](#nuget-pkg-nuget) | `PKG-NUGET` | 56 | 35 of 35 | 42 | 14 | 0 |
 | [Docker image format](#docker-image-format-pkg-docker) | `PKG-DOCKER` | 52 | – | 1 | 51 | 0 |
 | [OCI images and artifacts](#oci-images-and-artifacts-pkg-oci) | `PKG-OCI` | 20 | – | 0 | 20 | 0 |
@@ -94,7 +94,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 Catalog page: [repositories.md](../features/repositories.md) · specified by priority: MVP 24 of 24 · P1 17 of 26 · P2 0 of 16 · Later 0 of 1 · Out of scope 0 of 1
 
 <details>
-<summary>68 features: 41 specified, 27 open, 19 implemented</summary>
+<summary>68 features: 41 specified, 27 open, 20 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -130,12 +130,12 @@ Catalog page: [repositories.md](../features/repositories.md) · specified by pri
 | REPO-030 | NuGet local and virtual repository settings | MVP | specified | [R-NUGET-003](../spec/formats/nuget.md) |
 | REPO-031 | NuGet version normalization rules | MVP | specified | [R-NUGET-003](../spec/formats/nuget.md) |
 | REPO-032 | Other format-specific local repository settings | P2 | open | – |
-| REPO-033 | Virtual repository | MVP | specified | [R-ARCH-015](../spec/architecture.md) (implemented), [R-NPM-030](../spec/formats/npm.md), [R-REPO-017](../spec/repositories-and-proxy.md) (implemented) |
+| REPO-033 | Virtual repository | MVP | implemented | [R-ARCH-015](../spec/architecture.md) (implemented), [R-NPM-030](../spec/formats/npm.md) (implemented), [R-REPO-017](../spec/repositories-and-proxy.md) (implemented) |
 | REPO-034 | Nested virtual repositories | P1 | specified | [R-REPO-018](../spec/repositories-and-proxy.md) |
-| REPO-035 | Virtual resolution order | MVP | specified | [R-ARCH-015](../spec/architecture.md) (implemented), [R-NPM-030](../spec/formats/npm.md), [R-NUGET-017](../spec/formats/nuget.md), [R-REPO-019](../spec/repositories-and-proxy.md) (implemented) |
-| REPO-036 | Latest-version resolution across members | MVP | specified | [R-ARCH-015](../spec/architecture.md) (implemented), [R-NPM-030](../spec/formats/npm.md), [R-NUGET-017](../spec/formats/nuget.md), [R-REPO-019](../spec/repositories-and-proxy.md) (implemented) |
-| REPO-037 | Merged metadata and virtual metadata cache period | MVP | specified | [R-ARCH-015](../spec/architecture.md) (implemented), [R-NPM-030](../spec/formats/npm.md), [R-NPM-032](../spec/formats/npm.md), [R-NUGET-017](../spec/formats/nuget.md), [R-REPO-020](../spec/repositories-and-proxy.md) (implemented) |
-| REPO-038 | Default deployment repository | MVP | specified | [R-ARCH-014](../spec/architecture.md) (implemented), [R-ARCH-015](../spec/architecture.md) (implemented), [R-NPM-029](../spec/formats/npm.md), [R-NUGET-019](../spec/formats/nuget.md), [R-REPO-021](../spec/repositories-and-proxy.md) (implemented) |
+| REPO-035 | Virtual resolution order | MVP | specified | [R-ARCH-015](../spec/architecture.md) (implemented), [R-NPM-030](../spec/formats/npm.md) (implemented), [R-NUGET-017](../spec/formats/nuget.md), [R-REPO-019](../spec/repositories-and-proxy.md) (implemented) |
+| REPO-036 | Latest-version resolution across members | MVP | specified | [R-ARCH-015](../spec/architecture.md) (implemented), [R-NPM-030](../spec/formats/npm.md) (implemented), [R-NUGET-017](../spec/formats/nuget.md), [R-REPO-019](../spec/repositories-and-proxy.md) (implemented) |
+| REPO-037 | Merged metadata and virtual metadata cache period | MVP | specified | [R-ARCH-015](../spec/architecture.md) (implemented), [R-NPM-030](../spec/formats/npm.md) (implemented), [R-NPM-032](../spec/formats/npm.md) (implemented), [R-NUGET-017](../spec/formats/nuget.md), [R-REPO-020](../spec/repositories-and-proxy.md) (implemented) |
+| REPO-038 | Default deployment repository | MVP | specified | [R-ARCH-014](../spec/architecture.md) (implemented), [R-ARCH-015](../spec/architecture.md) (implemented), [R-NPM-029](../spec/formats/npm.md) (implemented), [R-NUGET-019](../spec/formats/nuget.md), [R-REPO-021](../spec/repositories-and-proxy.md) (implemented) |
 | REPO-039 | Remote retrieval for requests from other instances | P2 | open | – |
 | REPO-040 | External dependency rewrite | P1 | specified | [R-NPM-034](../spec/formats/npm.md) |
 | REPO-041 | Descriptor repository-reference cleanup | P1 | open | – |
@@ -199,7 +199,7 @@ Catalog page: [remote-repositories.md](../features/remote-repositories.md) · sp
 | RMT-019 | Metadata retrieval timeout with stale fallback | MVP | specified | [R-ARCH-013](../spec/architecture.md), [R-NPM-024](../spec/formats/npm.md) (implemented), [R-REPO-027](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-020 | Negative cache period | MVP | specified | [R-ARCH-013](../spec/architecture.md), [R-NPM-024](../spec/formats/npm.md) (implemented), [R-NUGET-015](../spec/formats/nuget.md), [R-REPO-028](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-021 | Unused cached artifact cleanup | P1 | specified | [R-REPO-046](../spec/repositories-and-proxy.md) |
-| RMT-022 | Remote checksum policy | P1 | specified | [R-NPM-025](../spec/formats/npm.md), [R-NUGET-029](../spec/formats/nuget.md), [R-REPO-041](../spec/repositories-and-proxy.md) (implemented) |
+| RMT-022 | Remote checksum policy | P1 | specified | [R-NPM-025](../spec/formats/npm.md) (implemented), [R-NUGET-029](../spec/formats/nuget.md), [R-REPO-041](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-023 | MIME-type mismatch blocking | MVP | implemented | [R-REPO-042](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-024 | HEAD request bypass | P2 | open | – |
 | RMT-025 | Eager fetching of companion artifacts | P2 | open | – |
@@ -370,8 +370,8 @@ Catalog page: [artifacts.md](../features/artifacts.md) · specified by priority:
 | ART-045 | Content browsing of files and archives | P2 | open | – |
 | ART-046 | Followers (change notifications) | P2 | open | – |
 | ART-047 | WebDAV access | P2 | open | – |
-| ART-048 | Package list | MVP | specified | [R-API-029](../spec/api-and-ui.md), [R-UI-006](../spec/api-and-ui.md) |
-| ART-049 | Package details and install commands | MVP | specified | [R-API-029](../spec/api-and-ui.md), [R-UI-007](../spec/api-and-ui.md) |
+| ART-048 | Package list | MVP | specified | [R-API-029](../spec/api-and-ui.md) (implemented), [R-UI-006](../spec/api-and-ui.md) |
+| ART-049 | Package details and install commands | MVP | specified | [R-API-029](../spec/api-and-ui.md) (implemented), [R-UI-007](../spec/api-and-ui.md) |
 | ART-050 | Invalidate cached metadata in a remote repository | P1 | implemented | [R-REPO-045](../spec/repositories-and-proxy.md) (implemented) |
 | ART-051 | List background tasks | P2 | implemented | [R-OPS-019](../spec/operations-and-observability.md) (implemented) |
 | ART-052 | RubyGems version list | P2 | open | – |
@@ -521,7 +521,7 @@ Catalog page: [builds-and-ci.md](../features/builds-and-ci.md) · specified by p
 Catalog page: [identity-and-access.md](../features/identity-and-access.md) · specified by priority: MVP 21 of 21 · P1 11 of 11 · P2 3 of 26 · Later 0 of 6 · Out of scope 0 of 5
 
 <details>
-<summary>69 features: 35 specified, 34 open, 20 implemented</summary>
+<summary>69 features: 35 specified, 34 open, 26 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -529,7 +529,7 @@ Catalog page: [identity-and-access.md](../features/identity-and-access.md) · sp
 | IAM-002 | System administrator | MVP | implemented | [R-AUTHZ-010](../spec/authorization.md) (implemented), [R-AUTHZ-022](../spec/authorization.md) (implemented), [R-AUTH-014](../spec/identity-and-authentication.md) (implemented) |
 | IAM-003 | Per-user options | MVP | implemented | [R-AUTH-016](../spec/identity-and-authentication.md) (implemented), [R-AUTH-020](../spec/identity-and-authentication.md) (implemented) |
 | IAM-004 | User status and disabling | MVP | implemented | [R-AUTH-016](../spec/identity-and-authentication.md) (implemented) |
-| IAM-005 | Anonymous user | MVP | specified | [R-AUTHZ-003](../spec/authorization.md) (implemented), [R-NPM-004](../spec/formats/npm.md), [R-AUTH-037](../spec/identity-and-authentication.md) (implemented) |
+| IAM-005 | Anonymous user | MVP | implemented | [R-AUTHZ-003](../spec/authorization.md) (implemented), [R-NPM-004](../spec/formats/npm.md) (implemented), [R-AUTH-037](../spec/identity-and-authentication.md) (implemented) |
 | IAM-006 | Auditor role | P1 | implemented | [R-AUTHZ-011](../spec/authorization.md) (implemented) |
 | IAM-007 | Delegated system roles: resource manager and webhook manager | P1 | implemented | [R-AUTHZ-012](../spec/authorization.md) (implemented) |
 | IAM-008 | Scan-related roles | MVP | specified | [R-VULN-013](../spec/vulnerability-scanning.md), [R-VULN-019](../spec/vulnerability-scanning.md) |
@@ -545,10 +545,10 @@ Catalog page: [identity-and-access.md](../features/identity-and-access.md) · sp
 | IAM-018 | Group management operations | MVP | implemented | [R-AUTH-018](../spec/identity-and-authentication.md) (implemented) |
 | IAM-019 | Permission policy model | MVP | implemented | [R-AUTHZ-001](../spec/authorization.md) (implemented), [R-AUTHZ-015](../spec/authorization.md) (implemented) |
 | IAM-020 | Repository resources and repository wildcards | MVP | implemented | [R-AUTHZ-004](../spec/authorization.md) (implemented) |
-| IAM-021 | Include and exclude patterns | MVP | specified | [R-AUTHZ-005](../spec/authorization.md) (implemented), [R-NPM-004](../spec/formats/npm.md) |
-| IAM-022 | Repository actions | MVP | specified | [R-AUTHZ-006](../spec/authorization.md) (implemented), [R-NPM-004](../spec/formats/npm.md) |
-| IAM-023 | Permissions on remote repositories | MVP | specified | [R-AUTHZ-008](../spec/authorization.md) (implemented), [R-NPM-004](../spec/formats/npm.md) |
-| IAM-024 | Permissions through virtual repositories | MVP | specified | [R-AUTHZ-009](../spec/authorization.md) (implemented), [R-AUTHZ-015](../spec/authorization.md) (implemented), [R-NPM-004](../spec/formats/npm.md) |
+| IAM-021 | Include and exclude patterns | MVP | implemented | [R-AUTHZ-005](../spec/authorization.md) (implemented), [R-NPM-004](../spec/formats/npm.md) (implemented) |
+| IAM-022 | Repository actions | MVP | implemented | [R-AUTHZ-006](../spec/authorization.md) (implemented), [R-NPM-004](../spec/formats/npm.md) (implemented) |
+| IAM-023 | Permissions on remote repositories | MVP | implemented | [R-AUTHZ-008](../spec/authorization.md) (implemented), [R-NPM-004](../spec/formats/npm.md) (implemented) |
+| IAM-024 | Permissions through virtual repositories | MVP | implemented | [R-AUTHZ-009](../spec/authorization.md) (implemented), [R-AUTHZ-015](../spec/authorization.md) (implemented), [R-NPM-004](../spec/formats/npm.md) (implemented) |
 | IAM-025 | Build resources and actions | P1 | specified | [R-AUTHZ-027](../spec/authorization.md) |
 | IAM-026 | Release-set resources and actions | Later | open | – |
 | IAM-027 | Distribution-target resources and actions | Later | open | – |
@@ -562,7 +562,7 @@ Catalog page: [identity-and-access.md](../features/identity-and-access.md) · sp
 | IAM-035 | Encrypted client passwords | P2 | open | – |
 | IAM-036 | Basic-authentication controls | P1 | implemented | [R-AUTH-014](../spec/identity-and-authentication.md) (implemented), [R-AUTH-033](../spec/identity-and-authentication.md) (implemented) |
 | IAM-037 | Token generation by basic-authenticated users | P1 | implemented | [R-AUTH-027](../spec/identity-and-authentication.md) (implemented) |
-| IAM-038 | Token lifetime limits and expiry notifications | MVP | specified | [R-AUTH-026](../spec/identity-and-authentication.md) (implemented), [R-AUTH-032](../spec/identity-and-authentication.md), [R-AUTH-040](../spec/identity-and-authentication.md) (implemented) |
+| IAM-038 | Token lifetime limits and expiry notifications | MVP | implemented | [R-AUTH-026](../spec/identity-and-authentication.md) (implemented), [R-AUTH-032](../spec/identity-and-authentication.md) (implemented), [R-AUTH-040](../spec/identity-and-authentication.md) (implemented) |
 | IAM-039 | Multi-factor authentication (TOTP) | P2 | open | – |
 | IAM-040 | Hide global identity mappings from project administrators | P2 | open | – |
 | IAM-041 | Password expiration policy | P2 | open | – |
@@ -658,16 +658,16 @@ Catalog page: [authentication-providers.md](../features/authentication-providers
 Catalog page: [access-tokens.md](../features/access-tokens.md) · specified by priority: MVP 24 of 24 · P1 3 of 3 · P2 0 of 12 · Later 0 of 6 · Out of scope 0 of 3
 
 <details>
-<summary>48 features: 27 specified, 21 open, 19 implemented</summary>
+<summary>48 features: 27 specified, 21 open, 25 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
 | TOK-001 | Access token as the system's own credential | MVP | implemented | [R-AUTH-001](../spec/identity-and-authentication.md) (implemented) |
-| TOK-002 | Token attributes and claims | MVP | specified | [R-AUTH-022](../spec/identity-and-authentication.md) |
+| TOK-002 | Token attributes and claims | MVP | implemented | [R-AUTH-022](../spec/identity-and-authentication.md) (implemented) |
 | TOK-003 | Self-contained signed token format | P2 | open | – |
-| TOK-004 | Reference tokens | MVP | specified | [R-AUTH-022](../spec/identity-and-authentication.md), [R-AUTH-023](../spec/identity-and-authentication.md) (implemented) |
+| TOK-004 | Reference tokens | MVP | implemented | [R-AUTH-022](../spec/identity-and-authentication.md) (implemented), [R-AUTH-023](../spec/identity-and-authentication.md) (implemented) |
 | TOK-005 | Identity tokens | MVP | implemented | [R-AUTH-024](../spec/identity-and-authentication.md) (implemented) |
-| TOK-006 | One-time display of token secrets | MVP | specified | [R-AUTH-022](../spec/identity-and-authentication.md), [R-AUTH-027](../spec/identity-and-authentication.md) (implemented) |
+| TOK-006 | One-time display of token secrets | MVP | implemented | [R-AUTH-022](../spec/identity-and-authentication.md) (implemented), [R-AUTH-027](../spec/identity-and-authentication.md) (implemented) |
 | TOK-007 | Scope expression | MVP | implemented | [R-AUTHZ-013](../spec/authorization.md) (implemented), [R-EP-011](../spec/endpoints.md) (implemented), [R-AUTH-024](../spec/identity-and-authentication.md) (implemented) |
 | TOK-008 | User-permissions scope | MVP | implemented | [R-AUTHZ-002](../spec/authorization.md) (implemented), [R-AUTHZ-013](../spec/authorization.md) (implemented), [R-AUTH-024](../spec/identity-and-authentication.md) (implemented) |
 | TOK-009 | Administrator scope | MVP | implemented | [R-AUTHZ-013](../spec/authorization.md) (implemented), [R-AUTH-024](../spec/identity-and-authentication.md) (implemented) |
@@ -690,12 +690,12 @@ Catalog page: [access-tokens.md](../features/access-tokens.md) · specified by p
 | TOK-026 | Token management screen | MVP | specified | [R-UI-030](../spec/api-and-ui.md), [R-AUTH-028](../spec/identity-and-authentication.md) (implemented) |
 | TOK-027 | List tokens | MVP | implemented | [R-AUTH-028](../spec/identity-and-authentication.md) (implemented) |
 | TOK-028 | Get token details | MVP | implemented | [R-AUTH-028](../spec/identity-and-authentication.md) (implemented) |
-| TOK-029 | Last-used tracking | P1 | specified | [R-AUTH-031](../spec/identity-and-authentication.md) |
+| TOK-029 | Last-used tracking | P1 | implemented | [R-AUTH-031](../spec/identity-and-authentication.md) (implemented) |
 | TOK-030 | Revoke a token by ID | MVP | implemented | [R-AUTH-029](../spec/identity-and-authentication.md) (implemented) |
 | TOK-031 | Revoke a token by value | MVP | implemented | [R-AUTH-029](../spec/identity-and-authentication.md) (implemented) |
 | TOK-032 | Revocation semantics | MVP | implemented | [R-AUTH-023](../spec/identity-and-authentication.md) (implemented), [R-AUTH-029](../spec/identity-and-authentication.md) (implemented) |
-| TOK-033 | Bearer authentication | MVP | specified | [R-NPM-004](../spec/formats/npm.md), [R-AUTH-001](../spec/identity-and-authentication.md) (implemented), [R-AUTH-002](../spec/identity-and-authentication.md) (implemented), [R-AUTH-033](../spec/identity-and-authentication.md) (implemented) |
-| TOK-034 | Token as the password in Basic authentication | MVP | specified | [R-NPM-004](../spec/formats/npm.md), [R-AUTH-001](../spec/identity-and-authentication.md) (implemented), [R-AUTH-002](../spec/identity-and-authentication.md) (implemented), [R-AUTH-033](../spec/identity-and-authentication.md) (implemented) |
+| TOK-033 | Bearer authentication | MVP | implemented | [R-NPM-004](../spec/formats/npm.md) (implemented), [R-AUTH-001](../spec/identity-and-authentication.md) (implemented), [R-AUTH-002](../spec/identity-and-authentication.md) (implemented), [R-AUTH-033](../spec/identity-and-authentication.md) (implemented) |
+| TOK-034 | Token as the password in Basic authentication | MVP | implemented | [R-NPM-004](../spec/formats/npm.md) (implemented), [R-AUTH-001](../spec/identity-and-authentication.md) (implemented), [R-AUTH-002](../spec/identity-and-authentication.md) (implemented), [R-AUTH-033](../spec/identity-and-authentication.md) (implemented) |
 | TOK-035 | Command-line client token handling | P2 | open | – |
 | TOK-036 | Token-signing key pair | P2 | open | – |
 | TOK-037 | Custom signing certificates | P2 | open | – |
@@ -1439,7 +1439,7 @@ Catalog page: [ui-inventory.md](../features/ui-inventory.md) · specified by pri
 Catalog page: [api-content-operations.md](../features/api-content-operations.md) · specified by priority: MVP 11 of 11 · P1 56 of 56 · P2 0 of 48 · Later 0 of 48 · Out of scope 0 of 3
 
 <details>
-<summary>166 features: 67 specified, 99 open, 11 implemented</summary>
+<summary>166 features: 67 specified, 99 open, 14 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1536,7 +1536,7 @@ Catalog page: [api-content-operations.md](../features/api-content-operations.md)
 | API-091 | Query language execution | P2 | open | – |
 | API-092 | Name search | P1 | specified | [R-API-028](../spec/api-and-ui.md) |
 | API-093 | Archive entry search (deprecated) | Later | open | – |
-| API-094 | Maven coordinate search | P1 | specified | [R-API-029](../spec/api-and-ui.md) |
+| API-094 | Maven coordinate search | P1 | implemented | [R-API-029](../spec/api-and-ui.md) (implemented) |
 | API-095 | Property search | P1 | specified | [R-API-028](../spec/api-and-ui.md) |
 | API-096 | Checksum search | P1 | specified | [R-API-028](../spec/api-and-ui.md) |
 | API-097 | Bad or missing client checksum search | P2 | open | – |
@@ -1551,8 +1551,8 @@ Catalog page: [api-content-operations.md](../features/api-content-operations.md)
 | API-106 | Latest version by properties | P2 | open | – |
 | API-107 | Build artifacts search | P1 | specified | [R-API-042](../spec/api-and-ui.md) |
 | API-108 | Parent manifest lists of a container image | P2 | open | – |
-| API-109 | Container image catalog | P1 | specified | [R-API-029](../spec/api-and-ui.md) |
-| API-110 | Container tag listing | P1 | specified | [R-API-029](../spec/api-and-ui.md) |
+| API-109 | Container image catalog | P1 | implemented | [R-API-029](../spec/api-and-ui.md) (implemented) |
+| API-110 | Container tag listing | P1 | implemented | [R-API-029](../spec/api-and-ui.md) (implemented) |
 | API-111 | Trash can operations | P1 | specified | [R-API-027](../spec/api-and-ui.md) |
 | API-112 | Remove redundant trash directory records | P2 | open | – |
 | API-113 | Run garbage collection | MVP | specified | [R-API-040](../spec/api-and-ui.md), [R-OPS-020](../spec/operations-and-observability.md) (implemented) |
@@ -1749,7 +1749,7 @@ Catalog page: [formats/README.md](../features/formats/README.md) · specified by
 | FMT-003 | Client version floors and validated client versions | MVP | specified | [R-ARCH-010](../spec/architecture.md) (implemented), [R-NPM-045](../spec/formats/npm.md) |
 | FMT-004 | Format eligibility for federation | Later | open | – |
 | FMT-005 | Container-only deployment profile | Out of scope | open | – |
-| FMT-006 | Client setup instructions across formats | MVP | specified | [R-ARCH-008](../spec/architecture.md) (implemented), [R-GENERIC-016](../spec/formats/generic.md), [R-NPM-041](../spec/formats/npm.md) (implemented) |
+| FMT-006 | Client setup instructions across formats | MVP | implemented | [R-ARCH-008](../spec/architecture.md) (implemented), [R-GENERIC-016](../spec/formats/generic.md) (implemented), [R-NPM-041](../spec/formats/npm.md) (implemented) |
 | FMT-007 | Package view and file view | MVP | implemented | [R-ARCH-009](../spec/architecture.md) (implemented) |
 | FMT-008 | Format property namespaces | MVP | implemented | [R-ARCH-008](../spec/architecture.md) (implemented), [R-NPM-006](../spec/formats/npm.md) (implemented) |
 | FMT-009 | Format-aware deploy coordinates | P2 | open | – |
@@ -1764,7 +1764,7 @@ Catalog page: [formats/README.md](../features/formats/README.md) · specified by
 Catalog page: [formats/npm.md](../features/formats/npm.md) · specified by priority: MVP 37 of 37 · P1 15 of 15 · P2 0 of 8 · Later 0 of 1 · Out of scope 0 of 1
 
 <details>
-<summary>62 features: 52 specified, 10 open, 23 implemented</summary>
+<summary>62 features: 52 specified, 10 open, 34 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1772,13 +1772,13 @@ Catalog page: [formats/npm.md](../features/formats/npm.md) · specified by prior
 | PKG-NPM-002 | Registry URL of a repository | MVP | implemented | [R-NPM-001](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-003 | Scoped packages and encoded slashes | MVP | implemented | [R-AUTHZ-005](../spec/authorization.md) (implemented), [R-NPM-002](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-004 | Package name rules | MVP | implemented | [R-NPM-002](../spec/formats/npm.md) (implemented) |
-| PKG-NPM-005 | Bearer token in client configuration | MVP | specified | [R-NPM-004](../spec/formats/npm.md), [R-AUTH-033](../spec/identity-and-authentication.md) (implemented) |
-| PKG-NPM-006 | Basic credentials in client configuration | MVP | specified | [R-NPM-004](../spec/formats/npm.md), [R-AUTH-033](../spec/identity-and-authentication.md) (implemented) |
-| PKG-NPM-007 | When clients send credentials | MVP | specified | [R-AUTHZ-016](../spec/authorization.md) (implemented), [R-NPM-004](../spec/formats/npm.md), [R-AUTH-002](../spec/identity-and-authentication.md) (implemented) |
+| PKG-NPM-005 | Bearer token in client configuration | MVP | implemented | [R-NPM-004](../spec/formats/npm.md) (implemented), [R-AUTH-033](../spec/identity-and-authentication.md) (implemented) |
+| PKG-NPM-006 | Basic credentials in client configuration | MVP | implemented | [R-NPM-004](../spec/formats/npm.md) (implemented), [R-AUTH-033](../spec/identity-and-authentication.md) (implemented) |
+| PKG-NPM-007 | When clients send credentials | MVP | implemented | [R-AUTHZ-016](../spec/authorization.md) (implemented), [R-NPM-004](../spec/formats/npm.md) (implemented), [R-AUTH-002](../spec/identity-and-authentication.md) (implemented) |
 | PKG-NPM-008 | Browser (web) login | P1 | specified | [R-NPM-020](../spec/formats/npm.md), [R-AUTH-034](../spec/identity-and-authentication.md) |
 | PKG-NPM-009 | Legacy username and password login | P1 | specified | [R-NPM-021](../spec/formats/npm.md), [R-AUTH-035](../spec/identity-and-authentication.md) |
 | PKG-NPM-010 | Logout | P1 | specified | [R-NPM-021](../spec/formats/npm.md), [R-AUTH-035](../spec/identity-and-authentication.md) |
-| PKG-NPM-011 | Identity and connectivity checks | MVP | specified | [R-NPM-019](../spec/formats/npm.md), [R-AUTH-033](../spec/identity-and-authentication.md) (implemented) |
+| PKG-NPM-011 | Identity and connectivity checks | MVP | implemented | [R-NPM-019](../spec/formats/npm.md) (implemented), [R-AUTH-033](../spec/identity-and-authentication.md) (implemented) |
 | PKG-NPM-012 | One-time-password challenge on writes | P2 | open | – |
 | PKG-NPM-013 | Trusted publishing through CI OIDC token exchange | P1 | specified | [R-NPM-022](../spec/formats/npm.md) |
 | PKG-NPM-014 | Client-side token and profile management | P2 | open | – |
@@ -1796,24 +1796,24 @@ Catalog page: [formats/npm.md](../features/formats/npm.md) · specified by prior
 | PKG-NPM-026 | Abbreviated package document | MVP | implemented | [R-NPM-011](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-027 | Publish times for client-side release-age policies | MVP | implemented | [R-NPM-012](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-028 | Single-version document | P1 | implemented | [R-NPM-014](../spec/formats/npm.md) (implemented) |
-| PKG-NPM-062 | Tarball download | MVP | specified | [R-NPM-015](../spec/formats/npm.md), [R-NPM-025](../spec/formats/npm.md) |
+| PKG-NPM-062 | Tarball download | MVP | implemented | [R-NPM-015](../spec/formats/npm.md) (implemented), [R-NPM-025](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-029 | Metadata calculation for local repositories | MVP | implemented | [R-NPM-010](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-030 | Recalculate npm metadata | P1 | specified | [R-NPM-035](../spec/formats/npm.md) |
-| PKG-NPM-031 | Selection of the `latest` dist-tag | MVP | specified | [R-NPM-016](../spec/formats/npm.md) (implemented), [R-NPM-031](../spec/formats/npm.md) |
+| PKG-NPM-031 | Selection of the `latest` dist-tag | MVP | implemented | [R-NPM-016](../spec/formats/npm.md) (implemented), [R-NPM-031](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-032 | Conditional requests and cache headers | MVP | implemented | [R-NPM-013](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-033 | Stored package properties | MVP | implemented | [R-NPM-006](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-034 | Storage layout | MVP | implemented | [R-NPM-003](../spec/formats/npm.md) (implemented), [R-NPM-006](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-035 | Strict layout enforcement per local repository | P2 | open | – |
 | PKG-NPM-036 | Strict-layout conversion of existing repositories | P2 | open | – |
 | PKG-NPM-037 | Registry signatures for `npm audit signatures` | P2 | open | – |
-| PKG-NPM-038 | Proxying an upstream npm registry | MVP | specified | [R-AUTHZ-008](../spec/authorization.md) (implemented), [R-NPM-024](../spec/formats/npm.md) (implemented), [R-NPM-025](../spec/formats/npm.md), [R-NPM-027](../spec/formats/npm.md) |
+| PKG-NPM-038 | Proxying an upstream npm registry | MVP | implemented | [R-AUTHZ-008](../spec/authorization.md) (implemented), [R-NPM-024](../spec/formats/npm.md) (implemented), [R-NPM-025](../spec/formats/npm.md) (implemented), [R-NPM-027](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-039 | Remote metadata freshness and invalidation | MVP | implemented | [R-NPM-024](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-040 | Credentials for a private upstream registry | P1 | specified | [R-NPM-023](../spec/formats/npm.md) |
 | PKG-NPM-041 | FHIR package registry as upstream | P2 | open | – |
-| PKG-NPM-042 | Merged package documents | MVP | specified | [R-AUTHZ-009](../spec/authorization.md) (implemented), [R-NPM-030](../spec/formats/npm.md), [R-NPM-033](../spec/formats/npm.md) (implemented) |
-| PKG-NPM-043 | Dist-tag resolution across members | MVP | specified | [R-NPM-031](../spec/formats/npm.md) |
-| PKG-NPM-044 | Virtual metadata cache period | MVP | specified | [R-NPM-032](../spec/formats/npm.md) |
-| PKG-NPM-045 | Publishing through a virtual repository | MVP | specified | [R-AUTHZ-009](../spec/authorization.md) (implemented), [R-NPM-029](../spec/formats/npm.md) |
+| PKG-NPM-042 | Merged package documents | MVP | implemented | [R-AUTHZ-009](../spec/authorization.md) (implemented), [R-NPM-030](../spec/formats/npm.md) (implemented), [R-NPM-033](../spec/formats/npm.md) (implemented) |
+| PKG-NPM-043 | Dist-tag resolution across members | MVP | implemented | [R-NPM-031](../spec/formats/npm.md) (implemented) |
+| PKG-NPM-044 | Virtual metadata cache period | MVP | implemented | [R-NPM-032](../spec/formats/npm.md) (implemented) |
+| PKG-NPM-045 | Publishing through a virtual repository | MVP | implemented | [R-AUTHZ-009](../spec/authorization.md) (implemented), [R-NPM-029](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-046 | External dependency rewrite | P1 | specified | [R-NPM-034](../spec/formats/npm.md) |
 | PKG-NPM-047 | Permissions covering metadata as well as tarballs | MVP | implemented | [R-AUTHZ-005](../spec/authorization.md) (implemented), [R-NPM-003](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-048 | `npm search` | P1 | specified | [R-NPM-037](../spec/formats/npm.md) |
@@ -1826,7 +1826,7 @@ Catalog page: [formats/npm.md](../features/formats/npm.md) · specified by prior
 | PKG-NPM-055 | Build metadata through a companion CLI wrapper | P1 | specified | [R-NPM-039](../spec/formats/npm.md) |
 | PKG-NPM-056 | Read endpoints | MVP | implemented | [R-NPM-001](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-057 | Write endpoints | MVP | implemented | [R-NPM-007](../spec/formats/npm.md) (implemented), [R-NPM-009](../spec/formats/npm.md) (implemented) |
-| PKG-NPM-058 | Authentication endpoints | MVP | specified | [R-NPM-019](../spec/formats/npm.md), [R-NPM-020](../spec/formats/npm.md), [R-NPM-043](../spec/formats/npm.md) (implemented) |
+| PKG-NPM-058 | Authentication endpoints | MVP | specified | [R-NPM-019](../spec/formats/npm.md) (implemented), [R-NPM-020](../spec/formats/npm.md), [R-NPM-043](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-059 | Security audit endpoints | P1 | specified | [R-NPM-038](../spec/formats/npm.md) (implemented), [R-VULN-017](../spec/vulnerability-scanning.md) |
 | PKG-NPM-060 | Headers and error bodies | MVP | implemented | [R-NPM-005](../spec/formats/npm.md) (implemented), [R-NPM-043](../spec/formats/npm.md) (implemented) |
 | PKG-NPM-061 | Public-registry-only endpoints | Out of scope | open | – |
@@ -2983,8 +2983,8 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-API-052 (implemented) | Visibility of a management write on other replicas | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-API-020 | Resource map and routing | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-API-021 (implemented) | Current caller and UI preferences | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
-| R-API-053 | Guides of the formats | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
-| R-API-054 | The manual | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-API-053 (implemented) | Guides of the formats | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
+| R-API-054 (implemented) | The manual | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-API-048 | Package ownership surface | P1 | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-049 (implemented) | Guides for every registry variant | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
 | R-UI-050 | Help area and the manual | MVP | [api-and-ui.md](../spec/api-and-ui.md) |
@@ -3029,10 +3029,10 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-EP-018 (implemented) | Package metadata on an endpoint: filtering, URLs and cache keys | MVP | [endpoints.md](../spec/endpoints.md) |
 | R-EP-019 (implemented) | Cache-fill policy per endpoint | MVP | [endpoints.md](../spec/endpoints.md) |
 | R-EP-020 (implemented) | Exposure changes in the revocation journal | MVP | [endpoints.md](../spec/endpoints.md) |
-| R-NPM-026 | Versions removed upstream | MVP | [formats/npm.md](../spec/formats/npm.md) |
-| R-NPM-044 | npm audit events and metrics | MVP | [formats/npm.md](../spec/formats/npm.md) |
+| R-NPM-026 (implemented) | Versions removed upstream | MVP | [formats/npm.md](../spec/formats/npm.md) |
+| R-NPM-044 (implemented) | npm audit events and metrics | MVP | [formats/npm.md](../spec/formats/npm.md) |
 | R-NPM-046 | npm across replicas: no state between requests, Valkey degradation, drain | MVP | [formats/npm.md](../spec/formats/npm.md) |
-| R-NPM-047 | npm data in backups and restores | MVP | [formats/npm.md](../spec/formats/npm.md) |
+| R-NPM-047 (implemented) | npm data in backups and restores | MVP | [formats/npm.md](../spec/formats/npm.md) |
 | R-NPM-048 (implemented) | npm documents on an endpoint with exposure rules | MVP | [formats/npm.md](../spec/formats/npm.md) |
 | R-NUGET-027 | Acceptance test suite | MVP | [formats/nuget.md](../spec/formats/nuget.md) |
 | R-NUGET-028 | Audit events and metrics for NuGet | MVP | [formats/nuget.md](../spec/formats/nuget.md) |
@@ -3050,7 +3050,7 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-HA-051 (implemented) | Local development profile | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
 | R-HA-052 | Failure-injection test suite | MVP | [ha-and-helm.md](../spec/ha-and-helm.md) |
 | R-AUTH-012 (implemented) | CSRF protection for cookie-authenticated requests | MVP | [identity-and-authentication.md](../spec/identity-and-authentication.md) |
-| R-AUTH-021 | Dormant-user deactivation | P1 | [identity-and-authentication.md](../spec/identity-and-authentication.md) |
+| R-AUTH-021 (implemented) | Dormant-user deactivation | P1 | [identity-and-authentication.md](../spec/identity-and-authentication.md) |
 | R-AUTH-043 (implemented) | Scheduled authentication tasks | MVP | [identity-and-authentication.md](../spec/identity-and-authentication.md) |
 | R-OPS-045 | Valkey and coordination observability | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
 | R-OPS-046 | Operational signals for availability, horizontal scale and backup | MVP | [operations-and-observability.md](../spec/operations-and-observability.md) |
