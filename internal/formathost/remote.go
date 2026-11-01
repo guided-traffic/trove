@@ -328,7 +328,7 @@ func (a *adapter) PrepareFill(ctx context.Context, path, variant string, body io
 }
 
 func (a *adapter) OnFill(ctx context.Context, tx meta.Tx, f proxy.FillEvent) (proxy.FillDecision, error) {
-	w, err := a.deps.writerFor(tx, nil, a.repo.Format)
+	w, err := a.deps.writerForEvent(tx, a.ref, a.repo.Format)
 	if err != nil {
 		return proxy.FillByFetchTime, err
 	}
