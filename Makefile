@@ -274,7 +274,7 @@ test-integration: ## Integration tests against the running stack (make integrati
 # exposure rules (R-EP-013, Q-ARCH-250): the per-change tier asserts delivery, the p50 and the allocations; the p99
 # bound is enforced here, by the nightly Performance workflow.
 .PHONY: test-performance
-test-performance: ## Latency targets of the per-change tier enforced (P-13, P-14, R-NPM-010, R-API-014, R-EP-013) (make integration-up); .out/test-performance.json
+test-performance: ## Latency targets of the per-change tier enforced (P-13, P-14, R-NPM-010, R-API-014, R-EP-013, R-ARCH-033) (make integration-up); .out/test-performance.json
 	@test -f $(INTEGRATION_ENV) || { echo "$(INTEGRATION_ENV) is missing: run 'make integration-up' first"; exit 1; }
 	@mkdir -p .out
 	@set -o pipefail; set -a; . $(INTEGRATION_ENV); set +a; \
@@ -283,6 +283,8 @@ test-performance: ## Latency targets of the per-change tier enforced (P-13, P-14
 	    -json ./test/integration/coordination/... ./test/integration/npm/... ./test/integration/api/... | tee .out/test-performance.json | $(TESTLOG) || rc=$$?; \
 	  TROVE_PERF_GATE=1 go test -count=1 -p 1 -run 'TestR_EP_013_CeilingPerformance' \
 	    -json ./internal/authz/ | tee -a .out/test-performance.json | $(TESTLOG) || rc=$$?; \
+	  TROVE_PERF_GATE=1 go test -count=1 -p 1 -run 'TestFlightLockWait' \
+	    -json ./internal/cluster/ | tee -a .out/test-performance.json | $(TESTLOG) || rc=$$?; \
 	  exit $$rc
 
 # S3 conformance against MinIO, the leg that used to run nightly: MinIO is built from source at
