@@ -76,6 +76,8 @@ func (f *Format) WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	h.Set("X-Content-Type-Options", "nosniff")
 	switch e.Kind {
 	case errs.Unauthenticated:
+		// The stage's own challenge (errs.Error.Challenge: Bearer for a browser-shaped request) is
+		// not used: a NuGet endpoint offers Basic alone, whoever refused (R-NUGET-012).
 		h.Set("WWW-Authenticate", challenge)
 	case errs.MethodNotAllowed:
 		if len(e.Allow) > 0 {
