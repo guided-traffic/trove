@@ -193,4 +193,73 @@ describe('Package details', () => {
     expect(text(r.root)).toContain('Deprecated.');
     expect(text(r.root)).toContain('Use @team-a/ui2');
   });
+
+  describe('NuGet', () => {
+    const nuget = (inputs: Record<string, unknown> = {}, setup?: (fake: FakePackagesApi) => void) =>
+      open({ format: 'nuget', ...inputs }, setup, 'Contoso.Logging');
+
+    it('R-UI-007 R-NUGET-007 the page shows the ID in its original casing and the latest listed version', async () => {
+      const r = await nuget();
+      expect(text(r.root.querySelector('h1')!)).toBe('Contoso.Logging');
+      expect(versionInput(r).value).toBe('2.3.1');
+      expect(r.root.querySelector('.banner-warning')).toBeNull();
+      expect(r.root.querySelector('.chips')?.textContent).toContain('nuget-local');
+    });
+
+    it('R-UI-007 R-NUGET-006 an unlisted version is flagged as hidden from search', async () => {
+      const r = await nuget({ version: '2.2.0' });
+      expect(text(r.root)).toContain('Unlisted.');
+      expect(text(r.root)).toContain('hidden from search');
+      await expectAccessible(r.root);
+    });
+
+    it('R-UI-007 the Metadata tab lists the dependencies by target framework, verbatim, and says so for a framework without any', async () => {
+      const r = await nuget({ tab: 'metadata' });
+      const t = text(r.root);
+      expect(t).toContain('Dependencies by target framework');
+      const headings = [...r.root.querySelectorAll('.pkg-tabs h3')].map((h) => text(h));
+      expect(headings).toEqual(['net8.0', '.NETStandard2.0', 'net462']);
+      const pairs = [...r.root.querySelectorAll('.pkg-tabs dl.facts')].flatMap((dl) =>
+        [...dl.querySelectorAll('dt')].map((dt) => `${text(dt)} ${text(dt.nextElementSibling!)}`),
+      );
+      expect(pairs).toEqual(
+        expect.arrayContaining([
+          'Microsoft.Extensions.Logging.Abstractions [8.0.0, )',
+          'System.Text.Json [8.0.4, )',
+          'System.Text.Json [6.0.0, )',
+        ]),
+      );
+      expect(t).toContain('No dependencies.');
+      expect(t).toContain('Contoso Team');
+      await expectAccessible(r.root);
+    });
+
+    it('R-UI-007 the project and license URLs are links only for http and https; the README tab is the default', async () => {
+      const r = await nuget();
+      expect(tabLabels(r)[0]).toBe('README');
+      expect(text(r.root)).toContain('Structured logging for Contoso services.');
+      await set(r, { tab: 'metadata' });
+      const hrefs = [...r.root.querySelectorAll('a')].map((a) => a.getAttribute('href'));
+      expect(hrefs).toContain('https://example.com/contoso/logging');
+      expect(hrefs).toContain('https://licenses.nuget.org/MIT');
+
+      const bad = await nuget({ tab: 'metadata' }, (fake) => {
+        for (const v of fake.versionList) {
+          if (v.format === 'nuget') v.metadata = { ...v.metadata, projectUrl: 'javascript:alert(1)', licenseUrl: 'file:///etc/passwd' };
+        }
+      });
+      expect(text(bad.root)).toContain('javascript:alert(1)');
+      expect(bad.root.querySelector('a[href*="javascript"]')).toBeNull();
+      expect(bad.root.querySelector('a[href^="file:"]')).toBeNull();
+    });
+
+    it('R-UI-007 a version without nuspec metadata opens the tab with the empty-state sentence', async () => {
+      const r = await nuget({ tab: 'metadata', version: '2.2.0' });
+      expect(text(r.root)).toContain('Contoso Team');
+      const bare = await nuget({ tab: 'metadata' }, (fake) => {
+        for (const v of fake.versionList) if (v.format === 'nuget') v.metadata = {};
+      });
+      expect(text(bare.root)).toContain('This version declares no further metadata.');
+    });
+  });
 });

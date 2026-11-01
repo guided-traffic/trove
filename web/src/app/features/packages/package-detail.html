@@ -58,6 +58,17 @@
         </ul>
       </dd>
     </dl>
+    @if (unlisted()) {
+      <p class="banner-warning" role="note">
+        <span class="material-icons inline warn" aria-hidden="true">visibility_off</span>
+        <span
+          ><strong i18n="@@pkg.unlisted">Unlisted.</strong>
+          <span i18n="@@pkg.unlisted-detail"
+            >This version is hidden from search. It is still downloaded when a project asks for exactly this version.</span
+          ></span
+        >
+      </p>
+    }
     @if (deprecated(); as why) {
       <p class="banner-warning" role="note">
         <span class="material-icons inline warn" aria-hidden="true">warning</span>
@@ -134,6 +145,28 @@
                         <dd>{{ e[1] }}</dd>
                       }
                     </dl>
+                  }
+                  @if (frameworkGroups().length > 0) {
+                    <h2 i18n="@@pkg.meta.frameworks">Dependencies by target framework</h2>
+                    @for (g of frameworkGroups(); track $index) {
+                      <h3>
+                        @if (g.framework; as fw) {
+                          <span translate="no">{{ fw }}</span>
+                        } @else {
+                          <span i18n="@@pkg.meta.all-frameworks">All frameworks</span>
+                        }
+                      </h3>
+                      @if (g.entries.length === 0) {
+                        <p class="empty" i18n="@@pkg.meta.no-dependencies">No dependencies.</p>
+                      } @else {
+                        <dl class="facts" translate="no">
+                          @for (e of g.entries; track e[0]) {
+                            <dt>{{ e[0] }}</dt>
+                            <dd>{{ e[1] }}</dd>
+                          }
+                        </dl>
+                      }
+                    }
                   }
                   @if (engines().length > 0) {
                     <h2 i18n="@@pkg.meta.engines">Required runtimes</h2>

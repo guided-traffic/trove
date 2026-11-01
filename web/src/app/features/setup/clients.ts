@@ -9,7 +9,8 @@ export interface ClientChoice {
 /**
  * The clients per format (R-UI-016, R-UI-009). The server owns the snippets and rejects a client
  * it does not know; this table only decides what the pickers offer. A format without an entry has
- * no setup screen yet and is not offered. The NuGet clients arrive with the NuGet format.
+ * no setup screen yet and is not offered. NuGet offers the .NET CLI, nuget.exe
+ * and Visual Studio (R-UI-018, Q-UI-93).
  */
 export const FORMAT_CLIENTS: Readonly<Record<string, readonly ClientChoice[]>> = {
   generic: [{ id: 'curl', label: 'curl' }],
@@ -18,6 +19,11 @@ export const FORMAT_CLIENTS: Readonly<Record<string, readonly ClientChoice[]>> =
     { id: 'pnpm', label: 'pnpm' },
     { id: 'yarn', label: 'Yarn Berry (2 and later)' },
     { id: 'yarn-classic', label: 'Yarn Classic (1.x)' },
+  ],
+  nuget: [
+    { id: 'dotnet', label: '.NET CLI (dotnet)' },
+    { id: 'nuget', label: 'NuGet CLI (nuget.exe)' },
+    { id: 'visual-studio', label: 'Visual Studio' },
   ],
 };
 
@@ -58,6 +64,24 @@ export function snippetExplanation(id: string): string | null {
       return $localize`:@@setup.snippet.gitlab-generic:For npm 10, pnpm 10 on npm 10 and Yarn 1. A pipeline step exchanges the job's ID token for a short-lived trove token and revokes it again as its last step.`;
     case 'npm.publish.gitlab-ci.native':
       return $localize`:@@setup.snippet.gitlab-native:For npm 11.5.1 and later, pnpm 11 and 12 and Yarn 4. The client exchanges the job's ID token itself.`;
+    case 'dotnet.configure.add-source':
+      return $localize`:@@setup.snippet.dotnet-add-source:Adds this repository as a package source of your user configuration. On Linux and macOS the .NET CLI cannot encrypt the password, so it is stored in clear text in that file.`;
+    case 'dotnet.configure.nuget-config':
+    case 'nuget.configure.nuget-config':
+      return $localize`:@@setup.snippet.nuget-config:Save this as nuget.config next to your solution. It removes all other package sources, so every package comes through this repository, and it reads the token from the environment variable.`;
+    case 'nuget.configure.sources-add':
+      return $localize`:@@setup.snippet.nuget-sources-add:Adds this repository as a package source of your user configuration with nuget.exe.`;
+    case 'visual-studio.configure.source':
+      return $localize`:@@setup.snippet.vs-source:In Visual Studio open Tools, NuGet Package Manager, Package Manager Settings, Package Sources. Add a source with this name and address. At the sign-in prompt enter any user name and the token as the password.`;
+    case 'dotnet.install':
+      return $localize`:@@setup.snippet.dotnet-install:Adds the package to the project in the current directory and restores it through the configured sources.`;
+    case 'nuget.install':
+      return $localize`:@@setup.snippet.nuget-install:Installs the package into the current directory through this repository.`;
+    case 'visual-studio.install':
+      return $localize`:@@setup.snippet.vs-install:In the NuGet package manager choose this source, search for the package and install it. Or run this in the Package Manager Console.`;
+    case 'dotnet.publish':
+    case 'nuget.publish':
+      return $localize`:@@setup.snippet.nuget-publish:Pushes the package to the repository that receives uploads. The token travels as the API key.`;
     case 'curl.configure.function':
       return $localize`:@@setup.snippet.curl-function:Paste this into the shell or the CI script that runs curl. It defines trove_curl, which hands curl the credential on standard input, so the token never appears on curl's command line.`;
     case 'curl.install':

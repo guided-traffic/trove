@@ -539,3 +539,17 @@ Conventions these screens follow:
   `msgpackr-extract` and `@parcel/watcher`. Build, test and lint pass without running them; if a
   later npm turns the warning into an error, approve the scripts in the workspace configuration.
 - Packages and client setup: the NuGet clients (.NET CLI, NuGet CLI, Visual Studio, `nuget.config`) wait for the NuGet format; the Owners and Builds tabs of the package page (P1), the native-exchange GitLab variant (R-NPM-022, P1) and the Playwright journey with a real `npm install` (R-UI-016) are not built. The version combobox is a native input with a `datalist`, not an ARIA combobox. The wizard of a caller who holds neither `settings:read` nor any readable repository shows no client address (Q-UI-69).
+
+## NuGet in the UI
+
+R-UI-007, R-UI-018 and R-UI-019 need no NuGet screen (Q-UI-93 to Q-UI-95). What the format adds:
+
+| Where | What |
+|---|---|
+| [clients.ts](../../web/src/app/features/setup/clients.ts) | The `nuget` entry of `FORMAT_CLIENTS` (`dotnet`, `nuget`, `visual-studio`) and the explanations by snippet id (`dotnet.configure.add-source`, `dotnet.configure.nuget-config`, `nuget.configure.nuget-config`, `nuget.configure.sources-add`, `visual-studio.configure.source`, `<client>.install`, `dotnet.publish`, `nuget.publish`). An id the server sends that is not listed shows the snippet without a sentence |
+| [package-detail.ts](../../web/src/app/features/packages/package-detail.ts) | The Metadata tab reads the NuGet members of `metadata`: `dependencyGroups`, `authors` (string or list), `projectUrl`, `licenseUrl`, `repositoryUrl`, `listed`. `listed: false` shows the banner |
+| [fakes-packages.ts](../../web/src/app/api/testing/fakes-packages.ts) | `NUGET_REPOSITORIES`, the `Contoso.Logging` versions (one listed with a README and three frameworks, one unlisted) and `nugetSetup`, modelled on R-NUGET-026; it is not the output of the Go templates, so a change to the templates' ids or text is a change here and in `clients.ts` |
+| [fakes-catalog.ts](../../web/src/app/api/testing/fakes-catalog.ts) | `NUGET_SETTINGS_SCHEMA`, a copy of [settings.schema.json](../../internal/formats/nuget/settings.schema.json), and `NUGET_FORMAT` |
+| [11-nuget.spec.ts](../../web/e2e/tests/11-nuget.spec.ts) | The browser journey ([e2e.md](e2e.md#browser-journeys)) |
+
+The settings form, the wizard step and the edit tab render the NuGet schema without NuGet code (`format-settings.spec.ts` shows `deleteMode` on a local repository and `forwardSearch` on a remote one).

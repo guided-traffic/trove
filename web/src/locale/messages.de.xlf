@@ -12710,6 +12710,24 @@
         <target>Repositories</target>
       </segment>
     </unit>
+    <unit id="pkg.unlisted">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:65,66</note>
+      </notes>
+      <segment>
+        <source>Unlisted.</source>
+        <target>Nicht gelistet.</target>
+      </segment>
+    </unit>
+    <unit id="pkg.unlisted-detail">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:67,69</note>
+      </notes>
+      <segment>
+        <source>This version is hidden from search. It is still downloaded when a project asks for exactly this version.</source>
+        <target>Diese Version erscheint nicht in der Suche. Sie wird weiterhin heruntergeladen, wenn ein Projekt genau diese Version anfordert.</target>
+      </segment>
+    </unit>
     <unit id="pkg.deprecated">
       <notes>
         <note category="location">src/app/features/packages/package-detail.html:65</note>
@@ -12762,6 +12780,33 @@
       <segment>
         <source>Distribution tags</source>
         <target>Verteilungs-Tags</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.frameworks">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:150,151</note>
+      </notes>
+      <segment>
+        <source>Dependencies by target framework</source>
+        <target>Abhängigkeiten nach Zielframework</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.all-frameworks">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:156,158</note>
+      </notes>
+      <segment>
+        <source>All frameworks</source>
+        <target>Alle Frameworks</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.no-dependencies">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:160,162</note>
+      </notes>
+      <segment>
+        <source>No dependencies.</source>
+        <target>Keine Abhängigkeiten.</target>
       </segment>
     </unit>
     <unit id="pkg.meta.engines">
@@ -12888,6 +12933,24 @@
       <segment>
         <source>Homepage</source>
         <target>Homepage</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.project">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:193</note>
+      </notes>
+      <segment>
+        <source>Project</source>
+        <target>Projekt</target>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.license-url">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:194</note>
+      </notes>
+      <segment>
+        <source>License</source>
+        <target>Lizenz</target>
       </segment>
     </unit>
     <unit id="pkg.meta.source">
@@ -14096,6 +14159,78 @@
       <segment>
         <source>For npm 11.5.1 and later, pnpm 11 and 12 and Yarn 4. The client exchanges the job&apos;s ID token itself.</source>
         <target>Für npm 11.5.1 und neuer, pnpm 11 und 12 sowie Yarn 4. Der Client tauscht das ID-Token des Jobs selbst.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.dotnet-add-source">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:68</note>
+      </notes>
+      <segment>
+        <source>Adds this repository as a package source of your user configuration. On Linux and macOS the .NET CLI cannot encrypt the password, so it is stored in clear text in that file.</source>
+        <target>Fügt dieses Repository als Paketquelle in Ihre Benutzerkonfiguration ein. Unter Linux und macOS kann die .NET CLI das Passwort nicht verschlüsseln, deshalb steht es im Klartext in dieser Datei.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.nuget-config">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:71</note>
+      </notes>
+      <segment>
+        <source>Save this as nuget.config next to your solution. It removes all other package sources, so every package comes through this repository, and it reads the token from the environment variable.</source>
+        <target>Speichern Sie dies als nuget.config neben Ihrer Projektmappe. Die Datei entfernt alle anderen Paketquellen, sodass jedes Paket über dieses Repository kommt, und liest das Token aus der Umgebungsvariablen.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.nuget-sources-add">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:73</note>
+      </notes>
+      <segment>
+        <source>Adds this repository as a package source of your user configuration with nuget.exe.</source>
+        <target>Fügt dieses Repository mit nuget.exe als Paketquelle in Ihre Benutzerkonfiguration ein.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.vs-source">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:75</note>
+      </notes>
+      <segment>
+        <source>In Visual Studio open Tools, NuGet Package Manager, Package Manager Settings, Package Sources. Add a source with this name and address. At the sign-in prompt enter any user name and the token as the password.</source>
+        <target>Öffnen Sie in Visual Studio Extras, NuGet-Paket-Manager, Paket-Manager-Einstellungen, Paketquellen. Fügen Sie eine Quelle mit diesem Namen und dieser Adresse hinzu. Geben Sie bei der Anmeldeabfrage einen beliebigen Benutzernamen und das Token als Passwort ein.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.dotnet-install">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:77</note>
+      </notes>
+      <segment>
+        <source>Adds the package to the project in the current directory and restores it through the configured sources.</source>
+        <target>Fügt das Paket dem Projekt im aktuellen Verzeichnis hinzu und stellt es über die eingerichteten Quellen wieder her.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.nuget-install">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:79</note>
+      </notes>
+      <segment>
+        <source>Installs the package into the current directory through this repository.</source>
+        <target>Installiert das Paket über dieses Repository in das aktuelle Verzeichnis.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.vs-install">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:81</note>
+      </notes>
+      <segment>
+        <source>In the NuGet package manager choose this source, search for the package and install it. Or run this in the Package Manager Console.</source>
+        <target>Wählen Sie im NuGet-Paket-Manager diese Quelle, suchen Sie das Paket und installieren Sie es. Oder führen Sie dies in der Paket-Manager-Konsole aus.</target>
+      </segment>
+    </unit>
+    <unit id="setup.snippet.nuget-publish">
+      <notes>
+        <note category="location">src/app/features/setup/clients.ts:84</note>
+      </notes>
+      <segment>
+        <source>Pushes the package to the repository that receives uploads. The token travels as the API key.</source>
+        <target>Überträgt das Paket in das Repository, das Uploads annimmt. Das Token wird als API-Schlüssel gesendet.</target>
       </segment>
     </unit>
     <unit id="setup.snippet.curl-function">

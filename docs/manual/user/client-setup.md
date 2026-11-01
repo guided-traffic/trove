@@ -1,6 +1,6 @@
 # Connecting a package client
 
-How to point npm, pnpm, Yarn and curl at a trove repository, sign them in with a token from an environment variable, and install, publish and maintain packages and files through it. The page explains the concepts and the places in the UI that give you the exact configuration of your installation: the Client setup page, the Guides area and the How to use tab of a repository.
+How to point npm, pnpm, Yarn, the .NET CLI, nuget.exe, Visual Studio and curl at a trove repository, sign them in with a token from an environment variable, and install, publish and maintain packages and files through it. The page explains the concepts and the places in the UI that give you the exact configuration of your installation: the Client setup page, the Guides area and the How to use tab of a repository.
 
 ## Where the instructions are
 
@@ -31,9 +31,10 @@ Every repository has one client address, built from the configured address of th
 | Package type | Address | Example |
 |---|---|---|
 | npm | `<base URL>/api/npm/<repository key>/` | `https://trove.example.com/api/npm/npm-all/` |
+| NuGet | `<base URL>/api/nuget/<repository key>/v3/index.json` | `https://trove.example.com/api/nuget/nuget-all/v3/index.json` |
 | Generic | `<base URL>/files/<repository key>/` | `https://trove.example.com/files/generic-local/` |
 
-The trailing slash belongs to the address. Which class of repository to use:
+The trailing slash belongs to the address of npm and generic repositories; a NuGet address ends in `index.json`. Which class of repository to use:
 
 - **Virtual** repositories are the recommended address: internal and public packages through one address and one credential. A publish through a virtual repository goes to its deployment target, a local member.
 - **Local** repositories hold what your teams publish and serve nothing else.
@@ -44,7 +45,7 @@ The trailing slash belongs to the address. Which class of repository to use:
 ## Use the Client setup page
 
 1. Under **Package type**, choose the format.
-2. Under **Client**, choose your client: **npm**, **pnpm**, **Yarn Berry (2 and later)** or **Yarn Classic (1.x)** for npm, **curl** for generic repositories.
+2. Under **Client**, choose your client: **npm**, **pnpm**, **Yarn Berry (2 and later)** or **Yarn Classic (1.x)** for npm, **.NET CLI (dotnet)**, **NuGet CLI (nuget.exe)** or **Visual Studio** for NuGet, **curl** for generic repositories.
 3. Under **Repository**, choose one of the repositories you can read. Virtual repositories come first and are marked **recommended**; each entry says **Read only**, **Publishing goes to its default deployment target**, **You can publish** or **You cannot publish**.
 4. Under **Credentials**, choose how the snippets sign in (next section). Without a session this step only says that the snippets contain no authentication.
 5. Copy the snippets from the tabs **Configure**, **Install** and **Publish** with **Copy snippet**, or save a configuration file with **Download**.
@@ -102,6 +103,38 @@ npm whoami
 ```
 
 `npm whoami`, `pnpm whoami` and `yarn npm whoami` print your trove user name (`sa:<name>` for a service-account token); Yarn Classic has no such command. In CI, store a service-account token with only the permissions the job needs as a masked, protected variable named `TROVE_TOKEN`. The variable has this name unless an administrator configured another; the snippets always show the name in use. `npm login` and its pnpm and Yarn equivalents do not work with trove: put the token into the configuration instead.
+
+## Configure a NuGet client
+
+The Client setup page always shows the `index.json` address of the repository, never an older NuGet v2 address. The clients take it like this:
+
+| Client | Where the source is configured | Credential |
+|---|---|---|
+| .NET CLI | `dotnet nuget add source` writes it into your user configuration; or a `nuget.config` next to the solution | `--password` with the token; on Linux and macOS add `--store-password-in-clear-text`, because the .NET CLI cannot encrypt the password there |
+| nuget.exe | `nuget sources add`, or a `nuget.config` | `-Password` with the token |
+| Visual Studio | Tools, NuGet Package Manager, Package Manager Settings, Package Sources | any user name; the token as the password at the sign-in prompt |
+
+The `nuget.config` the page offers starts with `<clear />`, which removes every other package source. Every package then comes through the trove repository (use a virtual repository that includes a nuget.org remote), and a package of the same name on a public source cannot slip in. It reads the token from the environment variable `%TROVE_TOKEN%`, which works on every operating system:
+
+```xml
+<!-- example: the virtual repository nuget-all -->
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="trove" value="https://trove.example.com/api/nuget/nuget-all/v3/index.json" />
+  </packageSources>
+  <packageSourceCredentials>
+    <trove>
+      <add key="Username" value="alice" />
+      <add key="ClearTextPassword" value="%TROVE_TOKEN%" />
+    </trove>
+  </packageSourceCredentials>
+</configuration>
+```
+
+The user name is not checked; the token is. To publish, `dotnet nuget push <id>.<version>.nupkg --source <address> --api-key "${TROVE_TOKEN}"` sends the token as the API key; the **Publish** tab fills in the address of the repository that receives uploads. Visual Studio has no **Publish** snippet.
+
+On the package page a NuGet package shows its ID in the casing of its first publish, its dependencies by target framework on the **Metadata** tab, and the banner **Unlisted.** for a version its publisher unlisted: that version is missing from search and is still downloaded when a project asks for exactly it.
 
 ## Install, publish and maintain npm packages
 

@@ -132,7 +132,7 @@ describe('Install command panel', () => {
 
   it('R-UI-009 a format without client instructions says so', async () => {
     const r = await renderScreen(InstallPanel, {
-      inputs: { format: 'nuget', name: 'Contoso.Logging', version: await version() },
+      inputs: { format: 'maven', name: 'org.example:lib', version: await version() },
     });
     expect(text(r.root)).toContain('no install instructions for this package type yet');
   });

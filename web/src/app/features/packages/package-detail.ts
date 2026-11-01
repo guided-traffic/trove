@@ -29,6 +29,12 @@ interface DependencyGroup {
   readonly entries: readonly (readonly [string, string])[];
 }
 
+/** The dependencies of a NuGet package for one target framework (`null`: declared for all). */
+interface FrameworkGroup {
+  readonly framework: string | null;
+  readonly entries: readonly (readonly [string, string])[];
+}
+
 function stringRecord(value: unknown): [string, string][] {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return [];
   return Object.entries(value).flatMap(([k, v]): [string, string][] =>
@@ -37,7 +43,30 @@ function stringRecord(value: unknown): [string, string][] {
 }
 
 function strings(value: unknown): string[] {
+  if (typeof value === 'string') return value.trim() === '' ? [] : [value];
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+}
+
+/**
+ * The `dependencyGroups` member of NuGet metadata (formats/nuget.md R-NUGET-007): a list of groups
+ * with an optional `targetFramework` and `dependencies` of `id` and `range`. Anything else is skipped.
+ */
+function frameworkGroups(value: unknown): FrameworkGroup[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((g): FrameworkGroup[] => {
+    if (typeof g !== 'object' || g === null) return [];
+    const group = g as Record<string, unknown>;
+    const deps = Array.isArray(group['dependencies']) ? group['dependencies'] : [];
+    const entries = deps.flatMap((d): [string, string][] => {
+      if (typeof d !== 'object' || d === null) return [];
+      const dep = d as Record<string, unknown>;
+      const id = dep['id'];
+      const range = dep['range'] ?? dep['version'];
+      return typeof id === 'string' ? [[id, typeof range === 'string' && range !== '' ? range : '*']] : [];
+    });
+    const fw = group['targetFramework'];
+    return [{ framework: typeof fw === 'string' && fw !== '' ? fw : null, entries }];
+  });
 }
 
 /**
@@ -148,6 +177,9 @@ export class PackageDetail {
       { label: $localize`:@@pkg.meta.optional-dependencies:Optional dependencies`, entries: stringRecord(m['optionalDependencies']) },
     ].filter((g) => g.entries.length > 0);
   });
+  protected readonly frameworkGroups = computed(() => frameworkGroups(this.detail()?.metadata['dependencyGroups']));
+  /** A NuGet version the publisher unlisted (R-NUGET-006): it restores when pinned and is hidden from search. */
+  protected readonly unlisted = computed(() => this.detail()?.metadata['listed'] === false);
   protected readonly engines = computed(() => stringRecord(this.detail()?.metadata['engines']));
   protected readonly authors = computed(() => strings(this.detail()?.metadata['authors']));
   protected readonly deprecated = computed(() => {
@@ -158,6 +190,8 @@ export class PackageDetail {
     const m = this.detail()?.metadata ?? {};
     const entries: [string, unknown][] = [
       [$localize`:@@pkg.meta.homepage:Homepage`, m['homepage']],
+      [$localize`:@@pkg.meta.project:Project`, m['projectUrl']],
+      [$localize`:@@pkg.meta.license-url:License`, m['licenseUrl']],
       [$localize`:@@pkg.meta.source:Source repository`, m['repositoryUrl']],
       [$localize`:@@pkg.meta.bugs:Issue tracker`, m['bugsUrl']],
     ];
@@ -171,6 +205,7 @@ export class PackageDetail {
     () =>
       this.distTags().length > 0 ||
       this.dependencyGroups().length > 0 ||
+      this.frameworkGroups().length > 0 ||
       this.engines().length > 0 ||
       this.authors().length > 0 ||
       this.links().length > 0 ||

@@ -2713,7 +2713,7 @@ Priority: **MVP** · Covers: UI-009, ART-049
 - Tabs: README (default when the version has one, `hasReadme`; a version without one has no README
   tab and the README is not requested, R-UI-008); Metadata (format-specific: npm dist-tags and
   dependency kinds, NuGet target frameworks and dependency groups, authors, project URL as a text
-  link with an external-link marker); Files (files of the version with size, SHA-256 copy button,
+  link with an external-link marker; the members the page reads are in Q-UI-93, among them the unlisted state); Files (files of the version with size, SHA-256 copy button,
   download); Repositories (each with "show in browser"); Owners (R-API-048, P1); Builds (P1).
 - From M4b ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-023): a Vulnerabilities
   tab (`tab=vulnerabilities`) with the selected version's evaluation state, block and findings per
@@ -3153,6 +3153,9 @@ options; at the credential prompt enter any user name and the token as password.
 | Publish | `dotnet nuget push <id>.<version>.nupkg --source "https://trove.example.com/api/nuget/nuget-local/v3/index.json" --api-key "${TROVE_TOKEN}"` (the token travels as `X-NuGet-ApiKey`, INV-8; a `.snupkg` next to the package is pushed with it, [formats/nuget.md](formats/nuget.md)) |
 
 The username is not checked (INV-8); the snippet fills in the caller's name for readability.
+
+The UI's client table offers three clients for NuGet: `dotnet`, `nuget` (nuget.exe) and `visual-studio` (Q-UI-94). Visual Studio
+has a configure and an install snippet and none for publishing.
 PowerShell and Chocolatey instructions need NuGet v2, which is P2 (INV-14), and are not offered in
 the MVP.
 
@@ -5238,7 +5241,7 @@ R-UI-009 and R-UI-016 name the clients (npm, pnpm, Yarn Berry, Yarn Classic; .NE
 | (b) The format descriptor lists its clients | A member of `GET /api/v1/formats` | Both halves change together | A change of the format contract for display data, owned by the repository work package |
 | (c) The UI hard-codes npm only | No table | Smallest | No path to NuGet; a second place to edit later |
 
-**Choice:** (a). The table has one entry, npm, with the four clients of R-UI-017 (`npm`, `pnpm`, `yarn`, `yarn-classic`; Q-UI-77 corrected the spelling of Yarn 2 and later); NuGet's clients arrive with the NuGet format. A format that is in the format catalog but not in the table is not offered by the setup page, and the install panel says that there are no instructions yet. The explanation of a snippet is looked up by its `id` (`snippetExplanation`) and is an English source text with a German translation like every other text; an unknown `id` shows the snippet without a sentence. The install panel preselects a virtual repository that holds the version, else the first local one, as R-UI-009 says, and links to `/setup?repository=&client=` with its choice.
+**Choice:** (a). The table has one entry, npm, with the four clients of R-UI-017 (`npm`, `pnpm`, `yarn`, `yarn-classic`; Q-UI-77 corrected the spelling of Yarn 2 and later); NuGet's clients arrive with the NuGet format (Q-UI-94 adds them). A format that is in the format catalog but not in the table is not offered by the setup page, and the install panel says that there are no instructions yet. The explanation of a snippet is looked up by its `id` (`snippetExplanation`) and is an English source text with a German translation like every other text; an unknown `id` shows the snippet without a sentence. The install panel preselects a virtual repository that holds the version, else the first local one, as R-UI-009 says, and links to `/setup?repository=&client=` with its choice.
 
 **Rationale:** The server must not send prose (R-API-030), and the UI must not parse the snippets. A table in the UI is the smaller coupling of the two. The development agent revisits this when the NuGet format ships: if its clients differ per installation (a Visual Studio entry only where the V2 protocol is on), (b) becomes the better home.
 
@@ -5664,6 +5667,60 @@ Status: **Decided by the development agent** — selected from the options below
 **Rationale:** The screen reports the HTTP answer, not a guess about the database. The development agent revisits this if the server's answer for non-administrators changes.
 
 **Applied in the spec:** R-UI-030.
+
+### Q-UI-93 · How the package page shows NuGet metadata and the listed state
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-UI-007 asks for NuGet target frameworks, dependency groups, authors and project URL on the Metadata tab, and R-NUGET-006 gives a version a `listed` flag. `PackageVersion.metadata` is "format-specific, owned by the format page", and the page so far read npm's members only.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The same Metadata tab reads the NuGet members | `dependencyGroups` (a list of `targetFramework` and `dependencies` of `id` and `range`), `authors` (a string or a list), `projectUrl`, `licenseUrl`, `repositoryUrl` and `listed`; a member that is absent is not shown; no branch on the format name | One screen for every format; the format owns the keys; a format that sends none of them shows nothing | The tab knows the key names of two formats |
+| (b) A component per format | The page picks a NuGet component by `format` | Each format can lay out freely | Contradicts R-UI-019 (a new format needs no new screen) and puts format knowledge into the UI |
+| (c) Add `listed` to `PackageVersionSummary` as well | The versions table shows the state per version | The table is complete | An API change in a generated schema for one format; the list of a version page is a minority path |
+
+**Choice:** (a). `listed: false` shows a banner "Unlisted." above the tabs of the selected version, with the sentence that the version is hidden from search and still downloaded when a project asks for exactly it (R-NUGET-006). The dependencies are grouped by the target framework verbatim as the nuspec declares it (R-NUGET-007), a group without one is "All frameworks", a group without dependencies says so. URLs follow the http and https rule of R-UI-007. The ID is shown as the server serves it, in its original casing.
+
+**Rationale:** The metadata object is the contract between a format's view adapter and the UI, and a tolerant reader costs less than a second screen. The versions table does not carry the state; the version page does, and a reader who looks for unlisted versions opens them from there. The development agent revisits this if users need to see unlisted versions in the "All versions" table, which is option (c) as an additive field.
+
+**Applied in the spec:** R-UI-007 names the NuGet members the Metadata tab reads; [formats/nuget.md](formats/nuget.md) R-NUGET-007's metadata table is the source of the keys. The view adapter maps the nuspec keys to the members above and adds `listed` (from the version row) and `repositoryUrl` (the `url` of the nuspec's `repository` element); a member it does not send is not shown.
+
+### Q-UI-94 · The NuGet clients and the explanations of their snippets
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Q-UI-70 left the client table of the UI with npm and said that the NuGet clients arrive with the format. R-NUGET-026 names the supported clients: the .NET SDK, nuget.exe and Visual Studio.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Three clients, `dotnet`, `nuget` and `visual-studio`, each with the explanations of its snippets by id | The table gets one entry, `nuget`; `snippetExplanation` knows the ids `dotnet.configure.add-source`, `dotnet.configure.nuget-config`, `nuget.configure.nuget-config`, `nuget.configure.sources-add`, `visual-studio.configure.source`, `<client>.install` and `dotnet.publish`/`nuget.publish` | Matches the clients R-NUGET-026 supports and the catalog's `clients`; an id the server sends without an entry shows the snippet without a sentence | The ids are a contract with the format's setup templates |
+| (b) One client `dotnet` | The snippets cover the SDK only | Smallest | nuget.exe and Visual Studio users get no instructions, which R-NUGET-026 and R-UI-019 promise |
+| (c) Read the clients from `GET /api/v1/formats` | The UI table disappears | No second list | Q-UI-70 chose the table so the explanations can be translated; the descriptor does not carry them |
+
+**Choice:** (a). Visual Studio has a configure and an install snippet and no publish snippet (the IDE does not push); the setup page shows the Publish tab's "cannot publish" hint for it as for any client without one. The labels are product names and are not translated: ".NET CLI (dotnet)", "NuGet CLI (nuget.exe)", "Visual Studio".
+
+**Rationale:** The explanation texts are the UI's and are translated (R-UI-045); the ids are the stable part of the server's answer (R-API-030). The development agent revisits this when the format's templates use other ids (the explanation would then be missing and the snippet shown without a sentence) or when a further NuGet client is supported.
+
+**Applied in the spec:** R-UI-018 names the three clients and the snippets the page shows; the table row of Q-UI-70 reads "npm and NuGet".
+
+### Q-UI-95 · What the NuGet browser journey covers
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-UI-047 gives each format a browser journey. The npm journey publishes a package through the npm protocol; a NuGet package is a zip with a nuspec, and the journey has no NuGet client.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Repositories, setup, guide, wizard and edit form; no package | The journey creates a local and a virtual repository through the API, checks the three clients' snippets against the repository's `index.json` URL, the guide, the wizard's `deleteMode` and the edit form, with axe in both colour schemes | Runs without a NuGet client; the package page is covered by the component tier and by the NuGet client matrix of the end-to-end suite | The package list and detail with a real package are not seen in a browser |
+| (b) Build a nupkg in the test and push it | Zip writing in the journey | The package page is seen too | A zip writer and a nuspec fixture in TypeScript, a second copy of the fixtures of the Go tests |
+| (c) Push with the .NET SDK in a container | Real client | Highest fidelity | Needs a container in the browser tier; the matrix does this already |
+
+**Choice:** (a). `web/e2e/tests/11-nuget.spec.ts` is written and runs with the other journeys on the kind stack.
+
+**Rationale:** The part of the screen that depends on the server's rendering (the snippets, the settings schema, the guide) is what a browser journey adds; the package page depends on metadata the component tier fixes. The development agent revisits this when the NuGet matrix publishes a package that a journey can open by name.
+
+**Applied in the spec:** none; [developer/web-ui.md](../developer/web-ui.md) lists the journey.
 
 ### Q-API-16 · A `limit` above the maximum is clamped
 

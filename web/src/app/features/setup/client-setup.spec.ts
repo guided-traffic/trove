@@ -3,8 +3,8 @@ import { ApiError } from '../../api/problem';
 import { RepositoriesApi } from '../../api/repositories-api';
 import { SessionApi } from '../../api/session-api';
 import { FakeSessionApi } from '../../api/testing/fakes';
-import { FakeRepositoriesApi, GENERIC_FORMAT, PACKAGE_FORMAT } from '../../api/testing/fakes-catalog';
-import { FakeClientSetupApi, GENERIC_REPOSITORY, NPM_REPOSITORIES } from '../../api/testing/fakes-packages';
+import { FakeRepositoriesApi, GENERIC_FORMAT, NUGET_FORMAT, PACKAGE_FORMAT } from '../../api/testing/fakes-catalog';
+import { FakeClientSetupApi, GENERIC_REPOSITORY, NPM_REPOSITORIES, NUGET_REPOSITORIES } from '../../api/testing/fakes-packages';
 import { FakeTokensApi } from '../../api/testing/access-fakes';
 import { TokensApi } from '../../api/tokens-api';
 import {
@@ -36,8 +36,8 @@ async function open(
     capabilities: options.capabilities,
     setup: (get) => {
       const repos = get(RepositoriesApi) as FakeRepositoriesApi;
-      repos.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT];
-      repos.repositories = [...NPM_REPOSITORIES];
+      repos.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT, NUGET_FORMAT];
+      repos.repositories = [...NPM_REPOSITORIES, ...NUGET_REPOSITORIES];
       if (options.anonymous) {
         (get(SessionApi) as FakeSessionApi).whoamiResult = new ApiError(401, { code: 'unauthenticated' }, null);
       }
@@ -101,7 +101,7 @@ describe('Client setup', () => {
     const withGeneric = (get: Opened['get']) =>
       void (get(RepositoriesApi) as FakeRepositoriesApi).repositories.push({ ...GENERIC_REPOSITORY });
     const first = await open({}, { setup: withGeneric });
-    expect([...first.root.querySelectorAll<HTMLInputElement>('input[name="format"]')].map((i) => i.value)).toEqual(['generic', 'npm']);
+    expect([...first.root.querySelectorAll<HTMLInputElement>('input[name="format"]')].map((i) => i.value)).toEqual(['generic', 'npm', 'nuget']);
     expect(radio(first, 'format', 'generic').checked).toBe(true);
     expect([...first.root.querySelectorAll<HTMLInputElement>('input[name="client"]')].map((i) => i.value)).toEqual(['curl']);
 
@@ -463,5 +463,65 @@ describe('Client setup', () => {
     expect(text(r.root)).toContain('Save this as .npmrc in your project.');
     await tab(r, 'Install');
     expect(text(r.root)).toContain('Installs a package through this repository');
+  });
+
+  describe('NuGet', () => {
+    it('R-UI-018 NuGet is offered with the .NET CLI, nuget.exe and Visual Studio, in the order of the table', async () => {
+      const r = await open({ format: 'nuget' });
+      expect([...r.root.querySelectorAll<HTMLInputElement>('input[name="client"]')].map((i) => i.value)).toEqual([
+        'dotnet',
+        'nuget',
+        'visual-studio',
+      ]);
+      expect([...r.root.querySelectorAll<HTMLInputElement>('input[name="repository"]')].map((i) => i.value)).toEqual([
+        'nuget-all',
+        'nuget-local',
+        'nuget-remote',
+      ]);
+      await expectAccessible(r.root);
+    });
+
+    it('R-UI-018 R-NUGET-026 the .NET CLI source uses the index.json URL, the environment reference and the clear-text flag; the nuget.config clears the other sources', async () => {
+      const r = await open({ repository: 'nuget-all', client: 'dotnet' });
+      expect(r.setup.calls.at(-1)).toMatchObject({ repository: 'nuget-all', query: { client: 'dotnet', credentials: 'env' } });
+      const [add, config] = snippets(r);
+      expect(add).toContain('dotnet nuget add source "https://trove.example.net/api/nuget/nuget-all/v3/index.json"');
+      expect(add).toContain('--password "${TROVE_TOKEN}" --store-password-in-clear-text');
+      expect(config).toContain('<clear />');
+      expect(config).toContain('<add key="ClearTextPassword" value="%TROVE_TOKEN%" />');
+      expect(text(r.root)).toContain('stored in clear text');
+      expect(text(r.root)).toContain('removes all other package sources');
+      expect(text(r.root)).not.toMatch(/trv_(pat|sat|cit)_/);
+      await expectAccessible(r.root);
+    });
+
+    it('R-UI-018 install and publish: the publish goes to the deployment target of a virtual repository with the token as the API key', async () => {
+      const r = await open({ repository: 'nuget-all', client: 'dotnet' });
+      await tab(r, 'Install');
+      expect(snippets(r)[0]).toContain('dotnet add package <id> --version <version>');
+      await tab(r, 'Publish');
+      expect(snippets(r)[0]).toContain(
+        'dotnet nuget push <id>.<version>.nupkg --source "https://trove.example.net/api/nuget/nuget-local/v3/index.json" --api-key "${TROVE_TOKEN}"',
+      );
+      expect(text(r.root)).toContain('The token travels as the API key.');
+    });
+
+    it('R-UI-018 nuget.exe and Visual Studio each get their own source instructions', async () => {
+      const exe = await open({ repository: 'nuget-local', client: 'nuget' });
+      expect(snippets(exe)[1]).toContain('nuget sources add -Name trove -Source "https://trove.example.net/api/nuget/nuget-local/v3/index.json"');
+      await tab(exe, 'Publish');
+      expect(snippets(exe)[0]).toContain('nuget push <id>.<version>.nupkg -Source');
+
+      const vs = await open({ repository: 'nuget-local', client: 'visual-studio' });
+      expect(snippets(vs)[0]).toContain('Source: https://trove.example.net/api/nuget/nuget-local/v3/index.json');
+      expect(text(vs.root)).toContain('Package Sources');
+      await expectAccessible(vs.root);
+    });
+
+    it('R-UI-018 a remote NuGet repository cannot be published to', async () => {
+      const r = await open({ repository: 'nuget-remote', client: 'dotnet' });
+      await tab(r, 'Publish');
+      expect(text(r.root)).toContain('You cannot publish to this repository');
+    });
   });
 });

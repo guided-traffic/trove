@@ -151,6 +151,43 @@ export const PACKAGE_FORMAT: FormatDescriptor = {
   settingsSchema: NPM_SETTINGS_SCHEMA,
 };
 
+/** The settings schema NuGet registers (internal/formats/nuget/settings.schema.json), as the catalog serves it. */
+export const NUGET_SETTINGS_SCHEMA = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    deleteMode: {
+      description:
+        'What the protocol DELETE of a package does: unlist keeps the version in the flat container and downloadable, delete removes it and writes its tombstone.',
+      type: 'string',
+      enum: ['unlist', 'delete'],
+      default: 'unlist',
+      'x-trove-classes': ['local'],
+    },
+    forwardSearch: {
+      description: "Forward the search and autocomplete requests of this remote to the upstream's search resource.",
+      type: 'boolean',
+      default: true,
+      'x-trove-classes': ['remote'],
+    },
+  },
+};
+
+/** NuGet as the catalog lists it: the .NET CLI, nuget.exe and Visual Studio, and its settings. */
+export const NUGET_FORMAT: FormatDescriptor = {
+  ...PACKAGE_FORMAT,
+  name: 'nuget',
+  displayName: 'NuGet',
+  clients: [
+    { id: 'dotnet', displayName: '.NET CLI (dotnet)' },
+    { id: 'nuget', displayName: 'NuGet CLI (nuget.exe)' },
+    { id: 'visual-studio', displayName: 'Visual Studio' },
+  ],
+  protocolBasePath: '/api/nuget/{key}/v3/',
+  settingsSchema: NUGET_SETTINGS_SCHEMA,
+};
+
 export class FakeRepositoriesApi extends RepositoriesApi {
   formatsResult: readonly FormatDescriptor[] = [GENERIC_FORMAT];
   formatsError: ApiError | null = null;

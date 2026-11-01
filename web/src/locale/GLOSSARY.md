@@ -58,3 +58,4 @@ before using a new term in a German text.
 | help (area), manual, contents, on this page | Hilfe, Handbuch, Inhalt, Auf dieser Seite |
 | theme (light, dark, follow the system) | Design (Hell, Dunkel, Systemeinstellung folgen) |
 | lockfile | Lockfile |
+| unlisted (NuGet version), target framework | nicht gelistet, Zielframework |

@@ -1,5 +1,5 @@
 import { FieldProblem } from '../../api/problem';
-import { RICH_SETTINGS_SCHEMA } from '../../api/testing/fakes-catalog';
+import { NUGET_SETTINGS_SCHEMA, RICH_SETTINGS_SCHEMA } from '../../api/testing/fakes-catalog';
 import { JsonObject } from '../../shared/merge-patch';
 import { expectAccessible, renderScreen, settle, text, type } from '../../testing/screen';
 import { FormatSettings } from './format-settings';
@@ -146,5 +146,38 @@ describe('Format settings rendered from the schema', () => {
     expect(el(r.root, '#f-npm-audit-e').textContent).toBeTruthy();
     expect(el(r.root, '#f-npm').querySelectorAll(':scope > .field-error')).toHaveLength(1);
     await expectAccessible(r.root);
+  });
+
+  it('R-UI-021 R-NUGET-020 the NuGet schema renders deleteMode on a local and forwardSearch on a remote, each with its default, and nothing on a virtual repository', async () => {
+    const render = (cls: string, value: JsonObject = {}) =>
+      renderScreen(FormatSettings, {
+        inputs: {
+          nodes: settingNodes(NUGET_SETTINGS_SCHEMA as SettingSchema, cls, 'nuget'),
+          pointer: '/nuget',
+          value,
+          fieldErrors: new Map<string, FieldProblem>(),
+        },
+      });
+
+    const local = await render('local');
+    const mode = el<HTMLSelectElement>(local.root, '#f-nuget-deleteMode');
+    expect([...mode.options].map((o) => o.textContent?.trim())).toEqual(['unlist', 'delete']);
+    expect(mode.options[mode.selectedIndex]?.textContent?.trim()).toBe('unlist');
+    expect(local.root.querySelector('#f-nuget-forwardSearch')).toBeNull();
+    type(mode, '1');
+    await settle(local.fixture);
+    expect(local.fixture.componentInstance.value()).toEqual({ deleteMode: 'delete' });
+    await expectAccessible(local.root);
+
+    const remote = await render('remote');
+    const forward = el<HTMLInputElement>(remote.root, '#f-nuget-forwardSearch');
+    expect(forward.type).toBe('checkbox');
+    expect(forward.checked).toBe(true);
+    expect(text(el(remote.root, '#f-nuget-forwardSearch-v'))).toContain('Default: on');
+    expect(remote.root.querySelector('#f-nuget-deleteMode')).toBeNull();
+    await expectAccessible(remote.root);
+
+    const virtual = await render('virtual');
+    expect(virtual.root.querySelector('input, select')).toBeNull();
   });
 });
