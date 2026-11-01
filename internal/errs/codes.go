@@ -283,6 +283,20 @@ const (
 
 // <<< M2 npm
 
+// >>> M3 nuget
+
+// Codes of the NuGet format (R-NUGET-003, R-NUGET-005). The leaf libraries of
+// internal/formats/nuget (id, version, nuspec) alias the ones they raise, so the
+// value exists once.
+const (
+	CodeNuGetInvalidPackage      = "nuget_invalid_package"
+	CodeNuGetInvalidVersion      = "nuget_invalid_version"
+	CodeNuGetInvalidVersionRange = "nuget_invalid_version_range"
+	CodeNuGetInvalidID           = "nuget_invalid_id"
+)
+
+// <<< M3 nuget
+
 // CodeInfo documents one code for the problem catalog.
 type CodeInfo struct {
 	Code   string
@@ -475,6 +489,12 @@ var registry = []CodeInfo{
 	{CodeNPMAuditUnavailable, NotImplemented, "npm audit not available", "The audit endpoint is not available for this repository: no remote of it forwards, it may not contact its upstream, or the endpoint does not allow it; npm 6's audit endpoints always answer it."},
 	{CodeNPMInvalidUpstreamDocument, UpstreamFailed, "Invalid npm upstream document", "The upstream package document failed validation and was not stored."},
 	// <<< M2 npm
+	// >>> M3 nuget
+	{CodeNuGetInvalidPackage, Invalid, "Invalid NuGet package", "The .nupkg is not a package trove accepts: not a ZIP archive, a name or entry the archive rules refuse, a missing or repeated .nuspec at the root, a limit of nuget.archive exceeded, or a .nuspec that is not well-formed or declares a DOCTYPE. The detail names the rule."},
+	{CodeNuGetInvalidVersion, Invalid, "Invalid NuGet version", "The version is not a NuGet version trove accepts: one to four numeric parts, an optional pre-release and build metadata, at most 255 bytes as given and normalized."},
+	{CodeNuGetInvalidVersionRange, Invalid, "Invalid NuGet version range", "The version range is not accepted: interval or minimum-version notation of NuGet.Versioning, without a floating version."},
+	{CodeNuGetInvalidID, Invalid, "Invalid NuGet package ID", "The package ID breaks the rules of R-NUGET-003: its length, its characters or its shape."},
+	// <<< M3 nuget
 }
 
 // Codes returns a copy of the registry in declaration order.

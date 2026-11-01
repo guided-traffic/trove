@@ -8,7 +8,7 @@ import (
 
 // CodeInvalidPackage is the code of every refusal of a package's content: the
 // archive, its names, its .nuspec and the bounds on them (R-NUGET-005, 400).
-const CodeInvalidPackage = "nuget_invalid_package"
+const CodeInvalidPackage = errs.CodeNuGetInvalidPackage
 
 // The reasons a refusal carries as its cause, so that a caller and a test can
 // tell the cases apart with errors.Is without reading the message.

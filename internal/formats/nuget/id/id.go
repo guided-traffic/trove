@@ -19,7 +19,7 @@ import (
 )
 
 // CodeInvalid is the error code of every ID this package refuses.
-const CodeInvalid = "nuget_invalid_id"
+const CodeInvalid = errs.CodeNuGetInvalidID
 
 // MaxLength is the longest ID, in characters of the .NET sense (UTF-16 code units; the upstream
 // rule admits no character outside the Basic Multilingual Plane, so it is also the number of

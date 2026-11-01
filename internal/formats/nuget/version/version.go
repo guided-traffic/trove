@@ -28,7 +28,7 @@ import (
 )
 
 // CodeInvalid is the error code of every version this package refuses.
-const CodeInvalid = "nuget_invalid_version"
+const CodeInvalid = errs.CodeNuGetInvalidVersion
 
 // MaxLength bounds the string of a version, as given and normalized (Q-NUGET-21).
 // NuGet.Versioning has no bound; the gallery refuses versions of more than 64 characters. The

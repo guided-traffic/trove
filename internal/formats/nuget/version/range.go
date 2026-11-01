@@ -8,7 +8,7 @@ import (
 )
 
 // CodeInvalidRange is the error code of every version range this package refuses.
-const CodeInvalidRange = "nuget_invalid_version_range"
+const CodeInvalidRange = errs.CodeNuGetInvalidVersionRange
 
 // MaxRangeLength bounds the string of a range: two versions and the notation around them.
 const MaxRangeLength = 2*MaxLength + 8
