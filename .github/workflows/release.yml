@@ -6,8 +6,9 @@
 # reproduce it: docs/developer/releasing.md#ci.
 #
 # What runs per change: every check above, the e2e legs push and access-long, and the npm acceptance leg
-# (e2e-npm, set npm). The long legs failover, npm-ha and npm-ha-crash are not here: they run nightly and on
-# dispatch in performance.yml ("HA and Performance (nightly)"), outside the release path (owner, 2026-11-01).
+# (e2e-npm, set npm). The long legs failover and npm-ha are not here: they run nightly and on dispatch in
+# performance.yml ("HA and Performance (nightly)"), outside the release path (owner, 2026-11-01); npm-ha-crash runs by
+# hand (make e2e SET=npm-ha-crash).
 # A red long leg is recorded as an open finding and does not hold the release.
 #
 # Every job runs on the organisation's self-hosted runners (runs-on: self-hosted).

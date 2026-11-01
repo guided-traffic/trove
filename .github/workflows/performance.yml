@@ -1,6 +1,7 @@
 # HA and Performance (nightly): the long tests, which run nightly and on dispatch and not on every change (owner,
 # 2026-11-01). Per change, Test and Release runs the e2e legs push and access-long and the npm leg; the long legs of the
-# failure suite (failover, npm-ha, npm-ha-crash) run here instead. The job latency enforces the p99 bounds of P-13
+# failure suite (failover, npm-ha) run here instead; npm-ha-crash, the three-force-delete form of the pod crash, runs by
+# hand (make e2e SET=npm-ha-crash), and job npm-ha-soak runs the same test with ten. The job latency enforces the p99 bounds of P-13
 # (change propagation) and P-14 (job pick-up) with Valkey available, against the integration stack (R-ARCH-027,
 # Q-ARCH-220): the per-change integration tier asserts delivery and the p50 only, because the runner pods keep a CPU
 # limit and a throttled process stalls for 100 ms or more at a time. On kind clusters, job e2e runs the failover set
@@ -409,7 +410,7 @@ jobs:
   # switchover and the Valkey failover of R-HA-052 under eight npm ci loops, a publish loop and k6) on a kind cluster.
   # It left Test and Release for this workflow (owner, 2026-11-01); the steps are those of the e2e-npm job there, unchanged.
   # The pod crash with three force-deletes (npm-ha-crash) has no job here: npm-ha-soak below runs the crash with ten
-  # force-deletes over 20 minutes. Edge port 8084 differs from the other ports of this file (8081, 8085).
+  # force-deletes over 20 minutes. Edge port 8087 differs from the other ports of this file (8081, 8085) and from the closing leg npm-ha-closing (8084).
   e2e-npm:
     name: e2e-npm on kind (${{ matrix.set }})
     runs-on: self-hosted
@@ -419,7 +420,7 @@ jobs:
       matrix:
         include:
           - set: npm-ha
-            port: "8084"
+            port: "8087"
     env:
       TROVE_IMAGE: guidedtraffic/trove:dev
       TROVE_DEV_CLUSTER: trove-${{ matrix.set }}-${{ github.run_id }}

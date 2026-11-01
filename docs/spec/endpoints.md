@@ -893,8 +893,8 @@ func Allowed(sub Subject, idx *Index, a Action, c Coordinate) bool {
   ([Q-EP-64](#q-ep-64--pattern-matching-in-the-decision-path-allocates-nothing-and-a-literal-lead-refuses-before-any-state-is-built)):
   one `Decide` makes 42 allocations, none per rule, and takes about 20 µs (rules whose patterns start
   with a literal) to 140 µs (rules whose patterns start with a wildcard) on one core of the
-  development machine. `TestR_EP_013_CeilingPerformance` asserts the allocations (at most 100) and
-  the median per change, and the p99, in the CPU time of the deciding thread
+  development machine. `TestR_EP_013_CeilingPerformance` asserts the allocations (at most 100) per change and
+  the median when the race detector is off, and the p99, in the CPU time of the deciding thread
   ([Q-EP-65](#q-ep-65--the-tail-of-r-ep-013-is-measured-in-the-cpu-time-of-the-deciding-thread)),
   only with `TROVE_PERF_GATE=1`, which `make test-performance` sets in the nightly run
   ([Q-ARCH-250](architecture.md#q-arch-250--a-p99-bound-in-microseconds-is-a-nightly-gate-and-the-per-change-test-asserts-allocations-and-the-median)).

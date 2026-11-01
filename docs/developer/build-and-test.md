@@ -65,7 +65,7 @@ on a checkout with an installed `node_modules` therefore picks them up; use `mak
 | Unit | `*_test.go` next to the code | nothing | `make test` |
 | Architecture | [internal/archtest](../../internal/archtest) | `go` on `PATH` (it runs `go list -deps -json ./...` and loads the packages with type information) | part of `make test` |
 | Integration | [test/integration](../../test/integration), build tag `integration` | the stack below | `make integration-up && make test-integration` |
-| Performance (nightly) | the latency tests of [test/integration/coordination](../../test/integration/coordination) | the stack below | `make integration-up && make test-performance` |
+| HA and Performance (nightly) | `make test-performance`: the latency tests of [test/integration/coordination](../../test/integration/coordination) and `TestR_EP_013_CeilingPerformance` with the p99 gate; on kind clusters the e2e sets `failover`, `npm-ha` and `npm-ha-soak` ([releasing.md](releasing.md#ha-and-performance-nightly)) | the stack below; a kind cluster for the e2e sets | `make integration-up && make test-performance`; `make dev-up && make e2e SET=failover` (or `npm-ha`, `npm-ha-soak`) |
 | End to end | `deploy/dev`, `test/e2e` | a kind cluster | `make dev-up && make e2e`; `SET=access` runs the access-core scenarios (`test/e2e/e1_*`, `m1_env_test.go`), `SET=npm` the npm tests and `SET=npm-ha` the drain and failovers under npm load ([e2e.md](e2e.md#drain-and-failover-under-npm-load)). CI runs `SET=push`, `access-long` and `npm` per change; `failover`, `npm-ha` and `npm-ha-soak` run nightly and on dispatch (owner, 2026-11-01; [releasing.md](releasing.md#ha-and-performance-nightly)), and `npm-ha-crash` by hand only. `make dev-valkey-stop` and `make dev-valkey-start` hold a Valkey outage across a criterion of unknown length |
 
 A test that verifies a requirement carries the requirement ID in a subtest name, for example
@@ -75,7 +75,7 @@ ID survives. A function name may carry it in the underscore form, `TestR_API_053
 `R-API-053` ([coverage.md](coverage.md#implementation-status-the-test-naming-rule)).
 
 A latency target in microseconds is not a per-change assertion on a shared machine: the per-change run asserts the
-allocations and the median, and the p99 is enforced with `TROVE_PERF_GATE=1` by `make test-performance` (for example
+allocations, and the median where the race detector is off (`make test` runs with it, so there only the allocations), and the p99 is enforced with `TROVE_PERF_GATE=1` by `make test-performance` (for example
 `TestR_EP_013_CeilingPerformance`, [Q-ARCH-250](../spec/architecture.md#q-arch-250--a-p99-bound-in-microseconds-is-a-nightly-gate-and-the-per-change-test-asserts-allocations-and-the-median)).
 
 ### Architecture test
