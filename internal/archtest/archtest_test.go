@@ -119,6 +119,20 @@ func TestLayers(t *testing.T) {
 			pkg("internal/cache", "internal/errs"),
 		}))
 	})
+	t.Run("R-ARCH-002 formats/<id>/rows is a leaf that imports only errs and the standard library (WP3.0r)", func(t *testing.T) {
+		for _, id := range []string{"npm", "nuget", "pypi"} {
+			r := "internal/formats/" + id + "/rows"
+			if l, ok := layerOf(r); !ok || l != layerLeaf {
+				t.Errorf("%s is %s", r, l)
+			}
+			wantClean(t, CheckLayers(mod, []Package{pkg(r, "internal/errs", "time", "net/url")}))
+			wantEdge(t, CheckLayers(mod, []Package{pkg(r, "internal/errs", "internal/config")}), "R-ARCH-002", r, "internal/config")
+			wantEdge(t, CheckLayers(mod, []Package{pkg(r, "github.com/jackc/pgx/v5")}), "R-ARCH-002", r, "github.com/jackc/pgx/v5")
+		}
+		if l, _ := layerOf("internal/formats/nuget/rows/sub"); l == layerLeaf {
+			t.Error("a package below a rows leaf is not itself a leaf")
+		}
+	})
 	t.Run("R-ARCH-002 a package without a layer is reported", func(t *testing.T) {
 		vs := CheckLayers(mod, []Package{pkg("internal/misc")})
 		if len(vs) != 1 || vs[0].From != "internal/misc" || !strings.Contains(vs[0].Detail, "no layer") {

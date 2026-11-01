@@ -3,6 +3,7 @@ package archtest
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // layer orders the packages of R-ARCH-002. A package may import packages of its
@@ -10,7 +11,7 @@ import (
 type layer int
 
 const (
-	layerLeaf   layer = iota // config, errs, buildinfo, observability, cache, meta, backup/tables, tlsfiles, formats/catalog, formats/npm/rows, auth/scope, docs/manual: usable from every layer
+	layerLeaf   layer = iota // config, errs, buildinfo, observability, cache, meta, backup/tables, tlsfiles, formats/catalog, formats/<id>/rows, auth/scope, docs/manual: usable from every layer
 	layerInfra               // meta/postgres, blob, cluster, outbound, secrets
 	layerDomain              // repository, proxy, virtual, formatdata, authz, auth, jobs, audit, backup, manual
 	layerEdge                // httpserver, api/v1, webui, formats
@@ -55,7 +56,6 @@ func layerTable() []layerRule {
 		{"internal/backup/tables", layerLeaf},
 		{"internal/tlsfiles", layerLeaf},
 		{"internal/formats/catalog", layerLeaf},
-		{"internal/formats/npm/rows", layerLeaf}, // the values of the npm data port, shared by the format and internal/formatdata/npm (Q-ARCH-193)
 		{"internal/auth/scope", layerLeaf},
 		{"docs/manual", layerLeaf}, // the embedded files of the manual, nothing but embed (R-API-054)
 
@@ -96,8 +96,22 @@ func unchecked() []string {
 	return []string{"internal/archtest", "internal/tools", "test", "tools", "perf", "web", "deploy"}
 }
 
+// isFormatRows reports whether a module-relative path is the rows leaf of a
+// format, internal/formats/<id>/rows: the values of that format's data port,
+// shared by the format and its internal/formatdata/<id> package (Q-ARCH-193). The
+// leaf is a rule, not a list entry (WP3.0r): every format that has a data port
+// gets one, and CheckLayers lets it import nothing but internal/errs and the
+// standard library.
+func isFormatRows(relPath string) bool {
+	parts := strings.Split(relPath, "/")
+	return len(parts) == 4 && parts[0] == "internal" && parts[1] == "formats" && parts[3] == "rows"
+}
+
 // layerOf returns the layer of a package by its module-relative path.
 func layerOf(relPath string) (layer, bool) {
+	if isFormatRows(relPath) {
+		return layerLeaf, true
+	}
 	best, bestLen, found := layerLeaf, -1, false
 	for _, r := range layerTable() {
 		if under(relPath, r.prefix) && len(r.prefix) > bestLen {
@@ -114,6 +128,9 @@ func CheckLayers(module string, pkgs []Package) []Violation {
 	for _, p := range pkgs {
 		if underAny(p.Rel, unchecked()) {
 			continue
+		}
+		if isFormatRows(p.Rel) {
+			out = append(out, checkFormatRows(module, p)...)
 		}
 		from, ok := layerOf(p.Rel)
 		if !ok {
@@ -141,6 +158,26 @@ func CheckLayers(module string, pkgs []Package) []Violation {
 		}
 	}
 	sortViolations(out)
+	return out
+}
+
+// checkFormatRows holds a rows leaf to its rule: it imports the standard library
+// and internal/errs and nothing else, so that both the format (an edge package) and
+// its domain data package can import it without a cycle or a layer breach.
+func checkFormatRows(module string, p Package) []Violation {
+	var out []Violation
+	for _, imp := range p.Imports {
+		if first, _, _ := strings.Cut(imp, "/"); !strings.Contains(first, ".") {
+			continue // standard library
+		}
+		if imp == module+"/internal/errs" {
+			continue
+		}
+		out = append(out, Violation{
+			Rule: "R-ARCH-002", From: p.Rel, To: rel(module, imp),
+			Detail: "a format's rows leaf imports only internal/errs and the standard library",
+		})
+	}
 	return out
 }
 

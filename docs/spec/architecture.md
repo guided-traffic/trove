@@ -337,9 +337,10 @@ Normative rules:
   1. Edge: `httpserver`, `api/v1`, `api/edge`, `api/dispatch`, `webui`, `formats` (the contract and the format handlers), `formathost`.
   2. Domain: `repository`, `files`, `items`, `packages`, `proxy`, `virtual`, `formatdata`, `authz`, `auth`, `jobs`, `audit`, `backup`.
   3. Infrastructure: `meta/postgres`, `blob` (the store and its spool; the S3 client is `blob/s3`), `cluster`, `outbound`, `secrets`.
-  4. Leaf: `config`, `errs`, `buildinfo`, `observability`, `cache`, `meta`, `backup/tables`, `tlsfiles`, `formats/catalog`, `formats/npm/rows`, `auth/scope`. Every layer may import them, and they import only each other.
-     `formats/npm/rows` is the values of npm's data port, shared by the format and `formatdata/npm` (Q-ARCH-193); it is a leaf listed by hand in
-     archtest's `layerTable`, and the rule "`formats/<id>/rows` is a leaf that imports only `errs`" replaces the hand entry before NuGet adds its own (roadmap M3).
+  4. Leaf: `config`, `errs`, `buildinfo`, `observability`, `cache`, `meta`, `backup/tables`, `tlsfiles`, `formats/catalog`, `formats/<id>/rows`, `auth/scope`. Every layer may import them, and they import only each other.
+     `formats/<id>/rows` is the values of a format's data port, shared by the format and `formatdata/<id>` (Q-ARCH-193). It is a leaf by rule, not by a
+     list entry: archtest's `layerOf` gives every `internal/formats/<id>/rows` the leaf layer, and `CheckLayers` fails it when it imports anything but `errs` and
+     the standard library (npm and NuGet each have one).
 
   No lower layer imports a higher one. Format packages reach storage only through the host interface
   (R-ARCH-009), so the diagram has no arrow from `formats` to `blob`.
