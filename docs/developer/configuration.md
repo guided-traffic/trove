@@ -176,8 +176,10 @@ storage:
       receive_window: 256KiB          # default; 16KiB to 1GiB; the HTTP/2 window per object, Go's default is 4 MiB
 ```
 
-Memory slots = ⌊0.8 × Go limit ÷ (class of max(`buffer_size`, 2 × `hold_back`, 4 KiB) + `receive_window` + 128 KiB)⌋: 278 for a
-256 MiB container, 1,114 for 1 GiB, 2,228 for 2 GiB. The 80 % and 70 % of the heap gate are constants
+Memory slots = ⌊(0.8 × Go limit − cache budgets) ÷ (class of max(`buffer_size`, 2 × `hold_back`, 4 KiB) + `receive_window` + 128 KiB)⌋,
+at least 1. The cache budgets are `cache.rendition_bytes` + `proxy.metadata_cache_bytes` + `proxy.merged_metadata_cache_bytes`, 640 MiB
+by default ([Q-ARCH-243](../spec/architecture.md#q-arch-243--the-memory-slots-leave-the-caches-byte-budgets-aside)): 90 for a 1 GiB
+container, 1,204 for 2 GiB; without caches 278 for 256 MiB and 1,114 for 1 GiB. The 80 % and 70 % of the heap gate are constants
 ([Q-ARCH-240](../spec/architecture.md#q-arch-240--a-replica-admits-what-its-memory-holds-memory-slots-and-a-heap-gate-in-step-4)).
 
 ## M2 keys

@@ -1,7 +1,7 @@
 # trove · Project plan to the beta release
 
 **Status:** ⚪ not started · 🟡 in progress or partly done · 🟢 done
-**Last updated:** 2026-10-31
+**Last updated:** 2026-11-01
 
 The way from zero to the beta release. The beta is trove with two package registries, **npm** and
 **NuGet (.NET)**, each with local, remote (pull-through) and virtual repositories, running on the
@@ -165,6 +165,7 @@ Details: [roadmap M2](../coverage/roadmap.md#m2--npm) · spec: [formats/npm.md](
 - 🟢 npm e2e tests: install and publish with npm, pnpm, Yarn Classic and Yarn Berry through local, remote and virtual repositories
 - 🟢 npm e2e: cold cache with three clients at once, upstream down, Valkey stopped, replica killed mid-install (the Valkey-stopped leg passed in the closing run 41235811145)
 - 🟡 npm load joins the drain and failover tests: the CI leg `npm-ha` passed once (run 41231246904) but is not reliable yet; `web` pods of the 1 GiB dev profile are still OOMKilled under the drain's npm load in some runs although the memory guard is on (runs 41235811145 and 41253578143, attempt 2). Open: a heap profile under that load (the merged package documents of `npm ci` are the first suspect), then the fix
+- ⚪ The drain criterion of the security audit (R-NPM-038): the `web` pod that forwards an `npm audit` to a provider answering after 20 s is deleted 1 s in; `npm audit` succeeds and no pod gets `SIGKILL`. No test yet; it belongs with the drain tests of WP2.8 ([roadmap M2](../coverage/roadmap.md#m2--npm)) and is no exit criterion of its own
 - 🟢 npm e2e: a customer endpoint through its own Ingress lists only exposed versions; hidden versions answer 404
 
 **Release**
@@ -173,6 +174,10 @@ Details: [roadmap M2](../coverage/roadmap.md#m2--npm) · spec: [formats/npm.md](
 ## Phase 4 · NuGet (.NET) registry (M3)
 
 Details: [roadmap M3](../coverage/roadmap.md#m3--nuget) · spec: [formats/nuget.md](../spec/formats/nuget.md)
+
+**Carried over**
+- ⚪ Renovate pull request #42 (TypeScript 7, a major update), held back during phase 3, folded in first (owner 2026-10-31)
+- ⚪ CI checks against the latest release: `api/openapi.yaml` with a breaking-change checker (R-ARCH-025) and the embedded migration files (R-ARCH-026). Both are M0 scope that phase 1 closed without (found 2026-11-01)
 
 **NuGet v3**
 - ⚪ Local: service index, package content, registrations, search, push, unlist, relist, delete
@@ -253,6 +258,7 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
 **High availability**
 - ⚪ Failure suite: pod crash, PostgreSQL switchover and failover, Valkey failover and outage, S3 outage, node loss
 - ⚪ Node drain under npm and NuGet load with zero failed requests
+- ⚪ The default of `health.shutdown_drain_delay` (5 s, proposed) set from the endpoint-removal time of the target Ingress measured under load; the dev profile needs 15 s on the CI runners (Actions run 41241903588)
 - ⚪ Vulnerability scanning under the failure suite: sync and evaluation jobs across drains and failovers, blocks and triage after a restore (E5.13)
 - ⚪ Rolling upgrade from the previous pre-release with mixed versions
 - ⚪ Performance targets met in two nightly runs in a row
@@ -266,7 +272,7 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
 **Helm chart and release**
 - ⚪ Chart complete: values reference and schema, autoscaling, network policies, monitoring integration
 - ⚪ Security documentation in [docs/security](../security/README.md) and security review
-- ⚪ Release pipeline: `Release Docker & Helm` publishes the image `guidedtraffic/trove` (Docker Hub) and the chart (GitHub Pages) with each release ([releasing.md](../developer/releasing.md#the-release-pipeline)). `v0.1.0` was published by the pipeline before it, to `ghcr.io`; the new pipeline has not published a release yet
+- 🟡 Release pipeline: `Release Docker & Helm` publishes the image `guidedtraffic/trove` (Docker Hub) with provenance and SBOM attestations and the chart (GitHub Pages) with each release ([releasing.md](../developer/releasing.md#the-release-pipeline)); it has published every release from `v0.1.1` to `v0.5.0`. `v0.1.0` went to `ghcr.io` through the pipeline before it. Open: E5.8, the beta candidate installed by digest from there passing E2.1's smoke scenarios
 - ⚪ Beta candidate published (the release that closes phase 7)
 
 ## Phase 8 · Walkthrough and beta release

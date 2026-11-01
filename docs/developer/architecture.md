@@ -92,8 +92,9 @@ in-flight limit and no memory guard, so a probe is never refused because the req
    `GOMEMLIMIT` is in the environment. No limit known means no guard (`NewMemoryGuard` returns nil, which admits everything), and a
    warning.
 2. `requestMemory` is what one request may hold: `blob.DownloadBufferBytes` (the verified download's buffer, rounded to its pool
-   class) + `storage.s3.http.receive_window` + `requestOverhead` (128 KiB, measured). The guard has ⌊0.8 × limit ÷ that⌋ slots, a buffered
-   channel; `Admit` takes one without waiting or refuses with `memory_slots`.
+   class) + `storage.s3.http.receive_window` + `requestOverhead` (128 KiB, measured). The guard has ⌊(0.8 × limit − `cacheBudgets`) ÷ that⌋
+   slots, at least 1, a buffered channel; `cacheBudgets` is the three caches' byte budgets (Q-ARCH-243), and budgets at 80 % of the
+   limit log an error; `Admit` takes one without waiting or refuses with `memory_slots`.
 3. `Run` reads `/gc/heap/live:bytes` + `/memory/classes/heap/stacks:bytes` every 50 ms. At 80 % of the limit the gate closes
    (`Admit` refuses with `heap`) until the value is below 70 %. Why not the allocated heap: near the Go limit it is high by design.
    A closed gate that sees `/gc/cycles/total:gc-cycles` unchanged for a second calls `runtime.GC` (Q-ARCH-242): an idle replica

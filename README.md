@@ -1328,7 +1328,7 @@ web:
     sizeLimit: ""                       # default: empty = spool.sizeLimit
   resources:
     requests: {cpu: "1", memory: 1Gi, ephemeral-storage: 2Gi}   # default
-    limits: {memory: 2Gi}               # default; no CPU limit; required: sizes the 2,228 requests the pod admits, at least 64 (R-HA-029)
+    limits: {memory: 2Gi}               # default; no CPU limit; required: sizes the 1,204 requests the pod admits with the default caches, at least 64 (R-HA-029)
   podDisruptionBudget: {enabled: true, maxUnavailable: 1, minAvailable: null}   # default
   topologySpread: {enabled: true, nodeTaintsPolicy: Honor}     # default; zone ScheduleAnyway, host DoNotSchedule
 worker:

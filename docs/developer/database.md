@@ -135,7 +135,7 @@ steps, also when none was pending (`MigrateOptions.AuditRetentionDays`, [audit.g
 the row alone.
 
 Not implemented yet: the `database.backup_role` grants and the grants check (no backup tables), the restore mode of the runner (M5), and
-the CI check against the latest release's files (no release yet).
+the CI check against the latest release's files (R-ARCH-026; carried into [phase 4](../projektplan/BETA.md#phase-4--nuget-net-registry-m3)).
 
 ### Privileges of the runtime role
 

@@ -6597,8 +6597,8 @@ A request holds its slot until it ends, and step 4 runs before authentication (s
 prefer anyone. A client that keeps as many requests open as the replica has slots, for example
 downloads it reads at a trickle or uploads it sends at one, gets every other request answered `503`
 until its own end. `server.transfer_stall_timeout` ends a request that moves no byte for 60 s, not
-one that moves a byte now and then. The number to reach is the slot count: 1,114 on a 1 GiB
-container, where `server.max_in_flight` alone allowed 4,096.
+one that moves a byte now and then. The number to reach is the slot count, which the cache budgets lower (Q-ARCH-243):
+1,204 on the chart's 2 GiB container with the default caches and 90 on 1 GiB, where `server.max_in_flight` alone allowed 4,096.
 
 What makes it real: a listener reachable by an unauthenticated client, a repository readable
 anonymously or a token with `read`, and enough connections from one place. Rate limits (step 7)
