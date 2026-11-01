@@ -94,7 +94,7 @@ func (c *countingWriter) Write(p []byte) (int, error) { *c.n += int64(len(p)); r
 
 // TestR_NPM_007_ASlowPublishOf200MiB: a 200 MiB tarball arrives slowly, in a document
 // whose manifest follows the attachment. The request is read as a stream: no
-// PostgreSQL connection is idle in a transaction while the bytes arrive (R-NPM-046),
+// PostgreSQL connection holds a transaction while the bytes arrive (R-NPM-046),
 // the process does not hold the body (R-ARCH-028), and the stored object has the digest
 // the client computed.
 func TestR_NPM_007_ASlowPublishOf200MiB(t *testing.T) {
@@ -122,12 +122,12 @@ func TestR_NPM_007_ASlowPublishOf200MiB(t *testing.T) {
 			select {
 			case <-bodySent:
 			default:
-				// A transaction held across the body stays idle for seconds; the round trips of
-				// BEGIN, a statement and COMMIT of the replica's background work (change log,
-				// leases, the last-use flush) leave a connection idle in transaction for
-				// milliseconds, which a 50 ms sample can catch and which says nothing about the
-				// publish.
-				n, err := e.st.TryNumber(`SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND state LIKE 'idle in transaction%' AND state_change < now() - interval '1 second'`)
+				// A transaction held across the body is seconds old; the BEGIN, statement and
+				// COMMIT round trips of the replica's background work (change log, leases, the
+				// last-use flush) open transactions that live for milliseconds. The age of the
+				// transaction is the measure, not the state: a transaction that runs a statement
+				// now and then while the body arrives is still held across it.
+				n, err := e.st.TryNumber(`SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() AND xact_start < now() - interval '1 second'`)
 				if err == nil && n > idle.Load() {
 					idle.Store(n)
 				}
@@ -156,7 +156,7 @@ func TestR_NPM_007_ASlowPublishOf200MiB(t *testing.T) {
 		t.Fatalf("the upload took %s: it was not slow", took)
 	}
 	if got := idle.Load(); got != 0 {
-		t.Fatalf("%d connections were idle in transaction while the body arrived", got)
+		t.Fatalf("%d connections held a transaction older than 1 s while the body arrived", got)
 	}
 	if grew := peak.Load() - int64(base.HeapAlloc); grew > 160<<20 {
 		t.Fatalf("the heap grew by %d MiB for a %d MiB tarball", grew>>20, size>>20)
