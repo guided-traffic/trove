@@ -13,17 +13,20 @@
 #
 #   e2e.sh              every test except the profile switch of E0.11 (the default profile)
 #   e2e.sh push         the set CI runs on every change: E0.3, E0.4, E0.6, E0.7, E0.12, E0.14 (with the upload and download
-#                       loop of E1.13), E0.15, E0.16, the sign-in of E1.1, the exposure of E1.14, then E0.11
+#                       loop of E1.13), E0.15, E0.16, the exposure of E1.14, then E0.11
 #   e2e.sh full         everything, in the order of the milestone, ending with E0.11
-#   e2e.sh failover     E0.4, E0.6 and the E0.13 failover set, with the long M1 tests: the limits of E1.8, the replica
-#                       scatter of E1.11, the 500 MB transfers of E1.13 (CI runs it on every change too, beside push)
+#   e2e.sh failover     the E0.13 failover set and the limits of E1.8 (CI, every change, beside push)
+#   e2e.sh access-long  the sign-in of E1.1, the replica scatter of E1.11, the 500 MB transfers of E1.13 (CI, every change)
 #   e2e.sh access       the M1 tests alone: E1.1, E1.8, E1.11, E1.13, E1.14 (they switch to the scatter profile and back)
 #   e2e.sh drain        E0.14 only (this is `make dev-drain`)
 #   e2e.sh clients      the smoke test of the npm client pods (R-NPM-045: every gate row runs --version, the base URL
 #                       reaches the cluster); builds the clients image and starts the pods, which stay up
 #   e2e.sh clients-down removes the client pods
-#   e2e.sh npm-ha       drain variant A and the failovers of R-HA-052 under the npm load (E2.11), then the npm load
-#                       scripts of R-ARCH-027 (perf/k6/npm.js, reported); npm-ha-closing adds the Valkey outage
+#   e2e.sh npm-ha       drain variant A and the failovers of R-HA-052 under the npm load (E2.11)
+#   e2e.sh npm-ha-crash the pod crash of R-HA-052 under the npm load, three force-deletes (E2.11)
+#   e2e.sh npm-ha-soak  the pod crash with ten force-deletes over 20 minutes, then the npm load scripts of R-ARCH-027
+#                       (perf/k6/npm.js, reported); the nightly Performance workflow runs it. npm-ha-closing runs npm-ha,
+#                       npm-ha-soak and the Valkey outage in one go
 #   e2e.sh <regex>      any other argument is a `go test -run` expression
 #
 # Environment: TROVE_DEV_HTTP_PORT (the port the cluster was created with; read back from the node),
@@ -42,9 +45,10 @@ for tool in docker jq go helm kubectl; do command -v "$tool" >/dev/null 2>&1 || 
 set_name="${1:-default}"
 case "$set_name" in
   default) run='^Test(E03|E04|E06|E07|E12|E13|E14|E15|E16)' ;;
-  push) run='^Test(E03|E04|E06|E07|E12|E14|E15|E16|E1_01|E1_14|E99)' ;;
+  push) run='^Test(E03|E04|E06|E07|E12|E14|E15|E16|E1_14|E99)' ;;
   full) run='^Test(E03|E04|E06|E07|E12|E13|E14|E15|E16|E1_|E99)' ;;
-  failover) run='^Test(E04|E06|E13|E1_08|E1_11|E1_13)' ;;
+  failover) run='^Test(E13|E1_08)' ;;
+  access-long) run='^TestE1_(01|11|13)' ;;
   access) run='^TestE1_' ;;
   drain) run='^TestE14' ;;
   # >>> M2 npm-clients
@@ -58,11 +62,14 @@ case "$set_name" in
   npm-closing) run='^TestNPMClosing'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NPM_CLOSING=1 ;;
   # <<< M2 npm-clients
   # Drain and failover under npm load (E2.11, test/e2e/npm_ha_test.go): drain variant A of R-HA-059, the PostgreSQL
-  # switchover, the Valkey failover and the pod crash of R-HA-052 under eight npm ci loops, a publish loop and k6
-  # (CI: e2e-npm, every change), then perf/k6/npm.js against one replica (TestNPMPerf, reported, not gated). npm-ha-closing
-  # adds the 5-minute Valkey outage of the full suite (closing run).
-  npm-ha) run='^TestNPM(HA|Perf)$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
-  npm-ha-closing) run='^TestNPM(HA|HAClosing|Perf)$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NPM_CLOSING=1 ;;
+  # switchover and the Valkey failover of R-HA-052 under eight npm ci loops, a publish loop and k6 (CI: e2e-npm leg
+  # npm-ha, every change); the pod crash in a leg of its own (npm-ha-crash, three force-deletes, every change). The soak
+  # (nightly) runs the pod crash with ten force-deletes, then perf/k6/npm.js against one replica (TestNPMPerf, reported,
+  # not gated). npm-ha-closing runs all of it and adds the 5-minute Valkey outage of the full suite (closing run).
+  npm-ha) run='^TestNPMHA$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
+  npm-ha-crash) run='^TestNPMHACrash$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
+  npm-ha-soak) run='^TestNPM(HACrash|Perf)$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NPM_CRASH_SOAK=1 ;;
+  npm-ha-closing) run='^TestNPM(HA|HACrash|HAClosing|Perf)$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NPM_CLOSING=1 TROVE_E2E_NPM_CRASH_SOAK=1 ;;
   *) run="$set_name" ;;
 esac
 

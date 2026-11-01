@@ -4831,7 +4831,7 @@ against the local profile (R-HA-051) in CI. Load comes from real clients in para
 
 | Scenario | Injection | Pass condition |
 |---|---|---|
-| Pod crash | `kubectl delete pod --grace-period=0 --force` of a random `web` or `worker` replica every 2 min for 20 min | No client iteration fails after its own retries; no item row without a durable object (`trove admin storage verify`; until that command exists, every version the scenario's publishes left is downloaded against its integrity, [Q-HA-69](#q-ha-69--the-storage-check-of-the-pod-crash-before-trove-admin-storage-verify-exists)) |
+| Pod crash | `kubectl delete pod --grace-period=0 --force` of a random `web` or `worker` replica every 2 min: 3 times on every change, 10 times (20 min) nightly and in the closing run | No client iteration fails after its own retries; no item row without a durable object (`trove admin storage verify`; until that command exists, every version the scenario's publishes left is downloaded against its integrity, [Q-HA-69](#q-ha-69--the-storage-check-of-the-pod-crash-before-trove-admin-storage-verify-exists)) |
 | Rolling restart | `kubectl rollout restart` of `deploy/trove-web`, then of `deploy/trove-worker` | Zero failed iterations |
 | Rolling upgrade | Previous minor → current with the migration Job | Zero failed iterations; R-HA-020 verification passes |
 | Rollback | `helm rollback` after the upgrade | Zero failed iterations |
@@ -4869,7 +4869,8 @@ against the local profile (R-HA-051) in CI. Load comes from real clients in para
 - The suite records client-side errors per scenario and fails on any deviation from the pass
   condition. Results are published as a CI artifact per run.
 - The pod-crash, switchover, rolling-upgrade, object-store and Valkey-primary-loss scenarios and
-  variant A of the drain test run on every change to `main`. The full suite, the pooler profile and
+  variant A of the drain test run on every change to `main`, the pod crash with three force-deletes; its 20-minute form runs
+  nightly ([Q-HA-67](#q-ha-67--where-and-how-often-the-scenarios-under-npm-load-run)). The full suite, the pooler profile and
   the trove-backup restore drill run in a green full run of Test and Release on the commit that closes
   the phase. The point-in-time restore drill has no run in the pipeline.
 
@@ -6075,7 +6076,8 @@ of its arrival.
 
 ### Q-HA-67 · Where and how often the scenarios under npm load run
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the owner on 2026-11-01** — option (e). It replaces the development agent's choice (a), which made the
+leg `npm-ha` the longest job of Test and Release (48 minutes, 22 of them the pod crash).
 
 Context: R-HA-052 runs the pod-crash and switchover scenarios and variant A of the drain test on every change to `main`, and the
 Valkey scenarios in the full suite; E2.11 pairs the drain with `dev-failover` and `dev-valkey-failover` during an `npm ci` loop. The
@@ -6088,15 +6090,19 @@ scenarios need the client pods, the counting test upstream and the scatter profi
 | (b) Everything on every change | The outage in `npm-ha` too | One set | 10 more minutes per change for a scenario R-HA-052 keeps for the full suite |
 | (c) The scenarios in the set `npm` | One cluster for all npm tests | No extra cluster | The matrix leg grows by 40 minutes; a failure of either blocks the other's evidence |
 | (d) In the job `e2e` beside E0.14 | The push set drains under npm load | One drain per change | That job has no client pods and no test upstream, and runs two `web` replicas, not R-HA-059's three |
+| (e) Two legs per change, a shorter pod crash, the 20 minutes nightly | Leg `npm-ha`: drain variant A, PostgreSQL switchover, Valkey failover. Leg `npm-ha-crash`: the pod crash with three force-deletes every 2 minutes. The ten force-deletes over 20 minutes and the load scripts of R-ARCH-027 run nightly (`performance.yml`, set `npm-ha-soak`) and in the closing run (`npm-ha-closing`, one leg with the outage) | Every scenario still runs on every change; the longest npm leg drops from about 48 to about 22 minutes | One more kind cluster per change than (a); a crash race that needs more than three force-deletes shows up nightly, not on the change that caused it |
 
-**Choice:** (a), with the step budget raised to 80 minutes for the `npm-ha` legs (the job to 120).
+**Choice:** (e), with the step budget of 80 minutes for the `npm-ha` legs (the job 120) kept for the closing leg.
 
-**Rationale:** (a) follows R-HA-052's frequencies and gives E2.11 its every-change evidence without making the matrix slower. The
-development agent revisits this when the runners run more than one leg per host and the latency condition of the drain becomes
-noisy, or when the pod crash moves to a shorter interval in the spec.
+**Rationale:** the owner's goal of 2026-11-01 is a shorter round trip of Test and Release; (a) put 48 minutes on its critical
+path. Three force-deletes keep the 2-minute recovery window of the full scenario, so each kill is judged as before; the
+20-minute form keeps its daily run. The load scripts of R-ARCH-027 are a report, and R-ARCH-027 asks for them in the closing
+run only.
 
-**Applied in the spec:** none; [release.yml](../../.github/workflows/release.yml) (job `e2e-npm`),
-[deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) (sets `npm-ha` and `npm-ha-closing`).
+**Applied in the spec:** R-HA-052 (the pod-crash row and the frequencies); [release.yml](../../.github/workflows/release.yml)
+(job `e2e-npm`), [performance.yml](../../.github/workflows/performance.yml) (job `npm-ha-soak`),
+[deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) (sets `npm-ha`, `npm-ha-crash`, `npm-ha-soak` and `npm-ha-closing`),
+[npm_ha_test.go](../../test/e2e/npm_ha_test.go) (`TestNPMHACrash`).
 
 ### Q-HA-68 · The node variant A drains on the three-node local profile
 

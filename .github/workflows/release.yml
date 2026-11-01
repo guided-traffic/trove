@@ -615,10 +615,15 @@ jobs:
           retention-days: 30
 
   integration:
-    # Valkey 9.1 only: trove is in development and guarantees no older line (owner, 2026-10-29).
-    name: integration (Valkey 9.1)
+    # Valkey 9.1 only: trove is in development and guarantees no older line (owner, 2026-10-29). The packages run in two
+    # shards with a stack each (make test-integration SHARD=a|b), about half the time each.
+    name: integration (Valkey 9.1, shard ${{ matrix.shard }})
     runs-on: self-hosted
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [a, b]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -650,15 +655,15 @@ jobs:
       - name: make integration-up
         run: make integration-up
 
-      - name: make test-integration
-        run: make test-integration
+      - name: make test-integration SHARD=${{ matrix.shard }}
+        run: make test-integration SHARD=${{ matrix.shard }}
 
       - name: Upload the go test -json report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: test-integration
-          path: .out/test-integration.json
+          name: test-integration-${{ matrix.shard }}
+          path: .out/test-integration-${{ matrix.shard }}.json
           if-no-files-found: warn
           retention-days: 14
 
@@ -666,8 +671,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: profile-integration
-          path: .out/coverage/integration-9.1.out
+          name: profile-integration-${{ matrix.shard }}
+          path: .out/coverage/integration-9.1-${{ matrix.shard }}.out
           if-no-files-found: warn
           retention-days: 14
 
@@ -735,15 +740,14 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # The failure suite on a kind cluster: the push set (every change: the M0 checks, the drain with a transfer
-  # loop, the sign-in of E1.1 and the exposure of E1.14) and the failover set (E0.13, E0.4, E0.6: PostgreSQL
-  # switchover, kill and stop, Valkey failover, kill and outage under k6 load; and the long tests of the access core:
-  # E1.8 limits, E1.11 replica scatter, E1.13 500 MB transfers).
-  # The legs run side by side on one Docker host, so each has its own cluster name and edge port.
+  # The failure suite on a kind cluster, three legs of about the same length: the push set (the M0 checks, the drain
+  # with a transfer loop and the exposure of E1.14), the failover set (E0.13: PostgreSQL switchover, kill and stop,
+  # Valkey failover, kill and outage under k6 load; the E1.8 limits) and access-long (the E1.1 sign-in, the E1.11
+  # replica scatter and the E1.13 500 MB transfers; the only leg with browser journeys). The legs build their own
+  # image, so they wait for no other job. Each has its own cluster name and edge port, so legs can share a Docker host.
   e2e:
     name: e2e on kind (${{ matrix.set }})
     runs-on: self-hosted
-    needs: [chart, image]
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -753,6 +757,9 @@ jobs:
             port: "8080"
           - set: failover
             port: "8081"
+          - set: access-long
+            port: "8086"
+            browser: true
     env:
       # The image is built with an explicit VERSION=dev: the binary refuses a version that is not
       # major.minor.patch or "dev" (see docs/developer/e2e.md). make image builds it into the local Docker.
@@ -796,6 +803,7 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Install the shared library the pinned Node.js loads
+        if: matrix.browser
         run: |
           set -euo pipefail
           # Node.js 26 links libatomic.so.1, which the runner image does not ship (Q-ARCH-218).
@@ -803,11 +811,13 @@ jobs:
           sudo apt-get install -y libatomic1
 
       - name: Set up Node.js (the Playwright journeys of E1.11)
+        if: matrix.browser
         uses: actions/setup-node@v7
         with:
           node-version-file: web/.nvmrc
 
       - name: Install the Playwright journeys and their browser
+        if: matrix.browser
         working-directory: web
         run: |
           set -euo pipefail
@@ -927,19 +937,19 @@ jobs:
   # The npm acceptance matrix (R-NPM-045, roadmap M2 E2.1 to E2.12): eight real clients against the scatter profile and the
   # counting test upstream, docs/developer/e2e.md#the-npm-client-matrix. It gates every change. A dispatch with
   # closing=true (Q-NPM-46) adds the leg that belongs to the commit that closes the phase: the scenario list and the
-  # cold-cache install with Valkey stopped, and the read-only subset against the public registry. The leg npm-ha is E2.11
-  # (Q-HA-67): drain variant A and the pod-crash, PostgreSQL-switchover and Valkey-failover scenarios under the npm
-  # load, about 40 minutes of scenarios; a closing dispatch runs it as npm-ha-closing with the 5-minute Valkey outage.
-  # The ports differ from the e2e job's (8080, 8081) so that the jobs can share a runner host.
+  # cold-cache install with Valkey stopped, and the read-only subset against the public registry. The legs npm-ha and
+  # npm-ha-crash are E2.11 (Q-HA-67): drain variant A, the PostgreSQL-switchover and Valkey-failover scenarios under the
+  # npm load, and beside them the pod crash with three force-deletes; the ten force-deletes over 20 minutes run nightly
+  # (performance.yml). A closing dispatch runs both as one leg npm-ha-closing, with the soak and the 5-minute Valkey outage.
+  # The ports differ from the e2e job's (8080, 8081, 8086) so that the jobs can share a runner host.
   e2e-npm:
     name: e2e-npm on kind (${{ matrix.set }})
     runs-on: self-hosted
-    needs: [chart, image]
     timeout-minutes: ${{ startsWith(matrix.set, 'npm-ha') && 120 || 90 }}
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.closing && '[{"set":"npm","port":"8082"},{"set":"npm-closing","port":"8083"},{"set":"npm-ha-closing","port":"8084"}]' || '[{"set":"npm","port":"8082"},{"set":"npm-ha","port":"8084"}]') }}
+        include: ${{ fromJSON(inputs.closing && '[{"set":"npm","port":"8082"},{"set":"npm-closing","port":"8083"},{"set":"npm-ha-closing","port":"8084"}]' || '[{"set":"npm","port":"8082"},{"set":"npm-ha","port":"8084"},{"set":"npm-ha-crash","port":"8085"}]') }}
     env:
       TROVE_IMAGE: guidedtraffic/trove:dev
       TROVE_DEV_CLUSTER: trove-${{ matrix.set }}-${{ github.run_id }}
@@ -1188,7 +1198,7 @@ jobs:
         run: |
           set -euo pipefail
           # A missing report would drop the requirements only that report proves, so it is an error.
-          for dir in test-unit test-chart test-integration; do
+          for dir in test-unit test-chart test-integration-a test-integration-b; do
             if ! compgen -G ".out/reports/$dir/*.json" >/dev/null; then
               echo "::error::report artifact $dir is missing"
               exit 1

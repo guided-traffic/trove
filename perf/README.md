@@ -22,7 +22,7 @@ to first byte of a 1 MiB tarball), P-3 (a document of `npm-local`), P-5 (a docum
 and P-8 (a 50 KiB tarball at 1,000 requests/s). Its inputs are a token file and a fixture file in `/out`, which `TestNPMPerf`
 ([test/e2e/npm_perf_test.go](../test/e2e/npm_perf_test.go)) writes; the result is `/out/perf-npm.json`, with every answer of a
 scenario counted by status, as `shed` (the replica's own `503 server_busy`) or by the error class of a request without an answer. Without `GATE=1` it reports, which
-is how the leg `npm-ha` runs it on the dev profile; with `GATE=1` the targets are k6 thresholds, for the reference environment of
+is how the nightly job `npm-ha-soak` and the closing run run it on the dev profile; with `GATE=1` the targets are k6 thresholds, for the reference environment of
 R-ARCH-027 (roadmap E5.3, [Q-ROAD-9](../docs/coverage/roadmap.md#q-road-9--what-wp28-builds-of-r-arch-027s-load-scripts-and-where-they-run)).
 How it is started: [e2e.md](../docs/developer/e2e.md#the-load-scripts-of-r-arch-027).
 

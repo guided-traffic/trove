@@ -41,7 +41,7 @@ with their pins and fails on a difference; a tool that is not installed is not a
 | `versions-check` | the E0.2 checks listed above |
 | `test` | `go test -race ./...` with a coverage profile of the unit tier (`.out/coverage/unit.out`); the `go test -json` stream goes to `.out/test-unit.json`, which the coverage generator reads |
 | `integration-up`, `integration-down` | start and stop the integration stack, see below |
-| `test-integration` | `go test -tags integration ./test/integration/...` with the environment of `.dev/integration/env`; the JSON stream goes to `.out/test-integration.json`, the profile to `.out/coverage/integration-<line>.out` |
+| `test-integration` | `go test -tags integration ./test/integration/...` with the environment of `.dev/integration/env`; the JSON stream goes to `.out/test-integration.json`, the profile to `.out/coverage/integration-<line>.out`; `SHARD=a\|b` runs one half of the packages (the two CI legs) and adds `-<shard>` to both names |
 | `test-performance` | the P-13 and P-14 latency tests of the integration tier with `TROVE_PERF_GATE=1`, which enforces their p99 bounds with Valkey (`test-integration` logs them only); the JSON stream goes to `.out/test-performance.json`. Run by the nightly workflow ([releasing.md](releasing.md#performance-nightly)) |
 | `minio-up`, `minio-down`, `s3-conformance` | MinIO built at `MINIO_COMMIT`, served over TLS, and the conformance tests against it ([test/integration/minio.sh](../../test/integration/minio.sh)) |
 | `coverage-report` | merges `.out/coverage` into `coverage.txt`, `summary.md` and the badge `coverage.json` ([test/coverage/report.sh](../../test/coverage/report.sh)) |

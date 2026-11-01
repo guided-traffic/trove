@@ -94,8 +94,9 @@ perf/k6/npm.js              the npm load scripts of R-ARCH-027 (P-1, P-3, P-5, P
 ```shell
 make image VERSION=dev          # IMAGE defaults to guidedtraffic/trove:dev
 make dev-up                  # TROVE_DEV_HTTP_PORT=28080 make dev-up when 8080 is taken
-make e2e SET=push            # E0.3, E0.4, E0.6, E0.7, E0.12, E0.14, E0.15, E0.16, E1.1, E1.14, then E0.11 (CI, every change)
-make e2e SET=failover        # E0.4, E0.6, the E0.13 failovers and the long M1 tests E1.8, E1.11, E1.13 (CI, every change)
+make e2e SET=push            # E0.3, E0.4, E0.6, E0.7, E0.12, E0.14, E0.15, E0.16, E1.14, then E0.11 (CI, every change)
+make e2e SET=failover        # the E0.13 failovers and the E1.8 limits (CI, every change)
+make e2e SET=access-long     # E1.1, E1.11 with the browser journeys, E1.13 (CI, every change)
 make e2e SET=access          # the M1 tests alone: E1.1, E1.8, E1.11, E1.13, E1.14
 make e2e SET=full            # everything, in the order of the milestone
 make e2e SET=drain           # E0.14 only (with the transfer loop of E1.13)
@@ -104,8 +105,10 @@ make e2e SET=clients         # build the npm clients image, start the client pod
 make e2e SET=clients-down    # remove the client pods
 make e2e SET=npm             # the npm acceptance matrix and E2.2 to E2.12 but E2.11 (CI job e2e-npm, every change); three client pods
 make e2e SET=npm-closing     # the additions of the closing run (below); fails unless TROVE_E2E_NPM_CLOSING=1, which the set exports
-make e2e SET=npm-ha          # E2.11: drain variant A and the failovers under the npm load, then perf/k6/npm.js (CI leg npm-ha, every change)
-make e2e SET=npm-ha-closing  # npm-ha plus the 5-minute Valkey outage under the npm load (the closing run's leg)
+make e2e SET=npm-ha          # E2.11: drain variant A and the failovers under the npm load (CI leg npm-ha, every change)
+make e2e SET=npm-ha-crash    # E2.11: the pod crash under the npm load, three force-deletes (CI leg npm-ha-crash, every change)
+make e2e SET=npm-ha-soak     # the pod crash with ten force-deletes over 20 minutes, then perf/k6/npm.js (nightly)
+make e2e SET=npm-ha-closing  # npm-ha, npm-ha-soak and the 5-minute Valkey outage under the npm load (the closing run's leg)
 make npm-clients-image       # only build the image into the local Docker
 make fuzz-npm FUZZ=FuzzMatch FUZZTIME=1m   # npm's fuzz targets (CI: 30 minutes, closing run only)
 ```
@@ -137,6 +140,7 @@ pod watch and the events of the drain, the logs of the drained pods, and the res
 | `TROVE_E2E_DRIVER_BIN` | unset | a prebuilt linux driver binary instead of `go build` |
 | `TROVE_E2E_SCATTER_RETURN` | `1` | `0` leaves the cluster in the `scatter` profile after E0.11 |
 | `TROVE_E2E_RUN` | unset | replaces the `go test -run` expression of any set (`TROVE_E2E_RUN='TestNPMMatrix/rows/E2.1_npm11' deploy/dev/e2e.sh npm`) |
+| `TROVE_E2E_NPM_CRASH_SOAK` | unset | `1` makes `TestNPMHACrash` force-delete ten pods over 20 minutes instead of three; the sets `npm-ha-soak` and `npm-ha-closing` export it |
 
 The suite runs over TLS by default: the scheme, the CA and the probe scheme are parameters (the defaults above),
 and nothing in the suite hard-codes `http`. What the move to TLS changed is listed in
@@ -657,7 +661,7 @@ test/e2e/clients/
 ## The npm tests
 
 `make e2e SET=npm` (CI job `e2e-npm`, every change) runs the eight clients and the criteria E2.1 to E2.12 of the
-[roadmap](../coverage/roadmap.md) that need a cluster, but E2.11, which is the leg `npm-ha` ([below](#drain-and-failover-under-npm-load)); `make e2e SET=npm-closing` adds what the run that closes a phase adds
+[roadmap](../coverage/roadmap.md) that need a cluster, but E2.11, which is the legs `npm-ha` and `npm-ha-crash` ([below](#drain-and-failover-under-npm-load)); `make e2e SET=npm-closing` adds what the run that closes a phase adds
 ([Q-NPM-46](../spec/formats/npm.md#q-npm-46--what-marks-the-run-that-closes-the-phase), [releasing.md](releasing.md#the-run-that-closes-a-phase)).
 `e2e.sh` builds the clients image, starts three client pods and the counting upstream, and the tests switch the cluster to the
 `scatter` profile once ([useScatter](../../test/e2e/m1_env_test.go)). Decisions: Q-NPM-46 to Q-NPM-49 in [npm.md](../spec/formats/npm.md).
@@ -776,11 +780,14 @@ Found while building the matrix and running it through `npm-all`, in the order t
 
 ## Drain and failover under npm load
 
-`make e2e SET=npm-ha` (CI leg `e2e-npm (npm-ha)`, every change) is exit criterion E2.11 of the [roadmap](../coverage/roadmap.md) and the
-M2 part of work package WP2.8: variant A of [R-HA-059](../spec/ha-and-helm.md#r-ha-059--node-drain-without-outage)'s drain test and the
-pod-crash, PostgreSQL-switchover and Valkey-failover scenarios of [R-HA-052](../spec/ha-and-helm.md#r-ha-052--failure-injection-test-suite),
-each under the npm part of R-HA-059's load, then the npm load scripts of R-ARCH-027 as a report. `SET=npm-ha-closing`, the leg a closing
-dispatch runs instead, adds the 5-minute Valkey outage, which R-HA-052 keeps for the full suite. The harness of the npm tests is the base
+`make e2e SET=npm-ha` and `SET=npm-ha-crash` (CI legs `e2e-npm (npm-ha)` and `e2e-npm (npm-ha-crash)`, every change) are exit criterion
+E2.11 of the [roadmap](../coverage/roadmap.md) and the M2 part of work package WP2.8: variant A of
+[R-HA-059](../spec/ha-and-helm.md#r-ha-059--node-drain-without-outage)'s drain test and the PostgreSQL-switchover and Valkey-failover
+scenarios of [R-HA-052](../spec/ha-and-helm.md#r-ha-052--failure-injection-test-suite) in the first leg, its pod crash with three
+force-deletes in the second, each under the npm part of R-HA-059's load. `SET=npm-ha-soak` (job `npm-ha-soak` of the nightly Performance
+workflow) runs the pod crash with ten force-deletes over 20 minutes and then the npm load scripts of R-ARCH-027 as a report.
+`SET=npm-ha-closing`, the one leg a closing dispatch runs instead, runs all of it and adds the 5-minute Valkey outage, which R-HA-052 keeps
+for the full suite ([Q-HA-67](../spec/ha-and-helm.md#q-ha-67--where-and-how-often-the-scenarios-under-npm-load-run)). The harness of the npm tests is the base
 (three client pods, the counting test upstream, the scatter profile with three `web` and two `worker` replicas); the M0 drain harness
 (`startPodWatch`, `checkEvents`, the driver's probe jobs, `startMonitor`) is reused. Decisions:
 [Q-HA-65 to Q-HA-69](../spec/ha-and-helm.md#q-ha-65--the-npm-part-of-r-ha-059s-load-before-nuget-exists-and-how-its-commands-are-counted) and
@@ -819,7 +826,7 @@ fault is therefore never a failed client command, and a loop that dies leaves no
 | `TestNPMHA` drain | `drain.sh <node>`, 2 minutes after the load started; the load runs 3 more minutes after the drain returns; six `system.probe` jobs of 330 steps | all three | R-HA-059's: every `npm` command exits `0`; k6 only `2xx` and `304`, no connection error, no wrong tarball, no dropped iteration and 95 % of the rate; the p99 of the k6 requests from the first eviction until 2 minutes after the drain at most twice the p99 of the warm-up; every acknowledged publish installs afterwards; every probe job `succeeded` with `attempt` 1, at least one moved and resumed from its cursor; no container exit 137 or `OOMKilled`, no SIGKILL or `FailedKillPod` event; no trove pod `Pending` for more than 60 s; `drain.sh` returns within 10 minutes and the node is uncordoned |
 | `TestNPMHA` switchover | `failover.sh` (`dev-failover`) after 1 minute; 1 minute after | all three | every `npm` command exits `0`, every `npm ci` loop ran a command during the switchover; k6 as above; every acknowledged publish installs; `/healthz` 200 on every pod, no restart |
 | `TestNPMHA` Valkey failover | `valkey-failover.sh` (`dev-valkey-failover`) after 1 minute; 1 minute after | all three | as the switchover, and `/readyz` 200 on every pod throughout, and `trove_valkey_primary_changes_total` rises by exactly one on every `web` and `worker` replica (R-HA-057) |
-| `TestNPMHA` pod crash | `kubectl delete pod --grace-period=0 --force` of a random `web` or `worker` pod (the seed is logged), ten times, every 2 minutes | `npm ci` and publish loops (R-HA-052 adds k6 only to the drain and Valkey rows) | every `npm` command exits `0`; every version `npm-local` lists for the publish loop's package downloads with its `dist.integrity`, and every acknowledged one is listed (the interim of `trove admin storage verify`, [Q-HA-69](../spec/ha-and-helm.md#q-ha-69--the-storage-check-of-the-pod-crash-before-trove-admin-storage-verify-exists)); every acknowledged publish installs; `/healthz` 200 on every pod that was not deleted; three `web` and two `worker` pods ready at the end |
+| `TestNPMHACrash` | `kubectl delete pod --grace-period=0 --force` of a random `web` or `worker` pod (the seed is logged), every 2 minutes: three times, ten with `TROVE_E2E_NPM_CRASH_SOAK=1` (`npm-ha-soak`, `npm-ha-closing`) | `npm ci` and publish loops (R-HA-052 adds k6 only to the drain and Valkey rows) | every `npm` command exits `0`; every version `npm-local` lists for the publish loop's package downloads with its `dist.integrity`, and every acknowledged one is listed (the interim of `trove admin storage verify`, [Q-HA-69](../spec/ha-and-helm.md#q-ha-69--the-storage-check-of-the-pod-crash-before-trove-admin-storage-verify-exists)); every acknowledged publish installs; `/healthz` 200 on every pod that was not deleted; three `web` and two `worker` pods ready at the end |
 | `TestNPMHAClosing` (closing run) | `valkey-stop.sh` after 1 minute; 2 minutes in, one `web` pod deleted with its grace period; `valkey-start.sh` 5 minutes after the stop | all three | every `npm` command exits `0`; k6 as above; the replacement pod becomes ready with `valkey` degraded; `/readyz` 200 throughout on every pod but the deleted one and its replacement; after the return, `degraded` clears on every replica within `open_duration` plus `health_check_interval` plus 5 s (15 s in the dev profile, read through `driver info`), counted from the first moment a Sentinel names a primary again (`valkeyClearWatch` polls while `valkey-start.sh` still waits for the StatefulSets and the operator) |
 | `TestNPMPerf` | none | [perf/k6/npm.js](../../perf/k6/npm.js) | every request answered `200` or shed with the replica's `503 server_busy`; no restart of the target pod; the numbers are reported, not gated (below) |
 

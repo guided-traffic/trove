@@ -4,8 +4,10 @@ package e2e
 
 // Drain and failover under npm load (WP2.8, roadmap M2 E2.11): variant A of R-HA-059's drain test and the pod-crash,
 // PostgreSQL-switchover and Valkey-failover scenarios of R-HA-052, each under the npm part of R-HA-059's load
-// (npm_load_test.go), in the scatter profile with three web and two worker replicas. The Valkey outage of R-HA-052
-// belongs to the full suite and runs in the closing run (TestNPMHAClosing). Q-HA-65 and Q-HA-67 to Q-HA-69 record the choices.
+// (npm_load_test.go), in the scatter profile with three web and two worker replicas. The pod crash is TestNPMHACrash, a CI
+// leg of its own: three force-deletes per change, the full ten with TROVE_E2E_NPM_CRASH_SOAK=1 (nightly and closing run).
+// The Valkey outage of R-HA-052 belongs to the full suite and runs in the closing run (TestNPMHAClosing). Q-HA-65 and
+// Q-HA-67 to Q-HA-69 record the choices.
 
 import (
 	"encoding/json"
@@ -59,9 +61,18 @@ func TestNPMHA(t *testing.T) {
 		t.Logf("%s before %v, after %v", changes, before, after)
 		r.res.installPublished(t, h)
 	})
+}
 
-	t.Run("R-HA-052 R-NPM-046 pod crash: a random web or worker replica force-deleted every 2 min for 20 min under the npm ci and publish loops: no failed iteration, every listed version's tarball is readable", func(t *testing.T) {
-		const kills, every = 10, 2 * time.Minute
+// TestNPMHACrash is R-HA-052's pod crash under the npm load: three force-deletes on every change, ten (20 minutes) with
+// TROVE_E2E_NPM_CRASH_SOAK=1, which the nightly Performance workflow and the closing run set (Q-HA-67).
+func TestNPMHACrash(t *testing.T) {
+	h := npmHAFx(t)
+
+	t.Run("R-HA-052 R-NPM-046 pod crash: a random web or worker replica force-deleted every 2 min under the npm ci and publish loops, 3 times per change and 10 times over 20 min in the soak: no failed iteration, every listed version's tarball is readable", func(t *testing.T) {
+		kills, every := 3, 2*time.Minute
+		if os.Getenv("TROVE_E2E_NPM_CRASH_SOAK") == "1" {
+			kills = 10
+		}
 		seed := uint64(time.Now().UnixNano())
 		rng := rand.New(rand.NewPCG(seed, seed>>1))
 		var victims []string

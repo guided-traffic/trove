@@ -228,16 +228,31 @@ integration-up: ## Start PostgreSQL, PgBouncer, Valkey with Sentinel (TLS) and S
 integration-down: ## Stop the integration stack and remove its volumes
 	test/integration/down.sh
 
-# The coverage profile of the line is named by the Valkey line it ran against, so the two lines
-# of the matrix merge into one report.
+# SHARD=a|b splits the packages over the two CI jobs, each with its own stack: a holds four of the slowest
+# packages (about half the time), b everything else, so a new package lands in b. Unset runs all.
+INTEGRATION_SHARD_A := $(addprefix $(MODULE)/test/integration/,coordination npm repository proxy)
+ifeq ($(SHARD),)
+INTEGRATION_PKGS = ./test/integration/...
+else ifeq ($(SHARD),a)
+INTEGRATION_PKGS = $(INTEGRATION_SHARD_A)
+else ifeq ($(SHARD),b)
+INTEGRATION_PKGS = $(filter-out $(INTEGRATION_SHARD_A),$(shell go list -tags integration ./test/integration/...))
+else
+$(error SHARD must be a, b or unset, not $(SHARD))
+endif
+
+# The coverage profile of the line is named by the Valkey line it ran against (and the shard), so the
+# profiles of the matrix merge into one report. -p 1 serialises the build too, so the test binaries are
+# compiled in parallel first and the run takes them from the build cache.
 .PHONY: test-integration
-test-integration: ## Integration tests against the running stack (make integration-up); .out/test-integration.json and .out/coverage/integration-<line>.out
+test-integration: ## Integration tests against the running stack (make integration-up), SHARD=a|b for one half; .out/test-integration[-<shard>].json and .out/coverage/integration-<line>[-<shard>].out
 	@test -f $(INTEGRATION_ENV) || { echo "$(INTEGRATION_ENV) is missing: run 'make integration-up' first"; exit 1; }
 	@mkdir -p .out $(COVERAGE_DIR)
+	go test -c -o .out/integration-bin/ -tags integration -covermode=atomic -coverpkg=./... $(INTEGRATION_PKGS) >/dev/null
 	@set -o pipefail; set -a; . $(INTEGRATION_ENV); set +a; \
 	  go test -count=1 -p 1 -tags integration -covermode=atomic -coverpkg=./... \
-	    -coverprofile=$(COVERAGE_DIR)/integration-$${TROVE_TEST_VALKEY_LINE:-9.1}.out \
-	    -json ./test/integration/... | tee .out/test-integration.json | $(TESTLOG)
+	    -coverprofile=$(COVERAGE_DIR)/integration-$${TROVE_TEST_VALKEY_LINE:-9.1}$(if $(SHARD),-$(SHARD)).out \
+	    -json $(INTEGRATION_PKGS) | tee .out/test-integration$(if $(SHARD),-$(SHARD)).json | $(TESTLOG)
 
 # The latency bounds of P-13 and P-14 with Valkey, tail included (Q-ARCH-220): the per-change tier asserts
 # delivery and the p50; the p99 bound is enforced here, by the nightly Performance workflow.
@@ -341,7 +356,7 @@ dev-drain: ## Drain a node under k6 load with cursor-persisting jobs; fails on a
 	deploy/dev/drain.sh
 
 .PHONY: e2e
-e2e: ## End-to-end tests on the dev cluster (deploy/dev/e2e.sh); SET=push|failover|access|full|drain|npm|npm-closing|npm-ha|npm-ha-closing|<go test -run regexp>, default: all but the profile switch
+e2e: ## End-to-end tests on the dev cluster (deploy/dev/e2e.sh); SET=push|failover|access-long|access|full|drain|npm|npm-closing|npm-ha|npm-ha-crash|npm-ha-soak|npm-ha-closing|<go test -run regexp>, default: all but the profile switch
 	deploy/dev/e2e.sh '$(SET)'
 
 # >>> M2 npm-clients
