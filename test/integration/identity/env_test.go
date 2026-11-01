@@ -402,7 +402,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	r.tokens = token.NewService(token.ServiceOptions{
 		DB: r.db, Notifier: r.changes, Recorder: r.recorder, Principals: r.principals, Settings: r.settings, Cache: r.caches, Gate: gate,
 		Tokens: r.tokenCfg, Recent: recent, Metrics: metrics, Log: quiet, Now: o.now,
-		Scope: scope.Options{Action: func(string) bool { return true }, SystemItem: func(s string) bool { return s == "identities:read" }},
+		Scope: endpointRules(scope.Options{Action: func(string) bool { return true }, SystemItem: func(s string) bool { return s == "identities:read" }}),
 	})
 	r.manager = principal.NewManager(principal.ManagerOptions{DB: r.db, Notifier: r.changes, Recorder: r.recorder, BreakGlassName: "breakglass"})
 	r.provisioner = principal.NewProvisioner(principal.ProvisionerOptions{
@@ -428,7 +428,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 		limiter = auth.NewLocalLimiter(300, time.Minute, nil, nil)
 	}
 	r.stage = auth.New(auth.Options{
-		Tokens: r.tokens, Principals: r.principals, Settings: r.settings, Limiter: limiter, BasicEnabled: true, Metrics: metrics,
+		Tokens: r.tokens, Uses: r.tokens, Principals: r.principals, Settings: r.settings, Limiter: limiter, BasicEnabled: true, Metrics: metrics,
 		ClientAddr: func(*http.Request) netip.Addr { return netip.MustParseAddr("203.0.113.7") }, Log: quiet,
 	})
 	return r

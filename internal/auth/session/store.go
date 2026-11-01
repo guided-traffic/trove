@@ -15,6 +15,7 @@ import (
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/config"
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
@@ -94,6 +95,8 @@ type Store struct {
 
 	fmu     sync.Mutex
 	flights map[string]*flight
+	// fillHook, when set, replaces the read of a row by readRow (tests).
+	fillHook func(ctx context.Context, key string) (*entry, error)
 
 	cmu      sync.Mutex
 	csrfLast map[string]time.Time // auth.csrf_failed de-duplication per session, per replica
@@ -252,16 +255,16 @@ func (s *Store) Peek(ctx context.Context, cookie string) (Info, error) {
 	if err != nil {
 		return Info{}, err
 	}
-	if now := time.Now(); !now.Before(e.absDeadline) || !now.Before(e.seen().Add(e.idle)) {
+	if !e.live(time.Now()) {
 		// The replica's view says the session ended; only the row can say it did not.
-		fresh, err := s.fill(ctx, key)
+		fresh, err := s.readRow(ctx, key)
 		if errors.Is(err, errGone) {
 			return Info{}, ErrInvalid
 		}
 		if err != nil {
 			return Info{}, err
 		}
-		if now = time.Now(); !now.Before(fresh.absDeadline) || !now.Before(fresh.seen().Add(fresh.idle)) {
+		if !fresh.live(time.Now()) {
 			return Info{}, ErrInvalid
 		}
 		e = fresh
@@ -282,6 +285,22 @@ func (s *Store) lookup(ctx context.Context, key string) (*entry, error) {
 		s.o.AuthMetrics.Bypassed("changes_stale")
 	}
 	return s.shared(ctx, key)
+}
+
+// live reports whether both deadlines of the entry still hold at now: the
+// absolute one, and the idle one counted from the newest last_seen_at read. It is
+// the one rule of [Store.Validate] and [Store.Peek].
+func (e *entry) live(now time.Time) bool {
+	return now.Before(e.absDeadline) && now.Before(e.seen().Add(e.idle))
+}
+
+// readRow reads the row of a session from PostgreSQL, not from the cache. A test
+// replaces it with fillHook.
+func (s *Store) readRow(ctx context.Context, key string) (*entry, error) {
+	if s.fillHook != nil {
+		return s.fillHook(ctx, key)
+	}
+	return s.fill(ctx, key)
 }
 
 // fill reads the row. A row that does not authenticate is errGone, so the
@@ -334,15 +353,23 @@ func (s *Store) sharedFill(ctx context.Context, key string, fill func(context.Co
 		// waits for it like the ones that join it, and stops waiting when its own
 		// context ends, without taking the others' answer with it.
 		go func() {
+			// A panic in the query would otherwise end the process, since no net/http
+			// goroutine recovers it here, and leave every waiter without an answer.
+			defer func() {
+				if p := recover(); p != nil {
+					s.log.Error("a shared session lookup panicked", "panic", p)
+					f.e, f.err = nil, errs.E(errs.Internal, errs.CodeInternal, "The session cannot be checked right now.")
+				}
+				close(f.done)
+				s.fmu.Lock()
+				if s.flights[key] == f {
+					delete(s.flights, key)
+				}
+				s.fmu.Unlock()
+			}()
 			fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), flightFillTimeout)
+			defer cancel()
 			f.e, f.err = fill(fctx, key)
-			cancel()
-			close(f.done)
-			s.fmu.Lock()
-			if s.flights[key] == f {
-				delete(s.flights, key)
-			}
-			s.fmu.Unlock()
 		}()
 	}
 	s.fmu.Unlock()
@@ -374,13 +401,13 @@ func (e *entry) copyForRequest() *entry {
 // replaces the entry.
 func (s *Store) checkDeadlines(ctx context.Context, key string, e *entry) (*entry, error) {
 	now := time.Now()
-	if now.Before(e.absDeadline) && now.Before(e.seen().Add(e.idle)) {
+	if e.live(now) {
 		return e, nil
 	}
 	if s.cache != nil {
 		s.cache.Invalidate(key)
 	}
-	fresh, err := s.fill(ctx, key)
+	fresh, err := s.readRow(ctx, key)
 	if errors.Is(err, errGone) {
 		return nil, ErrInvalid
 	}

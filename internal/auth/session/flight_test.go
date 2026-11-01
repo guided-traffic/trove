@@ -3,11 +3,13 @@ package session
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/cache"
+	"github.com/guided-traffic/trove/internal/errs"
 )
 
 // TestR_AUTH_023_ASharedLookupDoesNotHandOneRequestsCancellationToTheOthers: the
@@ -78,6 +80,76 @@ func TestR_AUTH_010_PeekChangesNothing(t *testing.T) {
 	}
 	if _, err := s.Peek(context.Background(), "not-a-secret"); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("a malformed cookie: %v", err)
+	}
+}
+
+// TestR_AUTH_010_PeekAsksTheRowWhenTheReplicasViewSaysTheSessionEnded: an entry
+// whose idle deadline has passed on this replica may have been touched elsewhere;
+// Peek reads the row (and writes nothing) and answers from it.
+func TestR_AUTH_010_PeekAsksTheRowWhenTheReplicasViewSaysTheSessionEnded(t *testing.T) {
+	reg, err := cache.NewRegistry(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Store{flights: map[string]*flight{}, o: Options{RevocationBound: time.Minute, Fresh: freshGate{}}}
+	s.cache = registerCache(reg, time.Minute, 10)
+	secret := NewSecret()
+	now := time.Now()
+	stale := &entry{id: "s", principalID: "u", absDeadline: now.Add(time.Hour), idle: time.Minute, lastSeen: now.Add(-time.Hour)}
+	s.cache.Set(string(Hash(secret)), stale)
+	if stale.live(now) {
+		t.Fatal("the entry should look idle-expired to the replica")
+	}
+
+	reads := 0
+	t.Run("R-AUTH-010 the row was touched elsewhere: the session lives", func(t *testing.T) {
+		s.fillHook = func(context.Context, string) (*entry, error) {
+			reads++
+			return &entry{id: "s", principalID: "u", absDeadline: now.Add(time.Hour), idle: time.Minute, lastSeen: time.Now()}, nil
+		}
+		if info, err := s.Peek(context.Background(), secret); err != nil || info.ID != "s" || reads != 1 {
+			t.Fatalf("%+v %v after %d reads", info, err, reads)
+		}
+	})
+	t.Run("R-AUTH-010 the row is idle-expired too: invalid, and nothing is ended", func(t *testing.T) {
+		s.fillHook = func(context.Context, string) (*entry, error) {
+			return &entry{id: "s", absDeadline: now.Add(time.Hour), idle: time.Minute, lastSeen: now.Add(-time.Hour)}, nil
+		}
+		if _, err := s.Peek(context.Background(), secret); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("%v", err)
+		}
+	})
+	t.Run("R-AUTH-010 the row is gone: invalid", func(t *testing.T) {
+		s.fillHook = func(context.Context, string) (*entry, error) { return nil, errGone }
+		if _, err := s.Peek(context.Background(), secret); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("%v", err)
+		}
+	})
+	t.Run("R-AUTH-010 live is one rule: both deadlines must hold", func(t *testing.T) {
+		e := &entry{absDeadline: now.Add(time.Hour), idle: time.Minute, lastSeen: now}
+		if !e.live(now) || e.live(now.Add(2*time.Minute)) || e.live(now.Add(2*time.Hour)) {
+			t.Fatal("live")
+		}
+	})
+}
+
+// TestR_AUTH_023_APanicInASharedLookupIsAnErrorNotACrash: the query runs in a
+// goroutine of its own, where nothing else recovers; the panic becomes an internal
+// error for every waiter, the flight ends, and the next lookup starts a new one.
+func TestR_AUTH_023_APanicInASharedLookupIsAnErrorNotACrash(t *testing.T) {
+	s := &Store{flights: map[string]*flight{}, o: Options{RevocationBound: time.Minute}, log: slog.New(slog.DiscardHandler)}
+	_, err := s.sharedFill(context.Background(), "k", func(context.Context, string) (*entry, error) { panic("boom") })
+	if e, ok := errs.As(err); !ok || e.Status() != 500 {
+		t.Fatalf("a panicking lookup: %v", err)
+	}
+	s.fmu.Lock()
+	left := len(s.flights)
+	s.fmu.Unlock()
+	if left != 0 {
+		t.Fatalf("%d flights left behind", left)
+	}
+	if e, err := s.sharedFill(context.Background(), "k", func(context.Context, string) (*entry, error) { return &entry{id: "ok"}, nil }); err != nil || e.id != "ok" {
+		t.Fatalf("the next lookup: %v %v", e, err)
 	}
 }
 

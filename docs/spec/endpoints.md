@@ -710,8 +710,13 @@ Priority: **MVP** · Covers: TOK-007
   (`auth.token_types`, R-EP-010); otherwise `400` `invalid_scope` names it. A personal token bound
   to a further endpoint, which accepts service-account tokens only by default (Q-EP-10), is refused
   because it would work nowhere: its type is refused on that endpoint and its binding on every
-  other. The rule holds for the API and for `trove admin token create` alike. Scopes stay
-  immutable, and rotation keeps the binding (R-AUTH-030).
+  other. The rule is the token service's, in `prepareCreate`, so it holds for the API, for
+  `trove admin token create` and for any other caller alike, and it comes after the
+  authorization of the operation: a caller who may not create the token gets the `403`, never
+  the `400` that would name an endpoint or its token types (Q-AUTH-182). Scopes stay immutable,
+  and rotation keeps the binding (R-AUTH-030) if the endpoint still accepts the token's type;
+  otherwise the rotation is refused with `400` `invalid_scope` naming the endpoint, and the old
+  token is untouched (Q-AUTH-182).
 - **Derivation rule** (R-AUTH-027). A token created under the derivation rule from a bound token
   must be bound to a non-empty subset of its endpoints; otherwise `403`
   `derivation_exceeds_parent`. An unbound token may create a bound or an unbound one.

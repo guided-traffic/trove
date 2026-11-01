@@ -461,6 +461,19 @@ func TestAPIOperations(t *testing.T) {
 			}
 			want(t, next().call(post, "/api/v1/tokens", alicePAT, map[string]any{"description": "x", "scope": map[string]any{"inherit": true, "endpoints": []string{"default"}}}), 201, "")
 		})
+		t.Run("R-EP-011 Q-AUTH-182 authorization comes before the scope check: a caller who may not create the token learns nothing about endpoints", func(t *testing.T) {
+			// "internal" accepts personal tokens only. An administrator is told why the binding fails; a user who may not create
+			// tokens for the account gets the same 403 whatever endpoint the body names.
+			bad := map[string]any{"description": "x", "scope": map[string]any{"inherit": true, "endpoints": []string{"internal"}}}
+			good := map[string]any{"description": "x", "scope": map[string]any{"inherit": true, "endpoints": []string{"customers"}}}
+			want(t, next().call(post, "/api/v1/service-accounts/ci-bot/tokens", alicePAT, bad), 403, "forbidden")
+			want(t, next().call(post, "/api/v1/service-accounts/ci-bot/tokens", alicePAT, good), 403, "forbidden")
+			rp := next().call(post, "/api/v1/service-accounts/ci-bot/tokens", admin, bad)
+			want(t, rp, 400, "invalid_scope")
+			if !strings.Contains(string(rp.Body), "internal") {
+				t.Fatalf("the problem does not name the endpoint: %s", rp.Body)
+			}
+		})
 		t.Run("a list shows own tokens; a token of another user is a 404 (R-AUTH-028)", func(t *testing.T) {
 			bob := b.user("bob")
 			bobPAT := b.pat(bob)

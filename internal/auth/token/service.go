@@ -205,6 +205,13 @@ func (s *Service) prepareCreate(ctx context.Context, r CreateRequest) (insertSpe
 	if err != nil {
 		return insertSpec{}, err
 	}
+	// A binding to an endpoint that does not accept the token's type would work nowhere
+	// (R-EP-011). The check is the service's, so the API, the command and every other
+	// caller have it, and a caller who may not create the token is refused before it
+	// (the handlers authorize first).
+	if err := scope.RequireEndpointTypes(sc.Endpoints, string(r.Type), s.o.Scope); err != nil {
+		return insertSpec{}, err
+	}
 	eff, err := s.o.Settings.Effective(ctx)
 	if err != nil {
 		return insertSpec{}, err

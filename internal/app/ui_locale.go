@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/auth"
 	"github.com/guided-traffic/trove/internal/auth/session"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
@@ -66,10 +67,8 @@ func (a *App) uiPreference() func(*http.Request) string {
 	read := func(ctx context.Context, userID string) (string, error) {
 		var locale string
 		err := db.Read(ctx, func(tx q.DBTX) error {
-			rows, err := q.New(tx).PreferencesGet(ctx, userID)
-			if err == nil && len(rows) == 1 {
-				locale = rows[0].Locale
-			}
+			var err error
+			locale, err = v1.PreferredLocale(ctx, tx, userID)
 			return err
 		})
 		return locale, err

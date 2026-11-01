@@ -60,7 +60,7 @@ func (e *env) apiHandler(name string, db *postgres.DB, changes *cluster.Changes,
 	})
 	manager := principal.NewManager(principal.ManagerOptions{DB: db, Notifier: changes, Recorder: e.audit, BreakGlassName: authCfg.BreakGlass.Username})
 	stage := auth.New(auth.Options{
-		Tokens: tokens, Sessions: store, Principals: principals, Settings: settings,
+		Tokens: tokens, Uses: tokens, Sessions: store, Principals: principals, Settings: settings,
 		Limiter:      auth.NewLocalLimiter(300, time.Minute, nil, nil),
 		ClientAddr:   func(r *http.Request) netip.Addr { return httpserver.InfoFrom(r.Context()).Client },
 		BasicEnabled: true, Metrics: metrics, Log: quiet,

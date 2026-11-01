@@ -2363,7 +2363,7 @@ NuGet API-key presentations count alike.
 - each replica aggregates uses in memory. Requests write this buffer and never read it, so it is
   per-replica state that no answer depends on (R-AUTH-042). A use is noted by the authentication
   stage once the whole authentication has succeeded, after the endpoint binding and the groups of
-  the owner (R-EP-011), so a token that is refused is not a use (Q-AUTH-180);
+  the owner (R-EP-011), so a token that is refused is not a use (Q-AUTH-180). The stage gets the recorder as an input of its own, which the composition root must give it (Q-AUTH-183);
 - it flushes every 60 s, and at shutdown before the pools close
   ([architecture.md](architecture.md) R-ARCH-024), with one `UPDATE … WHERE last_used_at IS NULL
   OR last_used_at < $ts − granularity`. The condition keeps each token's row at one change per
@@ -4975,9 +4975,70 @@ any request, did not hold for the one that happened to start the lookup.
 | (a) The query runs in its own goroutine; every request, the starter too, waits under its own context (chosen) | The shared query keeps the detached 10 s bound and finishes for the others | One rule for all requests of a flight; a cancelled starter no longer holds its caller | A goroutine per started flight |
 | (b) Give the starter the request context | The query is cancelled with its starter | No goroutine | The joiners fail with the starter's cancellation, the case the detached context exists to prevent |
 
-**Choice:** (a). **Rationale:** the flight is shared state, so it must not belong to one request. The development agent would revisit this if
+**Choice:** (a). The query keeps running up to its own 10 s after the request that started it gave up, so the number of lookups in flight is bounded
+by the database pool and not by the requests still waiting (H-328). **Rationale:** the flight is shared state, so it must not belong to one request. The development agent would revisit this if
 the goroutines showed up in a profile, then with a small worker. **Applied in the spec:** R-AUTH-023 (the shared lookup). Code:
 `Store.sharedFill` in `internal/auth/session/store.go`.
+
+### Q-AUTH-182 · The endpoint token-type check belongs to the token service, and a rotation applies it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the refusal of a binding to an endpoint that does not accept the token's type (R-EP-011) was made by the API handlers and the
+command, three call sites around the service. `CreateServiceAccountToken` ran it before it decided whether the caller may create the token,
+so any signed-in caller learned which endpoints exist and which token types they accept from a `400` against a `403`. Rotation copied the old
+scope without the check, so a personal token bound to an endpoint that takes service-account tokens only (made before the check existed), or a
+service-account token after an endpoint's `token_types` changed, rotated into a token that works nowhere.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The check is in `prepareCreate`, after the scope parse; a rotation applies it to the scope it copies, refusing with `400 invalid_scope` (chosen) | One place; the handlers authorize first and the service refuses last; the old token stays valid and can be revoked | Every caller has the rule; no oracle; a rotation never hands out a token that works nowhere | A configuration change can make a rotation fail until the binding is dealt with |
+| (b) The check stays in the callers | Three call sites and a second scope parse in the command | None | Order of checks per handler; the command and any new caller must remember it |
+| (c) A rotation copies the scope unchecked | A configuration change never blocks a rotation | The architecture review's wish | The new token is as useless as the old one, with a new value to distribute; nothing is gained |
+
+**Choice:** (a). No path found where a rotation is the only way out: a token whose endpoint no longer accepts its type is already unusable
+there and, bound to that endpoint only, everywhere else, so refusing loses nothing; the owner revokes it and creates one for an endpoint that
+takes the type. A binding to a name no endpoint carries is still left to the scope parse (it is listed as unknown, R-EP-011), as before.
+
+**Rationale:** authorization before validation is the order of every operation (R-API-008); the service is the one place all paths share. The
+development agent would revisit the rotation half if an operator needed to rotate a token across a `token_types` change, then with an
+override that rebinds the successor.
+
+**Applied in the spec:** R-EP-011 (creation), R-AUTH-030 (rotation keeps the binding while valid). Code: `Service.prepareCreate`, `Service.prepareRotate`
+(`internal/auth/token`); removed: `requireEndpointTypes`, `AuthServices.ScopeOptions`, the command's second parse. Tests:
+`TestR_EP_011_TheServiceRefusesABindingTheTypeCannotUse` and the order test in `TestAPIOperations`.
+
+### Q-AUTH-183 · The stage records the last use through an input of its own
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the stage found `NoteUse` by asserting the token validator to `UseNoter`. A validator that wraps the token service would silently stop
+the recording, and the last-used time (R-AUTH-031) would freeze without an error.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An explicit `auth.Options.Uses` (chosen) | The composition root passes the token service as `Uses` next to `Tokens`; nil records nothing | A missing recorder is a wiring fact, visible in `wireAuth`, which already refuses a missing token service | Two inputs for one object |
+| (b) Keep the assertion | As built | None | The silent loss |
+
+**Choice:** (a). The shell profile, which has no database, passes none. **Rationale:** a feature that must not fail silently must not depend on a
+type assertion. The development agent would revisit this if a second stage-level recorder appeared. **Applied in the spec:** R-AUTH-031. Code:
+`auth.Options.Uses`, `wireAuth`.
+
+### Q-AUTH-184 · One liveness rule for Validate and Peek, and a recovered shared lookup
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `Peek` (Q-API-184) and `checkDeadlines` each spelled out the two deadline conditions. And the shared session lookup (Q-AUTH-181) runs in a
+goroutine that no HTTP server recovers: a panic in the query would end the process, where before it ended one request, and leave `f.done` open.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `entry.live(now)` for both, and a deferred recovery in the lookup goroutine (chosen) | A panic becomes a `500` internal error for every waiter, the flight ends and is removed, the next lookup starts a new one | One rule; no process crash from a lookup | A recovered panic hides a bug unless it is logged (it is, at error level) |
+| (b) Leave both | — | None | A rule that can drift in two places; a crash |
+
+**Choice:** (a). The row read of the revalidation goes through `readRow`, which a test replaces. **Rationale:** the deadline rule decides who is
+signed in, so it should exist once. The development agent would revisit this if a panic ever fired in production, then to find its cause.
+**Applied in the spec:** R-AUTH-010, R-AUTH-023. Code: `entry.live`, `Store.readRow`, `Store.sharedFill`.
 
 ### Q-AUTH-79 · How the end-to-end tests drive the browser login of E1.1 and disable the break-glass account
 

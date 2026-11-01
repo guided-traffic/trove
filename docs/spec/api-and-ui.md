@@ -6477,6 +6477,22 @@ revisit this if the status held per-replica values that differ between replicas 
 **Applied in the spec:** R-AUTH-040 (read), `api/openapi.yaml` (`getAuthSettings`). Code: `settingsETag` and `settingsRevision` in
 `internal/api/v1/authsettings_api.go`.
 
+### Q-API-186 · The preference of a user is read by one function
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the redirect of `/ui/` (Q-API-184) read `user_preferences` with a statement of its own in the composition root, next to the one
+the preferences operations use.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The package that owns the preferences exports the read (chosen) | `v1.PreferredLocale` over `loadPreferences`; the redirect calls it | One reading of the table, with its defaults (a user without a row has none) | The composition root imports one more function of the API package, which it already imports |
+| (b) A second statement | As built | None | Two readings of one table that can drift |
+
+**Choice:** (a). **Rationale:** a change of the preferences table or of what "no stored locale" means is made once. The development agent would
+revisit this if preferences moved into a package of their own. **Applied in the spec:** R-API-021, R-UI-045. Code: `PreferredLocale` in
+`internal/api/v1/preferences_api.go`, `uiPreference` in `internal/app/ui_locale.go`.
+
 ## What this does not cover
 
 

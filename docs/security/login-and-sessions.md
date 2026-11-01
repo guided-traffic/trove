@@ -175,7 +175,7 @@ Stage: the session lookup of the authentication stage (`bySession`, [stage.go](.
 A cookie of the right length and alphabet passes `WellFormed`, so it is looked up: a cache miss reads `ui_session` by the hash of the secret (one
 indexed query), and a lookup that finds no live session is not cached (`errGone`). The session path of the stage does not count the failure
 toward the credential-failure throttle of R-AUTH-038, which counts rejected tokens only. A flood of random cookies from one or many addresses
-therefore costs one indexed query each, bounded only by the listener's request limits and the pool. Since the redirect of `/ui/` (Q-API-184)
+therefore costs one indexed query each. The listener's request limits do not bound it: since the shared lookup runs in its own goroutine under its own 10 s bound (Q-AUTH-181), a lookup can keep running up to 10 s after the request that started it gave up, so the number of queries in flight is bounded by the database pool, which the lookups queue for, and not by the requests that are still waiting. Since the redirect of `/ui/` (Q-API-184)
 looks the cookie up too, and that path is open to every request, it is a second way in. The query is cheap and the pool is bounded, so this is
 load and not exposure: no cookie can be guessed (256 bits), and a refused cookie answers the same `401 session_expired` whatever it was. What makes
 it real is a deployment without an edge rate limit in front of the client listener.

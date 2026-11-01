@@ -98,7 +98,7 @@ request ─► chain stage 6 ─► app.authenticate ─► auth.Stage.Authentic
   management operation is declared public (Q-AUTH-19). An endpoint that allows no anonymous request (a further endpoint
   by default, R-EP-010) answers every request without a credential with the same 401, the always-open routes included.
 - Not built: the NuGet API-key source (M2) and the GitLab job-token extension point (M4).
-- Last use (R-AUTH-031, Q-AUTH-178): the stage calls `Service.NoteUse` (the optional `auth.UseNoter`) once the whole
+- Last use (R-AUTH-031, Q-AUTH-178): the stage calls `Service.NoteUse` through its explicit `auth.Options.Uses` (Q-AUTH-183) once the whole
   authentication succeeded, after the endpoint binding and the owner's groups, cache hit or not; `Check` notes nothing
   ([lastused.go](../../internal/auth/token/lastused.go)). The buffer is a map from token ID to the latest time and address, under
   a mutex; `FlushLastUsed` takes it and writes one statement (`IdentityTouchTokensLastUsed`, rows locked in ID order, a row changes

@@ -116,6 +116,7 @@ func defaultRules() EndpointRules {
 
 func newStage(ft *fakeTokens, o Options) *Stage {
 	o.Tokens = ft
+	o.Uses = ft
 	if o.Principals == nil {
 		o.Principals = fakeStore{groups: map[string][]principal.GroupRef{alice.ID: {{ID: "g1", Name: "team-web"}}}}
 	}

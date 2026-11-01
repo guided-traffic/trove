@@ -43,6 +43,14 @@ func loadPreferences(ctx context.Context, db q.DBTX, userID string) (prefs, erro
 	return prefs{locale: r.Locale, theme: r.Theme, projectFilter: r.ProjectFilter, keyboardShortcuts: r.KeyboardShortcuts, revision: r.Revision}, nil
 }
 
+// PreferredLocale is the locale stored in the preferences of a user, "" for none.
+// The redirect of the UI uses it (Q-API-184); it reads the row through the same
+// function as the preferences operations, so there is one reading of the table.
+func PreferredLocale(ctx context.Context, db q.DBTX, userID string) (string, error) {
+	p, err := loadPreferences(ctx, db, userID)
+	return p.locale, err
+}
+
 // preferencesUser answers 403 for a caller that is not a user: a service
 // account or a CI token has no preferences (R-API-021).
 func preferencesUser(r *http.Request) (string, error) {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth/principal"
+	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
@@ -118,6 +119,15 @@ func (s *Service) prepareRotate(ctx context.Context, r RotateRequest, old Record
 		if r.Parent.ExpiresAt != nil && (life.nonExpiring || now.Add(life.ttl).After(*r.Parent.ExpiresAt)) {
 			return insertSpec{}, forbidden(errs.CodeDerivationExceedsParent, "The new token would outlive the presenting token.")
 		}
+	}
+	// The successor keeps the binding of the token it replaces. When the endpoint no
+	// longer accepts the token's type (the token predates the check on creation, or
+	// the endpoint's token_types changed), the successor would work nowhere either:
+	// refuse, naming the endpoint (Q-AUTH-182). The old token stays valid and can be
+	// revoked, so nothing is lost. After the authorization checks above, so a caller
+	// who may not rotate it learns nothing about the endpoints.
+	if err := scope.RequireEndpointTypes(old.Scope.Endpoints, string(old.Type), s.o.Scope); err != nil {
+		return insertSpec{}, err
 	}
 	// The successor keeps the lineage of the token it replaces, so revoking the
 	// token that one was derived from still revokes it, and it never outlives that

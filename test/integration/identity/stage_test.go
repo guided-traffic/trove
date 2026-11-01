@@ -240,7 +240,7 @@ func TestR_AUTH_038_ThrottleExemptions(t *testing.T) {
 			t.Fatal(err)
 		}
 		d2.stage = auth.New(auth.Options{
-			Tokens: d2.tokens, Principals: d2.principals, Settings: d2.settings, Limiter: exceeded{}, BasicEnabled: true,
+			Tokens: d2.tokens, Uses: d2.tokens, Principals: d2.principals, Settings: d2.settings, Limiter: exceeded{}, BasicEnabled: true,
 			ClientAddr: func(*http.Request) netip.Addr { return netip.MustParseAddr("203.0.113.7") },
 		})
 		if _, err := d2.bearer(p.Secret, "/x"); err != nil {

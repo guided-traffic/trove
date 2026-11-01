@@ -34,8 +34,7 @@ type TokenValidator interface {
 }
 
 // UseNoter records that a token authenticated a request (R-AUTH-031). The stage
-// calls it only when the whole authentication succeeded; a validator that does not
-// implement it records nothing.
+// calls it only when the whole authentication succeeded.
 type UseNoter interface {
 	NoteUse(tokenID, clientAddr string)
 }
@@ -50,6 +49,11 @@ type AnonymousSettings interface {
 type Options struct {
 	// Tokens validates Bearer and Basic credentials.
 	Tokens token.Validator
+	// Uses records the last use of a token once the whole authentication has
+	// succeeded (R-AUTH-031). It is an explicit input and not found on Tokens, so
+	// a validator that wraps the token service cannot silently stop the recording;
+	// nil records nothing (a replica without a database).
+	Uses UseNoter
 	// Sessions resolves the session cookie; nil means the replica has no
 	// sessions and a cookie is ignored (login area absent).
 	Sessions session.Validator
@@ -218,8 +222,8 @@ func (s *Stage) byToken(r *http.Request, ep EndpointRules, raw string, method Me
 		return Result{}, err
 	}
 	sc := info.Scope
-	if n, ok := s.o.Tokens.(UseNoter); ok {
-		n.NoteUse(info.ID, sourceOf(r, s.clientAddr(r)).ClientAddr)
+	if s.o.Uses != nil {
+		s.o.Uses.NoteUse(info.ID, sourceOf(r, s.clientAddr(r)).ClientAddr)
 	}
 	s.o.Metrics.Attempt(string(method), "success", "")
 	return Result{

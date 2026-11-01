@@ -171,7 +171,6 @@ func Handler(t testing.TB, c Components) http.Handler {
 		API:    v1.Services{Config: APIConfig(), Store: c.DB, Audit: c.Recorder},
 		Auth: v1.AuthServices{
 			Manager: c.Manager, Tokens: c.Tokens, Settings: c.Settings, Sessions: c.Sessions, Login: c.Login, FlowStarts: c.FlowStarts, Config: c.Auth,
-			ScopeOptions: ScopeOptions(),
 		},
 	}
 	if c.Options != nil {
@@ -221,9 +220,11 @@ func Handler(t testing.TB, c Components) http.Handler {
 
 // ScopeOptions are the endpoint rules of the harness: the default endpoint
 // accepts personal and service-account tokens, the further endpoint "customers"
-// service-account tokens only (the defaults of R-EP-010).
+// service-account tokens only (the defaults of R-EP-010), and "internal"
+// personal tokens only, so that both kinds of token have an endpoint they cannot
+// be bound to. The token service takes them as its scope options (R-EP-011).
 func ScopeOptions() scope.Options {
-	accepts := map[string][]string{"default": {"pat", "sat", "cit"}, "customers": {"sat"}}
+	accepts := map[string][]string{"default": {"pat", "sat", "cit"}, "customers": {"sat"}, "internal": {"pat"}}
 	return scope.Options{
 		Endpoint:        func(n string) bool { _, ok := accepts[n]; return ok },
 		EndpointAccepts: func(n, t string) bool { return slices.Contains(accepts[n], t) },

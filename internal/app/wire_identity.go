@@ -183,6 +183,8 @@ func (a *App) wireAuth(_ context.Context, id identityArea, ss sessionsArea, lim 
 	stage := auth.New(auth.Options{
 		Tokens: id.tokens, Sessions: ss.store, Principals: id.principals, Settings: id.settings, Limiter: lim.failures,
 		ExemptCIDRs: cfg.RateLimit.ExemptPrefixes(), ClientAddr: clientAddr, BasicEnabled: cfg.Clients.Basic.Enabled,
+		// The token service validates and records the last use; it is checked above.
+		Uses:    id.tokens,
 		Metrics: id.metrics, Log: a.log.With("component", "auth"),
 	})
 	return authArea{stage: stage, publicOps: publicOps}, nil
@@ -310,7 +312,6 @@ func (a *App) authServices() v1.AuthServices {
 	svc := v1.AuthServices{
 		Manager: id.manager, Tokens: id.tokens, Settings: id.settings, Config: a.cfg.Auth,
 		EndpointConfigured: TokenScopeOptions(a.cfg).Endpoint,
-		ScopeOptions:       TokenScopeOptions(a.cfg),
 	}
 	// A nil *session.Store or *oidc.Service must not become a non-nil interface.
 	if ss.store != nil {
