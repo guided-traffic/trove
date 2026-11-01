@@ -113,6 +113,12 @@ type Route struct {
 	// (npm's scoped names). It receives the escaped repository-relative path.
 	Match   func(escapedPath string) (Params, bool)
 	Handler HandlerFunc
+	// APIKey marks a route that accepts a credential in the format's API-key header
+	// (NuGet's X-NuGet-ApiKey, R-NUGET-012) besides Authorization. The authentication
+	// stage examines the header only on a route that declares it, and first
+	// (Q-ARCH-266); the field does not name the header, which is
+	// auth.nuget_api_key_header.
+	APIKey bool
 }
 
 // matcher returns the route's matcher: Match, or the compiled Template.
@@ -311,9 +317,46 @@ type Request struct {
 	Host Host
 	// Log is the request-scoped logger; nil logs to slog's default.
 	Log *slog.Logger
-	// HostState belongs to the Host implementation: the decisions it must record in
-	// the transaction of the write (R-AUTHZ-029). A format never reads or sets it.
-	HostState any
+}
+
+// Refusal is what the dispatcher knows of a request when it refuses it, handed to
+// [Format.WriteError] through the request it receives ([RefusalFrom]): the format, the
+// key of the repository the client addressed and the response base URL. A refusal that
+// links to something - NuGet's 404 of a v2 request names the absolute URL of the
+// service index - builds the link from it; the format needs neither a Host nor a
+// [Request] for that, and a refusal has neither (Q-ARCH-263).
+type Refusal struct {
+	// Format is the ID of the format that owns the prefix.
+	Format ID
+	// Key is the repository segment as addressed: the key, or "<remote>~cache" for the
+	// cache view of a remote repository (R-REPO-032). It has the shape of a key.
+	Key string
+	// BaseURL is the response base URL, "https://trove.example.com", without a
+	// trailing slash.
+	BaseURL string
+}
+
+// Registry is "<base>/api/<format>/<key>/", the URL of the addressed repository.
+func (f Refusal) Registry() string {
+	return f.BaseURL + "/api/" + string(f.Format) + "/" + url.PathEscape(f.Key) + "/"
+}
+
+type refusalKey struct{}
+
+// WithRefusal returns r carrying f for [RefusalFrom]. The dispatcher calls it as soon as
+// the repository key is known; the request it returns is what every later refusal of
+// the request is rendered with.
+func WithRefusal(r *http.Request, f Refusal) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), refusalKey{}, f))
+}
+
+// RefusalFrom returns what the dispatcher handed with the request. ok is false for a
+// refusal that happened before the repository key was known (a path that is no
+// repository path, a stage of the chain): such a refusal cannot link to the
+// repository.
+func RefusalFrom(r *http.Request) (Refusal, bool) {
+	f, ok := r.Context().Value(refusalKey{}).(Refusal)
+	return f, ok
 }
 
 // EndpointFacts are what a format needs of the request's endpoint (R-EP-018,

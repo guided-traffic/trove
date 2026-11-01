@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"runtime"
 	"runtime/metrics"
+	"slices"
 	"strings"
 	"sync"
 	"text/template"
@@ -589,14 +590,16 @@ func (r *run) setup() {
 			r.failf("setup template %q belongs to client %q, which the descriptor does not list", t.ID, t.Client)
 		case t.Section != "configure" && t.Section != "publish" && t.Section != "install":
 			r.failf("setup template %q has section %q", t.ID, t.Section)
-		case t.Lang != "shell" && t.Lang != "ini" && t.Lang != "xml" && t.Lang != "yaml":
+		case !slices.Contains([]string{"shell", "powershell", "cmd", "ini", "xml", "yaml"}, t.Lang):
 			r.failf("setup template %q has language %q", t.ID, t.Lang)
 		}
+		r.versionSpec(t)
 		ids[t.ID] = true
-		// The API gives a template the quoting functions shell and xml (R-API-030); the
-		// check only needs them to exist, the quoting is the API's and tested there.
+		// The API gives a template the quoting functions shell, powershell, cmd and xml
+		// (R-API-030); the check only needs them to exist, the quoting is the API's and
+		// tested there.
 		quote := func(v string) string { return v }
-		tp, err := template.New(t.ID).Option("missingkey=error").Funcs(template.FuncMap{"shell": quote, "xml": quote}).Parse(t.Template)
+		tp, err := template.New(t.ID).Option("missingkey=error").Funcs(template.FuncMap{"shell": quote, "powershell": quote, "cmd": quote, "xml": quote}).Parse(t.Template)
 		if err != nil {
 			r.failf("setup template %q does not parse: %v", t.ID, err)
 			continue
@@ -605,12 +608,30 @@ func (r *run) setup() {
 			r.failf("setup template %q does not execute over SetupData: %v", t.ID, err)
 		}
 		text := t.Template
+		// The references to the token are not credentials, in any of their spellings.
+		for _, ref := range formats.SetupTokenRefs() {
+			text = strings.ReplaceAll(text, ref, "")
+		}
 		for _, o := range r.fx.OptionNames {
 			text = strings.ReplaceAll(text, o, "")
 		}
 		if m := tokenText.FindString(text); m != "" {
 			r.failf("setup template %q spells a credential (%q): a template never receives a token, the user supplies it", t.ID, m)
 		}
+	}
+}
+
+// versionSpec is the rule of SetupTemplate.VersionSpec: only an install template that
+// places the package has one, and it places the version.
+func (r *run) versionSpec(t formats.SetupTemplate) {
+	switch {
+	case t.VersionSpec == "":
+	case t.Section != "install":
+		r.failf("setup template %q has a VersionSpec and is not an install template", t.ID)
+	case !strings.Contains(t.Template, formats.SetupPackageRef):
+		r.failf("setup template %q has a VersionSpec and does not place %s", t.ID, formats.SetupPackageRef)
+	case !strings.Contains(t.VersionSpec, formats.SetupVersionRef):
+		r.failf("setup template %q has a VersionSpec that does not place %s", t.ID, formats.SetupVersionRef)
 	}
 }
 

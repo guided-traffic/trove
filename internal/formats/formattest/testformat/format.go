@@ -694,7 +694,7 @@ func (f Format) tarballGet(ctx context.Context, rq *formats.Request, w http.Resp
 
 func (f Format) tarballPut(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
 	host := rq.Host
-	sp, err := host.Ingest().Spool(ctx, rq, rq.Body, formats.IngestOptions{})
+	sp, err := host.Ingest().Spool(ctx, rq, rq.Body, formats.IngestOptions{Length: rq.ContentLength})
 	if err != nil {
 		return err
 	}

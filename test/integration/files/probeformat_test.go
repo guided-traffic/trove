@@ -228,7 +228,7 @@ func (probeFormat) filePut(ctx context.Context, rq *formats.Request, w http.Resp
 	version := strings.TrimSuffix(strings.TrimPrefix(file, name+"-"), ".tgz")
 	// The identity is what the file name declares; a real format reads it from the
 	// content. Authorization checks that name (R-ARCH-014 step 5).
-	sp, err := rq.Host.Ingest().Spool(ctx, rq, rq.Body, formats.IngestOptions{})
+	sp, err := rq.Host.Ingest().Spool(ctx, rq, rq.Body, formats.IngestOptions{Length: rq.ContentLength})
 	if err != nil {
 		return err
 	}

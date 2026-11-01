@@ -107,7 +107,7 @@ func (r *run) guideText(s formats.GuideSection, d formats.GuideData) bool {
 		return false
 	}
 	for _, code := range fencedCode(out) {
-		for _, o := range append([]string{formats.SetupTokenRef, d.TokenEnvVar}, r.fx.OptionNames...) {
+		for _, o := range append(append(formats.SetupTokenRefs(), d.TokenEnvVar), r.fx.OptionNames...) {
 			code = strings.ReplaceAll(code, o, "")
 		}
 		if m := tokenText.FindString(code); m != "" {

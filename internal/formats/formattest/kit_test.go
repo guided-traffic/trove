@@ -229,6 +229,43 @@ func TestR_ARCH_010_KitChecksCatchTheirDefects(t *testing.T) {
 			t.Fatalf("refused despite the whitelist: %q", got)
 		}
 	})
+	t.Run("R-ARCH-010 check 8: every spelling of the token reference is no credential, with or without the whitelist", func(t *testing.T) {
+		ts := []formats.SetupTemplate{
+			{ID: "tf.win.configure", Client: "tf", Section: "configure", Lang: "xml", Template: `<add key="p" value="` + formats.SetupTokenRefWin + `" />` + "\n"},
+			{ID: "tf.ps.configure", Client: "tf", Section: "configure", Lang: "powershell", Template: "$h = " + formats.SetupTokenRefPS + "\n"},
+			{ID: "tf.cmd.configure", Client: "tf", Section: "configure", Lang: "cmd", Template: "set X=" + formats.SetupTokenRefWin + "\n"},
+			{ID: "tf.install", Client: "tf", Section: "install", Lang: "shell", Template: "tf install " + formats.SetupPackageRef + "\n", VersionSpec: " --version " + formats.SetupVersionRef},
+			{ID: "tf.publish", Client: "tf", Section: "publish", Lang: "shell", Template: "tf publish\n"},
+		}
+		o := override{Format: testformat.New(), templates: ts}
+		fx2 := fx
+		fx2.OptionNames = nil
+		if got := messages(formattest.Evaluate(o, fx2), formattest.CheckSetup); got != "" {
+			t.Fatalf("refused: %q", got)
+		}
+	})
+	t.Run("R-ARCH-010 check 8: a VersionSpec that is misplaced fails", func(t *testing.T) {
+		install := formats.SetupTemplate{ID: "tf.install", Client: "tf", Section: "install", Lang: "shell", Template: "tf install " + formats.SetupPackageRef + "\n"}
+		cases := map[string][]formats.SetupTemplate{
+			"is not an install template": {
+				{ID: "tf.rc.configure", Client: "tf", Section: "configure", Lang: "ini", Template: "x\n", VersionSpec: " --version " + formats.SetupVersionRef}, install,
+			},
+			"does not place " + formats.SetupPackageRef: {
+				{ID: "tf.rc.configure", Client: "tf", Section: "configure", Lang: "ini", Template: "x\n"},
+				{ID: "tf.install", Client: "tf", Section: "install", Lang: "shell", Template: "tf install\n", VersionSpec: " --version " + formats.SetupVersionRef},
+			},
+			"does not place " + formats.SetupVersionRef: {
+				{ID: "tf.rc.configure", Client: "tf", Section: "configure", Lang: "ini", Template: "x\n"},
+				{ID: "tf.install", Client: "tf", Section: "install", Lang: "shell", Template: install.Template, VersionSpec: " --version"},
+			},
+		}
+		for want, ts := range cases {
+			got := messages(formattest.Evaluate(override{Format: testformat.New(), templates: ts}, fx), formattest.CheckSetup)
+			if !strings.Contains(got, want) {
+				t.Errorf("%q does not say %q", got, want)
+			}
+		}
+	})
 	t.Run("R-ARCH-010 R-UI-049 check 8: a guide section that breaks a rule of the guide fails", func(t *testing.T) {
 		with := func(change func(*formats.GuideSection)) []formats.GuideSection {
 			out := append([]formats.GuideSection(nil), testformat.New().Guide()...)

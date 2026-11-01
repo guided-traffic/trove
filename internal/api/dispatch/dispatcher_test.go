@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/guided-traffic/trove/internal/api/edge"
@@ -65,11 +66,15 @@ func (probe) PackageDocumentPath(string) (formats.Path, bool) {
 	return formats.Path{}, false
 }
 
-func (probe) WriteError(w http.ResponseWriter, _ *http.Request, err error) {
+func (probe) WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	status := http.StatusInternalServerError
 	code := "internal"
+	if f, ok := formats.RefusalFrom(r); ok {
+		w.Header().Set("X-Probe-Registry", f.Registry())
+	}
 	if e, ok := errs.As(err); ok {
 		status, code = e.Status(), e.Code
+		w.Header().Set("X-Probe-Detail", e.Detail)
 		if len(e.Allow) > 0 {
 			w.Header().Set("Allow", strings.Join(e.Allow, ","))
 		}
@@ -137,7 +142,22 @@ func (r *fakeRepos) ByKey(_ context.Context, key string) (repository.Repository,
 	return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "no")
 }
 
-type fakeHost struct{ formats.Host }
+// fakeHost is the Host the dispatcher talks to. Begin counts the requests it began and
+// the finish functions that ran; a fakeHost without a counter begins nothing.
+type fakeHost struct {
+	formats.Host
+	begun *hostCalls
+}
+
+type hostCalls struct{ began, finished atomic.Int32 }
+
+func (h fakeHost) Begin(*formats.Request) func() {
+	if h.begun == nil {
+		return func() {}
+	}
+	h.begun.began.Add(1)
+	return func() { h.begun.finished.Add(1) }
+}
 
 type noDeployResolver struct{ formats.Resolver }
 
@@ -158,6 +178,7 @@ type rig struct {
 	repos   *fakeRepos
 	reached []string
 	labels  []string
+	calls   hostCalls
 }
 
 func newRig(t *testing.T) *rig {
@@ -182,7 +203,7 @@ func newRig(t *testing.T) *rig {
 		return nil
 	}}
 	d, err := New(Options{
-		Host: fakeHost{}, Decider: r.decider, Repos: r.repos, Formats: func() []formats.Format { return []formats.Format{p, bare{}} },
+		Host: fakeHost{begun: &r.calls}, Decider: r.decider, Repos: r.repos, Formats: func() []formats.Format { return []formats.Format{p, bare{}} },
 		Label: func(_ context.Context, name string) { r.labels = append(r.labels, name) },
 	})
 	if err != nil {
@@ -451,4 +472,49 @@ func TestR_EP_018_TheEndpointFactsCarryTheView(t *testing.T) {
 			t.Fatalf("facts %+v", facts)
 		}
 	})
+}
+
+func TestR_ARCH_011_TheDispatcherBeginsTheRequestOnTheHostAndFinishesItOnEveryPath(t *testing.T) {
+	r := newRig(t)
+	for _, c := range []struct{ method, path string }{
+		{"GET", "/api/probe/local/left-pad"},          // served
+		{"PUT", "/api/probe/remote/left-pad/-/x.tgz"}, // refused by the class
+		{"GET", "/api/probe/local/a/b/c"},             // refused by the match: never begun
+	} {
+		r.do(c.method, c.path)
+	}
+	if began, finished := r.calls.began.Load(), r.calls.finished.Load(); began != 2 || finished != began {
+		t.Fatalf("began %d, finished %d: the dispatcher begins a request after the checks and finishes every one it began", began, finished)
+	}
+}
+
+func TestR_NUGET_001_ARefusalKnowsTheRepositoryTheClientAddressed(t *testing.T) {
+	r := newRig(t)
+	for path, want := range map[string]string{
+		"/api/probe/local/a/b/c":      "/api/probe/local/",        // no route
+		"/api/probe/remote~cache/x/y": "/api/probe/remote~cache/", // the cache view as addressed
+		"/api/probe/ghost/left-pad":   "/api/probe/ghost/",        // an unknown key of a valid shape
+	} {
+		rec := r.do("GET", path)
+		if got := rec.Header().Get("X-Probe-Registry"); got != want {
+			t.Errorf("%s: registry %q, want %q (%d)", path, got, want, rec.Code)
+		}
+	}
+	if rec := r.do("GET", "/api/probe/NOPE/left-pad"); rec.Header().Get("X-Probe-Registry") != "" {
+		t.Errorf("a key of the wrong shape is no repository to link to: %q", rec.Header().Get("X-Probe-Registry"))
+	}
+}
+
+func TestR_NUGET_001_ARepositoryOfAnotherFormatSaysSo(t *testing.T) {
+	r := newRig(t)
+	rec := r.do("GET", "/api/probe/other/left-pad")
+	if rec.Code != 404 || rec.Header().Get("X-Probe-Error") != "repository_not_found" {
+		t.Fatalf("%d %v", rec.Code, rec.Header())
+	}
+	if got := rec.Header().Get("X-Probe-Detail"); got != "The repository is not a probe repository." {
+		t.Fatalf("detail %q", got)
+	}
+	if got := r.do("GET", "/api/probe/ghost/left-pad").Header().Get("X-Probe-Detail"); got == "The repository is not a probe repository." {
+		t.Fatal("a missing repository says it is of another format")
+	}
 }

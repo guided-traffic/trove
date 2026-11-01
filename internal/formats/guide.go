@@ -69,9 +69,9 @@ type GuideSection struct {
 	// of the reader's client the API attaches below the text; "" attaches none.
 	Snippets string
 	// Markdown is text/template over [GuideData]. Like a setup template it never
-	// receives a token: the one credential it may spell is the reference
-	// [SetupTokenRef], which the API rewrites by the reader's credential mode, and a
-	// line holding it is dropped for an anonymous reader. A section that renders to
+	// receives a token: the one credential it may spell is a reference
+	// ([SetupTokenRef], [SetupTokenRefWin], [SetupTokenRefPS]), which the API rewrites
+	// by the reader's credential mode, and a line holding it is dropped for an anonymous reader. A section that renders to
 	// white space only is left out.
 	Markdown string
 }

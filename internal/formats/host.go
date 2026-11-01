@@ -13,6 +13,13 @@ import (
 // internal/formathost implements it over the item store, the package rows, the
 // remote and virtual engines and the decision point.
 type Host interface {
+	// Begin gives a request the state the host keeps for it - the write decisions the
+	// transaction of a write records (R-AUTHZ-029) and the spool files - and returns the
+	// function that releases it: the spool files, on every path. The dispatcher calls it
+	// once, after it built rq and before the handler runs, and defers the result. The
+	// state is bound to rq and to every request derived from it ([Request.Member],
+	// [Request.WriteTarget]); the host itself holds none (R-ARCH-032, Q-ARCH-265).
+	Begin(rq *Request) (finish func())
 	// Authorize decides the target for rq.Subject on rq.Index (authz.Decider.DecideOn)
 	// and returns the refusal of R-AUTHZ-016, or nil. The host completes the
 	// coordinate - repository, class, format and the kind of the route - so a

@@ -65,9 +65,9 @@ the `user-content-<slug>` heading anchors. The limits are the source (cut), the 
 
 ## Client setup
 
-`renderSnippets` takes the format's templates of one client and runs each with `text/template` over `formats.SetupData` and the functions `shell` and
-`xml`; then `applyCredentials` rewrites `formats.SetupTokenRef` by the mode and `substitutePackage` fills `formats.SetupPackageRef` quoted for the language of the
-snippet. Publish templates are rendered only for a caller who may deploy to the target. `GetClientSetup` refuses an unknown client (the error lists the clients of
+`renderSnippets` takes the format's templates of one client and runs each with `text/template` over `formats.SetupData` and the functions `shell`, `powershell`, `cmd` and
+`xml`; then `applyCredentials` rewrites the three spellings of the token reference (`formats.SetupTokenRefs()`: POSIX, Windows, PowerShell) by the mode and `substitutePackage`
+fills `formats.SetupPackageRef` quoted for the language of the snippet (`quoterFor`), attaching the version as the template's `VersionSpec` says (default `@<version>`). Publish templates are rendered only for a caller who may deploy to the target. `GetClientSetup` refuses an unknown client (the error lists the clients of
 the format), a value above 256 bytes, with a control character or in the shape of a token, a `package` or `version` that starts with `-`
 (a client reads it as an option, Q-NPM-50) and a `package` the format's name rule (`Descriptor().Names`) does not take; the snippet holds the
 normalized name, and `shellQuote` quotes any value that starts with `-`. It answers `503` without a configured base URL. The registry URL is

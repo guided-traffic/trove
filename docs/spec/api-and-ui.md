@@ -1578,7 +1578,7 @@ on:
 - The server never fills a token. With `credentials=placeholder` snippets contain the placeholder
   `{{token}}`, replaced in the browser (R-UI-016); with `credentials=env` they hold the
   environment-variable reference of the client's syntax (`${TROVE_TOKEN}` for npm and Yarn,
-  `%TROVE_TOKEN%` for `nuget.config`); with `credentials=none` they hold no authentication line (an
+  `%TROVE_TOKEN%` for `nuget.config` and cmd, `$env:TROVE_TOKEN` for PowerShell, Q-API-187); with `credentials=none` they hold no authentication line (an
   anonymous caller, and the install command panel of R-UI-009). The variable name is
   `ui.client_setup.token_env_var`. `tokenTtlSeconds` is `ui.client_setup.token_ttl` in seconds, the lifetime
   the setup dialog asks for when it creates a token.
@@ -1586,7 +1586,11 @@ on:
   `id` (R-UI-045). The `id` is `<client>.<tab>[.<name>]`; the scoped variant of a configure snippet appends
   `-scoped` to its name.
 - The credential mode, the package and the quoting are the API's, not the template's (Q-API-168): the template
-  spells the token as `${TROVE_TOKEN}` and the package as `<package>` and receives the functions `shell` and `xml`.
+  spells the token as `${TROVE_TOKEN}` (POSIX shell), `%TROVE_TOKEN%` (a `nuget.config` value or cmd) or
+  `$env:TROVE_TOKEN` (PowerShell), whichever the syntax of its file or shell expands, and the package as `<package>`,
+  and receives the functions `shell`, `powershell`, `cmd` and `xml`. An install template may carry a `VersionSpec`, the
+  form in which the version follows the package (default `@<version>`, dotnet ` --version <version>`; Q-API-188). Its
+  language fixes the quoting of what the API substitutes: `shell`, `powershell`, `cmd` or `xml` (Q-API-189).
   A `package`, `version` or `scope` above 256 bytes, with a control character or in the shape of a token is
   refused with `400`, and so is a `package` or `version` that starts with `-` (a client reads it as an option,
   quoted or not) and a `package` that the format's name rule does not take; the snippet holds the normalized
@@ -1605,6 +1609,8 @@ on:
 - Values substituted into shell commands (package names, versions, repository keys) MUST be
   single-quoted, with embedded single quotes escaped, unless they match
   `^[A-Za-z0-9@/._+:=][A-Za-z0-9@/._+:=-]*$` (a value that starts with `-` is quoted); values
+  substituted into PowerShell commands are single-quoted by the same rule, with an embedded single quote doubled, and
+  into cmd commands double-quoted with `"` and `%` doubled; values
   substituted into XML snippets MUST be XML-escaped. Legacy npm
   names served through remote repositories may contain `'`, `(`, `)`, `!` and `*`, which a shell
   interprets when a user pastes the command.
@@ -6492,6 +6498,60 @@ the preferences operations use.
 **Choice:** (a). **Rationale:** a change of the preferences table or of what "no stored locale" means is made once. The development agent would
 revisit this if preferences moved into a package of their own. **Applied in the spec:** R-API-021, R-UI-045. Code: `PreferredLocale` in
 `internal/api/v1/preferences_api.go`, `uiPreference` in `internal/app/ui_locale.go`.
+
+### Q-API-187 · The token reference has one spelling per shell
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the API rewrote one literal, `${TROVE_TOKEN}`, by the credential mode. A `nuget.config` value and a cmd command expand `%NAME%`, PowerShell `$env:NAME`; a POSIX `${NAME}` there is text. `credentials=env` for NuGet would otherwise write a reference that the client does not expand.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Three literals, `SetupTokenRef`, `SetupTokenRefWin`, `SetupTokenRefPS`; the API rewrites each into the same variable in its own syntax (chosen) | A template spells the one its file or shell expands | Modes and quoting stay the API's; a template stays one text; `none` drops the line with any of them | Three literals instead of one |
+| (b) The API chooses the syntax by the template's language | One literal | Fewer constants | A `nuget.config` is `xml` and a Windows batch file is `cmd`; a language does not say who expands; the mapping hides in the API |
+| (c) A template function `{{tokenRef}}` | The template calls the API | Explicit | A template would execute with a function that returns what the API then rewrites, and the kit could no longer read the template text for a credential |
+
+**Choice:** (a). The kit (check 8) does not count any of the three as a credential; `placeholder` writes `{{token}}` for each.
+
+**Rationale:** the literal in the template text is what the kit scans. The development agent revisits this when a client needs a fourth syntax.
+
+**Applied in the spec:** R-API-030. Code: `internal/formats/setup.go`, `internal/api/v1/setup_snippets.go` (`applyCredentials`), `internal/formats/formattest/checks.go`. Tests: `TestR_API_030_EachShellGetsTheTokenReferenceItExpands`, kit check 8 cases in `kit_test.go`.
+
+### Q-API-188 · The format chooses how a version follows the package in an install snippet
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `substitutePackage` wrote `package@version`, which is npm's syntax. `dotnet add package X --version 1.2.3` and `Install-Package X -RequiredVersion 1.2.3` take the version as an option.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `SetupTemplate.VersionSpec` with the placeholder `<version>`; "" keeps `@<version>` (chosen) | The template states the form | npm templates stay as they are; the package and the version are quoted each on its own inside the option | One more field |
+| (b) Two placeholders in the template text, `<package>` and `<version>` | The template places both | No field | Without a version the option text stays in the command; npm's templates change |
+| (c) The API knows the clients | A switch on the client ID | No field | Shared code that names a format's clients |
+
+**Choice:** (a). Without a version the package stands alone. The kit refuses a `VersionSpec` on a template that is not an install template, does not place `<package>`, or whose spec does not place `<version>`.
+
+**Rationale:** the syntax of a client's option is the format's knowledge. The development agent revisits this when a snippet needs the version without the package.
+
+**Applied in the spec:** R-API-030, R-ARCH-008 (`SetupTemplate`). Code: `internal/formats/setup.go`, `internal/api/v1/setup_snippets.go` (`substitutePackage`), `internal/formats/formattest/checks.go` (`versionSpec`). Tests: `TestR_API_030_TheFormatChoosesHowTheVersionIsAttached`, kit check 8.
+
+### Q-API-189 · Setup templates may be PowerShell or cmd, each with its own quoting
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `Lang` was `shell`, `ini`, `xml` or `yaml`, and `shell` meant POSIX quoting. The NuGet snippets include PowerShell and cmd commands, in which a POSIX-quoted package name is not safe.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Languages `powershell` and `cmd` with a quoting function each, also offered to templates (chosen) | PowerShell: single quotes, `'` doubled; cmd: double quotes, `"` and `%` doubled, line breaks dropped | A substituted value cannot break out of the command in either shell | Two more quoting functions to keep correct; cmd cannot quote everything (a line break is dropped, not carried) |
+| (b) POSIX quoting everywhere | One function | Nothing new | Wrong in both shells: `'a b'` is not one argument in cmd |
+| (c) Refuse every value outside the safe set in those languages | A 400 | No quoting | A legitimate id or version never needs it, but the refusal belongs to the request validation, which does not know the template's language |
+
+**Choice:** (a). The package and the version of a NuGet request are IDs and versions of a fixed alphabet, so the quoting is a second line of defence there, as it is for npm.
+
+**Rationale:** quoting by the language the snippet is shown in. The development agent revisits this when a value outside the alphabet can reach a cmd template.
+
+**Applied in the spec:** R-API-030. Code: `internal/api/v1/setup_snippets.go` (`powershellQuote`, `cmdQuote`, `quoterFor`). Tests: `TestR_API_030_PowerShellAndCmdValuesAreQuoted`.
 
 ## What this does not cover
 

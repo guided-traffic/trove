@@ -20,7 +20,7 @@ func virtualRequest(t *testing.T, v repository.Repository) *formats.Request {
 		Route:   &formats.Route{Name: "probe.get", Kind: formats.Download},
 		Subject: authz.Subject{Name: "alice", Endpoint: "default"},
 	}
-	Prepare(rq)
+	(&Host{}).Begin(rq)
 	return rq
 }
 

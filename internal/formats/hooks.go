@@ -47,6 +47,13 @@ type IngestOptions struct {
 	MediaType string
 	// MaxSize is a bound below the repository's and the system's; 0 keeps them.
 	MaxSize int64
+	// Length is the declared length of the body handed to Spool; 0 or less is unknown.
+	// The spool refuses a body whose length differs, and a declared length above the
+	// limit before it reads a byte. It is the length of the reader the format passes,
+	// never the request's: a body that is not the request body - the decoded
+	// attachment of an npm publish, one part of a multipart form - has a length of its
+	// own or none (Q-ARCH-264). A handler that passes rq.Body states rq.ContentLength.
+	Length int64
 }
 
 // Spooled is a body in the replica-local spool (R-STOR-004). The core owns its

@@ -10,8 +10,8 @@
 // own [formats.Format.WriteError], including the refusals of the chain's stages
 // (Q-ARCH-214, errors.go).
 //
-// It is an edge package: it imports the shared conversions of internal/api/edge and
-// the host, never the management API.
+// It is an edge package: it imports the shared conversions of internal/api/edge, never
+// the management API, and talks to the host through [formats.Host] only.
 package dispatch
 
 import (
@@ -24,7 +24,6 @@ import (
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/errs"
-	"github.com/guided-traffic/trove/internal/formathost"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/repository"
@@ -117,10 +116,18 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpserver.Problem(w, r, errs.E(errs.NotFound, errs.CodeNotFound, "No route matches the request path."))
 		return
 	}
-	fail := func(err error) { f.WriteError(w, r, err) }
 	// <key>~cache addresses the cache view of remote repository <key> (R-REPO-032): the
 	// request is decided and served on the remote repository itself.
+	addressed := key
 	key, cacheView := strings.CutSuffix(key, cacheViewSuffix)
+	if repository.ValidKeyShape(key) {
+		// From here on a refusal can build links: it knows the repository and the base
+		// URL (Q-ARCH-263).
+		r = formats.WithRefusal(r, formats.Refusal{
+			Format: f.Descriptor().ID, Key: addressed, BaseURL: strings.TrimSuffix(httpserver.InfoFrom(r.Context()).BaseURL, "/"),
+		})
+	}
+	fail := func(err error) { f.WriteError(w, r, err) }
 	if !repository.ValidKeyShape(key) {
 		fail(errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "No repository has the requested key."))
 		return
@@ -180,8 +187,7 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Subject: acc.Subject, Index: acc.Index(), Endpoint: d.endpointFacts(r, acc, key),
 		Host: d.o.Host, Log: httpserver.Logger(ctx), CacheView: cacheView,
 	}
-	formathost.Prepare(rq)
-	defer formathost.Finish(rq)
+	defer d.o.Host.Begin(rq)()
 	if !route.ServesClass(repo.Class) {
 		target, err := d.redirectClass(ctx, f, rq)
 		if err != nil {
@@ -195,16 +201,24 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // resolve looks the repository up after the decision allowed the request (R-ARCH-011
 // step 2): one being deleted, one of another format and a disabled one are not
-// served. A repository of another format is the same 404 as a missing one.
+// served. A repository of another format is a 404 repository_not_found like a missing
+// one, whose message says that the repository is not of this format: the decision
+// allowed the caller a request on the key, so the key is one the caller may name
+// (Q-ARCH-263).
 func (d *Dispatcher) resolve(ctx context.Context, f formats.Format, key string) (repository.Repository, error) {
 	repo, err := d.o.Repos.ByKey(ctx, key)
 	if err != nil {
 		return repository.Repository{}, err
 	}
-	notFound := errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "No repository has the requested key.")
 	switch {
-	case repo.Lifecycle == repository.Deleting, repo.Format != string(f.Descriptor().ID):
-		return repository.Repository{}, notFound
+	case repo.Lifecycle == repository.Deleting:
+		return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "No repository has the requested key.")
+	case repo.Format != string(f.Descriptor().ID):
+		name := f.Descriptor().DisplayName
+		if name == "" {
+			name = string(f.Descriptor().ID)
+		}
+		return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "The repository is not a "+name+" repository.")
 	case repo.Disabled:
 		return repository.Repository{}, errs.E(errs.NotFound, errs.CodeRepositoryDisabled, "The repository is disabled.")
 	}

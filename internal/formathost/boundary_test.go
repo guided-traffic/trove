@@ -137,7 +137,7 @@ func TestQ_ARCH_260_TheStoresRefuseARepositoryOutsideTheRequest(t *testing.T) {
 			}},
 			Subject: authz.Subject{Name: "alice", Endpoint: "default"},
 		}
-		Prepare(rq)
+		(&Host{}).Begin(rq)
 		formats.ServeRoute(portFormat{id: "probe"}, httptest.NewRecorder(), rq, false)
 		return got
 	}

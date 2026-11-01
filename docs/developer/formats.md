@@ -50,13 +50,13 @@ only writer is `Member` (Q-ARCH-252, [Q-AUTHZ-165](../spec/authorization.md)).
 |---|---|
 | [formats.go](../../internal/formats/formats.go) | `ContractVersion`, the aliases and constants, `Format`, `Descriptor`, `Register` / `Validate` / `CatalogEntry`, `Lookup`, `List`, `Descriptors`, the optional capabilities (`ItemsRestorer`, `Capabilities`, `CapabilitiesOf`, `CapabilitiesFor`) |
 | [scope.go](../../internal/formats/scope.go) | The repositories a request may name: `ServeRoute` puts them in the handler's context, `RepositoryAllowed` is the check of the stores and the package writer (Q-ARCH-260) |
-| [route.go](../../internal/formats/route.go) | `Route`, `RouteKind`, `Params`, `Template`, `MatchRoutes`, `Request`, `EndpointFacts`, `Target`, `PathKind`, `PathInfo` |
+| [route.go](../../internal/formats/route.go) | `Route`, `RouteKind`, `Params`, `Template`, `MatchRoutes`, `Request`, `Refusal` (`WithRefusal`, `RefusalFrom`), `EndpointFacts`, `Target`, `PathKind`, `PathInfo` |
 | [host.go](../../internal/formats/host.go) | `Host` and its parts: `Ingestor`, `ItemStore`, `PackageStore`, `LinkBuilder`, `RenditionCache` |
 | [hooks.go](../../internal/formats/hooks.go) | The storage-hook types: `RepoRef`, `ItemRef`, `CommitEvent`, `ItemsEvent`, `Inspection`, `PackageWriter`, `OwnershipWrite` |
 | [remote.go](../../internal/formats/remote.go) | `RemoteAdapter`, `RemoteFetcher` and their types, among them `Exchange` and `ErrOffline` for a request outside the cache (Q-NPM-62) (the engine is internal/proxy, bridged by [internal/formathost/remote.go](../../internal/formathost/remote.go)) |
 | [virtual.go](../../internal/formats/virtual.go) | `VirtualAdapter`, `MemberDocument`, `Resolver` and their types |
 | [exposure.go](../../internal/formats/exposure.go) | `ExposureAdapter` (the version syntax and the dimensions), `ExposureView` (`Package`, `Version`) |
-| [setup.go](../../internal/formats/setup.go) | `Client`, `SetupTemplate`, `SetupData` |
+| [setup.go](../../internal/formats/setup.go) | `Client`, `SetupTemplate` (with `VersionSpec`), `SetupData`, the three spellings of the token reference (`SetupTokenRef`, `SetupTokenRefWin`, `SetupTokenRefPS`) and `SetupPackageRef`, `SetupVersionRef` |
 | [guide.go](../../internal/formats/guide.go) | `GuideSection`, `GuideData`, the topics (`GuideTopics`, `RequiredGuideTopics`), `GuideRepositoryPlaceholder`, `ExecuteGuide` (the one parser the API and the kit use), `AppliesTo` |
 | [serve.go](../../internal/formats/serve.go) | `ServeMode`, `ServeRoute`, `RouteKind.WrapsContent`, `Base` |
 
@@ -124,7 +124,7 @@ chain 1-7 (recovery, trace, log, in-flight, address and host, authentication, ra
      7  Repos.ByKey; deleting or another format -> 404 repository_not_found; disabled -> 404 repository_disabled
      8  a class the route does not serve -> a virtual write goes to Resolver().DeployTarget, else 405 with Allow
      9  formats.Request built (rq.Endpoint: name, Rules, CacheFill, exposure fingerprint and view, from the listener and the index),
-        formathost.Prepare; formats.ServeRoute (content headers, recovery, WriteError); formathost.Finish closes the spools
+        Host.Begin(rq) (state of the request; its finish function closes the spools); formats.ServeRoute (content headers, recovery, WriteError)
 ```
 
 `rq.Endpoint` is what a format knows of the endpoint ([endpoints.md](endpoints.md#package-formats-on-an-endpoint-r-ep-018-r-ep-019)):

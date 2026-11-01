@@ -65,8 +65,12 @@ func (i ingestor) Spool(ctx context.Context, rq *formats.Request, body io.Reader
 	if o.MaxSize > 0 && (limit == 0 || o.MaxSize < limit) {
 		limit = o.MaxSize
 	}
+	declared := o.Length
+	if declared <= 0 {
+		declared = -1 // unknown: the spool reads to the end (Q-ARCH-264)
+	}
 	exp := items.Expected{SHA256: o.Expect.SHA256, SHA512: o.Expect.SHA512, SHA1: o.Expect.SHA1, MD5: o.Expect.MD5}
-	sp, err := i.h.o.Items.Spool(ctx, body, items.IngestOptions{ContentLength: rq.ContentLength, MaxSize: limit, Expect: exp})
+	sp, err := i.h.o.Items.Spool(ctx, body, items.IngestOptions{ContentLength: declared, MaxSize: limit, Expect: exp})
 	if err != nil {
 		return nil, err
 	}

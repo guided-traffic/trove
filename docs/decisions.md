@@ -199,6 +199,7 @@ checked every earlier decision against them:
 | [ADR-135](#adr-135--public-advisories-never-apply-to-claimed-internal-names) | Public advisories never apply to claimed internal names | Decided by the development agent — owner review at the walkthrough |
 | [ADR-136](#adr-136--the-format-contract-freezes-at-version-1-as-the-smaller-contract-and-grows-by-optional-interfaces) | The format contract freezes at version 1 as the smaller contract and grows by optional interfaces | Decided by the development agent — owner review at the walkthrough |
 | [ADR-137](#adr-137--every-route-that-returns-package-derived-bytes-carries-the-content-headers) | Every route that returns package-derived bytes carries the content headers | Decided by the development agent — owner review at the walkthrough |
+| [ADR-138](#adr-138--what-the-core-knows-of-a-request-reaches-a-format-as-a-typed-value-never-as-an-untyped-slot-or-a-request-copy) | What the core knows of a request reaches a format as a typed value, never as an untyped slot or a request copy | Decided by the development agent — owner review at the walkthrough |
 
 </details>
 
@@ -5147,6 +5148,31 @@ signal. Vendored public packages under claimed names and internal mirrors of the
 
 **Spec:** [spec/architecture.md](spec/architecture.md) R-ARCH-007, R-ARCH-010 check 7; [security/file-transfer.md](security/file-transfer.md).
 
+### ADR-138 · What the core knows of a request reaches a format as a typed value, never as an untyped slot or a request copy
+
+**Status:** Decided by the development agent — owner review at the walkthrough
+
+**Context.** Three seams of the format contract carried request facts in the wrong shape: the host's per-request state sat in an
+untyped `Request.HostState` slot that the dispatcher filled by calling the implementation package; npm copied the whole request to
+tell the spool a body length that is not the request's; and an error shape had no way to name the repository it refused. NuGet
+needs the last two (a multipart part, an absolute URL in a 404), and the contract freeze (E3.3) cannot carry the first.
+
+**Decision.** The dispatcher talks to the host through `formats.Host` only: `Host.Begin(rq)` returns the function that releases the
+request's state, which the host keeps in the context of the request. The declared length of a spooled body is an option of the
+spool (`IngestOptions.Length`). A refusal receives the format, the repository key as addressed and the base URL as a `Refusal`
+value in the request's context. A route declares `APIKey` when it accepts the format's API-key header.
+
+**Consequences.** The contract has no untyped member and no method that only one implementation package can serve. A format reads
+a request fact from a typed accessor or an option. The context carries two values (the host's state, the refusal) that no format
+reads except through their accessors.
+
+**Alternatives considered.** New parameters of `WriteError`; a `Begin` that returns the request; keeping the untyped slot. Decided
+in [Q-ARCH-263](spec/architecture.md#q-arch-263--a-refusal-learns-the-repository-key-and-the-base-url-from-the-request-it-is-rendered-with),
+[Q-ARCH-264](spec/architecture.md#q-arch-264--the-declared-length-of-a-spooled-body-is-an-option-of-the-spool),
+[Q-ARCH-265](spec/architecture.md#q-arch-265--the-host-begins-a-request-through-the-host-interface-and-keeps-its-state-in-the-requests-context)
+and [Q-ARCH-266](spec/architecture.md#q-arch-266--a-route-declares-that-it-accepts-the-api-key-header).
+
+**Spec:** [spec/architecture.md](spec/architecture.md) R-ARCH-008, R-ARCH-009, R-ARCH-014.
 ## Compatibility checks and the TypeScript hold
 
 ### ADR-139 · Compatibility is checked against the latest release in CI
@@ -5325,6 +5351,10 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-ARCH-260](spec/architecture.md#q-arch-260--a-format-names-only-its-own-repository-the-requests-scope-and-a-writer-bound-to-its-event) | How is a format kept to its own repository? | (a) the request's scope in the handler's context, a writer bound to its request or event, no signature change; narrowing the signatures is version 2 | (b) record what `rq.Member` handed out; (c) narrow the signatures now — [ADR-136](#adr-136--the-format-contract-freezes-at-version-1-as-the-smaller-contract-and-grows-by-optional-interfaces) |
 | [Q-ARCH-261](spec/architecture.md#q-arch-261--the-rendition-etag-the-typed-environment-and-the-engine-value-types-stay-as-they-are-across-the-freeze) | Do the rendition ETag, the typed environment and the engine value types change before the freeze? | (a) no; each is added or aliased later | (b) do them in M3; (c) only the ETag |
 | [Q-ARCH-262](spec/architecture.md#q-arch-262--the-remote-configuration-probe-the-populate-decision-through-a-virtual-repository-and-the-defaults-for-missing-dependencies-are-not-contract-changes) | Are the probe check, the populate decision and the missing-dependency defaults contract changes? | (a) no; the catalog fact is built, the rest waits | (b) build the probe check and a hook; (c) build the populate decision and the refusal now |
+| [Q-ARCH-263](spec/architecture.md#q-arch-263--a-refusal-learns-the-repository-key-and-the-base-url-from-the-request-it-is-rendered-with) | How does a refusal learn the repository key and the base URL? | (a) a `Refusal` value in the context of the request given to `WriteError` | [ADR-138](#adr-138--what-the-core-knows-of-a-request-reaches-a-format-as-a-typed-value-never-as-an-untyped-slot-or-a-request-copy) |
+| [Q-ARCH-264](spec/architecture.md#q-arch-264--the-declared-length-of-a-spooled-body-is-an-option-of-the-spool) | Where does the declared length of a spooled body come from? | (a) `IngestOptions.Length`; 0 or less is unknown | [ADR-138](#adr-138--what-the-core-knows-of-a-request-reaches-a-format-as-a-typed-value-never-as-an-untyped-slot-or-a-request-copy) |
+| [Q-ARCH-265](spec/architecture.md#q-arch-265--the-host-begins-a-request-through-the-host-interface-and-keeps-its-state-in-the-requests-context) | How does the dispatcher start and finish a request on the host? | (a) `Host.Begin(rq) (finish func())`, state in the request's context | [ADR-138](#adr-138--what-the-core-knows-of-a-request-reaches-a-format-as-a-typed-value-never-as-an-untyped-slot-or-a-request-copy) |
+| [Q-ARCH-266](spec/architecture.md#q-arch-266--a-route-declares-that-it-accepts-the-api-key-header) | How does the stage know which routes take an API key? | (a) `Route.APIKey` | [ADR-138](#adr-138--what-the-core-knows-of-a-request-reaches-a-format-as-a-typed-value-never-as-an-untyped-slot-or-a-request-copy) |
 | [Q-ARCH-273](spec/architecture.md#q-arch-273--how-is-the-openapi-breaking-change-checker-pinned-and-run) | How is the OpenAPI breaking-change checker pinned and run? | (a) a binary at a pin in `tools/versions.env`, built by `go install`, its module version read with `go version -m` | [ADR-139](#adr-139--compatibility-is-checked-against-the-latest-release-in-ci) |
 | [Q-ARCH-274](spec/architecture.md#q-arch-274--what-is-the-baseline-and-what-do-the-checks-accept) | What is the baseline, and what do the checks accept? | (a) the newest `v0.*` tag whose commit is not HEAD's; no waiver; migrations only added, numbering continues | [ADR-139](#adr-139--compatibility-is-checked-against-the-latest-release-in-ci) |
 | [Q-ARCH-275](spec/architecture.md#q-arch-275--how-is-the-typescript-7-update-held) | How is the TypeScript 7 update held? | (a) a Renovate `allowedVersions: "<6.1"` rule for `typescript` | [ADR-140](#adr-140--typescript-is-held-below-61-until-angulars-peer-range-admits-7x) |
@@ -5806,6 +5836,9 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-API-184](spec/api-and-ui.md#q-api-184--the-ui-redirect-reads-the-session-cookie-itself-to-find-the-stored-locale) | How does the redirect of `/ui/` learn the stored locale of the user? | (a) it validates the session cookie itself, because the stage ignores it on `/ui/` | — |
 | [Q-API-185](spec/api-and-ui.md#q-api-185--the-etag-of-the-authentication-settings-follows-the-status-and-a-write-takes-only-the-revision) | What does the ETag of the authentication settings cover? | (a) the revision and a digest of the status; a write takes the revision only | — |
 | [Q-API-186](spec/api-and-ui.md#q-api-186--the-preference-of-a-user-is-read-by-one-function) | How many readings of the preferences table are there? | (a) one, exported by the package that owns the preferences | — |
+| [Q-API-187](spec/api-and-ui.md#q-api-187--the-token-reference-has-one-spelling-per-shell) | How does a setup template spell the token for each shell? | (a) three literals, rewritten into the same variable in each syntax | — |
+| [Q-API-188](spec/api-and-ui.md#q-api-188--the-format-chooses-how-a-version-follows-the-package-in-an-install-snippet) | How does an install snippet attach the version? | (a) `SetupTemplate.VersionSpec`, default `@<version>` | — |
+| [Q-API-189](spec/api-and-ui.md#q-api-189--setup-templates-may-be-powershell-or-cmd-each-with-its-own-quoting) | How are values quoted in PowerShell and cmd snippets? | (a) languages `powershell` and `cmd` with a quoting function each | — |
 | [Q-UI-1](spec/api-and-ui.md#q-ui-1--component-library) | Which component library? | (a) Angular Material with the CDK and `@angular/aria`; font icons | [ADR-086](#adr-086--ui-baseline-angular-22-defaults-a-strict-csp-nothing-from-foreign-origins) |
 | [Q-UI-2](spec/api-and-ui.md#q-ui-2--visual-direction-of-the-shell-example-screenshot-requested) | Shell layout and density? | (c) a left side bar, compact density, container queries | [ADR-086](#adr-086--ui-baseline-angular-22-defaults-a-strict-csp-nothing-from-foreign-origins) |
 | [Q-UI-3](spec/api-and-ui.md#q-ui-3--layout-of-the-package-details-page-example-screenshot-requested) | Layout of the package details page? | (c) two columns with a sticky install panel from 960 CSS px of content width; one column below | [ADR-086](#adr-086--ui-baseline-angular-22-defaults-a-strict-csp-nothing-from-foreign-origins) |

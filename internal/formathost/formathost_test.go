@@ -137,7 +137,7 @@ func testRequest(kind formats.RouteKind) *formats.Request {
 		Route:   &formats.Route{Name: "probe.get", Kind: kind},
 		Subject: authz.Subject{Name: "alice", Endpoint: "default"},
 	}
-	Prepare(rq)
+	(&Host{}).Begin(rq)
 	return rq
 }
 
@@ -207,7 +207,7 @@ func TestR_ARCH_009_AuthorizeCompletesTheCoordinate(t *testing.T) {
 	})
 	t.Run("a request the dispatcher did not prepare cannot record its writes", func(t *testing.T) {
 		rq := testRequest(formats.Upload)
-		rq.HostState = nil
+		rq.Request = httptest.NewRequest(http.MethodGet, "/api/probe/key/x", nil)
 		if err := stateOf(rq).record(context.Background(), nil, d, rq.Subject); err == nil {
 			t.Fatal("recorded without a state")
 		}

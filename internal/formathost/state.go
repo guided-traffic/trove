@@ -11,11 +11,12 @@ import (
 	"github.com/guided-traffic/trove/internal/meta"
 )
 
-// requestState is what the host keeps for one request, in formats.Request.HostState:
-// the decisions that allowed a write, which the transaction of the write records
-// (R-AUTHZ-029), and the spool files of the request, which Finish removes. It is
-// the request's, not the host's: the host itself holds no request state
-// (R-ARCH-032).
+// requestState is what the host keeps for one request: the decisions that allowed a
+// write, which the transaction of the write records (R-AUTHZ-029), and the spool
+// files of the request, which the finish function of [Host.Begin] removes. It is the
+// request's, not the host's: the host itself holds no request state (R-ARCH-032). It
+// travels in the context of the request, so that a request derived from it
+// ([formats.Request.Member]) shares it.
 type requestState struct {
 	mu      sync.Mutex
 	allowed []allowedWrite
@@ -27,16 +28,17 @@ type allowedWrite struct {
 	d authz.Decision
 }
 
-// Prepare gives a request the state the host needs. The dispatcher calls it when it
-// builds the request, before the handler runs.
-func Prepare(rq *formats.Request) { rq.HostState = &requestState{} }
+type stateKey struct{}
 
-// Finish releases what the request holds: its spool files, on every path.
-func Finish(rq *formats.Request) {
-	st := stateOf(rq)
-	if st == nil {
-		return
-	}
+// Begin implements [formats.Host]: it gives the request its state and returns the
+// function that releases what the request holds, its spool files, on every path.
+func (h *Host) Begin(rq *formats.Request) func() {
+	st := &requestState{}
+	rq.Request = rq.WithContext(context.WithValue(rq.Context(), stateKey{}, st))
+	return st.finish
+}
+
+func (st *requestState) finish() {
 	st.mu.Lock()
 	sp := st.spools
 	st.spools = nil
@@ -47,7 +49,10 @@ func Finish(rq *formats.Request) {
 }
 
 func stateOf(rq *formats.Request) *requestState {
-	st, _ := rq.HostState.(*requestState)
+	if rq == nil || rq.Request == nil {
+		return nil
+	}
+	st, _ := rq.Context().Value(stateKey{}).(*requestState)
 	return st
 }
 

@@ -1078,7 +1078,9 @@ type Format interface {
 	Guide() []GuideSection
 
 	// WriteError renders a core error in the client's native error shape (R-ARCH-023). The dispatcher also
-	// uses it for the refusals of the chain's own stages on this format's paths (Q-ARCH-214).
+	// uses it for the refusals of the chain's own stages on this format's paths (Q-ARCH-214). Once the dispatcher
+	// knows the repository key, r carries a Refusal (RefusalFrom(r)): the format ID, the key as addressed and the
+	// response base URL, so that a refusal can name an absolute URL (Q-ARCH-263).
 	WriteError(w http.ResponseWriter, r *http.Request, err error)
 }
 
@@ -1111,6 +1113,7 @@ type Route struct {
 	Classes  []Class  // the classes that serve the route; empty is every class of the format
 	Match    func(escapedPath string) (Params, bool) // overrides the template for a grammar it cannot state
 	Handler  HandlerFunc
+	APIKey   bool     // the route accepts a credential in the format's API-key header besides Authorization (NuGet X-NuGet-ApiKey, R-NUGET-012); examined only there, first (Q-ARCH-266)
 }
 
 // ServesClass reports whether the route serves repositories of a class (Classes empty: every class).
@@ -1134,8 +1137,19 @@ type Request struct {
 	CacheView bool                 // the request addressed the cache view of a remote repository, "<key>~cache" (R-REPO-032)
 	Host     Host                  // shadows http.Request.Host on purpose: no handler reads the Host header (R-ARCH-006)
 	Log      *slog.Logger          // request-scoped; nil logs to slog's default
-	HostState any                  // belongs to the Host implementation (the decisions to record in the write's transaction); a format never reads or sets it
 }
+
+// Refusal is what the dispatcher hands WriteError through the request it receives, once the repository key is known
+// (Q-ARCH-263). Registry is Base + "/api/" + Format + "/" + Key + "/".
+type Refusal struct {
+	Format  ID
+	Key     string // as addressed: the key, or "<remote>~cache"
+	BaseURL string // the response base URL without a trailing slash
+}
+
+func (f Refusal) Registry() string // BaseURL + "/api/" + Format + "/" + escaped Key + "/"
+func WithRefusal(r *http.Request, f Refusal) *http.Request
+func RefusalFrom(r *http.Request) (Refusal, bool)
 
 // Addressed is the key of the repository the client addressed: the outermost virtual repository on a request derived for
 // one of its members, the request's own repository otherwise. Every coordinate the Host builds carries it as
@@ -1281,9 +1295,12 @@ type SetupTemplate struct {
 	ID       string // stable, e.g. "npm.npmrc.configure"
 	Client   string // "npm", "pnpm", "yarn", "dotnet", "nuget"
 	Section  string // "configure", "publish", "install"
-	Lang     string // "shell", "ini", "xml", "yaml"
+	Lang     string // "shell" (POSIX), "powershell", "cmd", "ini", "xml", "yaml": the quoting of what the API substitutes
 	File     string // target file when the snippet is file content, e.g. ".npmrc"
 	Template string // text/template over SetupData, which has no credential field (api-and-ui.md R-API-030)
+	// VersionSpec is how an install template attaches the version after the package when the request names one,
+	// SetupVersionRef standing for it: "" is "@<version>" (npm), " --version <version>" is dotnet (Q-API-188).
+	VersionSpec string
 }
 
 // SetupData: RegistryURL, Repository, Endpoint, Scope (without "@"), Username, RegistryKey (the registry URL
@@ -1471,6 +1488,11 @@ Priority: **MVP** · Covers: FMT-007, STOR-001, STOR-002
 
 ```go
 type Host interface {
+	// Begin gives a request the state the host keeps for it (the write decisions the transaction records, the spool
+	// files) and returns the function that releases it. The dispatcher calls it once, before the handler, and defers
+	// the result; the state is bound to rq and to every request derived from it. The host holds none itself
+	// (R-ARCH-032, Q-ARCH-265).
+	Begin(rq *Request) (finish func())
 	// Authorize decides the target for rq.Subject on rq.Index (authz.Decider.DecideOn) and returns the
 	// refusal of R-AUTHZ-016, or nil. The host completes the coordinate and applies the repository's
 	// include and exclude patterns (R-REPO-005) to the package name or the path.
@@ -1922,7 +1944,9 @@ Priority: **MVP** · Covers: ART-002, ART-008, STOR-004, STOR-019, HA-005, REPO-
 2. The coarse check (`Route.Action`) runs before the body is read (R-ARCH-005).
 3. The format parses the request envelope, such as the npm publish document or a NuGet
    `multipart/form-data` body. It passes each binary part, with its `IngestOptions`, to
-   `Host.Ingest()`. Admission, spooling to the replica-local spool directory (HA-005), single-pass
+   `Host.Ingest()`. `IngestOptions.Length` is the declared length of the reader passed (0 or less:
+   unknown); the spool never reads the length from the request, because a part is not the request
+   body (Q-ARCH-264). Admission, spooling to the replica-local spool directory (HA-005), single-pass
    digests (INV-4) and size and digest verification follow [storage.md](storage.md).
 4. `Format.Inspect` reads the spooled file and returns the declared identity and namespaced
    properties.
@@ -6919,6 +6943,77 @@ Context: roadmap WP3.0g (the part after the catalog fact), WP3.0s and WP3.0t. (g
 
 **Applied in the spec:** none beyond this block and the roadmap rows. Code: none.
 
+### Q-ARCH-263 · A refusal learns the repository key and the base URL from the request it is rendered with
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: NuGet answers every unmatched path with 404 `nuget_v2_unsupported` and a message naming the absolute URL of the repository's service index, and a key of a repository of another format with a message saying that it is not a NuGet repository (R-NUGET-001). `Format.WriteError(w, r, err)` has neither a repository nor a link builder: the `Request` and the `Host` exist only after routing, and the chain's own refusals render before that. `Format.WriteError` is part of the frozen contract.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A `Refusal` value in the context of the request the dispatcher passes to `WriteError` (chosen) | `formats.WithRefusal` / `RefusalFrom`; set as soon as the key has the shape of a key | No signature change of the frozen `WriteError`; the chain's shape table (`HandleErrorShape`) receives the same request; a refusal before the key is known simply has none | A value in the context instead of a parameter; a format must handle its absence |
+| (b) Add the key and the base URL as parameters of `WriteError` | A new signature | Explicit | A breaking change of a method every format implements, and the chain's stages, which render through the table with the request only, do not know the key |
+| (c) The format reads `rq.Host.Links` in the handler and renders the refusal itself | No change | Needs nothing new | The unmatched path and the other-format key are refused before any `Request` exists; the format would be told in two places |
+
+**Choice:** (a). The base URL is `httpserver.RequestInfo.BaseURL` of the request, the one source of every absolute URL (R-ARCH-006); the key is the segment as addressed, so the cache view of a remote repository links to itself. A repository of another format stays a 404 `repository_not_found`, now with the message "The repository is not a <format> repository.": the coarse check allowed the subject an action on that key before the lookup, so the caller may name the key; a key the caller has no right on is still the plain 404.
+
+**Rationale:** the context carries what the dispatcher knows when it knows it and costs the contract nothing. The development agent revisits this when a second format needs more than the key and the base URL in a refusal.
+
+**Applied in the spec:** R-ARCH-008 (`Refusal`, `WithRefusal`, `RefusalFrom`; the `WriteError` comment). Code: `internal/formats/route.go`, `internal/api/dispatch/dispatcher.go`. Tests: `TestR_NUGET_001_ARefusalKnowsTheRepositoryTheClientAddressed`, `TestR_NUGET_001_ARepositoryOfAnotherFormatSaysSo` (dispatch).
+
+### Q-ARCH-264 · The declared length of a spooled body is an option of the spool
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `Ingestor.Spool` took the declared length from `rq.ContentLength`. A body that is not the request body has another length: the decoded attachment of an npm publish (base64 inside JSON), one part of NuGet's `multipart/form-data` push. npm worked around it with `withoutLength`, a copy of the request that sets the length to -1; NuGet's part would have needed the same copy.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `IngestOptions.Length`; 0 or less is unknown (chosen) | The format states the length of the reader it passes | No request copy; the zero value of the option set is the safe case (unknown); a part with a known size can state it | A handler that passes `rq.Body` must now state `rq.ContentLength` itself |
+| (b) `Length` as `*int64` or a "known" flag | Zero is a length | Distinguishes a declared empty body | An empty body declared as 0 and one of unknown length read the same bytes to the same end; the extra state buys nothing |
+| (c) Keep `rq.ContentLength` and copy the request | The status quo | No change | A copy of the request per part, and a spool that reads a request field it does not own |
+
+**Choice:** (a). The host maps 0 or less to the spool's "unknown" (-1); the length check and the early limit check of the spool stay for a stated length.
+
+**Rationale:** the reader and its length belong together; the request's length belongs to the request. The development agent revisits this if a format needs to declare an empty body as a checked fact.
+
+**Applied in the spec:** R-ARCH-014 step 3. Code: `internal/formats/hooks.go` (`IngestOptions.Length`), `internal/formathost/ingest.go`, `internal/formats/npm/publish.go` (`withoutLength` removed), `internal/formats/formattest/testformat/format.go`. Tests: `TestR_ARCH_014_TheDeclaredLengthOfASpooledBodyIsAnOptionNotTheRequestsLength` (formathost).
+
+### Q-ARCH-265 · The host begins a request through the Host interface and keeps its state in the request's context
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the dispatcher called `formathost.Prepare(rq)` and `formathost.Finish(rq)` on the concrete package, and the host kept its per-request state (the allowed write decisions, the spool files) in the untyped `Request.HostState` slot of the frozen contract. The dispatcher therefore imported the implementation, and the slot was a field every format could see and must not touch (E3.3).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Host.Begin(rq) (finish func())`; the state travels in the context of `rq.Request` (chosen) | The host replaces `rq.Request` by a copy whose context holds the state; every request derived with `Member` or `WriteTarget` copies the pointer and shares it | No untyped slot; the dispatcher imports the interface only; one finish function, so that no caller can forget the pair | `Begin` mutates the request it is given (once, before the handler); the state is found by a context lookup |
+| (b) `Begin` returns the new `*Request` | No mutation | Pure | The dispatcher must use the returned request in place of its own; every test double wraps it |
+| (c) Keep `HostState`, type it as an interface of the contract | A typed slot | Explicit | The contract names an implementation detail |
+
+**Choice:** (a). `Begin` is called after the dispatcher's checks and the construction of the request, once per request; a request that was not begun refuses a write with an internal error, as before.
+
+**Rationale:** the state belongs to the request and dies with it, and the context is the request's own place for that. The development agent revisits this if a second Host implementation needs state a context value cannot carry.
+
+**Applied in the spec:** R-ARCH-008 (`HostState` removed from `Request`), R-ARCH-009 (`Host.Begin`). Code: `internal/formats/host.go`, `internal/formats/route.go`, `internal/formathost/state.go`, `internal/api/dispatch/dispatcher.go`. Tests: `TestR_ARCH_011_TheDispatcherBeginsTheRequestOnTheHostAndFinishesItOnEveryPath` (dispatch), `TestR_ARCH_011_ARequestDerivedFromABegunRequestSharesItsState` (formathost).
+
+### Q-ARCH-266 · A route declares that it accepts the API-key header
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: NuGet clients send the credential of a push, an unlist and a relist in `X-NuGet-ApiKey` (R-NUGET-012), on exactly four routes. The authentication stage has to know on which requests to examine the header, and it runs before the dispatcher routes.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Route.APIKey bool`, consumed by the stage that matches the route (chosen) | The format declares it per route; the header name stays `auth.nuget_api_key_header` | The set of routes is the format's own fact, next to the route; a test over the route table shows it | The stage must learn the route before it authenticates (the later stage change, WP3.0x) |
+| (b) A list of paths in the auth configuration | The stage matches paths | No contract field | A second table that drifts from the routes |
+| (c) The header on every NuGet route | The stage examines it everywhere | Simple | A credential header on a download route that no client sends there; R-NUGET-012 limits it to the API-key endpoints |
+
+**Choice:** (a). This change adds the field and its documentation only; no stage reads it yet.
+
+**Rationale:** whether a route takes an API key is a property of the protocol operation. The development agent revisits this when the stage change lands.
+
+**Applied in the spec:** R-ARCH-008 (`Route.APIKey`). Code: `internal/formats/route.go`.
 ### Q-ARCH-273 · How is the OpenAPI breaking-change checker pinned and run?
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.

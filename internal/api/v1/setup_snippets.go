@@ -123,7 +123,7 @@ func renderSnippets(in setupInput) ([]snippet, error) {
 			}
 			content = applyCredentials(content, in)
 			if t.Section == "install" {
-				content = substitutePackage(content, t.Lang, in.Package, in.Version)
+				content = substitutePackage(content, t, in.Package, in.Version)
 			}
 			s := snippet{ID: snippetID(t, scope != ""), Tab: t.Section, FileName: t.File, Language: t.Lang, Content: content}
 			out = append(out, s)
@@ -137,8 +137,10 @@ func renderSnippets(in setupInput) ([]snippet, error) {
 // credential (kit check 8).
 func runTemplate(t formats.SetupTemplate, d formats.SetupData) (string, error) {
 	tm, err := template.New(t.ID).Option("missingkey=error").Funcs(template.FuncMap{
-		"shell": shellQuote,
-		"xml":   html.EscapeString,
+		"shell":      shellQuote,
+		"powershell": powershellQuote,
+		"cmd":        cmdQuote,
+		"xml":        html.EscapeString,
 	}).Parse(t.Template)
 	if err != nil {
 		return "", err
@@ -155,37 +157,94 @@ func runTemplate(t formats.SetupTemplate, d formats.SetupData) (string, error) {
 func applyCredentials(content string, in setupInput) string {
 	switch in.Credentials {
 	case credEnv:
-		return strings.ReplaceAll(content, formats.SetupTokenRef, "${"+in.TokenEnvVar+"}")
+		// Each spelling becomes the reference of the same variable in the syntax of
+		// its shell or file (Q-API-187): the client expands it itself.
+		return strings.NewReplacer(
+			formats.SetupTokenRef, "${"+in.TokenEnvVar+"}",
+			formats.SetupTokenRefWin, "%"+in.TokenEnvVar+"%",
+			formats.SetupTokenRefPS, "$env:"+in.TokenEnvVar,
+		).Replace(content)
 	case credNone:
 		lines := strings.SplitAfter(content, "\n")
 		kept := lines[:0]
 		for _, l := range lines {
-			if !strings.Contains(l, formats.SetupTokenRef) {
+			if !slices.ContainsFunc(formats.SetupTokenRefs(), func(ref string) bool { return strings.Contains(l, ref) }) {
 				kept = append(kept, l)
 			}
 		}
 		return strings.Join(kept, "")
 	}
-	return strings.ReplaceAll(content, formats.SetupTokenRef, tokenPlaceholder)
+	return strings.NewReplacer(
+		formats.SetupTokenRef, tokenPlaceholder, formats.SetupTokenRefWin, tokenPlaceholder, formats.SetupTokenRefPS, tokenPlaceholder,
+	).Replace(content)
 }
 
 // substitutePackage puts the package of an install snippet in place of the
-// placeholder, quoted for the language of the snippet.
-func substitutePackage(content, lang, pkg, version string) string {
+// placeholder, quoted for the language of the snippet, and attaches the version the
+// way the template says (formats.SetupTemplate.VersionSpec, default "@<version>").
+func substitutePackage(content string, t formats.SetupTemplate, pkg, version string) string {
 	if pkg == "" {
 		return content
 	}
-	spec := pkg
+	quote := quoterFor(t.Lang)
+	spec := quote(pkg)
 	if version != "" {
-		spec += "@" + version
-	}
-	switch lang {
-	case "shell":
-		spec = shellQuote(spec)
-	case "xml":
-		spec = html.EscapeString(spec)
+		if t.VersionSpec == "" {
+			spec = quote(pkg + "@" + version)
+		} else {
+			spec += strings.ReplaceAll(t.VersionSpec, formats.SetupVersionRef, quote(version))
+		}
 	}
 	return strings.ReplaceAll(content, formats.SetupPackageRef, spec)
+}
+
+// quoterFor returns the quoting of a language for a value placed in a command or an
+// XML text (R-API-030).
+func quoterFor(lang string) func(string) string {
+	switch lang {
+	case "shell":
+		return shellQuote
+	case "powershell":
+		return powershellQuote
+	case "cmd":
+		return cmdQuote
+	case "xml":
+		return html.EscapeString
+	}
+	return func(s string) string { return s }
+}
+
+// powershellQuote quotes a value for a PowerShell command: a value of safe
+// characters stays as it is, every other value is single-quoted - nothing is
+// expanded inside - with an embedded single quote doubled. The typographic quotes
+// PowerShell also reads as single quotes are doubled too.
+func powershellQuote(s string) string {
+	if shellSafe.MatchString(s) {
+		return s
+	}
+	var b strings.Builder
+	b.WriteByte('\'')
+	for _, r := range s {
+		switch r {
+		case '\'', '\u2018', '\u2019', '\u201a', '\u201b':
+			b.WriteRune(r)
+		}
+		b.WriteRune(r)
+	}
+	b.WriteByte('\'')
+	return b.String()
+}
+
+// cmdQuote quotes a value for a cmd command: a value of safe characters stays as it
+// is, every other value is double-quoted, an embedded double quote doubled and a
+// percent sign doubled, so that no variable is expanded in a batch file. A line
+// break cannot be quoted in cmd and is dropped.
+func cmdQuote(s string) string {
+	if shellSafe.MatchString(s) {
+		return s
+	}
+	s = strings.NewReplacer("\r", "", "\n", "", `"`, `""`, "%", "%%").Replace(s)
+	return `"` + s + `"`
 }
 
 var shellSafe = regexp.MustCompile(`^[A-Za-z0-9@/._+:=][A-Za-z0-9@/._+:=-]*$`)

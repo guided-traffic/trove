@@ -73,7 +73,6 @@ func (f *Format) handlePublish(ctx context.Context, rq *formats.Request, w http.
 	}
 
 	var tarSpool, sigSpool formats.Spooled
-	spoolRq := withoutLength(rq)
 	sink := func(file string, data io.Reader) (any, error) {
 		slot, max := &tarSpool, int64(cfg.MaxTarballSize)
 		switch {
@@ -86,7 +85,7 @@ func (f *Format) handlePublish(ctx context.Context, rq *formats.Request, w http.
 		if *slot != nil {
 			return nil, manifest.BadPublish("the publish request carries more than one " + file[strings.LastIndexByte(file, '.'):] + " attachment")
 		}
-		sp, err := rq.Host.Ingest().Spool(ctx, spoolRq, data, formats.IngestOptions{MediaType: "application/octet-stream", MaxSize: max})
+		sp, err := rq.Host.Ingest().Spool(ctx, rq, data, formats.IngestOptions{MediaType: "application/octet-stream", MaxSize: max})
 		if err != nil {
 			return nil, spoolError(err)
 		}
@@ -197,16 +196,6 @@ func (f *Format) handlePublish(ctx context.Context, rq *formats.Request, w http.
 		w.Header().Set("npm-notice", fmt.Sprintf(latestKeptNotice, pc.latest))
 	}
 	return writePublished(w, n.String(), Rev(repo.ID, pc.pkg, rev))
-}
-
-// withoutLength is the request as the spool sees it: the body it reads is the
-// decoded attachment, whose length the request's Content-Length does not state.
-func withoutLength(rq *formats.Request) *formats.Request {
-	r := *rq.Request
-	r.ContentLength = -1
-	c := *rq
-	c.Request = &r
-	return &c
 }
 
 // spoolError reports a spool that grew past its limit as the 413 of npm.

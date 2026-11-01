@@ -216,6 +216,9 @@ func (h *Host) id() int64 {
 	return h.nextID
 }
 
+// Begin implements formats.Host: the in-memory host keeps no request state to release.
+func (h *Host) Begin(*formats.Request) func() { return func() {} }
+
 // Authorize implements formats.Host.
 func (h *Host) Authorize(_ context.Context, rq *formats.Request, t formats.Target) error {
 	h.mu.Lock()

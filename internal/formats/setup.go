@@ -17,7 +17,9 @@ type SetupTemplate struct {
 	Client string
 	// Section is "configure", "publish" or "install".
 	Section string
-	// Lang is "shell", "ini", "xml" or "yaml".
+	// Lang is "shell" (a POSIX shell), "powershell", "cmd", "ini", "xml" or "yaml".
+	// It fixes how the API quotes the package and the version it substitutes into an
+	// install template.
 	Lang string
 	// File is the target file when the snippet is file content: ".npmrc".
 	File string
@@ -26,11 +28,20 @@ type SetupTemplate struct {
 	// and for an XML text or attribute (R-API-030); a value of SetupData that a
 	// template places in such a context goes through them.
 	//
-	// The credential is the one literal [SetupTokenRef], and the placeholder of
-	// the package to install is [SetupPackageRef]. The API rewrites both after the
-	// template ran, by the credential mode of the request and by the package asked
-	// for, so that no template implements the three modes or the quoting.
+	// The credential is one of the literals [SetupTokenRef], [SetupTokenRefWin] and
+	// [SetupTokenRefPS], the one the syntax of the file or shell the template writes
+	// expands, and the placeholder of the package to install is [SetupPackageRef].
+	// The API rewrites them after the template ran, by the credential mode of the
+	// request and by the package asked for, so that no template implements the three
+	// modes or the quoting.
 	Template string
+	// VersionSpec is how an install template attaches the version to the package when
+	// the request names one: the text that replaces [SetupPackageRef] after the quoted
+	// package, with [SetupVersionRef] standing for the quoted version. "" is
+	// "@<version>" (npm: pkg@1.2.3); dotnet writes " --version <version>". A request
+	// that names no version leaves the package alone. VersionSpec is meaningful for an
+	// install template only (kit check 8).
+	VersionSpec string
 }
 
 // SetupTokenRef is how a setup template spells the reference to the token, exactly:
@@ -39,6 +50,24 @@ type SetupTemplate struct {
 // browser fills in (credentials=placeholder), or drops the line that holds it
 // (credentials=none).
 const SetupTokenRef = "${TROVE_TOKEN}" //nolint:gosec // a reference to an environment variable, not a credential
+
+// SetupTokenRefWin is the reference to the token where the syntax is that of Windows:
+// a NuGet.Config value, which NuGet expands itself, and a cmd command. The API
+// rewrites it like [SetupTokenRef], to "%<variable>%" for credentials=env.
+const SetupTokenRefWin = "%TROVE_TOKEN%" //nolint:gosec // a reference to an environment variable, not a credential
+
+// SetupTokenRefPS is the reference to the token in a PowerShell command. The API
+// rewrites it like [SetupTokenRef], to "$env:<variable>" for credentials=env.
+const SetupTokenRefPS = "$env:TROVE_TOKEN" //nolint:gosec // a reference to an environment variable, not a credential
+
+// SetupTokenRefs are all the spellings of the token reference, in the order the API
+// looks for them. A template spells exactly one per credential line.
+func SetupTokenRefs() []string {
+	return []string{SetupTokenRef, SetupTokenRefWin, SetupTokenRefPS}
+}
+
+// SetupVersionRef stands for the version in [SetupTemplate.VersionSpec].
+const SetupVersionRef = "<version>"
 
 // SetupPackageRef is how an install template spells the package to install. The
 // API replaces it by the quoted name and version when the request names a package,
