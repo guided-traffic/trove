@@ -398,17 +398,28 @@ cache fills. The NuGet plug-in adds these steps between spooling and commit:
 1. Open the archive as ZIP within the archive limits below (400 on violation). Entries are read
    through the central directory only. An archive with an encrypted entry, a split or multi-disk
    archive, or a central-directory name that differs from the entry's local header name is
-   rejected (400).
+   rejected (400). So is an archive whose entry data overlaps another entry's or runs past the
+   central directory, and one that the standard library reads differently from the bounded scan of
+   the central directory (Q-NUGET-23). Every refusal of steps 1 to 4, a bound crossed included,
+   answers 400 with the code `nuget_invalid_package`; the reader keeps the rule that fired as the
+   cause for the log and the audit event.
 2. Normalize entry names (`\` becomes `/`). Reject the archive (400) if a name is absolute or
    contains a `..` segment, a drive letter or NUL, or if two entries share a name compared
-   case-insensitively. Then locate exactly one entry at the archive root whose name ends in
+   case-insensitively. The rules apply to the name and to the name with its percent escapes decoded
+   once, the spelling a client resolves package parts by; the duplicate comparison uses the decoded
+   spelling, and an escape that hides a path separator is refused. Control characters, invalid
+   UTF-8, empty and `.` segments, and segments that consist only of dots and spaces are refused too
+   (Q-NUGET-24). Then locate exactly one entry at the archive root whose name ends in
    `.nuspec`, compared case-insensitively (400 if none or several). Without these rules, two
    spellings of the `.nuspec`, or a duplicated name that one ZIP reader resolves to the first entry
    and another to the last, would let the identity trove authorizes differ from the identity a
    client installs.
 3. Parse the `.nuspec` as XML: UTF-8 or UTF-16; a document type declaration is rejected (400);
-   no entity expansion; elements matched by local name in any `nuspec` namespace version; at most
-   `nuget.archive.max_nuspec_bytes`.
+   no entity expansion; elements matched by local name in any `nuspec` namespace version (the
+   root's namespace is empty or starts with `http://schemas.microsoft.com/packaging/`, and children
+   are matched in the root's namespace); a repeated `metadata`, `id`, `version`, `dependencies`,
+   `packageTypes` or `license` element is refused, as is a dependency list that mixes groups and
+   plain dependencies; at most `nuget.archive.max_nuspec_bytes` (Q-NUGET-25).
 4. Validate `id` (R-NUGET-003: the local rule for content entering a local repository, the
    upstream rule for remote cache fills), `version`, every dependency ID (upstream rule) and every
    dependency range. On the package pipeline a
@@ -547,8 +558,10 @@ nuget:
     max_compression_ratio: 100      # default (proposed); per entry read into memory, at most R-ARCH-028's
 ```
 
-`max_entries` and `max_uncompressed_bytes` bound what the central directory may declare and what a
-streaming pass may decompress without keeping content. Entries read into memory (the `.nuspec`,
+`max_entries` and `max_uncompressed_bytes` bound what the central directory may declare (the sum of
+the declared sizes) and what a streaming pass may decompress without keeping content; the NuGet
+reader enforces them itself, because the shared zip reader can only tighten the defaults of
+R-ARCH-028 (Q-NUGET-23). The compression ratio is checked for the entries read into memory. Entries read into memory (the `.nuspec`,
 the embedded files of R-NUGET-024) stay within the limits of
 [architecture.md](../architecture.md) R-ARCH-028, which a format can only tighten.
 
@@ -2781,6 +2794,98 @@ R-NUGET-025: a reindex enqueues jobs instead of indexing symbols. R-NUGET-028:
 `trove_nuget_symbol_index_lag_seconds` and `trove_nuget_symbol_index_failures_total`. Cross-page:
 a row for `nuget-symbol-index` in [architecture.md](../architecture.md) R-ARCH-016's kind table;
 the worker spool note in [ha-and-helm.md](../ha-and-helm.md).
+
+### Q-NUGET-23 · How the package reader gets its archive limits
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-NUGET-005 sets `max_entries: 65535` and `max_uncompressed_bytes: 4GiB` as bounds on what the central
+directory may declare, and says that entries read into memory stay within R-ARCH-028, which a format can only
+tighten. The shared zip reader of `internal/formats/untrusted` applies the defaults of R-ARCH-028 to the
+whole archive (10,000 entries, 2 GiB for a pass that keeps nothing) and can only lower them. A `.nupkg` with
+more than 10,000 files exists (reference and runtime packs).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The NuGet reader scans the central directory itself | `internal/formats/nuget/nupkg` bounds the declared entries and sizes with the `nuget.archive` numbers, compares every local header name, and lets the standard library open entries only after both readers agree; the in-memory bounds are the R-ARCH-028 ones | Spec numbers hold; one place for the NuGet-specific name and overlap rules; the leaf imports only `errs` and the standard library | About 150 lines duplicate the scan of the shared reader |
+| (b) Use `untrusted.NewZip` and let the page raise its limits | A second, format-declared ceiling next to the defaults | One scan implementation | Changes the "can only tighten" contract of R-ARCH-028 and the contract package of another work package |
+| (c) Use `untrusted.NewZip` and lower the spec numbers to its defaults | 10,000 entries, 2 GiB | No duplicated code | Refuses real packages; the numbers on this page were chosen for them |
+
+**Choice:** (a).
+
+**Rationale:**
+- Only the entries the pipeline reads (the `.nuspec`, later the embedded files and the first bytes of PDBs)
+  are inflated, and each stays within 1 MiB, ratio 100:1 and 64 MiB in total, so the R-ARCH-028 bounds hold
+  where content is held in memory. The declared-size bounds protect later passes that read more.
+- The ratio is checked per entry that is read, not per declared entry: a stored or sparse data file may
+  compress by more than 100:1 in a valid package, and the archive total already bounds what is declared.
+- The development agent would revisit this if the shared reader gains a way for a format page to declare
+  higher central-directory bounds, in which case the scan moves there and this package keeps the name rules.
+
+**Applied in the spec:** R-NUGET-005 step 1 (what a refusal covers: split, encrypted, overlapping and
+out-of-archive entries; a bound crossed answers 400 like every other rule of the step) and the configuration
+note on `nuget.archive`.
+
+### Q-NUGET-24 · The name rules of the central directory beyond the wording of R-NUGET-005
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-NUGET-005 step 2 names backslash normalization, absolute names, `..`, drive letters, NUL and
+case-insensitive duplicates. The NuGet client resolves package parts by their percent-decoded names, and
+Windows ignores trailing dots and spaces in a path segment, so the listed rules leave spellings that two
+readers resolve differently.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The listed rules only | Check the name as the archive spells it | Exactly the text | `%2e%2e/x`, `lib/.%2E/x`, `.../x` and a duplicate hidden behind `%20` pass |
+| (b) The listed rules on both spellings, plus control characters, empty, dot and trailing-dot segments, and entry data that overlaps | Apply every rule to the normalized name and to the once percent-decoded name; the duplicate key is the decoded, case-folded name; an escape may not hide a separator | Closes the differences between readers; a lookup by another case or escape is unambiguous | A name that is odd but harmless (a segment `...`) is refused; none occurs in packages built by the NuGet tooling |
+| (c) Refuse every backslash and every percent escape | The strictest reading | Simple | Refuses real packages: older tools write backslashes, and the packaging format percent-encodes characters such as spaces |
+
+**Choice:** (b). A backslash is normalized to `/` as the step says and is not refused.
+
+**Rationale:**
+- Percent-decoding happens once, never recursively, which is what a client does; `%252e` stays `%2e`.
+- Nothing in a name is used as a file-system path (R-ARCH-028), so the rules protect identity and lookups
+  (the `.nuspec`, embedded files and symbols found by name), not a file system.
+- One refusal code serves every rule: `nuget_invalid_package` with status 400, whether a structure or a
+  bound is at fault, because R-NUGET-005 says "400 on violation" for all of them. The reader returns the
+  reason as the error cause so that a test and the audit event can tell the rules apart.
+- The development agent would revisit this if a widely used packaging tool writes names that rule (b)
+  refuses.
+
+**Applied in the spec:** R-NUGET-005 step 2 (the two spellings, the extra segment and control-character
+rules, overlapping entries, the code).
+
+### Q-NUGET-25 · How the `.nuspec` is read
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Step 3 of R-NUGET-005 asks for UTF-8 or UTF-16, no document type declaration, no entity expansion and
+elements matched by local name in any `nuspec` namespace version. Left open: what "any namespace version"
+admits, what happens to repeated identity elements, how the value of an element with markup is read, and
+which elements are required at this stage.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Match local names anywhere, first element wins, text of the element itself | The loosest reading | Accepts everything | `<id>` twice, or `<id>A<b/>B</id>`, gives the pipeline another identity than the client reads |
+| (b) The root's namespace is empty or under `http://schemas.microsoft.com/packaging/`; children match by local name in that namespace; a repeated `metadata`, `id`, `version`, `dependencies`, `packageTypes` or `license` is refused; `id` and `version` hold text only; other elements read their text in document order; required are `id` and `version` | The identity is the one a client reads, and nothing else is judged here | Closes the identity ambiguity; leaves the content rules (authors, description) to the validations that own them | A document in a foreign namespace is refused (none is produced by the tooling) |
+| (c) Validate against the schema | Required elements, types and order | Catches more | A client does not; a package a client installs would be refused, and the schema changed between versions |
+
+**Choice:** (b). Dependency groups and plain dependencies in one document are refused (a client refuses
+them as well); an empty group is kept, because it states that no dependency applies to that target
+framework. The encoding declaration must match the encoding the document is written in; UTF-16 needs a byte
+order mark.
+
+**Rationale:**
+- The id and version are what trove authorizes and indexes (R-AUTHZ-005); they have to be the strings a
+  client installs. Everything else is metadata for display and search.
+- Versions, IDs and ranges are returned as written; their grammar belongs to R-NUGET-003 and R-NUGET-004,
+  so the reader never normalizes what another rule has to judge.
+- The development agent would revisit this if real packages use another root namespace or a repeated
+  element the rules above refuse.
+
+**Applied in the spec:** R-NUGET-005 step 3 (namespaces, repeated elements, element text, the encoding
+declaration).
 
 ## What this does not cover
 
