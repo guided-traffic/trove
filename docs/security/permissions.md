@@ -34,7 +34,7 @@ an attacker who controls one of the inputs gains. The mechanics are in
 | Deny by default | A request with no grant, no role and no `content:bypass` is refused; a fresh installation has no policy | `evaluate` |
 | Allow-only grants | A grant only adds; an exclude pattern removes only inside its own resource set | `BuildIndex`, `globSet.match` |
 | No implication | `deploy` does not imply `read`, `manage` does not imply `deploy`; presets are expanded when written | [action.go](../../internal/authz/action.go) |
-| Token scope | Intersected with the owner's rights at use time; never grants; a malformed element admits nothing | `scopeAdmits` |
+| Token scope | Intersected with the owner's rights at use time; never grants; a malformed element admits nothing. An element that admits `read` on a virtual repository also admits `read` on the members reached through it, for that request only (Q-AUTHZ-163, below) | `scopeAdmits`, `scopeAdmitsThrough` |
 | Roles through tokens | A token exercises roles only with `admin: true` (and only if the owner holds `admin` at that moment) or through `system` items the owner's roles grant; `content:bypass` is never an item | `capabilities` |
 | `authenticated` and `anonymous` | Entries hold `read` only; `anonymous` entries select repositories by key only; neither holds a role; a service account and a CI token are never `authenticated` | `Service.entryRules`, `Index.principalIDs` |
 | Endpoint ceiling | Consulted first for every action and every subject, `content:bypass` included; nil is none | [ceiling.go](../../internal/authz/ceiling.go) |
@@ -101,6 +101,28 @@ on the timeline of the identity area, independently of the index.
 `Trove-Authz-Min-Epoch` can only make a replica wait or refuse; it cannot widen a permission. A malformed value is 400, an
 anonymous request ignores the header, so the epoch cannot be probed without a credential, and the replica reads the
 database epoch at most every 50 ms however many requests carry an unknown epoch.
+
+## A token scope on a virtual repository
+
+A virtual repository is read through its members: the gate is `read` on the virtual repository, and the content is decided on the
+member that holds it (R-AUTHZ-009). A token scope is checked at both steps, so a scope that named only the virtual repository, which
+is what **Create a token for this setup** creates, used to pass the gate and be refused by every member (Q-AUTHZ-163).
+
+`scopeAdmitsThrough` in [decide.go](../../internal/authz/decide.go) lifts that refusal under four conditions, all required:
+
+1. the action is `read`;
+2. the coordinate carries the virtual repository the client addressed (`Coordinate.Addressed`), which is set by the resolver for every member it consults;
+3. that repository reaches the member, directly or through nested virtual repositories (`Index.reaches`);
+4. a scope element admits `read` on the virtual repository for the same package and path, so the element's `packages` and `paths` still narrow.
+
+What does not change: the grants of the owner are evaluated before the scope and decide alone whether anything is allowed, so the lift
+removes a refusal by the scope and grants nothing; a token never reads more through the virtual repository than its owner reads
+through it. A member addressed directly (`/api/npm/<member>/…`), a repository that is no member, search and listing across
+repositories (decided on the repository itself), writes (decided on the deploy target, which a scope names itself) and every other action
+are decided by the scope as before. Tests: `TestR_AUTHZ_013_AScopeOnAVirtualRepositoryCoversItsMembersWhenReadThroughIt` (the
+cases above one by one, a token of a user without the right included) and
+`TestR_AUTHZ_013_ASetupTokenOfAVirtualRepositoryReadsThroughIt` (over HTTP through a virtual npm repository, with the direct read of the
+member refused).
 
 ## What Valkey can do to authorization
 
@@ -238,3 +260,13 @@ it reveals is an order of magnitude of the size of a repository the caller can r
 measure the time of its own requests and who has such a grant. A caller with an unrestricted read of a repository (`ReadAll`) pays
 nothing for the versions of other repositories. Closing it needs the pattern set compiled into the statement; Q-API-165 names the
 condition for doing so.
+
+### H-326 · A token scoped to a virtual repository follows the membership of the repository
+
+A token whose scope names a virtual repository reads whatever the members of that repository are at the time of the request, as far as
+its owner reads it (Q-AUTHZ-163). Live today for every scope element that admits `read` on a virtual repository, including the tokens the client
+setup page creates; what makes it real is an administrator holding `repositories:write-config` who adds a member to the virtual repository
+after the token was issued: the token then reads that member's content through the virtual repository, within the owner's rights and no
+further. Nothing records the members a token was created with, and the token list does not show the reach. The rights of the owner remain the
+bound, so the case needs an owner who may read the added member; narrowing the owner or the lifetime of the token (30 days by default on
+the setup page) limits it.

@@ -12,7 +12,7 @@ import (
 
 func renderSetup(t *testing.T, tpl formats.SetupTemplate, d formats.SetupData) string {
 	t.Helper()
-	tm, err := template.New(tpl.ID).Option("missingkey=error").Parse(tpl.Template)
+	tm, err := template.New(tpl.ID).Option("missingkey=error").Funcs(template.FuncMap{"shell": func(v string) string { return v }, "xml": func(v string) string { return v }}).Parse(tpl.Template)
 	if err != nil {
 		t.Fatalf("%s: %v", tpl.ID, err)
 	}
@@ -91,7 +91,7 @@ func TestR_NPM_041_SnippetLint(t *testing.T) {
 			t.Errorf("%q", out)
 		}
 	})
-	t.Run("R-NPM-041 every client of the descriptor has a configure and an install snippet", func(t *testing.T) {
+	t.Run("R-NPM-041 every client of the descriptor has a configure, an install and a publish snippet", func(t *testing.T) {
 		have := map[string]bool{}
 		for _, tpl := range tpls {
 			have[tpl.Client+"/"+tpl.Section] = true
@@ -100,7 +100,7 @@ func TestR_NPM_041_SnippetLint(t *testing.T) {
 			}
 		}
 		for _, c := range f.Descriptor().Clients {
-			for _, s := range []string{"configure", "install"} {
+			for _, s := range []string{"configure", "install", "publish"} {
 				if !have[c.ID+"/"+s] {
 					t.Errorf("%s has no %s snippet", c.ID, s)
 				}

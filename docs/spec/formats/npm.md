@@ -1990,6 +1990,14 @@ fixes the npm content. Snippets use the selected repository's registry URL with 
 the keyed credential form only, the public base URL, and a token newly created in the dialog or a
 placeholder.
 
+The templates of the setup API (R-API-030) are the configure and install snippets of every client and
+one **publish** snippet per client, for a caller who holds `deploy` on the publish target: npm, pnpm
+and Yarn 1 `<client> publish --registry <registry URL>`, Yarn 2 and later `npmPublishRegistry: "<registry
+URL>"` in `.yarnrc.yml`. The registry URL is the one of the selected repository, also for a virtual
+repository, which forwards the publish to its deployment target; the credential line of the configure
+snippet is keyed to that URL, so no second credential is needed (Q-API-180). The GitLab CI snippets
+below are not templates.
+
 <details>
 <summary>Snippets per client</summary>
 

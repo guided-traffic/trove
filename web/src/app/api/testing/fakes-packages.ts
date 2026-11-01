@@ -331,22 +331,16 @@ export class FakeClientSetupApi extends ClientSetupApi {
       : '<package>';
     snippets.push({ id: `${client}.install`, tab: 'install', fileName: null, language: 'shell', content: `${verb} ${spec}` });
     if (target !== null) {
-      const publishRegistry = `${BASE}/api/npm/${target}/`;
+      // As the server renders them (npm format templates, R-API-030, Q-API-180): the registry of the
+      // repository the caller chose, a virtual one forwards the publish to its deployment target.
       const publish: Record<string, [string, ClientSnippet['language'], string | null]> = {
-        npm: [`npm publish --registry ${publishRegistry}`, 'shell', null],
-        pnpm: [`pnpm publish --registry ${publishRegistry}`, 'shell', null],
-        'yarn-classic': [`yarn publish --registry ${publishRegistry}`, 'shell', null],
-        'yarn': [`npmPublishRegistry: "${publishRegistry}"\n`, 'yaml', '.yarnrc.yml'],
+        npm: [`npm publish --registry ${registryUrl}\n`, 'shell', null],
+        pnpm: [`pnpm publish --registry ${registryUrl}\n`, 'shell', null],
+        'yarn-classic': [`yarn publish --registry ${registryUrl}\n`, 'shell', null],
+        yarn: [`npmPublishRegistry: "${registryUrl}"\n`, 'yaml', '.yarnrc.yml'],
       };
       const [content, language, fileName] = publish[client] ?? ['', 'text', null];
       snippets.push({ id: `${client}.publish`, tab: 'publish', fileName, language, content });
-      snippets.push({
-        id: 'npm.publish.gitlab-ci.generic',
-        tab: 'publish',
-        fileName: '.gitlab-ci.yml',
-        language: 'yaml',
-        content: `publish:\n  id_tokens:\n    TROVE_ID_TOKEN:\n      aud: ${BASE}\n  script:\n    - npm publish --registry ${publishRegistry}\n`,
-      });
     }
     return {
       repository,

@@ -312,10 +312,46 @@ func (e *Engine) allowedAction(st *evalState, a Action, r *repoInfo, c Coordinat
 	if len(by) == 0 {
 		return false, ReasonNoGrant, nil
 	}
-	if !e.scopeAdmits(st.sub.Scope, a, r, repoLevel, c.Package, c.Path) {
+	if !e.scopeAdmits(st.sub.Scope, a, r, repoLevel, c.Package, c.Path) && !e.scopeAdmitsThrough(st, a, r, repoLevel, c) {
 		return false, ReasonScope, nil
 	}
 	return true, ReasonAllowGrant, by
+}
+
+// scopeAdmitsThrough is the one extension of the token scope that names a virtual
+// repository (Q-AUTHZ-163): the read of a member that resolution consults on behalf
+// of the virtual repository the client addressed is admitted when the scope admits
+// read on that virtual repository for the same package and path. The member is not
+// readable for the token in any other way, so a scope on a virtual repository does
+// not open its members to a request that addresses them directly, and the grants of
+// the subject still decide first: this only lifts the ceiling, it grants nothing.
+func (e *Engine) scopeAdmitsThrough(st *evalState, a Action, r *repoInfo, repoLevel bool, c Coordinate) bool {
+	if a != Read || c.Addressed == "" || c.Addressed == r.Key {
+		return false
+	}
+	v := st.idx.repo(c.Addressed)
+	if v == nil || v.Class != repository.Virtual || !st.idx.reaches(v, r.Key, 0) {
+		return false
+	}
+	return e.scopeAdmits(st.sub.Scope, Read, v, repoLevel, c.Package, c.Path)
+}
+
+// reaches reports whether the virtual repository v resolves through the repository
+// key, as a member or through nested virtual repositories (R-AUTHZ-009 rule 2). The
+// deploy target is a member, so it needs no case of its own.
+func (idx *Index) reaches(v *repoInfo, key string, depth int) bool {
+	if depth > 16 {
+		return false
+	}
+	for _, m := range v.members {
+		if m == key {
+			return true
+		}
+		if n := idx.repo(m); n != nil && n.Class == repository.Virtual && idx.reaches(n, key, depth+1) {
+			return true
+		}
+	}
+	return false
 }
 
 // anonReadsAllMembers reports whether anonymous holds read on every member of a

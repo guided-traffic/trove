@@ -49,7 +49,7 @@ The trailing slash belongs to the address. Which class of repository to use:
 4. Under **Credentials**, choose how the snippets sign in (next section). Without a session this step only says that the snippets contain no authentication.
 5. Copy the snippets from the tabs **Configure**, **Install** and **Publish** with **Copy snippet**, or save a configuration file with **Download**.
 
-For npm repositories the **Publish** tab holds no snippet in this version, and the sentence it shows in its place is not a statement about your permissions: the hint of step 3 says whether you can publish, and the guide's section **Publish a package** has the commands.
+The **Publish** tab shows how to publish through the repository you chose, once for your client: `npm publish --registry <address>`, `pnpm publish --registry <address>`, `yarn publish --registry <address>` for Yarn Classic, or `npmPublishRegistry: "<address>"` in `.yarnrc.yml` for Yarn Berry. The address is the one of the repository you chose; for a virtual repository the publish reaches its default deployment target. The tab has no snippet when you cannot publish: for a remote repository, for a virtual repository without a default deployment target, and when you do not hold the deploy permission on the target. The hint of step 3 tells you which case it is; the guide's section **Publish a package** has the rest of the commands.
 
 ### Credentials
 
@@ -61,7 +61,7 @@ For npm repositories the **Publish** tab holds no snippet in this version, and t
 
 **Create a token for this setup** creates a personal token with the description `Client setup: <client>, <repository>, <date>` that may read the chosen repository only. Tick **The token may also publish to the deployment target of this repository** to let it publish as well. It lives 30 days unless an administrator configured another period, and it appears under your [personal tokens](access-tokens.md), where you revoke it. The page shows it once; choosing another repository or credential option, or leaving the page, discards it. Creating it can ask you to [sign in again](troubleshooting.md#session-ended-and-re-authentication).
 
-Reading through a virtual repository also needs read on its members, so a token limited to a virtual repository finds no package there. For a virtual repository, reference the environment variable and put a token into it whose scope covers the members too.
+For a virtual repository the token also reads the packages of its members when they are read through the virtual repository, so `npm install` against it works. It reads nothing more than you do: a member you cannot read stays invisible to the token, and the token cannot read a member addressed directly. The members of a virtual repository may change after you created the token; the token follows them.
 
 A pasted token is checked in the browser for its prefix, its length of 57 characters, its alphabet and its checksum; a value that fails is not written into the snippets. A file that holds a token belongs in your home directory, never in version control.
 

@@ -568,6 +568,8 @@ Priority: **MVP** · Covers: IAM-024, PKG-NPM-042, PKG-NPM-045, PKG-NUGET-027
    [repositories-and-proxy.md](repositories-and-proxy.md)), a member is consulted only if the
    subject holds `read` on the member for that coordinate. Members the subject cannot read are
    skipped silently. Nested virtual repositories (P1) apply rule 1 at each level.
+   A token scope that admits `read` on the virtual repository admits these member reads for the
+   request that went through it (R-AUTHZ-013, Q-AUTHZ-163).
 3. **Fetching through a virtual repository** is checked on the remote member with that member's
    `cacheFillAction` (R-AUTHZ-008).
 4. **Merged metadata** (npm package documents, NuGet registrations, search results) MUST be built
@@ -762,6 +764,13 @@ requirement fixes how the evaluator applies a scope:
   policy's resource set plus `actions`, and the scope admits an action on a coordinate if an
   element matches the coordinate and lists the action. A restricted scope without a `builds`
   element admits no build action.
+
+  A scope element that admits `read` on a virtual repository also admits `read` on the members
+  that resolution consults on behalf of that repository (Q-AUTHZ-163): the check of a member
+  carries the virtual repository the client addressed, and when that repository reaches the member
+  and the element admits `read` on it for the same package and path, the scope admits the member.
+  The member addressed directly, and every action other than `read`, are decided by the scope as
+  before; the subject's own grants are evaluated first and are never widened.
 
   ```json
   {
@@ -3672,6 +3681,24 @@ introduced.
 
 **Applied in the spec:** [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-005, [storage.md](storage.md) R-STOR-018.
 Code: `internal/api/v1/items_api.go` (`DeleteItem`), `internal/files/delete.go`.
+
+### Q-AUTHZ-163 · A scope on a virtual repository covers its members when they are read through it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the token that **Create a token for this setup** (R-UI-016) mints for a virtual repository holds `read` on that repository only. R-AUTHZ-009 decides the content of a read on the member that holds it, and R-AUTHZ-013 intersects every decision with the scope, so every member refused the token and each package of the virtual repository answered 404. The token could pass the gate and read nothing.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The evaluator treats a scope element that admits `read` on a virtual repository as admitting `read` on the members that resolution consults on behalf of that repository | In `allowedAction`, a `read` whose coordinate carries `Addressed` = a virtual repository that reaches the member (directly or through nested virtual repositories) is admitted when the scope admits `read` on that virtual repository for the same package and path | One rule for every token and every client; no copy of the members in the scope that goes stale; the members stay configuration the token's creator need not see; the intersection with the subject's grants is untouched | The reach of the token follows the membership of the virtual repository, which an administrator changes |
+| (b) The setup page writes the members into the scope | The scope lists `npm-all` and each member | No change to the evaluator | A copy that is stale as soon as a member is added or removed; the page needs the member list, which is configuration (`repositories:read-config`), and a reader without that right could not create a working token |
+| (c) A new scope field, such as `through: ["npm-all"]` | A scope names the virtual repositories whose members it covers | Explicit | A schema and an API change for what R-AUTHZ-009 already means by reading through a virtual repository; every client of the scope API would have to know |
+
+**Choice:** (a). Only `read` is lifted: a virtual repository serves reads from its members, and writes go to the deploy target, which a scope names itself (the setup page adds the target with `deploy` when the user asks for it). Only a request that reaches the member through the virtual repository is lifted: the coordinate must carry the addressed virtual repository and that repository must reach the member. The member addressed directly, a repository that is no member, and every action other than `read` are decided by the scope as before. The element's `packages` and `paths` still narrow, and the grants of the subject are evaluated first and unchanged: the lift removes a refusal by the scope and grants nothing, so a token never reads more than its owner reads through the same virtual repository.
+
+**Rationale:** the scope of R-AUTHZ-013 is a ceiling of the same kind as the exposure of an endpoint, which also names the repository the client addressed (Q-EP-11) and not its members. Naming the virtual repository is naming the endpoint a client uses. The development agent revisits this if scopes gain a way to name a repository by what it resolves through for another purpose, or if membership changes need to be bound to token lifetimes.
+
+**Applied in the spec:** R-AUTHZ-013 (repository part), R-AUTHZ-009 (rule 2). Security: [tokens-and-credentials.md](../security/tokens-and-credentials.md). Code: `internal/authz/decide.go` (`scopeAdmitsThrough`, `reaches`). Tests: `TestR_AUTHZ_013_AScopeOnAVirtualRepositoryCoversItsMembersWhenReadThroughIt`, `TestR_AUTHZ_013_ASetupTokenOfAVirtualRepositoryReadsThroughIt`.
 
 ## What this does not cover
 

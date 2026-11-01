@@ -1595,11 +1595,13 @@ on:
   `publishTarget` need `deploy` on the repository that receives the publish: the repository itself when local, the
   deployment target of a virtual one, none for a remote one. Whether the snippets send the credential before
   being challenged (`RequiresAuth`) follows whether an anonymous caller on the same endpoint may read the
-  repository; it is off for `credentials=none`. The npm templates contribute the configure and install snippets
-  (R-NPM-041); the publish and CI snippets of R-UI-017 are not templates yet. The generic templates contribute curl's
+  repository; it is off for `credentials=none`. The npm templates contribute the configure, install and publish snippets
+  (R-NPM-041, Q-API-180); the CI snippets of R-UI-017 are not templates yet. The generic templates contribute curl's
   configure, install and publish snippets ([formats/generic.md](formats/generic.md) R-GENERIC-016).
 - A virtual repository without a default deployment target has no publish snippets and `publishTarget: null`;
   a caller without `deploy` on the target gets no publish snippets either.
+  A publish snippet names the registry URL of the repository the caller chose (Q-API-180); `publishTarget`
+  names the repository that receives the publish.
 - Values substituted into shell commands (package names, versions, repository keys) MUST be
   single-quoted, with embedded single quotes escaped, unless they match
   `^[A-Za-z0-9@/._+:=][A-Za-z0-9@/._+:=-]*$` (a value that starts with `-` is quoted); values
@@ -3069,10 +3071,13 @@ npmAuthToken: "${TROVE_TOKEN}"
 
 | Client | Install | Publish (local repository, or virtual with default deployment target) |
 |---|---|---|
-| npm | `npm install <package>` | `npm publish --registry https://trove.example.com/api/npm/npm-local/`, or `"publishConfig": {"registry": "…/api/npm/npm-local/"}` in `package.json` |
-| pnpm | `pnpm add <package>` | `pnpm publish` with the same `publishConfig` |
-| Yarn Berry | `yarn add <package>` | `npmPublishRegistry: "…/api/npm/npm-local/"` in `.yarnrc.yml`, then `yarn npm publish` |
-| Yarn classic | `yarn add <package>` | `yarn publish --registry …/api/npm/npm-local/` |
+| npm | `npm install <package>` | `npm publish --registry https://trove.example.com/api/npm/npm-all/`, or `"publishConfig": {"registry": "…/api/npm/npm-all/"}` in `package.json` (the guide) |
+| pnpm | `pnpm add <package>` | `pnpm publish --registry https://trove.example.com/api/npm/npm-all/` |
+| Yarn Berry | `yarn add <package>` | `npmPublishRegistry: "…/api/npm/npm-all/"` in `.yarnrc.yml`, then `yarn npm publish` |
+| Yarn classic | `yarn add <package>` | `yarn publish --registry …/api/npm/npm-all/` |
+
+The registry in the publish column is the repository the snippets are for (`npm-all` here, a virtual repository
+with a deployment target, or a local repository), not the deployment target (Q-API-180).
 
 GitLab CI publishing. The Publish tab shows the GitLab CI snippet of
 [formats/npm.md](formats/npm.md) R-NPM-041 in two variants, each labelled with the client versions
@@ -6213,7 +6218,7 @@ R-API-030 asks for three credential modes (`placeholder`, `env`, `none`), the pa
 | (b) The API rewrites the rendered text | The template spells the token as the literal `formats.SetupTokenRef` and the package as `formats.SetupPackageRef`; the API replaces the first by the placeholder or the configured variable (`ui.client_setup.token_env_var`) or drops the lines that hold it, and the second by the quoted package | The modes and the quoting exist once; a template stays one text; `RequiresAuth` is cleared for `none` so that an always-auth switch goes with the credential | The template and the API share two literals |
 | (c) The UI strips and substitutes | The server sends the `env` form | Nothing on the server | The UI would parse client syntax (Q-API-160) |
 
-**Choice:** (b). The templates also get the functions `shell` and `xml` for values they place in a command or in XML. A package name or version above 256 bytes, with a control character or in the shape of a token (`trv_(pat|sat|cit)_`) is refused with `400`, so that the answer cannot echo a token it was handed; every snippet is checked against the shape again before it is sent. The addresses are built on the configured base URL of the endpoint the request arrived on; without one the operation answers `503`, because an address from the `Host` of the request would end in a file the user copies. `requiresAuth` of the templates is true unless an anonymous caller on the same endpoint may read the repository. The publish tab is rendered only for a caller who holds `deploy` on the publish target (the repository itself when local, the deploy target of a virtual one, none for a remote one) and `publishTarget` names it. The snippet id is `<client>.<section>[.<name>]`, with `-scoped` appended to the name of the scoped variant of a configure snippet. The npm templates contribute configure and install snippets (R-NPM-041); the publish and CI snippets of R-UI-017 are not templates yet, so the publish tab is empty for npm until they are (the API renders them where a format supplies them).
+**Choice:** (b). The templates also get the functions `shell` and `xml` for values they place in a command or in XML. A package name or version above 256 bytes, with a control character or in the shape of a token (`trv_(pat|sat|cit)_`) is refused with `400`, so that the answer cannot echo a token it was handed; every snippet is checked against the shape again before it is sent. The addresses are built on the configured base URL of the endpoint the request arrived on; without one the operation answers `503`, because an address from the `Host` of the request would end in a file the user copies. `requiresAuth` of the templates is true unless an anonymous caller on the same endpoint may read the repository. The publish tab is rendered only for a caller who holds `deploy` on the publish target (the repository itself when local, the deploy target of a virtual one, none for a remote one) and `publishTarget` names it. The snippet id is `<client>.<section>[.<name>]`, with `-scoped` appended to the name of the scoped variant of a configure snippet. The npm templates contribute configure and install snippets (R-NPM-041); the publish and CI snippets of R-UI-017 are not templates yet, so the publish tab is empty for npm until they are (the API renders them where a format supplies them). The npm publish templates arrived with Q-API-180.
 
 **Rationale:** The mode and the quoting are the security-relevant part of the operation and belong in one place with one test (`TestR_API_030_*`, the integration tests over every client, mode and caller). The development agent revisits this when the first format needs a credential in a place that is not a line (NuGet's `nuget.config` element): the literal then becomes a typed marker.
 
@@ -6402,6 +6407,23 @@ Context: a guide of a virtual repository explains members and the deployment tar
 **Rationale:** A guide must not become a way around the consumer view. The development agent revisits this if the consumer view gains the members.
 
 **Applied in the spec:** R-API-053; H-321.
+
+### Q-API-180 · Publish snippets address the repository the caller chose
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the npm format had no publish templates, so the Publish tab of the client setup page was empty for every npm repository and, for a virtual one, said it had no deployment target even when it had one (the UI fake served snippets the server did not, so no spec noticed). R-UI-017 wrote the publish registry as the URL of the deployment target. A client sends its credential to the registry whose URL the credential line is keyed to (R-NPM-041), and the configure snippet keys it to the URL of the selected repository.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The publish snippet names the selected repository | `npm publish --registry …/api/npm/npm-all/` for a virtual repository; it forwards the publish to its deployment target (R-REPO-021) | The credential line of the configure snippet matches the URL, so the snippet works as shown; no second credential line; the target key need not be shown to the template | The snippet does not show the target; the page shows `publishTarget` next to it |
+| (b) The snippet names the deployment target | `npm publish --registry …/api/npm/npm-local/` | Shows where the package lands | The credential is keyed to the virtual repository's URL, so the client sends none to the target and the publish answers 401 unless a second credential line is added |
+
+**Choice:** (a). The templates need no new field of `SetupData`; the API renders the publish templates for a caller who holds `deploy` on the publish target, and `publishTarget` names that target. The CI snippets of R-UI-017 stay outside the templates. The UI fake renders what the server renders (the fake served a GitLab CI snippet and the target URL before).
+
+**Rationale:** a snippet that is correct only with an added credential line is not correct. The development agent revisits this if the template data gains the second credential line, or if the owner wants the snippet to show the target.
+
+**Applied in the spec:** R-API-030, R-UI-017, [formats/npm.md](formats/npm.md) R-NPM-041. Code: `internal/formats/npm/setup.go`; `web/src/app/api/testing/fakes-packages.ts`. Tests: `TestR_API_030_NpmPublishSnippets`.
 
 ## What this does not cover
 

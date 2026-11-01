@@ -106,10 +106,16 @@ func setupServerAs(t *testing.T, baseURL string, deploy bool, authn func(*http.R
 	if err != nil {
 		t.Fatal(err)
 	}
+	local := repository.Repository{Key: "npm-local", Class: repository.Local, Format: "npm"}
+	remote := repository.Repository{Key: "npm-remote", Class: repository.Remote, Format: "npm"}
 	repos := packagesReader{repos: map[string]repository.Repository{
-		"npm-local":  {Key: "npm-local", Class: repository.Local, Format: "npm"},
-		"npm-remote": {Key: "npm-remote", Class: repository.Remote, Format: "npm"},
+		"npm-local":  local,
+		"npm-remote": remote,
 		"files":      {Key: "files", Class: repository.Local, Format: "generic"},
+		"npm-all": repository.Assemble(repository.Repository{Key: "npm-all", Class: repository.Virtual, Format: "npm"},
+			[]repository.Repository{local, remote}, &local, 0),
+		"npm-readonly": repository.Assemble(repository.Repository{Key: "npm-readonly", Class: repository.Virtual, Format: "npm"},
+			[]repository.Repository{remote}, nil, 0),
 	}}
 	router := httpserver.NewClientRouter()
 	New(Options{
@@ -339,6 +345,63 @@ func TestR_API_029_FilterParsing(t *testing.T) {
 	for _, bad := range []string{"sort=downloads", "colour=red"} {
 		if _, err := parse(bad); err == nil {
 			t.Errorf("%s accepted", bad)
+		}
+	}
+}
+
+// TestR_API_030_NpmPublishSnippets: the npm templates deliver the publish snippets of
+// R-UI-017 for every client, for a local repository and for a virtual one with a
+// deployment target; the snippets address the repository the caller chose, whose
+// credential the configure snippet binds (Q-API-180). Without the deploy right, for a
+// virtual repository without a target and for a remote one there are none.
+func TestR_API_030_NpmPublishSnippets(t *testing.T) {
+	const local, all = "https://trove.example.com/api/npm/npm-local/", "https://trove.example.com/api/npm/npm-all/"
+	publish := func(deploy bool, repo, client string) (map[string]gen.ClientSnippet, gen.ClientSetup) {
+		t.Helper()
+		w := get(setupServer(t, "https://trove.example.com", deploy), "/api/v1/repositories/"+repo+"/client-setup?client="+client+"&credentials=env")
+		var out gen.ClientSetup
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil || w.Code != 200 {
+			t.Fatalf("%s %s: %d %s", repo, client, w.Code, w.Body.String())
+		}
+		got := map[string]gen.ClientSnippet{}
+		for _, sn := range out.Snippets {
+			if sn.Tab == gen.ClientSnippetTabPublish {
+				got[sn.Id] = sn
+			}
+		}
+		return got, out
+	}
+	for _, c := range []struct {
+		repo, url, client, id, content string
+		lang                           gen.ClientSnippetLanguage
+		file                           string
+	}{
+		{"npm-local", local, "npm", "npm.publish", "npm publish --registry " + local + "\n", gen.Shell, ""},
+		{"npm-local", local, "pnpm", "pnpm.publish", "pnpm publish --registry " + local + "\n", gen.Shell, ""},
+		{"npm-local", local, "yarn-classic", "yarn-classic.publish", "yarn publish --registry " + local + "\n", gen.Shell, ""},
+		{"npm-local", local, "yarn", "yarn.publish", "npmPublishRegistry: \"" + local + "\"\n", gen.Yaml, ".yarnrc.yml"},
+		{"npm-all", all, "npm", "npm.publish", "npm publish --registry " + all + "\n", gen.Shell, ""},
+		{"npm-all", all, "yarn", "yarn.publish", "npmPublishRegistry: \"" + all + "\"\n", gen.Yaml, ".yarnrc.yml"},
+	} {
+		got, out := publish(true, c.repo, c.client)
+		sn, ok := got[c.id]
+		if !ok || len(got) != 1 {
+			t.Errorf("%s %s: publish snippets %v", c.repo, c.client, got)
+			continue
+		}
+		if sn.Content != c.content || sn.Language != c.lang || (sn.FileName == nil) != (c.file == "") || (c.file != "" && *sn.FileName != c.file) {
+			t.Errorf("%s: %+v, want %q", c.id, sn, c.content)
+		}
+		if out.PublishTarget == nil || *out.PublishTarget != "npm-local" {
+			t.Errorf("%s: publishTarget %v", c.repo, out.PublishTarget)
+		}
+	}
+	for _, c := range []struct {
+		deploy bool
+		repo   string
+	}{{false, "npm-local"}, {false, "npm-all"}, {true, "npm-readonly"}, {true, "npm-remote"}} {
+		if got, out := publish(c.deploy, c.repo, "npm"); len(got) != 0 || out.PublishTarget != nil {
+			t.Errorf("%s deploy=%v: %v %v", c.repo, c.deploy, got, out.PublishTarget)
 		}
 	}
 }

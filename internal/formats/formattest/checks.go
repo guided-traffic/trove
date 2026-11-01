@@ -591,7 +591,10 @@ func (r *run) setup() {
 			r.failf("setup template %q has language %q", t.ID, t.Lang)
 		}
 		ids[t.ID] = true
-		tp, err := template.New(t.ID).Option("missingkey=error").Parse(t.Template)
+		// The API gives a template the quoting functions shell and xml (R-API-030); the
+		// check only needs them to exist, the quoting is the API's and tested there.
+		quote := func(v string) string { return v }
+		tp, err := template.New(t.ID).Option("missingkey=error").Funcs(template.FuncMap{"shell": quote, "xml": quote}).Parse(t.Template)
 		if err != nil {
 			r.failf("setup template %q does not parse: %v", t.ID, err)
 			continue

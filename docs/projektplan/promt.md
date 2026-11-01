@@ -211,17 +211,6 @@ Found on 2026-11-01 while writing the manual (`docs/manual`) and the design chan
 
 ### UI defects
 
-- **F-1 · The npm Publish tab of the client setup page is empty** (read). The npm format has no
-  publish setup templates, so `/setup` shows "You cannot publish…" for npm, and for a virtual
-  repository the "no default deployment target" text even when it has one. The specs do not notice,
-  because the UI fake serves npm publish snippets ([fakes-packages.ts](../../web/src/app/api/testing/fakes-packages.ts)).
-  Done when the server delivers the npm publish snippets (R-API-030), the fake matches the server and
-  `docs/manual/user/client-setup.md` no longer says the tab has no snippet.
-- **F-2 · A setup token for a virtual repository likely reads nothing** (read). **Create a token for
-  this setup** scopes the token to `read` on the virtual repository only; the scope is checked against
-  every member, so each package answers 404. Done when the token scope covers what the virtual
-  repository resolves through, proven by a test through a virtual npm repository;
-  `docs/manual/user/client-setup.md` carries a warning to remove.
 - **F-9 · The token filter "Not used for (days)" matches every token** (read). The last-used time is never
   recorded. Done when the time is recorded (with a bound on write load) or the filter is removed;
   `docs/manual/admin/tokens.md` says it matches everything.

@@ -152,7 +152,7 @@ describe('Client setup', () => {
     await tab(r, 'Install');
     expect(snippets(r)).toContain('npm install <package>');
     await tab(r, 'Publish');
-    expect(snippets(r)).toContain('npm publish --registry https://trove.example.net/api/npm/npm-local/');
+    expect(snippets(r)).toContain('npm publish --registry https://trove.example.net/api/npm/npm-all/\n');
   });
 
   it('R-UI-017 Yarn Berry gets a .yarnrc.yml with npmRegistryServer, npmAlwaysAuth and npmAuthToken, and its publish registry', async () => {
@@ -162,7 +162,7 @@ describe('Client setup', () => {
     expect(yml).toContain('npmAlwaysAuth: true');
     expect(yml).toContain('npmAuthToken: "${TROVE_TOKEN}"');
     await tab(r, 'Publish');
-    expect(snippets(r).some((s) => s.includes('npmPublishRegistry: "https://trove.example.net/api/npm/npm-local/"'))).toBe(true);
+    expect(snippets(r).some((s) => s.includes('npmPublishRegistry: "https://trove.example.net/api/npm/npm-all/"'))).toBe(true);
   });
 
   it('R-UI-017 Yarn Classic and pnpm use the .npmrc and their own add and publish commands', async () => {
@@ -171,18 +171,11 @@ describe('Client setup', () => {
     await tab(classic, 'Install');
     expect(snippets(classic)).toContain('yarn add <package>');
     await tab(classic, 'Publish');
-    expect(snippets(classic)).toContain('yarn publish --registry https://trove.example.net/api/npm/npm-local/');
+    expect(snippets(classic)).toContain('yarn publish --registry https://trove.example.net/api/npm/npm-all/\n');
 
     const pnpm = await open({ repository: 'npm-all', client: 'pnpm' });
     await tab(pnpm, 'Install');
     expect(snippets(pnpm)).toContain('pnpm add <package>');
-  });
-
-  it('R-UI-017 the Publish tab holds the GitLab CI snippet of the generic exchange', async () => {
-    const r = await open();
-    await tab(r, 'Publish');
-    expect(snippets(r).some((s) => s.includes('TROVE_ID_TOKEN'))).toBe(true);
-    expect(text(r.root)).toContain('npm 10, pnpm 10 on npm 10 and Yarn 1');
   });
 
   it('R-UI-016 each snippet shows its target file name and has a copy button; whole configuration files can be downloaded', async () => {
