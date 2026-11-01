@@ -88,7 +88,10 @@ func formatPorts(db meta.Runner, rec audit.Recorder) (map[formats.ID]any, error)
 	if err != nil {
 		return nil, fmt.Errorf("formats: npm data port: %w", err)
 	}
-	nuget, err := nugetdata.New(nugetdata.Options{DB: db, Recorder: rec})
+	nuget, err := nugetdata.New(nugetdata.Options{
+		DB: db, Recorder: rec, Source: httpserver.SourceFrom,
+		Actor: func(ctx context.Context) audit.Actor { return edge.ActorFrom(httpserver.PrincipalFrom(ctx)) },
+	})
 	if err != nil {
 		return nil, fmt.Errorf("formats: nuget data port: %w", err)
 	}

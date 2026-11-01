@@ -398,7 +398,7 @@ func (w *writer) DeleteItems(ctx context.Context, repo formats.RepoRef, paths ..
 		}
 		rec.removed = true
 		w.tx.undo = append(w.tx.undo, func() { rec.removed = false })
-		ev.Items = append(ev.Items, formats.RemovedItem{Item: rec.ref, Version: rec.version})
+		ev.Items = append(ev.Items, formats.RemovedItem{Item: rec.ref, Version: rec.version, SHA256: rec.digests.SHA256})
 	}
 	w.h.mu.Unlock()
 	if len(ev.Items) == 0 {
@@ -666,10 +666,31 @@ func (i ingestor) Commit(ctx context.Context, rq *formats.Request, sp formats.Sp
 		h.mu.Unlock()
 		replaced := old != nil && !old.removed
 		out = formats.Committed{Item: rec.ref, Created: !replaced, Overwritten: replaced}
-		return h.f.OnCommit(ctx, tx, formats.CommitEvent{
+		if err := h.f.OnCommit(ctx, tx, formats.CommitEvent{
 			Origin: formats.OriginUpload, Repo: h.ref, Item: rec.ref, Path: c.Path, Size: int64(len(s.data)), Digests: rec.digests,
 			Inspection: c.Inspection, Payload: c.Payload, Replaced: replaced, Packages: w, Data: h.opts.Data,
-		})
+		}); err != nil {
+			return err
+		}
+		// The companions commit in the transaction of the lead, after it, each with its own
+		// hook (R-ARCH-009): everything one client request writes is one unit.
+		for _, comp := range c.Companions {
+			cs, ok := comp.Spooled.(*memSpool)
+			if !ok {
+				return errs.E(errs.Internal, errs.CodeInternal, "The body was not spooled by this host.")
+			}
+			h.mu.Lock()
+			crec := h.putLocked(comp.Path.Path, comp.MediaType, cs.data, &mt.undo)
+			h.mu.Unlock()
+			out.Companions = append(out.Companions, crec.ref)
+			if err := h.f.OnCommit(ctx, tx, formats.CommitEvent{
+				Origin: formats.OriginUpload, Repo: h.ref, Item: crec.ref, Lead: rec.ref, Path: comp.Path, Size: int64(len(cs.data)),
+				Digests: crec.digests, Payload: comp.Payload, Packages: w, Data: h.opts.Data,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	return out, err
 }
@@ -689,7 +710,7 @@ func (h *Host) Remove(ctx context.Context, rq *formats.Request, reason string, p
 			}
 			rec.removed = true
 			tx.(*memTx).undo = append(tx.(*memTx).undo, func() { rec.removed = false })
-			ev.Items = append(ev.Items, formats.RemovedItem{Item: rec.ref, Version: rec.version})
+			ev.Items = append(ev.Items, formats.RemovedItem{Item: rec.ref, Version: rec.version, SHA256: rec.digests.SHA256})
 		}
 		h.mu.Unlock()
 		return h.f.OnItemsRemoved(ctx, tx, ev)
@@ -709,7 +730,7 @@ func (h *Host) Restore(ctx context.Context, rq *formats.Request, paths ...string
 			}
 			rec.removed = false
 			tx.(*memTx).undo = append(tx.(*memTx).undo, func() { rec.removed = true })
-			ev.Items = append(ev.Items, formats.RemovedItem{Item: rec.ref, Version: rec.version})
+			ev.Items = append(ev.Items, formats.RemovedItem{Item: rec.ref, Version: rec.version, SHA256: rec.digests.SHA256})
 		}
 		h.mu.Unlock()
 		r := formats.CapabilitiesOf(h.f).ItemsRestorer

@@ -19,14 +19,19 @@ import (
 // replica is what the composition root bound for one Host.
 type replica struct {
 	cfg config.NuGet
+	// writes counts the pushes, nil on a Host nobody bound with a metrics registry.
+	writes *writeMetrics
 }
 
 // Bind gives the format the nuget section of the configuration of the replica that owns the
 // Host h (R-NUGET-005 archive bounds, R-NUGET-009 paging, R-NUGET-010 search limits). It
 // must be called once per Host, before the replica serves. The metric families of
 // R-NUGET-028 are registered on m by the work packages that count what they measure.
-func (f *Format) Bind(h formats.Host, cfg *config.Config, _ *observability.Metrics) {
+func (f *Format) Bind(h formats.Host, cfg *config.Config, m *observability.Metrics) {
 	r := &replica{cfg: cfg.NuGet}
+	if m != nil {
+		r.writes = newWriteMetrics(m)
+	}
 	f.replicas.Store(h, r)
 	if d := h.FormatData(ID); d != nil {
 		f.ports.Store(d, r)

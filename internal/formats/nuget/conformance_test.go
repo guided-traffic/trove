@@ -1,6 +1,8 @@
 package nuget
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -9,6 +11,81 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/formattest"
 	"github.com/guided-traffic/trove/internal/formats/nuget/nugettest"
 )
+
+// nugetChanges are the writes of check 9: every hook and every route that changes package
+// rows raises packages.rev_seq of the affected package.
+func nugetChanges(f *Format) []formattest.ChangeCase {
+	const id = "acme.widgets"
+	push := func(version string) func(h *formattest.Host) error {
+		return func(h *formattest.Host) error {
+			pkg, err := makeNupkg("Acme.Widgets", version)
+			if err != nil {
+				return err
+			}
+			body, ct, err := makeMultipart(pkg)
+			if err != nil {
+				return err
+			}
+			r, err := h.Serve(context.Background(), http.MethodPut, "v3/package", body, false, func(r *http.Request) { r.Header.Set("Content-Type", ct) })
+			if err == nil && r.Code != http.StatusCreated {
+				err = fmt.Errorf("push %s: status %d: %s", version, r.Code, r.Body.String())
+			}
+			return err
+		}
+	}
+	serve := func(method, path string, want int) func(h *formattest.Host) error {
+		return func(h *formattest.Host) error {
+			r, err := h.Serve(context.Background(), method, path, nil, false)
+			if err == nil && r.Code != want {
+				err = fmt.Errorf("%s %s: status %d: %s", method, path, r.Code, r.Body.String())
+			}
+			return err
+		}
+	}
+	seed := func(steps ...func(h *formattest.Host) error) func(h *formattest.Host) error {
+		return func(h *formattest.Host) error {
+			for _, s := range steps {
+				if err := s(h); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}
+	deleteMode := func(h *formattest.Host) error {
+		h.Repo().Config = []byte(`{"nuget":{"deleteMode":"delete"}}`)
+		return nil
+	}
+	do := func(fn func(h *formattest.Host) error) func(context.Context, *formattest.Host) error {
+		return func(_ context.Context, h *formattest.Host) error { return fn(h) }
+	}
+	remove := func(paths ...string) func(context.Context, *formattest.Host) error {
+		return func(ctx context.Context, h *formattest.Host) error {
+			rq, err := h.NewRequest(ctx, http.MethodDelete, "v3/package/"+id+"/1.0.0", nil)
+			if err != nil {
+				return err
+			}
+			return h.Remove(ctx, rq, "delete", paths...)
+		}
+	}
+	return []formattest.ChangeCase{
+		{Name: "a first push (OnCommit)", Package: id, Do: do(push("1.0.0"))},
+		{Name: "a later version (OnCommit)", Package: id, Seed: push("1.0.0"), Do: do(push("1.1.0"))},
+		{Name: "an unlist (DELETE in unlist mode)", Package: id, Seed: push("1.0.0"), Do: do(serve(http.MethodDelete, "v3/package/"+id+"/1.0.0", http.StatusNoContent))},
+		{
+			Name: "a relist (POST)", Package: id, Seed: seed(push("1.0.0"), serve(http.MethodDelete, "v3/package/"+id+"/1.0.0", http.StatusNoContent)),
+			Do: do(serve(http.MethodPost, "v3/package/"+id+"/1.0.0", http.StatusOK)),
+		},
+		{
+			Name: "a hard delete (DELETE in delete mode, OnItemsRemoved)", Package: id, Seed: seed(deleteMode, push("1.0.0"), push("1.1.0")),
+			Do: do(serve(http.MethodDelete, "v3/package/"+id+"/1.0.0", http.StatusNoContent)),
+		},
+		{
+			Name: "the removal of a package through the items (OnItemsRemoved)", Package: id, Seed: seed(push("1.0.0"), push("1.1.0")),
+			Do: remove(NupkgPath(id, "1.0.0"), NuspecPath(id, "1.0.0")),
+		},
+	}
+}
 
 // canonicalOf maps a route example to the canonical path Classify is asked about (kit check
 // 3), through the route the format itself matches it to.
@@ -33,8 +110,9 @@ func conformance(f *Format) formattest.Fixture {
 	return formattest.Fixture{
 		Host: func() formattest.HostOptions {
 			return formattest.HostOptions{
-				Data:    nugettest.New(),
-				Subject: authz.Subject{Kind: "user", ID: "11111111-1111-1111-1111-111111111111", Name: "alice"},
+				Data:     nugettest.New(),
+				Resolver: shadowResolver{out: formats.ShadowOutcome{Proceed: true}},
+				Subject:  authz.Subject{Kind: "user", ID: "11111111-1111-1111-1111-111111111111", Name: "alice"},
 			}
 		},
 		Rejects: []string{
@@ -53,6 +131,7 @@ func conformance(f *Format) formattest.Fixture {
 			{Path: ".nuget/index.json", Want: formats.PathInfo{Kind: formats.PathMetadata}},
 			{Path: ".symbols/acme.widgets.pdb/0123456789abcdef0123456789abcdefFFFFFFFF/acme.widgets.pdb", Want: formats.PathInfo{Kind: formats.Content, RoutingName: "acme.widgets"}},
 		},
+		Inspect:   formattest.InspectZip("acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg", "acme.widgets.nuspec"),
 		Canonical: canonicalOf(f),
 		Protocol:  func(c string) string { return feed("flatcontainer/" + c) },
 		Content: []formattest.ContentCase{
@@ -70,17 +149,19 @@ func conformance(f *Format) formattest.Fixture {
 			{Name: "autocomplete", Path: feed("autocomplete"), Status: notBuilt},
 			{Name: "symbols", Path: feed("symbols/acme.widgets.pdb/0123456789abcdef0123456789abcdefFFFFFFFF/acme.widgets.pdb"), Status: notBuilt},
 		},
+		Changes: nugetChanges(f),
+		NoRevision: map[string]string{
+			"nuget.symbolpush": "the symbol push is a later package (R-NUGET-020): it answers 501 and changes nothing",
+		},
 		Names: []formattest.NameCase{
 			{Spellings: []string{"Acme.Widgets", "acme.widgets", "ACME.WIDGETS"}},
 			{Spellings: []string{"Newtonsoft.Json", "newtonsoft.json"}},
 		},
 		Skip: map[formattest.Check]string{
-			formattest.CheckRewrite:  "the remote class and its adapter are WP3.2a (Q-NUGET-28)",
-			formattest.CheckMerge:    "the virtual class and its adapter are WP3.2c (Q-NUGET-28)",
-			formattest.CheckInspect:  "the ingestion pipeline is WP3.1e; Inspect refuses every upload until then",
-			formattest.CheckSetup:    "clients, setup templates and the guide are WP3.1h",
-			formattest.CheckRevision: "no route writes a package row until WP3.1e",
-			formattest.CheckView:     "the package view adapter is WP3.1h",
+			formattest.CheckRewrite: "the remote class and its adapter are WP3.2a (Q-NUGET-28)",
+			formattest.CheckMerge:   "the virtual class and its adapter are WP3.2c (Q-NUGET-28)",
+			formattest.CheckSetup:   "clients, setup templates and the guide are WP3.1h",
+			formattest.CheckView:    "the package view adapter is WP3.1h",
 		},
 	}
 }

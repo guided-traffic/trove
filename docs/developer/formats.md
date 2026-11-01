@@ -161,7 +161,7 @@ The item store ([items.md](items.md)) runs `items.Hooks` inside the transaction 
    (`packages.Writer` with `packages.WithRaised`, Q-ARCH-259); a format does not call `Notify` for a publish, a tag change, an unpublish or a restore. `Notify` is for the areas
    a descriptor lists in `NotifyAreas` (`catalog.FormatAreas`: today `metadata_changed` alone), for a change that raised no package row: npm's `OnFill` after it replaced a stored remote document.
 3. It calls `OnCommit` (with `Origin` upload or fill, the inspection and payload of an upload, `Replaced`) or `OnItemsRemoved` (each removed item with the
-   version it belonged to).
+   version it belonged to and the SHA-256 of its content, which the item row no longer carries when the hook runs: NuGet's tombstone reads the SHA-512 of the blob by it, Q-NUGET-39).
 
 **One request, one transaction.** Everything one client request writes commits in one transaction (R-ARCH-009). A request that stores more than one file passes the lead to
 `Ingest().Commit` and the others as `Commit.Companions` (`formats.Companion`: its spool, path, media type, an own payload, and `Generated` for a file the format derived from the

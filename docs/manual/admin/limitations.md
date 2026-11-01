@@ -4,7 +4,7 @@ This page lists what this version of trove does not do, and the known weak spots
 
 ## Package formats
 
-- **Two formats.** trove serves generic files and npm packages. NuGet (.NET), container images, Python, Maven and every other package format are not supported. Paths such as `/v2/` are reserved and answer `404`.
+- **Two formats, and NuGet in parts.** trove serves generic files and npm packages. For NuGet (.NET) a local repository takes a push, an unlist, a relist and a delete and serves its service index; the downloads, the package documents and the search of NuGet answer `501` until they are built, and NuGet has no remote or virtual repositories yet. Container images, Python, Maven and every other package format are not supported. Paths such as `/v2/` are reserved and answer `404`.
 - **Generic repositories are local only.** There are no remote or virtual generic repositories.
 - **npm commands that are not implemented.** `npm login` and `npm adduser`, `npm search`, `npm token`, `npm access`, `npm org`, `npm team`, `npm deprecate`, staged publishing and trusted publishing through OIDC. These requests answer `404`, or `501` for a `POST`. Instead of `npm login`, put a trove token into `.npmrc` as the client setup of the repository shows.
 - **npm 6 audits.** The legacy audit endpoints answer `501`; npm 7 or later, pnpm and Yarn use the bulk endpoint, which works.

@@ -96,6 +96,22 @@ When trove cannot ask the remote member whether it serves the name, the first pu
 
 `E405` means the address is a remote repository or a virtual one without a deployment target. `E409` with `npm_version_exists` or `npm_version_unpublished` means the version number is taken for good: publish a new version. `npm_stale_rev` means another change came between your client's read and its write; run the command again, and with pnpm 11 or 12 unpublish at the deployment target instead of through a virtual repository.
 
+### NuGet: push, unlist and delete
+
+A NuGet push (`dotnet nuget push`, `nuget push`) goes to a local repository, or to a virtual repository with a deployment target. These answers have a code in the body of the response, which `curl` shows; the NuGet clients print the status and its reason phrase only.
+
+| Answer | Code | What it means | What to do |
+|---|---|---|---|
+| `400` | `nuget_invalid_package` | The file is no package trove accepts: not a ZIP archive, no or several `.nuspec` at the root, a name the archive rules refuse, a limit exceeded, or a symbol package sent to the package push | Build the package again; push `.snupkg` files to the symbol push after their package |
+| `400` | `nuget_invalid_id`, `nuget_invalid_version`, `nuget_invalid_version_range` | The ID (ASCII letters, digits, `_`, single `.` or `-`), the version or a dependency range does not follow the rules | Correct the `.nuspec` |
+| `403` | `forbidden`, `package_owned_by_other_owner`, `shadows_remote_package` | You may not deploy this ID, you are none of its owners, or the first push of the ID would replace a package a remote repository serves | Ask for deploy or ownership, or a holder of manage |
+| `409` | `nuget_version_exists` | The version is stored with other bytes. A version never changes | Push the changed package under a new version; development feeds use a pre-release counter. `--skip-duplicate` treats the answer as success |
+| `409` | `nuget_version_deleted` | The version was deleted; its number is never accepted again, whatever the bytes | Use a new version number |
+| `409` | `nuget_version_reserved` | After a restore the number is kept for the package that was published after the backup, byte for byte | Push exactly that package again, or use a new version |
+| `503` | `shadow_check_unavailable` | Whether a remote repository serves the ID could not be found out; nothing was stored | Retry after the `Retry-After` period (at most 30 seconds) |
+
+`dotnet nuget delete` unlists the version by default: it disappears from search and stays downloadable and restorable, and the command can be repeated. In a repository whose delete mode is `delete` it removes the version for good, and repeating the command still succeeds. Deleting a version that never existed is `404`.
+
 ### EINTEGRITY, audits and upstream failures
 
 - `EINTEGRITY` usually means the lockfile was written against a registry that served other bytes for that version.
@@ -147,6 +163,9 @@ Each code with its status and meaning. `GET /api/v1/problems/<code>` gives the d
 | `npm_version_exists` | 409 | The version was published before |
 | `npm_version_unpublished` | 409 | The version was unpublished and is never accepted again |
 | `npm_stale_rev` | 409 | Another change reached the package between read and write |
+| `nuget_version_exists` | 409 | The NuGet version is stored with other bytes |
+| `nuget_version_deleted` | 409 | The NuGet version was deleted and is never accepted again |
+| `nuget_version_reserved` | 409 | After a restore, the number is kept for one exact package |
 | `token_limit_reached` | 409 | You hold the maximum number of active tokens |
 | `idempotency_in_progress` | 409 | The same request is still running; retry after `Retry-After` |
 | `precondition_failed` | 412 | A condition header did not match |
@@ -156,6 +175,7 @@ Each code with its status and meaning. `GET /api/v1/problems/<code>` gives the d
 | `misdirected_request` | 421 | The host is not one this endpoint answers for |
 | `malformed_request`, `invalid_path`, `invalid_header` | 400 | The request, the path or a header is not valid |
 | `npm_invalid_name`, `npm_invalid_tag`, `npm_bad_publish`, `npm_manifest_mismatch` | 400 | A name, a dist-tag or a publish request that npm's rules or trove's checks refuse |
+| `nuget_invalid_package`, `nuget_invalid_id`, `nuget_invalid_version`, `nuget_invalid_version_range` | 400 | A NuGet package, ID, version or dependency range that the rules refuse |
 | `invalid_scope`, `invalid_ttl`, `ttl_exceeds_maximum`, `description_required` | 400 | A token request with an invalid scope, lifetime or description |
 | `validation_failed` | 422 | A field of the request is invalid; the answer names it |
 | `rate_limited` | 429 | Too many requests; wait for `Retry-After` |

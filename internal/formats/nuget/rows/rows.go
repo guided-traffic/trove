@@ -52,8 +52,9 @@ type VersionInput struct {
 	RepoID    int64
 	VersionID int64
 	// LowerID is the normalized ID (packages.name), DeclaredID the casing of this
-	// version's .nuspec, OriginalVersion the version string as the .nuspec has it.
-	LowerID, DeclaredID, OriginalVersion string
+	// version's .nuspec, OriginalVersion the version string as the .nuspec has it and
+	// LowerVersion the URL form (package_versions.version).
+	LowerID, DeclaredID, OriginalVersion, LowerVersion string
 	// SortKey is the order key of R-NUGET-003: byte order is version order.
 	SortKey      []byte
 	IsPrerelease bool
@@ -69,6 +70,44 @@ type VersionInput struct {
 	IDTokens, Title, Tags, Authors, Summary, Description string
 	// Origin is one of the Origin values.
 	Origin string
+	// FullVersion is the full normalized form (package_versions.display_version, which the
+	// core writer stores). The database store ignores it; the in-memory twin has no core
+	// rows and reads it.
+	FullVersion string
+	// SHA512 is the digest of the .nupkg, hex-encoded in the journal entry of the
+	// published event (R-NUGET-033). The blob holds the digest; the store does not
+	// compare it, so the format passes what the spool computed.
+	SHA512 []byte
+	// Files are the stored files the event lists (R-OPS-016): the .nupkg.
+	Files []File
+	// Audit says who published and where; the event is written for every origin but
+	// OriginCache, which no request wrote.
+	Audit Audit
+	// Claim is the outcome of the namespace auto claim of the first version
+	// (R-REPO-023), "" for none.
+	Claim string
+	// Shadowing is what the shadowing check found of a first version (R-REPO-048).
+	Shadowing Shadowing
+}
+
+// File is a stored file as the published event lists it.
+type File struct {
+	Path string
+	// SHA256 is the hex digest.
+	SHA256 string
+	Size   int64
+}
+
+// ShadowPair is a virtual repository and the remote member it contains that serves the
+// ID of a first push.
+type ShadowPair struct{ Virtual, Remote string }
+
+// Shadowing is what the shadowing check of a first push found: the pairs a push on the
+// strength of manage shadows, and whether a remote member could not be asked
+// (R-REPO-048).
+type Shadowing struct {
+	Shadowed     []ShadowPair
+	Undetermined bool
 }
 
 // VersionFacts are what the acknowledged-retry rule and the immutability rule read

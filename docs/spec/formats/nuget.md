@@ -462,7 +462,8 @@ cache fills. A raw deploy is not an ingestion path of NuGet (Q-NUGET-13). The Nu
    [authorization.md](../authorization.md): the name the content declares is the name that is
    authorized and indexed), including the ownership check (R-AUTHZ-018). A caller holding no
    `deploy` grant on the repository at all is refused before the body is read, so unauthorized
-   callers cannot fill the spool.
+   callers cannot fill the spool. A caller who holds `deploy` on the repository and no right to the
+   declared ID does fill it once per request ([H-334](../../security/nuget-publish.md#h-334--a-push-is-read-in-full-before-the-permission-on-its-id-can-be-decided)).
 6. In the commit transaction (R-STOR-005): create the `packages` row if absent and the
    `package_versions` row (its unique index on the URL form makes a duplicate answer 409); create
    the item of the `.nupkg` as lead item and the derived items with `generated = true`; insert
@@ -638,8 +639,8 @@ API ([package publish](https://learn.microsoft.com/en-us/nuget/api/package-publi
   upload; copy and move report them per item, R-NUGET-005):
   - A push whose URL form exists in the repository with other bytes answers 409
     `nuget_version_exists`.
-  - A protocol push (`PUT <feed>/package`) of the identical `.nupkg`, compared by SHA-256 with the
-    stored lead item, answers 201 and changes nothing: no row is written, `rev_seq` stays, no
+  - A protocol push (`PUT <feed>/package`) of the identical `.nupkg`, compared by SHA-512 with the
+    stored lead item (Q-NUGET-36), answers 201 and changes nothing: no row is written, `rev_seq` stays, no
     `package.published` event is written, and `trove_nuget_push_replayed_total` counts it
     (Q-NUGET-6). The NuGet clients repeat a push on their own after a transport failure
     (R-NUGET-032), and this rule makes such a repeat succeed when its first attempt had committed.
@@ -748,6 +749,8 @@ API (both are API-key endpoints, R-NUGET-012):
 - Unlisted versions: absent from search and autocomplete; present in the flat container version
   list and downloadable; `"listed": false` in registration entries. `published` keeps the real
   publish time; trove always emits `listed` explicitly instead of nuget.org's year-1900 marker.
+  Unlisting is no withdrawal: a holder of `deploy` and the ownership relists, and the version was
+  downloadable throughout ([H-333](../../security/nuget-publish.md#h-333--unlisting-is-not-a-withdrawal-a-holder-of-deploy-relists)).
 - `deleteMode` decides only what the protocol `DELETE` does (Q-NUGET-1): `unlist` (the default)
   or `delete`. Unlisting an already unlisted version answers 204 again.
 - Hard delete (protocol `DELETE` with `deleteMode: delete`; a delete through the management API or
@@ -1938,7 +1941,7 @@ Event catalog, schema and metric conventions are owned by
 
 | Operation | Audit event |
 |---|---|
-| Push accepted | `package.published` and `artifact.deployed` for the `.nupkg` |
+| Push accepted | `package.published`, and `artifact.deployed` for the `.nupkg` and for the generated `.nuspec` (the item store records one event per stored file, Q-NUGET-36) |
 | Push of the identical bytes of a stored version (R-NUGET-006) | none; counted in `trove_nuget_push_replayed_total` |
 | Symbol push accepted | `artifact.deployed` for the `.snupkg` |
 | Unlist, relist | `package.metadata_changed` with `change` = `unlist` or `relist` |
@@ -1957,7 +1960,7 @@ Event catalog, schema and metric conventions are owned by
   `trove_nuget_remote_unparseable_packages_total{repository}`,
   `trove_nuget_search_forward_failures_total{repository}`,
   `trove_nuget_search_withheld_total{repository}` (R-NUGET-016),
-  `trove_nuget_push_replayed_total{repository}` (R-NUGET-006) and, from P1,
+  `trove_nuget_push_replayed_total{repo}` (R-NUGET-006; `repo` is the repository label R-OPS-007 allows) and, from P1,
   `trove_nuget_symbol_index_lag_seconds` (age of the oldest symbol package without `indexed_at`,
   R-NUGET-021) and `trove_nuget_symbol_index_failures_total{repository,reason}` (packages that
   ended with `index_error`). The forwarded-search cache reports through the core's
@@ -3339,7 +3342,97 @@ Context: the skeleton routes every operation of the table and serves the service
 
 **Rationale:** the window is one phase on a development branch. The development agent revisits this if a release is cut with a handler still a stub, which the roadmap does not plan.
 
-**Applied in the spec:** R-NUGET-002 (the note on the resources). Code: [handlers_stub.go](../../../internal/formats/nuget/handlers_stub.go), [format.go](../../../internal/formats/nuget/format.go) `Inspect`. Tests: `TestR_NUGET_001_AnOperationThatIsNotBuiltAnswers501`, `TestR_NUGET_001_InspectRefusesEveryUploadUntilTheIngestionExists`.
+**Applied in the spec:** R-NUGET-002 (the note on the resources). Code: [handlers_stub.go](../../../internal/formats/nuget/handlers_stub.go), [format.go](../../../internal/formats/nuget/format.go) `Inspect`. Tests: `TestR_NUGET_001_AnOperationThatIsNotBuiltAnswers501`. The `Inspect` clause is replaced by [Q-NUGET-38](#q-nuget-38--the-roads-around-the-push-route-inspect-reads-the-package-the-commit-refuses-it): `Inspect` reads the package, and the 501 moved to the commit of an upload that is not a push; the push, the unlist, the relist and the delete are built.
+
+### Q-NUGET-36 · The order of the checks of a push, and how a repeated push is told from a rebuild
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the identity of a package is inside it, so the permission on the ID, the number and the shadowing check can only be decided after the body is spooled and read (R-NUGET-005 step 5). R-NUGET-006 wants a repeated push to touch nothing and the commit to be safe against a concurrent delete. The data port already reads the SHA-512 of a stored `.nupkg` (it is the digest of the tombstone and of the journal entry); the specification compared the push with the stored lead item by SHA-256.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Decide outside the transaction, again inside it; compare by SHA-512 (chosen) | Spool, read the package, authorize the declared ID, ask the ownership rule early, then read the number from PostgreSQL alone: stored with the same SHA-512 answers 201 and ends; stored with other bytes, or tombstoned, answers 409; otherwise run the shadowing check and commit. The commit transaction locks the package row, reads the versions and the tombstone after it, and decides again | A replay holds no lock, writes no blob, no row, no revision and no event; one digest serves the replay, the tombstone and the journal; a refusal costs no transaction | The number is decided twice |
+| (b) Compare by SHA-256 through the item store | Stat the canonical path of the `.nupkg` and compare the item's SHA-256 | The wording of the first version of the requirement | Needs the item row and its path rules where the data port has the facts; a second digest beside the one the tombstone and the journal use |
+| (c) Decide only in the commit transaction | Every push goes to the commit | One place | A replay would write its blob and take the package lock only to change nothing; a refused push would cost a transaction |
+
+**Choice:** (a). Identical bytes are SHA-512 equal, exactly as they are SHA-256 equal.
+
+**Rationale:** the replay is the case the client's own retry produces (R-NUGET-032), so it must be cheap and must leave nothing behind. The early check is an optimization and a better answer; the safety is the check inside the commit, which is also what a push racing a hard delete meets. A push whose commit loses a race for the path (the item store answers 403 for a path that took other content) is read again and answers what the number now says. The development agent would revisit this if the stored blob stopped carrying its SHA-512.
+
+**Applied in the spec:** R-NUGET-006 (the comparison is by SHA-512); R-NUGET-028 (the label of `trove_nuget_push_replayed_total` is `repo`, the label name R-OPS-007 allows; the generated `.nuspec` records an `artifact.deployed` of its own, because the item store records one per file). Code: [handlers_publish.go](../../../internal/formats/nuget/handlers_publish.go), [hooks.go](../../../internal/formats/nuget/hooks.go). Tests: `TestR_NUGET_006_IdenticalBytesOfAStoredVersionAnswer201AndChangeNothing`, `TestR_NUGET_006_AReplayChangesNothing`, `TestR_NUGET_006_ConcurrentPushesOfOneVersion`.
+
+### Q-NUGET-37 · What a GET of a stored file serves
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `ServeCheck` runs before the core serves any stored item, on the flat-container routes and on `/files/` alike. The item row says nothing about listing or about a removed number; the NuGet rows and the tombstone do.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Serve a stored version, listed or not; refuse a tombstoned one and one without a NuGet row (chosen) | One lookup of the NuGet row and the tombstone by the version of the path | Unlisting hides a version from search and keeps it restorable (R-NUGET-007); a file that reached the repository around the format is not served (fail closed); the check keeps no state, so it holds on every replica | One indexed lookup per served file |
+| (b) Refuse an unlisted version | Unlisting stops downloads | Closer to a withdrawal | Breaks the restore of every project pinned to the version, which is what unlisting is meant not to do |
+| (c) Check only the tombstone | A version without a NuGet row is served | Cheaper by a join | A file with no document that lists it is served from `/files/` |
+
+**Choice:** (a).
+
+**Rationale:** the specification defines unlisting as not-in-search and not-in-autocomplete, with the version still in the version list and downloadable. A tombstone only exists for a version that is not stored, so a tombstoned file that is still an item (a restore in progress, a trashed version) must not be served either. The check applies to local repositories; a remote repository's rules join with its adapter. The development agent would revisit this when the trash can exists (P1) and decides what a trashed version's files answer.
+
+**Applied in the spec:** none beyond R-NUGET-007, which says the same. Code: [servecheck.go](../../../internal/formats/nuget/servecheck.go), statement `NuGetServeState`. Tests: `TestR_NUGET_007_AServeCheckDecidesOnTheNuGetRows`, `TestR_NUGET_007_UnlistRelistAndDeleteOverHTTP`.
+
+### Q-NUGET-38 · The roads around the push route: `Inspect` reads the package, the commit refuses it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-NUGET-32 made `Inspect` refuse every upload until the ingestion existed, so that no package is stored without its NuGet rows. The ingestion now exists for the push. The upload of the management API, copy and move reach the format through `Inspect` and `OnCommit`, and neither writes the generated `.nuspec` or the NuGet row.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Inspect` reads and names the package (422 for a refusal); `OnCommit` answers 501 to a commit that is not a push (chosen) | The identity and the rules are one code path; the kit's check 6 has a subject; the roads stay closed until their package exists | No package without its rows; the reading is tested once | The upload answers 501 after the body was read |
+| (b) `Inspect` keeps refusing | Nothing changes for the roads around the push | Smallest | The kit's check 6 stays skipped with no subject, and the push has its reading in a function `Inspect` does not share |
+| (c) Build the upload road now | The upload derives the path and writes the companions | Complete | It is the work of the package that builds upload, copy and move (R-NUGET-005) |
+
+**Choice:** (a).
+
+**Rationale:** the push answers 400 for what the package rules refuse (R-NUGET-005, the clients print the status), while `Inspect` answers 422 `content_refused` with the kit's contract (check 6 accepts 413 and 422) and as npm does. A path that names another ID or version than the package declares is refused, so that the identity a road authorizes is the identity the package declares. The development agent would revisit this when the upload road is built; the 501 then goes.
+
+**Applied in the spec:** none (Q-NUGET-32 stays, its `Inspect` clause is replaced by this decision). Code: [format.go](../../../internal/formats/nuget/format.go) `Inspect`, [hooks.go](../../../internal/formats/nuget/hooks.go) `OnCommit`. Tests: `TestR_NUGET_005_InspectReadsTheIdentityOfAPackage`, `TestR_NUGET_006_AnUploadAroundThePushRouteIsRefused`, kit check 6.
+
+### Q-NUGET-39 · A delete goes through the item store and the hook writes the tombstone
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a version leaves a local repository by the protocol `DELETE` in `delete` mode, by a raw or management delete of its `.nupkg`, and by a move (P1). Each must write the tombstone with the SHA-512 of the removed package in the transaction that removes the version (R-NUGET-006). The hook of the item store runs after the item rows are deleted, so the row that held the digest is gone when the hook runs.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The delete route removes the files through the package writer; `OnItemsRemoved` removes the version and writes the tombstone for every road; the removal event carries the SHA-256 of the removed content and the store reads the SHA-512 from the blob row (chosen) | One code path for the protocol, raw, management and move deletes | A raw delete cannot forget the tombstone; the route and the hook cannot disagree | A field is added to the contract's `RemovedItem` |
+| (b) The route writes the tombstone and the rows, then removes the files | Reads the digest from the item before it goes | No contract change | A raw delete needs a second copy of the logic, which is the road a rule gets forgotten on |
+| (c) Store the SHA-512 in `nuget_version` | The digest survives the item row | No contract change, one statement less | A column added to a migration that other work packages generate against; the digest would exist twice |
+
+**Choice:** (a). `formats.RemovedItem` gains `SHA256`, set by the host and by the kit's Host. The blob row outlives the transaction, because its collection is queued.
+
+**Rationale:** the rule "every removal writes a tombstone" is only safe where there is one place that removes. The generated `.nuspec` or an embedded file cannot be removed on its own while the package stays: the hook refuses that with 409 and the removal rolls back (Q-NUGET-13). A delete that finds a version without a package file fails whole (500) instead of removing the version without a tombstone. The development agent would revisit this if more formats need the digest of a removed item (the field is then part of the frozen contract anyway).
+
+**Applied in the spec:** none (R-NUGET-005, R-NUGET-006 and R-NUGET-007 already say that a removal is a unit with a tombstone). Code: [hooks_remove.go](../../../internal/formats/nuget/hooks_remove.go), [handlers_delete.go](../../../internal/formats/nuget/handlers_delete.go), [formats/hooks.go](../../../internal/formats/hooks.go) `RemovedItem`, statement `NuGetInsertTombstone`. Tests: `TestR_NUGET_007_TheDeleteOfADeleteModeRepositoryRemovesTheVersionForGood`, `TestR_NUGET_005_ARawDeleteRemovesTheVersionAsAUnit`, `TestR_NUGET_005_ARawDeleteOfThePackageIsAHardDelete`.
+
+### Q-NUGET-40 · The reads of a hook run in its transaction
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the tombstone is read inside the commit transaction, after the package row lock (R-NUGET-006). The data port first read it on a connection of its own. Ten identical pushes at once, five on each of two replicas, answered nine of them 503 after the lock timeout of five seconds: each waiting transaction held a connection of the pool, and the one that held the lock needed a second connection to read the tombstone.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Store.Tombstone` takes the transaction; a nil transaction reads outside one (chosen) | The hook reads in the transaction that holds the lock | Needs one connection per request; sees the state the lock protects (READ COMMITTED) | A nil-able argument |
+| (b) A second connection for the read | As written first | One signature | The pool can starve itself: a transaction waits for a connection that only the transactions it blocks can free |
+| (c) A larger pool | The symptom goes at this load | No code | It returns at a higher load |
+
+**Choice:** (a). A hook never takes a second connection.
+
+**Rationale:** the failure is a property of the design, and the test that found it is part of the suite. `READ COMMITTED` makes a read in the transaction after the lock see every removal that committed before. The development agent would revisit this if the runner's isolation level changed.
+
+**Applied in the spec:** none. Code: [store.go](../../../internal/formats/nuget/store.go) `Tombstone`, [internal/formatdata/nuget/store.go](../../../internal/formatdata/nuget/store.go). Tests: `TestR_NUGET_006_ConcurrentPushesOfOneVersion`, `TestR_NUGET_006_APushRacingAHardDeleteSeesTheVersionOrItsTombstone`.
 
 ### Q-NUGET-33 · The clients image: one .NET SDK, and nuget.exe on Mono
 

@@ -58,18 +58,6 @@ func (f *Format) handleAutocomplete(ctx context.Context, rq *formats.Request, w 
 	return stub("autocomplete (P1, R-NUGET-011)")(ctx, rq, w)
 }
 
-func (f *Format) handlePush(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("push")(ctx, rq, w)
-}
-
-func (f *Format) handleDelete(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("unlist and delete")(ctx, rq, w)
-}
-
-func (f *Format) handleRelist(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("relist")(ctx, rq, w)
-}
-
 func (f *Format) handleSymbolPush(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
 	return stub("the symbol push")(ctx, rq, w)
 }

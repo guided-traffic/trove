@@ -146,6 +146,11 @@ type RemovedItem struct {
 	Item ItemRef
 	// Version is the version the item belonged to; 0 for none.
 	Version VersionID
+	// SHA256 is the digest of the removed content, which the item row no longer carries
+	// when the hook runs: a format that keeps a record of what it removed (NuGet's
+	// tombstone holds the SHA-512 of the blob, read by this digest) needs it. The blob
+	// outlives the transaction, because its collection is queued.
+	SHA256 []byte
 }
 
 // ItemsEvent is what OnItemsRemoved and the optional [ItemsRestorer] learn.

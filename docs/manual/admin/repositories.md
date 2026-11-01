@@ -59,6 +59,7 @@ The settings of a format are drawn from the schema the format publishes, so the 
 | Format and class | Setting | Default | Meaning |
 |---|---|---|---|
 | Generic local | none | | |
+| NuGet local | **deleteMode** | `unlist` | What `dotnet nuget delete` and `nuget delete` do: `unlist` hides the version from search and keeps it downloadable; `delete` removes the version for good and keeps its number blocked. A delete through the API, the UI or `/files/` always removes |
 | npm local | **latestGuard** | on | A publish under `latest` never moves `latest` backwards or onto a pre-release in front of a release; the version is stored and `latest` stays |
 | npm remote | **serveRemovedVersions** | off | Keep serving cached tarballs of versions the upstream no longer lists; the package documents never list them |
 | npm remote | **audit** › **mode** | `forward` | `forward` answers `npm audit` through this remote; `disabled` answers 501 `npm_audit_unavailable` |

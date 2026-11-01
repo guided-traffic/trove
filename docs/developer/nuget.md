@@ -2,7 +2,7 @@
 
 Status: the NuGet format is registered with its skeleton (phase 4, WP3.1c): the route table of the whole NuGet v3 protocol, the matching
 and the classification of paths, the service index, the error shape, the settings and the configuration section, and the data port interface.
-The operations behind the other routes - package content, registrations, search, push, unlist, relist, the symbol resources - are written by
+The push, the unlist, the relist and the delete are built ([the write side](#the-write-side)). The operations behind the other routes - package content, registrations, search, the symbol resources - are written by
 the work packages that own them and answer 501 `nuget_not_implemented` until then ([handlers_stub.go](../../internal/formats/nuget/handlers_stub.go)).
 The requirements are in [spec/formats/nuget.md](../spec/formats/nuget.md); the contract the format implements is in [formats.md](formats.md).
 
@@ -13,7 +13,7 @@ imports the format contract and the leaf packages below, and reaches its tables 
 
 | File | Responsibility |
 |---|---|
-| [format.go](../../internal/formats/nuget/format.go) | `Format`, `Descriptor` (the catalog facts: class `local` for now, Q-NUGET-28; the upstream, the 300 s and 1800 s periods, `ChecksumRequireUnsupported`, `NotifyAreas`, `DataPort`), `Inspect` (refuses every upload until the ingestion exists, Q-NUGET-32) |
+| [format.go](../../internal/formats/nuget/format.go) | `Format`, `Descriptor` (the catalog facts: class `local` for now, Q-NUGET-28; the upstream, the 300 s and 1800 s periods, `ChecksumRequireUnsupported`, `NotifyAreas`, `DataPort`), `Inspect` (reads a package for the roads around the push route, Q-NUGET-38) |
 | [routes.go](../../internal/formats/nuget/routes.go) | The route table of R-NUGET-001, written once; the route names (`nuget.flatcontainer.nupkg`, Q-NUGET-30); `op`, which records `X-NuGet-Session-Id` |
 | [match.go](../../internal/formats/nuget/match.go) | The matchers of the protocol paths, `Match` (the 404 `nuget_v2_unsupported`, the normalization of the ID, the version and the file name), the package-name rule `names` |
 | [paths.go](../../internal/formats/nuget/paths.go) | The canonical paths (`NupkgPath`, `NuspecPath`, `PackageDocumentPath`), `Classify`, `CanonicalPath` (route to canonical path), the routing name of a symbol key |
@@ -68,8 +68,9 @@ classes that serve them.
 
 ### Data port and tables
 
-The port is `nuget.Store`; the implementation is [internal/formatdata/nuget](../../internal/formatdata/nuget/store.go), whose methods answer `nuget_not_implemented` until WP3.1d
-writes them (the statements are in [nuget_local.sql](../../internal/meta/postgres/queries/nuget_local.sql)). The package also registers the four tables of migration 00017 with the
+The port is `nuget.Store`; the implementation is [internal/formatdata/nuget](../../internal/formatdata/nuget/store.go) (the statements are in
+[nuget_local.sql](../../internal/meta/postgres/queries/nuget_local.sql)); its `Search` answers `nuget_not_implemented` until the search package replaces
+[search.go](../../internal/formatdata/nuget/search.go). The package also registers the four tables of migration 00017 with the
 backup ([tables.go](../../internal/formatdata/nuget/tables.go)); [cmd/trove/registry.go](../../cmd/trove/registry.go) links it for `trove migrate`. The reads the document and
 search packages need are typed in [rows/read.go](../../internal/formats/nuget/rows/read.go).
 
@@ -81,7 +82,7 @@ arrive with R-NUGET-022 and R-NUGET-023 (Q-NUGET-31). The system file has `nuget
 
 ### Tests
 
-`go test ./internal/formats/nuget/` runs the conformance kit (checks 1, 2, 3, 7 and 10 run; the others are skipped with their reason, and the kit refuses a skip once the format has what a check
+`go test ./internal/formats/nuget/` runs the conformance kit (checks 1, 2, 3, 6, 7, 9 and 10 run; the others are skipped with their reason, and the kit refuses a skip once the format has what a check
 is about), the route and matching tables, the classification, the error shape and the service index. [test/integration/nuget](../../test/integration/nuget) creates repositories through the management
 API, reads the service index over HTTP with every credential form, and asserts the 404, 405, 409 and 501 answers.
 
@@ -152,3 +153,42 @@ already in `proxy.outbound.tls.ca_files` of the dev profile, and a remote reposi
 | A snippet per shell, `dotnet add package <id> --version <v>` | `SetupTemplate.VersionSpec`, the `powershell` and `cmd` languages (Q-API-187 to Q-API-189) |
 | `X-NuGet-ApiKey` accepted as a credential | `APIKey: true` on the push, delete, relist and symbol-push routes; the authentication stage reads the header only there, through the dispatcher's match, and never takes the session cookie there (Q-ARCH-266, Q-AUTH-186, Q-AUTH-187; [identity.md](identity.md#request-path)) |
 | `checksumPolicy: require` refused | `catalog.Facts.ChecksumRequireUnsupported` (Q-ARCH-269) |
+
+## The write side
+
+Push, unlist, relist and delete, the tombstones and the serve check (WP3.1d, WP3.1e; R-NUGET-005 to R-NUGET-007, R-NUGET-032, Q-NUGET-36 to Q-NUGET-40).
+The order of the checks and what each refusal answers is on [the security page](../security/nuget-publish.md).
+
+| File | Responsibility |
+|---|---|
+| [publish.go](../../internal/formats/nuget/publish.go) | `readIncoming`: steps 1 to 4 of R-NUGET-005 over a spooled package (`nupkg.Inspect` with the `nuget.archive` limits, the local ID rule, the version, the dependencies, the refusal of a symbol package); `incoming` is the payload to the commit; the metadata JSON (typed by [rows/metadata.go](../../internal/formats/nuget/rows/metadata.go)), the lowercased package types, the ID tokens of the search document |
+| [handlers_publish.go](../../internal/formats/nuget/handlers_publish.go) | `handlePush`: the multipart reader (first part is the package, 64 KiB of preamble at most, a bare body is the package), the spool with its own length, the permission on the declared ID, the number (`numberTaken`: replay 201, 409), the shadowing check, the commit with the generated `.nuspec` as a companion, `commitError` |
+| [hooks.go](../../internal/formats/nuget/hooks.go) | `OnCommit`: the package row lock first, then the versions and the tombstone, the claim, the version row, the revision, the NuGet row and the published event; the companion's hook links the `.nuspec`; a commit that is not a push is refused (501) |
+| [hooks_remove.go](../../internal/formats/nuget/hooks_remove.go) | `OnItemsRemoved`: the removal of a `.nupkg` is the removal of the version (tombstone, version row, revision, `package.deleted`); a generated file alone is refused with 409. `OnItemsRestored`: the tombstone goes with a restored package (P1) |
+| [handlers_delete.go](../../internal/formats/nuget/handlers_delete.go) | `handleDelete` (unlist, or the removal through the package writer in `delete` mode), `handleRelist`; repeatable; 404 for a number never held, 204 for a tombstoned one |
+| [servecheck.go](../../internal/formats/nuget/servecheck.go) | `ServeCheck`: a stored version is served, listed or not; a tombstoned one and a file without a NuGet row are 404 |
+| [metrics.go](../../internal/formats/nuget/metrics.go) | `trove_nuget_push_replayed_total{repo}` |
+| [rows/write.go](../../internal/formats/nuget/rows/write.go) | the values of a removal, a listing change, a lookup and the serve state |
+| [internal/formatdata/nuget](../../internal/formatdata/nuget) | `store.go` (every write and the audit events in the change's transaction, the journal entries), `read.go` (`Versions`, `Registration`), `search.go` (the search read, replaced by the search package) |
+| [nugettest](../../internal/formats/nuget/nugettest/store.go) | the twin with real state: the rows of versions, tombstones and listing, the blob digests a removal reads, a rollback that leaves no trace, the logs `Published`, `Tombstones`, `Listings` and `Journal`; `Revisions` binds the revision and the display name to the host of a test |
+
+How a push goes, in the order of the code:
+
+1. `packagePart` hands the package to the spool; `readIncoming` reads it. A refusal is a 400 with the code of the rule.
+2. `Authorize` and `CheckOwnership` decide on the declared ID; `numberTaken` reads `VersionFacts` and `Tombstone` outside a transaction. The identical bytes of a stored version are
+   answered 201 here and nothing is written; other bytes and a tombstone are 409.
+3. `shadowCheck` asks the resolver for the first version of an ID.
+4. `Ingest().Commit` stores the package (lead) and the generated `.nuspec` (companion, `Generated`) in one transaction; `OnCommit` of the lead decides the number again under the package
+   row lock and writes the rows and the events.
+
+A hook never takes a second connection: `Store.Tombstone` takes the hook's transaction (Q-NUGET-40). The delete route removes the files through the package writer and the hook of the item store
+does the rest, for the protocol, raw and management deletes alike; `formats.RemovedItem.SHA256` carries the digest the hook needs because the item row is gone when it runs (Q-NUGET-39).
+
+The authentication stage reads `Authorization` on a push; `X-NuGet-ApiKey` is read once the API-key stage is in the build (R-NUGET-012). The integration tests send a Bearer token.
+
+Not built here: the upload of the management API, copy and move (they reach `OnCommit` without a push payload and answer 501), the symbol push, the restore replay of the journal entries
+(R-NUGET-033; the entries are written and flagged, nothing reads them yet), the trash can (P1), and the remote and virtual classes.
+
+Tests: `go test ./internal/formats/nuget/ ./internal/formats/nuget/nugettest/ ./internal/formatdata/nuget/` (push, unlist, delete, hooks and the kit's checks 6 and 9 with the twin),
+and [test/integration/nuget](../../test/integration/nuget) `push_test.go` against PostgreSQL and the object store (the rows, the events, the outbox, the replica counter, two replicas,
+concurrent pushes, a push racing a delete).

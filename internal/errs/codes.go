@@ -305,6 +305,15 @@ const (
 	CodeUpstreamPackageMismatch = "upstream_package_mismatch"
 )
 
+// Codes of the immutability of a NuGet version number (R-NUGET-006): the version exists
+// with other bytes, was removed and is never accepted again, or is reserved for the
+// journaled bytes of a restore (Q-NUGET-10).
+const (
+	CodeNuGetVersionExists   = "nuget_version_exists"
+	CodeNuGetVersionDeleted  = "nuget_version_deleted"
+	CodeNuGetVersionReserved = "nuget_version_reserved"
+)
+
 // <<< M3 nuget
 
 // CodeInfo documents one code for the problem catalog.
@@ -505,6 +514,9 @@ var registry = []CodeInfo{
 	{CodeNuGetInvalidVersionRange, Invalid, "Invalid NuGet version range", "The version range is not accepted: interval or minimum-version notation of NuGet.Versioning, without a floating version."},
 	{CodeNuGetInvalidID, Invalid, "Invalid NuGet package ID", "The package ID breaks the rules of R-NUGET-003: its length, its characters or its shape."},
 	{CodeNuGetV2Unsupported, NotFound, "NuGet path not served", "The path is no NuGet v3 resource of the repository. NuGet v2 (OData) is not served; the message names the repository's v3 service index, which a client uses as its source URL."},
+	{CodeNuGetVersionExists, Conflict, "NuGet version exists", "The version is stored in the repository with other bytes. A version is immutable: push the changed package under a new version."},
+	{CodeNuGetVersionDeleted, Conflict, "NuGet version deleted", "The version was removed from the repository and its number is never accepted again, whatever the bytes. Push the package under a new version."},
+	{CodeNuGetVersionReserved, Conflict, "NuGet version reserved", "A restore of a backup reserved the number of this version for the package that was published after the backup's snapshot. Only that package, byte for byte, is accepted; any other build needs a new version."},
 	{CodeNuGetNotImplemented, NotImplemented, "NuGet operation not implemented", "The operation is part of the NuGet v3 protocol and is not served by this build of trove yet."},
 	{CodeUpstreamPackageMismatch, UpstreamFailed, "Upstream served another package", "The upstream answered a package request with a .nupkg whose declared ID or version is not the one asked for. Nothing is stored."},
 	// <<< M3 nuget

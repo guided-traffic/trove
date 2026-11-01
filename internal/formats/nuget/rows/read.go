@@ -8,18 +8,6 @@ import "time"
 // this leaf they arrive computed: the version order is the sort key, and the format
 // decides what a hive or a search shows.
 
-// TombstoneInput is the tombstone of a live version a removal writes
-// (R-NUGET-006), in the transaction that removes the version, while the version row
-// and its lead item still exist: the store reads the SHA-512 of the .nupkg from them.
-type TombstoneInput struct {
-	RepoID    int64
-	VersionID int64
-	// At is the time of the removal; By the principal id of the actor, "" for the
-	// system principal.
-	At time.Time
-	By string
-}
-
 // VersionEntry is a stored version as the lists render it. Trashed versions are not
 // among them (R-NUGET-005: a version whose trashed_at is set is invisible to every
 // NuGet document).

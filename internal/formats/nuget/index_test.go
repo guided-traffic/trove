@@ -216,9 +216,6 @@ func TestR_NUGET_001_AnOperationThatIsNotBuiltAnswers501(t *testing.T) {
 		{http.MethodGet, "v3/flatcontainer/acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg"},
 		{http.MethodGet, "v3/registration-semver2/acme.widgets/index.json"},
 		{http.MethodGet, "v3/search"},
-		{http.MethodPut, "v3/package"},
-		{http.MethodDelete, "v3/package/acme.widgets/1.2.3"},
-		{http.MethodPost, "v3/package/acme.widgets/1.2.3"},
 		{http.MethodPut, "v3/symbolpackage"},
 	} {
 		t.Run(c.method+" "+c.path, func(t *testing.T) {

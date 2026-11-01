@@ -194,12 +194,12 @@ func TestM3Migrations(t *testing.T) {
 
 	const by = "aaaaaaaa-0000-0000-0000-000000000001"
 	t.Run("R-NUGET-006 the tombstone outlives the version, its item and its removal", func(t *testing.T) {
-		got, err := qs.NuGetInsertTombstone(ctx, q.NuGetInsertTombstoneParams{RepositoryID: repo, At: "2026-11-01T11:00:00Z", By: by, VersionID: v1})
+		got, err := qs.NuGetInsertTombstone(ctx, q.NuGetInsertTombstoneParams{RepositoryID: repo, LowerID: "acme.widgets", LowerVersion: "1.2.3", At: "2026-11-01T11:00:00Z", By: by, Sha256: lead})
 		if err != nil || string(got) != string(sha512Of(7)) {
 			t.Fatalf("insert: %x, %v", got, err)
 		}
 		// A second removal keeps the first tombstone.
-		if _, err := qs.NuGetInsertTombstone(ctx, q.NuGetInsertTombstoneParams{RepositoryID: repo, At: "2026-11-01T12:00:00Z", By: by, VersionID: v1}); err != nil {
+		if _, err := qs.NuGetInsertTombstone(ctx, q.NuGetInsertTombstoneParams{RepositoryID: repo, LowerID: "acme.widgets", LowerVersion: "1.2.3", At: "2026-11-01T12:00:00Z", By: by, Sha256: lead}); err != nil {
 			t.Fatal(err)
 		}
 		if n := f.count("nuget_tombstone", "repository_id = $1", repo); n != 1 {

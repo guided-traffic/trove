@@ -27,24 +27,45 @@ type Store interface {
 	// for a version that is not stored.
 	VersionFacts(ctx context.Context, repoID int64, lowerID, lowerVersion string) (facts rows.VersionFacts, found bool, err error)
 	// Tombstone reads the tombstone of a version number (R-NUGET-006); found is false
-	// when there is none.
-	Tombstone(ctx context.Context, repoID int64, lowerID, lowerVersion string) (t rows.Tombstone, found bool, err error)
+	// when there is none. With a transaction it reads in it, after the package row lock
+	// the transaction took: it sees every removal that committed before, which is the
+	// order the rule needs (READ COMMITTED). A nil tx reads outside any transaction.
+	// A hook must pass its transaction: a second connection taken while the first waits
+	// for a lock could starve the pool of the connection it needs to finish.
+	Tombstone(ctx context.Context, tx formats.Tx, repoID int64, lowerID, lowerVersion string) (t rows.Tombstone, found bool, err error)
 	// InsertVersion stores the NuGet row of a new version in the transaction of a push, a
 	// copy or a cache fill (R-NUGET-005 step 6), with the search document built from the
 	// parts the format hands over.
 	InsertVersion(ctx context.Context, tx formats.Tx, in rows.VersionInput) error
-	// InsertTombstone writes the tombstone of a live version with the SHA-512 of its
-	// .nupkg, in the transaction that removes the version, and returns that digest. A
-	// number that is tombstoned already keeps its first tombstone (R-NUGET-006).
+	// InsertTombstone writes the tombstone of a version that is being removed, with the
+	// SHA-512 of its .nupkg, in the transaction that removes the version, and returns that
+	// digest. The digest is read from the blob by the SHA-256 the removal carries, because
+	// the item rows are gone when the hook runs. A number that is tombstoned already keeps
+	// its first tombstone. It records package.deleted with its journal entry
+	// (R-NUGET-028, R-NUGET-033).
 	InsertTombstone(ctx context.Context, tx formats.Tx, in rows.TombstoneInput) (sha512 []byte, err error)
+	// PromoteReserved turns the tombstone of kind reserved of a number into one of kind
+	// removed and records package.deleted with its journal entry, so that the journaled
+	// bytes are refused as well (R-NUGET-007). It reports whether a reserved tombstone was
+	// there; the digest is the one it holds.
+	PromoteReserved(ctx context.Context, tx formats.Tx, in rows.ReservedInput) (sha512 []byte, changed bool, err error)
 	// DeleteTombstone removes the tombstone of a version that is stored again with the
 	// SHA-512 the tombstone holds: a restore from the trash can, or the identical push
 	// against a reserved number (R-NUGET-006, Q-NUGET-10). It reports whether one went.
 	DeleteTombstone(ctx context.Context, tx formats.Tx, versionID int64) (bool, error)
-	// SetListed unlists or relists a version (R-NUGET-007); it reports whether the
-	// version has a NuGet row. The caller raises the package revision in the same
-	// transaction.
-	SetListed(ctx context.Context, tx formats.Tx, versionID int64, listed bool) (bool, error)
+	// FindVersion reads, in the transaction and under the package row lock, the live
+	// version of a number: its row and its listing state. found is false when the
+	// repository holds none (R-NUGET-007).
+	FindVersion(ctx context.Context, tx formats.Tx, repoID int64, lowerID, lowerVersion string) (ref rows.VersionRef, found bool, err error)
+	// SetListed unlists or relists a version (R-NUGET-007) and records
+	// package.metadata_changed. It reports whether the listing changed: a version that is
+	// listed already, or unlisted already, changes nothing and records nothing. The caller
+	// raises the package revision in the same transaction.
+	SetListed(ctx context.Context, tx formats.Tx, in rows.ListingInput) (changed bool, err error)
+	// ServeState reads, outside a transaction and in one statement, what a GET of a file
+	// of a version decides on: stored or not, listed or not, tombstoned or not
+	// (R-NUGET-007).
+	ServeState(ctx context.Context, repoID int64, lowerID, lowerVersion string) (rows.ServeState, error)
 	// InsertSymbolPackage records the symbol package of a version (R-NUGET-020); it
 	// reports false when the version holds one already.
 	InsertSymbolPackage(ctx context.Context, tx formats.Tx, in rows.SymbolPackageInput) (bool, error)

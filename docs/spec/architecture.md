@@ -1445,7 +1445,7 @@ Supporting types of the blocks, named here so that the contract has no type the 
 (`TestR_ARCH_008_EveryExportedTypeOfTheContractIsNamedInTheSpec`): `PackageID` is the id of a package row;
 `URLMapping` (path and upstream URL) and `RemoteDocument` (a stored or fetched upstream document with its times and
 `CacheStatus`) are what a remote adapter reads and hands over; `Currency` says how current a document is after
-`EnsureCurrent` (Q-NPM-13); `RemovedItem` is an item a removal took away, with its version; `ItemsEvent` is what the removal hook and the restore hook learn; `ShadowPair` names a
+`EnsureCurrent` (Q-NPM-13); `RemovedItem` is an item a removal took away, with its version and the SHA-256 of its content (Q-NUGET-39); `ItemsEvent` is what the removal hook and the restore hook learn; `ShadowPair` names a
 virtual repository and the remote member that serves a package (R-REPO-048); `RemoteBase` gives a `RemoteAdapter` the
 defaults of `ExpectsType`, `BeforeArtifact` and `UpstreamQuery` to embed; `RemoteContext` carries the repository, the upstream URL, the
 format's settings and, once the engine resolved the discovery document of a `Discoverer`, its parsed form in

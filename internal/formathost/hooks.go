@@ -2,6 +2,7 @@ package formathost
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strings"
 
@@ -110,7 +111,7 @@ func (h *Hooks) OnItemsRemoved(ctx context.Context, tx meta.Tx, e items.RemovedE
 	ev := formats.ItemsEvent{Repo: refOf(e.Repo), Reason: e.Reason, Actor: e.Actor, Packages: w, Data: h.d.Bindings.Get(f.Descriptor().ID)}
 	ev.Items = make([]formats.RemovedItem, len(e.Items))
 	for i, r := range e.Items {
-		ev.Items[i] = formats.RemovedItem{Item: itemRef(r.Item), Version: formats.VersionID(r.Version)}
+		ev.Items[i] = formats.RemovedItem{Item: itemRef(r.Item), Version: formats.VersionID(r.Version), SHA256: slices.Clone(r.Digest[:])}
 	}
 	return f.OnItemsRemoved(ctx, tx, ev)
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
+	"github.com/guided-traffic/trove/internal/formats/formattest"
 )
 
 // TestR_NUGET_001_MatchResolvesEveryRoute: every resource of the endpoint layout reaches its
@@ -294,13 +295,33 @@ func TestR_NUGET_001_CanonicalPathOfARoute(t *testing.T) {
 	}
 }
 
-// TestR_NUGET_001_InspectRefusesEveryUploadUntilTheIngestionExists: a package stored without
-// its NuGet rows would be a file no document lists, so the other roads in (the upload of the
-// management API, copy and move) are closed with the same 501 as the push.
-func TestR_NUGET_001_InspectRefusesEveryUploadUntilTheIngestionExists(t *testing.T) {
-	_, err := New().Inspect(t.Context(), formats.InspectInput{})
-	var e *errs.Error
-	if !errors.As(err, &e) || e.Kind != errs.NotImplemented || e.Code != errs.CodeNuGetNotImplemented {
-		t.Fatalf("Inspect = %v, want 501 nuget_not_implemented", err)
+// TestR_NUGET_005_InspectReadsTheIdentityOfAPackage: the roads around the push route meet the
+// package through Inspect, which runs steps 1 to 4 of R-NUGET-005 and names the package by
+// the identity it declares (the lower-cased ID and the URL form of the version), refuses what
+// the rules refuse with 422, and refuses a path that names another coordinate.
+func TestR_NUGET_005_InspectReadsTheIdentityOfAPackage(t *testing.T) {
+	f := New()
+	ok := formattest.Spool(buildNupkg(t, "Acme.Widgets", "1.2.3.0"))
+	got, err := f.Inspect(t.Context(), formats.InspectInput{Path: formats.Path{Path: acmePath}, Body: ok})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Package != "acme.widgets" || got.Version != "1.2.3" || got.Properties["nuget.id"] != "acme.widgets" {
+		t.Errorf("Inspect = %+v", got)
+	}
+	for name, c := range map[string]struct {
+		path string
+		body formats.Spooled
+	}{
+		"another version in the path": {"acme.widgets/9.9.9/acme.widgets.9.9.9.nupkg", ok},
+		"another ID in the path":      {"other.id/1.2.3/other.id.1.2.3.nupkg", ok},
+		"a symbol package":            {acmePath, formattest.Spool(buildNupkg(t, "Acme.Widgets", "1.2.3", withType("SymbolsPackage")))},
+		"not an archive":              {acmePath, formattest.Spool([]byte("no archive"))},
+	} {
+		_, err := f.Inspect(t.Context(), formats.InspectInput{Path: formats.Path{Path: c.path}, Body: c.body})
+		var e *errs.Error
+		if !errors.As(err, &e) || e.Kind != errs.Unprocessable || e.Code != errs.CodeContentRefused {
+			t.Errorf("%s: Inspect = %v, want 422 content_refused", name, err)
+		}
 	}
 }

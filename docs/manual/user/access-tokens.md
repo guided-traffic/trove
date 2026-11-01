@@ -51,6 +51,8 @@ Give each tool its own token with only what it needs. The actions a client needs
 | Upload a new file | `deploy` |
 | Replace a file with other bytes | `deploy`, `overwrite` |
 | Unpublish a package version | `read`, `delete` |
+| Push a NuGet package, or list a NuGet version again | `read`, `deploy` |
+| Unlist or delete a NuGet version | `read`, `delete` |
 | Delete a file | `delete` |
 
 Through a virtual repository a client reads the members as well, so list the members next to the virtual repository, or use a pattern that covers them. [Permissions](../admin/permissions.md) explains the actions.

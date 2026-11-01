@@ -93,11 +93,12 @@ Built (M2, npm registry):
 - 🖼️ **Package screens and client setup.** The package list and detail with the README, an install panel, client setup snippets, and repository settings rendered from the format's schema. See [packages](docs/developer/packages.md) and [web UI](docs/developer/web-ui.md).
 - 📖 **In-app guides.** A guide for every npm variant (local, remote and virtual) with npm, pnpm, Yarn Berry and Yarn Classic, in the UI's guides area. See [npm](docs/developer/npm.md) and [web UI](docs/developer/web-ui.md).
 
-Built (M3, NuGet skeleton):
+Built (M3, NuGet skeleton and write side):
 
 - 🧱 **NuGet format registered.** The format `nuget` for local repositories, with the settings `deleteMode` and `forwardSearch`, the `nuget.archive`, `nuget.registration` and `nuget.search` configuration keys, the NuGet v3 route table, the service index at its three spellings, the native one-line error shape and the 404 that points a NuGet v2 client at the v3 service index. The other operations answer `501` until they are built. See [NuGet](docs/developer/nuget.md).
+- 📦 **NuGet push, unlist, relist and delete.** `dotnet nuget push` and `nuget push` store a package byte for byte with its generated `.nuspec`; a version never changes, a removed version number is blocked for good by a tombstone, and the identical package pushed again is accepted without a change, so a client's retry after a lost answer succeeds. `dotnet nuget delete` unlists by default, or removes with `deleteMode: delete`. Every change is audited in its transaction and journaled for a restore. See [NuGet](docs/developer/nuget.md#the-write-side) and [NuGet publishing](docs/security/nuget-publish.md).
 
-Not built yet (see the [roadmap](docs/coverage/roadmap.md)): the operations of the NuGet protocol (package content, registrations, search, push, unlist, symbols) and its remote and virtual repositories; GitLab CI OIDC federation;
+Not built yet (see the [roadmap](docs/coverage/roadmap.md)): the operations of the NuGet protocol (package content, registrations, search, symbols) and its remote and virtual repositories; GitLab CI OIDC federation;
 vulnerability scanning; backup and restore and the HA hardening of phase 7; remote and virtual repositories for the generic format; the UI
 screens of search, trash, builds, webhooks, CI identity and projects.
 
@@ -131,7 +132,9 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 | `/api/v1/…` (the management API) | see the [API families](#management-api) | yes (M1; [api/openapi.yaml](api/openapi.yaml)) |
 | `/api/<format>/<repoKey>/…` | per route (npm: GET, PUT, DELETE, POST) | yes, npm (M2; [dispatcher](internal/api/dispatch/dispatcher.go)) |
 | `/api/nuget/<repoKey>/v3`, `…/v3/`, `…/v3/index.json` | GET, HEAD | yes, the service index of a local repository (M3 skeleton; the same body at the three spellings) |
-| `/api/nuget/<repoKey>/v3/{flatcontainer,registration,registration-gz,registration-semver2,search,autocomplete,package,symbolpackage,symbols}/…` | per route (GET; PUT, DELETE, POST on the publish resources) | routed, answers `501 nuget_not_implemented` until its work package lands ([NuGet](docs/developer/nuget.md#the-routes)) |
+| `/api/nuget/<repoKey>/v3/{flatcontainer,registration,registration-gz,registration-semver2,search,autocomplete,symbolpackage,symbols}/…` | per route (GET; PUT, DELETE, POST on the publish resources) | routed, answers `501 nuget_not_implemented` until its work package lands ([NuGet](docs/developer/nuget.md#the-routes)) |
+| `/api/nuget/<repoKey>/v3/package` | PUT | yes, the push of a package to a local repository (a multipart form whose first part is the package, or the bare package); `201`, `400`, `403`, `409` ([NuGet](docs/developer/nuget.md#the-write-side)) |
+| `/api/nuget/<repoKey>/v3/package/{id}/{version}` | DELETE, POST | yes, DELETE unlists (or removes, with `deleteMode: delete`) and answers `204`, POST lists again and answers `200` |
 | any other path below `/api/nuget/<repoKey>/` (every NuGet v2 shape) | any | `404 nuget_v2_unsupported`, the message names `…/v3/index.json` of the repository |
 | `/ui/{locale}/…` | GET, HEAD | yes, locales `en` and `de` ([webui](internal/webui/webui.go)) |
 
@@ -264,6 +267,7 @@ Built families, all with the `trove_` prefix:
 | `trove_api_rate_limited_total`, `trove_ratelimit_decisions_total` | the labels of `internal/api/v1/ratelimit.go` and `internal/cluster/limiter.go` | yes |
 | `trove_jobs_claimed_total`, `trove_jobs_completed_total`, `trove_jobs_running`, `trove_jobs_duration_seconds`, `trove_jobs_claim_errors_total` | the labels of `internal/jobs/metrics.go` | yes |
 | `trove_cache_requests_total`, `trove_cache_entries`, `trove_cache_bytes` | the labels of `internal/cache/metrics.go` | yes |
+| `trove_nuget_push_replayed_total` | `repo`: pushes of the identical package of a stored version, answered `201` without a change | yes |
 | `trove_lease_held`, `trove_lease_lost_total` | the labels of `internal/cluster/lease_manager.go` | yes |
 
 The label sets of the M1 families are not restated per family in this pass; read the file named in each row.
@@ -301,6 +305,7 @@ The names of the event registry ([internal/audit](internal/audit/)). Each event 
 | Settings | `settings.auth.changed` |
 | Repositories and endpoints | `repository.created`, `repository.updated`, `repository.deleted`, `endpoint.exposure.created`, `endpoint.exposure.updated`, `endpoint.exposure.deleted` |
 | Files | `artifact.deployed`, `artifact.deleted`, `artifact.downloaded` |
+| Packages (NuGet) | `package.published`, `package.deleted`, `package.metadata_changed`; `package.published` and `package.deleted` carry the journal entry `{"repository", "id", "version", "sha512"}` of a local NuGet repository |
 | System and audit | `system.task_triggered`, `system.job.cancelled`, `audit.exported` |
 
 </details>
@@ -310,7 +315,7 @@ The names of the event registry ([internal/audit](internal/audit/)). Each event 
 The code registry is [internal/errs/codes.go](internal/errs/codes.go). Every problem answer carries one of these values as `code`. The HTTP status of each code is in the registry.
 
 <details>
-<summary>Error codes (127 codes in the registry, grouped as the file groups them)</summary>
+<summary>Error codes (130 codes in the registry, grouped as the file groups them)</summary>
 
 - General: `internal`, `malformed_request`, `validation_failed`, `unauthenticated`, `forbidden`, `not_found`, `method_not_allowed`, `conflict`, `precondition_failed`, `payload_too_large`, `unsupported_media_type`, `rate_limited`, `insufficient_storage`, `unavailable`, `upstream_failed`, `upstream_timeout`, `repository_not_found`, `database_unavailable`, `egress_denied`, `key_ring_incompatible`, `object_store_unavailable`, `shutting_down`, `server_busy`, `database_timeout`, `misdirected_request`, `invalid_cursor`, `invalid_header`, `already_exists`, `idempotency_in_progress`, `idempotency_key_reused`, `precondition_required`, `reserved_name`, `managed_by_config`
 - Tokens: `invalid_token`, `credentials_required`, `invalid_credentials`, `principal_disabled`, `invalid_scope`, `invalid_ttl`, `ttl_exceeds_maximum`, `default_above_maximum`, `exceeds_ceiling`, `non_expiring_not_allowed`, `non_expiring_restricted`, `pat_not_allowed`, `ci_token_restricted`, `token_already_issued`, `token_limit_reached`, `derivation_exceeds_parent`, `description_required`, `not_a_token`
@@ -321,7 +326,7 @@ The code registry is [internal/errs/codes.go](internal/errs/codes.go). Every pro
 - Endpoints and exposure: `endpoint_read_only`, `invalid_version_range`, `dimension_not_supported`, `format_not_exposable`, `endpoint_not_configured`, `exposure_rule_limit_reached`
 - Package ownership and populating (M2): `package_owned_by_other_owner`, `last_owner`, `populate_not_permitted`
 - npm (M2): `npm_invalid_name`, `npm_invalid_version`, `npm_invalid_range`, `npm_invalid_tag`, `npm_bad_publish`, `npm_manifest_mismatch`, `npm_too_large`, `npm_class_not_writable`, `npm_version_exists`, `npm_version_unpublished`, `npm_stale_rev`, `npm_not_implemented`, `npm_audit_unavailable`, `npm_invalid_upstream_document`
-- NuGet (M3): `nuget_invalid_package`, `nuget_invalid_version`, `nuget_invalid_version_range`, `nuget_invalid_id`, `nuget_v2_unsupported`, `nuget_not_implemented`, `upstream_package_mismatch`
+- NuGet (M3): `nuget_invalid_package`, `nuget_invalid_version`, `nuget_invalid_version_range`, `nuget_invalid_id`, `nuget_version_exists`, `nuget_version_deleted`, `nuget_version_reserved`, `nuget_v2_unsupported`, `nuget_not_implemented`, `upstream_package_mismatch`
 - Remote repositories (M2): `upstream_secret_unavailable`, `source_network_unavailable`, `foreign_host_denied`
 - Package content (M2): `content_refused`
 

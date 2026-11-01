@@ -14,7 +14,7 @@ A repository is local, remote or virtual. An administrator chooses the class whe
 
 ### Local repositories
 
-A local repository keeps what is published to it, and a publish is visible as soon as it has returned. For npm, a published version never changes: publishing the same version again is refused, and an unpublished version number stays blocked for good. For generic files, uploading other bytes to an existing path replaces the file, but only for people who hold the overwrite permission.
+A local repository keeps what is published to it, and a publish is visible as soon as it has returned. For npm, a published version never changes: publishing the same version again is refused, and an unpublished version number stays blocked for good. NuGet is the same: a version never changes, a deleted version number stays blocked for good, and pushing the identical package again is accepted and changes nothing, so a push that a client repeats after a lost answer succeeds. For generic files, uploading other bytes to an existing path replaces the file, but only for people who hold the overwrite permission.
 
 ### Remote repositories
 

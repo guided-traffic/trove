@@ -31,6 +31,51 @@ func (q *Queries) NuGetDeleteTombstone(ctx context.Context, versionID int64) (in
 	return result.RowsAffected(), nil
 }
 
+const nuGetFindVersion = `-- name: NuGetFindVersion :many
+SELECT nv.version_id, nv.listed
+  FROM packages p
+  JOIN package_versions pv ON pv.package_id = p.id
+  JOIN nuget_version nv ON nv.version_id = pv.id
+ WHERE p.repo_id = $1::bigint
+   AND p.name = $2::text
+   AND pv.version = $3::text
+   AND pv.trashed_at IS NULL
+`
+
+type NuGetFindVersionParams struct {
+	RepositoryID int64
+	LowerID      string
+	LowerVersion string
+}
+
+type NuGetFindVersionRow struct {
+	VersionID int64
+	Listed    bool
+}
+
+// The live version of a number with its listing state, read under the package row lock
+// (R-NUGET-007). It starts at the package so that the unique index of (repo_id, name)
+// finds it, whatever the listing of the version is.
+func (q *Queries) NuGetFindVersion(ctx context.Context, arg NuGetFindVersionParams) ([]NuGetFindVersionRow, error) {
+	rows, err := q.db.Query(ctx, nuGetFindVersion, arg.RepositoryID, arg.LowerID, arg.LowerVersion)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NuGetFindVersionRow{}
+	for rows.Next() {
+		var i NuGetFindVersionRow
+		if err := rows.Scan(&i.VersionID, &i.Listed); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const nuGetInsertSymbolPackage = `-- name: NuGetInsertSymbolPackage :execrows
 INSERT INTO nuget_symbol_package (version_id, item_id)
 VALUES ($1::bigint, $2::bigint)
@@ -54,33 +99,37 @@ func (q *Queries) NuGetInsertSymbolPackage(ctx context.Context, arg NuGetInsertS
 
 const nuGetInsertTombstone = `-- name: NuGetInsertTombstone :one
 INSERT INTO nuget_tombstone (repository_id, lower_id, lower_version, sha512, deleted_at, deleted_by, kind)
-SELECT $1::bigint, p.name, pv.version, b.sha512,
-       $2::text::timestamptz, $3::text::uuid, 'removed'
-  FROM package_versions pv
-  JOIN packages p ON p.id = pv.package_id
-  JOIN items i ON i.id = pv.lead_item_id
-  JOIN blobs b ON b.sha256 = i.blob_sha256
- WHERE pv.id = $4::bigint
+SELECT $1::bigint, $2::text, $3::text, b.sha512,
+       $4::text::timestamptz, $5::text::uuid, 'removed'
+  FROM blobs b
+ WHERE b.sha256 = $6::bytea
 ON CONFLICT (repository_id, lower_id, lower_version) DO UPDATE SET kind = nuget_tombstone.kind
 RETURNING sha512
 `
 
 type NuGetInsertTombstoneParams struct {
 	RepositoryID int64
+	LowerID      string
+	LowerVersion string
 	At           string
 	By           string
-	VersionID    int64
+	Sha256       []byte
 }
 
-// The tombstone of a live version, with the SHA-512 of its .nupkg (R-NUGET-006). It
-// outlives the version row, the item and its permanent removal. A number that is
-// tombstoned already keeps its first tombstone, and its digest comes back all the same.
+// The tombstone of a version that is being removed, with the SHA-512 of its .nupkg
+// (R-NUGET-006). The hook that learns of the removal runs after the item rows are gone,
+// so the digest is read from the blob row by the SHA-256 the removal carries; the blob row
+// outlives the transaction (its collection is queued). It outlives the version row, the
+// item and its permanent removal. A number that is tombstoned already keeps its first
+// tombstone, and its digest comes back all the same.
 func (q *Queries) NuGetInsertTombstone(ctx context.Context, arg NuGetInsertTombstoneParams) ([]byte, error) {
 	row := q.db.QueryRow(ctx, nuGetInsertTombstone,
 		arg.RepositoryID,
+		arg.LowerID,
+		arg.LowerVersion,
 		arg.At,
 		arg.By,
-		arg.VersionID,
+		arg.Sha256,
 	)
 	var sha512 []byte
 	err := row.Scan(&sha512)
@@ -163,10 +212,166 @@ func (q *Queries) NuGetInsertVersion(ctx context.Context, arg NuGetInsertVersion
 	return err
 }
 
+const nuGetPromoteReserved = `-- name: NuGetPromoteReserved :many
+UPDATE nuget_tombstone
+   SET kind = 'removed', deleted_at = clock_timestamp(), deleted_by = $1::text::uuid
+ WHERE repository_id = $2::bigint
+   AND lower_id = $3::text
+   AND lower_version = $4::text
+   AND kind = 'reserved'
+RETURNING sha512
+`
+
+type NuGetPromoteReservedParams struct {
+	By           string
+	RepositoryID int64
+	LowerID      string
+	LowerVersion string
+}
+
+// A delete in delete mode of a number that a restore's replay reserved: the tombstone
+// becomes a removal, so that the journaled bytes are refused as well (R-NUGET-007).
+func (q *Queries) NuGetPromoteReserved(ctx context.Context, arg NuGetPromoteReservedParams) ([][]byte, error) {
+	rows, err := q.db.Query(ctx, nuGetPromoteReserved,
+		arg.By,
+		arg.RepositoryID,
+		arg.LowerID,
+		arg.LowerVersion,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := [][]byte{}
+	for rows.Next() {
+		var sha512 []byte
+		if err := rows.Scan(&sha512); err != nil {
+			return nil, err
+		}
+		items = append(items, sha512)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const nuGetRegistration = `-- name: NuGetRegistration :many
+SELECT p.rev_seq, p.display_name,
+       nv.version_id, pv.version, pv.display_version, nv.declared_id, nv.listed,
+       nv.is_prerelease, nv.is_semver2, nv.published_at, nv.package_types, nv.metadata::text AS metadata
+  FROM packages p
+  JOIN package_versions pv ON pv.package_id = p.id
+  JOIN nuget_version nv ON nv.version_id = pv.id
+ WHERE p.repo_id = $1::bigint
+   AND p.name = $2::text
+   AND pv.trashed_at IS NULL
+ ORDER BY nv.sort_key
+`
+
+type NuGetRegistrationParams struct {
+	RepositoryID int64
+	LowerID      string
+}
+
+type NuGetRegistrationRow struct {
+	RevSeq         int64
+	DisplayName    string
+	VersionID      int64
+	Version        string
+	DisplayVersion string
+	DeclaredID     string
+	Listed         bool
+	IsPrerelease   bool
+	IsSemver2      bool
+	PublishedAt    pgtype.Timestamptz
+	PackageTypes   []string
+	Metadata       string
+}
+
+// What the registration documents of an ID render from, in one statement: the package's
+// revision and display name on every row, and each visible version with its metadata,
+// ascending by sort key (R-NUGET-009). The revision is read in the same snapshot as the
+// versions, so an ETag never names a revision the rows do not belong to.
+func (q *Queries) NuGetRegistration(ctx context.Context, arg NuGetRegistrationParams) ([]NuGetRegistrationRow, error) {
+	rows, err := q.db.Query(ctx, nuGetRegistration, arg.RepositoryID, arg.LowerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NuGetRegistrationRow{}
+	for rows.Next() {
+		var i NuGetRegistrationRow
+		if err := rows.Scan(
+			&i.RevSeq,
+			&i.DisplayName,
+			&i.VersionID,
+			&i.Version,
+			&i.DisplayVersion,
+			&i.DeclaredID,
+			&i.Listed,
+			&i.IsPrerelease,
+			&i.IsSemver2,
+			&i.PublishedAt,
+			&i.PackageTypes,
+			&i.Metadata,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const nuGetServeState = `-- name: NuGetServeState :one
+WITH v AS (
+    SELECT nv.listed
+      FROM packages p
+      JOIN package_versions pv ON pv.package_id = p.id
+      JOIN nuget_version nv ON nv.version_id = pv.id
+     WHERE p.repo_id = $1::bigint
+       AND p.name = $2::text
+       AND pv.version = $3::text
+       AND pv.trashed_at IS NULL
+)
+SELECT EXISTS (SELECT 1 FROM v) AS stored,
+       COALESCE((SELECT v.listed FROM v LIMIT 1), false)::boolean AS listed,
+       EXISTS (SELECT 1 FROM nuget_tombstone t
+                WHERE t.repository_id = $1::bigint
+                  AND t.lower_id = $2::text
+                  AND t.lower_version = $3::text) AS tombstoned
+`
+
+type NuGetServeStateParams struct {
+	RepositoryID int64
+	LowerID      string
+	LowerVersion string
+}
+
+type NuGetServeStateRow struct {
+	Stored     bool
+	Listed     bool
+	Tombstoned bool
+}
+
+// What a GET of a file of a version decides on, in one statement: whether the repository
+// holds a live version row, whether it is listed, and whether the number is tombstoned
+// (R-NUGET-007).
+func (q *Queries) NuGetServeState(ctx context.Context, arg NuGetServeStateParams) (NuGetServeStateRow, error) {
+	row := q.db.QueryRow(ctx, nuGetServeState, arg.RepositoryID, arg.LowerID, arg.LowerVersion)
+	var i NuGetServeStateRow
+	err := row.Scan(&i.Stored, &i.Listed, &i.Tombstoned)
+	return i, err
+}
+
 const nuGetSetListed = `-- name: NuGetSetListed :execrows
 UPDATE nuget_version
    SET listed = $1::boolean
  WHERE version_id = $2::bigint
+   AND listed IS DISTINCT FROM $1::boolean
 `
 
 type NuGetSetListedParams struct {
@@ -174,8 +379,9 @@ type NuGetSetListedParams struct {
 	VersionID int64
 }
 
-// Unlists or relists a version (R-NUGET-007). The caller bumps the package revision in
-// the same transaction.
+// Unlists or relists a version (R-NUGET-007). A version that is in the state asked for
+// already is not touched, so the count says whether anything changed. The caller bumps
+// the package revision in the same transaction.
 func (q *Queries) NuGetSetListed(ctx context.Context, arg NuGetSetListedParams) (int64, error) {
 	result, err := q.db.Exec(ctx, nuGetSetListed, arg.Listed, arg.VersionID)
 	if err != nil {
@@ -274,6 +480,65 @@ func (q *Queries) NuGetVersionFacts(ctx context.Context, arg NuGetVersionFactsPa
 			&i.PublishedBy,
 			&i.PublishedAt,
 			&i.Now,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const nuGetVersions = `-- name: NuGetVersions :many
+SELECT nv.version_id, pv.version, pv.display_version, nv.declared_id, nv.listed,
+       nv.is_prerelease, nv.is_semver2, nv.published_at
+  FROM packages p
+  JOIN package_versions pv ON pv.package_id = p.id
+  JOIN nuget_version nv ON nv.version_id = pv.id
+ WHERE p.repo_id = $1::bigint
+   AND p.name = $2::text
+   AND pv.trashed_at IS NULL
+ ORDER BY nv.sort_key
+`
+
+type NuGetVersionsParams struct {
+	RepositoryID int64
+	LowerID      string
+}
+
+type NuGetVersionsRow struct {
+	VersionID      int64
+	Version        string
+	DisplayVersion string
+	DeclaredID     string
+	Listed         bool
+	IsPrerelease   bool
+	IsSemver2      bool
+	PublishedAt    pgtype.Timestamptz
+}
+
+// Every stored version of an ID, listed or not, ascending by sort key: the version list
+// of the flat container (R-NUGET-008). A trashed version is invisible (R-NUGET-005).
+func (q *Queries) NuGetVersions(ctx context.Context, arg NuGetVersionsParams) ([]NuGetVersionsRow, error) {
+	rows, err := q.db.Query(ctx, nuGetVersions, arg.RepositoryID, arg.LowerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NuGetVersionsRow{}
+	for rows.Next() {
+		var i NuGetVersionsRow
+		if err := rows.Scan(
+			&i.VersionID,
+			&i.Version,
+			&i.DisplayVersion,
+			&i.DeclaredID,
+			&i.Listed,
+			&i.IsPrerelease,
+			&i.IsSemver2,
+			&i.PublishedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -1,10 +1,12 @@
 // Package nuget is the NuGet v3 format (R-NUGET-001 to R-NUGET-034): the routes below
 // /api/nuget/<repoKey>/v3/, the classification of paths, the settings of a repository, the
-// native error shape, and the service index. The operations behind the other routes -
-// package content, registrations, search, push, unlist, relist and symbols - are written by
-// the work packages that own them; until then their handlers (handlers_stub.go) answer 501
-// nuget_not_implemented, so the format registers, the conformance kit runs and no route is
-// missing from the table (WP3.1c).
+// native error shape, the service index, and the write side: the push, the unlist, the relist
+// and the delete of a version, the tombstones that keep a removed number from returning, and
+// the serve check (handlers_publish.go, handlers_delete.go, hooks.go, hooks_remove.go,
+// servecheck.go). The operations behind the other routes - package content, registrations,
+// search and symbols - are written by the work packages that own them; until then their
+// handlers (handlers_stub.go) answer 501 nuget_not_implemented, so the format registers, the
+// conformance kit runs and no route is missing from the table (WP3.1c).
 //
 // Like every format it imports the format contract and almost nothing else (R-ARCH-008): its
 // tables are reached through the [Store] port, its generic package rows through the
@@ -20,8 +22,10 @@ import (
 	"context"
 	"reflect"
 
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
+	"github.com/guided-traffic/trove/internal/formats/nuget/nupkg"
 	"github.com/guided-traffic/trove/internal/formats/untrusted"
 )
 
@@ -117,10 +121,34 @@ func (f *Format) Routes() []formats.Route { return f.routes }
 // can be served on an endpoint with exposure rules.
 func (f *Format) Exposure() formats.ExposureAdapter { return f.exposure }
 
-// Inspect refuses every upload until the ingestion pipeline of R-NUGET-005 exists: a package
-// stored without its NuGet rows would be a file no document lists (fail closed). The push
-// route answers 501 on its own; this closes the other roads in (the upload of the management
-// API, copy and move).
-func (f *Format) Inspect(context.Context, formats.InspectInput) (*formats.Inspection, error) {
-	return nil, notImplemented("package ingestion")
+// Inspect reads the identity of a package that enters the repository around the push route
+// (FMT-008, R-NUGET-005 steps 1 to 4): the archive within the limits, the one .nuspec, the
+// ID by the rule of a local repository, the version, the dependencies, and the refusal of a
+// symbol package. The limits of the call tighten the bounds that are read into memory; the
+// entry count and the declared sizes are the defaults of nuget.archive, because Inspect
+// meets the package without its replica (the push route applies the settings).
+//
+// What the archive rules refuse as ambiguous or forbidden is content trove does not read,
+// 422 content_refused, as for npm; the push answers 400 for the same rules (R-NUGET-005).
+// A path that names another ID or version than the package declares is refused too.
+func (f *Format) Inspect(ctx context.Context, in formats.InspectInput) (*formats.Inspection, error) {
+	got, err := readIncoming(ctx, in.Body, nupkg.Limits{
+		MaxRatio: in.Limits.Ratio, MaxNuspecBytes: in.Limits.ManifestEntryBytes, Deadline: in.Limits.Deadline,
+	})
+	if err != nil {
+		if e, ok := errs.As(err); ok && e.Kind == errs.Invalid {
+			return nil, errs.E(errs.Unprocessable, errs.CodeContentRefused, e.Detail, errs.WithCause(err))
+		}
+		return nil, err
+	}
+	if info := f.Classify(in.Path); info.Kind == formats.Content && info.Package != "" &&
+		(info.Package != got.lowerID || (info.Version != "" && info.Version != got.lowerVersion)) {
+		return nil, errs.E(errs.Unprocessable, errs.CodeContentRefused,
+			"The path names "+info.Package+" "+info.Version+", the package declares "+got.lowerID+" "+got.lowerVersion+".")
+	}
+	return &formats.Inspection{
+		Package: got.lowerID, Version: got.lowerVersion,
+		Properties: map[string]string{"nuget.id": got.lowerID, "nuget.version": got.lowerVersion},
+		Payload:    got,
+	}, nil
 }
