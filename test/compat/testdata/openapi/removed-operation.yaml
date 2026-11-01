@@ -1,0 +1,24 @@
+# Fixture of R-ARCH-025: base.yaml without POST /api/v1/things. The breaking-change check must fail on it.
+openapi: 3.1.0
+info:
+  title: Compatibility fixture
+  version: 1.0.0
+paths:
+  /api/v1/things:
+    get:
+      operationId: listThings
+      responses:
+        "200":
+          description: The things.
+  /api/v1/things/{id}:
+    get:
+      operationId: getThing
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The thing.

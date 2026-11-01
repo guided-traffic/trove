@@ -1154,6 +1154,37 @@ jobs:
       - name: actionlint
         run: actionlint -shellcheck=
 
+  # R-ARCH-025 and R-ARCH-026: the OpenAPI document has no breaking change and the migration files only add to
+  # the latest v0.* release. The baseline is a tag, so the clone needs the whole history and the tags. The job
+  # runs `make compat-check` (docs/developer/releasing.md#compatibility).
+  compat:
+    name: compatibility with the latest release (R-ARCH-025, R-ARCH-026)
+    runs-on: self-hosted
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Load the tool pins
+        uses: ./.github/actions/load-pins
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: make compat-check
+        run: make compat-check
+
   # The requirement rules and the committed pages: the generator's -check, and every relative link and anchor.
   coverage:
     name: coverage generator (links and rules)
@@ -1306,7 +1337,7 @@ jobs:
   semantic-release:
     name: Semantic Release
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [versions, lint, gosec, govulncheck, cyclomatic-complexity, generate, build-no-node, unit, web, malware-scan, chart, image, container-scan, integration, s3-conformance, e2e, e2e-npm, workflows, coverage, coverage-evidence, coverage-report, release-tooling]
+    needs: [versions, lint, gosec, govulncheck, cyclomatic-complexity, generate, build-no-node, unit, web, malware-scan, chart, image, container-scan, integration, s3-conformance, e2e, e2e-npm, workflows, compat, coverage, coverage-evidence, coverage-report, release-tooling]
     runs-on: self-hosted
     timeout-minutes: 30
     steps:

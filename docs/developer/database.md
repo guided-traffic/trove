@@ -99,7 +99,9 @@ with header comments:
 
 ### How to add a migration
 
-1. Create the next number as an expand file. Unqualified names: the runner sets `search_path`.
+1. Create the next number as an expand file. Unqualified names: the runner sets `search_path`. Until a release contains the
+   file, `make compat-check` accepts it only as an addition that continues the numbering after the release's highest number
+   ([Compatibility](releasing.md#compatibility), R-ARCH-026).
 2. New table: register its export class in the owning package (`tables.Register`); a `bigint` revision column
    (`rev_seq`, `revision`, `epoch`, `*_version`) needs `meta.RegisterRevisionColumn`. The integration tests
    `TestTableRegistry` and `TestRevisionColumns` fail otherwise.
@@ -134,8 +136,8 @@ steps, also when none was pending (`MigrateOptions.AuditRetentionDays`, [audit.g
 [audit.md](audit.md)). `trove migrate` passes the configured value; a caller that leaves the option nil (a test with steps of its own) leaves
 the row alone.
 
-Not implemented yet: the `database.backup_role` grants and the grants check (no backup tables), the restore mode of the runner (M5), and
-the CI check against the latest release's files (R-ARCH-026; carried into [phase 4](../projektplan/BETA.md#phase-4--nuget-net-registry-m3)).
+Not implemented yet: the `database.backup_role` grants and the grants check (no backup tables), and the restore mode of the runner (M5).
+The CI check of the migration files against the latest release is in place (R-ARCH-026, [Compatibility](releasing.md#compatibility)).
 
 ### Privileges of the runtime role
 

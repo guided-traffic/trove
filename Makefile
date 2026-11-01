@@ -31,6 +31,7 @@ LDFLAGS     := -s -w \
 LINT_BIN       := .bin/golangci-lint-$(GOLANGCI_LINT_VERSION)-$(GOVERSION)
 GOVULNCHECK_BIN := .bin/govulncheck-$(GOVULNCHECK_VERSION)-$(GOVERSION)
 GOCYCLO_BIN    := .bin/gocyclo-$(GOCYCLO_VERSION)-$(GOVERSION)
+OASDIFF_BIN    := .bin/oasdiff-$(OASDIFF_VERSION)-$(GOVERSION)
 
 IMAGE       ?= guidedtraffic/trove:dev
 IMAGE_ARCH  ?= $(shell go env GOARCH)
@@ -178,6 +179,19 @@ test-release-tooling: ## Release tooling: npm ci, npm audit signatures, and the 
 	npm audit signatures
 	node hack/verify-release-tooling.mjs
 
+# R-ARCH-025 and R-ARCH-026 against the latest v0.* release (the compat job of release.yml). The checker is built
+# at its pin into .bin, and the name carries the pin and the Go toolchain, as the linters' names do. The tests need
+# the release tags in the clone: fetch-depth 0 and fetch-tags.
+$(OASDIFF_BIN):
+	@mkdir -p .bin
+	@tmp="$$(mktemp -d)"; \
+	  GOBIN="$$tmp" go install github.com/oasdiff/oasdiff@$(OASDIFF_VERSION) && \
+	  mv "$$tmp/oasdiff" $@ && rmdir "$$tmp"
+
+.PHONY: compat-check
+compat-check: $(OASDIFF_BIN) ## R-ARCH-025 (OpenAPI breaking changes) and R-ARCH-026 (migrations only added) against the latest v0.* release (CI: compat; needs the tags)
+	TROVE_OASDIFF=$(abspath $(OASDIFF_BIN)) go test -tags compat -count=1 -v ./test/compat/...
+
 # One version per tool (E0.2): every pin of a tool that is installed on PATH is compared with the
 # pin, so a copy of another version can never be the one a check ran with.
 .PHONY: versions-check
@@ -195,6 +209,8 @@ versions-check: ## One version per tool (E0.2): go, Node, sqlc, oapi-codegen, th
 	  have="$$($(LINT_BIN) --version | sed -n 's/.*version \([^ ]*\) built with \(go[^ ]*\).*/\1 \2/p')"; \
 	  if [ "$$have" != "$(GOLANGCI_LINT_VERSION:v%=%) $(GOVERSION)" ]; then echo "golangci-lint: running '$$have', pins are $(GOLANGCI_LINT_VERSION) built with $(GOVERSION)"; fail=1; fi; \
 	fi; \
+	if [ -x "$(OASDIFF_BIN)" ]; then have="$$(go version -m $(OASDIFF_BIN) | awk '$$1=="mod" && $$2=="github.com/oasdiff/oasdiff" {print $$3}')"; \
+	  if [ "$$have" != "$(OASDIFF_VERSION)" ]; then echo "oasdiff: built at '$$have', pin is $(OASDIFF_VERSION)"; fail=1; fi; fi; \
 	if command -v kind >/dev/null; then have="$$(kind version | awk '{print $$2}')"; \
 	  if [ "$$have" != "$(KIND_VERSION)" ]; then echo "kind: installed $$have, pin is $(KIND_VERSION)"; fail=1; fi; fi; \
 	if command -v kubectl >/dev/null; then have="$$(kubectl version --client -o json | sed -n 's/.*"gitVersion": "\([^"]*\)".*/\1/p' | head -n 1)"; \

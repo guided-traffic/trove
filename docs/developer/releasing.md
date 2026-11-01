@@ -19,7 +19,7 @@ Node.js from `web/.nvmrc`, and the pinned helm, kubectl, kind and Docker Buildx.
 
 | Job | Make target | Runs |
 |---|---|---|
-| versions (E0.2) | `make versions-check` | go, node (`web/.nvmrc`), sqlc, oapi-codegen, golangci-lint, kind, kubectl, helm, k6 and docker buildx against their pins. The job installs the pinned helm, kubectl, kind and buildx first, so the runner's copies are not the ones checked |
+| versions (E0.2) | `make versions-check` | go, node (`web/.nvmrc`), sqlc, oapi-codegen, golangci-lint, oasdiff (when built), kind, kubectl, helm, k6 and docker buildx against their pins. The job installs the pinned helm, kubectl, kind and buildx first, so the runner's copies are not the ones checked |
 | Code Linting | `make lint` | golangci-lint (pinned; its binary is cached by version and Go version) with the linters of [.golangci.yml](../../.golangci.yml), then `go vet` |
 | GoSec Security Scan | `make gosec` | golangci-lint with only gosec enabled, the settings and the accepted findings of [.golangci.yml](../../.golangci.yml) |
 | Vulnerability Check | `make vuln` | govulncheck (pinned) over the module |
@@ -38,6 +38,7 @@ Node.js from `web/.nvmrc`, and the pinned helm, kubectl, kind and Docker Buildx.
 | fuzz npm (closing run only) | `make fuzz-npm FUZZ=<target> FUZZTIME=30m` | three legs (`FuzzR_ARCH_028_Match`, `FuzzR_ARCH_028_Inspect`, `FuzzMatch`) of 30 minutes each; runs only on a dispatch with `closing=true`; uploads the failing input |
 | e2e on kind (push, access-long) | `make image VERSION=dev`, `make dev-up`, `make e2e SET=<set>`, `make dev-down` | the dev profile on a kind cluster, one leg per set, every change: `push` and `access-long` (E1.1, E1.11 with the Playwright journeys, E1.13; the only leg that installs Node.js and the browser). The set `failover` (E0.13, E1.8) left this job on 2026-11-01 (owner) and runs nightly and on dispatch in [HA and Performance (nightly)](#ha-and-performance-nightly); the legs and those of e2e-npm build their own image and wait for no other job; each leg has its own cluster name and edge port; uploads the reports, `e2e-artifacts-<set>`, and on failure the cluster state |
 | workflow files (actionlint) | `actionlint` (pinned `ACTIONLINT_VERSION`) | every file of `.github/workflows`, with [.github/actionlint.yaml](../../.github/actionlint.yaml) |
+| compatibility (R-ARCH-025, R-ARCH-026) | `make compat-check` | the OpenAPI document against the latest `v0.*` release with the pinned oasdiff (`--fail-on ERR`), and the migration files: only additions that continue the numbering; needs the history and the tags (`fetch-depth: 0`, `fetch-tags: true`); see [Compatibility](#compatibility) |
 | coverage generator (links and rules) | `go run ./internal/tools/coverage -check`, then `-links` | the generated pages match their rules; every relative link and anchor resolves |
 | coverage evidence (implemented.txt) | `go run ./internal/tools/coverage -check -tests …` over the reports of this run | [implemented.txt](../coverage/implemented.txt) equals what the reports imply; needs `unit`, both `integration` shards and `chart` |
 | Combined Coverage Report | `make coverage-report` | merges the unit and integration profiles; the job summary and the badge `coverage-badge` |
@@ -88,6 +89,29 @@ Both run through the same pinned golangci-lint (`GOLANGCI_LINT_VERSION`), with t
 (`//nolint:gosec // reason`) or in the configuration; the standalone gosec binary does not read those
 annotations, so the repository runs gosec through golangci-lint and has one gosec version.
 
+### Compatibility
+
+`make compat-check` runs the tests of [test/compat](../../test/compat) (build tag `compat`). They hold two promises of
+the specification to the latest release:
+
+| Requirement | What the check accepts | Implemented by |
+|---|---|---|
+| [R-ARCH-025](../spec/architecture.md#r-arch-025--versioning-and-compatibility-policy) | `api/openapi.yaml` has no error-level change against the baseline: `oasdiff breaking --fail-on ERR` | oasdiff, pinned as `OASDIFF_VERSION` in [tools/versions.env](../../tools/versions.env) and built into `.bin/` by the Makefile; the fixtures of [testdata/openapi](../../test/compat/testdata/openapi) show that a removed operation fails and an added one passes |
+| [R-ARCH-026](../spec/architecture.md#r-arch-026--schema-migrations-and-the-compatibility-gate) | Since the baseline, every change of `internal/meta/postgres/migrations` is an addition (`git diff --name-status --no-renames`), and the new numbers continue the sequence | [migrations_test.go](../../test/compat/migrations_test.go): fixtures for an edited, a renamed and a removed file, and for the numbering |
+
+The baseline is the newest `v0.*` tag whose commit is not HEAD's. On the release commit itself HEAD would be compared with
+itself, so the check then compares with the release before it ([ADR-139](../decisions.md#adr-139--compatibility-is-checked-against-the-latest-release-in-ci)).
+A clone without tags has no baseline, and the tests fail rather than pass. Locally run `git fetch --tags` first. The
+`compat` job of [release.yml](../../.github/workflows/release.yml) checks out with `fetch-depth: 0` and `fetch-tags: true`,
+and Semantic Release needs it, so a breaking change or a changed migration blocks the release.
+
+There is no waiver. R-ARCH-025 promises additive changes only within `/api/v1`, so a breaking change there is a new API
+version, not a flag in CI. The checker's own `--version` reports `main` for a module install, so the test reads the module
+version with `go version -m` and compares it with the pin: a binary of another version fails the test.
+
+Not covered by this job: the other surfaces of R-ARCH-025 (configuration keys, Helm values, metric names, error codes) and
+its acceptance test of a `helm upgrade` from N-1 to N and a `helm rollback`. Nothing in CI checks those.
+
 ### Running a job locally
 
 Run from the repository root. Each line is the command the job runs.
@@ -105,6 +129,7 @@ make minio-up s3-conformance minio-down # needs Docker and the MinIO source buil
 make coverage-report                    # merges .out/coverage
 make test-release-tooling               # npm ci, npm audit signatures, the release notes check
 go run ./internal/tools/coverage -check -links
+git fetch --tags && make compat-check   # R-ARCH-025 and R-ARCH-026 against the latest v0.* release
 make image VERSION=dev && make dev-up && make e2e SET=push && make dev-down
 make image VERSION=dev && make dev-up && make e2e SET=npm && make dev-down   # TROVE_DEV_HTTP_PORT=8080 is the port of the committed reference lockfile; any port works
 make fuzz-npm FUZZ=FuzzMatch FUZZTIME=1m
@@ -177,6 +202,8 @@ number of branches is bounded (owner, 2026-10-31):
 - Every automerged dependency update is a `fix` commit (valkey-operator's policy), so under
   [.releaserc.json](../../.releaserc.json) each of them is a patch release. See
   [Release flow](#release-flow).
+- TypeScript is held below 6.1 by a rule of its own (`allowedVersions`, [ADR-140](../decisions.md#adr-140--typescript-is-held-below-61-until-angulars-peer-range-admits-7x)):
+  the Angular 22 packages and typescript-eslint admit no 7.x, so Renovate does not open that update.
 - The Containerfile has no literal image or toolchain version; its build arguments come from
   `go.mod`, [web/.nvmrc](../../web/.nvmrc) and `tools/versions.env`, so there is nothing for the
   dockerfile manager to update.

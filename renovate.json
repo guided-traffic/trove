@@ -344,6 +344,13 @@
       "automerge": false
     },
     {
+      "description": "TypeScript is held below 6.1 (ADR-140). @angular/compiler-cli 22.2.4 and @angular/build 22.2.5 declare the peer range typescript >=6.0 <6.1 and typescript-eslint 8.72.1 declares <6.1.0 (npm peerDependencies, verified 2026-11-01); TypeScript 7.0.2 exports no compiler API from its package root, which the bundles of @angular/compiler-cli 22.2.4 import. Lift the rule when Angular's peer range admits 7.x and typescript-eslint's admits it too",
+      "matchPackageNames": [
+        "typescript"
+      ],
+      "allowedVersions": "<6.1"
+    },
+    {
       "description": "The Valkey 8.1 image of the integration tier (INTEGRATION_VALKEY_81_IMAGE) is an unsupported line on purpose: test/integration/valkey checks that trove refuses it (R-ARCH-031), so it stays on 8.x and only takes patch and digest updates",
       "matchDepNames": [
         "docker.io/valkey/valkey",

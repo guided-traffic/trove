@@ -3667,7 +3667,10 @@ major, and a breaking change in 0.x is announced in the release notes with its m
 
 Acceptance criteria:
 - A CI job compares `api/openapi.yaml` with the latest release tag using an OpenAPI breaking-change
-  checker (for example `oasdiff breaking`) and fails on a breaking change within v1.
+  checker (for example `oasdiff breaking`) and fails on a breaking change within v1. The checker is oasdiff at the pin
+  of `tools/versions.env` (Q-ARCH-273), the baseline is the newest `v0.*` tag whose commit is not HEAD's (Q-ARCH-274),
+  and the job is the `compat` job of `release.yml`, run by `make compat-check`; the tests are `TestR_ARCH_025_*` in
+  `test/compat`.
 - The upgrade end-to-end test runs `helm upgrade` from N-1 to N and then `helm rollback`. Both
   versions pass the client suite against the same database.
 
@@ -3783,7 +3786,8 @@ Acceptance criteria:
   exits `3`, names the backup ID and applies nothing. A restore of that backup then resumes and
   finishes (R-BAK-021).
 - A CI check compares the embedded migration files with those of the latest release of the same
-  major and fails when one of them is missing, renamed or changed.
+  major and fails when one of them is missing, renamed or changed, or when an added file does not continue the
+  numbering after the release's highest number (Q-ARCH-274). The tests are `TestR_ARCH_026_*` in `test/compat`.
 - A unit test fails on a migration file without a valid `phase` header, on a contract step without
   `requires-app`, and on a contract-class statement (`DROP`, `RENAME`, `SET NOT NULL`) in an expand
   file.
@@ -6730,6 +6734,64 @@ Context: the exposure rules and the check use "dist-tags", an npm word, as a Go 
 **Rationale:** the Go names are the part a second format reads. The development agent revisits this with the OpenAPI revision that adds a second format with tags.
 
 **Applied in the spec:** none (no behaviour). Code: `internal/authz/exposure.go`, `exposure_service.go`, `internal/api/v1/endpoints_api.go`.
+
+### Q-ARCH-273 · How is the OpenAPI breaking-change checker pinned and run?
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-ARCH-025 requires an OpenAPI breaking-change check of `api/openapi.yaml` against the latest release, with a pinned tool, one version of it (ADR-125). The repository runs its other Go-built tools (golangci-lint, gocyclo, actionlint) as binaries at a pin in `tools/versions.env`. The product module's `go.mod` must not take on the checker's requirements. A module install of oasdiff reports `main` from `--version`, so the version has to come from the build information.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A binary installed by `go install` at `OASDIFF_VERSION` in `tools/versions.env`, built into `.bin/` under a name with the pin and the Go toolchain; the test reads the module version with `go version -m` (chosen) | `$(OASDIFF_BIN)` and `compat-check` in the Makefile; a line in `versions-check`; the test helper `oasdiffBinary` | The same mechanism as the other Go-built tools; Renovate reads the pin through the existing `# renovate:` regex; `go.mod` stays as it is | The first run builds the tool from the module proxy |
+| (b) A `tool` directive in `go.mod`, run with `go tool oasdiff` | As sqlc and oapi-codegen | One pin in `go.mod`, read like the other `tool` directives | The checker's requirements join the `go.mod` of the product module, for a test that only runs the binary |
+| (c) An npm devDependency in `web/package.json`, run through npx | A Node wrapper of a Go binary | Renovate's npm manager already groups web updates | The Go-side check would depend on the web workspace's lock file |
+| (d) A container image pinned by digest, as Trivy is | `docker run` in the compat job | Isolated from the runner's tools | The job needs Docker, which no other check of the job needs |
+
+**Choice:** (a). The checker is a test-time tool outside the product, and its pin is read from the one file that the Makefile and CI already include. (b) would be the choice if the test imported oasdiff as a library; the test runs the binary and gains nothing from the requirements.
+
+**Rationale:** the same route as the linters and actionlint keeps one rule for every tool (ADR-125), and the pin changes in one line that Renovate updates. The development agent revisits this when the test needs oasdiff as a library, or when a second API tool joins the checks.
+
+**Applied in the spec:** R-ARCH-025 (the acceptance bullet on the checker). Code: `tools/versions.env` (`OASDIFF_VERSION`), `Makefile` (`OASDIFF_BIN`, `compat-check`, `versions-check`), `test/compat/helpers_test.go` (`oasdiffBinary`). Test: `TestR_ARCH_025_CheckerIsThePinnedVersion`.
+
+### Q-ARCH-274 · What is the baseline, and what do the checks accept?
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-ARCH-025 and R-ARCH-026 promise compatibility with what users installed, and what they installed is a release tag. The baseline has to be a release and not a moving commit. The CI check runs on the release commit too, where HEAD carries the tag. R-ARCH-025 promises additive changes only within `/api/v1`, so a breaking change has no exception.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The newest `v0.*` tag whose commit is not HEAD's; no waiver; a migration file may only be added, and the additions continue the numbering (chosen) | `git tag --list 'v0.*' --sort=-v:refname`, the first tag whose commit is not HEAD's; no baseline fails the test | Compares with what users installed; a re-run on the release commit compares with the release before it; no second copy to keep in step | The clone needs the tags (`fetch-tags`); a change of major version changes the pattern |
+| (b) The newest tag, HEAD included | The same list, without the skip | The simplest rule | On the release commit the check compares the release with itself and always passes |
+| (c) A committed snapshot of the spec and of the migration list, refreshed at each release | A file under `test/compat` | No git history needed | A second copy of the spec; a release that forgets the refresh moves the baseline silently |
+| (d) The previous commit of main | `HEAD~1` or the merge base | No tags needed | The baseline moves with every push: a breaking change pushed in one commit and kept in the next is never compared with a release |
+| (e) A list of waived breaking changes | An allow-list in the test | Allows a deliberate change | R-ARCH-025 has no deliberate breaking change within v1; the list is a second decision for the same change |
+
+**Choice:** (a). A baseline that cannot be found is a failure, not a skip: a check that did not run is not a pass. The migration rule is the runner's own rule, in the other direction: an applied file is never edited (checksum), and a new file takes the next number (`steps.go`).
+
+**Rationale:** the promise is against releases, and the tag names one. The skip of HEAD keeps the check meaningful on the release commit, and the failure without a tag keeps a shallow clone from passing silently. The development agent revisits the pattern when the major version changes (ADR-124 names the owner's decision on it).
+
+**Applied in the spec:** R-ARCH-025 and R-ARCH-026 (the acceptance bullets). Code: `test/compat/helpers_test.go` (`baselineTag`), `test/compat/migrations_test.go` (`checkMigrationChanges`). Tests: `TestR_ARCH_025_NoBreakingChangeAgainstLatestRelease`, `TestR_ARCH_025_RemovedOperationFails`, `TestR_ARCH_025_AddedOperationPasses`, `TestR_ARCH_026_MigrationsOnlyAddedSinceRelease`, `TestR_ARCH_026_ChangedFilesFail`, `TestR_ARCH_026_NumberingContinuesTheSequence`.
+
+### Q-ARCH-275 · How is the TypeScript 7 update held?
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Renovate PR #42 proposes typescript 6.0.3 → 7.0.2 in `web/package.json`. Verified on 2026-11-01: the newest Angular 22 patches declare the peer range `typescript >=6.0 <6.1` (`@angular/compiler-cli` 22.2.4 and `@angular/build` 22.2.5, from `npm view`), and typescript-eslint 8.72.1 declares `>=4.8.4 <6.1.0`. A lock file resolved in a scratch copy takes 7.0.2 only by overriding those peer ranges (`npm install --package-lock-only` exits 0 with "overriding peer dependency" warnings). The package root of TypeScript 7.0.2 exports only the version (`lib/version.cjs`), and the bundles of `@angular/compiler-cli` 22.2.4 import the `typescript` module for `SyntaxKind`, `factory` and `Program`. Not verified: a build of the Angular workspace with 7.0.2, which was not run.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A Renovate `allowedVersions: "<6.1"` rule for the `typescript` package, with the reason in its description (chosen) | `packageRules` entry in `renovate.json` | Renovate itself refuses the update, and the rule states its reason and its revisit condition | A later 6.1 is held as well, which the peer ranges also refuse; lifting the rule takes a person |
+| (b) Group `typescript` with the `@angular` packages | One pull request for both | The Angular set is reviewed together | A group cannot change peer ranges: the pull request would still not build |
+| (c) Leave PR #42 open and close it by hand | No configuration | Nothing to maintain | A red pull request that a person must remember; the next run proposes the same update again |
+| (d) `ignoreDeps` for `typescript` | A permanent exception | No version bound to write | Unbounded: a later 6.0.x would be ignored too, and the rule records no reason |
+
+**Choice:** (a). It enforces the constraint the update would break, and it bounds the hold to the 6.x line, so 6.0.x patches still arrive. (b) and (c) do not stop the update, and (d) holds more than the constraint does.
+
+**Rationale:** the hold is a dependency policy with a condition that a person can check (the Angular peer range), and the rule carries both. The development agent revisits it when `@angular/compiler-cli`, `@angular/build` and `typescript-eslint` admit typescript 7 (ADR-140).
+
+**Applied in the spec:** none (dependency policy). Code: `renovate.json` (the `typescript` package rule). Documented in [releasing.md](../developer/releasing.md#renovate) and [ADR-140](../decisions.md#adr-140--typescript-is-held-below-61-until-angulars-peer-range-admits-7x). Not verified: that Renovate closes PR #42 on its next run, because the rule has not run.
 
 ## What this does not cover
 

@@ -5116,6 +5116,60 @@ signal. Vendored public packages under claimed names and internal mirrors of the
 
 **Spec:** [spec/vulnerability-scanning.md](spec/vulnerability-scanning.md) R-VULN-010, R-VULN-017, R-VULN-018.
 
+## Compatibility checks and the TypeScript hold
+
+### ADR-139 · Compatibility is checked against the latest release in CI
+
+**Status:** Decided by the development agent — owner review at the walkthrough
+
+**Context.** R-ARCH-025 and R-ARCH-026 promise that the management API and the migration files stay compatible with what users
+installed. Nothing in CI compared them with a release, so a breaking change in `api/openapi.yaml`, or an edited migration, would
+have shipped unnoticed.
+
+**Decision.** The `compat` job of the Test and Release workflow runs `make compat-check` on every change. It compares
+`api/openapi.yaml` with the newest `v0.*` release tag whose commit is not HEAD's, with oasdiff at its pin in
+`tools/versions.env`, and fails on an error-level change. It checks the migration directory since that release: only additions,
+with the numbering continuing. Semantic Release needs the job, so a failing check blocks the release. There is no waiver.
+
+**Consequences.** A breaking change in `/api/v1`, or an edited migration, cannot reach a release by accident; an intended one
+must become a new API version. The job reads the tags, so its checkout fetches the whole history (`fetch-depth: 0`,
+`fetch-tags: true`), and a clone without tags fails rather than passes. The job covers the OpenAPI document and the migration
+files only. The other surfaces of R-ARCH-025 and its Helm upgrade test are not part of it.
+
+**Alternatives considered.** A snapshot of the spec committed at each release; the previous commit of main as the baseline; a list of
+waived changes; oasdiff as a `go.mod` tool directive. Decided in
+[Q-ARCH-273](spec/architecture.md#q-arch-273--how-is-the-openapi-breaking-change-checker-pinned-and-run) and
+[Q-ARCH-274](spec/architecture.md#q-arch-274--what-is-the-baseline-and-what-do-the-checks-accept).
+
+**Spec:** [architecture.md](spec/architecture.md) R-ARCH-025 and R-ARCH-026; code in `test/compat`, the `compat-check` target of the
+`Makefile`, and the job `compat` of `.github/workflows/release.yml`.
+
+### ADR-140 · TypeScript is held below 6.1 until Angular's peer range admits 7.x
+
+**Status:** Decided by the development agent — owner review at the walkthrough
+
+**Context.** Renovate PR #42 proposes TypeScript 6.0.3 → 7.0.2 in `web/package.json`. The newest Angular 22 patches
+(`@angular/compiler-cli` 22.2.4 and `@angular/build` 22.2.5) declare `typescript >=6.0 <6.1`, and typescript-eslint 8.72.1 declares
+`<6.1.0`. TypeScript 7.0.2 exports no compiler API from its package root, which the bundles of `@angular/compiler-cli` import. A
+lock file takes 7.0.2 only by overriding those peer ranges. Checked on 2026-11-01; the Angular build with 7.0.2 was not run.
+
+**Decision.** A packageRule in `renovate.json` sets `allowedVersions: "<6.1"` for `typescript`. Renovate does not propose the 7.x
+update. Patch releases of 6.0 continue.
+
+**Consequences.** The UI stays on TypeScript 6.0 until the condition holds. The hold is one rule with its reason in its description,
+and a person lifts it. A later 6.1 is held too, because the peer ranges stop there. Whether Renovate closes the open PR #42 on its
+next run is not verified: the rule has not run.
+
+**Alternatives considered.** Merging PR #42 and fixing the build (not possible while Angular declares the range); grouping
+typescript with the Angular packages (a group cannot change the ranges); closing PR #42 by hand each time; `ignoreDeps` for
+typescript (no bound). Decided in
+[Q-ARCH-275](spec/architecture.md#q-arch-275--how-is-the-typescript-7-update-held).
+
+**Revisit condition:** `@angular/compiler-cli` and `@angular/build` admit typescript 7.x, and typescript-eslint admits it too. The
+rule is then removed in the same change that moves TypeScript.
+
+**Spec:** [architecture.md](spec/architecture.md) Q-ARCH-275; `renovate.json`; [releasing.md](developer/releasing.md#renovate).
+
 ## Decisions by the development agent
 
 The development agent selected each of these decisions from the options documented in the
@@ -5233,6 +5287,9 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-ARCH-253](spec/architecture.md#q-arch-253--the-stored-versions-are-a-method-of-the-view-contract-and-the-source-is-built-before-the-rule-service) | Where do the stored versions live in the contract, and how does the rule service get them? | (a) `ViewAdapter.Stored`, bridge in `formathost`, a `formatports` area, a constructor input, kit check 11 | (b) keep the optional interface; (c) build the rule service late |
 | [Q-ARCH-254](spec/architecture.md#q-arch-254--the-written-contract-equals-the-code-and-a-capability-is-not-found-by-a-type-assertion) | How is the written contract held equal to the code, and how are optional capabilities handled? | (a) a parsing test, an archtest rule, `RemoteAdapter.ExpectsType`/`BeforeArtifact` | (b) generate the block; (c) record at `Register` |
 | [Q-ARCH-255](spec/architecture.md#q-arch-255--shared-code-says-tags-not-dist-tags) | Do shared Go identifiers say dist-tags? | (a) `Tags`; JSON, column and generated types keep their names | (b) rename everything; (c) leave it |
+| [Q-ARCH-273](spec/architecture.md#q-arch-273--how-is-the-openapi-breaking-change-checker-pinned-and-run) | How is the OpenAPI breaking-change checker pinned and run? | (a) a binary at a pin in `tools/versions.env`, built by `go install`, its module version read with `go version -m` | [ADR-139](#adr-139--compatibility-is-checked-against-the-latest-release-in-ci) |
+| [Q-ARCH-274](spec/architecture.md#q-arch-274--what-is-the-baseline-and-what-do-the-checks-accept) | What is the baseline, and what do the checks accept? | (a) the newest `v0.*` tag whose commit is not HEAD's; no waiver; migrations only added, numbering continues | [ADR-139](#adr-139--compatibility-is-checked-against-the-latest-release-in-ci) |
+| [Q-ARCH-275](spec/architecture.md#q-arch-275--how-is-the-typescript-7-update-held) | How is the TypeScript 7 update held? | (a) a Renovate `allowedVersions: "<6.1"` rule for `typescript` | [ADR-140](#adr-140--typescript-is-held-below-61-until-angulars-peer-range-admits-7x) |
 | [Q-REPO-1](spec/repositories-and-proxy.md#q-repo-1--who-specifies-the-stored-secret-mechanism-iam-045) | Which page specifies the stored-secret mechanism? | (b) architecture.md's R-ARCH-021, for every stored secret; repository secrets only use it | [ADR-032](#adr-032--stored-secrets-are-sealed-under-a-key-ring-the-operator-supplies) |
 | [Q-REPO-2](spec/repositories-and-proxy.md#q-repo-2--lower-bound-of-the-metadata-period) | Lower bound of the metadata period? | (a) `0` is allowed and means revalidate on every request; no minimum. Revisited 2026-10-28, choice unchanged | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving) |
 | [Q-REPO-3](spec/repositories-and-proxy.md#q-repo-3--generic-default-when-the-upstream-removes-a-cached-document) | Generic default when the upstream removes a cached document? | (b) mark the package gone; its documents and cached artifacts answer 404 until the upstream serves it again | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving), [ADR-069](#adr-069--versions-removed-upstream-are-hidden-by-default) |
