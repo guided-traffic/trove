@@ -1,6 +1,7 @@
 // The look of the application shell: skip link, dark top bar, navigation sidebar (and its icon
-// rail), content frame and breadcrumb trail (R-UI-002, Q-UI-68). Global and scoped to the root
-// element, because the root component's own stylesheet is held to the component style budget.
+// rail), content frame and breadcrumb trail (R-UI-002, Q-UI-68, the design language of Q-UI-88).
+// Global and scoped to the root element, because the root component's own stylesheet is held to
+// the component style budget.
 
 trove-root {
   .skip-link {
@@ -65,27 +66,62 @@ trove-root {
     .search-icon {
       position: absolute;
       inset-inline-start: var(--trove-space-2);
+      z-index: 1;
       font-size: 1.25rem;
-      color: var(--trove-nav-fg-muted);
       pointer-events: none;
     }
 
     input {
       box-sizing: border-box;
       inline-size: 100%;
-      block-size: 1.75rem;
+      block-size: 2rem;
       padding: 0 var(--trove-space-3) 0 2rem;
-      border: 1px solid rgb(255 255 255 / 40%);
-      border-radius: var(--mat-sys-corner-full);
-      background: rgb(255 255 255 / 9%);
-      color: var(--trove-nav-fg);
+      border: 1px solid var(--trove-search-border);
+      border-radius: var(--trove-radius-s);
+      background: var(--trove-search-bg);
+      color: var(--trove-search-fg);
       font: var(--mat-sys-body-medium);
 
       &::placeholder {
-        color: var(--trove-nav-fg-muted);
+        color: var(--trove-search-muted);
         opacity: 1;
       }
     }
+
+    .search-icon {
+      color: var(--trove-search-muted);
+    }
+  }
+
+  // The actions at the end of the bar: help, theme and the user menu.
+  .topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--trove-space-1);
+  }
+
+  .topbar-icon {
+    --mat-icon-button-icon-color: var(--trove-nav-fg);
+  }
+
+  // The badge and the name sit in Material's label span, so the space is the badge's own margin.
+  .user-button .avatar {
+    margin-inline-end: var(--trove-space-2);
+  }
+
+  // The round badge with the first letter of the name; decoration, the name is beside it.
+  .avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 1.75rem;
+    block-size: 1.75rem;
+    border: 1px solid var(--trove-nav-fg-muted);
+    border-radius: 50%;
+    color: var(--trove-nav-fg);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    text-transform: uppercase;
   }
 
   .user-name {
@@ -248,9 +284,11 @@ trove-root {
     }
 
     // The current page: a filled row and a bar in the accent colour; the text is bold as well, so
-    // the state is not carried by colour alone (R-UI-044).
+    // the state is not carried by colour alone (R-UI-044). In the dark scheme the text takes the
+    // accent too.
     &.active {
       background: var(--trove-nav-active);
+      color: var(--trove-nav-active-fg);
       font-weight: 600;
 
       &::before {
@@ -266,6 +304,11 @@ trove-root {
         color: var(--trove-nav-accent);
       }
     }
+  }
+
+  // An open group's entries sit on a deeper fill, so the group reads as one block.
+  .nested {
+    background: var(--trove-nav-bg-nested);
   }
 
   .nested .nav-link {
@@ -363,5 +406,16 @@ trove-root {
     .rail-toggle {
       justify-content: center;
     }
+  }
+}
+
+// The theme menu opens in an overlay outside trove-root: its icon and label on one line.
+.theme-menu .mat-mdc-menu-item-text {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--trove-space-3);
+
+  .material-icons {
+    font-size: 1.25rem;
   }
 }

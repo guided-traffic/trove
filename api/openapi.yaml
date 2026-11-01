@@ -103,6 +103,11 @@ tags:
       designates; these operations read the owners, add and remove them, pre-assign a name nobody has
       published, and list the names an identity owns.
   # <<< M2 ownership
+  #
+  # >>> M2 manual
+  - name: manual
+    description: The trove manual of the running version, for the help area of the UI (R-API-054, R-UI-050).
+  # <<< M2 manual
 security:
   - bearerAuth: []
 paths:
@@ -5813,6 +5818,119 @@ paths:
           $ref: "#/components/responses/Unavailable"
   # <<< M2 guides
   #
+  # >>> M2 manual
+  /api/v1/manual:
+    get:
+      operationId: getManualContents
+      tags: [manual]
+      summary: The contents of the manual
+      description: |
+        The sections of the trove manual (R-API-054) in reading order, the user guide first, each with the
+        title and summary of its pages. The manual is the one the binary embeds, so it describes the running
+        version; it is English and the same for every caller. Any caller; an anonymous caller only where
+        anonymous access is on, else `401`. The strong ETag changes with any page, and a matching
+        `If-None-Match` answers `304`.
+      x-trove-permission:
+        public: true
+      responses:
+        "200":
+          description: The contents.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManualContents"
+              example:
+                sections:
+                  - id: user
+                    title: User guide
+                    pages:
+                      - id: getting-started
+                        title: Getting started
+                        summary: How to sign in, find your way around the screens and choose your language and theme.
+        "304":
+          description: The manual has not changed since the ETag of If-None-Match.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/manual/{section}/{page}:
+    get:
+      operationId: getManualPage
+      tags: [manual]
+      summary: A page of the manual
+      description: |
+        One page of the manual (R-API-054): its title, its summary, its text below the title rendered from
+        Markdown to sanitized HTML by the README renderer of R-UI-008, its second- and third-level headings
+        for a table of contents, and its neighbours in reading order. A link to another page is relative to
+        the base address of the UI (`help/<section>/<page>`, with `#user-content-<slug>` for a heading), a
+        link inside the page is `#user-content-<slug>`; bind the HTML like a README. Same access and ETag as
+        the contents; an unknown section or page answers `404`.
+      x-trove-permission:
+        public: true
+      parameters:
+        - name: section
+          in: path
+          required: true
+          description: The section, `user` or `admin`.
+          schema:
+            type: string
+            pattern: "^[a-z][a-z0-9-]{0,31}$"
+        - name: page
+          in: path
+          required: true
+          description: The page id, the file name of the page without `.md`.
+          schema:
+            type: string
+            pattern: "^[a-z][a-z0-9-]{0,63}$"
+      responses:
+        "200":
+          description: The page.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManualPage"
+              example:
+                section: user
+                id: access-tokens
+                title: Personal access tokens
+                summary: How to create, use and revoke the tokens that package clients and scripts sign in with.
+                html: "<p>How to create, use and revoke …</p><h2 id=\"user-content-create-a-token\">Create a token</h2>"
+                headings:
+                  - level: 2
+                    id: user-content-create-a-token
+                    text: Create a token
+                previous:
+                  section: user
+                  id: client-setup
+                  title: Connecting a package client
+                next:
+                  section: user
+                  id: troubleshooting
+                  title: Errors and troubleshooting
+        "304":
+          description: The manual has not changed since the ETag of If-None-Match.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  # <<< M2 manual
+  #
   # >>> M2 proxy
   /api/v1/repositories/{repoKey}/cache/invalidate:
     post:
@@ -9746,6 +9864,92 @@ components:
           items:
             $ref: "#/components/schemas/ClientSnippet"
     # <<< M2 guides
+    #
+    # >>> M2 manual
+    ManualContents:
+      type: object
+      required: [sections]
+      properties:
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/ManualSection"
+    ManualSection:
+      type: object
+      required: [id, title, pages]
+      properties:
+        id:
+          type: string
+          description: "`user` or `admin`."
+        title:
+          type: string
+        pages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ManualPageSummary"
+    ManualPageSummary:
+      type: object
+      required: [id, title, summary]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+          description: The first paragraph of the page, plain text.
+    ManualPageRef:
+      type: object
+      required: [section, id, title]
+      properties:
+        section:
+          type: string
+        id:
+          type: string
+        title:
+          type: string
+    ManualHeading:
+      type: object
+      required: [level, id, text]
+      properties:
+        level:
+          type: integer
+          enum: [2, 3]
+        id:
+          type: string
+          description: The anchor of the heading in `html`, `user-content-<slug>`.
+        text:
+          type: string
+    ManualPage:
+      type: object
+      required: [section, id, title, summary, html, headings, previous, next]
+      properties:
+        section:
+          type: string
+        id:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        html:
+          type: string
+          description: The page below its title, sanitized by the README renderer of R-UI-008; bind it like a README.
+        headings:
+          type: array
+          items:
+            $ref: "#/components/schemas/ManualHeading"
+        previous:
+          description: The page before this one in reading order; null for the first page.
+          oneOf:
+            - $ref: "#/components/schemas/ManualPageRef"
+            - type: "null"
+        next:
+          description: The page after this one in reading order; null for the last page.
+          oneOf:
+            - $ref: "#/components/schemas/ManualPageRef"
+            - type: "null"
+    # <<< M2 manual
     #
     # >>> M2 proxy
     CacheInvalidateRequest:

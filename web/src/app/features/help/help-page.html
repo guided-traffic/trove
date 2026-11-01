@@ -1,0 +1,62 @@
+<div class="help-layout">
+  <nav class="help-contents" aria-labelledby="help-contents-title">
+    <p id="help-contents-title" class="help-contents-title" i18n="@@help.contents">Contents</p>
+    <a class="help-overview-link" routerLink="/help" i18n="@@help.overview">Overview</a>
+    @if (toc(); as c) {
+      @for (s of c.sections; track s.id) {
+        <p class="help-contents-section" [id]="'help-contents-' + s.id" lang="en">{{ s.title }}</p>
+        <ul [attr.aria-labelledby]="'help-contents-' + s.id" lang="en">
+          @for (p of s.pages; track p.id) {
+            <li>
+              <a [routerLink]="['/help', s.id, p.id]" routerLinkActive="active" ariaCurrentWhenActive="page">{{
+                p.title
+              }}</a>
+            </li>
+          }
+        </ul>
+      }
+    }
+  </nav>
+
+  <div class="help-main">
+    <a class="help-back" routerLink="/help" i18n="@@help.all-pages">All help pages</a>
+    @if (answer.error(); as e) {
+      <trove-error-notice [error]="error(e)" (retry)="answer.reload()" />
+    } @else if (current(); as p) {
+      <article class="help-article" aria-labelledby="help-page-title">
+        <h1 id="help-page-title" lang="en">{{ p.title }}</h1>
+        @if (p.headings.length > 0) {
+          <nav class="help-toc" aria-labelledby="help-toc-title">
+            <h2 id="help-toc-title" class="help-toc-title" i18n="@@help.toc">On this page</h2>
+            <ul lang="en">
+              @for (h of p.headings; track h.id) {
+                <li [class.sub]="h.level === 3">
+                  <a [href]="'#' + h.id" (click)="jump($event, h.id)">{{ h.text }}</a>
+                </li>
+              }
+            </ul>
+          </nav>
+        }
+        <trove-package-readme lang="en" [readme]="readme()" pageLinks="help/" />
+        @if (p.previous || p.next) {
+          <nav class="help-pager" i18n-aria-label="@@help.pager" aria-label="Previous and next page">
+            @if (p.previous; as prev) {
+              <a class="prev" rel="prev" [routerLink]="['/help', prev.section, prev.id]">
+                <span class="help-pager-label">{{ prevLabel }}</span>
+                <span class="help-pager-title" lang="en">{{ prev.title }}</span>
+              </a>
+            }
+            @if (p.next; as next) {
+              <a class="next" rel="next" [routerLink]="['/help', next.section, next.id]">
+                <span class="help-pager-label">{{ nextLabel }}</span>
+                <span class="help-pager-title" lang="en">{{ next.title }}</span>
+              </a>
+            }
+          </nav>
+        }
+      </article>
+    } @else {
+      <p role="status" i18n="@@help.loading">Loading the manual…</p>
+    }
+  </div>
+</div>

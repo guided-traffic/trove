@@ -155,12 +155,29 @@ type Result struct {
 // the limit is cut, and a rendering that is too large or too slow falls back to the
 // escaped text, with Truncated set.
 func (r *Renderer) Render(source string) Result {
+	return r.render(source, nil)
+}
+
+// Links resolves the target of a link that is neither an absolute http, https or
+// mailto address: a fragment or a relative reference. It returns the target the
+// link keeps, or false to remove it like any other relative link.
+type Links func(href string) (string, bool)
+
+// RenderLinked renders a source whose relative links point at documents the caller
+// knows, such as the pages of the manual: every link target that is not an absolute
+// address goes through links, which decides what it becomes. Everything else is
+// [Renderer.Render].
+func (r *Renderer) RenderLinked(source string, links Links) Result {
+	return r.render(source, links)
+}
+
+func (r *Renderer) render(source string, links Links) Result {
 	truncated := false
 	if len(source) > r.maxSource {
 		source, truncated = cutRunes(source, r.maxSource), true
 	}
 	for range 8 {
-		res, ok := r.renderWithin(source)
+		res, ok := r.renderWithin(source, links)
 		switch {
 		case !ok:
 			return Result{HTML: plain(source), Truncated: true}
@@ -177,9 +194,9 @@ func (r *Renderer) Render(source string) Result {
 
 // renderWithin runs the pipeline with the time limit. A rendering that takes longer
 // is abandoned and ok is false.
-func (r *Renderer) renderWithin(source string) (Result, bool) {
+func (r *Renderer) renderWithin(source string, links Links) (Result, bool) {
 	done := make(chan Result, 1)
-	go func() { done <- r.pipeline(source) }()
+	go func() { done <- r.pipeline(source, links) }()
 	t := time.NewTimer(r.timeout)
 	defer t.Stop()
 	select {
@@ -190,13 +207,13 @@ func (r *Renderer) renderWithin(source string) (Result, bool) {
 	}
 }
 
-func (r *Renderer) pipeline(source string) Result {
+func (r *Renderer) pipeline(source string, links Links) Result {
 	var buf bytes.Buffer
 	if err := r.md.Convert([]byte(source), &buf); err != nil {
 		return Result{HTML: plain(source), Truncated: true}
 	}
 	clean := r.policy.SanitizeBytes(buf.Bytes())
-	out, blocked := r.finish(clean)
+	out, blocked := r.finish(clean, links)
 	return Result{HTML: out, ExternalImagesBlocked: blocked}
 }
 
@@ -250,7 +267,7 @@ func newPolicy() *bluemonday.Policy {
 }
 
 // finish applies what the allowlist cannot say to the sanitized fragment.
-func (r *Renderer) finish(clean []byte) (string, int32) {
+func (r *Renderer) finish(clean []byte, links Links) (string, int32) {
 	root := &xhtml.Node{Type: xhtml.ElementNode, DataAtom: atom.Div, Data: "div"}
 	nodes, err := xhtml.ParseFragment(bytes.NewReader(clean), root)
 	if err != nil {
@@ -259,7 +276,7 @@ func (r *Renderer) finish(clean []byte) (string, int32) {
 	for _, n := range nodes {
 		root.AppendChild(n)
 	}
-	f := &finisher{r: r, seen: map[string]int{}}
+	f := &finisher{r: r, links: links, seen: map[string]int{}}
 	f.walk(root)
 	var out bytes.Buffer
 	for c := root.FirstChild; c != nil; c = c.NextSibling {
@@ -272,6 +289,7 @@ func (r *Renderer) finish(clean []byte) (string, int32) {
 
 type finisher struct {
 	r       *Renderer
+	links   Links
 	seen    map[string]int
 	blocked int32
 }
@@ -306,11 +324,18 @@ func (f *finisher) element(n *xhtml.Node) {
 
 // anchor keeps a link to a fragment, an http or https address or a mail address.
 // Any other target is removed; an anchor left with neither target nor name is
-// reduced to its text.
+// reduced to its text. With [Links], every target that is not an absolute address
+// is what links makes of it.
 func (f *finisher) anchor(n *xhtml.Node) {
 	href := strings.TrimSpace(attr(n, "href"))
 	switch {
 	case href == "":
+	case f.links != nil && !absolute(href):
+		if to, ok := f.links(href); ok {
+			setAttr(n, "href", to)
+		} else {
+			delAttr(n, "href")
+		}
 	case strings.HasPrefix(href, "#"):
 		setAttr(n, "href", href)
 	case absolute(href):

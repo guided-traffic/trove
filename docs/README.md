@@ -28,6 +28,7 @@ flowchart LR
 | Decisions | Why the design is what it is, with the options that were weighed | one record per decision; every invariant becomes one | [decisions.md](decisions.md) |
 | Developer documentation | How to work on the repository: the layout, the build and test tiers, the subsystem pages, ID rules, adding entries and requirements, the HA-shaped local development profile | — | [developer/README.md](developer/README.md) |
 | Security architecture | The security design, one page per perspective (including the Valkey trust boundary and the backup data flow), and where open gaps are recorded | `H-n` | [security/README.md](security/README.md) |
+| Manual | How to use and how to run trove, for users and administrators; embedded into the binary and shown in the UI's help area | — | [manual/README.md](manual/README.md) |
 
 Vulnerability reports go through [SECURITY.md](../SECURITY.md). The user-facing overview is the
 root [README.md](../README.md).

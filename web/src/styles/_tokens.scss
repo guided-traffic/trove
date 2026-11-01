@@ -1,6 +1,7 @@
 // trove design tokens. Components read these custom properties and never a literal colour or
 // length, so both themes and the density stay one-place changes. The Material system tokens
-// (--mat-sys-*) come from mat.theme in main.scss.
+// (--mat-sys-*) come from mat.theme and mat.theme-overrides in main.scss, where the palette of
+// the design language (Q-UI-88, docs/developer/design-language.md) is set.
 
 :root {
   color-scheme: light dark;
@@ -17,12 +18,13 @@
   --trove-font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   --trove-text-muted-size: 0.8125rem;
 
-  // Radii and elevation. Elevation is a hairline border plus a soft shadow; the dark scheme
-  // raises the border instead of the shadow, which would not show on a dark surface.
+  // Radii and elevation. The design language is flat: a surface is told apart by its fill and a
+  // hairline border; the shadow is faint in the light scheme and gone in the dark one, where it
+  // would not show.
   --trove-radius-s: 4px;
-  --trove-radius-m: 8px;
-  --trove-elevation-1: 0 1px 2px light-dark(rgb(16 24 40 / 8%), rgb(0 0 0 / 40%));
-  --trove-elevation-2: 0 4px 12px light-dark(rgb(16 24 40 / 14%), rgb(0 0 0 / 55%));
+  --trove-radius-m: 6px;
+  --trove-elevation-1: 0 1px 2px light-dark(rgb(16 24 40 / 6%), transparent);
+  --trove-elevation-2: 0 4px 12px light-dark(rgb(16 24 40 / 12%), rgb(0 0 0 / 55%));
 
   // Content area: whitespace, borders and the one accent. The accent is the Material primary, so
   // a theme change moves every accent-coloured control with it.
@@ -32,32 +34,43 @@
   --trove-accent: var(--mat-sys-primary);
   --trove-accent-container: var(--mat-sys-secondary-container);
   --trove-on-accent-container: var(--mat-sys-on-secondary-container);
-  --trove-surface-raised: var(--mat-sys-surface-container-lowest);
-  --trove-table-head-bg: var(--mat-sys-surface-container-low);
-  --trove-row-hover: var(--mat-sys-surface-container);
+  // A raised surface (card, panel, table frame) is white on the white page in the light scheme
+  // and one step lighter than the page in the dark one.
+  --trove-surface-raised: light-dark(#ffffff, #121822);
+  --trove-table-head-bg: light-dark(#f8f9fc, #121822);
+  --trove-row-hover: light-dark(#f1f4f8, #0d141e);
   --trove-focus-ring: 2px solid var(--mat-sys-primary);
 
-  // Navigation sidebar and top bar: dark in both schemes. Measured contrast (R-UI-044, AA asks
-  // 4.5:1 for text and 3:1 for marks): text on the background 8.3:1 to 17:1, muted text on the
-  // hover fill 6.3:1 at the lowest, the accent mark on the active fill 4.8:1 at the lowest, the
-  // outline of the search field 3.7:1.
-  --trove-nav-bg: light-dark(#17222f, #0d141c);
-  --trove-nav-bg-deep: light-dark(#101923, #080d13);
-  --trove-nav-fg: #eaf0f6;
-  --trove-nav-fg-muted: #aebccb;
-  --trove-nav-hover: rgb(255 255 255 / 9%);
-  --trove-nav-active: rgb(255 255 255 / 15%);
-  --trove-nav-accent: #7eb6ff;
-  --trove-nav-border: rgb(255 255 255 / 12%);
+  // Navigation sidebar and top bar: dark in both schemes, navy in the light one and near-black
+  // in the dark one. Measured contrast (R-UI-044, AA asks 4.5:1 for text and 3:1 for marks):
+  // text 11.9:1 (light) and 14.8:1 (dark), muted text 6.7:1 and 6.9:1, the accent on the
+  // sidebar 4.3:1 and on the nested group 5.3:1, the active text of the dark scheme 6.4:1.
+  // Recompute when a value changes.
+  --trove-nav-bg: light-dark(#233564, #121822);
+  --trove-nav-bg-deep: light-dark(#1e2e4a, #060e19);
+  --trove-nav-bg-nested: light-dark(#1a264e, #0d131c);
+  --trove-nav-fg: light-dark(#ffffff, #e8eaec);
+  --trove-nav-fg-muted: light-dark(#b9c3d9, #9aa1ad);
+  --trove-nav-hover: rgb(255 255 255 / 8%);
+  --trove-nav-active: light-dark(rgb(255 255 255 / 12%), rgb(61 176 100 / 12%));
+  --trove-nav-active-fg: light-dark(#ffffff, #3db064);
+  --trove-nav-accent: #3db064;
+  --trove-nav-border: light-dark(rgb(255 255 255 / 10%), #1e2530);
   --trove-nav-width: 15rem;
   --trove-nav-width-collapsed: 3.75rem;
   --trove-topbar-height: 3rem;
+  // The top bar's search field: a white field on the navy bar, a card-coloured one on the
+  // near-black bar. Its fill sets it off from the bar (11.9:1 and 1.3:1 plus the outline at 3.4:1).
+  --trove-search-bg: light-dark(#ffffff, #121822);
+  --trove-search-fg: light-dark(#1c2433, #e8eaec);
+  --trove-search-muted: light-dark(#5b6270, #9aa1ad);
+  --trove-search-border: light-dark(transparent, #646c78);
 
   --trove-surface: var(--mat-sys-surface);
   --trove-on-surface: var(--mat-sys-on-surface);
   // Status colours reinforce an icon and a text, never replace them (R-UI-044); the pairs keep
-  // a contrast ratio of at least 4.5:1 on the surface of their scheme.
-  --trove-status-ok: light-dark(#1b6e2e, #7bd88f);
+  // a contrast ratio of at least 4.5:1 on the surface of their scheme. OK is the accent green.
+  --trove-status-ok: light-dark(#1d7a43, #3db064);
   --trove-status-warn: light-dark(#8a5a00, #ffc857);
   --trove-status-bad: light-dark(#b3261e, #ffb4ab);
   --trove-banner-bg: var(--mat-sys-tertiary-container);

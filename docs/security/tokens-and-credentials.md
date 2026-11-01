@@ -153,6 +153,10 @@ setup answer into a token, which is the one place where the UI handles a token v
   `rel="nofollow noopener noreferrer"` on every link that leaves trove (`package-readme.spec.ts` carries the vectors). The server-side sanitizer
   of R-UI-008 is the first layer ([render.go](../../internal/packages/readme/render.go): goldmark, bluemonday with the allowlist, a pass for links, images,
   checkboxes and heading anchors; `TestR_UI_008_XSSCorpusRendersNothingExecutable`); this page describes the browser's part.
+  One exception, for the binary's own text only: the manual (R-API-054) is rendered with `RenderLinked`, which turns its relative `.md`
+  links into `help/<section>/<page>`, and the help page binds it with `pageLinks="help/"`, under which the component keeps a link that is a
+  plain relative path of letters, digits, `/`, `_` and `-` with an optional fragment, and opens it with the router. READMEs and guides go
+  through `Render` and are bound without `pageLinks`, so their relative links are still removed (`TestR_API_054_LinkedRenderingResolvesRelativeLinks`).
 
 ## What this does not cover
 

@@ -77,7 +77,8 @@ Built (M1, access core):
 - 📦 **Generic repositories.** Local repositories with flat paths; raw transfer under `/files/{repoKey}/{path}` with `PUT`, `GET` (with `Range`), `HEAD` and `DELETE`; folders and the items API. See [files](docs/developer/files.md) and [repository model](docs/security/repository-model.md).
 - 🧾 **Audit.** An event registry, transactional and asynchronous recording, a PostgreSQL journal with partitions and retention, and the query and export API. See [audit](docs/developer/audit.md) and [audit trail](docs/security/audit.md).
 - 🧭 **Management API.** Under `/api/v1/`, described by [api/openapi.yaml](api/openapi.yaml): problem+json errors, cursor paging, ETags with `If-Match`, idempotency keys, and a permission declared on every operation. See [API families](#management-api).
-- 🖥️ **Admin UI.** The Angular application, embedded in the binary: sign-in, the file tree, repositories, users, groups, service accounts, tokens, policies, endpoints, audit and the system status. See [web UI](docs/developer/web-ui.md).
+- 🖥️ **Admin UI.** The Angular application, embedded in the binary: sign-in, the file tree, repositories, users, groups, service accounts, tokens, policies, endpoints, audit and the system status, in a light and a dark scheme. See [web UI](docs/developer/web-ui.md) and [design language](docs/developer/design-language.md).
+- ❓ **Manual in the product.** The user and administrator manual is embedded in the binary and opens from the "?" of the top bar, on the page of the current screen. See [docs/manual](docs/manual/README.md).
 
 Planned, not built (see the [roadmap](docs/coverage/roadmap.md)): the npm and NuGet protocols with local, remote and virtual repositories;
 remote and virtual repositories for the generic format; GitLab CI OIDC federation; the pull-through proxy; backup and restore; the UI
@@ -328,6 +329,7 @@ Registrations at start-up, in `internal/app/wire_*.go` and in the packages that 
 
 | Document | What it holds |
 |---|---|
+| [docs/manual/](docs/manual/README.md) | The user and administrator manual; the binary embeds it and the UI shows it behind the "?" of the top bar |
 | [docs/developer/](docs/developer/README.md) | Contributor entry point; the M1 pages: [login](docs/developer/login.md), [identity](docs/developer/identity.md), [authorization](docs/developer/authorization.md), [files](docs/developer/files.md), [m1-contracts](docs/developer/m1-contracts.md), [audit](docs/developer/audit.md), [repositories](docs/developer/repositories.md); the package screens: [packages](docs/developer/packages.md) |
 | [docs/security/](docs/security/README.md) | Security architecture, one page per perspective, with the open gaps of each page: trust boundaries, transport encryption, data and secret flow, privilege footprint, isolation and coordination, egress, login and sessions, tokens and credentials, permissions, endpoints and exposure, repository model, file transfer, audit |
 | [SECURITY.md](SECURITY.md) | How to report a vulnerability, the supported versions and the pointer to the known gaps |
@@ -1248,6 +1250,13 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 | `GET /api/v1/packages/{packageId}/versions/{version}` | `getPackageVersion` | public; as above |
 | `GET /api/v1/packages/{packageId}/versions/{version}/readme` | `getPackageVersionReadme` | public; as above |
 | `GET /api/v1/repositories/{repoKey}/client-setup` | `getClientSetup` | action `read` on `path.repoKey`; the publish snippets need `deploy` on the publish target |
+
+**manual**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/manual` | `getManualContents` | public; anonymous only where anonymous access is on. The manual the binary embeds ([docs/manual](docs/manual/README.md)) |
+| `GET /api/v1/manual/{section}/{page}` | `getManualPage` | public; as above |
 
 **endpoints**
 

@@ -55,15 +55,6 @@
         <target>Sprache</target>
       </segment>
     </unit>
-    <unit id="shell.menu.theme">
-      <notes>
-        <note category="location">src/app/app.html:51,53</note>
-      </notes>
-      <segment>
-        <source> Theme </source>
-        <target>Darstellung</target>
-      </segment>
-    </unit>
     <unit id="shell.menu.sign-out">
       <notes>
         <note category="location">src/app/app.html:54,58</note>
@@ -14407,6 +14398,90 @@
       <segment>
         <source>Read the guide: what the repository is, publishing, lockfiles and troubleshooting</source>
         <target>Zur Anleitung: was das Repository ist, Veröffentlichen, Lockfiles und Fehlersuche</target>
+      </segment>
+    </unit>
+    <unit id="shell.help">
+      <segment>
+        <source>Help</source>
+        <target>Hilfe</target>
+      </segment>
+    </unit>
+    <unit id="shell.theme">
+      <segment>
+        <source>Theme</source>
+        <target>Design</target>
+      </segment>
+    </unit>
+    <unit id="route.help.title">
+      <segment>
+        <source>Help</source>
+        <target>Hilfe</target>
+      </segment>
+    </unit>
+    <unit id="help.title">
+      <segment>
+        <source>Help</source>
+        <target>Hilfe</target>
+      </segment>
+    </unit>
+    <unit id="help.lead">
+      <segment>
+        <source> The manual of the trove version this installation runs, for the people who use it and the people who run it. </source>
+        <target>Das Handbuch der trove-Version, die diese Installation betreibt – für alle, die trove nutzen, und alle, die es betreiben. Das Handbuch ist auf Englisch.</target>
+      </segment>
+    </unit>
+    <unit id="help.guides">
+      <segment>
+        <source> The commands of a package client with the addresses of this installation are in the <pc id="0" equivStart="START_LINK" equivEnd="CLOSE_LINK" type="link" dispStart="&lt;a routerLink=&quot;/guides&quot;&gt;" dispEnd="&lt;/a&gt;">guides</pc>. </source>
+        <target>Die Befehle eines Paket-Clients mit den Adressen dieser Installation stehen in den <pc id="0" equivStart="START_LINK" equivEnd="CLOSE_LINK" type="link" dispStart="&lt;a routerLink=&quot;/guides&quot;&gt;" dispEnd="&lt;/a&gt;">Anleitungen</pc>.</target>
+      </segment>
+    </unit>
+    <unit id="help.loading">
+      <segment>
+        <source>Loading the manual…</source>
+        <target>Das Handbuch wird geladen …</target>
+      </segment>
+    </unit>
+    <unit id="help.contents">
+      <segment>
+        <source>Contents</source>
+        <target>Inhalt</target>
+      </segment>
+    </unit>
+    <unit id="help.overview">
+      <segment>
+        <source>Overview</source>
+        <target>Übersicht</target>
+      </segment>
+    </unit>
+    <unit id="help.all-pages">
+      <segment>
+        <source>All help pages</source>
+        <target>Alle Hilfeseiten</target>
+      </segment>
+    </unit>
+    <unit id="help.toc">
+      <segment>
+        <source>On this page</source>
+        <target>Auf dieser Seite</target>
+      </segment>
+    </unit>
+    <unit id="help.pager">
+      <segment>
+        <source>Previous and next page</source>
+        <target>Vorherige und nächste Seite</target>
+      </segment>
+    </unit>
+    <unit id="help.previous">
+      <segment>
+        <source>Previous page</source>
+        <target>Vorherige Seite</target>
+      </segment>
+    </unit>
+    <unit id="help.next">
+      <segment>
+        <source>Next page</source>
+        <target>Nächste Seite</target>
       </segment>
     </unit>
   </file>

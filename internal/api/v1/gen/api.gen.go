@@ -673,6 +673,24 @@ func (e LocalFormatName) Valid() bool {
 	}
 }
 
+// Defines values for ManualHeadingLevel.
+const (
+	N2 ManualHeadingLevel = 2
+	N3 ManualHeadingLevel = 3
+)
+
+// Valid indicates whether the value is a known member of the ManualHeadingLevel enum.
+func (e ManualHeadingLevel) Valid() bool {
+	switch e {
+	case N2:
+		return true
+	case N3:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NpmSettingsAuditMode.
 const (
 	NpmSettingsAuditModeDisabled NpmSettingsAuditMode = "disabled"
@@ -3064,6 +3082,64 @@ type LoginProvider struct {
 
 	// StartUrl Server-relative start URL, `/auth/oidc/{providerId}/start`.
 	StartUrl string `json:"startUrl"`
+}
+
+// ManualContents defines model for ManualContents.
+type ManualContents struct {
+	Sections []ManualSection `json:"sections"`
+}
+
+// ManualHeading defines model for ManualHeading.
+type ManualHeading struct {
+	// Id The anchor of the heading in `html`, `user-content-<slug>`.
+	Id    string             `json:"id"`
+	Level ManualHeadingLevel `json:"level"`
+	Text  string             `json:"text"`
+}
+
+// ManualHeadingLevel defines model for ManualHeading.Level.
+type ManualHeadingLevel int
+
+// ManualPage defines model for ManualPage.
+type ManualPage struct {
+	Headings []ManualHeading `json:"headings"`
+
+	// Html The page below its title, sanitized by the README renderer of R-UI-008; bind it like a README.
+	Html string `json:"html"`
+	Id   string `json:"id"`
+
+	// Next The page after this one in reading order; null for the last page.
+	Next *ManualPageRef `json:"next"`
+
+	// Previous The page before this one in reading order; null for the first page.
+	Previous *ManualPageRef `json:"previous"`
+	Section  string         `json:"section"`
+	Summary  string         `json:"summary"`
+	Title    string         `json:"title"`
+}
+
+// ManualPageRef defines model for ManualPageRef.
+type ManualPageRef struct {
+	Id      string `json:"id"`
+	Section string `json:"section"`
+	Title   string `json:"title"`
+}
+
+// ManualPageSummary defines model for ManualPageSummary.
+type ManualPageSummary struct {
+	Id string `json:"id"`
+
+	// Summary The first paragraph of the page, plain text.
+	Summary string `json:"summary"`
+	Title   string `json:"title"`
+}
+
+// ManualSection defines model for ManualSection.
+type ManualSection struct {
+	// Id `user` or `admin`.
+	Id    string              `json:"id"`
+	Pages []ManualPageSummary `json:"pages"`
+	Title string              `json:"title"`
 }
 
 // MembershipChange defines model for MembershipChange.
@@ -5598,6 +5674,12 @@ type ServerInterface interface {
 	// PatchGroupMembers Add and remove members of a group
 	// (PATCH /api/v1/groups/{name}/members)
 	PatchGroupMembers(w http.ResponseWriter, r *http.Request, name string)
+	// GetManualContents The contents of the manual
+	// (GET /api/v1/manual)
+	GetManualContents(w http.ResponseWriter, r *http.Request)
+	// GetManualPage A page of the manual
+	// (GET /api/v1/manual/{section}/{page})
+	GetManualPage(w http.ResponseWriter, r *http.Request, section string, page string)
 	// GetOpenApiJson This document as JSON
 	// (GET /api/v1/openapi.json)
 	GetOpenApiJson(w http.ResponseWriter, r *http.Request)
@@ -7226,6 +7308,55 @@ func (siw *ServerInterfaceWrapper) PatchGroupMembers(w http.ResponseWriter, r *h
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PatchGroupMembers(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetManualContents operation middleware
+func (siw *ServerInterfaceWrapper) GetManualContents(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetManualContents(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetManualPage operation middleware
+func (siw *ServerInterfaceWrapper) GetManualPage(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "section" -------------
+	var section string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "section", r.PathValue("section"), &section, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "section", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "page" -------------
+	var page string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "page", r.PathValue("page"), &page, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "page", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetManualPage(w, r, section, page)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -11513,6 +11644,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/client-setup", wrapper.GetClientSetup)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/guide", wrapper.GetRepositoryGuide)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/formats/{format}/guide", wrapper.GetFormatGuide)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/manual", wrapper.GetManualContents)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/manual/{section}/{page}", wrapper.GetManualPage)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/cache/invalidate", wrapper.InvalidateRepositoryCache)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/cache/entries", wrapper.ListCacheEntries)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories/{key}/upstream-test", wrapper.TestRepositoryUpstream)

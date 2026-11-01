@@ -512,8 +512,10 @@ trove/
 │   ├── errs/
 │   ├── observability/
 │   ├── webui/                   # go:embed all:dist; dist/ is filled by the web build
+│   ├── manual/                  # the manual of the help area: contents, rendering, link check (R-API-054)
 │   ├── tools/coverage/          # requirement coverage generator (docs/coverage, Q-ROAD-4)
 │   └── archtest/
+├── docs/manual/                 # the manual's Markdown and embed.go, which embeds it (R-API-054, Q-UI-89)
 ├── web/                         # Angular workspace (R-ARCH-004)
 ├── deploy/helm/trove/         # Helm chart (INV-13)
 ├── test/

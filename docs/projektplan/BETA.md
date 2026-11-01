@@ -288,7 +288,13 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
   - ⚪ Backup by the CronJob and restore into an empty namespace
 - ⚪ Objections from the walkthrough worked off
 - ⚪ All exit checks green again
-- ⚪ Beta documentation: installation guide, configuration reference, known limitations
+- 🟡 Beta documentation: installation guide, configuration reference, known limitations. The first edition of the
+  [manual](../manual/README.md) (7 user and 12 administrator pages, among them installation, configuration and known
+  limitations) is written against the code of 2026-11-01, embedded into the binary and shown behind the "?" of the UI
+  (R-API-054, R-UI-050, owner 2026-11-01). Open: the pages follow every later phase, and the walkthrough reviews them
+- 🟡 Design language of the owner's example screens in both colour schemes (Q-UI-88, owner 2026-11-01): palette, shell and
+  theme button built and in the component tests; open: the browser tier's colour-contrast check (light and dark) in CI and the
+  owner's review at the walkthrough
 - ⚪ **Beta release**: the release that closes phase 8; its version goes into the table
 
 ---

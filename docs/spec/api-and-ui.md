@@ -1669,6 +1669,41 @@ Acceptance criteria:
   default endpoint it does not (`TestR_API_053_TheGuideOnAnEndpointWithRules`).
 - No answer, for any class, client and caller, matches `trv_(pat|sat|cit)_`.
 
+### R-API-054 · The manual
+Priority: **MVP** · Covers: trove-only
+
+The owner's requirement of 2026-11-01: the documentation for the people who use trove and the people who run it is
+delivered by trove itself, behind the help button of the UI (R-UI-050). The manual is Markdown in
+[docs/manual/](../manual/README.md), embedded into the binary (`docs/manual/embed.go`), so an installation always shows the
+manual of the version it runs; [internal/manual](../../internal/manual/) loads and renders it once at start-up (Q-UI-89).
+
+| Method | Path | Purpose | Permission |
+|---|---|---|---|
+| GET | `/api/v1/manual` | The sections (`user`, `admin`) in reading order with each page's id, title and summary | as `GET /api/v1/formats`: authenticated; anonymous where anonymous access is on |
+| GET | `/api/v1/manual/{section}/{page}` | One page: `title`, `summary`, `html`, `headings` (levels 2 and 3, with their anchors), `previous` and `next` | as above |
+
+- A page starts with a `# Title` line and a summary paragraph of plain text; the HTML is the page below the title, rendered
+  by the renderer and the sanitizer of R-UI-008 with a source bound of 1 MiB. A relative link to another page
+  (`access-tokens.md#create-a-token`, `../admin/endpoints.md`) becomes `help/<section>/<page>` with
+  `#user-content-<slug>` for a heading, a link inside the page `#user-content-<slug>`; every other relative link is removed
+  as in a README.
+- The contents are fixed in `internal/manual`; a page that is missing, a file outside the contents, a page without a title
+  or summary and a link to a page or a heading that does not exist stop the load, so start-up fails rather than serve a
+  broken manual. The test of the package loads the embedded files, so such a manual never passes CI.
+- Both answers carry the same strong ETag, a hash over every rendered page and the renderer version; a matching
+  `If-None-Match` answers `304`. An unknown section or page answers `404`. The text is English (Q-UI-86 applies).
+
+Acceptance criteria:
+
+- The embedded manual loads; `docs/manual/README.md` lists the same sections and pages in the same order with the same
+  titles (`TestR_API_054_EmbeddedManualLoads`, `TestR_API_054_ReadmeListsTheContents`).
+- A link to another page with a heading becomes `help/<section>/<page>#user-content-<slug>`; a link to a missing page or
+  heading, a link into the repository and a page outside the contents stop the load
+  (`TestR_API_054_LinksBecomeHelpRoutes`, `TestR_API_054_DefectsAreRefused`, `TestR_API_054_LinkedRenderingResolvesRelativeLinks`).
+- The contents list `user` before `admin`; a page carries its headings and neighbours; both answer `304` for the ETag and
+  an unknown page `404`; an anonymous caller gets `200` with anonymous access on and `401` with it off
+  (`TestR_API_054_TheManualOperations`, `TestR_API_054_AnonymousReadersFollowTheAnonymousAccessSetting`).
+
 ### R-API-031 · Users, groups and service accounts
 Priority: **MVP** · Covers: ADMAPI-004, ADMAPI-005, ADMAPI-006, ADMAPI-007, ADMAPI-008, ADMAPI-009, ADMAPI-012, ADMAPI-013, ADMAPI-014, ADMAPI-015, ADMAPI-016, ADMAPI-017, ADMAPI-018
 
@@ -2426,13 +2461,16 @@ Acceptance criteria:
 ### R-UI-002 · Application shell
 Priority: **MVP** · Covers: UI-001, UI-004
 
-- Top bar (slim, dark in both colour schemes, Q-UI-68): the product name, a repository search
-  field, the user menu. The search field takes a text and opens the repository list (R-UI-020)
-  filtered by it; it is shown only to a caller who holds `repositories:read-config`, because that
-  list is the API behind it. The global search over packages and files (P1, R-UI-015), the project
-  filter (P1, R-UI-041) and the help link (`ui.help_url`, which the browser cannot read yet,
-  Q-UI-15) take their place in the same bar when their APIs exist. A configurable server name is P2
-  on [operations-and-observability.md](operations-and-observability.md).
+- Top bar (slim, dark in both colour schemes, Q-UI-68, in the colours of the design language, Q-UI-88): the
+  product name, a repository search field, the help button, the theme button and the user menu. The search
+  field takes a text and opens the repository list (R-UI-020) filtered by it; it is shown only to a caller who
+  holds `repositories:read-config`, because that list is the API behind it. The help button ("?", R-UI-050) opens
+  the manual page of the current screen, or the overview of the help area (Q-UI-90). The theme button offers
+  "Follow the system", "Light" and "Dark" as radio items (R-API-021); the user menu shows a round badge with the
+  first letter of the name beside the name and holds profile, client setup, language and sign-out. The global
+  search over packages and files (P1, R-UI-015) and the project filter (P1, R-UI-041) take their place in the same
+  bar when their APIs exist. A configurable server name is P2 on
+  [operations-and-observability.md](operations-and-observability.md).
 - Navigation with two areas: **Packages and files** (packages, browser, guides (R-UI-049), search, trash, builds; from
   M4b also vulnerabilities, shown to every signed-in user,
   [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-022) and
@@ -3172,6 +3210,37 @@ Acceptance criteria:
 - For every class and client of npm the guide has the sections `what`, `configure`, `authenticate`, `install` and
   `troubleshooting` (kit check 8), and every code its troubleshooting table names is a code of the problem catalog,
   under the status trove answers it with (`TestR_UI_049_TheTroubleshootingCodesAreTroves`).
+
+### R-UI-050 · Help area and the manual
+Priority: **MVP** · Covers: trove-only
+
+The owner's requirement of 2026-11-01: a "?" at the top right behind which the user and administrator documentation of
+trove is found, delivered by the frontend. The text is the manual of R-API-054; the UI renders no Markdown.
+
+- **Entry.** The help button of the top bar (R-UI-002) links to the manual page of the current screen: the longest route
+  prefix of `HELP_TOPICS` in [core/help-topics.ts](../../web/src/app/core/help-topics.ts) (for example `/admin/endpoints`
+  to the administrator guide's endpoints page), or the overview `/help` where none matches (Q-UI-90). The lint
+  (`web/scripts/check-rules.mjs`) fails when a page named there is not a file of `docs/manual/`.
+- **Overview** (`/help`): both guides with every page's title and summary, each a link to the page, and a link to the
+  guides of R-UI-049 for the commands of a package client.
+- **Page** (`/help/<section>/<page>`): the contents of both guides beside the page with the current page marked
+  (`aria-current`), the page title as the heading and the document title, "On this page" from the page's headings, the
+  page's HTML bound like a README (R-UI-008, the same component and finishing pass), and links to the previous and the
+  next page. A link of the text to another page stays a link and opens the page in the application (a modified click
+  opens it in a new tab through the browser); a fragment in the address scrolls to its heading. On narrow content the
+  contents give way to a link back to the overview.
+- The manual's text is English and marked `lang="en"`; the frame is translated (Q-UI-86). The area sits behind the same
+  guard as the guides: signed-in callers, anonymous ones where anonymous access is on.
+- Accessibility as R-UI-044: one `h1`, landmarks for the contents, "On this page" and the page navigation.
+
+Acceptance criteria:
+
+- The help button links to `/help/admin/endpoints` on the endpoints screen, to `/help/user/files` on the file browser,
+  to `/help/admin/operations` on the jobs screen and to `/help` on the signed-out screen (`app.spec.ts`).
+- The overview lists both guides with every page linked; a page shows its title, its headings, the contents and its
+  neighbours; a link to another page navigates in the application to that page and heading, a link inside the page
+  scrolls; an unknown page and a failed read show the error with a retry; axe finds no serious or critical violation
+  ([help.spec.ts](../../web/src/app/features/help/help.spec.ts), `app.routes.spec.ts` for both routes).
 
 ### R-UI-020 · Repository list
 Priority: **MVP** · Covers: UI-030, REPO-007
@@ -5460,6 +5529,75 @@ Context: E2.13 asks that the guide of a virtual npm repository show the configur
 **Rationale:** Equality of the guide and the setup page is the criterion; correctness of the setup page against the clients is Q-UI-82's and the matrix's. The development agent revisits this with Q-UI-82.
 
 **Applied in the spec:** R-UI-049; [e2e.md](../developer/e2e.md#browser-journeys).
+
+### Q-UI-88 · The design language and its two colour schemes
+
+Status: **The owner's requirement of 2026-11-01; the adaptation decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the owner sent two example screens, one dark and one light, and asked that trove take their design language and
+colours, with a dark and a light mode. The measured values and the reading of both screens are in
+[design-language.md](../developer/design-language.md). Two measured values miss WCAG AA, which R-UI-044 requires and the
+browser tier checks with axe's `color-contrast` rule: the accent green as text or as the fill under white text on the
+white page (2.8:1), and the muted grey of the dark screen on its cards (4.1:1).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The measured values everywhere | Green `#3db064` on white, grey `#737984` on dark cards | Closest to the screens | Fails R-UI-044 and the axe check of the browser tier |
+| (b) The measured values, with the tones that miss AA moved in their own hue | Light scheme: accent `#1d7a43` (5.4:1 both ways), muted text `#5b6270`; dark scheme: accent `#3db064` as measured (7.1:1), muted text `#9aa1ad` (6.9:1); surfaces, borders, chrome as measured | The screens' look with readable text; one place (`main.scss`) holds the palette | The light scheme's green is darker than the screen's |
+| (c) Material tonal palettes generated from the two seed colours | Only `primary` and `neutral` as input | No hand-set values | Surfaces and chrome come out far from the screens (Material's dark surface is a neutral grey, not the screens' near-black navy) |
+
+**Choice:** (b). The theme button moves out of the user menu into the top bar, as on the dark example screen, and keeps
+the third choice "Follow the system" (R-API-021). The type stays the system font stack: the screens use a humanist sans,
+and a self-hosted web font would add files to the bundle for a difference most readers will not see.
+
+**Rationale:** The design language is the screens' structure and surfaces as much as their hue, so the surfaces, borders
+and chrome are taken as measured; only the two text tones move, by the least step that passes AA. The development agent
+revisits the type when the walkthrough finds the system font out of keeping, and every tone when the owner prefers the
+screens' green to the contrast rule.
+
+**Applied in the spec:** R-UI-002; [design-language.md](../developer/design-language.md);
+[web-ui.md](../developer/web-ui.md#design-tokens).
+
+### Q-UI-89 · How the manual reaches the UI
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the owner wants the user and administrator documentation delivered by the frontend (R-UI-050). The server already
+renders and sanitizes Markdown for READMEs and guides (R-UI-008, R-API-053), and the UI binds that HTML with one component.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Markdown in the repository, embedded into the binary, rendered by the server's README renderer, read through two operations | `docs/manual/`, `internal/manual`, R-API-054 | One renderer and sanitizer for every Markdown text; the manual is the running version's; works without internet; links checked by a Go test | Two operations and a load step at start-up |
+| (b) HTML rendered at build time into the UI's assets | A build step with a Markdown library | No API | A second Markdown pipeline beside the server's, a second sanitizer policy to keep equal, the build grows a step |
+| (c) Markdown fetched as assets and rendered in the browser | A Markdown library in the bundle | No server change | A dependency and its weight in the bundle; the browser's sanitizer only |
+| (d) A link to a documentation site | `ui.help_url` (Q-UI-15) | Nothing to build | No such site exists; it would describe another version than the installation runs, and an air-gapped installation cannot reach it |
+
+**Choice:** (a). Links between pages are relative `.md` links, so the same files read on GitHub; the server turns them into
+links of the help area, and a link to a page or heading that does not exist stops the load.
+
+**Rationale:** The manual is the third Markdown text trove shows; giving it the pipeline the other two use keeps one
+sanitizer policy and one binding component, and embedding it ties the text to the version it describes. The development
+agent revisits this if the manual needs content per installation (addresses, configured providers), which the guides of
+R-API-053 already cover for package clients.
+
+**Applied in the spec:** R-API-054, R-UI-050; [architecture.md](architecture.md) R-ARCH-003 (the packages).
+
+### Q-UI-90 · What the help button opens
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Always the overview of the help area | `/help` | Simple | Every reader starts by searching the contents |
+| (b) The manual page of the current screen, the overview where none matches | A table from route prefixes to pages | The answer to "what is this screen" is one click away | A table to keep true; the lint checks that its pages exist |
+| (c) A menu: manual, guides, client setup | Three entries | Every help surface named | A click more for the common case; the guides and the setup page are in the side bar and the user menu already |
+
+**Choice:** (b).
+
+**Rationale:** A help button is pressed on the screen the question is about. The development agent revisits this when a
+screen gains a help need its manual page does not answer, for example with a fragment per tab.
+
+**Applied in the spec:** R-UI-002, R-UI-050.
 
 ### Q-API-16 · A `limit` above the maximum is clamped
 

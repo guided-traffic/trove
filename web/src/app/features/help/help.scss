@@ -1,0 +1,242 @@
+// The help area (R-UI-050): the overview's cards and a page with the contents beside it. Colours
+// and lengths come from the tokens only.
+
+:host {
+  display: block;
+}
+
+.help-lead {
+  max-inline-size: 48rem;
+  margin-block: 0 var(--trove-space-6);
+  color: var(--trove-text-muted);
+}
+
+.help-sections {
+  display: grid;
+  gap: var(--trove-space-6);
+}
+
+.help-section h2 {
+  margin-block: 0 var(--trove-space-3);
+  font: var(--mat-sys-title-medium);
+  font-weight: 600;
+}
+
+.help-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: var(--trove-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.help-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--trove-space-1);
+  block-size: 100%;
+  box-sizing: border-box;
+  padding: var(--trove-space-3) var(--trove-space-4);
+  border: 1px solid var(--trove-border);
+  border-radius: var(--trove-radius-s);
+  background: var(--trove-surface-raised);
+  box-shadow: var(--trove-elevation-1);
+  color: var(--trove-on-surface);
+  text-decoration: none;
+
+  &:hover {
+    border-color: var(--trove-accent);
+  }
+
+  &:focus-visible {
+    outline: var(--trove-focus-ring);
+    outline-offset: 2px;
+  }
+}
+
+.help-card-title {
+  color: var(--trove-accent);
+  font-weight: 600;
+}
+
+// Four lines on the card; the whole summary opens the page.
+.help-card-summary {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  color: var(--trove-text-muted);
+  font-size: var(--trove-text-muted-size);
+}
+
+.help-more {
+  margin-block-start: var(--trove-space-6);
+}
+
+// ---- A page --------------------------------------------------------------------------------------
+
+.help-layout {
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr);
+  gap: var(--trove-space-8);
+  align-items: start;
+}
+
+.help-contents {
+  position: sticky;
+  inset-block-start: 0;
+  max-block-size: calc(100vh - var(--trove-topbar-height) - var(--trove-space-8));
+  overflow-y: auto;
+  padding: var(--trove-space-3);
+  border: 1px solid var(--trove-border);
+  border-radius: var(--trove-radius-s);
+  background: var(--trove-surface-raised);
+  font-size: var(--trove-text-muted-size);
+
+  ul {
+    margin: 0 0 var(--trove-space-3);
+    padding: 0;
+    list-style: none;
+  }
+
+  // `ul a` outweighs the shell's link colour, so the contents read as a list and only the current
+  // page takes the accent.
+  ul a {
+    display: block;
+    padding: var(--trove-space-1) var(--trove-space-2);
+    border-inline-start: 3px solid transparent;
+    color: var(--trove-on-surface);
+    text-decoration: none;
+
+    &:hover {
+      background: var(--trove-row-hover);
+    }
+
+    &:focus-visible {
+      outline: var(--trove-focus-ring);
+      outline-offset: -2px;
+    }
+
+    // The current page: the accent bar and bold text, so the state is not carried by colour alone.
+    &.active {
+      border-inline-start-color: var(--trove-accent);
+      color: var(--trove-accent);
+      font-weight: 600;
+    }
+  }
+}
+
+.help-contents-title {
+  margin: 0 0 var(--trove-space-2);
+  color: var(--trove-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.help-contents-section {
+  margin: var(--trove-space-3) 0 var(--trove-space-1);
+  font-size: var(--trove-text-muted-size);
+  font-weight: 600;
+}
+
+.help-contents .help-overview-link {
+  padding-inline: var(--trove-space-2);
+}
+
+.help-back {
+  display: none;
+}
+
+.help-article {
+  max-inline-size: 52rem;
+}
+
+.help-toc {
+  margin-block: 0 var(--trove-space-6);
+  padding: var(--trove-space-3) var(--trove-space-4);
+  border-inline-start: 3px solid var(--trove-accent);
+  background: var(--trove-table-head-bg);
+
+  // One flat list; a third-level heading is indented under its section.
+  ul {
+    display: grid;
+    gap: var(--trove-space-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  li.sub {
+    padding-inline-start: var(--trove-space-4);
+    font-size: var(--trove-text-muted-size);
+  }
+
+  a:focus-visible {
+    outline: var(--trove-focus-ring);
+    outline-offset: 2px;
+  }
+}
+
+.help-toc-title {
+  margin: 0 0 var(--trove-space-2);
+  font: var(--mat-sys-title-small);
+  font-weight: 600;
+}
+
+.help-pager {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--trove-space-3);
+  margin-block-start: var(--trove-space-8);
+  padding-block-start: var(--trove-space-4);
+  border-block-start: 1px solid var(--trove-border);
+
+  a {
+    display: flex;
+    flex-direction: column;
+    gap: var(--trove-space-1);
+    max-inline-size: 48%;
+    padding: var(--trove-space-2) var(--trove-space-3);
+    border: 1px solid var(--trove-border);
+    border-radius: var(--trove-radius-s);
+    text-decoration: none;
+
+    &:hover {
+      border-color: var(--trove-accent);
+    }
+  }
+
+  .next {
+    margin-inline-start: auto;
+    text-align: end;
+  }
+}
+
+.help-pager-label {
+  color: var(--trove-text-muted);
+  font-size: var(--trove-text-muted-size);
+}
+
+.help-pager-title {
+  font-weight: 600;
+}
+
+// Narrow content: the page alone, with a link back to the overview instead of the contents.
+@container content (max-width: 52rem) {
+  .help-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .help-contents {
+    display: none;
+  }
+
+  .help-back {
+    display: inline-block;
+    margin-block-end: var(--trove-space-3);
+  }
+}

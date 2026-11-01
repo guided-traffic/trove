@@ -195,5 +195,54 @@ describe('App shell', () => {
     const { root } = await render('/', (api) => (api.meResult = { capabilities: ['audit:read'] }));
     expect(root.querySelector('mat-toolbar form[role="search"]')).toBeNull();
   });
-});
 
+  it('R-UI-050 the help button opens the manual page of the current screen, or the overview', async () => {
+    const { fixture, root } = await render('/admin/endpoints');
+    const help = () => root.querySelector<HTMLAnchorElement>('mat-toolbar a[aria-label="Help"]');
+    expect(help()?.getAttribute('href')).toBe('/help/admin/endpoints');
+    await TestBed.inject(Router).navigateByUrl('/browse');
+    await fixture.whenStable();
+    expect(help()?.getAttribute('href')).toBe('/help/user/files');
+    await TestBed.inject(Router).navigateByUrl('/admin/system/jobs');
+    await fixture.whenStable();
+    expect(help()?.getAttribute('href')).toBe('/help/admin/operations');
+    await TestBed.inject(Router).navigateByUrl('/logged-out');
+    await fixture.whenStable();
+    expect(help()?.getAttribute('href')).toBe('/help');
+  });
+
+  it('R-API-021 the theme button offers the three choices, marks the current one and applies a choice', async () => {
+    const { fixture, root } = await render();
+    const button = root.querySelector<HTMLButtonElement>('mat-toolbar button[aria-label="Theme"]')!;
+    button.click();
+    await fixture.whenStable();
+    const items = () => [...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')];
+    expect(items().map((i) => i.querySelector('span:last-child')?.textContent?.trim())).toEqual([
+      'Follow the system',
+      'Light',
+      'Dark',
+    ]);
+    expect(items().map((i) => i.getAttribute('aria-checked'))).toEqual(['true', 'false', 'false']);
+    items()[2]!.click();
+    await fixture.whenStable();
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    button.click();
+    await fixture.whenStable();
+    expect(items().map((i) => i.getAttribute('aria-checked'))).toEqual(['false', 'false', 'true']);
+    items()[0]!.click();
+    await fixture.whenStable();
+    expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
+  });
+
+  it('R-UI-002 the user menu shows the initial and the name; the theme is not in it any more', async () => {
+    const { fixture, root } = await render();
+    const user = root.querySelector<HTMLButtonElement>('mat-toolbar .user-button')!;
+    const name = user.querySelector('.user-name')?.textContent?.trim() ?? '';
+    expect(user.querySelector('.avatar')?.textContent?.trim()).toBe(name.charAt(0));
+    user.click();
+    await fixture.whenStable();
+    const menu = [...document.querySelectorAll('.mat-mdc-menu-panel button, .mat-mdc-menu-panel a')].map((e) => e.textContent?.trim());
+    expect(menu).toContain('Language');
+    expect(menu).not.toContain('Theme');
+  });
+});

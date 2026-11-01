@@ -1999,6 +1999,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/manual": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The contents of the manual
+         * @description The sections of the trove manual (R-API-054) in reading order, the user guide first, each with the
+         *     title and summary of its pages. The manual is the one the binary embeds, so it describes the running
+         *     version; it is English and the same for every caller. Any caller; an anonymous caller only where
+         *     anonymous access is on, else `401`. The strong ETag changes with any page, and a matching
+         *     `If-None-Match` answers `304`.
+         */
+        get: operations["getManualContents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/manual/{section}/{page}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A page of the manual
+         * @description One page of the manual (R-API-054): its title, its summary, its text below the title rendered from
+         *     Markdown to sanitized HTML by the README renderer of R-UI-008, its second- and third-level headings
+         *     for a table of contents, and its neighbours in reading order. A link to another page is relative to
+         *     the base address of the UI (`help/<section>/<page>`, with `#user-content-<slug>` for a heading), a
+         *     link inside the page is `#user-content-<slug>`; bind the HTML like a README. Same access and ETag as
+         *     the contents; an unknown section or page answers `404`.
+         */
+        get: operations["getManualPage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/repositories/{repoKey}/cache/invalidate": {
         parameters: {
             query?: never;
@@ -4188,6 +4237,46 @@ export interface components {
             html: string;
             /** @description The snippets of the client setup the section shows below its text, empty for most sections. */
             snippets: components["schemas"]["ClientSnippet"][];
+        };
+        ManualContents: {
+            sections: components["schemas"]["ManualSection"][];
+        };
+        ManualSection: {
+            /** @description `user` or `admin`. */
+            id: string;
+            title: string;
+            pages: components["schemas"]["ManualPageSummary"][];
+        };
+        ManualPageSummary: {
+            id: string;
+            title: string;
+            /** @description The first paragraph of the page, plain text. */
+            summary: string;
+        };
+        ManualPageRef: {
+            section: string;
+            id: string;
+            title: string;
+        };
+        ManualHeading: {
+            /** @enum {integer} */
+            level: 2 | 3;
+            /** @description The anchor of the heading in `html`, `user-content-<slug>`. */
+            id: string;
+            text: string;
+        };
+        ManualPage: {
+            section: string;
+            id: string;
+            title: string;
+            summary: string;
+            /** @description The page below its title, sanitized by the README renderer of R-UI-008; bind it like a README. */
+            html: string;
+            headings: components["schemas"]["ManualHeading"][];
+            /** @description The page before this one in reading order; null for the first page. */
+            previous: components["schemas"]["ManualPageRef"] | null;
+            /** @description The page after this one in reading order; null for the last page. */
+            next: components["schemas"]["ManualPageRef"] | null;
         };
         CacheInvalidateRequest: {
             /**
@@ -9333,6 +9422,119 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getManualContents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The contents. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "sections": [
+                     *         {
+                     *           "id": "user",
+                     *           "title": "User guide",
+                     *           "pages": [
+                     *             {
+                     *               "id": "getting-started",
+                     *               "title": "Getting started",
+                     *               "summary": "How to sign in, find your way around the screens and choose your language and theme."
+                     *             }
+                     *           ]
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ManualContents"];
+                };
+            };
+            /** @description The manual has not changed since the ETag of If-None-Match. */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getManualPage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The section, `user` or `admin`. */
+                section: string;
+                /** @description The page id, the file name of the page without `.md`. */
+                page: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The page. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "section": "user",
+                     *       "id": "access-tokens",
+                     *       "title": "Personal access tokens",
+                     *       "summary": "How to create, use and revoke the tokens that package clients and scripts sign in with.",
+                     *       "html": "<p>How to create, use and revoke …</p><h2 id=\"user-content-create-a-token\">Create a token</h2>",
+                     *       "headings": [
+                     *         {
+                     *           "level": 2,
+                     *           "id": "user-content-create-a-token",
+                     *           "text": "Create a token"
+                     *         }
+                     *       ],
+                     *       "previous": {
+                     *         "section": "user",
+                     *         "id": "client-setup",
+                     *         "title": "Connecting a package client"
+                     *       },
+                     *       "next": {
+                     *         "section": "user",
+                     *         "id": "troubleshooting",
+                     *         "title": "Errors and troubleshooting"
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ManualPage"];
+                };
+            };
+            /** @description The manual has not changed since the ETag of If-None-Match. */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             401: components["responses"]["Unauthenticated"];
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];

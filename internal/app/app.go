@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	docsmanual "github.com/guided-traffic/trove/docs/manual"
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth/token"
@@ -25,6 +26,7 @@ import (
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/jobs"
+	"github.com/guided-traffic/trove/internal/manual"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/observability/health"
@@ -421,6 +423,12 @@ func (a *App) startClient() error {
 	if err != nil {
 		return fmt.Errorf("ui: %w", err)
 	}
+	// The manual is the binary's own text; the test of internal/manual loads the same
+	// files, so a manual that fails here never passed CI.
+	help, err := manual.Load(docsmanual.Files)
+	if err != nil {
+		return fmt.Errorf("manual: %w", err)
+	}
 	for _, rt := range a.eps {
 		router := httpserver.NewEndpointRouter(rt.ep)
 		api := v1.New(v1.Options{
@@ -436,6 +444,7 @@ func (a *App) startClient() error {
 			Files: part[filesArea](a.parts).service, FilesDecider: part[filesArea](a.parts).decider,
 			Cache:      a.cacheAPI(),
 			Resolution: a.resolutionExplainer(),
+			Manual:     help,
 		})
 		// The router drops the routes of a family the endpoint's surface does not hold.
 		api.Register(router)

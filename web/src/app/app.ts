@@ -16,11 +16,13 @@ import { MatDialog } from '@angular/material/dialog';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatSidenav, MatSidenavContainer, MatSidenavModule } from '@angular/material/sidenav';
 import { MatToolbarModule } from '@angular/material/toolbar';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter, map } from 'rxjs';
 import { ApiError } from './api/problem';
 import { Breadcrumbs } from './core/breadcrumbs';
 import { FocusOnNavigation } from './core/focus-on-navigation';
+import { helpFor } from './core/help-topics';
 import { Layout } from './core/layout';
 import { NavGroup, Navigation } from './core/navigation';
 import { NavState } from './core/nav-state';
@@ -33,8 +35,8 @@ import { SessionDialog } from './shared/session-dialog';
 
 /**
  * Root component (R-UI-002, Q-UI-68): skip link, the dark top bar (wordmark, repository search,
- * user menu), the dark navigation sidebar (areas, folding groups, icon rail), the breadcrumb trail,
- * banner area and router outlet.
+ * help, theme, user menu), the dark navigation sidebar (areas, folding groups, icon rail), the
+ * breadcrumb trail, banner area and router outlet.
  */
 @Component({
   selector: 'trove-root',
@@ -46,6 +48,7 @@ import { SessionDialog } from './shared/session-dialog';
     MatMenuModule,
     MatSidenavModule,
     MatToolbarModule,
+    MatTooltipModule,
     Banner,
     ErrorNotice,
     Notices,
@@ -84,6 +87,15 @@ export class App {
     ),
     { initialValue: this.router.url },
   );
+  /** The manual page of the current screen, or the help overview (R-UI-050, Q-UI-90). */
+  protected readonly help = computed(() => helpFor(this.url()));
+  /** The first letter of the signed-in name, for the badge of the user menu. */
+  protected readonly initial = computed(() => (this.session.whoami()?.principal?.name ?? '').trim().charAt(0));
+  protected readonly themes: readonly { value: UiTheme | null; label: string; icon: string }[] = [
+    { value: null, label: $localize`:@@shell.theme.system:Follow the system`, icon: 'brightness_auto' },
+    { value: 'light', label: $localize`:@@shell.theme.light:Light`, icon: 'light_mode' },
+    { value: 'dark', label: $localize`:@@shell.theme.dark:Dark`, icon: 'dark_mode' },
+  ];
   protected readonly loadFailure = computed(() =>
     this.session.state() === 'failed' ? (this.session.loadError() ?? new ApiError(0, null, null)) : null,
   );

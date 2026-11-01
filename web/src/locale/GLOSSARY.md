@@ -55,4 +55,6 @@ before using a new term in a German text.
 | class (of a repository), format settings | Klasse, Formateinstellungen (`npm-Einstellungen`) |
 | default (value of a setting) | Standard |
 | guide (of a format), how to use (tab) | Anleitung, Verwendung |
+| help (area), manual, contents, on this page | Hilfe, Handbuch, Inhalt, Auf dieser Seite |
+| theme (light, dark, follow the system) | Design (Hell, Dunkel, Systemeinstellung folgen) |
 | lockfile | Lockfile |

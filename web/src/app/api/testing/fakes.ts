@@ -21,6 +21,9 @@ import { provideCatalogFakes } from './fakes-catalog';
 import { providePackageFakes } from './fakes-packages';
 import { provideGuideFakes } from './fakes-guides';
 // <<< M2 ui-packages
+// >>> M2 manual
+import { provideManualFakes } from './fakes-manual';
+// <<< M2 manual
 
 /*
  * In-memory fakes of the typed service interfaces (R-UI-047 component tier). Screens of the later
@@ -268,5 +271,8 @@ export function provideFakeApis(): Provider[] {
     ...providePackageFakes(),
     ...provideGuideFakes(),
     // <<< M2 ui-packages
+    // >>> M2 manual
+    ...provideManualFakes(),
+    // <<< M2 manual
   ];
 }

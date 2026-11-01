@@ -1,0 +1,117 @@
+# How trove runs
+
+This page explains the moving parts of a trove installation: the process roles, the three services trove depends on and what each of them holds, why any replica can answer any request, which listeners a replica opens, how the schema migration runs, and what the Helm chart deploys. Read it before you install trove or plan its capacity.
+
+## At a glance
+
+```text
+  browsers, package managers, scripts
+                 │ HTTPS
+       ingress controller (edge)
+                 │ HTTPS, requests spread at random
+                 ▼
+  web replicas                           worker replicas
+    client listener :8080                  background jobs
+    further endpoints (own ports)          ops listener :8081
+    ops listener :8081
+          │                                      │
+          └───────────────── TLS ────────────────┘
+                              │
+       ┌──────────────────────┼──────────────────────┐
+       ▼                      ▼                      ▼
+  PostgreSQL            Valkey with Sentinel    S3 object storage
+  system of record      shared ephemeral state  blobs
+
+  migration Job: trove migrate up, before every install and upgrade, PostgreSQL only
+```
+
+## One binary, several roles
+
+trove is a single binary with the web UI built in. What a process does is set by its role, given as `trove serve --role <role>` (the chart sets it per Deployment) or as `process.role` in the configuration. The role has no default.
+
+| Role | What it runs | Where it runs |
+|---|---|---|
+| `web` | The client listener with the UI, the management API, sign-in, raw file transfer and the package protocols; the ops listener. It puts background work into the job queue but does not run it. | The `web` Deployment and, optionally, a pool Deployment per endpoint |
+| `worker` | The background jobs: garbage collection of stored content, repository and folder deletions, token and session cleanup, audit retention and the other maintenance tasks. It opens the ops listener only, never a client port. | The `worker` Deployment |
+| `all` | Both of the above in one process. It logs a warning at start because it is meant for local development only. | Never rendered by the chart |
+
+Besides `serve`, the binary has these commands:
+
+| Command | Purpose |
+|---|---|
+| `trove migrate up` | Applies the database migrations. The chart runs it as a Job before every install and upgrade. |
+| `trove migrate status` | Prints the migration state as JSON and changes nothing. |
+| `trove admin …` | Bootstrap and recovery: validate the configuration, the break-glass account, service accounts and their tokens, ending sessions, disabling a user. See [Installation](installation.md#bootstrap-and-recovery-commands). |
+| `trove backup` | Reserved. It exits with "not implemented yet": this version has no backup or restore command, no backup role and no backup job. See [Known limitations](limitations.md). |
+
+## The dependencies
+
+trove keeps no state on its own disks. Its pods use only an ephemeral spool directory and `/tmp`, and nothing is lost when a pod is replaced. Every piece of state lives in one of three services, none of which the chart installs.
+
+| Service | Role | What it holds | What happens without it |
+|---|---|---|---|
+| PostgreSQL 16 or later | System of record | Repositories and their settings, the item tree with its files, packages and versions, users, groups, service accounts, hashed tokens, sessions, permission policies and role bindings, endpoint exposure rules, the audit journal, the job queue, the change log that keeps the replicas' caches in step, and the schema state | Replicas turn unready after `health.database_outage_grace` (20 s by default) and requests fail with `503`. Nothing is served from anywhere else. |
+| Valkey 9.0 or later, with Sentinel | Shared ephemeral state | Cluster-wide rate-limit counters, short-lived markers of recently checked tokens, the locks that collapse simultaneous fetches from an upstream registry into one, the negative cache of upstream misses, and Pub/Sub messages that evict caches early | trove keeps serving in a degraded mode: rate limits fall back to each replica's share, fetch collapsing works only within a replica, and cache invalidations arrive through the PostgreSQL change log instead of the faster message. You lose performance, not data, because Valkey never holds the only copy of anything. |
+| S3-compatible object storage | Blob store | The content of every file and package, stored once under its SHA-256 digest | Downloads and uploads of content fail. A replica checks the store before its first readiness; afterwards the check only gates readiness when `health.require_object_store` is on. |
+
+Every connection to these services runs TLS by default, and the server certificate is verified, against the system roots or against the CA you configure. Credential and certificate files are read again while trove runs, so a rotated Secret takes effect without a restart. [Configuration](configuration.md#what-needs-a-restart-and-what-applies-live) lists what applies live.
+
+## Any replica, any request
+
+No `web` replica keeps state that a later request needs. A sign-in is three requests (start, identity provider, callback) and each step is recorded in PostgreSQL, so each of them may reach a different replica. Sessions, tokens and permissions are read from PostgreSQL and cached per replica. Every replica polls the PostgreSQL change log and drops a cached value that a write on another replica made stale; a revoked token or an ended session stops working on every replica within `auth.revocation_bound` (2 s by default).
+
+The client Service spreads requests over the `web` pods at random and has no session affinity. Do not add cookie or source-address affinity at the ingress controller: trove does not need it, and it would defeat the even spread of load.
+
+Background jobs are claimed by `worker` replicas under leases with heartbeats. A job whose worker disappears is picked up by another one when the lease runs out.
+
+## Listeners
+
+| Listener | Port | Serves | Opened by |
+|---|---|---|---|
+| Client listener (the default endpoint) | `8080` (`server.listen`) | The UI under `/ui/`, the management API under `/api/v1/`, sign-in under `/auth/`, raw files under `/files/` and the package protocols under `/api/<format>/<repository>/` | `web` |
+| Further endpoints | One port each, set per endpoint | Only the route families the endpoint is configured for (packages by default), with its own hosts, certificates and accepted credentials | `web`, or the endpoint's own pool |
+| Ops listener | `8081` (`server.ops_listen`) | `GET /healthz` (liveness), `GET /readyz` (readiness, `?verbose=1` lists the checks) and `GET /metrics` (Prometheus) | `web` and `worker` |
+
+An endpoint is identified by the listener a request arrives on, not by its `Host` header; a host the endpoint does not serve answers `421`. [Endpoints and exposure rules](endpoints.md) describes further endpoints. With the chart, every listener serves HTTPS by default and reloads its certificate without a restart; see [TLS and certificates](tls-and-certificates.md).
+
+The ops listener has no authentication of its own unless `metrics.auth` is set to `static`. The chart's NetworkPolicy admits port 8081 only from the `monitoring` namespace by default.
+
+## Start, readiness and shutdown
+
+A replica opens its ops listener first and answers `/readyz` with `503` until its checks pass: PostgreSQL reachable on the primary, the schema at the version this binary needs, the TLS material loaded, the object store checked once and the client listeners bound. Valkey is reported but holds back only the first readiness, and only when its settings are wrong (a wrong password, an unknown primary name, a rejected certificate). A replica that cannot reach PostgreSQL stays alive and unready and keeps trying.
+
+On `SIGTERM`, a replica turns unready at once. A `web` replica keeps serving for `health.shutdown_drain_delay` (5 s by default) so the ingress controller can drop it, lets in-flight requests finish and closes within the pod's termination grace period (120 s for `web`, 300 s for `worker` in the chart). A `worker` stops claiming jobs and releases what it holds. This is what lets a node drain or a rolling restart pass without failed requests.
+
+## The migration Job
+
+The schema is versioned with the binary. `trove migrate up` applies the migrations embedded in the binary in order, each in its own transaction, under a PostgreSQL advisory lock, so two runs never overlap. The chart runs it as the Job `<fullname>-migrate`, a Helm hook before every install and upgrade; the Deployments change only after it has succeeded. The Job connects only to PostgreSQL: it mounts no Valkey, object-store or encryption-key Secret and opens no listener.
+
+A replica checks the schema at start (the compatibility gate):
+
+- A schema that is behind this binary keeps the replica unready until the migration has run.
+- A schema that requires a newer binary than this one makes the replica exit with `schema requires trove >= <version>`.
+- Migrations that only add to the schema never make an older binary incompatible, so a running replica of the previous version stays ready after such a migration.
+
+[Upgrades](upgrades.md) describes the order of an upgrade and what is verified about it.
+
+## What the chart deploys
+
+`<fullname>` is the release name, or `<release>-trove` when the release name does not contain `trove`.
+
+| Object | Name | Purpose |
+|---|---|---|
+| Deployment | `<fullname>-web` | `trove serve --role web`, 3 replicas by default |
+| Deployment | `<fullname>-worker` | `trove serve --role worker`, 2 replicas by default |
+| Job (Helm hook) | `<fullname>-migrate` | `trove migrate up` before install and upgrade, with its own ConfigMap and ServiceAccount |
+| Service | `<fullname>` | Port 8080 of the `web` pods, no session affinity |
+| Service | `<fullname>-ops` | Port 8081 of every `web` and `worker` pod |
+| ConfigMap | `<fullname>-config` | `trove.yaml`, rendered from the `config` value |
+| ServiceAccount | `<fullname>` | Without a Kubernetes API token: trove never calls the Kubernetes API |
+| PodDisruptionBudget | one per Deployment | At most one pod of a role unavailable at a time |
+| NetworkPolicy | `<fullname>-web`, `<fullname>-worker`, `<fullname>-migrate` | Ingress rules only: 8080 from the configured peers (anywhere by default), 8081 from the `monitoring` namespace, nothing to the Job |
+| Ingress | `<fullname>` | Only with `ingress.enabled`; HTTPS to the backend |
+| Service, Ingress, NetworkPolicy, optional Deployment | `<fullname>-ep-<name>`, `<fullname>-web-ep-<name>` | One set per further endpoint |
+
+The pods run as a non-root user with a read-only root file system and satisfy the restricted Pod Security Standard. They are spread across nodes and zones.
+
+The chart does not deploy PostgreSQL, Valkey, the object store, the ingress controller, certificates or any Secret: every Secret it mounts must exist before the install. It also renders no autoscaler, no egress NetworkPolicy, no ServiceMonitor, no Gateway API route and no backup job in this version.

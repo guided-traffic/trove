@@ -43,24 +43,53 @@
     </form>
   }
 
-  @switch (session.state()) {
-    @case ('authenticated') {
-      <button
-        mat-button
-        type="button"
-        class="user-button"
-        [matMenuTriggerFor]="userMenu"
+  <div class="topbar-actions">
+    @if (showNav()) {
+      <!-- The manual page of the current screen, or the overview of the help area (R-UI-050). -->
+      <a
+        mat-icon-button
+        class="topbar-icon"
+        [routerLink]="help()"
+        i18n-aria-label="@@shell.help"
+        aria-label="Help"
+        i18n-matTooltip="@@shell.help"
+        matTooltip="Help"
       >
-        <span class="material-icons" aria-hidden="true">account_circle</span>
-        <span class="user-name" translate="no">{{ session.whoami()?.principal?.name }}</span>
-        <!-- The visible name is the first part of the accessible name (WCAG 2.5.3, axe label-content-name-mismatch). -->
-        <span class="visually-hidden">&ngsp;<ng-container i18n="@@shell.user-menu">User menu</ng-container></span>
-      </button>
+        <span class="material-icons" aria-hidden="true">help_outline</span>
+      </a>
     }
-    @case ('anonymous') {
-      <a mat-button routerLink="/login" i18n="@@shell.sign-in">Sign in</a>
+    <button
+      mat-icon-button
+      type="button"
+      class="topbar-icon"
+      [matMenuTriggerFor]="themeMenu"
+      i18n-aria-label="@@shell.theme"
+      aria-label="Theme"
+      i18n-matTooltip="@@shell.theme"
+      matTooltip="Theme"
+    >
+      <span class="material-icons" aria-hidden="true">contrast</span>
+    </button>
+
+    @switch (session.state()) {
+      @case ('authenticated') {
+        <button
+          mat-button
+          type="button"
+          class="user-button"
+          [matMenuTriggerFor]="userMenu"
+        >
+          <span class="avatar" aria-hidden="true" translate="no">{{ initial() }}</span>
+          <span class="user-name" translate="no">{{ session.whoami()?.principal?.name }}</span>
+          <!-- The visible name is the first part of the accessible name (WCAG 2.5.3, axe label-content-name-mismatch). -->
+          <span class="visually-hidden">&ngsp;<ng-container i18n="@@shell.user-menu">User menu</ng-container></span>
+        </button>
+      }
+      @case ('anonymous') {
+        <a mat-button routerLink="/login" i18n="@@shell.sign-in">Sign in</a>
+      }
     }
-  }
+  </div>
 </mat-toolbar>
 
 <mat-menu #userMenu="matMenu">
@@ -76,9 +105,6 @@
   >
     Language
   </button>
-  <button mat-menu-item type="button" [matMenuTriggerFor]="themeMenu" i18n="@@shell.menu.theme">
-    Theme
-  </button>
   <button mat-menu-item type="button" (click)="signOut()" i18n="@@shell.menu.sign-out">
     Sign out
   </button>
@@ -89,16 +115,20 @@
   <button mat-menu-item type="button" lang="de" (click)="setLocale('de')">Deutsch</button>
 </mat-menu>
 
-<mat-menu #themeMenu="matMenu">
-  <button mat-menu-item type="button" (click)="setTheme(null)" i18n="@@shell.theme.system">
-    Follow the system
-  </button>
-  <button mat-menu-item type="button" (click)="setTheme('light')" i18n="@@shell.theme.light">
-    Light
-  </button>
-  <button mat-menu-item type="button" (click)="setTheme('dark')" i18n="@@shell.theme.dark">
-    Dark
-  </button>
+<!-- The three choices of R-API-021 as radio items; the checked one is the current choice. -->
+<mat-menu #themeMenu="matMenu" class="theme-menu">
+  @for (t of themes; track t.value) {
+    <button
+      mat-menu-item
+      type="button"
+      role="menuitemradio"
+      [attr.aria-checked]="preferences.theme() === t.value"
+      (click)="setTheme(t.value)"
+    >
+      <span class="material-icons" aria-hidden="true">{{ preferences.theme() === t.value ? 'check' : t.icon }}</span>
+      <span>{{ t.label }}</span>
+    </button>
+  }
 </mat-menu>
 
 <mat-sidenav-container class="frame">

@@ -15,12 +15,59 @@
 html {
   @include mat.theme(
     (
-      color: mat.$azure-palette,
+      color: (
+        primary: mat.$green-palette,
+        tertiary: mat.$violet-palette,
+      ),
       typography: (
         plain-family: string.unquote('system-ui, -apple-system, "Segoe UI", sans-serif'),
         brand-family: string.unquote('system-ui, -apple-system, "Segoe UI", sans-serif'),
       ),
       density: -2,
+    )
+  );
+  // The palette of the design language (Q-UI-88, docs/developer/design-language.md): the values
+  // measured on the owner's reference screens, light first, dark second. Where a measured value
+  // misses WCAG AA it is darkened (light) or lightened (dark) in its own hue: the accent green of
+  // the light scheme (#3db064 is 2.8:1 on white, #1d7a43 is 5.4:1 both ways) and the muted text
+  // of the dark one. The generated green and violet palettes fill the tokens not named here.
+  @include mat.theme-overrides(
+    (
+      primary: light-dark(#1d7a43, #3db064),
+      on-primary: light-dark(#ffffff, #040c18),
+      primary-container: light-dark(#d7efdf, #123d27),
+      on-primary-container: light-dark(#0b3d20, #b6ebc6),
+      inverse-primary: light-dark(#3db064, #1d7a43),
+      surface-tint: light-dark(#1d7a43, #3db064),
+      secondary-container: light-dark(#e3f2e8, #163527),
+      on-secondary-container: light-dark(#0f3d22, #c8f0d4),
+      background: light-dark(#ffffff, #040c18),
+      on-background: light-dark(#1c2433, #e8eaec),
+      surface: light-dark(#ffffff, #040c18),
+      on-surface: light-dark(#1c2433, #e8eaec),
+      surface-variant: light-dark(#e4e7ec, #222a36),
+      on-surface-variant: light-dark(#5b6270, #9aa1ad),
+      surface-dim: light-dark(#e4e7ec, #040c18),
+      surface-bright: light-dark(#ffffff, #222a36),
+      surface-container-lowest: light-dark(#ffffff, #02070f),
+      surface-container-low: light-dark(#f8f9fc, #0b121c),
+      surface-container: light-dark(#f1f4f8, #121822),
+      surface-container-high: light-dark(#eaedf2, #1a212c),
+      surface-container-highest: light-dark(#e4e7ec, #222a36),
+      inverse-surface: light-dark(#1c2433, #e8eaec),
+      inverse-on-surface: light-dark(#f1f4f8, #121822),
+      outline: light-dark(#8a919c, #646c78),
+      outline-variant: light-dark(#dbdde1, #1e2530),
+    )
+  );
+  // Buttons are rectangles with a small radius, not pills.
+  @include mat.button-overrides(
+    (
+      filled-container-shape: var(--trove-radius-s),
+      outlined-container-shape: var(--trove-radius-s),
+      protected-container-shape: var(--trove-radius-s),
+      text-container-shape: var(--trove-radius-s),
+      tonal-container-shape: var(--trove-radius-s),
     )
   );
   // The density of -2 sets the label of a filled field to `display: none`, which leaves the input without a
@@ -42,5 +89,6 @@ body {
 
 h1 {
   font: var(--mat-sys-headline-small);
+  font-weight: 600;
   margin-block: 0 var(--trove-space-4);
 }

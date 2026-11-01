@@ -10,9 +10,9 @@ import (
 type layer int
 
 const (
-	layerLeaf   layer = iota // config, errs, buildinfo, observability, cache, meta, backup/tables, tlsfiles, formats/catalog, formats/npm/rows, auth/scope: usable from every layer
+	layerLeaf   layer = iota // config, errs, buildinfo, observability, cache, meta, backup/tables, tlsfiles, formats/catalog, formats/npm/rows, auth/scope, docs/manual: usable from every layer
 	layerInfra               // meta/postgres, blob, cluster, outbound, secrets
-	layerDomain              // repository, proxy, virtual, formatdata, authz, auth, jobs, audit, backup
+	layerDomain              // repository, proxy, virtual, formatdata, authz, auth, jobs, audit, backup, manual
 	layerEdge                // httpserver, api/v1, webui, formats
 	layerApp                 // the composition root
 	layerCmd                 // the binaries
@@ -57,6 +57,7 @@ func layerTable() []layerRule {
 		{"internal/formats/catalog", layerLeaf},
 		{"internal/formats/npm/rows", layerLeaf}, // the values of the npm data port, shared by the format and internal/formatdata/npm (Q-ARCH-193)
 		{"internal/auth/scope", layerLeaf},
+		{"docs/manual", layerLeaf}, // the embedded files of the manual, nothing but embed (R-API-054)
 
 		{"internal/meta/postgres", layerInfra},
 		{"internal/blob", layerInfra},
@@ -68,6 +69,7 @@ func layerTable() []layerRule {
 		{"internal/files", layerDomain},
 		{"internal/items", layerDomain},
 		{"internal/packages", layerDomain},
+		{"internal/manual", layerDomain}, // the embedded manual of the help area (R-API-054)
 		{"internal/proxy", layerDomain},
 		{"internal/virtual", layerDomain},
 		{"internal/formatdata", layerDomain},

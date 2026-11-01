@@ -25,18 +25,20 @@ trove-package-readme {
       font-size: 0.875em;
     }
 
+    // Code sits on the table-head fill: a tint on the white page of the light scheme, a step up
+    // from the page in the dark one.
     pre {
       overflow-x: auto;
       padding: var(--trove-space-3);
       border: 1px solid var(--trove-border);
       border-radius: var(--trove-radius-m);
-      background: var(--trove-surface-raised);
+      background: var(--trove-table-head-bg);
     }
 
     :not(pre) > code {
       padding: 0 var(--trove-space-1);
       border-radius: var(--mat-sys-corner-extra-small);
-      background: var(--trove-surface-raised);
+      background: var(--trove-table-head-bg);
     }
 
     blockquote {

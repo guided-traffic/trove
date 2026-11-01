@@ -3,7 +3,8 @@
 //  - R-UI-001: no bypassSecurityTrust or addSvgIcon in src.
 //  - R-ARCH-007: no string literal that starts with /files/ or /api/<format>/ in src, except the
 //    files client in src/app/api/ and generated code.
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+//  - R-UI-050: every manual page that src/app/core/help-topics.ts names is a file of docs/manual/.
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -44,5 +45,14 @@ for (const rule of rules) {
       });
   }
 }
+// The "?" of a screen opens its manual page; a page that does not exist would open a 404.
+const topics = readFileSync(join(root, 'src/app/core/help-topics.ts'), 'utf8');
+for (const [, section, page] of topics.matchAll(/section: '([a-z]+)', page: '([a-z0-9-]+)'/g)) {
+  if (!existsSync(join(root, '..', 'docs', 'manual', section, `${page}.md`))) {
+    failed = true;
+    console.error(`R-UI-050: src/app/core/help-topics.ts names docs/manual/${section}/${page}.md, which does not exist`);
+  }
+}
+
 if (failed) process.exit(1);
 console.log('check-rules: ok');

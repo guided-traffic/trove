@@ -215,6 +215,24 @@ describe('README rendering', () => {
     expect(text(one.root)).toContain('One external image is shown as a link.');
   });
 
+  it('R-UI-050 a README keeps no help/ link; the manual keeps only a plain relative path under its prefix', async () => {
+    const html =
+      '<a href="help/user/tokens#user-content-x">a</a><a href="help/../api/v1/x">b</a>' +
+      '<a href="help/user/x?y=1">c</a><a href="helpers/x">d</a>';
+    const readme = await show(html);
+    expect([...readme.body.querySelectorAll('a[href]')].map((a) => a.getAttribute('href'))).toEqual([]);
+
+    const r = await renderScreen(PackageReadmeView, {
+      inputs: {
+        readme: { contentType: 'text/markdown', html, truncated: false, externalImagesBlocked: 0 },
+        pageLinks: 'help/',
+      },
+    });
+    const kept = [...r.root.querySelectorAll('.readme a[href]')];
+    expect(kept.map((a) => a.getAttribute('href'))).toEqual(['help/user/tokens#user-content-x']);
+    expect(kept[0]?.hasAttribute('rel')).toBe(false);
+  });
+
   it('R-UI-008 a version without a README renders nothing', async () => {
     const r = await renderScreen(PackageReadmeView, { inputs: { readme: null } });
     expect(r.root.querySelector('.readme')).toBeNull();

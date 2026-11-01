@@ -15,6 +15,7 @@ import (
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/files"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/manual"
 )
 
 // PermissionSystemRead is the capability that admits the installation facts and
@@ -172,6 +173,12 @@ type Options struct {
 	// (resolution_api.go); nil disables the operation with 503.
 	Resolution ResolutionExplainer
 	// <<< M2 virtual
+
+	// >>> M2 manual
+	// Manual is the embedded manual behind the manual operations (manual_api.go);
+	// nil answers them with 503.
+	Manual *manual.Manual
+	// <<< M2 manual
 }
 
 // Server implements gen.ServerInterface.

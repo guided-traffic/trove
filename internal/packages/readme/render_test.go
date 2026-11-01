@@ -343,3 +343,37 @@ func TestR_UI_008_TimeLimitFallsBackToEscapedText(t *testing.T) {
 		t.Fatalf("truncated=%v len=%d", res.Truncated, len(res.HTML))
 	}
 }
+
+// TestR_API_054_LinkedRenderingResolvesRelativeLinks: with a link resolver, every
+// target that is not an absolute address is what the resolver makes of it, a target
+// it refuses is removed, and absolute links and the sanitizer stay as for a README.
+func TestR_API_054_LinkedRenderingResolvesRelativeLinks(t *testing.T) {
+	r := renderer(t)
+	links := func(href string) (string, bool) {
+		switch href {
+		case "tokens.md#create":
+			return "help/user/tokens#user-content-create", true
+		case "#usage":
+			return "#user-content-usage", true
+		}
+		return "", false
+	}
+	res := r.RenderLinked("[a](tokens.md#create) [b](#usage) [c](../spec/x.md) [d](https://example.com/) [e](javascript:alert(1))", links)
+	for _, want := range []string{
+		`<a href="help/user/tokens#user-content-create">a</a>`,
+		`<a href="#user-content-usage">b</a>`,
+		` c `,
+		`<a href="https://example.com/" rel="nofollow noopener noreferrer">d</a>`,
+	} {
+		if !strings.Contains(res.HTML, want) {
+			t.Errorf("missing %q in %q", want, res.HTML)
+		}
+	}
+	if strings.Contains(res.HTML, "javascript:") || strings.Contains(res.HTML, "spec/x.md") {
+		t.Errorf("a refused target survived: %q", res.HTML)
+	}
+	// Without a resolver, a relative link is removed as before.
+	if plain := r.Render("[a](tokens.md)").HTML; strings.Contains(plain, "href") {
+		t.Errorf("Render kept a relative link: %q", plain)
+	}
+}

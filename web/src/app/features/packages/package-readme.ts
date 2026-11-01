@@ -6,6 +6,7 @@ import {
   inject,
   input,
 } from '@angular/core';
+import { Router } from '@angular/router';
 import { PackageReadme } from '../../api/packages-api';
 import { EXTERNAL_REL } from './package-links';
 
@@ -46,6 +47,9 @@ export function headingSlug(heading: string, seen: Map<string, number>): string 
  *   table of contents work. The server derives its heading anchors with the same rule ([headingSlug]);
  * - such a link scrolls inside the README and does not navigate, because the document's
  *   `<base href>` would turn a bare fragment into a navigation to the UI root;
+ * - with `pageLinks`, a link whose target starts with that prefix stays and opens in the application:
+ *   the manual's links to its own pages (`help/<section>/<page>`, R-UI-050), which resolve against the
+ *   base href when they are opened in a new tab;
  * - code blocks can take focus, so that a keyboard user can scroll them sideways.
  */
 @Component({
@@ -76,17 +80,24 @@ export function headingSlug(heading: string, seen: Map<string, number>): string 
 })
 export class PackageReadmeView {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly router = inject(Router);
 
   readonly readme = input.required<PackageReadme | null>();
+  /** The start of the link targets that are routes of the application; none for a README. */
+  readonly pageLinks = input<string | null>(null);
 
   constructor() {
     afterRenderEffect(() => {
       this.readme();
+      const pages = this.pageLinks();
       const root = this.host.nativeElement.querySelector('.readme');
       if (!root) return;
       for (const a of root.querySelectorAll<HTMLAnchorElement>('a[href]')) {
         const href = (a.getAttribute('href') ?? '').trim();
-        if (!LINK_TARGET.test(href)) {
+        if (pages && isPageLink(href, pages)) {
+          a.removeAttribute('target');
+          a.removeAttribute('rel');
+        } else if (!LINK_TARGET.test(href)) {
           a.removeAttribute('href');
         } else if (!href.startsWith('#')) {
           a.removeAttribute('target');
@@ -106,6 +117,17 @@ export class PackageReadmeView {
   }
 
   protected inPageLink(event: Event): void {
+    const pages = this.pageLinks();
+    const anchor = (event.target as Element | null)?.closest('a[href]');
+    const href = anchor?.getAttribute('href') ?? '';
+    if (pages && isPageLink(href, pages)) {
+      // A modified click opens a new tab or window through the browser; a plain one stays in the application.
+      const m = event as MouseEvent;
+      if (m.button > 0 || m.ctrlKey || m.metaKey || m.shiftKey || m.altKey) return;
+      event.preventDefault();
+      void this.router.navigateByUrl('/' + href);
+      return;
+    }
     const link = (event.target as Element | null)?.closest('a[href^="#"]');
     if (!link) return;
     event.preventDefault();
@@ -121,4 +143,9 @@ export class PackageReadmeView {
     );
     target?.scrollIntoView?.({ block: 'start' });
   }
+}
+
+/** A route of the application under the prefix: a relative path of plain segments (no scheme, no step upwards) and an optional fragment. */
+function isPageLink(href: string, prefix: string): boolean {
+  return href.startsWith(prefix) && /^[a-z0-9/_-]+(#\S*)?$/i.test(href);
 }
