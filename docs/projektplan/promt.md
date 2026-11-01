@@ -278,7 +278,8 @@ Found on 2026-11-01 while writing the manual (`docs/manual`) and the design chan
   were brought to their pins through Homebrew, and `make versions-check` prints `versions ok`. Left: two
   shadowed copies from Docker Desktop's time in `/usr/local/bin`, `kubectl` (v1.32.2) and `kind` (v0.20.0),
   owned by root (`sudo rm /usr/local/bin/kubectl /usr/local/bin/kind`), and the Command Line Tools 26.6,
-  which Homebrew reports as too old for Xcode 27 (Software Update, or `sudo xcode-select --install`).
+  which Homebrew reports as too old for Xcode 27
+  (`sudo softwareupdate --install "Command Line Tools for Xcode 27.2-27.2"`, no restart).
   Machine-level: the owner runs these; a run does not change the machine.
 
 ### Stale documentation
