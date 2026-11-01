@@ -5560,7 +5560,7 @@ white page (2.8:1), and the muted grey of the dark screen on its cards (4.1:1).
 | Option | What it means | For | Against |
 |---|---|---|---|
 | (a) The measured values everywhere | Green `#3db064` on white, grey `#737984` on dark cards | Closest to the screens | Fails R-UI-044 and the axe check of the browser tier |
-| (b) The measured values, with the tones that miss AA moved in their own hue | Light scheme: accent `#1d7a43` (5.4:1 both ways), muted text `#5b6270`; dark scheme: accent `#3db064` as measured (7.1:1), muted text `#9aa1ad` (6.9:1); surfaces, borders, chrome as measured | The screens' look with readable text; one place (`main.scss`) holds the palette | The light scheme's green is darker than the screen's |
+| (b) The measured values, with the tones that miss AA moved in their own hue | Light scheme: accent `#1a6e3c` (6.3:1 on white and under white text, 5.1:1 on the filled form field), muted text `#5b6270`; dark scheme: accent `#3db064` as measured (7.1:1), muted text `#9aa1ad` (6.9:1); surfaces, borders, chrome as measured | The screens' look with readable text; one place (`main.scss`) holds the palette | The light scheme's green is darker than the screen's |
 | (c) Material tonal palettes generated from the two seed colours | Only `primary` and `neutral` as input | No hand-set values | Surfaces and chrome come out far from the screens (Material's dark surface is a neutral grey, not the screens' near-black navy) |
 
 **Choice:** (b). The theme button moves out of the user menu into the top bar, as on the dark example screen, and keeps

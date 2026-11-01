@@ -29,16 +29,17 @@ html {
   // The palette of the design language (Q-UI-88, docs/developer/design-language.md): the values
   // measured on the owner's reference screens, light first, dark second. Where a measured value
   // misses WCAG AA it is darkened (light) or lightened (dark) in its own hue: the accent green of
-  // the light scheme (#3db064 is 2.8:1 on white, #1d7a43 is 5.4:1 both ways) and the muted text
-  // of the dark one. The generated green and violet palettes fill the tokens not named here.
+  // the light scheme (#3db064 is 2.8:1 on white, #1a6e3c is 6.3:1 on white and under white text, and 5.1:1 on the filled field
+  // of a form, where #1d7a43 gave 4.3:1) and the muted text
+  // of the dark one (#9aa1ad is 6.9:1 on a card). The generated green and violet palettes fill the tokens not named here.
   @include mat.theme-overrides(
     (
-      primary: light-dark(#1d7a43, #3db064),
+      primary: light-dark(#1a6e3c, #3db064),
       on-primary: light-dark(#ffffff, #040c18),
       primary-container: light-dark(#d7efdf, #123d27),
       on-primary-container: light-dark(#0b3d20, #b6ebc6),
-      inverse-primary: light-dark(#3db064, #1d7a43),
-      surface-tint: light-dark(#1d7a43, #3db064),
+      inverse-primary: light-dark(#3db064, #1a6e3c),
+      surface-tint: light-dark(#1a6e3c, #3db064),
       secondary-container: light-dark(#e3f2e8, #163527),
       on-secondary-container: light-dark(#0f3d22, #c8f0d4),
       background: light-dark(#ffffff, #040c18),

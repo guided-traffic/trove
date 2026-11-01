@@ -233,9 +233,6 @@ Found on 2026-11-01 while writing the manual (`docs/manual`) and the design chan
 
 ### Tests and tools
 
-- **F-16 · No browser journey visits the help area, and the new palette has not been through the browser
-  tier's colour-contrast check** (confirmed). Done when a journey opens `/help` and a page from the "?" and
-  axe passes with `color-contrast` in the light (English) and the dark (German) scheme.
 - **F-17 · Leftovers of old tool versions on the owner's machine that need an admin password** (confirmed).
   On 2026-11-01 helm (4.3.1), kubectl (1.37.2), docker buildx (0.38.1), kind (0.33.0) and Node.js (26.13.0)
   were brought to their pins through Homebrew, and `make versions-check` prints `versions ok`. Left: two
