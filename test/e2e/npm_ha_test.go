@@ -4,8 +4,8 @@ package e2e
 
 // Drain and failover under npm load (WP2.8, roadmap M2 E2.11): variant A of R-HA-059's drain test and the pod-crash,
 // PostgreSQL-switchover and Valkey-failover scenarios of R-HA-052, each under the npm part of R-HA-059's load
-// (npm_load_test.go), in the scatter profile with three web and two worker replicas. The pod crash is TestNPMHACrash, a CI
-// leg of its own: three force-deletes per change, the full ten with TROVE_E2E_NPM_CRASH_SOAK=1 (nightly and closing run).
+// (npm_load_test.go), in the scatter profile with three web and two worker replicas. The pod crash is TestNPMHACrash, a set
+// of its own: three force-deletes when run by hand, the full ten with TROVE_E2E_NPM_CRASH_SOAK=1 (nightly and closing run).
 // The Valkey outage of R-HA-052 belongs to the full suite and runs in the closing run (TestNPMHAClosing). Q-HA-65 and
 // Q-HA-67 to Q-HA-69 record the choices.
 

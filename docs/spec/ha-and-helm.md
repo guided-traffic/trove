@@ -1010,7 +1010,7 @@ Variants, with the same load and pass conditions:
 
 | Variant | The drained node also hosts | Additional pass condition | Runs |
 |---|---|---|---|
-| A | nothing else | — | every change to `main` (2 minutes of load before and 3 after) |
+| A | nothing else | — | every night and on dispatch, in HA and Performance (2 minutes of load before and 3 after; every change to `main` until the owner's decision of 2026-11-01, [Q-HA-67](#q-ha-67--where-and-how-often-the-scenarios-under-npm-load-run)) |
 | B | the Valkey primary and one Sentinel | `trove_valkey_primary_changes_total` rises on every replica; no replica turns unready | a green full run of Test and Release on the commit that closes the phase |
 | C | the PostgreSQL primary | CloudNativePG switches over before the eviction | a green full run of Test and Release on the commit that closes the phase |
 | D | an instance of the transaction-mode pooler (pooler profile, R-HA-058) | — | a green full run of Test and Release on the commit that closes the phase |
@@ -4831,7 +4831,7 @@ against the local profile (R-HA-051) in CI. Load comes from real clients in para
 
 | Scenario | Injection | Pass condition |
 |---|---|---|
-| Pod crash | `kubectl delete pod --grace-period=0 --force` of a random `web` or `worker` replica every 2 min: 3 times on every change, 10 times (20 min) nightly and in the closing run | No client iteration fails after its own retries; no item row without a durable object (`trove admin storage verify`; until that command exists, every version the scenario's publishes left is downloaded against its integrity, [Q-HA-69](#q-ha-69--the-storage-check-of-the-pod-crash-before-trove-admin-storage-verify-exists)) |
+| Pod crash | `kubectl delete pod --grace-period=0 --force` of a random `web` or `worker` replica every 2 min: 10 times (20 min) nightly and in the closing run, 3 times in `make e2e SET=npm-ha-crash` | No client iteration fails after its own retries; no item row without a durable object (`trove admin storage verify`; until that command exists, every version the scenario's publishes left is downloaded against its integrity, [Q-HA-69](#q-ha-69--the-storage-check-of-the-pod-crash-before-trove-admin-storage-verify-exists)) |
 | Rolling restart | `kubectl rollout restart` of `deploy/trove-web`, then of `deploy/trove-worker` | Zero failed iterations |
 | Rolling upgrade | Previous minor → current with the migration Job | Zero failed iterations; R-HA-020 verification passes |
 | Rollback | `helm rollback` after the upgrade | Zero failed iterations |
@@ -4869,8 +4869,10 @@ against the local profile (R-HA-051) in CI. Load comes from real clients in para
 - The suite records client-side errors per scenario and fails on any deviation from the pass
   condition. Results are published as a CI artifact per run.
 - The pod-crash, switchover, rolling-upgrade, object-store and Valkey-primary-loss scenarios and
-  variant A of the drain test run on every change to `main`, the pod crash with three force-deletes; its 20-minute form runs
-  nightly ([Q-HA-67](#q-ha-67--where-and-how-often-the-scenarios-under-npm-load-run)). The full suite, the pooler profile and
+  variant A of the drain test run every night and on dispatch in the workflow HA and Performance, not on every change to
+  `main` (owner, 2026-11-01): the pod crash in its 20-minute form, the rest as before
+  ([Q-HA-67](#q-ha-67--where-and-how-often-the-scenarios-under-npm-load-run)). A red night is recorded as an open finding and
+  does not hold a release. The full suite, the pooler profile and
   the trove-backup restore drill run in a green full run of Test and Release on the commit that closes
   the phase. The point-in-time restore drill has no run in the pipeline.
 
@@ -6078,6 +6080,15 @@ of its arrival.
 
 Status: **Decided by the owner on 2026-11-01** — option (e). It replaces the development agent's choice (a), which made the
 leg `npm-ha` the longest job of Test and Release (48 minutes, 22 of them the pod crash).
+
+**Amended by the owner later on 2026-11-01:** the legs under faults leave the per-change pipeline altogether. Performance,
+failover and similar long tests run occasionally: locally (`make e2e SET=failover|npm-ha|npm-ha-crash|npm-ha-soak`) and in a
+separate CI run, the workflow HA and Performance ([performance.yml](../../.github/workflows/performance.yml), every night and on
+dispatch), with the jobs `e2e` (set `failover`), `e2e-npm` (set `npm-ha`), `npm-ha-soak` and `latency`. Test and Release keeps
+the sets `push`, `access-long` and `npm`. The three-force-delete set `npm-ha-crash` runs by hand; the nightly soak runs the same
+test with ten. A red long leg becomes an open finding and does not hold a release. Reason: the per-change pipeline had
+blocked feature work for more than a day, failing on CPU-throttled runners rather than on trove; the scenarios keep their pass
+conditions.
 
 Context: R-HA-052 runs the pod-crash and switchover scenarios and variant A of the drain test on every change to `main`, and the
 Valkey scenarios in the full suite; E2.11 pairs the drain with `dev-failover` and `dev-valkey-failover` during an `npm ci` loop. The

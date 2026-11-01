@@ -658,8 +658,7 @@ contract (Q-ARCH-235) that kit check 8 enforces.
   through one replica takes effect on every replica within `cluster.epoch_poll_interval` plus 1 s,
   with and without Valkey (R-OPS-021, R-REPO-045).
 - **E2.11** Drain and failover under npm load. Variant A of R-HA-059's drain test, with the npm
-  part of its load (the `npm ci` and `npm publish` loops and the k6 npm requests), runs on every
-  change to `main`: every npm command exits `0` with npm's default retries, and k6 records only
+  part of its load (the `npm ci` and `npm publish` loops and the k6 npm requests), runs nightly and on dispatch, not on every change to `main` (owner, 2026-11-01: the long legs run nightly and on dispatch): every npm command exits `0` with npm's default retries, and k6 records only
   `2xx` and `304`. `dev-failover` and `dev-valkey-failover` during an `npm ci` loop cause no
   failed iteration (R-HA-051).
 - **E2.12** npm on a customer endpoint. Through the endpoint `customers` and its own Ingress, with a
@@ -1514,7 +1513,7 @@ now says "a green full run of Test and Release on the commit that closes the pha
 it is a per-change gate. The job `e2e` of
 [Test and Release](../../.github/workflows/release.yml) runs both sets on every change, as two legs of its matrix:
 `make e2e SET=push` and `make e2e SET=failover`, each with its own cluster name and edge port. Choice (b) is superseded
-in that respect. The AWS S3 leg does not run until an AWS account exists (E0.5).
+in that respect. (Owner, 2026-11-01: the long legs run nightly and on dispatch, so the failover set is no longer a leg of that matrix.) The AWS S3 leg does not run until an AWS account exists (E0.5).
 
 ### Q-ROAD-8 · Where vulnerability scanning goes in the beta
 

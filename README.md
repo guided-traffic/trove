@@ -9,7 +9,7 @@
 > and Valkey connections, replica coordination, the S3 blob layer, the TLS of every connection, the system API, the ops endpoints
 > and the Helm chart. The access core: OIDC login, own tokens, permission policies, endpoints and exposure rules, generic
 > repositories with raw transfer, audit, the admin UI and the in-app manual. The npm registry: local, remote (pull-through) and
-> virtual repositories, the package screens, client setup, npm on customer endpoints, the security audit and the in-app guides. One open item of phase 3: the npm load in the drain and failover tests is not reliable yet.
+> virtual repositories, the package screens, client setup, npm on customer endpoints, the security audit and the in-app guides. The npm load in the drain and failover tests runs nightly and is not reliable yet; phase 7 owns it.
 > Not built yet: the NuGet protocols, GitLab CI federation, vulnerability scanning, backup and restore, and the HA hardening of
 > phase 7. Everything else is the target design in [docs/spec/](docs/spec/README.md). `v0.1.0` is the
 > last release made before the switch to the organisation's CI and release standard; it was published to `ghcr.io`. Releases

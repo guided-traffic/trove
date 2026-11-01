@@ -34,9 +34,9 @@ Node.js from `web/.nvmrc`, and the pinned helm, kubectl, kind and Docker Buildx.
 | Container Scan (Trivy, built image) | `make image IMAGE=trove:scan`, then Trivy | Trivy (pinned `TRIVY_VERSION`) on the built image: fixed OS and library vulnerabilities of CRITICAL or HIGH, secrets and misconfigurations; SARIF uploaded as `trivy-container-report` |
 | integration (Valkey 9.1, shard a, b) | `make integration-up`, `make test-integration SHARD=<a\|b>`, `make integration-down` | the integration tier against the compose stack on TLS, on Valkey 9.1 only (no older line is guaranteed while trove is in development); two legs with a stack each, shard `a` the packages `coordination`, `npm`, `repository` and `proxy`, shard `b` every other one; uploads `test-integration-<shard>` and `profile-integration-<shard>` |
 | S3 conformance (MinIO) | `make minio-up`, `make s3-conformance`, `make minio-down` | the conformance tests of R-STOR-035 against MinIO, built from source at `MINIO_COMMIT` and served over TLS only; the server log is uploaded on failure |
-| e2e-npm on kind (npm) | `make image VERSION=dev`, `make dev-up`, `make e2e SET=npm`, `make dev-down` | the npm acceptance matrix (eight real clients, [R-NPM-045](../spec/formats/npm.md#r-npm-045--client-acceptance-matrix)) and E2.2 to E2.12 on the scatter profile with the counting test upstream; gates every change, own cluster name and edge port (8082). A dispatch with `closing=true` adds the leg `npm-closing` (port 8083): the matrix and the cold install with Valkey stopped, and the read-only subset against the public registry ([Q-NPM-46](../spec/formats/npm.md#q-npm-46--what-marks-the-run-that-closes-the-phase)); the legs `npm-ha` (port 8084) and `npm-ha-crash` (port 8085), every change, step budget 80 minutes, job 120, are E2.11: drain variant A, the PostgreSQL switchover and the Valkey failover under the npm load, and the pod crash with three force-deletes ([e2e.md](e2e.md#drain-and-failover-under-npm-load)); a closing dispatch runs both as one leg `npm-ha-closing` with the 20-minute pod crash, the R-ARCH-027 report and the 5-minute Valkey outage ([Q-HA-67](../spec/ha-and-helm.md#q-ha-67--where-and-how-often-the-scenarios-under-npm-load-run)); uploads `e2e-npm-report-<set>`, `e2e-npm-artifacts-<set>` and on failure the cluster state |
+| e2e-npm on kind (npm) | `make image VERSION=dev`, `make dev-up`, `make e2e SET=npm`, `make dev-down` | the npm acceptance matrix (eight real clients, [R-NPM-045](../spec/formats/npm.md#r-npm-045--client-acceptance-matrix)) and E2.2 to E2.12 on the scatter profile with the counting test upstream; gates every change, own cluster name and edge port (8082). A dispatch with `closing=true` adds the leg `npm-closing` (port 8083): the matrix and the cold install with Valkey stopped, and the read-only subset against the public registry ([Q-NPM-46](../spec/formats/npm.md#q-npm-46--what-marks-the-run-that-closes-the-phase)); the legs `npm-ha` (port 8084) and `npm-ha-crash` (port 8085) left this job on 2026-11-01 (owner): `npm-ha` runs nightly and on dispatch in [HA and Performance (nightly)](#ha-and-performance-nightly), `npm-ha-crash` (three force-deletes) runs by hand only; for them the step budget is 80 minutes and the job 120, and they are E2.11: drain variant A, the PostgreSQL switchover and the Valkey failover under the npm load, and the pod crash with three force-deletes ([e2e.md](e2e.md#drain-and-failover-under-npm-load)); a closing dispatch runs both as one leg `npm-ha-closing` with the 20-minute pod crash, the R-ARCH-027 report and the 5-minute Valkey outage ([Q-HA-67](../spec/ha-and-helm.md#q-ha-67--where-and-how-often-the-scenarios-under-npm-load-run)); uploads `e2e-npm-report-<set>`, `e2e-npm-artifacts-<set>` and on failure the cluster state |
 | fuzz npm (closing run only) | `make fuzz-npm FUZZ=<target> FUZZTIME=30m` | three legs (`FuzzR_ARCH_028_Match`, `FuzzR_ARCH_028_Inspect`, `FuzzMatch`) of 30 minutes each; runs only on a dispatch with `closing=true`; uploads the failing input |
-| e2e on kind (push, failover, access-long) | `make image VERSION=dev`, `make dev-up`, `make e2e SET=<set>`, `make dev-down` | the dev profile on a kind cluster, one leg per set, every change: `push`, `failover` (E0.13, E1.8) and `access-long` (E1.1, E1.11 with the Playwright journeys, E1.13; the only leg that installs Node.js and the browser); the legs and those of e2e-npm build their own image and wait for no other job; each leg has its own cluster name and edge port; uploads the reports, `e2e-artifacts-<set>`, and on failure the cluster state |
+| e2e on kind (push, access-long) | `make image VERSION=dev`, `make dev-up`, `make e2e SET=<set>`, `make dev-down` | the dev profile on a kind cluster, one leg per set, every change: `push` and `access-long` (E1.1, E1.11 with the Playwright journeys, E1.13; the only leg that installs Node.js and the browser). The set `failover` (E0.13, E1.8) left this job on 2026-11-01 (owner) and runs nightly and on dispatch in [HA and Performance (nightly)](#ha-and-performance-nightly); the legs and those of e2e-npm build their own image and wait for no other job; each leg has its own cluster name and edge port; uploads the reports, `e2e-artifacts-<set>`, and on failure the cluster state |
 | workflow files (actionlint) | `actionlint` (pinned `ACTIONLINT_VERSION`) | every file of `.github/workflows`, with [.github/actionlint.yaml](../../.github/actionlint.yaml) |
 | coverage generator (links and rules) | `go run ./internal/tools/coverage -check`, then `-links` | the generated pages match their rules; every relative link and anchor resolves |
 | coverage evidence (implemented.txt) | `go run ./internal/tools/coverage -check -tests …` over the reports of this run | [implemented.txt](../coverage/implemented.txt) equals what the reports imply; needs `unit`, both `integration` shards and `chart` |
@@ -117,7 +117,7 @@ The roadmap reserves a few checks for "the full run of Test and Release on the c
 the 30-minute fuzz run of npm's `Match` and `Inspect`). Nothing in a push or a pull request marks that commit, so a person starts
 the run ([Q-NPM-46](../spec/formats/npm.md#q-npm-46--what-marks-the-run-that-closes-the-phase)):
 *Actions, Test and Release, Run workflow*, the closing commit as the ref, `closing` ticked; or
-`gh workflow run release.yml --ref main -f closing=true`. Every job of the workflow runs, plus the legs `e2e-npm (npm-closing)` and
+`gh workflow run release.yml --ref main -f closing=true`. Every job of the workflow runs, except that the `e2e` job no longer has the `failover` set (owner, 2026-11-01): the closing run does not start [HA and Performance (nightly)](#ha-and-performance-nightly), so a closing commit whose criteria need the failover set needs that run too. Plus the legs `e2e-npm (npm-closing)` and
 the three `fuzz npm` legs, and the legs `e2e-npm (npm-ha)` and `e2e-npm (npm-ha-crash)` run as one leg `npm-ha-closing`, with the 20-minute pod crash, the R-ARCH-027 report and the Valkey outage under npm load. A dispatch does not release (Semantic Release runs on `push`), and a failed closing leg means the phase
 is not closed.
 
@@ -125,9 +125,17 @@ is not closed.
 reasons unrelated to generation. `make dev-up` needs an amd64 host or the emulator of
 the arm64 note of [local-profile.md](local-profile.md).
 
-### Performance (nightly)
+### HA and Performance (nightly)
 
-[`performance.yml`](../../.github/workflows/performance.yml) ("Performance (nightly)") runs every night at 02:17 UTC and on demand
+The long tests run here and not on every change (owner, 2026-11-01), so a slow leg no longer holds the release. Per change,
+Test and Release runs `push` and `access-long` (job `e2e`) and `npm` (job `e2e-npm`). This workflow runs the `failover` set
+(job `e2e`, E0.13 and E1.8), the `npm-ha` leg (job `e2e-npm`, E2.11) and `npm-ha-soak`, beside the latency job. Dispatch it with
+`gh workflow run "HA and Performance (nightly)" --ref main`. Locally, from the repository root, after `make image VERSION=dev` and
+`make dev-up`: `make e2e SET=failover`, `make e2e SET=npm-ha`, `make e2e SET=npm-ha-crash` (the three-force-delete crash, which has
+no CI job) or `make e2e SET=npm-ha-soak`, then `make dev-down`; the latency tests need `make integration-up && make test-performance`.
+A red long leg does not hold the release: it is recorded as an open finding instead (owner, 2026-11-01).
+
+[`performance.yml`](../../.github/workflows/performance.yml) ("HA and Performance (nightly)") runs every night at 02:17 UTC and on demand
 (`workflow_dispatch`), on the self-hosted runners. It brings up the integration stack (`make integration-up`), runs
 `make test-performance` and stops the stack. That target runs `TestChangePropagation`, `TestJobPickup`, `TestR_NPM_010_ThousandVersions` and
 `TestIdempotentCreate` with `TROVE_PERF_GATE=1`, which enforces the p99 bounds of P-13 (100 ms) and P-14 (1 s) with Valkey available, R-NPM-010's
@@ -135,8 +143,8 @@ the arm64 note of [local-profile.md](local-profile.md).
 ([Q-ARCH-220](../spec/architecture.md#q-arch-220--p-13-starts-its-clock-at-the-commit-and-its-p99-is-enforced-in-the-nightly-performance-run)).
 The report `test-performance` is kept for 30 days. Beside it, the job `npm-ha-soak` runs `make image VERSION=dev`, `make dev-up` and
 `make e2e SET=npm-ha-soak` on a kind cluster: R-HA-052's pod crash with ten force-deletes over 20 minutes under the npm load, then the npm
-load scripts of R-ARCH-027 against one replica (`TestNPMPerf`, reported, not gated); per change Test and Release runs the pod crash with three
-force-deletes ([Q-HA-67](../spec/ha-and-helm.md#q-ha-67--where-and-how-often-the-scenarios-under-npm-load-run)). Its reports
+load scripts of R-ARCH-027 against one replica (`TestNPMPerf`, reported, not gated); the three-force-delete crash runs by hand only, and the closing run runs the ten force-deletes
+in its leg `npm-ha-closing` ([Q-HA-67](../spec/ha-and-helm.md#q-ha-67--where-and-how-often-the-scenarios-under-npm-load-run)). Its reports
 `e2e-npm-report-npm-ha-soak` and `e2e-npm-artifacts-npm-ha-soak` are kept for 30 days. A failed night is not wired to an issue or a
 notification: look at the Actions list. The other targets of R-ARCH-027 (`perf/`) are not part of this workflow.
 

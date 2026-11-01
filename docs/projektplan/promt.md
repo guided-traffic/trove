@@ -62,8 +62,10 @@ Hard rules, also for every subagent (put them into every subagent prompt):
 4. Version of the phase: none is chosen in advance. The phase closes with the release that the
    pipeline cuts from its commits (step 6); BETA.md's **Version** column records it. Check that the
    previous phase's release exists (`git tag --list 'v0.*' --sort=-v:refname | head -1`).
-5. If the pipeline on `main` is red (`gh run list --branch main --limit 5`), repairing it is the
-   first task of this run.
+5. If `Test and Release` on `main` is red (`gh run list --workflow "Test and Release" --branch main --limit 5`),
+   repairing it is the first task of this run. A red leg of `HA and Performance (nightly)`
+   (`gh run list --workflow "HA and Performance (nightly)" --limit 3`) is not: it becomes an open finding in
+   [section 8](#8--open-findings), unless the phase's own exit criteria are that leg.
 6. Tell the owner in two or three German sentences which phase, which version and what it
    delivers, then continue without waiting.
 
@@ -144,9 +146,12 @@ The phase is done only when all of the following hold:
 
 - Every checklist item of the phase is 🟢, and every exit criterion of the roadmap section passes.
   For each exit criterion note the evidence (test name, CI job, command and output).
-- Unit, integration and e2e tests are green locally and in CI. Exit criteria that need a long-running
-  job (the e2e failover set, the S3 conformance leg) have passed in the run of `Test and Release` on the
-  commit (`gh run list --workflow "Test and Release" --branch main`).
+- Unit, integration and the per-change e2e legs are green locally and in `Test and Release`. The long legs
+  (drain and failover, the npm load under faults, the soak and the performance bounds) run in
+  `HA and Performance (nightly)` every night and on dispatch, not per change (owner, 2026-11-01): a phase whose
+  exit criteria are long legs dispatches that workflow on its closing commit
+  (`gh workflow run "HA and Performance (nightly)" --ref main`) and notes the run as evidence; any other red
+  long leg becomes an open finding in [section 8](#8--open-findings) and does not hold the release.
 - Documentation is current: README (naming tables; the TL;DR once trove is installable),
   docs/developer, docs/security (a page per mechanism that now exists, open gaps as `H-…` items),
   spec deviations recorded, coverage numbers regenerated.

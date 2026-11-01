@@ -164,8 +164,9 @@ Details: [roadmap M2](../coverage/roadmap.md#m2--npm) · spec: [formats/npm.md](
 - 🟢 npm integration tests: protocol over HTTP, conformance kit, nightly fuzzing of package documents (the three 30-minute fuzz legs passed in the closing run 41235811145)
 - 🟢 npm e2e tests: install and publish with npm, pnpm, Yarn Classic and Yarn Berry through local, remote and virtual repositories
 - 🟢 npm e2e: cold cache with three clients at once, upstream down, Valkey stopped, replica killed mid-install (the Valkey-stopped leg passed in the closing run 41235811145)
-- 🟡 npm load joins the drain and failover tests: the CI leg `npm-ha` passed once (run 41231246904) but is not reliable yet; `web` pods of the 1 GiB dev profile are still OOMKilled under the drain's npm load in some runs although the memory guard is on (runs 41235811145 and 41253578143, attempt 2). Open: a heap profile under that load (the merged package documents of `npm ci` are the first suspect), then the fix
-- ⚪ The drain criterion of the security audit (R-NPM-038): the `web` pod that forwards an `npm audit` to a provider answering after 20 s is deleted 1 s in; `npm audit` succeeds and no pod gets `SIGKILL`. No test yet; it belongs with the drain tests of WP2.8 ([roadmap M2](../coverage/roadmap.md#m2--npm)) and is no exit criterion of its own
+- 🟢 npm load in the drain and failover tests built (`TestNPMHA`, `TestNPMHACrash`, `make e2e SET=npm-ha`); since
+  2026-11-01 they run in `HA and Performance (nightly)` and on dispatch, not per change (owner). Making them pass reliably,
+  and the drain criterion of the security audit (R-NPM-038), moved to phase 7
 - 🟢 npm e2e: a customer endpoint through its own Ingress lists only exposed versions; hidden versions answer 404
 
 **Release**
@@ -258,6 +259,12 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
 **High availability**
 - ⚪ Failure suite: pod crash, PostgreSQL switchover and failover, Valkey failover and outage, S3 outage, node loss
 - ⚪ Node drain under npm and NuGet load with zero failed requests
+- 🟡 npm load in the drain and failover tests reliably green (moved from phase 3, owner 2026-11-01): the leg `npm-ha`
+  passed once (run 41231246904); in runs 41235811145 and 41253578143 `web` pods of the 1 GiB dev profile were OOMKilled under
+  the drain's npm load although the memory guard is on, and in run 41322837920 the drain answered 30,041 of 59,558 k6 requests
+  with `503` or a timeout and counted a shutdown release as a job attempt. Open: the root cause and the fix
+- ⚪ The drain criterion of the security audit (R-NPM-038, moved from phase 3): the `web` pod that forwards an `npm audit`
+  to a provider answering after 20 s is deleted 1 s in; `npm audit` succeeds and no pod gets `SIGKILL`
 - ⚪ The default of `health.shutdown_drain_delay` (5 s, proposed) set from the endpoint-removal time of the target Ingress measured under load; the dev profile needs 15 s on the CI runners (Actions run 41241903588)
 - ⚪ Vulnerability scanning under the failure suite: sync and evaluation jobs across drains and failovers, blocks and triage after a restore (E5.13)
 - ⚪ Rolling upgrade from the previous pre-release with mixed versions
@@ -305,7 +312,7 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
 |---|---|---|---|
 | Foundation (storage, coordination) | 🟢 | — | 🟢 |
 | Access core (login, tokens, permissions) | 🟢 | 🟢 | 🟢 |
-| **npm** | ⚪ | ⚪ | ⚪ |
+| **npm** | 🟢 | 🟢 | 🟡 |
 | **NuGet (.NET)** | ⚪ | ⚪ | ⚪ |
 | GitLab CI OIDC | ⚪ | ⚪ | ⚪ |
 | Vulnerability scanning | ⚪ | ⚪ | ⚪ |

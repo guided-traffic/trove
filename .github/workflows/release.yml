@@ -5,6 +5,11 @@
 # release's "published" event starts build.yml (Release Docker & Helm). What each job runs and how to
 # reproduce it: docs/developer/releasing.md#ci.
 #
+# What runs per change: every check above, the e2e legs push and access-long, and the npm acceptance leg
+# (e2e-npm, set npm). The long legs failover, npm-ha and npm-ha-crash are not here: they run nightly and on
+# dispatch in performance.yml ("HA and Performance (nightly)"), outside the release path (owner, 2026-11-01).
+# A red long leg is recorded as an open finding and does not hold the release.
+#
 # Every job runs on the organisation's self-hosted runners (runs-on: self-hosted).
 name: Test and Release
 
@@ -740,11 +745,12 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # The failure suite on a kind cluster, three legs of about the same length: the push set (the M0 checks, the drain
-  # with a transfer loop and the exposure of E1.14), the failover set (E0.13: PostgreSQL switchover, kill and stop,
-  # Valkey failover, kill and outage under k6 load; the E1.8 limits) and access-long (the E1.1 sign-in, the E1.11
-  # replica scatter and the E1.13 500 MB transfers; the only leg with browser journeys). The legs build their own
-  # image, so they wait for no other job. Each has its own cluster name and edge port, so legs can share a Docker host.
+  # The failure suite on a kind cluster, two legs: the push set (the M0 checks, the drain with a transfer loop and
+  # the exposure of E1.14) and access-long (the E1.1 sign-in, the E1.11 replica scatter and the E1.13 500 MB transfers;
+  # the only leg with browser journeys). The failover set (E0.13: PostgreSQL switchover, kill and stop, Valkey failover,
+  # kill and outage under k6 load; the E1.8 limits) left this job: it runs nightly and on dispatch in performance.yml
+  # (owner, 2026-11-01). The legs build their own image, so they wait for no other job. Each has its own cluster name
+  # and edge port, so legs can share a Docker host.
   e2e:
     name: e2e on kind (${{ matrix.set }})
     runs-on: self-hosted
@@ -755,8 +761,6 @@ jobs:
         include:
           - set: push
             port: "8080"
-          - set: failover
-            port: "8081"
           - set: access-long
             port: "8086"
             browser: true
@@ -935,13 +939,15 @@ jobs:
         run: make dev-down
 
   # The npm acceptance matrix (R-NPM-045, roadmap M2 E2.1 to E2.12): eight real clients against the scatter profile and the
-  # counting test upstream, docs/developer/e2e.md#the-npm-client-matrix. It gates every change. A dispatch with
-  # closing=true (Q-NPM-46) adds the leg that belongs to the commit that closes the phase: the scenario list and the
-  # cold-cache install with Valkey stopped, and the read-only subset against the public registry. The legs npm-ha and
-  # npm-ha-crash are E2.11 (Q-HA-67): drain variant A, the PostgreSQL-switchover and Valkey-failover scenarios under the
-  # npm load, and beside them the pod crash with three force-deletes; the ten force-deletes over 20 minutes run nightly
-  # (performance.yml). A closing dispatch runs both as one leg npm-ha-closing, with the soak and the 5-minute Valkey outage.
-  # The ports differ from the e2e job's (8080, 8081, 8086) so that the jobs can share a runner host.
+  # counting test upstream, docs/developer/e2e.md#the-npm-client-matrix. Per change it runs the one leg npm. The legs
+  # npm-ha and npm-ha-crash are E2.11 (Q-HA-67: drain variant A, the PostgreSQL-switchover and Valkey-failover scenarios
+  # under the npm load, and the pod crash with three force-deletes). They left this job for performance.yml, which runs
+  # npm-ha nightly and on dispatch (owner, 2026-11-01). The three-force-delete crash has no CI leg after that and is run
+  # by hand (make e2e SET=npm-ha-crash). A dispatch with closing=true (Q-NPM-46) replaces the matrix with the legs of the
+  # commit that closes the phase: npm-closing (the scenario list and the cold-cache install with Valkey stopped, and the
+  # read-only subset against the public registry) and npm-ha-closing (npm-ha, the 20-minute pod crash and the 5-minute
+  # Valkey outage under the npm load). The closing run also runs fuzz-npm, below.
+  # The ports differ from the e2e job's (8080, 8086) so that the jobs can share a runner host.
   e2e-npm:
     name: e2e-npm on kind (${{ matrix.set }})
     runs-on: self-hosted
@@ -949,7 +955,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.closing && '[{"set":"npm","port":"8082"},{"set":"npm-closing","port":"8083"},{"set":"npm-ha-closing","port":"8084"}]' || '[{"set":"npm","port":"8082"},{"set":"npm-ha","port":"8084"},{"set":"npm-ha-crash","port":"8085"}]') }}
+        include: ${{ fromJSON(inputs.closing && '[{"set":"npm","port":"8082"},{"set":"npm-closing","port":"8083"},{"set":"npm-ha-closing","port":"8084"}]' || '[{"set":"npm","port":"8082"}]') }}
     env:
       TROVE_IMAGE: guidedtraffic/trove:dev
       TROVE_DEV_CLUSTER: trove-${{ matrix.set }}-${{ github.run_id }}

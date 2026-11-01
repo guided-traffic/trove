@@ -15,7 +15,7 @@
 #   e2e.sh push         the set CI runs on every change: E0.3, E0.4, E0.6, E0.7, E0.12, E0.14 (with the upload and download
 #                       loop of E1.13), E0.15, E0.16, the exposure of E1.14, then E0.11
 #   e2e.sh full         everything, in the order of the milestone, ending with E0.11
-#   e2e.sh failover     the E0.13 failover set and the limits of E1.8 (CI, every change, beside push)
+#   e2e.sh failover     the E0.13 failover set and the limits of E1.8 (CI: nightly and on dispatch, HA and Performance)
 #   e2e.sh access-long  the sign-in of E1.1, the replica scatter of E1.11, the 500 MB transfers of E1.13 (CI, every change)
 #   e2e.sh access       the M1 tests alone: E1.1, E1.8, E1.11, E1.13, E1.14 (they switch to the scatter profile and back)
 #   e2e.sh drain        E0.14 only (this is `make dev-drain`)
@@ -63,7 +63,8 @@ case "$set_name" in
   # <<< M2 npm-clients
   # Drain and failover under npm load (E2.11, test/e2e/npm_ha_test.go): drain variant A of R-HA-059, the PostgreSQL
   # switchover and the Valkey failover of R-HA-052 under eight npm ci loops, a publish loop and k6 (CI: e2e-npm leg
-  # npm-ha, every change); the pod crash in a leg of its own (npm-ha-crash, three force-deletes, every change). The soak
+  # npm-ha of the nightly HA and Performance workflow); the pod crash in a set of its own (npm-ha-crash, three force-deletes,
+  # run by hand). The soak
   # (nightly) runs the pod crash with ten force-deletes, then perf/k6/npm.js against one replica (TestNPMPerf, reported,
   # not gated). npm-ha-closing runs all of it and adds the 5-minute Valkey outage of the full suite (closing run).
   npm-ha) run='^TestNPMHA$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;

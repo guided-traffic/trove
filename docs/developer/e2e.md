@@ -95,7 +95,7 @@ perf/k6/npm.js              the npm load scripts of R-ARCH-027 (P-1, P-3, P-5, P
 make image VERSION=dev          # IMAGE defaults to guidedtraffic/trove:dev
 make dev-up                  # TROVE_DEV_HTTP_PORT=28080 make dev-up when 8080 is taken
 make e2e SET=push            # E0.3, E0.4, E0.6, E0.7, E0.12, E0.14, E0.15, E0.16, E1.14, then E0.11 (CI, every change)
-make e2e SET=failover        # the E0.13 failovers and the E1.8 limits (CI, every change)
+make e2e SET=failover        # the E0.13 failovers and the E1.8 limits (CI: nightly and on dispatch, since 2026-11-01)
 make e2e SET=access-long     # E1.1, E1.11 with the browser journeys, E1.13 (CI, every change)
 make e2e SET=access          # the M1 tests alone: E1.1, E1.8, E1.11, E1.13, E1.14
 make e2e SET=full            # everything, in the order of the milestone
@@ -105,8 +105,8 @@ make e2e SET=clients         # build the npm clients image, start the client pod
 make e2e SET=clients-down    # remove the client pods
 make e2e SET=npm             # the npm acceptance matrix and E2.2 to E2.12 but E2.11 (CI job e2e-npm, every change); three client pods
 make e2e SET=npm-closing     # the additions of the closing run (below); fails unless TROVE_E2E_NPM_CLOSING=1, which the set exports
-make e2e SET=npm-ha          # E2.11: drain variant A and the failovers under the npm load (CI leg npm-ha, every change)
-make e2e SET=npm-ha-crash    # E2.11: the pod crash under the npm load, three force-deletes (CI leg npm-ha-crash, every change)
+make e2e SET=npm-ha          # E2.11: drain variant A and the failovers under the npm load (CI leg npm-ha: nightly and on dispatch, since 2026-11-01)
+make e2e SET=npm-ha-crash    # E2.11: the pod crash under the npm load, three force-deletes (no CI leg since 2026-11-01; run by hand)
 make e2e SET=npm-ha-soak     # the pod crash with ten force-deletes over 20 minutes, then perf/k6/npm.js (nightly)
 make e2e SET=npm-ha-closing  # npm-ha, npm-ha-soak and the 5-minute Valkey outage under the npm load (the closing run's leg)
 make npm-clients-image       # only build the image into the local Docker
@@ -780,7 +780,7 @@ Found while building the matrix and running it through `npm-all`, in the order t
 
 ## Drain and failover under npm load
 
-`make e2e SET=npm-ha` and `SET=npm-ha-crash` (CI legs `e2e-npm (npm-ha)` and `e2e-npm (npm-ha-crash)`, every change) are exit criterion
+`make e2e SET=npm-ha` (CI leg `e2e-npm (npm-ha)`, nightly and on dispatch since 2026-11-01, owner) and `SET=npm-ha-crash` (no CI leg; run by hand) are exit criterion
 E2.11 of the [roadmap](../coverage/roadmap.md) and the M2 part of work package WP2.8: variant A of
 [R-HA-059](../spec/ha-and-helm.md#r-ha-059--node-drain-without-outage)'s drain test and the PostgreSQL-switchover and Valkey-failover
 scenarios of [R-HA-052](../spec/ha-and-helm.md#r-ha-052--failure-injection-test-suite) in the first leg, its pod crash with three
@@ -839,7 +839,7 @@ the pod watch sees with a deletion timestamp; the warm-up is every k6 request be
 **Not built in M2, with where it lands:** the NuGet rows of the load (`dotnet restore`, `dotnet nuget push`, k6's 20 %) in M3; the
 long-transfer probes of R-HA-059 and variants B to E in E5.9; R-HA-057's "every replica writes to the new primary within 10 s", the alerts
 (`TroveValkeyUnavailable`; the dev profile runs no Prometheus) and the other Valkey rows in E5.10; `trove admin storage verify` in E5.2. The
-Valkey-primary-loss row of R-HA-052, which also runs on every change, is E0.13's (`valkey-kill.sh` under the ping load); its npm load
+Valkey-primary-loss row of R-HA-052, which ran on every change until 2026-11-01 and now runs in the nightly failover set, is E0.13's (`valkey-kill.sh` under the ping load); its npm load
 joins with M5.
 
 ### The load scripts of R-ARCH-027

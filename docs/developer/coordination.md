@@ -274,7 +274,7 @@ delete rows stale for 24 h. The HTTP layer converts `cluster.ReplicaInfo` to its
 The p99 bounds with Valkey are tail-sensitive: the runner pods keep a CPU limit, and the throttling of the Linux scheduler stalls a
 process for periods of 100 ms ([Q-ARCH-220](../spec/architecture.md#q-arch-220--p-13-starts-its-clock-at-the-commit-and-its-p99-is-enforced-in-the-nightly-performance-run)),
 which CI showed as p99 100 to 122 ms with p50 1.5 ms. Without the switch the tests log a p99 above the bound and pass; the switch is set by
-`make test-performance`, which the workflow "Performance (nightly)" runs ([releasing.md](releasing.md#performance-nightly)):
+`make test-performance`, which the workflow "HA and Performance (nightly)" runs ([releasing.md](releasing.md#ha-and-performance-nightly)):
 
 ```
 make integration-up test-performance integration-down
