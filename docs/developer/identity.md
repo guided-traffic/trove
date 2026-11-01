@@ -88,7 +88,8 @@ request ─► chain stage 6 ─► app.authenticate ─► auth.Stage.Authentic
 - The challenge is `Bearer realm="trove"` (plus `error="invalid_token"` after a rejected token) under `/api/v1/`, otherwise
   `Basic realm="trove"`.
 - The session cookie is accepted on `/api/v1/` for every method, on `/files/` for GET, HEAD, PUT and DELETE, on
-  `/api/<format>/` for GET and HEAD, and ignored elsewhere.
+  `/api/<format>/` for GET and HEAD, and ignored elsewhere and on `/api/v1/auth/login-options`, so an ended session's cookie
+  cannot keep the sign-in screen from loading (Q-AUTH-177).
 - Anonymous: the endpoint allows it (`EndpointRules.Anonymous`), `anonymousAccess` is on and the ceiling
   `auth.anonymous.allowed` is true (`SettingsStore.Effective`), and the method is safe if the path is under `/api/v1/`.
   Independently of the runtime switch, on an endpoint that allows anonymous requests, a request is anonymous when the

@@ -84,7 +84,7 @@ operations of [identity.md](identity.md#management-api) apply to the signed-in u
 
 | operationId | Method and path | `x-trove-permission` |
 |---|---|---|
-| `getLoginOptions` | `GET /api/v1/auth/login-options` | public; `oidc.Service.LoginOptions` plus `anonymousAccess` from the cached settings |
+| `getLoginOptions` | `GET /api/v1/auth/login-options` | public, the session cookie ignored (Q-AUTH-177); `oidc.Service.LoginOptions` plus `anonymousAccess` from the cached settings |
 | `getWhoami` | `GET /api/v1/auth/whoami` | authenticated; the principal, its groups and the credential (a token's scope and expiry come from its row, a session shows `type: session`) |
 | `listOwnSessions` | `GET /api/v1/users/me/sessions` | authenticated (a user or the break-glass account); `current` is the session of the request |
 | `endOwnSession` | `DELETE /api/v1/users/me/sessions/{id}` | authenticated; `404` for a session of another user |

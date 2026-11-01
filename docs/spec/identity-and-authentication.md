@@ -97,7 +97,8 @@ The stage MUST select the credential in this order and MUST evaluate only the fi
    method, with the CSRF rules of R-AUTH-012. On `/files/…` it is accepted for `GET` and `HEAD`, and for `PUT` and
    `DELETE` under the same CSRF rules, because the UI's deploy dialog and item actions use them
    ([api-and-ui.md](api-and-ui.md) R-API-006, R-UI-012). On `/api/<format>/…` it is accepted for
-   `GET` and `HEAD` only. Everywhere else it is ignored.
+   `GET` and `HEAD` only. Everywhere else it is ignored, and so is it on
+   `GET /api/v1/auth/login-options`, which the sign-in screen reads (Q-AUTH-177).
 4. **No credential.** The request becomes anonymous if R-AUTH-037 allows it; otherwise it is
    unauthenticated.
 
@@ -4836,6 +4837,31 @@ the domain.
 the limiter moves to the chain as a stage, when `AdmitLocalLogin` shrinks to the account check.
 
 **Applied in the spec:** R-AUTH-014 (no change of behavior); [login.md](../developer/login.md).
+
+### Q-AUTH-177 · The login options ignore the session cookie
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a browser keeps `__Host-trv_session` after its session ended (`idle_timeout`, `absolute_timeout`, an end by an
+administrator). The UI then calls `GET /api/v1/auth/login-options` with it; the stage evaluated the cookie, answered `401
+session_expired`, and the sign-in screen never loaded. The cookie is `HttpOnly`, so the UI cannot drop it, and every retry sent it again:
+the user stayed locked out until they deleted the site's cookies (found on an installation of `v0.5.0`, 2026-11-01). The handler of the
+login options does not read the principal.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The cookie is ignored on the login options (chosen) | R-AUTH-001 item 3 adds the route to where the cookie is ignored, as on `/ui/` and `/auth/` | The sign-in screen loads whatever the cookie says; the rule that an invalid credential never falls through to anonymous stays whole | One more route in the path rule |
+| (b) Every `401 session_expired` clears the cookie | `Set-Cookie` with `Max-Age=0`, as at logout (R-AUTH-013) | The browser stops sending a dead cookie anywhere | A request still in flight with the old cookie clears the cookie a login in another tab has just set, and signs that user out; the login screen still fails once before the retry |
+| (c) An invalid session on an always-open route counts as no credential | The stage falls through to anonymous there | Covers every always-open route | Breaks the no-fall-through rule of R-AUTH-001; the device approval would answer `credentials_required` instead of telling the UI the session ended |
+
+**Choice:** (a).
+
+**Rationale:** The login options are public and carry nothing that depends on who asks, so the cookie has no meaning there; ignoring it is
+the smallest change that keeps the sign-in screen reachable (R-AUTH-037, Q-AUTH-19). Every other route still answers an ended session
+with `session_expired`, which the UI turns into its sign-in path. The development agent would revisit (b) if the UI meets a dead cookie
+on a route it cannot recover from.
+
+**Applied in the spec:** R-AUTH-001 item 3. Code: `sessionAllowed` in `internal/auth/stage.go`.
 
 ### Q-AUTH-79 · How the end-to-end tests drive the browser login of E1.1 and disable the break-glass account
 

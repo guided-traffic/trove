@@ -306,6 +306,34 @@ func TestR_AUTH_042_LoginJourneyOverTheAPI(t *testing.T) {
 	}
 }
 
+// TestR_AUTH_001_EndedSessionOverTheAPI: a browser keeps the cookie of a session
+// that has ended, and its sign-in screen must still load (Q-AUTH-177).
+func TestR_AUTH_001_EndedSessionOverTheAPI(t *testing.T) {
+	e := apiEnv(t, nil)
+	auth := e.defaultAuth()
+	auth.Sessions.IdleTimeout = 2 * time.Second
+	e.start(3, auth)
+
+	t.Run("R-AUTH-001 Q-AUTH-177 with an ended session's cookie the login options load on every replica and a new login replaces the cookie", func(t *testing.T) {
+		b := e.browser()
+		b.mustLogin("corp")
+		time.Sleep(2500 * time.Millisecond)
+		if code, body := whoamiRaw(t, b); code != http.StatusUnauthorized || !strings.Contains(body, "session_expired") {
+			t.Fatalf("whoami: %d %s", code, body)
+		}
+		for i := range 3 {
+			resp, body := b.get(e.baseURL + "/api/v1/auth/login-options")
+			if resp.StatusCode != http.StatusOK || !strings.Contains(body, `"providers"`) {
+				t.Fatalf("request %d: %d %s", i, resp.StatusCode, body)
+			}
+		}
+		b.mustLogin("corp")
+		if code, m := b.whoami(); code != http.StatusOK || m["principal"].(map[string]any)["name"] != "alice" {
+			t.Fatalf("after the new login: %d %v", code, m)
+		}
+	})
+}
+
 // TestR_AUTH_014_UnlockOverTheAPI: five wrong passwords lock the break-glass
 // account on every replica; an administrator unlocks it through the API at once
 // (R-AUTH-014, R-AUTH-038), and the user record shows the lock meanwhile.

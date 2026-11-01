@@ -376,10 +376,14 @@ func isManagementAPI(p string) bool { return p == "/api/v1" || strings.HasPrefix
 
 // sessionAllowed is the path rule of R-AUTH-001 item 3: the session cookie is
 // accepted on /api/v1 for every method, on /files for GET, HEAD, PUT and DELETE,
-// on /api/<format> for GET and HEAD, and ignored everywhere else.
+// on /api/<format> for GET and HEAD, and ignored everywhere else. The login
+// options ignore it too: an ended session's cookie would make the sign-in screen
+// unreachable, and the browser cannot drop an HttpOnly cookie (Q-AUTH-177).
 func sessionAllowed(r *http.Request) bool {
 	p := r.URL.Path
 	switch {
+	case p == "/api/v1/auth/login-options":
+		return false
 	case isManagementAPI(p):
 		return true
 	case strings.HasPrefix(p, "/files/"):

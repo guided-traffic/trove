@@ -269,6 +269,12 @@ func TestR_AUTH_001_SessionRules(t *testing.T) {
 		_, err := do(fakeSessions{err: session.ErrInvalid}, "GET", "/api/v1/tokens", defaultRules())
 		wantErr(t, err, 401, "session_expired")
 	})
+	t.Run("R-AUTH-001 Q-AUTH-177 the login options ignore the cookie, so an ended session leaves the sign-in screen reachable", func(t *testing.T) {
+		res, err := do(fakeSessions{err: session.ErrInvalid}, "GET", "/api/v1/auth/login-options", defaultRules())
+		if err != nil || !res.Anonymous {
+			t.Fatalf("%+v %v", res, err)
+		}
+	})
 	t.Run("R-AUTH-012 a failed CSRF check is 403", func(t *testing.T) {
 		_, err := do(fakeSessions{info: sess, csrfErr: session.ErrCSRF}, "POST", "/api/v1/tokens", defaultRules())
 		wantErr(t, err, 403, "csrf_failed")
