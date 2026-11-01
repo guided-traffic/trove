@@ -121,15 +121,8 @@ type Format interface {
 	// OnCommit runs in the transaction of a commit (storage.md): package and
 	// version rows, the lead item.
 	OnCommit(ctx context.Context, tx Tx, c CommitEvent) error
-	// OnItemsRemoved and OnItemsRestored run in the transaction that removed or
-	// restored items.
+	// OnItemsRemoved runs in the transaction that removed items.
 	OnItemsRemoved(ctx context.Context, tx Tx, e ItemsEvent) error
-	OnItemsRestored(ctx context.Context, tx Tx, e ItemsEvent) error
-	// RemoveVersion removes a version for retention and caps; the items it names
-	// are removed by the core. A stub until retention exists.
-	RemoveVersion(ctx context.Context, tx Tx, v VersionRef) ([]ItemRef, error)
-	// VersionGroup is the group a cap counts the version in. A stub until caps.
-	VersionGroup(v VersionRef) string
 
 	// ServeCheck runs before the core serves a stored item on any route, /files/
 	// included; errs.NotFound refuses it because of format state the generic item
@@ -140,8 +133,6 @@ type Format interface {
 	Remote() RemoteAdapter
 	// Virtual is nil exactly when Classes lacks Virtual.
 	Virtual() VirtualAdapter
-	// Indexes is nil for a format with no rebuildable derived metadata.
-	Indexes() IndexBuilder
 	// Exposure is nil for a format that is not exposable (R-EP-018).
 	Exposure() ExposureAdapter
 	// View is nil for a format without package screens (R-API-029): the adapter
@@ -184,9 +175,13 @@ type Descriptor struct {
 	VerifyAnnouncedDigests bool
 	// Limits tighten untrusted.DefaultLimits; a zero field keeps the default.
 	Limits Limits
-	// RepositoryIndex says the format has repository-wide derived indexes, which
-	// enables the per-repository revision (R-ARCH-012, Q-ARCH-12).
-	RepositoryIndex bool
+	// NotifyAreas are the notification areas the format may name in
+	// [PackageWriter.Notify]: signal areas of [catalog.FormatAreas] only. The package
+	// writer raises the signal of a changed package itself (Q-ARCH-259); a format
+	// declares an area for the change that raised no package row, such as the
+	// replacement of a stored remote document. Register refuses any other area, and
+	// the host refuses a Notify for an area the format did not declare.
+	NotifyAreas []string
 	// DataPort is the interface type of the format's side-table port (Q-ARCH-193),
 	// for example reflect.TypeFor[npm.Store](); nil for a format without side
 	// tables. The composition root binds one value per format and refuses to
@@ -194,14 +189,46 @@ type Descriptor struct {
 	DataPort reflect.Type
 }
 
+// ItemsRestorer is the optional hook of a format that keeps state of its own for
+// restored items: it runs in the transaction that restored them, with the writer
+// and the port of the event (R-STOR-022). It is not part of [Format]: the restore
+// from the trash does not exist yet, so the method could not be implemented as
+// frozen (Q-ARCH-256). A format that has it implements the method; [CapabilitiesOf]
+// finds it.
+type ItemsRestorer interface {
+	OnItemsRestored(ctx context.Context, tx Tx, e ItemsEvent) error
+}
+
+// Capabilities are the optional behaviours of a format, found once, when the format
+// registers (R-ARCH-025). A new behaviour is added to the contract as an optional
+// interface and a field here; no existing format changes, and ContractVersion stays
+// (Q-ARCH-256). The core asks the registry ([CapabilitiesFor]), never the format
+// value, so a capability cannot be missed by a call site that forgot to look.
+type Capabilities struct {
+	// ItemsRestorer is the restore hook; nil for a format without one.
+	ItemsRestorer ItemsRestorer
+}
+
+// CapabilitiesOf reads the capabilities off a format. It is the one function of the
+// module that asserts a value to an interface of this package (the architecture
+// test allows no other), and [Register] and the conformance kit are its callers.
+func CapabilitiesOf(f Format) Capabilities {
+	var c Capabilities
+	if r, ok := f.(ItemsRestorer); ok {
+		c.ItemsRestorer = r
+	}
+	return c
+}
+
 // formatRegistry holds the registered formats; the facts live in the catalog.
 var formatRegistry = struct {
-	mu sync.RWMutex
-	by map[ID]Format
-}{by: map[ID]Format{}}
+	mu   sync.RWMutex
+	by   map[ID]Format
+	caps map[ID]Capabilities
+}{by: map[ID]Format{}, caps: map[ID]Capabilities{}}
 
 // Register adds a format to the process catalog ([catalog.Default]) and to the
-// registry of formats. It panics, and the process exits, on a programming error
+// registry of formats, and records its [Capabilities]. It panics, and the process exits, on a programming error
 // (R-ARCH-010): a duplicate or reserved ID, a ContractVersion mismatch, a route
 // set the ambiguity check refuses, a class without its adapter (or an adapter
 // without its class), and every rule of [catalog.Registry.Register]. Formats are
@@ -222,6 +249,15 @@ func Register(f Format) {
 	}
 	catalog.Default().Register(CatalogEntry(f))
 	formatRegistry.by[d.ID] = f
+	formatRegistry.caps[d.ID] = CapabilitiesOf(f)
+}
+
+// CapabilitiesFor returns the capabilities recorded when the format registered; the
+// zero value for a format that is not registered.
+func CapabilitiesFor(id ID) Capabilities {
+	formatRegistry.mu.RLock()
+	defer formatRegistry.mu.RUnlock()
+	return formatRegistry.caps[id]
 }
 
 // CatalogEntry derives the catalog entry of a format: its facts, its name rule
@@ -256,6 +292,11 @@ func Validate(f Format) error {
 	}
 	if d.DataPort != nil && d.DataPort.Kind() != reflect.Interface {
 		return fmt.Errorf("%q: the data port %v is no interface type", id, d.DataPort)
+	}
+	for _, a := range d.NotifyAreas {
+		if !slices.Contains(catalog.FormatAreas, a) {
+			return fmt.Errorf("%q declares notification area %q, which a format may not raise (%s)", id, a, strings.Join(catalog.FormatAreas, ", "))
+		}
 	}
 	if err := checkAdapter(id, "Remote", d.Supports(Remote), f.Remote() != nil); err != nil {
 		return err

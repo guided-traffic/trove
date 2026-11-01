@@ -327,7 +327,7 @@ func TestR_ARCH_015_BridgeMetadata(t *testing.T) {
 		for _, tc := range []struct {
 			in   formats.Strategy
 			want virtual.Strategy
-		}{{formats.FirstMatch, virtual.FirstMatch}, {formats.Merge, virtual.Merge}, {formats.Newest, virtual.Newest}} {
+		}{{formats.FirstMatch, virtual.FirstMatch}, {formats.Merge, virtual.Merge}} {
 			b.ad.strategy = tc.in
 			if got := mg.Strategy(virtual.Descriptor{}); got != tc.want {
 				t.Errorf("strategy %v -> %v", tc.in, got)

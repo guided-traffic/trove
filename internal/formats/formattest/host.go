@@ -67,11 +67,11 @@ type HostOptions struct {
 }
 
 // Host is the in-memory implementation of formats.Host: an item store, the
-// package rows with packages.rev_seq, links, renditions, notifications, jobs, an
+// package rows with packages.rev_seq, links, renditions, notifications, an
 // authorization table and the format's data port. It mirrors the production Host
 // where a format can tell the difference: a package row write raises rev_seq once
 // per package per transaction (Q-ARCH-212), a rolled-back transaction leaves no
-// row, no notification and no job, and the transaction is opaque. Every call that
+// row and no notification, and the transaction is opaque. Every call that
 // matters to a check is recorded.
 type Host struct {
 	f    formats.Format
@@ -92,7 +92,6 @@ type Host struct {
 	claims    []ClaimCall
 	prechecks []ClaimCall
 	notified  []Notification
-	jobs      []formats.JobSpec
 	routes    []string // names of the routes served
 	reads     [][]byte // package bytes handed to a handler
 	served    bool     // an item was served to a response
@@ -189,13 +188,6 @@ func (h *Host) Notifications() []Notification {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return append([]Notification(nil), h.notified...)
-}
-
-// Jobs returns the jobs committed transactions enqueued, in order.
-func (h *Host) Jobs() []formats.JobSpec {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return append([]formats.JobSpec(nil), h.jobs...)
 }
 
 // Violations returns the contract violations the Host noticed while routes ran:
@@ -484,6 +476,8 @@ func (h *Host) ServeRequest(rq *formats.Request, sameOrigin bool) *Response {
 		if h.served {
 			h.violation = append(h.violation, fmt.Sprintf("route %q of kind %s served a stored item", rq.Route.Name, rq.Route.Kind))
 		}
+	}
+	if !rq.Route.Kind.WrapsContent() {
 		body := rec.Body.Bytes()
 		for _, r := range h.reads {
 			if len(r) > 0 && len(body) > 0 && strings.Contains(string(body), string(r)) {

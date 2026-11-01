@@ -250,7 +250,7 @@ Priority: **MVP** · Covers: PKG-NUGET-008, PKG-NUGET-009, PKG-NUGET-011, PKG-NU
 
 Package IDs:
 
-- **Local rule.** An ID that enters a local repository (push, raw deploy, upload, copy or move)
+- **Local rule.** An ID that enters a local repository (push, upload, copy or move)
   MUST match `^[A-Za-z0-9_]+([.-][A-Za-z0-9_]+)*$` and be at most 100 characters; violations
   answer 400 (Q-NUGET-3). This is NuGet's general ID rule intersected with the restricted ASCII
   set that nuget.org has required for new IDs since 2026-06-15 and for every push since
@@ -413,8 +413,8 @@ Priority: **MVP** · Covers: PKG-NUGET-005, PKG-NUGET-006, PKG-NUGET-021, FMT-01
 Every `.nupkg` that enters a NuGet repository goes through the upload pipeline of
 [storage.md](../storage.md) (R-STOR-004, R-STOR-005: admission with the repository's maximum upload
 size, spool, one-pass SHA-256, SHA-1, MD5 and SHA-512, commit). That covers protocol push
-(R-NUGET-006), raw deploy, upload through the management API and UI, copy and move, and remote
-cache fills. The NuGet plug-in adds these steps between spooling and commit:
+(R-NUGET-006), upload through the management API and UI, copy and move, and remote
+cache fills. A raw deploy is not an ingestion path of NuGet (Q-NUGET-13). The NuGet plug-in adds these steps between spooling and commit:
 
 1. Open the archive as ZIP within the archive limits below (400 on violation). Entries are read
    through the central directory only. An archive with an encrypted entry, a split or multi-disk
@@ -474,11 +474,11 @@ cache fills. The NuGet plug-in adds these steps between spooling and commit:
   (R-ARCH-009) is the package's change sequence that keys R-ARCH-012's rendition cache and the
   ETags of R-NUGET-002. NuGet keeps no counter of its own: the core reads `rev_seq` without format
   code, also for the merged-metadata check of virtual repositories (R-ARCH-015).
-- Raw deploy (R-STOR-007): `PUT /files/<repoKey>/{lower_id}/{lower_version}/{lower_id}.{lower_version}.nupkg`
-  runs this pipeline; a declared ID or version that does not match the path answers 400
-  (R-AUTHZ-005). A `.snupkg` at its canonical path runs R-NUGET-020. Every other path or file type
-  answers 409 with a reason (R-STOR-007), including the derived files, which only the plug-in
-  writes.
+- Raw deploy (R-STOR-007) into a NuGet repository answers 409 before the body is read, for every
+  path and file type: `PUT /files/<repoKey>/...` is accepted only by a format whose protocol base path
+  is `/files/{key}/` (generic, Q-ARCH-223), and the answer names the protocol path of the repository,
+  `/api/nuget/<key>/` (Q-NUGET-13). A package enters through the protocol push, the upload of the management API and the
+  UI, copy and move. The derived files, which only the plug-in writes, are never a raw deploy's.
 - Upload through the management API without a target path (the UI deploy dialog,
   [api-and-ui.md](../api-and-ui.md)): the plug-in derives the canonical path from the `.nuspec`.
 - Copy and move (R-STOR-019, P1): the plug-in hooks copy or move the NuGet side rows in the same
@@ -492,8 +492,9 @@ cache fills. The NuGet plug-in adds these steps between spooling and commit:
 - Raw delete (R-STOR-018) of a `.nupkg` removes the whole version: the `OnItemsRemoved` hook removes
   the derived items, the symbol package and the side rows and writes the version's tombstone
   (R-NUGET-006) in the same transaction; with the trash can enabled (R-STOR-022) the version is
-  trashed and restored as a unit, and the `OnItemsRestored` hook removes the tombstone. A raw
-  delete of a derived item alone answers 409.
+  trashed and restored as a unit, and the format's optional `OnItemsRestored` hook (`formats.ItemsRestorer`) removes the tombstone. A raw
+  delete of a derived item alone answers 409: the `OnItemsRemoved` hook refuses it, which rolls the
+  removal back (Q-NUGET-13).
 
 Metadata extracted from the `.nuspec` into `nuget_version.metadata`:
 
@@ -618,7 +619,7 @@ API ([package publish](https://learn.microsoft.com/en-us/nuget/api/package-publi
 - This is an API-key endpoint (R-NUGET-012).
 - Versions are immutable for the lifetime of the repository (Q-NUGET-6). These rules hold
   whatever permissions the caller holds, `overwrite` included (R-AUTHZ-006 lets a format refuse
-  overwrites), and for every ingestion path into a local repository (protocol push, raw deploy,
+  overwrites), and for every ingestion path into a local repository (protocol push,
   upload; copy and move report them per item, R-NUGET-005):
   - A push whose URL form exists in the repository with other bytes answers 409
     `nuget_version_exists`.
@@ -627,7 +628,7 @@ API ([package publish](https://learn.microsoft.com/en-us/nuget/api/package-publi
     `package.published` event is written, and `trove_nuget_push_replayed_total` counts it
     (Q-NUGET-6). The NuGet clients repeat a push on their own after a transport failure
     (R-NUGET-032), and this rule makes such a repeat succeed when its first attempt had committed.
-    Raw deploy and upload keep answering 409 for an existing version.
+    Upload keeps answering 409 for an existing version.
   - A push whose URL form is tombstoned answers 409 `nuget_version_deleted`, identical bytes
     included. The one exception is a tombstone of kind `reserved`, which a restore's journal
     replay writes for a version published after the backup's snapshot (R-NUGET-033, Q-NUGET-10):
@@ -2821,6 +2822,24 @@ R-NUGET-025: a reindex enqueues jobs instead of indexing symbols. R-NUGET-028:
 `trove_nuget_symbol_index_lag_seconds` and `trove_nuget_symbol_index_failures_total`. Cross-page:
 a row for `nuget-symbol-index` in [architecture.md](../architecture.md) R-ARCH-016's kind table;
 the worker spool note in [ha-and-helm.md](../ha-and-helm.md).
+
+### Q-NUGET-13 · A raw deploy into a NuGet repository answers 409
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-005 let `PUT /files/<repoKey>/{lower_id}/{lower_version}/...nupkg` run the ingestion pipeline and answer 400 when path and declared identity differ. The file seam refuses a raw deploy into any repository whose format is not served at `/files/{key}/` before the body is read (Q-ARCH-223, `FilesSeam.RawDeploy`), and roadmap WP3.0h would have changed it: an admission of a deploy before the body, an inspection after the spool with the re-check of the declared name at the commit, and a veto of a delete of a derived item alone.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A raw deploy answers 409 for every path; a raw delete of a derived file alone is refused by `OnItemsRemoved` (chosen) | Q-ARCH-223 stays as it is; the seam gets nothing | No contract addition at the freeze; one road in (push, upload, copy, move) for tombstone, ownership and shadowing rules; the generated files cannot be written by hand | `curl -T` of a `.nupkg` into `/files/` does not work; scripted uploads use the push, which MAY take a raw body (R-NUGET-006) |
+| (b) The seam runs the format's ingestion rules on the raw road (WP3.0h) | Admission before the body, inspection after the spool, re-check at the commit, a veto seam, `generated` items refuse raw writes | One more way in for scripts | Three additions to the frozen files seam for a second road to the same pipeline; every rule of R-NUGET-006 (tombstones, ownership, the shadowing check) must be right on two roads |
+| (c) 409 for raw deploy now, the seam later | As (a), with (b) as an additive extension | Nothing is built twice | Same as (a); (b) stays available because a new seam is an optional interface (R-ARCH-025) |
+
+**Choice:** (a); (c) is how it is revisited. A raw delete of a `.nupkg` removes the version as a unit (`OnItemsRemoved`), and a raw delete of a derived file alone is a 409 from the same hook: an error of the hook rolls the removal back, so no veto seam is needed.
+
+**Rationale:** the push MAY take a raw `.nupkg` body (R-NUGET-006), so a script has a road; the files seam stays the generic layer's. The development agent would revisit it when a user needs `/files/` upload of NuGet packages (a seam as an optional interface, with the three additions above) or when a second format needs the admission before the body.
+
+**Applied in the spec:** R-NUGET-005 (the opening paragraph and the raw deploy bullet), R-NUGET-003 (the local rule), the immutability rule of R-NUGET-006. Code: none (the seam already behaves so); the test of the deviation is `TestR_STOR_007_RawDeployIntoAFormatRepositoryIsRefused`'s NuGet case, which belongs to the format's integration tests (roadmap WP3.4).
 
 ### Q-NUGET-20 · Dependency version ranges are parsed without floating versions
 

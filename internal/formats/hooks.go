@@ -2,11 +2,8 @@ package formats
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"io"
-	"strconv"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/formats/untrusted"
@@ -36,14 +33,6 @@ type (
 	VersionID int64
 	RevSeq    int64
 )
-
-// VersionRef names a version of a package.
-type VersionRef struct {
-	Repo    RepoRef
-	Package string
-	Version string
-	ID      VersionID
-}
 
 // Digests are the digests of a body. A digest the pipeline did not compute is nil.
 type Digests struct{ SHA256, SHA512, SHA1, MD5 []byte }
@@ -152,7 +141,7 @@ type RemovedItem struct {
 	Version VersionID
 }
 
-// ItemsEvent is what OnItemsRemoved and OnItemsRestored learn.
+// ItemsEvent is what OnItemsRemoved and the optional [ItemsRestorer] learn.
 type ItemsEvent struct {
 	Repo  RepoRef
 	Items []RemovedItem
@@ -200,13 +189,6 @@ type NewVersion struct {
 	Attributes json.RawMessage
 	// CreatedBy is a principal id, "" for none.
 	CreatedBy string
-}
-
-// JobSpec is a job a hook enqueues in its transaction (R-ARCH-016).
-type JobSpec struct {
-	Kind     string
-	Args     any
-	DedupKey string
 }
 
 // OwnershipWrite says what a write is for the ownership rule of R-AUTHZ-018: a
@@ -274,24 +256,11 @@ type PackageWriter interface {
 	// a raw delete through /files/ takes the same road. A writer bound to no request
 	// answers errs.Internal. The caller has decided the action on every path.
 	DeleteItems(ctx context.Context, repo RepoRef, paths ...string) error
-	// Notify attaches a notification to the transaction: a change area writes its
-	// change-log row in it, a signal area is published after the commit
-	// (R-ARCH-018). A rollback sends neither.
+	// Notify attaches a notification to the transaction for an area the format
+	// declared in [Descriptor.NotifyAreas]; a signal area is published after the
+	// commit and a rollback sends nothing (R-ARCH-018). Any other area is refused
+	// with an internal error. The signal that a package changed is not raised
+	// here: the writer attaches it once per package it raised (Q-ARCH-259), so Notify
+	// is for a change that raised no package row (a replaced remote document).
 	Notify(area string, payload any) error
-	// Enqueue enqueues a job in the transaction (R-ARCH-016).
-	Enqueue(ctx context.Context, j JobSpec) error
-}
-
-// PackageChanged is the payload a format attaches, with PackageWriter.Notify, to the
-// signal area metadata_changed after a change of the rows of a package of a local
-// repository: the virtual engine drops the merged documents that contain the
-// package early (R-REPO-020). Nothing depends on it for correctness; the engine
-// validates every entry by rev_seq.
-//
-// The payload is "<repository id>:<hex SHA-256 of the normalized name>"; the virtual
-// engine parses it (virtual.PackageChanged is the same function, which the contract
-// may not import: a test of internal/formathost pins the two together).
-func PackageChanged(repoID int64, name string) string {
-	sum := sha256.Sum256([]byte(name))
-	return strconv.FormatInt(repoID, 10) + ":" + hex.EncodeToString(sum[:])
 }

@@ -238,8 +238,6 @@ func (m merger) Strategy(virtual.Descriptor) virtual.Strategy {
 	switch m.a.Strategy(m.p) {
 	case formats.Merge:
 		return virtual.Merge
-	case formats.Newest:
-		return virtual.Newest
 	}
 	return virtual.FirstMatch
 }

@@ -14,7 +14,9 @@ type DataPorts interface {
 // ViewAdapter is a format's part of the package screens (R-API-029): what the
 // generic package and version rows do not hold - the description, the keywords,
 // the licenses, the format-specific metadata and the README - and the format's
-// notion of version order. The core answers everything the generic rows carry
+// notion of version order. Whether a version is a pre-release is not asked here: the
+// screens take it from the format's exposure adapter ([catalog.Versioning]), which
+// is the one definition (Q-ARCH-257). The core answers everything the generic rows carry
 // (names, versions, repositories, times, sizes, downloads, files) and asks the
 // adapter for the rest; the adapter reads its own side tables through its data
 // port and runs no SQL (R-ARCH-008).
@@ -27,8 +29,6 @@ type ViewAdapter interface {
 	// stores; a string that is no version of the format sorts before every version
 	// and equal strings compare equal.
 	Compare(a, b string) int
-	// Prerelease reports whether a normalized version is a pre-release.
-	Prerelease(version string) bool
 	// Describe reads, for versions the caller may read, what the screens show of
 	// each. A version the format has no data for is absent from the answer. visible
 	// says which versions of the same package the caller may read, so that data

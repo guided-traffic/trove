@@ -295,7 +295,7 @@ func (f *Format) exposedDocument(ctx context.Context, rq *formats.Request, n nam
 	if err != nil {
 		return nil, err
 	}
-	filtered, err := f.exposure.FilterDocument(ctx, formats.Path{Path: n.String()}, rewritten, view)
+	filtered, err := f.exposure.filterDocument(ctx, formats.Path{Path: n.String()}, rewritten, view)
 	if err != nil {
 		return nil, err
 	}

@@ -56,8 +56,6 @@ func (m *memView) Compare(a, b string) int {
 	return num(a) - num(b)
 }
 
-func (m *memView) Prerelease(string) bool { return false }
-
 func (m *memView) Describe(context.Context, formats.DataPorts, []formats.ViewVersion, formats.ViewFields, func(string) bool) (map[formats.VersionID]formats.ViewData, error) {
 	return nil, nil
 }

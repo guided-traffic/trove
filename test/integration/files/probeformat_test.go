@@ -38,12 +38,15 @@ var probeLog = struct {
 	removed []formats.ItemsEvent
 	data    []any
 	failFor string
+	// failAfterRows fails the commit of this package after its rows were written and the
+	// package was raised, so that a rollback has something to undo.
+	failAfterRows string
 }{}
 
 func probeReset() {
 	probeLog.mu.Lock()
 	defer probeLog.mu.Unlock()
-	probeLog.removed, probeLog.data, probeLog.failFor = nil, nil, ""
+	probeLog.removed, probeLog.data, probeLog.failFor, probeLog.failAfterRows = nil, nil, "", ""
 }
 
 type lowerNames struct{}
@@ -138,7 +141,7 @@ func (probeFormat) ServeCheck(_ context.Context, _ formats.Host, _ formats.RepoR
 func (probeFormat) OnCommit(ctx context.Context, _ formats.Tx, c formats.CommitEvent) error {
 	probeLog.mu.Lock()
 	probeLog.data = append(probeLog.data, c.Data)
-	fail := probeLog.failFor
+	fail, failAfter := probeLog.failFor, probeLog.failAfterRows
 	probeLog.mu.Unlock()
 	if c.Inspection == nil { // a raw upload through /files/ keeps no package rows
 		return nil
@@ -155,7 +158,13 @@ func (probeFormat) OnCommit(ctx context.Context, _ formats.Tx, c formats.CommitE
 	if err != nil {
 		return err
 	}
-	return c.Packages.SetProperties(ctx, c.Item, map[string]string{"probe.name": c.Inspection.Package})
+	if err := c.Packages.SetProperties(ctx, c.Item, map[string]string{"probe.name": c.Inspection.Package}); err != nil {
+		return err
+	}
+	if failAfter != "" && c.Inspection.Package == failAfter {
+		return errors.New("the probe format refused the package after its rows")
+	}
+	return nil
 }
 
 func (probeFormat) OnItemsRemoved(ctx context.Context, _ formats.Tx, e formats.ItemsEvent) error {
@@ -261,9 +270,8 @@ func (probeFormat) tagPut(ctx context.Context, rq *formats.Request, w http.Respo
 	return nil
 }
 
-// leak is a route of kind Volatile that returns package-derived bytes: a contract
-// violation the conformance kit catches (R-ARCH-010 check 7). The dispatcher does not
-// wrap it, so it must not receive the content headers.
+// leak is a route of kind Volatile that returns package-derived bytes, as a search
+// does. The dispatcher wraps it in the headers of Metadata (R-ARCH-007, Q-ARCH-258).
 func (probeFormat) leak(_ context.Context, _ *formats.Request, w http.ResponseWriter) error {
 	_, _ = w.Write([]byte("{}"))
 	return nil
@@ -277,8 +285,4 @@ func (probeExposure) Prerelease(string) (bool, bool) { return false, false }
 func (probeExposure) InRange(string, string) bool    { return false }
 func (probeExposure) Dimensions() formats.ExposureDimensions {
 	return formats.ExposureDimensions{Packages: true}
-}
-
-func (probeExposure) FilterDocument(_ context.Context, _ formats.Path, d []byte, _ formats.ExposureView) ([]byte, error) {
-	return d, nil
 }

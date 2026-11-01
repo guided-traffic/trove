@@ -11,6 +11,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/formats/formattest"
 	"github.com/guided-traffic/trove/internal/formats/formattest/testformat"
 )
@@ -104,7 +105,7 @@ func TestR_ARCH_009_InMemoryHost(t *testing.T) {
 			t.Fatalf("RevSeqs = %v", revs)
 		}
 	})
-	t.Run("R-ARCH-009 a rolled-back transaction leaves no row, no revision, no notification and no job", func(t *testing.T) {
+	t.Run("R-ARCH-009 a rolled-back transaction leaves no row, no revision and no notification", func(t *testing.T) {
 		h := newHost(t)
 		boom := errors.New("boom")
 		rolled := false
@@ -114,8 +115,7 @@ func TestR_ARCH_009_InMemoryHost(t *testing.T) {
 			if _, err := w.InsertVersion(ctx, p, formats.NewVersion{Version: "1.0.0"}); err != nil {
 				return err
 			}
-			_ = w.Notify("area", "payload")
-			_ = w.Enqueue(ctx, formats.JobSpec{Kind: "k"})
+			_ = w.Notify(catalog.MetadataChangedArea, "payload")
 			return boom
 		})
 		if !errors.Is(err, boom) || !rolled {
@@ -124,22 +124,19 @@ func TestR_ARCH_009_InMemoryHost(t *testing.T) {
 		if _, ok, _ := h.Packages().Package(ctx, h.Ref(), "left-pad"); ok {
 			t.Fatal("the package survived the rollback")
 		}
-		if len(h.Notifications()) != 0 || len(h.Jobs()) != 0 {
-			t.Fatal("a rollback sent a notification or a job")
+		if len(h.Notifications()) != 0 {
+			t.Fatal("a rollback sent a notification")
 		}
 	})
-	t.Run("R-ARCH-018 a commit sends the notifications and the jobs and runs the after hooks", func(t *testing.T) {
+	t.Run("R-ARCH-018 a commit sends the notifications and runs the after hooks", func(t *testing.T) {
 		h := newHost(t)
 		after := 0
 		err := h.Write(ctx, nil, func(tx formats.Tx, w formats.PackageWriter) error {
 			tx.After(func() { after++ })
-			if err := w.Notify("area", 1); err != nil {
-				return err
-			}
-			return w.Enqueue(ctx, formats.JobSpec{Kind: "k", DedupKey: "d"})
+			return w.Notify(catalog.MetadataChangedArea, 1)
 		})
-		if err != nil || after != 1 || len(h.Notifications()) != 1 || len(h.Jobs()) != 1 || h.Jobs()[0].DedupKey != "d" {
-			t.Fatalf("err = %v after = %d notes = %v jobs = %v", err, after, h.Notifications(), h.Jobs())
+		if err != nil || after != 1 || len(h.Notifications()) != 1 {
+			t.Fatalf("err = %v after = %d notes = %v", err, after, h.Notifications())
 		}
 		err = h.Write(ctx, nil, func(_ formats.Tx, w formats.PackageWriter) error { return w.Notify("", nil) })
 		if err == nil {

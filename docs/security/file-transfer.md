@@ -31,6 +31,13 @@ deletes or overwrites one of them does not change what is sent (unit test `TestC
 is on `200`, `206`, `304` and `HEAD`. The directory index of a folder is a page trove renders itself: it has `nosniff`,
 `same-site` and the policy without `sandbox`, and no disposition, and every name in it is HTML-escaped and linked as `./` plus the
 percent-encoded name, so `javascript:x` stays a relative path. Problem answers carry none of this: their body is not content.
+
+A format route is wrapped by `formats.ServeRoute` with the same set: `Download` with the disposition, `Metadata`, `Computed` and `Volatile` without it
+(`RouteKind.WrapsContent`). A `Volatile` route is a search, and its answer carries package-derived text (titles, descriptions, icon URLs) that an
+uploader chose; it is therefore under the headers as a document is (Q-ARCH-258, ADR-137), and `TestR_ARCH_007_ServeRouteWrapsTheContentRoutes` removes the
+policy from inside such a handler and reads it back at the status line. Before this, such a route was a contract violation the kit could only report; now the
+core guarantees the headers and the kit still fails a `Volatile` route that serves a stored item, or an `Upload`, `Delete` or `Admin` route that returns
+package bytes.
 The media type is the one the uploader sent, parsed as a media type and stored in its normalised form (a value that does not
 parse is `400 invalid_header`); it is never derived from the content or the name.
 

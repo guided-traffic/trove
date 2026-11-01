@@ -28,6 +28,8 @@ type formatsFixture struct {
 	disp *dispatch.Dispatcher
 	// router is the replica's router, for the route table.
 	router *httpserver.Router
+	// sigs records the signals the package writer attached to committed transactions.
+	sigs *recordedSignals
 }
 
 func newFormatsFixture(t *testing.T) *formatsFixture {
@@ -39,8 +41,9 @@ func newFormatsFixture(t *testing.T) *formatsFixture {
 	if err := b.Bind("probe", probePort{}); err != nil {
 		t.Fatal(err)
 	}
-	deps := formathost.Deps{Bindings: b}
-	f := &formatsFixture{e: e}
+	sigs := &recordedSignals{}
+	deps := formathost.Deps{Bindings: b, Signals: sigs}
+	f := &formatsFixture{e: e, sigs: sigs}
 	seam := formathost.NewFilesSeam(func() (formats.Host, error) { return f.host, nil }, deps)
 	f.r = e.newReplica("a", replicaOpts{
 		hooks: formathost.NewHooks(deps), formats: seam,
@@ -448,11 +451,12 @@ func TestR_ARCH_007_FormatRoutesCarryTheContentHeaders(t *testing.T) {
 			t.Fatalf("answer %d disposition %q", res.status, res.header.Get("Content-Disposition"))
 		}
 	})
-	t.Run("a route of another kind gets no content headers from the dispatcher", func(t *testing.T) {
+	t.Run("Q-ARCH-258 a Volatile route that returns package-derived bytes has the metadata policy and no file name", func(t *testing.T) {
 		res := f.r.get("reader", "/api/probe/probe-local/left-pad/leak")
-		if res.status != 200 || res.header.Get("Content-Security-Policy") != "" {
-			t.Fatalf("answer %d headers %v: a Volatile route that returns bytes is a contract violation the kit catches", res.status, res.header)
+		if res.status != 200 {
+			t.Fatalf("answer %d %s", res.status, res.body)
 		}
+		check(t, res, false)
 	})
 }
 

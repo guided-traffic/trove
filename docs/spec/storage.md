@@ -60,9 +60,9 @@ offer, used throughout this page:
 |---|---|---|
 | `IngestOptions` | before an upload is spooled | Expected digests from the protocol (npm `integrity`, OCI digest), whether SHA-512 is needed (it is always computed, Q-STOR-2), media type. |
 | `OnCommit` | inside the commit transaction of an upload and of a remote artifact fill (`CommitEvent.Origin`) | Create or update the package and version rows, mark the lead item, write format metadata. The event carries the `PackageWriter` bound to the transaction, which increments `packages.rev_seq` on every write of generic rows (once per package per transaction), and the format's data port (R-STOR-003, architecture.md R-ARCH-009). |
-| `OnItemsRemoved`, `OnItemsRestored` | inside the delete transaction (milestone M2; reason `delete` only). The trash, move and restore transactions run them from P1: until the trash exists the item store has no restore hook and `OnItemsRestored` is never called | Keep format indexes consistent (an npm packument no longer lists a removed version); the event names each removed item and the version it belonged to, and carries the `PackageWriter`, which increments `packages.rev_seq`. Formats with version tombstones write them on removal and remove a restored version's tombstone (R-STOR-022, R-STOR-023). The sync delete and every batch of the `items-delete` job raise it, in the removing transaction. |
-| `RemoveVersion` | by retention and cap enforcement | Remove every item that belongs only to one version (an OCI tag with its manifest and exclusively owned children). |
-| `VersionGroup` | after a push, for repository caps | Name the group whose variants a cap counts (snapshot base version, image name). |
+| `OnItemsRemoved`, and the optional `OnItemsRestored` | inside the delete transaction (milestone M2; reason `delete` only). The trash, move and restore transactions run them from P1: until the trash exists the item store has no restore hook and `OnItemsRestored`, an optional interface found when the format registers (`formats.ItemsRestorer`, Q-ARCH-256), is never called | Keep format indexes consistent (an npm packument no longer lists a removed version); the event names each removed item and the version it belonged to, and carries the `PackageWriter`, which increments `packages.rev_seq`. Formats with version tombstones write them on removal and remove a restored version's tombstone (R-STOR-022, R-STOR-023). The sync delete and every batch of the `items-delete` job raise it, in the removing transaction. |
+| `RemoveVersion` (P1; not yet in the contract) | by retention and cap enforcement | Remove every item that belongs only to one version (an OCI tag with its manifest and exclusively owned children). It joins the contract as an optional interface with the retention it serves (R-ARCH-025, Q-ARCH-256); until then the contract has no such method. |
+| `VersionGroup` (P1; not yet in the contract) | after a push, for repository caps | Name the group whose variants a cap counts (snapshot base version, image name). Same rule as `RemoveVersion`. |
 
 ## Blob store layout
 
@@ -1661,7 +1661,7 @@ Priority: **P1** · Covers: ART-037, ART-038
 | `POST` | `/api/v1/trash-can/purge` | — | `202` | system administrator |
 
 - Restore clears the trash fields, re-links the version row and runs the format plug-in's
-  `OnItemsRestored` hook. When an untrashed item already occupies the target path, that entry is
+  optional `OnItemsRestored` hook (`formats.ItemsRestorer`, found when the format registers). When an untrashed item already occupies the target path, that entry is
   skipped with a message unless `overwrite` is true (the occupant then goes to the trash can).
   When the version was re-published meanwhile, the version's entries are skipped.
 - `OnItemsRestored` lets the format remove the restored version's tombstone in the restore
@@ -2682,7 +2682,8 @@ Priority: **P1** · Covers: RET-003, RET-004, RET-005, RET-006, RET-007, RET-008
   4. `keepNewest: N` (N ≥ 1): per package, the N versions with the latest `created_at` are never
      selected, whatever the other conditions say; the newest version is therefore always kept.
 - A day is 24 hours counted back from the run's start; no calendar arithmetic.
-- Selected versions are removed through the format plug-in's `RemoveVersion` hook, into the trash
+- Selected versions are removed through the format plug-in's `RemoveVersion` hook (an optional interface added
+  with retention, R-ARCH-025), into the trash
   can unless `bypassTrash` is set or the trash can is disabled.
 - Repository caps (R-STOR-044) and policies act independently; whichever keeps less wins.
 
@@ -2702,7 +2703,7 @@ Priority: **P1** · Covers: RET-009, RET-010
 - Every format plug-in MUST declare the lead item of each version when it commits the version
   (npm: the tarball; NuGet: the `.nupkg`; Maven: the POM; container images: the manifest or
   index the tag points at). Conditions are evaluated on the lead item only.
-- A version is removed as one unit through `RemoveVersion`; partially removed versions do not
+- A version is removed as one unit through `RemoveVersion` (see above); partially removed versions do not
   occur. Generic repositories have no versions: each file is its own unit, `keepNewest` is not
   available (`422`), age, usage and property conditions apply per file.
 - Container images (OCI, Docker and Helm OCI repositories; P1 formats): a tag is a version; an
@@ -2965,7 +2966,7 @@ kept revisions per overwritten tag) are repository settings owned by
 - All three caps are counts (RET-035): distinct snapshot versions per artifact, distinct tag names
   per image, kept revisions per tag name. Federated repositories are not part of the MVP (INV-5);
   when they arrive, they use the same count semantics, not an age in days.
-- After a push, the format plug-in's `VersionGroup` names the affected group, and the push's
+- After a push, the format plug-in's `VersionGroup` (an optional interface added with the caps, R-ARCH-025) names the affected group, and the push's
   commit transaction appends one row (repository, group, push time) to the table `cap_outbox`.
   Rows are only inserted and deleted, never updated, so concurrent pushes to one group never wait
   for each other or for enforcement.

@@ -850,7 +850,7 @@ Consequences, normative for every component:
 
   A route of kind `Metadata` or `Computed` (a package document, a service index) carries the same
   set without `Content-Disposition`: a client reads it as a response and does not save it as a file.
-  This covers `/files/` and every format route of kind `Download`, `Metadata` or `Computed`
+  This covers `/files/` and every format route of kind `Download`, `Metadata`, `Computed` or `Volatile`
   (R-ARCH-008). It also covers uploaded and cached README, license, icon and manifest files.
   One exception: the HTML directory index of a folder `GET` under `/files/` is rendered by trove,
   not stored content. For it the wrapper selects the header set of
@@ -860,11 +860,11 @@ Consequences, normative for every component:
   wrap the `http.ResponseWriter` of every route of those kinds before the handler runs.
   - The wrapper writes the headers and checks them again at `WriteHeader`, so a handler can change
     `Content-Type` but cannot remove or weaken them.
-  - A route of another kind (`Upload`, `Delete`, `Admin`, `Volatile`) that returns package-derived
-    bytes is a contract violation, which the conformance kit detects (R-ARCH-010 check 7).
-    *Status (milestone M2):* NuGet's search is a `Volatile` route that returns package metadata (titles, descriptions, icon
-    URLs), which this sentence forbids; the contract addition of roadmap M3 lets a `Volatile` route serve content under the headers of `Metadata`
-    and rewrites this sentence (Q-ARCH-233). No route of npm is `Volatile`.
+  - A `Volatile` route (a search) may return package-derived bytes: titles, descriptions, icon URLs. The
+    wrapper puts the headers of `Metadata` on it, without `Content-Disposition`, whatever the handler does
+    (Q-ARCH-258, ADR-137). A route of another kind (`Upload`, `Delete`, `Admin`) that returns package-derived
+    bytes is a contract violation, which the conformance kit detects (R-ARCH-010 check 7), and so is a
+    `Volatile` route that serves a stored item.
 - The UI never embeds package-provided HTML. It renders README content only as sanitized output of
   its own Markdown renderer ([api-and-ui.md](api-and-ui.md)).
 - **Content links from one place.** Every absolute URL to package content that a response hands to
@@ -1054,9 +1054,6 @@ type Format interface {
 	Inspect(ctx context.Context, in InspectInput) (*Inspection, error)         // identity and namespaced properties (FMT-008)
 	OnCommit(ctx context.Context, tx Tx, c CommitEvent) error                  // c.Origin: Upload or Fill; package and version rows
 	OnItemsRemoved(ctx context.Context, tx Tx, e ItemsEvent) error
-	OnItemsRestored(ctx context.Context, tx Tx, e ItemsEvent) error
-	RemoveVersion(ctx context.Context, tx Tx, v VersionRef) ([]ItemRef, error) // retention and caps
-	VersionGroup(v VersionRef) string                                          // group a cap counts
 
 	// ServeCheck runs before the core serves a stored item on any route. errs.NotFound refuses the item
 	// because of format state the generic item row does not carry. It reads through h.
@@ -1064,12 +1061,11 @@ type Format interface {
 
 	Remote() RemoteAdapter     // nil exactly when Descriptor().Classes lacks Remote
 	Virtual() VirtualAdapter   // nil exactly when Descriptor().Classes lacks Virtual
-	Indexes() IndexBuilder     // nil when the format has no rebuildable derived metadata
-	// Exposure filters documents per endpoint; nil makes the format unservable on an endpoint with
-	// exposure rules (endpoints.md R-EP-018). It is the one source of the format's exposure facts.
+	// Exposure carries the format's exposure facts; nil makes the format unservable on an endpoint with
+	// exposure rules (endpoints.md R-EP-018). It is the one source of those facts.
 	Exposure() ExposureAdapter
 	// View is nil for a format without package screens (api-and-ui.md R-API-029). The adapter orders the
-	// format's versions, says what a pre-release is, and reads, through the format's data port, what the
+	// format's versions and reads, through the format's data port, what the
 	// generic rows do not hold: description, keywords, licenses, README and format-specific metadata
 	// (Q-API-166). It runs no SQL; Validate refuses a view without package names.
 	View() ViewAdapter
@@ -1096,7 +1092,9 @@ type Descriptor struct {
 	PropertyPrefix   string          // reserved property namespace, e.g. "npm." (FMT-008)
 	MaxDocumentBytes int64           // bound for documents held in memory (R-ARCH-028)
 	Limits           Limits          // tightenings of the defaults of R-ARCH-028
-	RepositoryIndex  bool            // has repository-wide derived indexes; enables the per-repository revision (R-ARCH-012)
+	// NotifyAreas are the signal areas the format may name in PackageWriter.Notify (catalog.FormatAreas); the writer raises the
+	// signal of a changed package itself (Q-ARCH-259). Register refuses any other area.
+	NotifyAreas []string
 	DataPort         reflect.Type    // the interface type of the format's side-table port; nil without side tables (Q-ARCH-193)
 	// VerifyAnnouncedDigests: the protocol addresses artifacts by the digests its metadata announces, so a remote fill
 	// compares them whatever integrity.checksumPolicy says (R-REPO-041: npm always verifies, R-NPM-026).
@@ -1157,8 +1155,9 @@ func (rq *Request) RepoRef() RepoRef
 
 // Target is what a format asks the decision point inside the addressed repository. The host completes the
 // coordinate (repository, class, format, the kind of the route), so a format names neither another repository
-// nor another endpoint (Q-ARCH-189). That holds for Authorize; the read stores, EnsureLocked and DeleteItems still
-// take a RepoRef the format builds, and rq.Repo is the whole repository model (narrowing them: roadmap M3, Q-ARCH-233).
+// nor another endpoint (Q-ARCH-189). That holds for Authorize. The read stores, EnsureLocked and DeleteItems take a RepoRef
+// the format builds and refuse one that is not the request's or a member below it (RepositoryAllowed, Q-ARCH-260); the
+// signatures stay, and rq.Repo stays the whole repository model (Q-ARCH-260 records why).
 type Target struct {
 	Package, Version, Path string // normalized; all empty is the repository level
 	Actions                []Action
@@ -1235,20 +1234,48 @@ type Strategy uint8
 const (
 	FirstMatch Strategy = iota + 1 // tiered lookup, first eligible member that has it wins
 	Merge                          // every eligible member contributes
-	Newest                         // Merge, with remote members revalidated first; the revalidation is not built, the engine resolves it as Merge (Q-ARCH-234)
 )
 
-// ExposureAdapter is a format's part of endpoint exposure (endpoints.md R-EP-018).
+// ExposureAdapter is a format's part of endpoint exposure (endpoints.md R-EP-018): the version syntax the decision
+// point compiles rules with and the dimensions rules may narrow. What an endpoint hides from a document is the format's
+// own filter over Request.Endpoint.Exposure; no core code calls one (Q-ARCH-257).
 type ExposureAdapter interface {
 	catalog.Versioning // ValidateRange, Prerelease, InRange
 	Dimensions() ExposureDimensions
-	FilterDocument(ctx context.Context, p Path, doc []byte, view ExposureView) ([]byte, error)
 }
 
-type IndexBuilder interface {
-	// Rebuild recomputes derived metadata of a local repository from stored rows; runs as a job.
-	Rebuild(ctx context.Context, repo RepoRef, scope Path, opts RebuildOptions) (RebuildResult, error)
+// ExposureView is what the endpoint exposes of the addressed repository. A format whose rules also narrow tags reads them
+// from the same value through an interface of its own, because what a tag is belongs to the format.
+type ExposureView interface {
+	Package(name string) bool
+	Version(name, version string) bool
 }
+
+// ItemsRestorer is the optional restore hook: it runs in the transaction that restored items. It is not part of Format
+// (the restore does not exist yet); CapabilitiesOf finds it (Q-ARCH-256).
+type ItemsRestorer interface {
+	OnItemsRestored(ctx context.Context, tx Tx, e ItemsEvent) error
+}
+
+// Capabilities are the optional behaviours of a format, found once when it registers. A new behaviour is an optional
+// interface and a field here (R-ARCH-025).
+type Capabilities struct {
+	ItemsRestorer ItemsRestorer // nil for a format without a restore hook
+}
+
+// CapabilitiesOf reads the capabilities off a format: the one place that asserts to an interface of this package.
+func CapabilitiesOf(f Format) Capabilities
+
+// CapabilitiesFor returns the capabilities recorded when the format registered.
+func CapabilitiesFor(id ID) Capabilities
+
+// WrapsContent reports whether the core wraps a route of this kind in the content headers of R-ARCH-007: Download,
+// Metadata, Computed and Volatile.
+func (k RouteKind) WrapsContent() bool
+
+// RepositoryAllowed refuses a repository that is neither the request's nor a member below it (Q-ARCH-260); the stores
+// and the package writer of a Host call it with the context ServeRoute gave the handler.
+func RepositoryAllowed(ctx context.Context, repo RepoRef) error
 
 type SetupTemplate struct {
 	ID       string // stable, e.g. "npm.npmrc.configure"
@@ -1276,12 +1303,12 @@ type GuideSection struct {
 func (g GuideSection) AppliesTo(class Class, client string) bool
 
 // ViewAdapter is a format's part of the package screens (api-and-ui.md R-API-029) and of the dry run of the exposure
-// rules (endpoints.md R-EP-016). It reads through the format's data port and runs no SQL.
+// rules (endpoints.md R-EP-016). It reads through the format's data port and runs no SQL. Whether a version is a
+// pre-release is the exposure adapter's answer (Versioning.Prerelease), taken once by the host (Q-ARCH-257).
 type ViewAdapter interface {
 	// Compare is a total order over the versions the format stores (negative: a is older than b); a string that is no
 	// version sorts before every version, and equal strings compare equal.
 	Compare(a, b string) int
-	Prerelease(version string) bool
 	Describe(ctx context.Context, ports DataPorts, vs []ViewVersion, want ViewFields, visible func(version string) bool) (map[VersionID]ViewData, error)
 	Find(ctx context.Context, ports DataPorts, f ViewFind, limit int) ([]VersionID, error)
 	// Withheld returns the ids of the stored versions the format does not serve (R-NPM-047).
@@ -1352,7 +1379,7 @@ Supporting types of the blocks, named here so that the contract has no type the 
 (`TestR_ARCH_008_EveryExportedTypeOfTheContractIsNamedInTheSpec`): `PackageID` is the id of a package row;
 `URLMapping` (path and upstream URL) and `RemoteDocument` (a stored or fetched upstream document with its times and
 `CacheStatus`) are what a remote adapter reads and hands over; `Currency` says how current a document is after
-`EnsureCurrent` (Q-NPM-13); `RemovedItem` is an item a removal took away, with its version; `ShadowPair` names a
+`EnsureCurrent` (Q-NPM-13); `RemovedItem` is an item a removal took away, with its version; `ItemsEvent` is what the removal hook and the restore hook learn; `ShadowPair` names a
 virtual repository and the remote member that serves a package (R-REPO-048); `RemoteBase` gives a `RemoteAdapter` the
 defaults of `ExpectsType` and `BeforeArtifact` to embed.
 
@@ -1361,6 +1388,12 @@ The blocks above are held equal to the code: `TestR_ARCH_008_TheWrittenContractE
 they declare (exported fields, interface methods, aliases), the methods the code attaches to it, the functions and
 the constants with the package, and fails with one line per difference (Q-ARCH-254). The unexported field `via` of
 `Request` is not part of the contract.
+
+**Optional behaviour.** `Format` holds what every format answers. A behaviour that only some formats have, or that
+the core cannot call yet, is an optional interface of this package, found by `CapabilitiesOf` when the format registers
+and recorded in the registry (`CapabilitiesFor`); the core never asks the format value (the architecture test allows
+that assertion in `CapabilitiesOf` alone). Today there is one: `ItemsRestorer`. The rule for adding to the contract is in
+R-ARCH-025.
 
 Normative rules:
 - `Descriptor().Classes` is the single source of truth for the classes a format supports. Creating
@@ -1484,13 +1517,14 @@ type PackageWriter interface {
 	// Claim checks ownership and claims in the commit transaction (R-AUTHZ-018); AutoClaim applies the
 	// namespace auto claim (R-REPO-023) and returns what it did, which the audit event of the publish
 	// records. Both refuse until the composition root binds the rule
-	// (Q-ARCH-215). Notify attaches a notification to the transaction (R-ARCH-018); Enqueue a job (R-ARCH-016).
-	// A change of the rows of a local package attaches PackageChanged(repoID, name) to the signal area
-	// metadata_changed, which the virtual engine reads to drop merged documents early (R-REPO-020).
+	// (Q-ARCH-215). The writer attaches the signal of a changed package itself: once per package it raised in the
+	// transaction, the signal area metadata_changed with catalog.PackageChanged(repoID, name), which the virtual engine
+	// reads to drop merged documents early (R-REPO-020, Q-ARCH-259). Notify attaches a notification of an area the
+	// format declared in Descriptor.NotifyAreas (R-ARCH-018) for a change that raised no package row. EnsureLocked and
+	// DeleteItems refuse a repository other than the one the writer is bound to (Q-ARCH-260).
 	Claim(ctx context.Context, t Target, w OwnershipWrite) error
 	AutoClaim(ctx context.Context, name string) (AutoClaimResult, error) // Created, Pattern; or the Reason: disabled, covered, skipped, limit
 	Notify(area string, payload any) error
-	Enqueue(ctx context.Context, j JobSpec) error
 	// DeleteItems removes the files at the paths permanently (R-STOR-018), in this transaction and as the
 	// actor of the request; OnItemsRemoved runs for them in it (npm: formats/npm.md Q-NPM-27).
 	DeleteItems(ctx context.Context, repo RepoRef, paths ...string) error
@@ -1499,8 +1533,9 @@ type PackageWriter interface {
 
 - Formats never see blob addresses, bucket names or SQL. Item, package and blob schemas belong to
   [storage.md](storage.md).
-  *Status (milestone M2):* the host hands no format an address, and `Bind(host, *config.Config, metrics)` hands a format the whole configuration,
-  which holds the bucket name; npm reads its own section only. A typed environment with the format's own section replaces it before the freeze (roadmap M3, Q-ARCH-233).
+  *Status (milestone M3):* the host hands no format an address, and `Bind(host, *config.Config, metrics)` hands a format the whole configuration,
+  which holds the bucket name; npm reads its own section only. `Bind` is not part of the frozen contract: a typed environment with the format's own section
+  is added later as an optional interface (R-ARCH-025), and the format then drops `Bind` (Q-ARCH-261).
 - This page requires one thing of that schema: a revision sequence `rev_seq bigint NOT NULL DEFAULT 1`
   on storage.md's generic `packages` row, not in a format's side table.
   - The core reads it for read-your-writes (R-ARCH-012) and for the merged-metadata check
@@ -1591,9 +1626,10 @@ own tests:
 6. `Inspect` enforces the limits of R-ARCH-028 against crafted inputs that the kit ships
    (`formattest/crafted`): it answers `413` or `422` within 5 s, and the heap, sampled with
    `runtime/metrics`, stays within 512 MiB of its baseline.
-7. Responses of `Download`, `Metadata` and `Computed` routes carry the content headers of
-   R-ARCH-007, including when the handler tries to remove them. No route of another kind returns a
-   body taken from package content.
+7. Responses of `Download`, `Metadata`, `Computed` and `Volatile` routes carry the content headers of
+   R-ARCH-007, including when the handler tries to remove them; a `Volatile` route may return
+   package-derived bytes, and none of the four serves a `Content-Disposition` but `Download`. No route of
+   another kind returns a body taken from package content, and a `Volatile` route serves no stored item.
 8. Every client in `Descriptor().Clients` has `configure` and `install` templates. No template
    contains a token placeholder that the server would fill. The format's guide (`Guide()`, Q-ARCH-236)
    covers every class of `Classes` for every client with the topics `what`, `configure`,
@@ -1651,7 +1687,9 @@ repository in `test/e2e` (FMT-002, FMT-003). The versions are fixed on the forma
 Acceptance criteria:
 - A format that registers `/{package}` and `/{scope}/{name}` without a disambiguating rule fails
   kit check 1.
-- Registering the npm tarball route with kind `Volatile` instead of `Download` fails kit check 7.
+- Registering the npm tarball route with kind `Volatile` instead of `Download` fails kit check 7 (it serves a stored
+  item). An `Admin` route that answers with the bytes of a stored package fails the check that drives it (check 9, its
+  change case), a `Volatile` search that answers with them passes (Q-ARCH-258).
 - A test format whose tag-changing `Admin` route updates package rows without incrementing
   `rev_seq` fails kit check 9.
 - A unit test compares each per-class format enum in `api/openapi.yaml` with the registry and fails
@@ -1737,8 +1775,8 @@ Priority: **MVP** · Covers: FMT-011
     increments whenever it changes the rendered bytes (npm: `npmRenderVersion`).
   - A cached rendering and the `ETag` computed for it use the same inputs, so a client never holds
     an `ETag` for bytes that a settings change or a new release would render differently
-    ([formats/npm.md](formats/npm.md) R-NPM-013). *Status (milestone M2):* the format hashes the inputs of its ETag itself and keeps them in step
-    with the rendition key by hand; the contract derives one ETag from the key in roadmap M3 (Q-ARCH-233).
+    ([formats/npm.md](formats/npm.md) R-NPM-013). *Status (milestone M3):* the format hashes the inputs of its ETag itself and keeps them in step
+    with the rendition key by hand; a serving function that derives one ETag from the key is a helper added after the freeze (R-ARCH-025, Q-ARCH-261).
 - Every change that reaches package rows through the storage hooks of R-ARCH-008 increments
   `rev_seq` in its own transaction. Those changes are: publish or upload, delete, trash restore,
   copy, move, import, retention removal and remote cache fill. The catalog lists deploy, delete,
@@ -1751,8 +1789,10 @@ Priority: **MVP** · Covers: FMT-011
   follow Q-ARCH-12:
   1. **Default: rendered per request.** The index is rendered from rows and cached under a
      per-repository revision. The commit transaction increments that revision only for
-     repositories whose format sets `Descriptor().RepositoryIndex`. npm and NuGet do not set it, so
-     their repositories never contend on a per-repository row.
+     repositories whose format declares a repository-wide index; that declaration arrives with the
+     first such format as an optional interface (R-ARCH-025, Q-ARCH-256), and no field of
+     `Descriptor` stands for it before. npm and NuGet declare none, so their repositories never
+     contend on a per-repository row.
   2. **Exception: built by a job.** An index may be built by a job only when its format page shows
      one of two things: rendering per request cannot meet the P-4 bound of R-ARCH-027 at the
      format's reference repository size, or the index must be signed or stored in several
@@ -1930,7 +1970,7 @@ components act in this order:
 3. The format's `Strategy(path)` picks the mode:
    - `FirstMatch` walks the tiers: local members, then the remote members' caches, then the remote
      members' upstreams through R-ARCH-013. The first hit wins.
-   - `Merge` and `Newest` collect each eligible member's document. Local documents come from
+   - `Merge` collects each eligible member's document. Local documents come from
      R-ARCH-012, remote documents from R-ARCH-013, with stale serving and the circuit applying. The
      format then merges them under the per-version source rule.
 4. The merged result is cached as the proxy page specifies. The cache key includes the eligible
@@ -3661,9 +3701,27 @@ not use that latitude. The promises of the table apply between 0.x minors as the
 major, and a breaking change in 0.x is announced in the release notes with its migration path.
 | Token formats | `trv_*_` prefixes (INV-8) | A prefix never changes meaning. New token types get new prefixes. |
 | Metrics, log and audit fields | Names and labels | Stable within a major. A renamed metric is emitted under both names for at least 2 minors ([operations-and-observability.md](operations-and-observability.md)). |
-| Format contract | `formats.ContractVersion` | Internal and compile-time checked; no external promise |
+| Format contract | `formats.ContractVersion` | Internal and compile-time checked; no external promise. The rule for changing it is below |
 
 `helm rollback` from N to N-1 works by design (R-ARCH-026). Rolling back further is not supported.
+
+**Evolution of the format contract after the freeze.** The contract that freezes at the end of M3 (E3.3) is the smaller
+one: what no caller in the core could use is not in it (Q-ARCH-256). From the freeze on:
+- *A new behaviour is added, never inserted.* It is an optional interface of `internal/formats` with a field in
+  `Capabilities`; `CapabilitiesOf` finds it when the format registers, the registry records it, and the core asks the
+  registry (`CapabilitiesFor`), never the format value. A format that has no such behaviour is not touched, and
+  `ContractVersion` stays.
+- *A default for the common case lives in an embeddable base* (`Base`, `RemoteBase`), as `ExpectsType` and
+  `BeforeArtifact` do; a method added to an adapter interface needs such a default in the same change.
+- *A method that the core calls on every format* is added to `Format` only together with its default in `Base`, so that
+  a format that embeds `Base` compiles unchanged.
+- *New services for formats* are added to `Host`, `PackageWriter` and the stores: formats call them and implement none, so
+  adding is compatible.
+- *`ContractVersion` rises only when the meaning of an existing method changes* (an argument gains a rule, a result a
+  case) or a method leaves. The change is applied to every registered format in the same change, and `Register` refuses a
+  format written against the older number.
+- The conformance kit gains a check for every new behaviour in the change that adds it, and the written blocks of R-ARCH-008
+  and R-ARCH-009 change with the code (`TestR_ARCH_008_TheWrittenContractEqualsTheCode`).
 
 Acceptance criteria:
 - A CI job compares `api/openapi.yaml` with the latest release tag using an OpenAPI breaking-change
@@ -6469,7 +6527,7 @@ changes in the spec in the change that drops it.
 
 ### Q-ARCH-234 · `Newest` resolves as `Merge` until the revalidation exists
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. Superseded by [Q-ARCH-257](#q-arch-257--a-minimal-contract-the-npm-concepts-leave-the-shared-types): the constant is removed.
 
 Context: R-ARCH-008 says `Newest` is `Merge` with the remote members revalidated first. The engine resolves it as `Merge` and revalidates nothing; no format returns `Newest`.
 
@@ -6711,7 +6769,7 @@ Context: the R-ARCH-008 block lacked `CacheView`, `Log`, `HostState` and `Verify
 | (b) Generate the block from the code | A generator | No drift | The block is prose-annotated; the generator would drop the comments the contract needs |
 | (c) Record the two capabilities at `Register` | A struct of capabilities | Format code stays unchanged | A second place to know; the kit could not fail a missing one |
 
-**Choice:** (a). Neither assertion was a genuine extension point: `TypeExpecter` and `ArtifactGate` are what every remote format answers (npm implements both, others need the defaults), so they are `RemoteAdapter.ExpectsType` and `RemoteAdapter.BeforeArtifact`, and the interfaces are gone. The rule's allow-list holds `internal/formats.Register` only, with its reason, and takes further entries with a comment. The anonymous `interface{ Gate(...) }` assertion on the remote fetcher in `formathost/virtual.go` is an interface of `formathost`, not of the contract; the rule does not cover it.
+**Choice:** (a). Neither assertion was a genuine extension point: `TypeExpecter` and `ArtifactGate` are what every remote format answers (npm implements both, others need the defaults), so they are `RemoteAdapter.ExpectsType` and `RemoteAdapter.BeforeArtifact`, and the interfaces are gone. The rule's allow-list holds `internal/formats.Register` only, with its reason, and takes further entries with a comment. (Q-ARCH-256 moved the one assertion into `formats.CapabilitiesOf`, which `Register` calls; the allow-list now holds that function.) The anonymous `interface{ Gate(...) }` assertion on the remote fetcher in `formathost/virtual.go` is an interface of `formathost`, not of the contract; the rule does not cover it.
 
 **Rationale:** the contract freezes at the end of M3 (E3.3); this is the cheapest moment to make the written and the compiled contract one thing. The development agent revisits this when a block needs a construct the parser rejects, then with a golden file.
 
@@ -6734,6 +6792,132 @@ Context: the exposure rules and the check use "dist-tags", an npm word, as a Go 
 **Rationale:** the Go names are the part a second format reads. The development agent revisits this with the OpenAPI revision that adds a second format with tags.
 
 **Applied in the spec:** none (no behaviour). Code: `internal/authz/exposure.go`, `exposure_service.go`, `internal/api/v1/endpoints_api.go`.
+
+### Q-ARCH-256 · The dormant methods leave the frozen contract, and the contract grows by optional interfaces
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: roadmap WP3.0j. Five parts of the contract of M2 have no caller in the core and cannot be implemented as written: `Format.Indexes` with `IndexBuilder`, `RebuildOptions` and `RebuildResult` (no format has a rebuildable index, Q-ARCH-12); `Format.RemoveVersion` and `Format.VersionGroup` with `VersionRef` (retention and caps do not exist); `Format.OnItemsRestored` (the trash can's restore does not exist, so the item store never calls it; only the kit did); `PackageWriter.Enqueue` with `JobSpec` (a job needs a handler, and a format has no way to register one); and `Descriptor.RepositoryIndex` (nothing reads it). The contract freezes at the end of M3 (E3.3).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Take them out; `OnItemsRestored` becomes the optional `ItemsRestorer` that `CapabilitiesOf` finds; R-ARCH-025 gets the additive-evolution rule (chosen) | The frozen contract is the smaller one; a new behaviour is an optional interface with a field in `Capabilities`, the registry records it at `Register`, the core asks `CapabilitiesFor` | No frozen method nobody calls; the freeze needs no guess at the shape of retention, of the worker-side host or of a job registry; `ContractVersion` stays 1 until a meaning changes | A format that has a restore hook is found by a type assertion, in one function the architecture test allows |
+| (b) Design the seams now | A job-handler registration in the descriptor, a worker-side host with ranged reads over stored items, `IndexBuilder`, `RemoveVersion` and `OnItemsRestored` with the transaction, writer and port of `OnCommit` | The P1 work finds its seams | Five designs for callers that do not exist; the wrong shape is frozen (the reasoning of Q-ARCH-234) |
+| (c) Keep them as stubs and raise `ContractVersion` when a caller arrives | Today's `Base` defaults | No work now | A frozen method that no test can exercise; a version bump for every one of them; `Base` hides that no format implements them |
+
+**Choice:** (a). Removed: `Format.Indexes`, `IndexBuilder`, `RebuildOptions`, `RebuildResult`, `Format.RemoveVersion`, `Format.VersionGroup`, `VersionRef`, `PackageWriter.Enqueue`, `JobSpec`, `Descriptor.RepositoryIndex` and, with `Enqueue`, `formathost.Deps.Jobs`. `Format.OnItemsRestored` becomes `ItemsRestorer`; npm keeps its method, the kit's `Restore` calls it through `CapabilitiesOf`, and `formats.CapabilitiesOf` is the one function the architecture test allows to assert to an interface of `internal/formats` (it replaces `Register` in the allow-list of Q-ARCH-254, and `Register` calls it). The P1 items that need a seam bring it with them: the symbol-index job of Q-NUGET-11 and the reindex of R-NUGET-025 add `PackageWriter.Enqueue` back (a service of the core that formats call: adding it breaks no format) and a job-handler registration as an optional interface; retention adds `RemoveVersion` and caps `VersionGroup` the same way, each with a kit check.
+
+**Rationale:** the contract that freezes should hold what the core calls. The development agent revisits this when the first of those callers is built (retention, the trash can's restore, the NuGet symbol-index job): that change adds its optional interface, the kit check and the block of R-ARCH-008, and `ContractVersion` rises only if an existing method changes meaning.
+
+**Applied in the spec:** R-ARCH-008 (the blocks, the paragraph "Optional behaviour"), R-ARCH-009 (`PackageWriter`), R-ARCH-012 (the repository-wide index declaration), R-ARCH-025 ("Evolution of the format contract after the freeze"), [storage.md](storage.md) (the hook table, restore, retention and caps). Code: `internal/formats/formats.go`, `hooks.go`, `exposure.go`, `serve.go`, `internal/formats/formattest/store.go`, `internal/formathost/writer.go`, `host.go`, `internal/archtest/contract.go`. Tests: `TestQ_ARCH_256_AnOptionalCapabilityIsFoundOnceAndRecordedAtRegister`, `TestContractAssertions`, `TestR_ARCH_008_TheWrittenContractEqualsTheCode`.
+
+### Q-ARCH-257 · A minimal contract: the npm concepts leave the shared types
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: roadmap WP3.0q. The shared types carry npm's vocabulary: `ExposureView.Tag` (a dist-tag), `SetupData.Scope` and `SetupData.RegistryKey` (an npm scope and the key of an `.npmrc` credential line), `ExposureAdapter.FilterDocument` (called by no core code: npm calls its own), `Strategy.Newest` (returned by no format, resolved as `Merge` by the engine, Q-ARCH-234) and `ViewAdapter.Prerelease` (a second definition of what `catalog.Versioning.Prerelease` already says).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Move what is npm's into npm, drop what the core does not call, derive what exists twice (chosen) | `ExposureView` has `Package` and `Version`; npm reads `Tag` through its own `tagView` and treats a view without it as one that hides all; `FilterDocument` becomes npm's `filterDocument`; `Newest` and `ViewAdapter.Prerelease` go; the screens take "is a pre-release" from the format's exposure adapter; `SetupData.Scope` becomes the format-neutral `Variant` and `RegistryKey` leaves `SetupData` for a template function | The second format finds no word of the first in the contract; one definition of a pre-release | The decision point's value still implements `Tag` for every format with tags; npm asserts to an interface of its own |
+| (b) Declare them optional in the contract | `Tag` and the setup fields stay, documented as "may be empty" | No change to the formats | The freeze keeps the npm words |
+| (c) Leave them | — | No work | The freeze keeps the npm words and a dead method |
+
+**Choice:** (a). Applied: `ExposureView`, `ExposureAdapter` (no `FilterDocument`), `Strategy`, `ViewAdapter` (no `Prerelease`; `viewBridge.Prerelease` asks `Format.Exposure().Prerelease`, a format without an exposure adapter has no pre-release), npm's `tagView`, `filterDocument` and view. Not applied here, handed to the owner of `internal/formats/setup.go` and `internal/api/v1/setup_snippets.go` in the same wave, because that file is theirs: `SetupData.Scope` becomes `Variant` (the value the request's `scope` input selects for a `configure` snippet; npm: a scope without `@`), `RegistryKey` leaves `SetupData`, and the template function set (`shell`, `xml`) gains `schemeless`, which drops `https:` from a URL and is how npm's templates spell the key of a credential line; npm's `setup.go` and the kit's `checks.go`/`guide.go` follow. Until that lands, `SetupData` keeps the two fields and the contract is not frozen.
+
+**Rationale:** a contract frozen with another format's words teaches the third format the wrong model. The development agent revisits this when a second format needs a tag-like pointer in exposure rules (OCI): the view then gains an optional method of its own, as `Tag` is for npm today.
+
+**Applied in the spec:** R-ARCH-008 (blocks), [endpoints.md](endpoints.md) R-EP-018 (the adapter and the view), [formats/npm.md](formats/npm.md) (`filterDocument`), Q-ARCH-234 (superseded). Code: `internal/formats/exposure.go`, `view.go`, `virtual.go`, `generic/generic.go`, `internal/formats/npm/exposure.go`, `view.go`, `handlers_remote.go`, `internal/formathost/view.go`, `virtual.go`. Tests: `TestR_NPM_048_TheViewOfARequestAnswersForDistTagsOrHidesAll`, `TestR_API_029_ViewAdaptersBridgeTheRegisteredFormats`.
+
+### Q-ARCH-258 · A `Volatile` route returns package-derived content under the headers of `Metadata`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: roadmap WP3.0d. NuGet's search is a `Volatile` route (a query, passed through, never cached) whose answer carries titles, descriptions and icon URLs that an uploader chose. R-ARCH-007 called a `Volatile` route that returns package-derived bytes a contract violation, so the search could not be written.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The core wraps a `Volatile` route like a `Metadata` route: the headers of R-ARCH-007 without `Content-Disposition`, whatever the handler does (chosen) | `RouteKind.WrapsContent`; `ServeRoute` and kit check 7 use it | The guarantee stays the core's, not the handler's; one place; the search is a route like any other | A `Volatile` route that serves a stored item is still a violation, and the kit says so |
+| (b) NuGet's search is a `Metadata` route | The kind that is wrapped | No change to the contract | A search would be classed as a cacheable document: R-REPO-003 gives it the request kind `search`, which is never cached |
+| (c) The handler sets the headers | A rule for the format's code | No change to the core | The handler can forget or weaken them; exactly what R-ARCH-007 forbids |
+
+**Choice:** (a). `RouteKind.ServesContent` keeps its meaning (a route that serves stored content or documents); `WrapsContent` adds `Volatile`. The kit's check 7 asserts the headers on a `Volatile` route as on a `Metadata` one, and still fails an `Upload`, `Delete` or `Admin` route that returns package bytes and a `Volatile` route that serves a stored item.
+
+**Rationale:** the text of a search answer is as hostile as a package document. The development agent revisits this if a `Volatile` route ever has to return HTML: it would need its own header set and its own kind.
+
+**Applied in the spec:** R-ARCH-007, R-ARCH-008 (`WrapsContent`), R-ARCH-010 (check 7 and its criteria). Code: `internal/formats/serve.go`, `internal/formats/formattest/checks.go`, `host.go`, `testformat/format.go`. Tests: `TestR_ARCH_007_ServeRouteWrapsTheContentRoutes` (the Volatile cases), `TestR_ARCH_007_FormatRoutesCarryTheContentHeaders`, `TestQ_ARCH_258_OnlyContentRoutesAndVolatileOnesMayReturnPackageBytes`. The stale sentence on `RouteKind.ServesContent` in `route.go` is the owner of that file's to fix.
+
+### Q-ARCH-259 · The package writer signals a raised package, and `Notify` is limited to declared areas
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: roadmap WP3.0k. Six call sites in npm attach `metadata_changed` with `PackageChanged(repoID, name)` after a change of a package's rows, by hand; a format that forgets one leaves a stale merged document until its entry expires. `PackageWriter.Notify(area, payload)` accepted any area the cluster knew, change areas included. The name of the signal and the payload function existed three times (`cluster`, `formats`, `virtual`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The package writer attaches the signal once per package it raised; `Notify` accepts the areas of `Descriptor.NotifyAreas` only, signal areas of `catalog.FormatAreas`; the name and the payload function live in the leaf `catalog` (chosen) | `packages.Writer` calls a `Raised` function at the first raise of a package in a transaction; the host attaches the signal, once per (area, payload); npm's six calls go; npm declares `metadata_changed` for its remote fill | No format repeats the call; a rollback sends nothing; a format cannot raise an area of the core | A raise whose package ref the writer does not know costs one query (`GetPackageRef`) |
+| (b) `Notify` leaves the contract | Remote fills need another seam (a method that says "this remote document changed") | Smallest surface | A second contract change for the one caller left |
+| (c) Leave `Notify` open | — | No work | A format can write the change log of an area it does not own |
+
+**Choice:** (a). The signal follows `packages.rev_seq`: whatever raises it signals it (`EnsureLocked` of a new package, `InsertVersion`, `TrashOrDeleteVersion`, `SetPackageAttributes`, `SetVersionAttributes`, `LinkItem`, `SetProperties` of an item with a package, `BumpRevision`). A change that raises no package row - npm's replacement of a stored remote document in `OnFill` - calls `Notify` for the area it declared. Left as it is (the "k rest" of the roadmap): `virtual.PackageChanged` and its parser stay a second copy of `catalog.PackageChanged`, pinned to it by `TestR_REPO_020_PackageChangedIsThePayloadOfTheEngine`, until the owner of `internal/virtual/mcache.go` makes them delegate (a one-line change each); and the remote engine still attaches nothing itself (Q-REPO-116): a remote fill signals through the format's `OnFill`, because the engine does not know a package name before the format's `PrepareFill` has read the document.
+
+**Rationale:** the revision and the signal are one fact. The development agent revisits this when a second format's remote fill raises package rows (NuGet's cached `.nupkg` rows, R-NUGET-015): its fill then signals through the writer and needs no declared area.
+
+**Applied in the spec:** R-ARCH-008 (`Descriptor.NotifyAreas`), R-ARCH-009 (`PackageWriter`), [virtual.md](../developer/virtual.md). Code: `internal/formats/catalog/changed.go`, `internal/packages/writer.go`, `internal/meta/postgres/queries/packages.sql` (`GetPackageRef`), `internal/formathost/writer.go`, `hooks.go`, `internal/cluster/areas.go`, `internal/formats/npm`, the kit's `store.go`. Tests: `TestQ_ARCH_259_NotifyIsLimitedToTheAreasTheFormatDeclared`, `TestQ_ARCH_259_APackageTheTransactionRaisedSignalsOnce`, `TestQ_ARCH_259_ThePackageWriterSignalsARaisedPackageOnce` (integration), `TestQ_ARCH_259_NotifyAreasAreSignalAreasOfTheCatalog`.
+
+### Q-ARCH-260 · A format names only its own repository: the request's scope, and a writer bound to its event
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: roadmap WP3.0e. `EnsureLocked`, `DeleteItems` and the read stores take a `RepoRef` that the format builds, so a format can name any repository by id; `rq.Repo` is the whole repository model, including `Members()`, which a search over members would iterate and so skip the per-member read check (R-AUTHZ-009 rule 2, R-NUGET-018).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The scope of a request is its repository and the members below it; the stores refuse a repository outside it; a writer is bound to the request's or the event's repository; no signature changes (chosen) | `ServeRoute` puts the scope in the handler's context; `formats.RepositoryAllowed` is the check of the stores; `newWriter` binds the writer; the kit's host does the same | A format cannot name another tenant's repository; no contract change; the kit sees it | A member the format took from `rq.Repo.Members()` without `rq.Member` is inside the scope (H-329) |
+| (b) The scope is the record of what `rq.Member` handed out | `Member` and `WriteTarget` add to a set shared by the derived requests | Exactly the members the format was given | The engines hand members to a format without `Member` (`ServeCheck`, `LocalDocument`, `Merge`), and those calls would be refused; the record lives in `Request`, which `route.go` owns |
+| (c) Narrow the signatures: no `RepoRef` parameter on a write, a narrowed repository view instead of `*repository.Repository` | The request's repository is implied | The check is structural | A breaking change of every store and writer signature and of every format: contract version 2 |
+
+**Choice:** (a), and (c) is the "e rest": it stays out of version 1 and is a version 2 change, to be taken by an ADR when the narrowed view exists (ADR-136). The read check applies to a context that carries a scope, which `ServeRoute` gives every handler; a hook, a fill and a job run without one and act on their event's repository, which the writer is bound to (`writerForEvent`; the fill path in `internal/formathost/remote.go` calls `writerFor` with no repository today and is handed over to the owner of that file). The kit's host refuses with the same error.
+
+**Rationale:** (a) closes the cross-repository road for formats and costs no signature; what it cannot close is the road inside the family of a virtual repository, which only (b) or (c) close. The development agent revisits this when `Resolver.Plan` (roadmap WP3.0c) hands out the members a caller may read: the scope can then be that list.
+
+**Applied in the spec:** R-ARCH-008 (`Target` comment, `RepositoryAllowed`), R-ARCH-009 (`PackageWriter`). Code: `internal/formats/scope.go`, `serve.go`, `internal/formathost/ingest.go`, `writer.go`, `hooks.go`, the kit's `store.go`. Tests: `TestQ_ARCH_260_TheStoresRefuseARepositoryOutsideTheRequest`, `TestQ_ARCH_260_AWriterWritesToItsOwnRepositoryOnly`, `TestQ_ARCH_260_AFormatNamesItsOwnRepositoryOnly`. The open gap is [H-329](../security/repository-model.md#h-329--a-format-that-reads-a-member-without-rqmember-skips-the-per-member-read-check).
+
+### Q-ARCH-261 · The rendition ETag, the typed environment and the engine value types stay as they are across the freeze
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: roadmap WP3.0f, WP3.0i and WP3.0m. (f) The ETag of a rendered document is the format's own: it hashes the inputs it keeps and keeps them in step with `RenditionKey` by hand; the roadmap would derive one weak ETag from the key and a serving function that owns the conditional request, the cache, gzip and the headers. (i) `Bind(host, *config.Config, metrics)` is a duck-typed method on a process-wide format, which hands a format the whole configuration. (m) Digests, entry state, currency, cache status, URL mapping and the fill event are declared in `internal/formats` and mirrored by the engine; a repository's numeric id is parsed in several places. Each is a refactor of what sits behind the contract, not a change of what a format must implement.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Do none of them before the freeze; each is added or aliased later (chosen) | (f) NuGet keeps its weak ETag in its own `document` leaf, as npm does; (i) NuGet implements `Bind` as npm does; (m) the types stay | No change to the frozen files; the three are source compatible when they arrive: a serving function is a helper, a typed environment is an optional interface that replaces `Bind` per format, a type alias changes no format | The formats carry the hand-kept ETag and the duck-typed `Bind` until then |
+| (b) Do them in M3 | Derive the ETag, build the typed environment, alias the types | The contract is complete | Three refactors under the same freeze as the format that needs the contract; a second ETag path to test before the first NuGet release |
+| (c) Do only (f) | Move npm onto the serving function | The comment of `RenditionKey` becomes true | The same risk for npm's cache and `304` behaviour, with NuGet as the only reason |
+
+**Choice:** (a). The comment of `RenditionKey` says what the code does (the cache keys on every field, the ETag is the format's). `Bind` is not in the frozen blocks; it is the composition root's duck-typed call (`hostBinder` in `wire_formats.go`), and R-ARCH-009 says so.
+
+**Rationale:** none of the three changes what a format implements, so none needs the freeze to wait. The development agent revisits (f) with NuGet's `document` leaf in phase 3.1f (if the two formats' ETags are the same function, it moves into `internal/formats` as a helper), (i) when a format needs a section of the configuration that npm's `Bind` does not cover (`nuget.search.*`, `nuget.archive.*`, R-NUGET-030), and (m) with the first change that touches those types for another reason.
+
+**Applied in the spec:** R-ARCH-009 (the status lines on `Bind` and on the ETag), R-ARCH-012. Code: none.
+
+### Q-ARCH-262 · The remote configuration probe, the populate decision through a virtual repository and the defaults for missing dependencies are not contract changes
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: roadmap WP3.0g (the part after the catalog fact), WP3.0s and WP3.0t. (g) A check of the probe's status and bounded body that the repository service runs on create, on update and on the upstream test, so that a NuGet remote whose service index lacks `PackageBaseAddress/3.0.0` is refused with 422. (s) The populate decision of a fill through a virtual repository is the decision that allowed the write, where the bridge builds an allow itself for the audit event (R-AUTHZ-029). (t) Components keep a default for a missing dependency (`proxy.New` without an invalidation matcher treats every entry as valid) that only tests use, and the files seam reads the Host at request time.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The catalog fact `checksumPolicy: require` unsupported -> 422 is the part of (g) that is built; the probe check, (s) and (t) stay out of the contract (chosen) | (g rest) a remote NuGet repository whose index lacks the resources answers 502 on its first fetch, as the NuGet page's Q-NUGET-14 decides; (s) is the bridge's and the decision point's, phase 7; (t) is phase 7 | The frozen files change for none of them | A misconfigured NuGet remote is found on the first fetch, not on the save; an audit event records an allow the bridge built; two defaults stay |
+| (b) Build the probe check and a hook for it in the descriptor | `Descriptor` gains a validation function | The 422 at save | A contract addition for one format; the check would make the repository service open an outbound connection, which today only the proxy and the probe of the upstream test do |
+| (c) Build (s) and (t) now | Return the deciding decision from the check; make the missing dependency a refusal | Honest audit; no test-only defaults | Both touch the engines (`internal/virtual`, `internal/proxy`) in the wave that rewrites them |
+
+**Choice:** (a). The contract needs none of the four, so the freeze does not wait for them.
+
+**Rationale:** each is a property of an engine or of the composition, not of what a format implements. The development agent revisits (g rest) when a user reports a remote saved with a bad index (the check then becomes an optional interface of the remote adapter, `Validate(probe)`), and (s) and (t) in phase 7, where the audit and the composition root are revisited.
+
+**Applied in the spec:** none beyond this block and the roadmap rows. Code: none.
 
 ### Q-ARCH-273 · How is the OpenAPI breaking-change checker pinned and run?
 

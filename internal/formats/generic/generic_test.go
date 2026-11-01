@@ -53,7 +53,7 @@ func TestQ_GENERIC_7_TheContractWithoutRoutes(t *testing.T) {
 	if _, ok := f.PackageDocumentPath("x"); ok {
 		t.Fatal("generic has no package names")
 	}
-	if f.Remote() != nil || f.Virtual() != nil || f.Indexes() != nil {
+	if f.Remote() != nil || f.Virtual() != nil {
 		t.Fatal("only the local class is implemented")
 	}
 }

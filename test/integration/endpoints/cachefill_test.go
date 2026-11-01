@@ -118,9 +118,6 @@ func (pathsExposure) ValidateRange(string) error             { return fmt.Errorf
 func (pathsExposure) Prerelease(string) (bool, bool)         { return false, false }
 func (pathsExposure) InRange(string, string) bool            { return false }
 func (pathsExposure) Dimensions() formats.ExposureDimensions { return formats.ExposureDimensions{} }
-func (pathsExposure) FilterDocument(_ context.Context, _ formats.Path, doc []byte, _ formats.ExposureView) ([]byte, error) {
-	return doc, nil
-}
 
 // fillEndpoints is server.endpoints of the test: customers with the defaults of a further
 // endpoint (cache_fill false), partners with cache_fill true.

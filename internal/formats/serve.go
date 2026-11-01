@@ -30,10 +30,14 @@ const (
 // route; the dispatcher and the conformance kit both call it, so the kit tests
 // the code that runs in production.
 //
-//   - A route of kind Download, Metadata or Computed writes through the content
-//     wrapper of R-ARCH-007: the headers hold whatever the handler does to them.
-//     sameOrigin selects the stricter resource policy when a session cookie
-//     authenticated the request (Q-ARCH-86).
+//   - A route of kind Download, Metadata, Computed or Volatile writes through the
+//     content wrapper of R-ARCH-007: the headers hold whatever the handler does to
+//     them. A Volatile route (a search) may return package-derived bytes; it carries
+//     the headers of Metadata, without Content-Disposition (Q-ARCH-258). sameOrigin
+//     selects the stricter resource policy when a session cookie authenticated the
+//     request (Q-ARCH-86).
+//   - The handler's context carries the repositories the request may name: a read
+//     store or a package writer refuses any other (Q-ARCH-260).
 //   - A panic is recovered and logged with the format and the route; the request
 //     answers 500 through WriteError when no byte has left (R-ARCH-028). A
 //     panic of http.ErrAbortHandler passes through, and so does the abort of a
@@ -52,7 +56,7 @@ func ServeRoute(f Format, w http.ResponseWriter, rq *Request, sameOrigin bool) {
 		tw.hide = []string{"Cache-Status"}
 	}
 	var out http.ResponseWriter = tw
-	if rq.Route.Kind.ServesContent() {
+	if rq.Route.Kind.WrapsContent() {
 		kind := content.Document
 		if rq.Route.Kind == Download {
 			kind = content.File
@@ -78,7 +82,7 @@ func ServeRoute(f Format, w http.ResponseWriter, rq *Request, sameOrigin bool) {
 		}
 		renderError(f, tw, rq, errs.E(errs.Internal, errs.CodeInternal, ""))
 	}()
-	err := rq.Route.Handler(rq.Context(), rq, out)
+	err := rq.Route.Handler(withRepositories(rq.Context(), rq), rq, out)
 	if err == nil {
 		return
 	}
@@ -88,6 +92,13 @@ func ServeRoute(f Format, w http.ResponseWriter, rq *Request, sameOrigin bool) {
 	}
 	renderError(f, tw, rq, err)
 }
+
+// WrapsContent reports whether the core wraps the response of a route of this kind
+// in the content headers of R-ARCH-007: the kinds that serve stored content or
+// package documents, and Volatile, whose answer (a search) is derived from package
+// metadata. Content-Disposition is added for Download alone. A route of any other
+// kind returns no package-derived bytes (R-ARCH-010 check 7).
+func (k RouteKind) WrapsContent() bool { return k.ServesContent() || k == Volatile }
 
 // renderError writes an error response on the plain writer: an error is no stored
 // content, so it does not carry Content-Disposition.
@@ -156,15 +167,6 @@ func (Base) OnCommit(context.Context, Tx, CommitEvent) error { return nil }
 // OnItemsRemoved does nothing.
 func (Base) OnItemsRemoved(context.Context, Tx, ItemsEvent) error { return nil }
 
-// OnItemsRestored does nothing.
-func (Base) OnItemsRestored(context.Context, Tx, ItemsEvent) error { return nil }
-
-// RemoveVersion removes nothing: retention does not exist yet.
-func (Base) RemoveVersion(context.Context, Tx, VersionRef) ([]ItemRef, error) { return nil, nil }
-
-// VersionGroup puts every version in one group.
-func (Base) VersionGroup(VersionRef) string { return "" }
-
 // ServeCheck refuses nothing.
 func (Base) ServeCheck(context.Context, Host, RepoRef, ItemRef, ServeMode) error { return nil }
 
@@ -173,9 +175,6 @@ func (Base) Remote() RemoteAdapter { return nil }
 
 // Virtual is nil: the format has no virtual class.
 func (Base) Virtual() VirtualAdapter { return nil }
-
-// Indexes is nil: the format has no rebuildable derived metadata.
-func (Base) Indexes() IndexBuilder { return nil }
 
 // Exposure is nil: the format is not exposable on an endpoint with rules.
 func (Base) Exposure() ExposureAdapter { return nil }

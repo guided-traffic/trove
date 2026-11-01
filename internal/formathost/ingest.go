@@ -158,6 +158,9 @@ type handle struct{ it items.Item }
 
 // Stat implements [formats.ItemStore].
 func (s itemStore) Stat(ctx context.Context, repo formats.RepoRef, p formats.Path) (formats.Item, bool, error) {
+	if err := formats.RepositoryAllowed(ctx, repo); err != nil {
+		return formats.Item{}, false, err
+	}
 	it, found, err := s.h.o.Items.Live(ctx, itemsRepo(repo), p.Path)
 	if err != nil || !found {
 		return formats.Item{}, false, err
@@ -210,6 +213,9 @@ func (s itemStore) row(ctx context.Context, it formats.Item) (items.Item, error)
 	if h, ok := it.Handle.(handle); ok {
 		return h.it, nil
 	}
+	if err := formats.RepositoryAllowed(ctx, it.Ref.Repo); err != nil {
+		return items.Item{}, err
+	}
 	row, found, err := s.h.o.Items.Live(ctx, itemsRepo(it.Ref.Repo), it.Ref.Path)
 	if err != nil {
 		return items.Item{}, err
@@ -223,6 +229,9 @@ func (s itemStore) row(ctx context.Context, it formats.Item) (items.Item, error)
 type packageStore struct{ s *packages.Store }
 
 func (p packageStore) Package(ctx context.Context, repo formats.RepoRef, name string) (formats.PackageRow, bool, error) {
+	if err := formats.RepositoryAllowed(ctx, repo); err != nil {
+		return formats.PackageRow{}, false, err
+	}
 	row, found, err := p.s.Package(ctx, repo.ID, name)
 	if err != nil || !found {
 		return formats.PackageRow{}, false, err
@@ -231,6 +240,9 @@ func (p packageStore) Package(ctx context.Context, repo formats.RepoRef, name st
 }
 
 func (p packageStore) Versions(ctx context.Context, repo formats.RepoRef, name string) ([]formats.VersionRow, formats.RevSeq, error) {
+	if err := formats.RepositoryAllowed(ctx, repo); err != nil {
+		return nil, 0, err
+	}
 	vs, rev, err := p.s.Versions(ctx, repo.ID, name)
 	return versionRows(vs), formats.RevSeq(rev), err
 }
@@ -238,6 +250,9 @@ func (p packageStore) Versions(ctx context.Context, repo formats.RepoRef, name s
 func (p packageStore) RevSeqs(ctx context.Context, repos []formats.RepoRef, name string) (map[int64]formats.RevSeq, error) {
 	ids := make([]int64, len(repos))
 	for i, r := range repos {
+		if err := formats.RepositoryAllowed(ctx, r); err != nil {
+			return nil, err
+		}
 		ids[i] = r.ID
 	}
 	revs, err := p.s.RevSeqs(ctx, ids, name)

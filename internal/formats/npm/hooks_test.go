@@ -94,7 +94,6 @@ func (w *fakeWriter) Notify(area string, payload any) error {
 	w.notes = append(w.notes, area+":"+payload.(string))
 	return nil
 }
-func (w *fakeWriter) Enqueue(context.Context, formats.JobSpec) error { return nil }
 
 func (w *fakeWriter) DeleteItems(context.Context, formats.RepoRef, ...string) error {
 	w.note("DeleteItems")
@@ -152,7 +151,7 @@ func TestR_NPM_007_OnCommitOfAFirstPublish(t *testing.T) {
 	// The package row is locked first, ownership is checked under that lock, the version
 	// and its revision follow, and the npm rows are written last.
 	order := strings.Join(w.calls, " ")
-	want := "EnsureLocked Versions Claim AutoClaim InsertVersion BumpRevision SetProperties Notify"
+	want := "EnsureLocked Versions Claim AutoClaim InsertVersion BumpRevision SetProperties"
 	if order != want {
 		t.Fatalf("calls %q, want %q", order, want)
 	}
@@ -173,7 +172,7 @@ func TestR_NPM_007_OnCommitOfAFirstPublish(t *testing.T) {
 		in.Tags["latest"] != "1.2.0" || in.LatestKept || in.Claim != `created "@acme/ui"` {
 		t.Fatalf("rows %+v", in)
 	}
-	if pc.rev != 3 || pc.pkg != 42 || len(w.notes) != 1 || w.notes[0] != "metadata_changed:"+formats.PackageChanged(7, "@acme/ui") {
+	if pc.rev != 3 || pc.pkg != 42 || len(w.notes) != 0 { // the writer signals the change, not the hook (Q-ARCH-259)
 		t.Fatalf("result rev %d pkg %d notes %v", pc.rev, pc.pkg, w.notes)
 	}
 }
@@ -320,7 +319,7 @@ func TestR_NPM_007_OnCommitOfAProvenanceBundle(t *testing.T) {
 		if err := f.OnCommit(context.Background(), nil, ev(w, sc)); err != nil {
 			t.Fatal(err)
 		}
-		if got := strings.Join(w.calls, " "); got != "EnsureLocked Versions Claim LinkItem BumpRevision Notify" || sc.rev != 3 {
+		if got := strings.Join(w.calls, " "); got != "EnsureLocked Versions Claim LinkItem BumpRevision" || sc.rev != 3 {
 			t.Fatalf("calls %q rev %d", got, sc.rev)
 		}
 	})

@@ -9,6 +9,7 @@ import (
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/formats/formattest"
 )
 
@@ -458,7 +459,7 @@ func TestR_NPM_017_RawDeleteOfATarballUnpublishesTheVersion(t *testing.T) {
 	t.Run("the notification evicts merged documents early", func(t *testing.T) {
 		got := rf.h.Notifications()
 		last := got[len(got)-1]
-		if last.Area != "metadata_changed" || last.Payload != formats.PackageChanged(rf.h.Ref().ID, "lodash") {
+		if last.Area != "metadata_changed" || last.Payload != catalog.PackageChanged(rf.h.Ref().ID, "lodash") {
 			t.Fatalf("%+v", last)
 		}
 	})

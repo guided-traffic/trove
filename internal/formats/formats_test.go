@@ -275,9 +275,6 @@ func (stubExposure) ValidateRange(string) error       { return errors.New("no") 
 func (stubExposure) Prerelease(string) (bool, bool)   { return false, true }
 func (stubExposure) InRange(string, string) bool      { return false }
 func (s stubExposure) Dimensions() ExposureDimensions { return s.dim }
-func (stubExposure) FilterDocument(_ context.Context, _ Path, d []byte, _ ExposureView) ([]byte, error) {
-	return d, nil
-}
 
 func catalogClass(catalog.Class) catalog.Class                     { return Local }
 func catalogKind(catalog.RequestKind) catalog.RequestKind          { return KindWrite }
@@ -311,6 +308,14 @@ func TestR_ARCH_008_RouteKindsMapToRequestKinds(t *testing.T) {
 	for _, k := range []RouteKind{Upload, Delete, Admin, Volatile} {
 		if k.ServesContent() {
 			t.Errorf("%s serves no content", k)
+		}
+	}
+	// Volatile is wrapped too (Q-ARCH-258): a search returns package-derived bytes.
+	for k, want := range map[RouteKind]bool{
+		Download: true, Metadata: true, Computed: true, Volatile: true, Upload: false, Delete: false, Admin: false,
+	} {
+		if got := k.WrapsContent(); got != want {
+			t.Errorf("%s.WrapsContent() = %v, want %v", k, got, want)
 		}
 	}
 }
@@ -369,7 +374,7 @@ func TestR_ARCH_005_MatchRoutes(t *testing.T) {
 func TestBaseWriteErrorIsProblemJSON(t *testing.T) {
 	// Base.WriteError is the default shape; the dispatcher test covers a format's own.
 	var b Base
-	if !reflect.DeepEqual(b.IngestOptions(nil), IngestOptions{}) || b.VersionGroup(VersionRef{}) != "" || b.Remote() != nil || b.Virtual() != nil || b.Indexes() != nil || b.Exposure() != nil || b.SetupTemplates() != nil {
+	if !reflect.DeepEqual(b.IngestOptions(nil), IngestOptions{}) || b.Remote() != nil || b.Virtual() != nil || b.Exposure() != nil || b.SetupTemplates() != nil {
 		t.Fatal("Base is not neutral")
 	}
 }

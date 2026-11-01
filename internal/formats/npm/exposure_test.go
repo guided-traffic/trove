@@ -230,7 +230,7 @@ func TestR_NPM_048_TheFilterOfALocalDocument(t *testing.T) {
 			for _, render := range []func(*rows.LocalPackage, document.Options) ([]byte, error){document.FullDocument, document.AbbreviatedDocument} {
 				unfiltered, _ := render(&all, renderOpts())
 				want, _ := render(&filtered, renderOpts())
-				got, err := x.FilterDocument(context.Background(), formats.Path{Path: "@acme/sdk"}, unfiltered, view)
+				got, err := x.filterDocument(context.Background(), formats.Path{Path: "@acme/sdk"}, unfiltered, view)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -252,7 +252,7 @@ func (r prereleaseView) Version(n, v string) bool {
 func TestR_NPM_048_TheFilterOfAMergedOrRewrittenDocument(t *testing.T) {
 	x, view := newExposure(), fixtureView()
 	filter := func(path, doc string) ([]byte, error) {
-		return x.FilterDocument(context.Background(), formats.Path{Path: path}, []byte(doc), view)
+		return x.filterDocument(context.Background(), formats.Path{Path: path}, []byte(doc), view)
 	}
 	upstream := `{
 	  "_id": "@acme/sdk", "_rev": "12-abc", "name": "@acme/sdk",
@@ -356,7 +356,7 @@ func TestR_NPM_048_TheFilterOfAMergedOrRewrittenDocument(t *testing.T) {
 		}
 	})
 	t.Run("R-EP-018 without a view the document is unchanged", func(t *testing.T) {
-		got, err := x.FilterDocument(context.Background(), formats.Path{Path: "@acme/sdk"}, []byte(upstream), nil)
+		got, err := x.filterDocument(context.Background(), formats.Path{Path: "@acme/sdk"}, []byte(upstream), nil)
 		if err != nil || string(got) != upstream {
 			t.Fatal("changed without a view")
 		}
@@ -365,7 +365,7 @@ func TestR_NPM_048_TheFilterOfAMergedOrRewrittenDocument(t *testing.T) {
 
 // onCustomers puts a request on an endpoint with exposure rules: the facts the dispatcher
 // derives from the listener and the request's index.
-func onCustomers(view formats.ExposureView, fingerprint string) func(*formats.Request) {
+func onCustomers(view tagView, fingerprint string) func(*formats.Request) {
 	return func(rq *formats.Request) {
 		rq.Endpoint = formats.EndpointFacts{Name: "customers", Rules: true, ExposureFingerprint: fingerprint, Exposure: view}
 	}

@@ -3,17 +3,17 @@ package formathost
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"slices"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/api/edge"
-	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/authz"
-	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/items"
-	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/packages"
 	"github.com/guided-traffic/trove/internal/repository"
@@ -67,46 +67,53 @@ type RemoteRefuser interface {
 	RemoteRefused(ctx context.Context, remote repository.Repository, name string, via *repository.Repository) (bool, error)
 }
 
-// Changer writes the change-log row of a change area into the transaction
-// (cluster.Changes implements it).
-type Changer interface {
-	Notify(tx meta.Tx, area string, version int, payload any) error
-}
-
 // Signaler attaches a signal to the transaction, published after the commit
 // (cluster.Signals implements it).
 type Signaler interface {
 	Notify(tx meta.Tx, area, payload string)
 }
 
-// Jobs enqueues a job in the caller's transaction (jobs.Queue implements it).
-type Jobs interface {
-	Enqueue(ctx context.Context, tx meta.Tx, e jobs.EnqueueSpec) (jobs.Result, error)
-}
-
 // writerDeps are what a package writer needs beyond the rows.
 type writerDeps struct {
-	own      Ownership
-	auto     AutoClaimer
-	changes  Changer
-	signals  Signaler
-	enqueuer Jobs
+	own     Ownership
+	auto    AutoClaimer
+	signals Signaler
 	// remove removes items in the transaction; set for the writer of Host.Write.
 	remove ItemRemover
+	// areas are the notification areas the writer's format declared.
+	areas []string
 }
 
 // writer implements formats.PackageWriter over the package rows of a transaction.
-// req is the request it is bound to, nil for a writer of a fill or a job.
+// req is the request it is bound to, nil for a writer of a fill or a job. bound is
+// the repository the writer writes to: the request's, or the event's for a hook
+// (Q-ARCH-260); nil binds none, which only a test or a caller that has not been
+// moved to [Deps.writerForEvent] yet does.
 type writer struct {
-	w   *packages.Writer
-	tx  meta.Tx
-	d   writerDeps
-	req *formats.Request
+	w     *packages.Writer
+	tx    meta.Tx
+	d     writerDeps
+	req   *formats.Request
+	bound *formats.RepoRef
 }
 
 var _ formats.PackageWriter = (*writer)(nil)
 
+// owns refuses a repository other than the one the writer is bound to: a format
+// names its own repository only, and a write to another is a defect, not a request
+// a client can cause.
+func (w *writer) owns(repo formats.RepoRef) error {
+	if w.bound == nil || w.bound.ID == repo.ID {
+		return nil
+	}
+	return errs.E(errs.Internal, errs.CodeInternal, "A format wrote to a repository other than the one its request or event is bound to.",
+		errs.WithCause(fmt.Errorf("repository %q (id %d) is not %q (id %d)", repo.Key, repo.ID, w.bound.Key, w.bound.ID)))
+}
+
 func (w *writer) EnsureLocked(ctx context.Context, repo formats.RepoRef, name, displayName string) (formats.PackageRef, bool, error) {
+	if err := w.owns(repo); err != nil {
+		return formats.PackageRef{}, false, err
+	}
 	ref, created, err := w.w.EnsureLocked(ctx, repo.ID, name, displayName)
 	if err != nil {
 		return formats.PackageRef{}, false, err
@@ -211,52 +218,63 @@ func (w *writer) DeleteItems(ctx context.Context, repo formats.RepoRef, paths ..
 	if w.req == nil || w.d.remove == nil {
 		return errs.E(errs.Internal, errs.CodeInternal, "Items are removed for a request through Host.Write; this writer cannot.")
 	}
+	if err := w.owns(repo); err != nil {
+		return err
+	}
 	return w.d.remove.RemoveIn(ctx, w.tx, items.RemoveSpec{
 		Repo:  items.RepoRef{ID: repo.ID, Key: repo.Key, Class: string(repo.Class), Format: string(repo.Format)},
 		Paths: paths, Actor: edge.ActorFrom(httpserver.PrincipalFrom(ctx)), Source: httpserver.SourceFrom(ctx), Endpoint: w.req.Subject.Endpoint,
 	})
 }
 
-// Notify attaches the notification to the transaction as its area's class says:
-// a change area writes its change-log row in it, a signal area is published after
-// the commit (R-ARCH-018).
+// Notify attaches a signal of an area the writer's format declared in
+// Descriptor.NotifyAreas; the signal is published after the commit and a rollback
+// sends none (R-ARCH-018). Any other area is a defect of the format. One
+// (area, payload) pair is attached once per transaction, so a signal the writer
+// raised for a package is not repeated by a format that names it again.
 func (w *writer) Notify(area string, payload any) error {
-	a, ok := cluster.LookupArea(area)
+	if !slices.Contains(w.d.areas, area) {
+		return errs.E(errs.Internal, errs.CodeInternal, "The format did not declare the notification area "+area+".")
+	}
+	s, ok := payload.(string)
 	if !ok {
-		return errs.E(errs.Internal, errs.CodeInternal, "Unknown notification area "+area+".")
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			return err
+		}
+		s = string(raw)
 	}
-	switch a.Class {
-	case cluster.ChangeArea:
-		if w.d.changes == nil {
-			return errs.E(errs.Internal, errs.CodeInternal, "The change log is not wired on this replica.")
-		}
-		return w.d.changes.Notify(w.tx, area, a.PayloadVersion, payload)
-	default:
-		if w.d.signals == nil { // a replica without signals loses the wake-up; consumers poll
-			return nil
-		}
-		s, ok := payload.(string)
-		if !ok {
-			raw, err := json.Marshal(payload)
-			if err != nil {
-				return err
-			}
-			s = string(raw)
-		}
-		w.d.signals.Notify(w.tx, area, s)
-		return nil
-	}
+	notifyOnce(w.d.signals, w.tx, area, s)
+	return nil
 }
 
-// Enqueue enqueues a job in the transaction.
-func (w *writer) Enqueue(ctx context.Context, j formats.JobSpec) error {
-	if w.d.enqueuer == nil {
-		return errs.E(errs.Internal, errs.CodeInternal, "The job queue is not wired on this replica.")
+type notifiedKey struct{}
+
+// notifyOnce attaches a signal to the transaction unless the same one is already
+// attached. A replica without signals loses the wake-up; consumers validate their
+// entries by revision.
+func notifyOnce(sig Signaler, tx meta.Tx, area, payload string) {
+	if sig == nil {
+		return
 	}
-	spec := jobs.EnqueueSpec{Kind: j.Kind, Args: j.Args, DedupKey: j.DedupKey}
-	if w.req != nil {
-		spec.CreatedBy = principal.IDOrEmpty(w.req.Subject.ID)
+	seen, _ := tx.Value(notifiedKey{}).(map[[2]string]bool)
+	if seen == nil {
+		seen = map[[2]string]bool{}
+		tx.SetValue(notifiedKey{}, seen)
 	}
-	_, err := w.d.enqueuer.Enqueue(ctx, w.tx, spec)
-	return err
+	k := [2]string{area, payload}
+	if seen[k] {
+		return
+	}
+	seen[k] = true
+	sig.Notify(tx, area, payload)
+}
+
+// packageRaised is the function the package writer calls when a transaction raises a
+// package: it attaches the early-eviction signal of the package once (Q-ARCH-259).
+func packageRaised(sig Signaler) packages.Raised {
+	return func(_ context.Context, tx meta.Tx, pkg packages.Ref) error {
+		notifyOnce(sig, tx, catalog.MetadataChangedArea, catalog.PackageChanged(pkg.RepoID, pkg.Name))
+		return nil
+	}
 }

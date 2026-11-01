@@ -29,6 +29,13 @@ SELECT id, repo_id, name, display_name, attributes, rev_seq
   FROM packages
  WHERE repo_id = sqlc.arg(repo_id)::bigint AND name = sqlc.arg(name)::text;
 
+-- name: GetPackageRef :many
+-- The repository and the name of a package by its id, for the signal of a package a
+-- write raised without naming it (internal/packages).
+SELECT id, repo_id, name
+  FROM packages
+ WHERE id = sqlc.arg(id)::bigint;
+
 -- name: ListLiveVersions :many
 SELECT id, version, display_version, COALESCE(lead_item_id, 0)::bigint AS lead_item_id, attributes,
        created_at, COALESCE(created_by::text, '')::text AS created_by

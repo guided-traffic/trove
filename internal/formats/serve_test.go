@@ -57,12 +57,12 @@ func write(body string) HandlerFunc {
 	}
 }
 
-// TestR_ARCH_007_ServeRouteWrapsTheContentRoutes: a route of kind Download, Metadata
-// or Computed answers with the content headers, whatever the handler does to them;
-// a route of another kind is not wrapped.
+// TestR_ARCH_007_ServeRouteWrapsTheContentRoutes: a route of kind Download, Metadata,
+// Computed or Volatile answers with the content headers, whatever the handler does to
+// them; a route of another kind is not wrapped (Q-ARCH-258).
 func TestR_ARCH_007_ServeRouteWrapsTheContentRoutes(t *testing.T) {
 	const csp = "sandbox; default-src 'none'"
-	for _, k := range []RouteKind{Download, Metadata, Computed} {
+	for _, k := range []RouteKind{Download, Metadata, Computed, Volatile} {
 		t.Run("R-ARCH-007 a "+k.String()+" route carries the headers", func(t *testing.T) {
 			rec := serve(t, k, write("x"), false)
 			h := rec.Header()
@@ -93,7 +93,25 @@ func TestR_ARCH_007_ServeRouteWrapsTheContentRoutes(t *testing.T) {
 			t.Fatalf("policy = %q", got)
 		}
 	})
-	for _, k := range []RouteKind{Upload, Delete, Admin, Volatile} {
+	t.Run("Q-ARCH-258 a volatile route that returns package-derived bytes carries the metadata headers and no attachment", func(t *testing.T) {
+		rec := serve(t, Volatile, func(_ context.Context, _ *Request, w http.ResponseWriter) error {
+			w.Header().Del("Content-Security-Policy")
+			w.Header().Set("Content-Type", "application/json")
+			_, err := io.WriteString(w, `{"data":[{"title":"<script>x</script>"}]}`)
+			return err
+		}, false)
+		h := rec.Header()
+		if h.Get("X-Content-Type-Options") != "nosniff" || h.Get("Content-Security-Policy") != csp || h.Get("Cross-Origin-Resource-Policy") != "same-site" {
+			t.Fatalf("headers = %v", h)
+		}
+		if h.Get("Content-Disposition") != "" {
+			t.Fatalf("a search answer is no attachment: %q", h.Get("Content-Disposition"))
+		}
+		if got := serve(t, Volatile, write("x"), true).Header().Get("Cross-Origin-Resource-Policy"); got != "same-origin" {
+			t.Fatalf("the session cookie's policy = %q", got)
+		}
+	})
+	for _, k := range []RouteKind{Upload, Delete, Admin} {
 		t.Run("R-ARCH-007 a "+k.String()+" route is not wrapped", func(t *testing.T) {
 			if got := serve(t, k, write("x"), false).Header().Get("Content-Security-Policy"); got != "" {
 				t.Fatalf("a %s route got the content headers: %q", k, got)

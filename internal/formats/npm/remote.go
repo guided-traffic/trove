@@ -8,6 +8,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/formats/npm/name"
 	"github.com/guided-traffic/trove/internal/formats/npm/remote"
 	"github.com/guided-traffic/trove/internal/formats/npm/rows"
@@ -148,7 +149,7 @@ func (a remoteAdapter) OnFill(ctx context.Context, tx formats.Tx, ev formats.Fil
 	if res.Newer {
 		decision = formats.FillReplaceStored // the records are the newer document's: the entry follows them
 	}
-	return decision, ev.Packages.Notify(areaMetadataChanged, formats.PackageChanged(ev.Repo.ID, doc.Name))
+	return decision, ev.Packages.Notify(catalog.MetadataChangedArea, catalog.PackageChanged(ev.Repo.ID, doc.Name))
 }
 
 // Rewrite renders a stored full document for one response of the repository the links

@@ -1,8 +1,6 @@
 package formats
 
 import (
-	"context"
-
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 )
 
@@ -10,32 +8,22 @@ import (
 // (R-EP-012, R-EP-018).
 type ExposureDimensions struct{ Packages, Versions, Tags bool }
 
-// ExposureView answers what an endpoint exposes, to filter a document.
+// ExposureView answers what an endpoint exposes of the addressed repository. It is
+// the shared half of a view: the package and the version. A format whose rules also
+// narrow tags (Dimensions.Tags) reads them from the same value through an interface
+// of its own, because what a tag is belongs to the format (Q-ARCH-257).
 type ExposureView interface {
 	Package(name string) bool
 	Version(name, version string) bool
-	Tag(name, tag, version string) bool
 }
 
-// ExposureAdapter is a format's part of endpoint exposure (R-EP-018). The part
-// the decision point compiles rules with is [catalog.Versioning]: Register puts
-// it, with Dimensions, into the catalog, and authz reads it there, so no bridge
-// between the two exists (C-13). FilterDocument removes what the endpoint hides
-// from a rendered document.
+// ExposureAdapter is a format's part of endpoint exposure (R-EP-018): the version
+// syntax the decision point compiles rules with, [catalog.Versioning], and the
+// dimensions the rules may narrow. Register puts both into the catalog, and authz
+// reads them there, so no bridge between the two exists (C-13). What an endpoint
+// hides from a document is the format's own filter over [Request.Endpoint]: no
+// core code calls a filter, so the contract has none (Q-ARCH-257).
 type ExposureAdapter interface {
 	catalog.Versioning
 	Dimensions() ExposureDimensions
-	FilterDocument(ctx context.Context, p Path, doc []byte, view ExposureView) ([]byte, error)
 }
-
-// IndexBuilder recomputes derived metadata of a local repository from stored
-// rows (R-ARCH-008). No format of the MVP has one (Q-ARCH-12).
-type IndexBuilder interface {
-	Rebuild(ctx context.Context, repo RepoRef, scope Path, o RebuildOptions) (RebuildResult, error)
-}
-
-// RebuildOptions configure a rebuild.
-type RebuildOptions struct{ DryRun bool }
-
-// RebuildResult counts what a rebuild touched.
-type RebuildResult struct{ Packages, Versions int }

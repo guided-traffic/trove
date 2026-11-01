@@ -92,6 +92,10 @@ func (f *Format) Descriptor() formats.Descriptor {
 		// the defaults of an inspection, so they are not tightened here.
 		Limits:   untrusted.Limits{ManifestEntryBytes: 1 << 20, JSONDepth: 64, Ratio: 100},
 		DataPort: reflect.TypeFor[Store](),
+		// A remote fill replaces a stored document without raising a package row, so it
+		// signals the early eviction of merged documents itself (R-REPO-020); every other
+		// change of a package is signalled by the writer (Q-ARCH-259).
+		NotifyAreas: []string{catalog.MetadataChangedArea},
 	}
 }
 

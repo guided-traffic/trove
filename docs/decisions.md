@@ -197,6 +197,8 @@ checked every earlier decision against them:
 | [ADR-133](#adr-133--scan-state-lives-in-postgresql-a-re-fetchable-advisory-mirror-and-backed-up-findings) | Scan state lives in PostgreSQL: a re-fetchable advisory mirror and backed-up findings | Decided by the development agent — owner review at the walkthrough |
 | [ADR-134](#adr-134--malicious-versions-are-blocked-at-download-by-default) | Malicious versions are blocked at download by default | What blocks and who sets and lifts a block: decided by the owner on 2026-10-31; the rest decided by the development agent — owner review at the walkthrough |
 | [ADR-135](#adr-135--public-advisories-never-apply-to-claimed-internal-names) | Public advisories never apply to claimed internal names | Decided by the development agent — owner review at the walkthrough |
+| [ADR-136](#adr-136--the-format-contract-freezes-at-version-1-as-the-smaller-contract-and-grows-by-optional-interfaces) | The format contract freezes at version 1 as the smaller contract and grows by optional interfaces | Decided by the development agent — owner review at the walkthrough |
+| [ADR-137](#adr-137--every-route-that-returns-package-derived-bytes-carries-the-content-headers) | Every route that returns package-derived bytes carries the content headers | Decided by the development agent — owner review at the walkthrough |
 
 </details>
 
@@ -1741,8 +1743,9 @@ depends on background capacity.
 1. **Per request by default.** Every derived index is rendered from committed rows at request time
    and cached under a revision. Per-package metadata uses the package's `rev_seq`. A
    repository-wide index uses a per-repository revision. The commit increments it only for formats
-   whose `Descriptor().RepositoryIndex` is set, so npm and NuGet publishes never contend on a
-   repository row.
+   whose format declares a repository-wide index (an optional interface added with the first such
+   format; the `Descriptor().RepositoryIndex` field of M2 was removed before the freeze, Q-ARCH-256),
+   so npm and NuGet publishes never contend on a repository row.
 2. **Jobs only by exception.** A format may build an index by a job only when its page shows one of
    two things: rendering per request misses the P-4 bound at the format's reference repository
    size, or the index must be signed or stored in several compressed variants. The job is a
@@ -5116,6 +5119,34 @@ signal. Vendored public packages under claimed names and internal mirrors of the
 
 **Spec:** [spec/vulnerability-scanning.md](spec/vulnerability-scanning.md) R-VULN-010, R-VULN-017, R-VULN-018.
 
+### ADR-136 · The format contract freezes at version 1 as the smaller contract and grows by optional interfaces
+
+**Status:** Decided by the development agent — owner review at the walkthrough
+
+**Context.** The format contract (R-ARCH-008, R-ARCH-009) freezes at the end of M3. At the architecture review of M2 it still held methods the core does not call (`Indexes`, `RemoveVersion`, `VersionGroup`, `OnItemsRestored`, `Enqueue`), another format's words (a dist-tag in the exposure view, an npm scope in the setup data, a `FilterDocument` that only npm called, a `Newest` strategy nothing returned) and a notification call open to any area. A frozen method nobody calls cannot be tested, and a frozen word teaches the next format the wrong model.
+
+**Decision.** The contract that freezes holds what the core calls and what every format answers, and nothing else. Behaviour that only some formats have, or that the core cannot call yet, is an optional interface of `internal/formats` with a field in `formats.Capabilities`; `CapabilitiesOf` finds it when the format registers and the core asks the registry, never the format value. After the freeze a change is additive: a new optional interface, a default in `Base` or `RemoteBase`, a new service on `Host` or `PackageWriter` (formats call these and implement none). `ContractVersion` rises only when the meaning of an existing method changes or a method leaves. Narrowing what a format can name (the `RepoRef` parameters of the stores and the writer, a narrowed repository view instead of `*repository.Repository`) changes signatures, so it is a version 2 and not part of this freeze; until then the stores and the writer refuse a repository outside the request's scope.
+
+**Consequences.** The P1 work that needs a seam (retention, caps, the trash can's restore, the NuGet symbol-index job and reindex) brings its optional interface and its kit check with it. The freeze review of phase 3.5 compares a smaller contract. A format that reads a member of a virtual repository without `rq.Member` is not stopped by the scope ([H-329](security/repository-model.md#h-329--a-format-that-reads-a-member-without-rqmember-skips-the-per-member-read-check)). The rendition ETag, the typed environment and the engine value types are not contract changes and wait ([Q-ARCH-261](spec/architecture.md#q-arch-261--the-rendition-etag-the-typed-environment-and-the-engine-value-types-stay-as-they-are-across-the-freeze)).
+
+**Alternatives considered.** Designing the P1 seams now (five designs for callers that do not exist); keeping the methods as stubs and raising the version when a caller arrives; recording each member the format was handed (the engines hand members over without `rq.Member`). Decided in [Q-ARCH-256](spec/architecture.md#q-arch-256--the-dormant-methods-leave-the-frozen-contract-and-the-contract-grows-by-optional-interfaces), [Q-ARCH-257](spec/architecture.md#q-arch-257--a-minimal-contract-the-npm-concepts-leave-the-shared-types), [Q-ARCH-259](spec/architecture.md#q-arch-259--the-package-writer-signals-a-raised-package-and-notify-is-limited-to-declared-areas) and [Q-ARCH-260](spec/architecture.md#q-arch-260--a-format-names-only-its-own-repository-the-requests-scope-and-a-writer-bound-to-its-event).
+
+**Spec:** [spec/architecture.md](spec/architecture.md) R-ARCH-008, R-ARCH-009, R-ARCH-025.
+
+### ADR-137 · Every route that returns package-derived bytes carries the content headers
+
+**Status:** Decided by the development agent — owner review at the walkthrough
+
+**Context.** R-ARCH-007 puts the content headers (`nosniff`, the sandbox policy, `Cross-Origin-Resource-Policy`, and for files the attachment disposition) on every response whose body comes from package content, set by the core and not by the handler. A `Volatile` route (a search) was outside the rule and was called a violation if it returned package-derived bytes, but NuGet's search returns titles, descriptions and icon URLs that an uploader chose, on the same origin as the UI.
+
+**Decision.** `formats.ServeRoute` wraps `Volatile` routes in the headers of `Metadata` (no `Content-Disposition`), as it wraps `Download`, `Metadata` and `Computed`. The conformance kit asserts them on a `Volatile` route and keeps failing an `Upload`, `Delete` or `Admin` route that returns package bytes and a `Volatile` route that serves a stored item.
+
+**Consequences.** A search can return package-derived text without weakening the origin's defence; the guarantee stays the core's. What a search puts into its answer is the format's to review: the kit cannot tell a title from a leak on a route that is allowed to return titles.
+
+**Alternatives considered.** Classing the search as `Metadata` (it would become a cacheable document, but a search is `KindSearch` and never cached); leaving the headers to the handler (what R-ARCH-007 forbids). Decided in [Q-ARCH-258](spec/architecture.md#q-arch-258--a-volatile-route-returns-package-derived-content-under-the-headers-of-metadata).
+
+**Spec:** [spec/architecture.md](spec/architecture.md) R-ARCH-007, R-ARCH-010 check 7; [security/file-transfer.md](security/file-transfer.md).
+
 ## Compatibility checks and the TypeScript hold
 
 ### ADR-139 · Compatibility is checked against the latest release in CI
@@ -5287,6 +5318,13 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-ARCH-253](spec/architecture.md#q-arch-253--the-stored-versions-are-a-method-of-the-view-contract-and-the-source-is-built-before-the-rule-service) | Where do the stored versions live in the contract, and how does the rule service get them? | (a) `ViewAdapter.Stored`, bridge in `formathost`, a `formatports` area, a constructor input, kit check 11 | (b) keep the optional interface; (c) build the rule service late |
 | [Q-ARCH-254](spec/architecture.md#q-arch-254--the-written-contract-equals-the-code-and-a-capability-is-not-found-by-a-type-assertion) | How is the written contract held equal to the code, and how are optional capabilities handled? | (a) a parsing test, an archtest rule, `RemoteAdapter.ExpectsType`/`BeforeArtifact` | (b) generate the block; (c) record at `Register` |
 | [Q-ARCH-255](spec/architecture.md#q-arch-255--shared-code-says-tags-not-dist-tags) | Do shared Go identifiers say dist-tags? | (a) `Tags`; JSON, column and generated types keep their names | (b) rename everything; (c) leave it |
+| [Q-ARCH-256](spec/architecture.md#q-arch-256--the-dormant-methods-leave-the-frozen-contract-and-the-contract-grows-by-optional-interfaces) | What happens to the contract methods that cannot be implemented as frozen? | (a) they leave the contract; `OnItemsRestored` becomes the optional `ItemsRestorer`; the additive-evolution rule in R-ARCH-025 | (b) design the P1 seams now; (c) keep stubs and bump the version later — [ADR-136](#adr-136--the-format-contract-freezes-at-version-1-as-the-smaller-contract-and-grows-by-optional-interfaces) |
+| [Q-ARCH-257](spec/architecture.md#q-arch-257--a-minimal-contract-the-npm-concepts-leave-the-shared-types) | Which npm concepts leave the shared contract? | (a) `ExposureView.Tag`, `FilterDocument`, `Newest`, `ViewAdapter.Prerelease` and `SetupData.Scope`/`RegistryKey` move into npm, go or are derived | (b) declare them optional; (c) leave them — [ADR-136](#adr-136--the-format-contract-freezes-at-version-1-as-the-smaller-contract-and-grows-by-optional-interfaces) |
+| [Q-ARCH-258](spec/architecture.md#q-arch-258--a-volatile-route-returns-package-derived-content-under-the-headers-of-metadata) | May a `Volatile` route return package-derived content? | (a) yes, under the headers of `Metadata`, set by the core | (b) classify the search as `Metadata`; (c) the handler sets the headers — [ADR-137](#adr-137--every-route-that-returns-package-derived-bytes-carries-the-content-headers) |
+| [Q-ARCH-259](spec/architecture.md#q-arch-259--the-package-writer-signals-a-raised-package-and-notify-is-limited-to-declared-areas) | Who raises the early-eviction signal, and which areas may a format notify? | (a) the package writer, once per raised package; `Notify` only for `Descriptor.NotifyAreas`; the name and payload in the catalog leaf | (b) `Notify` leaves the contract; (c) leave it open |
+| [Q-ARCH-260](spec/architecture.md#q-arch-260--a-format-names-only-its-own-repository-the-requests-scope-and-a-writer-bound-to-its-event) | How is a format kept to its own repository? | (a) the request's scope in the handler's context, a writer bound to its request or event, no signature change; narrowing the signatures is version 2 | (b) record what `rq.Member` handed out; (c) narrow the signatures now — [ADR-136](#adr-136--the-format-contract-freezes-at-version-1-as-the-smaller-contract-and-grows-by-optional-interfaces) |
+| [Q-ARCH-261](spec/architecture.md#q-arch-261--the-rendition-etag-the-typed-environment-and-the-engine-value-types-stay-as-they-are-across-the-freeze) | Do the rendition ETag, the typed environment and the engine value types change before the freeze? | (a) no; each is added or aliased later | (b) do them in M3; (c) only the ETag |
+| [Q-ARCH-262](spec/architecture.md#q-arch-262--the-remote-configuration-probe-the-populate-decision-through-a-virtual-repository-and-the-defaults-for-missing-dependencies-are-not-contract-changes) | Are the probe check, the populate decision and the missing-dependency defaults contract changes? | (a) no; the catalog fact is built, the rest waits | (b) build the probe check and a hook; (c) build the populate decision and the refusal now |
 | [Q-ARCH-273](spec/architecture.md#q-arch-273--how-is-the-openapi-breaking-change-checker-pinned-and-run) | How is the OpenAPI breaking-change checker pinned and run? | (a) a binary at a pin in `tools/versions.env`, built by `go install`, its module version read with `go version -m` | [ADR-139](#adr-139--compatibility-is-checked-against-the-latest-release-in-ci) |
 | [Q-ARCH-274](spec/architecture.md#q-arch-274--what-is-the-baseline-and-what-do-the-checks-accept) | What is the baseline, and what do the checks accept? | (a) the newest `v0.*` tag whose commit is not HEAD's; no waiver; migrations only added, numbering continues | [ADR-139](#adr-139--compatibility-is-checked-against-the-latest-release-in-ci) |
 | [Q-ARCH-275](spec/architecture.md#q-arch-275--how-is-the-typescript-7-update-held) | How is the TypeScript 7 update held? | (a) a Renovate `allowedVersions: "<6.1"` rule for `typescript` | [ADR-140](#adr-140--typescript-is-held-below-61-until-angulars-peer-range-admits-7x) |
@@ -5579,6 +5617,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-NUGET-9](spec/formats/nuget.md#q-nuget-9--etags-of-rendered-documents-on-replicas-of-different-releases) | ETags of rendered documents on replicas of different releases? | (c) weak ETags over a render version and the inputs; virtual inputs taken after pin rules and claims | [ADR-121](#adr-121--rendered-nuget-documents-carry-weak-etags) |
 | [Q-NUGET-10](spec/formats/nuget.md#q-nuget-10--versions-changed-after-a-backups-snapshot) | Versions changed after a backup's snapshot? | (b) journal replay with `reserved` and `removed` tombstones and a `revived` report; no reservation without the replay | [ADR-122](#adr-122--a-restore-replays-nuget-publishes-and-deletes-into-tombstones) |
 | [Q-NUGET-11](spec/formats/nuget.md#q-nuget-11--where-symbol-indexing-runs) | Where does symbol indexing run? | (b) one `nuget-symbol-index` job per symbol package on the `worker` role | [ADR-123](#adr-123--nuget-symbol-packages-are-indexed-by-one-job-each-on-the-worker-role) |
+| [Q-NUGET-13](spec/formats/nuget.md#q-nuget-13--a-raw-deploy-into-a-nuget-repository-answers-409) | Does a raw deploy into a NuGet repository run the ingestion pipeline? | (a) no: 409 for every path; a raw delete of a derived file alone is refused by `OnItemsRemoved` | (b) the files seam runs the format's ingestion rules; (c) 409 now, the seam later |
 | [Q-NUGET-20](spec/formats/nuget.md#q-nuget-20--dependency-version-ranges-are-parsed-without-floating-versions) | Parse floating dependency ranges? | (a) refuse floating versions; a dependency range is an interval | — |
 | [Q-NUGET-21](spec/formats/nuget.md#q-nuget-21--length-bound-of-a-version-string) | Length bound of a version string? | (a) 255 bytes, as given and normalized | — |
 | [Q-NUGET-22](spec/formats/nuget.md#q-nuget-22--pre-release-identifiers-that-look-like-negative-numbers) | Order identifiers like `-5` as the library does? | (a) as text, so equal precedence and equal URL form coincide | — |

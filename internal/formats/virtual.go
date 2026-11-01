@@ -17,8 +17,6 @@ const (
 	FirstMatch Strategy = iota + 1
 	// Merge: every eligible member contributes.
 	Merge
-	// Newest: Merge, with remote members revalidated first (R-REPO-036).
-	Newest
 )
 
 // Tier is where a part of a merge came from; resolution walks them in this order.

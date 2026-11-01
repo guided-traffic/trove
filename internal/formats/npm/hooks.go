@@ -13,12 +13,6 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/npm/tarball"
 )
 
-// areaMetadataChanged is the signal that evicts merged metadata early after a
-// change of a package (R-REPO-020). The payload is formats.PackageChanged of the
-// repository and the name, which every change of the rows of a package attaches in
-// its transaction; nothing's correctness depends on it (R-NPM-007 step 5).
-const areaMetadataChanged = "metadata_changed"
-
 // publishCommit travels from the publish handler through the item store to
 // OnCommit as the commit's payload, and carries the result back: the handler reads
 // the revision and the tags after the commit.
@@ -167,9 +161,6 @@ func (f *Format) commitVersion(ctx context.Context, tx formats.Tx, c formats.Com
 	if err != nil {
 		return err
 	}
-	if err := c.Packages.Notify(areaMetadataChanged, formats.PackageChanged(c.Repo.ID, pkgName)); err != nil {
-		return err
-	}
 	p.pkg, p.rev, p.latest, p.kept = pkg.ID, rev, tags["latest"], kept
 	return nil
 }
@@ -212,7 +203,7 @@ func (f *Format) commitSigstore(ctx context.Context, c formats.CommitEvent, p *s
 			return err
 		}
 		p.rev = rev
-		return c.Packages.Notify(areaMetadataChanged, formats.PackageChanged(c.Repo.ID, pkgName))
+		return nil
 	}
 	return errs.E(errs.Conflict, errs.CodeNPMVersionUnpublished, pkgName+"@"+p.version+" is not published any more; its provenance bundle is not stored.")
 }

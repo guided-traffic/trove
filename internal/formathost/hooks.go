@@ -16,18 +16,37 @@ import (
 )
 
 // writerFor binds a package writer to tx for a format, and to rq when there is a
-// request. The writer may write properties below the format's PropertyPrefix only.
+// request: it then writes to the request's repository only. A writer of no request
+// is bound to no repository; use [Deps.writerForEvent] for a hook or a fill.
 func (d Deps) writerFor(tx meta.Tx, rq *formats.Request, format string) (formats.PackageWriter, error) {
-	prefix := ""
-	if f, ok := d.lookup(format); ok {
-		prefix = f.Descriptor().PropertyPrefix
+	var bound *formats.RepoRef
+	if rq != nil {
+		r := rq.RepoRef()
+		bound = &r
 	}
-	pw, err := packages.NewWriter(tx, prefix)
+	return d.newWriter(tx, rq, bound, format)
+}
+
+// writerForEvent binds a package writer to tx for an event of the repository: it
+// writes to that repository only, as the actor of no request (Q-ARCH-260).
+func (d Deps) writerForEvent(tx meta.Tx, repo formats.RepoRef, format string) (formats.PackageWriter, error) {
+	return d.newWriter(tx, nil, &repo, format)
+}
+
+// newWriter builds the writer. The writer may write properties below the format's
+// PropertyPrefix only, notifies the areas the format declared, and attaches the
+// signal of a package it raised (Q-ARCH-259).
+func (d Deps) newWriter(tx meta.Tx, rq *formats.Request, bound *formats.RepoRef, format string) (formats.PackageWriter, error) {
+	var desc formats.Descriptor
+	if f, ok := d.lookup(format); ok {
+		desc = f.Descriptor()
+	}
+	pw, err := packages.NewWriter(tx, desc.PropertyPrefix, packages.WithRaised(packageRaised(d.Signals)))
 	if err != nil {
 		return nil, err
 	}
-	return &writer{w: pw, tx: tx, req: rq, d: writerDeps{
-		own: d.Ownership, auto: d.AutoClaim, changes: d.Changes, signals: d.Signals, enqueuer: d.Jobs,
+	return &writer{w: pw, tx: tx, req: rq, bound: bound, d: writerDeps{
+		own: d.Ownership, auto: d.AutoClaim, signals: d.Signals, areas: desc.NotifyAreas,
 	}}, nil
 }
 
@@ -69,7 +88,8 @@ func (h *Hooks) OnCommit(ctx context.Context, tx meta.Tx, e items.CommitEvent) e
 	if cp, ok := e.Payload.(*commitPayload); ok {
 		rq, ev.Inspection, ev.Payload = cp.req, cp.inspection, cp.payload
 	}
-	w, err := h.d.writerFor(tx, rq, e.Repo.Format)
+	bound := refOf(e.Repo)
+	w, err := h.d.newWriter(tx, rq, &bound, e.Repo.Format)
 	if err != nil {
 		return err
 	}
@@ -83,7 +103,7 @@ func (h *Hooks) OnItemsRemoved(ctx context.Context, tx meta.Tx, e items.RemovedE
 	if !ok {
 		return nil
 	}
-	w, err := h.d.writerFor(tx, nil, e.Repo.Format)
+	w, err := h.d.writerForEvent(tx, refOf(e.Repo), e.Repo.Format)
 	if err != nil {
 		return err
 	}

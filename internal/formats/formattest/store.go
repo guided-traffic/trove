@@ -14,6 +14,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 )
 
 type itemRec struct {
@@ -58,12 +59,24 @@ type memTx struct {
 	undo       []func()
 	bumped     map[formats.PackageID]bool
 	notes      []Notification
-	jobs       []formats.JobSpec
+	noted      map[Notification]bool
 }
 
 var _ formats.Tx = (*memTx)(nil)
 
-func newTx() *memTx { return &memTx{values: map[any]any{}, bumped: map[formats.PackageID]bool{}} }
+func newTx() *memTx {
+	return &memTx{values: map[any]any{}, bumped: map[formats.PackageID]bool{}, noted: map[Notification]bool{}}
+}
+
+// note attaches a notification once per transaction, as the production writer does
+// for one (area, payload).
+func (t *memTx) note(n Notification) {
+	if t.noted[n] {
+		return
+	}
+	t.noted[n] = true
+	t.notes = append(t.notes, n)
+}
 
 func (t *memTx) Before(fn func(context.Context, formats.Tx) error) { t.before = append(t.before, fn) }
 func (t *memTx) After(fn func())                                   { t.after = append(t.after, fn) }
@@ -73,8 +86,8 @@ func (t *memTx) SetValue(key, v any)                               { t.values[ke
 
 // Write implements formats.Host: fn runs against the Host's rows under an undo
 // log. A failure of fn or of a Before hook plays the log backwards, so the rows,
-// the notifications and the jobs of the attempt vanish; a commit publishes the
-// notifications and the jobs and runs the After hooks.
+// the notifications of the attempt vanish; a commit publishes the notifications
+// and runs the After hooks.
 func (h *Host) Write(ctx context.Context, rq *formats.Request, fn func(tx formats.Tx, w formats.PackageWriter) error) error {
 	tx := newTx()
 	w := &writer{h: h, tx: tx, rq: rq, prefix: h.f.Descriptor().PropertyPrefix}
@@ -95,7 +108,6 @@ func (h *Host) Write(ctx context.Context, rq *formats.Request, fn func(tx format
 	}
 	h.mu.Lock()
 	h.notified = append(h.notified, tx.notes...)
-	h.jobs = append(h.jobs, tx.jobs...)
 	h.mu.Unlock()
 	for _, fn := range tx.after {
 		fn()
@@ -135,6 +147,13 @@ func (w *writer) touch(p *pkgRec) {
 	p.rev++
 	w.tx.bumped[p.id] = true
 	w.tx.undo = append(w.tx.undo, func() { p.rev = old; delete(w.tx.bumped, p.id) })
+	w.signal(p)
+}
+
+// signal attaches the early-eviction signal of a package the transaction raised: the
+// writer does it, once per package, so a format never repeats it (Q-ARCH-259).
+func (w *writer) signal(p *pkgRec) {
+	w.tx.note(Notification{Area: catalog.MetadataChangedArea, Payload: catalog.PackageChanged(w.h.ref.ID, p.name)})
 }
 
 func (w *writer) EnsureLocked(_ context.Context, repo formats.RepoRef, name, displayName string) (formats.PackageRef, bool, error) {
@@ -153,6 +172,7 @@ func (w *writer) EnsureLocked(_ context.Context, repo formats.RepoRef, name, dis
 	w.h.pkgs[name] = p
 	w.h.pkgByID[p.id] = p
 	w.tx.bumped[p.id] = true // a created package starts at 1, which is this transaction's raise
+	w.signal(p)
 	w.tx.undo = append(w.tx.undo, func() { delete(w.h.pkgs, name); delete(w.h.pkgByID, p.id); delete(w.tx.bumped, p.id) })
 	return w.ref(p), true, nil
 }
@@ -408,26 +428,26 @@ func (h *Host) sortedItems() []*itemRec {
 	return out
 }
 
+// Notify accepts the areas the format declared in its descriptor, as the production
+// writer does, and attaches a notification once per (area, payload).
 func (w *writer) Notify(area string, payload any) error {
 	if area == "" {
 		return errs.E(errs.Internal, errs.CodeInternal, "formattest: a notification has an area")
 	}
-	w.tx.notes = append(w.tx.notes, Notification{Area: area, Payload: payload})
-	return nil
-}
-
-func (w *writer) Enqueue(_ context.Context, j formats.JobSpec) error {
-	if j.Kind == "" {
-		return errs.E(errs.Internal, errs.CodeInternal, "formattest: a job has a kind")
+	if !slices.Contains(w.h.f.Descriptor().NotifyAreas, area) {
+		return errs.E(errs.Internal, errs.CodeInternal, "The format did not declare the notification area "+area+".")
 	}
-	w.tx.jobs = append(w.tx.jobs, j)
+	w.tx.note(Notification{Area: area, Payload: payload})
 	return nil
 }
 
 // packageStore reads the committed rows.
 type packageStore struct{ h *Host }
 
-func (s packageStore) Package(_ context.Context, _ formats.RepoRef, name string) (formats.PackageRow, bool, error) {
+func (s packageStore) Package(ctx context.Context, repo formats.RepoRef, name string) (formats.PackageRow, bool, error) {
+	if err := formats.RepositoryAllowed(ctx, repo); err != nil {
+		return formats.PackageRow{}, false, err
+	}
 	s.h.mu.Lock()
 	defer s.h.mu.Unlock()
 	p, ok := s.h.pkgs[name]
@@ -440,7 +460,10 @@ func (s packageStore) Package(_ context.Context, _ formats.RepoRef, name string)
 	}, true, nil
 }
 
-func (s packageStore) Versions(_ context.Context, _ formats.RepoRef, name string) ([]formats.VersionRow, formats.RevSeq, error) {
+func (s packageStore) Versions(ctx context.Context, repo formats.RepoRef, name string) ([]formats.VersionRow, formats.RevSeq, error) {
+	if err := formats.RepositoryAllowed(ctx, repo); err != nil {
+		return nil, 0, err
+	}
 	s.h.mu.Lock()
 	defer s.h.mu.Unlock()
 	p, ok := s.h.pkgs[name]
@@ -451,7 +474,12 @@ func (s packageStore) Versions(_ context.Context, _ formats.RepoRef, name string
 	return w.live(p), p.rev, nil
 }
 
-func (s packageStore) RevSeqs(_ context.Context, repos []formats.RepoRef, name string) (map[int64]formats.RevSeq, error) {
+func (s packageStore) RevSeqs(ctx context.Context, repos []formats.RepoRef, name string) (map[int64]formats.RevSeq, error) {
+	for _, r := range repos {
+		if err := formats.RepositoryAllowed(ctx, r); err != nil {
+			return nil, err
+		}
+	}
 	s.h.mu.Lock()
 	defer s.h.mu.Unlock()
 	out := make(map[int64]formats.RevSeq, len(repos))
@@ -508,7 +536,10 @@ func (h *Host) putLocked(p, mediaType string, data []byte, undo *[]func()) *item
 
 type itemStore struct{ h *Host }
 
-func (s itemStore) Stat(_ context.Context, _ formats.RepoRef, p formats.Path) (formats.Item, bool, error) {
+func (s itemStore) Stat(ctx context.Context, repo formats.RepoRef, p formats.Path) (formats.Item, bool, error) {
+	if err := formats.RepositoryAllowed(ctx, repo); err != nil {
+		return formats.Item{}, false, err
+	}
 	s.h.mu.Lock()
 	defer s.h.mu.Unlock()
 	rec, ok := s.h.items[p.Path]
@@ -665,7 +696,8 @@ func (h *Host) Remove(ctx context.Context, rq *formats.Request, reason string, p
 	})
 }
 
-// Restore restores removed items and runs OnItemsRestored in the same transaction.
+// Restore restores removed items and runs the format's optional OnItemsRestored
+// (formats.ItemsRestorer) in the same transaction.
 func (h *Host) Restore(ctx context.Context, rq *formats.Request, paths ...string) error {
 	return h.Write(ctx, rq, func(tx formats.Tx, w formats.PackageWriter) error {
 		ev := formats.ItemsEvent{Repo: h.ref, Reason: "restore", Packages: w, Data: h.opts.Data}
@@ -680,7 +712,11 @@ func (h *Host) Restore(ctx context.Context, rq *formats.Request, paths ...string
 			ev.Items = append(ev.Items, formats.RemovedItem{Item: rec.ref, Version: rec.version})
 		}
 		h.mu.Unlock()
-		return h.f.OnItemsRestored(ctx, tx, ev)
+		r := formats.CapabilitiesOf(h.f).ItemsRestorer
+		if r == nil {
+			return nil // the format keeps no state for a restored item
+		}
+		return r.OnItemsRestored(ctx, tx, ev)
 	})
 }
 

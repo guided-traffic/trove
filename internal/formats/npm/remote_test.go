@@ -17,6 +17,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/formats/formattest"
 	"github.com/guided-traffic/trove/internal/formats/npm/npmtest"
 )
@@ -181,7 +182,7 @@ func TestR_NPM_024_OnFillRecordsAFillAndKeepsTheNewerDocument(t *testing.T) {
 		t.Fatalf("fills = %+v", twin.Fills)
 	}
 	// R-REPO-020: the signal names the package, so the merged documents of other packages stay.
-	if want := "metadata_changed:" + formats.PackageChanged(9, "react"); len(w.notes) != 1 || w.notes[0] != want {
+	if want := "metadata_changed:" + catalog.PackageChanged(9, "react"); len(w.notes) != 1 || w.notes[0] != want {
 		t.Errorf("the refresh with new content signals %v, want once %q", w.notes, want)
 	}
 

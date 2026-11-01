@@ -9,13 +9,13 @@ type Gate interface{ Allow() bool }
 // Plain is a struct of the package; asserting to it is no business of the rule.
 type Plain struct{}
 
-// Register may read a capability off a registering format.
-func Register(a Adapter) bool {
+// CapabilitiesOf may read an optional capability off a format.
+func CapabilitiesOf(a Adapter) bool {
 	_, ok := a.(Gate)
 	return ok
 }
 
-// Other is not Register and may not assert either.
+// Other is not CapabilitiesOf and may not assert either.
 func Other(a Adapter) bool {
 	_, ok := a.(Gate)
 	return ok

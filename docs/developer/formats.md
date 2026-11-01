@@ -48,16 +48,17 @@ only writer is `Member` (Q-ARCH-252, [Q-AUTHZ-165](../spec/authorization.md)).
 
 | File | Responsibility |
 |---|---|
-| [formats.go](../../internal/formats/formats.go) | `ContractVersion`, the aliases and constants, `Format`, `Descriptor`, `Register` / `Validate` / `CatalogEntry`, `Lookup`, `List`, `Descriptors` |
+| [formats.go](../../internal/formats/formats.go) | `ContractVersion`, the aliases and constants, `Format`, `Descriptor`, `Register` / `Validate` / `CatalogEntry`, `Lookup`, `List`, `Descriptors`, the optional capabilities (`ItemsRestorer`, `Capabilities`, `CapabilitiesOf`, `CapabilitiesFor`) |
+| [scope.go](../../internal/formats/scope.go) | The repositories a request may name: `ServeRoute` puts them in the handler's context, `RepositoryAllowed` is the check of the stores and the package writer (Q-ARCH-260) |
 | [route.go](../../internal/formats/route.go) | `Route`, `RouteKind`, `Params`, `Template`, `MatchRoutes`, `Request`, `EndpointFacts`, `Target`, `PathKind`, `PathInfo` |
 | [host.go](../../internal/formats/host.go) | `Host` and its parts: `Ingestor`, `ItemStore`, `PackageStore`, `LinkBuilder`, `RenditionCache` |
 | [hooks.go](../../internal/formats/hooks.go) | The storage-hook types: `RepoRef`, `ItemRef`, `CommitEvent`, `ItemsEvent`, `Inspection`, `PackageWriter`, `OwnershipWrite` |
 | [remote.go](../../internal/formats/remote.go) | `RemoteAdapter`, `RemoteFetcher` and their types, among them `Exchange` and `ErrOffline` for a request outside the cache (Q-NPM-62) (the engine is internal/proxy, bridged by [internal/formathost/remote.go](../../internal/formathost/remote.go)) |
 | [virtual.go](../../internal/formats/virtual.go) | `VirtualAdapter`, `MemberDocument`, `Resolver` and their types |
-| [exposure.go](../../internal/formats/exposure.go) | `ExposureAdapter`, `IndexBuilder` |
+| [exposure.go](../../internal/formats/exposure.go) | `ExposureAdapter` (the version syntax and the dimensions), `ExposureView` (`Package`, `Version`) |
 | [setup.go](../../internal/formats/setup.go) | `Client`, `SetupTemplate`, `SetupData` |
 | [guide.go](../../internal/formats/guide.go) | `GuideSection`, `GuideData`, the topics (`GuideTopics`, `RequiredGuideTopics`), `GuideRepositoryPlaceholder`, `ExecuteGuide` (the one parser the API and the kit use), `AppliesTo` |
-| [serve.go](../../internal/formats/serve.go) | `ServeMode`, `ServeRoute`, `Base` |
+| [serve.go](../../internal/formats/serve.go) | `ServeMode`, `ServeRoute`, `RouteKind.WrapsContent`, `Base` |
 
 ### The packages around it
 
@@ -78,7 +79,7 @@ only writer is `Member` (Q-ARCH-252, [Q-AUTHZ-165](../spec/authorization.md)).
 ## The package view
 
 A format that has package screens (R-API-029) returns a `formats.ViewAdapter` from `View()`; `Base.View()` is nil, and a format without one is not
-listed on the screens. The adapter orders the versions (`Compare`, `Prerelease`), reads what the screens show of a version beyond the generic rows
+listed on the screens. The adapter orders the versions (`Compare`; "is a pre-release" is the exposure adapter's `Prerelease`, which the host's view bridge asks, Q-ARCH-257), reads what the screens show of a version beyond the generic rows
 (`Describe`: description, keywords, licenses, the README flag, the metadata and, when asked, the README), answers the two searches that need the format's
 data (`Find`) and names the stored versions it does not serve (`Withheld`). It runs no SQL: it reaches its tables through the data port the host hands it
 (`formats.DataPorts`, the part of `Host` that is `FormatData`). `Validate` refuses a view without package names. The read model that calls the adapter, and
@@ -127,7 +128,7 @@ chain 1-7 (recovery, trace, log, in-flight, address and host, authentication, ra
 ```
 
 `rq.Endpoint` is what a format knows of the endpoint ([endpoints.md](endpoints.md#package-formats-on-an-endpoint-r-ep-018-r-ep-019)):
-`Exposure` is the view `FilterDocument` takes, read with `ExposureFingerprint` from the request's index, nil where the endpoint does not
+`Exposure` is the view a format's own filter takes (`Package`, `Version`; npm reads `Tag` through an interface of its own, Q-ARCH-257), read with `ExposureFingerprint` from the request's index, nil where the endpoint does not
 restrict; `Rules` forbids member names in answers; `CacheFill` is folded into every populate decision by the core.
 
 Every error of steps 1 to 8 is rendered by the format's `WriteError`. The chain's own refusals (401, 421, 429, 503) on the prefix are rendered by
@@ -148,7 +149,10 @@ body was arriving refuses the write, the new decisions are the ones recorded, an
 The item store ([items.md](items.md)) runs `items.Hooks` inside the transaction of a commit and of a removal. `formathost.Hooks` is the implementation:
 
 1. It finds the format of the event's repository (`RepoRef.Format`); a repository of an unregistered format has no hook.
-2. It binds a `PackageWriter` to the transaction (property writes only below the format's `PropertyPrefix`) and fetches the format's data port.
+2. It binds a `PackageWriter` to the transaction (property writes only below the format's `PropertyPrefix`, package rows and item removals only in the event's repository,
+   Q-ARCH-260) and fetches the format's data port. The writer attaches the signal `metadata_changed` itself, once per package the transaction raised
+   (`packages.Writer` with `packages.WithRaised`, Q-ARCH-259); a format does not call `Notify` for a publish, a tag change, an unpublish or a restore. `Notify` is for the areas
+   a descriptor lists in `NotifyAreas` (`catalog.FormatAreas`: today `metadata_changed` alone), for a change that raised no package row: npm's `OnFill` after it replaced a stored remote document.
 3. It calls `OnCommit` (with `Origin` upload or fill, the inspection and payload of an upload, `Replaced`) or `OnItemsRemoved` (each removed item with the
    version it belonged to).
 
@@ -219,8 +223,9 @@ anchors from the README component; pin each fact a test can hold (codes, quoted 
 ## Content headers and error shapes
 
 `formats.ServeRoute(f, w, rq, sameOrigin)` is the one function that runs a handler. It wraps the writer for a route of kind `Download` (file headers with
-`Content-Disposition`), `Metadata` and `Computed` (the same set without it); a route of any other kind is not wrapped and must return no package-derived bytes
-(kit check 7). It recovers a panic (log with format and route, 500 through `WriteError`, `http.ErrAbortHandler` passes), renders an error returned before the status
+`Content-Disposition`), `Metadata`, `Computed` and `Volatile` (the same set without it, `RouteKind.WrapsContent`); a search may return package-derived bytes (titles,
+descriptions) under those headers, but serves no stored item (Q-ARCH-258). A route of kind `Upload`, `Delete` or `Admin` is not wrapped and must return no package-derived bytes
+(kit check 7). It also puts the repositories the request may name in the handler's context (`RepositoryAllowed`, Q-ARCH-260): the request's repository and the members below it. It recovers a panic (log with format and route, 500 through `WriteError`, `http.ErrAbortHandler` passes), renders an error returned before the status
 line through `WriteError` without `Content-Disposition`, and aborts the connection for an error after it. `sameOrigin` is true when a session cookie authenticated the request.
 On an endpoint with exposure rules (`rq.Endpoint.Rules`) its writer removes `Cache-Status` when the status line goes out, from a handler, an engine or an
 error's headers alike (`trackWriter.scrub`, Q-EP-60; `TestR_EP_018_NoCacheStatusOnAnEndpointWithRules`).
@@ -307,7 +312,7 @@ The fixture ([kit.go](../../internal/formats/formattest/kit.go)) holds what only
 | 4 | `Rewrite` twice on a copy of each document, then on its own output | A different output, a changed input, an output that rewriting changes again, an upstream host left in a download link; a fixture without an upstream link |
 | 5 | `Merge` twice; for each version, the source must be the lowest (tier, position) part that holds it | Another member wins a version, or the output differs |
 | 6 | Every crafted input through `Inspect` with the effective limits (`untrusted.DefaultLimits` tightened by the descriptor): `413` or `422` within 5 s, heap sampled with `runtime/metrics` within 512 MiB of the baseline | Success, another kind, a timeout (the kit cancels the context), the heap bound, a panic |
-| 7 | Every content case through `formats.ServeRoute`, once with and once without a session cookie, with the handler wrapped so that it deletes the content headers before and while it writes; the headers are read at the status line and compared with `content.Headers` | A header missing or weakened; `Content-Disposition` on a document; a route of another kind that served an item or whose body holds package bytes it read; a route without a case |
+| 7 | Every content case through `formats.ServeRoute`, once with and once without a session cookie, with the handler wrapped so that it deletes the content headers before and while it writes; the headers are read at the status line and compared with `content.Headers` | A header missing or weakened; `Content-Disposition` on a document; a route of kind `Upload`, `Delete` or `Admin` whose body holds package bytes it read, a route that is no `Download`, `Metadata` or `Computed` route and served an item (a `Volatile` one included); a route without a case |
 | 8 | Every client has a `configure` and an `install` template; every template parses and executes over `SetupData`; no template text matches `(?i)token\|password\|_auth` outside the whitelisted option names. Then the guide ([guide.go](../../internal/formats/formattest/guide.go), Q-ARCH-236): every section has an ID, a known topic, a title, classes and clients of the descriptor and a valid `Snippets`; it executes over `GuideData` for every class and client it applies to and every reader variant (a named repository and none, with and without a publish target, signed in and anonymous, with and without exposure rules); its fenced code blocks match the credential pattern only in the option names, `${TROVE_TOKEN}` and the variable name; no output holds `trv_(pat\|sat\|cit)_`; every class and client has the required topics, which say something in every variant, and the `configure` and `install` topics attach those snippets | A missing section or template, an unknown client, a duplicate ID, a bad language or section, a credential; a class or client without a required topic, a required topic that says nothing, a section that attaches a section its client has no template of, a guide without clients |
 | 9 | Each `ChangeCase` against the in-memory host: `rev_seq` of its package before and after | The revision did not rise; a route of kind `Upload`, `Delete` or `Admin` without a case or a `NoRevision` entry |
 | 10 | For each spelling: normalize, `PackageDocumentPath`, escape, `Match("GET", …)`; all spellings of one name | A name the format rejects, spellings that normalize differently or lead to two paths, a path that matches no `GET` route |
@@ -319,13 +324,15 @@ class cannot pass vacuously ([generic's test](../../internal/formats/generic/con
 ### The in-memory host
 
 [`formattest.NewHost(f, HostOptions)`](../../internal/formats/formattest/host.go) implements `formats.Host`: items ([store.go](../../internal/formats/formattest/store.go)), package rows
-with `rev_seq`, links on a fixed base URL (`DefaultBaseURL`), renditions, notifications and jobs as logs, an authorization table (`Allow`, with every call recorded),
+with `rev_seq`, links on a fixed base URL (`DefaultBaseURL`), renditions and notifications as logs, an authorization table (`Allow`, with every call recorded),
 the format's data port, and `Remote` and `Resolver` from the options (`MemRemote` is a ready remote over fixed documents; unset, they answer "not supported" like the
 production host before an engine is bound). It mirrors production where a format can tell the difference:
 
 - the package writer raises `rev_seq` once per package per transaction, however many calls touch it; `EnsureLocked` of a new package starts at 1 and does not bump an
-  existing one; `BumpRevision` is idempotent within the transaction (Q-ARCH-212);
-- a transaction (`Write`, `Ingest().Commit`, `Remove`, `Restore`, `Seed`) is undone as a whole when its function or a `Before` hook fails: rows, notifications and jobs vanish;
+  existing one; `BumpRevision` is idempotent within the transaction (Q-ARCH-212); it attaches `metadata_changed` once per raised package, `Notify` accepts the areas of
+  `Descriptor.NotifyAreas` only and attaches one (area, payload) once (Q-ARCH-259);
+- the read stores and the writer refuse a repository outside the request's scope with an internal error (Q-ARCH-260);
+- a transaction (`Write`, `Ingest().Commit`, `Remove`, `Restore`, `Seed`) is undone as a whole when its function or a `Before` hook fails: rows and notifications vanish;
   a commit sends the notifications and runs the `After` hooks;
 - `Claim` on a writer bound to no request (`Seed`) answers an internal error; `SetProperties` refuses a key outside the descriptor's `PropertyPrefix`;
 - `Ingest().Commit` of the same content at the same path is an identical commit that runs no hook; other content without `MayOverwrite` is refused;
@@ -351,7 +358,7 @@ kit's cases, and a format may answer such an input with its own 400.
 [testformat](../../internal/formats/formattest/testformat/format.go) is a complete small format that passes the checks (`testformat.New()` with `testformat.Fixture()`; it has no package screens, so check 11 is skipped there and the kit's own tests give it a view adapter, `kit_view_test.go`), and a named
 `Defect` per check that breaks the rule the check exists for (`AmbiguousRoutes`, `CleaningMatch`, `ContentMetadata`, `NondeterministicRewrite`, `UpstreamLeak`, `MergeLastWins`,
 `InspectAccepts`, `InspectWrongKind`, `InspectHeap`, `TarballVolatile`, `TemplateCredential`, `NoInstallTemplate`, `NoGuide`, `GuideCredential`, `TagWithoutRevision`,
-`NamesCaseSensitive`, `WrongDocumentPath`). [format_test.go](../../internal/formats/formattest/testformat/format_test.go) asserts that each defect fails the check the spec names, plus the checks that cannot
+`NamesCaseSensitive`, `WrongDocumentPath`, `AdminReadsPackages`, `NotifiesUndeclared`, `ReadsOtherRepository`; the option `SearchReadsPackages` is a conforming variant). [format_test.go](../../internal/formats/formattest/testformat/format_test.go) asserts that each defect fails the check the spec names, plus the checks that cannot
 stand without it (routes that are not told apart cannot be served), and no other: these are the acceptance criteria of R-ARCH-010 and R-ARCH-007. To add a rule to the kit, add the defect first
 and watch the test fail.
 
@@ -369,7 +376,8 @@ kit's tightened limits: it must not panic, finish within its deadline, fail only
 - That a route handler decides authorization on the right target: the host records every `Authorize` call (`h.Authorizations()`), and a format's own test asserts on them.
 - The dispatcher's order of checks and the error shapes of the chain: [dispatcher_test.go](../../internal/api/dispatch/dispatcher_test.go).
 - Retried transactions: `Write` runs the function once; a format with a non-transactional twin of its data port must not depend on a rollback.
-- A leak of package bytes through a `Volatile`, `Upload`, `Delete` or `Admin` route that the kit detects only when the bytes appear unchanged in the body or the route served an item.
+- A leak of package bytes through an `Upload`, `Delete` or `Admin` route that the kit detects only when the bytes appear unchanged in the body or the route served an item; a `Volatile` route is allowed to return them (Q-ARCH-258), so what a search puts in its answer is the format's to review.
+- A format that reads a member it took from `rq.Repo.Members()` instead of `rq.Member`: the stores accept every member of the request's repository, so the per-member read check of R-AUTHZ-009 rule 2 is skipped without anyone noticing (Q-ARCH-260, [H-329](../security/repository-model.md#h-329--a-format-that-reads-a-member-without-rqmember-skips-the-per-member-read-check)).
 
 ## Untrusted content
 
@@ -408,6 +416,21 @@ What is not covered: an archive in several parts is refused, not read; the zip r
 an entry whose compressed stream is longer than the central directory says is read only up to the declared compressed size by the standard library and refused as damaged (this path is not covered by a
 test of its own).
 
+## Changing the contract
+
+Before the freeze at the end of M3 (E3.3) a change is applied to every format in the same change (Q-ARCH-213). After it the contract only grows
+(R-ARCH-025, Q-ARCH-256, ADR-136). Ordered steps for a new behaviour:
+
+1. Ask first whether it is a service a format calls (a method of `Host`, `PackageWriter` or a store): adding one breaks no format. Do that, with the in-memory twin in
+   [store.go](../../internal/formats/formattest/store.go) and the production implementation in `internal/formathost`, and stop.
+2. If a format must implement it, and every format answers it, add the method to `Format` (or to an adapter) together with its default in `Base` (or `RemoteBase`).
+3. If only some formats have it, or the core cannot call it yet, declare an optional interface in `internal/formats`, add a field to `Capabilities` and the assertion to
+   `CapabilitiesOf` ([formats.go](../../internal/formats/formats.go)): that function is the one place the architecture test allows to assert to an interface of the package.
+   The core reads `formats.CapabilitiesFor(id)`.
+4. Write the block into R-ARCH-008 or R-ARCH-009 of [architecture.md](../spec/architecture.md) in the same change (`TestR_ARCH_008_TheWrittenContractEqualsTheCode` fails otherwise).
+5. Add the kit check, or extend one, with a named defect in `testformat` that fails it.
+6. Raise `ContractVersion` only if the meaning of an existing method changed, and apply that to every format in the same change.
+
 ## How to add a format
 
 1. Write the spec page `docs/spec/formats/<id>.md` (routes, grammar, error shape, hooks, tables) and its decisions, in the numbers the owning plan assigns.
@@ -436,6 +459,6 @@ test of its own).
   behaves like the in-memory one is tested by the integration tests of `test/integration/files`, not by the kit.
 - The remote engine, package ownership, the namespace auto claim and the virtual engine are built and bound by the composition root ([wire_formats.go](../../internal/app/wire_formats.go)). The virtual engine exists ([virtual.md](virtual.md)) and the Host takes it as `Options.Resolver`
   through `formathost.NewResolver`; `MemberDocument.Restricted` and `ShadowOutcome.Refusal`/`Shadowed` are the two fields it added to the contract.
-- What the contract still lacks for NuGet (a hook on a remote fill, discovery documents, a pass-through for volatile requests, validation of remote settings, an `Inspect` on the raw routes) and the
-  dormant methods that cannot be implemented as they are frozen (`IndexBuilder.Rebuild`, `RemoveVersion`, `OnItemsRestored`, `Enqueue`) are work packages of
-  roadmap M3, "Contract additions before the freeze" ([roadmap.md](../coverage/roadmap.md)). Until they land, a format must not approximate them over `rq.Repo.Members()` and the stores: that skips the per-member read check (R-AUTHZ-009 rule 2) and the pin and claim rules.
+- What the contract still lacks for NuGet (a hook on a remote fill, discovery documents, a pass-through for volatile requests, validation of remote settings, an `Inspect` on the raw routes) is a work package of
+  roadmap M3, "Contract additions before the freeze" ([roadmap.md](../coverage/roadmap.md)). Until it lands, a format must not approximate it over `rq.Repo.Members()` and the stores: that skips the per-member read check (R-AUTHZ-009 rule 2) and the pin and claim rules.
+- The dormant methods that could not be implemented as frozen (`IndexBuilder.Rebuild`, `RemoveVersion`, `VersionGroup`, `Enqueue`, the `RepositoryIndex` descriptor field) are not in the frozen contract, and `OnItemsRestored` is an optional interface (Q-ARCH-256); they join it by the rule below.

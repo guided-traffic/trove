@@ -28,8 +28,7 @@ func (s *viewAdapterStub) Stored(_ context.Context, _ formats.DataPorts, q forma
 	return st, nil
 }
 
-func (viewAdapterStub) Compare(a, b string) int  { return len(a) - len(b) }
-func (viewAdapterStub) Prerelease(v string) bool { return v == "pre" }
+func (viewAdapterStub) Compare(a, b string) int { return len(a) - len(b) }
 func (s *viewAdapterStub) Describe(_ context.Context, _ formats.DataPorts, vs []formats.ViewVersion, want formats.ViewFields, visible func(string) bool) (map[formats.VersionID]formats.ViewData, error) {
 	s.want, s.got = want, vs
 	return map[formats.VersionID]formats.ViewData{vs[0].ID: {Description: "d", Keywords: []string{"k"}, HasReadme: visible("1")}}, nil
@@ -62,6 +61,22 @@ func (viewFormat) PackageDocumentPath(string) (formats.Path, bool) {
 	return formats.Path{}, false
 }
 func (f viewFormat) View() formats.ViewAdapter { return f.a }
+
+// Exposure is the format's one definition of a pre-release; a format with an id of "plain"
+// has none.
+func (f viewFormat) Exposure() formats.ExposureAdapter {
+	if f.id == "plain" {
+		return nil
+	}
+	return preExposure{}
+}
+
+type preExposure struct{}
+
+func (preExposure) ValidateRange(string) error             { return nil }
+func (preExposure) Prerelease(v string) (bool, bool)       { return v == "pre", v != "junk" }
+func (preExposure) InRange(string, string) bool            { return false }
+func (preExposure) Dimensions() formats.ExposureDimensions { return formats.ExposureDimensions{} }
 
 type noPorts struct{}
 
@@ -113,8 +128,8 @@ func TestR_API_029_ViewAdaptersBridgeTheRegisteredFormats(t *testing.T) {
 		t.Fatal("a format without an adapter has one")
 	}
 	a, ok := vs.For("alpha")
-	if !ok || a.Compare("aa", "b") <= 0 || !a.Prerelease("pre") {
-		t.Fatal("Compare or Prerelease do not reach the format")
+	if !ok || a.Compare("aa", "b") <= 0 || !a.Prerelease("pre") || a.Prerelease("1.0.0") || a.Prerelease("junk") {
+		t.Fatal("Compare does not reach the format, or Prerelease is not the exposure adapter's answer (a text that is no version is none)")
 	}
 	got, err := a.Describe(context.Background(), []view.Version{{ID: 5, Format: "alpha", Repo: "r", Package: "p", Version: "1"}},
 		view.FieldSummary|view.FieldReadme, func(v string) bool { return v == "1" })

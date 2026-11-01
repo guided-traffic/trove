@@ -151,6 +151,40 @@ func (q *Queries) GetPackage(ctx context.Context, arg GetPackageParams) ([]GetPa
 	return items, nil
 }
 
+const getPackageRef = `-- name: GetPackageRef :many
+SELECT id, repo_id, name
+  FROM packages
+ WHERE id = $1::bigint
+`
+
+type GetPackageRefRow struct {
+	ID     int64
+	RepoID int64
+	Name   string
+}
+
+// The repository and the name of a package by its id, for the signal of a package a
+// write raised without naming it (internal/packages).
+func (q *Queries) GetPackageRef(ctx context.Context, id int64) ([]GetPackageRefRow, error) {
+	rows, err := q.db.Query(ctx, getPackageRef, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetPackageRefRow{}
+	for rows.Next() {
+		var i GetPackageRefRow
+		if err := rows.Scan(&i.ID, &i.RepoID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertItemProperties = `-- name: InsertItemProperties :exec
 INSERT INTO item_properties (item_id, key, value)
 SELECT $1::bigint, p.key, p.value

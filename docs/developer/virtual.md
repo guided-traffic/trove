@@ -233,8 +233,9 @@ On an endpoint with rules (`Caller.Rules`) no answer names a member (R-EP-018, Q
 member's error as the logged cause, and turns a `NotFound` into the engine's one `404`.
 
 `Metadata(ctx, caller, plan, merger)`: by `merger.Strategy`. `FirstMatch` serves the document of the first member that has it (local members,
-then remote members) and caches nothing. `Merge` and `Newest` (resolved as `Merge`; revalidating the remote members first, R-REPO-036, waits
-for the first format with a latest-version request) collect one document per member concurrently and call `merger.Merge`.
+then remote members) and caches nothing. `Merge` collects one document per member concurrently and calls `merger.Merge`. The contract has no `Newest` (Merge with the remote
+members revalidated first, R-REPO-036): nothing returned it, the engine resolved it as `Merge`, and it was removed before the freeze (Q-ARCH-257); it returns
+with the first format that needs a latest-version request, as a new strategy.
 
 ### The merged-metadata cache
 
@@ -250,10 +251,13 @@ for the first format with a latest-version request) collect one document per mem
 | Early eviction | the signal `metadata_changed` with `PackageChanged(repoID, name)` drops the entries that contain the member and the package; a coarse signal or a payload that does not parse drops everything. The area `cache_invalidation` drops by `invalidation.ParsePayload`: `virt` the entries of that virtual repository under the prefix (whole segments), `add` the entries that contain that remote repository under the prefix, `del` nothing; `claims`, `repo_config` and an unknown kind flush |
 | Fill rule | the cache's `Load` (R-ARCH-018): a result computed while one of the three areas changed is served and not stored |
 
-`PackageChanged` is the payload that a publisher of a local change (the `OnCommit` of a format's writer, after its commit) and the remote engine
-(after a refresh with new content) publish on the signal area `metadata_changed`. A format cannot import the engine, so `formats.PackageChanged` spells the same payload
-(a test in `internal/formathost` pins the two); the npm format attaches it with `PackageWriter.Notify` to every change of the rows of a local package (publish, tag change, unpublish, restore).
-The remote engine sends no signal of its own (Q-REPO-116): the format's `OnFill` attaches it for the package a fill stored (npm:
+`PackageChanged` is the payload that a publisher of a local change and the remote engine (after a refresh with new content) publish on the
+signal area `metadata_changed`. Its name and the function are declared once, in the leaf `catalog.MetadataChangedArea` and `catalog.PackageChanged`, which the engine, the
+cluster and the formats host import (`virtual.PackageChanged` is the same function, which a test in `internal/formathost` pins to the leaf until it delegates). The package
+writer of the host attaches the signal itself, once per package a transaction raised (`packages.Writer` with `packages.WithRaised`, wired in `formathost.Deps.newWriter`;
+Q-ARCH-259), so a format calls nothing for a publish, a tag change, an unpublish or a restore.
+The remote engine sends no signal of its own (Q-REPO-116): the format's `OnFill` attaches it for the package a fill stored with `PackageWriter.Notify`, an area its descriptor
+declares in `NotifyAreas` (npm:
 [remote.go](../../internal/formats/npm/remote.go)). The engine is correct without any signal: a hit checks the revisions of the local members, and an entry expires with the earliest
 remote document it was merged from.
 

@@ -27,9 +27,19 @@ import (
 //
 // The filter decides once, in exposedVersions and exposedTags, and is applied in two
 // places: exposeRows on the rows of a local document before it is rendered (the
-// handlers), and FilterDocument on the bytes of a merged or rewritten document (the
+// handlers), and filterDocument on the bytes of a merged or rewritten document (the
 // remote and virtual handlers). Both keep the same versions and tags, so a document
 // does not depend on the class that served it.
+
+// tagView is the exposure view npm reads: the package and the version of the shared
+// [formats.ExposureView], and whether the rules admit a dist-tag name for the version
+// it points to. What a tag is belongs to npm, so the contract's view does not ask it
+// (Q-ARCH-257); the decision point's view answers it for every format whose
+// dimensions include tags, and a view that cannot is read as one that hides all.
+type tagView interface {
+	formats.ExposureView
+	Tag(name, tag, version string) bool
+}
 
 // maxRanges bounds the parsed ranges InRange keeps. A range is typed by an
 // administrator and there are at most 1,000 rules per endpoint; the bound only keeps
@@ -107,7 +117,7 @@ func (x *exposure) rangeOf(expr string) *semver.Range {
 	return r
 }
 
-// FilterDocument removes from a merged or rewritten document what the view does not
+// filterDocument removes from a merged or rewritten document what the view does not
 // expose (R-NPM-048). It filters the package document (the full and the abbreviated
 // form, path "{name}") and the single-version document of a version (path
 // "{name}/{version}"); any other document is refused, so that a caller cannot pass a
@@ -115,7 +125,7 @@ func (x *exposure) rangeOf(expr string) *semver.Range {
 // version a tag names are read from the filtered package document, because only
 // that one knows where latest moved. Nothing exposed is the 404 of a missing package
 // or version. A nil view filters nothing.
-func (x *exposure) FilterDocument(_ context.Context, p formats.Path, doc []byte, view formats.ExposureView) ([]byte, error) {
+func (x *exposure) filterDocument(_ context.Context, p formats.Path, doc []byte, view tagView) ([]byte, error) {
 	if view == nil {
 		return doc, nil
 	}
@@ -157,7 +167,7 @@ func documentOf(p formats.Path) (name, ref string, ok bool) {
 // its version is exposed (and, for a tag other than latest, the tag is kept), else the
 // 404 of a missing version. latest is re-pointed on the package document, which a
 // single-version document cannot do; its caller resolves latest there.
-func filterVersionDocument(name, ref string, doc []byte, view formats.ExposureView) ([]byte, error) {
+func filterVersionDocument(name, ref string, doc []byte, view tagView) ([]byte, error) {
 	var v struct {
 		Version string `json:"version"`
 	}
@@ -175,7 +185,7 @@ func filterVersionDocument(name, ref string, doc []byte, view formats.ExposureVi
 }
 
 // exposedVersions keeps the versions the view exposes, in their order.
-func exposedVersions(view formats.ExposureView, name string, versions []string) (kept []string, keep map[string]bool) {
+func exposedVersions(view tagView, name string, versions []string) (kept []string, keep map[string]bool) {
 	keep = make(map[string]bool, len(versions))
 	for _, v := range versions {
 		if view.Version(name, v) {
@@ -192,7 +202,7 @@ func exposedVersions(view formats.ExposureView, name string, versions []string) 
 // and otherwise moves to the highest exposed version that is not a pre-release, or
 // to the highest exposed version when all are pre-releases (the rule of R-NPM-016).
 // A document whose latest is missing gets one by the same rule.
-func exposedTags(view formats.ExposureView, name string, tags map[string]string, kept []string, keep map[string]bool) map[string]string {
+func exposedTags(view tagView, name string, tags map[string]string, kept []string, keep map[string]bool) map[string]string {
 	out := make(map[string]string, len(tags))
 	for tag, v := range tags {
 		if tag != "latest" && keep[v] && view.Tag(name, tag, v) {
@@ -240,7 +250,7 @@ func highestText(vs []string) (string, bool) {
 // false when nothing of the package is exposed. The time map and the maintainers are
 // rendered from the versions that remain; created and modified stay those of the
 // package (R-NPM-012).
-func exposeRows(view formats.ExposureView, name string, p *rows.LocalPackage) bool {
+func exposeRows(view tagView, name string, p *rows.LocalPackage) bool {
 	if !view.Package(name) {
 		return false
 	}
@@ -274,9 +284,12 @@ func keepIf[T any](in []T, keep func(T) bool) []T {
 // viewOf returns the exposure view of a request, nil when the endpoint does not
 // restrict. An endpoint with rules whose view the request lacks exposes nothing
 // (fail closed).
-func viewOf(rq *formats.Request) formats.ExposureView {
+func viewOf(rq *formats.Request) tagView {
 	if v := rq.Endpoint.Exposure; v != nil {
-		return v
+		if tv, ok := v.(tagView); ok {
+			return tv
+		}
+		return hidesAll{} // a view that cannot judge a dist-tag exposes nothing
 	}
 	if rq.Endpoint.Rules {
 		return hidesAll{}
@@ -314,7 +327,7 @@ func topLevelOfLatest() []string {
 // last value at the place of its first, as JSON.parse reads it, so no duplicate can
 // carry an unfiltered copy past the filter. Members the filter does not know are
 // kept as they are.
-func filterPackageDocument(name string, doc []byte, view formats.ExposureView) ([]byte, error) {
+func filterPackageDocument(name string, doc []byte, view tagView) ([]byte, error) {
 	top, err := readObject(doc)
 	if err != nil {
 		return nil, errs.E(errs.Internal, errs.CodeInternal, "The package document is not a JSON object.", errs.WithCause(err))

@@ -13,13 +13,13 @@ const contractRule = "R-ARCH-008"
 
 // contractAssertionAllowed lists the functions that may assert a value to an interface of
 // internal/formats, as "<package path relative to the module>.<function>" with the reason. A
-// capability a format may or may not have is a method of the contract with a default (formats.Base,
-// formats.RemoteBase) or a fact recorded when the format registers; it is not found by asking the
-// value what it can do at the place that uses it (Q-ARCH-254). Register is where a capability is
-// read off a format, once.
+// capability every format has is a method of the contract with a default (formats.Base,
+// formats.RemoteBase); one that only some formats have is an optional interface that
+// CapabilitiesOf reads off the format when it registers (Q-ARCH-254, Q-ARCH-256). Nothing else asks
+// a value what it can do at the place that uses it.
 func contractAssertionAllowed() map[string]string {
 	return map[string]string{
-		"internal/formats.Register": "the one place that reads a capability off a registering format and records it",
+		"internal/formats.CapabilitiesOf": "the one place that reads an optional capability off a format; Register records the result and the kit calls it",
 	}
 }
 
@@ -86,6 +86,6 @@ func contractViolation(p *packages.Package, e ast.Expr, file, owner string) []Vi
 	}
 	return []Violation{{
 		Rule: contractRule, From: file, To: "formats." + n.Obj().Name() + " in " + owner,
-		Detail: "a capability of a format is a method of the contract or a fact recorded at Register, not a type assertion to an interface of internal/formats",
+		Detail: "a capability every format has is a method of the contract; an optional one is read by formats.CapabilitiesOf alone, not by a type assertion to an interface of internal/formats",
 	}}
 }

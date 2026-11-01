@@ -2533,9 +2533,9 @@ document and before compression:
   because `modified` must never move backwards for a downstream proxy (R-NPM-012); what that reveals
   is [endpoints.md](../endpoints.md) H-60.
 - **Where.** A local document is filtered on its rows, after they are read and before it is
-  rendered; a merged or rewritten document is filtered on its bytes (`FilterDocument`). One
+  rendered; a merged or rewritten document is filtered on its bytes (npm's own `filterDocument`, which the contract no longer has, Q-ARCH-257). One
   decision serves both, so a document lists the same versions and tags whatever class served it
-  ([Q-NPM-38](#q-npm-38--where-a-document-is-filtered)). `FilterDocument` filters the package
+  ([Q-NPM-38](#q-npm-38--where-a-document-is-filtered)). `filterDocument` filters the package
   document (`{name}`, full and abbreviated) and the single-version document of a version
   (`{name}/{version}`); the dist-tag map and the version a tag names are read from the filtered
   package document, and any other document is refused rather than served unfiltered.
@@ -3829,16 +3829,16 @@ R-REPO-023 makes a remote repository refuse a name a global claim covers, also w
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
 Context: R-NPM-048 filters a document after the merge of a virtual repository and the rewrite of a remote document, and the exposure
-adapter of R-EP-018 filters bytes (`FilterDocument`). A local document is rendered from rows (Q-NPM-26), and its rendition is cached
+adapter of R-EP-018 filters bytes (`filterDocument`). A local document is rendered from rows (Q-NPM-26), and its rendition is cached
 under a key that holds the endpoint and the exposure fingerprint already.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Rows for local documents, bytes for merged and rewritten ones, one decision | `exposeRows` filters the rows between the read and the rendering; `FilterDocument` filters the bytes of the other classes; both call `exposedVersions` and `exposedTags` | The local renderer stays the one place that writes `time`, `maintainers` and the top-level fields, so a filtered and an unfiltered local document follow the same rules; the README of the moved `latest` can come from its rows; no second parse of a local document | Two applications of the rule (a unit test renders the rows both ways and compares) |
-| (b) Bytes for every class | Render, then `FilterDocument` | One application | Parses and re-encodes every local miss on a rules endpoint; the top-level fields of a moved `latest` can only come from what the rendered version object carries |
+| (a) Rows for local documents, bytes for merged and rewritten ones, one decision | `exposeRows` filters the rows between the read and the rendering; `filterDocument` filters the bytes of the other classes; both call `exposedVersions` and `exposedTags` | The local renderer stays the one place that writes `time`, `maintainers` and the top-level fields, so a filtered and an unfiltered local document follow the same rules; the README of the moved `latest` can come from its rows; no second parse of a local document | Two applications of the rule (a unit test renders the rows both ways and compares) |
+| (b) Bytes for every class | Render, then `filterDocument` | One application | Parses and re-encodes every local miss on a rules endpoint; the top-level fields of a moved `latest` can only come from what the rendered version object carries |
 | (c) Rows everywhere | Merge and rewrite produce rows | One application | Merged and rewritten documents are bytes by design (D-8, Q-NPM-5); the remote and virtual classes would need a second representation |
 
-**Choice:** (a). `FilterDocument` filters the package document and the single-version document of a version; the dist-tag map and the
+**Choice:** (a). `filterDocument` filters the package document and the single-version document of a version; the dist-tag map and the
 version a tag names are read from the filtered package document, because only it knows where `latest` moved; any other path is refused
 with an internal error rather than served unfiltered. A single-version request for a hidden version is answered before any lookup; a
 tag request on a rules endpoint reads the whole document, filters it and takes the tag's version from the filtered tags.
@@ -3848,7 +3848,7 @@ the parsed documents holds the two applications together. The development agent 
 need a filter of the rows as well (then (c) for them), or if profiling shows the extra parse of (b) is negligible and the README of a
 moved `latest` is dropped anyway.
 
-**Applied in the spec:** R-NPM-048 ("Where", "Other documents"). Code: `exposeRows`, `FilterDocument`, `exposedVersions`,
+**Applied in the spec:** R-NPM-048 ("Where", "Other documents"). Code: `exposeRows`, `filterDocument`, `exposedVersions`,
 `exposedTags` in [exposure.go](../../../internal/formats/npm/exposure.go); the marked blocks of the document, dist-tag and tarball
 handlers.
 
@@ -3879,7 +3879,7 @@ local documents.
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-Context: `FilterDocument` runs on merged and rewritten documents whose bytes come from an upstream. JSON allows a member twice, and npm
+Context: `filterDocument` runs on merged and rewritten documents whose bytes come from an upstream. JSON allows a member twice, and npm
 clients parse with `JSON.parse`, which takes the last value; upstream documents carry members trove does not render (`users`,
 `contributors`), `time` entries of unpublished versions and an `unpublished` record, and may lack `latest` or carry a tag that is not a
 string.

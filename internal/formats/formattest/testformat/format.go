@@ -84,6 +84,16 @@ const (
 	// WrongDocumentPath lets PackageDocumentPath answer a path no GET route
 	// resolves: check 10.
 	WrongDocumentPath Defect = "wrong-document-path"
+	// AdminReadsPackages lets the tag route, which is an Admin route, answer with the
+	// bytes of a stored package: check 7. Only the kinds that serve content, and
+	// Volatile, may return package-derived bytes.
+	AdminReadsPackages Defect = "admin-reads-packages"
+	// NotifiesUndeclared lets the tag route notify an area the descriptor did not
+	// declare: the format fails the Host, not a check.
+	NotifiesUndeclared Defect = "notifies-undeclared"
+	// ReadsOtherRepository lets the document route read a package from a repository
+	// that is neither the request's nor a member of it: the Host refuses it.
+	ReadsOtherRepository Defect = "reads-other-repository"
 )
 
 // Option adjusts the format; it is not a defect.
@@ -93,6 +103,11 @@ type Option string
 // after it writes, as a careless handler would. The core puts them back
 // (R-ARCH-007), so the variant passes check 7.
 const StripHeaders Option = "strip-headers"
+
+// SearchReadsPackages makes the search route, a Volatile route, answer with the bytes
+// of a stored package, as a search that returns titles and descriptions does. The core
+// puts the headers of Metadata on it (Q-ARCH-258), so the variant passes check 7.
+const SearchReadsPackages Option = "search-reads-packages"
 
 // Format is the test format.
 type Format struct {
@@ -186,6 +201,7 @@ func (f Format) Descriptor() formats.Descriptor {
 		PropertyPrefix:   "tf.",
 		MaxDocumentBytes: 4 << 20,
 		DataPort:         reflect.TypeFor[Store](),
+		NotifyAreas:      []string{catalog.MetadataChangedArea},
 	}
 }
 
@@ -538,7 +554,7 @@ func (f Format) OnCommit(ctx context.Context, _ formats.Tx, c formats.CommitEven
 	if created {
 		c.Data.(Store).SetTag(pkg.Name, "latest", c.Inspection.Version)
 	}
-	return c.Packages.Notify("tf.package", pkg.Name)
+	return nil
 }
 
 // OnItemsRemoved implements formats.Format: a removed item takes its version with
@@ -637,6 +653,13 @@ func (f Format) docGet(ctx context.Context, rq *formats.Request, w http.Response
 	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: name, Actions: []formats.Action{formats.ActionRead}}); err != nil {
 		return err
 	}
+	if f.has(string(ReadsOtherRepository)) {
+		other := rq.RepoRef()
+		other.ID, other.Key = other.ID+1000, "other"
+		if _, _, err := rq.Host.Packages().Package(ctx, other, name); err != nil {
+			return err
+		}
+	}
 	doc, found, err := f.document(ctx, rq, name)
 	if err != nil {
 		return err
@@ -723,6 +746,11 @@ func (f Format) tagPut(ctx context.Context, rq *formats.Request, w http.Response
 	}
 	st := rq.Host.FormatData(ID).(Store)
 	err := rq.Host.Write(ctx, rq, func(_ formats.Tx, wr formats.PackageWriter) error {
+		if f.has(string(NotifiesUndeclared)) {
+			if err := wr.Notify("undeclared_area", name); err != nil {
+				return err
+			}
+		}
 		pkg, _, err := wr.EnsureLocked(ctx, rq.RepoRef(), name, name)
 		if err != nil {
 			return err
@@ -741,6 +769,9 @@ func (f Format) tagPut(ctx context.Context, rq *formats.Request, w http.Response
 		return err
 	}
 	w.WriteHeader(http.StatusOK)
+	if f.has(string(AdminReadsPackages)) {
+		return f.echo(ctx, rq, w)
+	}
 	return nil
 }
 
@@ -748,8 +779,28 @@ func (f Format) search(ctx context.Context, rq *formats.Request, w http.Response
 	if err := rq.Host.Authorize(ctx, rq, formats.Target{Actions: []formats.Action{formats.ActionRead}}); err != nil {
 		return err
 	}
+	f.strip(w)
 	w.Header().Set("Content-Type", "application/json")
+	if f.has(string(SearchReadsPackages)) {
+		return f.echo(ctx, rq, w)
+	}
 	_, err := w.Write([]byte(`{"objects":[],"total":0}`))
+	return err
+}
+
+// echo writes the bytes of the stored tarball of left-pad 1.0.0, if there is one, into
+// the response: package-derived content in an answer that is no stored item.
+func (f Format) echo(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
+	it, ok, err := rq.Host.Items().Stat(ctx, rq.RepoRef(), formats.Path{Path: "left-pad/-/left-pad-1.0.0.tgz"})
+	if err != nil || !ok {
+		return err
+	}
+	rc, err := rq.Host.Items().Open(ctx, it)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rc.Close() }()
+	_, err = io.Copy(w, rc)
 	return err
 }
 

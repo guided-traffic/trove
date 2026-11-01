@@ -32,10 +32,14 @@ func TestR_API_029_NPMVersionOrderIsSemVerPrecedence(t *testing.T) {
 	if a.Compare("not-a-version", "0.0.1") >= 0 || a.Compare("0.0.1", "not-a-version") <= 0 {
 		t.Error("a string that is no version sorts after a version")
 	}
-	for v, want := range map[string]bool{"1.0.0": false, "1.0.0-rc.1": true, "2.0.0-beta.1+build": true, "1.0.0+build": false, "garbage": false} {
-		if got := a.Prerelease(v); got != want {
-			t.Errorf("Prerelease(%s) = %v, want %v", v, got, want)
+	// The screens take "is a pre-release" from the exposure adapter, the one definition (Q-ARCH-257).
+	for v, want := range map[string]bool{"1.0.0": false, "1.0.0-rc.1": true, "2.0.0-beta.1+build": true, "1.0.0+build": false} {
+		if pre, ok := newExposure().Prerelease(v); !ok || pre != want {
+			t.Errorf("Prerelease(%s) = %v %v, want %v", v, pre, ok, want)
 		}
+	}
+	if _, ok := newExposure().Prerelease("garbage"); ok {
+		t.Error("a text that is no version has a pre-release answer")
 	}
 }
 

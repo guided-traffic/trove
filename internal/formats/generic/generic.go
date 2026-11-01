@@ -14,7 +14,6 @@
 package generic
 
 import (
-	"context"
 	"errors"
 
 	"github.com/guided-traffic/trove/internal/formats"
@@ -87,6 +86,3 @@ func (pathsOnly) ValidateRange(string) error             { return errNoVersions 
 func (pathsOnly) Prerelease(string) (bool, bool)         { return false, false }
 func (pathsOnly) InRange(string, string) bool            { return false }
 func (pathsOnly) Dimensions() formats.ExposureDimensions { return formats.ExposureDimensions{} }
-func (pathsOnly) FilterDocument(_ context.Context, _ formats.Path, doc []byte, _ formats.ExposureView) ([]byte, error) {
-	return doc, nil
-}

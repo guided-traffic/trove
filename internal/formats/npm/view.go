@@ -78,12 +78,6 @@ func (viewAdapter) Compare(a, b string) int {
 	return strings.Compare(a, b)
 }
 
-// Prerelease reports whether the version has a pre-release tag.
-func (viewAdapter) Prerelease(version string) bool {
-	v, err := semver.Parse(version)
-	return err == nil && v.IsPrerelease()
-}
-
 // Describe reads the manifests of the versions. The summary fields come from the
 // manifest; the details add the licenses, the README flag and the metadata members
 // of R-API-029.

@@ -121,7 +121,7 @@ func (f *Format) handleDistTagSet(ctx context.Context, rq *formats.Request, w ht
 		if err != nil {
 			return err
 		}
-		return pw.Notify(areaMetadataChanged, formats.PackageChanged(repo.ID, n.String()))
+		return nil
 	})
 	if err != nil {
 		return err
@@ -176,7 +176,7 @@ func (f *Format) handleDistTagDelete(ctx context.Context, rq *formats.Request, w
 		if err != nil {
 			return err
 		}
-		return pw.Notify(areaMetadataChanged, formats.PackageChanged(repo.ID, n.String()))
+		return nil
 	})
 	if err != nil {
 		return err

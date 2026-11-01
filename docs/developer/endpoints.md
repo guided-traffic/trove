@@ -8,7 +8,7 @@ decision point, the rate-limit class, and the endpoint and exposure-rule operati
 on an endpoint ([R-EP-018, R-EP-019](#package-formats-on-an-endpoint-r-ep-018-r-ep-019)): the exposure view in the request's
 endpoint facts, npm's exposure adapter and the filter of its local documents, member names on endpoints with rules, and
 the cache-fill refusal in the remote and the virtual engine. The endpoint screen (`web/src/app/features/endpoints`) and the filter of
-npm's remote and virtual documents are built too (they call `FilterDocument`). Not built yet: the stored versions in the dry
+npm's remote and virtual documents are built too (they call npm's own `filterDocument`; the contract has none, Q-ARCH-257). Not built yet: the stored versions in the dry
 run, and the replay of the journaled exposure changes (R-EP-020, M5; the events carry their journal entries from now on).
 The security view is [security/endpoints-and-exposure.md](../security/endpoints-and-exposure.md).
 
@@ -220,12 +220,13 @@ dispatcher ─► endpointFacts: Name, Rules, CacheFill, ExposureFingerprint ─
                              Exposure = Ceiling.View(index, endpoint, key) ┘
 format handler ─► authorize (ceiling: versions, tarballs) ─► read rows ─► exposeRows(view) ─► render ─► rendition cache
                                                                          (key: endpoint + fingerprint; ETag the same inputs)
-remote / virtual handler ─► merge or rewrite ─► Exposure().FilterDocument(view) ─► compress
+remote / virtual handler ─► merge or rewrite ─► the format's own filter (npm: filterDocument(view)) ─► compress
 ```
 
 - **The view** (Q-EP-55). `formats.EndpointFacts.Exposure` is `authz.ExposureView`, read by the dispatcher with
   `ExposureCeiling.View` from the index the request decides on, the same index that gave `ExposureFingerprint`; nil in mode
-  `all` and for a subject without an endpoint. `Package`, `Version` and `Tag` use the matching of the ceiling, so every
+  `all` and for a subject without an endpoint. `Package`, `Version` and `Tag` use the matching of the ceiling (the contract's
+  `formats.ExposureView` has `Package` and `Version`; npm reads `Tag` through its own interface, Q-ARCH-257), so every
   version a filtered document lists is one the ceiling lets the same caller download. An endpoint with rules whose ceiling
   cannot be read gets a view that exposes nothing, and npm's `viewOf` does the same for a request without one.
 - **npm** ([npm.md](npm.md#exposure)): local documents are filtered on their rows before rendering, dist-tags and tag
@@ -386,7 +387,8 @@ addressed repository into `Coordinate.Addressed` when deciding a member of a vir
 
 **A format that can be served under exposure rules.**
 1. Return an `ExposureAdapter` from `Exposure()` ([exposure.go](../../internal/formats/exposure.go)): `Dimensions`, the
-   `catalog.Versioning` of its ranges and pre-releases, and `FilterDocument`; `formats.Register` puts the facts into the
+   `catalog.Versioning` of its ranges and pre-releases; the filter of a merged or rewritten document is the format's own function
+   over `rq.Endpoint.Exposure`, not a method of the adapter (Q-ARCH-257); `formats.Register` puts the facts into the
    catalog, which `NewExposureCeiling` and `ExposureServiceOptions.Ceiling` read (`exposureCeiling` in
    [wire_exposure.go](../../internal/app/wire_exposure.go)). The adapter is the format's own value; a memo it keeps is a field
    of the format, never a package variable (archtest state rule).

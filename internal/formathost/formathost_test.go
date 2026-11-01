@@ -289,22 +289,6 @@ func TestR_AUTHZ_018_CheckOwnershipFailsClosed(t *testing.T) {
 	}
 }
 
-func TestR_ARCH_009_PackageWriterNotifyAndEnqueueNeedTheirSeams(t *testing.T) {
-	w := &writer{}
-	if err := w.Notify("no_such_area", nil); errs.KindOf(err) != errs.Internal {
-		t.Fatalf("an unknown area: %v", err)
-	}
-	if err := w.Notify("authz", nil); errs.KindOf(err) != errs.Internal {
-		t.Fatalf("a change area without the change log: %v", err)
-	}
-	if err := w.Notify("metadata_changed", "x"); err != nil {
-		t.Fatalf("a signal on a replica without signals is dropped: %v", err)
-	}
-	if err := w.Enqueue(context.Background(), formats.JobSpec{Kind: "x"}); errs.KindOf(err) != errs.Internal {
-		t.Fatalf("a job without a queue: %v", err)
-	}
-}
-
 func TestR_ARCH_007_LinksComeFromTheBaseURL(t *testing.T) {
 	l := linkBuilder{base: "https://trove.example.com", format: "npm", key: "npm-local"}
 	for got, want := range map[string]string{

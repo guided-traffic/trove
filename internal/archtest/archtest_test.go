@@ -560,7 +560,7 @@ func TestSubjectConstruction(t *testing.T) {
 }
 
 func TestContractAssertions(t *testing.T) {
-	t.Run("R-ARCH-008 an assertion or a type-switch case to an interface of internal/formats is named outside Register", func(t *testing.T) {
+	t.Run("R-ARCH-008 an assertion or a type-switch case to an interface of internal/formats is named outside CapabilitiesOf", func(t *testing.T) {
 		pkgs, err := LoadTyped(fixtureDir(t, "contract"))
 		if err != nil {
 			t.Fatal(err)
@@ -583,7 +583,7 @@ func TestContractAssertions(t *testing.T) {
 			}
 		}
 		if len(vs) != 3 {
-			t.Errorf("%d violations, want 3 (Register, the standard library, anonymous interfaces and structs are fine):\n%s", len(vs), strings.Join(Strings(vs), "\n"))
+			t.Errorf("%d violations, want 3 (CapabilitiesOf, the standard library, anonymous interfaces and structs are fine):\n%s", len(vs), strings.Join(Strings(vs), "\n"))
 		}
 	})
 }
@@ -631,7 +631,7 @@ func TestRealTree(t *testing.T) {
 		}
 		wantClean(t, CheckSubjectConstruction(module, pkgs))
 	})
-	t.Run("R-ARCH-008 no type assertion to an interface of internal/formats outside Register", func(t *testing.T) {
+	t.Run("R-ARCH-008 no type assertion to an interface of internal/formats outside CapabilitiesOf", func(t *testing.T) {
 		root, module, _ := realTree(t)
 		pkgs, err := LoadTyped(root)
 		if err != nil {

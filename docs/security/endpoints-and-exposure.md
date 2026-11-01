@@ -169,7 +169,7 @@ Stage: the npm handlers of the remote and virtual classes, and every later forma
 
 Dormant for npm: its local, remote and virtual handlers filter (`exposeRows`, `exposedDocument`, tested on the R-EP-012 fixture of a virtual repository with a remote member), and
 generic has no documents; live for every later format. The filter is the format's call: nothing in the core stops a handler that serves a merged or rewritten
-document on an endpoint with rules without calling `FilterDocument` with `rq.Endpoint.Exposure`, and the ceiling, which decided the
+document on an endpoint with rules without calling the format's own filter with `rq.Endpoint.Exposure`, and the ceiling, which decided the
 package, would let every version of that document through to the listing. Downloads stay bound by the ceiling. Subject: the version
 list of every exposed package of such a class. What makes it real: a remote or virtual document handler without the call; the
 checklist in [developer/endpoints.md](../developer/endpoints.md#extension-checklists) and a test on the R-EP-012 fixture per class

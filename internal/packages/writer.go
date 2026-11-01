@@ -17,16 +17,34 @@ import (
 // transaction: a retry starts empty and raises again.
 type bumpsKey struct{}
 
-type bumps struct{ rev map[int64]int64 }
+// bumps is the record of one attempt of a transaction: the revision each raised
+// package holds, and the package refs the writers came to know, which the signal of a
+// raise names.
+type bumps struct {
+	rev  map[int64]int64
+	refs map[int64]Ref
+}
 
 func bumpsOf(tx meta.Tx) *bumps {
 	if b, ok := tx.Value(bumpsKey{}).(*bumps); ok {
 		return b
 	}
-	b := &bumps{rev: map[int64]int64{}}
+	b := &bumps{rev: map[int64]int64{}, refs: map[int64]Ref{}}
 	tx.SetValue(bumpsKey{}, b)
 	return b
 }
+
+// Raised is called once for every package whose revision a transaction raised, at the
+// moment of the first raise, with the transaction the writer is bound to. The host
+// attaches the signal that evicts merged metadata early to it, so no format repeats
+// the call (Q-ARCH-259). An error fails the write.
+type Raised func(ctx context.Context, tx meta.Tx, pkg Ref) error
+
+// Option configures a [Writer].
+type Option func(*Writer)
+
+// WithRaised sets the function called when a package is raised.
+func WithRaised(fn Raised) Option { return func(w *Writer) { w.raised = fn } }
 
 // Writer writes the package rows inside one transaction. Writers made for the same
 // transaction share the record of which revisions were raised, so a revision is
@@ -36,16 +54,46 @@ type Writer struct {
 	tx     meta.Tx
 	qs     *q.Queries
 	prefix string
+	raised Raised
 }
 
 // NewWriter binds a writer to tx. propertyPrefix is the namespace SetProperties
 // may write below ("npm."); "" refuses every property write.
-func NewWriter(tx meta.Tx, propertyPrefix string) (*Writer, error) {
+func NewWriter(tx meta.Tx, propertyPrefix string, opts ...Option) (*Writer, error) {
 	qs, err := queries(tx)
 	if err != nil {
 		return nil, err
 	}
-	return &Writer{tx: tx, qs: qs, prefix: propertyPrefix}, nil
+	w := &Writer{tx: tx, qs: qs, prefix: propertyPrefix}
+	for _, o := range opts {
+		o(w)
+	}
+	return w, nil
+}
+
+// known records the ref of a package the writer was handed or created.
+func (w *Writer) known(pkg Ref) { bumpsOf(w.tx).refs[pkg.ID] = pkg }
+
+// signalRaise tells the host that the transaction raised the package for the first
+// time. The ref is the one a writer call carried, else the row's own.
+func (w *Writer) signalRaise(ctx context.Context, id int64) error {
+	if w.raised == nil {
+		return nil
+	}
+	b := bumpsOf(w.tx)
+	ref, ok := b.refs[id]
+	if !ok {
+		rows, err := w.qs.GetPackageRef(ctx, id)
+		if err != nil {
+			return err
+		}
+		if len(rows) != 1 {
+			return errs.E(errs.Internal, errs.CodeInternal, "packages: the package row vanished under its lock")
+		}
+		ref = Ref{ID: rows[0].ID, RepoID: rows[0].RepoID, Name: rows[0].Name}
+		b.refs[id] = ref
+	}
+	return w.raised(ctx, w.tx, ref)
 }
 
 // bump raises the revision of a package once per transaction and returns the
@@ -64,6 +112,9 @@ func (w *Writer) bump(ctx context.Context, pkg int64) (rev int64, at time.Time, 
 		return 0, time.Time{}, false, err
 	}
 	b.rev[pkg] = r.RevSeq
+	if err := w.signalRaise(ctx, pkg); err != nil {
+		return 0, time.Time{}, false, err
+	}
 	return r.RevSeq, r.At.Time, true, nil
 }
 
@@ -93,10 +144,15 @@ func (w *Writer) EnsureLocked(ctx context.Context, repoID int64, name, displayNa
 	}
 	r := rows[0]
 	created := n == 1
+	ref := Ref{ID: r.ID, RepoID: r.RepoID, Name: r.Name, RevSeq: r.RevSeq}
+	w.known(ref)
 	if created {
 		bumpsOf(w.tx).rev[r.ID] = r.RevSeq
+		if err := w.signalRaise(ctx, r.ID); err != nil {
+			return Ref{}, false, err
+		}
 	}
-	return Ref{ID: r.ID, RepoID: r.RepoID, Name: r.Name, RevSeq: r.RevSeq}, created, nil
+	return ref, created, nil
 }
 
 // Versions lists the live versions of a package.

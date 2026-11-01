@@ -59,9 +59,7 @@ type Deps struct {
 	AutoClaim AutoClaimer
 	// Refusal decides the remote refusal of a name a global claim covers (R-REPO-023).
 	Refusal RemoteRefuser
-	Changes Changer
 	Signals Signaler
-	Jobs    Jobs
 }
 
 // Options configure [New].

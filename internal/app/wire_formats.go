@@ -146,7 +146,7 @@ func (a *App) wireFormats(_ context.Context, in infra, fp formatPortsArea, vr vi
 		return formatsArea{}, err
 	}
 	catalog.Default().Freeze()
-	d := formathost.Deps{Bindings: fp.bindings, Changes: in.changes, Signals: in.signals, Jobs: in.queue}
+	d := formathost.Deps{Bindings: fp.bindings, Signals: in.signals}
 	// A nil pointer in an interface would not be nil: a seam is set only where its
 	// component exists.
 	if ow.service != nil {

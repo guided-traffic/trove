@@ -79,9 +79,6 @@ func (f *Format) OnItemsRemoved(ctx context.Context, tx formats.Tx, e formats.It
 			if _, _, err := e.Packages.BumpRevision(ctx, pkg); err != nil {
 				return err
 			}
-			if err := e.Packages.Notify(areaMetadataChanged, formats.PackageChanged(e.Repo.ID, p)); err != nil {
-				return err
-			}
 		}
 	}
 	return nil
@@ -192,7 +189,7 @@ func (f *Format) removeVersions(ctx context.Context, tx formats.Tx, st Store, pw
 			return nil, err
 		}
 	}
-	return gone, pw.Notify(areaMetadataChanged, formats.PackageChanged(repo.ID, pkg.Name))
+	return gone, nil
 }
 
 // OnItemsRestored runs in the transaction that brought removed files back (the trash
@@ -249,9 +246,6 @@ func (f *Format) OnItemsRestored(ctx context.Context, tx formats.Tx, e formats.I
 			if err := f.restoreLatest(ctx, tx, st, e, pkg, at, audit); err != nil {
 				return err
 			}
-		}
-		if err := e.Packages.Notify(areaMetadataChanged, formats.PackageChanged(e.Repo.ID, p)); err != nil {
-			return err
 		}
 	}
 	return nil

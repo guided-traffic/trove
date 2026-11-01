@@ -33,7 +33,7 @@ func NewViewAdapters(fs []formats.Format, ports formats.DataPorts) *ViewAdapters
 	for _, f := range fs {
 		if a := f.View(); a != nil {
 			id := string(f.Descriptor().ID)
-			b := viewBridge{a: a, ports: ports}
+			b := viewBridge{a: a, ports: ports, pre: prereleaseOf(f)}
 			v.by[id], v.bridges[id] = b, b
 			v.formats = append(v.formats, id)
 		}
@@ -74,10 +74,25 @@ func (v *ViewAdapters) Stored(ctx context.Context, repo authz.StoredRepo, pkg st
 type viewBridge struct {
 	a     formats.ViewAdapter
 	ports formats.DataPorts
+	pre   func(string) bool
+}
+
+// prereleaseOf derives "is a pre-release" for the screens from the format's exposure
+// adapter, the one place a format says it; a format that is not exposable has none, and
+// none of its versions is a pre-release.
+func prereleaseOf(f formats.Format) func(string) bool {
+	x := f.Exposure()
+	if x == nil {
+		return func(string) bool { return false }
+	}
+	return func(v string) bool {
+		pre, ok := x.Prerelease(v)
+		return ok && pre
+	}
 }
 
 func (b viewBridge) Compare(x, y string) int  { return b.a.Compare(x, y) }
-func (b viewBridge) Prerelease(v string) bool { return b.a.Prerelease(v) }
+func (b viewBridge) Prerelease(v string) bool { return b.pre(v) }
 
 func (b viewBridge) Describe(ctx context.Context, vs []view.Version, want view.Fields, visible func(string) bool) (map[int64]view.Data, error) {
 	in := make([]formats.ViewVersion, len(vs))

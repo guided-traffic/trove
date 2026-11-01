@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"sort"
 	"sync"
+
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 )
 
 // AreaClass is how an area leaves the replica (R-ARCH-018).
@@ -177,7 +179,9 @@ const AreaCacheInvalidation = "cache_invalidation"
 const AreaUpstreamState = "upstream_state"
 
 // AreaMetadataChanged is the signal for the early eviction of merged metadata after a
-// remote refresh (R-REPO-020); the rev_seq check keeps local members exact without it.
-const AreaMetadataChanged = "metadata_changed"
+// change of a package (R-REPO-020); the rev_seq check keeps local members exact without
+// it. Its name and payload are declared once, in the catalog leaf the writer of the
+// formats host and the virtual engine share.
+const AreaMetadataChanged = catalog.MetadataChangedArea
 
 // <<< M2 schema

@@ -1107,24 +1107,27 @@ type ExposureAdapter interface {
     InRange(version, expr string) bool
     // Dimensions says what rules may narrow: packages, versions, tags.
     Dimensions() ExposureDimensions
-    // FilterDocument removes every version, file and tag the view does not expose from a
-    // rendered, merged or rewritten document, and fixes the fields that refer to them.
-    FilterDocument(ctx context.Context, p Path, doc []byte, view ExposureView) ([]byte, error)
 }
 
 // ExposureView answers from the compiled rules of one endpoint and one addressed repository.
+// It is the shared half; the decision point's value also answers
+// Tag(name, tag, version string) bool, which a format whose Dimensions include tags reads
+// through an interface of its own (Q-ARCH-257).
 type ExposureView interface {
     Package(name string) bool
     Version(name, version string) bool
-    Tag(name, tag, version string) bool
 }
 ```
+
+  What an endpoint hides from a document (every version, file and tag the view does not expose,
+  and the fields that refer to them) is the format's own filter over the view in the request's
+  endpoint facts; no core code calls a filter, so the adapter has none (Q-ARCH-257).
 
   The first three methods are `catalog.Versioning`. `formats.Register` puts them, with
   `Dimensions`, into the format catalog, which the decision point reads when it compiles rules
   (R-EP-012): there is no second copy of a format's exposure facts and no bridge between the
   contract and `authz`. generic returns a paths-only adapter (`Dimensions` empty, `ValidateRange`
-  refusing, `FilterDocument` the identity), so its repositories are exposed through paths alone
+  refusing), so its repositories are exposed through paths alone
   (R-EP-014).
 
   The view is the request's, never the format's: the dispatcher reads it with the exposure
@@ -1914,7 +1917,7 @@ E1.14 variant that needs an endpoint without `api`, which would be (b).
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
-Context: `FilterDocument` takes an `ExposureView`, and R-EP-018 says the view answers from the compiled rules of one endpoint and
+Context: a format's filter takes an `ExposureView` (the contract's `FilterDocument` method of M2 was removed by Q-ARCH-257), and R-EP-018 says the view answers from the compiled rules of one endpoint and
 one addressed repository. A format imports neither `authz` nor the index (R-ARCH-008), and the exposure fingerprint that keys the
 rendition and the validator is already computed by the dispatcher from the request's index (`EndpointFacts.ExposureFingerprint`).
 

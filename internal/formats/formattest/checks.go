@@ -443,9 +443,11 @@ func (s stripper) Write(p []byte) (int, error) {
 }
 func (s stripper) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
-// headers is check 7: the responses of Download, Metadata and Computed routes
-// carry the content headers even when the handler deletes them, and no other
-// route returns package content.
+// headers is check 7: the responses of Download, Metadata, Computed and Volatile
+// routes carry the content headers even when the handler deletes them, and no other
+// route returns package content. A Volatile route (a search) may return
+// package-derived bytes under the headers of Metadata (Q-ARCH-258); it serves no
+// stored item.
 func (r *run) headers() {
 	routes := r.f.Routes()
 	if len(routes) == 0 {
@@ -478,7 +480,7 @@ func (r *run) headers() {
 				break
 			}
 			served[rq.Route.Name] = true
-			if rq.Route.Kind.ServesContent() {
+			if rq.Route.Kind.WrapsContent() {
 				rt := *rq.Route
 				orig := rt.Handler
 				rt.Handler = func(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
@@ -514,7 +516,7 @@ func (r *run) checkContent(c ContentCase, rq *formats.Request, resp *Response, s
 		r.failf("content case %q: status %d, want %d (%s)", c.Name, resp.Code, want, snippet(resp.Body.String()))
 		return
 	}
-	if !rq.Route.Kind.ServesContent() || resp.Code >= 400 {
+	if !rq.Route.Kind.WrapsContent() || resp.Code >= 400 {
 		return
 	}
 	kind := content.Document

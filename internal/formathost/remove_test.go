@@ -4,23 +4,29 @@ import (
 	"context"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/formats"
+	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/virtual"
 )
 
-// TestR_REPO_020_PackageChangedIsThePayloadOfTheEngine: the payload a format attaches to
-// metadata_changed (formats.PackageChanged, which the contract spells out because it
-// may not import the engine) is the one the engine parses.
+// TestR_REPO_020_PackageChangedIsThePayloadOfTheEngine: the payload the package writer
+// attaches to metadata_changed (catalog.PackageChanged, declared once in a leaf because
+// the engine and the contract may not import each other) is the one the engine parses,
+// and the area is the one the cluster registers.
 func TestR_REPO_020_PackageChangedIsThePayloadOfTheEngine(t *testing.T) {
 	for _, name := range []string{"lodash", "@acme/ui", "JSONStream", ""} {
 		for _, id := range []int64{0, 1, 4096} {
-			if got, want := formats.PackageChanged(id, name), virtual.PackageChanged(id, name); got != want {
+			if got, want := catalog.PackageChanged(id, name), virtual.PackageChanged(id, name); got != want {
 				t.Errorf("PackageChanged(%d, %q) = %q, the engine's is %q", id, name, got, want)
 			}
 		}
+	}
+	if catalog.MetadataChangedArea != cluster.AreaMetadataChanged {
+		t.Errorf("the area is %q, the cluster registers %q", catalog.MetadataChangedArea, cluster.AreaMetadataChanged)
 	}
 }
 
