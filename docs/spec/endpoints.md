@@ -1000,7 +1000,9 @@ Priority: **MVP** · Covers: trove-only
   a configured endpoint or an inert name that still has rules, whose rules can be read and deleted.
 - Every successful write answers `Trove-Authz-Epoch` (R-API-052, R-AUTHZ-032).
 - `check-exposure` transfers no content and contacts no upstream; for a remote repository it reports
-  the cached versions only. Reasons: `exposed`, `no_rule`, `rule_disabled`, `package_excluded`,
+  the cached versions only. A request that names a package of a format with versions and no
+  `versions` (absent or empty) judges the versions the repository stores of the package, and for a
+  format with tags answers its tags with their visibility (`distTags`; Q-EP-61). Reasons: `exposed`, `no_rule`, `rule_disabled`, `package_excluded`,
   `path_excluded`, `version_excluded`, `out_of_range`, `prerelease`, `tag_excluded`.
 - **Capabilities.** `endpoints:read` and `endpoints:write` join the capability table of
   [authorization.md](authorization.md) R-AUTHZ-010: `admin` and `security-admin` hold both,
@@ -1715,7 +1717,7 @@ rule being edited, before it is saved.
 
 **Choice:** (b). `paths` items answer `path`, `exposed`, `rule` and `reason`; a draft with another repository than the check's
 answers `422`; the exposure fingerprint is that of the stored rules, unaffected by the draft. Without `versions`, a format
-with versions lists the package's stored versions; no format of M1 has versions.
+with versions lists the package's stored versions (built for npm, Q-EP-61).
 
 **Rationale:** The editor exists to change what customers see, and a preview of the saved state does not show the change. One
 operation keeps one matcher behind the answer and behind the ceiling. The development agent would revisit this if drafts made
@@ -2043,6 +2045,37 @@ of a rules endpoint needs cache state, then with a value that names no upstream.
 
 **Applied in the spec:** R-EP-018 ("No cache state"), [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-047.
 Code: `internal/formats/serve.go` (`ServeRoute`, `trackWriter.scrub`).
+
+### Q-EP-61 · A check without versions judges the stored versions and answers the tags
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-EP-016, the contract (`api/openapi.yaml`) and the label of the rule editor ("Versions to test (one per line, empty for
+the stored ones)") say that a check without `versions` judges the versions the repository stores, and that `distTags` carries the
+tags. `ExposureService.Check` judged only the versions sent, and `distTags` was always empty (found on 2026-11-01), because the
+spec had written "no format of M1 has versions" and npm has since been built.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The format's view adapter lists them (chosen) | An optional `formats.StoredLister` on the view adapter: `Stored(repo, package)` returns the versions and tags; the app bridges it to `authz.StoredPackages`, and the check calls it after its transaction | The format reads its own tables through its own data port (R-ARCH-008); the check stays free of format SQL; a format without it lists nothing and says so | One more optional interface and a late-bound source on the rule service |
+| (b) The check reads the generic `packages` and `package_versions` rows itself | One statement in the endpoints queries | No new interface | Dist-tags and tombstones are npm tables, so the check would carry npm SQL; remote repositories have no generic rows |
+| (c) Change the contract and the label: only the versions sent are judged | Remove the sentence | No code | The editor's preview shows nothing without typing every version, which is what the preview is for |
+
+**Choice:** (a). For npm a hosted repository lists its live, not tombstoned versions in the order they arrived, with its dist-tags; a
+remote repository lists the versions of its cached document (`listed`) and no tags, because the tags of that document are not
+stored in a column; a virtual repository stores nothing of its own, so the answer carries the warning `stored_versions_not_listed`
+and no versions. More than 1,000 versions are cut with `stored_versions_truncated`. An empty `versions` list means the same as an
+absent one. A tag is visible when a rule admits its name for the package and the version it points to is exposed, the rule of
+`ExposureView.Tag`; with mode `all` every tag is visible. `distTags` is also answered when versions are sent. The source is read
+outside the transaction of the check, so the check holds one connection at a time.
+
+**Rationale:** the contract and the label already promise it, the preview of the editor needs it, and the adapter is the place that
+knows the format's tables. The development agent would revisit this when a virtual repository should answer for its members (a
+merge of their versions and tags in the order of the resolution, R-REPO-048), or when a second format with versions is built.
+
+**Applied in the spec:** R-EP-016 (the `check-exposure` row and bullet), Q-EP-19. Code: `internal/authz/exposure_service.go`
+(`Check`, `StoredPackages`), `internal/formats/view.go` (`StoredLister`), `internal/formats/npm/view.go` (`Stored`),
+`internal/formatdata/npm/view.go` (`ViewStored`), `internal/app/stored_packages.go`.
 
 ### Q-EP-64 · Pattern matching in the decision path allocates nothing, and a literal lead refuses before any state is built
 

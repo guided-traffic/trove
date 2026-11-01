@@ -288,6 +288,8 @@ func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	out.AnsweredBy.Replica, out.AnsweredBy.Role = s.o.Identity.Replica, gen.SystemInfoAnsweredByRole(s.o.Identity.Role)
 	out.Version.Version, out.Version.Revision, out.Version.GoVersion = bi.Version, bi.Commit, bi.GoVersion
 	out.BaseUrl, out.BaseUrlSource = info.BaseURL, gen.SystemInfoBaseUrlSource(info.BaseURLSource)
+	// R-OPS-004 fixes the member; the read-only mode of R-OPS-024 is P1 and not built, so
+	// "normal" is the only mode there is (Q-OPS-156). The screen shows no row for it.
 	out.MaintenanceMode = "normal"
 	out.Replicas = Summarise(replicas)
 	out.Database, out.Valkey, out.ObjectStore = facts.Database, facts.Valkey, facts.ObjectStore

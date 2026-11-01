@@ -17,10 +17,12 @@ type AuthTokens struct {
 	CacheTTL          time.Duration `yaml:"cache_ttl" default:"15s" validate:"min=1s,max=60s" doc:"SafetyTTL of the four auth caches; bounds staleness only if an invalidation were lost."`
 	RetentionAfterEnd time.Duration `yaml:"retention_after_end" default:"2160h" validate:"min=1h" doc:"The token-cleanup task deletes a token row this long after expiry or revocation."`
 	ExpiryNotice      time.Duration `yaml:"expiry_notice" default:"168h" validate:"min=1h" doc:"A token expiring within this period produces one token.expiring event; runtime-adjustable."`
-	PAT               AuthTokenPAT  `yaml:"pat"`
-	SAT               AuthTokenSAT  `yaml:"sat"`
-	CIT               AuthTokenCIT  `yaml:"cit"`
-	MaxActive         AuthTokenMax  `yaml:"max_active_per_principal"`
+	// LastUsedGranularity bounds the writes of the last-used time (R-AUTH-031).
+	LastUsedGranularity time.Duration `yaml:"last_used_granularity" default:"5m" validate:"min=1s,max=24h" doc:"A token's last-used time is written at most once per this period, however often and on however many replicas the token is used."`
+	PAT                 AuthTokenPAT  `yaml:"pat"`
+	SAT                 AuthTokenSAT  `yaml:"sat"`
+	CIT                 AuthTokenCIT  `yaml:"cit"`
+	MaxActive           AuthTokenMax  `yaml:"max_active_per_principal"`
 }
 
 // AuthTokenPAT is the lifetime policy of personal access tokens (R-AUTH-026).

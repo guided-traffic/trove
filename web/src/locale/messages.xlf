@@ -3177,7 +3177,7 @@
     <unit id="ep.rule.delete.title">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.ts:108</note>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:406</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:410</note>
       </notes>
       <segment>
         <source>Delete rule <ph id="0" equiv="name" disp="rule.name"/>?</source>
@@ -3186,7 +3186,7 @@
     <unit id="ep.rule.delete.text">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.ts:110</note>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:408</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:412</note>
       </notes>
       <segment>
         <source>Content that only this rule exposes stops being retrievable on this endpoint.</source>
@@ -3195,7 +3195,7 @@
     <unit id="ep.rule.delete.confirm">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.ts:112</note>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:410</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:414</note>
       </notes>
       <segment>
         <source>Delete rule</source>
@@ -3204,7 +3204,7 @@
     <unit id="ep.rule.deleted">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.ts:118</note>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:416</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:420</note>
       </notes>
       <segment>
         <source>Rule <ph id="0" equiv="name" disp="rule.name"/> deleted.</source>
@@ -3221,7 +3221,7 @@
     <unit id="ep.copy-address">
       <notes>
         <note category="location">src/app/features/endpoints/endpoint-detail.ts:138</note>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:423</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:427</note>
       </notes>
       <segment>
         <source>Copy client address</source>
@@ -3390,7 +3390,7 @@
     <unit id="ep.field.name">
       <notes>
         <note category="location">src/app/features/endpoints/exposure-rule-editor.html:56,57</note>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:87</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:91</note>
       </notes>
       <segment>
         <source>Name</source>
@@ -3415,7 +3415,7 @@
     <unit id="ep.field.repository">
       <notes>
         <note category="location">src/app/features/endpoints/exposure-rule-editor.html:89,91</note>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:88</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:92</note>
       </notes>
       <segment>
         <source>Repository</source>
@@ -3448,7 +3448,7 @@
     <unit id="ep.field.description">
       <notes>
         <note category="location">src/app/features/endpoints/exposure-rule-editor.html:138,140</note>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:89</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:93</note>
       </notes>
       <segment>
         <source>Description</source>
@@ -3552,7 +3552,7 @@
     <unit id="ep.field.range">
       <notes>
         <note category="location">src/app/features/endpoints/exposure-rule-editor.html:233,235</note>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:92</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:96</note>
       </notes>
       <segment>
         <source>Version range</source>
@@ -3915,9 +3915,25 @@
         <source>This endpoint is in mode &quot;all&quot;, so this rule has no effect.</source>
       </segment>
     </unit>
+    <unit id="ep.warning.stored-not-listed">
+      <notes>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:81</note>
+      </notes>
+      <segment>
+        <source>This repository cannot list what it stores of the package, because a virtual repository stores nothing of its own. Name the versions to test, or check one of its member repositories.</source>
+      </segment>
+    </unit>
+    <unit id="ep.warning.stored-truncated">
+      <notes>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:83</note>
+      </notes>
+      <segment>
+        <source>The package has more stored versions than one check judges; the first 1000 are shown. Name the versions to test.</source>
+      </segment>
+    </unit>
     <unit id="ep.field.packages">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:90</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:94</note>
       </notes>
       <segment>
         <source>Package patterns</source>
@@ -3925,7 +3941,7 @@
     </unit>
     <unit id="ep.field.paths">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:91</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:95</note>
       </notes>
       <segment>
         <source>Path patterns</source>
@@ -3933,7 +3949,7 @@
     </unit>
     <unit id="ep.field.versions">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:93</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:97</note>
       </notes>
       <segment>
         <source>Versions</source>
@@ -3941,7 +3957,7 @@
     </unit>
     <unit id="ep.field.tags">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:94</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:98</note>
       </notes>
       <segment>
         <source>Tags</source>
@@ -3949,7 +3965,7 @@
     </unit>
     <unit id="ep.save.diff.title">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:324</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:328</note>
       </notes>
       <segment>
         <source>Save changes to rule <ph id="0" equiv="name" disp="form.name"/>?</source>
@@ -3957,7 +3973,7 @@
     </unit>
     <unit id="ep.save.confirm">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:327</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:331</note>
       </notes>
       <segment>
         <source>Save</source>
@@ -3965,7 +3981,7 @@
     </unit>
     <unit id="ep.save.created">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:337</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:341</note>
       </notes>
       <segment>
         <source>Rule <ph id="0" equiv="name" disp="created.value.name"/> created.</source>
@@ -3973,8 +3989,8 @@
     </unit>
     <unit id="ep.save.saved">
       <notes>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:358</note>
-        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:379</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:362</note>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:383</note>
       </notes>
       <segment>
         <source>Rule saved.</source>
@@ -8950,9 +8966,25 @@
         <source>Locked until</source>
       </segment>
     </unit>
+    <unit id="auth-settings.break-glass-no-password">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:145,146</note>
+      </notes>
+      <segment>
+        <source>No password is configured: <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code&gt;" dispEnd="&lt;/code&gt;">auth.break_glass.password_file</pc> is empty. Every local sign-in is refused.</source>
+      </segment>
+    </unit>
+    <unit id="auth-settings.break-glass-bad-password">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:151,156</note>
+      </notes>
+      <segment>
+        <source>The password file is not usable on this replica, for example after a rotation to an empty or too short password. Every local sign-in is refused until the file is fixed.</source>
+      </segment>
+    </unit>
     <unit id="auth-settings.sessions">
       <notes>
-        <note category="location">src/app/features/settings/auth-settings.html:142,144</note>
+        <note category="location">src/app/features/settings/auth-settings.html:156,158</note>
       </notes>
       <segment>
         <source>Sessions</source>
@@ -8960,7 +8992,7 @@
     </unit>
     <unit id="auth-settings.idle">
       <notes>
-        <note category="location">src/app/features/settings/auth-settings.html:144,145</note>
+        <note category="location">src/app/features/settings/auth-settings.html:158,159</note>
       </notes>
       <segment>
         <source>Idle timeout</source>
@@ -8968,7 +9000,7 @@
     </unit>
     <unit id="auth-settings.absolute">
       <notes>
-        <note category="location">src/app/features/settings/auth-settings.html:146,147</note>
+        <note category="location">src/app/features/settings/auth-settings.html:160,161</note>
       </notes>
       <segment>
         <source>Absolute timeout</source>
@@ -8976,7 +9008,7 @@
     </unit>
     <unit id="auth-settings.max-sessions">
       <notes>
-        <note category="location">src/app/features/settings/auth-settings.html:148,149</note>
+        <note category="location">src/app/features/settings/auth-settings.html:162,163</note>
       </notes>
       <segment>
         <source>Sessions per user</source>
@@ -8984,7 +9016,7 @@
     </unit>
     <unit id="auth-settings.recent">
       <notes>
-        <note category="location">src/app/features/settings/auth-settings.html:150,151</note>
+        <note category="location">src/app/features/settings/auth-settings.html:164,165</note>
       </notes>
       <segment>
         <source>Recent sign-in window</source>
@@ -8992,7 +9024,7 @@
     </unit>
     <unit id="auth-settings.clients">
       <notes>
-        <note category="location">src/app/features/settings/auth-settings.html:154,156</note>
+        <note category="location">src/app/features/settings/auth-settings.html:168,170</note>
       </notes>
       <segment>
         <source>Clients</source>
@@ -9000,7 +9032,7 @@
     </unit>
     <unit id="auth-settings.basic-on">
       <notes>
-        <note category="location">src/app/features/settings/auth-settings.html:157,159</note>
+        <note category="location">src/app/features/settings/auth-settings.html:171,173</note>
       </notes>
       <segment>
         <source>HTTP Basic with a token as the password is enabled.</source>
@@ -9008,7 +9040,7 @@
     </unit>
     <unit id="auth-settings.basic-off">
       <notes>
-        <note category="location">src/app/features/settings/auth-settings.html:159,162</note>
+        <note category="location">src/app/features/settings/auth-settings.html:173,176</note>
       </notes>
       <segment>
         <source>HTTP Basic with a token as the password is disabled.</source>
@@ -9680,8 +9712,8 @@
     <unit id="system.loading">
       <notes>
         <note category="location">src/app/features/system/jobs-page.ts:110,114</note>
-        <note category="location">src/app/features/system/system-status.html:484,488</note>
-        <note category="location">src/app/features/system/system-status.html:505,507</note>
+        <note category="location">src/app/features/system/system-status.html:482,486</note>
+        <note category="location">src/app/features/system/system-status.html:503,505</note>
         <note category="location">src/app/features/system/tasks-card.ts:108,111</note>
       </notes>
       <segment>
@@ -9795,23 +9827,15 @@
     </unit>
     <unit id="system.install.maintenance">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:59,61</note>
+        <note category="location">src/app/features/system/system-status.html:60,62</note>
       </notes>
       <segment>
         <source>Maintenance mode</source>
       </segment>
     </unit>
-    <unit id="system.install.maintenance.off">
-      <notes>
-        <note category="location">src/app/features/system/system-status.html:62,64</note>
-      </notes>
-      <segment>
-        <source>Off</source>
-      </segment>
-    </unit>
     <unit id="system.install.answered-by">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:68,69</note>
+        <note category="location">src/app/features/system/system-status.html:66,67</note>
       </notes>
       <segment>
         <source>Answered by</source>
@@ -9819,7 +9843,7 @@
     </unit>
     <unit id="system.db.heading">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:74,75</note>
+        <note category="location">src/app/features/system/system-status.html:72,73</note>
       </notes>
       <segment>
         <source>Database</source>
@@ -9827,7 +9851,7 @@
     </unit>
     <unit id="system.db.server">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:77,78</note>
+        <note category="location">src/app/features/system/system-status.html:75,76</note>
       </notes>
       <segment>
         <source>Server version</source>
@@ -9835,7 +9859,7 @@
     </unit>
     <unit id="system.db.schema">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:79,81</note>
+        <note category="location">src/app/features/system/system-status.html:77,79</note>
       </notes>
       <segment>
         <source>Schema version</source>
@@ -9843,7 +9867,7 @@
     </unit>
     <unit id="system.db.schema.supported">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:84,86</note>
+        <note category="location">src/app/features/system/system-status.html:82,84</note>
       </notes>
       <segment>
         <source>supported</source>
@@ -9851,7 +9875,7 @@
     </unit>
     <unit id="system.db.schema.unsupported">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:87,90</note>
+        <note category="location">src/app/features/system/system-status.html:85,88</note>
       </notes>
       <segment>
         <source>not supported by this build</source>
@@ -9859,7 +9883,7 @@
     </unit>
     <unit id="system.db.unknown">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:92,95</note>
+        <note category="location">src/app/features/system/system-status.html:90,93</note>
       </notes>
       <segment>
         <source>Not read yet by this replica.</source>
@@ -9867,7 +9891,7 @@
     </unit>
     <unit id="system.versions.mixed">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:101,105</note>
+        <note category="location">src/app/features/system/system-status.html:99,103</note>
       </notes>
       <segment>
         <source>Replicas of two versions run side by side: <pc id="0" equivStart="START_TAG_SPAN" equivEnd="CLOSE_TAG_SPAN" type="other" dispStart="&lt;span translate=&quot;no&quot;&gt;" dispEnd="&lt;/span
@@ -9876,7 +9900,7 @@
     </unit>
     <unit id="system.replicas.heading">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:111,112</note>
+        <note category="location">src/app/features/system/system-status.html:109,110</note>
       </notes>
       <segment>
         <source>Replicas by role</source>
@@ -9884,7 +9908,7 @@
     </unit>
     <unit id="system.role.counts">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:118,119</note>
+        <note category="location">src/app/features/system/system-status.html:116,117</note>
       </notes>
       <segment>
         <source>live <ph id="0" equiv="INTERPOLATION" disp="{{ g.live }}"/>, ready <ph id="1" equiv="INTERPOLATION_1" disp="{{ g.ready }}"/>, degraded <ph id="2" equiv="INTERPOLATION_2" disp="{{ g.degraded }}"/></source>
@@ -9892,7 +9916,7 @@
     </unit>
     <unit id="system.role.fewer">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:127,129</note>
+        <note category="location">src/app/features/system/system-status.html:125,127</note>
       </notes>
       <segment>
         <source>Fewer than two ready replicas: a node drain or the loss of one pod interrupts this role.</source>
@@ -9900,7 +9924,7 @@
     </unit>
     <unit id="system.role.one-node">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:133,135</note>
+        <note category="location">src/app/features/system/system-status.html:131,133</note>
       </notes>
       <segment>
         <source>All ready replicas on one node: a drain of that node interrupts this role.</source>
@@ -9908,7 +9932,7 @@
     </unit>
     <unit id="system.role.no-worker">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:139,141</note>
+        <note category="location">src/app/features/system/system-status.html:137,139</note>
       </notes>
       <segment>
         <source>No live worker replica: jobs and scheduled tasks are queued but nothing runs them.</source>
@@ -9916,8 +9940,8 @@
     </unit>
     <unit id="system.col.name">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:156,157</note>
-        <note category="location">src/app/features/system/system-status.html:393,394</note>
+        <note category="location">src/app/features/system/system-status.html:154,155</note>
+        <note category="location">src/app/features/system/system-status.html:391,392</note>
       </notes>
       <segment>
         <source>Name</source>
@@ -9925,7 +9949,7 @@
     </unit>
     <unit id="system.col.node">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:157,158</note>
+        <note category="location">src/app/features/system/system-status.html:155,156</note>
       </notes>
       <segment>
         <source>Node</source>
@@ -9933,7 +9957,7 @@
     </unit>
     <unit id="system.col.version">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:158,159</note>
+        <note category="location">src/app/features/system/system-status.html:156,157</note>
       </notes>
       <segment>
         <source>Version</source>
@@ -9941,8 +9965,8 @@
     </unit>
     <unit id="system.col.state">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:159,160</note>
-        <note category="location">src/app/features/system/system-status.html:397,399</note>
+        <note category="location">src/app/features/system/system-status.html:157,158</note>
+        <note category="location">src/app/features/system/system-status.html:395,397</note>
       </notes>
       <segment>
         <source>State</source>
@@ -9950,7 +9974,7 @@
     </unit>
     <unit id="system.col.heartbeat">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:160,161</note>
+        <note category="location">src/app/features/system/system-status.html:158,159</note>
       </notes>
       <segment>
         <source>Heartbeat</source>
@@ -9958,7 +9982,7 @@
     </unit>
     <unit id="system.col.valkey">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:161,163</note>
+        <note category="location">src/app/features/system/system-status.html:159,161</note>
       </notes>
       <segment>
         <source>Valkey</source>
@@ -9966,7 +9990,7 @@
     </unit>
     <unit id="system.state.lost">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:173,174</note>
+        <note category="location">src/app/features/system/system-status.html:171,172</note>
       </notes>
       <segment>
         <source>lost</source>
@@ -9974,7 +9998,7 @@
     </unit>
     <unit id="system.state.ready">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:178,179</note>
+        <note category="location">src/app/features/system/system-status.html:176,177</note>
       </notes>
       <segment>
         <source>ready</source>
@@ -9982,7 +10006,7 @@
     </unit>
     <unit id="system.state.starting">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:182,183</note>
+        <note category="location">src/app/features/system/system-status.html:180,181</note>
       </notes>
       <segment>
         <source>starting</source>
@@ -9990,7 +10014,7 @@
     </unit>
     <unit id="system.state.draining">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:186,187</note>
+        <note category="location">src/app/features/system/system-status.html:184,185</note>
       </notes>
       <segment>
         <source>draining</source>
@@ -9998,7 +10022,7 @@
     </unit>
     <unit id="system.state.unready">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:190,191</note>
+        <note category="location">src/app/features/system/system-status.html:188,189</note>
       </notes>
       <segment>
         <source>unready</source>
@@ -10006,7 +10030,7 @@
     </unit>
     <unit id="system.checks.failing">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:196,197</note>
+        <note category="location">src/app/features/system/system-status.html:194,195</note>
       </notes>
       <segment>
         <source>Failing checks:</source>
@@ -10014,7 +10038,7 @@
     </unit>
     <unit id="system.valkey.available">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:216,217</note>
+        <note category="location">src/app/features/system/system-status.html:214,215</note>
       </notes>
       <segment>
         <source>available</source>
@@ -10022,7 +10046,7 @@
     </unit>
     <unit id="system.valkey.degraded">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:219,220</note>
+        <note category="location">src/app/features/system/system-status.html:217,218</note>
       </notes>
       <segment>
         <source>degraded</source>
@@ -10030,7 +10054,7 @@
     </unit>
     <unit id="system.valkey.circuit-open">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:225,227</note>
+        <note category="location">src/app/features/system/system-status.html:223,225</note>
       </notes>
       <segment>
         <source>, circuit open</source>
@@ -10038,7 +10062,7 @@
     </unit>
     <unit id="system.replicas.limits">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:241,247</note>
+        <note category="location">src/app/features/system/system-status.html:239,245</note>
       </notes>
       <segment>
         <source> This screen cannot see disruption budgets, free capacity on other nodes, or whether the remaining replicas carry the peak load, because trove holds no Kubernetes permissions. </source>
@@ -10046,7 +10070,7 @@
     </unit>
     <unit id="system.valkey.heading">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:249,250</note>
+        <note category="location">src/app/features/system/system-status.html:247,248</note>
       </notes>
       <segment>
         <source>Valkey</source>
@@ -10054,7 +10078,7 @@
     </unit>
     <unit id="system.valkey.summary.ok">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:253,256</note>
+        <note category="location">src/app/features/system/system-status.html:251,254</note>
       </notes>
       <segment>
         <source>Available on every replica</source>
@@ -10062,7 +10086,7 @@
     </unit>
     <unit id="system.valkey.summary.degraded">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:259,261</note>
+        <note category="location">src/app/features/system/system-status.html:257,259</note>
       </notes>
       <segment>
         <source>Degraded on <ph id="0" equiv="INTERPOLATION" disp="{{ v.degradedReplicas }}"/> of <ph id="1" equiv="INTERPOLATION_1" disp="{{ v.liveReplicas }}"/> replicas</source>
@@ -10070,7 +10094,7 @@
     </unit>
     <unit id="system.valkey.disagree">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:269,272</note>
+        <note category="location">src/app/features/system/system-status.html:267,270</note>
       </notes>
       <segment>
         <source>Replicas disagree about the primary</source>
@@ -10078,7 +10102,7 @@
     </unit>
     <unit id="system.valkey.sentinels">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:276,280</note>
+        <note category="location">src/app/features/system/system-status.html:274,278</note>
       </notes>
       <segment>
         <source>Sentinels unreachable: no failover can happen while this lasts.</source>
@@ -10086,7 +10110,7 @@
     </unit>
     <unit id="system.valkey.mode">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:282,283</note>
+        <note category="location">src/app/features/system/system-status.html:280,281</note>
       </notes>
       <segment>
         <source>Mode</source>
@@ -10094,7 +10118,7 @@
     </unit>
     <unit id="system.valkey.primary-name">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:284,285</note>
+        <note category="location">src/app/features/system/system-status.html:282,283</note>
       </notes>
       <segment>
         <source>Primary name</source>
@@ -10102,7 +10126,7 @@
     </unit>
     <unit id="system.valkey.sentinels-configured">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:286,287</note>
+        <note category="location">src/app/features/system/system-status.html:284,285</note>
       </notes>
       <segment>
         <source>Configured Sentinels</source>
@@ -10110,7 +10134,7 @@
     </unit>
     <unit id="system.valkey.tls">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:288,289</note>
+        <note category="location">src/app/features/system/system-status.html:286,287</note>
       </notes>
       <segment>
         <source>TLS verification</source>
@@ -10118,7 +10142,7 @@
     </unit>
     <unit id="system.valkey.last-change">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:291,293</note>
+        <note category="location">src/app/features/system/system-status.html:289,291</note>
       </notes>
       <segment>
         <source>Last primary change</source>
@@ -10126,7 +10150,7 @@
     </unit>
     <unit id="system.valkey.server-version">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:297,298</note>
+        <note category="location">src/app/features/system/system-status.html:295,296</note>
       </notes>
       <segment>
         <source>Server version</source>
@@ -10134,7 +10158,7 @@
     </unit>
     <unit id="system.keys.heading">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:306,307</note>
+        <note category="location">src/app/features/system/system-status.html:304,305</note>
       </notes>
       <segment>
         <source>Stored-secret keys</source>
@@ -10142,8 +10166,8 @@
     </unit>
     <unit id="system.keys.active">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:311,312</note>
-        <note category="location">src/app/features/system/system-status.html:395,396</note>
+        <note category="location">src/app/features/system/system-status.html:309,310</note>
+        <note category="location">src/app/features/system/system-status.html:393,394</note>
       </notes>
       <segment>
         <source>Active key ID</source>
@@ -10151,7 +10175,7 @@
     </unit>
     <unit id="system.keys.answered-by">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:314,316</note>
+        <note category="location">src/app/features/system/system-status.html:312,314</note>
       </notes>
       <segment>
         <source>(answered by <ph id="0" equiv="INTERPOLATION" disp="{{ e.answeredBy }}"/>)</source>
@@ -10159,7 +10183,7 @@
     </unit>
     <unit id="system.keys.compatible">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:320,322</note>
+        <note category="location">src/app/features/system/system-status.html:318,320</note>
       </notes>
       <segment>
         <source>Key rings are compatible.</source>
@@ -10167,7 +10191,7 @@
     </unit>
     <unit id="system.keys.incompatible">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:324,328</note>
+        <note category="location">src/app/features/system/system-status.html:322,326</note>
       </notes>
       <segment>
         <source>Key rings are not compatible: a value sealed by one replica cannot be opened by another.</source>
@@ -10175,7 +10199,7 @@
     </unit>
     <unit id="system.keys.caption">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:331,333</note>
+        <note category="location">src/app/features/system/system-status.html:329,331</note>
       </notes>
       <segment>
         <source> Key IDs and sealed values </source>
@@ -10183,7 +10207,7 @@
     </unit>
     <unit id="system.keys.col.id">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:335,336</note>
+        <note category="location">src/app/features/system/system-status.html:333,334</note>
       </notes>
       <segment>
         <source>Key ID</source>
@@ -10191,7 +10215,7 @@
     </unit>
     <unit id="system.keys.col.sealed">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:336,337</note>
+        <note category="location">src/app/features/system/system-status.html:334,335</note>
       </notes>
       <segment>
         <source>Sealed values</source>
@@ -10199,7 +10223,7 @@
     </unit>
     <unit id="system.keys.col.canary-by">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:338,340</note>
+        <note category="location">src/app/features/system/system-status.html:336,338</note>
       </notes>
       <segment>
         <source> Canary (reported by <ph id="0" equiv="INTERPOLATION" disp="{{ e.answeredBy }}"/>) </source>
@@ -10207,7 +10231,7 @@
     </unit>
     <unit id="system.keys.col.status">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:340,343</note>
+        <note category="location">src/app/features/system/system-status.html:338,341</note>
       </notes>
       <segment>
         <source>Status</source>
@@ -10215,7 +10239,7 @@
     </unit>
     <unit id="system.keys.canary.ok">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:352,354</note>
+        <note category="location">src/app/features/system/system-status.html:350,352</note>
       </notes>
       <segment>
         <source>ok</source>
@@ -10223,7 +10247,7 @@
     </unit>
     <unit id="system.keys.canary.failed">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:356,358</note>
+        <note category="location">src/app/features/system/system-status.html:354,356</note>
       </notes>
       <segment>
         <source>failed</source>
@@ -10231,7 +10255,7 @@
     </unit>
     <unit id="system.keys.canary.absent">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:360,362</note>
+        <note category="location">src/app/features/system/system-status.html:358,360</note>
       </notes>
       <segment>
         <source>absent</source>
@@ -10239,7 +10263,7 @@
     </unit>
     <unit id="system.keys.status.active">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:368,370</note>
+        <note category="location">src/app/features/system/system-status.html:366,368</note>
       </notes>
       <segment>
         <source>active</source>
@@ -10247,7 +10271,7 @@
     </unit>
     <unit id="system.keys.status.pending">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:372,374</note>
+        <note category="location">src/app/features/system/system-status.html:370,372</note>
       </notes>
       <segment>
         <source>re-encryption pending</source>
@@ -10255,7 +10279,7 @@
     </unit>
     <unit id="system.keys.status.unused">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:376,378</note>
+        <note category="location">src/app/features/system/system-status.html:374,376</note>
       </notes>
       <segment>
         <source>No values left under this key: its key file can be removed.</source>
@@ -10263,7 +10287,7 @@
     </unit>
     <unit id="system.keys.replicas.heading">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:386,388</note>
+        <note category="location">src/app/features/system/system-status.html:384,386</note>
       </notes>
       <segment>
         <source>Key IDs per replica</source>
@@ -10271,7 +10295,7 @@
     </unit>
     <unit id="system.keys.replicas.caption">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:389,392</note>
+        <note category="location">src/app/features/system/system-status.html:387,390</note>
       </notes>
       <segment>
         <source> Key rings of the live replicas </source>
@@ -10279,7 +10303,7 @@
     </unit>
     <unit id="system.keys.replicas.role">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:394,395</note>
+        <note category="location">src/app/features/system/system-status.html:392,393</note>
       </notes>
       <segment>
         <source>Role</source>
@@ -10287,7 +10311,7 @@
     </unit>
     <unit id="system.keys.replicas.ring">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:396,397</note>
+        <note category="location">src/app/features/system/system-status.html:394,395</note>
       </notes>
       <segment>
         <source>Key IDs held</source>
@@ -10295,7 +10319,7 @@
     </unit>
     <unit id="system.keys.replicas.missing">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:410,411</note>
+        <note category="location">src/app/features/system/system-status.html:408,409</note>
       </notes>
       <segment>
         <source>lacks</source>
@@ -10303,7 +10327,7 @@
     </unit>
     <unit id="system.keys.replicas.complete">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:414,417</note>
+        <note category="location">src/app/features/system/system-status.html:412,415</note>
       </notes>
       <segment>
         <source>complete</source>
@@ -10311,7 +10335,7 @@
     </unit>
     <unit id="system.keys.step.incompatible">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:427,431</note>
+        <note category="location">src/app/features/system/system-status.html:425,429</note>
       </notes>
       <segment>
         <source>Next step: give every replica the key files it lacks. Re-encryption stays disabled until all rings hold the same key IDs.</source>
@@ -10319,7 +10343,7 @@
     </unit>
     <unit id="system.keys.step.reencrypt">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:436,440</note>
+        <note category="location">src/app/features/system/system-status.html:434,438</note>
       </notes>
       <segment>
         <source>Next step: re-encrypt the values that are still sealed under an old key ID.</source>
@@ -10327,7 +10351,7 @@
     </unit>
     <unit id="system.keys.step.remove">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:444,447</note>
+        <note category="location">src/app/features/system/system-status.html:442,445</note>
       </notes>
       <segment>
         <source>Next step: no values are left under an old key ID, so its key file can be removed from every replica.</source>
@@ -10335,7 +10359,7 @@
     </unit>
     <unit id="system.keys.last">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:453,454</note>
+        <note category="location">src/app/features/system/system-status.html:451,452</note>
       </notes>
       <segment>
         <source>Last re-encryption</source>
@@ -10343,7 +10367,7 @@
     </unit>
     <unit id="system.keys.reencrypt">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:475,477</note>
+        <note category="location">src/app/features/system/system-status.html:473,475</note>
       </notes>
       <segment>
         <source> Re-encrypt now </source>
@@ -10351,7 +10375,7 @@
     </unit>
     <unit id="system.keys.reencrypt-reason">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:479,483</note>
+        <note category="location">src/app/features/system/system-status.html:477,481</note>
       </notes>
       <segment>
         <source> Disabled while the key rings are not compatible. </source>
@@ -10359,7 +10383,7 @@
     </unit>
     <unit id="system.jobs.heading">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:491,492</note>
+        <note category="location">src/app/features/system/system-status.html:489,490</note>
       </notes>
       <segment>
         <source>Recent jobs</source>
@@ -10367,7 +10391,7 @@
     </unit>
     <unit id="jobs.empty-recent">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:496,498</note>
+        <note category="location">src/app/features/system/system-status.html:494,496</note>
       </notes>
       <segment>
         <source>No job has run yet.</source>
@@ -10375,7 +10399,7 @@
     </unit>
     <unit id="system.jobs.all">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:507,510</note>
+        <note category="location">src/app/features/system/system-status.html:505,508</note>
       </notes>
       <segment>
         <source>All jobs</source>
@@ -10383,7 +10407,7 @@
     </unit>
     <unit id="system.link.jobs">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:512,513</note>
+        <note category="location">src/app/features/system/system-status.html:510,511</note>
       </notes>
       <segment>
         <source>Jobs</source>
@@ -10391,7 +10415,7 @@
     </unit>
     <unit id="system.link.backups">
       <notes>
-        <note category="location">src/app/features/system/system-status.html:513,515</note>
+        <note category="location">src/app/features/system/system-status.html:511,513</note>
       </notes>
       <segment>
         <source>Backups</source>
@@ -12363,12 +12387,12 @@
         <source>Never</source>
       </segment>
     </unit>
-    <unit id="token-table.not-recorded">
+    <unit id="token-table.not-used">
       <notes>
-        <note category="location">src/app/shared/access/token-table.ts:107,110</note>
+        <note category="location">src/app/shared/access/token-table.ts:107,109</note>
       </notes>
       <segment>
-        <source>Not recorded</source>
+        <source>Not used yet</source>
       </segment>
     </unit>
     <unit id="token-table.state.active">

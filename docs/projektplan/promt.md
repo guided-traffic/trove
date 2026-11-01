@@ -209,28 +209,6 @@ here; remove a finding in the commit that fixes it.
 
 Found on 2026-11-01 while writing the manual (`docs/manual`) and the design change of Q-UI-88:
 
-### UI defects
-
-- **F-9 · The token filter "Not used for (days)" matches every token** (read). The last-used time is never
-  recorded. Done when the time is recorded (with a bound on write load) or the filter is removed;
-  `docs/manual/admin/tokens.md` says it matches everything.
-- **F-10 · System status shows a maintenance mode that does not exist** (confirmed). The handler always sets
-  `MaintenanceMode = "normal"` ([handlers.go](../../internal/api/v1/handlers.go)). Done when the mode is
-  real or not shown; `docs/manual/admin/limitations.md` lists it.
-- **F-11 · The break-glass status shows "Enabled." without a password file** (read). Every local sign-in is
-  then refused while the settings screen looks fine. Done when the status names the missing password.
-
-### Server and API defects
-
-- **F-12 · The saved language is not used for `/ui/` without a locale** (confirmed). `webui.Options.Preference`
-  exists ([webui.go](../../internal/webui/webui.go)) but `startClient` in [app.go](../../internal/app/app.go)
-  does not set it, so the browser's language wins over the stored one. Done when it is wired, with a test.
-- **F-13 · The exposure check does not list stored versions** (read). The rule editor says "Versions to test
-  (one per line, empty for the stored ones)" and `api/openapi.yaml` says an absent list means the stored
-  versions; `ExposureService.Check` ([exposure_service.go](../../internal/authz/exposure_service.go)) judges
-  only the versions sent, and `distTags` in the answer is always empty. Done when code, contract and label
-  agree.
-
 ### Tests and tools
 
 - **F-17 · Leftovers of old tool versions on the owner's machine that need an admin password** (confirmed).

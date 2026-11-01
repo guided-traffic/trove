@@ -21,6 +21,7 @@ type viewPort interface {
 	ViewDetails(ctx context.Context, ids []int64, withReadme bool) ([]rows.ViewDetail, error)
 	ViewFind(ctx context.Context, repos []string, text, keyword string, limit int) ([]int64, error)
 	ViewWithheld(ctx context.Context, repos []string) ([]int64, error)
+	ViewStored(ctx context.Context, repoID int64, name string, remote bool) ([]string, map[string]string, error)
 }
 
 // View returns the format's part of the package screens (R-API-029).
@@ -28,7 +29,25 @@ func (f *Format) View() formats.ViewAdapter { return viewAdapter{} }
 
 type viewAdapter struct{}
 
-var _ formats.ViewAdapter = viewAdapter{}
+var (
+	_ formats.ViewAdapter  = viewAdapter{}
+	_ formats.StoredLister = viewAdapter{}
+)
+
+// Stored lists what the repository serves of the package (R-EP-016): the versions
+// of a hosted repository with its dist-tags, the cached versions of a remote one.
+// A virtual repository stores nothing of its own, so it lists none.
+func (viewAdapter) Stored(ctx context.Context, ports formats.DataPorts, repo formats.RepoRef, pkg string) (formats.Stored, error) {
+	if repo.Class != formats.Local && repo.Class != formats.Remote {
+		return formats.Stored{}, nil
+	}
+	p, err := portOf(ports)
+	if err != nil {
+		return formats.Stored{}, err
+	}
+	versions, tags, err := p.ViewStored(ctx, repo.ID, pkg, repo.Class == formats.Remote)
+	return formats.Stored{Listed: err == nil, Versions: versions, Tags: tags}, err
+}
 
 func portOf(ports formats.DataPorts) (viewPort, error) {
 	if ports != nil {

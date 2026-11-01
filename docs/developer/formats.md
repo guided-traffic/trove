@@ -78,7 +78,9 @@ data (`Find`) and names the stored versions it does not serve (`Withheld`). It r
 (`formats.DataPorts`, the part of `Host` that is `FormatData`). `Validate` refuses a view without package names. The read model that calls the adapter, and
 the bridge to it (`formathost.NewViewAdapters`), are in [packages.md](packages.md). To give a format a view: implement the five methods in `view.go` of the
 format, add the statements to the format's data package and the matching methods to its port, and add the port interface the adapter asserts (`viewPort` in
-[npm view.go](../../internal/formats/npm/view.go)).
+[npm view.go](../../internal/formats/npm/view.go)). An adapter may also implement the optional `formats.StoredLister` (`Stored`): what one repository stores of one
+package, its versions and tags. The dry run of an endpoint's exposure rules calls it when a check names no versions (R-EP-016, Q-EP-61; the bridge is
+[internal/app/stored_packages.go](../../internal/app/stored_packages.go)); a format without it lists nothing and the check says so.
 
 ## The registry
 

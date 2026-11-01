@@ -76,6 +76,9 @@ type SessionService interface {
 // LoginService renders the options of the sign-in screen (*oidc.Service).
 type LoginService interface {
 	LoginOptions(anonymousAccess bool) oidc.LoginOptions
+	// BreakGlassPassword says whether the replica can verify the break-glass
+	// password; the settings status shows it (R-AUTH-040).
+	BreakGlassPassword() oidc.PasswordStatus
 }
 
 // identityReady answers 503 and reports false when the replica has no identity

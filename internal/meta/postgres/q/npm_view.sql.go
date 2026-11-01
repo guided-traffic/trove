@@ -119,6 +119,75 @@ func (q *Queries) NPMViewFind(ctx context.Context, arg NPMViewFindParams) ([]int
 	return items, nil
 }
 
+const nPMViewStoredLocal = `-- name: NPMViewStoredLocal :many
+SELECT pv.version::text AS version
+  FROM package_versions pv
+  JOIN packages p ON p.id = pv.package_id
+ WHERE p.repo_id = $1::bigint AND p.name = $2::text AND pv.trashed_at IS NULL
+   AND NOT EXISTS (SELECT 1 FROM npm_tombstones t WHERE t.repo_id = p.repo_id AND t.name = p.name AND t.version = pv.version)
+ ORDER BY pv.id
+`
+
+type NPMViewStoredLocalParams struct {
+	RepoID int64
+	Name   string
+}
+
+// The versions a hosted repository serves of a package: live, not tombstoned, in
+// the order of their arrival (the dry run of the exposure rules, R-EP-016).
+func (q *Queries) NPMViewStoredLocal(ctx context.Context, arg NPMViewStoredLocalParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, nPMViewStoredLocal, arg.RepoID, arg.Name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var version string
+		if err := rows.Scan(&version); err != nil {
+			return nil, err
+		}
+		items = append(items, version)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const nPMViewStoredRemote = `-- name: NPMViewStoredRemote :many
+SELECT v.version::text AS version
+  FROM npm_remote_versions v
+ WHERE v.repo_id = $1::bigint AND v.name = $2::text AND v.listed
+ ORDER BY v.version
+`
+
+type NPMViewStoredRemoteParams struct {
+	RepoID int64
+	Name   string
+}
+
+// The versions a remote repository lists of a package, from the cached document.
+func (q *Queries) NPMViewStoredRemote(ctx context.Context, arg NPMViewStoredRemoteParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, nPMViewStoredRemote, arg.RepoID, arg.Name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var version string
+		if err := rows.Scan(&version); err != nil {
+			return nil, err
+		}
+		items = append(items, version)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const nPMViewSummaries = `-- name: NPMViewSummaries :many
 
 SELECT nv.version_id,

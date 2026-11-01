@@ -88,7 +88,7 @@ internal/webui:  //go:embed all:dist
 
 | Request | Answer |
 |---|---|
-| `/ui/` or `/ui/<route>` without locale | `302` to `/ui/<locale>/<route>` with the query kept. Locale: `Options.Preference`, then `Accept-Language` (q-values, `de-DE` matches `de`), then `Options.DefaultLocale`. `Cache-Control: no-store`, `Vary: Accept-Language` |
+| `/ui/` or `/ui/<route>` without locale | `302` to `/ui/<locale>/<route>` with the query kept. Locale: `Options.Preference` (the app sets it to `uiLocalePreference` in [internal/app/ui_locale.go](../../internal/app/ui_locale.go): it validates the `__Host-trv_session` cookie with the session store, because the authentication stage ignores the cookie on `/ui/`, and reads `user_preferences.locale`; Q-API-184), then `Accept-Language` (q-values, `de-DE` matches `de`), then `Options.DefaultLocale`. `Cache-Control: no-store`, `Vary: Accept-Language` |
 | `/ui/<locale>` | `302` to `/ui/<locale>/` |
 | `/ui/<locale>/` and any path whose last segment has no `.` | The locale's `index.html` with nonce and document headers (SPA fallback) |
 | `/ui/<locale>/<file with extension>` | The file; `404` problem+json if missing or a directory. It never falls back to the index |

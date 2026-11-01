@@ -1737,8 +1737,15 @@ export interface paths {
          *     editor that is evaluated in place of the stored rule of its name, or in addition, and is
          *     validated like a write (Q-EP-18). Needs `endpoints:read` and `read` on the repository; a
          *     repository the caller cannot read answers `404` like a missing one. Generic repositories are
-         *     checked through `paths`; formats with versions list a package's stored versions when
-         *     `versions` is absent.
+         *     checked through `paths`. For a format with versions, a request that names a package and no
+         *     `versions` (absent or empty) judges the versions the repository stores of that package and
+         *     answers the package's tags in `distTags` (Q-EP-61): a hosted repository lists its live
+         *     versions, a remote one the versions of its cached document (its tags are not stored, so none
+         *     are listed), and a virtual repository stores nothing of its own, so the answer carries the
+         *     warning `stored_versions_not_listed`. More than 1,000 stored versions are cut and the answer
+         *     carries `stored_versions_truncated`. A tag is visible when a rule admits its name and the
+         *     version it points to is exposed. `distTags` is filled whenever a package of a format with
+         *     tags is named, also when `versions` are sent.
          */
         post: operations["checkExposure"];
         delete?: never;
@@ -2415,7 +2422,7 @@ export interface components {
              */
             baseUrlSource: "config" | "request";
             /**
-             * @description Open enum; `normal` until the maintenance modes exist.
+             * @description Open enum; always `normal` until the read-only maintenance mode (R-OPS-024) exists. The system status screen shows no row for `normal` (Q-OPS-156).
              * @example normal
              */
             maintenanceMode: string;
@@ -3203,6 +3210,16 @@ export interface components {
             providers: components["schemas"]["AuthSettingsProvider"][];
             breakGlass: {
                 enabled: boolean;
+                /**
+                 * @description Whether the replica that answers can verify the break-glass password (R-AUTH-014). `ok`: the account is
+                 *     enabled and holds a usable password. `not_configured`: the account is enabled but
+                 *     `auth.break_glass.password_file` is empty, so every local sign-in is refused with `403 local_login_disabled`.
+                 *     `unusable`: a file is configured but the replica holds no usable password because a rotated file did not
+                 *     contain one; local sign-in is refused until the file is fixed. `not_applicable`: the account is disabled.
+                 *     The password itself is never part of the answer.
+                 * @enum {string}
+                 */
+                passwordStatus: "ok" | "not_configured" | "unusable" | "not_applicable";
                 /** Format: date-time */
                 lockedUntil: string | null;
             };
@@ -3257,6 +3274,7 @@ export interface components {
          *         ],
          *         "breakGlass": {
          *           "enabled": true,
+         *           "passwordStatus": "ok",
          *           "lockedUntil": null
          *         },
          *         "sessions": {
@@ -4006,7 +4024,7 @@ export interface components {
             repository: string;
             /** @description The package to check; absent checks the repository. */
             package?: string;
-            /** @description Versions of the package; for a format with versions an absent list means the stored versions. */
+            /** @description Versions of the package. For a format with versions, an absent or empty list means the versions the repository stores of the package, in the order they arrived (Q-EP-61). */
             versions?: string[];
             /** @description Paths to check, the dimension of generic repositories. */
             paths?: string[];
@@ -4043,10 +4061,11 @@ export interface components {
             reason: string;
             versions: components["schemas"]["ExposureCheckVersion"][];
             paths: components["schemas"]["ExposureCheckPath"][];
-            /** @description The tags of the package and whether they are visible; formats with tags only. */
+            /** @description The tags the repository stores of the package, sorted by name, and whether each is visible; formats with tags only, and empty when no package is named or the repository does not list its tags. */
             distTags: components["schemas"]["ExposureCheckTag"][];
             /** @description SHA-256 over the mode and the ID, revision and state of every stored rule of the endpoint for the repository (R-EP-018). */
             exposureFingerprint: string;
+            /** @description `endpoint_not_in_rules_mode`, `stored_versions_not_listed` or `stored_versions_truncated`. */
             warnings: string[];
         };
         /**

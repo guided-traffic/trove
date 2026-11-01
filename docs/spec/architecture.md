@@ -144,7 +144,7 @@ is interchangeable with any other replica of that role:
     - the identity loops of [identity-and-authentication.md](identity-and-authentication.md)
       R-AUTH-042: the OIDC discovery refresh and JWKS refetch (R-AUTH-004), the re-read of the
       client-secret and break-glass files including the break-glass rotation check (R-AUTH-014),
-      the last-used flush (R-AUTH-031, P1) and the pending-flow count refresh (R-AUTH-038);
+      the last-used flush (R-AUTH-031) and the pending-flow count refresh (R-AUTH-038);
   - leave work running after a response that a later request depends on.
 
   Work that a request starts and that outlasts it is enqueued as a job, and the request answers
@@ -384,7 +384,7 @@ connection through an edge proxy that balances per request.
 | Per session, the newest `last_seen_at` a replica has read ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-010) | While the replica holds the session | A lower bound of the row that only saves touch statements and never decides an end; the session's deadlines are decided from its row. |
 | In-process single-flight groups (R-ARCH-033), and the credential lookups shared while the freshness gate is closed ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023) | One flight; a shared credential lookup at most `auth.revocation_bound` old | Only concurrent requests join; nothing outlives the flight, and a shared lookup is never cached. |
 | Spool and temporary files (`emptyDir` or a generic ephemeral volume, INV-13) | One request or one job | Deleted on every path and at process start ([storage.md](storage.md) R-STOR-004). |
-| Write-only buffers: download statistics (R-ARCH-011), `lastActivityAt` ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-012), metadata `last_used_at` (R-REPO-046, P1), token last-used times ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-031, P1) | Until the next batch flush (the last-used buffer: 60 s) | Requests write them and never read them. They are flushed at shutdown (R-ARCH-024 step 6); a crash loses at most one batch, which the next use records again. |
+| Write-only buffers: download statistics (R-ARCH-011), `lastActivityAt` ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-012), metadata `last_used_at` (R-REPO-046, P1), token last-used times ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-031) | Until the next batch flush (the last-used buffer: 60 s) | Requests write them and never read them. They are flushed at shutdown (R-ARCH-024 step 6); a crash loses at most one batch, which the next use records again. |
 | Asynchronous audit buffer and the audit deduplication windows with their open denial summaries ([operations-and-observability.md](operations-and-observability.md) R-OPS-015) | Until the next batch or deduplication window | Written by requests, never read by one; flushed at shutdown. A crash loses what they hold, normally under one second of events, at most `audit.async_buffer`. |
 | Denial aggregation buffer of the CI exchange ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-021) | One minute | Requests write it and never read it; the first denial of an address and reason in a minute is written at once, so a crash loses at most one minute of counts. |
 | De-duplication of `auth.csrf_failed` events ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-041) | One minute | Bounds log volume only; no answer depends on it. |
@@ -3461,7 +3461,7 @@ learns of the removal with a delay. The steps cover that delay first:
    the pools close: download statistics, the `lastActivityAt` buffer
    ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-012), the metadata
    `last_used_at` buffer (R-REPO-046, P1) and the token last-used buffer
-   ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-031, P1). The open
+   ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-031). The open
    audit deduplication summaries, denial summaries included, are written and the asynchronous
    audit buffer is flushed ([operations-and-observability.md](operations-and-observability.md)
    R-OPS-015). Pending signals are published. Then the remaining leases are released (R-ARCH-017),

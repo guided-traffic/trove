@@ -110,8 +110,9 @@ func TestR_EP_018_FormatsOnAnEndpointWithRules(t *testing.T) {
 	e := newEnv(t, false)
 	e.stack.Repository("opaque-local", "local", "opaque", "{}")
 	e.stack.Repository("npm-customers", "local", "npm", "{}")
+	e.stack.Repository("npm-virtual", "virtual", "npm", "{}")
 	acme := testenv.Person{ID: e.acmeID, Kind: "service_account"}
-	e.stack.Policy("formats-read", []string{"read"}, []string{"opaque-local", "npm-customers"}, acme)
+	e.stack.Policy("formats-read", []string{"read"}, []string{"opaque-local", "npm-customers", "npm-virtual"}, acme)
 	r := e.start("a")
 
 	t.Run("R-EP-018 the format is served on the default endpoint", func(t *testing.T) {
@@ -178,6 +179,87 @@ func TestR_EP_018_FormatsOnAnEndpointWithRules(t *testing.T) {
 			if want[v.Version] != v.Reason || v.Exposed != (v.Reason == "exposed") {
 				t.Fatalf("%s: %+v (%s)", v.Version, v, a.Body)
 			}
+		}
+	})
+	t.Run("R-EP-016 Q-EP-61 a check without versions judges the stored versions, with their dist-tags", func(t *testing.T) {
+		const repo = `(SELECT id FROM repositories WHERE key = 'npm-customers')`
+		e.stack.Exec(`INSERT INTO packages (repo_id, name, display_name) VALUES (` + repo + `, '@acme/sdk', '@acme/sdk')`)
+		pkg := `(SELECT id FROM packages WHERE repo_id = ` + repo + ` AND name = '@acme/sdk')`
+		for _, v := range []string{"1.9.0", "2.0.0", "2.0.1", "2.1.0-rc.1", "2.1.0", "2.2.0", "3.0.0"} {
+			e.stack.Exec(`INSERT INTO package_versions (package_id, version, display_version) VALUES (`+pkg+`, $1, $1)`, v)
+		}
+		e.stack.Exec(`UPDATE package_versions SET trashed_at = now() WHERE version = '2.2.0' AND package_id = ` + pkg)
+		e.stack.Exec(`INSERT INTO npm_tombstones (repo_id, name, version, integrity, source, unpublished_at, unpublished_by)
+			VALUES (` + repo + `, '@acme/sdk', '3.0.0', 'sha512-x', 'unpublish', now(), gen_random_uuid())`)
+		e.stack.Exec(`INSERT INTO npm_packages (package_id, repo_id, name_fold, dist_tags) VALUES (` + pkg + `, ` + repo + `, '@acme/sdk',
+			'{"latest":"2.1.0","lts":"1.9.0","next":"2.1.0-rc.1"}')`)
+
+		type verdict struct {
+			Version string `json:"version"`
+			Exposed bool   `json:"exposed"`
+			Reason  string `json:"reason"`
+		}
+		var res struct {
+			Versions []verdict `json:"versions"`
+			DistTags []struct {
+				Tag     string `json:"tag"`
+				Version string `json:"version"`
+				Visible bool   `json:"visible"`
+			} `json:"distTags"`
+			Warnings []string `json:"warnings"`
+		}
+		for _, body := range []string{`{"repository":"npm-customers","package":"@acme/sdk"}`, `{"repository":"npm-customers","package":"@acme/sdk","versions":[]}`} {
+			a := e.api("POST", "/api/v1/endpoints/customers/check-exposure", []byte(body))
+			res.Versions, res.DistTags = nil, nil
+			if a.Status != http.StatusOK || json.Unmarshal(a.Body, &res) != nil {
+				t.Fatalf("%d %s", a.Status, a.Body)
+			}
+			// The trashed 2.2.0 and the tombstoned 3.0.0 are not stored versions any more.
+			want := []verdict{
+				{"1.9.0", false, "out_of_range"},
+				{"2.0.0", true, "exposed"},
+				{"2.0.1", false, "version_excluded"},
+				{"2.1.0-rc.1", false, "prerelease"},
+				{"2.1.0", true, "exposed"},
+			}
+			if len(res.Versions) != len(want) {
+				t.Fatalf("%s: %s", body, a.Body)
+			}
+			for i, w := range want {
+				if res.Versions[i] != w {
+					t.Fatalf("%s: version %d = %+v, want %+v (%s)", body, i, res.Versions[i], w, a.Body)
+				}
+			}
+			// latest stays: the rule admits the tag and 2.1.0 is exposed. lts is admitted by name but points
+			// at a version out of range, and next is not in the include list.
+			wantTags := map[string]bool{"latest": true, "lts": false, "next": false}
+			if len(res.DistTags) != 3 || res.DistTags[0].Tag != "latest" || res.DistTags[1].Tag != "lts" || res.DistTags[2].Tag != "next" {
+				t.Fatalf("%s: distTags %+v", body, res.DistTags)
+			}
+			for _, tg := range res.DistTags {
+				if tg.Visible != wantTags[tg.Tag] {
+					t.Fatalf("%s: tag %s visible = %v (%s)", body, tg.Tag, tg.Visible, a.Body)
+				}
+			}
+		}
+		// Versions named in the request are judged as sent, and the tags are still answered.
+		a := e.api("POST", "/api/v1/endpoints/customers/check-exposure", []byte(`{"repository":"npm-customers","package":"@acme/sdk","versions":["2.0.0"]}`))
+		res.Versions, res.DistTags = nil, nil
+		if a.Status != http.StatusOK || json.Unmarshal(a.Body, &res) != nil || len(res.Versions) != 1 || len(res.DistTags) != 3 {
+			t.Fatalf("%d %s", a.Status, a.Body)
+		}
+		// A virtual repository stores nothing of its own: the answer says it cannot list, instead of
+		// passing an empty list off as "nothing is stored".
+		a = e.api("POST", "/api/v1/endpoints/customers/check-exposure", []byte(`{"repository":"npm-virtual","package":"@acme/sdk"}`))
+		res.Versions, res.DistTags, res.Warnings = nil, nil, nil
+		if a.Status != http.StatusOK || json.Unmarshal(a.Body, &res) != nil || len(res.Versions) != 0 || len(res.Warnings) != 1 || res.Warnings[0] != "stored_versions_not_listed" {
+			t.Fatalf("%d %s", a.Status, a.Body)
+		}
+		// A package the repository does not hold lists nothing.
+		a = e.api("POST", "/api/v1/endpoints/customers/check-exposure", []byte(`{"repository":"npm-customers","package":"@acme/none"}`))
+		res.Versions, res.DistTags = nil, nil
+		if a.Status != http.StatusOK || json.Unmarshal(a.Body, &res) != nil || len(res.Versions) != 0 || len(res.DistTags) != 0 {
+			t.Fatalf("%d %s", a.Status, a.Body)
 		}
 	})
 }

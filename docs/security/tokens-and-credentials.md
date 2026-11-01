@@ -58,6 +58,20 @@ bound on two replicas with Valkey running (about 15 ms) and with Valkey stopped 
 The payload of a change names a token by ID and by the SHA-256 of its secret; it can confirm a guess of a secret that
 already is a full 256-bit value, which nobody can make, and cannot authenticate anyone.
 
+## Last use of a token
+
+Every successful authentication by a token, from the cache or from PostgreSQL, notes the token ID, the time and the client address
+in a per-replica map ([lastused.go](../../internal/auth/token/lastused.go)); nothing on the request path reads it, so it cannot
+change an answer. The map holds no token value or hash. A component flushes it every 60 s and at shutdown with one statement that
+changes a token's row only when it has no last use or the new one is `auth.tokens.last_used_granularity` (5 m by default) newer, so
+the write load follows the number of tokens, not of requests. The client address is the one the trusted-proxy rule of the chain
+resolved (a forwarded header from a peer outside `server.trusted_proxies` is not believed), with an IPv6 zone removed because the
+`inet` column cannot hold it. A failed flush is dropped and counted in `trove_auth_lastused_flush_failures_total`; a replica killed
+without a drain loses the uses of its last minute, so the time and address are approximate evidence of a use, which is what
+[H-19](../spec/identity-and-authentication.md#h-19--tokens-are-bearer-credentials) asks of it, and not an audit record: the audit trail
+holds the rejections and the content events, not every successful use. The filter `lastUsedBefore` and the token screens read
+the columns.
+
 ## Throttle, markers and rate limits
 
 The failed-credential throttle counts every rejected credential per client address (`auth.rate_limit.failures_per_address`
@@ -183,14 +197,6 @@ The per-operation check of `authorizingMux` then decides. Live only with the bri
 are reachable. What makes it real: an operation declared public that should not be, or the bridge enabled on an
 installation that is reachable from untrusted networks (the configuration check refuses it for an https origin other than
 localhost).
-
-### H-84 · Last use of a token is not recorded
-
-Component: `api_token.last_used_at` (R-AUTH-031, P1). Subject: leaked tokens. Live in M1: the column stays null, so
-`GET /api/v1/tokens?lastUsedBefore=` cannot find stale tokens and the owner cannot see whether a leaked token was used.
-[H-19](../spec/identity-and-authentication.md#h-19--tokens-are-bearer-credentials) names last-used data among the limits of a
-bearer token; until it is written, the audit trail (`token.rejected`, and the access events of the content areas) is the only
-trace of a use.
 
 ### H-85 · Group names from the login flow are applied as given
 

@@ -397,6 +397,27 @@ SELECT t.id::text AS id, t.type, t.hint, t.principal_id::text AS owner_id, p.kin
  ORDER BY t.id DESC
  LIMIT sqlc.arg(max_rows)::int;
 
+-- name: IdentityTouchTokensLastUsed :execrows
+-- One flush of the last-used buffer (R-AUTH-031). A JSON array of {"id", "at", "addr"}.
+-- The row changes only when it has no last use or the new one is a granularity
+-- newer, so a token costs one write per granularity however many replicas saw it.
+-- The rows are locked in id order, so two replicas flushing together cannot deadlock.
+WITH u AS (
+    SELECT (e ->> 'id')::uuid AS id, (e ->> 'at')::timestamptz AS at, NULLIF(e ->> 'addr', '')::inet AS addr
+      FROM jsonb_array_elements(sqlc.arg(uses)::text::jsonb) AS e
+), due AS (
+    SELECT t.id
+      FROM api_token t JOIN u ON u.id = t.id
+     WHERE t.last_used_at IS NULL
+        OR t.last_used_at < u.at - make_interval(secs => sqlc.arg(granularity_secs)::float8)
+     ORDER BY t.id
+       FOR UPDATE OF t
+)
+UPDATE api_token t
+   SET last_used_at = u.at, last_used_addr = coalesce(u.addr, t.last_used_addr)
+  FROM u, due
+ WHERE t.id = u.id AND t.id = due.id;
+
 -- name: IdentityRevokeCascade :many
 -- Revokes a token and, in the same statement, every unrevoked token whose
 -- derived_from chain leads to it; with follow_rotation also the rotation

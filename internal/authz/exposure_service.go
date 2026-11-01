@@ -3,8 +3,10 @@ package authz
 import (
 	"context"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -52,11 +54,62 @@ type ExposureServiceOptions struct {
 	Ceiling *ExposureCeiling
 }
 
+// StoredRepo names the repository a check lists the stored versions of.
+type StoredRepo struct {
+	ID     int64
+	Key    string
+	Format string
+	// Class is local, remote or virtual.
+	Class string
+}
+
+// StoredPackage is what a repository stores under a package name.
+type StoredPackage struct {
+	// Listed is false when the repository cannot say what it stores (a virtual
+	// repository, or a format that lists nothing).
+	Listed   bool
+	Versions []string
+	// Tags maps a tag to the version it points to; formats with tags only.
+	Tags map[string]string
+}
+
+// StoredPackages lists the versions and tags a repository stores of a package, for
+// the check of an endpoint's exposure rules that names no versions (R-EP-016,
+// Q-EP-61). The format owns the answer; a build without one lists nothing.
+type StoredPackages interface {
+	Stored(ctx context.Context, repo StoredRepo, pkg string) (StoredPackage, error)
+}
+
+// MaxCheckStored bounds the stored versions one check judges; more are cut and the
+// answer carries [WarnStoredVersionsTruncated].
+const MaxCheckStored = 1000
+
+// The warnings of a check that lists stored versions.
+const (
+	// WarnStoredVersionsNotListed: the repository cannot list what it stores of
+	// the package, so the answer holds no versions.
+	WarnStoredVersionsNotListed = "stored_versions_not_listed"
+	// WarnStoredVersionsTruncated: the package has more than MaxCheckStored versions.
+	WarnStoredVersionsTruncated = "stored_versions_truncated"
+)
+
 // ExposureService is the domain API of exposure rules (R-EP-012, R-EP-016): the
 // HTTP operations are thin handlers over it that add paging, ETags and
 // idempotency.
 type ExposureService struct {
-	o ExposureServiceOptions
+	o      ExposureServiceOptions
+	stored atomic.Pointer[StoredPackages]
+}
+
+// SetStored installs the source of stored versions. The formats are built after
+// the exposure rules, because the decision point needs the rules first, so the
+// source arrives later; until then a check lists no stored versions.
+func (s *ExposureService) SetStored(p StoredPackages) {
+	if p == nil {
+		s.stored.Store(nil)
+		return
+	}
+	s.stored.Store(&p)
 }
 
 // NewExposureService creates the service.
@@ -678,6 +731,13 @@ type ExposureCheckItem struct {
 	Reason string
 }
 
+// ExposureCheckTag is the verdict on one tag of the package.
+type ExposureCheckTag struct {
+	Tag, Version string
+	// Visible: a rule admits the tag name and the version it points to is exposed.
+	Visible bool
+}
+
 // ExposureCheckResult is the answer of the dry run.
 type ExposureCheckResult struct {
 	Endpoint, Repository, Mode, Package string
@@ -687,6 +747,8 @@ type ExposureCheckResult struct {
 	Rule, Reason string
 	Versions     []ExposureCheckItem
 	Paths        []ExposureCheckItem
+	// DistTags are the tags of the package for a format with tags, sorted by name.
+	DistTags []ExposureCheckTag
 	// Fingerprint is the exposure fingerprint of the stored rules (R-EP-018).
 	Fingerprint string
 	Warnings    []string
@@ -695,12 +757,15 @@ type ExposureCheckResult struct {
 // Check is the dry run of R-EP-016: exposed or not, the admitting rule or the
 // reason, for the repository or a package and for the versions and paths asked.
 // It reads the stored rules from PostgreSQL, so it reflects a write at once on
-// every replica (R-API-052), transfers no content and contacts no upstream. The
-// stored versions of a package are listed by formats with versions; this build
-// has none, so a check without versions lists none. The caller has already
-// checked endpoints:read and read on the repository.
+// every replica (R-API-052), transfers no content and contacts no upstream. A check
+// that names a package of a format with versions and no versions judges the
+// versions the repository stores of it, and for a format with tags answers the
+// tags and whether each stays visible (Q-EP-61); a repository that cannot list
+// them (a virtual one) answers the warning [WarnStoredVersionsNotListed]. The
+// caller has already checked endpoints:read and read on the repository.
 func (s *ExposureService) Check(ctx context.Context, endpoint string, in ExposureCheckInput) (ExposureCheckResult, error) {
 	res := ExposureCheckResult{Endpoint: endpoint, Repository: in.Repository, Package: in.Package, Warnings: []string{}}
+	var held checkHeld
 	err := s.o.DB.InTx(ctx, func(tx meta.Tx) error {
 		qs, err := queriesOf(tx)
 		if err != nil {
@@ -769,11 +834,7 @@ func (s *ExposureService) Check(ctx context.Context, endpoint string, in Exposur
 			res.Warnings = append(res.Warnings, WarnEndpointNotInRulesMode)
 		}
 		res.Exposed, res.Rule, res.Reason = judge(exposureItem{pkg: in.Package})
-		res.Versions = make([]ExposureCheckItem, 0, len(in.Versions))
-		for _, v := range in.Versions {
-			ok, rule, reason := judge(exposureItem{pkg: in.Package, version: v})
-			res.Versions = append(res.Versions, ExposureCheckItem{Value: v, Exposed: ok, Rule: rule, Reason: reason})
-		}
+		held = checkHeld{repo: repo, f: f, names: names, rules: rules, judge: judge}
 		res.Paths = make([]ExposureCheckItem, 0, len(in.Paths))
 		for _, p := range in.Paths {
 			ok, rule, reason := judge(exposureItem{pkg: in.Package, path: p})
@@ -781,7 +842,75 @@ func (s *ExposureService) Check(ctx context.Context, endpoint string, in Exposur
 		}
 		return nil
 	})
-	return res, err
+	if err != nil {
+		return res, err
+	}
+	// The versions and tags come from the format, outside the transaction above: the
+	// format reads its own tables through its own transaction.
+	res.Versions = make([]ExposureCheckItem, 0, len(in.Versions))
+	res.DistTags = []ExposureCheckTag{}
+	versions := in.Versions
+	if held.f.Versions && in.Package != "" {
+		sp, err := s.storedOf(ctx, held.repo, in.Package, held.names)
+		if err != nil {
+			return res, err
+		}
+		if len(versions) == 0 {
+			// The request names none: judge what the repository stores (Q-EP-61).
+			versions = sp.Versions
+			switch {
+			case !sp.Listed:
+				res.Warnings = append(res.Warnings, WarnStoredVersionsNotListed)
+			case len(versions) > MaxCheckStored:
+				versions = versions[:MaxCheckStored]
+				res.Warnings = append(res.Warnings, WarnStoredVersionsTruncated)
+			}
+		}
+		for _, tag := range slices.Sorted(maps.Keys(sp.Tags)) {
+			// A tag stays in a filtered document when a rule admits its name and the
+			// version it points to is exposed (ExposureView.Tag).
+			visible := res.Mode == ExposureModeAll
+			if !visible {
+				pointed, _, _ := held.judge(exposureItem{pkg: in.Package, version: sp.Tags[tag]})
+				visible = pointed && admitsItem(held.rules, exposureItem{pkg: in.Package, tag: tag}, held.f.Versioning)
+			}
+			res.DistTags = append(res.DistTags, ExposureCheckTag{Tag: tag, Version: sp.Tags[tag], Visible: visible})
+		}
+	}
+	for _, v := range versions {
+		ok, rule, reason := held.judge(exposureItem{pkg: in.Package, version: v})
+		res.Versions = append(res.Versions, ExposureCheckItem{Value: v, Exposed: ok, Rule: rule, Reason: reason})
+	}
+	return res, nil
+}
+
+// checkHeld is what the transaction of a check hands to the part that lists the
+// stored versions: the repository, its format's exposure facts and the compiled
+// rules, with the judge over them.
+type checkHeld struct {
+	repo  q.EndpointsRepositoryByKeyRow
+	f     catalog.Exposure
+	names catalog.Names
+	rules []*compiledRule
+	judge func(exposureItem) (bool, string, string)
+}
+
+// storedOf asks the source what the repository stores of the package. A build or
+// a replica without a source, and a package name the format does not accept,
+// answer the empty, unlisted package.
+func (s *ExposureService) storedOf(ctx context.Context, repo q.EndpointsRepositoryByKeyRow, pkg string, names catalog.Names) (StoredPackage, error) {
+	src := s.stored.Load()
+	if src == nil {
+		return StoredPackage{}, nil
+	}
+	if names != nil {
+		norm, ok := names.Normalize(pkg)
+		if !ok {
+			return StoredPackage{Listed: true}, nil
+		}
+		pkg = norm
+	}
+	return (*src).Stored(ctx, StoredRepo{ID: repo.ID, Key: repo.Key, Format: repo.Format, Class: repo.Class}, pkg)
 }
 
 // withDraft validates the draft of the rule editor and puts it in place of the

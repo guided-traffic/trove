@@ -949,15 +949,6 @@
         <target>Wartungsmodus</target>
       </segment>
     </unit>
-    <unit id="system.install.maintenance.off">
-      <notes>
-        <note category="location">src/app/features/system/system-status.html:62,64</note>
-      </notes>
-      <segment>
-        <source>Off</source>
-        <target>Aus</target>
-      </segment>
-    </unit>
     <unit id="system.install.answered-by">
       <notes>
         <note category="location">src/app/features/system/system-status.html:68,69</note>
@@ -4851,6 +4842,24 @@
       <segment>
         <source>This endpoint is in mode &quot;all&quot;, so this rule has no effect.</source>
         <target>Dieser Endpunkt steht im Modus „all“, daher hat diese Regel keine Wirkung.</target>
+      </segment>
+    </unit>
+    <unit id="ep.warning.stored-not-listed">
+      <notes>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:81</note>
+      </notes>
+      <segment>
+        <source>This repository cannot list what it stores of the package, because a virtual repository stores nothing of its own. Name the versions to test, or check one of its member repositories.</source>
+        <target>Dieses Repository kann nicht auflisten, was es vom Paket speichert, denn ein virtuelles Repository speichert selbst nichts. Geben Sie die zu testenden Versionen an oder prüfen Sie eines seiner Mitglieds-Repositories.</target>
+      </segment>
+    </unit>
+    <unit id="ep.warning.stored-truncated">
+      <notes>
+        <note category="location">src/app/features/endpoints/exposure-rule-editor.ts:83</note>
+      </notes>
+      <segment>
+        <source>The package has more stored versions than one check judges; the first 1000 are shown. Name the versions to test.</source>
+        <target>Das Paket hat mehr gespeicherte Versionen, als eine Prüfung beurteilt; die ersten 1000 werden gezeigt. Geben Sie die zu testenden Versionen an.</target>
       </segment>
     </unit>
     <unit id="ep.field.packages">
@@ -9921,6 +9930,24 @@
         <target>Aktiviert.</target>
       </segment>
     </unit>
+    <unit id="auth-settings.break-glass-no-password">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:145,146</note>
+      </notes>
+      <segment>
+        <source>No password is configured: <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code&gt;" dispEnd="&lt;/code&gt;">auth.break_glass.password_file</pc> is empty. Every local sign-in is refused.</source>
+        <target>Es ist kein Passwort konfiguriert: <pc id="0" equivStart="START_TAG_CODE" equivEnd="CLOSE_TAG_CODE" type="other" dispStart="&lt;code&gt;" dispEnd="&lt;/code&gt;">auth.break_glass.password_file</pc> ist leer. Jede lokale Anmeldung wird abgelehnt.</target>
+      </segment>
+    </unit>
+    <unit id="auth-settings.break-glass-bad-password">
+      <notes>
+        <note category="location">src/app/features/settings/auth-settings.html:151,156</note>
+      </notes>
+      <segment>
+        <source>The password file is not usable on this replica, for example after a rotation to an empty or too short password. Every local sign-in is refused until the file is fixed.</source>
+        <target>Die Passwortdatei ist auf diesem Replikat nicht nutzbar, zum Beispiel nach einer Rotation auf ein leeres oder zu kurzes Passwort. Jede lokale Anmeldung wird abgelehnt, bis die Datei korrigiert ist.</target>
+      </segment>
+    </unit>
     <unit id="auth-settings.break-glass-off">
       <notes>
         <note category="location">src/app/features/settings/auth-settings.html:135,137</note>
@@ -12122,13 +12149,13 @@
         <target>Nie</target>
       </segment>
     </unit>
-    <unit id="token-table.not-recorded">
+    <unit id="token-table.not-used">
       <notes>
         <note category="location">src/app/shared/access/token-table.ts:111,113</note>
       </notes>
       <segment>
-        <source>Not recorded</source>
-        <target>Nicht erfasst</target>
+        <source>Not used yet</source>
+        <target>Noch nicht verwendet</target>
       </segment>
     </unit>
     <unit id="token-table.unknown-endpoints">

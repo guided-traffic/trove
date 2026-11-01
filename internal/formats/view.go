@@ -46,6 +46,29 @@ type ViewAdapter interface {
 	Withheld(ctx context.Context, ports DataPorts, repos []string) ([]VersionID, error)
 }
 
+// StoredLister is implemented by the view adapter of a format that can say what
+// one repository stores under one package name: the dry run of an endpoint's
+// exposure rules lists these versions when the request names none
+// (R-EP-016, Q-EP-61). It is optional; a format without it lists none.
+type StoredLister interface {
+	// Stored returns the versions the repository serves of the package, in the
+	// order of their arrival, and, for a format with tags, its tags (tag to
+	// version). A hosted repository lists its live versions, a remote one the
+	// versions of its cached document; the package is a normalized name. A package
+	// the repository does not hold is the empty answer, not an error.
+	Stored(ctx context.Context, ports DataPorts, repo RepoRef, pkg string) (Stored, error)
+}
+
+// Stored is the answer of [StoredLister].
+type Stored struct {
+	// Listed is false when the repository cannot say what it stores of a package
+	// (a virtual repository stores nothing of its own), which is not the same as a
+	// package it does not hold.
+	Listed   bool
+	Versions []string
+	Tags     map[string]string
+}
+
 // ViewVersion names a stored version for the adapter.
 type ViewVersion struct {
 	ID      VersionID

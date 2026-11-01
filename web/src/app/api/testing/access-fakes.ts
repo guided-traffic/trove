@@ -658,7 +658,7 @@ export function sampleAuthSettings(): LoadedAuthSettings {
       },
       status: {
         providers: [{ id: 'corp', displayName: 'Corporate SSO', available: true }],
-        breakGlass: { enabled: true, lockedUntil: null },
+        breakGlass: { enabled: true, passwordStatus: 'ok', lockedUntil: null },
         sessions: {
           idleTimeoutSeconds: 3600,
           absoluteTimeoutSeconds: 43_200,

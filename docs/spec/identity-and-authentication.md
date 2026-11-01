@@ -2369,15 +2369,25 @@ NuGet API-key presentations count alike.
 - updates are best effort. A failed flush is dropped and counted in a metric, and never fails a
   request. A replica killed without a drain loses at most one interval of uses.
 
-**Use.** `lastUsedBefore` in R-AUTH-028 finds stale tokens. A token that was never used has
-`lastUsedAt: null`.
+**Use.** `lastUsedBefore` in R-AUTH-028 finds stale tokens: a token that was never used, and one
+last used before the instant. A token that was never used has `lastUsedAt: null`. The token screens
+filter with it ("Not used for (days)").
+
+**Build status.** Built ahead of its milestone ([Q-AUTH-178](#q-auth-178--the-last-use-of-a-token-is-recorded-through-a-write-only-buffer)):
+`internal/auth/token/lastused.go` holds the buffer, `internal/app/wire_identity.go` runs its flush
+loop and flushes it at shutdown, and the `UPDATE` is `IdentityTouchTokensLastUsed`. The priority
+label stays P1, because the requirement keeps its place in the roadmap tables. Two points of the
+build: the flush is one statement for the whole batch whose rows are locked in ID order, so two
+replicas that flush together cannot deadlock; and the address is stored without an IPv6 zone, which
+PostgreSQL does not take in `inet`. A replica that has no client address for a presentation (a
+command, a test) records the time and leaves the address as it was.
 
 Configuration:
 
 ```yaml
 auth:
   tokens:
-    last_used_granularity: 5m # default (proposed)
+    last_used_granularity: 5m # default; 1s to 24h
 ```
 
 Acceptance criteria:
@@ -3101,8 +3111,9 @@ YAML (INV-15).
 - the effective runtime values, at the top level of the answer and in the shape `PATCH` takes, so
   that a body obtained by `GET` can be sent back (Q-AUTH-45);
 - the YAML ceilings they are bound by;
-- read-only status: providers with discovery state, break-glass enabled and locked, session
-  timeouts, the client switches, the command-line login poll binding mode (R-AUTH-034, with a
+- read-only status: providers with discovery state, break-glass enabled, locked, and the state
+  of its password (`passwordStatus`: `ok`, `not_configured`, `unusable` or `not_applicable`;
+  Q-AUTH-179), session timeouts, the client switches, the command-line login poll binding mode (R-AUTH-034, with a
   warning when it is `off`, and another when it is not `off` while `server.trusted_proxies` is
   empty), and the SCIM state.
 
@@ -3276,7 +3287,7 @@ list of authentication state; a new kind needs a row here before it ships:
 | Break-glass lockout and rotation hold (R-AUTH-014, R-AUTH-038) | `auth_lockout` | nothing | none | unaffected |
 | Failed-credential throttle, flow starts, wrong device codes (R-AUTH-038) | none: disposable counters | fallback buckets while Valkey is unavailable | the counters | per-replica shares of each limit |
 | Throttle exemption of recently validated credentials (R-AUTH-038) | none | its own cache | markers | only its own cache exempts |
-| Last-used times (R-AUTH-031, P1) | `api_token` | a write-only buffer until the next flush | none | unaffected |
+| Last-used times (R-AUTH-031) | `api_token` | a write-only buffer until the next flush | none | unaffected |
 | OIDC discovery documents and JWKS (R-AUTH-004) | the provider | its own copy | none | unaffected |
 | Break-glass verifier and OIDC client secrets (R-AUTH-004, R-AUTH-014) | Kubernetes Secrets | read from the mounted files; the loaded break-glass file content, to notice a rotation | none | unaffected |
 | Argon2id verification slots (R-AUTH-014) | none | the number of verifications running | none | unaffected; it protects the replica's own memory |
@@ -3304,7 +3315,7 @@ Rules:
 - **Background loops on `web` replicas** ([architecture.md](architecture.md) R-ARCH-001): the
   discovery refresh and JWKS refetch (R-AUTH-004), the re-read of the client-secret and break-glass
   files with the rotation check of R-AUTH-014 (R-AUTH-004, R-AUTH-014), the last-used flush
-  (R-AUTH-031, P1) and the pending-flow count (R-AUTH-038). Every iteration carries a deadline, and
+  (R-AUTH-031) and the pending-flow count (R-AUTH-038). Every iteration carries a deadline, and
   none holds a database connection across an outbound call or a Valkey call.
 - **Drain.** Every request of this page is short; the longest, the OIDC callback, is bounded by the
   three 10 s timeouts of R-AUTH-004 and R-AUTH-006 and finishes within the default drain of
@@ -4862,6 +4873,63 @@ with `session_expired`, which the UI turns into its sign-in path. The developmen
 on a route it cannot recover from.
 
 **Applied in the spec:** R-AUTH-001 item 3. Code: `sessionAllowed` in `internal/auth/stage.go`.
+
+### Q-AUTH-178 · The last use of a token is recorded through a write-only buffer
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the token screens offer the filter "Not used for (days)", which sends `lastUsedBefore`. R-AUTH-031 was P1 and nothing wrote
+`api_token.last_used_at`, so the filter matched every token, and the manual said so (found on 2026-11-01). The owner's rule for the
+UI is that no control is offered without a working backend. The design of the write already exists: R-AUTH-031 and the table of
+write-only buffers of R-ARCH-032 describe a per-replica buffer that flushes every 60 s and at shutdown, one write per token and
+`granularity`; the repository activity (R-REPO-012) and the download statistics are built the same way.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Record it, as R-AUTH-031 designs it (chosen) | `token.Service` notes every successful authentication in memory; a component flushes the batch every 60 s and at shutdown with one statement | The column and the filter are useful (finding stale and leaked tokens, H-19); the code follows the pattern of `repository.Activity`; the write load is bounded by tokens, not requests | One more write path and one more component to start and flush |
+| (b) Remove the filter and the column from the UI and the API | `lastUsedBefore` is refused or ignored | No write path | Gives up the only signal for stale tokens; the API parameter is in the contract (R-AUTH-028); the audit trail does not record successful uses |
+| (c) Write on every authentication | An `UPDATE` per request | Exact | A write per npm request; the case R-AUTH-031 exists to avoid |
+
+**Choice:** (a). Every successful authentication by a token, from the cache or from PostgreSQL, notes `(token ID, now, client address)`
+in a map under a mutex, which is all a request does. `auth.tokens.last_used_granularity` (default `5m`, 1 s to 24 h) is the
+coarsening: the `UPDATE` changes a row only when it has no last use or the new one is at least a granularity newer, so one token costs
+at most one row change per granularity whatever the number of requests and replicas, and one write per token and flush at most from a
+replica. A failed flush is dropped, counted in `trove_auth_lastused_flush_failures_total`, logged, and never fails a request.
+R-AUTH-031 keeps its P1 label and is built ahead of its milestone; the requirement text says so.
+
+**Rationale:** the filter, the column and the contract exist, so recording is the smaller change than removing them; and the buffer
+is a pattern the code base already carries. The development agent would revisit this if the flush of a very large number of
+distinct tokens (the batch is one statement with one row per token) showed up in the PostgreSQL write profile, then by splitting the batch.
+
+**Applied in the spec:** R-AUTH-031 (build status, configuration), the table of cached and buffered state, R-ARCH-024 step 6,
+[operations-and-observability.md](operations-and-observability.md) (the metric). Code: `internal/auth/token/lastused.go`,
+`internal/app/wire_identity.go` (`lastUsedComponent`), the statement `IdentityTouchTokensLastUsed`.
+
+### Q-AUTH-179 · The break-glass status names the state of the password
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `status.breakGlass` of `GET /api/v1/settings/auth` held `enabled` and `lockedUntil`. With the account enabled and no
+`auth.break_glass.password_file` (Q-AUTH-33), or a rotated file that does not hold a usable password (Q-AUTH-14), every local sign-in is
+refused with `403 local_login_disabled`, while the settings screen said "Enabled." (found on 2026-11-01).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A `passwordStatus` member with four values (chosen) | `ok`, `not_configured`, `unusable`, `not_applicable` (the account is disabled) | Names the cause so the operator knows what to fix; an enumeration the UI can switch on | One more member in a representation that is read-only |
+| (b) A boolean `passwordConfigured` | `false` when no file is configured | Smaller | Does not cover the rotated file that is not usable, the other way to be locked out |
+| (c) Show the problem only in the log | The start-up warning of Q-AUTH-33 exists | Nothing to add | The settings screen is where an operator looks, and the log line is gone after a rotation |
+
+**Choice:** (a). The value is the state of this replica: `unusable` is possible after a rotation that the replica noticed, and another
+replica may not have noticed it yet. The member is read-only status, part of the already administrator-only settings document; it
+carries no part of the password, its length or its hash. The screen shows the missing password as an error with the key to set, and
+the unusable one with the effect (every local sign-in refused until the file is fixed).
+
+**Rationale:** the member answers the question the operator has when a sign-in is refused, without exposing anything that helps an
+attacker: whether a password file is configured is also visible to anyone who tries the form. The development agent would revisit
+this if replicas disagree often enough to need a per-replica list.
+
+**Applied in the spec:** R-AUTH-040 (the `status.breakGlass` member), `api/openapi.yaml` (`AuthSettingsStatus`). Code:
+`oidc.Service.BreakGlassPassword`, `authsettings_api.go`, `web/src/app/features/settings/auth-settings.html`.
 
 ### Q-AUTH-79 · How the end-to-end tests drive the browser login of E1.1 and disable the break-glass account
 

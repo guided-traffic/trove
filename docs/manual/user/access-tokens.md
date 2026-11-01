@@ -79,7 +79,7 @@ You can hold 50 active personal tokens unless the administrator set another numb
 | **Type** | `pat` |
 | **Scope** | **All permissions of the owner**, or the number of repository grants; a warning when the token is bound to an endpoint that is no longer configured |
 | **Created**, **Expires** | Times; **Expires soon** within seven days of the expiry |
-| **Last used** | **Not recorded**: this version does not record when a token was last used |
+| **Last used** | When the token last authenticated a request, recorded in batches, so it can be a few minutes behind; **Not used yet** for a token without a recorded use |
 | **Created via** | `ui`, `api` or `rotation` |
 | **State** | **Active**, **Expired** or **Revoked** |
 

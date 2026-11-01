@@ -37,6 +37,11 @@ func (a *App) wirePackagesAPI(_ context.Context, in infra, az authzArea, repo re
 	if err != nil {
 		return packagesAPIArea{}, fmt.Errorf("%s: the read model: %w", AreaPackagesAPI, err)
 	}
+	// The check of the exposure rules lists a package's stored versions through the same
+	// format host (R-EP-016, Q-EP-61); the rule service was built before the formats.
+	if ex := part[exposureArea](a.parts).rules; ex != nil {
+		ex.SetStored(newStoredPackages(formats.List(), fh.host))
+	}
 	rd, err := readme.New(readme.Options{
 		MaxSourceBytes: int(a.cfg.UI.Readme.MaxSourceBytes),
 		ImageOrigins:   a.cfg.UI.Readme.ExternalImageOrigins,

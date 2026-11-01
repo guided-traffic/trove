@@ -77,6 +77,10 @@ function warningText(code: string): string {
       return $localize`:@@ep.warning.path-patterns:Path patterns on a package format can admit a tarball but not its metadata. Prefer package-name patterns.`;
     case 'endpoint_not_in_rules_mode':
       return $localize`:@@ep.warning.not-rules-mode:This endpoint is in mode "all", so this rule has no effect.`;
+    case 'stored_versions_not_listed':
+      return $localize`:@@ep.warning.stored-not-listed:This repository cannot list what it stores of the package, because a virtual repository stores nothing of its own. Name the versions to test, or check one of its member repositories.`;
+    case 'stored_versions_truncated':
+      return $localize`:@@ep.warning.stored-truncated:The package has more stored versions than one check judges; the first 1000 are shown. Name the versions to test.`;
     default:
       return code;
   }

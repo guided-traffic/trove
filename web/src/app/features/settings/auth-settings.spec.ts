@@ -22,6 +22,38 @@ describe('Authentication settings (R-UI-031)', () => {
     expect(await seriousViolations(root)).toEqual([]);
   });
 
+  it('R-AUTH-040 the break-glass status names a missing or unusable password instead of saying only Enabled', async () => {
+    const withPassword = (passwordStatus: 'ok' | 'not_configured' | 'unusable' | 'not_applicable', enabled = true) => ({
+      setup: (get: <A>(token: abstract new (...args: never[]) => A) => A) => {
+        const api = get(AuthSettingsApi) as FakeAuthSettingsApi;
+        const s = sampleAuthSettings();
+        api.stored = {
+          ...s,
+          settings: {
+            ...s.settings,
+            status: { ...s.settings.status, breakGlass: { enabled, passwordStatus, lockedUntil: null } },
+          },
+        };
+      },
+    });
+    const ok = await renderScreen(AuthSettings, withPassword('ok'));
+    expect(text(ok.root)).toContain('Enabled.');
+    expect(text(ok.root)).not.toContain('No password');
+
+    const missing = await renderScreen(AuthSettings, withPassword('not_configured'));
+    expect(text(missing.root)).toContain('No password is configured');
+    expect(text(missing.root)).toContain('auth.break_glass.password_file');
+    expect(text(missing.root)).toContain('Every local sign-in is refused');
+
+    const unusable = await renderScreen(AuthSettings, withPassword('unusable'));
+    expect(text(unusable.root)).toContain('password file is not usable');
+    expect(text(unusable.root)).toContain('Every local sign-in is refused');
+
+    const off = await renderScreen(AuthSettings, withPassword('not_applicable', false));
+    expect(text(off.root)).toContain('Disabled.');
+    expect(text(off.root)).not.toContain('Every local sign-in is refused');
+  });
+
   it('R-API-013 saves a merge patch of the changed members with the loaded ETag', async () => {
     const { fixture, root, get } = await renderScreen(AuthSettings);
     typeInto(root, 'Default lifetime (days)', '30');

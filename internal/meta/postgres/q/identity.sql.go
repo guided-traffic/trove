@@ -2296,6 +2296,41 @@ func (q *Queries) IdentityTokensEnteringNotice(ctx context.Context, arg Identity
 	return items, nil
 }
 
+const identityTouchTokensLastUsed = `-- name: IdentityTouchTokensLastUsed :execrows
+WITH u AS (
+    SELECT (e ->> 'id')::uuid AS id, (e ->> 'at')::timestamptz AS at, NULLIF(e ->> 'addr', '')::inet AS addr
+      FROM jsonb_array_elements($1::text::jsonb) AS e
+), due AS (
+    SELECT t.id
+      FROM api_token t JOIN u ON u.id = t.id
+     WHERE t.last_used_at IS NULL
+        OR t.last_used_at < u.at - make_interval(secs => $2::float8)
+     ORDER BY t.id
+       FOR UPDATE OF t
+)
+UPDATE api_token t
+   SET last_used_at = u.at, last_used_addr = coalesce(u.addr, t.last_used_addr)
+  FROM u, due
+ WHERE t.id = u.id AND t.id = due.id
+`
+
+type IdentityTouchTokensLastUsedParams struct {
+	Uses            string
+	GranularitySecs float64
+}
+
+// One flush of the last-used buffer (R-AUTH-031). A JSON array of {"id", "at", "addr"}.
+// The row changes only when it has no last use or the new one is a granularity
+// newer, so a token costs one write per granularity however many replicas saw it.
+// The rows are locked in id order, so two replicas flushing together cannot deadlock.
+func (q *Queries) IdentityTouchTokensLastUsed(ctx context.Context, arg IdentityTouchTokensLastUsedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, identityTouchTokensLastUsed, arg.Uses, arg.GranularitySecs)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const identityUpdateGroup = `-- name: IdentityUpdateGroup :exec
 UPDATE user_group SET description = CASE WHEN $1::boolean THEN $2::text ELSE description END,
                       auto_join = CASE WHEN $3::boolean THEN $4::boolean ELSE auto_join END

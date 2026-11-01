@@ -94,7 +94,7 @@ trove is available in English and German.
 1. Open the user menu and select **Language**.
 2. Select **English** or **Deutsch**. trove saves the choice with your preferences and reloads the same page in that language.
 
-The language is part of the page address (`/ui/en/` or `/ui/de/`), so a bookmark keeps it. When you open trove without a language in the address, it uses the language your browser prefers, and English if that is neither.
+The language is part of the page address (`/ui/en/` or `/ui/de/`), so a bookmark keeps it. When you open trove without a language in the address, it uses the language you saved in your preferences if you are signed in, otherwise the language your browser prefers, and English if that is neither. The sign-in page itself comes before any preference is known, so it follows the browser.
 
 To change the colours, select **Theme** in the top bar and choose **Follow the system**, **Light** or **Dark**. When you are signed in, trove saves the choice with your preferences and applies it at your next sign-in, also in another browser. You can set both on your profile too: **Profile and tokens**, then **Profile**, section **Preferences**, then **Save preferences**.
 

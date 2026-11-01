@@ -419,7 +419,11 @@ func (a *App) startClient() error {
 	if err != nil {
 		return err
 	}
-	ui, err := webui.New(webui.Options{Locales: uiLocales(), DefaultLocale: uiDefaultLocale, ImageOrigins: cfg.UI.Readme.ExternalImageOrigins})
+	ui, err := webui.New(webui.Options{
+		Locales: uiLocales(), DefaultLocale: uiDefaultLocale, ImageOrigins: cfg.UI.Readme.ExternalImageOrigins,
+		// The saved language of a signed-in user beats Accept-Language (R-UI-001).
+		Preference: a.uiPreference(),
+	})
 	if err != nil {
 		return fmt.Errorf("ui: %w", err)
 	}

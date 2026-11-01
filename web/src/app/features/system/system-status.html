@@ -56,15 +56,13 @@
             >
           }
         </dd>
-        <dt i18n="@@system.install.maintenance">Maintenance mode</dt>
-        <dd>
-          @if (i.maintenanceMode === 'normal') {
-            <ng-container i18n="@@system.install.maintenance.off">Off</ng-container>
-          } @else {
+        @if (i.maintenanceMode !== 'normal') {
+          <dt i18n="@@system.install.maintenance">Maintenance mode</dt>
+          <dd>
             <span class="material-icons warn" aria-hidden="true">warning</span>
             <span translate="no">{{ i.maintenanceMode }}</span>
-          }
-        </dd>
+          </dd>
+        }
         <dt i18n="@@system.install.answered-by">Answered by</dt>
         <dd translate="no">{{ i.answeredBy.replica }}</dd>
       </dl>

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/netip"
 	"strings"
+	"sync"
 
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/auth"
@@ -57,7 +58,7 @@ func TokenScopeOptions(cfg *config.Config) scope.Options {
 // store and the login count into as well (R-AUTH-041). The authentication stage
 // is the auth area, which also needs the sessions and the limiters of a
 // replica with a client listener.
-func (a *App) wireIdentity(_ context.Context, in infra) (identityArea, error) {
+func (a *App) wireIdentity(ctx context.Context, in infra) (identityArea, error) {
 	cfg := a.cfg.Auth
 	metrics, err := principal.NewMetrics(a.tele.metrics.Registry())
 	if err != nil {
@@ -85,6 +86,9 @@ func (a *App) wireIdentity(_ context.Context, in infra) (identityArea, error) {
 	provisioner := principal.NewProvisioner(principal.ProvisionerOptions{
 		DB: in.db, Notifier: in.changes, Recorder: in.rec, BreakGlassName: breakGlass, Metrics: metrics, Authz: authz.NewPrincipalHook(in.changes),
 	})
+	if err := a.startComponent(ctx, &lastUsedComponent{tokens: tokens}); err != nil {
+		return identityArea{}, err
+	}
 	a.tokenSvc.set(tokens)
 	return identityArea{
 		metrics: metrics, principals: principals, manager: manager, provisioner: provisioner, tokens: tokens, settings: settings,
@@ -96,6 +100,56 @@ func (a *App) wireIdentity(_ context.Context, in infra) (identityArea, error) {
 		},
 	}, nil
 }
+
+// lastUsedComponent owns the flush loop of the token last-used buffer
+// (R-AUTH-031). The loop lives until Stop, not until the context of the start-up
+// ends, because the first act of a shutdown ends that context while requests are
+// still being served; Flush writes what is left after the last request
+// (R-ARCH-024 step 6).
+type lastUsedComponent struct {
+	tokens *token.Service
+
+	mu     sync.Mutex
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+var (
+	_ Component = (*lastUsedComponent)(nil)
+	_ Flusher   = (*lastUsedComponent)(nil)
+)
+
+func (c *lastUsedComponent) Name() string { return "token-last-used" }
+
+func (c *lastUsedComponent) Start(context.Context) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	c.mu.Lock()
+	c.cancel, c.done = cancel, done
+	c.mu.Unlock()
+	go func() {
+		defer close(done)
+		c.tokens.RunLastUsed(ctx)
+	}()
+	return nil
+}
+
+func (c *lastUsedComponent) Stop(context.Context) error {
+	c.mu.Lock()
+	cancel, done := c.cancel, c.done
+	c.mu.Unlock()
+	if cancel != nil {
+		cancel()
+		<-done
+	}
+	return nil
+}
+
+// Flush writes the pending last-used times; Sync is the same for a running replica.
+func (c *lastUsedComponent) Flush(ctx context.Context) error { return c.tokens.FlushLastUsed(ctx) }
+
+// Sync is Flush for a running replica (App.Flush).
+func (c *lastUsedComponent) Sync(ctx context.Context) error { return c.tokens.FlushLastUsed(ctx) }
 
 // wireAuth is the auth area: the authentication stage of the client listeners'
 // chains, on the stores of the identity area, the session store and the

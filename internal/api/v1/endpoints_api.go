@@ -616,10 +616,13 @@ func checkResultOf(res authz.ExposureCheckResult) exposureCheckResult {
 		Endpoint: res.Endpoint, Repository: res.Repository, Mode: res.Mode, Package: optString(res.Package),
 		PackageExposed: res.Exposed, Rule: optString(res.Rule), Reason: res.Reason,
 		Versions: make([]checkVersion, 0, len(res.Versions)), Paths: make([]checkPath, 0, len(res.Paths)),
-		DistTags: []checkTag{}, Fingerprint: res.Fingerprint, Warnings: orEmpty(res.Warnings),
+		DistTags: make([]checkTag, 0, len(res.DistTags)), Fingerprint: res.Fingerprint, Warnings: orEmpty(res.Warnings),
 	}
 	for _, v := range res.Versions {
 		out.Versions = append(out.Versions, checkVersion{Version: v.Value, Exposed: v.Exposed, Rule: optString(v.Rule), Reason: v.Reason})
+	}
+	for _, t := range res.DistTags {
+		out.DistTags = append(out.DistTags, checkTag{Tag: t.Tag, Version: t.Version, Visible: t.Visible})
 	}
 	for _, p := range res.Paths {
 		out.Paths = append(out.Paths, checkPath{Path: p.Value, Exposed: p.Exposed, Rule: optString(p.Rule), Reason: p.Reason})

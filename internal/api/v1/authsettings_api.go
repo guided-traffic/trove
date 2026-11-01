@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
+	"github.com/guided-traffic/trove/internal/auth/oidc"
 	"github.com/guided-traffic/trove/internal/auth/token"
+	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
 
@@ -46,6 +48,7 @@ func (s *Server) authSettings(r *http.Request, row token.Settings) (gen.AuthSett
 		}
 	}
 	st.BreakGlass.Enabled = cfg.BreakGlass.Enabled
+	st.BreakGlass.PasswordStatus = gen.AuthSettingsStatusBreakGlassPasswordStatus(breakGlassPassword(cfg.BreakGlass, s.o.Auth.Login))
 	if cfg.BreakGlass.Enabled && s.o.Auth.Manager != nil {
 		u, err := s.o.Auth.Manager.GetUser(r.Context(), cfg.BreakGlass.Username)
 		switch {
@@ -61,6 +64,21 @@ func (s *Server) authSettings(r *http.Request, row token.Settings) (gen.AuthSett
 	st.Sessions.RecentAuthWindowSeconds = seconds(cfg.Sessions.RecentAuthWindow)
 	st.Clients.BasicEnabled = cfg.Clients.Basic.Enabled
 	return out, nil
+}
+
+// breakGlassPassword is the state of the break-glass password: the login
+// service's, which knows whether the replica holds a usable one, or, on a
+// replica without a login service, what the configuration alone shows.
+func breakGlassPassword(cfg config.AuthBreakGlass, login LoginService) oidc.PasswordStatus {
+	switch {
+	case login != nil:
+		return login.BreakGlassPassword()
+	case !cfg.Enabled:
+		return oidc.PasswordNotApplicable
+	case cfg.PasswordFile == "":
+		return oidc.PasswordNotConfigured
+	}
+	return oidc.PasswordOK
 }
 
 // GetAuthSettings implements GET /api/v1/settings/auth. It reads PostgreSQL, not

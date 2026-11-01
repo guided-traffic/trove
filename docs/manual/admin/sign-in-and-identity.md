@@ -16,7 +16,7 @@ trove has no password database. People sign in through an OpenID Connect identit
 | Anonymous access switch, token lifetimes | **Administration › System › Settings** | Within seconds, on every replica |
 | Users, groups, memberships, service accounts | **Administration › Identity** | Within seconds, on every replica |
 
-The **Authentication settings** screen under **Administration › System › Settings** also shows a read-only **Status (read only)** section: each identity provider with **discovery document loaded** or **not available on this replica**, whether the break-glass account is enabled or locked, the session timeouts and whether HTTP Basic with a token is allowed. Reading the screen needs the `settings:read` capability, saving needs `settings:write` and a recent sign-in. The token lifetimes on the same screen are described in [Managing tokens](tokens.md).
+The **Authentication settings** screen under **Administration › System › Settings** also shows a read-only **Status (read only)** section: each identity provider with **discovery document loaded** or **not available on this replica**, whether the break-glass account is enabled or locked and, when it is enabled but cannot verify a password, an error that says why (see [The break-glass administrator](#the-break-glass-administrator)), the session timeouts and whether HTTP Basic with a token is allowed. Reading the screen needs the `settings:read` capability, saving needs `settings:write` and a recent sign-in. The token lifetimes on the same screen are described in [Managing tokens](tokens.md).
 
 ## Configure an OpenID Connect provider
 
@@ -186,7 +186,7 @@ auth:
 
 - **Lockout.** `threshold` failed attempts within `window`, from any address, lock the account for `duration`; during the lock even the right password is refused. Anyone who can reach the sign-in can keep the account locked, so keep it disabled outside recovery or restrict `/auth/local/` at your edge. An administrator clears a lock with **Unlock** on the account's user page, or with `trove admin break-glass unlock`.
 - **Rotation.** Replace the password in the Secret. When a replica notices the new file, all break-glass sessions end and local sign-in is refused for `rotation_hold`. A file without a usable password refuses every local sign-in.
-- **No password file.** An enabled account without `password_file` starts, logs a warning and refuses every local sign-in, while the settings screen still shows **Enabled.** Test a local sign-in before you rely on the account.
+- **No password file.** An enabled account without `password_file` starts, logs a warning and refuses every local sign-in. The settings screen shows **Enabled.** and, below it, the error **No password is configured: `auth.break_glass.password_file` is empty.** The API field is `status.breakGlass.passwordStatus` of `GET /api/v1/settings/auth`: `ok`, `not_configured`, `unusable` (a rotated file that holds no usable password; the screen says **The password file is not usable on this replica**) or `not_applicable` (the account is disabled). The value describes the replica that answers; a replica that has not yet noticed a rotation can still say `ok`. Test a local sign-in before you rely on the account.
 - **Disable it** once an administrator can sign in through the identity provider: remove `secrets.breakGlass` and roll the release.
 
 ## Anonymous access

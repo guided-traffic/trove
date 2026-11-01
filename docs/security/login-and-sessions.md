@@ -162,7 +162,9 @@ recovery path. Live whenever `auth.break_glass.enabled` is true (the default) an
 R-AUTH-014 asks the replica to refuse to start without a readable password file; it starts instead, logs a warning, and refuses
 every local login with 403 `local_login_disabled` (Q-AUTH-33). A configured file that cannot be read, a weak plaintext and a
 weak hash still stop the replica. What makes it real: an operator who believes the break-glass account works because the
-default says enabled and finds out during the outage that needs it.
+default says enabled and finds out during the outage that needs it. The replica still starts; what changed is that the settings
+status names the cause for an administrator who looks (`status.breakGlass.passwordStatus` is `not_configured`, or `unusable` after a
+rotated file that holds no usable password, Q-AUTH-179), and the member carries no part of the password.
 
 ### H-210 · Anyone who reaches the local login can keep the break-glass account locked
 

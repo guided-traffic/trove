@@ -3664,7 +3664,7 @@ of the system information (R-OPS-004), and the backup summary of R-API-050, whic
 INV-12 makes roles, drains and Valkey MVP and INV-19 the backup job (Q-UI-7).
 
 - Cards from `GET /api/v1/system/info` and `/system/replicas`: version and revision; base URL and
-  source; maintenance mode; database (server version, schema version against the supported ones);
+  source; the maintenance mode, as a row only while it is not `normal` (Q-OPS-156); database (server version, schema version against the supported ones);
   scheduled tasks (`/system/tasks`: next run, last outcome) with "Run now", which runs on a
   `worker` replica; recent jobs (`/system/jobs`) with cancel.
 - **Replicas by role** (Q-UI-7). One group per role (`web`, `worker`; a replica with roles
@@ -3971,7 +3971,10 @@ Priority: **MVP** · Covers: trove-only
   route under the other locale.
 - Locale choice: the user's preference (R-API-021), then `Accept-Language`, then
   `ui.default_locale`. Switching the language in the user menu stores the preference and reloads the
-  same route under the other locale.
+  same route under the other locale. The preference applies to a request for `/ui/` or a UI route
+  without a locale from a browser that holds a valid session cookie; the redirect reads the cookie
+  itself, because the authentication stage ignores it on `/ui/` (Q-API-184). A request without a
+  session, with an ended one, or whose preference cannot be read follows `Accept-Language`.
 - Dates, numbers, file sizes (binary units such as MiB with the locale's decimal separator) and
   relative times are formatted with Angular's locale data and `Intl`.
 - API texts stay English; the UI translates problem codes (R-UI-042) and shows the English `detail`
@@ -3995,6 +3998,9 @@ Acceptance criteria:
 
 - A browser with `Accept-Language: de-DE` opening `/ui/` lands on `/ui/de/packages` with German
   texts and German number formatting.
+- A user whose stored locale is `de`, signed in, opening `/ui/` with `Accept-Language: en` is
+  redirected to `/ui/de/`; the same request without the session cookie, or with a cookie that is
+  not a valid session, is redirected to `/ui/en/`.
 - Removing one German translation unit makes the build fail.
 
 ### R-UI-046 · State management with signals
@@ -5123,7 +5129,7 @@ Status: **Decided by the development agent** — selected from the options below
 | Question | Options | Choice |
 |---|---|---|
 | How R-UI-005's "disabled with the reason" applies to administration screens | Hide everything; disable everything; disable primary actions and note the rest | List pages show their create button disabled with `<trove-needs>` ("Read only: changing this needs the permission X") described by `aria-describedby`; detail pages hide the edit controls and show the same note at the top. The API decides in every case |
-| Token filter "unused since N days" | A date field; a day count | A day count, sent as `lastUsedBefore` = now minus N days. The API records no last use yet (R-AUTH-031 is P1), so the filter lists every token until it does |
+| Token filter "unused since N days" | A date field; a day count | A day count, sent as `lastUsedBefore` = now minus N days. The API records the last use (R-AUTH-031, Q-AUTH-178), so the filter lists the tokens not used since, and the tokens never used |
 | R-UI-031 warnings about the poll binding and the `authz.hide_existence` display | Invent them from other data; show nothing; wait | Not shown: `GET /api/v1/settings/auth` returns neither the poll-binding mode, the trusted-proxy fact, SCIM state nor `hide_existence`. The status block lists what the answer carries |
 | Audit link on the user detail | Omit; link with a query | A link to `/admin/audit?actor=<username>`; the audit screen's filter parameter is the audit screen's decision |
 | `PermissionCheck.action` type | The generated enum; a string | A string, because callers hold actions in variables; the HTTP body is the generated shape |
@@ -6424,6 +6430,32 @@ Context: the npm format had no publish templates, so the Publish tab of the clie
 **Rationale:** a snippet that is correct only with an added credential line is not correct. The development agent revisits this if the template data gains the second credential line, or if the owner wants the snippet to show the target.
 
 **Applied in the spec:** R-API-030, R-UI-017, [formats/npm.md](formats/npm.md) R-NPM-041. Code: `internal/formats/npm/setup.go`; `web/src/app/api/testing/fakes-packages.ts`. Tests: `TestR_API_030_NpmPublishSnippets`.
+
+### Q-API-184 · The UI redirect reads the session cookie itself to find the stored locale
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-045 puts the user's stored locale before `Accept-Language`. `webui.Options.Preference` exists for that, but the
+composition root did not set it, so a signed-in user with a stored German locale who opened `/ui/` got the browser's language
+(found on 2026-11-01). Setting the option is not enough: the authentication stage accepts the session cookie only on the paths of
+R-AUTH-001 item 3 and ignores it on `/ui/`, so the principal of a `/ui/` request is anonymous.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The redirect validates the cookie itself (chosen) | `Preference` reads `__Host-trv_session`, validates it with the session store, reads the stored locale of that user | Nothing else changes: the stage still ignores the cookie on `/ui/`; the same validation as everywhere else, so an ended or forged cookie names nobody | One session validation and one read of `user_preferences` per request for a locale-less UI path, which is a redirect, not a page |
+| (b) Let the stage accept the session cookie on `GET /ui/` | `sessionAllowed` returns true for the UI shell | The principal is there for any later UI code | An invalid cookie would answer `401 session_expired` for the UI shell, the dead-cookie lock-out of Q-AUTH-177 |
+| (c) Keep a `locale` cookie the UI sets | The redirect reads a plain cookie | No lookup | A second source of truth next to the preference, and a cookie that stays after the user changes the preference elsewhere |
+
+**Choice:** (a). The function is bounded by two seconds; a failing session store or database, an unreadable row, a user without a
+stored locale and a locale the build does not serve all fall back to `Accept-Language`. A replica without a session store (the
+shell profile) sets no preference function.
+
+**Rationale:** a redirect that costs one cached session lookup and one indexed read is cheap, and (b) would bring back the lock-out
+that Q-AUTH-177 removed. The development agent would revisit this if the redirect of `/ui/` showed up as a hot path, then with a short
+cache keyed by the session hash.
+
+**Applied in the spec:** R-UI-045 (locale choice and acceptance criteria). Code: `internal/app/ui_locale.go`, `startClient` in
+`internal/app/app.go`.
 
 ## What this does not cover
 

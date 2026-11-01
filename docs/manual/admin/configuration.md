@@ -189,6 +189,7 @@ The tables below list the keys an installation most often sets. Every key with i
 | `auth.tokens.sat.allow_non_expiring` | `false` | Allow administrators to create service-account tokens without expiry |
 | `auth.tokens.expiry_notice` | `168h` (7 days) | How long before expiry a token produces its expiry event, and the ceiling of the value in the UI |
 | `auth.tokens.retention_after_end` | `2160h` | How long an expired or revoked token's record is kept |
+| `auth.tokens.last_used_granularity` | `5m` | A token's last-used time is written at most once per this period (1 second to 24 hours); a longer period means fewer database writes and a less exact time |
 | `auth.tokens.max_active_per_principal.pat`, `.sat` | `50`, `20` | Active tokens per user and per service account |
 
 </details>

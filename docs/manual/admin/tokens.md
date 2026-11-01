@@ -26,7 +26,7 @@ The filter panel narrows the list:
 | **Expires before** | A date |
 | **Not used for (days)** | A number of days |
 
-This version does not record when a token was last used: **Last used** shows **Not recorded**, and **Not used for (days)** therefore matches every token.
+**Not used for (days)** lists the tokens whose last use is older than that many days, and the tokens that were never used. trove records the last use of a token (time and client address) when the token authenticates a request, in batches: each replica flushes every 60 seconds and at shutdown, and a token's row changes at most once per `auth.tokens.last_used_granularity` (default `5m`), so the time can be a few minutes behind and a replica that is killed loses at most one interval of uses. A token that has not been used since this was introduced shows no last use.
 
 To revoke, choose **Revoke** on a row, or tick active tokens and choose **Revoke selected**; both ask for confirmation. **Revoke by value** takes a leaked token: paste it into **Token value** and choose **Revoke token**. The field is cleared whatever the answer. An administrator is told whose token was revoked. Anyone else, and anyone who pastes a value that is not a token, gets the same neutral message that the request was accepted: it does not say whether the value was a token, so the screen cannot be used to test guesses.
 

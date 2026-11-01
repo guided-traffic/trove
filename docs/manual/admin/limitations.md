@@ -33,7 +33,7 @@ This page lists what this version of trove does not do, and the known weak spots
 - **Drain delay.** The default `health.shutdown_drain_delay` of 5 s has not been measured against a production ingress controller under load; the test cluster needs 15 s. If clients see connection errors during drains, raise it.
 - **Chart gaps.** The chart renders no ServiceMonitor (see [Monitoring and operations](operations.md)), no HorizontalPodAutoscaler, no Gateway API route (only a `BackendTLSPolicy`), and no egress NetworkPolicy: the pods' outgoing traffic is not restricted by the chart.
 - **One database and one Valkey user per installation.** Two installations in one PostgreSQL database delay each other through shared locks. Two installations that use one Valkey instance with the same user can read each other's keys.
-- **No maintenance mode.** System status shows **Maintenance mode**, which is always **Off**.
+- **No maintenance mode.** There is no mode that stops writes while reads continue. The **System status** screen does not show a maintenance row; it would appear, with the mode, once the mode exists. `GET /api/v1/system/info` carries `maintenanceMode`, which is always `normal`.
 
 ## Web UI
 
@@ -49,7 +49,7 @@ This page lists what this version of trove does not do, and the known weak spots
 - **Not tamper-evident.** The database owner and any superuser can change or delete audit rows, and in single-role mode so can trove's own database login. Ship the `audit` log stream to a store outside trove's control if you need an unchangeable copy.
 - **Reads are not audited.** Viewing the audit log leaves no event; only an export is recorded.
 - **Events can be lost when a process is killed.** Denials, token rejections, logins and downloads are written in batches. A replica killed without a normal shutdown (out of memory, node loss) loses the events still in its buffer.
-- **Last use of a token is not recorded**, so stale tokens cannot be found by their last use.
+- **Last use of a token is approximate.** It is written in batches and at most once per `auth.tokens.last_used_granularity` (default `5m`); a replica killed without a normal shutdown loses the uses of its last minute. Uses before the upgrade that introduced it are not known.
 
 ## Storage
 

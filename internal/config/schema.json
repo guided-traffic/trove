@@ -522,6 +522,14 @@
               "x-trove-env": "TROVE_AUTH_TOKENS_EXPIRY_NOTICE",
               "x-trove-type": "duration"
             },
+            "last_used_granularity": {
+              "default": "5m",
+              "description": "A token's last-used time is written at most once per this period, however often and on however many replicas the token is used.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_AUTH_TOKENS_LAST_USED_GRANULARITY",
+              "x-trove-type": "duration"
+            },
             "max_active_per_principal": {
               "additionalProperties": false,
               "properties": {

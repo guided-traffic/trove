@@ -58,6 +58,7 @@ type Service struct {
 	o       ServiceOptions
 	tokens  *cache.Cache[[32]byte, cachedToken]
 	flights principal.Flights[[32]byte, cachedToken]
+	used    lastUsed
 	log     *slog.Logger
 }
 

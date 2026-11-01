@@ -44,6 +44,18 @@ describe('System status screen', () => {
     expect(root.querySelectorAll('table th[scope="row"]').length).toBeGreaterThan(1);
   });
 
+  it('R-UI-038 shows no maintenance mode row while the mode is normal, and a warning row for any other mode', async () => {
+    const normal = await render();
+    expect(text(normal.root)).not.toContain('Maintenance mode');
+    TestBed.resetTestingModule();
+
+    const other = await render((system) => {
+      system.infoResult = { ...sampleInfo(), maintenanceMode: 'read-only' };
+    });
+    expect(text(other.root)).toContain('Maintenance mode');
+    expect(text(other.root)).toContain('read-only');
+  });
+
   it('R-UI-038 a degraded Valkey check is a warning that names what it means, not an error', async () => {
     const { root } = await render((system) => {
       system.replicasResult = [

@@ -46,6 +46,7 @@ type Metrics struct {
 	attempts           *prometheus.CounterVec
 	ratelimited        *prometheus.CounterVec
 	throttleExempt     *prometheus.CounterVec
+	lastUsedFlushFails prometheus.Counter
 }
 
 // NewMetrics creates the metrics and registers them on reg (nil: unregistered).
@@ -75,11 +76,15 @@ func NewMetrics(reg prometheus.Registerer) (*Metrics, error) {
 			Name: "trove_auth_throttle_exempt_total",
 			Help: "Credentials a throttled address could still validate, by the exemption that applied (marker).",
 		}, []string{"via"}),
+		lastUsedFlushFails: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "trove_auth_lastused_flush_failures_total",
+			Help: "Flushes of the token last-used buffer that failed; the batch is dropped and the next use records the token again (R-AUTH-031).",
+		}),
 	}
 	if reg == nil {
 		return m, nil
 	}
-	for _, c := range []prometheus.Collector{m.cacheBypassed, m.cacheInvalidations, m.groupClaimMissing, m.attempts, m.ratelimited, m.throttleExempt} {
+	for _, c := range []prometheus.Collector{m.cacheBypassed, m.cacheInvalidations, m.groupClaimMissing, m.attempts, m.ratelimited, m.throttleExempt, m.lastUsedFlushFails} {
 		if err := reg.Register(c); err != nil {
 			var are prometheus.AlreadyRegisteredError
 			if errors.As(err, &are) {
@@ -185,6 +190,13 @@ func (m *Metrics) Attempt(method, outcome, reason string) {
 func (m *Metrics) RateLimited(limit string) {
 	if m != nil {
 		m.ratelimited.WithLabelValues(limit).Inc()
+	}
+}
+
+// LastUsedFlushFailed counts one failed flush of the token last-used buffer.
+func (m *Metrics) LastUsedFlushFailed() {
+	if m != nil {
+		m.lastUsedFlushFails.Inc()
 	}
 }
 

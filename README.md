@@ -250,7 +250,7 @@ Built families, all with the `trove_` prefix:
 | `trove_storage_s3_requests_total`, `trove_storage_s3_request_duration_seconds` | `operation`, `outcome` |
 | `trove_metrics_label_overflow_total` | `family`, `label` |
 | `trove_tracing_spans_dropped_total` | none |
-| `trove_auth_attempts_total`, `trove_auth_ratelimited_total`, `trove_auth_throttle_exempt_total`, `trove_auth_cache_bypassed_total`, `trove_auth_cache_invalidations_total`, `trove_auth_group_claim_missing_total` | the labels of `internal/auth/principal/gate.go` | yes |
+| `trove_auth_attempts_total`, `trove_auth_ratelimited_total`, `trove_auth_throttle_exempt_total`, `trove_auth_cache_bypassed_total`, `trove_auth_cache_invalidations_total`, `trove_auth_group_claim_missing_total`, `trove_auth_lastused_flush_failures_total` | the labels of `internal/auth/principal/gate.go` | yes |
 | `trove_auth_session_touch_failures_total`, `trove_auth_csrf_failures_total` | the labels of `internal/auth/session/metrics.go` | yes |
 | `trove_authz_decisions_total`, `trove_authz_evaluation_seconds`, `trove_authz_epoch`, `trove_authz_min_epoch_total`, `trove_authz_stale_waits_total`, `trove_authz_index_rebuilds_total`, `trove_authz_index_rebuild_seconds`, `trove_authz_index_staleness_seconds`, `trove_authz_index_builds_discarded_total`, `trove_exposure_rules`, `trove_exposure_hidden_total` | the labels of `internal/authz/metrics.go` | yes |
 | `trove_api_rate_limited_total`, `trove_ratelimit_decisions_total` | the labels of `internal/api/v1/ratelimit.go` and `internal/cluster/limiter.go` | yes |
@@ -954,6 +954,7 @@ auth:
     cache_ttl: 15s                      # default; 1s to 60s
     retention_after_end: 2160h          # default; at least 1h: token-cleanup deletes a row this long after expiry or revocation
     expiry_notice: 168h                 # default; at least 1h; one token.expiring event per token in this period
+    last_used_granularity: 5m           # default; 1s to 24h; a token's last-used time is written at most once per this period
     pat:
       default_ttl: 2160h                # default; at least 1m
       max_ttl: 8760h                    # default

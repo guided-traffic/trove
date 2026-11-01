@@ -104,7 +104,7 @@ export function expiresSoon(token: Pick<Token, 'state' | 'expiresAt'>, now: numb
             @if (t.lastUsedAt) {
               {{ t.lastUsedAt | date: 'medium' }}
             } @else {
-              <span class="muted" i18n="@@token-table.not-recorded">Not recorded</span>
+              <span class="muted" i18n="@@token-table.not-used">Not used yet</span>
             }
           </td>
           <td translate="no">{{ t.createdVia }}</td>

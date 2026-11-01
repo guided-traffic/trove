@@ -244,6 +244,35 @@ describe('Exposure rule editor', () => {
     }
   });
 
+  it('R-EP-016 the preview explains an answer that lists no stored versions, and shows the tags of the package', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const r = await create((endpoints, repos) => {
+        repos.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT];
+        repos.repositories.push({ key: 'npm-virtual', class: 'virtual', format: 'npm' });
+        endpoints.checkResult = {
+          ...(endpoints.checkResult as object),
+          package: '@acme/sdk',
+          versions: [],
+          distTags: [{ tag: 'latest', version: '2.1.0', visible: false }],
+          warnings: ['stored_versions_not_listed'],
+        } as never;
+      });
+      type(r.root.querySelector<HTMLSelectElement>('#f-repository')!, 'npm-virtual');
+      await settle(r.fixture);
+      type(r.root.querySelector<HTMLInputElement>('#t-package')!, '@acme/sdk');
+      await settle(r.fixture);
+      vi.advanceTimersByTime(PREVIEW_DEBOUNCE_MS);
+      await settle(r.fixture);
+      const t = text(r.root);
+      expect(t).toContain('cannot list what it stores of the package');
+      expect(t).toContain('latest');
+      expect(t).toContain('2.1.0');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('R-EP-017 saving an existing rule shows a diff against the loaded revision, then sends PUT with If-Match', async () => {
     const r = await edit();
     type(r.root.querySelector<HTMLTextAreaElement>('#f-paths-include')!, 'releases/**\nextra/**');

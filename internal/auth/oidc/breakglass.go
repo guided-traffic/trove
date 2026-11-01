@@ -128,6 +128,39 @@ func (b *BreakGlass) usable() bool {
 	return b.cfg.Enabled && b.pw != nil
 }
 
+// PasswordStatus says whether the break-glass account can verify a password on
+// this replica (R-AUTH-014, R-AUTH-040).
+type PasswordStatus string
+
+// The values of [PasswordStatus] and of status.breakGlass.passwordStatus.
+const (
+	// PasswordOK: the account is enabled and the replica holds a usable password.
+	PasswordOK PasswordStatus = "ok"
+	// PasswordNotConfigured: the account is enabled and auth.break_glass.password_file
+	// is empty, so every local login is refused (Q-AUTH-33).
+	PasswordNotConfigured PasswordStatus = "not_configured"
+	// PasswordUnusable: the account is enabled and a file is configured, but the
+	// replica holds no usable password, because a rotated file did not hold one.
+	PasswordUnusable PasswordStatus = "unusable"
+	// PasswordNotApplicable: the account is disabled.
+	PasswordNotApplicable PasswordStatus = "not_applicable"
+)
+
+// BreakGlassPassword reports the state of the break-glass password on this
+// replica, so the settings status can say why every local sign-in is refused.
+func (s *Service) BreakGlassPassword() PasswordStatus {
+	cfg := s.o.Auth.BreakGlass
+	switch {
+	case !cfg.Enabled:
+		return PasswordNotApplicable
+	case cfg.PasswordFile == "":
+		return PasswordNotConfigured
+	case s.bg == nil || !s.bg.usable():
+		return PasswordUnusable
+	}
+	return PasswordOK
+}
+
 // UserID is the principal ID of the break-glass user, "" while disabled.
 func (b *BreakGlass) UserID() string { return b.userID }
 
