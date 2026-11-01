@@ -4376,7 +4376,10 @@ type TokenScope struct {
 	// Admin The token exercises the owner's system roles.
 	Admin *bool `json:"admin,omitempty"`
 
-	// Endpoints The endpoint names the token is valid on (R-EP-011); empty is unbound.
+	// Endpoints The endpoint names the token is valid on (R-EP-011); empty is unbound. Every name must be a configured
+	// endpoint that accepts the token's type (`auth.token_types`, R-EP-010): a binding to another is `400`
+	// `invalid_scope` naming the endpoint, because such a token would be refused there by its type and
+	// everywhere else by its binding.
 	Endpoints *[]string `json:"endpoints,omitempty"`
 
 	// Inherit All repository rights of the owner. Exclusive with `repositories`.

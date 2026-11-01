@@ -3044,7 +3044,12 @@ export interface components {
             repositories?: components["schemas"]["TokenScopeGrant"][];
             /** @description System capabilities (R-AUTHZ-010), from the closed list of R-AUTH-025. */
             system?: string[];
-            /** @description The endpoint names the token is valid on (R-EP-011); empty is unbound. */
+            /**
+             * @description The endpoint names the token is valid on (R-EP-011); empty is unbound. Every name must be a configured
+             *     endpoint that accepts the token's type (`auth.token_types`, R-EP-010): a binding to another is `400`
+             *     `invalid_scope` naming the endpoint, because such a token would be refused there by its type and
+             *     everywhere else by its binding.
+             */
             endpoints?: string[];
         };
         TokenOwner: {

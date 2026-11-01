@@ -108,6 +108,23 @@ describe('Personal tokens (R-UI-029)', () => {
     expect(await seriousViolations(root)).toEqual([]);
   });
 
+  it('R-EP-011 the personal token form offers only the endpoints that accept personal tokens', async () => {
+    // The fake "customers" endpoint accepts service-account tokens only (Q-EP-10): a personal token bound
+    // to it would work nowhere, and the server refuses it with 400 invalid_scope.
+    const { fixture, root, get } = await renderScreen(ProfileTokens);
+    buttonByText(root, 'Create token').click();
+    await settle(fixture);
+    const form = root.querySelector('trove-token-form') as HTMLElement;
+    const names = Array.from(form.querySelectorAll('.endpoints mat-checkbox')).map((e) => e.textContent?.trim());
+    expect(names).toEqual(['default']);
+    typeInto(form, 'Description', 'bound pat');
+    form.querySelector<HTMLInputElement>('.endpoints input[type="checkbox"]')!.click();
+    await settle(fixture);
+    buttonByText(form, 'Create token').click();
+    await settle(fixture);
+    expect((get(TokensApi) as FakeTokensApi).lastRequest?.scope).toEqual({ inherit: true, endpoints: ['default'] });
+  });
+
   it('R-UI-029 creates a token, shows its value once with copy and warning, and keeps it out of storage', async () => {
     const { fixture, root, get } = await renderScreen(ProfileTokens);
     buttonByText(root, 'Create token').click();

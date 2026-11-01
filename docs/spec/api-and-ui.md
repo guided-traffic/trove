@@ -5634,7 +5634,7 @@ A token is bound to endpoints through `scope.endpoints` ([endpoints.md](endpoint
 | (b) A field in both token forms, fed by `GET /api/v1/endpoints`, shown with `endpoints:read` | One checkbox per configured endpoint (inert ones left out); none ticked leaves the token unbound; the selection joins `scope.endpoints` of either scope kind | The list exists and the scope already carries the field; the server still validates every name (`400 invalid_scope`) | A caller without `endpoints:read` cannot bind from the UI |
 | (c) A free-text field in the service-account form only | Names typed by hand | No dependency on the list | Typos are found only by the server; the personal form has the same need on an endpoint with other token types |
 
-**Choice:** (b).
+**Choice:** (b), offering only the endpoints whose accepted token types (`configuration.auth.tokenTypes` of the endpoint list) include the type of the token the form creates: `pat` for a personal token, `sat` for a service account's. The server refuses any other binding with `400` `invalid_scope` (R-EP-011), so the form never offers a token that would work nowhere.
 
 **Rationale:** The API gives the UI what it needs, and the field changes only where a token is accepted, never what it may do. A caller without `endpoints:read` sees no field and issues an unbound token, which is the default of R-EP-011. The development agent revisits this if an endpoint can bind tokens of a user to a different set than the endpoint list shows, or if the list grows beyond what checkboxes carry.
 

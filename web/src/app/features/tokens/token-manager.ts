@@ -103,6 +103,7 @@ export class RotateDialog {
         <trove-token-form
           [submitLabel]="createLabel"
           [allowNonExpiring]="scope().kind === 'service-account'"
+          [tokenType]="scope().kind === 'service-account' ? 'sat' : 'pat'"
           [busy]="busy()"
           [failure]="formError()"
           [restore]="restored()"

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync"
 
@@ -33,13 +34,16 @@ func TokenScopeOptions(cfg *config.Config) scope.Options {
 		acts[string(a)] = true
 	}
 	endpoints := map[string]bool{}
-	for _, n := range endpointNames(cfg) {
-		endpoints[n] = true
+	accepts := map[string][]string{}
+	for _, e := range cfg.Server.ResolveEndpoints() {
+		endpoints[e.Name] = true
+		accepts[e.Name] = e.TokenTypes
 	}
 	return scope.Options{
-		Action:     func(s string) bool { return acts[s] },
-		SystemItem: func(s string) bool { return items[s] },
-		Endpoint:   func(n string) bool { return endpoints[n] },
+		Action:          func(s string) bool { return acts[s] },
+		SystemItem:      func(s string) bool { return items[s] },
+		Endpoint:        func(n string) bool { return endpoints[n] },
+		EndpointAccepts: func(n, tokenType string) bool { return slices.Contains(accepts[n], tokenType) },
 		Pattern: func(dimension, p string) error {
 			switch dimension {
 			case "repositories":
@@ -293,6 +297,7 @@ func (a *App) authServices() v1.AuthServices {
 	svc := v1.AuthServices{
 		Manager: id.manager, Tokens: id.tokens, Settings: id.settings, Config: a.cfg.Auth,
 		EndpointConfigured: TokenScopeOptions(a.cfg).Endpoint,
+		ScopeOptions:       TokenScopeOptions(a.cfg),
 	}
 	// A nil *session.Store or *oidc.Service must not become a non-nil interface.
 	if ss.store != nil {

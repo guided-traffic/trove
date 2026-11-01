@@ -7980,7 +7980,11 @@ components:
             type: string
         endpoints:
           type: array
-          description: The endpoint names the token is valid on (R-EP-011); empty is unbound.
+          description: |
+            The endpoint names the token is valid on (R-EP-011); empty is unbound. Every name must be a configured
+            endpoint that accepts the token's type (`auth.token_types`, R-EP-010): a binding to another is `400`
+            `invalid_scope` naming the endpoint, because such a token would be refused there by its type and
+            everywhere else by its binding.
           items:
             type: string
       example:

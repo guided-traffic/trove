@@ -42,3 +42,26 @@ func TestR_AUTH_024_ScopePatternsUseTheAuthorizationValidators(t *testing.T) {
 		})
 	}
 }
+
+func TestR_EP_011_ScopeOptionsKnowTheTokenTypesOfAnEndpoint(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Server.Endpoints = map[string]config.Endpoint{
+		"customers": {Listen: ":8443", BaseURL: "https://packages.example.net"},
+		"partners":  {Listen: ":8444", BaseURL: "https://partners.example.net", Auth: config.EndpointAuth{TokenTypes: []string{"pat", "sat"}}},
+	}
+	o := TokenScopeOptions(cfg)
+	for _, tc := range []struct {
+		endpoint, typ string
+		want          bool
+	}{
+		{"default", "pat", true},
+		{"default", "sat", true},
+		{"customers", "sat", true},
+		{"customers", "pat", false},
+		{"partners", "pat", true},
+	} {
+		if got := o.EndpointAccepts(tc.endpoint, tc.typ); got != tc.want {
+			t.Errorf("R-EP-011 %s accepts %s = %v, want %v", tc.endpoint, tc.typ, got, tc.want)
+		}
+	}
+}

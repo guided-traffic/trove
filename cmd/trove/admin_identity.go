@@ -11,6 +11,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/app"
 	"github.com/guided-traffic/trove/internal/auth/principal"
+	authscope "github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/cache"
@@ -39,6 +40,8 @@ type identityParts struct {
 	manager *principal.Manager
 	tokens  *token.Service
 	caller  principal.Caller
+	// scopeOptions validate the scope of a token the command creates.
+	scopeOptions authscope.Options
 }
 
 // identity builds the manager and the token service for a command.
@@ -57,11 +60,12 @@ func (e *adminEnv) identity() (*identityParts, error) {
 	settings := token.NewSettingsStore(token.SettingsOptions{
 		DB: e.db, Notifier: e.changes, Recorder: e.recorder, Cache: caches, Gate: gate, Tokens: cfg.Tokens, Anonymous: cfg.Anonymous,
 	})
+	scopeOptions := app.TokenScopeOptions(e.cfg)
 	tokens := token.NewService(token.ServiceOptions{
 		DB: e.db, Notifier: e.changes, Recorder: e.recorder, Principals: principals, Settings: settings, Cache: caches, Gate: gate,
-		Tokens: cfg.Tokens, Log: e.log, Scope: app.TokenScopeOptions(e.cfg),
+		Tokens: cfg.Tokens, Log: e.log, Scope: scopeOptions,
 	})
-	return &identityParts{manager: manager, tokens: tokens, caller: principal.Caller{Actor: e.actor}}, nil
+	return &identityParts{manager: manager, tokens: tokens, caller: principal.Caller{Actor: e.actor}, scopeOptions: scopeOptions}, nil
 }
 
 // serviceAccountCmd is trove admin service-account create <name>.
@@ -119,6 +123,15 @@ func tokenCreate(args []string, s streams) error {
 				return fmt.Errorf("--scope-file: %w", err)
 			}
 			scope = b
+		}
+		// A scope bound to an endpoint that does not accept service-account tokens
+		// would work nowhere (R-EP-011): refuse it as the API does.
+		parsed, err := token.ParseScope(scope, id.scopeOptions)
+		if err != nil {
+			return err
+		}
+		if err := authscope.RequireEndpointTypes(parsed.Endpoints, string(token.TypeSAT), id.scopeOptions); err != nil {
+			return err
 		}
 		acct, err := id.manager.GetServiceAccount(ctx, *sa)
 		if err != nil {

@@ -105,3 +105,34 @@ func TestR_AUTH_027_ScopeWithin(t *testing.T) {
 		})
 	}
 }
+
+func TestR_EP_011_RequireEndpointTypes(t *testing.T) {
+	accepts := map[string][]string{"default": {"pat", "sat", "cit"}, "customers": {"sat"}}
+	opts := Options{
+		Endpoint:        func(n string) bool { _, ok := accepts[n]; return ok },
+		EndpointAccepts: func(n, tt string) bool { return slices.Contains(accepts[n], tt) },
+	}
+	t.Run("R-EP-011 a binding to endpoints that accept the type passes", func(t *testing.T) {
+		if err := RequireEndpointTypes([]string{"default", "customers"}, "sat", opts); err != nil {
+			t.Fatal(err)
+		}
+		if err := RequireEndpointTypes([]string{"default"}, "pat", opts); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("R-EP-011 a personal token bound to a service-account-only endpoint is 400 invalid_scope naming it", func(t *testing.T) {
+		err := RequireEndpointTypes([]string{"default", "customers"}, "pat", opts)
+		e, ok := errs.As(err)
+		if !ok || e.Code != errs.CodeInvalidScope || e.Status() != 400 || !strings.Contains(e.Error(), `"customers"`) {
+			t.Fatalf("err = %v", err)
+		}
+	})
+	t.Run("R-EP-011 an unknown name is left to Parse, and without a rule nothing is refused", func(t *testing.T) {
+		if err := RequireEndpointTypes([]string{"nope"}, "pat", opts); err != nil {
+			t.Fatal(err)
+		}
+		if err := RequireEndpointTypes([]string{"customers"}, "pat", Options{}); err != nil {
+			t.Fatal(err)
+		}
+	})
+}

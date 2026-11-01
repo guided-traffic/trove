@@ -69,6 +69,10 @@ type Options struct {
 	// Endpoint reports whether an endpoint name is configured (R-EP-011); nil
 	// accepts every name of the endpoint-name syntax.
 	Endpoint func(name string) bool
+	// EndpointAccepts reports whether a configured endpoint accepts tokens of
+	// the type ("pat", "sat"): a token bound to an endpoint that does not would
+	// work nowhere (R-EP-010, R-EP-011). Nil: every endpoint does.
+	EndpointAccepts func(name, tokenType string) bool
 	// Pattern validates a repository selector ("repositories"), a package-name
 	// pattern ("packages") or a path pattern ("paths") with the syntax and the
 	// length limit of R-AUTHZ-004 and R-AUTHZ-005; nil only checks that the text is
@@ -182,6 +186,26 @@ func validate(s Scope, o Options) error {
 		}
 		if !ok {
 			return invalidScope("unknown endpoint %q", e)
+		}
+	}
+	return nil
+}
+
+// RequireEndpointTypes refuses a binding to a configured endpoint that does not
+// accept tokens of tokenType with 400 invalid_scope naming the endpoint
+// (R-EP-011): such a token is refused on that endpoint by its type and on every
+// other by its binding. Names that no endpoint carries are left to Parse, which
+// reports them.
+func RequireEndpointTypes(endpoints []string, tokenType string, o Options) error {
+	if o.EndpointAccepts == nil {
+		return nil
+	}
+	for _, e := range endpoints {
+		if o.Endpoint != nil && !o.Endpoint(e) {
+			continue
+		}
+		if !o.EndpointAccepts(e, tokenType) {
+			return invalidScope("endpoint %q does not accept %s tokens, so a token bound to it would work nowhere", e, tokenType)
 		}
 	}
 	return nil

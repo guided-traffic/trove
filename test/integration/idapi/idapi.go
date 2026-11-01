@@ -17,6 +17,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +27,7 @@ import (
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth"
 	"github.com/guided-traffic/trove/internal/auth/principal"
+	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/cluster"
@@ -169,6 +171,7 @@ func Handler(t testing.TB, c Components) http.Handler {
 		API:    v1.Services{Config: APIConfig(), Store: c.DB, Audit: c.Recorder},
 		Auth: v1.AuthServices{
 			Manager: c.Manager, Tokens: c.Tokens, Settings: c.Settings, Sessions: c.Sessions, Login: c.Login, FlowStarts: c.FlowStarts, Config: c.Auth,
+			ScopeOptions: ScopeOptions(),
 		},
 	}
 	if c.Options != nil {
@@ -214,4 +217,15 @@ func Handler(t testing.TB, c Components) http.Handler {
 		return c.Validator.Handler(t, chain)
 	}
 	return chain
+}
+
+// ScopeOptions are the endpoint rules of the harness: the default endpoint
+// accepts personal and service-account tokens, the further endpoint "customers"
+// service-account tokens only (the defaults of R-EP-010).
+func ScopeOptions() scope.Options {
+	accepts := map[string][]string{"default": {"pat", "sat", "cit"}, "customers": {"sat"}}
+	return scope.Options{
+		Endpoint:        func(n string) bool { _, ok := accepts[n]; return ok },
+		EndpointAccepts: func(n, t string) bool { return slices.Contains(accepts[n], t) },
+	}
 }

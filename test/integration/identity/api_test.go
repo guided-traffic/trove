@@ -290,6 +290,8 @@ func TestAPIOperations(t *testing.T) {
 		sat := next().call(post, "/api/v1/service-accounts/ci-bot/tokens", admin, map[string]any{"description": "pipeline", "ttlSeconds": 3600})
 		want(t, sat, 201, "")
 		secret := str(sat.json(t), "token")
+		// A service-account token may be bound to the endpoint that accepts its type (R-EP-011, Q-EP-10).
+		want(t, next().call(post, "/api/v1/service-accounts/ci-bot/tokens", admin, map[string]any{"description": "customer", "scope": map[string]any{"inherit": true, "endpoints": []string{"customers"}}}), 201, "")
 		want(t, next().call(post, "/api/v1/service-accounts/ci-bot/disable", admin, nil), 204, "")
 		waitFor(t, "the disabled account's token failing", revocationBound, func() bool {
 			return next().call(get, "/api/v1/auth/whoami", secret, nil).code() == "principal_disabled"
@@ -448,6 +450,16 @@ func TestAPIOperations(t *testing.T) {
 			want(t, next().call(post, "/api/v1/tokens", alicePAT, map[string]any{"description": "x", "scope": map[string]any{"inherit": true, "repositories": []any{map[string]any{"repositories": []string{"a"}, "actions": []string{"read"}}}}}), 400, "invalid_scope")
 			want(t, next().call(post, "/api/v1/tokens", "", map[string]any{"description": "x"}), 401, "")
 			want(t, next().call(post, "/api/v1/tokens", alicePAT, `{"description": "x", "bogus": 1}`), 400, "malformed_request")
+		})
+		t.Run("R-EP-011 a binding to an endpoint that does not accept the token's type is 400 invalid_scope", func(t *testing.T) {
+			// "customers" accepts service-account tokens only (the default of R-EP-010): a personal token
+			// bound to it would be refused there by its type and on every other endpoint by its binding.
+			rp := next().call(post, "/api/v1/tokens", alicePAT, map[string]any{"description": "x", "scope": map[string]any{"inherit": true, "endpoints": []string{"customers"}}})
+			want(t, rp, 400, "invalid_scope")
+			if !strings.Contains(string(rp.Body), "customers") {
+				t.Fatalf("the problem does not name the endpoint: %s", rp.Body)
+			}
+			want(t, next().call(post, "/api/v1/tokens", alicePAT, map[string]any{"description": "x", "scope": map[string]any{"inherit": true, "endpoints": []string{"default"}}}), 201, "")
 		})
 		t.Run("a list shows own tokens; a token of another user is a 404 (R-AUTH-028)", func(t *testing.T) {
 			bob := b.user("bob")

@@ -2,7 +2,7 @@ import { Component, computed, effect, inject, input, output, signal, untracked }
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { ApiError } from '../../api/problem';
-import { EndpointsApi } from '../../api/endpoints-api';
+import { Endpoint, EndpointsApi } from '../../api/endpoints-api';
 import { CreateTokenRequest } from '../../api/tokens-api';
 import { SessionStore } from '../../core/session-store';
 import { SelectField, SelectOption, TextField } from './fields';
@@ -40,7 +40,7 @@ export interface TokenDraft {
  * validates what it can before the request and shows server field errors next to the fields. The
  * idempotency key is the parent's, generated when the form opens. Where the caller may read the
  * endpoints (`endpoints:read`), the form offers the binding of the token to endpoints
- * (`scope.endpoints`, R-EP-011, Q-UI-91); none chosen leaves the token unbound.
+ * (`scope.endpoints`, R-EP-011, Q-UI-91) that accept its type; none chosen leaves the token unbound.
  */
 @Component({
   selector: 'trove-token-form',
@@ -190,6 +190,8 @@ export interface TokenDraft {
 export class TokenForm {
   /** Offers "Never expires" (service-account tokens may be non-expiring, R-AUTH-026). */
   readonly allowNonExpiring = input(false);
+  /** The type of the token this form creates; it decides which endpoints can be offered. */
+  readonly tokenType = input<'pat' | 'sat'>('pat');
   readonly submitLabel = input.required<string>();
   readonly busy = input(false);
   /** The last failed submit; its field errors appear next to the fields. */
@@ -213,8 +215,17 @@ export class TokenForm {
   protected readonly repositories = signal('');
   protected readonly packages = signal('');
   protected readonly actions = signal<readonly TokenAction[]>(['read']);
-  /** The configured endpoints the token can be bound to; empty when the caller cannot read them. */
-  protected readonly endpointNames = signal<readonly string[]>([]);
+  private readonly endpointList = signal<readonly Endpoint[]>([]);
+  /**
+   * The configured endpoints the token can be bound to: those whose accepted token types include
+   * the type of this form. A token bound to any other would work nowhere (R-EP-011); the server
+   * refuses it with 400 invalid_scope. Empty when the caller cannot read the endpoints.
+   */
+  protected readonly endpointNames = computed(() =>
+    this.endpointList()
+      .filter((e) => !e.inert && e.configuration?.auth.tokenTypes.includes(this.tokenType()))
+      .map((e) => e.name),
+  );
   protected readonly endpoints = signal<readonly string[]>([]);
   private readonly localErrors = signal<Readonly<Record<string, string>>>({});
 
@@ -234,7 +245,7 @@ export class TokenForm {
     if (this.session.has('endpoints:read')) {
       this.endpointsApi
         .list()
-        .then((list) => this.endpointNames.set(list.filter((e) => !e.inert).map((e) => e.name)))
+        .then((list) => this.endpointList.set(list))
         // Without the list the token stays unbound; the server still checks every name it is given.
         .catch(() => undefined);
     }

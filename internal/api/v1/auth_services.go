@@ -14,6 +14,7 @@ import (
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth/oidc"
 	"github.com/guided-traffic/trove/internal/auth/principal"
+	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/auth/session"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/authz"
@@ -49,6 +50,9 @@ type AuthServices struct {
 	// that name. A token listing shows the bound names it does not hold under
 	// unknownEndpoints (R-EP-011). Nil: every name counts as configured.
 	EndpointConfigured func(name string) bool
+	// ScopeOptions is the validation of token scopes; a create refuses a binding
+	// to an endpoint that does not accept the token's type (R-EP-011).
+	ScopeOptions scope.Options
 	// Config is the auth section: the session windows, the provider issuers for a
 	// pending identity link, the break-glass username, the ceilings.
 	Config config.Auth

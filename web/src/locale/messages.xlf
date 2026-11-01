@@ -10941,7 +10941,7 @@
     </unit>
     <unit id="tokens.loading">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:134,137</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:135,138</note>
       </notes>
       <segment>
         <source>Loading tokens.</source>
@@ -10949,7 +10949,7 @@
     </unit>
     <unit id="tokens.create-submit">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:158</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:159</note>
       </notes>
       <segment>
         <source>Create token</source>
@@ -10957,7 +10957,7 @@
     </unit>
     <unit id="tokens.draft-restored">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:198</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:199</note>
       </notes>
       <segment>
         <source>Your entries were restored. Create the token again.</source>
@@ -10965,7 +10965,7 @@
     </unit>
     <unit id="tokens.revoke-title">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:262</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:263</note>
       </notes>
       <segment>
         <source>Revoke this token?</source>
@@ -10973,7 +10973,7 @@
     </unit>
     <unit id="tokens.revoke-text">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:263</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:264</note>
       </notes>
       <segment>
         <source>“<ph id="0" equiv="description" disp="token.description"/>” stops working at once on every replica. This cannot be undone.</source>
@@ -10981,7 +10981,7 @@
     </unit>
     <unit id="tokens.revoke-confirm">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:264</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:265</note>
       </notes>
       <segment>
         <source>Revoke</source>
@@ -10989,7 +10989,7 @@
     </unit>
     <unit id="tokens.revoked">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:269</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:270</note>
       </notes>
       <segment>
         <source>Token revoked.</source>
@@ -10997,7 +10997,7 @@
     </unit>
     <unit id="tokens.revoke-all-title">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:275</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:276</note>
       </notes>
       <segment>
         <source>Revoke all tokens?</source>
@@ -11005,7 +11005,7 @@
     </unit>
     <unit id="tokens.revoke-all-text">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:276</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:277</note>
       </notes>
       <segment>
         <source>Every token of this owner stops working at once. This cannot be undone.</source>
@@ -11013,7 +11013,7 @@
     </unit>
     <unit id="tokens.revoke-all-confirm">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:277</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:278</note>
       </notes>
       <segment>
         <source>Revoke all</source>
@@ -11021,7 +11021,7 @@
     </unit>
     <unit id="tokens.revoked-all">
       <notes>
-        <note category="location">src/app/features/tokens/token-manager.ts:285</note>
+        <note category="location">src/app/features/tokens/token-manager.ts:286</note>
       </notes>
       <segment>
         <source>All tokens revoked.</source>
@@ -12157,7 +12157,7 @@
     </unit>
     <unit id="token-form.life.default">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:222</note>
+        <note category="location">src/app/shared/access/token-form.ts:233</note>
       </notes>
       <segment>
         <source>Server default</source>
@@ -12165,7 +12165,7 @@
     </unit>
     <unit id="token-form.life.d7">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:223</note>
+        <note category="location">src/app/shared/access/token-form.ts:234</note>
       </notes>
       <segment>
         <source>7 days</source>
@@ -12173,7 +12173,7 @@
     </unit>
     <unit id="token-form.life.d30">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:224</note>
+        <note category="location">src/app/shared/access/token-form.ts:235</note>
       </notes>
       <segment>
         <source>30 days</source>
@@ -12181,7 +12181,7 @@
     </unit>
     <unit id="token-form.life.d90">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:225</note>
+        <note category="location">src/app/shared/access/token-form.ts:236</note>
       </notes>
       <segment>
         <source>90 days</source>
@@ -12189,7 +12189,7 @@
     </unit>
     <unit id="token-form.life.d365">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:226</note>
+        <note category="location">src/app/shared/access/token-form.ts:237</note>
       </notes>
       <segment>
         <source>1 year</source>
@@ -12197,7 +12197,7 @@
     </unit>
     <unit id="token-form.life.custom">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:227</note>
+        <note category="location">src/app/shared/access/token-form.ts:238</note>
       </notes>
       <segment>
         <source>Custom date</source>
@@ -12205,7 +12205,7 @@
     </unit>
     <unit id="token-form.life.never">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:229</note>
+        <note category="location">src/app/shared/access/token-form.ts:240</note>
       </notes>
       <segment>
         <source>Never expires</source>
@@ -12213,7 +12213,7 @@
     </unit>
     <unit id="token-form.err.description">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:294</note>
+        <note category="location">src/app/shared/access/token-form.ts:305</note>
       </notes>
       <segment>
         <source>Enter a description.</source>
@@ -12221,7 +12221,7 @@
     </unit>
     <unit id="token-form.err.date">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:298</note>
+        <note category="location">src/app/shared/access/token-form.ts:309</note>
       </notes>
       <segment>
         <source>Pick the expiry date.</source>
@@ -12229,7 +12229,7 @@
     </unit>
     <unit id="token-form.err.repositories">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:303</note>
+        <note category="location">src/app/shared/access/token-form.ts:314</note>
       </notes>
       <segment>
         <source>Name at least one repository.</source>
@@ -12237,7 +12237,7 @@
     </unit>
     <unit id="token-form.err.actions">
       <notes>
-        <note category="location">src/app/shared/access/token-form.ts:306</note>
+        <note category="location">src/app/shared/access/token-form.ts:317</note>
       </notes>
       <segment>
         <source>Choose at least one action.</source>

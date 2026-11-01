@@ -2,11 +2,15 @@ package v1
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/guided-traffic/trove/internal/api/v1/gen"
+	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/auth/token"
+	"github.com/guided-traffic/trove/internal/errs"
 )
 
 func TestR_EP_011_TokenListingShowsUnknownEndpoints(t *testing.T) {
@@ -42,4 +46,24 @@ func TestR_EP_011_TokenListingShowsUnknownEndpoints(t *testing.T) {
 			t.Fatalf("unknownEndpoints = %v", got)
 		}
 	})
+}
+
+func TestR_EP_011_CreateRefusesABindingTheTypeCannotUse(t *testing.T) {
+	accepts := map[string][]string{"default": {"pat", "sat"}, "customers": {"sat"}}
+	s := New(Options{Auth: AuthServices{ScopeOptions: scope.Options{
+		Endpoint:        func(n string) bool { _, ok := accepts[n]; return ok },
+		EndpointAccepts: func(n, tt string) bool { return slices.Contains(accepts[n], tt) },
+	}}})
+	bound := func(names ...string) *gen.TokenScope { return &gen.TokenScope{Endpoints: &names} }
+
+	if err := s.requireEndpointTypes(bound("customers"), token.TypeSAT); err != nil {
+		t.Fatalf("a service-account token on customers: %v", err)
+	}
+	if err := s.requireEndpointTypes(nil, token.TypePAT); err != nil {
+		t.Fatalf("an unbound token: %v", err)
+	}
+	err := s.requireEndpointTypes(bound("default", "customers"), token.TypePAT)
+	if e, ok := errs.As(err); !ok || e.Code != errs.CodeInvalidScope || !strings.Contains(e.Error(), "customers") {
+		t.Fatalf("a personal token on customers: %v", err)
+	}
 }

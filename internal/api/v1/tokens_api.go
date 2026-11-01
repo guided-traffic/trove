@@ -206,6 +206,15 @@ func scopeBytes(sc *gen.TokenScope) ([]byte, error) {
 	return json.Marshal(sc)
 }
 
+// requireEndpointTypes refuses a scope bound to an endpoint that does not accept
+// the token's type: 400 invalid_scope naming the endpoint (R-EP-011).
+func (s *Server) requireEndpointTypes(sc *gen.TokenScope, t token.Type) error {
+	if sc == nil || sc.Endpoints == nil {
+		return nil
+	}
+	return scope.RequireEndpointTypes(*sc.Endpoints, string(t), s.o.Auth.ScopeOptions)
+}
+
 // tokenIssued is the answer to a replay of a create whose value was not stored.
 func tokenIssued(id string) error {
 	return errs.E(errs.Conflict, errs.CodeTokenAlreadyIssued,
@@ -250,6 +259,9 @@ func (s *Server) CreateToken(w http.ResponseWriter, r *http.Request, _ gen.Creat
 	var scope []byte
 	if err == nil {
 		scope, err = scopeBytes(in.Scope)
+	}
+	if err == nil {
+		err = s.requireEndpointTypes(in.Scope, token.TypePAT)
 	}
 	if err == nil {
 		err = firstErr(refuseBreakGlass(p), refuseOtherOwner(in.Owner, p))
@@ -304,6 +316,9 @@ func (s *Server) CreateServiceAccountToken(w http.ResponseWriter, r *http.Reques
 	var scope []byte
 	if err == nil {
 		scope, err = scopeBytes(in.Scope)
+	}
+	if err == nil {
+		err = s.requireEndpointTypes(in.Scope, token.TypeSAT)
 	}
 	if err != nil {
 		failIdentity(w, r, err)

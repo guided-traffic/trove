@@ -706,8 +706,12 @@ Priority: **MVP** · Covers: TOK-007
   unbound. Non-empty, the token is valid only on the endpoints it names (R-EP-010).
 - `endpoints` is a binding, not a resource type: it grants nothing and changes nothing but where
   the token is accepted. The closed list of resource types of R-AUTHZ-013 is unchanged.
-- **Creation.** Every name must be a configured endpoint; otherwise `400` `invalid_scope` names
-  it. Scopes stay immutable, and rotation keeps the binding (R-AUTH-030).
+- **Creation.** Every name must be a configured endpoint that accepts the token's type
+  (`auth.token_types`, R-EP-010); otherwise `400` `invalid_scope` names it. A personal token bound
+  to a further endpoint, which accepts service-account tokens only by default (Q-EP-10), is refused
+  because it would work nowhere: its type is refused on that endpoint and its binding on every
+  other. The rule holds for the API and for `trove admin token create` alike. Scopes stay
+  immutable, and rotation keeps the binding (R-AUTH-030).
 - **Derivation rule** (R-AUTH-027). A token created under the derivation rule from a bound token
   must be bound to a non-empty subset of its endpoints; otherwise `403`
   `derivation_exceeds_parent`. An unbound token may create a bound or an unbound one.
