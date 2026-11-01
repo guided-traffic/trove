@@ -27,7 +27,7 @@ version number is expected for it ([ADR-124](../decisions.md#adr-124--releases-s
 | [0 · Specification](#phase-0--specification) | Feature catalog, specification, decisions | — | 🟢 |
 | [1 · Foundation](#phase-1--foundation-m0) | Skeleton, HA-shaped local stack, roles, drain-safe shutdown, TLS everywhere, endpoint foundation | `v0.1.0` | 🟢 |
 | [2 · Access core](#phase-2--access-core-m1) | Login, tokens, permissions, repositories, admin UI | `v0.3.0` | 🟢 |
-| [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | — | 🟢 |
+| [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | `v0.6.0` | 🟢 |
 | [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual | — | ⚪ |
 | [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | — | ⚪ |
 | [6 · Vulnerability scanning](#phase-6--vulnerability-scanning-m4b) | Own advisory mirror, findings and vulnerability report, malicious versions blocked, npm and NuGet audits from trove's data | — | ⚪ |
@@ -181,7 +181,7 @@ Details: [roadmap M2](../coverage/roadmap.md#m2--npm) · spec: [formats/npm.md](
   `HA and Performance (nightly)`
 
 **Release**
-- 🟢 the release that closes the phase (cut by Semantic Release from the commits of 2026-11-01; the version goes into the table)
+- 🟢 `v0.6.0` (2026-11-01, Test and Release run 41349077102)
 
 ## Phase 4 · NuGet (.NET) registry (M3)
 
