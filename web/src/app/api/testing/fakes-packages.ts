@@ -486,16 +486,16 @@ function nugetSetup(repo: Repository, query: ClientSetupQuery, mayPublish: boole
     add(
       'dotnet.configure.powershell',
       'configure',
-      'powershell',
+      'shell',
       `dotnet nuget add source ${source} --name trove` + (auth ? ` \`\n  --username trove --password "${refs.ps}" --store-password-in-clear-text` : '') + '\n',
     );
   }
   if (query.client === 'nuget') {
-    add('nuget.configure.cmd', 'configure', 'cmd', `nuget sources add -Name trove -Source ${source}` + (auth ? ` ^\n  -Username trove -Password ${refs.cmd}` : '') + '\n');
+    add('nuget.configure.cmd', 'configure', 'shell', `nuget sources add -Name trove -Source ${source}` + (auth ? ` ^\n  -Username trove -Password ${refs.cmd}` : '') + '\n');
     add(
       'nuget.configure.powershell',
       'configure',
-      'powershell',
+      'shell',
       `nuget sources add -Name trove -Source ${source}` + (auth ? ` \`\n  -Username trove -Password "${refs.ps}"` : '') + '\n',
     );
   }
@@ -504,7 +504,7 @@ function nugetSetup(repo: Repository, query: ClientSetupQuery, mayPublish: boole
   if (query.client === 'dotnet') {
     add('dotnet.install', 'install', 'shell', `dotnet add package ${pkg}${withVersion ? ` --version ${withVersion}` : ''}\n`);
   } else if (query.client === 'nuget') {
-    add('nuget.install', 'install', 'cmd', `nuget install ${pkg} -Source trove -OutputDirectory packages${withVersion ? ` -Version ${withVersion}` : ''}\n`);
+    add('nuget.install', 'install', 'shell', `nuget install ${pkg} -Source trove -OutputDirectory packages${withVersion ? ` -Version ${withVersion}` : ''}\n`);
   } else {
     add('visual-studio.install.packagereference', 'install', 'xml', `<PackageReference Include="${pkg}"${withVersion ? ` Version="${withVersion}"` : ''} />\n`);
   }
@@ -515,11 +515,11 @@ function nugetSetup(repo: Repository, query: ClientSetupQuery, mayPublish: boole
     if (query.client === 'dotnet') {
       const push = `dotnet nuget push bin/Release/Acme.Widgets.1.2.3.nupkg --source ${feed}`;
       add('dotnet.publish.shell', 'publish', 'shell', push + key(refs.sh, true) + '\n');
-      add('dotnet.publish.powershell', 'publish', 'powershell', push + key(refs.ps, true) + '\n');
+      add('dotnet.publish.powershell', 'publish', 'shell', push + key(refs.ps, true) + '\n');
     } else {
       const push = `nuget push Acme.Widgets.1.2.3.nupkg -Source ${feed}`;
-      add('nuget.publish.cmd', 'publish', 'cmd', push + (refs.cmd === null ? '' : ` -ApiKey ${refs.cmd}`) + '\n');
-      add('nuget.publish.powershell', 'publish', 'powershell', push + (refs.ps === null ? '' : ` -ApiKey "${refs.ps}"`) + '\n');
+      add('nuget.publish.cmd', 'publish', 'shell', push + (refs.cmd === null ? '' : ` -ApiKey ${refs.cmd}`) + '\n');
+      add('nuget.publish.powershell', 'publish', 'shell', push + (refs.ps === null ? '' : ` -ApiKey "${refs.ps}"`) + '\n');
     }
   }
   return {

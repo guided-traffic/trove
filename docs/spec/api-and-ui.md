@@ -6636,6 +6636,24 @@ Context: the repository document has one member per format that has settings, na
 
 **Applied in the spec:** R-REPO-004 already states the rule; none. Code: `api/openapi.yaml` (`NugetSettings`, `Repository.nuget`, the format enums), `internal/api/v1/format_settings_test.go`, `internal/repository/document.go` (`Settings.NuGet`, `formatMembers`). Tests: `TestR_ARCH_008_NugetSettingsSchemaEqualsTheOpenAPIMember`, `TestR_ARCH_010_PerClassFormatEnums`, `TestR_NUGET_007_TheNuGetMemberOfADocument`.
 
+### Q-API-191 · The command-line languages of the templates are reported as shell, because the snippet enum is frozen
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-API-189 gave the setup templates the languages `powershell` and `cmd` for their quoting. The `language` of a `ClientSnippet` is an enum of the OpenAPI document (`ini`, `yaml`, `json`, `shell`, `xml`, `text`) and the NuGet snippets use both new values. R-ARCH-025 fails the compatibility check for a value added to a response enum, and for an enum that becomes extensible, against the last release (oasdiff `response-property-enum-value-added`, `response-property-became-not-enum`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Report `powershell` and `cmd` as `shell` (chosen) | The template keeps its language for quoting; the answer says `shell` for every command line | The enum stays; no client written against the last release meets an unknown value | A client cannot tell PowerShell from a POSIX shell by the field; the snippet id (`dotnet.configure.powershell`) and the content say it |
+| (b) Add the values to the enum | The document lists them | Exact | Fails R-ARCH-025 until the next major version |
+| (c) Make the enum extensible | `x-extensible-enum` | Future values need no break | The change itself becomes not-an-enum, which R-ARCH-025 also fails |
+
+**Choice:** (a). The mapping is `snippetLanguage` in `internal/api/v1/packages_api.go`; a test keeps every registered template language inside the enum.
+
+**Rationale:** the field only chooses how a screen shows a snippet, and a screen shows every command line the same way. The development agent revisits this at the next breaking version of the API, when the enum may list the values.
+
+**Applied in the spec:** R-API-030 (the languages of a template). Code: `internal/api/v1/packages_api.go`, `internal/api/v1/snippet_languages_test.go`.
+
 ## What this does not cover
 
 
