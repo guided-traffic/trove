@@ -9,13 +9,13 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 305 of 629 spec requirements are implemented: a passing test names them and no
+**Status.** 315 of 629 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 695 specified (232 of them implemented), 1,544 open.
+**Totals.** 2,239 catalog features on 60 pages: 695 specified (256 of them implemented), 1,544 open.
 629 spec requirements: 524 cover catalog features, 105 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
@@ -26,8 +26,8 @@ end](#requirements-that-cover-no-catalog-feature)).
 
 | Catalog page | Prefix | Features | MVP specified | Specified | Open | Implemented |
 |---|---|---:|---:|---:|---:|---:|
-| [Repositories](#repositories-repo) | `REPO` | 68 | 24 of 24 | 41 | 27 | 20 |
-| [Remote repositories](#remote-repositories-rmt) | `RMT` | 49 | 15 of 15 | 28 | 21 | 14 |
+| [Repositories](#repositories-repo) | `REPO` | 68 | 24 of 24 | 41 | 27 | 23 |
+| [Remote repositories](#remote-repositories-rmt) | `RMT` | 49 | 15 of 15 | 28 | 21 | 22 |
 | [Replication, federation and multi-site topology](#replication-federation-and-multi-site-topology-repl) | `REPL` | 72 | – | 0 | 72 | 0 |
 | [Artifact management](#artifact-management-art) | `ART` | 53 | 10 of 10 | 32 | 21 | 12 |
 | [Search and query language](#search-and-query-language-srch) | `SRCH` | 64 | – | 3 | 61 | 0 |
@@ -46,9 +46,9 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [UI inventory](#ui-inventory-ui) | `UI` | 61 | 30 of 30 | 47 | 14 | 1 |
 | [Content API operation catalog](#content-api-operation-catalog-api) | `API` | 166 | 11 of 11 | 67 | 99 | 14 |
 | [Operation catalog: administration API](#operation-catalog-administration-api-admapi) | `ADMAPI` | 114 | 34 of 34 | 54 | 60 | 4 |
-| [Package formats: matrix and cross-format behavior](#package-formats-matrix-and-cross-format-behavior-fmt) | `FMT` | 14 | 8 of 8 | 9 | 5 | 5 |
+| [Package formats: matrix and cross-format behavior](#package-formats-matrix-and-cross-format-behavior-fmt) | `FMT` | 14 | 8 of 8 | 9 | 5 | 6 |
 | [npm package format](#npm-package-format-pkg-npm) | `PKG-NPM` | 62 | 37 of 37 | 52 | 10 | 34 |
-| [NuGet](#nuget-pkg-nuget) | `PKG-NUGET` | 56 | 35 of 35 | 42 | 14 | 0 |
+| [NuGet](#nuget-pkg-nuget) | `PKG-NUGET` | 56 | 35 of 35 | 42 | 14 | 12 |
 | [Docker image format](#docker-image-format-pkg-docker) | `PKG-DOCKER` | 52 | – | 1 | 51 | 0 |
 | [OCI images and artifacts](#oci-images-and-artifacts-pkg-oci) | `PKG-OCI` | 20 | – | 0 | 20 | 0 |
 | [Helm chart format](#helm-chart-format-pkg-helm) | `PKG-HELM` | 25 | – | 0 | 25 | 0 |
@@ -94,7 +94,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 Catalog page: [repositories.md](../features/repositories.md) · specified by priority: MVP 24 of 24 · P1 17 of 26 · P2 0 of 16 · Later 0 of 1 · Out of scope 0 of 1
 
 <details>
-<summary>68 features: 41 specified, 27 open, 20 implemented</summary>
+<summary>68 features: 41 specified, 27 open, 23 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -102,7 +102,7 @@ Catalog page: [repositories.md](../features/repositories.md) · specified by pri
 | REPO-002 | One package format per repository | MVP | implemented | [R-ARCH-008](../spec/architecture.md) (implemented), [R-REPO-001](../spec/repositories-and-proxy.md) (implemented) |
 | REPO-003 | Generic repositories | P1 | open | – |
 | REPO-004 | Repository key naming rules | MVP | implemented | [R-REPO-002](../spec/repositories-and-proxy.md) (implemented) |
-| REPO-005 | Repository addressing | MVP | specified | [R-ARCH-005](../spec/architecture.md) (implemented), [R-NPM-001](../spec/formats/npm.md) (implemented), [R-NUGET-001](../spec/formats/nuget.md), [R-REPO-002](../spec/repositories-and-proxy.md) (implemented) |
+| REPO-005 | Repository addressing | MVP | implemented | [R-ARCH-005](../spec/architecture.md) (implemented), [R-NPM-001](../spec/formats/npm.md) (implemented), [R-NUGET-001](../spec/formats/nuget.md) (implemented), [R-REPO-002](../spec/repositories-and-proxy.md) (implemented) |
 | REPO-006 | Format support per repository class | MVP | implemented | [R-ARCH-008](../spec/architecture.md) (implemented), [R-REPO-003](../spec/repositories-and-proxy.md) (implemented) |
 | REPO-007 | Repository administration list | MVP | specified | [R-UI-020](../spec/api-and-ui.md), [R-REPO-012](../spec/repositories-and-proxy.md) (implemented) |
 | REPO-008 | Quick repository setup wizard | P1 | specified | [R-UI-023](../spec/api-and-ui.md), [R-REPO-015](../spec/repositories-and-proxy.md) |
@@ -127,8 +127,8 @@ Catalog page: [repositories.md](../features/repositories.md) · specified by pri
 | REPO-027 | Container tag limits and retention | P1 | specified | [R-REPO-007](../spec/repositories-and-proxy.md) |
 | REPO-028 | Force authentication per repository | MVP | specified | [R-NUGET-012](../spec/formats/nuget.md), [R-REPO-004](../spec/repositories-and-proxy.md) (implemented) |
 | REPO-029 | npm local repository settings | MVP | implemented | [R-NPM-006](../spec/formats/npm.md) (implemented) |
-| REPO-030 | NuGet local and virtual repository settings | MVP | specified | [R-NUGET-003](../spec/formats/nuget.md) |
-| REPO-031 | NuGet version normalization rules | MVP | specified | [R-NUGET-003](../spec/formats/nuget.md) |
+| REPO-030 | NuGet local and virtual repository settings | MVP | implemented | [R-NUGET-003](../spec/formats/nuget.md) (implemented) |
+| REPO-031 | NuGet version normalization rules | MVP | implemented | [R-NUGET-003](../spec/formats/nuget.md) (implemented) |
 | REPO-032 | Other format-specific local repository settings | P2 | open | – |
 | REPO-033 | Virtual repository | MVP | implemented | [R-ARCH-015](../spec/architecture.md) (implemented), [R-NPM-030](../spec/formats/npm.md) (implemented), [R-REPO-017](../spec/repositories-and-proxy.md) (implemented) |
 | REPO-034 | Nested virtual repositories | P1 | specified | [R-REPO-018](../spec/repositories-and-proxy.md) |
@@ -174,14 +174,14 @@ Catalog page: [repositories.md](../features/repositories.md) · specified by pri
 Catalog page: [remote-repositories.md](../features/remote-repositories.md) · specified by priority: MVP 15 of 15 · P1 13 of 14 · P2 0 of 20
 
 <details>
-<summary>49 features: 28 specified, 21 open, 14 implemented</summary>
+<summary>49 features: 28 specified, 21 open, 22 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
-| RMT-001 | Remote repository (pull-through proxy and cache) | MVP | specified | [R-ARCH-013](../spec/architecture.md), [R-NPM-024](../spec/formats/npm.md) (implemented), [R-REPO-024](../spec/repositories-and-proxy.md) (implemented), [R-REPO-025](../spec/repositories-and-proxy.md) (implemented) |
+| RMT-001 | Remote repository (pull-through proxy and cache) | MVP | implemented | [R-ARCH-013](../spec/architecture.md) (implemented), [R-NPM-024](../spec/formats/npm.md) (implemented), [R-REPO-024](../spec/repositories-and-proxy.md) (implemented), [R-REPO-025](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-002 | Remote repository configuration operations | MVP | implemented | [R-REPO-008](../spec/repositories-and-proxy.md) (implemented), [R-REPO-009](../spec/repositories-and-proxy.md) (implemented), [R-REPO-011](../spec/repositories-and-proxy.md) (implemented), [R-REPO-013](../spec/repositories-and-proxy.md) (implemented), [R-REPO-024](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-003 | Cache view and cached-content management | MVP | implemented | [R-REPO-032](../spec/repositories-and-proxy.md) (implemented) |
-| RMT-004 | Upstream URL | MVP | specified | [R-NUGET-014](../spec/formats/nuget.md), [R-REPO-024](../spec/repositories-and-proxy.md) (implemented) |
+| RMT-004 | Upstream URL | MVP | implemented | [R-NUGET-014](../spec/formats/nuget.md) (implemented), [R-REPO-024](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-005 | Upstream credentials | MVP | implemented | [R-REPO-033](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-006 | Bearer token authentication to the upstream | P1 | specified | [R-NPM-023](../spec/formats/npm.md), [R-REPO-033](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-007 | Client TLS certificate for the upstream | P1 | specified | [R-REPO-034](../spec/repositories-and-proxy.md) |
@@ -195,9 +195,9 @@ Catalog page: [remote-repositories.md](../features/remote-repositories.md) · sp
 | RMT-015 | Network timeouts and source interface | MVP | implemented | [R-ARCH-022](../spec/architecture.md) (implemented), [R-REPO-024](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-016 | Outbound proxy selection per repository | P1 | implemented | [R-REPO-037](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-017 | Store artifacts locally or pass through | P1 | specified | [R-REPO-044](../spec/repositories-and-proxy.md) |
-| RMT-018 | Metadata retrieval cache period | MVP | specified | [R-ARCH-013](../spec/architecture.md), [R-NPM-024](../spec/formats/npm.md) (implemented), [R-NUGET-015](../spec/formats/nuget.md), [R-REPO-027](../spec/repositories-and-proxy.md) (implemented) |
-| RMT-019 | Metadata retrieval timeout with stale fallback | MVP | specified | [R-ARCH-013](../spec/architecture.md), [R-NPM-024](../spec/formats/npm.md) (implemented), [R-REPO-027](../spec/repositories-and-proxy.md) (implemented) |
-| RMT-020 | Negative cache period | MVP | specified | [R-ARCH-013](../spec/architecture.md), [R-NPM-024](../spec/formats/npm.md) (implemented), [R-NUGET-015](../spec/formats/nuget.md), [R-REPO-028](../spec/repositories-and-proxy.md) (implemented) |
+| RMT-018 | Metadata retrieval cache period | MVP | implemented | [R-ARCH-013](../spec/architecture.md) (implemented), [R-NPM-024](../spec/formats/npm.md) (implemented), [R-NUGET-015](../spec/formats/nuget.md) (implemented), [R-REPO-027](../spec/repositories-and-proxy.md) (implemented) |
+| RMT-019 | Metadata retrieval timeout with stale fallback | MVP | implemented | [R-ARCH-013](../spec/architecture.md) (implemented), [R-NPM-024](../spec/formats/npm.md) (implemented), [R-REPO-027](../spec/repositories-and-proxy.md) (implemented) |
+| RMT-020 | Negative cache period | MVP | implemented | [R-ARCH-013](../spec/architecture.md) (implemented), [R-NPM-024](../spec/formats/npm.md) (implemented), [R-NUGET-015](../spec/formats/nuget.md) (implemented), [R-REPO-028](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-021 | Unused cached artifact cleanup | P1 | specified | [R-REPO-046](../spec/repositories-and-proxy.md) |
 | RMT-022 | Remote checksum policy | P1 | specified | [R-NPM-025](../spec/formats/npm.md) (implemented), [R-NUGET-029](../spec/formats/nuget.md), [R-REPO-041](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-023 | MIME-type mismatch blocking | MVP | implemented | [R-REPO-042](../spec/repositories-and-proxy.md) (implemented) |
@@ -206,12 +206,12 @@ Catalog page: [remote-repositories.md](../features/remote-repositories.md) · sp
 | RMT-026 | Cache invalidation | MVP | implemented | [R-ARCH-018](../spec/architecture.md) (implemented), [R-NPM-024](../spec/formats/npm.md) (implemented), [R-REPO-045](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-027 | Cache pre-population without client transfer | P2 | open | – |
 | RMT-028 | Download redirect for cached artifacts | P2 | open | – |
-| RMT-029 | Assumed-offline period | MVP | specified | [R-ARCH-013](../spec/architecture.md), [R-REPO-029](../spec/repositories-and-proxy.md) (implemented) |
+| RMT-029 | Assumed-offline period | MVP | implemented | [R-ARCH-013](../spec/architecture.md) (implemented), [R-REPO-029](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-030 | Repository offline mode | MVP | implemented | [R-REPO-004](../spec/repositories-and-proxy.md) (implemented), [R-REPO-030](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-031 | Global offline mode | P1 | implemented | [R-REPO-031](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-032 | Hard fail | P2 | open | – |
-| RMT-033 | Behavior when the upstream fails | MVP | specified | [R-ARCH-013](../spec/architecture.md), [R-NUGET-015](../spec/formats/nuget.md), [R-REPO-025](../spec/repositories-and-proxy.md) (implemented), [R-REPO-029](../spec/repositories-and-proxy.md) (implemented) |
-| RMT-034 | Include and exclude patterns | MVP | specified | [R-NPM-033](../spec/formats/npm.md) (implemented), [R-NUGET-015](../spec/formats/nuget.md), [R-REPO-005](../spec/repositories-and-proxy.md) (implemented) |
+| RMT-033 | Behavior when the upstream fails | MVP | implemented | [R-ARCH-013](../spec/architecture.md) (implemented), [R-NUGET-015](../spec/formats/nuget.md) (implemented), [R-REPO-025](../spec/repositories-and-proxy.md) (implemented), [R-REPO-029](../spec/repositories-and-proxy.md) (implemented) |
+| RMT-034 | Include and exclude patterns | MVP | implemented | [R-NPM-033](../spec/formats/npm.md) (implemented), [R-NUGET-015](../spec/formats/nuget.md) (implemented), [R-REPO-005](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-035 | Cache layout and remote layout mapping | P2 | open | – |
 | RMT-036 | Release and snapshot handling | P1 | open | – |
 | RMT-037 | Priority resolution | P1 | specified | [R-NPM-028](../spec/formats/npm.md), [R-REPO-022](../spec/repositories-and-proxy.md) (implemented) |
@@ -1754,7 +1754,7 @@ Catalog page: [formats/README.md](../features/formats/README.md) · specified by
 | FMT-008 | Format property namespaces | MVP | implemented | [R-ARCH-008](../spec/architecture.md) (implemented), [R-NPM-006](../spec/formats/npm.md) (implemented) |
 | FMT-009 | Format-aware deploy coordinates | P2 | open | – |
 | FMT-010 | Default layout per format and layout mapping | P1 | open | – |
-| FMT-011 | Automatic metadata calculation | MVP | specified | [R-ARCH-008](../spec/architecture.md) (implemented), [R-ARCH-012](../spec/architecture.md) (implemented), [R-ARCH-016](../spec/architecture.md) (implemented), [R-NPM-010](../spec/formats/npm.md) (implemented), [R-NUGET-005](../spec/formats/nuget.md) |
+| FMT-011 | Automatic metadata calculation | MVP | implemented | [R-ARCH-008](../spec/architecture.md) (implemented), [R-ARCH-012](../spec/architecture.md) (implemented), [R-ARCH-016](../spec/architecture.md) (implemented), [R-NPM-010](../spec/formats/npm.md) (implemented), [R-NUGET-005](../spec/formats/nuget.md) (implemented) |
 | FMT-012 | Manual metadata recalculation | P1 | specified | [R-ARCH-016](../spec/architecture.md) (implemented), [R-NPM-035](../spec/formats/npm.md), [R-NUGET-025](../spec/formats/nuget.md) |
 | FMT-013 | Client authentication styles and anonymous fallbacks | MVP | implemented | [R-AUTH-033](../spec/identity-and-authentication.md) (implemented) |
 | FMT-014 | Package settings screen | P1 | open | – |
@@ -1838,39 +1838,39 @@ Catalog page: [formats/npm.md](../features/formats/npm.md) · specified by prior
 Catalog page: [formats/nuget.md](../features/formats/nuget.md) · specified by priority: MVP 35 of 35 · P1 7 of 7 · P2 0 of 12 · Later 0 of 2
 
 <details>
-<summary>56 features: 42 specified, 14 open, 0 implemented</summary>
+<summary>56 features: 42 specified, 14 open, 12 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
-| PKG-NUGET-001 | NuGet repositories in all three classes | MVP | specified | [R-NUGET-001](../spec/formats/nuget.md) |
-| PKG-NUGET-002 | Feed addresses per protocol | MVP | specified | [R-NUGET-001](../spec/formats/nuget.md) |
-| PKG-NUGET-003 | NuGet v3 protocol | MVP | specified | [R-NUGET-001](../spec/formats/nuget.md) |
+| PKG-NUGET-001 | NuGet repositories in all three classes | MVP | implemented | [R-NUGET-001](../spec/formats/nuget.md) (implemented) |
+| PKG-NUGET-002 | Feed addresses per protocol | MVP | implemented | [R-NUGET-001](../spec/formats/nuget.md) (implemented) |
+| PKG-NUGET-003 | NuGet v3 protocol | MVP | implemented | [R-NUGET-001](../spec/formats/nuget.md) (implemented) |
 | PKG-NUGET-004 | NuGet v2 (OData) and v1 feed | P2 | open | – |
-| PKG-NUGET-005 | Package recognition and stored properties | MVP | specified | [R-NUGET-005](../spec/formats/nuget.md) |
-| PKG-NUGET-006 | Automatic metadata calculation | MVP | specified | [R-NUGET-005](../spec/formats/nuget.md) |
+| PKG-NUGET-005 | Package recognition and stored properties | MVP | implemented | [R-NUGET-005](../spec/formats/nuget.md) (implemented) |
+| PKG-NUGET-006 | Automatic metadata calculation | MVP | implemented | [R-NUGET-005](../spec/formats/nuget.md) (implemented) |
 | PKG-NUGET-007 | Recalculate NuGet metadata (reindex) | P1 | specified | [R-NUGET-025](../spec/formats/nuget.md) |
-| PKG-NUGET-008 | Enforced layout (normalized repositories) | MVP | specified | [R-NUGET-003](../spec/formats/nuget.md) |
-| PKG-NUGET-009 | Version normalization and duplicate detection | MVP | specified | [R-NUGET-003](../spec/formats/nuget.md) |
+| PKG-NUGET-008 | Enforced layout (normalized repositories) | MVP | implemented | [R-NUGET-003](../spec/formats/nuget.md) (implemented) |
+| PKG-NUGET-009 | Version normalization and duplicate detection | MVP | implemented | [R-NUGET-003](../spec/formats/nuget.md) (implemented) |
 | PKG-NUGET-010 | Global normalization for new repositories | P2 | open | – |
-| PKG-NUGET-011 | Normalization compatibility between repositories | MVP | specified | [R-NUGET-003](../spec/formats/nuget.md) |
+| PKG-NUGET-011 | Normalization compatibility between repositories | MVP | implemented | [R-NUGET-003](../spec/formats/nuget.md) (implemented) |
 | PKG-NUGET-012 | Custom layouts and folder paths | P2 | open | – |
 | PKG-NUGET-013 | Normalization migration of existing repositories | P2 | open | – |
-| PKG-NUGET-014 | SemVer 2.0.0 packages | MVP | specified | [R-NUGET-004](../spec/formats/nuget.md) |
+| PKG-NUGET-014 | SemVer 2.0.0 packages | MVP | implemented | [R-NUGET-004](../spec/formats/nuget.md) (implemented) |
 | PKG-NUGET-015 | Maximum unique snapshots on NuGet repositories | P2 | open | – |
 | PKG-NUGET-016 | Anonymous access and forced authentication | MVP | specified | [R-AUTHZ-016](../spec/authorization.md) (implemented), [R-NUGET-012](../spec/formats/nuget.md), [R-AUTH-002](../spec/identity-and-authentication.md) (implemented), [R-AUTH-037](../spec/identity-and-authentication.md) (implemented) |
 | PKG-NUGET-017 | Client credentials over HTTP Basic | MVP | specified | [R-NUGET-012](../spec/formats/nuget.md), [R-AUTH-033](../spec/identity-and-authentication.md) (implemented) |
 | PKG-NUGET-018 | API key for push and delete | MVP | specified | [R-NUGET-006](../spec/formats/nuget.md), [R-NUGET-012](../spec/formats/nuget.md), [R-AUTH-033](../spec/identity-and-authentication.md) (implemented) |
 | PKG-NUGET-019 | Permissions per NuGet operation | MVP | specified | [R-AUTHZ-007](../spec/authorization.md) (implemented), [R-AUTHZ-008](../spec/authorization.md) (implemented), [R-NUGET-013](../spec/formats/nuget.md) |
 | PKG-NUGET-020 | Push through the NuGet protocol | MVP | specified | [R-NUGET-006](../spec/formats/nuget.md) |
-| PKG-NUGET-021 | Deploy through the UI and generic upload | MVP | specified | [R-NUGET-005](../spec/formats/nuget.md) |
+| PKG-NUGET-021 | Deploy through the UI and generic upload | MVP | implemented | [R-NUGET-005](../spec/formats/nuget.md) (implemented) |
 | PKG-NUGET-022 | Delete, unlist and relist | MVP | specified | [R-AUTHZ-007](../spec/authorization.md) (implemented), [R-NUGET-007](../spec/formats/nuget.md) |
-| PKG-NUGET-023 | NuGet remote repository settings | MVP | specified | [R-NUGET-014](../spec/formats/nuget.md) |
-| PKG-NUGET-024 | Proxying the public NuGet gallery | MVP | specified | [R-NUGET-014](../spec/formats/nuget.md), [R-NUGET-015](../spec/formats/nuget.md), [R-NUGET-016](../spec/formats/nuget.md) |
+| PKG-NUGET-023 | NuGet remote repository settings | MVP | implemented | [R-NUGET-014](../spec/formats/nuget.md) (implemented) |
+| PKG-NUGET-024 | Proxying the public NuGet gallery | MVP | implemented | [R-NUGET-014](../spec/formats/nuget.md) (implemented), [R-NUGET-015](../spec/formats/nuget.md) (implemented), [R-NUGET-016](../spec/formats/nuget.md) (implemented) |
 | PKG-NUGET-025 | Chained remote NuGet repository | P2 | open | – |
-| PKG-NUGET-026 | NuGet virtual repository | MVP | specified | [R-NUGET-017](../spec/formats/nuget.md), [R-NUGET-018](../spec/formats/nuget.md) |
+| PKG-NUGET-026 | NuGet virtual repository | MVP | specified | [R-NUGET-017](../spec/formats/nuget.md), [R-NUGET-018](../spec/formats/nuget.md) (implemented) |
 | PKG-NUGET-027 | Push through a virtual repository | MVP | specified | [R-AUTHZ-009](../spec/authorization.md) (implemented), [R-NUGET-019](../spec/formats/nuget.md) |
 | PKG-NUGET-056 | Federated NuGet repositories | Later | open | – |
-| PKG-NUGET-028 | Client search and version listing | MVP | specified | [R-NUGET-010](../spec/formats/nuget.md), [R-NUGET-016](../spec/formats/nuget.md), [R-NUGET-018](../spec/formats/nuget.md) |
+| PKG-NUGET-028 | Client search and version listing | MVP | specified | [R-NUGET-010](../spec/formats/nuget.md), [R-NUGET-016](../spec/formats/nuget.md) (implemented), [R-NUGET-018](../spec/formats/nuget.md) (implemented) |
 | PKG-NUGET-029 | Symbol package upload | MVP | specified | [R-NUGET-020](../spec/formats/nuget.md) |
 | PKG-NUGET-030 | Symbol server for debuggers | P1 | specified | [R-NUGET-021](../spec/formats/nuget.md) |
 | PKG-NUGET-031 | Proxying an upstream symbol server | P1 | specified | [R-NUGET-022](../spec/formats/nuget.md) |
@@ -1884,7 +1884,7 @@ Catalog page: [formats/nuget.md](../features/formats/nuget.md) · specified by p
 | PKG-NUGET-039 | Companion client wrapping nuget and dotnet | P2 | open | – |
 | PKG-NUGET-040 | Newest-compliant-version selection for NuGet clients | Later | open | – |
 | PKG-NUGET-041 | Protocol conventions | MVP | specified | [R-NUGET-002](../spec/formats/nuget.md) |
-| PKG-NUGET-042 | Package IDs and versions on the wire | MVP | specified | [R-NUGET-003](../spec/formats/nuget.md), [R-NUGET-004](../spec/formats/nuget.md), [R-NUGET-009](../spec/formats/nuget.md) |
+| PKG-NUGET-042 | Package IDs and versions on the wire | MVP | specified | [R-NUGET-003](../spec/formats/nuget.md) (implemented), [R-NUGET-004](../spec/formats/nuget.md) (implemented), [R-NUGET-009](../spec/formats/nuget.md) |
 | PKG-NUGET-043 | Service index | MVP | specified | [R-NUGET-002](../spec/formats/nuget.md) |
 | PKG-NUGET-044 | Resource URL placement for authenticated feeds | MVP | specified | [R-NUGET-002](../spec/formats/nuget.md) |
 | PKG-NUGET-045 | Package content (flat container) | MVP | specified | [R-NUGET-008](../spec/formats/nuget.md) |
@@ -3034,7 +3034,7 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-NPM-046 | npm across replicas: no state between requests, Valkey degradation, drain | MVP | [formats/npm.md](../spec/formats/npm.md) |
 | R-NPM-047 (implemented) | npm data in backups and restores | MVP | [formats/npm.md](../spec/formats/npm.md) |
 | R-NPM-048 (implemented) | npm documents on an endpoint with exposure rules | MVP | [formats/npm.md](../spec/formats/npm.md) |
-| R-NUGET-027 | Acceptance test suite | MVP | [formats/nuget.md](../spec/formats/nuget.md) |
+| R-NUGET-027 (implemented) | Acceptance test suite | MVP | [formats/nuget.md](../spec/formats/nuget.md) |
 | R-NUGET-028 | Audit events and metrics for NuGet | MVP | [formats/nuget.md](../spec/formats/nuget.md) |
 | R-NUGET-030 | NuGet on interchangeable replicas (INV-18) | MVP | [formats/nuget.md](../spec/formats/nuget.md) |
 | R-NUGET-031 | Valkey unavailable or emptied | MVP | [formats/nuget.md](../spec/formats/nuget.md) |
