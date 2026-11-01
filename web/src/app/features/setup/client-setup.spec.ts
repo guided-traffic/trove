@@ -484,10 +484,12 @@ describe('Client setup', () => {
     it('R-UI-018 R-NUGET-026 the .NET CLI source uses the index.json URL, the environment reference and the clear-text flag; the nuget.config clears the other sources', async () => {
       const r = await open({ repository: 'nuget-all', client: 'dotnet' });
       expect(r.setup.calls.at(-1)).toMatchObject({ repository: 'nuget-all', query: { client: 'dotnet', credentials: 'env' } });
-      const [add, config] = snippets(r);
-      expect(add).toContain('dotnet nuget add source "https://trove.example.net/api/nuget/nuget-all/v3/index.json"');
-      expect(add).toContain('--password "${TROVE_TOKEN}" --store-password-in-clear-text');
+      const [shell, powershell, config] = snippets(r);
+      expect(shell).toContain('dotnet nuget add source https://trove.example.net/api/nuget/nuget-all/v3/index.json --name trove');
+      expect(shell).toContain('--password "${TROVE_TOKEN}" --store-password-in-clear-text');
+      expect(powershell).toContain('--password "$env:TROVE_TOKEN"');
       expect(config).toContain('<clear />');
+      expect(config).toContain('protocolVersion="3"');
       expect(config).toContain('<add key="ClearTextPassword" value="%TROVE_TOKEN%" />');
       expect(text(r.root)).toContain('stored in clear text');
       expect(text(r.root)).toContain('removes all other package sources');
@@ -495,26 +497,27 @@ describe('Client setup', () => {
       await expectAccessible(r.root);
     });
 
-    it('R-UI-018 install and publish: the publish goes to the deployment target of a virtual repository with the token as the API key', async () => {
+    it('R-UI-018 install and publish: the push names the repository the caller chose, with the token as the API key', async () => {
       const r = await open({ repository: 'nuget-all', client: 'dotnet' });
       await tab(r, 'Install');
-      expect(snippets(r)[0]).toContain('dotnet add package <id> --version <version>');
+      expect(snippets(r)[0]).toContain('dotnet add package <package>');
       await tab(r, 'Publish');
       expect(snippets(r)[0]).toContain(
-        'dotnet nuget push <id>.<version>.nupkg --source "https://trove.example.net/api/nuget/nuget-local/v3/index.json" --api-key "${TROVE_TOKEN}"',
+        'dotnet nuget push bin/Release/Acme.Widgets.1.2.3.nupkg --source https://trove.example.net/api/nuget/nuget-all/v3/index.json --api-key "${TROVE_TOKEN}"',
       );
       expect(text(r.root)).toContain('The token travels as the API key.');
     });
 
     it('R-UI-018 nuget.exe and Visual Studio each get their own source instructions', async () => {
       const exe = await open({ repository: 'nuget-local', client: 'nuget' });
-      expect(snippets(exe)[1]).toContain('nuget sources add -Name trove -Source "https://trove.example.net/api/nuget/nuget-local/v3/index.json"');
+      expect(snippets(exe)[0]).toContain('nuget sources add -Name trove -Source https://trove.example.net/api/nuget/nuget-local/v3/index.json');
       await tab(exe, 'Publish');
-      expect(snippets(exe)[0]).toContain('nuget push <id>.<version>.nupkg -Source');
+      expect(snippets(exe)[0]).toContain('nuget push Acme.Widgets.1.2.3.nupkg -Source');
 
       const vs = await open({ repository: 'nuget-local', client: 'visual-studio' });
-      expect(snippets(vs)[0]).toContain('Source: https://trove.example.net/api/nuget/nuget-local/v3/index.json');
-      expect(text(vs.root)).toContain('Package Sources');
+      expect(snippets(vs)[0]).toContain('<add key="trove" value="https://trove.example.net/api/nuget/nuget-local/v3/index.json" protocolVersion="3" />');
+      await tab(vs, 'Install');
+      expect(snippets(vs)[0]).toContain('<PackageReference Include="<package>" />');
       await expectAccessible(vs.root);
     });
 

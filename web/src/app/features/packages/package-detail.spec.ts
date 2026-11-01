@@ -234,6 +234,16 @@ describe('Package details', () => {
       await expectAccessible(r.root);
     });
 
+    it('R-UI-007 the plain members of Q-NUGET-48 are listed as facts and absent members are not', async () => {
+      const r = await nuget({ tab: 'metadata' });
+      const pairs = [...r.root.querySelectorAll('.pkg-tabs dl.facts')].flatMap((dl) =>
+        [...dl.querySelectorAll('dt')].map((dt) => `${text(dt)} ${text(dt.nextElementSibling!)}`),
+      );
+      expect(pairs).toEqual(expect.arrayContaining(['Minimum client version 4.3.0', 'Package types Dependency']));
+      expect(pairs.join('|')).not.toContain('Copyright');
+      expect(text(r.root)).toContain('Ada Lovelace');
+    });
+
     it('R-UI-007 the project and license URLs are links only for http and https; the README tab is the default', async () => {
       const r = await nuget();
       expect(tabLabels(r)[0]).toBe('README');
@@ -245,7 +255,7 @@ describe('Package details', () => {
 
       const bad = await nuget({ tab: 'metadata' }, (fake) => {
         for (const v of fake.versionList) {
-          if (v.format === 'nuget') v.metadata = { ...v.metadata, projectUrl: 'javascript:alert(1)', licenseUrl: 'file:///etc/passwd' };
+          if (v.format === 'nuget') v.metadata = { ...v.metadata, homepage: 'javascript:alert(1)', licenseUrl: 'file:///etc/passwd' };
         }
       });
       expect(text(bad.root)).toContain('javascript:alert(1)');

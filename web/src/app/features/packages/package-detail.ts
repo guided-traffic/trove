@@ -182,6 +182,20 @@ export class PackageDetail {
   protected readonly unlisted = computed(() => this.detail()?.metadata['listed'] === false);
   protected readonly engines = computed(() => stringRecord(this.detail()?.metadata['engines']));
   protected readonly authors = computed(() => strings(this.detail()?.metadata['authors']));
+  /** The plain members of a NuGet version (Q-NUGET-48): text, a name list or a version, shown as given. */
+  protected readonly nugetFacts = computed<readonly [string, string][]>(() => {
+    const m = this.detail()?.metadata ?? {};
+    const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+    const types = strings(m['packageTypes']).join(', ');
+    const entries: [string, string][] = [
+      [$localize`:@@pkg.meta.min-client:Minimum client version`, text(m['minClientVersion'])],
+      [$localize`:@@pkg.meta.package-types:Package types`, types],
+      [$localize`:@@pkg.meta.language:Language`, text(m['language'])],
+      [$localize`:@@pkg.meta.copyright:Copyright`, text(m['copyright'])],
+      [$localize`:@@pkg.meta.release-notes:Release notes`, text(m['releaseNotes'])],
+    ];
+    return entries.filter((e) => e[1] !== '');
+  });
   protected readonly deprecated = computed(() => {
     const d = this.detail()?.metadata['deprecated'];
     return typeof d === 'string' && d !== '' ? d : null;
@@ -190,7 +204,6 @@ export class PackageDetail {
     const m = this.detail()?.metadata ?? {};
     const entries: [string, unknown][] = [
       [$localize`:@@pkg.meta.homepage:Homepage`, m['homepage']],
-      [$localize`:@@pkg.meta.project:Project`, m['projectUrl']],
       [$localize`:@@pkg.meta.license-url:License`, m['licenseUrl']],
       [$localize`:@@pkg.meta.source:Source repository`, m['repositoryUrl']],
       [$localize`:@@pkg.meta.bugs:Issue tracker`, m['bugsUrl']],
@@ -208,6 +221,7 @@ export class PackageDetail {
       this.frameworkGroups().length > 0 ||
       this.engines().length > 0 ||
       this.authors().length > 0 ||
+      this.nugetFacts().length > 0 ||
       this.links().length > 0 ||
       this.deprecated() !== null,
   );

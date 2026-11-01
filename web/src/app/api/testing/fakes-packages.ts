@@ -121,10 +121,11 @@ function version(
 /**
  * A NuGet version as the server's view adapter describes it (formats/nuget.md R-NUGET-007): the ID
  * keeps its original casing, `listed` is explicit, `dependencyGroups` carry the target framework
- * verbatim and `authors` is the one string of the nuspec.
+ * verbatim, `authors` is the list the server splits at commas and `homepage` is the project URL
+ * (Q-NUGET-48, internal/formats/nuget/view.go).
  */
 function nugetVersion(v: string, over: Partial<FakeVersion> = {}): FakeVersion {
-  const file = `contoso.logging.${v}.nupkg`;
+  const file = `contoso.logging/${v}/contoso.logging.${v}.nupkg`;
   return {
     packageId: 'pkg_01JBQ7ZZZZZZ',
     format: 'nuget',
@@ -137,9 +138,13 @@ function nugetVersion(v: string, over: Partial<FakeVersion> = {}): FakeVersion {
     downloadCount: 12,
     hasReadme: true,
     metadata: {
+      id: 'Contoso.Logging',
       listed: true,
-      authors: 'Contoso Team',
-      projectUrl: 'https://example.com/contoso/logging',
+      title: 'Contoso Logging',
+      authors: ['Contoso Team', 'Ada Lovelace'],
+      homepage: 'https://example.com/contoso/logging',
+      minClientVersion: '4.3.0',
+      packageTypes: ['Dependency'],
       licenseUrl: 'https://licenses.nuget.org/MIT',
       repositoryUrl: 'https://example.com/contoso/logging.git',
       tags: ['logging', 'diagnostics'],
@@ -161,7 +166,7 @@ function nugetVersion(v: string, over: Partial<FakeVersion> = {}): FakeVersion {
         path: file,
         sizeBytes: 20480,
         sha256: sha(0x7ac3),
-        downloadUrl: `${BASE}/api/nuget/nuget-local/v3/flatcontainer/contoso.logging/${v}/${file}`,
+        downloadUrl: `${BASE}/api/nuget/nuget-local/v3/flatcontainer/${file}`,
       },
     ],
     readme: {
@@ -433,9 +438,12 @@ export class FakeClientSetupApi extends ClientSetupApi {
 }
 
 /**
- * The NuGet snippets (R-NUGET-026, R-UI-018): always the `index.json` URL, a `nuget.config` that clears
- * the other sources, the token as the password and, on a repository that receives uploads, the push
- * with the token as the API key. A virtual repository publishes to its default target, `nuget-local`.
+ * The NuGet snippets as the server renders them (internal/formats/nuget/setup.go, Q-NUGET-49): the
+ * registry URL ends in a slash and the source is its `v3/index.json`; the ids are
+ * `<client>.<section>[.<name>]`; the token is one spelling per shell (`${TROVE_TOKEN}`,
+ * `%TROVE_TOKEN%`, `$env:TROVE_TOKEN`), replaced by the placeholder or by the variable of the
+ * credential mode; with `none` the lines that hold a token go. The user name is the fixed `trove`.
+ * A virtual repository publishes through itself, so the push names the repository the caller chose.
  */
 function nugetSetup(repo: Repository, query: ClientSetupQuery, mayPublish: boolean, ttl: number): ClientSetup {
   const clients = ['dotnet', 'nuget', 'visual-studio'];
@@ -443,81 +451,85 @@ function nugetSetup(repo: Repository, query: ClientSetupQuery, mayPublish: boole
     throw new ApiError(400, { code: 'malformed_request', detail: 'unknown client' }, null);
   }
   const credentials = query.credentials ?? 'placeholder';
-  const feed = (key: string): string => `${BASE}/api/nuget/${key}/v3/index.json`;
-  const url = feed(repo.key);
+  const registryUrl = `${BASE}/api/nuget/${repo.key}/`;
+  const source = `${registryUrl}v3/index.json`;
   const target = mayPublish ? (repo.class === 'virtual' ? 'nuget-local' : repo.key) : null;
-  const token = credentials === 'placeholder' ? '{{token}}' : credentials === 'env' ? '${TROVE_TOKEN}' : null;
-  const user = credentials === 'none' ? null : 'alice';
-  const pkg = query.package ?? '<id>';
-  const ver = query.package && query.version ? ` --version ${query.version}` : query.package ? '' : ' --version <version>';
+  const refs = {
+    sh: credentials === 'placeholder' ? '{{token}}' : credentials === 'env' ? '${TROVE_TOKEN}' : null,
+    cmd: credentials === 'placeholder' ? '{{token}}' : credentials === 'env' ? '%TROVE_TOKEN%' : null,
+    ps: credentials === 'placeholder' ? '{{token}}' : credentials === 'env' ? '$env:TROVE_TOKEN' : null,
+  };
+  const auth = credentials !== 'none';
+  const pkg = query.package ?? '<package>';
+  const withVersion = query.package && query.version ? query.version : null;
   const snippets: ClientSnippet[] = [];
-  const name = 'trove';
+  const add = (id: string, tab: ClientSnippet['tab'], language: ClientSnippet['language'], content: string, fileName: string | null = null): void => {
+    snippets.push({ id, tab, fileName, language, content });
+  };
+
+  const config =
+    '<?xml version="1.0" encoding="utf-8"?>\n<configuration>\n  <packageSources>\n    <clear />\n' +
+    `    <add key="trove" value="${source}" protocolVersion="3" />\n  </packageSources>\n` +
+    (auth
+      ? '  <packageSourceCredentials>\n    <trove>\n      <add key="Username" value="trove" />\n' +
+        `      <add key="ClearTextPassword" value="${refs.cmd}" />\n    </trove>\n  </packageSourceCredentials>\n`
+      : '') +
+    '</configuration>\n';
+
   if (query.client === 'dotnet') {
-    snippets.push({
-      id: 'dotnet.configure.add-source',
-      tab: 'configure',
-      fileName: null,
-      language: 'shell',
-      content:
-        `dotnet nuget add source "${url}" \\\n  --name ${name}` +
-        (token === null ? '\n' : ` --username "${user}" --password "${token}" --store-password-in-clear-text\n`),
-    });
-  }
-  if (query.client !== 'visual-studio') {
-    snippets.push({
-      id: `${query.client}.configure.nuget-config`,
-      tab: 'configure',
-      fileName: 'nuget.config',
-      language: 'xml',
-      content:
-        '<?xml version="1.0" encoding="utf-8"?>\n<configuration>\n  <packageSources>\n    <clear />\n' +
-        `    <add key="${name}" value="${url}" />\n  </packageSources>\n` +
-        (token === null
-          ? ''
-          : `  <packageSourceCredentials>\n    <${name}>\n      <add key="Username" value="${user}" />\n` +
-            `      <add key="ClearTextPassword" value="%TROVE_TOKEN%" />\n    </${name}>\n  </packageSourceCredentials>\n`) +
-        '</configuration>\n',
-    });
+    add(
+      'dotnet.configure.shell',
+      'configure',
+      'shell',
+      `dotnet nuget add source ${source} --name trove` + (auth ? ` \\\n  --username trove --password "${refs.sh}" --store-password-in-clear-text` : '') + '\n',
+    );
+    add(
+      'dotnet.configure.powershell',
+      'configure',
+      'powershell',
+      `dotnet nuget add source ${source} --name trove` + (auth ? ` \`\n  --username trove --password "${refs.ps}" --store-password-in-clear-text` : '') + '\n',
+    );
   }
   if (query.client === 'nuget') {
-    snippets.push({
-      id: 'nuget.configure.sources-add',
-      tab: 'configure',
-      fileName: null,
-      language: 'shell',
-      content: `nuget sources add -Name ${name} -Source "${url}"` + (token === null ? '\n' : ` -Username "${user}" -Password "${token}"\n`),
-    });
+    add('nuget.configure.cmd', 'configure', 'cmd', `nuget sources add -Name trove -Source ${source}` + (auth ? ` ^\n  -Username trove -Password ${refs.cmd}` : '') + '\n');
+    add(
+      'nuget.configure.powershell',
+      'configure',
+      'powershell',
+      `nuget sources add -Name trove -Source ${source}` + (auth ? ` \`\n  -Username trove -Password "${refs.ps}"` : '') + '\n',
+    );
   }
-  if (query.client === 'visual-studio') {
-    snippets.push({
-      id: 'visual-studio.configure.source',
-      tab: 'configure',
-      fileName: null,
-      language: 'text',
-      content: `Name: ${name}\nSource: ${url}\n` + (token === null ? '' : `User name: ${user}\nPassword: ${token}\n`),
-    });
+  add(`${query.client}.configure.nugetconfig`, 'configure', 'xml', config, 'nuget.config');
+
+  if (query.client === 'dotnet') {
+    add('dotnet.install', 'install', 'shell', `dotnet add package ${pkg}${withVersion ? ` --version ${withVersion}` : ''}\n`);
+  } else if (query.client === 'nuget') {
+    add('nuget.install', 'install', 'cmd', `nuget install ${pkg} -Source trove -OutputDirectory packages${withVersion ? ` -Version ${withVersion}` : ''}\n`);
+  } else {
+    add('visual-studio.install.packagereference', 'install', 'xml', `<PackageReference Include="${pkg}"${withVersion ? ` Version="${withVersion}"` : ''} />\n`);
   }
-  const install: Record<string, string> = {
-    dotnet: `dotnet add package ${pkg}${ver}\ndotnet restore\n`,
-    nuget: `nuget install ${pkg}${query.version ? ` -Version ${query.version}` : ''} -Source "${url}"\n`,
-    'visual-studio': `Install-Package ${pkg}${query.version ? ` -Version ${query.version}` : ''} -Source ${name}\n`,
-  };
-  snippets.push({ id: `${query.client}.install`, tab: 'install', fileName: null, language: 'shell', content: install[query.client] ?? '' });
+
   if (target !== null && query.client !== 'visual-studio') {
-    const push =
-      query.client === 'dotnet'
-        ? `dotnet nuget push <id>.<version>.nupkg --source "${feed(target)}"` + (token === null ? '' : ` --api-key "${token}"`)
-        : `nuget push <id>.<version>.nupkg -Source "${feed(target)}"` + (token === null ? '' : ` -ApiKey "${token}"`);
-    snippets.push({ id: `${query.client}.publish`, tab: 'publish', fileName: null, language: 'shell', content: push + '\n' });
+    const feed = source;
+    const key = (r: string | null, quote: boolean): string => (r === null ? '' : quote ? ` --api-key "${r}"` : '');
+    if (query.client === 'dotnet') {
+      const push = `dotnet nuget push bin/Release/Acme.Widgets.1.2.3.nupkg --source ${feed}`;
+      add('dotnet.publish.shell', 'publish', 'shell', push + key(refs.sh, true) + '\n');
+      add('dotnet.publish.powershell', 'publish', 'powershell', push + key(refs.ps, true) + '\n');
+    } else {
+      const push = `nuget push Acme.Widgets.1.2.3.nupkg -Source ${feed}`;
+      add('nuget.publish.cmd', 'publish', 'cmd', push + (refs.cmd === null ? '' : ` -ApiKey ${refs.cmd}`) + '\n');
+      add('nuget.publish.powershell', 'publish', 'powershell', push + (refs.ps === null ? '' : ` -ApiKey "${refs.ps}"`) + '\n');
+    }
   }
   return {
     repository: repo.key,
     format: 'nuget',
     client: query.client,
     credentials,
-    registryUrl: url,
-    endpointPath: url.replace(/^https?:/, ''),
-    username: user,
+    registryUrl,
+    endpointPath: source.replace(/^https?:/, ''),
+    username: credentials === 'none' ? null : 'alice',
     publishTarget: target,
     tokenTtlSeconds: ttl,
     snippets,

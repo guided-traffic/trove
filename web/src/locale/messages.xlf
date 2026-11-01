@@ -2486,7 +2486,7 @@
       <notes>
         <note category="location">src/app/features/browse/browse.ts:216</note>
         <note category="location">src/app/features/guides/guide-page.ts:94</note>
-        <note category="location">src/app/features/packages/package-detail.ts:246</note>
+        <note category="location">src/app/features/packages/package-detail.ts:260</note>
         <note category="location">src/app/features/repositories/repository-wizard.ts:59</note>
         <note category="location">src/app/features/setup/client-setup.ts:192</note>
       </notes>
@@ -2498,7 +2498,7 @@
       <notes>
         <note category="location">src/app/features/browse/browse.ts:218</note>
         <note category="location">src/app/features/guides/guide-page.ts:96</note>
-        <note category="location">src/app/features/packages/package-detail.ts:247</note>
+        <note category="location">src/app/features/packages/package-detail.ts:261</note>
         <note category="location">src/app/features/repositories/repository-wizard.ts:61</note>
         <note category="location">src/app/features/setup/client-setup.ts:194</note>
       </notes>
@@ -2510,7 +2510,7 @@
       <notes>
         <note category="location">src/app/features/browse/browse.ts:220</note>
         <note category="location">src/app/features/guides/guide-page.ts:98</note>
-        <note category="location">src/app/features/packages/package-detail.ts:248</note>
+        <note category="location">src/app/features/packages/package-detail.ts:262</note>
         <note category="location">src/app/features/repositories/repository-wizard.ts:63</note>
         <note category="location">src/app/features/setup/client-setup.ts:196</note>
       </notes>
@@ -5137,9 +5137,17 @@
         <source>No dependencies.</source>
       </segment>
     </unit>
-    <unit id="pkg.meta.engines">
+    <unit id="pkg.meta.facts">
       <notes>
         <note category="location">src/app/features/packages/package-detail.html:172,173</note>
+      </notes>
+      <segment>
+        <source>Package details</source>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.engines">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.html:181,182</note>
       </notes>
       <segment>
         <source>Required runtimes</source>
@@ -5147,7 +5155,7 @@
     </unit>
     <unit id="pkg.file.download-link">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.html:192,194</note>
+        <note category="location">src/app/features/packages/package-detail.html:201,203</note>
       </notes>
       <segment>
         <source>Download</source>
@@ -5155,7 +5163,7 @@
     </unit>
     <unit id="pkg.repo.show-in-browser">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.html:208,210</note>
+        <note category="location">src/app/features/packages/package-detail.html:217,219</note>
       </notes>
       <segment>
         <source>Show in browser</source>
@@ -5163,7 +5171,7 @@
     </unit>
     <unit id="pkg.badge.prerelease">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.html:227,228</note>
+        <note category="location">src/app/features/packages/package-detail.html:236,237</note>
       </notes>
       <segment>
         <source>pre-release</source>
@@ -5241,25 +5249,57 @@
         <source>Optional dependencies</source>
       </segment>
     </unit>
-    <unit id="pkg.meta.homepage">
+    <unit id="pkg.meta.min-client">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:191</note>
+      </notes>
+      <segment>
+        <source>Minimum client version</source>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.package-types">
       <notes>
         <note category="location">src/app/features/packages/package-detail.ts:192</note>
+      </notes>
+      <segment>
+        <source>Package types</source>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.language">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:193</note>
+      </notes>
+      <segment>
+        <source>Language</source>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.copyright">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:194</note>
+      </notes>
+      <segment>
+        <source>Copyright</source>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.release-notes">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:195</note>
+      </notes>
+      <segment>
+        <source>Release notes</source>
+      </segment>
+    </unit>
+    <unit id="pkg.meta.homepage">
+      <notes>
+        <note category="location">src/app/features/packages/package-detail.ts:206</note>
       </notes>
       <segment>
         <source>Homepage</source>
       </segment>
     </unit>
-    <unit id="pkg.meta.project">
-      <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:193</note>
-      </notes>
-      <segment>
-        <source>Project</source>
-      </segment>
-    </unit>
     <unit id="pkg.meta.license-url">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:194</note>
+        <note category="location">src/app/features/packages/package-detail.ts:207</note>
       </notes>
       <segment>
         <source>License</source>
@@ -5267,7 +5307,7 @@
     </unit>
     <unit id="pkg.meta.source">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:195</note>
+        <note category="location">src/app/features/packages/package-detail.ts:208</note>
       </notes>
       <segment>
         <source>Source repository</source>
@@ -5275,7 +5315,7 @@
     </unit>
     <unit id="pkg.meta.bugs">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:196</note>
+        <note category="location">src/app/features/packages/package-detail.ts:209</note>
       </notes>
       <segment>
         <source>Issue tracker</source>
@@ -5283,7 +5323,7 @@
     </unit>
     <unit id="pkg.file.path">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:219</note>
+        <note category="location">src/app/features/packages/package-detail.ts:233</note>
       </notes>
       <segment>
         <source>File</source>
@@ -5291,7 +5331,7 @@
     </unit>
     <unit id="pkg.file.size">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:220</note>
+        <note category="location">src/app/features/packages/package-detail.ts:234</note>
       </notes>
       <segment>
         <source>Size</source>
@@ -5299,7 +5339,7 @@
     </unit>
     <unit id="pkg.file.sha256">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:223</note>
+        <note category="location">src/app/features/packages/package-detail.ts:237</note>
       </notes>
       <segment>
         <source>SHA-256</source>
@@ -5307,7 +5347,7 @@
     </unit>
     <unit id="pkg.help.sha256">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:224</note>
+        <note category="location">src/app/features/packages/package-detail.ts:238</note>
       </notes>
       <segment>
         <source>The checksum of the file&apos;s content. Compare it with the output of sha256sum on the downloaded file.</source>
@@ -5315,7 +5355,7 @@
     </unit>
     <unit id="pkg.file.download">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:226</note>
+        <note category="location">src/app/features/packages/package-detail.ts:240</note>
       </notes>
       <segment>
         <source>Download</source>
@@ -5323,7 +5363,7 @@
     </unit>
     <unit id="pkg.ver.version">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:229</note>
+        <note category="location">src/app/features/packages/package-detail.ts:243</note>
       </notes>
       <segment>
         <source>Version</source>
@@ -5331,7 +5371,7 @@
     </unit>
     <unit id="pkg.ver.published">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:230</note>
+        <note category="location">src/app/features/packages/package-detail.ts:244</note>
       </notes>
       <segment>
         <source>Published</source>
@@ -5339,7 +5379,7 @@
     </unit>
     <unit id="pkg.ver.size">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:231</note>
+        <note category="location">src/app/features/packages/package-detail.ts:245</note>
       </notes>
       <segment>
         <source>Size</source>
@@ -5347,7 +5387,7 @@
     </unit>
     <unit id="pkg.ver.repositories">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:232</note>
+        <note category="location">src/app/features/packages/package-detail.ts:246</note>
       </notes>
       <segment>
         <source>Repositories</source>
@@ -5355,7 +5395,7 @@
     </unit>
     <unit id="pkg.ver.downloads">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:233</note>
+        <note category="location">src/app/features/packages/package-detail.ts:247</note>
       </notes>
       <segment>
         <source>Downloads</source>
@@ -5363,7 +5403,7 @@
     </unit>
     <unit id="pkg.repo.repository">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:236</note>
+        <note category="location">src/app/features/packages/package-detail.ts:250</note>
       </notes>
       <segment>
         <source>Repository</source>
@@ -5371,7 +5411,7 @@
     </unit>
     <unit id="pkg.repo.class">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:237</note>
+        <note category="location">src/app/features/packages/package-detail.ts:251</note>
       </notes>
       <segment>
         <source>Class</source>
@@ -5379,7 +5419,7 @@
     </unit>
     <unit id="pkg.repo.published">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:238</note>
+        <note category="location">src/app/features/packages/package-detail.ts:252</note>
       </notes>
       <segment>
         <source>Published</source>
@@ -5387,7 +5427,7 @@
     </unit>
     <unit id="pkg.repo.browse">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:239</note>
+        <note category="location">src/app/features/packages/package-detail.ts:253</note>
       </notes>
       <segment>
         <source>Browse</source>
@@ -5395,7 +5435,7 @@
     </unit>
     <unit id="pkg.file.caption">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:241</note>
+        <note category="location">src/app/features/packages/package-detail.ts:255</note>
       </notes>
       <segment>
         <source>Files of this version</source>
@@ -5403,7 +5443,7 @@
     </unit>
     <unit id="pkg.ver.caption">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:242</note>
+        <note category="location">src/app/features/packages/package-detail.ts:256</note>
       </notes>
       <segment>
         <source>All versions</source>
@@ -5411,7 +5451,7 @@
     </unit>
     <unit id="pkg.repo.caption">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:243</note>
+        <note category="location">src/app/features/packages/package-detail.ts:257</note>
       </notes>
       <segment>
         <source>Repositories that hold this version</source>
@@ -5419,7 +5459,7 @@
     </unit>
     <unit id="pkg.file.copy-sha">
       <notes>
-        <note category="location">src/app/features/packages/package-detail.ts:244</note>
+        <note category="location">src/app/features/packages/package-detail.ts:258</note>
       </notes>
       <segment>
         <source>Copy SHA-256</source>
@@ -9595,7 +9635,7 @@
     </unit>
     <unit id="setup.snippet.dotnet-add-source">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:68</note>
+        <note category="location">src/app/features/setup/clients.ts:69</note>
       </notes>
       <segment>
         <source>Adds this repository as a package source of your user configuration. On Linux and macOS the .NET CLI cannot encrypt the password, so it is stored in clear text in that file.</source>
@@ -9603,7 +9643,7 @@
     </unit>
     <unit id="setup.snippet.nuget-config">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:71</note>
+        <note category="location">src/app/features/setup/clients.ts:73</note>
       </notes>
       <segment>
         <source>Save this as nuget.config next to your solution. It removes all other package sources, so every package comes through this repository, and it reads the token from the environment variable.</source>
@@ -9611,23 +9651,15 @@
     </unit>
     <unit id="setup.snippet.nuget-sources-add">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:73</note>
+        <note category="location">src/app/features/setup/clients.ts:76</note>
       </notes>
       <segment>
         <source>Adds this repository as a package source of your user configuration with nuget.exe.</source>
       </segment>
     </unit>
-    <unit id="setup.snippet.vs-source">
-      <notes>
-        <note category="location">src/app/features/setup/clients.ts:75</note>
-      </notes>
-      <segment>
-        <source>In Visual Studio open Tools, NuGet Package Manager, Package Manager Settings, Package Sources. Add a source with this name and address. At the sign-in prompt enter any user name and the token as the password.</source>
-      </segment>
-    </unit>
     <unit id="setup.snippet.dotnet-install">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:77</note>
+        <note category="location">src/app/features/setup/clients.ts:78</note>
       </notes>
       <segment>
         <source>Adds the package to the project in the current directory and restores it through the configured sources.</source>
@@ -9635,23 +9667,23 @@
     </unit>
     <unit id="setup.snippet.nuget-install">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:79</note>
+        <note category="location">src/app/features/setup/clients.ts:80</note>
       </notes>
       <segment>
         <source>Installs the package into the current directory through this repository.</source>
       </segment>
     </unit>
-    <unit id="setup.snippet.vs-install">
+    <unit id="setup.snippet.vs-packagereference">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:81</note>
+        <note category="location">src/app/features/setup/clients.ts:82</note>
       </notes>
       <segment>
-        <source>In the NuGet package manager choose this source, search for the package and install it. Or run this in the Package Manager Console.</source>
+        <source>Add this line to the project file inside an ItemGroup, then restore. Or choose this source in the NuGet package manager of Visual Studio and install the package there.</source>
       </segment>
     </unit>
     <unit id="setup.snippet.nuget-publish">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:84</note>
+        <note category="location">src/app/features/setup/clients.ts:87</note>
       </notes>
       <segment>
         <source>Pushes the package to the repository that receives uploads. The token travels as the API key.</source>
@@ -9659,7 +9691,7 @@
     </unit>
     <unit id="setup.snippet.curl-function">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:86</note>
+        <note category="location">src/app/features/setup/clients.ts:89</note>
       </notes>
       <segment>
         <source>Paste this into the shell or the CI script that runs curl. It defines trove_curl, which hands curl the credential on standard input, so the token never appears on curl&apos;s command line.</source>
@@ -9667,7 +9699,7 @@
     </unit>
     <unit id="setup.snippet.curl-install">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:88</note>
+        <note category="location">src/app/features/setup/clients.ts:91</note>
       </notes>
       <segment>
         <source>Downloads a file of this repository with trove_curl. Replace &lt;path&gt; with the path of the file in the repository.</source>
@@ -9675,7 +9707,7 @@
     </unit>
     <unit id="setup.snippet.curl-publish">
       <notes>
-        <note category="location">src/app/features/setup/clients.ts:90</note>
+        <note category="location">src/app/features/setup/clients.ts:93</note>
       </notes>
       <segment>
         <source>Uploads a file to the path you give. Replacing a file with other bytes also needs the overwrite permission.</source>

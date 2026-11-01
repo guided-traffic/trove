@@ -50,13 +50,15 @@ test('R-UI-018 R-UI-019 the NuGet clients, their snippets with the index.json UR
     const clientStep = page.getByRole('group', { name: /^2\s*Client$/ });
     await clientStep.getByRole('radio', { name: '.NET CLI (dotnet)', exact: true }).check();
     const configure = page.getByRole('tabpanel', { name: 'Configure' });
-    await expect(configure.locator('.snippet pre').first()).toContainText(`dotnet nuget add source "${feed(virtualKey)}"`);
-    await expect(configure.locator('.snippet pre').first()).toContainText('--store-password-in-clear-text');
-    await expect(configure.locator('.snippet pre').nth(1)).toContainText('<clear />');
-    await expect(configure.locator('.snippet pre').nth(1)).toContainText('%TROVE_TOKEN%');
+    // The server renders the shell form, the PowerShell form and the nuget.config, in that order; the source is
+    // always the index.json URL, and the push names the repository the caller chose (a virtual one forwards it).
+    await expect(configure.locator('.snippet pre').first()).toContainText(`dotnet nuget add source ${feed(virtualKey)} --name trove`);
+    await expect(configure.locator('.snippet pre').nth(1)).toContainText(`dotnet nuget add source ${feed(virtualKey)} --name trove`);
+    await expect(configure.locator('.snippet pre').nth(2)).toContainText('<clear />');
+    await expect(configure.locator('.snippet pre').nth(2)).toContainText(`value="${feed(virtualKey)}" protocolVersion="3"`);
     await page.getByRole('tab', { name: 'Publish' }).click();
     await expect(page.getByRole('tabpanel', { name: 'Publish' }).locator('.snippet pre').first()).toContainText(
-      `--source "${feed(localKey)}"`,
+      `--source ${feed(virtualKey)}`,
     );
   });
 
@@ -69,7 +71,7 @@ test('R-UI-018 R-UI-019 the NuGet clients, their snippets with the index.json UR
     );
     await clientStep.getByRole('radio', { name: 'Visual Studio', exact: true }).check();
     await expect(page.getByRole('tabpanel', { name: 'Configure' }).locator('.snippet pre').first()).toContainText(
-      `Source: ${feed(virtualKey)}`,
+      `<add key="trove" value="${feed(virtualKey)}" protocolVersion="3" />`,
     );
   });
 
