@@ -24,9 +24,13 @@ type SetupTemplate struct {
 	// File is the target file when the snippet is file content: ".npmrc".
 	File string
 	// Template is text/template over [SetupData]; it never receives a token
-	// (R-API-030). The functions shell and xml quote a value for a shell command
-	// and for an XML text or attribute (R-API-030); a value of SetupData that a
-	// template places in such a context goes through them.
+	// (R-API-030). The functions shell, powershell, cmd and xml quote a value for a
+	// command of that shell and for an XML text or attribute (R-API-030); a value of
+	// SetupData that a template places in such a context goes through them. The
+	// function schemeless drops the scheme of a URL ("https://host/p/" becomes
+	// "//host/p/"): the form in which npm and pnpm bind a credential to a registry
+	// (R-NPM-041), so a template derives that key from RegistryURL and the core
+	// carries no field for it.
 	//
 	// The credential is one of the literals [SetupTokenRef], [SetupTokenRefWin] and
 	// [SetupTokenRefPS], the one the syntax of the file or shell the template writes
@@ -81,15 +85,11 @@ type SetupData struct {
 	RegistryURL string
 	Repository  string
 	Endpoint    string
-	// Scope is the scope a snippet binds to the repository without its "@"
-	// ("acme"), "" for the default registry of the client.
-	Scope    string
+	// Variant names the variant of a configure snippet the request asked for, in the
+	// words of the format: for npm the scope without its "@" ("acme"). "" is the
+	// default variant, the one that binds the whole client to the registry.
+	Variant  string
 	Username string
-	// RegistryKey is RegistryURL without its scheme, "//trove.example.com/api/npm/npm-all/":
-	// the key an .npmrc credential line is bound to, so that the client sends the
-	// credential to this registry and to no other URL (R-NPM-041). It is a key, not
-	// a credential.
-	RegistryKey string
 	// RequiresAuth is true when the repository is not anonymously readable: a
 	// snippet then makes the client send its credential without waiting for a
 	// challenge (always-auth, npmAlwaysAuth).

@@ -391,7 +391,7 @@ func (f Format) SetupTemplates() []formats.SetupTemplate {
 		{ID: "tf.publish", Client: "tf", Section: "publish", Lang: "shell", Template: "tf publish --registry {{.RegistryURL}}\n"},
 	}
 	if !f.has(string(NoInstallTemplate)) {
-		ts = append(ts, formats.SetupTemplate{ID: "tf.install", Client: "tf", Section: "install", Lang: "shell", Template: "tf install {{.Scope}}/name\n"})
+		ts = append(ts, formats.SetupTemplate{ID: "tf.install", Client: "tf", Section: "install", Lang: "shell", Template: "tf install {{.Variant}}/name\n"})
 	}
 	return ts
 }

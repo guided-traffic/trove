@@ -10,7 +10,7 @@ import (
 func testData() formats.SetupData {
 	return formats.SetupData{
 		RegistryURL: "https://trove.example.com/api/npm/npm-all/", Repository: "npm-all", Endpoint: "default",
-		RegistryKey: "//trove.example.com/api/npm/npm-all/", RequiresAuth: true,
+		RequiresAuth: true,
 	}
 }
 
@@ -18,7 +18,7 @@ func fakeTemplates() []formats.SetupTemplate {
 	return []formats.SetupTemplate{
 		{
 			ID: "x.conf.configure", Client: "x", Section: "configure", Lang: "ini", File: "x.conf",
-			Template: "{{if .Scope}}@{{.Scope}}:{{end}}registry={{.RegistryURL}}\n{{.RegistryKey}}:token=" + formats.SetupTokenRef + "\n{{if .RequiresAuth}}always=true\n{{end}}",
+			Template: "{{if .Variant}}@{{.Variant}}:{{end}}registry={{.RegistryURL}}\n{{schemeless .RegistryURL}}:token=" + formats.SetupTokenRef + "\n{{if .RequiresAuth}}always=true\n{{end}}",
 		},
 		{ID: "x.install", Client: "x", Section: "install", Lang: "shell", Template: "x add " + formats.SetupPackageRef + "\n"},
 		{ID: "x.xml.install", Client: "x", Section: "install", Lang: "xml", Template: `<Add Include="` + formats.SetupPackageRef + `" Repo="{{xml .Repository}}" />` + "\n"},

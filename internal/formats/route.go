@@ -64,9 +64,10 @@ func (k RouteKind) String() string {
 func (k RouteKind) Valid() bool { return k >= Download && k <= Volatile }
 
 // ServesContent reports whether the response of a route of this kind carries
-// package content or package metadata, and so the content headers of R-ARCH-007.
-// A route of any other kind that returns package-derived bytes is a contract
-// violation (R-ARCH-010 check 7).
+// package content or package metadata of a stored package, with the content
+// headers of R-ARCH-007 including Content-Disposition. [RouteKind.WrapsContent]
+// adds Volatile, which is wrapped without it. A route of any other kind that
+// returns package-derived bytes is a contract violation (R-ARCH-010 check 7).
 func (k RouteKind) ServesContent() bool { return k == Download || k == Metadata || k == Computed }
 
 // RequestKind maps a route kind to the request kind of the coarse check

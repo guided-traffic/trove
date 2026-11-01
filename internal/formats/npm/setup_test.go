@@ -12,7 +12,7 @@ import (
 
 func renderSetup(t *testing.T, tpl formats.SetupTemplate, d formats.SetupData) string {
 	t.Helper()
-	tm, err := template.New(tpl.ID).Option("missingkey=error").Funcs(template.FuncMap{"shell": func(v string) string { return v }, "xml": func(v string) string { return v }}).Parse(tpl.Template)
+	tm, err := template.New(tpl.ID).Option("missingkey=error").Funcs(template.FuncMap{"shell": func(v string) string { return v }, "xml": func(v string) string { return v }, "schemeless": func(v string) string { return strings.TrimPrefix(v, "https:") }}).Parse(tpl.Template)
 	if err != nil {
 		t.Fatalf("%s: %v", tpl.ID, err)
 	}
@@ -25,8 +25,8 @@ func renderSetup(t *testing.T, tpl formats.SetupTemplate, d formats.SetupData) s
 
 func setupData(scope string, auth bool) formats.SetupData {
 	return formats.SetupData{
-		RegistryURL: "https://trove.example.com/api/npm/npm-all/", Repository: "npm-all", Endpoint: "default", Scope: scope,
-		RegistryKey: "//trove.example.com/api/npm/npm-all/", RequiresAuth: auth,
+		RegistryURL: "https://trove.example.com/api/npm/npm-all/", Repository: "npm-all", Endpoint: "default", Variant: scope,
+		RequiresAuth: auth,
 	}
 }
 

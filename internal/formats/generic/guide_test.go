@@ -27,7 +27,7 @@ func guideData(anonymous, rules bool, target string) formats.GuideData {
 	return formats.GuideData{
 		SetupData: formats.SetupData{
 			RegistryURL: registry, Repository: "generic-local", Endpoint: "default",
-			RegistryKey: strings.TrimPrefix(registry, "https:"), RequiresAuth: !anonymous,
+			RequiresAuth: !anonymous,
 		},
 		Class: formats.Local, Client: ClientCurl, PublishTarget: target, Anonymous: anonymous, ExposureRules: rules,
 		TokenEnvVar: "TROVE_TOKEN",

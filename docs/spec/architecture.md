@@ -1344,8 +1344,10 @@ type SetupTemplate struct {
 	VersionSpec string
 }
 
-// SetupData: RegistryURL, Repository, Endpoint, Scope (without "@"), Username, RegistryKey (the registry URL
-// without its scheme, the key of a keyed credential line) and RequiresAuth (the repository is not anonymously readable).
+// SetupData: RegistryURL, Repository, Endpoint, Variant (the variant of a configure snippet the request asked for, in the
+// words of the format: npm's scope without "@"), Username and RequiresAuth (the repository is not anonymously readable).
+// A template that needs the registry URL without its scheme, the key of a keyed credential line, derives it with the
+// template function schemeless (Q-ARCH-257).
 
 type GuideSection struct {
 	ID       string  // stable, e.g. "npm.remote.what"
@@ -6915,7 +6917,7 @@ Context: roadmap WP3.0q. The shared types carry npm's vocabulary: `ExposureView.
 | (b) Declare them optional in the contract | `Tag` and the setup fields stay, documented as "may be empty" | No change to the formats | The freeze keeps the npm words |
 | (c) Leave them | — | No work | The freeze keeps the npm words and a dead method |
 
-**Choice:** (a). Applied: `ExposureView`, `ExposureAdapter` (no `FilterDocument`), `Strategy`, `ViewAdapter` (no `Prerelease`; `viewBridge.Prerelease` asks `Format.Exposure().Prerelease`, a format without an exposure adapter has no pre-release), npm's `tagView`, `filterDocument` and view. Not applied here, handed to the owner of `internal/formats/setup.go` and `internal/api/v1/setup_snippets.go` in the same wave, because that file is theirs: `SetupData.Scope` becomes `Variant` (the value the request's `scope` input selects for a `configure` snippet; npm: a scope without `@`), `RegistryKey` leaves `SetupData`, and the template function set (`shell`, `xml`) gains `schemeless`, which drops `https:` from a URL and is how npm's templates spell the key of a credential line; npm's `setup.go` and the kit's `checks.go`/`guide.go` follow. Until that lands, `SetupData` keeps the two fields and the contract is not frozen.
+**Choice:** (a). Applied: `ExposureView`, `ExposureAdapter` (no `FilterDocument`), `Strategy`, `ViewAdapter` (no `Prerelease`; `viewBridge.Prerelease` asks `Format.Exposure().Prerelease`, a format without an exposure adapter has no pre-release), npm's `tagView`, `filterDocument` and view. `SetupData.Scope` became `Variant` (the value the request's `scope` input selects for a `configure` snippet; npm: a scope without `@`), `RegistryKey` left `SetupData`, and the template function set (`shell`, `powershell`, `cmd`, `xml`) gained `schemeless`, which drops the scheme of a URL and is how npm's templates spell the key of a credential line; npm's `setup.go`, the kit's `checks.go` and `guide.go` and the API's `setup_snippets.go` follow.
 
 **Rationale:** a contract frozen with another format's words teaches the third format the wrong model. The development agent revisits this when a second format needs a tag-like pointer in exposure rules (OCI): the view then gains an optional method of its own, as `Tag` is for npm today.
 

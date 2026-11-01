@@ -165,7 +165,7 @@ func (r *run) guideVariants(class formats.Class, client string) []formats.GuideD
 					out = append(out, formats.GuideData{
 						SetupData: formats.SetupData{
 							RegistryURL: registry, Repository: key, Endpoint: "default",
-							RegistryKey: strings.TrimPrefix(registry, "https:"), RequiresAuth: !anonymous,
+							RequiresAuth: !anonymous,
 						},
 						Class: class, Client: client, PublishTarget: target, Anonymous: anonymous,
 						ExposureRules: rules, TokenEnvVar: "TROVE_TOKEN",

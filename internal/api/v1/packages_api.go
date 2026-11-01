@@ -550,8 +550,7 @@ func (s *Server) clientSetup(r *http.Request, ps PackageServices, repoKey string
 	snippets, err := renderSnippets(setupInput{
 		Templates: templates, Client: p.Client, Credentials: creds, TokenEnvVar: ps.TokenEnvVar,
 		Data: formats.SetupData{
-			RegistryURL: registry, Repository: repoKey, Endpoint: acc.Subject.Endpoint,
-			RegistryKey: registryKey, RequiresAuth: requiresAuth,
+			RegistryURL: registry, Repository: repoKey, Endpoint: acc.Subject.Endpoint, RequiresAuth: requiresAuth,
 		},
 		Package: values["package"], Version: values["version"], Scope: scopeName, MayPublish: mayPublish,
 	})

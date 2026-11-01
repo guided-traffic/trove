@@ -116,7 +116,7 @@ func renderSnippets(in setupInput) ([]snippet, error) {
 		}
 		for _, scope := range variants {
 			d := data
-			d.Scope = scope
+			d.Variant = scope
 			content, err := runTemplate(t, d)
 			if err != nil {
 				return nil, fmt.Errorf("setup template %s: %w", t.ID, err)
@@ -141,6 +141,7 @@ func runTemplate(t formats.SetupTemplate, d formats.SetupData) (string, error) {
 		"powershell": powershellQuote,
 		"cmd":        cmdQuote,
 		"xml":        html.EscapeString,
+		"schemeless": schemeless,
 	}).Parse(t.Template)
 	if err != nil {
 		return "", err
@@ -150,6 +151,17 @@ func runTemplate(t formats.SetupTemplate, d formats.SetupData) (string, error) {
 		return "", err
 	}
 	return b.String(), nil
+}
+
+// schemeless drops the scheme of an http or https URL and keeps the rest from the
+// double slash on; anything else is returned as it is.
+func schemeless(u string) string {
+	for _, scheme := range []string{"https:", "http:"} {
+		if rest, ok := strings.CutPrefix(u, scheme); ok && strings.HasPrefix(rest, "//") {
+			return rest
+		}
+	}
+	return u
 }
 
 // applyCredentials rewrites the token reference of a rendered snippet by the

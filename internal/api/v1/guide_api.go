@@ -49,7 +49,7 @@ func (s *Server) repositoryGuide(ctx context.Context, ps PackageServices, repoKe
 	if err != nil {
 		return gen.Guide{}, err
 	}
-	registry, registryKey, err := setupAddress(ctx, f, repoKey, "The guide")
+	registry, _, err := setupAddress(ctx, f, repoKey, "The guide")
 	if err != nil {
 		return gen.Guide{}, err
 	}
@@ -66,7 +66,7 @@ func (s *Server) repositoryGuide(ctx context.Context, ps PackageServices, repoKe
 		Format: f, Class: repo.Class, Client: client, Anonymous: acc.Subject.Anonymous, ExposureRules: exposureRules(ctx),
 		TokenEnvVar: ps.TokenEnvVar, MayPublish: mayPublish,
 		Data: formats.SetupData{
-			RegistryURL: registry, Repository: repoKey, Endpoint: acc.Subject.Endpoint, RegistryKey: registryKey, RequiresAuth: requiresAuth,
+			RegistryURL: registry, Repository: repoKey, Endpoint: acc.Subject.Endpoint, RequiresAuth: requiresAuth,
 		},
 	}
 	if target != nil {
@@ -107,14 +107,14 @@ func formatGuide(ctx context.Context, ps PackageServices, format string, class f
 	if !f.Descriptor().Supports(class) {
 		return gen.Guide{}, badParam("class", "is not a class of the format "+format)
 	}
-	registry, registryKey, err := setupAddress(ctx, f, formats.GuideRepositoryPlaceholder, "The guide")
+	registry, _, err := setupAddress(ctx, f, formats.GuideRepositoryPlaceholder, "The guide")
 	if err != nil {
 		return gen.Guide{}, err
 	}
 	sub := SubjectFrom(ctx)
 	return renderGuide(ps.Guides, guideInput{
 		Format: f, Class: class, Client: client, Anonymous: sub.Anonymous, ExposureRules: exposureRules(ctx), TokenEnvVar: ps.TokenEnvVar,
-		Data: formats.SetupData{RegistryURL: registry, Endpoint: sub.Endpoint, RegistryKey: registryKey, RequiresAuth: true},
+		Data: formats.SetupData{RegistryURL: registry, Endpoint: sub.Endpoint, RequiresAuth: true},
 	})
 }
 

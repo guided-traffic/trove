@@ -125,3 +125,28 @@ func TestR_API_030_PowerShellAndCmdValuesAreQuoted(t *testing.T) {
 		}
 	}
 }
+
+// TestR_API_030_SchemelessDropsTheSchemeOfTheRegistryURL: a template derives the key of a
+// keyed credential line (R-NPM-041) from RegistryURL with schemeless, so SetupData needs
+// no field for it (Q-ARCH-257).
+func TestR_API_030_SchemelessDropsTheSchemeOfTheRegistryURL(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://trove.example.com/api/npm/npm-all/": "//trove.example.com/api/npm/npm-all/",
+		"http://127.0.0.1:8080/api/npm/x/":           "//127.0.0.1:8080/api/npm/x/",
+		"//already.example.com/":                     "//already.example.com/",
+		"https:not-a-url":                            "https:not-a-url",
+		"":                                           "",
+	} {
+		if got := schemeless(in); got != want {
+			t.Errorf("schemeless(%q) = %q, want %q", in, got, want)
+		}
+	}
+	ss := mustRender(t, setupInput{
+		Templates: []formats.SetupTemplate{{ID: "n.rc.configure", Client: "n", Section: "configure", Lang: "ini", File: ".rc",
+			Template: "{{schemeless .RegistryURL}}:token=" + formats.SetupTokenRef + "\n"}},
+		Client: "n", Credentials: credEnv, TokenEnvVar: "TROVE_TOKEN", Data: testData(),
+	})
+	if len(ss) != 1 || !strings.HasPrefix(ss[0].Content, "//trove.example.com/api/npm/npm-all/:token=") {
+		t.Errorf("snippets = %+v", ss)
+	}
+}

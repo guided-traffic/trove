@@ -297,7 +297,7 @@ func TestR_API_053_TheEndpointNoteIsForEndpointsWithRules(t *testing.T) {
 	f, _ := formats.Lookup("npm")
 	in := guideInput{
 		Format: f, Class: formats.Virtual, Client: "npm", TokenEnvVar: "TROVE_TOKEN",
-		Data: formats.SetupData{RegistryURL: "https://trove.example.com/api/npm/npm-all/", Repository: "npm-all", RegistryKey: "//trove.example.com/api/npm/npm-all/"},
+		Data: formats.SetupData{RegistryURL: "https://trove.example.com/api/npm/npm-all/", Repository: "npm-all"},
 	}
 	without, err := renderGuide(rd, in)
 	if err != nil {

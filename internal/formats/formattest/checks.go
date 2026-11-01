@@ -577,7 +577,7 @@ func (r *run) setup() {
 	}
 	ids := map[string]bool{}
 	data := formats.SetupData{
-		RegistryURL: DefaultBaseURL + "/api/" + string(r.d.ID) + "/main/", Repository: "main", Endpoint: "default", Scope: "@scope", Username: "alice",
+		RegistryURL: DefaultBaseURL + "/api/" + string(r.d.ID) + "/main/", Repository: "main", Endpoint: "default", Variant: "scope", Username: "alice",
 	}
 	for _, t := range tpls {
 		switch {
@@ -596,10 +596,10 @@ func (r *run) setup() {
 		r.versionSpec(t)
 		ids[t.ID] = true
 		// The API gives a template the quoting functions shell, powershell, cmd and xml
-		// (R-API-030); the check only needs them to exist, the quoting is the API's and
+		// (R-API-030), and schemeless; the check only needs them to exist, the quoting is the API's and
 		// tested there.
 		quote := func(v string) string { return v }
-		tp, err := template.New(t.ID).Option("missingkey=error").Funcs(template.FuncMap{"shell": quote, "powershell": quote, "cmd": quote, "xml": quote}).Parse(t.Template)
+		tp, err := template.New(t.ID).Option("missingkey=error").Funcs(template.FuncMap{"shell": quote, "powershell": quote, "cmd": quote, "xml": quote, "schemeless": quote}).Parse(t.Template)
 		if err != nil {
 			r.failf("setup template %q does not parse: %v", t.ID, err)
 			continue

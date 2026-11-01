@@ -20,13 +20,13 @@ import "github.com/guided-traffic/trove/internal/formats"
 // Yarn 2+ need their always-auth switches when the repository is not anonymously
 // readable.
 func (f *Format) SetupTemplates() []formats.SetupTemplate {
-	const npmrc = `{{if .Scope}}@{{.Scope}}:registry={{else}}registry={{end}}{{.RegistryURL}}
-{{.RegistryKey}}:_authToken=${TROVE_TOKEN}
+	const npmrc = `{{if .Variant}}@{{.Variant}}:registry={{else}}registry={{end}}{{.RegistryURL}}
+{{schemeless .RegistryURL}}:_authToken=${TROVE_TOKEN}
 `
 	const yarnClassic = npmrc + `{{if .RequiresAuth}}always-auth=true
 {{end}}`
-	const yarn = `{{if .Scope}}npmScopes:
-  {{.Scope}}:
+	const yarn = `{{if .Variant}}npmScopes:
+  {{.Variant}}:
     npmRegistryServer: "{{.RegistryURL}}"
     npmAuthToken: "${TROVE_TOKEN}"
 {{else}}npmRegistryServer: "{{.RegistryURL}}"
