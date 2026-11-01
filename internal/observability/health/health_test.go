@@ -270,6 +270,45 @@ func TestReadiness(t *testing.T) {
 		}
 	})
 
+	t.Run("R-OPS-001 a Refresh that meets a call in flight waits for it and records a newer result, not a timeout", func(t *testing.T) {
+		// The check loop's first pass can still be inside the start-up check when the composition
+		// root refreshes after the start-up turned true. That is no hang: the refresh must not report
+		// the check as timed out, and the replica must be ready as soon as the refresh returns.
+		h := New(cfg()) // success_threshold 2 would hide the order of the two results; use 1
+		h.cfg.SuccessThreshold = 1
+		entered := make(chan struct{})
+		release := make(chan struct{})
+		var calls atomic.Int32
+		h.AddReadiness("startup", func(context.Context) error {
+			if calls.Add(1) == 1 {
+				close(entered)
+				<-release
+				return errors.New("starting") // the answer of the call that began before the start-up turned true
+			}
+			return nil
+		}, false)
+		first := make(chan struct{})
+		go func() { h.Refresh(t.Context()); close(first) }()
+		<-entered
+		second := make(chan struct{})
+		go func() { h.Refresh(t.Context()); close(second) }()
+		select {
+		case <-second:
+			t.Fatal("the second Refresh returned while the first call was in flight")
+		case <-time.After(30 * time.Millisecond):
+		}
+		close(release)
+		<-first
+		<-second
+		if !h.Ready() {
+			_, body := get(t, h.ReadyHandler(), "/readyz?verbose=1")
+			t.Fatalf("not ready after the Refresh: %v", body)
+		}
+		if got := calls.Load(); got != 2 {
+			t.Fatalf("the check ran %d times, want 2", got)
+		}
+	})
+
 	t.Run("R-OPS-001 a panicking check is a failed check", func(t *testing.T) {
 		c := cfg()
 		c.FailureThreshold = 1

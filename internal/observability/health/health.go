@@ -99,8 +99,11 @@ type check struct {
 	every time.Duration // 0 means health.check_interval
 	grace time.Duration // 0 means a failure gates as soon as it is debounced
 
-	mu         sync.Mutex
-	running    bool
+	mu      sync.Mutex
+	running bool
+	// flight is closed by the call that owns the check, after it recorded its result: a forced
+	// run (Refresh) that meets a call in flight waits for it instead of reporting a timeout.
+	flight     chan struct{}
 	lastRun    time.Time
 	pending    bool // no result yet
 	failing    bool // debounced state
@@ -375,7 +378,7 @@ func (h *Health) runDue(ctx context.Context, force bool) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			h.runCheck(ctx, c)
+			h.runCheck(ctx, c, force)
 		}()
 	}
 	wg.Wait()
@@ -462,17 +465,42 @@ func reasonOf(err error) string {
 
 // runCheck evaluates one check, bounded by health.check_timeout, and applies the
 // debounce. A check that ignores its context and hangs is reported as timed out
-// and is not started again while its first call still runs.
-func (h *Health) runCheck(ctx context.Context, c *check) {
-	c.mu.Lock()
-	c.lastRun = h.now()
-	if c.running {
+// and is not started again while its first call still runs. A call that is merely
+// in flight is no hang: a forced run (Refresh) waits for it, and then runs the
+// check itself, so the result it records is newer than the one it waited for. A
+// run that is due by the clock, and a call still running after its time, are
+// reported as timed out.
+func (h *Health) runCheck(ctx context.Context, c *check, force bool) {
+	for {
+		c.mu.Lock()
+		c.lastRun = h.now()
+		if !c.running {
+			c.running = true
+			flight := make(chan struct{})
+			c.flight = flight
+			c.mu.Unlock()
+			defer close(flight)
+			break
+		}
+		flight := c.flight
 		c.mu.Unlock()
-		h.record(c, errCheckTimeout, 0)
-		return
+		if !force || flight == nil {
+			h.record(c, errCheckTimeout, 0)
+			return
+		}
+		select {
+		case <-flight:
+		case <-ctx.Done():
+			return
+		}
+		c.mu.Lock()
+		hung := c.running
+		c.mu.Unlock()
+		if hung {
+			h.record(c, errCheckTimeout, 0)
+			return
+		}
 	}
-	c.running = true
-	c.mu.Unlock()
 
 	h.gate.RLock()
 	if h.closed {

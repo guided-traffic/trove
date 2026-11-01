@@ -81,6 +81,14 @@ A latency target in microseconds is not a per-change assertion on a shared machi
 allocations, and the median where the race detector is off (`make test` runs with it, so there only the allocations), and the p99 is enforced with `TROVE_PERF_GATE=1` by `make test-performance` (for example
 `TestR_EP_013_CeilingPerformance`, [Q-ARCH-250](../spec/architecture.md#q-arch-250--a-p99-bound-in-microseconds-is-a-nightly-gate-and-the-per-change-test-asserts-allocations-and-the-median)).
 
+A wait in a test is a guard or a budget, and only a budget may be tight. A guard bounds a wait for something that happens on its
+own (a replica that starts, a writer that retries, a loop that repeats) and fails only when it never happens; it is generous (30 to 60 s:
+`startGuard` in [internal/app](../../internal/app/app_test.go), `settle` in [internal/audit](../../internal/audit/writer_test.go)),
+because a CI runner with a CPU limit and the race detector took tens of times as long as an idle machine. A test waits for a condition
+(poll it) and does not sleep for a fixed time and count what happened in it. A fake clock that a test advances is advanced inside the
+wait, because the code under test reads it at a moment the test does not see. The evidence: the start-up tests of `internal/app` failed in
+50 of 300 processes run at once on 20 CPUs before this rule and in none after it.
+
 ### Architecture test
 
 [internal/archtest](../../internal/archtest) turns the structural rules of the specification into tests.
