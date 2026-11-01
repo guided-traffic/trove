@@ -6467,6 +6467,67 @@ need one) or if measurements show a cache's overhead well above its budget.
 **Applied in the spec:** R-ARCH-005 (memory slots); [ha-and-helm.md](ha-and-helm.md) R-HA-029 and Q-HA-70 (the chart's check). Code:
 `cacheBudgets` in `internal/app/memory.go`, `MemoryGuardConfig.Reserved` in `internal/httpserver/memory.go`, `_validate.tpl`.
 
+### Q-ARCH-250 · A p99 bound in microseconds is a nightly gate, and the per-change test asserts allocations and the median
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `TestR_EP_013_CeilingPerformance` (R-EP-013 "Performance", the 1 ms target of R-AUTHZ-015) failed in a full `go test ./...` with
+`p99 1.0995 ms` and passed three times alone. Go runs the tests of different packages in parallel processes, and the machine is shared. Measured on
+the development machine (20 cores, load average 15 to 60 from other work): the same test, run alone and unchanged, gave p99 of 0.95, 1.1 and 3.8 ms
+in three runs; with the matcher of Q-EP-64 (mean 20 µs per `Decide` for the literal rule shape, 140 µs for the wildcard shape) the wall-clock p99 was
+0.03 to 1.5 ms (literal) and 0.2 to 20 ms (wildcard) across eleven runs on the same loaded machine, with the median unchanged at 20 and 140 µs. Q-ARCH-220 (owner decision of 2026-10-30) already settles the policy for tails of milliseconds: a per-change test does not gate on a tail
+latency on shared CPU, the bound is enforced where it is a statement about the system, in the nightly run with `TROVE_PERF_GATE=1`. A bound of
+1 ms at the 99th percentile over 2,000 samples is the same kind of statement at a smaller scale: the 20 slowest samples decide, and one time slice
+of a loaded machine is longer than the whole call.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the p99 per change | The test fails when the wall-clock p99 is above 1 ms | Strictest | Fails on a loaded machine without a regression; the failure that prompted this block |
+| (b) Retry or raise the bound | Run again until green, or 5 ms | Quiet | A bound that says nothing; retrying hides a real regression |
+| (c) Per change: allocations and median; the p99 under `TROVE_PERF_GATE=1` (chosen) | The test fails per change when one `Decide` allocates more than 100 times or its median CPU time is above 1 ms; the p99 fails only with the gate, which `make test-performance` sets and the nightly workflow runs | The allocation count does not depend on the machine and catches the regression that mattered (16,042 allocations per decision); the median is 20 to 150 µs, so a factor 7 to 50 below the bound; the bound itself is enforced as before | A regression of the tail alone shows up the next night |
+| (d) A benchmark outside the tests | No test, `go test -bench` by hand | No flakiness | Nothing fails; the target is no longer checked |
+
+**Choice:** (c). The test runs two rule shapes (a literal first segment, and a wildcard first segment, which every rule evaluates) with 1,000 rules each.
+The race detector enforces neither time, as before (its instrumentation slows a decision by an order of magnitude). `make test-performance` runs the
+test a second time after the integration latency tests, with `TROVE_PERF_GATE=1`, and the report goes to `.out/test-performance.json`.
+
+**Rationale:** The decision follows Q-ARCH-220 and adds what it left open: a unit test, not an integration test. The measurement that backs the
+choice: 16,042 allocations and 194 KB per `Decide` before Q-EP-64, 42 allocations and 1.7 KB after; the allocation count is identical in every run. The
+development agent would revisit the choice when the unit tests run on runners without a CPU limit and a quiet core (then the p99 in CPU time, Q-EP-65, can return to
+every change), or when the allocation bound of 100 proves too tight for a legitimate change to the decision (it is 2.4 times the measured 42).
+
+**Applied in the spec:** R-EP-013 ("Performance"); [docs/developer/build-and-test.md](../developer/build-and-test.md) (`test-performance`);
+[docs/developer/releasing.md](../developer/releasing.md) ("Performance (nightly)"); [docs/developer/authorization.md](../developer/authorization.md).
+Code: `TestR_EP_013_CeilingPerformance` and `BenchmarkCeilingDecide` in `internal/authz/exposure_test.go`, the `test-performance` target of the `Makefile`.
+
+### Q-ARCH-251 · The coverage generator reads a requirement ID in a Go function name in its underscore form
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a Go function name cannot hold a hyphen, so 427 of the 961 test functions (unit and integration tier) carry their ID as `TestR_API_053_Name`, and the generator read hyphen IDs only
+(`R-API-053`). The tests passed and counted for nothing: R-API-053 and R-API-054 were missing from `docs/coverage/implemented.txt`. Reading the function
+list of the whole repository (unit and integration tier) with the new parser shows 15 requirements that gain evidence from top-level functions alone (R-API-029, R-API-053, R-API-054, R-AUTH-022, R-GENERIC-016, R-NPM-004, 015, 019, 025, 026, 029, 030, 031, 044, 047) and no function whose
+underscore ID fails to parse.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The generator reads both forms (chosen) | `R_API_053` reads as `R-API-053`, with the same standalone rule as the hyphen form, plus `Test`, `Benchmark`, `Fuzz` and `Example` directly before it | Every existing test counts, nothing is renamed; the idiomatic Go name keeps its ID at the front | The parser has a second form to keep strict |
+| (b) Rename the tests to carry a hyphen ID | `t.Run("R-API-053 …")` in each, or a hyphen in a subtest | One form | 427 functions and every future one; a function name with a hyphen is impossible, so a subtest wrapper in each |
+| (c) Both, and a lint that forbids the underscore form | — | One form in the end | Same cost as (b) |
+
+**Choice:** (a). The underscore form is `R_<AREA>_<digits>` with an upper-case area of one segment and one number, the shape of every requirement in
+`docs/spec`; it is narrower than the hyphen form on purpose, so that `TestR_AUTH_027_E1_2_Token` reads R-AUTH-027 and not an ID `R-AUTH-027-E1-2`. It must
+stand alone: it starts at the beginning of the name or of a subtest, after anything but a letter, digit or hyphen (an underscore included), or directly after the prefix of a
+test function; it ends at the end or before anything but a letter, digit or hyphen. `PR_API_053`, `TestPR_API_053`, `TestR_API_053x`, `TestR_api_053` and `TestR_API_` carry nothing.
+An ID the spec does not define is reported as unknown, as for the hyphen form.
+
+**Rationale:** The underscore ID is the repository's convention, 427 functions deep; the cost of the second form is one regular expression and the boundary rules,
+held by 40 cases in `TestIDsInTestNames`. The development agent would revisit the choice if a spec ID gets a second segment between the area and the number (then the
+underscore form is ambiguous with trailing words, and tests move to the hyphen form in a subtest).
+
+**Applied in the spec:** [docs/developer/coverage.md](../developer/coverage.md) ("Implementation status: the test-naming rule"),
+[docs/developer/build-and-test.md](../developer/build-and-test.md). Code: `idsIn`, `underscoreID`, `startsUnderscoreID` in `internal/tools/coverage/evidence.go`.
+
 ## What this does not cover
 
 

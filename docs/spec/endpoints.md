@@ -889,7 +889,15 @@ func Allowed(sub Subject, idx *Index, a Action, c Coordinate) bool {
 - `reasonFor` of R-AUTHZ-015 returns `deny.exposure` and `deny.endpoint_read_only`. The decision
   explanation (R-AUTHZ-024, P1) names the endpoint and the rules it considered.
 - **Performance.** With 1,000 rules on an endpoint, the 1 ms p99 target of R-AUTHZ-015 holds for
-  one `Decide` call including the ceiling.
+  one `Decide` call including the ceiling. Matching a rule allocates nothing
+  ([Q-EP-64](#q-ep-64--pattern-matching-in-the-decision-path-allocates-nothing-and-a-literal-lead-refuses-before-any-state-is-built)):
+  one `Decide` makes 42 allocations, none per rule, and takes about 20 µs (rules whose patterns start
+  with a literal) to 140 µs (rules whose patterns start with a wildcard) on one core of the
+  development machine. `TestR_EP_013_CeilingPerformance` asserts the allocations (at most 100) and
+  the median per change, and the p99, in the CPU time of the deciding thread
+  ([Q-EP-65](#q-ep-65--the-tail-of-r-ep-013-is-measured-in-the-cpu-time-of-the-deciding-thread)),
+  only with `TROVE_PERF_GATE=1`, which `make test-performance` sets in the nightly run
+  ([Q-ARCH-250](architecture.md#q-arch-250--a-p99-bound-in-microseconds-is-a-nightly-gate-and-the-per-change-test-asserts-allocations-and-the-median)).
 
 Acceptance criteria (fixture of R-EP-012):
 
@@ -2035,6 +2043,55 @@ of a rules endpoint needs cache state, then with a value that names no upstream.
 
 **Applied in the spec:** R-EP-018 ("No cache state"), [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-047.
 Code: `internal/formats/serve.go` (`ServeRoute`, `trackWriter.scrub`).
+
+### Q-EP-64 · Pattern matching in the decision path allocates nothing, and a literal lead refuses before any state is built
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: with 1,000 exposure rules, one `Decide` took 360 to 410 µs and made 16,042 allocations (194 KB), 16 per rule (benchmark `BenchmarkCeilingDecide`, `-benchmem`,
+`-cpuprofile`: 44 % of the CPU in `repository.(*Pattern).Match`, of it `makeslice`, `strings.Split` and the garbage collector's stop-the-world). `Pattern.Match`
+split the path, converted every segment to a `[]rune` and allocated a state vector per token and per segment. A decision with the ceiling evaluates every rule
+of the endpoint for the repository (R-EP-013), so the cost is the matcher's cost times 1,000, and the garbage it makes is collected inside the 1 ms of R-AUTHZ-015.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Allocation-free matcher with a literal lead (chosen) | State vectors and runes on the stack up to 128 characters per segment and 32 segments, the heap beyond; a path segment is matched greedily with one retreat point; a pattern whose first segment starts with literal characters is refused at once when the input does not | 42 allocations per `Decide` (none per rule), 20 µs for literal-first rules and 140 to 200 µs for wildcard-first rules; same answers (below) | More code in the matcher |
+| (b) Index the rules by first segment | A map from the literal first segment to the rules | Sub-linear in the rule count | A second structure to keep equal to the rules; wildcard-first rules still scan; the matcher's garbage remains |
+| (c) Cache decisions per (rule set, path) | Memoise the verdict | Constant on a repeat | Unbounded keys (every path); stale across epochs; a cache in the decision path |
+| (d) Cap the rule count lower | `MaxExposureRules` below 1,000 | Trivial | Changes the stated limit of R-EP-012 for a cost the matcher caused |
+
+**Choice:** (a). Name patterns keep the state vector (their `*` stops at `/`, which a retreat point cannot honour); path segments contain no `/`, so
+`*` is a plain run there. The answers are those of the former matcher: `pattern_alloc_test.go` holds a copy of it as the reference and compares `Match` and `MayContain` on
+20,000 random patterns with 6 inputs each per subject (inputs beyond the stack sizes included) and in a fuzz target (`FuzzPatternMatch`, 20 to 30 s with no difference found
+after each of four edits of the matcher); `testing.AllocsPerRun` asserts zero allocations for the shapes in use.
+
+**Rationale:** The cause was the allocation per rule, not the algorithm: the segment automaton is linear in the input, and removing the allocations took the call from 360-410 µs to 140-200 µs
+(wildcard-first) before the lead check, and to 20 µs (literal-first) with it. (b) and (c) add state for a gain that (a) already gives at the sizes the spec allows. The
+development agent would revisit the choice when a rule limit above 1,000 is wanted (then (b)), or when pattern syntax gains a construct a retreat point cannot match (a character class: then
+the segment match returns to the state vector, which stays in the file).
+
+**Applied in the spec:** R-EP-013 ("Performance"). Code: `Pattern.Match`, `matchSegments`, `matchSegment`, `newPattern` in `internal/repository/pattern.go`; the tests in `internal/repository/pattern_alloc_test.go`.
+
+### Q-EP-65 · The tail of R-EP-013 is measured in the CPU time of the deciding thread
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the p99 of R-AUTHZ-015 is a statement about a decision on one CPU core (`trove_authz_evaluation_seconds`), but a wall-clock sample of a call of 20 to 140 µs on a
+shared machine also holds the time the scheduler gave the core to another process. Wall-clock p99 of the wildcard-first shape was 1 to 20 ms in five of eleven runs at a load average of 36 to 63
+(median 140 µs in all of them); the same runs measured in the CPU time of the thread were 0.2 to 0.45 ms in six of six.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Wall clock | `time.Since` per call | Simple; what a caller sees | Includes the machine's other work; fails with no regression, as above |
+| (b) Thread CPU time for the gated p99 (chosen) | `CLOCK_THREAD_CPUTIME_ID` around each call on a locked thread (Linux, macOS; wall clock elsewhere); the wall-clock p99 and maximum are logged | The gate fails when the code is slower, not when the machine is busy; matches the "one CPU core" of R-AUTHZ-015 | Excludes waits that a call really has (there are none in `Decide` on a compiled index); a platform without the clock measures wall time |
+| (c) A dedicated runner | The nightly job on an idle runner | Real latency | Owner keeps the runners shared (Q-ARCH-220) |
+
+**Choice:** (b), for the gated p99 and the per-change median. Both shapes of Q-ARCH-250 run with 1,000 rules and 2,000 samples.
+
+**Rationale:** A decision on a compiled index takes no lock and does no I/O (R-AUTHZ-015), so its CPU time is its latency on a free core. The wall-clock tail stays in the log for whoever
+needs it. The development agent would revisit the choice if `Decide` gains a wait (a lock, a fetch): then wall time is the honest measure.
+
+**Applied in the spec:** R-EP-013 ("Performance"); [docs/developer/authorization.md](../developer/authorization.md). Code: `threadCPU` in `internal/authz/cputime_unix_test.go` and `cputime_other_test.go`.
 
 ## What this does not cover
 

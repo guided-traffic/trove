@@ -42,7 +42,7 @@ with their pins and fails on a difference; a tool that is not installed is not a
 | `test` | `go test -race ./...` with a coverage profile of the unit tier (`.out/coverage/unit.out`); the `go test -json` stream goes to `.out/test-unit.json`, which the coverage generator reads |
 | `integration-up`, `integration-down` | start and stop the integration stack, see below |
 | `test-integration` | `go test -tags integration ./test/integration/...` with the environment of `.dev/integration/env`; the JSON stream goes to `.out/test-integration.json`, the profile to `.out/coverage/integration-<line>.out`; `SHARD=a\|b` runs one half of the packages (the two CI legs) and adds `-<shard>` to both names |
-| `test-performance` | the P-13 and P-14 latency tests of the integration tier with `TROVE_PERF_GATE=1`, which enforces their p99 bounds with Valkey (`test-integration` logs them only); the JSON stream goes to `.out/test-performance.json`. Run by the nightly workflow "HA and Performance (nightly)" ([releasing.md](releasing.md#ha-and-performance-nightly)) |
+| `test-performance` | the P-13 and P-14 latency tests of the integration tier and `TestR_EP_013_CeilingPerformance` of `internal/authz` with `TROVE_PERF_GATE=1`, which enforces their p99 bounds (with Valkey for the first; `test-integration` and `make test` log them only); the JSON stream goes to `.out/test-performance.json`. Run by the nightly workflow "HA and Performance (nightly)" ([releasing.md](releasing.md#ha-and-performance-nightly)) |
 | `minio-up`, `minio-down`, `s3-conformance` | MinIO built at `MINIO_COMMIT`, served over TLS, and the conformance tests against it ([test/integration/minio.sh](../../test/integration/minio.sh)) |
 | `coverage-report` | merges `.out/coverage` into `coverage.txt`, `summary.md` and the badge `coverage.json` ([test/coverage/report.sh](../../test/coverage/report.sh)) |
 | `test-release-tooling` | `npm ci`, `npm audit signatures`, and [hack/verify-release-tooling.mjs](../../hack/verify-release-tooling.mjs) |
@@ -71,7 +71,12 @@ on a checkout with an installed `node_modules` therefore picks them up; use `mak
 A test that verifies a requirement carries the requirement ID in a subtest name, for example
 `t.Run("R-ARCH-002 forbidden import names the edge", …)`. The coverage generator reads the IDs from the
 `go test -json` stream ([coverage.md](coverage.md)). Go replaces spaces by underscores in the name; the
-ID survives.
+ID survives. A function name may carry it in the underscore form, `TestR_API_053_Name`, which names
+`R-API-053` ([coverage.md](coverage.md#implementation-status-the-test-naming-rule)).
+
+A latency target in microseconds is not a per-change assertion on a shared machine: the per-change run asserts the
+allocations and the median, and the p99 is enforced with `TROVE_PERF_GATE=1` by `make test-performance` (for example
+`TestR_EP_013_CeilingPerformance`, [Q-ARCH-250](../spec/architecture.md#q-arch-250--a-p99-bound-in-microseconds-is-a-nightly-gate-and-the-per-change-test-asserts-allocations-and-the-median)).
 
 ### Architecture test
 

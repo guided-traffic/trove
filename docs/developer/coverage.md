@@ -62,14 +62,25 @@ with one decision on top (below).
 
 - A test names a requirement by carrying its ID in the test name. In Go, put it in the subtest
   name; the testing package turns spaces into underscores, and the generator reads
-  `TestSomething/R-ARCH-002_forbidden_import_names_the_edge` as naming `R-ARCH-002`.
+  `TestSomething/R-ARCH-002_forbidden_import_names_the_edge` as naming `R-ARCH-002`. A function
+  name cannot hold a hyphen, so the generator also reads the underscore form
+  ([Q-ARCH-251](../spec/architecture.md#q-arch-251--the-coverage-generator-reads-a-requirement-id-in-a-go-function-name-in-its-underscore-form)):
+  `TestR_API_053_TheGuideOfAFormat` names `R-API-053`.
 - A requirement is **implemented** when at least one passing test names it and **no** failing
   test names it. A skipped test is neither.
 - A catalog feature is **implemented** when at least one requirement covers it and every
   requirement that covers it is implemented. Otherwise it stays *specified*.
 - The ID must stand alone in the name. The characters next to it may be anything but a letter,
   digit or hyphen: `R-ARCH-002_x`, `/R-ARCH-002 x` and `R-ARCH-002/2` name it; `PR-ARCH-002` and
-  `R-ARCH-002-x` do not. Only `R-` IDs count. A criterion suffix such as `/2` is ignored today;
+  `R-ARCH-002-x` do not. Only `R-` IDs count.
+- The underscore form is `R_<AREA>_<digits>` (`idsIn`, `underscoreID` in
+  [evidence.go](../../internal/tools/coverage/evidence.go)): an upper-case area of one segment and one
+  number, so `TestR_AUTH_027_E1_2_Token` names `R-AUTH-027` and nothing else. It follows the same
+  standalone rule, and may also stand directly after `Test`, `Benchmark`, `Fuzz` or `Example` at the
+  start of a function name or a subtest, and next to underscores (`TestName_R_API_053`).
+  `PR_API_053`, `TestPR_API_053`, `TestR_API_053x` and `TestR_api_053` name nothing. An ID the spec
+  does not define is reported as unknown, in either form. `TestIDsInTestNames` in
+  [coverage_test.go](../../internal/tools/coverage/coverage_test.go) holds the cases. A criterion suffix such as `/2` is ignored today;
   Q-ROAD-4 names it as the answer if one name per requirement proves too coarse.
 
 ```go

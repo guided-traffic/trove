@@ -33,10 +33,40 @@ func idChar(b byte) bool {
 	return b >= 'A' && b <= 'Z' || b >= 'a' && b <= 'z' || b >= '0' && b <= '9' || b == '-'
 }
 
-// idsIn returns the requirement IDs a test name carries. An ID must stand
-// alone: the characters around it may be anything but a letter, a digit or a
-// hyphen, so `TestX/R-ARCH-002_forbidden_import` carries R-ARCH-002 while
-// `R-ARCH-002-x` and `PR-ARCH-002` carry nothing.
+// underscoreID is the form of an ID in a Go function name, which cannot hold a
+// hyphen: `R_API_053` is R-API-053 (Q-ARCH-251). It is deliberately narrower than
+// requirementID: one area segment and one number, the shape of every requirement
+// in docs/spec, so that `R_AUTH_027_E1_2_Token` reads R-AUTH-027 and no longer ID.
+var underscoreID = regexp.MustCompile(`R_[A-Z][A-Z0-9]*_[0-9]+`)
+
+// testFuncPrefixes are the prefixes `go test` requires on a function name; the
+// ID may follow one directly (`TestR_API_053_Name`).
+var testFuncPrefixes = []string{"Test", "Benchmark", "Fuzz", "Example"}
+
+// startsUnderscoreID reports whether an underscore-form ID may begin at i: at the
+// start of the name or of a subtest, after anything but a letter, a digit or a
+// hyphen (an underscore included, so `TestName_R_API_053` reads), or directly after
+// the prefix of a test function. `PR_API_053` and `TestPR_API_053` carry nothing.
+func startsUnderscoreID(name string, i int) bool {
+	if i == 0 || !idChar(name[i-1]) {
+		return true
+	}
+	for _, prefix := range testFuncPrefixes {
+		if start := i - len(prefix); start >= 0 && name[start:i] == prefix && (start == 0 || name[start-1] == '/') {
+			return true
+		}
+	}
+	return false
+}
+
+// idsIn returns the requirement IDs a test name carries, in the hyphen form
+// (`R-ARCH-002`) and in the underscore form of a Go function name
+// (`TestR_API_053_Name`, which carries R-API-053). An ID must stand alone: the
+// characters around it may be anything but a letter, a digit or a hyphen, so
+// `TestX/R-ARCH-002_forbidden_import` carries R-ARCH-002 while `R-ARCH-002-x` and
+// `PR-ARCH-002` carry nothing. The underscore form follows the same rule, except
+// that an underscore may stand around it and that it may directly follow the
+// `Test`, `Benchmark`, `Fuzz` or `Example` of a function name.
 func idsIn(name string) []string {
 	var out []string
 	for _, loc := range requirementID.FindAllStringIndex(name, -1) {
@@ -47,6 +77,14 @@ func idsIn(name string) []string {
 			continue
 		}
 		if id := name[loc[0]:loc[1]]; !contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	for _, loc := range underscoreID.FindAllStringIndex(name, -1) {
+		if !startsUnderscoreID(name, loc[0]) || loc[1] < len(name) && idChar(name[loc[1]]) {
+			continue
+		}
+		if id := strings.ReplaceAll(name[loc[0]:loc[1]], "_", "-"); !contains(out, id) {
 			out = append(out, id)
 		}
 	}

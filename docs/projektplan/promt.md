@@ -244,14 +244,6 @@ Found on 2026-11-01 while writing the manual (`docs/manual`) and the design chan
 
 ### Tests and tools
 
-- **F-14 · Test names with underscores give no coverage evidence** (confirmed). The coverage generator reads
-  IDs with hyphens only (`idsIn` in [evidence.go](../../internal/tools/coverage/evidence.go)), so
-  `TestR_API_053_…` and `TestR_API_054_…` count for nothing and R-API-053 and R-API-054 are missing from
-  `docs/coverage/implemented.txt` although their tests pass. Done when those tests carry the ID in a form the
-  generator reads (or the generator reads both) and the evidence is refreshed (`make coverage-refresh`).
-- **F-15 · `TestR_EP_013_CeilingPerformance` misses its 1 ms target under a full `go test ./...`** (confirmed
-  once: p99 1.0995 ms; it passed three times run alone). Find the cause (contention with parallel packages,
-  allocation in `Decide`) and fix it; do not retry it to green (rule 7).
 - **F-16 · No browser journey visits the help area, and the new palette has not been through the browser
   tier's colour-contrast check** (confirmed). Done when a journey opens `/help` and a page from the "?" and
   axe passes with `color-contrast` in the light (English) and the dark (German) scheme.

@@ -3,6 +3,7 @@ package authz
 import (
 	"context"
 	"fmt"
+	"os"
 	"slices"
 	"sort"
 	"strconv"
@@ -484,13 +485,16 @@ func TestR_EP_018_ExposureView(t *testing.T) {
 	})
 }
 
-func TestR_EP_013_CeilingPerformance(t *testing.T) {
-	// 1,000 rules on one endpoint for one repository, none of which admits the
-	// item: the worst case of the ceiling (R-EP-013 "Performance").
+// ceilingRules builds the worst case of the ceiling (R-EP-013 "Performance"): the
+// maximum number of rules on one endpoint for one repository, none of which
+// admits the item. include gives the two include patterns of rule i.
+func ceilingRules(t testing.TB, include func(i int) (string, string)) (*Engine, Subject, Coordinate) {
+	t.Helper()
 	f := newFixture().repo("generic-local", "local", "generic", "")
 	f.policy(policyDef{name: "read", selectors: []string{"@any"}, entries: map[string][]string{idBot: {"read"}}})
 	for i := range MaxExposureRules {
-		f.exposure(ruleDef{endpoint: "customers", name: fmt.Sprintf("r%04d", i), repo: "generic-local", dims: paths(fmt.Sprintf("dir%04d/**", i), "a/*/b/**")})
+		first, second := include(i)
+		f.exposure(ruleDef{endpoint: "customers", name: fmt.Sprintf("r%04d", i), repo: "generic-local", dims: paths(first, second)})
 	}
 	// The test measures the decision, not the staleness bound: building 1,000
 	// rules and 2,000 decisions can outlast the 10 s of testConfig under the race
@@ -499,22 +503,90 @@ func TestR_EP_013_CeilingPerformance(t *testing.T) {
 		o.Ceiling = exposureCeiling()
 		o.Config.Cache.MaxStaleness = time.Hour
 	})
-	c, sub := read("generic-local", "", "nowhere/x/y.bin"), onEP(botSub, "customers")
-	const n = 2000
-	took := make([]time.Duration, 0, n)
-	for range n {
-		start := time.Now()
-		d := e.Decide(context.Background(), sub, c)
-		took = append(took, time.Since(start))
-		if d.Outcome != DenyHidden {
-			t.Fatalf("%+v", d)
-		}
+	return e, onEP(botSub, "customers"), read("generic-local", "", "nowhere/x/y.bin")
+}
+
+// ceilingShapes are the include patterns the performance tests run: rules whose
+// patterns start with a literal (a match refuses most of them at the first
+// characters) and rules whose patterns start with a wildcard (every rule builds
+// its segment states).
+var ceilingShapes = []struct {
+	name    string
+	include func(i int) (string, string)
+}{
+	{"literal first segment", func(i int) (string, string) { return fmt.Sprintf("dir%04d/**", i), "a/*/b/**" }},
+	{"wildcard first segment", func(i int) (string, string) { return fmt.Sprintf("*/dir%04d/**", i), fmt.Sprintf("**/d%04d/*.bin", i) }},
+}
+
+// TestR_EP_013_CeilingPerformance holds the cost of one Decide with 1,000 rules
+// on an endpoint at the 1 ms target of R-AUTHZ-015. The per-change run asserts what
+// does not depend on the load of the machine: the allocations of one decision,
+// which were 16,042 when every pattern match built its own slices (Q-EP-64), and
+// the median. The p99 bound is enforced with TROVE_PERF_GATE=1, which
+// `make test-performance` sets in the nightly run (Q-ARCH-220, Q-ARCH-250), and it
+// is the p99 of the CPU time of the deciding thread, not of the wall clock
+// (Q-EP-65); without the gate the p99 is logged. The race detector slows a
+// decision by an order of magnitude, so it enforces neither time.
+func TestR_EP_013_CeilingPerformance(t *testing.T) {
+	for _, shape := range ceilingShapes {
+		t.Run(shape.name, func(t *testing.T) {
+			e, sub, c := ceilingRules(t, shape.include)
+			ctx := context.Background()
+			if n := testing.AllocsPerRun(50, func() { e.Decide(ctx, sub, c) }); n > maxAllocsPerCeilingDecision {
+				t.Errorf("one Decide with %d rules allocates %.0f times, want at most %d", MaxExposureRules, n, maxAllocsPerCeilingDecision)
+			}
+			const n = 2000
+			cpu, release := threadCPU()
+			defer release()
+			wall, onCPU := make([]time.Duration, 0, n), make([]time.Duration, 0, n)
+			for range n {
+				c0, w0 := cpu(), time.Now()
+				d := e.Decide(ctx, sub, c)
+				c1, w1 := cpu(), time.Now()
+				onCPU, wall = append(onCPU, c1-c0), append(wall, w1.Sub(w0))
+				if d.Outcome != DenyHidden {
+					t.Fatalf("%+v", d)
+				}
+			}
+			slices.Sort(onCPU)
+			slices.Sort(wall)
+			p50, p99 := onCPU[n/2], onCPU[n*99/100]
+			t.Logf("one Decide with %d rules, %s: p50 %s, p99 %s; wall clock: p50 %s, p99 %s, max %s",
+				MaxExposureRules, cpuClock, p50, p99, wall[n/2], wall[n*99/100], wall[n-1])
+			if raceDetector {
+				return
+			}
+			if p50 > time.Millisecond {
+				t.Errorf("median %s is above the 1 ms target of R-AUTHZ-015", p50)
+			}
+			switch {
+			case p99 <= time.Millisecond:
+			case os.Getenv("TROVE_PERF_GATE") == "1":
+				t.Errorf("p99 %s (%s) is above the 1 ms target of R-AUTHZ-015", p99, cpuClock)
+			default:
+				t.Logf("p99 %s is above 1 ms; enforced with TROVE_PERF_GATE=1 (Q-ARCH-250)", p99)
+			}
+		})
 	}
-	slices.Sort(took)
-	p99 := took[n*99/100]
-	t.Logf("p99 of one Decide with 1,000 rules: %s", p99)
-	if !raceDetector && p99 > time.Millisecond {
-		t.Fatalf("p99 %s is above the 1 ms target of R-AUTHZ-015", p99)
+}
+
+// maxAllocsPerCeilingDecision bounds the allocations of one Decide with 1,000
+// rules: 42 are measured (the decision, its counters and the audit event), none
+// of them per rule. A match that allocates per rule is above it by two orders.
+const maxAllocsPerCeilingDecision = 100
+
+func BenchmarkCeilingDecide(b *testing.B) {
+	for _, shape := range ceilingShapes {
+		b.Run(shape.name, func(b *testing.B) {
+			e, sub, c := ceilingRules(b, shape.include)
+			ctx := context.Background()
+			b.ReportAllocs()
+			for b.Loop() {
+				if d := e.Decide(ctx, sub, c); d.Outcome != DenyHidden {
+					b.Fatal(d)
+				}
+			}
+		})
 	}
 }
 

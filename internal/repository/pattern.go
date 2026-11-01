@@ -39,6 +39,39 @@ const (
 type Pattern struct {
 	subject PatternSubject
 	segs    []patSeg
+	// lead is the literal text every match starts with: the leading literal
+	// characters of a name pattern, or of the first segment of a path pattern
+	// that does not start with a globstar. A match refuses an input without it
+	// before any state is built. whole says that lead is the entire first
+	// segment, so the input must continue with "/" or end there.
+	lead  string
+	whole bool
+}
+
+// newPattern builds a Pattern and derives its literal lead.
+func newPattern(subject PatternSubject, segs []patSeg) *Pattern {
+	p := &Pattern{subject: subject, segs: segs}
+	if len(segs) == 0 || segs[0].globstar {
+		return p
+	}
+	var b strings.Builder
+	toks := segs[0].toks
+	n := 0
+	for n < len(toks) && toks[n].kind == tokLit {
+		b.WriteRune(toks[n].r)
+		n++
+	}
+	p.lead = b.String()
+	p.whole = subject == SubjectPath && n == len(toks)
+	return p
+}
+
+// leadRefuses reports whether s cannot match because it lacks the literal lead.
+func (p *Pattern) leadRefuses(s string) bool {
+	if !strings.HasPrefix(s, p.lead) {
+		return true
+	}
+	return p.whole && len(s) > len(p.lead) && s[len(p.lead)] != '/'
 }
 
 type tokKind uint8
@@ -82,7 +115,7 @@ func CompilePattern(subject PatternSubject, p string) (*Pattern, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &Pattern{subject: subject, segs: []patSeg{{toks: toks}}}, nil
+		return newPattern(subject, []patSeg{{toks: toks}}), nil
 	case SubjectPath:
 		return compilePath(p)
 	}
@@ -108,7 +141,7 @@ func compilePath(p string) (*Pattern, error) {
 		}
 		segs = append(segs, patSeg{toks: toks})
 	}
-	return &Pattern{subject: SubjectPath, segs: segs}, nil
+	return newPattern(SubjectPath, segs), nil
 }
 
 // splitUnescaped splits s at sep, ignoring a separator that a backslash escapes.
@@ -172,36 +205,75 @@ func parseTokens(s string, name bool) ([]tok, error) {
 	return out, nil
 }
 
+// Matching is the hot path of every decision with an exposure ceiling: a
+// decision evaluates up to MaxExposureRules patterns, so a match allocates
+// nothing for the inputs that occur (a path of up to stackRunes characters per
+// segment and a pattern of up to stackSegs segments); longer ones fall back to
+// the heap with the same result.
+const (
+	stackSegs  = 32
+	stackRunes = 128
+)
+
 // Match reports whether the canonical path (or the normalized name) matches.
 func (p *Pattern) Match(s string) bool {
+	if p.leadRefuses(s) {
+		return false
+	}
 	if p.subject == SubjectName {
-		return globMatch(p.segs[0].toks, []rune(s))
+		return globMatch(p.segs[0].toks, s)
 	}
 	if s == "" {
 		return false
 	}
-	return matchSegments(p.segs, strings.Split(s, "/"))
+	return matchSegments(p.segs, s)
 }
 
-func matchSegments(pat []patSeg, in []string) bool {
+// segStates returns two cleared state vectors of len(pat)+1 entries.
+func segStates(buf *[2 * (stackSegs + 1)]bool, pat []patSeg) (reach, next []bool) {
+	n := len(pat) + 1
+	if n <= stackSegs+1 {
+		return buf[:n:n], buf[n : 2*n : 2*n]
+	}
+	return make([]bool, n), make([]bool, n)
+}
+
+// advance consumes one path segment: next becomes the states reachable from
+// reach through seg. It reports whether any state is left; none is left for good,
+// so the caller stops reading segments.
+func advance(pat []patSeg, reach, next []bool, seg string) bool {
+	clear(next)
+	alive := false
+	for i, ok := range reach {
+		if !ok || i == len(pat) {
+			continue
+		}
+		if pat[i].globstar {
+			next[i] = true
+			alive = true
+		} else if matchSegment(pat[i].toks, seg) {
+			next[i+1] = true
+			alive = true
+		}
+	}
+	closure(pat, next)
+	return alive
+}
+
+// matchSegments matches the "/"-separated segments of in; in is not empty.
+func matchSegments(pat []patSeg, in string) bool {
+	var buf [2 * (stackSegs + 1)]bool
 	// reach[i] is true when pat[:i] consumed the segments seen so far.
-	reach := make([]bool, len(pat)+1)
+	reach, next := segStates(&buf, pat)
 	reach[0] = true
 	closure(pat, reach)
-	for _, seg := range in {
-		next := make([]bool, len(pat)+1)
-		for i, ok := range reach {
-			if !ok || i == len(pat) {
-				continue
-			}
-			if pat[i].globstar {
-				next[i] = true
-			} else if globMatch(pat[i].toks, []rune(seg)) {
-				next[i+1] = true
-			}
+	for rest, more := in, true; more; {
+		var seg string
+		seg, rest, more = strings.Cut(rest, "/")
+		if !advance(pat, reach, next, seg) {
+			return false
 		}
-		closure(pat, next)
-		reach = next
+		reach, next = next, reach
 	}
 	return reach[len(pat)]
 }
@@ -224,24 +296,18 @@ func (p *Pattern) MayContain(folder string) bool {
 		return p.Match(folder)
 	}
 	pat := p.segs
-	reach := make([]bool, len(pat)+1)
+	var buf [2 * (stackSegs + 1)]bool
+	reach, next := segStates(&buf, pat)
 	reach[0] = true
 	closure(pat, reach)
 	if folder != "" {
-		for _, seg := range strings.Split(folder, "/") {
-			next := make([]bool, len(pat)+1)
-			for i, ok := range reach {
-				if !ok || i == len(pat) {
-					continue
-				}
-				if pat[i].globstar {
-					next[i] = true
-				} else if globMatch(pat[i].toks, []rune(seg)) {
-					next[i+1] = true
-				}
+		for rest, more := folder, true; more; {
+			var seg string
+			seg, rest, more = strings.Cut(rest, "/")
+			if !advance(pat, reach, next, seg) {
+				return false
 			}
-			closure(pat, next)
-			reach = next
+			reach, next = next, reach
 		}
 	}
 	for i := range pat {
@@ -252,23 +318,78 @@ func (p *Pattern) MayContain(folder string) bool {
 	return false
 }
 
-// globMatch matches tokens against the whole of s.
-func globMatch(toks []tok, s []rune) bool {
-	n := len(s)
-	cur := make([]bool, n+1)
+// matchSegment matches the tokens of one path segment against one segment of
+// the input. A segment holds no "/" (the input is split at it, the pattern at
+// its unescaped ones), so "*" is a plain run here and the match is the greedy one
+// with a single retreat point: no state vector, no allocation, and a literal
+// first token that differs ends it at once.
+func matchSegment(toks []tok, s string) bool {
+	ti, si := 0, 0
+	star, mark := -1, 0 // the last run token and where in s its run ends now
+	for si < len(s) {
+		if ti < len(toks) {
+			t := toks[ti]
+			switch t.kind {
+			case tokStar, tokAny:
+				star, mark = ti, si
+				ti++
+				continue
+			case tokOne:
+				_, w := utf8.DecodeRuneInString(s[si:])
+				si += w
+				ti++
+				continue
+			case tokLit:
+				if r, w := utf8.DecodeRuneInString(s[si:]); r == t.r {
+					si += w
+					ti++
+					continue
+				}
+			}
+		}
+		if star < 0 {
+			return false
+		}
+		_, w := utf8.DecodeRuneInString(s[mark:])
+		mark += w
+		si, ti = mark, star+1
+	}
+	for ti < len(toks) && (toks[ti].kind == tokStar || toks[ti].kind == tokAny) {
+		ti++
+	}
+	return ti == len(toks)
+}
+
+// globMatch matches the tokens of a name pattern against the whole of s, one
+// rune per character; "*" stops at "/", which a retreat point cannot honour, so
+// it keeps the state vector.
+func globMatch(toks []tok, s string) bool {
+	var rbuf [stackRunes]rune
+	rs := rbuf[:0]
+	for _, r := range s {
+		rs = append(rs, r)
+	}
+	n := len(rs)
+	var bbuf [2 * (stackRunes + 1)]bool
+	var cur, next []bool
+	if n <= stackRunes {
+		cur, next = bbuf[:n+1:n+1], bbuf[n+1:2*(n+1):2*(n+1)]
+	} else {
+		cur, next = make([]bool, n+1), make([]bool, n+1)
+	}
 	cur[0] = true
 	for _, t := range toks {
-		next := make([]bool, n+1)
+		clear(next)
 		switch t.kind {
 		case tokLit:
 			for j := 0; j < n; j++ {
-				if cur[j] && s[j] == t.r {
+				if cur[j] && rs[j] == t.r {
 					next[j+1] = true
 				}
 			}
 		case tokOne:
 			for j := 0; j < n; j++ {
-				if cur[j] && s[j] != '/' {
+				if cur[j] && rs[j] != '/' {
 					next[j+1] = true
 				}
 			}
@@ -279,7 +400,7 @@ func globMatch(toks []tok, s []rune) bool {
 					run = true
 				}
 				next[k] = run
-				if k < n && s[k] == '/' {
+				if k < n && rs[k] == '/' {
 					run = false
 				}
 			}
@@ -292,7 +413,7 @@ func globMatch(toks []tok, s []rune) bool {
 				next[k] = run
 			}
 		}
-		cur = next
+		cur, next = next, cur
 	}
 	return cur[n]
 }
