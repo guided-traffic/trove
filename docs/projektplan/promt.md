@@ -273,13 +273,13 @@ Found on 2026-11-01 while writing the manual (`docs/manual`) and the design chan
 - **F-16 · No browser journey visits the help area, and the new palette has not been through the browser
   tier's colour-contrast check** (confirmed). Done when a journey opens `/help` and a page from the "?" and
   axe passes with `color-contrast` in the light (English) and the dark (German) scheme.
-- **F-17 · Three tools on the owner's machine differ from their pins** (confirmed by `make versions-check`).
-  helm v3.21.3 (Homebrew formula `helm@3`, pin v4.3.1); kubectl v1.36.2 (Homebrew `kubernetes-cli`, pin
-  v1.37.2) with a second kubectl v1.32.2 from Docker Desktop in `/usr/local/bin`; docker buildx
-  v0.28.0-desktop.1 (Docker Desktop's plugin, pin v0.38.1). Machine-level: the owner runs
-  `brew uninstall helm@3 && brew install helm`, `brew upgrade kubernetes-cli`, `sudo rm /usr/local/bin/kubectl`,
-  `brew install docker-buildx` and links its binary into `~/.docker/cli-plugins/`; done when
-  `make versions-check` prints `versions ok`. A run does not change the machine.
+- **F-17 · Leftovers of old tool versions on the owner's machine that need an admin password** (confirmed).
+  On 2026-11-01 helm (4.3.1), kubectl (1.37.2), docker buildx (0.38.1), kind (0.33.0) and Node.js (26.13.0)
+  were brought to their pins through Homebrew, and `make versions-check` prints `versions ok`. Left: two
+  shadowed copies from Docker Desktop's time in `/usr/local/bin`, `kubectl` (v1.32.2) and `kind` (v0.20.0),
+  owned by root (`sudo rm /usr/local/bin/kubectl /usr/local/bin/kind`), and the Command Line Tools 26.6,
+  which Homebrew reports as too old for Xcode 27 (Software Update, or `sudo xcode-select --install`).
+  Machine-level: the owner runs these; a run does not change the machine.
 
 ### Stale documentation
 
