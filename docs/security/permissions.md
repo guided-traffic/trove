@@ -277,3 +277,14 @@ All of this stays inside the owner's own rights; the bound is the owner, the lif
 ### H-327 · The walk over nested virtual repositories has no visited set
 
 `Index.reaches` and `anonReadsAllMembers` ([decide.go](../../internal/authz/decide.go)) walk members recursively with a depth bound of 16 and no visited set. Dormant today: a virtual repository cannot contain another one ([members.go](../../internal/repository/members.go) refuses it). Before nested virtual repositories (R-REPO-018) arrive, the walk needs a visited set or a precomputed member closure, and `Addressed` (`formats.Request.Addressed()`) must stay the outermost repository, because the scope lift names the repository the client addressed.
+
+### H-335 · A NuGet search by a caller with row-level grants scans up to 200,000 matches per request
+
+Live today for a caller whose read of a NuGet repository is narrowed row by row (`authz.ReadRows`: a package pattern in a grant, a token
+scope with elements, or an endpoint with exposure rules) and who calls `GET …/v3/search` (R-NUGET-010, Q-NUGET-45). SQL cannot ask the
+decision point which versions the caller may read, so `totalHits` stays exact by scanning the matches in rank order in batches of 500 and
+asking `MayRead` per listed version; the scan stops with `400` above 200,000 matching packages and never returns a partial count. The cost
+is CPU on the replica that answers, proportional to the matches (not to the page): a query that matches a large repository, repeated, can
+hold a replica busy, and each request pays the scan again because nothing caches it. A caller with an unrestricted read (`ReadAll`) is
+counted and paged by SQL and pays no scan. What bounds it today is the 1,024-byte and 16-term limit of `q` and the 200,000 cap; nothing caches or rate-limits the scan itself. Closing it needs the readable package names handed to the statement (the condition is in
+Q-NUGET-45); H-299 is the same cost for the package list.
