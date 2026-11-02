@@ -17,6 +17,14 @@ import (
 // otherwise. Any other member that holds an address is dropped, as an unknown member of the entry
 // is (Q-NUGET-52).
 
+// Deprecation returns an upstream's deprecation member cleaned as above, nil when nothing is left.
+// The registration of a remote and its forwarded search (R-NUGET-016) both pass it through it.
+func Deprecation(raw json.RawMessage) json.RawMessage { return passThrough(raw, false) }
+
+// Vulnerabilities returns an upstream's vulnerabilities member cleaned as above, each advisory
+// keeping an advisoryUrl that is a web link, nil when nothing is left.
+func Vulnerabilities(raw json.RawMessage) json.RawMessage { return passThrough(raw, true) }
+
 // passThrough returns the member cleaned as above, compact and with the keys of every object in
 // order, or nil when it is absent, null or nothing is left of it. advisories says the member is the
 // vulnerabilities list, whose objects may keep an advisoryUrl.

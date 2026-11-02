@@ -117,7 +117,7 @@ func Convert(l Leaf, lowerID string) (v Version, ok bool) {
 			PackageTypes: []string{"dependency"}, Metadata: meta,
 		},
 		Extras: registration.Passthrough{
-			Deprecation: passThrough(e["deprecation"], false), Vulnerabilities: passThrough(e["vulnerabilities"], true), Other: unknown(e),
+			Deprecation: Deprecation(e["deprecation"]), Vulnerabilities: Vulnerabilities(e["vulnerabilities"]), Other: unknown(e),
 		},
 	}, true
 }

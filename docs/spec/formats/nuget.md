@@ -1417,7 +1417,8 @@ Priority: **MVP** · Covers: PKG-NUGET-024, PKG-NUGET-028
   trove's limits (R-REPO-025 lets the plug-in map these parameters). Result URLs are rewritten as
   in R-NUGET-015 (`registration`, `versions[].@id` into the hive that matches the request's
   `semVerLevel`); `owners`, `verified`, `deprecation`, `vulnerabilities`, download counts and
-  `packageTypes` are kept. Results whose ID is excluded by the remote's patterns, refused by remote
+  `packageTypes` are kept, `deprecation` and `vulnerabilities` without the upstream's addresses as
+  in R-NUGET-015 (Q-NUGET-85). Results whose ID is excluded by the remote's patterns, refused by remote
   refusal (a `global` claim, R-REPO-023), or not readable by the caller are removed, and
   `totalHits` is reduced by the number removed from the returned page. Through a virtual
   repository, R-NUGET-018 step 2 also removes IDs that its claims and pin rules keep away from this
@@ -4598,7 +4599,7 @@ Context: R-NUGET-015 said both "catalog entry properties are copied, including `
 
 **Rationale:** `advisoryUrl` is a link shown to people, like `projectUrl`, which trove never follows; the JSON-LD addresses are the upstream's API, which trove replaces everywhere else. The development agent revisits this if a client turns out to read a dropped member.
 
-**Applied in the spec:** R-NUGET-015 (the copy rule, the URL table and the criterion on the URLs of a registration); Q-NUGET-52 superseded in part. Code: [remote/passthrough.go](../../../internal/formats/nuget/remote/passthrough.go), [remote/catalog.go](../../../internal/formats/nuget/remote/catalog.go), [test/nugetstub](../../../test/nugetstub/docs.go). Tests: `TestR_NUGET_015_DeprecationAndVulnerabilitiesComeWithoutTheUpstreamsAddresses`, `TestR_NUGET_015_APassThroughMemberWithNothingLeftIsAbsent`, `TestR_NUGET_015_TheCorpusDeprecatesAVersionAndRecordsAnAdvisory`, and the integration tests `TestR_NUGET_015_RegistrationsAreRenderedOnTheServingRepository`, `TestR_NUGET_017_AVirtualRepositoryMergesARemoteMemberThatGzipsAndPagesItsRegistration`.
+**Applied in the spec:** R-NUGET-015 (the copy rule, the URL table and the criterion on the URLs of a registration), R-NUGET-016 (the forwarded search cleans both members the same way); Q-NUGET-52 superseded in part. Code: [remote/passthrough.go](../../../internal/formats/nuget/remote/passthrough.go) (`Deprecation`, `Vulnerabilities`), [remote/catalog.go](../../../internal/formats/nuget/remote/catalog.go), [search_remote.go](../../../internal/formats/nuget/search_remote.go) `upstreamResult.hit`, [test/nugetstub](../../../test/nugetstub/docs.go). Tests: `TestR_NUGET_015_DeprecationAndVulnerabilitiesComeWithoutTheUpstreamsAddresses`, `TestR_NUGET_016_AForwardedResultComesWithoutTheUpstreamsAddresses`, `TestR_NUGET_015_APassThroughMemberWithNothingLeftIsAbsent`, `TestR_NUGET_015_TheCorpusDeprecatesAVersionAndRecordsAnAdvisory`, and the integration tests `TestR_NUGET_015_RegistrationsAreRenderedOnTheServingRepository`, `TestR_NUGET_017_AVirtualRepositoryMergesARemoteMemberThatGzipsAndPagesItsRegistration`.
 
 ### Q-NUGET-86 · The first answer to a cache miss: a body within the withheld tail is answered from the stored entry, a longer one streams with the headers that do not depend on the body
 

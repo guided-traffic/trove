@@ -106,8 +106,9 @@ never in Valkey or PostgreSQL). It is filtered on every use, so a claim or a gra
   caller may read no version is removed, and `totalHits` is reduced by the results removed from the page (H-347);
 - a version the caller may not read is removed; when it is the upstream's latest, the result shows none of the description, links, `deprecation` and
   `vulnerabilities` that describe it (Q-NUGET-78);
-- every registration address is the serving repository's; `projectUrl`, `licenseUrl`, `iconUrl` and a vulnerability's `advisoryUrl` are links for people and
-  pass as the upstream wrote them; a member of a result that R-NUGET-016 does not name is dropped.
+- every registration address is the serving repository's; `projectUrl`, `licenseUrl` and `iconUrl` are links for people and pass as the upstream wrote
+  them; `deprecation` and `vulnerabilities` are cleaned as in the registration, every `@id` and `@type` dropped at any depth and an `advisoryUrl` kept
+  only as an absolute `http` or `https` link without user info (Q-NUGET-85); a member of a result that R-NUGET-016 does not name is dropped.
 
 An upstream failure, an open circuit, a missing search resource and an answer that is no search document fall back to the cache-only search with 200 and are
 counted in `trove_nuget_search_forward_failures_total{repo}`.

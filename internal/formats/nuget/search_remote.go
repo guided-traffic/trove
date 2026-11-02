@@ -329,7 +329,10 @@ func resultHit(raw json.RawMessage) (rows.SearchHit, bool) {
 // (Q-NUGET-78): the versions in URL form, ascending, with their download counts; the metadata
 // of the result as the metadata of its latest version; the owners, the verified flag, the
 // deprecation, the vulnerabilities and the total downloads as the latest version's forwarded
-// members. ok is false for a result whose ID is no NuGet ID or that lists no version.
+// members. The deprecation and the vulnerabilities come without the upstream's addresses, as
+// in the remote's registration: every "@id" and "@type" is dropped at any depth, an advisoryUrl
+// is kept only as an absolute http(s) link without user info (Q-NUGET-85). ok is false for a
+// result whose ID is no NuGet ID or that lists no version.
 func (u upstreamResult) hit() (rows.SearchHit, bool) {
 	lower, ok := lowerID(u.ID)
 	if !ok {
@@ -356,7 +359,7 @@ func (u upstreamResult) hit() (rows.SearchHit, bool) {
 		VersionEntry: latest,
 		Forwarded: &rows.Forwarded{
 			Owners: textList(u.Owners), Verified: u.Verified, TotalDownloads: max(u.TotalDownloads, 0),
-			Deprecation: u.Deprecation, Vulnerabilities: u.Vulnerabilities,
+			Deprecation: remote.Deprecation(u.Deprecation), Vulnerabilities: remote.Vulnerabilities(u.Vulnerabilities),
 		},
 	}
 	// The metadata describes the upstream's latest version; it is the latest version's only when

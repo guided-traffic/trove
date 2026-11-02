@@ -380,3 +380,37 @@ func TestR_NUGET_018_ARemoteMemberIsSearchedThroughTheVirtualRepositorysMembers(
 		t.Errorf("a planned member that is no member answered %d: %s", r.Code, r.Body.String())
 	}
 }
+
+// TestR_NUGET_016_AForwardedResultComesWithoutTheUpstreamsAddresses: the deprecation and the
+// vulnerabilities of a forwarded result are cleaned as the remote's registration cleans them
+// (Q-NUGET-85): every "@id" and "@type" is dropped at any depth, the alternate package's included;
+// an advisoryUrl stays only as an absolute http(s) link without user info, and an advisory left
+// with nothing is dropped.
+func TestR_NUGET_016_AForwardedResultComesWithoutTheUpstreamsAddresses(t *testing.T) {
+	fw := newForwarding(t, authz.Subject{})
+	fw.answer = `{"totalHits":1,"data":[{"id":"Newtonsoft.Json","version":"13.0.1",
+	  "versions":[{"version":"13.0.1","downloads":10}],"totalDownloads":10,
+	  "deprecation":{"@id":"https://up.test/catalog/deprecation","@type":"deprecation","reasons":["Legacy"],"message":"use the other",
+	    "alternatePackage":{"@id":"https://up.test/reg/other/index.json","@type":"alternatePackage","id":"Other.Json","range":"[1.0.0, )"}},
+	  "vulnerabilities":[
+	    {"@id":"https://up.test/catalog/vuln/1","@type":"vulnerability","advisoryUrl":"https://github.com/advisories/GHSA-5crp-9r3c-p9vr","severity":"2"},
+	    {"advisoryUrl":"https://user:secret@advisories.test/GHSA-2","severity":"1"},
+	    {"@id":"https://up.test/catalog/vuln/3","advisoryUrl":"ftp://advisories.test/GHSA-3"}]}]}`
+	d := forwardedOf(t, doSearch(t, fw.h, "q=newtonsoft"))
+	if len(d.Data) != 1 {
+		t.Fatalf("results %v", namesOf(d))
+	}
+	n := d.Data[0]
+	for name, raw := range map[string]json.RawMessage{"deprecation": n.Deprecation, "vulnerabilities": n.Vulnerabilities} {
+		if s := string(raw); strings.Contains(s, "up.test") || strings.Contains(s, "@id") || strings.Contains(s, "@type") ||
+			strings.Contains(s, "secret") || strings.Contains(s, "ftp:") {
+			t.Errorf("%s keeps an upstream address: %s", name, s)
+		}
+	}
+	if want := `{"alternatePackage":{"id":"Other.Json","range":"[1.0.0, )"},"message":"use the other","reasons":["Legacy"]}`; string(n.Deprecation) != want {
+		t.Errorf("deprecation %s, want %s", n.Deprecation, want)
+	}
+	if want := `[{"advisoryUrl":"https://github.com/advisories/GHSA-5crp-9r3c-p9vr","severity":"2"},{"severity":"1"}]`; string(n.Vulnerabilities) != want {
+		t.Errorf("vulnerabilities %s, want %s", n.Vulnerabilities, want)
+	}
+}
