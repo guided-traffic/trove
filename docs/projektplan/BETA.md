@@ -302,6 +302,13 @@ to denial-of-service attempts.
   counted and reported
 - ⚪ No web interface (owner, 2026-11-02): the Bastion serves the package clients and raw downloads with tokens only; no
   login, no session, no UI
+- ⚪ Configured only through its Helm chart (owner, 2026-11-02): the Bastion has no settings held anywhere else; every value
+  (main installation, its token, cache, periods, limits, blocking, trusted proxies) is a chart value, and a change is a
+  rollout
+- ⚪ Blocking in two stages (owner, 2026-11-02): the Bastion itself enforces the rules that need trove's knowledge (failed
+  authentication, misses, block duration, a block list shared through Valkey); its chart can put a coarser per-address
+  limit in front at HAProxy Ingress, which can be switched off and is set wider than the Bastion's own. Volumetric attacks
+  on bandwidth are the network provider's, not the Bastion's
 - ⚪ The main installation counts the real client: the Bastion stops abuse before a request reaches the main installation,
   and the main installation lists the Bastion's addresses in `server.trusted_proxies`, so its per-address limits apply to
   the client and not to the Bastion
