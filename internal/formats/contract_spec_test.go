@@ -1,18 +1,22 @@
 package formats_test
 
 import (
+	"flag"
 	"fmt"
 	"go/ast"
 	"go/parser"
+	"go/printer"
 	"go/token"
 	"go/types"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/guided-traffic/trove/internal/formats"
 )
 
 // The contract the spec writes down (the Go blocks of R-ARCH-008 and R-ARCH-009 in
@@ -66,12 +70,39 @@ type decls struct {
 	types  map[string]*ast.TypeSpec
 	funcs  map[string]*ast.FuncDecl
 	consts map[string]string // name -> explicit type, "" when none
+	// values are the values of the constants and variables, as valueString writes them.
+	values map[string]string
 	// methods are the exported methods of exported types: type -> method lines.
 	methods map[string][]string
 }
 
 func newDecls() *decls {
-	return &decls{types: map[string]*ast.TypeSpec{}, funcs: map[string]*ast.FuncDecl{}, consts: map[string]string{}, methods: map[string][]string{}}
+	return &decls{
+		types: map[string]*ast.TypeSpec{}, funcs: map[string]*ast.FuncDecl{}, consts: map[string]string{},
+		values: map[string]string{}, methods: map[string][]string{},
+	}
+}
+
+// valueString writes the value of the i-th name of a value spec: its expression, or, for a
+// constant that repeats the expression of the spec before it (iota), its place in the group;
+// an expression that reads iota carries its place too, so a reordering that changes a value shows.
+func valueString(tok token.Token, s *ast.ValueSpec, i, place int) string {
+	switch {
+	case i < len(s.Values):
+		// the printer writes a composite literal whole, where ExprString abbreviates it
+		var b strings.Builder
+		if err := printer.Fprint(&b, token.NewFileSet(), s.Values[i]); err != nil {
+			return "= " + types.ExprString(s.Values[i])
+		}
+		v := "= " + strings.Join(strings.Fields(b.String()), " ")
+		if tok == token.CONST && strings.Contains(v, "iota") {
+			v += fmt.Sprintf(" (place %d of its group)", place)
+		}
+		return v
+	case tok == token.CONST:
+		return fmt.Sprintf("= (repeated, place %d of its group)", place)
+	}
+	return ""
 }
 
 // receiver names the type a method belongs to: "Request" for (rq *Request).
@@ -100,7 +131,7 @@ func (d *decls) add(f *ast.File) {
 				d.methods[r] = append(d.methods[r], "method "+x.Name.Name+strings.TrimPrefix(typeString(x.Type), "func"))
 			}
 		case *ast.GenDecl:
-			for _, s := range x.Specs {
+			for si, s := range x.Specs {
 				switch s := s.(type) {
 				case *ast.TypeSpec:
 					if s.Name.IsExported() {
@@ -111,9 +142,10 @@ func (d *decls) add(f *ast.File) {
 					if s.Type != nil {
 						typ = typeString(s.Type)
 					}
-					for _, n := range s.Names {
+					for i, n := range s.Names {
 						if n.IsExported() {
 							d.consts[n.Name] = typ
+							d.values[n.Name] = valueString(x.Tok, s, i, si)
 						}
 					}
 				}
@@ -124,7 +156,13 @@ func (d *decls) add(f *ast.File) {
 
 func codeDecls(t *testing.T) *decls {
 	t.Helper()
-	entries, err := os.ReadDir(".")
+	return dirDecls(t, ".")
+}
+
+// dirDecls are the declarations of the Go files of a directory, its tests left out.
+func dirDecls(t *testing.T, dir string) *decls {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +173,7 @@ func codeDecls(t *testing.T) *decls {
 		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		f, err := parser.ParseFile(fset, name, nil, 0)
+		f, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -324,39 +362,59 @@ func TestR_ARCH_008_TheWrittenContractEqualsTheCode(t *testing.T) {
 // of package formats is written into the contract blocks or named in the prose of the spec; it does
 // not appear without the spec knowing it.
 func TestR_ARCH_008_EveryExportedTypeOfTheContractIsNamedInTheSpec(t *testing.T) {
-	code := codeDecls(t)
-	files, err := filepath.Glob("../../docs/spec/*.md")
-	if err != nil || len(files) == 0 {
-		t.Fatalf("no spec pages: %v", err)
-	}
-	var all strings.Builder
-	for _, f := range files {
-		b, err := os.ReadFile(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		all.Write(b)
-		all.WriteByte('\n')
-	}
-	formatsPages, _ := filepath.Glob("../../docs/spec/formats/*.md")
-	for _, f := range formatsPages {
-		b, err := os.ReadFile(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		all.Write(b)
-		all.WriteByte('\n')
-	}
-	text := all.String()
+	code, words := codeDecls(t), specWords(t)
 	var missing []string
 	for _, name := range sortedKeys(code.types) {
-		if !regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\b`).MatchString(text) {
+		if !words[name] {
 			missing = append(missing, name)
 		}
 	}
 	if len(missing) > 0 {
 		t.Fatalf("exported types of package formats that no page of docs/spec names: %s\nwrite them into the contract blocks of R-ARCH-008/009", strings.Join(missing, ", "))
 	}
+}
+
+// specWords are the identifiers on every page of docs/spec, the format pages included: the
+// words a name must be one of to count as named, as a word-bounded match would find it. The
+// pages are read and split once per test binary.
+func specWords(t *testing.T) map[string]bool {
+	t.Helper()
+	specWordSet.once.Do(func() { specWordSet.words, specWordSet.err = readSpecWords() })
+	if specWordSet.err != nil {
+		t.Fatal(specWordSet.err)
+	}
+	return specWordSet.words
+}
+
+var specWordSet struct {
+	once  sync.Once
+	words map[string]bool
+	err   error
+}
+
+func readSpecWords() (map[string]bool, error) {
+	files, err := filepath.Glob("../../docs/spec/*.md")
+	switch {
+	case err != nil:
+		return nil, err
+	case len(files) == 0:
+		return nil, fmt.Errorf("no spec pages in %s", filepath.Dir(specPath))
+	}
+	formatsPages, _ := filepath.Glob("../../docs/spec/formats/*.md")
+	words := map[string]bool{}
+	notWord := func(r rune) bool {
+		return r != '_' && (r < '0' || r > '9') && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z')
+	}
+	for _, f := range append(files, formatsPages...) {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			return nil, err
+		}
+		for _, w := range strings.FieldsFunc(string(b), notWord) {
+			words[w] = true
+		}
+	}
+	return words, nil
 }
 
 func sortedKeys[V any](m map[string]V) []string {
@@ -366,4 +424,102 @@ func sortedKeys[V any](m map[string]V) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// The frozen contract (E3.3, ADR-141, Q-ARCH-280). The exported surface of package formats and of
+// the catalog leaf a descriptor embeds, one line per member, is held equal to testdata/contract.txt,
+// whose first line is ContractVersion. Any change of the surface - an addition as much as a removal
+// or a changed signature - fails TestR_ARCH_025_TheFrozenContractChangesOnlyWithItsSurfaceFile
+// until the file is regenerated, which is done in the change that carries the change's ADR:
+//
+//	go test ./internal/formats -run TestR_ARCH_025 -update-contract
+var updateContract = flag.Bool("update-contract", false, "rewrite testdata/contract.txt from the exported surface of the format contract")
+
+const surfacePath = "testdata/contract.txt"
+
+// surfaceOf writes what a package exports: every type with its exported fields, interface methods
+// and methods, every function with its signature, every constant and variable with its type and value.
+func surfaceOf(pkg string, d *decls) []string {
+	var out []string
+	for _, n := range sortedKeys(d.types) {
+		lines := append(members(d.types[n]), d.methods[n]...)
+		sort.Strings(lines)
+		for _, l := range lines {
+			out = append(out, pkg+"."+n+": "+l)
+		}
+	}
+	for _, n := range sortedKeys(d.funcs) {
+		out = append(out, pkg+"."+n+": func"+strings.TrimPrefix(typeString(d.funcs[n].Type), "func"))
+	}
+	for _, n := range sortedKeys(d.consts) {
+		l := pkg + "." + n + ": value"
+		for _, part := range []string{d.consts[n], d.values[n]} {
+			if part != "" {
+				l += " " + part
+			}
+		}
+		out = append(out, l)
+	}
+	return out
+}
+
+// TestR_ARCH_025_TheFrozenContractChangesOnlyWithItsSurfaceFile: the contract is frozen at version 1
+// since the end of M3, and from then on every change of it is an ADR (E3.3). The test cannot tell an
+// addition the rule of R-ARCH-025 allows from a breaking change; it makes every change visible in
+// the diff of testdata/contract.txt, next to the ADR that decides it and, for a breaking change, the
+// raised version on the file's first line.
+func TestR_ARCH_025_TheFrozenContractChangesOnlyWithItsSurfaceFile(t *testing.T) {
+	lines := []string{fmt.Sprintf("contract version %d", formats.ContractVersion)}
+	lines = append(lines, surfaceOf("formats", codeDecls(t))...)
+	lines = append(lines, surfaceOf("catalog", dirDecls(t, "catalog"))...)
+	got := strings.Join(lines, "\n") + "\n"
+	if *updateContract {
+		if err := os.MkdirAll(filepath.Dir(surfacePath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(surfacePath, []byte(got), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	raw, err := os.ReadFile(surfacePath)
+	if err != nil {
+		t.Fatalf("%v: generate the surface file with -update-contract", err)
+	}
+	want := strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n")
+	var diffs []string
+	for _, l := range want {
+		if !slices.Contains(lines, l) {
+			diffs = append(diffs, "- "+l)
+		}
+	}
+	for _, l := range lines {
+		if !slices.Contains(want, l) {
+			diffs = append(diffs, "+ "+l)
+		}
+	}
+	if len(diffs) > 0 {
+		t.Fatalf("the format contract changed (%d lines):\n  %s\n"+
+			"It is frozen at version %d (E3.3, ADR-141): every change is an ADR of its own. An addition (an optional interface "+
+			"that CapabilitiesOf finds, a default in Base or RemoteBase, a service of the Host) keeps ContractVersion; a changed "+
+			"meaning or a removal raises it and moves every format (R-ARCH-025). Regenerate the file in the change that carries "+
+			"the ADR: go test ./internal/formats -run TestR_ARCH_025 -update-contract", len(diffs), strings.Join(diffs, "\n  "), formats.ContractVersion)
+	}
+}
+
+// TestR_ARCH_008_EveryExportedFunctionAndValueOfTheContractIsNamedInTheSpec: what holds for the types
+// holds for the functions, constants and variables of package formats (E3.3): none joins the frozen
+// contract without a page of docs/spec naming it.
+func TestR_ARCH_008_EveryExportedFunctionAndValueOfTheContractIsNamedInTheSpec(t *testing.T) {
+	code, words := codeDecls(t), specWords(t)
+	var missing []string
+	for _, name := range append(sortedKeys(code.funcs), sortedKeys(code.consts)...) {
+		if !words[name] {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		t.Fatalf("exported functions and values of package formats that no page of docs/spec names: %s\n"+
+			"name them in R-ARCH-008 (the blocks or the paragraph of supporting names)", strings.Join(missing, ", "))
+	}
 }

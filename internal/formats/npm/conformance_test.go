@@ -49,9 +49,11 @@ func tgzFor(t testing.TB, name, version string) []byte {
 	return tgz(t, map[string]string{"package/package.json": string(pj), "package/index.js": "module.exports = 1\n"})
 }
 
-// conformance is the fixture of the npm format for the kit (R-ARCH-010). Remote and
-// virtual repositories are not served yet, so checks 4 and 5 have nothing to run
-// over; the kit refuses a skip once the format lists the class.
+// conformance is the fixture of the npm format for the kit (R-ARCH-010). Every check
+// runs and none is skipped: the remote documents of check 4, the member documents of
+// check 5 and the view of check 11 are below. What the kit does not check is listed
+// with its reason: the write routes that change no package row (NoRevision) and the
+// content routes that only refuse in the kit (NoContent).
 func conformance(t *testing.T) formattest.Fixture {
 	// The twin reads packages.rev_seq of the Host the kit builds for a case, so the
 	// revision of a rendered document is the one the Host holds; every Seed binds it.
@@ -187,6 +189,24 @@ func conformance(t *testing.T) formattest.Fixture {
 					return h.Remove(ctx, rq, "delete", TarballPath(mustName("lodash"), "4.17.20"))
 				},
 			},
+			{
+				Name: "the restore of a tarball from the trash (OnItemsRestored)", Package: "lodash",
+				Seed: func(h *formattest.Host) error {
+					if err := publishAll("lodash", "4.17.20", "4.17.21")(h); err != nil {
+						return err
+					}
+					return h.Remove(context.Background(), nil, "trash", TarballPath(mustName("lodash"), "4.17.20"))
+				},
+				Do: func(ctx context.Context, h *formattest.Host) error {
+					return h.Restore(ctx, nil, TarballPath(mustName("lodash"), "4.17.20"))
+				},
+			},
+		},
+		// The content routes whose cases only refuse; check 7 checks the headers of what a route serves.
+		NoContent: map[string]string{
+			"npm.audit.bulk":   "the kit's repository is local, which answers 501 (R-NPM-038); the forwarded answer of a remote or virtual repository is tested in handlers_audit_test.go",
+			"npm.audit.legacy": "npm 6's audit endpoints answer 501 by design, so npm 6 reports that the registry has no audit (R-NPM-038)",
+			"npm.deferred.get": "an endpoint npm defines and trove does not implement answers 404 by design (R-NPM-043)",
 		},
 		NoRevision: map[string]string{
 			"npm.unpublish.tarball": "the PUT of the unpublish removed the version with its files; this request changes nothing and answers 200 for a version that is gone",
@@ -346,6 +366,14 @@ func serveOK(h *formattest.Host, method, path string, body []byte, want int) err
 		return fmt.Errorf("%s %s: status %d, want %d: %s", method, path, resp.Code, want, resp.Body.String())
 	}
 	return nil
+}
+
+// TestR_ARCH_010_NoCheckIsSkipped: every check of the kit runs over npm (E3.3); a skip added to
+// the fixture later fails here, since the kit reports a skipped check as skipped, not as failed.
+func TestR_ARCH_010_NoCheckIsSkipped(t *testing.T) {
+	if s := conformance(t).Skip; len(s) != 0 {
+		t.Fatalf("the npm fixture skips %v", s)
+	}
 }
 
 // TestR_ARCH_010_Conformance runs the conformance kit over the npm format.

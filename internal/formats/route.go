@@ -34,7 +34,7 @@ const (
 	Upload
 	// Delete removes content or a package.
 	Delete
-	// Admin changes package rows without content: dist-tags, deprecation.
+	// Admin changes package rows without content: tags, deprecation, a relist.
 	Admin
 	// Volatile is passed through and never cached: search.
 	Volatile
@@ -377,8 +377,8 @@ type EndpointFacts struct {
 	// ExposureFingerprint is "" in mode all; rendition keys and ETags include it
 	// (R-EP-018).
 	ExposureFingerprint string
-	// Exposure is what the endpoint exposes of the addressed repository, the view
-	// FilterDocument takes; nil exactly when the endpoint does not restrict (mode
+	// Exposure is what the endpoint exposes of the addressed repository, the view a
+	// format's own document filter reads; nil exactly when the endpoint does not restrict (mode
 	// all, or no endpoint). It is read from rq.Index, like ExposureFingerprint, so a
 	// document is filtered by the rules its validator names (R-EP-018).
 	Exposure ExposureView

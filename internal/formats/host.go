@@ -45,10 +45,10 @@ type Host interface {
 	Items() ItemStore
 	// Packages reads the package and version rows.
 	Packages() PackageStore
-	// Remote is the remote engine (C-4). Until the engine lands every call
-	// answers errs.Unavailable "not supported".
+	// Remote is the remote engine (C-4). A Host built without it answers every
+	// call with an internal error that says so, never as if nothing was found.
 	Remote() RemoteFetcher
-	// Resolver is virtual resolution (C-5). Same stub rule as Remote.
+	// Resolver is virtual resolution (C-5). Same rule as Remote.
 	Resolver() Resolver
 	// Links builds every absolute URL a response hands out (C-11).
 	Links(rq *Request) LinkBuilder
@@ -183,9 +183,10 @@ type LinkBuilder interface {
 // RenditionKey identifies a rendered document. The cache is keyed by every field of
 // the key, so a rendition is found only under all of its inputs (R-ARCH-012,
 // R-NPM-013; C-12). The ETag of a rendition is the format's own: it hashes the
-// inputs it keeps (npm: document.Inputs) and keeps them in step with this key by
-// hand. One ETag derived from the key by the core is a contract addition of
-// roadmap M3 (Q-ARCH-233).
+// inputs it keeps (npm: document.Inputs; NuGet: the weak ETag of its document leaf,
+// Q-NUGET-9) and keeps them in step with this key by hand. One ETag derived from the
+// key by the core is not part of the frozen contract; it would be a helper added
+// later (Q-ARCH-261).
 type RenditionKey struct {
 	Repo     RepoRef
 	Package  string

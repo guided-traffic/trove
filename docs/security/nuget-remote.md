@@ -76,7 +76,9 @@ central directory a configured, smaller limit would have refused.
 
 What makes it real: an operator who lowered `nuget.archive.max_entries` to refuse a class of archives, and an upstream (or a compromised one) that serves such an
 archive. The package is read with the default bound, its identity is checked, and it is stored and served; a client that restores it receives it. The effect is
-bounded by `limits.maxArtifactBytes` of the remote and by the time limit of the reader. A fix hands the replica's limits to the hook through the contract.
+bounded by `limits.maxArtifactBytes` of the remote and by the time limit of the reader; kit check 6 runs the crafted archives of R-ARCH-028 through the hook
+and holds it to the time and heap bounds (Q-ARCH-281). A fix hands the replica's limits to the hook through the contract, which is frozen since the end of M3:
+the addition (a field of `RemoteContext`) is an ADR of its own ([ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)).
 
 ### H-337 · The registration of a remote is what the upstream says, not what the package declares
 

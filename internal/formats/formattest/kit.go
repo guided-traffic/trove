@@ -101,13 +101,22 @@ type Fixture struct {
 	// and document types.
 	Inspect []InspectCase
 	// Content are the requests of check 7: one per Download, Metadata, Computed and
-	// Volatile route at least.
+	// Volatile route at least, and for each such route one that it serves (a status
+	// below 400), since the content headers are checked on what a route serves.
 	Content []ContentCase
+	// NoContent lists routes of kind Download, Metadata, Computed or Volatile whose
+	// content cases only refuse (an operation not built yet, an endpoint the format
+	// answers with a refusal by design), with the reason. Check 7 checks the headers of
+	// no such route, so the list is where that shows; it refuses an entry for a route
+	// that a content case serves.
+	NoContent map[string]string
 	// Changes are the writes of check 9: every storage hook and every Upload,
 	// Delete or Admin route that changes package rows.
 	Changes []ChangeCase
 	// NoRevision lists routes of kind Upload, Delete or Admin that change no
-	// package row, with the reason; check 9 asks no change case of them.
+	// package row, and storage hooks ("OnCommit", "OnItemsRemoved",
+	// "OnItemsRestored") that no change case drives, with the reason; check 9 asks no
+	// change case of them.
 	NoRevision map[string]string
 	// Names are the sample package names of check 10.
 	Names []NameCase
@@ -375,6 +384,10 @@ func (r *run) skipProblem(c Check, reason string) string {
 		return fmt.Sprintf("%s is skipped (%s) and the format has a remote adapter", c, reason)
 	case c == CheckMerge && r.f.Virtual() != nil:
 		return fmt.Sprintf("%s is skipped (%s) and the format has a virtual adapter", c, reason)
+	case c == CheckInspect && r.hasRoute(formats.Upload):
+		return fmt.Sprintf("%s is skipped (%s) and the format has an upload route, whose body Inspect reads", c, reason)
+	case c == CheckRevision && (r.d.PackageNames || r.hasWriteRoutes()):
+		return fmt.Sprintf("%s is skipped (%s) and the format has package names or a route that writes", c, reason)
 	case c == CheckSetup && (len(r.d.Clients) > 0 || len(r.f.SetupTemplates()) > 0 || len(r.f.Guide()) > 0):
 		return fmt.Sprintf("%s is skipped (%s) and the format has clients, setup templates or a guide", c, reason)
 	case c == CheckNames && r.d.PackageNames:

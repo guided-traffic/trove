@@ -93,6 +93,7 @@ type Host struct {
 	prechecks []ClaimCall
 	notified  []Notification
 	routes    []string // names of the routes served
+	hooks     []string // names of the storage hooks run, in order
 	reads     [][]byte // package bytes handed to a handler
 	served    bool     // an item was served to a response
 	violation []string
@@ -196,6 +197,21 @@ func (h *Host) Violations() []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return append([]string(nil), h.violation...)
+}
+
+// HooksRun returns the names of the storage hooks the Host ran ("OnCommit",
+// "OnItemsRemoved", "OnItemsRestored"), in order: check 9 asks that a change case
+// drives each one the format has.
+func (h *Host) HooksRun() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]string(nil), h.hooks...)
+}
+
+func (h *Host) noteHook(name string) {
+	h.mu.Lock()
+	h.hooks = append(h.hooks, name)
+	h.mu.Unlock()
 }
 
 // RoutesServed returns the names of the routes [Host.Serve] ran, in order.

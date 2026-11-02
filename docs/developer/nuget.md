@@ -106,8 +106,9 @@ when the code exists). To add a section: a file in `guide/`, a line in `guideSec
 
 ### Tests
 
-`go test ./internal/formats/nuget/` runs the conformance kit (checks 1, 2, 3, 6, 7, 8, 9, 10 and 11 run; the others are skipped with their reason, and the kit refuses a skip once the format has what a check
-is about), the route and matching tables, the classification, the error shape and the service index. [test/integration/nuget](../../test/integration/nuget) creates repositories through the management
+`go test ./internal/formats/nuget/` runs the conformance kit (all eleven checks run and none is skipped, `TestR_ARCH_010_NoCheckIsSkipped`; check 6 runs the crafted
+packages through the remote adapter's fill hook as well, and the three P1 routes that answer 501, embedded files, autocomplete and the symbol server, are the
+fixture's `NoContent` entries, Q-ARCH-281), the route and matching tables, the classification, the error shape and the service index. [test/integration/nuget](../../test/integration/nuget) creates repositories through the management
 API, reads the service index over HTTP with every credential form, and asserts the 404, 405, 409 and 501 answers; [view_store_test.go](../../test/integration/nuget/view_store_test.go) runs the view reads against PostgreSQL and [view_api_test.go](../../test/integration/nuget/view_api_test.go) the package screens of the management API over NuGet rows.
 
 ## Leaf packages

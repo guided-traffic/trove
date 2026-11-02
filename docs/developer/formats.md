@@ -28,13 +28,14 @@ only writer is `Member` (Q-ARCH-252, [Q-AUTHZ-165](../spec/authorization.md)).
 - **`packages.rev_seq` is the writer's job, not the format's.** Every `PackageWriter` call that writes generic rows raises the revision of
   that package, once per transaction ([Q-ARCH-212](../spec/architecture.md#decisions)). A change that writes only side rows calls
   `BumpRevision`.
-- **The core owns the headers, the checks and the transaction.** `formats.ServeRoute` wraps every `Download`, `Metadata` and `Computed`
-  route in the content headers of R-ARCH-007; the dispatcher runs the key shape, the clean path, the match, the index and the coarse
+- **The core owns the headers, the checks and the transaction.** `formats.ServeRoute` wraps every `Download`, `Metadata`, `Computed` and
+  `Volatile` route in the content headers of R-ARCH-007 (`Volatile` without `Content-Disposition`, Q-ARCH-258); the dispatcher runs the key shape, the clean path, the match, the index and the coarse
   check before a handler sees the request; `Host.Ingest().Commit` runs the hook in the item's transaction.
 - **A format with no routes has no prefix.** generic's protocol is `/files/` ([Q-GENERIC-7](../spec/formats/generic.md)); `/files/` is the
   raw view of every repository and is served by the generic layer, not by the dispatcher.
-- **`ContractVersion` is 1 until the freeze at the end of M3** ([Q-ARCH-213](../spec/architecture.md#decisions)): a change to the
-  contract is applied to every format in the same change.
+- **The contract is frozen at `ContractVersion` 1** since the end of M3 ([ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)):
+  every change of its exported surface, an addition included, is an ADR, and
+  [testdata/contract.txt](../../internal/formats/testdata/contract.txt) is regenerated in the same change (see [Changing the contract](#changing-the-contract)).
 - **Unbound seams fail closed.** `Claim` and `AutoClaim` refuse until the composition root binds the ownership rule and the namespace auto
   claim ([Q-ARCH-215](../spec/architecture.md#decisions)); it binds both ([wire_formats.go](../../internal/app/wire_formats.go)), so a format with package
   names publishes under the rule. `AutoClaim` returns the `AutoClaimResult` that the publish's audit event records.
@@ -48,7 +49,7 @@ only writer is `Member` (Q-ARCH-252, [Q-AUTHZ-165](../spec/authorization.md)).
 
 | File | Responsibility |
 |---|---|
-| [formats.go](../../internal/formats/formats.go) | `ContractVersion`, the aliases and constants, `Format`, `Descriptor`, `Register` / `Validate` / `CatalogEntry`, `Lookup`, `List`, `Descriptors`, the optional capabilities (`ItemsRestorer`, `Capabilities`, `CapabilitiesOf`, `CapabilitiesFor`) |
+| [formats.go](../../internal/formats/formats.go) | `ContractVersion`, the aliases and constants, `Format`, `Descriptor`, `Register` / `Validate` / `CatalogEntry`, `Lookup`, `List`, `Descriptors`, the optional capabilities (`ItemsRestorer`, `Capabilities`, `CapabilitiesOf`, `CapabilitiesFor`; the remote adapter's `Discoverer` and `FillInspector` are declared in remote.go) |
 | [scope.go](../../internal/formats/scope.go) | The repositories a request may name: `ServeRoute` puts them in the handler's context, `RepositoryAllowed` is the check of the stores and the package writer (Q-ARCH-260) |
 | [route.go](../../internal/formats/route.go) | `Route`, `RouteKind`, `Params`, `Template`, `MatchRoutes`, `Request`, `Refusal` (`WithRefusal`, `RefusalFrom`), `EndpointFacts`, `Target`, `PathKind`, `PathInfo` |
 | [host.go](../../internal/formats/host.go) | `Host` and its parts: `Ingestor`, `ItemStore`, `PackageStore`, `LinkBuilder`, `RenditionCache` |
@@ -59,6 +60,7 @@ only writer is `Member` (Q-ARCH-252, [Q-AUTHZ-165](../spec/authorization.md)).
 | [setup.go](../../internal/formats/setup.go) | `Client`, `SetupTemplate` (with `VersionSpec`), `SetupData`, the three spellings of the token reference (`SetupTokenRef`, `SetupTokenRefWin`, `SetupTokenRefPS`) and `SetupPackageRef`, `SetupVersionRef` |
 | [guide.go](../../internal/formats/guide.go) | `GuideSection`, `GuideData`, the topics (`GuideTopics`, `RequiredGuideTopics`), `GuideRepositoryPlaceholder`, `ExecuteGuide` (the one parser the API and the kit use), `AppliesTo` |
 | [serve.go](../../internal/formats/serve.go) | `ServeMode`, `ServeRoute`, `RouteKind.WrapsContent`, `Base` |
+| [contract_spec_test.go](../../internal/formats/contract_spec_test.go), [testdata/contract.txt](../../internal/formats/testdata/contract.txt) | The written contract equals the code (the Go blocks of R-ARCH-008/009 against the package, Q-ARCH-254), every exported name is on a spec page, and the frozen surface of `internal/formats` and `internal/formats/catalog` equals the generated file (ADR-141, Q-ARCH-280) |
 
 ### The packages around it
 
@@ -304,9 +306,10 @@ The fixture ([kit.go](../../internal/formats/formattest/kit.go)) holds what only
 | `Remote` | 4 | The upstream origin, upstream documents (`RemoteDoc`), and `DownloadLinks(doc)`; at least one document must link to the upstream |
 | `Merge` | 5 | Member documents in the core's order, one source marker per part, `Versions(doc)` and `VersionSource(merged, v)` to read the marker back |
 | `Inspect` | 6 | Crafted uploads: `InspectTarGz(path, manifestEntry)`, `InspectZip`, `InspectJSON`, `InspectXML` give the standard cases; add your own `InspectCase` with a `crafted.Input` |
-| `Content` | 7 | A request per `Download`, `Metadata`, `Computed` and `Volatile` route, with a `Seed` that stores what it reads |
-| `Changes` | 9 | A `ChangeCase` per storage hook and per `Upload`, `Delete` or `Admin` route; `Do` drives the host (`h.Serve`, `h.Ingest().Commit`, `h.Remove`, `h.Restore`) |
-| `NoRevision` | 9 | A route of those kinds that changes no package row, with the reason |
+| `Content` | 7 | A request per `Download`, `Metadata`, `Computed` and `Volatile` route, with a `Seed` that stores what it reads; each such route needs one case it serves (a status below 400), since the headers are checked on what it serves |
+| `NoContent` | 7 | A route of those kinds whose cases only refuse (an operation not built yet, a refusal by design), with the reason; an entry for a route a case serves fails (Q-ARCH-281) |
+| `Changes` | 9 | A `ChangeCase` per storage hook and per `Upload`, `Delete` or `Admin` route; `Do` drives the host (`h.Serve`, `h.Ingest().Commit`, `h.Remove`, `h.Restore`). The kit records the hooks each case ran (`h.HooksRun()`) |
+| `NoRevision` | 9 | A route of those kinds that changes no package row, or a hook (`OnCommit`, `OnItemsRemoved`, `OnItemsRestored`) no change can drive, with the reason |
 | `Names` | 10 | Spellings of one package name: they must normalize to one name and lead to one document path |
 | `OptionNames` | 8 | Literal client option names a template may spell although they contain `token`, `password` or `_auth` |
 | `Skip` | all | The checks that do not apply, each with the reason |
@@ -317,17 +320,18 @@ The fixture ([kit.go](../../internal/formats/formattest/kit.go)) holds what only
 |---|---|---|
 | 1 | `formats.Validate` and the catalog's rules (what `Register` runs), then `Match(method, example)` for every example of every route | An example is unmatched, matched by two routes (`/{package}` and `/{scope}/{name}` without a disambiguating rule), or resolves to another route |
 | 2 | The traversal inputs (`..`, `%2e%2e`, `%2E%2e%2f`, NUL, `%00`, `\x01`, backslash, malformed escapes, 4,097 bytes, a 256-byte segment), `Rejects`, and every route example mutated with them, through `Match`; runs for a format without routes too | Any of them resolves to a route, or `Match` panics |
-| 3 | `Classify` over every example, mapped by `Canonical` when the fixture has one (a `Download` route is `Content`, a `Metadata` or `Computed` route is never `Content`, a `Volatile` route is `PathVolatile`), and over `Paths` | A missing kind, a wrong kind, a path case that differs |
+| 3 | `Classify` over every example, mapped by `Canonical` when the fixture has one (a `Download` route is `Content`, a `Metadata` or `Computed` route is never `Content`, a `Volatile` route is `PathVolatile`), and over `Paths`; an example `Canonical` maps to no path is left to checks 7 and 9 | A missing kind, a wrong kind, a path case that differs, a `Download` example that addresses no canonical path |
 | 4 | `Rewrite` twice on a copy of each document, then on its own output | A different output, a changed input, an output that rewriting changes again, an upstream host left in a download link; a fixture without an upstream link |
 | 5 | `Merge` twice; for each version, the source must be the lowest (tier, position) part that holds it | Another member wins a version, or the output differs |
-| 6 | Every crafted input through `Inspect` with the effective limits (`untrusted.DefaultLimits` tightened by the descriptor): `413` or `422` within 5 s, heap sampled with `runtime/metrics` within 512 MiB of the baseline | Success, another kind, a timeout (the kit cancels the context), the heap bound, a panic |
-| 7 | Every content case through `formats.ServeRoute`, once with and once without a session cookie, with the handler wrapped so that it deletes the content headers before and while it writes; the headers are read at the status line and compared with `content.Headers` | A header missing or weakened; `Content-Disposition` on a document; a route of kind `Upload`, `Delete` or `Admin` whose body holds package bytes it read, a route that is no `Download`, `Metadata` or `Computed` route and served an item (a `Volatile` one included); a route without a case |
+| 6 | Every crafted input through `Inspect` with the effective limits (`untrusted.DefaultLimits` tightened by the descriptor): `413` or `422` within 5 s, heap sampled with `runtime/metrics` within 512 MiB of the baseline. A format whose remote adapter is a `FillInspector` runs every input its `InspectsFill` takes through `InspectFill` too, under the same bounds, whatever it answers (Q-ARCH-281) | Success, another kind, a timeout (the kit cancels the context), the heap bound, a panic; for the fill hook a timeout, the heap bound or a panic |
+| 7 | Every content case through `formats.ServeRoute`, once with and once without a session cookie, with the handler wrapped so that it deletes the content headers before and while it writes; the headers are read at the status line and compared with `content.Headers` | A header missing or weakened; `Content-Disposition` on a document; a route of kind `Upload`, `Delete` or `Admin` whose body holds package bytes it read, a route that is no `Download`, `Metadata` or `Computed` route and served an item (a `Volatile` one included); a route without a case; a route whose cases only refuse and that `NoContent` does not list; a `NoContent` entry without a reason, for a route a case serves or for no content route |
 | 8 | Every client has a `configure` and an `install` template; every template parses and executes over `SetupData`; no template text matches `(?i)token\|password\|_auth` outside the whitelisted option names. Then the guide ([guide.go](../../internal/formats/formattest/guide.go), Q-ARCH-236): every section has an ID, a known topic, a title, classes and clients of the descriptor and a valid `Snippets`; it executes over `GuideData` for every class and client it applies to and every reader variant (a named repository and none, with and without a publish target, signed in and anonymous, with and without exposure rules); its fenced code blocks match the credential pattern only in the option names, `${TROVE_TOKEN}` and the variable name; no output holds `trv_(pat\|sat\|cit)_`; every class and client has the required topics, which say something in every variant, and the `configure` and `install` topics attach those snippets | A missing section or template, an unknown client, a duplicate ID, a bad language or section, a credential; a class or client without a required topic, a required topic that says nothing, a section that attaches a section its client has no template of, a guide without clients |
-| 9 | Each `ChangeCase` against the in-memory host: `rev_seq` of its package before and after | The revision did not rise; a route of kind `Upload`, `Delete` or `Admin` without a case or a `NoRevision` entry |
+| 9 | Each `ChangeCase` against the in-memory host: `rev_seq` of its package before and after, and the routes and hooks it ran | The revision did not rise; a route of kind `Upload`, `Delete` or `Admin`, or a hook the format has (`OnCommit` and `OnItemsRemoved` with package names, `OnItemsRestored` with `ItemsRestorer`), without a case or a `NoRevision` entry |
 | 10 | For each spelling: normalize, `PackageDocumentPath`, escape, `Protocol` when the fixture has one, `Match("GET", …)`; all spellings of one name | A name the format rejects, spellings that normalize differently or lead to two paths, a path that matches no `GET` route |
 
 A skip without a reason fails the check. So does a skip the format contradicts: checks 1, 3 and 7 with routes, 4 with a remote adapter, 5 with a virtual
-adapter, 8 with clients, setup templates or a guide, 10 with package names, and check 2 always. A check with nothing to run over and no skip fails: that is how a later generic remote
+adapter, 6 with an `Upload` route, 8 with clients, setup templates or a guide, 9 with package names or a route that writes, 10 with package names, 11 with a
+view adapter, and check 2 always. npm and NuGet skip nothing (`TestR_ARCH_010_NoCheckIsSkipped` in each package). A check with nothing to run over and no skip fails: that is how a later generic remote
 class cannot pass vacuously ([generic's test](../../internal/formats/generic/conformance_test.go) shows the skips of a format with no routes).
 
 ### The in-memory host
@@ -427,8 +431,8 @@ test of its own).
 
 ## Changing the contract
 
-Before the freeze at the end of M3 (E3.3) a change is applied to every format in the same change (Q-ARCH-213). After it the contract only grows
-(R-ARCH-025, Q-ARCH-256, ADR-136). Ordered steps for a new behaviour:
+The contract is frozen at version 1 since the end of M3 (E3.3, [ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)): it only grows,
+and every change of its exported surface is an ADR (R-ARCH-025, Q-ARCH-256, Q-ARCH-280). Ordered steps for a new behaviour:
 
 1. Ask first whether it is a service a format calls (a method of `Host`, `PackageWriter` or a store): adding one breaks no format. Do that, with the in-memory twin in
    [store.go](../../internal/formats/formattest/store.go) and the production implementation in `internal/formathost`, and stop.
@@ -438,7 +442,11 @@ Before the freeze at the end of M3 (E3.3) a change is applied to every format in
    The core reads `formats.CapabilitiesFor(id)`.
 4. Write the block into R-ARCH-008 or R-ARCH-009 of [architecture.md](../spec/architecture.md) in the same change (`TestR_ARCH_008_TheWrittenContractEqualsTheCode` fails otherwise).
 5. Add the kit check, or extend one, with a named defect in `testformat` that fails it.
-6. Raise `ContractVersion` only if the meaning of an existing method changed, and apply that to every format in the same change.
+6. Raise `ContractVersion` only if the meaning of an existing method changed, a signature changed or a member left, and apply that to every format in the same change.
+7. Write the ADR, and regenerate the surface file in the same change: `go test ./internal/formats -run TestR_ARCH_025 -update-contract`. Until then
+   `TestR_ARCH_025_TheFrozenContractChangesOnlyWithItsSurfaceFile` fails with one `-`/`+` line per changed member of
+   [testdata/contract.txt](../../internal/formats/testdata/contract.txt); an exported function or value also needs its name on a spec page
+   (`TestR_ARCH_008_EveryExportedFunctionAndValueOfTheContractIsNamedInTheSpec`).
 
 ## How to add a format
 

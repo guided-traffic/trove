@@ -405,6 +405,7 @@ func (w *writer) DeleteItems(ctx context.Context, repo formats.RepoRef, paths ..
 		return nil
 	}
 	ev.Packages = &writer{h: w.h, tx: w.tx, prefix: w.prefix}
+	w.h.noteHook("OnItemsRemoved")
 	return w.h.f.OnItemsRemoved(ctx, w.tx, ev)
 }
 
@@ -666,6 +667,7 @@ func (i ingestor) Commit(ctx context.Context, rq *formats.Request, sp formats.Sp
 		h.mu.Unlock()
 		replaced := old != nil && !old.removed
 		out = formats.Committed{Item: rec.ref, Created: !replaced, Overwritten: replaced}
+		h.noteHook("OnCommit")
 		if err := h.f.OnCommit(ctx, tx, formats.CommitEvent{
 			Origin: formats.OriginUpload, Repo: h.ref, Item: rec.ref, Path: c.Path, Size: int64(len(s.data)), Digests: rec.digests,
 			Inspection: c.Inspection, Payload: c.Payload, Replaced: replaced, Packages: w, Data: h.opts.Data,
@@ -713,6 +715,7 @@ func (h *Host) Remove(ctx context.Context, rq *formats.Request, reason string, p
 			ev.Items = append(ev.Items, formats.RemovedItem{Item: rec.ref, Version: rec.version, SHA256: rec.digests.SHA256})
 		}
 		h.mu.Unlock()
+		h.noteHook("OnItemsRemoved")
 		return h.f.OnItemsRemoved(ctx, tx, ev)
 	})
 }
@@ -737,6 +740,7 @@ func (h *Host) Restore(ctx context.Context, rq *formats.Request, paths ...string
 		if r == nil {
 			return nil // the format keeps no state for a restored item
 		}
+		h.noteHook("OnItemsRestored")
 		return r.OnItemsRestored(ctx, tx, ev)
 	})
 }

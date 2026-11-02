@@ -1019,9 +1019,10 @@ store.
 ```go
 package formats
 
-// ContractVersion changes whenever a method below changes meaning (R-ARCH-025). It stays 1 until
-// the contract freezes at the end of M3; before the freeze a change is applied to every format in
-// the same change (Q-ARCH-213). A format declares the literal it was written against.
+// ContractVersion changes whenever a method below changes meaning or leaves (R-ARCH-025). The
+// contract is frozen at 1 since the end of M3 (E3.3, ADR-141): every change of it is an ADR, an
+// addition keeps the version, and a breaking change raises it and moves every format in the same
+// change. A format declares the literal it was written against.
 const ContractVersion = 1
 
 // The types of other packages under the names a format spells them: one type each, no mirrors
@@ -1205,9 +1206,10 @@ type PathInfo struct {
 }
 
 // ServeRoute runs rq.Route.Handler with the guarantees the core owes every route (the dispatcher and the
-// conformance kit both call it): the content headers of R-ARCH-007 for Download, Metadata and Computed
-// routes, panic recovery that logs format and route (R-ARCH-028), WriteError for an error returned before
-// the status line, and an aborted connection for one after it.
+// conformance kit both call it): the content headers of R-ARCH-007 for Download, Metadata, Computed and
+// Volatile routes (Volatile without Content-Disposition, Q-ARCH-258), panic recovery that logs format and
+// route (R-ARCH-028), WriteError for an error returned before the status line, and an aborted connection
+// for one after it.
 func ServeRoute(f Format, w http.ResponseWriter, rq *Request, sameOrigin bool)
 
 type RemoteAdapter interface {
@@ -1362,7 +1364,7 @@ type GuideSection struct {
 	Classes  []Class // the classes the section is written for; empty is every class
 	Clients  []string // the clients it is written for; empty is every client
 	Snippets string  // the setup section whose snippets the API attaches: "configure", "install", "publish" or ""
-	Markdown string  // text/template over GuideData; the only credential it may spell is SetupTokenRef
+	Markdown string  // text/template over GuideData; the only credential it may spell is a token reference: SetupTokenRef, SetupTokenRefWin or SetupTokenRefPS
 }
 
 // AppliesTo reports whether the section is written for a class and a client ("" for no client).
@@ -1467,10 +1469,31 @@ they declare (exported fields, interface methods, aliases), the methods the code
 the constants with the package, and fails with one line per difference (Q-ARCH-254). The unexported field `via` of
 `Request` is not part of the contract.
 
+The functions and values of the package that the blocks leave to the code are named here, so that nothing exported
+joins the contract without this page knowing it (`TestR_ARCH_008_EveryExportedFunctionAndValueOfTheContractIsNamedInTheSpec`):
+`CatalogEntry` derives a format's catalog entry from its descriptor and exposure adapter, and `Descriptors` lists the
+descriptors of the registered formats, the body of `GET /api/v1/formats`; `GuideTopics` lists the guide topics in serving
+order (`GuideWhat`, `GuideConfigure`, `GuideAuthenticate`, `GuideInstall`, `GuidePublish`, `GuideMaintain`, `GuideAudit`,
+`GuideLockfiles`, `GuideEndpoint`, `GuideTroubleshooting`) and `RequiredGuideTopics` the ones kit check 8 requires;
+`GuideRepositoryPlaceholder` stands for the key in a guide that names no repository; `SetupTokenRefs` lists the
+spellings of the token reference in the order the API looks for them; `SubjectName` and `SubjectPath` are the catalog's
+pattern subjects and `KindArtifact`, `KindMetadata`, `KindSearch`, `KindWrite` and `KindOther` its request kinds, under
+the names a format spells; `TierLocal`, `TierRemoteCached` and `TierRemote` are the tiers of a merge part; `Current`,
+`Revalidated` and `Unknown` are the values of `Currency`.
+
+**The freeze.** The contract is frozen at `ContractVersion` 1 since the end of M3 (E3.3,
+[ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)).
+`TestR_ARCH_025_TheFrozenContractChangesOnlyWithItsSurfaceFile` holds the exported surface of `internal/formats` and of
+`internal/formats/catalog` equal to [internal/formats/testdata/contract.txt](../../internal/formats/testdata/contract.txt);
+every change of it is an ADR, and R-ARCH-025 says which changes keep the version (Q-ARCH-280).
+
 **Optional behaviour.** `Format` holds what every format answers. A behaviour that only some formats have, or that
 the core cannot call yet, is an optional interface of this package, found by `CapabilitiesOf` when the format registers
 and recorded in the registry (`CapabilitiesFor`); the core never asks the format value (the architecture test allows
-that assertion in `CapabilitiesOf` alone). Today there is one: `ItemsRestorer`. The rule for adding to the contract is in
+that assertion in `CapabilitiesOf` alone). Today there are three: `ItemsRestorer` on the format, and `Discoverer` and
+`FillInspector` on its remote adapter (`Capabilities.Remote`, Q-ARCH-267, Q-ARCH-268). A behaviour that every format
+answers, and whose default is a correct answer for a format without it, is a method with that default in `Base` or
+`RemoteBase` instead (`ExpectsType`, `BeforeArtifact`, `UpstreamQuery`). The rule for adding to the contract is in
 R-ARCH-025.
 
 Normative rules:
@@ -1536,12 +1559,15 @@ Normative rules:
 - **Vulnerability adapter (from M4b).** A format takes part in vulnerability scanning by also
   implementing the optional interface `formats.VulnerabilityAdapter` of
   [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-009 (its OSV ecosystem, the
-  normalization of advisory names and versions, the format's version order). The core discovers it
-  by a type assertion, so the frozen methods above and `ContractVersion` stay as they are; a format
+  normalization of advisory names and versions, the format's version order). `CapabilitiesOf` finds
+  it when the format registers, as a field of `Capabilities` (R-ARCH-025; no other code asserts to an
+  interface of the contract, Q-ARCH-254), so the frozen methods above and `ContractVersion` stay as
+  they are; its addition is an ADR like every change of the frozen contract (ADR-141). A format
   without it is `not_covered` (Q-VULN-15).
 
 Acceptance criteria:
-- The conformance kit (R-ARCH-010) passes for `npm` and `nuget`.
+- The conformance kit (R-ARCH-010) passes for `npm` and `nuget`, with no check skipped
+  (`TestR_ARCH_010_NoCheckIsSkipped` in each format's package).
 - Creating a repository whose class is not in the format's `Classes` fails with `422`.
 
 ### R-ARCH-009 · Core services offered to formats
@@ -1672,8 +1698,8 @@ Priority: **MVP** · Covers: FMT-001, FMT-002, FMT-003
   - an external process would add a network hop to every package request.
 - At start-up, `Register` panics, and the process exits, on any of these:
   - a duplicate or reserved ID;
-  - a `ContractVersion` mismatch (the contract stays at 1 until the freeze at the end of M3; every
-    change before it is applied to all formats in the same change, Q-ARCH-213);
+  - a `ContractVersion` mismatch (the contract is frozen at 1 since the end of M3, E3.3 and ADR-141;
+    a change that raises it moves every format in the same change, R-ARCH-025);
   - a route set that fails the kit's ambiguity check, which `Register` runs itself: every route has
     a name, a method, a template, a handler, a kind, an action and at least one example, and every
     entry of `Route.Examples` is matched by its own route and by no other route of the same method;
@@ -1700,7 +1726,10 @@ own tests:
 2. `Match` rejects `..`, `%2e%2e`, NUL, control characters and paths longer than 4 KiB. The kit runs its
    traversal inputs, and every route example mutated with them, through `Match`; it runs them for a
    format without routes as well.
-3. `Classify` returns a kind for every route example. No `Content` path is `Metadata`.
+3. `Classify` returns a kind for every route example. No `Content` path is `Metadata`. A format whose protocol paths
+   are not its canonical paths maps each example to the canonical path it stands for (`Fixture.Canonical`); an example
+   that addresses none (a service index, a search, a write) has nothing to classify and is held to its kind by checks 7
+   and 9, and a `Download` route's example must address one (Q-ARCH-281).
 4. `Rewrite` is deterministic and idempotent. No upstream host remains in a download link of a
    rewritten document.
 5. `Merge` is deterministic and follows the per-version source rule of
@@ -1708,11 +1737,16 @@ own tests:
    that tier resolution would choose for that version's file.
 6. `Inspect` enforces the limits of R-ARCH-028 against crafted inputs that the kit ships
    (`formattest/crafted`): it answers `413` or `422` within 5 s, and the heap, sampled with
-   `runtime/metrics`, stays within 512 MiB of its baseline.
+   `runtime/metrics`, stays within 512 MiB of its baseline. A format whose remote adapter inspects fills
+   (`FillInspector`, Q-ARCH-267) runs every crafted input its hook takes through `InspectFill` as well, under the same
+   time and heap bounds and without a panic; what the hook answers is the format's (Q-ARCH-281).
 7. Responses of `Download`, `Metadata`, `Computed` and `Volatile` routes carry the content headers of
    R-ARCH-007, including when the handler tries to remove them; a `Volatile` route may return
    package-derived bytes, and none of the four serves a `Content-Disposition` but `Download`. No route of
-   another kind returns a body taken from package content, and a `Volatile` route serves no stored item.
+   another kind returns a body taken from package content, and a `Volatile` route serves no stored item. The headers
+   are checked on what a route serves, so each of the four needs a content case it serves (a status below 400); a route
+   whose cases only refuse (an operation not built yet, a refusal by design) is listed in the fixture's `NoContent` with
+   the reason, and an entry for a route that a case serves fails (Q-ARCH-281).
 8. Every client in `Descriptor().Clients` has `configure` and `install` templates. No template
    contains a token placeholder that the server would fill. The format's guide (`Guide()`, Q-ARCH-236)
    covers every class of `Classes` for every client with the topics `what`, `configure`,
@@ -1726,7 +1760,9 @@ own tests:
    a token. A format without clients has no guide.
 9. Every storage hook, and every route of kind `Upload`, `Delete` or `Admin` that changes package
    rows, leaves the affected package's `rev_seq` higher than before (R-ARCH-009), measured on the
-   in-memory `Host`.
+   in-memory `Host`. Every hook the format has runs in at least one change case: `OnCommit` and `OnItemsRemoved` for a
+   format with package names, `OnItemsRestored` for one with `ItemsRestorer`; a hook no change can drive is listed in
+   `NoRevision` with the reason, as a write route that changes no package row is (Q-ARCH-281).
 10. For every sample package name the kit ships, `PackageDocumentPath` returns a path that `Match`
     resolves to a `GET` route, and two spellings of the same normalized name yield the same path.
 11. For a format with a view adapter (`View()` is not nil): `Compare` is a total order over the fixture's sample
@@ -1743,17 +1779,20 @@ A check that cannot apply to a format is skipped in the format's test with a sta
 has no routes, no clients and no package names); a skip without a reason fails the check, so a
 later class cannot pass a check vacuously. The kit also refuses a skip that the format contradicts:
 checks 1, 3 and 7 on a format that has routes, check 4 on one with a remote adapter, check 5 with a
-virtual adapter, check 8 with clients, setup templates or a guide, check 10 with package names, check 11
-with a view adapter, check 12 with a vulnerability adapter. Check 2 is
-never skipped. A check with nothing to run over (an empty fixture) fails unless it is skipped.
+virtual adapter, check 6 with an `Upload` route, check 8 with clients, setup templates or a guide, check 9 with
+package names or a route that writes, check 10 with package names, check 11 with a view adapter, check 12 with a
+vulnerability adapter. Check 2 is never skipped. A check with nothing to run over (an empty fixture) fails unless it
+is skipped. npm and NuGet skip no check (`TestR_ARCH_010_NoCheckIsSkipped`); what a check of theirs does not look at
+is an entry of `NoRevision` or `NoContent`, each with its reason, in the format's `conformance_test.go`.
 
 A format runs the kit as `formattest.Run(t, format, formattest.Fixture{…})` in its own test; one
 subtest per check is named `R-ARCH-010 check N <name>`. The fixture holds what the format alone can
 state: extra paths for checks 2 and 3, upstream documents for 4, member documents for 5, the crafted
 uploads for 6 (`InspectTarGz`, `InspectZip`, `InspectJSON` and `InspectXML` give the standard ones),
 requests for 7, changes for 9, sample names for 10 and the sample versions, a package name and a seed for 11. The kit derives the rest from the format. It
-requires a content case for every `Download`, `Metadata`, `Computed` and `Volatile` route, and a
-change case, or a reasoned `NoRevision` entry, for every `Upload`, `Delete` and `Admin` route.
+requires a content case it serves, or a reasoned `NoContent` entry, for every `Download`, `Metadata`, `Computed` and
+`Volatile` route, and a change case, or a reasoned `NoRevision` entry, for every `Upload`, `Delete` and `Admin` route
+and every storage hook.
 `formattest.Evaluate` returns the same results without a `testing.T`; the kit's own tests use it to
 assert that a defective format fails the check the acceptance criteria name (`formattest/testformat`
 carries one named defect per check, and for check 8 also `NoGuide`, a class without guide sections,
@@ -1779,6 +1818,9 @@ Acceptance criteria:
   on any difference.
 - A test format whose guide has no section for one of its classes, or whose guide has a credential
   in a code block, fails kit check 8 (`TestR_ARCH_010_Defects`).
+- A content route whose cases only refuse fails kit check 7 unless `NoContent` lists it with a reason, a restore hook
+  no change case drives fails check 9, a fill hook that panics on a crafted input fails check 6, and a skip of check 6
+  or 9 that the format contradicts fails (`TestQ_ARCH_281_*`, `TestR_ARCH_010_KitSkips`).
 
 ## Request paths
 
@@ -3792,35 +3834,48 @@ Priority: **MVP** · Covers: OPS-072, EVT-072
 | Configuration file | Key paths | Keys are only added within a major. A renamed key keeps its old name as a deprecated alias, with a start-up warning, for at least 2 minors. Removal happens only in a major. |
 | Helm chart | Own SemVer; `appVersion` = trove version | Same alias rule for values ([ha-and-helm.md](ha-and-helm.md)) |
 | Database schema | Migration sequence | Not a public interface. N and N-1 run against one schema (INV-3, R-ARCH-026). |
+| Token formats | `trv_*_` prefixes (INV-8) | A prefix never changes meaning. New token types get new prefixes. |
+| Metrics, log and audit fields | Names and labels | Stable within a major. A renamed metric is emitted under both names for at least 2 minors ([operations-and-observability.md](operations-and-observability.md)). |
+| Format contract | `formats.ContractVersion`, frozen at 1 since the end of M3 ([ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)) | Internal and compile-time checked; no external promise. Every change is an ADR; the rule for changing it is below |
 
 **Major version 0.** trove releases stay on major version 0 until the owner decides otherwise
 ([ADR-124](../decisions.md#adr-124--releases-stay-on-major-version-0)); Semantic Release sets each version from the
 conventional commits, and a phase closes with the release cut from its commits. Semantic Versioning would allow any change within 0.x; trove does
 not use that latitude. The promises of the table apply between 0.x minors as they would within a
 major, and a breaking change in 0.x is announced in the release notes with its migration path.
-| Token formats | `trv_*_` prefixes (INV-8) | A prefix never changes meaning. New token types get new prefixes. |
-| Metrics, log and audit fields | Names and labels | Stable within a major. A renamed metric is emitted under both names for at least 2 minors ([operations-and-observability.md](operations-and-observability.md)). |
-| Format contract | `formats.ContractVersion` | Internal and compile-time checked; no external promise. The rule for changing it is below |
 
 `helm rollback` from N to N-1 works by design (R-ARCH-026). Rolling back further is not supported.
 
-**Evolution of the format contract after the freeze.** The contract that freezes at the end of M3 (E3.3) is the smaller
-one: what no caller in the core could use is not in it (Q-ARCH-256). From the freeze on:
-- *A new behaviour is added, never inserted.* It is an optional interface of `internal/formats` with a field in
-  `Capabilities`; `CapabilitiesOf` finds it when the format registers, the registry records it, and the core asks the
-  registry (`CapabilitiesFor`), never the format value. A format that has no such behaviour is not touched, and
+**Evolution of the format contract after the freeze.** The contract froze at `ContractVersion` 1 at the end of M3 (E3.3,
+[ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)), as the smaller one: what no caller in
+the core could use is not in it (Q-ARCH-256). From the freeze on:
+- *Every change is an ADR.* `TestR_ARCH_025_TheFrozenContractChangesOnlyWithItsSurfaceFile` holds the exported surface
+  of `internal/formats` and of the catalog leaf `internal/formats/catalog` (every type with its exported fields,
+  interface methods and methods, every function, every constant and variable with its value) equal to
+  [internal/formats/testdata/contract.txt](../../internal/formats/testdata/contract.txt), whose first line is
+  `ContractVersion`. A change of the surface fails the test until the file is regenerated
+  (`go test ./internal/formats -run TestR_ARCH_025 -update-contract`) in the change that carries its ADR. The test does
+  not tell an addition from a breaking change; the ADR decides which it is, by the rules below (Q-ARCH-280).
+- *A new behaviour is added, never inserted.* A behaviour whose presence the core must know, because it changes what an
+  engine does (a discovery document, a fill hook, a restore hook), is an optional interface of `internal/formats` with a
+  field in `Capabilities`; `CapabilitiesOf` finds it when the format registers, the registry records it, and the core
+  asks the registry (`CapabilitiesFor`), never the format value. A format that has no such behaviour is not touched, and
   `ContractVersion` stays.
-- *A default for the common case lives in an embeddable base* (`Base`, `RemoteBase`), as `ExpectsType` and
-  `BeforeArtifact` do; a method added to an adapter interface needs such a default in the same change.
+- *A default for the common case lives in an embeddable base* (`Base`, `RemoteBase`), as `ExpectsType`,
+  `BeforeArtifact` and `UpstreamQuery` do: a behaviour every format answers, whose default is a correct answer for a
+  format without it, is such a method rather than an optional interface (Q-ARCH-254). A method added to an adapter
+  interface needs such a default in the same change.
 - *A method that the core calls on every format* is added to `Format` only together with its default in `Base`, so that
   a format that embeds `Base` compiles unchanged.
-- *New services for formats* are added to `Host`, `PackageWriter` and the stores: formats call them and implement none, so
-  adding is compatible.
+- *New services for formats* are added to `Host`, `PackageWriter`, the stores, `RemoteFetcher` and `Resolver`: formats
+  call them and implement none, so adding is compatible.
 - *`ContractVersion` rises only when the meaning of an existing method changes* (an argument gains a rule, a result a
-  case) or a method leaves. The change is applied to every registered format in the same change, and `Register` refuses a
-  format written against the older number.
+  case), a signature changes or a method or field leaves. The change is applied to every registered format in the same
+  change, `Register` refuses a format written against the older number, and its ADR names what breaks. The narrowed
+  signatures of Q-ARCH-260 (a format names only its own repository, H-329) are the first such change on record.
 - The conformance kit gains a check for every new behaviour in the change that adds it, and the written blocks of R-ARCH-008
-  and R-ARCH-009 change with the code (`TestR_ARCH_008_TheWrittenContractEqualsTheCode`).
+  and R-ARCH-009 change with the code (`TestR_ARCH_008_TheWrittenContractEqualsTheCode`). A check added to the kit later
+  applies to every format in the change that adds it.
 
 Acceptance criteria:
 - A CI job compares `api/openapi.yaml` with the latest release tag using an OpenAPI breaking-change
@@ -3830,6 +3885,9 @@ Acceptance criteria:
   `test/compat`.
 - The upgrade end-to-end test runs `helm upgrade` from N-1 to N and then `helm rollback`. Both
   versions pass the client suite against the same database.
+- A change of the exported surface of the format contract fails
+  `TestR_ARCH_025_TheFrozenContractChangesOnlyWithItsSurfaceFile` (in `internal/formats`, not `test/compat`) until
+  `internal/formats/testdata/contract.txt` is regenerated, and the failure names each changed line.
 
 ### R-ARCH-026 · Schema migrations and the compatibility gate
 Priority: **MVP** · Covers: OPS-073, OPS-074, HA-066, HA-069
@@ -7375,6 +7433,83 @@ only guard; when the reference solution is generated by `go generate`, the step 
 
 **Applied in the spec:** none (dependency policy and CI wiring). Code: [renovate.json](../../renovate.json) (rule `.NET SDK (NuGet tests)`),
 [tools/versions.env](../../tools/versions.env) (comment), `Makefile` (`nuget-reference-check`). Elsewhere: [releasing.md](../developer/releasing.md#renovate).
+
+### Q-ARCH-280 · How is the frozen format contract guarded, so that no change passes without its ADR?
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: E3.3 freezes the format contract at the end of M3 and makes every later change an ADR. The tests in place at the
+freeze review (WP3.5, 2026-11-02) compared, member by member and in both directions, only the types the Go blocks of
+R-ARCH-008 and R-ARCH-009 declare. The other exported types of `internal/formats` (`RemoteFetcher`, `Resolver`,
+`CommitEvent`, `Ingestor`, `ItemStore` and about sixty more) only had to be named on a spec page; functions and constants
+were compared from the spec to the code and not back, and five functions and twenty-two constants were named on no page
+(`CatalogEntry`, `Descriptors`, `GuideTopics`, `RequiredGuideTopics`, `SetupTokenRefs`, the guide topics, the aliased
+request kinds and pattern subjects, the tiers). `catalog.Facts`, which every `Descriptor` embeds, had no check at all. A
+method added to `RemoteFetcher` or a field added to `catalog.Facts` passed every test.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A surface file: a test writes the exported surface of `internal/formats` and `internal/formats/catalog`, one line per member, and compares it with `internal/formats/testdata/contract.txt`, whose first line is `ContractVersion`; `-update-contract` regenerates it. A second test asks a spec page to name every exported function and value (chosen) | `TestR_ARCH_025_TheFrozenContractChangesOnlyWithItsSurfaceFile`, `TestR_ARCH_008_EveryExportedFunctionAndValueOfTheContractIsNamedInTheSpec` | Every change of the surface, an addition included, shows as a diff next to its ADR; the file is generated, so it cannot drift; no new tool | A second written form of the contract, though a generated one; it cannot tell an addition from a breaking change |
+| (b) Every type in the spec blocks | The blocks declare all exported types | One written form | The spec page becomes an API listing, and a change still carries no signal that it needs an ADR |
+| (c) An API compatibility checker against the last release tag in the `compat` job | `apidiff` at a pin | Classifies compatible and incompatible changes | A new pinned tool; an addition passes it although it needs an ADR here; the formats are compiled in, so the compiler already finds a break |
+| (d) Review alone | The rule stays prose | No work | The rule of E3.3 has no test |
+
+**Choice:** (a). The surface holds every exported type with its fields, interface methods and methods, every function with
+its signature, and every constant and variable with its type and value; a composite literal is written whole, and a
+constant that repeats the expression before it (`iota`) is written as its place in its group, so a reordering shows. The
+catalog leaf is included because a descriptor embeds its `Facts` and a format declares them; the conformance kit is not,
+because the kit grows with the checks R-ARCH-025 asks for and binds no format at run time.
+
+**Rationale:** after the freeze the question about a change is not whether it compiles (it must, for every format, in the
+same change) but whether it was decided; a diff line that a reviewer sees beside the ADR makes the decision unavoidable at
+the lowest cost. Verified here: the test passes on the committed file and fails with a `-`/`+` pair when one field type in
+the file is altered. The development agent revisits this when a second module consumes the contract (then a compatibility
+checker against the release), or when the values of repeated constants must be compared as numbers (then a rendering
+through `go/types`).
+
+**Applied in the spec:** R-ARCH-008 (the paragraph of supporting names, "The freeze"), R-ARCH-025 (the evolution rules:
+every change is an ADR, the criterion between an optional interface and a method with a default, what raises the
+version; an acceptance criterion). Code: [internal/formats/contract_spec_test.go](../../internal/formats/contract_spec_test.go),
+[internal/formats/testdata/contract.txt](../../internal/formats/testdata/contract.txt), the comments of
+`internal/formats/doc.go` and `formats.go`. Elsewhere: [ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1).
+
+### Q-ARCH-281 · How does the conformance kit keep a format from passing a check it does not run?
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: E3.3 asks that both formats pass the conformance kit. Neither npm nor NuGet skips a check, but the freeze review
+found five ways a check passed without looking: (1) check 7 checks the content headers only on an answer below 400, and a
+route whose content cases all expect a refusal counted as covered (`npm.audit.bulk`, `npm.audit.legacy`,
+`npm.deferred.get`, `nuget.flatcontainer.embedded`, `nuget.autocomplete`, `nuget.symbols`); (2) check 9 asked a change
+case of every write route but not of every storage hook, and no change case of either format drove the restore hook
+(`ItemsRestorer`) both have; (3) the kit accepted a skip of check 6 for a format with an upload route and of check 9 for
+one with package names; (4) the fill hook of Q-ARCH-267 (`FillInspector`) reads what an upstream sent, as untrusted as an
+upload, and came without the kit check R-ARCH-025 asks of every new behaviour; (5) check 3 passed over a route example
+without a canonical path while its comment said such a route was held to its kind.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Tighten the kit, and make every place a check does not look a reasoned fixture entry (chosen) | `Fixture.NoContent` for content routes whose cases only refuse; the hooks in check 9 with `NoRevision` entries for a hook no change can drive; the skip guards of checks 6 and 9; check 6 runs the crafted inputs through `InspectFill` under the same bounds; a `Download` example must address a canonical path | What is not checked is written where a reviewer reads the fixture, with its reason, as skips and `NoRevision` already are; a format that later builds a listed route fails until the entry goes | Two fixture fields to keep in step |
+| (b) Leave the kit and list the gaps on the format pages | Prose | No code | The kit keeps passing what it does not check; a new format inherits the same holes |
+| (c) Require a served case for every content route, with no list | Fail the P1 routes until they are built | No list | The P1 routes answer 501 by design until M6; a fixture would have to fake an answer to pass |
+
+**Choice:** (a). The fill hook is held to the time bound, the heap bound and to no panic, not to an answer: what a fill hook
+answers is the format's (NuGet serves and caches an archive it cannot read as it came, Q-NUGET-53). The entries at the
+freeze: npm lists `npm.audit.bulk` (the kit's repository is local, which answers 501; the forwarded answer is tested in
+`handlers_audit_test.go`), `npm.audit.legacy` (501 by design) and `npm.deferred.get` (404 by design, R-NPM-043); NuGet
+lists its three P1 routes (R-NUGET-011, R-NUGET-021, R-NUGET-024). Both fixtures gained a change case that restores items
+from the trash; both pass with no check skipped, which `TestR_ARCH_010_NoCheckIsSkipped` pins.
+
+**Rationale:** a check with nothing to look at should say so where its fixture is written; that is the rule the kit
+already applied to skips and to `NoRevision`, carried to the two places it did not reach. The development agent revisits
+the `npm.audit.bulk` entry when a content case can name the class of its repository.
+
+**Applied in the spec:** R-ARCH-008 (acceptance criterion), R-ARCH-010 (checks 3, 6, 7 and 9, the skip rule, the fixture
+paragraph, an acceptance criterion). Code: `internal/formats/formattest/kit.go`, `checks.go`, `host.go`, `store.go`;
+`internal/formats/npm/conformance_test.go`, `internal/formats/nuget/conformance_test.go`. Tests:
+`TestQ_ARCH_281_AContentRouteThatOnlyRefusesIsListed`, `TestQ_ARCH_281_EveryStorageHookIsDrivenByAChange`,
+`TestQ_ARCH_281_TheFillHookMeetsTheBoundsOfCheck6`, `TestR_ARCH_010_KitSkips`, `TestR_ARCH_010_NoCheckIsSkipped`,
+`TestR_ARCH_010_Conformance`.
 
 ## What this does not cover
 

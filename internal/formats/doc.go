@@ -17,10 +17,13 @@
 // conformance kit (internal/formats/formattest) runs every format's routes, errors,
 // hooks and headers through the contract (R-ARCH-010).
 //
-// ContractVersion is 1 and stays 1 until the contract is frozen at the end of
-// milestone M3 (Q-ARCH-213): until then the contract changes with every format that
-// lands, in one change that moves every format with it, and the version is bumped
-// only when the meaning of a method changes.
+// ContractVersion is 1, and the contract is frozen at it since the end of milestone
+// M3 (E3.3, ADR-141). A change of the exported surface is an ADR of its own: the
+// surface file internal/formats/testdata/contract.txt fails the test until the ADR
+// and the regenerated file come in one change. A change adds - an optional interface
+// that CapabilitiesOf finds, a default in Base or RemoteBase, a service of the Host -
+// and the version rises only when the meaning of a method changes or a method leaves,
+// with every format moved in the same change (R-ARCH-025, Q-ARCH-256, Q-ARCH-280).
 //
 // A format imports this package and the leaf packages catalog, errs, config and
 // observability, and the untrusted-content limits (internal/formats/untrusted);

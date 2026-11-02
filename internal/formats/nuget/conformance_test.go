@@ -104,6 +104,15 @@ func nugetChanges(f *Format) []formattest.ChangeCase {
 			Name: "the removal of a package through the items (OnItemsRemoved)", Package: id, Seed: seed(push("1.0.0"), push("1.1.0")),
 			Do: remove(NupkgPath(id, "1.0.0"), NuspecPath(id, "1.0.0")),
 		},
+		{
+			Name: "the restore of a package from the trash (OnItemsRestored)", Package: id,
+			Seed: seed(push("1.0.0"), push("1.1.0"), func(h *formattest.Host) error {
+				return h.Remove(context.Background(), nil, "trash", NupkgPath(id, "1.0.0"), NuspecPath(id, "1.0.0"))
+			}),
+			Do: func(ctx context.Context, h *formattest.Host) error {
+				return h.Restore(ctx, nil, NupkgPath(id, "1.0.0"), NuspecPath(id, "1.0.0"))
+			},
+		},
 	}
 }
 
@@ -151,12 +160,12 @@ func seedVersions(lowerID string, versions ...string) func(h *formattest.Host) e
 	}
 }
 
-// conformance is the fixture of the NuGet format for the kit (R-ARCH-010). The skeleton
-// serves the service index and answers 501 for every other route, so checks 4 and 5 have no
-// remote adapter to run over (the remote class joins with its adapter, Q-NUGET-28), the
-// virtual adapter runs check 5 (merge, R-NUGET-017), and the checks that need a pipeline or a
-// view are skipped with their reason; the kit refuses a skip once the format has what the
-// check is about.
+// conformance is the fixture of the NuGet format for the kit (R-ARCH-010). Every check runs
+// and none is skipped: the stored remote documents of check 4, the member documents of check 5
+// (merge, R-NUGET-017), the crafted packages of check 6 (which the fill hook of the remote
+// adapter reads as well, R-NUGET-015) and the view of check 11 are below. What the kit does not
+// check is listed with its reason: the content routes of P1 operations, which answer 501 until
+// they are built (NoContent).
 func conformance(f *Format) formattest.Fixture {
 	const notBuilt = http.StatusNotImplemented
 	feed := func(p string) string { return "v3/" + p }
@@ -202,6 +211,14 @@ func conformance(f *Format) formattest.Fixture {
 			{Name: "search", Path: feed("search")},
 			{Name: "autocomplete", Path: feed("autocomplete"), Status: notBuilt},
 			{Name: "symbols", Path: feed("symbols/acme.widgets.pdb/0123456789abcdef0123456789abcdefFFFFFFFF/acme.widgets.pdb"), Status: notBuilt},
+		},
+		// The content routes of P1 operations, which answer 501 nuget_not_implemented until they are
+		// built (M6); check 7 checks the headers of what a route serves, and refuses an entry once a
+		// case serves the route.
+		NoContent: map[string]string{
+			"nuget.flatcontainer.embedded": "the embedded icon, license and readme are P1 (R-NUGET-024) and answer 501 until built",
+			"nuget.autocomplete":           "autocomplete is P1 (R-NUGET-011) and answers 501 until built",
+			"nuget.symbols":                "the symbol server is P1 (R-NUGET-021) and answers 501 until built; the symbol push is served (R-NUGET-020)",
 		},
 		Changes: nugetChanges(f),
 		Names: []formattest.NameCase{
@@ -298,10 +315,16 @@ func seedWidgets(h *formattest.Host) error {
 	return nil
 }
 
-// TestR_ARCH_010_Conformance runs the conformance kit over the NuGet format: route
-// ambiguity (check 1), path traversal (2), classification (3), the setup templates and the
-// guide (8), content headers (7), package names (10) and the view adapter (11) run; the others
-// are skipped with their reason.
+// TestR_ARCH_010_NoCheckIsSkipped: every check of the kit runs over NuGet (E3.3); a skip added to
+// the fixture later fails here, since the kit reports a skipped check as skipped, not as failed.
+func TestR_ARCH_010_NoCheckIsSkipped(t *testing.T) {
+	if s := conformance(New()).Skip; len(s) != 0 {
+		t.Fatalf("the NuGet fixture skips %v", s)
+	}
+}
+
+// TestR_ARCH_010_Conformance runs the conformance kit over the NuGet format: all eleven
+// checks run, none is skipped (E3.3).
 func TestR_ARCH_010_Conformance(t *testing.T) {
 	f := New()
 	formattest.Run(t, f, conformance(f))

@@ -1,0 +1,606 @@
+contract version 1
+formats.Action: alias authz.Action
+formats.AutoClaimResult: alias repository.AutoClaimResult
+formats.Base: method Exposure() ExposureAdapter
+formats.Base: method Guide() []GuideSection
+formats.Base: method IngestOptions(*Request) IngestOptions
+formats.Base: method Inspect(context.Context, InspectInput) (*Inspection, error)
+formats.Base: method OnCommit(context.Context, Tx, CommitEvent) error
+formats.Base: method OnItemsRemoved(context.Context, Tx, ItemsEvent) error
+formats.Base: method Remote() RemoteAdapter
+formats.Base: method ServeCheck(context.Context, Host, RepoRef, ItemRef, ServeMode) error
+formats.Base: method SetupTemplates() []SetupTemplate
+formats.Base: method View() ViewAdapter
+formats.Base: method Virtual() VirtualAdapter
+formats.Base: method WriteError(http.ResponseWriter, *http.Request, error)
+formats.CacheStatus: field Collapsed bool
+formats.CacheStatus: field Detail string
+formats.CacheStatus: field Header string
+formats.CacheStatus: field Hit bool
+formats.CacheStatus: field Negative bool
+formats.CacheStatus: field Stale bool
+formats.CacheStatus: field Stored bool
+formats.CacheStatus: field TTL time.Duration
+formats.Capabilities: field ItemsRestorer ItemsRestorer
+formats.Capabilities: field Remote RemoteCaps
+formats.Class: alias catalog.Class
+formats.Client: field DisplayName string
+formats.Client: field ID string
+formats.Client: field Versions []string
+formats.Commit: field Companions []Companion
+formats.Commit: field CreateOnly bool
+formats.Commit: field Inspection *Inspection
+formats.Commit: field MayOverwrite bool
+formats.Commit: field MediaType string
+formats.Commit: field Path Path
+formats.Commit: field Payload any
+formats.CommitEvent: field Actor string
+formats.CommitEvent: field Data any
+formats.CommitEvent: field Digests Digests
+formats.CommitEvent: field Inspection *Inspection
+formats.CommitEvent: field Item ItemRef
+formats.CommitEvent: field Lead ItemRef
+formats.CommitEvent: field Origin Origin
+formats.CommitEvent: field Packages PackageWriter
+formats.CommitEvent: field Path Path
+formats.CommitEvent: field Payload any
+formats.CommitEvent: field Replaced bool
+formats.CommitEvent: field Repo RepoRef
+formats.CommitEvent: field Size int64
+formats.CommitEvent: field UpstreamURL string
+formats.Committed: field Companions []ItemRef
+formats.Committed: field Created bool
+formats.Committed: field Identical bool
+formats.Committed: field Item ItemRef
+formats.Committed: field Overwritten bool
+formats.Companion: field Generated bool
+formats.Companion: field MediaType string
+formats.Companion: field Path Path
+formats.Companion: field Payload any
+formats.Companion: field Spooled Spooled
+formats.Currency: type uint8
+formats.DataPorts: method FormatData(ID) any
+formats.Descriptor: embedded catalog.Facts
+formats.Descriptor: field Clients []Client
+formats.Descriptor: field ContractVersion int
+formats.Descriptor: field DataPort reflect.Type
+formats.Descriptor: field Limits Limits
+formats.Descriptor: field MaxDocumentBytes int64
+formats.Descriptor: field Names catalog.Names
+formats.Descriptor: field NotifyAreas []string
+formats.Descriptor: field PropertyPrefix string
+formats.Descriptor: field VerifyAnnouncedDigests bool
+formats.Digests: field MD5 []byte
+formats.Digests: field SHA1 []byte
+formats.Digests: field SHA256 []byte
+formats.Digests: field SHA512 []byte
+formats.Discoverer: method DiscoveryDocument() (Path, string, bool)
+formats.Discoverer: method ParseDiscovery(context.Context, RemoteContext, []byte) (any, error)
+formats.EndpointFacts: field CacheFill bool
+formats.EndpointFacts: field Exposure ExposureView
+formats.EndpointFacts: field ExposureFingerprint string
+formats.EndpointFacts: field Name string
+formats.EndpointFacts: field Rules bool
+formats.EntryState: field GoneAt time.Time
+formats.EntryState: field Stored bool
+formats.Exchange: field Base *url.URL
+formats.Exchange: field Body []byte
+formats.Exchange: field Header http.Header
+formats.Exchange: field Method string
+formats.Exchange: field Path string
+formats.ExposureAdapter: embedded catalog.Versioning
+formats.ExposureAdapter: method Dimensions() ExposureDimensions
+formats.ExposureDimensions: field Packages bool
+formats.ExposureDimensions: field Tags bool
+formats.ExposureDimensions: field Versions bool
+formats.ExposureView: method Package(string) bool
+formats.ExposureView: method Version(string, string) bool
+formats.FillDecision: type uint8
+formats.FillEvent: field Data any
+formats.FillEvent: field Digest [32]byte
+formats.FillEvent: field ETag string
+formats.FillEvent: field FetchedAt time.Time
+formats.FillEvent: field LastModified time.Time
+formats.FillEvent: field Packages PackageWriter
+formats.FillEvent: field Path Path
+formats.FillEvent: field Prepared Prepared
+formats.FillEvent: field Replaces bool
+formats.FillEvent: field Repo RepoRef
+formats.FillEvent: field StoredAt time.Time
+formats.FillEvent: field StoredDigest [32]byte
+formats.FillEvent: field Variant string
+formats.FillInspector: method InspectFill(context.Context, RemoteContext, Path, Spooled) (*Inspection, error)
+formats.FillInspector: method InspectsFill(Path) bool
+formats.Format: method Classify(Path) PathInfo
+formats.Format: method Descriptor() Descriptor
+formats.Format: method Exposure() ExposureAdapter
+formats.Format: method Guide() []GuideSection
+formats.Format: method IngestOptions(*Request) IngestOptions
+formats.Format: method Inspect(context.Context, InspectInput) (*Inspection, error)
+formats.Format: method Match(string, string) (*Route, Params, error)
+formats.Format: method OnCommit(context.Context, Tx, CommitEvent) error
+formats.Format: method OnItemsRemoved(context.Context, Tx, ItemsEvent) error
+formats.Format: method PackageDocumentPath(string) (Path, bool)
+formats.Format: method Remote() RemoteAdapter
+formats.Format: method Routes() []Route
+formats.Format: method ServeCheck(context.Context, Host, RepoRef, ItemRef, ServeMode) error
+formats.Format: method SetupTemplates() []SetupTemplate
+formats.Format: method View() ViewAdapter
+formats.Format: method Virtual() VirtualAdapter
+formats.Format: method WriteError(http.ResponseWriter, *http.Request, error)
+formats.GuideData: embedded SetupData
+formats.GuideData: field Anonymous bool
+formats.GuideData: field Class Class
+formats.GuideData: field Client string
+formats.GuideData: field ExposureRules bool
+formats.GuideData: field PublishTarget string
+formats.GuideData: field TokenEnvVar string
+formats.GuideSection: field Classes []Class
+formats.GuideSection: field Clients []string
+formats.GuideSection: field ID string
+formats.GuideSection: field Markdown string
+formats.GuideSection: field Snippets string
+formats.GuideSection: field Title string
+formats.GuideSection: field Topic string
+formats.GuideSection: method AppliesTo(Class, string) bool
+formats.HandlerFunc: type func(context.Context, *Request, http.ResponseWriter) error
+formats.Host: method Authorize(context.Context, *Request, Target) error
+formats.Host: method Begin(*Request) func()
+formats.Host: method CheckOwnership(context.Context, *Request, Target, OwnershipWrite) error
+formats.Host: method FormatData(ID) any
+formats.Host: method Ingest() Ingestor
+formats.Host: method Items() ItemStore
+formats.Host: method Links(*Request) LinkBuilder
+formats.Host: method Packages() PackageStore
+formats.Host: method Remote() RemoteFetcher
+formats.Host: method Renditions() RenditionCache
+formats.Host: method Resolver() Resolver
+formats.Host: method RestoredAt(context.Context) (time.Time, error)
+formats.Host: method Write(context.Context, *Request, func(Tx, PackageWriter) error) error
+formats.ID: alias catalog.ID
+formats.IngestOptions: field Expect Digests
+formats.IngestOptions: field Length int64
+formats.IngestOptions: field MaxSize int64
+formats.IngestOptions: field MediaType string
+formats.Ingestor: method Close(Spooled)
+formats.Ingestor: method Commit(context.Context, *Request, Spooled, Commit) (Committed, error)
+formats.Ingestor: method Spool(context.Context, *Request, io.Reader, IngestOptions) (Spooled, error)
+formats.InspectInput: field Body Spooled
+formats.InspectInput: field Limits untrusted.Limits
+formats.InspectInput: field MediaType string
+formats.InspectInput: field Path Path
+formats.Inspection: field Package string
+formats.Inspection: field Payload any
+formats.Inspection: field Properties map[string]string
+formats.Inspection: field Version string
+formats.Item: field Digests Digests
+formats.Item: field Folder bool
+formats.Item: field Handle any
+formats.Item: field MediaType string
+formats.Item: field Modified time.Time
+formats.Item: field Ref ItemRef
+formats.Item: field Size int64
+formats.Item: field Version VersionID
+formats.ItemRef: field ID int64
+formats.ItemRef: field Path string
+formats.ItemRef: field Repo RepoRef
+formats.ItemStore: method Open(context.Context, Item) (io.ReadCloser, error)
+formats.ItemStore: method Serve(context.Context, *Request, http.ResponseWriter, Item, ServeMode) error
+formats.ItemStore: method Stat(context.Context, RepoRef, Path) (Item, bool, error)
+formats.ItemsEvent: field Actor string
+formats.ItemsEvent: field Data any
+formats.ItemsEvent: field Items []RemovedItem
+formats.ItemsEvent: field Packages PackageWriter
+formats.ItemsEvent: field Reason string
+formats.ItemsEvent: field Repo RepoRef
+formats.ItemsRestorer: method OnItemsRestored(context.Context, Tx, ItemsEvent) error
+formats.Limits: alias untrusted.Limits
+formats.LinkBuilder: method Base() string
+formats.LinkBuilder: method File(string, string) string
+formats.LinkBuilder: method Path(string) string
+formats.LinkBuilder: method Registry(string) string
+formats.LinkBuilder: method Repository() string
+formats.MemberDocument: field CachedVersions map[string]bool
+formats.MemberDocument: field Doc []byte
+formats.MemberDocument: field Member RepoRef
+formats.MemberDocument: field Position int
+formats.MemberDocument: field Restricted bool
+formats.MemberDocument: field Revision Revision
+formats.MemberDocument: field Stale bool
+formats.MemberDocument: field Tier Tier
+formats.Merged: field Bytes []byte
+formats.Merged: field CacheStatus string
+formats.Merged: field MergeFingerprint [32]byte
+formats.Merged: field Partial bool
+formats.NewVersion: field Attributes json.RawMessage
+formats.NewVersion: field CreatedBy string
+formats.NewVersion: field DisplayVersion string
+formats.NewVersion: field LeadItem *ItemRef
+formats.NewVersion: field Version string
+formats.Origin: method String() string
+formats.Origin: type uint8
+formats.OwnershipWrite: field FirstVersion bool
+formats.OwnershipWrite: field Publish bool
+formats.PackageID: type int64
+formats.PackageRef: field ID PackageID
+formats.PackageRef: field Name string
+formats.PackageRef: field Repo RepoRef
+formats.PackageRef: field RevSeq RevSeq
+formats.PackageRow: field Attributes json.RawMessage
+formats.PackageRow: field DisplayName string
+formats.PackageRow: field Ref PackageRef
+formats.PackageStore: method Package(context.Context, RepoRef, string) (PackageRow, bool, error)
+formats.PackageStore: method RevSeqs(context.Context, []RepoRef, string) (map[int64]RevSeq, error)
+formats.PackageStore: method Versions(context.Context, RepoRef, string) ([]VersionRow, RevSeq, error)
+formats.PackageWriter: method AutoClaim(context.Context, string) (AutoClaimResult, error)
+formats.PackageWriter: method BumpRevision(context.Context, PackageRef) (RevSeq, time.Time, error)
+formats.PackageWriter: method Claim(context.Context, Target, OwnershipWrite) error
+formats.PackageWriter: method DeleteItems(context.Context, RepoRef, ...string) error
+formats.PackageWriter: method EnsureLocked(context.Context, RepoRef, string, string) (PackageRef, bool, error)
+formats.PackageWriter: method InsertVersion(context.Context, PackageRef, NewVersion) (VersionID, error)
+formats.PackageWriter: method LinkItem(context.Context, ItemRef, VersionID, bool) error
+formats.PackageWriter: method Notify(string, any) error
+formats.PackageWriter: method SetPackageAttributes(context.Context, PackageRef, json.RawMessage) error
+formats.PackageWriter: method SetProperties(context.Context, ItemRef, map[string]string) error
+formats.PackageWriter: method SetVersionAttributes(context.Context, VersionID, json.RawMessage) error
+formats.PackageWriter: method TrashOrDeleteVersion(context.Context, VersionID, bool) error
+formats.PackageWriter: method Versions(context.Context, PackageRef) ([]VersionRow, error)
+formats.Params: method Get(string) string
+formats.Params: type map[string]string
+formats.Path: alias repository.Cleaned
+formats.PathInfo: field Kind PathKind
+formats.PathInfo: field Package string
+formats.PathInfo: field RoutingName string
+formats.PathInfo: field Version string
+formats.PathKind: method RequestKind() RequestKind
+formats.PathKind: method String() string
+formats.PathKind: type uint8
+formats.PatternSubject: alias catalog.PatternSubject
+formats.PlannedMember: field MayFill bool
+formats.PlannedMember: field Member RepoRef
+formats.PlannedMember: field Position int
+formats.PlannedMember: field Tier Tier
+formats.Prepared: field Data any
+formats.Prepared: field Mappings []URLMapping
+formats.Query: field Params url.Values
+formats.Query: field Path Path
+formats.Query: field TTL time.Duration
+formats.QueryResult: field Body []byte
+formats.QueryResult: field Cached bool
+formats.QueryResult: field Collapsed bool
+formats.QueryResult: field ContentType string
+formats.QueryResult: field FetchedAt time.Time
+formats.ReadScope: method MayRead(string, string, string) bool
+formats.ReadScope: method Shape(string) ReadShape
+formats.ReadShape: type uint8
+formats.Refusal: field BaseURL string
+formats.Refusal: field Format ID
+formats.Refusal: field Key string
+formats.Refusal: method Registry() string
+formats.RemoteAdapter: method AcceptResponse(Path, *http.Response) error
+formats.RemoteAdapter: method BeforeArtifact(context.Context, Host, *Request, Path) (Digests, error)
+formats.RemoteAdapter: method ExpectsType(Path, string) bool
+formats.RemoteAdapter: method OnFill(context.Context, Tx, FillEvent) (FillDecision, error)
+formats.RemoteAdapter: method PrepareFill(context.Context, RemoteContext, Path, string, io.ReaderAt, int64) (Prepared, error)
+formats.RemoteAdapter: method Rewrite(context.Context, RemoteContext, Path, []byte, LinkBuilder) ([]byte, error)
+formats.RemoteAdapter: method TracksVersionRemoval() bool
+formats.RemoteAdapter: method UpstreamQuery(context.Context, RemoteContext, Query) (*http.Request, error)
+formats.RemoteAdapter: method UpstreamRequest(context.Context, RemoteContext, Path, string) (*http.Request, error)
+formats.RemoteBase: method BeforeArtifact(context.Context, Host, *Request, Path) (Digests, error)
+formats.RemoteBase: method ExpectsType(Path, string) bool
+formats.RemoteBase: method UpstreamQuery(context.Context, RemoteContext, Query) (*http.Request, error)
+formats.RemoteCaps: field Discovery Discoverer
+formats.RemoteCaps: field Fill FillInspector
+formats.RemoteContext: field Discovery any
+formats.RemoteContext: field Repo *repository.Repository
+formats.RemoteContext: field Settings json.RawMessage
+formats.RemoteContext: field Upstream *url.URL
+formats.RemoteDocument: field Bytes func(context.Context) ([]byte, error)
+formats.RemoteDocument: field Digest [32]byte
+formats.RemoteDocument: field ExpiresAt time.Time
+formats.RemoteDocument: field FetchedAt time.Time
+formats.RemoteDocument: field GoneAt time.Time
+formats.RemoteDocument: field Size int64
+formats.RemoteDocument: field Stale bool
+formats.RemoteDocument: field Status CacheStatus
+formats.RemoteDocument: field ValidatedAt time.Time
+formats.RemoteFetcher: method Artifact(context.Context, *Request, Path, Digests, http.ResponseWriter) error
+formats.RemoteFetcher: method Cached(context.Context, *Request, Path) (Item, bool, error)
+formats.RemoteFetcher: method EnsureCurrent(context.Context, *Request, Path, string) (*RemoteDocument, Currency, error)
+formats.RemoteFetcher: method EntryState(context.Context, *Request, Path) (EntryState, error)
+formats.RemoteFetcher: method Exchange(context.Context, *Request, Exchange) (*http.Response, error)
+formats.RemoteFetcher: method Gate(context.Context, *Request, Path) error
+formats.RemoteFetcher: method Metadata(context.Context, *Request, Path, string) (*RemoteDocument, error)
+formats.RemoteFetcher: method Query(context.Context, *Request, Query) (*QueryResult, error)
+formats.RemovedItem: field Item ItemRef
+formats.RemovedItem: field SHA256 []byte
+formats.RemovedItem: field Version VersionID
+formats.RenditionCache: method Get(RenditionKey) ([]byte, bool)
+formats.RenditionCache: method Put(RenditionKey, []byte)
+formats.RenditionKey: field BaseURL string
+formats.RenditionKey: field Encoding string
+formats.RenditionKey: field Endpoint string
+formats.RenditionKey: field Exposure string
+formats.RenditionKey: field Package string
+formats.RenditionKey: field RenderVersion int
+formats.RenditionKey: field Repo RepoRef
+formats.RenditionKey: field RevSeq RevSeq
+formats.RenditionKey: field Settings string
+formats.RenditionKey: field Variant string
+formats.RepoRef: field Class Class
+formats.RepoRef: field Format ID
+formats.RepoRef: field ID int64
+formats.RepoRef: field Key string
+formats.Request: embedded *http.Request
+formats.Request: field CacheView bool
+formats.Request: field Endpoint EndpointFacts
+formats.Request: field Escaped string
+formats.Request: field Host Host
+formats.Request: field Index *authz.Index
+formats.Request: field Log *slog.Logger
+formats.Request: field Params Params
+formats.Request: field Path Path
+formats.Request: field Repo *repository.Repository
+formats.Request: field Route *Route
+formats.Request: field Subject authz.Subject
+formats.Request: method Addressed() string
+formats.Request: method Member(*repository.Repository) (*Request, error)
+formats.Request: method RepoRef() RepoRef
+formats.Request: method WriteTarget(*repository.Repository) *Request
+formats.RequestKind: alias catalog.RequestKind
+formats.Resolver: method Artifact(context.Context, *Request, Path, PathInfo, http.ResponseWriter) error
+formats.Resolver: method DeployTarget(context.Context, *Request) (*repository.Repository, error)
+formats.Resolver: method KeepsAway(context.Context, *Request, RepoRef, string) (bool, error)
+formats.Resolver: method Metadata(context.Context, *Request, Path, PathInfo, string) (*Merged, error)
+formats.Resolver: method Plan(context.Context, *Request, Path, PathInfo) (*VirtualPlan, error)
+formats.Resolver: method ReadScope(context.Context, *Request, []string) (ReadScope, error)
+formats.Resolver: method ShadowCheck(context.Context, *Request, string) (ShadowOutcome, error)
+formats.RevSeq: type int64
+formats.Revision: field Digest [32]byte
+formats.Revision: field RevSeq RevSeq
+formats.Route: field APIKey bool
+formats.Route: field Action authz.Action
+formats.Route: field Classes []Class
+formats.Route: field Examples []string
+formats.Route: field Handler HandlerFunc
+formats.Route: field Kind RouteKind
+formats.Route: field Match func(string) (Params, bool)
+formats.Route: field Method string
+formats.Route: field Name string
+formats.Route: field Template string
+formats.Route: method ServesClass(Class) bool
+formats.RouteKind: method RequestKind() RequestKind
+formats.RouteKind: method ServesContent() bool
+formats.RouteKind: method String() string
+formats.RouteKind: method Valid() bool
+formats.RouteKind: method WrapsContent() bool
+formats.RouteKind: type uint8
+formats.ServeMode: type uint8
+formats.SetupData: field Endpoint string
+formats.SetupData: field RegistryURL string
+formats.SetupData: field Repository string
+formats.SetupData: field RequiresAuth bool
+formats.SetupData: field Username string
+formats.SetupData: field Variant string
+formats.SetupTemplate: field Client string
+formats.SetupTemplate: field File string
+formats.SetupTemplate: field ID string
+formats.SetupTemplate: field Lang string
+formats.SetupTemplate: field Section string
+formats.SetupTemplate: field Template string
+formats.SetupTemplate: field VersionSpec string
+formats.ShadowOutcome: field Code string
+formats.ShadowOutcome: field Proceed bool
+formats.ShadowOutcome: field Refusal error
+formats.ShadowOutcome: field RetryAfter time.Duration
+formats.ShadowOutcome: field Shadowed []ShadowPair
+formats.ShadowOutcome: field Undetermined bool
+formats.ShadowPair: field Remote string
+formats.ShadowPair: field Virtual string
+formats.Spooled: method Digests() Digests
+formats.Spooled: method Open() (io.ReadCloser, error)
+formats.Spooled: method ReaderAt() (io.ReaderAt, error)
+formats.Spooled: method Size() int64
+formats.Stored: field Tags map[string]string
+formats.Stored: field Versions []string
+formats.StoredQuery: field Limit int
+formats.StoredQuery: field Package string
+formats.StoredQuery: field Repo RepoRef
+formats.StoredQuery: field Tags bool
+formats.Strategy: type uint8
+formats.Target: field Actions []Action
+formats.Target: field Package string
+formats.Target: field Path string
+formats.Target: field Version string
+formats.Tier: type uint8
+formats.Tx: alias meta.Tx
+formats.URLMapping: field Path Path
+formats.URLMapping: field Upstream string
+formats.VersionID: type int64
+formats.VersionRow: field Attributes json.RawMessage
+formats.VersionRow: field CreatedAt time.Time
+formats.VersionRow: field CreatedBy string
+formats.VersionRow: field DisplayVersion string
+formats.VersionRow: field ID VersionID
+formats.VersionRow: field LeadItem int64
+formats.VersionRow: field Version string
+formats.ViewAdapter: method Compare(string, string) int
+formats.ViewAdapter: method Describe(context.Context, DataPorts, []ViewVersion, ViewFields, func(string) bool) (map[VersionID]ViewData, error)
+formats.ViewAdapter: method Find(context.Context, DataPorts, ViewFind, int) ([]VersionID, error)
+formats.ViewAdapter: method Stored(context.Context, DataPorts, StoredQuery) (Stored, error)
+formats.ViewAdapter: method Withheld(context.Context, DataPorts, []string) ([]VersionID, error)
+formats.ViewData: field Description string
+formats.ViewData: field HasReadme bool
+formats.ViewData: field Keywords []string
+formats.ViewData: field Licenses []string
+formats.ViewData: field Metadata map[string]any
+formats.ViewData: field Readme string
+formats.ViewData: field ReadmeFile string
+formats.ViewFields: method Has(ViewFields) bool
+formats.ViewFields: type uint8
+formats.ViewFind: field Keyword string
+formats.ViewFind: field Repos []string
+formats.ViewFind: field Text string
+formats.ViewVersion: field ID VersionID
+formats.ViewVersion: field Package string
+formats.ViewVersion: field Repo RepoRef
+formats.ViewVersion: field Version string
+formats.VirtualAdapter: method ArtifactPrefix(string) string
+formats.VirtualAdapter: method LocalDocument(context.Context, *Request, RepoRef, Path, string) ([]byte, RevSeq, bool, error)
+formats.VirtualAdapter: method Merge(context.Context, *Request, Path, []MemberDocument) ([]byte, error)
+formats.VirtualAdapter: method Strategy(Path) Strategy
+formats.VirtualPlan: field Admitted bool
+formats.VirtualPlan: field Members []PlannedMember
+formats.CapabilitiesFor: func(ID) Capabilities
+formats.CapabilitiesOf: func(Format) Capabilities
+formats.CatalogEntry: func(Format) catalog.Entry
+formats.Descriptors: func() []Descriptor
+formats.ExecuteGuide: func(GuideSection, GuideData) (string, error)
+formats.GuideTopics: func() []string
+formats.List: func() []Format
+formats.Lookup: func(string) (Format, bool)
+formats.MatchRoutes: func([]Route, string, string) (*Route, Params, error)
+formats.RefusalFrom: func(*http.Request) (Refusal, bool)
+formats.Register: func(Format)
+formats.RemoteCapabilities: func(ID) RemoteCaps
+formats.RepositoryAllowed: func(context.Context, RepoRef) error
+formats.RequiredGuideTopics: func() []string
+formats.ServeRoute: func(Format, http.ResponseWriter, *Request, bool)
+formats.SetupTokenRefs: func() []string
+formats.Template: func(string) (func(string) (Params, bool))
+formats.Validate: func(Format) error
+formats.WithRefusal: func(*http.Request, Refusal) *http.Request
+formats.ActionAnnotate: value = authz.Annotate
+formats.ActionDelete: value = authz.Delete
+formats.ActionDeploy: value = authz.Deploy
+formats.ActionManage: value = authz.Manage
+formats.ActionOverwrite: value = authz.Overwrite
+formats.ActionRead: value = authz.Read
+formats.Admin: value = (repeated, place 5 of its group)
+formats.Computed: value = (repeated, place 2 of its group)
+formats.Content: value PathKind = iota + 1 (place 0 of its group)
+formats.ContractVersion: value = 1
+formats.Current: value Currency = iota + 1 (place 0 of its group)
+formats.Delete: value = (repeated, place 4 of its group)
+formats.Download: value RouteKind = iota + 1 (place 0 of its group)
+formats.ErrOffline: value = errors.New("formats: the remote repository may not contact its upstream")
+formats.FillByFetchTime: value FillDecision = iota (place 0 of its group)
+formats.FillKeepStored: value = (repeated, place 1 of its group)
+formats.FillReplaceStored: value = (repeated, place 2 of its group)
+formats.FirstMatch: value Strategy = iota + 1 (place 0 of its group)
+formats.GuideAudit: value = "audit"
+formats.GuideAuthenticate: value = "authenticate"
+formats.GuideConfigure: value = "configure"
+formats.GuideEndpoint: value = "endpoint"
+formats.GuideInstall: value = "install"
+formats.GuideLockfiles: value = "lockfiles"
+formats.GuideMaintain: value = "maintain"
+formats.GuidePublish: value = "publish"
+formats.GuideRepositoryPlaceholder: value = "<repository>"
+formats.GuideTroubleshooting: value = "troubleshooting"
+formats.GuideWhat: value = "what"
+formats.KindArtifact: value = catalog.KindArtifact
+formats.KindMetadata: value = catalog.KindMetadata
+formats.KindOther: value = catalog.KindOther
+formats.KindSearch: value = catalog.KindSearch
+formats.KindWrite: value = catalog.KindWrite
+formats.Local: value = catalog.Local
+formats.Merge: value = (repeated, place 1 of its group)
+formats.Metadata: value = (repeated, place 1 of its group)
+formats.OriginFill: value = (repeated, place 1 of its group)
+formats.OriginUpload: value Origin = iota + 1 (place 0 of its group)
+formats.PathComputed: value = (repeated, place 2 of its group)
+formats.PathMetadata: value = (repeated, place 1 of its group)
+formats.PathVolatile: value = (repeated, place 3 of its group)
+formats.ReadAll: value = (repeated, place 1 of its group)
+formats.ReadNone: value ReadShape = iota (place 0 of its group)
+formats.ReadRows: value = (repeated, place 2 of its group)
+formats.Remote: value = catalog.Remote
+formats.Revalidated: value = (repeated, place 1 of its group)
+formats.ServeMayRevalidate: value = (repeated, place 1 of its group)
+formats.ServeStored: value ServeMode = iota + 1 (place 0 of its group)
+formats.SetupPackageRef: value = "<package>"
+formats.SetupTokenRef: value = "${TROVE_TOKEN}"
+formats.SetupTokenRefPS: value = "$env:TROVE_TOKEN"
+formats.SetupTokenRefWin: value = "%TROVE_TOKEN%"
+formats.SetupVersionRef: value = "<version>"
+formats.SubjectName: value = catalog.SubjectName
+formats.SubjectPath: value = catalog.SubjectPath
+formats.TierLocal: value Tier = iota + 1 (place 0 of its group)
+formats.TierRemote: value = (repeated, place 2 of its group)
+formats.TierRemoteCached: value = (repeated, place 1 of its group)
+formats.Unknown: value = (repeated, place 2 of its group)
+formats.Upload: value = (repeated, place 3 of its group)
+formats.ViewDetails: value = (repeated, place 1 of its group)
+formats.ViewReadme: value = (repeated, place 2 of its group)
+formats.ViewSummary: value ViewFields = 1 << iota (place 0 of its group)
+formats.Virtual: value = catalog.Virtual
+formats.Volatile: value = (repeated, place 6 of its group)
+catalog.Class: method Valid() bool
+catalog.Class: type string
+catalog.Entry: embedded Facts
+catalog.Entry: field Exposure Exposure
+catalog.Entry: field Names Names
+catalog.Entry: method HasSettings() bool
+catalog.Entry: method ValidateSettings(Class, json.RawMessage) []SettingViolation
+catalog.Exposure: field Exposable bool
+catalog.Exposure: field Packages bool
+catalog.Exposure: field Tags bool
+catalog.Exposure: field Versioning Versioning
+catalog.Exposure: field Versions bool
+catalog.Facts: field Caps bool
+catalog.Facts: field ChecksumRequireUnsupported bool
+catalog.Facts: field Classes []Class
+catalog.Facts: field DefaultExtraHosts []string
+catalog.Facts: field DefaultMetadataTTLSeconds *int
+catalog.Facts: field DefaultNotFoundTTLSeconds *int
+catalog.Facts: field DefaultUpstreamURL string
+catalog.Facts: field DisplayName string
+catalog.Facts: field ID ID
+catalog.Facts: field Layout string
+catalog.Facts: field OwnershipDefault string
+catalog.Facts: field PackageNames bool
+catalog.Facts: field PatternSubject PatternSubject
+catalog.Facts: field PinsAndClaims bool
+catalog.Facts: field PriorityMembers bool
+catalog.Facts: field ProbePath string
+catalog.Facts: field ProtocolBasePath string
+catalog.Facts: field SettingsSchema []byte
+catalog.Facts: method Supports(Class) bool
+catalog.ID: type string
+catalog.Names: method Normalize(string) (string, bool)
+catalog.PatternSubject: type string
+catalog.Registry: method Freeze()
+catalog.Registry: method List() []Entry
+catalog.Registry: method Lookup(string) (Entry, bool)
+catalog.Registry: method NormalizeName(string, string) (string, bool)
+catalog.Registry: method Register(Entry)
+catalog.RequestKind: type string
+catalog.SettingViolation: field Code string
+catalog.SettingViolation: field Detail string
+catalog.SettingViolation: field Pointer string
+catalog.Versioning: method InRange(string, string) bool
+catalog.Versioning: method Prerelease(string) (bool, bool)
+catalog.Versioning: method ValidateRange(string) error
+catalog.Default: func() *Registry
+catalog.NewRegistry: func() *Registry
+catalog.Or: func(*Registry) *Registry
+catalog.PackageChanged: func(int64, string) string
+catalog.ParsePackageChanged: func(string) (int64, [32]byte, bool)
+catalog.ValidID: func(string) bool
+catalog.FormatAreas: value = []string{MetadataChangedArea}
+catalog.KindArtifact: value RequestKind = "artifact"
+catalog.KindMetadata: value RequestKind = "metadata"
+catalog.KindOther: value RequestKind = "other"
+catalog.KindSearch: value RequestKind = "search"
+catalog.KindWrite: value RequestKind = "write"
+catalog.Local: value Class = "local"
+catalog.MetadataChangedArea: value = "metadata_changed"
+catalog.OwnershipEnforce: value = "enforce"
+catalog.OwnershipOff: value = "off"
+catalog.Remote: value Class = "remote"
+catalog.SettingInvalid: value = "invalid_value"
+catalog.SettingNotApplicable: value = "not_applicable"
+catalog.SubjectName: value PatternSubject = "name"
+catalog.SubjectPath: value PatternSubject = "path"
+catalog.Virtual: value Class = "virtual"

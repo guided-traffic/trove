@@ -139,10 +139,10 @@ func TestR_ARCH_010_KitSkips(t *testing.T) {
 			}
 		}
 	})
-	t.Run("R-ARCH-010 a skip the format contradicts fails: routes, a remote adapter, a virtual adapter, clients, package names", func(t *testing.T) {
+	t.Run("R-ARCH-010 a skip the format contradicts fails: routes, an upload route, a write route, a remote adapter, a virtual adapter, clients, package names", func(t *testing.T) {
 		for _, c := range []formattest.Check{
 			formattest.CheckAmbiguity, formattest.CheckClassify, formattest.CheckRewrite, formattest.CheckMerge, formattest.CheckHeaders,
-			formattest.CheckSetup, formattest.CheckNames, formattest.CheckTraversal,
+			formattest.CheckSetup, formattest.CheckNames, formattest.CheckTraversal, formattest.CheckInspect, formattest.CheckRevision,
 		} {
 			rep := formattest.Evaluate(testformat.New(), formattest.Fixture{Skip: map[formattest.Check]string{c: "not applicable"}})
 			if got := messages(rep, c); !strings.Contains(got, "skipped") && !strings.Contains(got, "always applies") {
@@ -194,10 +194,18 @@ func TestR_ARCH_010_KitChecksCatchTheirDefects(t *testing.T) {
 		if got := messages(formattest.Evaluate(testformat.New(), identity), formattest.CheckClassify); got != "" {
 			t.Fatalf("the identity mapping is refused: %q", got)
 		}
+		// A route that addresses no canonical path is held to its kind by checks 7 and 9; a
+		// download serves a stored item, so only the downloads are refused.
 		skipped := fx
 		skipped.Canonical = func(string) (string, bool) { return "", false }
-		if got := messages(formattest.Evaluate(testformat.New(), skipped), formattest.CheckClassify); got != "" {
-			t.Fatalf("a route without a canonical path is refused: %q", got)
+		got := messages(formattest.Evaluate(testformat.New(), skipped), formattest.CheckClassify)
+		if got == "" {
+			t.Fatal("a download whose example addresses no canonical path passes")
+		}
+		for _, line := range strings.Split(got, "\n") {
+			if !strings.Contains(line, "is a download and its example") {
+				t.Fatalf("a route without a canonical path that is no download is refused: %q", line)
+			}
 		}
 		wrong := fx
 		wrong.Canonical = func(string) (string, bool) { return "", true }
@@ -507,4 +515,99 @@ func TestR_ARCH_010_CleanMethodCoverage(t *testing.T) {
 	if got := h.RoutesServed(); len(got) != 2 || got[1] != "tf.doc.get" {
 		t.Fatalf("routes served = %v", got)
 	}
+}
+
+// TestQ_ARCH_281_AContentRouteThatOnlyRefusesIsListed: check 7 checks the content headers on what a
+// route serves, so a route whose content cases all expect a refusal is listed in NoContent with the
+// reason, and an entry the fixture contradicts fails.
+func TestQ_ARCH_281_AContentRouteThatOnlyRefusesIsListed(t *testing.T) {
+	fx := testformat.Fixture()
+	var cases []formattest.ContentCase
+	for _, c := range fx.Content {
+		if c.Path != "left-pad" && c.Path != "@scope%2Fname" {
+			cases = append(cases, c)
+		}
+	}
+	cases = append(cases, formattest.ContentCase{Name: "an unknown package", Path: "no-such-package", Status: http.StatusNotFound})
+	fx.Content = cases
+	check7 := func(noContent map[string]string) string {
+		f := fx
+		f.NoContent = noContent
+		return messages(formattest.Evaluate(testformat.New(), f), formattest.CheckHeaders)
+	}
+	for name, c := range map[string]struct {
+		noContent map[string]string
+		want      string
+	}{
+		"R-ARCH-010 a route whose cases only refuse fails":             {nil, "only content cases that refuse"},
+		"R-ARCH-010 a listed route without a reason fails":             {map[string]string{"tf.doc.get": ""}, "without a reason"},
+		"R-ARCH-010 a listed route that a case serves fails":           {map[string]string{"tf.doc.get": "x", "tf.tarball.get": "x"}, "a content case serves it"},
+		"R-ARCH-010 an entry for a route that serves no content fails": {map[string]string{"tf.doc.get": "x", "tf.tag.put": "x"}, "NoContent names"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := check7(c.noContent); !strings.Contains(got, c.want) {
+				t.Fatalf("got %q, want %q", got, c.want)
+			}
+		})
+	}
+	t.Run("R-ARCH-010 a listed route with its reason passes", func(t *testing.T) {
+		if got := check7(map[string]string{"tf.doc.get": "the format answers 404 for it"}); got != "" {
+			t.Fatalf("got %q", got)
+		}
+	})
+}
+
+// TestQ_ARCH_281_EveryStorageHookIsDrivenByAChange: check 9 asks a change case of every storage hook
+// the format has, the restore hook of formats.ItemsRestorer included, or a reasoned NoRevision entry.
+func TestQ_ARCH_281_EveryStorageHookIsDrivenByAChange(t *testing.T) {
+	fx := testformat.Fixture()
+	var changes []formattest.ChangeCase
+	for _, c := range fx.Changes {
+		if !strings.Contains(c.Name, "OnItemsRestored") {
+			changes = append(changes, c)
+		}
+	}
+	fx.Changes = changes
+	check9 := func() string { return messages(formattest.Evaluate(testformat.New(), fx), formattest.CheckRevision) }
+	if got := check9(); !strings.Contains(got, "storage hook OnItemsRestored ran in no change case") {
+		t.Fatalf("got %q", got)
+	}
+	fx.NoRevision = map[string]string{"OnItemsRestored": "the trash can's restore is not built"}
+	if got := check9(); got != "" {
+		t.Fatalf("a reasoned NoRevision entry for the hook is refused: %q", got)
+	}
+}
+
+// fillInspecting gives a remote adapter the fill hook of formats.FillInspector.
+type fillInspecting struct {
+	formats.RemoteAdapter
+	fill func(ctx context.Context) (*formats.Inspection, error)
+}
+
+func (fillInspecting) InspectsFill(formats.Path) bool { return true }
+
+func (f fillInspecting) InspectFill(ctx context.Context, _ formats.RemoteContext, _ formats.Path, _ formats.Spooled) (*formats.Inspection, error) {
+	return f.fill(ctx)
+}
+
+// TestQ_ARCH_281_TheFillHookMeetsTheBoundsOfCheck6: a remote adapter that inspects fills runs the
+// crafted inputs of check 6 through its hook; what it answers is its own, and a panic fails the check.
+func TestQ_ARCH_281_TheFillHookMeetsTheBoundsOfCheck6(t *testing.T) {
+	fx := testformat.Fixture()
+	fx.Inspect = fx.Inspect[:1]
+	withFill := func(fill func(context.Context) (*formats.Inspection, error)) override {
+		return override{Format: testformat.New(), remote: fillInspecting{RemoteAdapter: testformat.New().Remote(), fill: fill}}
+	}
+	t.Run("R-ARCH-028 a fill hook that answers in time passes, whatever it answers", func(t *testing.T) {
+		o := withFill(func(context.Context) (*formats.Inspection, error) { return nil, nil })
+		if got := messages(formattest.Evaluate(o, fx), formattest.CheckInspect); got != "" {
+			t.Fatalf("got %q", got)
+		}
+	})
+	t.Run("R-ARCH-028 a fill hook that panics fails check 6", func(t *testing.T) {
+		o := withFill(func(context.Context) (*formats.Inspection, error) { panic("boom") })
+		if got := messages(formattest.Evaluate(o, fx), formattest.CheckInspect); !strings.Contains(got, "InspectFill panicked: boom") {
+			t.Fatalf("got %q", got)
+		}
+	})
 }

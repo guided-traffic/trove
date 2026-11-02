@@ -204,8 +204,8 @@ type NewVersion struct {
 }
 
 // OwnershipWrite says what a write is for the ownership rule of R-AUTHZ-018: a
-// publish adds a version, a change of a dist-tag does not (it is a write by an
-// owner or a writer, never a claim), and a first version creates the package and
+// publish adds a version, a change of a tag or of a version's listing does not (it
+// is a write by an owner or a writer, never a claim), and a first version creates the package and
 // so claims it.
 type OwnershipWrite struct {
 	Publish      bool
@@ -224,7 +224,7 @@ type AutoClaimResult = repository.AutoClaimResult
 // Every call that changes the rows of a package raises packages.rev_seq of that
 // package once per transaction, however many calls there are, so a write of
 // generic rows cannot forget the revision (Q-ARCH-212). A change that writes only
-// the format's own side rows - a dist-tag - calls BumpRevision, which does the
+// the format's own side rows - npm's dist-tags, NuGet's listing - calls BumpRevision, which does the
 // same and returns the clock read after the row lock.
 //
 // No SQL leaves the core: a format names packages and versions by their values.

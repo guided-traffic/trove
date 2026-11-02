@@ -200,6 +200,7 @@ checked every earlier decision against them:
 | [ADR-136](#adr-136--the-format-contract-freezes-at-version-1-as-the-smaller-contract-and-grows-by-optional-interfaces) | The format contract freezes at version 1 as the smaller contract and grows by optional interfaces | Decided by the development agent — owner review at the walkthrough |
 | [ADR-137](#adr-137--every-route-that-returns-package-derived-bytes-carries-the-content-headers) | Every route that returns package-derived bytes carries the content headers | Decided by the development agent — owner review at the walkthrough |
 | [ADR-138](#adr-138--what-the-core-knows-of-a-request-reaches-a-format-as-a-typed-value-never-as-an-untyped-slot-or-a-request-copy) | What the core knows of a request reaches a format as a typed value, never as an untyped slot or a request copy | Decided by the development agent — owner review at the walkthrough |
+| [ADR-141](#adr-141--the-format-contract-is-frozen-at-version-1) | The format contract is frozen at version 1 | Decided by the development agent — owner review at the walkthrough |
 
 </details>
 
@@ -5227,6 +5228,71 @@ rule is then removed in the same change that moves TypeScript.
 
 **Spec:** [architecture.md](spec/architecture.md) Q-ARCH-275; `renovate.json`; [releasing.md](developer/releasing.md#renovate).
 
+## The format contract freeze
+
+### ADR-141 · The format contract is frozen at version 1
+
+**Status:** Decided by the development agent — owner review at the walkthrough
+
+**Context.** M3's exit criterion E3.3: at the end of M3 the format contract (R-ARCH-008, R-ARCH-009) has `ContractVersion`
+1, both formats pass the conformance kit, any contract change NuGet needed was applied to npm in the same change, and from
+then on every contract change is an ADR. Until the freeze the contract changed with every format that landed
+(Q-ARCH-213). [ADR-136](#adr-136--the-format-contract-freezes-at-version-1-as-the-smaller-contract-and-grows-by-optional-interfaces)
+fixed the shape of what freezes: the smaller contract, growing by optional interfaces (Q-ARCH-256). NuGet's work then
+added, each in one change with npm: the fill hook and the discovery document as optional interfaces of the remote adapter
+(Q-ARCH-267, Q-ARCH-268; npm needs neither and is untouched); the pass-through query as a method with a refusing default
+in `RemoteBase`, and the plan, withheld-term and read-scope questions and the artifact gate as services of the fetcher and
+the resolver (Q-ARCH-270 to Q-ARCH-272); the artifact prefix as a method of the virtual adapter, which npm implements
+since the same commit; the stored versions as a method of the view adapter (Q-ARCH-253), which kit check 11 runs for both;
+and the typed request facts of [ADR-138](#adr-138--what-the-core-knows-of-a-request-reaches-a-format-as-a-typed-value-never-as-an-untyped-slot-or-a-request-copy).
+The freeze review (WP3.5, 2026-11-02) found no npm or NuGet concept left in a shared type, method or field name: what
+remains are labelled examples in comments. It corrected the comments that still described the contract before the freeze,
+and it found that the tests could not hold the rule "every change is an ADR": only the types the spec blocks declare
+were compared member by member, and the kit let routes and hooks pass checks it never ran.
+
+**Decision.** The format contract is frozen at `ContractVersion` 1: the exported surface of `internal/formats` and of the
+catalog leaf `internal/formats/catalog` that a descriptor embeds, as `internal/formats/testdata/contract.txt` records it.
+From here on:
+- Every change of that surface is an ADR of its own, in the same change as the code, the spec blocks and the regenerated
+  surface file. `TestR_ARCH_025_TheFrozenContractChangesOnlyWithItsSurfaceFile` fails until the file is regenerated, so
+  no change passes unnoticed (Q-ARCH-280).
+- Additive evolution, the rule of Q-ARCH-256 in R-ARCH-025: a behaviour whose presence the core must know, because it
+  changes what an engine does, is an optional interface of `internal/formats` with a field in `Capabilities`, found by
+  `CapabilitiesOf` when the format registers; a behaviour every format answers, whose default is a correct answer for a
+  format without it, is a method with that default in `Base` or `RemoteBase`; a service for formats is a method of
+  `Host`, `PackageWriter`, the stores, `RemoteFetcher` or `Resolver`, which formats call and never implement. None of
+  these changes a registered format, and `ContractVersion` stays 1.
+- A breaking change (a method or field leaves, a signature changes, an argument gains a rule or a result a case) raises
+  `ContractVersion` to 2 in the same change, moves every registered format onto it, and its ADR names what breaks;
+  `Register` refuses a format still written against 1. The narrowed signatures of Q-ARCH-260 (a format names only its
+  own repository, H-329) are the first such change on record.
+- The conformance kit is the evidence: npm and NuGet pass all eleven checks with none skipped, and what a check does not
+  look at is a fixture entry with its reason (`NoRevision`, `NoContent`; Q-ARCH-281). A new behaviour brings its kit check
+  in the change that adds it, and a check added later applies to every format in its change.
+
+**Consequences.** The surface file is a second written form of the contract, but a generated one: it cannot drift, and its
+diff is the checklist of the review. Comments, the spec prose and unexported code change freely. The test does not tell
+an addition from a breaking change; the ADR does, and the version line sits in the same diff. The P1 work that needs a
+seam (retention, the trash can's restore, the NuGet symbol-index job and reindex) and M4b's `VulnerabilityAdapter` each
+bring an ADR. Left as they are across the freeze, and not breaking when they come (Q-ARCH-261, Q-ARCH-262): the
+rendition ETag helper, a typed environment instead of `Bind`, the engine value types and the recorded populate decision
+through a virtual repository. Check 7 does not look at the npm audit's forwarded answer (its own tests do) or at NuGet's
+three P1 routes, and the fixtures say so.
+
+**Alternatives considered.** Freezing by review alone (the rule stays prose); every type in the spec blocks (the spec page
+as an API listing, and still no signal that a change needs an ADR); an API compatibility checker against the last release
+(a new pinned tool that passes additions, which here need an ADR too); raising the version at the freeze (nothing broke:
+npm and NuGet moved with every change before it). Decided in
+[Q-ARCH-280](spec/architecture.md#q-arch-280--how-is-the-frozen-format-contract-guarded-so-that-no-change-passes-without-its-adr)
+and [Q-ARCH-281](spec/architecture.md#q-arch-281--how-does-the-conformance-kit-keep-a-format-from-passing-a-check-it-does-not-run);
+the evolution rule in [Q-ARCH-256](spec/architecture.md#q-arch-256--the-dormant-methods-leave-the-frozen-contract-and-the-contract-grows-by-optional-interfaces).
+
+**Revisit condition:** a second module consumes the contract, or a format is built outside this repository; then the
+surface file gives way to a compatibility checker against the release, and the version becomes an external promise.
+
+**Spec:** [spec/architecture.md](spec/architecture.md) R-ARCH-008, R-ARCH-009, R-ARCH-010, R-ARCH-025;
+[coverage/roadmap.md](coverage/roadmap.md#m3--nuget) E3.3 and WP3.5.
+
 ## Decisions by the development agent
 
 The development agent selected each of these decisions from the options documented in the
@@ -5368,6 +5434,8 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-ARCH-277](spec/architecture.md#q-arch-277--which-legs-run-the-nuget-sets-in-which-jobs-on-which-ports) | Which legs run the NuGet sets, in which jobs, on which ports? | (a) one `e2e-nuget` job per workflow in the shape of `e2e-npm`; ports 8088 to 8090 | — |
 | [Q-ARCH-278](spec/architecture.md#q-arch-278--how-is-the-nuget-fuzz-run-of-the-closing-run-laid-out) | How is the NuGet fuzz run of the closing run laid out? | (a) one leg per fuzz target, six legs of 30 minutes side by side | — |
 | [Q-ARCH-279](spec/architecture.md#q-arch-279--how-are-the-nuget-sdk-pins-and-the-reference-solution-kept-in-step) | How are the NuGet SDK pins and the reference solution kept in step? | (a) one Renovate group on the `mcr.microsoft.com/dotnet/sdk` pins with `versions-check` as the guard; the reference check in the `generate` job | — |
+| [Q-ARCH-280](spec/architecture.md#q-arch-280--how-is-the-frozen-format-contract-guarded-so-that-no-change-passes-without-its-adr) | How is the frozen format contract guarded, so that no change passes without its ADR? | (a) a generated surface file `internal/formats/testdata/contract.txt` of `internal/formats` and its catalog leaf, compared by a test; every exported function and value named in the spec | [ADR-141](#adr-141--the-format-contract-is-frozen-at-version-1) |
+| [Q-ARCH-281](spec/architecture.md#q-arch-281--how-does-the-conformance-kit-keep-a-format-from-passing-a-check-it-does-not-run) | How does the conformance kit keep a format from passing a check it does not run? | (a) reasoned `NoContent` and hook `NoRevision` entries, skip guards for checks 6 and 9, the fill hook under the bounds of check 6, a download addresses a canonical path | [ADR-141](#adr-141--the-format-contract-is-frozen-at-version-1) |
 | [Q-REPO-1](spec/repositories-and-proxy.md#q-repo-1--who-specifies-the-stored-secret-mechanism-iam-045) | Which page specifies the stored-secret mechanism? | (b) architecture.md's R-ARCH-021, for every stored secret; repository secrets only use it | [ADR-032](#adr-032--stored-secrets-are-sealed-under-a-key-ring-the-operator-supplies) |
 | [Q-REPO-2](spec/repositories-and-proxy.md#q-repo-2--lower-bound-of-the-metadata-period) | Lower bound of the metadata period? | (a) `0` is allowed and means revalidate on every request; no minimum. Revisited 2026-10-28, choice unchanged | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving) |
 | [Q-REPO-3](spec/repositories-and-proxy.md#q-repo-3--generic-default-when-the-upstream-removes-a-cached-document) | Generic default when the upstream removes a cached document? | (b) mark the package gone; its documents and cached artifacts answer 404 until the upstream serves it again | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving), [ADR-069](#adr-069--versions-removed-upstream-are-hidden-by-default) |

@@ -17,11 +17,11 @@ import (
 	"github.com/guided-traffic/trove/internal/repository"
 )
 
-// ContractVersion changes whenever a method of the contract changes meaning
-// (R-ARCH-025). It stays 1 until the contract freezes at the end of M3 (E3.3);
-// before the freeze a change is applied to every format in the same change
-// (Q-ARCH-213). A format declares the literal it was written against in
-// [Descriptor.ContractVersion], and Register panics on a mismatch.
+// ContractVersion changes whenever a method of the contract changes meaning or
+// leaves it (R-ARCH-025). The contract is frozen at 1 since the end of M3 (E3.3,
+// ADR-141): an addition keeps the version, and a breaking change raises it and moves
+// every format in the same change. A format declares the literal it was written
+// against in [Descriptor.ContractVersion], and Register panics on a mismatch.
 const ContractVersion = 1
 
 // The types of other packages under the names a format spells them: one type

@@ -153,10 +153,14 @@ func (r *run) classify() {
 			}
 			if r.fx.Canonical != nil {
 				// The example is a protocol path; Classify is asked about the canonical path
-				// it stands for. A route that addresses none is held to its kind on the
-				// repository root, which every format classifies as computed.
+				// it stands for. A route that addresses none (a service index, a search, a
+				// write) has no path to classify, and checks 7 and 9 hold it to its kind; a
+				// download serves a stored item, so its example must address one.
 				canon, ok := r.fx.Canonical(ex)
 				if !ok {
+					if rt.Kind == formats.Download {
+						r.failf("route %q is a download and its example %q addresses no canonical path", rt.Name, ex)
+					}
 					continue
 				}
 				if clean, err = repository.CleanPath(canon); err != nil {
@@ -325,7 +329,8 @@ func less(a, b formats.MemberDocument) bool {
 }
 
 // inspect is check 6: every crafted input is rejected with 413 or 422 within
-// five seconds, and the heap stays within 512 MiB of its baseline.
+// five seconds, and the heap stays within 512 MiB of its baseline. A format whose
+// remote adapter inspects fills runs the inputs its hook takes through it as well.
 func (r *run) inspect() {
 	if len(r.fx.Inspect) == 0 {
 		r.failf("the fixture has no crafted Inspect case and the check is not skipped")
@@ -342,7 +347,10 @@ func (r *run) inspect() {
 			continue
 		}
 		in := formats.InspectInput{Path: clean, MediaType: c.MediaType, Body: inputSpool{c.Input}, Limits: lim}
-		m := measure(r.f, in, lim)
+		m := measure(func(ctx context.Context) error {
+			_, e := r.f.Inspect(ctx, in)
+			return e
+		}, lim)
 		switch e, ok := errs.As(m.err); {
 		case m.elapsed > inspectDeadline:
 			r.failf("inspect case %q: Inspect took %v, the bound is %v", c.Name, m.elapsed.Round(time.Millisecond), inspectDeadline)
@@ -354,6 +362,31 @@ func (r *run) inspect() {
 		if m.peak > heapBudget {
 			r.failf("inspect case %q: the heap grew by %d MiB, the bound is %d MiB", c.Name, m.peak>>20, heapBudget>>20)
 		}
+		if fill := formats.CapabilitiesOf(r.f).Remote.Fill; fill != nil && fill.InspectsFill(clean) {
+			r.inspectFill(fill, c.Name, in, lim)
+		}
+	}
+}
+
+// inspectFill holds the fill hook of a remote adapter (formats.FillInspector) to the bounds of
+// R-ARCH-028 on the same crafted input: it reads what an upstream sent, which is as untrusted as an
+// upload (Q-ARCH-267). What it answers is the format's - NuGet serves and caches an archive it
+// cannot read as it came - so the check asks that it returns in time, within the heap budget and
+// without a panic (Q-ARCH-281).
+func (r *run) inspectFill(fill formats.FillInspector, name string, in formats.InspectInput, lim untrusted.Limits) {
+	rc := formats.RemoteContext{Repo: r.host(formats.Remote).Repo()}
+	m := measure(func(ctx context.Context) error {
+		_, e := fill.InspectFill(ctx, rc, in.Path, in.Body)
+		return e
+	}, lim)
+	switch {
+	case m.elapsed > inspectDeadline:
+		r.failf("inspect case %q: InspectFill took %v, the bound is %v", name, m.elapsed.Round(time.Millisecond), inspectDeadline)
+	case errors.Is(m.err, errPanicked):
+		r.failf("inspect case %q: InspectFill %s", name, strings.TrimPrefix(m.err.Error(), "inspect "))
+	}
+	if m.peak > heapBudget {
+		r.failf("inspect case %q: InspectFill grew the heap by %d MiB, the bound is %d MiB", name, m.peak>>20, heapBudget>>20)
 	}
 }
 
@@ -365,9 +398,13 @@ type measurement struct {
 	peak uint64
 }
 
-// measure runs Inspect on the input. A run that is not done after the deadline is
+// errPanicked marks the error of a measured call that panicked.
+var errPanicked = errors.New("panicked")
+
+// measure runs one reading of a crafted input - Inspect, or the fill hook of a remote
+// adapter - under the input's limits. A run that is not done after the deadline is
 // cancelled and reported with the time it took until it stopped.
-func measure(f formats.Format, in formats.InspectInput, lim untrusted.Limits) measurement {
+func measure(call func(ctx context.Context) error, lim untrusted.Limits) measurement {
 	runtime.GC()
 	base := heapBytes()
 	ctx, cancel := lim.Context(context.Background())
@@ -396,11 +433,10 @@ func measure(f formats.Format, in formats.InspectInput, lim untrusted.Limits) me
 	go func() {
 		defer func() {
 			if p := recover(); p != nil {
-				done <- fmt.Errorf("inspect panicked: %v", p)
+				done <- fmt.Errorf("inspect %w: %v", errPanicked, p)
 			}
 		}()
-		_, e := f.Inspect(ctx, in)
-		done <- e
+		done <- call(ctx)
 	}()
 	var m measurement
 	select {
@@ -468,7 +504,9 @@ func (r *run) headers() {
 		r.failf("%s: the format has no routes and the check is not skipped (Skip[%d] needs a reason)", CheckHeaders, CheckHeaders)
 		return
 	}
-	served := map[string]bool{}
+	// served are the routes a content case reached, checked those whose headers a case
+	// checked: a case that expects a refusal checks none (an error is no content).
+	served, checked := map[string]bool{}, map[string]bool{}
 	for _, c := range r.fx.Content {
 		for _, sameOrigin := range []bool{false, true} {
 			h := r.host("")
@@ -506,17 +544,34 @@ func (r *run) headers() {
 			}
 			resp := h.ServeRequest(rq, sameOrigin)
 			r.checkContent(c, rq, resp, sameOrigin)
+			if c.Status < http.StatusBadRequest {
+				checked[rq.Route.Name] = true
+			}
 			for _, v := range h.Violations() {
 				r.failf("content case %q: %s", c.Name, v)
 			}
 		}
 	}
 	for _, rt := range routes {
-		switch rt.Kind {
-		case formats.Download, formats.Metadata, formats.Computed, formats.Volatile:
-			if !served[rt.Name] {
-				r.failf("route %q (%s) has no content case", rt.Name, rt.Kind)
-			}
+		if !rt.Kind.WrapsContent() {
+			continue
+		}
+		reason, listed := r.fx.NoContent[rt.Name]
+		switch {
+		case !served[rt.Name]:
+			r.failf("route %q (%s) has no content case", rt.Name, rt.Kind)
+		case listed && reason == "":
+			r.failf("route %q is listed in NoContent without a reason", rt.Name)
+		case listed && checked[rt.Name]:
+			r.failf("route %q is listed in NoContent and a content case serves it: its headers are checked, the entry goes", rt.Name)
+		case !listed && !checked[rt.Name]:
+			r.failf("route %q (%s) has only content cases that refuse, so its content headers are never checked: "+
+				"give it a case it serves, or list it in NoContent with the reason", rt.Name, rt.Kind)
+		}
+	}
+	for n := range r.fx.NoContent {
+		if !slices.ContainsFunc(routes, func(rt formats.Route) bool { return rt.Name == n && rt.Kind.WrapsContent() }) {
+			r.failf("NoContent names %q, which is no Download, Metadata, Computed or Volatile route of the format", n)
 		}
 	}
 }
@@ -669,13 +724,16 @@ func (r *run) revision() {
 		}
 		before := h.RevSeq(c.Package)
 		h.mu.Lock()
-		h.routes = nil
+		h.routes, h.hooks = nil, nil
 		h.mu.Unlock()
 		if err := c.Do(context.Background(), h); err != nil {
 			r.failf("change %q fails: %v", c.Name, err)
 			continue
 		}
 		for _, n := range h.RoutesServed() {
+			covered[n] = true
+		}
+		for _, n := range h.HooksRun() {
 			covered[n] = true
 		}
 		if after := h.RevSeq(c.Package); after <= before {
@@ -701,11 +759,46 @@ func (r *run) revision() {
 			}
 		}
 	}
-	for n := range r.fx.NoRevision {
-		if !names[n] {
-			r.failf("NoRevision names the route %q, which the format does not have", n)
+	hooks := r.hooks()
+	for _, hook := range hooks {
+		if reason, ok := r.fx.NoRevision[hook]; ok {
+			if reason == "" {
+				r.failf("the storage hook %s is listed in NoRevision without a reason", hook)
+			}
+			continue
+		}
+		if !covered[hook] {
+			r.failf("the storage hook %s ran in no change case: check 9 needs a change that drives it, or a NoRevision entry with the reason", hook)
 		}
 	}
+	for n := range r.fx.NoRevision {
+		if !names[n] && !slices.Contains(hooks, n) {
+			r.failf("NoRevision names the route or hook %q, which the format does not have", n)
+		}
+	}
+}
+
+// hooks are the storage hooks check 9 drives: the commit and the removal hook of a format
+// with package rows, and the restore hook of a format that has one (formats.ItemsRestorer).
+func (r *run) hooks() []string {
+	var out []string
+	if r.d.PackageNames {
+		out = append(out, "OnCommit", "OnItemsRemoved")
+	}
+	if formats.CapabilitiesOf(r.f).ItemsRestorer != nil {
+		out = append(out, "OnItemsRestored")
+	}
+	return out
+}
+
+// hasRoute reports whether the format has a route of the kind.
+func (r *run) hasRoute(kind formats.RouteKind) bool {
+	for _, rt := range r.f.Routes() {
+		if rt.Kind == kind {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *run) hasWriteRoutes() bool {

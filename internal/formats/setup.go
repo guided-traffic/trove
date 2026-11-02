@@ -3,7 +3,7 @@ package formats
 // Client is a native client of a format and the majors tested against it
 // (FMT-002, FMT-003).
 type Client struct {
-	// ID is "npm", "pnpm", "yarn", "yarn-classic".
+	// ID is "npm", "pnpm", "yarn", "yarn-classic", "dotnet", "nuget".
 	ID          string
 	DisplayName string
 	// Versions are the tested majors (R-NPM-045).
