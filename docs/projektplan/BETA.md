@@ -222,8 +222,15 @@ Details: [roadmap M3](../coverage/roadmap.md#m3--nuget) · spec: [formats/nuget.
 
 Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md)
 
-- ⚪ GitLab as trusted issuer: discovery, signing keys, key rotation
-- ⚪ Token exchange: GitLab ID token in, short-lived CI token (`trv_cit_`) out
+- ⚪ GitLab as trusted issuer: discovery, signing keys, key rotation; several GitLab instances side by side (R-CI-005)
+- ⚪ GitLab issuers declared in the Helm values (`config.ci.issuers`), applied by `trove migrate`, shown in trove and
+  read-only there ([Q-CI-16](../spec/gitlab-ci-oidc.md#q-ci-16--ci-issuers-provisioned-through-the-helm-values-are-read-only-in-trove), owner 2026-11-02)
+- ⚪ Token exchange: GitLab ID token (`id_tokens:` with trove as audience) in, short-lived CI token (`trv_cit_`) out;
+  `CI_JOB_TOKEN` is not accepted (owner 2026-11-02; its fallback stays P2, R-CI-022)
+- ⚪ Audit of the exchange: which pipeline (instance, group, project, branch, pipeline, job) signed in when, as issuance
+  records with a tab per issuer in the admin UI (R-CI-020)
+- ⚪ Admin manual: a runbook page for GitLab CI (register an instance in the Helm values, the `id_tokens:` block, a
+  mapping, verify with the dry run, read the issuances, troubleshoot refusals) (owner 2026-11-02)
 - ⚪ Identity mappings: conditions on project, branch, protected ref, environment; templated grants
 - ⚪ Package ownership: a CI project writes only the packages it owns, reads what it is granted
 - ⚪ Admin UI: CI issuers, mappings, dry run and claim tester

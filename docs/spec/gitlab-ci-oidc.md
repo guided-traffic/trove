@@ -165,6 +165,33 @@ R-CI-005 with exactly the claims that rule exists to exclude. For an issuer URL 
 construction (`https://gitlab.com`, `https://token.actions.githubusercontent.com`),
 `public_issuer: false` answers 422 `public_issuer_required`.
 
+**Issuers from the system configuration (owner, [Q-CI-16](#q-ci-16--ci-issuers-provisioned-through-the-helm-values-are-read-only-in-trove)).**
+CI issuers can also be declared in the system configuration file under `ci.issuers`, which the chart renders from its
+`config` values, so that a GitOps repository provisions them. Each entry carries the fields of the table above in the
+configuration's snake_case, with the same validation and defaults; `name`, `kind` and `issuer` are required.
+
+```yaml
+ci:
+  issuers:
+    - name: gitlab-main                        # example
+      kind: gitlab
+      issuer: https://gitlab.example.com       # example
+      public_issuer: false                     # example: an instance without open sign-up
+      allowed_audiences: ["https://packages.example.com"]   # example; without it the default audiences above
+      ca_bundle_ref: file:/var/run/secrets/gitlab-ca/ca.crt  # example: an instance behind a private CA
+```
+
+- The declared issuers are applied by `trove migrate`, the step the chart runs as its pre-install and pre-upgrade Job,
+  in one transaction: an issuer is created or replaced by `name` with `source = 'configuration'`. No `web` or `worker`
+  replica writes them, so replicas of two releases during a rolling update never overwrite each other.
+- A configuration issuer whose name is also an API-created issuer, or whose `issuer` URL another issuer already has,
+  stops `trove migrate` with an error that names both; nothing is applied.
+- An issuer that is no longer declared is disabled (`enabled = false`) and keeps `source = 'configuration'`, so its
+  mappings and issuance records stay; the API shows `removedFromConfiguration: true`, and only then may an administrator
+  delete it.
+- Mappings of a configuration issuer are managed through the API and the UI as for any issuer (R-CI-019); configuration
+  documents (P1, below) are the declarative way for mappings.
+
 **Data model**
 
 ```sql
@@ -192,6 +219,8 @@ CREATE TABLE ci_issuers (
   job_token_fallback         jsonb NOT NULL DEFAULT '{"enabled": false}',
   enabled                    boolean NOT NULL DEFAULT true,
   description                text NOT NULL DEFAULT '',
+  source                     text NOT NULL DEFAULT 'api' CHECK (source IN ('api', 'configuration')),  -- Q-CI-16
+  removed_from_configuration boolean NOT NULL DEFAULT false,
   version                    bigint NOT NULL DEFAULT 1,
   mappings_version           bigint NOT NULL DEFAULT 0,     -- R-CI-009: bumped by every write of one of its mappings
   created_at                 timestamptz NOT NULL DEFAULT now(),
@@ -210,6 +239,9 @@ taken before a restore could match a different record of the same number afterwa
 **Acceptance criteria**
 
 - Creating a second CI issuer with `issuer = https://gitlab.com` fails with 409.
+- `ci.issuers` declares `gitlab-main`; after `trove migrate`, `GET /api/v1/ci/issuers/gitlab-main` answers 200 with
+  `source: "configuration"`, and an exchange with an ID token of that instance works once a mapping exists. Removed from
+  `ci.issuers`, the next `trove migrate` disables it; exchanges answer `issuer_disabled`, and its issuance records stay.
 - Creating a CI issuer with `allowed_algorithms: ["HS256"]` or `["none"]` fails with 422.
 - Creating a CI issuer with `issuer = http://gitlab.example.com` fails with 422.
 - Creating a `gitlab` CI issuer with `pin_claims: ["project_path"]` fails with 422
@@ -222,7 +254,10 @@ taken before a restore could match a different record of the same number afterwa
 ### R-CI-002 · CI issuer management API
 Priority: **MVP** · Covers: CIOIDC-005, ADMAPI-028
 
-All operations require the system administrator role (INV-9). Pagination and the error envelope
+All operations require the system administrator role (INV-9). An issuer with `source: "configuration"` (R-CI-001,
+Q-CI-16) is shown like any other, with its `source`, and is read-only: `PUT`, `DELETE`, enabling and disabling answer 409
+`issuer_managed_by_configuration`, and the UI shows it without edit controls and names the configuration as its source.
+Once it is `removedFromConfiguration`, `DELETE` is allowed. Its mappings stay writable. Pagination and the error envelope
 follow [api-and-ui.md](api-and-ui.md): errors are problem details (R-API-009), and the reason names
 this page gives for management operations (`pin_required`, `discovery_unreachable`, …) are their
 `code`. Optimistic concurrency follows R-API-012: GET returns `ETag: "<version>"`, PUT requires
@@ -3318,6 +3353,27 @@ criteria. R-CI-002: every issuer write notifies the change area `ci_mappings`. R
 acceptance criterion no longer relies on `NOTIFY`. R-CI-020: the metric
 `trove_ci_mapping_set_stale_total`. Cross-page: [backup-and-restore.md](backup-and-restore.md)
 R-BAK-022 (the four CI revision columns in the initial registry).
+
+### Q-CI-16 · CI issuers provisioned through the Helm values are read-only in trove
+
+Status: **Decided by the owner on 2026-11-02** — option (a).
+
+Context: the owner provisions the installation from a GitOps repository and wants GitLab instances added as CI issuers
+there: visible in trove, changeable only in Git. R-CI-001 made issuers objects of the management API, and configuration
+documents (R-OPS-029 to R-OPS-031), the general declarative way for objects held in the database, are P1.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `ci.issuers` in the system configuration, read-only in the API and the UI (chosen) | The chart renders the issuers from its `config` values; `trove migrate` applies them; API and UI show them with source "configuration" and refuse changes | Small; the same pattern as the login providers of `auth.oidc.providers`; GitOps for what the owner named | Mappings stay objects of the API until configuration documents ship |
+| (b) Configuration documents pulled forward for `ciIssuers` and `ciMappings` | The general mechanism of R-OPS-029, locked managed objects | One declarative path for issuers and mappings, later for other objects | Diff and apply, pruning, ownership and locking in phase 5 |
+
+**Choice:** (a), the owner's decision; the development agent had recommended (b) because of the mappings.
+
+**Rationale:** the owner's decision. The development agent records no revisit condition; configuration documents (P1)
+remain the later way to declare mappings, and they never declare an issuer that `ci.issuers` declares.
+
+**Applied in the spec:** R-CI-001 (the configuration section, `trove migrate`, removal, the columns `source` and
+`removed_from_configuration`, two acceptance criteria), R-CI-002 (read-only, 409 `issuer_managed_by_configuration`).
 
 ## What this does not cover
 
