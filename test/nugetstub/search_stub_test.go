@@ -46,3 +46,47 @@ func TestR_NUGET_016_TheStubSearchCarriesDownloadCountsOwnersAndVerified(t *test
 		t.Errorf("searches %d, want 1", n)
 	}
 }
+
+// TestR_NUGET_016_TheStubSearchCarriesTheDeprecationAndAdvisoriesOfTheVersionItNames: a search
+// result carries the deprecation and the vulnerabilities of the version it names, in nuget.org's
+// JSON-LD form with the upstream's @id and @type, one advisory a file:// address, so a forwarded
+// search must clean them (Q-NUGET-85).
+func TestR_NUGET_016_TheStubSearchCarriesTheDeprecationAndAdvisoriesOfTheVersionItNames(t *testing.T) {
+	f := newFixture(t, Config{})
+	var res struct {
+		Data []struct {
+			ID          string `json:"id"`
+			Deprecation struct {
+				ID        string   `json:"@id"`
+				Reasons   []string `json:"reasons"`
+				Alternate struct {
+					ID      string `json:"@id"`
+					Package string `json:"id"`
+				} `json:"alternatePackage"`
+			} `json:"deprecation"`
+			Vulnerabilities []struct {
+				ID          string `json:"@id"`
+				AdvisoryURL string `json:"advisoryUrl"`
+			} `json:"vulnerabilities"`
+		} `json:"data"`
+	}
+	f.getJSON(f.resource("SearchQueryService")+"?q="+exactIDField+"fabrikam.legacy", &res)
+	if len(res.Data) != 1 || res.Data[0].ID != LegacyID {
+		t.Fatalf("results %+v", res.Data)
+	}
+	d := res.Data[0]
+	if d.Deprecation.ID == "" || d.Deprecation.Alternate.ID == "" || d.Deprecation.Alternate.Package != NewtonsoftID || !slices.Equal(d.Deprecation.Reasons, []string{"Legacy"}) {
+		t.Errorf("deprecation %+v", d.Deprecation)
+	}
+	if len(d.Vulnerabilities) != 2 || d.Vulnerabilities[0].ID == "" || d.Vulnerabilities[0].AdvisoryURL != Advisory || d.Vulnerabilities[1].AdvisoryURL != LocalAdvisory {
+		t.Errorf("vulnerabilities %+v", d.Vulnerabilities)
+	}
+	// A result whose version carries neither has neither member.
+	var plain struct {
+		Data []map[string]any `json:"data"`
+	}
+	f.getJSON(f.resource("SearchQueryService")+"?q="+exactIDField+"newtonsoft.json", &plain)
+	if len(plain.Data) != 1 || plain.Data[0]["deprecation"] != nil || plain.Data[0]["vulnerabilities"] != nil {
+		t.Errorf("Newtonsoft.Json 13.0.3: %+v", plain.Data)
+	}
+}

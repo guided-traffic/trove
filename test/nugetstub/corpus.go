@@ -44,10 +44,12 @@ type Vulnerability struct {
 }
 
 // Advisory is the advisory the corpus records against NewtonsoftID 13.0.1, and the alternate
-// package its deprecation names.
+// package its deprecation names. LocalAdvisory is an advisory address that is no web link, which
+// a remote drops (Q-NUGET-85); LegacyID's version carries both.
 const (
 	Advisory          = "https://github.com/advisories/GHSA-5crp-9r3c-p9vr"
 	DeprecatedVersion = "13.0.1"
+	LocalAdvisory     = "file://advisories.fabrikam.test/share/GHSA-0000-0000-0000"
 )
 
 // Package is one package ID with its versions in ascending order.
@@ -122,6 +124,9 @@ const (
 	UtilID = "Contoso.Util"
 	// OtherID is the package a wrong-content mode serves in place of the requested one.
 	OtherID = "Other.Pkg"
+	// LegacyID has one version, deprecated with an alternate package and with two advisories, one
+	// of them a file:// address, so its search result carries what a forwarded search cleans.
+	LegacyID = "Fabrikam.Legacy"
 )
 
 var (
@@ -133,7 +138,7 @@ var (
 
 // Default returns the deterministic package set: 180 packages in a dependency graph (each depends
 // on two or three packages that come before it in the order, so the graph has no cycle and every
-// version of a package has the same dependencies), the ManyVersionsID package and three named
+// version of a package has the same dependencies), the ManyVersionsID package and four named
 // packages. Every call builds the same set.
 func Default() *Corpus {
 	c := &Corpus{packages: map[string]*Package{}}
@@ -197,6 +202,14 @@ func Default() *Corpus {
 		Reasons: []string{"Legacy", "CriticalBugs"}, Message: "Use 13.0.3 or later.", AlternateID: NewtonsoftID, AlternateRange: "[13.0.3, )",
 	}
 	nj.Versions[0].Vulnerabilities = []Vulnerability{{AdvisoryURL: Advisory, Severity: 2}}
+	// The latest version of LegacyID is deprecated, so a search result shows it (as nuget.org's
+	// show the deprecation and the advisories of the version they name).
+	simple(LegacyID, "Synthetic package whose only version is deprecated", "1.0.0")
+	legacy := c.packages[strings.ToLower(LegacyID)]
+	legacy.Versions[0].Deprecation = &Deprecation{
+		Reasons: []string{"Legacy"}, Message: "Use Newtonsoft.Json.", AlternateID: NewtonsoftID, AlternateRange: "[13.0.3, )",
+	}
+	legacy.Versions[0].Vulnerabilities = []Vulnerability{{AdvisoryURL: Advisory, Severity: 3}, {AdvisoryURL: LocalAdvisory, Severity: 1}}
 	return c
 }
 

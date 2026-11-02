@@ -348,3 +348,33 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 		time.Sleep(50 * time.Millisecond)
 	}
 }
+
+// TestR_NUGET_016_AForwardedResultCarriesNoAddressOfTheUpstreamInItsAdvisories: the test upstream's
+// result for Fabrikam.Legacy carries a deprecation and two advisories in nuget.org's JSON-LD form,
+// one advisory a file:// address. Through the remote and through nuget-all the result keeps the
+// reasons, the alternate package and the severities, keeps the https advisory as a link for people,
+// and drops every @id, @type and the file:// address (Q-NUGET-85).
+func TestR_NUGET_016_AForwardedResultCarriesNoAddressOfTheUpstreamInItsAdvisories(t *testing.T) {
+	e := newForwardEnv(t)
+	a := e.start(1)[0]
+	for _, repo := range []string{rRemote, fAll} {
+		ans := e.st.Do(a, http.MethodGet, "/api/nuget/"+repo+"/v3/search?"+q("packageid:fabrikam.legacy"), e.tokAdmin, nil)
+		if ans.Status != http.StatusOK {
+			t.Fatalf("%s: %d %s", repo, ans.Status, ans.Body)
+		}
+		body := string(ans.Body)
+		if !strings.Contains(body, `"id":"`+nugetstub.LegacyID+`"`) {
+			t.Fatalf("%s lists no %s: %s", repo, nugetstub.LegacyID, body)
+		}
+		for _, bad := range []string{"file://", `"@type":"deprecation"`, `"@type":"alternatePackage"`, `"@type":"Vulnerability"`, "#deprecation", "#vulnerability"} {
+			if strings.Contains(body, bad) {
+				t.Errorf("%s: the result carries %q: %s", repo, bad, body)
+			}
+		}
+		wantVuln := `"vulnerabilities":[{"advisoryUrl":"` + nugetstub.Advisory + `","severity":"3"},{"severity":"1"}]`
+		wantDep := `"deprecation":{"alternatePackage":{"id":"` + nugetstub.NewtonsoftID + `","range":"[13.0.3, )"},"message":"Use Newtonsoft.Json.","reasons":["Legacy"]}`
+		if !strings.Contains(body, wantVuln) || !strings.Contains(body, wantDep) {
+			t.Errorf("%s: want %s and %s in %s", repo, wantDep, wantVuln, body)
+		}
+	}
+}

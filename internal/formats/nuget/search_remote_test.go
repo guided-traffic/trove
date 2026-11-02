@@ -28,7 +28,8 @@ import (
 const feedOfOrg = "https://trove.test/api/nuget/nuget-org/v3/"
 
 // upstreamAnswer is an upstream's answer to a search: three results, the first with every member
-// a forwarded search keeps, the third with a SemVer 2.0.0 version that carries build metadata.
+// a forwarded search keeps (its deprecation and vulnerabilities in nuget.org's JSON-LD form, one
+// advisory a file:// address), the third with a SemVer 2.0.0 version that carries build metadata.
 const upstreamAnswer = `{"totalHits":7,"data":[
  {"@id":"https://up.test/reg/newtonsoft.json/index.json","@type":"Package","registration":"https://up.test/reg/newtonsoft.json/index.json",
   "id":"Newtonsoft.Json","version":"13.0.3","description":"Json.NET is a JSON framework","summary":"","title":"Json.NET",
@@ -37,7 +38,10 @@ const upstreamAnswer = `{"totalHits":7,"data":[
   "packageTypes":[{"name":"Dependency"}],
   "versions":[{"version":"13.0.1","downloads":1000,"@id":"https://up.test/reg/newtonsoft.json/13.0.1.json"},
               {"version":"13.0.3","downloads":3000,"@id":"https://up.test/reg/newtonsoft.json/13.0.3.json"}],
-  "deprecation":{"reasons":["Legacy"]},"vulnerabilities":[{"advisoryUrl":"https://advisories.test/GHSA-1","severity":"2"}]},
+  "deprecation":{"@id":"https://up.test/catalog/newtonsoft.json.13.0.3.json#deprecation","@type":"deprecation","reasons":["Legacy"],
+    "alternatePackage":{"@id":"https://up.test/reg/system.text.json/index.json","@type":"alternatePackage","id":"System.Text.Json","range":"[8.0.0, )"}},
+  "vulnerabilities":[{"@id":"https://up.test/vuln/1","@type":"Vulnerability","advisoryUrl":"https://advisories.test/GHSA-1","severity":"2"},
+                     {"@id":"https://up.test/vuln/2","advisoryUrl":"file://advisories.test/share/GHSA-2","severity":"1"}]},
  {"id":"Contoso.Secret","version":"1.0.0","versions":[{"version":"1.0.0","downloads":5}],"totalDownloads":5},
  {"id":"Semver.Two","version":"2.0.0-beta.1+build.7","versions":[{"version":"2.0.0-beta.1+build.7","downloads":7}],"totalDownloads":7}
 ]}`
@@ -195,8 +199,12 @@ func TestR_NUGET_016_AForwardedSearchIsRewrittenIntoTheRemoteAndKeepsTheUpstream
 	if !slices.Equal(n.Owners, []string{"jamesnk", "newtonsoft"}) || n.Verified == nil || !*n.Verified || n.TotalDownloads != 5000000 {
 		t.Errorf("owners %v, verified %v, totalDownloads %d", n.Owners, n.Verified, n.TotalDownloads)
 	}
-	if string(n.Deprecation) != `{"reasons":["Legacy"]}` || !strings.Contains(string(n.Vulnerabilities), "GHSA-1") {
-		t.Errorf("deprecation %s, vulnerabilities %s", n.Deprecation, n.Vulnerabilities)
+	// The deprecation and the vulnerabilities come without the upstream's addresses (Q-NUGET-85).
+	if want := `{"alternatePackage":{"id":"System.Text.Json","range":"[8.0.0, )"},"reasons":["Legacy"]}`; string(n.Deprecation) != want {
+		t.Errorf("deprecation %s, want %s", n.Deprecation, want)
+	}
+	if want := `[{"advisoryUrl":"https://advisories.test/GHSA-1","severity":"2"},{"severity":"1"}]`; string(n.Vulnerabilities) != want {
+		t.Errorf("vulnerabilities %s, want %s", n.Vulnerabilities, want)
 	}
 	s2 := d.Data[2]
 	if s2.Version != "2.0.0-beta.1+build.7" || s2.Versions[0].ID != feedOfOrg+"registration-semver2/semver.two/2.0.0-beta.1.json" {

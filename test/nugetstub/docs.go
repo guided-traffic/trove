@@ -182,6 +182,13 @@ func (s *Server) catalogEntry(b bases, hive string, p *Package, v Version, badDi
 		}
 		entry["dependencyGroups"] = []map[string]any{{"@type": "PackageDependencyGroup", "targetFramework": ".NETStandard2.0", "dependencies": deps}}
 	}
+	addAdvisories(entry, b, hive, p, v)
+	return entry
+}
+
+// addAdvisories sets the deprecation and the vulnerabilities of a version on a catalog entry or a
+// search result, in the JSON-LD form nuget.org writes: each with an @id in the upstream's hive.
+func addAdvisories(entry map[string]any, b bases, hive string, p *Package, v Version) {
 	if d := v.Deprecation; d != nil {
 		dep := map[string]any{
 			"@id": leafURL(b, hive, p, v.Version) + "#deprecation", "@type": "deprecation", "reasons": d.Reasons, "message": d.Message,
@@ -203,7 +210,6 @@ func (s *Server) catalogEntry(b bases, hive string, p *Package, v Version, badDi
 		}
 		entry["vulnerabilities"] = list
 	}
-	return entry
 }
 
 func (s *Server) leafInPage(b bases, hive string, p *Package, v Version, badDigest bool) map[string]any {
@@ -351,23 +357,26 @@ func VersionDownloads(i int) int64 { return int64(i+1) * 1000 }
 
 func searchHit(b bases, p *Package, prerelease bool) map[string]any {
 	var versions []map[string]any
-	latest := ""
+	var latest *Version
 	var total int64
 	for i, v := range p.Versions {
 		total += VersionDownloads(i)
 		if !v.Listed || (!prerelease && isPrerelease(v.Version)) {
 			continue
 		}
-		latest = v.Version
+		latest = &p.Versions[i]
 		versions = append(versions, map[string]any{"version": v.Version, "downloads": VersionDownloads(i), "@id": leafURL(b, registrationGz, p, v.Version)})
 	}
-	if latest == "" {
+	if latest == nil {
 		return nil
 	}
-	return map[string]any{
+	hit := map[string]any{
 		"@id": indexURL(b, registrationGz, p), "@type": "Package", "registration": indexURL(b, registrationGz, p),
-		"id": p.ID, "version": latest, "description": p.Description, "summary": "", "title": p.ID,
+		"id": p.ID, "version": latest.Version, "description": p.Description, "summary": "", "title": p.ID,
 		"authors": []string{"Contoso"}, "owners": []string{SearchOwner}, "tags": []string{}, "totalDownloads": total, "verified": true,
 		"packageTypes": []map[string]string{{"name": "Dependency"}}, "versions": versions,
 	}
+	// The deprecation and the advisories of the version the result names, as nuget.org's.
+	addAdvisories(hit, b, registrationGz, p, *latest)
+	return hit
 }

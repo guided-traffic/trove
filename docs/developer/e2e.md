@@ -1122,7 +1122,7 @@ A registration index has pages of 64 leaves. Below 128 versions the pages are in
 from 128 they are listed without `items` and fetched at `…/page/{lower}/{upper}.json`, which is what the package
 `Contoso.Versions` (200 versions, four pages) is for. The other packages: 180 `Contoso.<Area>.<Name>` packages in a
 dependency graph (each depends on two or three earlier ones, with minimum-version ranges of `1.0.0`; every version of a
-package has the same dependencies), `Newtonsoft.Json` 13.0.1 and 13.0.3, `Contoso.Util` 2.0.0 and 2.1.0, and `Other.Pkg` 1.0.0.
+package has the same dependencies), `Newtonsoft.Json` 13.0.1 and 13.0.3, `Contoso.Util` 2.0.0 and 2.1.0, `Other.Pkg` 1.0.0 and `Fabrikam.Legacy` 1.0.0.
 Catalog entries carry `packageHash` (SHA-512, base64), `packageHashAlgorithm` and `packageSize`.
 
 ### Counting and switches
@@ -1147,7 +1147,10 @@ path more than twice and no `.nupkg` path more than once, over every host.
 
 The corpus marks `Newtonsoft.Json` 13.0.1 deprecated (reasons, message, `Newtonsoft.Json` `[13.0.3, )` as the alternate)
 and records an advisory against it (`advisoryUrl` on github.com, severity 2), in the JSON-LD form nuget.org writes, with
-an `@id` and `@type` on the upstream for each, so the pass-through of Q-NUGET-85 is in every run.
+an `@id` and `@type` on the upstream for each, so the pass-through of Q-NUGET-85 is in every run. `Fabrikam.Legacy` 1.0.0, the
+latest version of its ID, is deprecated in the same form and carries two advisories, one of them a `file://` address; a search
+result carries the deprecation and the advisories of the version it names, as nuget.org's do, so the forwarded search cleans
+them in every run as well.
 
 The control API (`-control-token-file`, bearer token) has `GET /-/stub/counts`, `POST /-/stub/reset[?all=true]`,
 `GET`/`POST /-/stub/mode`, and `POST /-/stub/publish|drop|restore|unlist|relist` with `{"name","version"}`
