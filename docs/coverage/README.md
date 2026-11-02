@@ -17,7 +17,7 @@ regenerated.
 <!-- coverage-gen:begin headline -->
 | Number | Value | Kind |
 |---|---|---|
-| **Implemented** | **12.7%** (285 of 2,239 catalog features) | measured from passing tests that name requirements (Q-ROAD-4) |
+| **Implemented** | **12.8%** (286 of 2,239 catalog features) | measured from passing tests that name requirements (Q-ROAD-4) |
 | **MVP features covered by spec requirements** | **100%** (384 of 384) | measured from `Covers:` lines |
 | P1 features covered by spec requirements | 56.7% (293 of 517) | measured from `Covers:` lines |
 | In-scope features covered (MVP, P1, P2, Later) | 32.3% (700 of 2,167) | measured from `Covers:` lines |
@@ -51,12 +51,12 @@ see [Honesty notes](#honesty-notes).
 <!-- coverage-gen:begin priority -->
 | Priority | Features | Specified | Open | Specified share | Covered by an MVP requirement | Implemented |
 |---|---:|---:|---:|---:|---:|---:|
-| **MVP** | 384 | 384 | 0 | 100% | 384 | 227 |
+| **MVP** | 384 | 384 | 0 | 100% | 384 | 228 |
 | **P1** | 517 | 293 | 224 | 56.7% | 64 | 50 |
 | **P2** | 892 | 23 | 869 | 2.6% | 15 | 8 |
 | **Later** | 374 | 0 | 374 | 0% | 0 | 0 |
 | **Out of scope** | 72 | 0 | 72 | 0% | 0 | 0 |
-| **Total** | 2,239 | 700 | 1,539 | 31.3% | 463 | 285 |
+| **Total** | 2,239 | 700 | 1,539 | 31.3% | 463 | 286 |
 <!-- coverage-gen:end priority -->
 
 The column *Covered by an MVP requirement* shows where the spec pulls work forward: 55 P1 features
@@ -189,7 +189,7 @@ table.
 |---|---|---|---:|---|
 | **npm-only team** | 205 of 205 specified, 0 open (100%) | 319 of 367 specified, 48 open (86.9%) | 162 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
 | **.NET team** | 203 of 203 specified, 0 open (100%) | 309 of 357 specified, 48 open (86.6%) | 163 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
-| **platform/ops team** | 263 of 263 specified, 0 open (100%) | 445 of 465 specified, 20 open (95.7%) | 174 | Repositories 9; Operations, monitoring and configuration 4; High availability and deployment 3 |
+| **platform/ops team** | 263 of 263 specified, 0 open (100%) | 445 of 465 specified, 20 open (95.7%) | 175 | Repositories 9; Operations, monitoring and configuration 4; High availability and deployment 3 |
 
 Pages counted per audience:
 
