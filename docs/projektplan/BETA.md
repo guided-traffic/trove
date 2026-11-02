@@ -276,6 +276,10 @@ to denial-of-service attempts.
 - ⚪ What a caller reads (owner, 2026-11-02): there is no release step of its own. The right is the token's: a caller reads
   through the Bastion exactly what its token may read on the main installation, and read access behaves the same on both,
   including the exposure ceiling of the endpoint a token is bound to
+- ⚪ How the Bastion fetches (owner, 2026-11-02): with the caller's token. On a cache miss it forwards the caller's token,
+  the main installation decides and serves, and the Bastion caches the bytes; a cached artifact is served to another
+  caller only after the main installation said that this caller may read it (an answer kept for the bound). The
+  Bastion's own token identifies the Bastion and may only have tokens checked; it reads no package
 - ⚪ Internet exposure (owner, 2026-11-02): rate limits per client address, automatic blocking of addresses that flood it,
   a timeout for an address after too many failed authentication attempts, and a configurable cache (size, retention,
   metadata revalidation)
