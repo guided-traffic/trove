@@ -17,6 +17,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/audit"
 	nugetdata "github.com/guided-traffic/trove/internal/formatdata/nuget"
+	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/test/integration/testenv"
 )
@@ -75,7 +76,7 @@ func TestQ_NUGET_48_TheDataPortReadsTheViewFromPostgreSQL(t *testing.T) {
 	readme := nupkgWith(t, map[string][]byte{"docs/README.md": []byte("# Widgets\n"), "docs/binary.md": {0xff, 0xfe, 0x00, 0xc3, 0x28}})
 	digest := func(b []byte) []byte { s := sha256.Sum256(b); return s[:] }
 	blobs := blobBytes{string(digest(readme)): readme}
-	st, err := nugetdata.New(nugetdata.Options{DB: db, Recorder: audit.Nop{}, Blobs: blobs})
+	st, err := nugetdata.New(nugetdata.Options{DB: db, Recorder: audit.Nop{}, Blobs: blobs, Jobs: jobs.NewQueue(jobs.QueueOptions{})})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +165,7 @@ func TestQ_NUGET_48_TheDataPortReadsTheViewFromPostgreSQL(t *testing.T) {
 				}
 			}
 		}
-		none, err := nugetdata.New(nugetdata.Options{DB: db, Recorder: audit.Nop{}})
+		none, err := nugetdata.New(nugetdata.Options{DB: db, Recorder: audit.Nop{}, Jobs: jobs.NewQueue(jobs.QueueOptions{})})
 		if err != nil {
 			t.Fatal(err)
 		}
