@@ -166,7 +166,7 @@ func TestStructLists(t *testing.T) {
 			t.Fatalf("errs = %v", errs)
 		}
 	})
-	t.Run("R-CI-001 a list element may hold pointers to scalars and lists of strings", func(t *testing.T) {
+	t.Run("a list element may hold pointers to scalars and lists of strings", func(t *testing.T) { // R-CI-001
 		type elem struct {
 			Name  string   `yaml:"name"`
 			On    *bool    `yaml:"on"`

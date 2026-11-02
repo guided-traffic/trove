@@ -10,10 +10,11 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// TestR_CI_001_DeclaredCIIssuersReachTheMigrationJob: ci.issuers and the other ci.* keys under
+// TestDeclaredCIIssuersReachTheMigrationJob (R-CI-001): ci.issuers and the other ci.* keys under
 // config are rendered into the file of the migration Job, which applies the issuers (trove migrate,
 // R-CI-001, Q-CI-16), and into the file of the replicas unchanged.
-func TestR_CI_001_DeclaredCIIssuersReachTheMigrationJob(t *testing.T) {
+// Contract of R-CI-001 (phase 5); the requirement's evidence comes from the tests of its work package.
+func TestDeclaredCIIssuersReachTheMigrationJob(t *testing.T) {
 	_, docs := render(t, []string{filepath.Join(chartDir, "ci", "ha-ingress.yaml")})
 	ciOf := func(t *testing.T, configMap string) map[string]any {
 		t.Helper()
@@ -36,7 +37,7 @@ func TestR_CI_001_DeclaredCIIssuersReachTheMigrationJob(t *testing.T) {
 		"allowed_audiences": []any{"https://packages.example.com"}, "ca_bundle_ref": "file:/var/run/secrets/gitlab-ca/ca.crt",
 	}}
 	for _, name := range []string{"trove-migrate", "trove-config"} {
-		t.Run("R-CI-001 the file of "+name+" carries ci.issuers and the ci keys", func(t *testing.T) {
+		t.Run("the file of "+name+" carries ci.issuers and the ci keys", func(t *testing.T) { // R-CI-001
 			ci := ciOf(t, name)
 			if !reflect.DeepEqual(ci["issuers"], wantIssuers) {
 				t.Fatalf("ci.issuers = %#v", ci["issuers"])

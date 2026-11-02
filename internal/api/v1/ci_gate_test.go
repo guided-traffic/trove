@@ -15,10 +15,11 @@ func ciRequest(kind httpserver.PrincipalKind) *http.Request {
 	return r.WithContext(httpserver.WithPrincipal(r.Context(), p))
 }
 
-// TestR_CI_013_ACITokenIsRefusedOnTheManagementAPIByDefault: the gate admits a CI token only on the
+// TestACITokenIsRefusedOnTheManagementAPIByDefault (R-CI-013): the gate admits a CI token only on the
 // operations of the action form, on public operations and on those that declare x-trove-ci: admitted
 // (Q-CI-18); every other form is refused with 403 ci_token_restricted, and every other caller passes.
-func TestR_CI_013_ACITokenIsRefusedOnTheManagementAPIByDefault(t *testing.T) {
+// Contract of R-CI-013 (phase 5); the requirement's evidence comes from the tests of its work package.
+func TestACITokenIsRefusedOnTheManagementAPIByDefault(t *testing.T) {
 	cases := []struct {
 		name string
 		op   Operation
@@ -34,7 +35,7 @@ func TestR_CI_013_ACITokenIsRefusedOnTheManagementAPIByDefault(t *testing.T) {
 		{"a user on a capability", Operation{Requirement: Requirement{Permission: "ci:read"}}, httpserver.KindUser, false},
 	}
 	for _, tc := range cases {
-		t.Run("R-CI-013 "+tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) { // R-CI-013
 			err := ciGate(ciRequest(tc.kind), tc.op)
 			if (err != nil) != tc.want {
 				t.Fatalf("refused = %v, want %v (%v)", err != nil, tc.want, err)
@@ -48,9 +49,10 @@ func TestR_CI_013_ACITokenIsRefusedOnTheManagementAPIByDefault(t *testing.T) {
 	}
 }
 
-// TestR_CI_017_OnlyTheCurrentTokenOperationsAdmitACIToken: of the document's operations, exactly
+// TestOnlyTheCurrentTokenOperationsAdmitACIToken (R-CI-017): of the document's operations, exactly
 // GET and DELETE /tokens/current declare x-trove-ci: admitted (R-CI-013, R-CI-017).
-func TestR_CI_017_OnlyTheCurrentTokenOperationsAdmitACIToken(t *testing.T) {
+// Contract of R-CI-017 (phase 5); the requirement's evidence comes from the tests of its work package.
+func TestOnlyTheCurrentTokenOperationsAdmitACIToken(t *testing.T) {
 	doc, err := LoadDocument(EmbeddedYAML())
 	if err != nil {
 		t.Fatal(err)

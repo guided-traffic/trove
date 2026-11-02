@@ -87,7 +87,7 @@ func TestCIMigration(t *testing.T) {
 		}
 	})
 
-	t.Run("R-CI-001 the issuer rules are enforced by the table", func(t *testing.T) {
+	t.Run("the issuer rules are enforced by the table", func(t *testing.T) { // R-CI-001
 		insert := `INSERT INTO trove.ci_issuers (id, name, kind, issuer, allowed_audiences, required_claims, pin_claims, single_use_subject_tokens%s)
 			VALUES ($1, $2, $3, $4, $5, ARRAY['jti'], ARRAY['project_id'], false%s)`
 		plain := func(extraCol, extraVal string) string {
@@ -110,7 +110,7 @@ func TestCIMigration(t *testing.T) {
 		}
 	})
 
-	t.Run("R-CI-009 a mapping is a principal of kind ci_mapping, unique by name and by priority in its tier", func(t *testing.T) {
+	t.Run("a mapping is a principal of kind ci_mapping, unique by name and by priority in its tier", func(t *testing.T) { // R-CI-009
 		mustExec(t, admin, "INSERT INTO trove.principal (id, kind, name) VALUES ($1, 'ci_mapping', 'gitlab-a/release')", ciPrinc)
 		mustExec(t, admin, "INSERT INTO trove.principal (id, kind, name) VALUES ('cc000000-0000-0000-0000-0000000000d2', 'user', 'ci-test-user')")
 		insert := `INSERT INTO trove.ci_mappings (id, issuer_id, principal_id, name, priority, match, grants, created_by)
@@ -127,7 +127,7 @@ func TestCIMigration(t *testing.T) {
 		wantRestrict(t, admin, "DELETE FROM trove.ci_issuers WHERE id = $1", ciIssuerA)
 	})
 
-	t.Run("R-CI-003 R-CI-018 R-CI-020 the statements of the CI query files run against the schema", func(t *testing.T) {
+	t.Run("the statements of the CI query files run against the schema", func(t *testing.T) { // R-CI-003 R-CI-018 R-CI-020
 		mustExec(t, admin, "SET search_path = trove, public")
 		qs := q.New(admin)
 

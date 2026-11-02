@@ -3529,7 +3529,7 @@ development agent would revisit this if an operation of the action form turns ou
 (then it gets a declaration form of its own).
 
 **Applied in the spec:** R-CI-013 (the gate). Code: `internal/api/v1/authorize.go` (`ciGate`), `document.go`
-(`Operation.CIAdmitted`), `api/openapi.yaml`; the test `TestR_CI_013_ACITokenIsRefusedOnTheManagementAPIByDefault`.
+(`Operation.CIAdmitted`), `api/openapi.yaml`; the test `TestACITokenIsRefusedOnTheManagementAPIByDefault`.
 
 ### Q-CI-19 · The JWS code of the subject-token validation and the order of its steps
 

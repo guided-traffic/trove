@@ -127,10 +127,14 @@ where they link them; the change that ships the exchange removes those notes. Th
 
 ## Tests that pass now
 
+These contract tests carry their requirement IDs in comments, not in their names: they pin the contract and are no
+evidence that a requirement is implemented (the coverage generator counts a named passing test as evidence, Q-ROAD-5);
+the evidence comes from the tests of each work package.
+
 | Test | What it pins |
 |---|---|
-| `TestR_CI_013_ACITokenIsRefusedOnTheManagementAPIByDefault`, `TestR_CI_017_OnlyTheCurrentTokenOperationsAdmitACIToken` ([ci_gate_test.go](../../internal/api/v1/ci_gate_test.go)) | the gate |
-| `TestR_CI_001_TheCISectionDefaults`, `TestR_CI_016_TheLifetimeCeilingIsOne`, `TestR_CI_021_ThePerIssuerBucketIsRetired`, `TestTheJobTokenFallbackIsRefusedByName` (R-CI-022, P2, refused), `TestR_CI_001_IssuersFromTheConfiguration` ([ci_test.go](../../internal/config/ci_test.go)) | defaults, refusals, declared issuers |
+| `TestACITokenIsRefusedOnTheManagementAPIByDefault`, `TestOnlyTheCurrentTokenOperationsAdmitACIToken` ([ci_gate_test.go](../../internal/api/v1/ci_gate_test.go)) | the gate |
+| `TestTheCISectionDefaults`, `TestTheLifetimeCeilingIsOne`, `TestThePerIssuerBucketIsRetired`, `TestTheJobTokenFallbackIsRefusedByName` (R-CI-022, P2, refused), `TestIssuersFromTheConfiguration` ([ci_test.go](../../internal/config/ci_test.go)) | defaults, refusals, declared issuers |
 | `TestCIMigration` ([test/integration/postgres/ci_test.go](../../test/integration/postgres/ci_test.go)) | schema, classes, areas, every CI statement |
-| `TestR_CI_001_DeclaredCIIssuersReachTheMigrationJob` ([test/chart/ci_test.go](../../test/chart/ci_test.go)) | `config.ci.*` reaches the migration Job and the replicas |
+| `TestDeclaredCIIssuersReachTheMigrationJob` ([test/chart/ci_test.go](../../test/chart/ci_test.go)) | `config.ci.*` reaches the migration Job and the replicas |
 | the document tests of [internal/api/v1](../../internal/api/v1) | declarations, recent authentication, reserved names, problem responses |
