@@ -31,8 +31,10 @@ func (s *streamStore) Search(ctx context.Context, q rows.SearchQuery) ([]rows.Se
 	}
 	var out []rows.SearchHit
 	for _, ref := range q.Only {
-		out = append(out, rows.SearchHit{LowerID: ref.LowerID, DisplayName: ref.LowerID, Listed: []rows.VersionEntry{ver(ref.LowerVersion, false)},
-			Latest: rows.RegistrationVersion{VersionEntry: ver(ref.LowerVersion, false)}})
+		out = append(out, rows.SearchHit{
+			LowerID: ref.LowerID, DisplayName: ref.LowerID, Listed: []rows.VersionEntry{ver(ref.LowerVersion, false)},
+			Latest: rows.RegistrationVersion{VersionEntry: ver(ref.LowerVersion, false)},
+		})
 	}
 	return out, nil
 }
@@ -44,8 +46,10 @@ func (s *streamStore) SearchScan(_ context.Context, _ rows.SearchQuery, batch in
 		var buf []rows.SearchHit
 		sent := 0
 		for i := range s.n {
-			buf = append(buf, rows.SearchHit{LowerID: fmt.Sprintf("p%06d", i), Listed: []rows.VersionEntry{ver("1.0.0", false)},
-				ListedTypes: [][]string{{"dependency"}}, ListedMatch: []bool{true}})
+			buf = append(buf, rows.SearchHit{
+				LowerID: fmt.Sprintf("p%06d", i), Listed: []rows.VersionEntry{ver("1.0.0", false)},
+				ListedTypes: [][]string{{"dependency"}}, ListedMatch: []bool{true},
+			})
 			if len(buf) == batch {
 				if more, err := visit(buf); err != nil || !more {
 					return err

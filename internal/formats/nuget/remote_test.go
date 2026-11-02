@@ -806,8 +806,10 @@ func TestR_NUGET_034_TheValidatorOfARemoteDocumentOnAnEndpointWithRulesFollowsOn
 	}
 	const flat = "v3/flatcontainer/acme.widgets/index.json"
 	const leaf = "v3/registration-semver2/acme.widgets/2.1.0.json"
-	paths := []string{flat, "v3/registration/acme.widgets/index.json", "v3/registration-gz/acme.widgets/index.json",
-		"v3/registration-semver2/acme.widgets/index.json", leaf}
+	paths := []string{
+		flat, "v3/registration/acme.widgets/index.json", "v3/registration-gz/acme.widgets/index.json",
+		"v3/registration-semver2/acme.widgets/index.json", leaf,
+	}
 	etags := map[string]string{}
 	for _, p := range paths {
 		r := on(h, p, customers)
