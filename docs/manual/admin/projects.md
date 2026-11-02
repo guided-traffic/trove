@@ -57,9 +57,9 @@ Only an administrator of trove (the `admin` role) creates and changes projects. 
 2. Set **Manage policies and service accounts** and **Manage repositories**.
 3. Under **Administrators**, enter at least two characters of a user or group name in **Find a user or group** and select the match. Remove an administrator with the button beside it.
 4. Under **Repositories**, choose **Add a repository**. A repository that belongs to another project is listed with that project, and the dialog shows that it moves; choosing it is the confirmation.
-5. Select **Create project** or **Save project**.
+5. Select **Create project** or **Save project**. The display name must be 1 to 128 characters and the key must match the pattern; the dialog says so before it sends anything.
 
-Saving sends the changes one by one: the project, then its administrators, then its repositories. If a step fails, the dialog stays open on the rest and the steps that succeeded are not repeated. Changing the project itself needs a recent sign-in and carries the version you opened it with; if someone else changed it meanwhile, the conflict dialog shows both versions. Taking a switch away or removing an administrator or a repository takes effect on every replica at once.
+Saving sends the changes one by one: the project, then its administrators, then its repositories. If a step fails, the dialog stays open on the rest and the steps that succeeded are not repeated; after a refusal you can correct the key or the name and select **Create project** again. An administrator or repository that someone else already removed counts as removed. Just before the repositories are assigned, the dialog reads their current projects. A repository is moved without a question only from the project the dialog showed next to it ("moves from") when you chose it. If it belongs to a different project by now, or was unassigned when you chose it and belongs to one now, a question names that project and asks whether to move the repository; if you decline, nothing is moved and the dialog stays open. Changing the project itself needs a recent sign-in and carries the version you opened it with; if someone else changed it meanwhile, the conflict dialog shows both versions. Taking a switch away or removing an administrator or a repository takes effect on every replica at once.
 
 ### Delete a project
 
@@ -77,7 +77,7 @@ An action whose switch is off is shown disabled, with the reason beside it. Enab
 
 ## The project filter in the top bar
 
-When at least one project exists and you administer one or may read projects, the top bar shows a **Project filter** menu. The selection is stored as your preference and limits the repository list and the policy list to the project (`project=`). **All projects** removes it. A project that no longer exists, or that you cannot see, filters nothing.
+When at least one project exists and you administer one or may read projects, the top bar shows a **Project filter** menu. The selection is stored as your preference and limits the repository list and the policy list to the project (`project=`). **All projects** removes it. A project that no longer exists, or that you cannot see, filters nothing. **New policy** in the policy list creates a policy of the selected project; without a selection it creates a global policy. The policy editor says which one it is: **Global policy — applies to every repository**, or **Project policy of** the key.
 
 ## For a project administrator without a system role
 

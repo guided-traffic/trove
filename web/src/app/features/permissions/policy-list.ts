@@ -58,6 +58,11 @@ export class PolicyList {
 
   /** The project the list is limited to: the query parameter, else the filter of the top bar. */
   protected readonly projectKey = computed(() => this.project() || this.projectFilter.active());
+  /** "New policy" belongs to the project the list is limited to; only an unscoped list creates a global policy. */
+  protected readonly newPolicyParams = computed(() => {
+    const key = this.projectKey();
+    return key ? { project: key } : {};
+  });
   protected readonly list = new PagedResource<PermissionPolicy>();
   protected readonly principalFilter = signal('');
   protected readonly repositoryFilter = signal('');

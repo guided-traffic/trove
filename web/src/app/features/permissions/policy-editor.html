@@ -20,6 +20,12 @@
   </p>
   <trove-project-needs [state]="projectState()" capability="policies:write" right="managePolicies" />
 } @else {
+  @if (isNew() || loaded()) {
+    <p class="subject" role="note">
+      <span class="material-icons" aria-hidden="true">public</span>
+      <ng-container i18n="@@policy.global">Global policy — applies to every repository</ng-container>
+    </p>
+  }
   <trove-needs capability="policies:write" />
 }
 

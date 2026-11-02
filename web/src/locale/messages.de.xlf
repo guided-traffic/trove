@@ -14909,6 +14909,15 @@
         <target>Projekt-Richtlinie von</target>
       </segment>
     </unit>
+    <unit id="policy.global">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:26,28</note>
+      </notes>
+      <segment>
+        <source>Global policy — applies to every repository</source>
+        <target>Globale Richtlinie — gilt für jedes Repository</target>
+      </segment>
+    </unit>
     <unit id="policy.find-principal">
       <notes>
         <note category="location">src/app/features/permissions/policy-editor.html:129,130</note>
@@ -15555,6 +15564,42 @@
       <segment>
         <source><ph id="0" equiv="key" disp="r.key"/> (belongs to <ph id="1" equiv="project" disp="r.project"/>)</source>
         <target><ph id="0" equiv="key" disp="r.key"/> (gehört zu <ph id="1" equiv="project" disp="r.project"/>)</target>
+      </segment>
+    </unit>
+    <unit id="project-dialog.display-name-invalid">
+      <notes>
+        <note category="location">src/app/features/projects/project-dialog.ts</note>
+      </notes>
+      <segment>
+        <source>The display name is required, 1 to 128 characters.</source>
+        <target>Der Anzeigename ist erforderlich, 1 bis 128 Zeichen.</target>
+      </segment>
+    </unit>
+    <unit id="project-dialog.move-title">
+      <notes>
+        <note category="location">src/app/features/projects/project-dialog.ts</note>
+      </notes>
+      <segment>
+        <source>Move <ph id="0" equiv="repository" disp="repository"/> to <ph id="1" equiv="project" disp="key"/>?</source>
+        <target><ph id="0" equiv="repository" disp="repository"/> nach <ph id="1" equiv="project" disp="key"/> verschieben?</target>
+      </segment>
+    </unit>
+    <unit id="project-dialog.move-line">
+      <notes>
+        <note category="location">src/app/features/projects/project-dialog.ts</note>
+      </notes>
+      <segment>
+        <source>The repository now belongs to project <ph id="0" equiv="owner" disp="owner"/>. Moving it takes it away from that project.</source>
+        <target>Das Repository gehört jetzt zum Projekt <ph id="0" equiv="owner" disp="owner"/>. Beim Verschieben wird es diesem Projekt entzogen.</target>
+      </segment>
+    </unit>
+    <unit id="project-dialog.move-confirm">
+      <notes>
+        <note category="location">src/app/features/projects/project-dialog.ts</note>
+      </notes>
+      <segment>
+        <source>Move repository</source>
+        <target>Repository verschieben</target>
       </segment>
     </unit>
     <unit id="project-dialog.key-invalid">

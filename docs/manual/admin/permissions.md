@@ -117,7 +117,7 @@ The `auditor` reads everything that is not secret and changes nothing: the confi
 
 **Administration › Access › Permission policies** lists **Name**, **Description**, **Principals**, **Repositories** and **Actions**. A policy that covers no repository any more, for example because its repository was deleted, shows **Grants nothing**. Filter by **Principal** (also lists the policies of the principal's groups) or by **Repository** (the policies whose selectors cover it).
 
-To create a policy, select **New policy**:
+To create a policy, select **New policy**. When the list is limited to a project (the project filter of the top bar, or the page of a project), the policy belongs to that project; otherwise it is a global policy, and the editor says **Global policy — applies to every repository**:
 
 1. Under **General**, enter a **Name** (it cannot be changed later) and a **Description**.
 2. Under **Principals and actions**, select **Add principal** for each entry, enter a reference such as `group:team-web`, and tick actions or select a **Preset**.

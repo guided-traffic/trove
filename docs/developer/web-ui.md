@@ -528,12 +528,22 @@ How the pieces fit:
 - **Project filter.** `ProjectFilter` ([core/project-filter.ts](../../web/src/app/core/project-filter.ts)) lists the visible projects once per session and exposes `visible()` and `active()`; the
   selection is the `projectFilter` preference (`PreferencesStore.setProjectFilter`). A stored key that names no visible project is ignored (`active()` is null). The repository and policy lists
   send `project=` (the `project` query parameter of a link from the project page wins over the filter) and say so in a line above the table; the line is not a filter-panel field and does not count
-  as an applied filter. Webhook and retention lists do not exist yet, so nothing filters them.
+  as an applied filter. Webhook and retention lists do not exist yet, so nothing filters them. "New policy" of a project-scoped list (the header filter or `?project=`) links to
+  `/admin/permissions/new?project=<key>`, so the policy is the project's; only an unscoped list links to a global policy, and the policy editor names a global policy ("Global policy -
+  applies to every repository") the way it names a project policy, so a pattern policy is never global by accident.
 - **Saving a project is a sequence.** `ProjectDialog` sends the project (`POST`, or `PUT` with `If-Match`; a 412 opens the conflict dialog of R-UI-042), then the administrators (`PUT`/`DELETE` of
   `/admins/{ref}`), then the repositories (`PUT`/`DELETE` of `/repositories/{key}`, `?move=true` for one taken from another project, which the dialog shows as "moves from"). A step that succeeded moves
-  the baseline, so a failure leaves the dialog open on the rest and a retry repeats only that.
+  the baseline, so a failure leaves the dialog open on the rest and a retry repeats only that. Details of the sequence: the display name (required, 1 to 128 characters) and the key
+  pattern are checked before the first request; the `Idempotency-Key` of the create is replaced after every 4xx refusal except `idempotency_in_progress`, because the server stores a 4xx
+  outcome under its key and a corrected retry (another key, another name) would answer 422 `idempotency_key_reused` (R-API-014); a 404 from the removal of an administrator or the
+  unassignment of a repository counts as done; the repositories are read again right before the assignments, and `move=true` is sent only for an
+  owner the person saw: the dialog remembers the owner each repository showed ("moves from") when it was chosen, and a repository whose owner now differs from that (or that is owned
+  although it showed as unassigned) is asked about through the confirm dialog first; a 409 `repository_assigned` in the window after that read reads the owner again and asks the same way
+  (declining stops the save and keeps the dialog open with the 409 notice). The repositories already assigned arrive asynchronously and are merged into the list, so one the person added
+  before they arrived stays. Intended behaviour, not a gap: when someone else already did a step (an administrator or repository already removed, a repository already assigned to this
+  project) the dialog treats it as done and says nothing.
 - **Whitespace.** Angular drops whitespace-only text nodes: a label in an `ng-container` followed by an element on the next line needs `&ngsp;` or the words run together on screen.
-- **Tests.** [projects.spec.ts](../../web/src/app/features/projects/projects.spec.ts) (list, dialog, detail), [project-screens.spec.ts](../../web/src/app/features/projects/project-screens.spec.ts)
+- **Tests.** [projects.spec.ts](../../web/src/app/features/projects/projects.spec.ts) (list, dialog, detail), [project-dialog.spec.ts](../../web/src/app/features/projects/project-dialog.spec.ts) (the save sequence: keys, validation, 404, 409, baseline), [policy-scope.spec.ts](../../web/src/app/features/permissions/policy-scope.spec.ts) (project or global scope of a new policy), [project-screens.spec.ts](../../web/src/app/features/projects/project-screens.spec.ts)
   (policy editor, service account, wizard, session helpers, messages), [app.projects.spec.ts](../../web/src/app/app.projects.spec.ts) (navigation rule, top-bar filter, filtered lists). The
   browser journey is [12-projects.spec.ts](../../web/e2e/tests/12-projects.spec.ts) ([e2e.md](e2e.md#browser-journeys)); it needs the deployed backend and is not run by the component tier.
 

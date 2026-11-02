@@ -6179,9 +6179,17 @@
         <source>Project policy of</source>
       </segment>
     </unit>
+    <unit id="policy.global">
+      <notes>
+        <note category="location">src/app/features/permissions/policy-editor.html:26,28</note>
+      </notes>
+      <segment>
+        <source>Global policy — applies to every repository</source>
+      </segment>
+    </unit>
     <unit id="policy.toc">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:35,37</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:41,43</note>
       </notes>
       <segment>
         <source>Sections of this policy</source>
@@ -6189,7 +6197,7 @@
     </unit>
     <unit id="policy.toc.general">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:37,38</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:43,44</note>
       </notes>
       <segment>
         <source>General</source>
@@ -6197,7 +6205,7 @@
     </unit>
     <unit id="policy.toc.principals">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:38,39</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:44,45</note>
       </notes>
       <segment>
         <source>Principals and actions</source>
@@ -6205,7 +6213,7 @@
     </unit>
     <unit id="policy.toc.resources">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:39,40</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:45,46</note>
       </notes>
       <segment>
         <source>Repositories and patterns</source>
@@ -6213,7 +6221,7 @@
     </unit>
     <unit id="policy.toc.preview">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:40,42</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:46,48</note>
       </notes>
       <segment>
         <source>Preview</source>
@@ -6221,7 +6229,7 @@
     </unit>
     <unit id="policy.general">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:46,47</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:52,53</note>
       </notes>
       <segment>
         <source>General</source>
@@ -6229,7 +6237,7 @@
     </unit>
     <unit id="policy.name">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:51,52</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:57,58</note>
       </notes>
       <segment>
         <source>Name</source>
@@ -6237,7 +6245,7 @@
     </unit>
     <unit id="policy.description">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:60,62</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:66,68</note>
       </notes>
       <segment>
         <source>Description</source>
@@ -6245,7 +6253,7 @@
     </unit>
     <unit id="policy.principals">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:69,70</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:75,76</note>
       </notes>
       <segment>
         <source>Principals and actions</source>
@@ -6253,7 +6261,7 @@
     </unit>
     <unit id="policy.principals-help">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:71,73</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:77,79</note>
       </notes>
       <segment>
         <source> Each entry gives one principal a set of actions. Actions are independent: holding one never implies another. </source>
@@ -6261,7 +6269,7 @@
     </unit>
     <unit id="policy.no-entries">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:81,83</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:87,89</note>
       </notes>
       <segment>
         <source>No principal yet. Add one to grant something.</source>
@@ -6269,7 +6277,7 @@
     </unit>
     <unit id="policy.entry">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:85,86</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:91,92</note>
       </notes>
       <segment>
         <source>Entry <ph id="0" equiv="INTERPOLATION" disp="{{ i + 1 }}"/></source>
@@ -6277,7 +6285,7 @@
     </unit>
     <unit id="policy.entry-principal">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:88,89</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:94,95</note>
       </notes>
       <segment>
         <source>Principal</source>
@@ -6285,7 +6293,7 @@
     </unit>
     <unit id="policy.entry-principal-hint">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:95,97</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:101,103</note>
       </notes>
       <segment>
         <source>user:name, group:name, sa:name, anonymous or authenticated</source>
@@ -6293,7 +6301,7 @@
     </unit>
     <unit id="policy.remove-entry">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:117,118</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:123,124</note>
       </notes>
       <segment>
         <source>Remove entry</source>
@@ -6301,7 +6309,7 @@
     </unit>
     <unit id="policy.add-entry">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:125,126</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:131,132</note>
       </notes>
       <segment>
         <source>Add principal</source>
@@ -6309,7 +6317,7 @@
     </unit>
     <unit id="policy.find-principal">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:129,130</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:135,136</note>
       </notes>
       <segment>
         <source>Find a user or group</source>
@@ -6317,7 +6325,7 @@
     </unit>
     <unit id="policy.find-principal-hint">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:132,133</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:138,139</note>
       </notes>
       <segment>
         <source>Type at least two characters of the name. The match becomes a new entry.</source>
@@ -6325,7 +6333,7 @@
     </unit>
     <unit id="policy.resources">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:142,143</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:148,149</note>
       </notes>
       <segment>
         <source>Repositories and patterns</source>
@@ -6333,7 +6341,7 @@
     </unit>
     <unit id="policy.repositories">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:145,147</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:151,153</note>
       </notes>
       <segment>
         <source>Repository selectors</source>
@@ -6341,7 +6349,7 @@
     </unit>
     <unit id="policy.repositories-hint">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:152,154</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:158,160</note>
       </notes>
       <segment>
         <source>One per line: a key (npm-internal), a pattern (npm-team-*) or a class (@any-local, @any-remote, @any-virtual, @any), optionally with a format (@any-local:npm).</source>
@@ -6349,7 +6357,7 @@
     </unit>
     <unit id="policy.covers-checking">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:156,157</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:162,163</note>
       </notes>
       <segment>
         <source>Checking which repositories are covered.</source>
@@ -6357,7 +6365,7 @@
     </unit>
     <unit id="policy.covers">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:159,160</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:165,166</note>
       </notes>
       <segment>
         <source>Repositories covered now: <ph id="0" equiv="INTERPOLATION" disp="{{ covers().length }}"/></source>
@@ -6365,7 +6373,7 @@
     </unit>
     <unit id="policy.project-repos">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:165,166</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:171,172</note>
       </notes>
       <segment>
         <source>Repositories of the project:</source>
@@ -6373,7 +6381,7 @@
     </unit>
     <unit id="policy.add-selector">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:168</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:174</note>
       </notes>
       <segment>
         <source>Add selector</source>
@@ -6381,7 +6389,7 @@
     </unit>
     <unit id="policy.project-selectors">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:175,179</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:181,185</note>
       </notes>
       <segment>
         <source> A project policy covers the repositories of its project only, whatever the selectors name. </source>
@@ -6389,7 +6397,7 @@
     </unit>
     <unit id="policy.packages">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:179,180</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:185,186</note>
       </notes>
       <segment>
         <source>Package names</source>
@@ -6397,7 +6405,7 @@
     </unit>
     <unit id="policy.patterns-help">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:181,183</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:187,189</note>
       </notes>
       <segment>
         <source> One pattern per line. * is any run of characters except /, ** includes /, ? is one character, \ makes the next character literal. An empty include list is unrestricted; exclude always wins within this policy. </source>
@@ -6405,7 +6413,7 @@
     </unit>
     <unit id="policy.packages-include">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:184</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:190</note>
       </notes>
       <segment>
         <source>Include</source>
@@ -6413,7 +6421,7 @@
     </unit>
     <unit id="policy.packages-exclude">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:185</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:191</note>
       </notes>
       <segment>
         <source>Exclude</source>
@@ -6421,7 +6429,7 @@
     </unit>
     <unit id="policy.paths">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:187,188</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:193,194</note>
       </notes>
       <segment>
         <source>Paths</source>
@@ -6429,7 +6437,7 @@
     </unit>
     <unit id="policy.paths-include">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:189</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:195</note>
       </notes>
       <segment>
         <source>Include</source>
@@ -6437,7 +6445,7 @@
     </unit>
     <unit id="policy.paths-exclude">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:190</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:196</note>
       </notes>
       <segment>
         <source>Exclude</source>
@@ -6445,7 +6453,7 @@
     </unit>
     <unit id="policy.tester">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:193,194</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:199,200</note>
       </notes>
       <segment>
         <source>Pattern tester</source>
@@ -6453,7 +6461,7 @@
     </unit>
     <unit id="policy.tester-kind">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:195</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:201</note>
       </notes>
       <segment>
         <source>Test against</source>
@@ -6461,7 +6469,7 @@
     </unit>
     <unit id="policy.tester-value">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:196</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:202</note>
       </notes>
       <segment>
         <source>Does this match?</source>
@@ -6469,7 +6477,7 @@
     </unit>
     <unit id="policy.preview">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:208,209</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:214,215</note>
       </notes>
       <segment>
         <source>Preview</source>
@@ -6477,7 +6485,7 @@
     </unit>
     <unit id="policy.preview-hide">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:211,213</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:217,219</note>
       </notes>
       <segment>
         <source>Hide preview</source>
@@ -6485,7 +6493,7 @@
     </unit>
     <unit id="policy.preview-show">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:213,215</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:219,221</note>
       </notes>
       <segment>
         <source>Show preview</source>
@@ -6493,7 +6501,7 @@
     </unit>
     <unit id="policy.preview-denied">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:218,219</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:224,225</note>
       </notes>
       <segment>
         <source>The preview needs the permission to read policies.</source>
@@ -6501,7 +6509,7 @@
     </unit>
     <unit id="policy.valid">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:221,222</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:227,228</note>
       </notes>
       <segment>
         <source>No problems found.</source>
@@ -6509,7 +6517,7 @@
     </unit>
     <unit id="policy.invalid">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:223,224</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:229,230</note>
       </notes>
       <segment>
         <source>The policy has problems:</source>
@@ -6517,7 +6525,7 @@
     </unit>
     <unit id="policy.warnings">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:231,232</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:237,238</note>
       </notes>
       <segment>
         <source>Warnings</source>
@@ -6525,7 +6533,7 @@
     </unit>
     <unit id="policy.covered">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:238,239</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:244,245</note>
       </notes>
       <segment>
         <source>Covered repositories</source>
@@ -6533,7 +6541,7 @@
     </unit>
     <unit id="policy.covers-none">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:240,242</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:246,248</note>
       </notes>
       <segment>
         <source>No repository is covered.</source>
@@ -6541,7 +6549,7 @@
     </unit>
     <unit id="policy.preview-loading">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:249,252</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:255,258</note>
       </notes>
       <segment>
         <source>Checking the policy.</source>
@@ -6549,7 +6557,7 @@
     </unit>
     <unit id="policy.try">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:252,253</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:258,259</note>
       </notes>
       <segment>
         <source>Try it</source>
@@ -6557,7 +6565,7 @@
     </unit>
     <unit id="policy.try-help">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:253,254</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:259,260</note>
       </notes>
       <segment>
         <source>Ask why a principal can or cannot do something. Only this draft is evaluated.</source>
@@ -6565,7 +6573,7 @@
     </unit>
     <unit id="policy.try-principal">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:255</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:261</note>
       </notes>
       <segment>
         <source>Principal</source>
@@ -6573,7 +6581,7 @@
     </unit>
     <unit id="policy.try-principal-hint">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:255,256</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:261,262</note>
       </notes>
       <segment>
         <source>for example user:alice</source>
@@ -6581,7 +6589,7 @@
     </unit>
     <unit id="policy.try-repository">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:256</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:262</note>
       </notes>
       <segment>
         <source>Repository</source>
@@ -6589,7 +6597,7 @@
     </unit>
     <unit id="policy.try-action">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:257</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:263</note>
       </notes>
       <segment>
         <source>Action</source>
@@ -6597,7 +6605,7 @@
     </unit>
     <unit id="policy.try-ask">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:258,260</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:264,266</note>
       </notes>
       <segment>
         <source>Explain</source>
@@ -6605,7 +6613,7 @@
     </unit>
     <unit id="policy.allowed">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:268,269</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:274,275</note>
       </notes>
       <segment>
         <source>Allowed by this draft</source>
@@ -6613,7 +6621,7 @@
     </unit>
     <unit id="policy.denied">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:270,272</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:276,278</note>
       </notes>
       <segment>
         <source>Not granted by this draft</source>
@@ -6621,7 +6629,7 @@
     </unit>
     <unit id="policy.mine-yes">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:284,285</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:290,291</note>
       </notes>
       <segment>
         <source>For comparison, you yourself may do this under the stored policies.</source>
@@ -6629,7 +6637,7 @@
     </unit>
     <unit id="policy.mine-no">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:286,287</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:292,293</note>
       </notes>
       <segment>
         <source>For comparison, you yourself may not do this under the stored policies.</source>
@@ -6637,7 +6645,7 @@
     </unit>
     <unit id="policy.create">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:299,300</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:305,306</note>
       </notes>
       <segment>
         <source>Create policy</source>
@@ -6645,7 +6653,7 @@
     </unit>
     <unit id="policy.review">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:301,303</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:307,309</note>
       </notes>
       <segment>
         <source>Review and save</source>
@@ -6653,7 +6661,7 @@
     </unit>
     <unit id="policy.delete">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:305,308</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:311,314</note>
       </notes>
       <segment>
         <source>Delete policy</source>
@@ -6661,7 +6669,7 @@
     </unit>
     <unit id="policy.fix-first">
       <notes>
-        <note category="location">src/app/features/permissions/policy-editor.html:309,311</note>
+        <note category="location">src/app/features/permissions/policy-editor.html:315,317</note>
       </notes>
       <segment>
         <source>Fix the problems in the preview first.</source>
@@ -6953,7 +6961,7 @@
     </unit>
     <unit id="policies.caption">
       <notes>
-        <note category="location">src/app/features/permissions/policy-list.ts:67</note>
+        <note category="location">src/app/features/permissions/policy-list.ts:72</note>
       </notes>
       <segment>
         <source>Permission policies</source>
@@ -6961,7 +6969,7 @@
     </unit>
     <unit id="policies.col.name">
       <notes>
-        <note category="location">src/app/features/permissions/policy-list.ts:69</note>
+        <note category="location">src/app/features/permissions/policy-list.ts:74</note>
       </notes>
       <segment>
         <source>Name</source>
@@ -6969,7 +6977,7 @@
     </unit>
     <unit id="policies.col.description">
       <notes>
-        <note category="location">src/app/features/permissions/policy-list.ts:70</note>
+        <note category="location">src/app/features/permissions/policy-list.ts:75</note>
       </notes>
       <segment>
         <source>Description</source>
@@ -6977,7 +6985,7 @@
     </unit>
     <unit id="policies.col.principals">
       <notes>
-        <note category="location">src/app/features/permissions/policy-list.ts:73</note>
+        <note category="location">src/app/features/permissions/policy-list.ts:78</note>
       </notes>
       <segment>
         <source>Principals</source>
@@ -6985,7 +6993,7 @@
     </unit>
     <unit id="policies.help.principals">
       <notes>
-        <note category="location">src/app/features/permissions/policy-list.ts:74</note>
+        <note category="location">src/app/features/permissions/policy-list.ts:79</note>
       </notes>
       <segment>
         <source>Who the policy grants to, counted by kind: users, groups, service accounts, and the special principals for anonymous and all signed-in callers.</source>
@@ -6993,7 +7001,7 @@
     </unit>
     <unit id="policies.col.resources">
       <notes>
-        <note category="location">src/app/features/permissions/policy-list.ts:78</note>
+        <note category="location">src/app/features/permissions/policy-list.ts:83</note>
       </notes>
       <segment>
         <source>Repositories</source>
@@ -7001,7 +7009,7 @@
     </unit>
     <unit id="policies.help.resources">
       <notes>
-        <note category="location">src/app/features/permissions/policy-list.ts:79</note>
+        <note category="location">src/app/features/permissions/policy-list.ts:84</note>
       </notes>
       <segment>
         <source>The repository keys or patterns the policy covers. Open the policy to see which repositories they match now.</source>
@@ -7009,7 +7017,7 @@
     </unit>
     <unit id="policies.col.actions">
       <notes>
-        <note category="location">src/app/features/permissions/policy-list.ts:81</note>
+        <note category="location">src/app/features/permissions/policy-list.ts:86</note>
       </notes>
       <segment>
         <source>Actions</source>
@@ -7017,7 +7025,7 @@
     </unit>
     <unit id="policies.sum.more">
       <notes>
-        <note category="location">src/app/features/permissions/policy-list.ts:127</note>
+        <note category="location">src/app/features/permissions/policy-list.ts:132</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="list" disp="shown"/> and <ph id="1" equiv="count" disp="repos.length - 3"/> more</source>
@@ -7905,7 +7913,7 @@
     </unit>
     <unit id="project-dialog.title-edit">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:38,39</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:43,44</note>
       </notes>
       <segment>
         <source>Edit project <ph id="0" equiv="INTERPOLATION" disp="{{ p.value.key }}"/></source>
@@ -7913,7 +7921,7 @@
     </unit>
     <unit id="project-dialog.title-new">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:40,43</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:45,48</note>
       </notes>
       <segment>
         <source>New project</source>
@@ -7921,7 +7929,7 @@
     </unit>
     <unit id="project-dialog.key">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:51,52</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:56,57</note>
       </notes>
       <segment>
         <source>Key</source>
@@ -7929,7 +7937,7 @@
     </unit>
     <unit id="project-dialog.key-hint">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:57,59</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:62,64</note>
       </notes>
       <segment>
         <source>Lower-case letters, digits and -, two to 32 characters, starting with a letter. Cannot be changed later.</source>
@@ -7937,7 +7945,7 @@
     </unit>
     <unit id="project-dialog.display-name">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:61,63</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:66,68</note>
       </notes>
       <segment>
         <source>Display name</source>
@@ -7945,7 +7953,7 @@
     </unit>
     <unit id="project-dialog.description">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:69,71</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:74,76</note>
       </notes>
       <segment>
         <source>Description</source>
@@ -7953,7 +7961,7 @@
     </unit>
     <unit id="project-dialog.switches">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:77,78</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:82,83</note>
       </notes>
       <segment>
         <source>What the administrators may do</source>
@@ -7961,7 +7969,7 @@
     </unit>
     <unit id="project-dialog.manage-policies">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:79,81</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:84,86</note>
       </notes>
       <segment>
         <source>Manage policies and service accounts</source>
@@ -7969,7 +7977,7 @@
     </unit>
     <unit id="project-dialog.manage-policies-hint">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:82,84</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:87,89</note>
       </notes>
       <segment>
         <source> Create and change the project&apos;s permission policies, create and enable its service accounts, issue their tokens and look up users and groups. </source>
@@ -7977,7 +7985,7 @@
     </unit>
     <unit id="project-dialog.manage-repositories">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:85,87</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:90,92</note>
       </notes>
       <segment>
         <source>Manage repositories</source>
@@ -7985,7 +7993,7 @@
     </unit>
     <unit id="project-dialog.manage-repositories-hint">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:88,92</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:93,97</note>
       </notes>
       <segment>
         <source> Create, change and delete the project&apos;s repositories, also remote ones that reach other servers. Assigning repositories stays with you. </source>
@@ -7993,7 +8001,7 @@
     </unit>
     <unit id="project-dialog.admins">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:93,94</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:98,99</note>
       </notes>
       <segment>
         <source>Administrators</source>
@@ -8001,7 +8009,7 @@
     </unit>
     <unit id="project-dialog.no-admins">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:95,97</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:100,102</note>
       </notes>
       <segment>
         <source>No administrator yet. Users and groups can administer a project.</source>
@@ -8009,7 +8017,7 @@
     </unit>
     <unit id="project-dialog.remove-admin">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:103,104</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:108,109</note>
       </notes>
       <segment>
         <source>Remove administrator</source>
@@ -8017,7 +8025,7 @@
     </unit>
     <unit id="project-dialog.find-admin">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:111,113</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:116,118</note>
       </notes>
       <segment>
         <source>Find a user or group</source>
@@ -8025,7 +8033,7 @@
     </unit>
     <unit id="project-dialog.repositories">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:120,121</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:125,126</note>
       </notes>
       <segment>
         <source>Repositories</source>
@@ -8033,7 +8041,7 @@
     </unit>
     <unit id="project-dialog.no-repositories">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:122,124</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:127,129</note>
       </notes>
       <segment>
         <source>No repository is assigned.</source>
@@ -8041,7 +8049,7 @@
     </unit>
     <unit id="project-dialog.moves">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:129,130</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:134,135</note>
       </notes>
       <segment>
         <source>moves from <ph id="0" equiv="INTERPOLATION" disp="{{ from }}"/></source>
@@ -8049,7 +8057,7 @@
     </unit>
     <unit id="project-dialog.remove-repository">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:133,134</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:138,139</note>
       </notes>
       <segment>
         <source>Remove repository</source>
@@ -8057,7 +8065,7 @@
     </unit>
     <unit id="project-dialog.add-repository">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:141,143</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:146,148</note>
       </notes>
       <segment>
         <source>Add a repository</source>
@@ -8065,7 +8073,7 @@
     </unit>
     <unit id="project-dialog.cancel">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:150,151</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:155,156</note>
       </notes>
       <segment>
         <source>Cancel</source>
@@ -8073,7 +8081,7 @@
     </unit>
     <unit id="project-dialog.save">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:153,154</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:158,159</note>
       </notes>
       <segment>
         <source>Save project</source>
@@ -8081,7 +8089,7 @@
     </unit>
     <unit id="project-dialog.create">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:155,157</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:160,162</note>
       </notes>
       <segment>
         <source>Create project</source>
@@ -8089,7 +8097,7 @@
     </unit>
     <unit id="project-dialog.admins-label">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:223</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:232</note>
       </notes>
       <segment>
         <source>Administrators of the project</source>
@@ -8097,7 +8105,7 @@
     </unit>
     <unit id="project-dialog.repositories-label">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:224</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:233</note>
       </notes>
       <segment>
         <source>Repositories of the project</source>
@@ -8105,7 +8113,7 @@
     </unit>
     <unit id="project-dialog.choose-repository">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:233</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:244</note>
       </notes>
       <segment>
         <source>Choose a repository</source>
@@ -8113,7 +8121,7 @@
     </unit>
     <unit id="project-dialog.repository-of">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:240</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:251</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="key" disp="r.key"/> (belongs to <ph id="1" equiv="project" disp="r.project"/>)</source>
@@ -8121,10 +8129,42 @@
     </unit>
     <unit id="project-dialog.key-invalid">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:278</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:290</note>
       </notes>
       <segment>
         <source>The key does not match the pattern.</source>
+      </segment>
+    </unit>
+    <unit id="project-dialog.display-name-invalid">
+      <notes>
+        <note category="location">src/app/features/projects/project-dialog.ts:298</note>
+      </notes>
+      <segment>
+        <source>The display name is required, 1 to 128 characters.</source>
+      </segment>
+    </unit>
+    <unit id="project-dialog.move-title">
+      <notes>
+        <note category="location">src/app/features/projects/project-dialog.ts:472</note>
+      </notes>
+      <segment>
+        <source>Move <ph id="0" equiv="repository" disp="repository"/> to <ph id="1" equiv="project" disp="key"/>?</source>
+      </segment>
+    </unit>
+    <unit id="project-dialog.move-line">
+      <notes>
+        <note category="location">src/app/features/projects/project-dialog.ts:474</note>
+      </notes>
+      <segment>
+        <source>The repository now belongs to project <ph id="0" equiv="owner" disp="owner"/>. Moving it takes it away from that project.</source>
+      </segment>
+    </unit>
+    <unit id="project-dialog.move-confirm">
+      <notes>
+        <note category="location">src/app/features/projects/project-dialog.ts:476</note>
+      </notes>
+      <segment>
+        <source>Move repository</source>
       </segment>
     </unit>
     <unit id="projects.heading">

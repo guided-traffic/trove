@@ -100,14 +100,40 @@ export class FakeProjectsApi extends ProjectsApi {
     return { value: p, etag: this.etag(p) };
   }
 
+  /** What the server stored per `Idempotency-Key`: the body and the outcome, a 4xx refusal too (R-API-014). */
+  private readonly stored = new Map<string, { body: string; outcome: Versioned<Project> | ApiError }>();
+
   override async create(input: ProjectInput, idempotencyKey: string): Promise<Versioned<Project>> {
     this.fail();
     this.keys.push(idempotencyKey);
     this.calls.push(`create ${input.key}`);
+    const body = JSON.stringify(input);
+    const seen = this.stored.get(idempotencyKey);
+    if (seen) {
+      if (seen.body !== body) throw problem(422, 'idempotency_key_reused');
+      if (seen.outcome instanceof ApiError) throw seen.outcome;
+      return seen.outcome;
+    }
+    try {
+      const created = this.createNew(input);
+      this.stored.set(idempotencyKey, { body, outcome: created });
+      return created;
+    } catch (e) {
+      if (e instanceof ApiError && e.status >= 400 && e.status < 500) this.stored.set(idempotencyKey, { body, outcome: e });
+      throw e;
+    }
+  }
+
+  private createNew(input: ProjectInput): Versioned<Project> {
     const key = input.key ?? '';
     if (!PROJECT_KEY_PATTERN.test(key)) {
       throw problem(422, 'invalid_request', {
         errors: [{ pointer: '/key', code: 'invalid_key', detail: 'The key does not match the pattern.' }],
+      });
+    }
+    if (!(input.displayName ?? '').trim() || (input.displayName ?? '').length > 128) {
+      throw problem(422, 'validation_failed', {
+        errors: [{ pointer: '/displayName', code: 'invalid_length', detail: 'The display name is required, 1 to 128 characters.' }],
       });
     }
     if (this.projects.some((p) => p.key === key)) throw problem(409, 'already_exists');

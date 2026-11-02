@@ -1,7 +1,7 @@
 <header class="page-header">
   <h1 tabindex="-1" i18n="@@policies.heading">Permission policies</h1>
   @if (session.has('policies:write')) {
-    <a mat-flat-button routerLink="/admin/permissions/new" i18n="@@policies.new">New policy</a>
+    <a mat-flat-button routerLink="/admin/permissions/new" [queryParams]="newPolicyParams()" i18n="@@policies.new">New policy</a>
   } @else {
     <button mat-flat-button type="button" disabled aria-describedby="needs-policies" i18n="@@policies.new-disabled">New policy</button>
   }

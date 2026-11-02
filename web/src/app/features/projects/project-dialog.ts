@@ -9,6 +9,7 @@ import { PROJECT_KEY_PATTERN, Project, ProjectInput, ProjectsApi } from '../../a
 import { RepositoriesApi, RepositorySummary, Versioned } from '../../api/repositories-api';
 import { ProjectFilter } from '../../core/project-filter';
 import { ConflictResolver } from '../../shared/conflict-dialog';
+import { Confirm } from '../../shared/confirm-dialog';
 import { ErrorNotice } from '../../shared/error-notice';
 import { fieldErrorAt } from '../../shared/field-errors';
 import { asApiError, valueOf } from '../../shared/paged-resource';
@@ -27,7 +28,11 @@ export interface ProjectDialogData {
  * lost, then the repositories it gained or lost. Each step that succeeded moves the baseline, so a
  * failure in the middle leaves the dialog open on the rest and a second click repeats only that rest;
  * a project that was just created is no longer created again. A repository that belongs to another
- * project is listed with that project and is moved only because the person chose it (`?move=true`).
+ * project is listed with that project and is moved only because the person chose it (`?move=true`);
+ * the owners are read again right before the assignments, and a repository whose owner is not the one
+ * the dialog showed when it was chosen is asked about first (`move=true` only for a seen owner).
+ * The display name and the key are checked before the first request; the idempotency key of the create
+ * is replaced after a refusal, because the server stores a 4xx outcome under it.
  */
 @Component({
   selector: 'trove-project-dialog',
@@ -62,7 +67,7 @@ export interface ProjectDialogData {
           name="displayName"
           [(value)]="displayName"
           [required]="true"
-          [error]="fieldError('/displayName')"
+          [error]="displayNameError()"
         />
         <trove-text-field
           i18n-label="@@project-dialog.description"
@@ -198,10 +203,12 @@ export class ProjectDialog {
   private readonly identity = inject(IdentityApi);
   private readonly repositoriesApi = inject(RepositoriesApi);
   private readonly conflicts = inject(ConflictResolver);
+  private readonly confirm = inject(Confirm);
   private readonly filter = inject(ProjectFilter);
   private readonly ref = inject<MatDialogRef<ProjectDialog, Project>>(MatDialogRef);
   private readonly data = inject<ProjectDialogData>(MAT_DIALOG_DATA);
-  private readonly idempotencyKey = newIdempotencyKey();
+  /** Replaced after every refusal of the create: the server stores a 4xx outcome under its key (R-API-014). */
+  private idempotencyKey = newIdempotencyKey();
 
   /** The project once it exists: the one being edited, or the one this dialog just created. */
   protected readonly existing = signal<Versioned<Project> | null>(this.data.project ?? null);
@@ -219,13 +226,17 @@ export class ProjectDialog {
   /** What the server holds of the administrators and the repositories: the baseline of the diff. */
   private storedAdmins: readonly string[] = this.data.project?.value.admins ?? [];
   private storedRepositories: readonly string[] = [];
+  /** The owner each added repository showed when it was chosen; null when it was unassigned. */
+  private readonly shownOwner = new Map<string, string | null>();
 
   protected readonly adminsLabel = $localize`:@@project-dialog.admins-label:Administrators of the project`;
   protected readonly repositoriesLabel = $localize`:@@project-dialog.repositories-label:Repositories of the project`;
 
   /** Every repository, with the project it belongs to: the choices and the "moves from" notes. */
   private readonly all = resource({ loader: () => this.repositoriesApi.listAll() });
-  private readonly summaries = computed<readonly RepositorySummary[]>(() => valueOf(this.all) ?? []);
+  /** The summaries read again after a 409 `repository_assigned`: they replace the ones loaded when the dialog opened. */
+  private readonly fresh = signal<readonly RepositorySummary[] | null>(null);
+  private readonly summaries = computed<readonly RepositorySummary[]>(() => this.fresh() ?? valueOf(this.all) ?? []);
 
   protected readonly repositoryOptions = computed<readonly SelectOption[]>(() => {
     const chosen = new Set(this.repositories());
@@ -263,7 +274,8 @@ export class ProjectDialog {
         .then((page) => {
           const keys = page.items.map((r) => r.key);
           this.storedRepositories = keys;
-          this.repositories.set(keys);
+          // A repository the person added before the baseline arrived stays in the list.
+          this.repositories.update((list) => [...keys, ...list.filter((r) => !keys.includes(r))]);
         })
         .catch((e: unknown) => this.error.set(asApiError(e)));
     }
@@ -276,6 +288,20 @@ export class ProjectDialog {
     return PROJECT_KEY_PATTERN.test(this.key().trim())
       ? null
       : $localize`:@@project-dialog.key-invalid:The key does not match the pattern.`;
+  }
+
+  /** The display name is required and at most 128 characters (R-UI-041); the server's word wins when it refused. */
+  protected displayNameError(): string | null {
+    const server = fieldErrorAt(this.error(), '/displayName');
+    if (server) return server;
+    return this.attempted() && !this.displayNameValid()
+      ? $localize`:@@project-dialog.display-name-invalid:The display name is required, 1 to 128 characters.`
+      : null;
+  }
+
+  private displayNameValid(): boolean {
+    const length = this.displayName().trim().length;
+    return length >= 1 && length <= 128;
   }
 
   protected fieldError(pointer: string): string | null {
@@ -297,7 +323,10 @@ export class ProjectDialog {
   }
 
   protected addRepository(key: string): void {
-    if (key) this.repositories.update((list) => (list.includes(key) ? list : [...list, key]));
+    if (!key || this.repositories().includes(key)) return;
+    // What the person is shown at this moment ("moves from"): the only owner a move is agreed for.
+    this.shownOwner.set(key, this.ownerOf(key));
+    this.repositories.update((list) => [...list, key]);
   }
 
   protected removeRepository(key: string): void {
@@ -307,7 +336,8 @@ export class ProjectDialog {
   protected async submit(event: Event): Promise<void> {
     event.preventDefault();
     this.attempted.set(true);
-    if (!this.existing() && !PROJECT_KEY_PATTERN.test(this.key().trim())) return;
+    const keyValid = this.existing() !== null || PROJECT_KEY_PATTERN.test(this.key().trim());
+    if (!keyValid || !this.displayNameValid()) return;
     this.busy.set(true);
     this.error.set(null);
     try {
@@ -337,7 +367,17 @@ export class ProjectDialog {
   private async saveProject(): Promise<boolean> {
     const current = this.existing();
     if (!current) {
-      const created = await this.api.create({ key: this.key().trim(), ...this.body() }, this.idempotencyKey);
+      let created: Versioned<Project>;
+      try {
+        created = await this.api.create({ key: this.key().trim(), ...this.body() }, this.idempotencyKey);
+      } catch (e) {
+        // The refusal is stored under the key; a corrected retry has another body and needs another key.
+        // A request still in progress is the same intent: its key stays.
+        if (e instanceof ApiError && e.status >= 400 && e.status < 500 && e.code !== 'idempotency_in_progress') {
+          this.idempotencyKey = newIdempotencyKey();
+        }
+        throw e;
+      }
       this.existing.set(created);
       this.storedAdmins = created.value.admins;
       return true;
@@ -378,7 +418,7 @@ export class ProjectDialog {
       this.storedAdmins = [...this.storedAdmins, a];
     }
     for (const a of this.storedAdmins.filter((x) => !wanted.includes(x))) {
-      await this.api.removeAdmin(key, a);
+      await settleGone(() => this.api.removeAdmin(key, a));
       this.storedAdmins = this.storedAdmins.filter((x) => x !== a);
     }
   }
@@ -386,14 +426,64 @@ export class ProjectDialog {
   private async saveRepositories(): Promise<void> {
     const key = this.existing()?.value.key ?? '';
     const wanted = this.repositories();
-    for (const r of wanted.filter((x) => !this.storedRepositories.includes(x))) {
-      const from = this.summaries().find((s) => s.key === r)?.project ?? null;
-      await this.api.assignRepository(key, r, from !== null && from !== key);
+    const added = wanted.filter((x) => !this.storedRepositories.includes(x));
+    // The owners are read again right before the assignments: what the dialog showed may be old.
+    if (added.length > 0) this.fresh.set(await this.repositoriesApi.listAll());
+    for (const r of added) {
+      await this.assign(key, r);
       this.storedRepositories = [...this.storedRepositories, r];
     }
     for (const r of this.storedRepositories.filter((x) => !wanted.includes(x))) {
-      await this.api.unassignRepository(key, r);
+      await settleGone(() => this.api.unassignRepository(key, r));
       this.storedRepositories = this.storedRepositories.filter((x) => x !== r);
     }
+  }
+
+  private ownerOf(repository: string): string | null {
+    return this.summaries().find((s) => s.key === repository)?.project ?? null;
+  }
+
+  /**
+   * Assigns one repository. `move=true` is only ever sent for an owner the person saw: the one the
+   * dialog showed when the repository was chosen ("moves from"). A different owner now, or a 409
+   * `repository_assigned` in the window after the read, reads the owner again and asks first.
+   */
+  private async assign(key: string, repository: string): Promise<void> {
+    const owner = this.ownerOf(repository);
+    if (owner === key) return;
+    if (owner !== null && owner !== (this.shownOwner.get(repository) ?? null)) {
+      await this.askToMove(key, repository, owner);
+    }
+    try {
+      await this.api.assignRepository(key, repository, owner !== null);
+    } catch (e) {
+      if (!(e instanceof ApiError) || e.code !== 'repository_assigned') throw e;
+      this.fresh.set(await this.repositoriesApi.listAll());
+      const now = this.ownerOf(repository);
+      if (now === key) return;
+      if (now !== null) await this.askToMove(key, repository, now);
+      await this.api.assignRepository(key, repository, now !== null);
+    }
+  }
+
+  /** Asks whether to take the repository from `owner`; declining stops the save with the 409 notice. */
+  private async askToMove(key: string, repository: string, owner: string): Promise<void> {
+    const answer = await this.confirm.ask({
+      title: $localize`:@@project-dialog.move-title:Move ${repository}:repository: to ${key}:project:?`,
+      lines: [
+        $localize`:@@project-dialog.move-line:The repository now belongs to project ${owner}:owner:. Moving it takes it away from that project.`,
+      ],
+      confirmLabel: $localize`:@@project-dialog.move-confirm:Move repository`,
+    });
+    if (!answer) throw new ApiError(409, { code: 'repository_assigned' }, null);
+  }
+}
+
+/** Runs a removal; a 404 means it is already gone, which is what the step wants. */
+async function settleGone(step: () => Promise<void>): Promise<void> {
+  try {
+    await step();
+  } catch (e) {
+    if (!(e instanceof ApiError && e.status === 404)) throw e;
   }
 }

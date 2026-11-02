@@ -340,6 +340,9 @@ Bastion serves those parties. Phase 5 then maps GitLab pipelines into projects.
   `repository.created` of a project repository carries no `project`; the project dialog's retry after a refusal reuses
   its idempotency key and treats a `404` of an undo step as failure; doc drift (Q-AUTH-189 against H-399, R-REPO-008's
   code, `internal/project` package comment, two unused queries); the delete retry branch has no test
+- ⚪ LOW (UI fix wave) · `PUT /projects/{key}/repositories/{repoKey}?move=true` takes no expected current owner, so an
+  administrator's move can take a repository from a project it was moved to between the dialog's read and the request; the
+  dialog re-reads the owners right before and asks when one changed, which leaves only that window
 - ⚪ Not verified (code review, predates the phase) · `repository.Service.List` orders in SQL and compares its cursor
   bytewise in Go; under a non-C collation hyphenated keys could be skipped across pages
 
