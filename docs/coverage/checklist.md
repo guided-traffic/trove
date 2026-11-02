@@ -9,13 +9,13 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 334 of 678 spec requirements are implemented: a passing test names them and no
+**Status.** 336 of 678 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 700 specified (286 of them implemented), 1,539 open.
+**Totals.** 2,239 catalog features on 60 pages: 700 specified (293 of them implemented), 1,539 open.
 678 spec requirements: 543 cover catalog features, 135 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
@@ -32,7 +32,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Artifact management](#artifact-management-art) | `ART` | 53 | 10 of 10 | 32 | 21 | 12 |
 | [Search and query language](#search-and-query-language-srch) | `SRCH` | 64 | – | 3 | 61 | 0 |
 | [Builds and CI integration](#builds-and-ci-integration-bld) | `BLD` | 49 | – | 0 | 49 | 0 |
-| [Identity and access](#identity-and-access-iam) | `IAM` | 69 | 24 of 24 | 35 | 34 | 26 |
+| [Identity and access](#identity-and-access-iam) | `IAM` | 69 | 24 of 24 | 35 | 34 | 29 |
 | [Authentication providers and human login](#authentication-providers-and-human-login-authn) | `AUTHN` | 44 | 13 of 13 | 18 | 26 | 10 |
 | [Access tokens](#access-tokens-tok) | `TOK` | 48 | 24 of 24 | 27 | 21 | 25 |
 | [OIDC federation for CI systems](#oidc-federation-for-ci-systems-cioidc) | `CIOIDC` | 40 | 20 of 20 | 31 | 9 | 0 |
@@ -45,7 +45,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Security scanning and curation](#security-scanning-and-curation-sec) | `SEC` | 98 | 18 of 18 | 18 | 80 | 0 |
 | [UI inventory](#ui-inventory-ui) | `UI` | 61 | 33 of 33 | 47 | 14 | 1 |
 | [Content API operation catalog](#content-api-operation-catalog-api) | `API` | 166 | 11 of 11 | 67 | 99 | 14 |
-| [Operation catalog: administration API](#operation-catalog-administration-api-admapi) | `ADMAPI` | 114 | 34 of 34 | 54 | 60 | 4 |
+| [Operation catalog: administration API](#operation-catalog-administration-api-admapi) | `ADMAPI` | 114 | 34 of 34 | 54 | 60 | 8 |
 | [Package formats: matrix and cross-format behavior](#package-formats-matrix-and-cross-format-behavior-fmt) | `FMT` | 14 | 8 of 8 | 9 | 5 | 6 |
 | [npm package format](#npm-package-format-pkg-npm) | `PKG-NPM` | 62 | 37 of 37 | 52 | 10 | 34 |
 | [NuGet](#nuget-pkg-nuget) | `PKG-NUGET` | 56 | 35 of 35 | 42 | 14 | 35 |
@@ -521,7 +521,7 @@ Catalog page: [builds-and-ci.md](../features/builds-and-ci.md) · specified by p
 Catalog page: [identity-and-access.md](../features/identity-and-access.md) · specified by priority: MVP 24 of 24 · P1 11 of 11 · P2 0 of 23 · Later 0 of 6 · Out of scope 0 of 5
 
 <details>
-<summary>69 features: 35 specified, 34 open, 26 implemented</summary>
+<summary>69 features: 35 specified, 34 open, 29 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -576,13 +576,13 @@ Catalog page: [identity-and-access.md](../features/identity-and-access.md) · sp
 | IAM-048 | JAR signing keystore for virtual repositories | P2 | open | – |
 | IAM-049 | Trusted public keys | Later | open | – |
 | IAM-050 | SSH authentication | P2 | open | – |
-| IAM-051 | Projects | MVP | specified | [R-AUTHZ-026](../spec/authorization.md) |
-| IAM-052 | Project administrators and delegated privileges | MVP | specified | [R-AUTHZ-026](../spec/authorization.md) |
+| IAM-051 | Projects | MVP | implemented | [R-AUTHZ-026](../spec/authorization.md) (implemented) |
+| IAM-052 | Project administrators and delegated privileges | MVP | implemented | [R-AUTHZ-026](../spec/authorization.md) (implemented) |
 | IAM-053 | Project members | P2 | open | – |
 | IAM-054 | Global roles | P2 | open | – |
 | IAM-055 | Project roles | P2 | open | – |
 | IAM-056 | Role action catalog | P2 | open | – |
-| IAM-057 | Repository ownership by projects | MVP | specified | [R-AUTHZ-026](../spec/authorization.md) |
+| IAM-057 | Repository ownership by projects | MVP | implemented | [R-AUTHZ-026](../spec/authorization.md) (implemented) |
 | IAM-058 | Sharing repositories across projects | P2 | open | – |
 | IAM-059 | Project-aware sharing through internal remote repositories | Later | open | – |
 | IAM-060 | Builds in projects | P2 | open | – |
@@ -1617,7 +1617,7 @@ Catalog page: [api-content-operations.md](../features/api-content-operations.md)
 Catalog page: [api-admin-operations.md](../features/api-admin-operations.md) · specified by priority: MVP 34 of 34 · P1 20 of 23 · P2 0 of 23 · Later 0 of 28 · Out of scope 0 of 6
 
 <details>
-<summary>114 features: 54 specified, 60 open, 4 implemented</summary>
+<summary>114 features: 54 specified, 60 open, 8 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1684,11 +1684,11 @@ Catalog page: [api-admin-operations.md](../features/api-admin-operations.md) · 
 | ADMAPI-060 | Key-pair assignment to repositories | P2 | open | – |
 | ADMAPI-061 | Trusted public keys of other services | Later | open | – |
 | ADMAPI-062 | Installed TLS certificates | P2 | open | – |
-| ADMAPI-063 | Project operations | P1 | specified | [R-API-047](../spec/api-and-ui.md) |
-| ADMAPI-064 | Project user membership operations | P1 | specified | [R-API-047](../spec/api-and-ui.md) |
-| ADMAPI-065 | Project group membership operations | P1 | specified | [R-API-047](../spec/api-and-ui.md) |
+| ADMAPI-063 | Project operations | P1 | implemented | [R-API-047](../spec/api-and-ui.md) (implemented) |
+| ADMAPI-064 | Project user membership operations | P1 | implemented | [R-API-047](../spec/api-and-ui.md) (implemented) |
+| ADMAPI-065 | Project group membership operations | P1 | implemented | [R-API-047](../spec/api-and-ui.md) (implemented) |
 | ADMAPI-066 | Project role operations | P1 | open | – |
-| ADMAPI-067 | Repository assignment and sharing operations | P1 | specified | [R-API-047](../spec/api-and-ui.md) |
+| ADMAPI-067 | Repository assignment and sharing operations | P1 | implemented | [R-API-047](../spec/api-and-ui.md) (implemented) |
 | ADMAPI-068 | Environment operations | P1 | open | – |
 | ADMAPI-069 | Health probes | MVP | implemented | [R-API-038](../spec/api-and-ui.md) (implemented), [R-OPS-001](../spec/operations-and-observability.md) (implemented) |
 | ADMAPI-070 | Version and system information | MVP | implemented | [R-API-038](../spec/api-and-ui.md) (implemented), [R-OPS-002](../spec/operations-and-observability.md) (implemented), [R-OPS-004](../spec/operations-and-observability.md) (implemented) |
