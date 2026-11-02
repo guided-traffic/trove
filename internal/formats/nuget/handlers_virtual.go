@@ -61,24 +61,32 @@ func (f *Format) serveVirtual(ctx context.Context, rq *formats.Request, w http.R
 	links := rq.Host.Links(rq)
 	serving := rq.Addressed()
 	settings := strconv.FormatInt(rq.Repo.Version, 10) + "/" + spec.settings
-	etag := document.Inputs{
-		RenderVersion: RenderVersion, Repo: rq.RepoRef().ID, Variant: spec.variant + "@" + hex.EncodeToString(m.MergeFingerprint[:]),
+	fingerprint := hex.EncodeToString(m.MergeFingerprint[:])
+	// The engine's fingerprint names the members and their revisions, not the ID, so the
+	// validator names the ID itself, as the remote's does.
+	inputs := document.Inputs{
+		RenderVersion: RenderVersion, Repo: rq.RepoRef().ID, Variant: "virtual/" + lowerID + "/" + spec.variant,
 		Serving: serving, BaseURL: links.Base(), Endpoint: rq.Endpoint.Name, Exposure: rq.Endpoint.ExposureFingerprint, Settings: settings,
-	}.ETag()
+	}
 	if m.CacheStatus != "" {
 		w.Header().Set("Cache-Status", m.CacheStatus)
 	}
+	key := formats.RenditionKey{
+		Repo: rq.RepoRef(), Package: lowerID, Variant: spec.variant + "@" + serving + "@" + fingerprint,
+		Encoding: encodingOf(false), BaseURL: links.Base(), Endpoint: rq.Endpoint.Name, Exposure: rq.Endpoint.ExposureFingerprint,
+		Settings: settings, RenderVersion: RenderVersion,
+	}
+	if viewOf(rq) != nil {
+		return serveVirtualFiltered(rq, w, m, spec, key, inputs)
+	}
+	inputs.Variant += "@" + fingerprint
+	etag := inputs.ETag()
 	if document.IfNoneMatch(rq.Header.Get("If-None-Match"), etag) {
 		document.NotModified(w, etag, spec.gzip)
 		return nil
 	}
 
 	gzip := spec.gzip && document.AcceptsGzip(rq.Header.Get("Accept-Encoding"))
-	key := formats.RenditionKey{
-		Repo: rq.RepoRef(), Package: lowerID, Variant: spec.variant + "@" + serving + "@" + hex.EncodeToString(m.MergeFingerprint[:]),
-		Encoding: encodingOf(false), BaseURL: links.Base(), Endpoint: rq.Endpoint.Name, Exposure: rq.Endpoint.ExposureFingerprint,
-		Settings: settings, RenderVersion: RenderVersion,
-	}
 	cache := rq.Host.Renditions()
 	body, hit := cache.Get(withEncoding(key, gzip))
 	if !hit && gzip && !m.Partial {
@@ -88,19 +96,9 @@ func (f *Format) serveVirtual(ctx context.Context, rq *formats.Request, w http.R
 		}
 	}
 	if !hit {
-		entries, err := merge.Decode(m.Bytes)
-		if err != nil {
+		var err error
+		if body, err = renderMerged(m, spec); err != nil {
 			return err
-		}
-		var found bool
-		if body, found, err = spec.render(entries); err != nil {
-			return err
-		}
-		if !found {
-			return errNoSuchResource()
-		}
-		if int64(len(body)) > MaxDocumentBytes {
-			return errs.E(errs.Internal, errs.CodeInternal, "The document is larger than the limit of documents held in memory.")
 		}
 		if !m.Partial {
 			cache.Put(key, body)
@@ -113,6 +111,64 @@ func (f *Format) serveVirtual(ctx context.Context, rq *formats.Request, w http.R
 		}
 	}
 	return document.Reply{ETag: etag, Body: body, Gzip: gzip, Vary: spec.gzip}.Write(w, rq.Method)
+}
+
+// serveVirtualFiltered answers a merged document on an endpoint with exposure rules
+// (R-NUGET-034, Q-NUGET-87). Its validator follows the filtered rendering instead of the merge
+// fingerprint, which changes with every write of a local member and every new upstream
+// document, those of versions the endpoint hides included. The identity rendering comes from
+// the rendition cache or is rendered from the merge, so a 304 here costs a cache hit or a
+// rendering; a partial merge is rendered and never kept, as elsewhere (R-REPO-020).
+func serveVirtualFiltered(rq *formats.Request, w http.ResponseWriter, m *formats.Merged, spec virtualDoc, key formats.RenditionKey, inputs document.Inputs) error {
+	cache := rq.Host.Renditions()
+	plain, hit := cache.Get(key)
+	if !hit {
+		var err error
+		if plain, err = renderMerged(m, spec); err != nil {
+			return err
+		}
+		if !m.Partial {
+			cache.Put(key, plain)
+		}
+	}
+	inputs.Content = document.ContentDigest(plain)
+	etag := inputs.ETag()
+	if document.IfNoneMatch(rq.Header.Get("If-None-Match"), etag) {
+		document.NotModified(w, etag, spec.gzip)
+		return nil
+	}
+	gzip := spec.gzip && document.AcceptsGzip(rq.Header.Get("Accept-Encoding"))
+	body := plain
+	if gzip {
+		var ok bool
+		if body, ok = cache.Get(withEncoding(key, true)); !ok {
+			body = document.Gzip(plain)
+			if !m.Partial {
+				cache.Put(withEncoding(key, true), body)
+			}
+		}
+	}
+	return document.Reply{ETag: etag, Body: body, Gzip: gzip, Vary: spec.gzip}.Write(w, rq.Method)
+}
+
+// renderMerged renders the identity bytes of a document from a merge: a merge that leaves
+// nothing to show is a missing document.
+func renderMerged(m *formats.Merged, spec virtualDoc) ([]byte, error) {
+	entries, err := merge.Decode(m.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	body, found, err := spec.render(entries)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, errNoSuchResource()
+	}
+	if int64(len(body)) > MaxDocumentBytes {
+		return nil, errs.E(errs.Internal, errs.CodeInternal, "The document is larger than the limit of documents held in memory.")
+	}
+	return body, nil
 }
 
 // virtualFlat is the version list of an ID through a virtual repository: the union of the

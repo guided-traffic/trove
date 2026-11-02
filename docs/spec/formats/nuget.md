@@ -168,19 +168,23 @@ HTTP conventions for every NuGet endpoint:
     R-ARCH-009), the hive and `<base>`;
   - for remote documents: the stored upstream document's digest and the serving address
     (R-REPO-043);
-  - through a virtual repository: the fingerprint of the members that contribute to the ID
-    (R-REPO-020's fingerprint, taken after permission filtering and after the pin rules and claims
-    of R-NUGET-017), the `rev_seq` of every eligible local member and the stored digest of every
-    contributing remote document. A push to a local member therefore changes the virtual
-    document's ETag, and so does a claim or pin rule that drops a member for the ID without any
-    push;
+  - through a virtual repository: the lower-case ID and the fingerprint of the members that
+    contribute to it (R-REPO-020's fingerprint, taken after permission filtering and after the pin
+    rules and claims of R-NUGET-017), the `rev_seq` of every eligible local member and the stored
+    digest of every contributing remote document. A push to a local member therefore changes the
+    virtual document's ETag, and so does a claim or pin rule that drops a member for the ID without
+    any push; two IDs whose merges have one fingerprint keep two values (Q-NUGET-87);
   - for the service index: the repository's configuration version and `<base>`; from P1, for a
     remote or virtual repository also the stored digests of the upstream service indexes and the
     member fingerprint that decide whether the vulnerability entry is listed (R-NUGET-023); from
     M4b also whether trove's NuGet advisory data is complete, which decides whether trove's own
     entry is listed (R-VULN-018);
   - for every document: the endpoint of the request and its exposure fingerprint (R-NUGET-034,
-    [endpoints.md](../endpoints.md) R-EP-018).
+    [endpoints.md](../endpoints.md) R-EP-018);
+  - on an endpoint with `exposure: rules`, for the documents of local and virtual repositories:
+    the SHA-256 of the filtered identity rendering in place of `rev_seq` and of the member
+    fingerprint, which rise with writes of versions the endpoint hides; the value then moves only
+    with what the endpoint shows (R-NUGET-034, Q-NUGET-87).
 
   The same value is sent with and without gzip content coding, and replicas of two releases send
   the same value for documents built from the same inputs; RFC 9110 calls such a shared validator
@@ -433,7 +437,9 @@ cache fills. A raw deploy is not an ingestion path of NuGet (Q-NUGET-13). The Nu
    archive, or a central-directory name that differs from the entry's local header name is
    rejected (400). So is an archive whose entry data overlaps another entry's or runs past the
    central directory, and one that the standard library reads differently from the bounded scan of
-   the central directory (Q-NUGET-23). Every refusal of steps 1 to 4, a bound crossed included,
+   the central directory (Q-NUGET-23): another end-of-central-directory signature after the end
+   record whose comment ends the archive, or an entry whose data the standard library would read
+   from another offset than the one the scan checked (Q-NUGET-89). Every refusal of steps 1 to 4, a bound crossed included,
    answers 400 with the code `nuget_invalid_package`; the reader keeps the rule that fired as the
    cause for the log and the audit event.
 2. Normalize entry names (`\` becomes `/`). Reject the archive (400) if a name is absolute or
@@ -767,6 +773,11 @@ API (both are API-key endpoints, R-NUGET-012):
   who could not delete the version. One exception changes something: in `delete` mode, a
   `reserved` tombstone (R-NUGET-033) becomes `removed`, so the journaled bytes are refused too.
   Other `DELETE` requests for a version the repository does not hold answer 404.
+- A hard delete and a push of another version of the same ID run side by side without waiting for
+  each other in a circle: the delete holds the package row and never waits inside its transaction
+  for the ID's folder, which the push holds until it commits; a folder the delete empties while
+  another transaction holds it is removed after the delete's commit, if it is still empty then
+  (Q-NUGET-88).
 - The repository settings page in the UI shows the effective `deleteMode`, so users know what
   `dotnet nuget delete` does in that repository.
 - Unlist and relist increment `packages.rev_seq` (R-ARCH-009), so the next search, version list or
@@ -2401,7 +2412,12 @@ document:
   `versions` include and exclude lists are not ranges: they are compared literally with the
   canonical form the format asks about, the normalized lower-case URL form (`2.1.0-beta.1`), so an
   exclude written as `2.1` or `2.1.0-Beta.1` hides nothing (Q-NUGET-62, Q-EP-69, H-380).
-- **Validators.** The ETag of R-NUGET-002 includes the endpoint and its exposure fingerprint.
+- **Validators.** The ETag of R-NUGET-002 includes the endpoint and its exposure fingerprint. For
+  the documents of local and virtual repositories it is derived from the filtered rendering, not
+  from the package's revision or the merge fingerprint, so a push, unlist, relist or delete of a
+  hidden version leaves it as it was and a consumer polling with `If-None-Match` gets 304
+  (Q-NUGET-87). A remote repository's documents keep the digest of the stored upstream document
+  ([H-350](../../security/endpoints-and-exposure.md#h-350--on-an-endpoint-with-rules-the-etag-of-a-nuget-remote-document-follows-the-whole-upstream-document)).
 
 Acceptance criteria (`Acme.Sdk` 1.9.0, 2.0.0, 2.1.0-beta.1 and 2.1.0 in `nuget-internal`, a member
 of `nuget-customers`; a rule on `customers` exposing `Acme.Sdk` with `"range": "[2.0.0, )"` and no
@@ -4280,6 +4296,61 @@ Context: E3.6 asks that variant A of the drain test gains the NuGet part of its 
 **Rationale:** the owner's rule of 2026-11-01 says long legs run nightly and their reliability is phase 7's; building the NuGet load where its capacity question is answered avoids a second leg that is red for the same reason. The development agent revisits this when phase 7 starts.
 
 **Applied in the spec:** none. Plan: [BETA.md](../../projektplan/BETA.md) phases 4 and 7; [roadmap](../../coverage/roadmap.md) E3.6.
+
+### Q-NUGET-87 · On an endpoint with rules the validator of a local or virtual document follows its filtered bytes, and a virtual validator names the ID
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the weak ETag of a local document was a hash of its inputs with `packages.rev_seq`, that of a virtual document one with the merge fingerprint (R-NUGET-002, Q-NUGET-9). Both rise with every write of the ID, a write of a version that an endpoint with rules hides included, while the filtered body stays the same, so a consumer polling with `If-None-Match` learned when hidden versions were pushed, unlisted, relisted or deleted (security audit of 2026-11-02, finding F-23). The virtual value did not name the ID either: the engine's fingerprint names the members and their revisions, so two IDs of one member at one revision shared a value (code review of the same day).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) On an endpoint with rules the SHA-256 of the filtered identity rendering takes the place of the revision and of the merge fingerprint among the inputs (chosen) | `serveFiltered` and `serveVirtualFiltered` take the identity rendering from the rendition cache, keyed as before, or render it, and hash it into `document.Inputs.Content` | The value moves exactly when the shown bytes move; every replica computes it alike, because a rendering is a function of its inputs (R-NUGET-030); gzip and identity share it; an empty `Content` leaves the hash as it was, so a local document outside such an endpoint keeps its value | A 304 on such an endpoint costs a cache hit, or after a write of the ID a read of the rows and a rendering, because the rendition cache is keyed by the revision |
+| (b) A hash of the filtered inputs: the exposed versions with their listed state and a digest of their metadata | A pass over the rows before the 304 | No rendering for a 304 | A second definition of what a document shows beside the renderer, which has to follow every field the renderer adds |
+| (c) Keep the revision and record the signal as a gap beside H-60 | Nothing changes | No cost | The signal stays, on the endpoints that exist for consumers who must not learn about unreleased versions |
+
+**Choice:** (a). The variant of a virtual value carries the lower-case ID, as the remote's does.
+
+**Rationale:** the bytes the endpoint shows are the one input that may move the value there, and hashing them is the one definition that cannot drift from the renderer; the cost falls on endpoints with rules only, and only after a write. The new inputs change the value of every virtual document and of every document on an endpoint with rules once: during the rolling upgrade a client may get a 200 where a 304 was possible, never a 304 for other bytes. The remote class keeps the digest of the stored upstream document (Q-NUGET-52), which an upstream change of a hidden version moves (H-350). The development agent revisits this if the renderings on endpoints with rules show in the request latency.
+
+**Applied in the spec:** R-NUGET-002 (the inputs of the value), R-NUGET-034 (Validators). Code: [documents.go](../../../internal/formats/nuget/documents.go), [handlers_virtual.go](../../../internal/formats/nuget/handlers_virtual.go), [document.go](../../../internal/formats/nuget/document/document.go). Tests: `TestR_NUGET_034_TheValidatorOnAnEndpointWithRulesFollowsOnlyWhatTheEndpointShows`, `TestR_NUGET_034_TheValidatorOfAVirtualDocumentOnAnEndpointWithRulesFollowsOnlyWhatItShows`, `TestR_NUGET_002_TheValidatorOfAVirtualDocumentNamesThePackage`, `TestR_NUGET_002_AnEmptyContentKeepsTheValueOfEarlierReleases`.
+
+### Q-NUGET-88 · A removal never waits for a folder inside its transaction; a folder another transaction holds goes after the commit
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a push of a new version holds the ID's folder and every other ancestor `FOR SHARE` from its link step to its commit (Q-STOR-144) and takes the package row in its storage hook (R-NUGET-006). A hard delete of another version takes the package row first, because the version and the tombstone are read under it (R-NUGET-006), and after removing the files it took the folders it emptied `FOR UPDATE`, waiting for the push. The two waited for each other in a circle, which PostgreSQL broke after `deadlock_timeout` with 40P01 and the retry repeated (code review of 2026-11-02, finding F-23). Every removal that locks a package row before its files takes the same order: a raw delete through `/files/` (the generic layer locks the packages in `DeleteSpec.Extra`), the eviction of a remote, an npm unpublish. The integration test that arranges the circle and then races six pushes against six hard deletes on two replicas counted 20 deadlocks in its database before the change, and three requests of the race answered 500 when the retry gave up.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A removing transaction takes a folder's lock only when it is free (`FOR UPDATE SKIP LOCKED`); a folder another transaction holds is removed after the commit in a transaction of its own (chosen) | `items.Store.removeEmptied` and `sweepAncestors` in `RemoveIn` and the synchronous `Delete`; the statements `LockFolderExclusiveFree` and `FolderLive`; the sweep runs from `meta.Tx.After`, waits for the holder, removes the folder if it is still empty and walks up | One rule for every removal and every format; no removal waits for a deploy, so no circle through a package row remains; an uncontended removal removes its folders in its own transaction as before | A folder that was held goes in a second transaction after the commit, and the answer of the request waits for it (bounded by `lock_timeout`); a process that dies between the two leaves an empty implicit folder until a later removal below it takes it |
+| (b) The delete locks the folder chain before the package row | One order: folders, then the package row | The textbook form | The format's route has no way to lock folders: a method on `formats.PackageWriter` changes the frozen contract (ADR-141); the `/files/` road locks packages in `Extra` before the store sees a folder; every deploy below the ID waits for every delete |
+| (c) Look for other children before taking the lock | Skip the lock when another child is visible | Small | The circle stays when the deleted version was the last committed child (the push's own child is not committed); two deletes that each see the other's child both keep a folder that ends up empty |
+| (d) Keep it: the retry resolves it | — | Nothing to build | One `deadlock_timeout` per collision, and a 500 when collisions repeat, as the race showed |
+
+**Choice:** (a).
+
+**Rationale:** the removal is the side that can wait: an empty folder is a cosmetic state for one more short transaction, while a deploy cannot go on without its folders. The job `items-delete` removes its folders in transactions that hold nothing else and keeps waiting for them. The development agent revisits this if the sweep's log line ("was not removed after its commit", a `lock_timeout` behind a long deploy) shows in operation.
+
+**Applied in the spec:** R-NUGET-007 (a hard delete beside a push of another version). Code: [sweep.go](../../../internal/items/sweep.go), [delete.go](../../../internal/items/delete.go), [files.sql](../../../internal/meta/postgres/queries/files.sql). Developer docs: [items.md](../../developer/items.md), [files.md](../../developer/files.md). Tests: `TestR_NUGET_007_APushAndAHardDeleteOfAnotherVersionNeverDeadlock`, `TestR_STOR_018_ARemovalDoesNotWaitForAFolderAnotherTransactionHolds`.
+
+### Q-NUGET-89 · The package reader refuses a second end record after the one it reads and holds every entry to the data offset it checked
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the bounded scan of R-NUGET-005 step 1 (Q-NUGET-23) takes the end-of-central-directory record whose comment ends at the end of the archive. `archive/zip` of Go 1.27.3, which opens the entries, takes the last end-record signature whose 22-byte record fits, also when bytes follow its comment. An archive with a second end record inside the first one's comment was therefore read through two central directories: the scan checked one, the standard library served the other, and the two were compared by name, flags, method and sizes only (security audit of 2026-11-02, finding F-26). The unit test builds such a package whose second directory points the `.nuspec` at other bytes of the same size: before the change `Inspect` returned the identity `Evil.Widgets` of the bytes the scan never checked, while the scan had checked `Acme.Widgets`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Refuse an end-record signature after the chosen record wherever a whole record fits, and compare each entry's `(*zip.File).DataOffset()` with the offset the scan computed from the local header it checked (chosen) | `endRecord` in [scan.go](../../../internal/formats/nuget/nupkg/scan.go), `readBy` in [nupkg.go](../../../internal/formats/nuget/nupkg/nupkg.go); 400 `nuget_invalid_package` with the reason that the two readers disagree | The two readers read one directory and take every entry's data from the place the scan checked; the offset comparison also catches a reader that moves the offsets, as `archive/zip` does for bytes in front of an archive | One more local header read per entry; a package whose comment holds the signature where a record fits is refused |
+| (b) Take the record `archive/zip` takes | Follow the library's rule | No refusal | The check follows one library's heuristic, and the scan's rule exists so that a comment cannot carry an archive of its own (`TestR_NUGET_005_NupkgCommentCannotHideAnArchive`) |
+| (c) Compare the checksums as well | Each entry's CRC-32 beside the offset | — | Once both readers read one directory the checksums are those of the same records |
+
+**Choice:** (a).
+
+**Rationale:** the reader's promise is that what was checked is what is served; refusing the ambiguous archive keeps that without following any reader's guess. The price is the refusal of a package whose comment holds the signature where a record fits. The development agent revisits this if a package from a real client is refused for a signature in its comment.
+
+**Applied in the spec:** R-NUGET-005 step 1. Tests: `TestR_NUGET_005_AnEndRecordAfterTheOneTheScanChoseIsRefused`, `TestR_NUGET_005_EveryEntryIsReadFromTheOffsetTheScanChecked`; the seed and the corpus entry `second-end-record` of `FuzzR_ARCH_028_Inspect`.
 
 ## What this does not cover
 

@@ -14,20 +14,27 @@ import (
 
 // Versions lists every stored version of an ID, listed or not, ascending by sort key.
 func (s *Store) Versions(ctx context.Context, repoID int64, lowerID string) ([]rows.VersionEntry, error) {
-	var out []rows.VersionEntry
+	idx, err := s.FlatIndex(ctx, repoID, lowerID)
+	return idx.Versions, err
+}
+
+// FlatIndex reads the version list of an ID with the revision of the package, in one
+// statement.
+func (s *Store) FlatIndex(ctx context.Context, repoID int64, lowerID string) (rows.FlatIndex, error) {
+	var out rows.FlatIndex
 	err := s.o.DB.InTx(ctx, func(tx meta.Tx) error {
-		out = nil
+		out = rows.FlatIndex{}
 		qs, err := queries(tx)
 		if err != nil {
 			return err
 		}
 		rs, err := qs.NuGetVersions(ctx, q.NuGetVersionsParams{RepositoryID: repoID, LowerID: lowerID})
-		if err != nil {
+		if err != nil || len(rs) == 0 {
 			return err
 		}
-		out = make([]rows.VersionEntry, len(rs))
+		out = rows.FlatIndex{Rev: rs[0].RevSeq, Versions: make([]rows.VersionEntry, len(rs))}
 		for i, r := range rs {
-			out[i] = rows.VersionEntry{
+			out.Versions[i] = rows.VersionEntry{
 				VersionID: r.VersionID, LowerVersion: r.Version, FullVersion: r.DisplayVersion, DeclaredID: r.DeclaredID,
 				Listed: r.Listed, IsPrerelease: r.IsPrerelease, IsSemver2: r.IsSemver2, PublishedAt: r.PublishedAt.Time,
 			}

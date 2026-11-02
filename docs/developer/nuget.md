@@ -120,7 +120,7 @@ All four import only [internal/errs](../../internal/errs), the standard library 
 |---|---|
 | [internal/formats/nuget/id](../../internal/formats/nuget/id) | `ValidateLocal` (ASCII IDs of a local repository), `ValidateUpstream` (the .NET `\w` rule for cached IDs, by Unicode category), `Lower`, `SameID`; code `nuget_invalid_id` |
 | [internal/formats/nuget/version](../../internal/formats/nuget/version) | `Parse`, the normalized, full-normalized and URL forms, `Compare` and `SortKey`, `ParseRange` and `Satisfies`; codes `nuget_invalid_version` and `nuget_invalid_version_range` (R-NUGET-003, Q-NUGET-20 to Q-NUGET-22) |
-| [internal/formats/nuget/nupkg](../../internal/formats/nuget/nupkg) | `Open` and `Inspect` over an `io.ReaderAt`: the central directory scanned by hand (ZIP64 included), every local header name compared, the name rules, the one `.nuspec` at the root; only the central directory and the `.nuspec` are read (R-NUGET-005, Q-NUGET-23, Q-NUGET-24) |
+| [internal/formats/nuget/nupkg](../../internal/formats/nuget/nupkg) | `Open` and `Inspect` over an `io.ReaderAt`: the central directory scanned by hand (ZIP64 included; no end-record signature may follow the record the scan reads), every local header name compared, the name rules, the one `.nuspec` at the root; `directory.readBy` holds `archive/zip` to the scan, entry by entry, data offsets included; only the central directory, the local headers and the `.nuspec` are read (R-NUGET-005, Q-NUGET-23, Q-NUGET-24, Q-NUGET-89) |
 | [internal/formats/nuget/nuspec](../../internal/formats/nuget/nuspec) | `Parse` of the `.nuspec`: UTF-8 and UTF-16 with BOM, no DOCTYPE, no entity expansion, namespace and repeated-element rules (Q-NUGET-25) |
 | [internal/formats/nuget/rows](../../internal/formats/nuget/rows) | the plain values of the data port, a leaf by the rule "`formats/<id>/rows`" |
 
@@ -188,7 +188,7 @@ The order of the checks and what each refusal answers is on [the security page](
 
 | File | Responsibility |
 |---|---|
-| [publish.go](../../internal/formats/nuget/publish.go) | `readIncoming`: steps 1 to 4 of R-NUGET-005 over a spooled package (`nupkg.Inspect` with the `nuget.archive` limits, the local ID rule, the version, the dependencies, the refusal of a symbol package); `incoming` is the payload to the commit; the metadata JSON (typed by [rows/metadata.go](../../internal/formats/nuget/rows/metadata.go)), the lowercased package types, the ID tokens of the search document |
+| [publish.go](../../internal/formats/nuget/publish.go) | `readIncoming`: steps 1 to 4 of R-NUGET-005 over a spooled package (`nupkg.Inspect` with the `nuget.archive` limits, the local ID rule, the version, the dependencies, the refusal of a symbol package); `incoming` is the payload to the commit; `isSemver2` (the version or a bound of a dependency range is SemVer 2.0.0-specific, R-NUGET-004; the push and a remote's fill share it); the metadata JSON (typed by [rows/metadata.go](../../internal/formats/nuget/rows/metadata.go)), the lowercased package types, the ID tokens of the search document |
 | [handlers_publish.go](../../internal/formats/nuget/handlers_publish.go) | `handlePush`: the multipart reader (first part is the package, 64 KiB of preamble at most, a bare body is the package), the spool with its own length, the permission on the declared ID, the number (`numberTaken`: replay 201, 409), the shadowing check, the commit with the generated `.nuspec` as a companion, `commitError` |
 | [hooks.go](../../internal/formats/nuget/hooks.go) | `OnCommit`: the package row lock first, then the versions and the tombstone, the claim, the version row, the revision, the NuGet row and the published event; the companion's hook links the `.nuspec`; a commit that is not a push is refused (501) |
 | [hooks_remove.go](../../internal/formats/nuget/hooks_remove.go) | `OnItemsRemoved`: the removal of a `.nupkg` is the removal of the version (tombstone, version row, revision, `package.deleted`); a generated file alone is refused with 409. `OnItemsRestored`: the tombstone goes with a restored package (P1) |
@@ -196,7 +196,7 @@ The order of the checks and what each refusal answers is on [the security page](
 | [servecheck.go](../../internal/formats/nuget/servecheck.go) | `ServeCheck`: a stored version is served, listed or not; a tombstoned one and a file without a NuGet row are 404 |
 | [metrics.go](../../internal/formats/nuget/metrics.go) | `trove_nuget_push_replayed_total{repo}` |
 | [rows/write.go](../../internal/formats/nuget/rows/write.go) | the values of a removal, a listing change, a lookup and the serve state |
-| [internal/formatdata/nuget](../../internal/formatdata/nuget) | `store.go` (every write and the audit events in the change's transaction, the journal entries), `read.go` (`Versions`, `Registration`), `search.go` (the search read, replaced by the search package) |
+| [internal/formatdata/nuget](../../internal/formatdata/nuget) | `store.go` (every write and the audit events in the change's transaction, the journal entries), `read.go` (`Versions`, `FlatIndex` with the package's revision in the statement of the versions, `Registration`), `search.go` (the search read, replaced by the search package) |
 | [nugettest](../../internal/formats/nuget/nugettest/store.go) | the twin with real state: the rows of versions, tombstones and listing, the blob digests a removal reads, a rollback that leaves no trace, the logs `Published`, `Tombstones`, `Listings` and `Journal`; `Revisions` binds the revision and the display name to the host of a test |
 
 How a push goes, in the order of the code:
@@ -211,6 +211,11 @@ How a push goes, in the order of the code:
 A hook never takes a second connection: `Store.Tombstone` takes the hook's transaction (Q-NUGET-40). The delete route removes the files through the package writer and the hook of the item store
 does the rest, for the protocol, raw and management deletes alike; `formats.RemovedItem.SHA256` carries the digest the hook needs because the item row is gone when it runs (Q-NUGET-39).
 
+The locks of a push and a hard delete: the push holds the ID's folder `FOR SHARE` from its link step and takes the package row in `OnCommit`; the delete takes the
+package row first and removes the version's files through `RemoveIn`. The item store never waits inside a removing transaction for a folder it emptied: a folder
+another transaction holds is removed after the commit ([sweep.go](../../internal/items/sweep.go), Q-NUGET-88), so the two cannot wait for each other in a circle.
+`TestR_NUGET_007_APushAndAHardDeleteOfAnotherVersionNeverDeadlock` arranges the circle with a held row and reads `pg_stat_database.deadlocks` at the end.
+
 The authentication stage reads `Authorization` on a push; `X-NuGet-ApiKey` is read once the API-key stage is in the build (R-NUGET-012). The integration tests send a Bearer token.
 
 Not built here: the upload of the management API, copy and move (they reach `OnCommit` without a push payload and answer 501), the restore replay of the journal entries
@@ -218,7 +223,7 @@ Not built here: the upload of the management API, copy and move (they reach `OnC
 
 Tests: `go test ./internal/formats/nuget/ ./internal/formats/nuget/nugettest/ ./internal/formatdata/nuget/` (push, unlist, delete, hooks and the kit's checks 6 and 9 with the twin),
 and [test/integration/nuget](../../test/integration/nuget) `push_test.go` against PostgreSQL and the object store (the rows, the events, the outbox, the replica counter, two replicas,
-concurrent pushes, a push racing a delete).
+concurrent pushes, a push racing a delete), and `lockorder_test.go` (a push and a hard delete of another version, arranged and raced, without a deadlock).
 
 ## Symbol packages
 
@@ -249,10 +254,10 @@ served for local repositories (R-NUGET-008, R-NUGET-009). They read through the 
 
 | File | Responsibility |
 |---|---|
-| [documents.go](../../internal/formats/nuget/documents.go) | `serveDocument`: the read permission on the ID, the exposure view, the revision lookup, the weak validator and the 304, the rendition cache, gzip, the reply; `docSpec` describes one document; `viewOf` is the exposure view of the request |
-| [handlers_flat.go](../../internal/formats/nuget/handlers_flat.go) | `handleFlatIndex` (the version list), `handleNupkg`, `handleNuspec` through `serveFile` (stat, serve with the protocol's media type) |
+| [documents.go](../../internal/formats/nuget/documents.go) | `serveDocument`: the read permission on the ID, the exposure view, the revision lookup, the weak validator and the 304, the rendition cache, gzip, the reply; `serveFiltered`: the same on an endpoint with rules, with the validator taken from the filtered rendering (Q-NUGET-87); `docSpec` describes one document; `viewOf` is the exposure view of the request |
+| [handlers_flat.go](../../internal/formats/nuget/handlers_flat.go) | `handleFlatIndex` (the version list from `Store.FlatIndex`, which returns the revision of the rows it read), `handleNupkg`, `handleNuspec` through `serveFile` (stat, serve with the protocol's media type) |
 | [handlers_registration.go](../../internal/formats/nuget/handlers_registration.go) | `handleRegistrationIndex`, `…Page`, `…Leaf`: one `Store.Registration` read, `registration.Visible` for the hive and the exposure, then `registration.Doc` |
-| [document](../../internal/formats/nuget/document/document.go) | The helpers every rendered document shares: `Marshal` (deterministic JSON), `Timestamp`, `VersionList`, `Gzip`, `AcceptsGzip`, `Inputs.ETag`, `IfNoneMatch`, `Reply.Write` (headers, HEAD without a body, the length of the variant sent) |
+| [document](../../internal/formats/nuget/document/document.go) | The helpers every rendered document shares: `Marshal` (deterministic JSON), `Timestamp`, `VersionList`, `Gzip`, `AcceptsGzip`, `Inputs.ETag` (with `Inputs.Content`, the `ContentDigest` of a rendering, on an endpoint with rules), `IfNoneMatch`, `Reply.Write` (headers, HEAD without a body, the length of the variant sent) |
 | [registration](../../internal/formats/nuget/registration) | `Doc.Index`, `Doc.Page`, `Doc.Leaf`, `Visible` (hive and exposure filter), `Hive`, `Paging`, `Feed` (the URLs), `ParseMetadata` (the stored object) |
 
 Both packages are plain edge packages, not layer leaves: the format is their only caller, and `registration` imports `rows`, `id`, `version` and `document`.
@@ -263,8 +268,12 @@ The path of a document request:
 2. One `Packages().Package` lookup gives `packages.rev_seq`. The validator is computed from it and the other inputs of `document.Inputs` without rendering, and `If-None-Match`
    answers 304 here, reading no rows.
 3. The replica's rendition cache is asked under a key with the same inputs and the coding; a gzip hit is made from a cached identity rendition.
-4. On a miss the `Store` is read (`Versions` for the list, `Registration` for the hives), the document is rendered, both codings are cached, and the rows' own revision replaces
-   the looked-up one in key and validator when a write raced the lookup.
+4. On a miss the `Store` is read (`FlatIndex` for the list, `Registration` for the hives, each with the package's revision in the statement of its rows), the document is
+   rendered, both codings are cached, and the rows' own revision replaces the looked-up one in key and validator when a write raced the lookup.
+
+On an endpoint with rules steps 2 to 4 run in `serveFiltered`: the identity rendering comes from the cache under the key of step 3 or is rendered, and the validator is
+computed from it (`document.ContentDigest` in `Inputs.Content`, `Rev` 0), so it moves only when what the endpoint shows moves, not with a write of a hidden version
+(Q-NUGET-87). A 304 there costs a cache hit, or after a write of the ID a read and a rendering.
 
 Things to know when changing a document:
 
@@ -292,7 +301,7 @@ What each route does with it:
 
 | Route | Call | Hidden means |
 |---|---|---|
-| `flatcontainer/{id}/index.json` | `exposes(viewOf(rq), id)` over `Store.Versions` | the version is not listed; none left is a 404 |
+| `flatcontainer/{id}/index.json` | `exposes(viewOf(rq), id)` over `Store.FlatIndex` | the version is not listed; none left is a 404 |
 | registration index, page, leaf, three hives | `registration.Visible(versions, hive, keep)` | the leaf is not listed, counts and bounds follow the rest; a leaf of a hidden version is a 404 |
 | `.nupkg`, `.nuspec` | `serveFile` asks `hiddenVersion` after `Authorize` | 404, the same body as a missing version |
 | search | `Resolver.ReadScope` answers `ReadRows`; `MayRead` is the ceiling | the version is not in `versions`, the package is not counted when none is left |
@@ -303,7 +312,7 @@ Rules for a handler that serves a list or a version, in the order they matter:
 
 1. Ask the view with `lower_id` and the URL form of the version (Q-NUGET-62); never with the original spelling. The decision point compares version names letter by letter with what the format passes (Q-EP-69, H-380).
 2. A package the view does not expose answers the 404 of a missing package before any lookup (`serveDocument` does this for every document).
-3. The rendition key and the validator include `rq.Endpoint.Name` and `rq.Endpoint.ExposureFingerprint`; `serveDocument` and `indexETag` do. A new document that bypasses `serveDocument` must add both, or a rule change leaves the old document valid.
+3. The rendition key and the validator include `rq.Endpoint.Name` and `rq.Endpoint.ExposureFingerprint`; `serveDocument` and `indexETag` do. A new document that bypasses `serveDocument` must add both, or a rule change leaves the old document valid. Its validator must not follow an input that moves with hidden versions (a revision, a merge fingerprint, an upstream digest): `serveFiltered` and `serveVirtualFiltered` hash the filtered rendering instead (Q-NUGET-87); the remote's `serveRemote` does not yet (H-350).
 4. Embedded files, the symbol server and autocomplete, when built, call `hiddenVersion` for a version they serve; the symbol server answers 404 on `onRulesEndpoint(rq)` until its filter is specified (R-NUGET-034).
 5. A remote or virtual handler that merges versions filters the rows, not the merged bytes (Q-NUGET-63, H-295).
 
@@ -385,14 +394,15 @@ caches the merged document of an ID; the format contributes the strategy per pat
 |---|---|
 | [virtual.go](../../internal/formats/nuget/virtual.go) | `Format.Virtual()`: `Strategy` (the version list and the registration entries are merged, every other path is first match), `LocalDocument` (a member's rows to its document, with the `rev_seq` read before the rows), `Merge` (to package `merge`), `ArtifactPrefix` (`{lower_id}/`). `VariantFlat`, `VariantRegistration`. |
 | [merge](../../internal/formats/nuget/merge) | `Do` (the per-version source rule: local, then a remote member whose cache holds the package, then the remote members that would fetch it; ties by position), `DecodeUpstream` (an upstream registration index with its pages inlined to entries), the neutral `Doc`. No host, no request, no clock. |
-| [handlers_virtual.go](../../internal/formats/nuget/handlers_virtual.go) | `serveVirtual` (authorize, exposure, `Resolver.Metadata`, validator from the merge fingerprint, the rendition cache unless the merge is partial), `virtualFlat`, `virtualRegistration`, `virtualFile` (`Resolver.Artifact`). The existing handlers branch on `rq.Repo.Class` in one line each. |
+| [handlers_virtual.go](../../internal/formats/nuget/handlers_virtual.go) | `serveVirtual` (authorize, exposure, `Resolver.Metadata`, validator from the lower-case ID and the merge fingerprint, the rendition cache unless the merge is partial), `serveVirtualFiltered` (on an endpoint with rules the validator from the filtered rendering, Q-NUGET-87), `renderMerged`, `virtualFlat`, `virtualRegistration`, `virtualFile` (`Resolver.Artifact`). The existing handlers branch on `rq.Repo.Class` in one line each. |
 | [search_virtual.go](../../internal/formats/nuget/search_virtual.go) | `runVirtualSearch`: `Resolver.Plan`, one `searchRepo` per local member in parallel, `KeepsAway` per result, `mergeHits`/`unionHit`. `searchRemote` is the seam of the forwarded search. |
 | [metrics_virtual.go](../../internal/formats/nuget/metrics_virtual.go) | `trove_nuget_virtual_member_skipped_total{repo,reason}`; the one reason is `unavailable` (a partial merge). |
 
 **The way a request runs.** `GET flatcontainer/{id}/index.json` and the three registration documents authorize the read on the ID, apply the endpoint's exposure, and ask `Resolver.Metadata` for the merge of
 `{lower_id}/index.json` (variant `flat`) or `{lower_id}/.registration/index.json` (variant `registration`). The engine reads the document of every local member through `LocalDocument` and of every remote
-member from the remote engine, merges them with `Merge`, and keeps the result by member set until the revision of a local member changes. The handler computes the weak ETag from the merge fingerprint and the serving inputs
-before it decodes anything, answers 304 on a match, and otherwise renders the list or the hive from the merged entries with the registration package. A package file goes to `Resolver.Artifact` at its canonical path; the engine names the member in `Trove-Resolved-From`.
+member from the remote engine, merges them with `Merge`, and keeps the result by member set until the revision of a local member changes. The handler computes the weak ETag from the lower-case ID, the merge fingerprint and the serving inputs
+before it decodes anything, answers 304 on a match, and otherwise renders the list or the hive from the merged entries with the registration package. On an endpoint with rules it renders first (or takes the
+rendition from the cache) and hashes the filtered bytes into the ETag instead of the fingerprint, which moves with writes of hidden versions (Q-NUGET-87). A package file goes to `Resolver.Artifact` at its canonical path; the engine names the member in `Trove-Resolved-From`.
 
 **Writes.** Nothing here: the dispatcher sends a write route (`Classes: local`) addressed to a virtual repository to its deployment target (`redirectClass`), so `handlePush`, `handleDelete` and `handleRelist` run on the target and `rq.Addressed()` is the target.
 The service index lists the publish resources when `Resolver.DeployTarget` resolves one (`takesPushes`); the decision point refuses a write on a virtual repository without a target with 403 before the dispatcher is reached (Q-NUGET-59).

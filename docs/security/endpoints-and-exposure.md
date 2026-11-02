@@ -72,6 +72,12 @@ same rules (R-EP-018, [developer/endpoints.md](../developer/endpoints.md#package
   endpoint_read_only`. A merged or rewritten document is read the way `JSON.parse` reads it, so a member repeated in an upstream
   document cannot carry an unfiltered copy past the filter (Q-NPM-40). What stays visible: `time.created`, `time.modified` and
   `Last-Modified` (H-60).
+- **NuGet** (R-NUGET-034): the version list and the registrations of a local or virtual repository list the exposed versions
+  only, and their weak `ETag` is derived from the filtered rendering instead of the package's revision or the merge fingerprint,
+  so a push, unlist, relist or delete of a hidden version leaves a polling consumer with a `304` and the value it had
+  ([documents.go](../../internal/formats/nuget/documents.go) `serveFiltered`, [handlers_virtual.go](../../internal/formats/nuget/handlers_virtual.go)
+  `serveVirtualFiltered`, Q-NUGET-87; `TestR_NUGET_034_TheValidatorOnAnEndpointWithRulesFollowsOnlyWhatTheEndpointShows`).
+  The documents of a remote repository keep the digest of the stored upstream document (H-350).
 - **Member names.** On an endpoint with rules no answer carries `Trove-Resolved-From`, and a member's failure is reported as the
   addressed repository's, with its code and `Retry-After` (Q-EP-56; H-294).
 - **Cache state.** On an endpoint with rules no answer of a format route carries `Cache-Status`: `formats.ServeRoute` removes it
@@ -213,15 +219,15 @@ integration test of R-NUGET-034 builds `nuget-customers` as a local repository a
 NuGet virtual repository, as [endpoints.md](../spec/endpoints.md) describes it. The fix sets the addressed repository on the read scope of the merged search
 (open finding F-21).
 
-### H-343 · On an endpoint with rules a NuGet document's ETag changes with hidden versions
+### H-350 · On an endpoint with rules the ETag of a NuGet remote document follows the whole upstream document
 
-Stage: the weak ETag of the NuGet documents of a local and of a virtual repository ([documents.go](../../internal/formats/nuget/documents.go),
-[handlers_virtual.go](../../internal/formats/nuget/handlers_virtual.go)).
+Stage: the weak ETag of the version list and the registration documents of a NuGet remote repository addressed on an endpoint with `exposure: rules`
+([handlers_remote.go](../../internal/formats/nuget/handlers_remote.go) `serveRemote`).
 
-Subject: the activity on hidden versions of an exposed package.
+Subject: the activity at the remote's upstream on versions of an exposed package that the endpoint hides, and when trove took the upstream's new document.
 
-Live today (read in the code; found by the security audit of 2026-11-02). The ETag is derived from the package's revision, which a push, unlist, relist or
-delete of any version raises, also of a hidden one; the filtered body does not change. A customer that polls a version list or registration with
-`If-None-Match` learns when hidden versions change, the same kind of signal as `Last-Modified` (H-60). The virtual ETag also lacks the package ID, so two IDs of
-one member at the same revision share an ETag. What makes it real: a consumer who must not learn when unreleased versions move. The fix derives the ETag on
-an endpoint with rules from the filtered inputs (open finding F-23).
+Live today (read in the code). The value is a hash of the SHA-256 of every stored upstream document the rendering reads (Q-NUGET-52), so an upstream change
+that touches only hidden versions changes the value while the filtered body stays the same, and a consumer polling with `If-None-Match` learns that the
+upstream changed something about the ID, not what. The documents of local and virtual repositories follow their filtered rendering (Q-NUGET-87), a virtual
+repository with a remote member included. What makes it real: a remote whose upstream is private, another trove or a company feed, addressed directly on a
+customer endpoint; the activity of nuget.org is public anyway. The fix is the one of Q-NUGET-87 in `serveRemote`.

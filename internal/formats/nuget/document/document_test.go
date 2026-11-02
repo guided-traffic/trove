@@ -41,6 +41,7 @@ func TestR_NUGET_002_ETagIsWeakAndFollowsItsInputs(t *testing.T) {
 		"endpoint":       func(i *Inputs) { i.Endpoint = "customers" },
 		"exposure":       func(i *Inputs) { i.Exposure = "abc" },
 		"settings":       func(i *Inputs) { i.Settings = "4/32/128" },
+		"content":        func(i *Inputs) { i.Content = ContentDigest([]byte(`{"versions":["2.0.0"]}`)) },
 	} {
 		in := inputs()
 		mod(&in)
@@ -54,6 +55,22 @@ func TestR_NUGET_002_ETagIsWeakAndFollowsItsInputs(t *testing.T) {
 	b.Variant, b.Serving = "a", "bc"
 	if a.ETag() == b.ETag() {
 		t.Error("two inputs that differ only in where a field ends give the same value")
+	}
+}
+
+// TestR_NUGET_002_AnEmptyContentKeepsTheValueOfEarlierReleases: Content enters the value only
+// when it is set, so the validator of a local document outside an endpoint with rules is the one
+// the releases before Q-NUGET-87 computed, and a rolling upgrade does not turn its 304s into 200s.
+// The digest is the SHA-256 of the bytes in hex.
+func TestR_NUGET_002_AnEmptyContentKeepsTheValueOfEarlierReleases(t *testing.T) {
+	if got := inputs().ETag(); got != `W/"5e5fe61503a3a4ea2c96923aafe9e1cb"` {
+		t.Errorf("ETag = %s, want the value of the earlier releases", got)
+	}
+	if got := ContentDigest([]byte("a")); got != "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb" {
+		t.Errorf("digest of a = %s, want the SHA-256 of a", got)
+	}
+	if got := ContentDigest(nil); got != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" {
+		t.Errorf("digest of nothing = %s, want the SHA-256 of nothing", got)
 	}
 }
 

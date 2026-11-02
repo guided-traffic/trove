@@ -805,6 +805,10 @@ func (*failingStore) Versions(context.Context, int64, string) ([]rows.VersionEnt
 	return nil, errs.E(errs.Unavailable, errs.CodeUnavailable, "The database is not reachable.", errs.WithCause(errors.New("connection refused")))
 }
 
+func (*failingStore) FlatIndex(context.Context, int64, string) (rows.FlatIndex, error) {
+	return rows.FlatIndex{}, errs.E(errs.Unavailable, errs.CodeUnavailable, "The database is not reachable.", errs.WithCause(errors.New("connection refused")))
+}
+
 func (*failingStore) Registration(context.Context, int64, string) (rows.RegistrationPackage, bool, error) {
 	return rows.RegistrationPackage{}, false, errs.E(errs.Unavailable, errs.CodeUnavailable, "The database is not reachable.")
 }
@@ -822,4 +826,108 @@ func TestR_NUGET_009_UnknownHiveIsNotARoute(t *testing.T) {
 // bindPaging gives the fixture's replica the paging settings.
 func bindPaging(fx *docFixture, size, inline int) {
 	fx.f.Bind(fx.host, &config.Config{NuGet: config.NuGet{Registration: config.NuGetRegistration{PageSize: size, InlineBelow: inline}}}, nil)
+}
+
+// TestR_NUGET_034_TheValidatorOnAnEndpointWithRulesFollowsOnlyWhatTheEndpointShows: on an
+// endpoint with exposure rules the weak validator of a document is derived from the filtered
+// rendering, not from the package's revision (Q-NUGET-87). A push, an unlist and a relist of a
+// version the endpoint hides raise the revision and leave the validator alone, so a consumer
+// polling with If-None-Match gets 304 and learns nothing of them; a change of what the endpoint
+// shows changes it. The value is the same on a replica that renders the document afresh, and
+// for gzip and identity.
+func TestR_NUGET_034_TheValidatorOnAnEndpointWithRulesFollowsOnlyWhatTheEndpointShows(t *testing.T) {
+	fx := newDocFixture(t)
+	replica := newDocFixture(t) // a second replica of the same rows, its rendition cache empty
+	for _, f := range []*docFixture{fx, replica} {
+		for _, v := range []string{"1.9.0", "2.0.0", "2.1.0"} {
+			f.putAll("acme.sdk", registrationVersion("Acme.Sdk", v, true, `{}`))
+		}
+	}
+	view := exposureView{packages: map[string]bool{"acme.sdk": true}, versions: map[string]bool{"2.0.0": true, "2.1.0": true, "2.2.0": true}}
+	customers := &formats.EndpointFacts{Name: "customers", Rules: true, ExposureFingerprint: "fp1", Exposure: view}
+	const flat = "v3/flatcontainer/acme.sdk/index.json"
+	paths := []string{
+		flat,
+		"v3/registration/acme.sdk/index.json",
+		"v3/registration-gz/acme.sdk/index.json",
+		"v3/registration-semver2/acme.sdk/index.json",
+		"v3/registration-semver2/acme.sdk/page/2.0.0/2.1.0.json",
+		"v3/registration-semver2/acme.sdk/2.1.0.json",
+	}
+	etags := map[string]string{}
+	for _, p := range paths {
+		r := fx.do("GET", p, customers)
+		etags[p] = r.Header().Get("ETag")
+		if r.Code != http.StatusOK || !strings.HasPrefix(etags[p], `W/"`) {
+			t.Fatalf("%s = %d, ETag %q", p, r.Code, etags[p])
+		}
+		if got := replica.do("GET", p, customers).Header().Get("ETag"); got != etags[p] {
+			t.Errorf("%s: the other replica sends %q, this one %q", p, got, etags[p])
+		}
+		if got := fx.do("GET", p, customers, "Accept-Encoding", "gzip").Header().Get("ETag"); got != etags[p] {
+			t.Errorf("%s: gzip sends %q, identity %q", p, got, etags[p])
+		}
+	}
+	// Writes of versions the endpoint hides: a push, an unlist, a relist.
+	rev := fx.host.RevSeq("acme.sdk")
+	fx.putAll("acme.sdk", registrationVersion("Acme.Sdk", "1.9.5", true, `{}`))
+	fx.setListed("acme.sdk", "1.9.0", false)
+	fx.setListed("acme.sdk", "1.9.0", true)
+	if fx.host.RevSeq("acme.sdk") == rev {
+		t.Fatal("the writes did not raise the revision; the test shows nothing")
+	}
+	for _, p := range paths {
+		r := fx.do("GET", p, customers, "If-None-Match", etags[p])
+		if r.Code != http.StatusNotModified || r.Header().Get("ETag") != etags[p] {
+			t.Errorf("%s after writes of hidden versions = %d, ETag %q, want 304 with %q", p, r.Code, r.Header().Get("ETag"), etags[p])
+		}
+	}
+	// The default endpoint shows every version, so its validator moves with the revision.
+	before := fx.get(flat).Header().Get("ETag")
+	fx.putAll("acme.sdk", registrationVersion("Acme.Sdk", "1.9.6", true, `{}`))
+	if fx.get(flat).Header().Get("ETag") == before {
+		t.Error("the validator of the default endpoint did not follow a push")
+	}
+	// What the endpoint shows: an unlist of an exposed version changes the registrations, not
+	// the version list; a push of an exposed version changes the version list.
+	fx.setListed("acme.sdk", "2.1.0", false)
+	for _, p := range paths {
+		r := fx.do("GET", p, customers, "If-None-Match", etags[p])
+		want := http.StatusOK
+		if p == flat {
+			want = http.StatusNotModified
+		}
+		if r.Code != want {
+			t.Errorf("%s after the unlist of an exposed version = %d, want %d", p, r.Code, want)
+		}
+	}
+	fx.putAll("acme.sdk", registrationVersion("Acme.Sdk", "2.2.0", true, `{}`))
+	if r := fx.do("GET", flat, customers, "If-None-Match", etags[flat]); r.Code != http.StatusOK || r.Body.String() != `{"versions":["2.0.0","2.1.0","2.2.0"]}` {
+		t.Errorf("version list after the push of an exposed version = %d %s", r.Code, r.Body)
+	}
+}
+
+// TestR_NUGET_030_AVersionListIsValidatedByTheRevisionOfItsOwnRows: a commit that lands
+// between the revision lookup and the read of the versions makes the rendering newer than the
+// lookup. The version list reads the package's revision in the statement that reads its
+// versions, as the registrations do, so its validator and its key in the rendition cache are
+// those of the rows it shows: the next request for the same rows gets the same ETag from the
+// cache, without a read.
+func TestR_NUGET_030_AVersionListIsValidatedByTheRevisionOfItsOwnRows(t *testing.T) {
+	fx := newDocFixture(t)
+	fx.put("1.0.0", true, `{}`)
+	fx.store.beforeRead = func() { fx.put("1.1.0", true, `{}`) }
+	const path = "v3/flatcontainer/acme.widgets/index.json"
+	raced := fx.get(path)
+	if raced.Code != http.StatusOK || raced.Body.String() != `{"versions":["1.0.0","1.1.0"]}` {
+		t.Fatalf("raced read = %d %s", raced.Code, raced.Body)
+	}
+	reads := fx.store.readCount()
+	after := fx.get(path)
+	if after.Header().Get("ETag") != raced.Header().Get("ETag") {
+		t.Errorf("the list rendered across a commit carries %s, the same rows read afterwards %s", raced.Header().Get("ETag"), after.Header().Get("ETag"))
+	}
+	if fx.store.readCount() != reads {
+		t.Error("the rendering of the newer rows was not kept under their revision: the next request read them again")
+	}
 }

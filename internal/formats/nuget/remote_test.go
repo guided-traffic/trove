@@ -743,3 +743,26 @@ func TestR_NUGET_015_TheFillSignalsTheEvictionOfMergedDocumentsExceptForTheServi
 		}
 	}
 }
+
+// TestR_NUGET_004_ADependencyRangeWithASemVer2BoundMakesACachedVersionSemVer2Specific: the
+// rows of a package a remote repository cached follow the rule of a pushed one: a dependency
+// range with a SemVer 2.0.0-specific bound makes the version SemVer 2.0.0-specific, as the
+// remote's own rendering of the upstream's leaves decides too.
+func TestR_NUGET_004_ADependencyRangeWithASemVer2BoundMakesACachedVersionSemVer2Specific(t *testing.T) {
+	h, f, st := fillHost(t)
+	if err := commitFilled(t, h, f, st, "acme.widgets", "1.0.0", buildNupkg(t, "Acme.Widgets", "1.0.0", withDep("Acme.Core", "[1.0.0, 2.0.0)"))); err != nil {
+		t.Fatal(err)
+	}
+	if err := commitFilled(t, h, f, st, "acme.widgets", "1.1.0", buildNupkg(t, "Acme.Widgets", "1.1.0", withDep("Acme.Core", "[1.0.0-beta.1, )"))); err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Cached) != 2 {
+		t.Fatalf("%d NuGet rows, want 2", len(st.Cached))
+	}
+	for _, row := range st.Cached {
+		want := row.LowerVersion == "1.1.0"
+		if row.IsSemver2 != want {
+			t.Errorf("%s: is_semver2 = %v, want %v", row.LowerVersion, row.IsSemver2, want)
+		}
+	}
+}

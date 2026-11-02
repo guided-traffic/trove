@@ -120,6 +120,25 @@ func (q *Queries) FolderHasChildren(ctx context.Context, arg FolderHasChildrenPa
 	return exists, err
 }
 
+const folderLive = `-- name: FolderLive :one
+SELECT EXISTS (
+    SELECT 1 FROM items
+     WHERE repo_id = $1::bigint AND path = $2::text AND kind = 'folder' AND trashed_at IS NULL
+)
+`
+
+type FolderLiveParams struct {
+	RepoID int64
+	Path   string
+}
+
+func (q *Queries) FolderLive(ctx context.Context, arg FolderLiveParams) (bool, error) {
+	row := q.db.QueryRow(ctx, folderLive, arg.RepoID, arg.Path)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const getItemStats = `-- name: GetItemStats :many
 SELECT s.downloads, s.last_download_at,
        COALESCE(CASE p.kind WHEN 'ci_mapping' THEN 'ci' ELSE p.kind END || ':' || p.name, '')::text AS last_downloader_name
@@ -686,6 +705,47 @@ func (q *Queries) LockFolderExclusive(ctx context.Context, arg LockFolderExclusi
 	items := []LockFolderExclusiveRow{}
 	for rows.Next() {
 		var i LockFolderExclusiveRow
+		if err := rows.Scan(&i.ID, &i.ExplicitFolder); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockFolderExclusiveFree = `-- name: LockFolderExclusiveFree :many
+SELECT id, explicit_folder
+  FROM items
+ WHERE repo_id = $1::bigint AND path = $2::text AND kind = 'folder' AND trashed_at IS NULL
+   FOR UPDATE SKIP LOCKED
+`
+
+type LockFolderExclusiveFreeParams struct {
+	RepoID int64
+	Path   string
+}
+
+type LockFolderExclusiveFreeRow struct {
+	ID             int64
+	ExplicitFolder bool
+}
+
+// LockFolderExclusive for a removing transaction, which may hold a package row that a deploy
+// holding this folder FOR SHARE waits for: it never waits. A folder another transaction holds
+// is skipped; FolderLive tells it from a folder that is gone, and the caller removes it after
+// the commit in a transaction of its own (Q-NUGET-88).
+func (q *Queries) LockFolderExclusiveFree(ctx context.Context, arg LockFolderExclusiveFreeParams) ([]LockFolderExclusiveFreeRow, error) {
+	rows, err := q.db.Query(ctx, lockFolderExclusiveFree, arg.RepoID, arg.Path)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LockFolderExclusiveFreeRow{}
+	for rows.Next() {
+		var i LockFolderExclusiveFreeRow
 		if err := rows.Scan(&i.ID, &i.ExplicitFolder); err != nil {
 			return nil, err
 		}

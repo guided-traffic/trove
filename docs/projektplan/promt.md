@@ -234,12 +234,6 @@ started and stopped before it changed the tree; phase 4 stays open until these a
   version as cached from any cached file, not only its `.nupkg` (`formathost/virtual.go` `CachedVersion`); the merge drops parts
   of a remote entry (reuse `remote.Convert`); `MergeFingerprint` covers only the index digest, so a changed page under an unchanged
   index keeps the old ETag.
-- **F-23 · Local NuGet documents** (read, except the first). `is_semver2` ignores a SemVer-2-specific bound of a dependency range
-  for pushed and cached packages (`publish.go` `versionInput`, `remote_fill.go`; confirmed by a probe test), so such a version
-  shows to clients older than 4.3. On an endpoint with rules the ETag changes with hidden versions and the virtual ETag lacks the
-  ID ([H-343](../security/endpoints-and-exposure.md#h-343--on-an-endpoint-with-rules-a-nuget-documents-etag-changes-with-hidden-versions)).
-  A push of a new version and a hard delete of another version of the same ID take the folder and the package row in opposite
-  order (40P01, resolved by the retry). The local flat index renders with revision 0 (`handlers_flat.go`).
 - **F-24 · Upstream addresses in `deprecation` and `vulnerabilities`** (read). The remote and the merge copy them verbatim,
   with `advisoryUrl` and any upstream `@id`; [nuget.md](../spec/formats/nuget.md) R-NUGET-015 says both "passed through" and
   "every URL except projectUrl, licenseUrl and iconUrl is trove's". Decide, write back, and add a vulnerability and a deprecation to
@@ -250,9 +244,6 @@ started and stopped before it changed the tree; phase 4 stays open until these a
   the identity check folds Unicode case while the rows keep the declared ID
   ([H-340](../security/nuget-remote.md#h-340--the-identity-check-folds-unicode-case-the-rows-keep-the-declared-spelling)). And (seen in
   e2e): the first answer to a cache miss on a remote file has no `ETag`, `Accept-Ranges` or `Cache-Control`, a stored answer has them.
-- **F-26 · The package reader may read another central directory than `archive/zip`** (read, not checked against Go 1.27.3).
-  `nupkg/scan.go` takes the end record whose comment ends at the end of the file, `archive/zip` the last signature; the entries
-  are compared by name, flags, method and sizes, not by data offset. Names and sizes must still match, so the limits hold.
 - **F-27 · The run against nuget.org of E3.1 has no test** (confirmed). npm has a read-only subset against the public
   registry in `TestNPMClosing`; NuGet's closing set has none. Planned: a remote of `https://api.nuget.org/v3/index.json` and a
   virtual repository with it, `dotnet restore` of `Newtonsoft.Json` and of an ID with more than 128 versions, nuget.exe through the

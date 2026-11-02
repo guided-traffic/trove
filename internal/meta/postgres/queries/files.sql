@@ -140,6 +140,22 @@ SELECT id, explicit_folder
  WHERE repo_id = sqlc.arg(repo_id)::bigint AND path = sqlc.arg(path)::text AND kind = 'folder' AND trashed_at IS NULL
    FOR UPDATE;
 
+-- name: LockFolderExclusiveFree :many
+-- LockFolderExclusive for a removing transaction, which may hold a package row that a deploy
+-- holding this folder FOR SHARE waits for: it never waits. A folder another transaction holds
+-- is skipped; FolderLive tells it from a folder that is gone, and the caller removes it after
+-- the commit in a transaction of its own (Q-NUGET-88).
+SELECT id, explicit_folder
+  FROM items
+ WHERE repo_id = sqlc.arg(repo_id)::bigint AND path = sqlc.arg(path)::text AND kind = 'folder' AND trashed_at IS NULL
+   FOR UPDATE SKIP LOCKED;
+
+-- name: FolderLive :one
+SELECT EXISTS (
+    SELECT 1 FROM items
+     WHERE repo_id = sqlc.arg(repo_id)::bigint AND path = sqlc.arg(path)::text AND kind = 'folder' AND trashed_at IS NULL
+);
+
 -- name: FolderHasChildren :one
 SELECT EXISTS (
     SELECT 1 FROM items

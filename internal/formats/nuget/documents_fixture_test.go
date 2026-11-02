@@ -24,6 +24,9 @@ type docStore struct {
 	reads   int
 	nextID  int64
 	display map[string]string
+	// beforeRead runs once, at the start of the next read of the documents, before the twin
+	// reads: a commit that lands between the revision lookup and the read of the rows.
+	beforeRead func()
 }
 
 func newDocStore() *docStore {
@@ -35,6 +38,11 @@ func (s *docStore) Versions(ctx context.Context, repo int64, lowerID string) ([]
 	return s.Store.Versions(ctx, repo, lowerID)
 }
 
+func (s *docStore) FlatIndex(ctx context.Context, repo int64, lowerID string) (rows.FlatIndex, error) {
+	s.count()
+	return s.Store.FlatIndex(ctx, repo, lowerID)
+}
+
 func (s *docStore) Registration(ctx context.Context, repo int64, lowerID string) (rows.RegistrationPackage, bool, error) {
 	s.count()
 	return s.Store.Registration(ctx, repo, lowerID)
@@ -43,7 +51,12 @@ func (s *docStore) Registration(ctx context.Context, repo int64, lowerID string)
 func (s *docStore) count() {
 	s.mu.Lock()
 	s.reads++
+	hook := s.beforeRead
+	s.beforeRead = nil
 	s.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 }
 
 func (s *docStore) readCount() int {

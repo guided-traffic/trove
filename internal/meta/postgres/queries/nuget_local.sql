@@ -138,8 +138,11 @@ SELECT EXISTS (SELECT 1 FROM v) AS stored,
 
 -- name: NuGetVersions :many
 -- Every stored version of an ID, listed or not, ascending by sort key: the version list
--- of the flat container (R-NUGET-008). A trashed version is invisible (R-NUGET-005).
-SELECT nv.version_id, pv.version, pv.display_version, nv.declared_id, nv.listed,
+-- of the flat container (R-NUGET-008). A trashed version is invisible (R-NUGET-005). The
+-- package's revision is on every row, read in the same snapshot as the versions, so the
+-- version list is validated by the revision of the rows it shows, as the registrations are.
+SELECT p.rev_seq,
+       nv.version_id, pv.version, pv.display_version, nv.declared_id, nv.listed,
        nv.is_prerelease, nv.is_semver2, nv.published_at
   FROM packages p
   JOIN package_versions pv ON pv.package_id = p.id

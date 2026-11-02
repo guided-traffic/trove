@@ -386,6 +386,25 @@ func (s *Store) Versions(_ context.Context, repo int64, lowerID string) ([]rows.
 	return out, nil
 }
 
+// FlatIndex lists every stored version of an ID with the package's revision, which the
+// Revisions hook supplies as the database reads it in the same statement.
+func (s *Store) FlatIndex(_ context.Context, repo int64, lowerID string) (rows.FlatIndex, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	recs := s.stored(repo, lowerID)
+	if len(recs) == 0 {
+		return rows.FlatIndex{}, nil
+	}
+	out := rows.FlatIndex{Rev: s.revs[fmt.Sprintf("%d/%s", repo, lowerID)]}
+	if s.Revisions != nil {
+		out.Rev, _ = s.Revisions(repo, lowerID)
+	}
+	for _, r := range recs {
+		out.Versions = append(out.Versions, entry(r))
+	}
+	return out, nil
+}
+
 // Registration reads what the registration documents of an ID render from.
 func (s *Store) Registration(_ context.Context, repo int64, lowerID string) (rows.RegistrationPackage, bool, error) {
 	s.mu.Lock()

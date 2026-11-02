@@ -59,19 +59,12 @@ func Open(ctx context.Context, ra io.ReaderAt, size int64, lim Limits) (*Archive
 	if err != nil {
 		return nil, invalid(ErrNotZip, "the content is not a valid ZIP archive: "+shorten(err.Error()))
 	}
-	// Two readers must see one archive: the standard library, which opens the
-	// entries, has to agree with the scan on every entry it will serve.
-	if len(zr.File) != len(dir.recs) {
-		return nil, invalid(ErrLocalMismatch, "the central directory is read differently by two readers")
+	if err := dir.readBy(zr); err != nil {
+		return nil, err
 	}
 	a := &Archive{zr: zr, lim: lim, byPath: make(map[string]int, len(dir.recs)), nuspec: -1}
-	for i, f := range zr.File {
+	for i := range zr.File {
 		r := dir.recs[i]
-		usize, ok1 := fit(f.UncompressedSize64)
-		csize, ok2 := fit(f.CompressedSize64)
-		if f.Name != r.name || f.Flags != r.flags || f.Method != r.method || !ok1 || !ok2 || usize != r.usize || csize != r.csize {
-			return nil, invalid(ErrLocalMismatch, "the central directory is read differently by two readers")
-		}
 		name, path, isDir, err := normalize(r.name)
 		if err != nil {
 			return nil, err
@@ -93,6 +86,30 @@ func Open(ctx context.Context, ra io.ReaderAt, size int64, lim Limits) (*Archive
 		return nil, invalid(ErrNuspecCount, "the archive holds no .nuspec at its root")
 	}
 	return a, nil
+}
+
+// readBy holds the standard library's reading of the archive, which opens the entries, to
+// the scan's: two readers must see one archive, so every entry the standard library will
+// serve has the scan's name, flags, method and sizes and starts its data at the offset the
+// scan computed from the local header it checked (F-26, Q-NUGET-89). The offset is read
+// through (*zip.File).DataOffset, one local header per entry.
+func (d *directory) readBy(zr *zip.Reader) error {
+	differ := invalid(ErrLocalMismatch, "the central directory is read differently by two readers")
+	if len(zr.File) != len(d.recs) {
+		return differ
+	}
+	for i, f := range zr.File {
+		r := d.recs[i]
+		usize, ok1 := fit(f.UncompressedSize64)
+		csize, ok2 := fit(f.CompressedSize64)
+		if f.Name != r.name || f.Flags != r.flags || f.Method != r.method || !ok1 || !ok2 || usize != r.usize || csize != r.csize {
+			return differ
+		}
+		if off, err := f.DataOffset(); err != nil || off != r.data {
+			return differ
+		}
+	}
+	return nil
 }
 
 // Entries lists the entries in the order of the central directory.

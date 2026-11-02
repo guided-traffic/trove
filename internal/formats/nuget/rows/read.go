@@ -24,6 +24,15 @@ type VersionEntry struct {
 	PublishedAt  time.Time
 }
 
+// FlatIndex is what the version list of the flat container renders from (R-NUGET-008):
+// the package's revision (packages.rev_seq), read in the statement that reads the
+// versions, and every stored version, ascending by sort key. Rev is 0 when the ID holds no
+// version.
+type FlatIndex struct {
+	Rev      int64
+	Versions []VersionEntry
+}
+
 // RegistrationVersion is a stored version with the metadata a catalog entry is
 // built from (R-NUGET-009).
 type RegistrationVersion struct {

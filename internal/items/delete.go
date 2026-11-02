@@ -124,7 +124,7 @@ func (s *Store) Delete(ctx context.Context, spec DeleteSpec) (DeleteResult, erro
 		if err := s.removeRows(ctx, tx, qs, who{spec.Actor, spec.Source, spec.Endpoint}, repo, rows); err != nil {
 			return err
 		}
-		return cleanAncestors(ctx, qs, repo.ID, ParentOf(spec.Path))
+		return s.sweepAncestors(ctx, tx, qs, repo.ID, ParentOf(spec.Path))
 	})
 	if err != nil {
 		return DeleteResult{}, err
@@ -239,7 +239,7 @@ func (s *Store) removeRows(ctx context.Context, tx meta.Tx, qs *q.Queries, w who
 	}
 	sort.Slice(folders, func(i, j int) bool { return folders[i].Path > folders[j].Path })
 	for _, f := range folders {
-		if _, err := removeFolderIfEmpty(ctx, qs, repo.ID, f.Path, true); err != nil {
+		if _, err := s.removeEmptied(ctx, tx, qs, repo.ID, f.Path, true); err != nil {
 			return err
 		}
 	}
@@ -260,25 +260,34 @@ func (s *Store) recordDeleted(ctx context.Context, tx meta.Tx, w who, repoKey, p
 // removeFolderIfEmpty deletes a folder when no live item is below it. It takes the
 // row FOR UPDATE first, so a deploy under it (which holds the row FOR SHARE) is
 // waited for, and looks for children in a statement of its own, which then sees
-// them. An explicit folder stays unless force is set (the caller named it).
+// them. An explicit folder stays unless force is set (the caller named it). It
+// waits, so it runs only in a transaction that holds no lock a deploy waits for
+// after its folders: a removing transaction uses removeEmptied (Q-NUGET-88).
 func removeFolderIfEmpty(ctx context.Context, qs *q.Queries, rid int64, path string, force bool) (bool, error) {
 	rows, err := qs.LockFolderExclusive(ctx, q.LockFolderExclusiveParams{RepoID: rid, Path: path})
 	if err != nil || len(rows) == 0 {
 		return false, err
 	}
-	if rows[0].ExplicitFolder && !force {
+	return removeLockedFolder(ctx, qs, rid, path, rows[0].ID, rows[0].ExplicitFolder, force)
+}
+
+// removeLockedFolder deletes the folder whose row this transaction locked when no live
+// item is below it; an explicit folder stays unless force is set.
+func removeLockedFolder(ctx context.Context, qs *q.Queries, rid int64, path string, id int64, explicit, force bool) (bool, error) {
+	if explicit && !force {
 		return false, nil
 	}
 	has, err := qs.FolderHasChildren(ctx, q.FolderHasChildrenParams{RepoID: rid, Path: path})
 	if err != nil || has {
 		return false, err
 	}
-	n, err := qs.DeleteItemByIDOne(ctx, rows[0].ID)
+	n, err := qs.DeleteItemByIDOne(ctx, id)
 	return n == 1, err
 }
 
 // cleanAncestors removes the implicit folders above a deleted item that have no
-// other child, bottom up; an explicit folder stays (R-STOR-003).
+// other child, bottom up; an explicit folder stays (R-STOR-003). It waits for the
+// folders' locks: see removeFolderIfEmpty.
 func cleanAncestors(ctx context.Context, qs *q.Queries, rid int64, parent string) error {
 	for parent != "" {
 		gone, err := removeFolderIfEmpty(ctx, qs, rid, parent, false)
@@ -509,7 +518,7 @@ func (s *Store) RemoveIn(ctx context.Context, tx meta.Tx, spec RemoveSpec) error
 		return err
 	}
 	for _, p := range spec.Paths {
-		if err := cleanAncestors(ctx, qs, spec.Repo.ID, ParentOf(p)); err != nil {
+		if err := s.sweepAncestors(ctx, tx, qs, spec.Repo.ID, ParentOf(p)); err != nil {
 			return err
 		}
 	}

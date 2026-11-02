@@ -154,7 +154,9 @@ package of those files in name order and asks `Ownership.EnforceTx` with `delete
 owner refuses the whole delete. Up to `storage.delete.max_sync_items` items the store lists the subtree in a
 transaction, asks the check about every item (403 and nothing changes if one is refused; the message names the path the caller
 sent), deletes the files by id, tells the storage hook, writes one `artifact.deleted` per file, removes the folders deepest first
-(each only if it is empty then) and the empty implicit folders above. A larger subtree is checked in full at the request and
+(each only if it is empty then) and the empty implicit folders above. It takes a folder only when no other transaction holds it: a folder a
+deploy holds `FOR SHARE` (the deploy may wait for a package row the delete locked in `Extra`) is removed after the commit, when it is still
+empty then (`removeEmptied`, Q-NUGET-88). A larger subtree is checked in full at the request and
 removed by the job `items-delete` (the store's `RunDeleteJob`, which decides nothing) in batches of `storage.delete.batch_size` (files first, then the folders), answered `202` with
 the job. The job carries the highest item id the check saw (`DeleteArgs.MaxID`) and removes only items up to it, so a file that is
 deployed into the subtree afterwards stays (Q-STOR-143). A virtual repository holds no items: a delete there is `405`, as a deploy

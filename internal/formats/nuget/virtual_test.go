@@ -516,3 +516,82 @@ func TestR_NUGET_019_ThePublishResourcesAreListedWhenThereIsADeploymentTarget(t 
 		t.Errorf("a failing resolution: %d", r.Code)
 	}
 }
+
+// serveOn serves a GET through the endpoint a test names.
+func serveOn(t *testing.T, h *formattest.Host, path string, ep formats.EndpointFacts, hdr ...string) *formattest.Response {
+	t.Helper()
+	rq, err := h.NewRequest(context.Background(), http.MethodGet, path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rq.Endpoint = ep
+	for i := 0; i+1 < len(hdr); i += 2 {
+		rq.Header.Set(hdr[i], hdr[i+1])
+	}
+	return h.ServeRequest(rq, false)
+}
+
+// TestR_NUGET_002_TheValidatorOfAVirtualDocumentNamesThePackage: two IDs whose merges have one
+// fingerprint (the engine's fingerprint names the members and their revisions, not the ID) and
+// whose documents have the same bytes still have two validators.
+func TestR_NUGET_002_TheValidatorOfAVirtualDocumentNamesThePackage(t *testing.T) {
+	res := &mergeResolver{docs: docsOf([]formats.MemberDocument{localFlat(t, "local", 0, "1.0.0")}, nil), sameFingerprint: true}
+	h := virtualHost(t, res, nil)
+	a := get(t, h, http.MethodGet, "v3/flatcontainer/acme.widgets/index.json")
+	b := get(t, h, http.MethodGet, "v3/flatcontainer/acme.tools/index.json")
+	if a.Code != http.StatusOK || b.Code != http.StatusOK || !bytes.Equal(a.Body.Bytes(), b.Body.Bytes()) {
+		t.Fatalf("%d %s / %d %s: want two equal version lists", a.Code, a.Body, b.Code, b.Body)
+	}
+	if a.Header().Get("ETag") == b.Header().Get("ETag") {
+		t.Errorf("acme.widgets and acme.tools share the validator %s", a.Header().Get("ETag"))
+	}
+}
+
+// TestR_NUGET_034_TheValidatorOfAVirtualDocumentOnAnEndpointWithRulesFollowsOnlyWhatItShows: on
+// an endpoint with exposure rules the validator of a merged document is derived from the
+// filtered rendering, not from the merge fingerprint (Q-NUGET-87): a push of a version the
+// endpoint hides gives the merge a new fingerprint and leaves the validator alone; a push of
+// an exposed one changes it.
+func TestR_NUGET_034_TheValidatorOfAVirtualDocumentOnAnEndpointWithRulesFollowsOnlyWhatItShows(t *testing.T) {
+	members := func(versions ...string) []formats.MemberDocument {
+		vs := make([]rows.RegistrationVersion, len(versions))
+		for i, v := range versions {
+			vs[i] = registrationVersion("Acme.Sdk", v, true, `{}`)
+		}
+		return []formats.MemberDocument{localPart(t, "internal", 0, vs...)}
+	}
+	flats := func(versions ...string) []formats.MemberDocument {
+		return []formats.MemberDocument{localFlat(t, "internal", 0, versions...)}
+	}
+	res := &mergeResolver{docs: docsOf(flats("1.9.0", "2.0.0", "2.1.0"), members("1.9.0", "2.0.0", "2.1.0"))}
+	h := virtualHost(t, res, nil)
+	customers := formats.EndpointFacts{Name: "customers", Rules: true, ExposureFingerprint: "fp1", Exposure: exposureView{
+		packages: map[string]bool{"acme.sdk": true}, versions: map[string]bool{"2.0.0": true, "2.1.0": true, "2.2.0": true},
+	}}
+	paths := []string{"v3/flatcontainer/acme.sdk/index.json", "v3/registration-gz/acme.sdk/index.json", "v3/registration-semver2/acme.sdk/index.json"}
+	etags := map[string]string{}
+	for _, p := range paths {
+		r := serveOn(t, h, p, customers)
+		etags[p] = r.Header().Get("ETag")
+		if r.Code != http.StatusOK || !strings.HasPrefix(etags[p], `W/"`) {
+			t.Fatalf("%s = %d, ETag %q", p, r.Code, etags[p])
+		}
+		if gz := serveOn(t, h, p, customers, "Accept-Encoding", "gzip"); gz.Header().Get("ETag") != etags[p] {
+			t.Errorf("%s: gzip sends %q, identity %q", p, gz.Header().Get("ETag"), etags[p])
+		}
+	}
+	// A push of a hidden version to the member: a new merge fingerprint, the same filtered documents.
+	res.docs = docsOf(flats("1.9.0", "1.9.5", "2.0.0", "2.1.0"), members("1.9.0", "1.9.5", "2.0.0", "2.1.0"))
+	for _, p := range paths {
+		if r := serveOn(t, h, p, customers, "If-None-Match", etags[p]); r.Code != http.StatusNotModified || r.Header().Get("ETag") != etags[p] {
+			t.Errorf("%s after the push of a hidden version = %d, ETag %q, want 304 with %q", p, r.Code, r.Header().Get("ETag"), etags[p])
+		}
+	}
+	// A push of an exposed version changes every document.
+	res.docs = docsOf(flats("1.9.0", "1.9.5", "2.0.0", "2.1.0", "2.2.0"), members("1.9.0", "1.9.5", "2.0.0", "2.1.0", "2.2.0"))
+	for _, p := range paths {
+		if r := serveOn(t, h, p, customers, "If-None-Match", etags[p]); r.Code != http.StatusOK || r.Header().Get("ETag") == etags[p] {
+			t.Errorf("%s after the push of an exposed version = %d, ETag %q", p, r.Code, r.Header().Get("ETag"))
+		}
+	}
+}

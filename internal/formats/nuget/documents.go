@@ -16,7 +16,9 @@ import (
 // packages.rev_seq with one indexed lookup, derives the weak validator and the key of the
 // replica's rendition cache from it without rendering, and renders only on a miss. Nothing
 // is cached under a key a commit can outlive, so no message between replicas is involved
-// (R-NUGET-030).
+// (R-NUGET-030). On an endpoint with exposure rules the validator is derived from the
+// filtered rendering instead, so it does not move with versions the endpoint hides
+// (Q-NUGET-87).
 
 // documentStore finds the data port a request's Host bound for the format.
 func documentStore(h formats.Host) (Store, error) {
@@ -51,7 +53,8 @@ func (f *Format) serveDocument(ctx context.Context, rq *formats.Request, w http.
 	}
 	// A package the endpoint does not expose is a missing one, decided before any lookup
 	// (R-NUGET-034, R-EP-013).
-	if view := viewOf(rq); view != nil && !view.Package(lowerID) {
+	view := viewOf(rq)
+	if view != nil && !view.Package(lowerID) {
 		return errNoSuchResource()
 	}
 	st, err := documentStore(rq.Host)
@@ -76,6 +79,15 @@ func (f *Format) serveDocument(ctx context.Context, rq *formats.Request, w http.
 		}
 	}
 
+	key := formats.RenditionKey{
+		Repo: repo, Package: lowerID, RevSeq: row.Ref.RevSeq, Variant: spec.variant + "@" + serving, Encoding: encodingOf(false),
+		BaseURL: links.Base(), Endpoint: rq.Endpoint.Name, Exposure: rq.Endpoint.ExposureFingerprint,
+		Settings: inputs(0).Settings, RenderVersion: RenderVersion,
+	}
+	if view != nil {
+		return serveFiltered(ctx, rq, w, st, spec, key, inputs(0))
+	}
+
 	etag := inputs(int64(row.Ref.RevSeq)).ETag()
 	if document.IfNoneMatch(rq.Header.Get("If-None-Match"), etag) {
 		// A validator of this revision: the rows are the ones the client holds. No
@@ -85,11 +97,6 @@ func (f *Format) serveDocument(ctx context.Context, rq *formats.Request, w http.
 	}
 
 	gzip := spec.gzip && document.AcceptsGzip(rq.Header.Get("Accept-Encoding"))
-	key := formats.RenditionKey{
-		Repo: repo, Package: lowerID, RevSeq: row.Ref.RevSeq, Variant: spec.variant + "@" + serving, Encoding: encodingOf(false),
-		BaseURL: links.Base(), Endpoint: rq.Endpoint.Name, Exposure: rq.Endpoint.ExposureFingerprint,
-		Settings: inputs(0).Settings, RenderVersion: RenderVersion,
-	}
 	body, hit := rq.Host.Renditions().Get(withEncoding(key, gzip))
 	if !hit && gzip {
 		// The identity rendering of the revision is cached already: compress it.
@@ -120,6 +127,51 @@ func (f *Format) serveDocument(ctx context.Context, rq *formats.Request, w http.
 		if gzip {
 			body = document.Gzip(body)
 			rq.Host.Renditions().Put(withEncoding(key, true), body)
+		}
+	}
+	return document.Reply{ETag: etag, Body: body, Gzip: gzip, Vary: spec.gzip}.Write(w, rq.Method)
+}
+
+// serveFiltered answers a document on an endpoint with exposure rules (R-NUGET-034,
+// Q-NUGET-87). Its validator follows the filtered rendering instead of the revision: the
+// revision rises with every write of the ID, those of versions the endpoint hides included,
+// and a validator that rose with it would tell a consumer polling with If-None-Match when a
+// version it cannot see was pushed, unlisted, relisted or deleted. The identity rendering of
+// the revision comes from the rendition cache or is rendered, so a 304 here costs a cache hit
+// or a read of the rows; base holds every other input of the validator.
+func serveFiltered(ctx context.Context, rq *formats.Request, w http.ResponseWriter, st Store, spec docSpec, key formats.RenditionKey, base document.Inputs) error {
+	cache := rq.Host.Renditions()
+	plain, hit := cache.Get(key)
+	if !hit {
+		body, rev, found, err := spec.render(ctx, st)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return errNoSuchResource()
+		}
+		if rev > 0 {
+			key.RevSeq = formats.RevSeq(rev)
+		}
+		if int64(len(body)) > MaxDocumentBytes {
+			return errs.E(errs.Internal, errs.CodeInternal, "The document is larger than the limit of documents held in memory.")
+		}
+		cache.Put(key, body)
+		plain = body
+	}
+	base.Content = document.ContentDigest(plain)
+	etag := base.ETag()
+	if document.IfNoneMatch(rq.Header.Get("If-None-Match"), etag) {
+		document.NotModified(w, etag, spec.gzip)
+		return nil
+	}
+	gzip := spec.gzip && document.AcceptsGzip(rq.Header.Get("Accept-Encoding"))
+	body := plain
+	if gzip {
+		var ok bool
+		if body, ok = cache.Get(withEncoding(key, true)); !ok {
+			body = document.Gzip(plain)
+			cache.Put(withEncoding(key, true), body)
 		}
 	}
 	return document.Reply{ETag: etag, Body: body, Gzip: gzip, Vary: spec.gzip}.Write(w, rq.Method)

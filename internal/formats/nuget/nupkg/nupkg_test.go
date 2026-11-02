@@ -338,6 +338,11 @@ func FuzzR_ARCH_028_Inspect(f *testing.F) {
 	f.Add(build{ents: []ent{{name: "a.nuspec", body: bytes.Repeat([]byte{0}, 200<<10)}}}.bytes())
 	f.Add(build{ents: []ent{{name: "a.nuspec", body: []byte(`<!DOCTYPE a><package/>`)}}}.bytes())
 	f.Add([]byte("PK\x05\x06" + strings.Repeat("\x00", 18)))
+	// a second end record after the one the scan takes, naming a directory whose .nuspec is other
+	// bytes (F-26); the corpus in testdata/fuzz keeps the same archive for the fuzzer to mutate
+	f.Add(withSecondDirectory(f, storedNuspec(), map[string][]byte{
+		"Acme.Widgets.nuspec": []byte(strings.Replace(nuspecXML, "Acme.Widgets", "Evil.Widgets", 1)),
+	}))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		lim := Limits{MaxEntries: 1000, MaxUncompressedBytes: 1 << 30, Deadline: 5 * time.Second}
 		c := &countingReaderAt{r: bytes.NewReader(data)}

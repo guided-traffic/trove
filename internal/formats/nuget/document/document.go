@@ -122,6 +122,11 @@ type Inputs struct {
 	// Settings is the config_version of the serving repository and the keys of the
 	// nuget section that change bytes (the paging of the registrations).
 	Settings string
+	// Content is the [ContentDigest] of the identity rendering, set on an endpoint with
+	// exposure rules in place of Rev (and of the merge fingerprint in a virtual document's
+	// Variant), which moves with versions the endpoint hides (Q-NUGET-87). Empty, it is left
+	// out of the value, so the validator of every other document stays what it was.
+	Content string
 }
 
 // ETag is the weak validator of a rendering: a hash of its inputs and the render version,
@@ -141,7 +146,19 @@ func (in Inputs) ETag() string {
 	for _, s := range []string{in.Variant, in.Serving, in.BaseURL, in.Endpoint, in.Exposure, in.Settings} {
 		field(s)
 	}
+	if in.Content != "" {
+		field("content")
+		field(in.Content)
+	}
 	return `W/"` + hex.EncodeToString(h.Sum(nil)[:16]) + `"`
+}
+
+// ContentDigest is the SHA-256 of a rendering in hex, the [Inputs.Content] of a document
+// whose validator follows its bytes. A rendering is a function of its inputs alone
+// (R-NUGET-030), so every replica computes the same value for the same document.
+func ContentDigest(body []byte) string {
+	sum := sha256.Sum256(body)
+	return hex.EncodeToString(sum[:])
 }
 
 // IfNoneMatch reports whether an If-None-Match header holds the ETag, by the weak

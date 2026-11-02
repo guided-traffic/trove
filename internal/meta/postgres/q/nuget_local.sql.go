@@ -492,7 +492,8 @@ func (q *Queries) NuGetVersionFacts(ctx context.Context, arg NuGetVersionFactsPa
 }
 
 const nuGetVersions = `-- name: NuGetVersions :many
-SELECT nv.version_id, pv.version, pv.display_version, nv.declared_id, nv.listed,
+SELECT p.rev_seq,
+       nv.version_id, pv.version, pv.display_version, nv.declared_id, nv.listed,
        nv.is_prerelease, nv.is_semver2, nv.published_at
   FROM packages p
   JOIN package_versions pv ON pv.package_id = p.id
@@ -509,6 +510,7 @@ type NuGetVersionsParams struct {
 }
 
 type NuGetVersionsRow struct {
+	RevSeq         int64
 	VersionID      int64
 	Version        string
 	DisplayVersion string
@@ -520,7 +522,9 @@ type NuGetVersionsRow struct {
 }
 
 // Every stored version of an ID, listed or not, ascending by sort key: the version list
-// of the flat container (R-NUGET-008). A trashed version is invisible (R-NUGET-005).
+// of the flat container (R-NUGET-008). A trashed version is invisible (R-NUGET-005). The
+// package's revision is on every row, read in the same snapshot as the versions, so the
+// version list is validated by the revision of the rows it shows, as the registrations are.
 func (q *Queries) NuGetVersions(ctx context.Context, arg NuGetVersionsParams) ([]NuGetVersionsRow, error) {
 	rows, err := q.db.Query(ctx, nuGetVersions, arg.RepositoryID, arg.LowerID)
 	if err != nil {
@@ -531,6 +535,7 @@ func (q *Queries) NuGetVersions(ctx context.Context, arg NuGetVersionsParams) ([
 	for rows.Next() {
 		var i NuGetVersionsRow
 		if err := rows.Scan(
+			&i.RevSeq,
 			&i.VersionID,
 			&i.Version,
 			&i.DisplayVersion,

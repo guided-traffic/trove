@@ -417,3 +417,32 @@ func TestR_NUGET_006_AnUploadAroundThePushRouteIsRefused(t *testing.T) {
 		t.Error("the refused upload left its item behind")
 	}
 }
+
+// TestR_NUGET_004_ADependencyRangeWithASemVer2BoundMakesAPushedVersionSemVer2Specific: a
+// version whose own number is SemVer 1 is SemVer 2.0.0-specific when a bound of one of its
+// dependency ranges is (a dotted pre-release label or build metadata); a range whose bounds
+// are SemVer 1 leaves it SemVer 1.
+func TestR_NUGET_004_ADependencyRangeWithASemVer2BoundMakesAPushedVersionSemVer2Specific(t *testing.T) {
+	for _, c := range []struct {
+		name, rng string
+		want      bool
+	}{
+		{"a SemVer 1 minimum", "[1.0.0, )", false},
+		{"a SemVer 1 pre-release maximum", "(, 2.0.0-beta1]", false},
+		{"a dotted pre-release minimum", "[1.0.0-beta.1, )", true},
+		{"a dotted pre-release maximum", "(, 2.0.0-rc.1)", true},
+		{"a bare version with build metadata", "1.0.0+build.5", true},
+		{"an exact dotted pre-release", "[3.0.0-ci.7]", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := newWriteHost(t, formattest.HostOptions{})
+			h.mustPush(t, "Acme.Widgets", "1.0.0", withDep("Newtonsoft.Json", "[13.0.1,)"), withDep("Acme.Core", c.rng))
+			if got := len(h.st.Published); got != 1 {
+				t.Fatalf("%d published rows, want 1", got)
+			}
+			if got := h.st.Published[0].IsSemver2; got != c.want {
+				t.Errorf("is_semver2 = %v for a dependency on %q, want %v", got, c.rng, c.want)
+			}
+		})
+	}
+}

@@ -93,4 +93,15 @@ type Store interface {
 	SearchCount(ctx context.Context, q rows.SearchQuery) (int, error)
 
 	// <<< M3 nuget-read
+
+	// >>> M3 fix wave FX-L
+
+	// FlatIndex reads, outside a transaction and in one statement, the package's revision
+	// and every stored version of an ID, listed or not, ascending by sort key: the version
+	// list of the flat container, validated and cached under the revision of the rows it
+	// shows (R-NUGET-008, R-NUGET-030). It is empty, with revision 0, for an ID that holds
+	// none.
+	FlatIndex(ctx context.Context, repoID int64, lowerID string) (rows.FlatIndex, error)
+
+	// <<< M3 fix wave FX-L
 }

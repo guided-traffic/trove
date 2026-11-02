@@ -33,6 +33,8 @@ type record struct {
 	flags, method uint16
 	usize, csize  int64
 	local         int64
+	// data is where the entry's data starts, after the local header checkLocal read.
+	data int64
 }
 
 // directory is the result of the scan: the records and where the central
@@ -112,6 +114,14 @@ func endRecord(ra io.ReaderAt, size int64) (total, cdSize, cdOff int64, err erro
 	}
 	if at < 0 {
 		return notZip()
+	}
+	// archive/zip takes the last end-record signature whose record fits before the end, also
+	// when bytes follow its comment, and would read the directory that one names. The two
+	// readers agree only when no signature follows the record chosen here (F-26, Q-NUGET-89).
+	for j := at + 1; j <= len(buf)-eocdLen; j++ {
+		if le.Uint32(buf[j:]) == sigEOCD {
+			return 0, 0, 0, invalid(ErrLocalMismatch, "the archive holds another end-of-central-directory record after the one that ends it")
+		}
 	}
 	eocd := buf[at:]
 	if le.Uint16(eocd[4:]) != 0 || le.Uint16(eocd[6:]) != 0 || le.Uint16(eocd[8:]) != le.Uint16(eocd[10:]) {
@@ -262,13 +272,14 @@ func zip64Fields(extra []byte, needU, needC, needO bool, usize, csize, local uin
 
 // checkLocal compares the name of every local header with the name of its
 // central-directory record, so that a reader that walks the local headers and
-// one that reads the central directory see the same archive, and refuses
-// entries whose data overlaps another's or runs into the central directory.
+// one that reads the central directory see the same archive, refuses entries
+// whose data overlaps another's or runs into the central directory, and records
+// where the data of each entry starts.
 func checkLocal(ctx context.Context, ra io.ReaderAt, size, cdAt int64, recs []record) error {
 	type span struct{ from, to int64 }
 	spans := make([]span, 0, len(recs))
 	var h [localLen]byte
-	for _, r := range recs {
+	for i, r := range recs {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -289,10 +300,12 @@ func checkLocal(ctx context.Context, ra io.ReaderAt, size, cdAt int64, recs []re
 		if string(name) != r.name {
 			return invalid(ErrLocalMismatch, fmt.Sprintf("entry %q is named differently in its local header", shorten(r.name)))
 		}
-		end := r.local + localLen + int64(n) + int64(extra) + r.csize
+		data := r.local + localLen + int64(n) + int64(extra)
+		end := data + r.csize
 		if end > cdAt || end < r.local {
 			return invalid(ErrNotZip, fmt.Sprintf("the data of entry %q runs beyond the archive", shorten(r.name)))
 		}
+		recs[i].data = data
 		spans = append(spans, span{r.local, end})
 	}
 	sort.Slice(spans, func(i, j int) bool { return spans[i].from < spans[j].from })

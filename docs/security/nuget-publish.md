@@ -29,6 +29,11 @@ Steps 5 and 6 are decided outside any transaction and decided again at step 7: t
 check inside the transaction is the one that protects the repository. A push that loses a race for the path of the package is read again
 and answers what the number now says.
 
+Step 3 checks the archive with a bounded scan of its central directory and then lets `archive/zip` open the `.nuspec`; what the scan checked is
+what is read. An archive with another end-of-central-directory record after the one that ends it, which `archive/zip` would take instead, and an
+entry whose data `archive/zip` would read from another offset than the one the scan checked in its local header are refused like any other
+damaged archive (Q-NUGET-89; `TestR_NUGET_005_AnEndRecordAfterTheOneTheScanChoseIsRefused`). The same reader checks a package a remote caches.
+
 ## A version number is taken for good
 
 A version number of a local repository is immutable for the life of the repository (Q-NUGET-6):
@@ -46,7 +51,9 @@ A version number of a local repository is immutable for the life of the reposito
   caller nothing it does not hold the right to learn.
 - **The lock order** is the package row first, the number second. A push racing a hard delete of the same number sees the version or its tombstone, never
   neither. The reads of the hook run in its own transaction (Q-NUGET-40); the integration test `TestR_NUGET_006_APushRacingAHardDeleteSeesTheVersionOrItsTombstone`
-  ends every run in a state with exactly one of the two.
+  ends every run in a state with exactly one of the two. A hard delete never waits inside its transaction for a folder that a push holds until its
+  commit, so a push and a hard delete of another version of the same ID do not deadlock and neither fails when they collide repeatedly (Q-NUGET-88,
+  `TestR_NUGET_007_APushAndAHardDeleteOfAnotherVersionNeverDeadlock`).
 - **A `reserved` tombstone** is what a restore's journal replay writes for a version that was published after the snapshot. It refuses other bytes
   with `nuget_version_reserved`, and it admits the one package whose SHA-512 it holds, deleting itself in that push's transaction. A protocol delete of
   that number in a `delete` repository turns it into a `removed` tombstone, so the journaled bytes are refused as well. The replay itself is not built.

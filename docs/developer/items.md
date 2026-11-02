@@ -148,13 +148,20 @@ The job decides nothing. A hook that fails stops the batch, rolls it back, and t
 `Hooks.OnItemsRemoved` in the caller's transaction, writes the `artifact.deleted` events and removes the implicit folders that stay empty. It checks nothing and queues no job: the caller
 has decided every path and bounds their number.
 
+A removing transaction (`Delete` at once, `RemoveIn`) never waits for the lock of a folder it emptied ([sweep.go](../../internal/items/sweep.go), Q-NUGET-88). It
+may hold a package row that a deploy waits for while that deploy holds the folder `FOR SHARE` (a format's route locks the row before `RemoveIn`, the generic layer
+in `DeleteSpec.Extra`), so `removeEmptied` takes the folder with `LockFolderExclusiveFree` (`FOR UPDATE SKIP LOCKED`); a folder another transaction holds stays
+for now, and the sweep registered with `meta.Tx.After` removes it after the commit in a transaction of its own, which holds no other lock and waits for the holder,
+when it is still empty then, and walks up. The folder transactions of the job `items-delete` hold nothing else and use the waiting `removeFolderIfEmpty`. A new
+removal inside a caller's transaction uses `removeEmptied` and `sweepAncestors`, never the waiting pair.
+
 ## Tests
 
 | Tier | Where | Proves |
 |---|---|---|
 | unit | [items_test.go](../../internal/items/items_test.go), [buffers_test.go](../../internal/items/buffers_test.go) | path helpers and subtree bounds, `RepoOf`, the origin names, no credentials in the upstream URL, the statistics buffer keeps what it could not write |
 | architecture | [archtest_test.go](../../internal/archtest/archtest_test.go) `TestModuleBans` | `items` imports no `authz`; `files` imports no `blob` and no `meta/postgres`; `rawfiles` and `edge` import no `api/v1` |
-| integration | [commit_test.go](../../test/integration/files/commit_test.go) | `TestR_ARCH_009_ItemStoreRunsTheStorageHooksInItsTransaction` (both origins, the order `Extra` → hook → audit, `Extra` sees the new item id, rollback leaves no item, no folder, no `Extra` row, no event; identical commit; overwrite gate; create-only), `TestR_ARCH_008_DeleteRunsOnItemsRemoved` (the hook is told in the synchronous delete and in every batch of the job; a failing hook leaves the files) |
+| integration | [commit_test.go](../../test/integration/files/commit_test.go) | `TestR_ARCH_009_ItemStoreRunsTheStorageHooksInItsTransaction` (both origins, the order `Extra` → hook → audit, `Extra` sees the new item id, rollback leaves no item, no folder, no `Extra` row, no event; identical commit; overwrite gate; create-only), `TestR_ARCH_008_DeleteRunsOnItemsRemoved` (the hook is told in the synchronous delete and in every batch of the job; a failing hook leaves the files); [sweep_test.go](../../test/integration/files/sweep_test.go) `TestR_STOR_018_ARemovalDoesNotWaitForAFolderAnotherTransactionHolds` (the removal commits under a held folder, the sweep takes it after the holder) |
 
 ## Extending
 

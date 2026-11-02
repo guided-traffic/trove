@@ -32,12 +32,12 @@ func (f *Format) handleFlatIndex(ctx context.Context, rq *formats.Request, w htt
 	return f.serveDocument(ctx, rq, w, lowerID, docSpec{
 		variant: "flat",
 		render: func(ctx context.Context, st Store) ([]byte, int64, bool, error) {
-			entries, err := st.Versions(ctx, repoID, lowerID)
+			idx, err := st.FlatIndex(ctx, repoID, lowerID)
 			if err != nil {
 				return nil, 0, false, err
 			}
-			list := make([]string, 0, len(entries))
-			for _, e := range entries {
+			list := make([]string, 0, len(idx.Versions))
+			for _, e := range idx.Versions {
 				if keep == nil || keep(e.LowerVersion) {
 					list = append(list, e.LowerVersion)
 				}
@@ -49,7 +49,9 @@ func (f *Format) handleFlatIndex(ctx context.Context, rq *formats.Request, w htt
 			if err != nil {
 				return nil, 0, false, internalError(err)
 			}
-			return body, 0, true, nil
+			// The revision read with the versions keys and validates the rendering, so a
+			// commit that raced the lookup cannot leave newer bytes under an older value.
+			return body, idx.Rev, true, nil
 		},
 	})
 }
