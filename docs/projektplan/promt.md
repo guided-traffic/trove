@@ -208,23 +208,10 @@ Found on 2026-11-01 while writing the manual (`docs/manual`) and the design chan
 
 ### Tests and tools
 
-- **F-19 · The failover set is red on the CI runners** (read, from the artifacts of run 41332313390, job `e2e on kind
-  (failover)`). `pg-kill.sh` took 296 s to recover; the CloudNativePG operator failed its readiness and liveness probes for
-  about 6 minutes, restarted three times and refused the webhook call of `pg-stop.sh`, so the later subtests ran without a
-  database. A `web` pod and both `worker` pods exited 1 and restarted once (no OOM; cause not established). The same kind of
-  CPU starvation as the npm-ha diagnosis in BETA.md phase 7. Since 2026-11-01 the set runs in `HA and Performance
-  (nightly)`. Done when the set is green there, or the exits of the trove pods are explained and fixed and the rest is shown
-  to be the runner's.
-
-- **F-17 · Leftovers of old tool versions on the owner's machine that need an admin password** (confirmed).
-  On 2026-11-01 helm (4.3.1), kubectl (1.37.2), docker buildx (0.38.1), kind (0.33.0) and Node.js (26.13.0)
-  were brought to their pins through Homebrew, and `make versions-check` prints `versions ok`. Left: two
-  shadowed copies from Docker Desktop's time in `/usr/local/bin`, `kubectl` (v1.32.2) and `kind` (v0.20.0),
-  owned by root (`sudo rm /usr/local/bin/kubectl /usr/local/bin/kind`), and the Command Line Tools 26.6,
-  which Homebrew reports as too old for Xcode 27
-  (`sudo softwareupdate --install "Command Line Tools for Xcode 27.2-27.2"`, no restart).
-  Since Docker Desktop's restart of 2026-11-02 (after the disk ran full) `~/.docker/cli-plugins/docker-buildx` points at
-  Docker Desktop's own buildx again (v0.28.0-desktop.1, pin v0.38.1), so `make versions-check` fails locally; the Homebrew
-  copy is in place (`ln -sf /opt/homebrew/bin/docker-buildx ~/.docker/cli-plugins/docker-buildx`, no admin password; Docker
-  Desktop may relink it on its next update unless its CLI plugin management is turned off).
-  Machine-level: the owner runs these; a run does not change the machine.
+- **F-17 · A leftover of an old tool version on the owner's machine** (confirmed, checked again on 2026-11-02). The shadowed
+  `kubectl` and `kind` in `/usr/local/bin` are gone and the Command Line Tools are at 27.2. Left: since Docker Desktop's
+  restart of 2026-11-02 (after the disk ran full) `~/.docker/cli-plugins/docker-buildx` points at Docker Desktop's own
+  buildx again (v0.28.0-desktop.1, pin v0.38.1), so `make versions-check` fails locally; the Homebrew copy is in place
+  (`ln -sf /opt/homebrew/bin/docker-buildx ~/.docker/cli-plugins/docker-buildx`, no admin password; Docker Desktop may
+  relink it on its next update unless its CLI plugin management is turned off). Machine-level: the owner runs it; a run
+  does not change the machine.
