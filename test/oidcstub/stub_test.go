@@ -712,20 +712,33 @@ func (f *fixture) setFault(fault Fault) {
 // The double serves the cases of R-CI-003.
 func TestDoubleFaultDelay(t *testing.T) {
 	f := newFixture(t, Config{})
+	short := &http.Client{Transport: f.client.Transport, Timeout: 100 * time.Millisecond}
+
+	// A held key set leaves the discovery document alone. The proof does not depend on a time bound that a
+	// loaded machine can exceed: a held discovery answer would time f.client out after 5 s and fail get.
+	f.setFault(Fault{Delay: Duration(time.Minute), Target: TargetJWKS})
+	if _, _, err := f.get(f.s.DiscoveryURL()); err != nil {
+		t.Fatalf("discovery is not targeted: %v", err)
+	}
+	if err := tryGet(short, f.s.JWKSURL()); err == nil {
+		t.Fatal("a held key set must time the client out")
+	}
+
+	// A delay that ends holds the answer back at least that long (an upper bound would only measure the machine).
 	f.setFault(Fault{Delay: Duration(300 * time.Millisecond), Target: TargetJWKS})
 	start := time.Now()
-	if _, _, err := f.get(f.s.DiscoveryURL()); err != nil || time.Since(start) > 200*time.Millisecond {
-		t.Fatalf("discovery is not targeted: %v after %v", err, time.Since(start))
-	}
-	start = time.Now()
 	if _, _, err := f.get(f.s.JWKSURL()); err != nil || time.Since(start) < 300*time.Millisecond {
 		t.Fatalf("JWKS answered after %v (%v), want at least 300ms", time.Since(start), err)
 	}
-	// A client that gives up counts the request all the same.
+
+	// A client that gives up counts the request all the same, and what it sees is never an answer: the hold
+	// that is cut by the client's close must not turn into an empty 200 that the client's transport can take
+	// when it races its own cancellation.
 	f.setFault(Fault{Delay: Duration(time.Minute)})
-	short := &http.Client{Transport: f.client.Transport, Timeout: 100 * time.Millisecond}
-	if err := tryGet(short, f.s.JWKSURL()); err == nil {
-		t.Fatal("a held answer must time the client out")
+	for _, url := range []string{f.s.JWKSURL(), f.s.DiscoveryURL()} {
+		if err := tryGet(short, url); err == nil {
+			t.Fatalf("a held answer of %s must time the client out", url)
+		}
 	}
 }
 

@@ -338,7 +338,11 @@ func (s *Server) faultAnswer(w http.ResponseWriter, r *http.Request, f Fault, pl
 		case <-t.C:
 		case <-r.Context().Done():
 			t.Stop()
-			return true
+			// The request ended before the hold did (the client gave up). Writing nothing would make
+			// net/http answer an empty 200, which a client that is still closing its connection can read
+			// and take for an answer of the issuer: the Go transport uses a response that races its own
+			// cancellation. Cutting the connection leaves no answer to read.
+			panic(http.ErrAbortHandler)
 		}
 	}
 	switch {

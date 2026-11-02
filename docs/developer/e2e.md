@@ -1568,7 +1568,7 @@ both) limits the response faults.
 
 | Field | What the issuer does |
 |---|---|
-| `Delay` | holds every answer back (a client that times out is still counted) |
+| `Delay` | holds every answer back (a client that times out is still counted); a hold that the client cuts short ends with an aborted connection (`http.ErrAbortHandler`), never with an empty 200 that a closing client could still read |
 | `Unreachable` | closes connections before the TLS handshake and cuts kept-alive ones |
 | `Status` | answers that status (500) |
 | `NotJSON` | 200 with an HTML body that contains `NonJSONMarker`, for "no byte of the body in `last_error`" |

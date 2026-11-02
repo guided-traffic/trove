@@ -311,6 +311,11 @@ Bastion serves those parties. Phase 5 then maps GitLab pipelines into projects.
   failed in Test and Release run 41466257735 (6 of 9,000 local runs); the flight now leaves the map before it answers
   (commit fb53a61)
 - 🟢 F-31 (upstream client cache) fixed; F-19 closed on the green failover leg of nightly run 41420733312
+- 🟢 `TestDoubleFaultDelay` failed in Test and Release run 41531079294 ("a held answer must time the client out"): when the
+  client's timeout cut the hold, the issuer double returned without writing, net/http answered an empty 200, and the Go transport
+  used that response because it raced its own cancellation (one in about 450 runs under CPU load); the double now aborts the
+  connection (`http.ErrAbortHandler`), and the test's 200 ms upper bound on an undelayed answer, which only measured the machine,
+  is gone
 
 **Security audit and code review of the phase (2026-11-02; fixed in the fix wave, what stays open is an H-item of its page)**
 - 🟢 HIGH · A project administrator with `manageRepositories` could send installation secrets to a host it chooses: the
