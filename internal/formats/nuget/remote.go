@@ -27,8 +27,15 @@ import (
 
 // documentVariant is the one variant of every metadata document a NuGet remote stores: the
 // upstream's bytes as they came. The registration hive, the paging and the SemVer 2.0.0 filter
-// are decided at serve time, never at fill time (R-NUGET-015).
+// are decided at serve time, never at fill time (R-NUGET-015). A virtual repository asks its
+// remote members for the same bytes under the variants of its merged documents ([VariantFlat],
+// [VariantRegistration]); they are the upstream's bytes too (Q-NUGET-67).
 const documentVariant = "doc"
+
+// storesVariant says whether a variant is one of the stored upstream documents.
+func storesVariant(variant string) bool {
+	return variant == documentVariant || variant == VariantFlat || variant == VariantRegistration
+}
 
 // Remote returns the format's remote adapter. It is a stable value, because Register records
 // the instance it returns.
@@ -263,8 +270,8 @@ type fillData struct{ kind docKind }
 // (R-REPO-043).
 func (a remoteAdapter) PrepareFill(_ context.Context, rc formats.RemoteContext, p formats.Path, variant string, body io.ReaderAt, size int64) (formats.Prepared, error) {
 	t, err := parseTarget(p)
-	if err != nil || variant != documentVariant {
-		return formats.Prepared{}, errs.E(errs.Internal, errs.CodeInternal, "NuGet fills metadata documents of the variant doc only.")
+	if err != nil || !storesVariant(variant) {
+		return formats.Prepared{}, errs.E(errs.Internal, errs.CodeInternal, "NuGet fills metadata documents of the variants doc, flat and registration only.")
 	}
 	if size > MaxDocumentBytes {
 		return formats.Prepared{}, errs.E(errs.UpstreamFailed, errs.CodeUpstreamItemTooLarge, "The upstream document is larger than the limit of documents held in memory.")

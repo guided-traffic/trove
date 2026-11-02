@@ -4155,6 +4155,25 @@ same way (then (c) with the dispatcher's clean path), or if the symbol push of n
 [routes.go](../../../internal/formats/nuget/routes.go). Tests: `TestR_NUGET_001_MatchResolvesEveryRoute` (the two cases with the
 slash), and `TestNuGetPush` in the e2e suite, which failed with the 404 before the change.
 
+
+### Q-NUGET-67 · A remote member of a virtual repository is asked for the stored upstream bytes under the variants of the merged documents
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a virtual repository asks every member for the document it merges, with the variant of that document: `flat` for the version list and `registration` for the registration entries (Q-NUGET-56). A remote NuGet repository stores one variant of every metadata document, `doc`, the upstream's bytes (Q-NUGET-51), and its `PrepareFill` refused any other variant, so a virtual repository with a remote member answered 500 on its first version list. Neither package could see it alone: the remote class did not exist when the virtual one was written, and the virtual class did not exist when the remote one was.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The remote accepts `flat` and `registration` as stored variants of the same bytes (chosen) | `PrepareFill` and the upstream request treat the three variants alike; the engine keeps one entry per variant | One line; the engine's entries, validators and invalidation stay as they are | The upstream document is stored up to three times for a package that is read directly and through a virtual repository |
+| (b) The virtual adapter asks remote members for `doc` | The variant of a member depends on its class | One stored copy | The virtual adapter learns the remote adapter's variant, and the merged-metadata cache keys on a variant per class |
+| (c) One variant name for both | `doc` everywhere | One copy | The local member's document is not the upstream's bytes: the variants differ in content, not only in name |
+
+**Choice:** (a). The same bytes under three names cost a few kilobytes per package and keep the two classes ignorant of each other.
+
+**Rationale:** the documents are small and bounded by `MaxDocumentBytes`; the engine's validators make the three entries refresh independently, as they would for any two variants. The development agent revisits this when the engine can alias variants of one path.
+
+**Applied in the spec:** none in a requirement. Code: `storesVariant` in [remote.go](../../../internal/formats/nuget/remote.go). Tests: `TestR_NUGET_015_...` fill cases in `remote_test.go` and `TestR_NUGET_018_AVirtualRepositoryMergesALocalAndARemoteMember`.
+
 ## What this does not cover
 
 ### H-35 · Cached NuGet packages are not checked against an upstream digest

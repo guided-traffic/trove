@@ -140,7 +140,13 @@ func TestR_NUGET_015_PrepareFillRefusesADocumentThatIsNotWhatItsPathPromises(t *
 	if _, err := fill("acme.widgets/index.json", `{"versions":["1.0.0"]}`); err != nil {
 		t.Errorf("a version list: %v", err)
 	}
-	// Only the variant of the stored upstream bytes is filled.
+	// Only the variants of the stored upstream bytes are filled: the document itself and the two a virtual
+	// repository asks its remote members for (Q-NUGET-67).
+	for _, v := range []string{"doc", VariantFlat, VariantRegistration} {
+		if _, err := a.PrepareFill(context.Background(), rc, formats.Path{Path: "acme.widgets/index.json"}, v, strings.NewReader(`{"versions":["1.0.0"]}`), 23); err != nil {
+			t.Errorf("variant %q: %v", v, err)
+		}
+	}
 	_, err := a.PrepareFill(context.Background(), rc, formats.Path{Path: "acme.widgets/index.json"}, "other", strings.NewReader("{}"), 2)
 	if err == nil {
 		t.Error("another variant was filled")
