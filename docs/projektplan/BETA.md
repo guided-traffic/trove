@@ -303,6 +303,26 @@ Bastion serves those parties. Phase 5 then maps GitLab pipelines into projects.
   (commit fb53a61)
 - 🟢 F-31 (upstream client cache) fixed; F-19 closed on the green failover leg of nightly run 41420733312
 
+**Security audit of the phase (2026-11-02, read in the code, not yet reproduced; fix wave planned)**
+- ⚪ HIGH · A project administrator with `manageRepositories` can send installation secrets to a host it chooses: the
+  unsaved upstream test resolves any `secretRef` (`env` `TROVE_CAC_…`, a file in `secrets_dir`) and sends it to the URL of
+  the request, and a `PATCH` that changes the URL of an assigned remote keeps its sealed password (`{"set": true}`)
+  (`upstream_api.go`, `repository/upstream.go`, `secrets_store.go`); H-281 covered `repositories:write-config` only
+- ⚪ MEDIUM · The `manage` grant of a project administrator works through any credential (an `inherit` token without
+  `admin: true`) and for a global service account that is a member of an administrator group, against Q-AUTHZ-183
+  (`authz/index.go`)
+- ⚪ MEDIUM · Deleting a project repository with `detach=true` changes virtual repositories outside the project, and the
+  409 without it names them (`repository/delete.go`, `members.go`)
+- ⚪ MEDIUM · The policy list filters (`principal` with `expandGroups`, `repository`) and the policy validation tell a
+  project administrator about group memberships, repositories and service accounts outside its project
+  (`authz_api.go`, `policy_list.go`, `validate.go`)
+- ⚪ LOW · A project service account bound through `authz.role_bindings` or named in a global entry is refused only in
+  code, not by the database; a race between a handler's narrowing and the policy write or the saved upstream test; global
+  policy names under a project's prefix; an auto-join group in a project policy stands in for `authenticated`; a delegated
+  token may be self-rotatable and so unbounded; "New policy" in a project-scoped list creates a global policy; the spec
+  puts a service account's description change under two different rights; refusals of a project administrator may leave
+  no audit event
+
 ## Phase 5 · GitLab CI OIDC (M4)
 
 Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md)
