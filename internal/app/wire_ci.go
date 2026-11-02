@@ -53,8 +53,9 @@ type ciArea struct {
 }
 
 // wireCI builds the services: the issuer and key service of work package W1 over the database, the change
-// log, the cache registry and the outbound factory; the stubs of the other work packages until they build
-// theirs (the revoker and the mapping store are the issuer service's collaborators).
+// log, the cache registry and the outbound factory, and the mapping store of work package W3; the stubs of
+// the other work packages until they build theirs (the revoker and the mapping store are the issuer
+// service's collaborators).
 func (a *App) wireCI(_ context.Context, in infra) (ciArea, error) {
 	if err := requireInputs(AreaCI, given("database", in.db), given("change log", in.changes), given("cache registry", in.caches),
 		given("outbound factory", in.out), given("audit recorder", in.rec)); err != nil {
@@ -64,10 +65,17 @@ func (a *App) wireCI(_ context.Context, in infra) (ciArea, error) {
 	if err != nil {
 		return ciArea{}, fmt.Errorf("ci metrics: %w", err)
 	}
-	out := ciArea{
-		mappings: ci.StubMappings{}, revoker: ci.StubRevoker{}, issuances: ci.StubIssuances{}, exchanger: ci.StubExchanger{},
-		metrics: metrics,
+	out := ciArea{revoker: ci.StubRevoker{}, issuances: ci.StubIssuances{}, exchanger: ci.StubExchanger{}, metrics: metrics}
+	// The mapping store of work package W3: it takes the revoker of the area (work package W5 replaces the
+	// stub above) and is the issuer service's collaborator for the cascade of a deletion.
+	mappings, err := ci.NewMappings(ci.MappingsOptions{
+		DB: in.db, Changes: in.changes, Recorder: in.rec, Caches: in.caches, Revoker: out.revoker,
+		Config: a.cfg.CI, BaseURL: a.cfg.Server.BaseURL, Log: a.log.With("component", "ci"),
+	})
+	if err != nil {
+		return ciArea{}, err
 	}
+	out.mappings = mappings
 	issuers, err := ci.New(ci.Options{
 		DB: in.db, Changes: in.changes, Recorder: in.rec, Caches: in.caches, Outbound: in.out,
 		Config: a.cfg.CI, OutboundConfig: a.cfg.Proxy.Outbound, EpochPollInterval: a.cfg.Cluster.EpochPollInterval,
@@ -84,6 +92,10 @@ func (a *App) wireCI(_ context.Context, in infra) (ciArea, error) {
 // CIIssuers returns the issuer and key service; nil in the shell profile. The integration tests of the key
 // source call it the way the exchange does.
 func (a *App) CIIssuers() ci.Issuers { return part[ciArea](a.parts).issuers }
+
+// CIMappings returns the mapping service; nil in the shell profile. The integration tests of the mapping
+// cache call it the way the exchange does.
+func (a *App) CIMappings() ci.Mappings { return part[ciArea](a.parts).mappings }
 
 // ciAPI hands the services to the management API.
 func (a *App) ciAPI() v1.CIServices {

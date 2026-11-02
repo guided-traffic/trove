@@ -288,8 +288,8 @@ func checkDeletable(p Project, expected int64) error {
 	}
 	if !p.Empty() {
 		return errs.E(errs.Conflict, errs.CodeProjectNotEmpty,
-			fmt.Sprintf("The project %q still has %d repositories and %d service accounts; unassign the repositories and delete the accounts first.",
-				p.Key, p.Repositories, p.ServiceAccounts))
+			fmt.Sprintf("The project %q still has %d repositories, %d service accounts and %d CI mappings; unassign the repositories and delete the accounts and the CI mappings first.",
+				p.Key, p.Repositories, p.ServiceAccounts, p.CIMappings))
 	}
 	return nil
 }

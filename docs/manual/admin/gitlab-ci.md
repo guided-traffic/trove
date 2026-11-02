@@ -179,6 +179,7 @@ The job's `aud` must be one of the issuer's `allowedAudiences`, compared exactly
 - Because the first match decides, a mapping lists everything its jobs need, reading included. Put narrow rules at low numbers and broad ones at high numbers, for example a publish mapping at 100 and a read mapping for the whole group at 900.
 - No match in any tier refuses the exchange with `no_matching_mapping`. A matched mapping whose grants cannot be rendered refuses it with `grant_render_failed`; evaluation never falls through to the next mapping.
 - A mapping grants in up to three ways: **inline grants** (repositories, package-name or path patterns, actions and ownership), **policies** that list the mapping as a principal, and, in the system tier only, **groups**. Inline grants are frozen into the token at the exchange; policy and group grants are evaluated when the token is used, so changing a policy affects tokens already issued.
+- A policy a mapping lists names the mapping in its principal list, and the list is the one place of that binding. Saving the mapping adds the entry `ci:<issuer>/<mapping>` with the action `read` where the policy has none, and removes the entry of a policy the mapping no longer lists; an entry that stays keeps the actions the policy gives it. To let a mapping write through a policy, widen its entry in the policy; the mapping's rules (`unprotected_write`, `unpinned_write`) count the entry the next time the mapping is saved. Removing the mapping from the policy removes it from the mapping's `grants.policies` as well, and a token already issued loses the policy's grants at once.
 - A token's rights are those grants, narrowed by the `scope` the job asked for. The package ownership of the repository decides every write on top.
 
 ### The bounds of a project mapping
@@ -187,8 +188,8 @@ A project's administrators manage the mappings of their project's tier, with eve
 
 - The name starts with the project key and a hyphen (`422` `project_prefix_required`), so the principal `ci:<issuer>/<key>-…` is unique.
 - Inline grants reach the project's repositories only: `@any` means every repository of the project, and a key outside the project is refused (`422` `repository_outside_project`).
-- `policies` name policies of the project only (`422` `policy_outside_project`); `groups` are refused (`422` `groups_not_allowed_in_project`); `manage` is never grantable (`422` `action_not_allowed`).
-- They list and dry-run only their project's tier, and see the issuance records of tokens that one of their mappings contributed to, showing their mappings only.
+- `policies` name policies of the project only (`422` `policy_outside_project`, also for a name that does not exist, so the answer tells nothing about the policies of others); `groups` are refused (`422` `groups_not_allowed_in_project`); `manage` is never grantable (`422` `action_not_allowed`).
+- They list and dry-run only their project's tier, read the snippet (`GET /api/v1/projects/{key}/ci/issuers/{issuer}/snippets/gitlab-ci?mapping=<name>&format=npm`, or `nuget`) of their own mappings, and see the issuance records of tokens that one of their mappings contributed to, showing their mappings only.
 - A project with CI mappings is not empty and cannot be deleted (`409` `project_not_empty`).
 
 The issuers stay with the system administrators: a project administrator lists them read-only with `GET /api/v1/projects/{key}/ci/issuers` (name, kind, issuer URL, `publicIssuer`).
@@ -385,16 +386,16 @@ The dry run evaluates mappings against a claim set and shows the decision. It ta
 trove_curl -X POST -H 'Content-Type: application/json' --data @claims.json https://trove.example.com/api/v1/projects/web/ci/issuers/gitlab-main/evaluate
 ```
 
-Write the claims as GitLab sends them, IDs and booleans as strings. `scope` is optional and narrows as the exchange's parameter does. `now` (Unix seconds) is optional too: without it no time claim is checked, with it `exp`, `nbf` and `iat` are checked against that moment. The answer:
+Write the claims as GitLab sends them, IDs and booleans as strings. `scope` is optional and narrows as the exchange's parameter does. `now` (Unix seconds) is optional too: without it no time claim is checked, with it and with `exp` and `iat` in the claims they and `nbf` are checked against that moment, with the issuer's clock skew. The dry run reads the mappings from the database, so a mapping you just saved is in it. The answer:
 
 | Member | Shows |
 |---|---|
 | `crossProject` | Whether the claims classify as a fork pipeline |
-| `trace` | Every mapping looked at, per tier: `matched`, `contributes` (false for a matched mapping that denies a fork pipeline), `failedLeaf` (a pointer into the condition, such as `/all/1`), `detail`, and `leaves` with each leaf's operator, expected and actual values and whether it passed |
-| `selected` | The mappings the token would carry |
+| `trace` | Every mapping looked at, per tier: `matched`, `contributes` (false for a matched mapping that denies a fork pipeline), `failedLeaf` (a pointer into the condition, such as `/all/1`; empty when the condition is a single leaf), `detail`, and `leaves` with each leaf's operator, expected and actual values and whether it passed |
+| `selected` | The names of the mappings the token would carry |
 | `failure` | The reason the exchange would be refused with, such as `no_matching_mapping`; absent when it would succeed |
 | `grants`, `scope`, `ttlSeconds` | The rendered grants, the scope and the lifetime the token would get |
-| `warnings` | Warnings about the mappings involved |
+| `warnings` | `scope_policy_grants_not_checked` when `scope` asks for something only a policy or a group of the mapping could hold: the dry run reads no policy, takes the item as held and says so |
 
 Real claims come from an earlier exchange: the issuance record holds the claim snapshot of every token, and the audit event of a refused exchange holds it once the signature was verified. Copy the snapshot into `claims`, change a value, and watch which leaf fails.
 
@@ -558,7 +559,6 @@ Project administrators manage the mappings of their project. These stay with hol
 
 - the issuers: registering, changing, disabling and deleting instances, their audiences, CA bundles and key refreshes;
 - mappings of the `system` tier, mappings that grant through groups, and grants on repositories outside a project;
-- the snippet operation `GET /api/v1/ci/issuers/{issuer}/snippets/gitlab-ci?mapping=<name>&format=npm` (or `nuget`), which needs `ci:read`;
 - the issuance records of every mapping, revoking one token, and the bulk revocation;
 - the `ci.*` configuration keys and the package ownership of repositories outside a project.
 

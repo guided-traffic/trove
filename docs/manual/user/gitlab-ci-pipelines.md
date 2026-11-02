@@ -55,14 +55,14 @@ variables:
         --data-urlencode 'subject_token@-' \
         "$TROVE_URL/api/v1/auth/oidc/token")"
       TROVE_TOKEN="$(printf '%s' "$response" | jq -er '.access_token // empty')" \
-        || { printf '%s\n' "$response" | jq '{error, error_description, reason}' >&2; exit 1; }
+        || { printf '%s\n' "$response" | jq '{error, error_description, reason, requestId}' >&2; exit 1; }
       export TROVE_TOKEN
       unset response TROVE_ID_TOKEN
 ```
 
 - `printf '%s' "$TROVE_ID_TOKEN" | curl --data-urlencode 'subject_token@-'` hands curl the ID token on standard input. `printf` is a shell builtin, so the token never appears in the runner's process list.
 - `--retry 3` repeats the exchange after a `429` or a `503`, waiting as `Retry-After` says. Neither answer records the ID token as used, so the repeat is accepted. curl reads the token into memory once and sends it again.
-- On success, `jq` takes `access_token`; on a refusal it prints `error`, `error_description` and `reason` and stops the job. Neither ever contains a token or a claim value.
+- On success, `jq` takes `access_token`; on a refusal it prints `error`, `error_description`, `reason` and `requestId` and stops the job. None of them ever contains a token or a claim value.
 - `unset` removes the ID token from the shell once it is exchanged. Keep it if a later step of the job exchanges again ([Several exchanges in one job](#several-exchanges-in-one-job)).
 - The `apt-get` line installs the tools on Debian-based images that lack them; leave it out where the image has them.
 
@@ -122,7 +122,8 @@ publish-npm:
     - npm version --no-git-tag-version --allow-same-version "${CI_COMMIT_TAG#v}"
     - npm publish --registry https://trove.example.com/api/npm/web-npm/
     # Last step: revoke the CI token, so it does not outlive the job.
-    - printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- "$TROVE_URL/api/v1/tokens/current"
+    - |
+      printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- "$TROVE_URL/api/v1/tokens/current"
 ```
 
 The credential lines name trove's host, so npm never sends the token to another registry. `npm version --allow-same-version` keeps the job working when `package.json` already carries the tag's version. The `rules:` run the job only for protected tags; a job on an unprotected branch would get a token without `deploy`, and `npm publish` would fail with `E403`. [Connecting a package client](client-setup.md) explains the npm configuration in general.
@@ -164,7 +165,8 @@ push-nuget:
       dotnet nuget push "out/*.nupkg"
       --source "$TROVE_URL/api/nuget/web-nuget/v3/index.json"
       --api-key "$TROVE_TOKEN"
-    - printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- "$TROVE_URL/api/v1/tokens/current"
+    - |
+      printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- "$TROVE_URL/api/v1/tokens/current"
 ```
 
 - The user name in `nuget.config` is not checked. When `TROVE_TOKEN` is not set, NuGet keeps the literal text `%TROVE_TOKEN%`, so a missing token shows up as `401`, not as anonymous access.
@@ -176,6 +178,8 @@ push-nuget:
 ```shell
 printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- "$TROVE_URL/api/v1/tokens/current"
 ```
+
+In a `.gitlab-ci.yml`, write the line as a block scalar (`- |`, as the pipelines above do): a plain list item with a colon and a space in it (`Authorization: Bearer`) is a YAML mapping, and GitLab refuses the job.
 
 `DELETE /api/v1/tokens/current` revokes the token that authenticates it and answers `204`; the token is refused on every replica within seconds. The header comes from standard input (`-H @-`) for the same reason as the exchange.
 
@@ -212,7 +216,7 @@ variables:
         --data-urlencode 'subject_token@-' \
         "$TROVE_URL/api/v1/auth/oidc/token")"
       TROVE_TOKEN="$(printf '%s' "$response" | jq -er '.access_token // empty')" \
-        || { printf '%s\n' "$response" | jq '{error, error_description, reason}' >&2; exit 1; }
+        || { printf '%s\n' "$response" | jq '{error, error_description, reason, requestId}' >&2; exit 1; }
       export TROVE_TOKEN
       unset response TROVE_ID_TOKEN
 
@@ -232,7 +236,8 @@ publish-npm:
     - npm ci
     - npm version --no-git-tag-version --allow-same-version "${CI_COMMIT_TAG#v}"
     - npm publish --registry https://trove.example.com/api/npm/web-npm/
-    - printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- "$TROVE_URL/api/v1/tokens/current"
+    - |
+      printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- "$TROVE_URL/api/v1/tokens/current"
 
 push-nuget:
   stage: publish
@@ -249,7 +254,8 @@ push-nuget:
       dotnet nuget push "out/*.nupkg"
       --source "$TROVE_URL/api/nuget/web-nuget/v3/index.json"
       --api-key "$TROVE_TOKEN"
-    - printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- "$TROVE_URL/api/v1/tokens/current"
+    - |
+      printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- "$TROVE_URL/api/v1/tokens/current"
 ```
 
 </details>
@@ -294,7 +300,7 @@ The job log shows the members `error`, `error_description` and `reason`. The `re
 
 Until the federation is released, the exchange answers `501` `ci_not_implemented` as problem details, which carry none of these members, so the error line of the snippet prints only `null` values.
 
-For anything you cannot fix yourself, give your administrator the time, the GitLab project and job, and the `reason`. The answer also carries a `requestId`, which leads straight to the refusal in trove's audit trail; add it to the error line with `jq '{error, error_description, reason, requestId}'` if you want it in the log. The administrator's table of every reason is in [GitLab CI federation](../admin/gitlab-ci.md#troubleshoot-refused-exchanges).
+For anything you cannot fix yourself, give your administrator the time, the GitLab project and job, and the `reason`. The answer also carries a `requestId`, which leads straight to the refusal in trove's audit trail; the error line of the snippet prints it, so give it to your administrator as well. The administrator's table of every reason is in [GitLab CI federation](../admin/gitlab-ci.md#troubleshoot-refused-exchanges).
 
 ## When a later request is refused
 

@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
-	"github.com/guided-traffic/trove/internal/ci/claims"
 )
 
 // The OAuth values of the exchange (R-CI-007).
@@ -72,45 +71,7 @@ func (e *ExchangeError) Error() string { return string(e.Reason) + ": " + e.Desc
 // Unwrap returns the cause.
 func (e *ExchangeError) Unwrap() error { return e.Err }
 
-// TraceEntry is one mapping in the decision trace of an evaluation (R-CI-019): the first failed leaf
-// as the spec's sketch shows it, and every leaf for the claim tester (R-UI-036).
-type TraceEntry struct {
-	Tier    string
-	Mapping string
-	Matched bool
-	// Contributes is false for a matched mapping whose cross_project_source is deny on a
-	// cross-project token (R-CI-012): it is not one of the token's mappings.
-	Contributes bool
-	FailedLeaf  string
-	Detail      string
-	Leaves      []claims.LeafResult
-}
-
-// Selection is the result of steps 4 to 7 of the exchange on one mapping set (R-CI-007): the
-// classification, the trace, the contributing mappings, their rendered grants and the caps. It is a
-// pure function of the mapping set and the claims, so the dry run (W3) and the exchange (W4) share it.
-type Selection struct {
-	CrossProject bool
-	Trace        []TraceEntry
-	// Mappings are the contributing mappings, in evaluation order; exactly one in the MVP (one tier).
-	Mappings []Mapping
-	// Rendered is the union of what the contributing mappings render (policies, groups, inline).
-	Rendered claims.Rendered
-	Caps     []claims.Cap
-	// Failure is no_matching_mapping, cross_project_source_denied or grant_render_failed, "" on a
-	// success; Detail names the mapping or the claim and holds no claim value.
-	Failure Reason
-	Detail  string
-}
-
-// Select evaluates the mapping set for a subject token of the given kind (R-CI-009): the enabled
-// mappings whose subject_kinds include it, per tier in ascending priority, the first match per tier;
-// the cross-project classification and the per-mapping opt-in (R-CI-012); the rendering of the
-// matched mappings' grants (R-CI-013, R-CI-014) without falling through on a render failure; the cap
-// `read` for a read_only opt-in. It records the trace of every mapping it looked at.
-func Select(_ MappingSet, _ string, _ claims.Claims) Selection {
-	panic("not implemented: W3")
-}
+// TraceEntry, Selection and Select are in select.go (work package W3).
 
 // TTLInput is what the lifetime of a CI token depends on (R-CI-016).
 type TTLInput struct {

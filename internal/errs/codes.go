@@ -166,7 +166,7 @@ const (
 	// CodeProjectAccountNotGroupable: a project service account as a group member.
 	CodeProjectAccountNotGroupable = "project_account_not_groupable"
 	// CodeProjectNotEmpty: a delete of a project that still has repositories (also
-	// those being deleted) or service accounts.
+	// those being deleted), service accounts or CI mappings.
 	CodeProjectNotEmpty = "project_not_empty"
 	// CodeRepositoryAssigned: an assignment of a repository that belongs to another
 	// project, without ?move=true.
@@ -545,7 +545,7 @@ var registry = []CodeInfo{
 	{CodeProjectPrefixRequired, Invalid, "Project prefix required", "The names of a project's repositories, policies and service accounts start with the project key and a hyphen."},
 	{CodeNameReservedByProject, Invalid, "Name reserved by a project", "A service account that belongs to no project cannot take a name that starts with the key of a project and a hyphen."},
 	{CodeProjectAccountNotGroupable, Invalid, "Project service account cannot join a group", "A service account of a project is no group member: a group's grants would reach the project's account."},
-	{CodeProjectNotEmpty, Conflict, "Project not empty", "The project still has repositories (also ones being deleted) or service accounts; unassign the repositories and delete the accounts first."},
+	{CodeProjectNotEmpty, Conflict, "Project not empty", "The project still has repositories (also ones being deleted), service accounts or CI mappings; unassign the repositories and delete the accounts and the CI mappings first."},
 	{CodeRepositoryAssigned, Conflict, "Repository assigned to another project", "The repository belongs to another project; send move=true to move it."},
 	{CodeProjectOwnerChanged, Conflict, "Project owner changed", "The repository belongs to another project than the request expected (from); the extension currentProject names it, null for none. Read it again and decide again."},
 	{CodeProjectKeyOverlap, Conflict, "Project key overlaps", "A project key is not the prefix, up to a hyphen, of another project's key or of a global service account's name."},

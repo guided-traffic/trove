@@ -3979,8 +3979,8 @@ paths:
       summary: Delete an empty project
       description: |
         Deletes the project, its project policies (each deleted, audited and journaled like any policy
-        deletion) and its administrator entries. A project with a repository, in any lifecycle state, or a
-        service account is not empty: `409 project_not_empty`. `If-Match` is optional; a stale one answers
+        deletion) and its administrator entries. A project with a repository, in any lifecycle state, a
+        service account or a CI mapping of its tier is not empty: `409 project_not_empty`. `If-Match` is optional; a stale one answers
         `412` (Q-AUTHZ-185).
       x-trove-recent-auth: true
       x-trove-permission:
@@ -5339,6 +5339,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -5878,6 +5880,78 @@ paths:
           $ref: "#/components/responses/PayloadTooLarge"
         "415":
           $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+  /api/v1/projects/{key}/ci/issuers/{issuer}/snippets/{kind}:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        description: The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable.
+        schema:
+          type: string
+          pattern: "^[a-z][a-z0-9-]{1,31}$"
+      - name: issuer
+        in: path
+        required: true
+        description: The CI issuer name.
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+      - name: kind
+        in: path
+        required: true
+        description: The CI system of the snippet; `gitlab-ci` in this release.
+        schema:
+          type: string
+          enum: [gitlab-ci]
+    get:
+      operationId: getProjectCiSnippet
+      tags: [ci]
+      summary: Read a ready-to-paste CI snippet for a mapping of a project
+      description: |
+        As `getCiSnippet`, for a mapping of the project's tier only: a mapping of another tier answers `404`. A project
+        administrator who writes a mapping needs the pipeline that uses it (R-API-035, R-UI-035, Q-CI-26). It holds no secret.
+      x-trove-permission:
+        permission: ci:read
+        projectAdmin: managePolicies
+      parameters:
+        - name: mapping
+          in: query
+          required: true
+          description: The mapping the snippet is for.
+          schema:
+            type: string
+        - name: format
+          in: query
+          description: The package client the snippet configures.
+          schema:
+            type: string
+            enum: [npm, nuget]
+            default: npm
+      responses:
+        "200":
+          description: The snippet.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "422":
           $ref: "#/components/responses/Unprocessable"
         "429":

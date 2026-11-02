@@ -74,7 +74,7 @@ Saving sends the changes one by one: the project, then its administrators, then 
 
 ### Delete a project
 
-**Delete project** is offered only for a project that has no repository, in any state, and no service account. The project's permission policies are deleted with it, each through the policy store, and its administrator entries go. For a project that is not empty, the button is disabled and the page says why; a project that became non-empty after you opened the page answers `project_not_empty`.
+**Delete project** is offered only for a project that has no repository, in any state, no service account and no CI mapping. The project's permission policies are deleted with it, each through the policy store, and its administrator entries go. For a project that is not empty, the button is disabled and the page says why; a project that became non-empty after you opened the page answers `project_not_empty`.
 
 ## The project page
 
@@ -103,7 +103,7 @@ After you sign in, **Administration** shows **Projects** only. The global lists,
 | The name must start with the key of the project and a hyphen | `project_prefix_required` for a repository, policy or service account |
 | A repository named here does not belong to this project, or does not exist | `repository_outside_project`: a selector, a virtual member or a deployment target |
 | A service account of a project can only be granted by the policies of its own project | `principal_outside_project` |
-| The project still has repositories or service accounts | `project_not_empty`: unassign the repositories and delete the service accounts first |
+| The project still has repositories, service accounts or CI mappings | `project_not_empty`: unassign the repositories and delete the service accounts and the CI mappings first |
 | The repository belongs to another project | `repository_assigned`: move it explicitly |
 | The repository was moved to another project in the meantime | `project_owner_changed`: the repository belongs to another project than the request expected; read it again and decide again |
 | Enter the password or token of this upstream again | `secret_value_required`: a reference of the installation, or a stored password kept while the URL or a credential host changes |

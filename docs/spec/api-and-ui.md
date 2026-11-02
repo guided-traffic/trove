@@ -1858,6 +1858,7 @@ Owned by [gitlab-ci-oidc.md](gitlab-ci-oidc.md):
 | GET, POST | `/api/v1/projects/{key}/ci/mappings` | List and create the mappings of a project (the body names the issuer) | `ci:write` (read: `ci:read`), or administrator of the project with `managePolicies`; recent authentication for writes |
 | GET, PUT, DELETE | `/api/v1/projects/{key}/ci/mappings/{issuer}/{name}` | Read, replace, delete | as above |
 | POST | `/api/v1/projects/{key}/ci/issuers/{issuer}/evaluate` | Dry run over the project's tier only | as above |
+| GET | `/api/v1/projects/{key}/ci/issuers/{issuer}/snippets/{kind}?mapping=&format=` | The snippet of a mapping of the project's tier (R-UI-035) | `ci:read`, or administrator of the project with `managePolicies` |
 | POST, DELETE | `/api/v1/ci/issuers/{issuer}/delegations…` | Delegate mapping management for a scope to a group (P1; covers project-scoped mappings, ADMAPI-030) | `admin` |
 | GET | `/api/v1/ci/issuances`, `/api/v1/ci/issuances/{tokenId}` | Issued CI tokens with job context | `admin`, `tokens:read` |
 | POST | `/api/v1/ci/issuances/revoke` | Revoke matching CI tokens | `admin`, `tokens:revoke` |

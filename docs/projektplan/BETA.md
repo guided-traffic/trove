@@ -401,9 +401,11 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - 🟢 HIGH (design) · `claims.Frozen` carried one `Project` for all inline grants, while a token can unite the match of the
   system tier with matches of several project tiers (R-CI-009). Now one contribution per matched mapping with its tier, its
   project, its inline grants and its caps, and a versioned bundle (W2, Q-CI-17 amended); W5 evaluates per contribution
-- 🟡 The snippet operation (R-API-035, R-UI-035) has no project route, so a project administrator cannot get a mapping's
-  snippet (W3)
-- 🟡 R-AUTHZ-026 "Deleting a project" and its table row do not name CI mappings as a blocker (`project_not_empty`, Q-CI-26) (W3)
+- 🟢 The snippet operation (R-API-035, R-UI-035) had no project route, so a project administrator could not get a mapping's
+  snippet; `GET /projects/{key}/ci/issuers/{issuer}/snippets/{kind}` answers it for a mapping of the project's tier, and the
+  spec says the operation is MVP for R-UI-035 while R-CI-027 stays P1 (W3)
+- 🟢 R-AUTHZ-026 "Deleting a project" and its table row did not name CI mappings as a blocker; both do now, and the delete
+  answers 409 `project_not_empty` while a project has CI mappings (W3)
 - 🟢 The spec listed three save-time warnings, `internal/ci/reason` six more; R-CI-010 lists all nine now
 - 🟢 A rule violation of a management write: every violation in `errors[]` with its pointer and code, a rule the spec names
   also as the problem's `code` (Q-CI-30)
@@ -412,13 +414,26 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - 🟡 The exchange: a `ttl` below `ci.token.min_ttl` answers `subject_token_expires_too_soon`, which names the wrong cause; an
   empty `subject_token` has no stated reason; `ci.exchange.enabled: false` answering 404 is only in the code; the 405 of
   R-CI-007 is not in OpenAPI (W4)
-- 🟡 The reference pipeline's error line (R-CI-028) prints no `requestId`, which the administrator needs to find the refusal (W7)
+- 🟢 The reference pipeline's error line (R-CI-028) printed no `requestId`, which the administrator needs to find the refusal;
+  the error line of the examples, the snippet and the manual prints `error`, `error_description`, `reason` and `requestId`, and
+  R-CI-028 has the acceptance criterion (W3)
+- 🟢 The closing revocation of the reference pipeline, `- printf 'Authorization: Bearer %s\n' …`, is a YAML mapping, not a
+  command: a plain scalar with a colon and a space in it. GitLab refuses such a `script` entry. The examples, the manual and the
+  snippet write it as a block scalar (`- |`), and a test parses the snippet as YAML (W3)
 - 🟢 `TestR_CI_003_ARotationCausesOneFetchAndRandomKidsCauseNone` failed in 2 of 4 runs: the lookups caused no extra read (the key source lets at most one re-read per `cluster.epoch_poll_interval` through), but PostgreSQL flushed the 10 reads of the preceding rotation into `pg_stat_user_tables` between 0.9 s and 1.6 s late, on either side of the test's 1.5 s wait, so they landed in the measured window; the test now waits 2.5 s (`statsFlushWait`) before each reading and the bound is unchanged
 - 🟡 Two implementations of R-CI-003's key rules: W1's `internal/ci/keys_jwks.go` (built while the shared leaf did not exist)
   and W2's `jws.ParseJWKS`; one of them goes, so the key status and the validation cannot disagree (W4)
 - 🟢 Test and Release run 41525937899 failed in `integration (shard b)`: since W1, `trove migrate` applies `ci.issuers` on
   every run, and the test helper `testenv.DeclareRoleBindings` built a bare configuration without the CI caches' SafetyTTL
   (`cache: "ci_issuers" needs a SafetyTTL`); the helper sets them as `config.Load` does
+- 🟢 `TestR_CI_003_AFetchHoldsNoTransactionOpenAndAnUnchangedSetLeavesTheEpoch` failed in 2 of 3 runs after the merge of W3:
+  its sampler counted every connection that passed through `idle in transaction` for under a millisecond between two
+  statements of an ordinary transaction (a job insert, a gauge read); it counts the connections in that state for more than
+  1 s now, which a transaction held over the 4 s fetch still is (8 of 8 runs pass)
+- 🟢 W3 declared two package-level slices in `internal/ci` against R-ARCH-032 (the architecture test caught it at the merge);
+  both are functions now
+- 🟡 `TestR_CI_003_StaleAndUnreachable` failed once in W3's full run of `test/integration/ci` while three agents shared
+  the stack, and passed alone and in the next full run; watched, not yet reproduced
 - 🟢 Test and Release run 41518863868 failed in `e2e on kind (access-long)`: the journey `06` clicked "Refresh now" by a
   substring match, and the new task `ci-keys-refresh` added a "Run task ci-keys-refresh now" button to the same screen; the
   locator is exact now
@@ -448,14 +463,17 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   whole project or to one repository; how a pipeline gets its trove token. Written against the contracts:
   [admin/gitlab-ci.md](../manual/admin/gitlab-ci.md) and [user/gitlab-ci-pipelines.md](../manual/user/gitlab-ci-pipelines.md), each
   with a "not available yet" note that the change shipping the exchange removes ([ci-oidc.md](../developer/ci-oidc.md#the-manual-pages))
-- ⚪ Project administrators manage the CI mappings of their project (owner, 2026-11-02; Q-CI-26): a mapping tier per
+- 🟡 Project administrators manage the CI mappings of their project (owner, 2026-11-02; Q-CI-26): a mapping tier per
   project, grants only over the project's repositories and policies, the save-time rules unchanged; issuers stay the
-  system administrators'
+  system administrators'. Built (W3): the project routes with the narrowing, the bounds, the dry run and the snippet of the
+  tier, `project_not_empty` for a project with mappings (`TestQ_CI_26_*`); open: the issuances of the project (W5)
 - 🟡 Identity mappings: conditions on project, branch, protected ref, environment; templated grants. The claim engine is
   built (W2: conditions with their limits and trace, glob, RE2, templates with escaping per context, grants with the
   ownership default, the scope grammar, the cross-project cap per mapping, every save-time rule and warning, the project
   tier's rules; Q-CI-27 to Q-CI-29); the subject-token validation of R-CI-004 and the shared JWS leaf `internal/auth/jws`
-  the login uses too; open: the mapping store and API (W3)
+  the login uses too. The mapping store and API are built (W3: the principals, `mappings_version`, the policy binding, the
+  per-replica copy, `Select`, the dry run, the snippet; Q-CI-35 to Q-CI-37, `TestR_CI_009_*` in `test/integration/ci`); open:
+  the criteria that need the exchange, the revoker and the use-time evaluator (W4, W5), listed as pending on the contract page
 - ⚪ Package ownership: a CI project writes only the packages it owns, reads what it is granted
 - 🟡 Admin UI: CI issuers, mappings, dry run and claim tester; built against the API fakes with the issuances, bulk revoke
   and the project's CI screens (`/admin/ci…`, `/admin/projects/:key/ci…`, Q-UI-99, Q-UI-100; 713 web tests); open: against

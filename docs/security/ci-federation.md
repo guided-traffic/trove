@@ -1,9 +1,10 @@
-# CI federation: issuers and signing keys
+# CI federation: issuers, signing keys and mappings
 
-Status: the issuer record, its read-only configuration form and the signing-key store are built (work package W1 of
-[ci-oidc.md](../developer/ci-oidc.md)); the subject-token validation, the mappings and the exchange are specified in
-[gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md) and described here when they exist. This page answers one question: what does trove
-trust when it trusts a CI issuer, and what can reach or change that trust.
+Status: the issuer record, its read-only configuration form and the signing-key store (work package W1 of
+[ci-oidc.md](../developer/ci-oidc.md)) and the identity mappings with their save-time rules (work package W3) are built; the
+exchange and the use-time evaluation are specified in [gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md) and described here when they
+exist. This page answers two questions: what does trove trust when it trusts a CI issuer, and what can reach or change that trust;
+and what decides what a verified job receives.
 
 ## What trust in an issuer means
 
@@ -77,6 +78,63 @@ issuer is resolved from the in-process copy of all issuers. The throttles are pe
 one interval ([R-ARCH-032](../spec/architecture.md)); [H-409](#h-409--an-attacker-can-delay-a-rotated-key-on-one-replica) is the one
 consequence.
 
+## The mappings: the access control of an anonymous endpoint
+
+The exchange is anonymous: its caller proves a job identity with a token and nothing else. What that identity receives is decided by
+the mapping set of the issuer alone ([R-CI-009](../spec/gitlab-ci-oidc.md)), so the mappings are the access control of the
+endpoint and the rules on saving them are its configuration checks. A token is evaluated per tier, the first matching mapping of a
+tier decides it, and the tiers add up: the administrators' tier `system` and one tier `project:<key>` per project
+([select.go](../../internal/ci/select.go)). A disabled mapping is not looked at, so disabling a narrow mapping lets its jobs fall
+through to the next one of the tier, which can grant more; the event of the disable carries a journal entry for that reason
+([mappings_store.go](../../internal/ci/mappings_store.go)).
+
+| Who | What they can do with a mapping | Where it is enforced |
+|---|---|---|
+| a system administrator (`ci:write`, recent authentication) | create, replace and delete mappings of every tier; a project's mapping keeps the bounds of its tier | the declarations; [mappings_write.go](../../internal/ci/mappings_write.go) |
+| an auditor or security administrator (`ci:read`) | read the mappings, run the dry run, read the snippet | the declarations |
+| a project administrator with `managePolicies` | the same for the tier of its project, within the bounds below | [ci_project_api.go](../../internal/api/v1/ci_project_api.go) (`requireProject`), [mappings_bind.go](../../internal/ci/mappings_bind.go) |
+| a holder of `policies:write` | change what a policy gives a mapping that it lists, which no check of the mapping sees ([H-412](#h-412--a-policy-or-group-widened-after-the-save-is-not-held-to-the-write-rules)) | the policy store |
+| a CI token | nothing: the management API refuses it ([Q-CI-18](../spec/gitlab-ci-oidc.md)) | `ciGate` |
+
+**The rules on save** are checked in the transaction of the write, by the pure engine ([check.go](../../internal/ci/claims/check.go)) and
+the lookups that need the database ([mappings_write.go](../../internal/ci/mappings_write.go) `check`). Each refuses a mapping that would
+hand an anonymous caller more than its author meant:
+
+- a condition with no leaf (`catch_all_condition`) matches every job of the issuer; on a public issuer (gitlab.com) a condition
+  without an `equals` or `in` leaf on an immutable ID claim (`pin_required`) matches any project of the world that can reach the
+  audience ([R-CI-005](../spec/gitlab-ci-oidc.md));
+- a grant of `deploy`, `overwrite` or `delete` needs `ref_protected` at the top of the condition (`unprotected_write`), since on an
+  unprotected ref anyone who can push a branch gets the grant, and on a private issuer a write through a policy, a group or an
+  inline grant without ownership `bind_project` needs a pin (`unpinned_write`). The actions that policies and groups give the
+  mapping are read from their entries and counted ([Q-CI-35](../spec/gitlab-ci-oidc.md));
+- `manage` is never grantable, to a CI token or through a group that holds it (`action_not_allowed`);
+- a template that a claim value alone can turn into a repository selector is refused (`template_unanchored`), and a render failure
+  at the exchange fails it instead of falling through to a broader mapping;
+- a cross-project (fork) job gets nothing from a mapping that has not opted in with `read_only`, and then only `read`; the first match
+  of a tier decides, so a denying mapping does not fall through to a later one that would opt in
+  ([select.go](../../internal/ci/select.go)).
+
+**A project's mapping** is bounded like a project policy ([Q-CI-26](../spec/gitlab-ci-oidc.md), [Q-CI-37](../spec/gitlab-ci-oidc.md)):
+its name starts with the project key, its policies are the project's, it has no groups, a literal repository of an inline grant is a
+repository of the project, and every contribution of the token names the project, so the evaluator compiles `@any` and patterns
+against the project's repositories only. A policy name that is not the project's, existing or not, answers the same
+(`policy_outside_project`). A create in the tier locks the project row, so a project cannot be deleted under a mapping.
+
+**The principal** of a mapping mirrors `enabled`: disabling it sets the principal `disabled` in the transaction and notifies the
+change area `auth`, which is the status token validation reads ([R-CI-017](../spec/gitlab-ci-oidc.md), R-AUTH-023); no CI token
+exists yet to show it, because the exchange is not built. Deleting a mapping deletes its principal and,
+through the foreign keys, its entries in policies, so a mapping created under the same name inherits nothing. A mapping that has an
+issuance record is disabled or deleted only through the revoker; until it exists the write answers 501 and changes nothing.
+
+**The dry run** takes a claim set and never a token; it issues nothing, records no `jti` and writes no event. A project
+administrator's trace shows its tier only. It reads no policy, which the answer says when a `scope` item depends on one
+([Q-CI-36](../spec/gitlab-ci-oidc.md)). **The snippet** holds the variables of the job and no token, and the revocation as its last step.
+
+**Every write** records an event with the record before and after (`ci.mapping.*`, category `identity`, the project in the details);
+`.updated`, `.disabled` and `.deleted` also enter the revocation journal with the mapping's ID, issuer, name, tier, priority and the
+record before ([R-CI-020](../spec/gitlab-ci-oidc.md)). A PUT writes exactly one event, so a change that disables is not hidden behind
+an `.updated`.
+
 ## What this does not cover
 
 ### H-408 · A writer on `ci_issuer_keys` can plant a signing key
@@ -109,3 +167,31 @@ returned, but the failure class and the HTTP status code are: with the default p
 hosts can be probed; a policy that allows an internal range through `proxy.outbound.address_policy.allow_cidrs` also lets a holder of
 `ci:write` learn whether a host in that range answers on https and with which status. Dormant with the default policy; live as soon as
 an `allow_cidrs` entry covers an internal range.
+
+### H-412 · A policy or group widened after the save is not held to the write rules
+
+`unprotected_write` and `unpinned_write` count the actions that the listed policies and groups give a mapping when the mapping is
+saved. An administrator who later widens the mapping's entry in the policy, or the grants of a group the mapping lists, gives the
+mapping, and every token it issues, writes that the rules never saw: policy and group grants are evaluated when a token is used. Live
+today for every mapping that lists a policy or a group, for holders of `policies:write` and for project administrators with
+`managePolicies` on their project's policies. What bounds it: a policy entry of a mapping never holds `manage`, a write is still
+decided by the package ownership of the repository ([R-CI-015](../spec/gitlab-ci-oidc.md)), and a project policy reaches the
+project's repositories only. The widening is visible in the policy's own event, not in the mapping's.
+
+### H-413 · A project administrator can probe the mapping names of the system tier below its prefix
+
+The name of a mapping is unique per issuer across all tiers, and a create that finds the name taken answers 409 `already_exists`
+([mappings_write.go](../../internal/ci/mappings_write.go)). A project administrator names its mappings `<key>-…` and can therefore
+learn whether a mapping of any tier, a system administrator's included, has a given name that starts with its own project key on an
+issuer it can see. Live for project administrators with `managePolicies`; the answer reveals the existence of one name at a time and
+nothing of the mapping, and the prefix limits the probe to the project's own namespace.
+
+### H-414 · A binding removed by a mapping save is not in the policy's own journal
+
+A save that removes a mapping from a policy, and the delete of a mapping, change the policy's principal list in the mapping's
+transaction. The policy's version moves and the change area `authz` is notified, but the policy's own events (`authz.policy.updated`)
+and its entry in the revocation journal ([R-AUTHZ-031](../spec/authorization.md)) are not written; the mapping's event carries the
+policies in its before and after record, and its journal entry has the record before the change. Live whenever a PUT or a DELETE of
+a mapping removes an entry. After a point-in-time restore the policy's removed entry is restored with its rows and only the mapping's
+journal entry (a disable, never a delete, [R-CI-020](../spec/gitlab-ci-oidc.md)) is replayed; a reader of the policy audit trail does not
+see the removal.

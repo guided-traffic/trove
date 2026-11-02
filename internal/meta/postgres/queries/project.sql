@@ -14,7 +14,8 @@ SELECT p.id::text AS id, p.key, p.display_name, p.description, p.manage_policies
        COALESCE(ub.kind, '')::text AS updated_by_kind, COALESCE(ub.name, '')::text AS updated_by_name,
        (SELECT count(*) FROM repositories r WHERE r.project_id = p.id)::bigint AS repositories,
        (SELECT count(*) FROM service_account s WHERE s.project_id = p.id)::bigint AS service_accounts,
-       (SELECT count(*) FROM authz_policy a WHERE a.project_id = p.id)::bigint AS policies
+       (SELECT count(*) FROM authz_policy a WHERE a.project_id = p.id)::bigint AS policies,
+       (SELECT count(*) FROM ci_mappings c WHERE c.project_id = p.id)::bigint AS ci_mappings
   FROM project p
   LEFT JOIN principal cb ON cb.id = p.created_by
   LEFT JOIN principal ub ON ub.id = p.updated_by
@@ -28,7 +29,8 @@ SELECT p.id::text AS id, p.key, p.display_name, p.description, p.manage_policies
        COALESCE(ub.kind, '')::text AS updated_by_kind, COALESCE(ub.name, '')::text AS updated_by_name,
        (SELECT count(*) FROM repositories r WHERE r.project_id = p.id)::bigint AS repositories,
        (SELECT count(*) FROM service_account s WHERE s.project_id = p.id)::bigint AS service_accounts,
-       (SELECT count(*) FROM authz_policy a WHERE a.project_id = p.id)::bigint AS policies
+       (SELECT count(*) FROM authz_policy a WHERE a.project_id = p.id)::bigint AS policies,
+       (SELECT count(*) FROM ci_mappings c WHERE c.project_id = p.id)::bigint AS ci_mappings
   FROM project p
   LEFT JOIN principal cb ON cb.id = p.created_by
   LEFT JOIN principal ub ON ub.id = p.updated_by
@@ -73,10 +75,11 @@ DELETE FROM project
 RETURNING id::text AS id, version;
 
 -- name: ProjectCountMembers :one
--- What keeps a project from being deleted: repositories in every lifecycle state
--- and service accounts (Q-AUTHZ-169).
+-- What keeps a project from being deleted: repositories in every lifecycle state, service accounts
+-- (Q-AUTHZ-169) and CI mappings of the project's tier (Q-CI-26).
 SELECT (SELECT count(*) FROM repositories WHERE project_id = sqlc.arg(id)::text::uuid)::bigint AS repositories,
-       (SELECT count(*) FROM service_account WHERE project_id = sqlc.arg(id)::text::uuid)::bigint AS service_accounts;
+       (SELECT count(*) FROM service_account WHERE project_id = sqlc.arg(id)::text::uuid)::bigint AS service_accounts,
+       (SELECT count(*) FROM ci_mappings WHERE project_id = sqlc.arg(id)::text::uuid)::bigint AS ci_mappings;
 
 -- name: ProjectPolicyNames :many
 -- The policies of a project, for the delete that removes them through the policy

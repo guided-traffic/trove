@@ -1036,7 +1036,10 @@ Mappings are cached in memory per replica, per CI issuer, together with the issu
   PostgreSQL when the cache lags behind (R-CI-007, Q-CI-15).
 
 A mapping change therefore governs the next exchange on every replica, and mapping writes of one
-issuer serialize with each other and with that issuer's exchange transactions.
+issuer serialize with each other and with that issuer's exchange transactions. A create in a project's tier takes the
+project's row `FOR UPDATE` before the issuer's, the lock the project's delete counts under, so a create and the delete of the
+project exclude each other (Q-CI-37). A list shows the system tier first, then the projects' tiers by key, each in ascending
+`priority`.
 
 **Configuration**
 
@@ -1341,7 +1344,9 @@ three, before caps and `scope` narrowing:
   kind). It receives the actions the policy grants to that principal. The binding is stored once,
   in the policy's principal list; this field reads and writes that same binding. Policy grants
   are evaluated when the token is used, so changing a policy affects tokens that were already
-  issued.
+  issued. A save adds the missing entry with the actions `read` and removes the entry of a policy the mapping no longer
+  lists; an entry that stays keeps the actions the policy gives it, which an administrator widens in the policy
+  (Q-CI-35). The rules of R-CI-010 and R-CI-011 count the actions of these entries and of the listed groups.
 - `groups`: trove groups whose grants the token also carries, also evaluated at use time.
 - `inline`: grants defined in the mapping. Each has a set of `repositories` (keys or patterns as
   in INV-9), exactly one of `packages` or `paths` (include/exclude patterns), `actions` from
@@ -1760,7 +1765,7 @@ required on PUT, lowerCamelCase on the wire) are those of R-CI-002.
 tier through the project routes, which are these operations with the tier fixed by the path
 (`/api/v1/projects/{key}/ci/…`): `GET …/ci/issuers` (the issuers read-only: name, kind, issuer URL, `publicIssuer`),
 `GET` and `POST …/ci/mappings` (the body names the `issuer`), `GET`, `PUT` and `DELETE …/ci/mappings/{issuer}/{name}`,
-`POST …/ci/issuers/{issuer}/evaluate` and `GET …/ci/issuances`. The step admits the capability holder or any project
+`POST …/ci/issuers/{issuer}/evaluate`, `GET …/ci/issuers/{issuer}/snippets/{kind}` and `GET …/ci/issuances`. The step admits the capability holder or any project
 administrator and the handler narrows (404 for a project the caller does not administer, 403 `project_switch_off`,
 ADR-146). The bounds of a project mapping, on top of every rule of R-CI-010 and R-CI-011 (`pin_required`,
 `unprotected_write`, `unpinned_write`, `catch_all_condition`):
@@ -1769,10 +1774,11 @@ ADR-146). The bounds of a project mapping, on top of every rule of R-CI-010 and 
 - inline grants reach the project's repositories only: the evaluator compiles them against those repositories, so `@any`
   means every repository of the project (Q-AUTHZ-179), and a key selector outside the project is 422
   `repository_outside_project`;
-- `policies` name policies of the project only (422 `policy_outside_project`), `groups` are refused (422
+- `policies` name policies of the project only (422 `policy_outside_project`, also for a name that does not exist, so the
+  answer is no oracle on the names of others, Q-CI-37), `groups` are refused (422
   `groups_not_allowed_in_project`), `manage` is never grantable (422 `action_not_allowed`);
-- the dry run evaluates and traces the project's tier only, and a project administrator lists only its project's
-  mappings; the issuances it sees are those of tokens whose mappings include one of the project's, showing the project's
+- the dry run evaluates and traces the project's tier only, the snippet is that of a mapping of the project's tier (another
+  tier's is 404), and a project administrator lists only its project's mappings; the issuances it sees are those of tokens whose mappings include one of the project's, showing the project's
   mappings only. Audit events carry the project.
 
 Issuers stay with system administrators and the Helm values (Q-CI-16). A project with CI mappings is not empty: its
@@ -1802,7 +1808,11 @@ Mapping record sketch:
 
 Dry run: the request carries a claim set, not a token, so nobody has to paste a live credential.
 The response shows the decision trace. It performs no signature or time check unless `now` and
-the time claims are given, issues nothing and records no `jti`:
+the time claims (`exp` and `iat`) are given, issues nothing and records no `jti`. The wire members are lowerCamelCase
+(`failedLeaf`, `ttlSeconds`, `crossProject`); `selected` names the contributing mappings; `failedLeaf` is the pointer of
+the leaf that decided a mapping's failure, `""` for a condition that is a single leaf. The dry run reads the mapping set from
+PostgreSQL, and it reads no policy: a `scope` item that only a listed policy or group could hold is taken as held, with the
+warning `scope_policy_grants_not_checked` (Q-CI-36):
 
 ```json
 {
@@ -2485,7 +2495,14 @@ ready-to-paste snippet as `text/plain`:
   (R-CI-017).
 
 The snippet contains no secret. Required permission: system administrator, or the delegate who
-owns the mapping. The UI shows it on the CI identity screen
+owns the mapping.
+
+The operation itself is MVP for `gitlab-ci` and the formats npm and NuGet: R-API-035 declares it and R-UI-035 shows it (a
+project administrator reads the snippet of a mapping of its project through
+`GET /api/v1/projects/{key}/ci/issuers/{issuer}/snippets/{kind}`, Q-CI-37). This requirement stays P1 for what goes beyond
+it: `github-actions` snippets and the delegate who owns the mapping. The `.npmrc` or
+`nuget.config` lines name the repositories the mapping's inline grants name by key and whose format is the client's; a
+mapping that names none (patterns, classes, templates, policies) gets a placeholder the administrator replaces. The UI shows it on the CI identity screen
 ([api-and-ui.md](api-and-ui.md), UI-049) with a copy button.
 
 **Acceptance criteria**
@@ -2523,6 +2540,8 @@ R-ARCH-032), so a job's exchange, installs, publish and self-revocation reach di
   `project_id`, `ref` and `sha`.
 - After both jobs pass, their CI tokens are revoked (`token.revoked`, reason `owner`) and get 401
   on `npm view`, although their `expires_in` has not passed.
+- A job whose exchange is refused prints `error`, `error_description`, `reason` and `requestId` of the answer and stops;
+  the `requestId` leads to the denial's audit event (R-CI-020) and to the log of the request.
 - No output of a job's steps contains a `trv_cit_` value or the ID token.
 - The pipeline passes while the node of one `web` replica is drained with `kubectl drain` during
   its run, and again with Valkey stopped for the whole run.
@@ -2753,7 +2772,7 @@ variables:
         --data-urlencode 'subject_token@-' \
         "$TROVE_URL/api/v1/auth/oidc/token")"
       TROVE_TOKEN="$(printf '%s' "$response" | jq -er '.access_token // empty')" \
-        || { printf '%s\n' "$response" | jq '{error, error_description, reason}' >&2; exit 1; }
+        || { printf '%s\n' "$response" | jq '{error, error_description, reason, requestId}' >&2; exit 1; }
       export TROVE_TOKEN
       unset response TROVE_ID_TOKEN
 
@@ -2775,7 +2794,8 @@ publish-npm:
     - npm version --no-git-tag-version --allow-same-version "${CI_COMMIT_TAG#v}"
     - npm publish --registry https://packages.example.com/api/npm/npm-internal/
     # Last step: revoke the CI token, so it does not outlive the job (R-CI-017).
-    - printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- "$TROVE_URL/api/v1/tokens/current"
+    - |
+      printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- "$TROVE_URL/api/v1/tokens/current"
 
 push-nuget:
   stage: publish
@@ -2793,7 +2813,8 @@ push-nuget:
       dotnet nuget push "out/*.nupkg"
       --source "$TROVE_URL/api/nuget/nuget-internal/v3/index.json"
       --api-key "$TROVE_TOKEN"
-    - printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- "$TROVE_URL/api/v1/tokens/current"
+    - |
+      printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- "$TROVE_URL/api/v1/tokens/current"
 ```
 
 `nuget.config` in the repository root. Developers use the same file with their personal access
@@ -2820,6 +2841,10 @@ Notes on the examples:
 - `printf … | curl --data-urlencode 'subject_token@-'` keeps the ID token out of the process
   list. `printf` is a shell builtin. The closing revocation reads its header from standard input
   (`-H @-`, curl 7.55 and later) for the same reason.
+- A refused exchange prints `error`, `error_description`, `reason` and `requestId`: the request ID is what an administrator
+  needs to find the denial in the audit trail and the log, and it holds no claim value and no token material.
+- The closing revocation is a block scalar (`- |`). A plain scalar with a colon and a space in it (`Authorization: Bearer`) is a
+  YAML mapping, and GitLab refuses a `script` entry that is one.
 - `--retry 3` repeats the exchange after a 429 or 503, waiting as `Retry-After` says (curl 7.66
   and later; [`--retry`](https://curl.se/docs/manpage.html#--retry), read 2026-10-28). A 429 comes
   from the cluster-wide budgets of R-CI-021, a 503 from a transient condition such as
@@ -3977,6 +4002,100 @@ an issuance record (then always call the revoker).
 
 **Applied in the spec:** R-CI-003 (the failure record). Code: `queries/ci_issuers.sql` (`CiKeysRecordError`), `internal/ci/services.go`
 (`Mappings.DeleteForIssuerTx`), `internal/ci/issuers_write.go` (`revokeTokens`).
+
+### Q-CI-35 · What a mapping save writes into a policy's principal list
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-CI-013 says the binding of a mapping to a policy is stored once, in the policy's principal list, and that `grants.policies` reads
+and writes that same binding. An entry of a principal list carries actions (R-AUTHZ-021), and the body of a mapping carries none
+for a policy, only its name. A mapping that is being created cannot be in a list yet, so an administrator cannot add the entry
+first.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The save adds an entry with `read`; an entry that exists keeps its actions (chosen) | The policy's actions are the policy's: an administrator widens the entry in the policy | Least privilege by default; one place for what a policy grants; the policy's own API and audit keep their meaning | A write through a policy takes two steps, and the save-time rules (R-CI-010, R-CI-011) see the widening only at the next save (H-412) |
+| (b) The entry gets every action but `manage` | The mapping receives what the policy could give | One step | A mapping that lists a policy silently receives writes; every such save would need the write rules of R-CI-011 for a grant its author never wrote |
+| (c) `policies` becomes a list of `{name, actions}` | The body states the actions | Explicit | Changes the wire form of R-CI-013, the spec's examples and the UI; two statements of one grant (the body's and the policy's) |
+| (d) The save only checks that the policy already lists the mapping | No write into the policy | No side effect | Impossible on create |
+
+**Choice:** (a). A save adds the missing entries with the actions `["read"]`, removes the entry of a policy the mapping no longer
+lists, and leaves an entry that stays as it is. The rules `unprotected_write` and `unpinned_write` count the actions of the entries
+the mapping has (or, for an entry the save adds, `read`) and of the groups it lists. A policy that lists the mapping but that the
+body omits loses the entry on a PUT: the PUT is a full replacement of the grants, which a read shows including the policies.
+Each change of a list moves the policy's `version` and notifies the change area `authz` in the transaction of the save; the
+mapping's event shows the policies in its before and after record.
+
+**Rationale:** it keeps the one rule that a policy says what it grants and a mapping only joins it, and it makes the default the
+safe one. The development agent would revisit (a) for (c) if administrators routinely need the policy to grant writes in the same
+request that creates the mapping, or if the review at the walkthrough wants the policy's own audit event for the change.
+
+**Applied in the spec:** R-CI-013 (the first bullet: what the save writes and what it keeps), R-CI-010 and R-CI-011 (the write rules
+count the entries' actions). Gap: [H-412](../security/ci-federation.md#h-412--a-policy-or-group-widened-after-the-save-is-not-held-to-the-write-rules),
+[H-414](../security/ci-federation.md#h-414--a-binding-removed-by-a-mapping-save-is-not-in-the-policys-own-journal). Code: `internal/ci/mappings_bind.go`
+(`resolveGrants`, `applyBindings`), `queries/ci_mappings.sql` (`CiMappingPolicyBindings`, `CiPoliciesLock`, `CiPolicyEntryDelete`).
+
+### Q-CI-36 · What the dry run answers where it cannot know
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The dry run (R-CI-019) evaluates the mapping set of the issuer on a claim set. Three of its answers need something it does not
+have: whether a `scope` item is held through a policy or a group (the authorization index is the use-time evaluator's, work package
+W5), what the lifetime is (`ComputeTTL` is the exchange's, work package W4), and what a request without `now` should do with
+the time claims.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Refuse a `scope` that only a policy could hold | `scope_not_granted` | Never claims more than it knows | The claim tester cannot test the usual mapping (policy plus inline grants) with a scope |
+| (b) Take such an item as held and warn `scope_policy_grants_not_checked` (chosen) | The answer shows the item and says the policies were not read | Useful for the usual mapping; the warning says what is unknown | The answer can promise an item the token will not hold |
+| (c) Read the policies in the dry run | The dry run asks the index | Exact | Couples the dry run to the use-time evaluator and its freshness; a dry run is a read of the mapping set |
+
+**Choice:** (b) for the scope. The lifetime is the formula of R-CI-016 without a requested `ttl`: the minimum of
+`ci.token.default_ttl`, the mappings' and the issuer's `max_ttl`, `ci.token.max_ttl` and, when the request carries `now` and `exp`,
+the remaining life of the subject token; below `ci.token.min_ttl` the failure is `subject_token_expires_too_soon`. The time claims
+are checked only when the request carries `now` and both `exp` and `iat`, by the rule of the exchange (`subject.CheckTimes`).
+`selected` names the contributing mappings by their name, as the specification's sketch shows. A mapping that did not match has
+`failedLeaf` (the pointer of the leaf, `""` for a condition that is a single leaf), and the dry run reads the mapping set from
+PostgreSQL and not from the replica's copy, so an administrator who just saved a mapping sees it.
+
+**Rationale:** the dry run is a tool for the author of a mapping, and a mapping that lists a policy is the normal one; an answer
+that says what it did not check is more useful than a refusal, and (c) would make a read depend on an index it does not own. The
+development agent would revisit (b) when the evaluator of W5 can answer the held question without a request, and the lifetime when
+W4 exports `ComputeTTL` (the dry run then calls it).
+
+**Applied in the spec:** R-CI-019 (the dry run's answer: `selected`, `failedLeaf`, the warning, the time check). Code:
+`internal/ci/mappings_evaluate.go`, `internal/ci/subject/times.go`.
+
+### Q-CI-37 · The edges of a project's mapping: the policies it sees, the project lock and a system administrator's edit
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Q-CI-26 bounds a project's mapping. Four edges were open: what a project administrator learns about policies that are not its
+project's (R-CI-019 names `policy_outside_project`, and R-AUTHZ-026 promises a project administrator no oracle on the names of
+others, Q-AUTHZ-176, Q-AUTHZ-197); what its view of a mapping's policies and its PUT do with a binding in a global policy that a
+system administrator made; how a mapping create and the delete of its project exclude each other; and what a system administrator
+who edits a project's mapping through the issuer routes may do.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `unknown_policy` for a name that does not exist, `policy_outside_project` for one that is not the project's | The literal reading | Precise message | A project administrator learns which names of policies of other projects and of global policies exist |
+| (b) `policy_outside_project` for both, with a detail that says the project has no such policy (chosen) | The answer of a name that is not the project's is the same whether or not the name exists | No oracle; the detail still says what to do | A typo of a project policy name is reported as outside the project |
+
+**Choice:** (b) for the policy names. Further: a project's mapping lists, and a PUT of it changes, only the bindings in the
+project's own policies; a binding that a system administrator made in a global policy is neither shown to nor removed by the
+project administrator. A create in a project takes the project row `FOR UPDATE` before the issuer row, the lock the project delete
+counts under, so a create and a delete serialize: either the delete answers 409 `project_not_empty`, or the create answers 404.
+A system administrator who replaces a project's mapping through the issuer routes keeps the bounds of its tier (the rules follow the
+stored tier, not the route). `GET …/ci/issuers/{issuer}/snippets/{kind}` is also a project route (a finding: a project
+administrator who writes a mapping needs the pipeline for it).
+
+**Rationale:** a project administrator's reach ends at its project, as for repositories and policies. The development agent would
+revisit (b) if administrators of projects complain about the message, which a detail per case can mend without a second code.
+
+**Applied in the spec:** R-CI-019 (the project bounds: the policy answer, the snippet route), R-AUTHZ-026 (Deleting a project and the
+table row name the CI mappings), R-API-035. Gap: [H-413](../security/ci-federation.md#h-413--a-project-administrator-can-probe-the-mapping-names-of-the-system-tier-below-its-prefix).
+Code: `internal/ci/mappings_bind.go`, `internal/ci/mappings_write.go` (`create`, `lockMapping`), `internal/project` (`Project.CIMappings`),
+`internal/api/v1/ci_project_api.go`, `api/openapi.yaml` (`getProjectCiSnippet`).
 
 ## What this does not cover
 

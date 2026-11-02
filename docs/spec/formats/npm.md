@@ -2092,7 +2092,8 @@ publish:
     # npm expands ${TROVE_TOKEN} at run time; the token itself is never written to disk.
     - npm config set //trove.example.com/api/npm/npm-all/:_authToken '${TROVE_TOKEN}'
     - npm publish
-    - printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- https://trove.example.com/api/v1/tokens/current
+    - |
+      printf 'Authorization: Bearer %s\n' "$TROVE_TOKEN" | curl -sS -X DELETE -H @- https://trove.example.com/api/v1/tokens/current
 ```
 
 </details>

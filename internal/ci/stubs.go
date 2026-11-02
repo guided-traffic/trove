@@ -19,8 +19,6 @@ func NotImplemented(workPackage string) error {
 // The stubs: one type per service, every method answering [NotImplemented]. A work package replaces
 // its stub in internal/app/wire_ci.go and deletes its type from this file.
 type (
-	// StubMappings is the stub of [Mappings] (W3).
-	StubMappings struct{}
 	// StubExchanger is the stub of [Exchanger] (W4).
 	StubExchanger struct{}
 	// StubRevoker is the stub of [Revoker] (W5).
@@ -30,47 +28,10 @@ type (
 )
 
 var (
-	_ Mappings  = StubMappings{}
 	_ Exchanger = StubExchanger{}
 	_ Revoker   = StubRevoker{}
 	_ Issuances = StubIssuances{}
 )
-
-func (StubMappings) List(context.Context, string) ([]Mapping, error) {
-	return nil, NotImplemented("W3")
-}
-
-func (StubMappings) Get(context.Context, string, string) (Mapping, error) {
-	return Mapping{}, NotImplemented("W3")
-}
-
-func (StubMappings) Create(context.Context, Actor, string, MappingInput) (MappingResult, error) {
-	return MappingResult{}, NotImplemented("W3")
-}
-
-func (StubMappings) Replace(context.Context, Actor, string, string, int64, MappingInput) (MappingResult, error) {
-	return MappingResult{}, NotImplemented("W3")
-}
-
-func (StubMappings) Delete(context.Context, Actor, string, string, int64) error {
-	return NotImplemented("W3")
-}
-
-func (StubMappings) Evaluate(context.Context, string, EvaluateRequest) (EvaluateResult, error) {
-	return EvaluateResult{}, NotImplemented("W3")
-}
-
-func (StubMappings) Snippet(context.Context, string, SnippetRequest) (string, error) {
-	return "", NotImplemented("W3")
-}
-
-func (StubMappings) Set(context.Context, string) (MappingSet, error) {
-	return MappingSet{}, NotImplemented("W3")
-}
-
-func (StubMappings) SetTx(context.Context, meta.Tx, string) (MappingSet, error) {
-	return MappingSet{}, NotImplemented("W3")
-}
 
 // CheckAddress answers like Exchange: the stub refuses nothing and the exchange says it is not built.
 func (StubExchanger) CheckAddress(context.Context, string) error { return nil }
@@ -107,38 +68,6 @@ func (StubIssuances) RetainIssuances(context.Context) (int64, error) {
 	return 0, NotImplemented("W5")
 }
 
-func (StubMappings) ListIn(context.Context, string) ([]Mapping, error) {
-	return nil, NotImplemented("W3")
-}
-
-func (StubMappings) GetIn(context.Context, string, string, string) (Mapping, error) {
-	return Mapping{}, NotImplemented("W3")
-}
-
-func (StubMappings) CreateIn(context.Context, Actor, string, MappingInput) (MappingResult, error) {
-	return MappingResult{}, NotImplemented("W3")
-}
-
-func (StubMappings) ReplaceIn(context.Context, Actor, string, string, string, int64, MappingInput) (MappingResult, error) {
-	return MappingResult{}, NotImplemented("W3")
-}
-
-func (StubMappings) DeleteIn(context.Context, Actor, string, string, string, int64) error {
-	return NotImplemented("W3")
-}
-
-func (StubMappings) EvaluateIn(context.Context, string, string, EvaluateRequest) (EvaluateResult, error) {
-	return EvaluateResult{}, NotImplemented("W3")
-}
-
-func (StubMappings) CountIn(context.Context, string) (int, error) {
-	return 0, NotImplemented("W3")
-}
-
 func (StubIssuances) ListForProject(context.Context, string, IssuanceFilter) (IssuancePage, error) {
 	return IssuancePage{}, NotImplemented("W5")
-}
-
-func (StubMappings) DeleteForIssuerTx(context.Context, meta.Tx, Actor, string, string) (int, error) {
-	return 0, NotImplemented("W3")
 }

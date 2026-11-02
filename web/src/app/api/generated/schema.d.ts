@@ -1440,8 +1440,8 @@ export interface paths {
         /**
          * Delete an empty project
          * @description Deletes the project, its project policies (each deleted, audited and journaled like any policy
-         *     deletion) and its administrator entries. A project with a repository, in any lifecycle state, or a
-         *     service account is not empty: `409 project_not_empty`. `If-Match` is optional; a stale one answers
+         *     deletion) and its administrator entries. A project with a repository, in any lifecycle state, a
+         *     service account or a CI mapping of its tier is not empty: `409 project_not_empty`. `If-Match` is optional; a stale one answers
          *     `412` (Q-AUTHZ-185).
          */
         delete: operations["deleteProject"];
@@ -2082,6 +2082,34 @@ export interface paths {
          * @description As `evaluateCiMappings`, over the project's tier only: the trace shows nothing of the system tier or of another project (Q-CI-26).
          */
         post: operations["evaluateProjectCiMappings"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{key}/ci/issuers/{issuer}/snippets/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                key: string;
+                /** @description The CI issuer name. */
+                issuer: string;
+                /** @description The CI system of the snippet; `gitlab-ci` in this release. */
+                kind: "gitlab-ci";
+            };
+            cookie?: never;
+        };
+        /**
+         * Read a ready-to-paste CI snippet for a mapping of a project
+         * @description As `getCiSnippet`, for a mapping of the project's tier only: a mapping of another tier answers `404`. A project
+         *     administrator who writes a mapping needs the pipeline that uses it (R-API-035, R-UI-035, Q-CI-26). It holds no secret.
+         */
+        get: operations["getProjectCiSnippet"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5997,6 +6025,15 @@ export interface components {
         Unavailable: {
             headers: {
                 "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description An upstream system the operation contacts could not be reached or answered unusably (`upstream_failed`); the detail names the failure class, the HTTP status and the host, never a response body. */
+        BadGateway: {
+            headers: {
                 [name: string]: unknown;
             };
             content: {
@@ -9993,6 +10030,7 @@ export interface operations {
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             501: components["responses"]["NotImplementedCI"];
+            502: components["responses"]["BadGateway"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -10252,6 +10290,7 @@ export interface operations {
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             501: components["responses"]["NotImplementedCI"];
@@ -10703,6 +10742,47 @@ export interface operations {
             404: components["responses"]["NotFound"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getProjectCiSnippet: {
+        parameters: {
+            query: {
+                /** @description The mapping the snippet is for. */
+                mapping: string;
+                /** @description The package client the snippet configures. */
+                format?: "npm" | "nuget";
+            };
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                key: string;
+                /** @description The CI issuer name. */
+                issuer: string;
+                /** @description The CI system of the snippet; `gitlab-ci` in this release. */
+                kind: "gitlab-ci";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The snippet. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];

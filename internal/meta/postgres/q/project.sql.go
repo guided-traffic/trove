@@ -162,20 +162,22 @@ func (q *Queries) ProjectAssignRepository(ctx context.Context, arg ProjectAssign
 
 const projectCountMembers = `-- name: ProjectCountMembers :one
 SELECT (SELECT count(*) FROM repositories WHERE project_id = $1::text::uuid)::bigint AS repositories,
-       (SELECT count(*) FROM service_account WHERE project_id = $1::text::uuid)::bigint AS service_accounts
+       (SELECT count(*) FROM service_account WHERE project_id = $1::text::uuid)::bigint AS service_accounts,
+       (SELECT count(*) FROM ci_mappings WHERE project_id = $1::text::uuid)::bigint AS ci_mappings
 `
 
 type ProjectCountMembersRow struct {
 	Repositories    int64
 	ServiceAccounts int64
+	CiMappings      int64
 }
 
-// What keeps a project from being deleted: repositories in every lifecycle state
-// and service accounts (Q-AUTHZ-169).
+// What keeps a project from being deleted: repositories in every lifecycle state, service accounts
+// (Q-AUTHZ-169) and CI mappings of the project's tier (Q-CI-26).
 func (q *Queries) ProjectCountMembers(ctx context.Context, id string) (ProjectCountMembersRow, error) {
 	row := q.db.QueryRow(ctx, projectCountMembers, id)
 	var i ProjectCountMembersRow
-	err := row.Scan(&i.Repositories, &i.ServiceAccounts)
+	err := row.Scan(&i.Repositories, &i.ServiceAccounts, &i.CiMappings)
 	return i, err
 }
 
@@ -228,7 +230,8 @@ SELECT p.id::text AS id, p.key, p.display_name, p.description, p.manage_policies
        COALESCE(ub.kind, '')::text AS updated_by_kind, COALESCE(ub.name, '')::text AS updated_by_name,
        (SELECT count(*) FROM repositories r WHERE r.project_id = p.id)::bigint AS repositories,
        (SELECT count(*) FROM service_account s WHERE s.project_id = p.id)::bigint AS service_accounts,
-       (SELECT count(*) FROM authz_policy a WHERE a.project_id = p.id)::bigint AS policies
+       (SELECT count(*) FROM authz_policy a WHERE a.project_id = p.id)::bigint AS policies,
+       (SELECT count(*) FROM ci_mappings c WHERE c.project_id = p.id)::bigint AS ci_mappings
   FROM project p
   LEFT JOIN principal cb ON cb.id = p.created_by
   LEFT JOIN principal ub ON ub.id = p.updated_by
@@ -252,6 +255,7 @@ type ProjectGetRow struct {
 	Repositories       int64
 	ServiceAccounts    int64
 	Policies           int64
+	CiMappings         int64
 }
 
 func (q *Queries) ProjectGet(ctx context.Context, key string) ([]ProjectGetRow, error) {
@@ -280,6 +284,7 @@ func (q *Queries) ProjectGet(ctx context.Context, key string) ([]ProjectGetRow, 
 			&i.Repositories,
 			&i.ServiceAccounts,
 			&i.Policies,
+			&i.CiMappings,
 		); err != nil {
 			return nil, err
 		}
@@ -443,7 +448,8 @@ SELECT p.id::text AS id, p.key, p.display_name, p.description, p.manage_policies
        COALESCE(ub.kind, '')::text AS updated_by_kind, COALESCE(ub.name, '')::text AS updated_by_name,
        (SELECT count(*) FROM repositories r WHERE r.project_id = p.id)::bigint AS repositories,
        (SELECT count(*) FROM service_account s WHERE s.project_id = p.id)::bigint AS service_accounts,
-       (SELECT count(*) FROM authz_policy a WHERE a.project_id = p.id)::bigint AS policies
+       (SELECT count(*) FROM authz_policy a WHERE a.project_id = p.id)::bigint AS policies,
+       (SELECT count(*) FROM ci_mappings c WHERE c.project_id = p.id)::bigint AS ci_mappings
   FROM project p
   LEFT JOIN principal cb ON cb.id = p.created_by
   LEFT JOIN principal ub ON ub.id = p.updated_by
@@ -467,6 +473,7 @@ type ProjectListRow struct {
 	Repositories       int64
 	ServiceAccounts    int64
 	Policies           int64
+	CiMappings         int64
 }
 
 // Queries of projects (R-AUTHZ-026). Identifiers are read as text and written
@@ -502,6 +509,7 @@ func (q *Queries) ProjectList(ctx context.Context) ([]ProjectListRow, error) {
 			&i.Repositories,
 			&i.ServiceAccounts,
 			&i.Policies,
+			&i.CiMappings,
 		); err != nil {
 			return nil, err
 		}

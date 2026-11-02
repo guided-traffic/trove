@@ -9,6 +9,99 @@ import (
 	"context"
 )
 
+const ciGroupActions = `-- name: CiGroupActions :many
+SELECT DISTINCT x.action::text AS action FROM (
+    SELECT unnest(e.actions) AS action FROM authz_policy_entry e JOIN principal p ON p.id = e.principal_id
+     WHERE p.kind = 'group' AND p.name = ANY($1::text[])
+    UNION ALL
+    SELECT unnest(e.actions) FROM authz_project_policy_entry e JOIN principal p ON p.id = e.principal_id
+     WHERE p.kind = 'group' AND p.name = ANY($1::text[])
+) x ORDER BY 1
+`
+
+// Every action the named groups hold in any policy, for the write rules of R-CI-010 and R-CI-011.
+func (q *Queries) CiGroupActions(ctx context.Context, names []string) ([]string, error) {
+	rows, err := q.db.Query(ctx, ciGroupActions, names)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var action string
+		if err := rows.Scan(&action); err != nil {
+			return nil, err
+		}
+		items = append(items, action)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ciGroupsFound = `-- name: CiGroupsFound :many
+SELECT p.name FROM principal p JOIN user_group g ON g.principal_id = p.id
+ WHERE p.kind = 'group' AND p.name = ANY($1::text[])
+`
+
+func (q *Queries) CiGroupsFound(ctx context.Context, names []string) ([]string, error) {
+	rows, err := q.db.Query(ctx, ciGroupsFound, names)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ciIssuerAudiences = `-- name: CiIssuerAudiences :many
+SELECT i.id::text AS id, i.allowed_audiences, i.kind, i.enabled FROM ci_issuers i WHERE i.name = $1::text
+`
+
+type CiIssuerAudiencesRow struct {
+	ID               string
+	AllowedAudiences []string
+	Kind             string
+	Enabled          bool
+}
+
+// The first allowed audience and the kind of an issuer, for the snippet.
+func (q *Queries) CiIssuerAudiences(ctx context.Context, name string) ([]CiIssuerAudiencesRow, error) {
+	rows, err := q.db.Query(ctx, ciIssuerAudiences, name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CiIssuerAudiencesRow{}
+	for rows.Next() {
+		var i CiIssuerAudiencesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AllowedAudiences,
+			&i.Kind,
+			&i.Enabled,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ciIssuerBumpMappings = `-- name: CiIssuerBumpMappings :one
 UPDATE ci_issuers SET mappings_version = mappings_version + 1 WHERE id = $1::text::uuid
 RETURNING mappings_version
@@ -21,6 +114,80 @@ func (q *Queries) CiIssuerBumpMappings(ctx context.Context, id string) (int64, e
 	var mappings_version int64
 	err := row.Scan(&mappings_version)
 	return mappings_version, err
+}
+
+const ciMappingByID = `-- name: CiMappingByID :many
+SELECT m.id::text AS id, m.issuer_id::text AS issuer_id, i.name AS issuer, m.principal_id::text AS principal_id, m.tier, COALESCE(m.project_id::text, '')::text AS project_id,
+       COALESCE(m.delegation_id::text, '')::text AS delegation_id, m.name, m.priority, m.enabled, m.subject_kinds,
+       m.match, m.grants, COALESCE(extract(epoch FROM m.max_ttl), 0)::bigint AS max_ttl_secs, m.options, m.description, m.version,
+       m.created_by, (extract(epoch FROM m.created_at) * 1000000)::bigint AS created_us,
+       (extract(epoch FROM m.updated_at) * 1000000)::bigint AS updated_us
+  FROM ci_mappings m JOIN ci_issuers i ON i.id = m.issuer_id
+ WHERE m.id = $1::text::uuid
+`
+
+type CiMappingByIDRow struct {
+	ID           string
+	IssuerID     string
+	Issuer       string
+	PrincipalID  string
+	Tier         string
+	ProjectID    string
+	DelegationID string
+	Name         string
+	Priority     int32
+	Enabled      bool
+	SubjectKinds []string
+	Match        []byte
+	Grants       []byte
+	MaxTtlSecs   int64
+	Options      []byte
+	Description  string
+	Version      int64
+	CreatedBy    string
+	CreatedUs    int64
+	UpdatedUs    int64
+}
+
+func (q *Queries) CiMappingByID(ctx context.Context, id string) ([]CiMappingByIDRow, error) {
+	rows, err := q.db.Query(ctx, ciMappingByID, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CiMappingByIDRow{}
+	for rows.Next() {
+		var i CiMappingByIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.IssuerID,
+			&i.Issuer,
+			&i.PrincipalID,
+			&i.Tier,
+			&i.ProjectID,
+			&i.DelegationID,
+			&i.Name,
+			&i.Priority,
+			&i.Enabled,
+			&i.SubjectKinds,
+			&i.Match,
+			&i.Grants,
+			&i.MaxTtlSecs,
+			&i.Options,
+			&i.Description,
+			&i.Version,
+			&i.CreatedBy,
+			&i.CreatedUs,
+			&i.UpdatedUs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const ciMappingByName = `-- name: CiMappingByName :many
@@ -133,6 +300,38 @@ func (q *Queries) CiMappingDelete(ctx context.Context, id string) error {
 	return err
 }
 
+const ciMappingHasIssuances = `-- name: CiMappingHasIssuances :many
+SELECT 1::int AS one FROM ci_token_issuances
+ WHERE issuer_id = $1::text::uuid AND $2::text::uuid = ANY(mapping_ids) LIMIT 1
+`
+
+type CiMappingHasIssuancesParams struct {
+	IssuerID string
+	ID       string
+}
+
+// Whether a token was ever issued through the mapping: a token exists only with its issuance record
+// (R-CI-020), so no row means nothing to revoke.
+func (q *Queries) CiMappingHasIssuances(ctx context.Context, arg CiMappingHasIssuancesParams) ([]int32, error) {
+	rows, err := q.db.Query(ctx, ciMappingHasIssuances, arg.IssuerID, arg.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int32{}
+	for rows.Next() {
+		var one int32
+		if err := rows.Scan(&one); err != nil {
+			return nil, err
+		}
+		items = append(items, one)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ciMappingInsert = `-- name: CiMappingInsert :many
 INSERT INTO ci_mappings (id, issuer_id, principal_id, tier, project_id, name, priority, enabled, subject_kinds, match, grants, max_ttl,
                          options, description, created_by)
@@ -215,7 +414,7 @@ SELECT m.id::text AS id, m.issuer_id::text AS issuer_id, i.name AS issuer, m.pri
        (extract(epoch FROM m.updated_at) * 1000000)::bigint AS updated_us
   FROM ci_mappings m JOIN ci_issuers i ON i.id = m.issuer_id
  WHERE i.name = $1::text
- ORDER BY m.tier, m.priority
+ ORDER BY (m.tier <> 'system'), m.tier, m.priority
 `
 
 type CiMappingListRow struct {
@@ -247,7 +446,7 @@ type CiMappingListRow struct {
 // issuer's row FOR UPDATE; it increments the issuer's mappings_version (CiIssuerBumpMappings) and
 // notifies the area ci_mappings. The match, grants and options columns hold the wire form of
 // internal/ci/claims (lowerCamelCase JSON). W3 adds its further statements here.
-// The mappings of an issuer in evaluation order: tier, then ascending priority (R-CI-009).
+// The mappings of an issuer in evaluation order: the system tier first, then the projects' tiers by key, each by ascending priority (R-CI-009).
 func (q *Queries) CiMappingList(ctx context.Context, issuer string) ([]CiMappingListRow, error) {
 	rows, err := q.db.Query(ctx, ciMappingList, issuer)
 	if err != nil {
@@ -366,6 +565,58 @@ func (q *Queries) CiMappingListOfProject(ctx context.Context, projectKey string)
 	return items, nil
 }
 
+const ciMappingPolicyBindings = `-- name: CiMappingPolicyBindings :many
+SELECT e.principal_id::text AS principal_id, pol.name AS policy, e.actions, pol.id::text AS policy_id, COALESCE(pr.key, '')::text AS project
+  FROM authz_policy_entry e
+  JOIN authz_policy pol ON pol.id = e.policy_id
+  LEFT JOIN project pr ON pr.id = pol.project_id
+ WHERE e.principal_id = ANY($1::text[]::uuid[])
+UNION ALL
+SELECT e.principal_id::text, pol.name, e.actions, pol.id::text, COALESCE(pr.key, '')::text
+  FROM authz_project_policy_entry e
+  JOIN authz_policy pol ON pol.id = e.policy_id
+  LEFT JOIN project pr ON pr.id = pol.project_id
+ WHERE e.principal_id = ANY($1::text[]::uuid[])
+ ORDER BY 1, 2
+`
+
+type CiMappingPolicyBindingsRow struct {
+	PrincipalID string
+	Policy      string
+	Actions     []string
+	PolicyID    string
+	Project     string
+}
+
+// The policies whose principal list names one of the mapping principals (R-CI-013: the binding is
+// stored once, in the policy): the principal, the policy, the actions the entry gives it, the ID of
+// the policy and the key of its project (empty for a global policy).
+func (q *Queries) CiMappingPolicyBindings(ctx context.Context, principalIds []string) ([]CiMappingPolicyBindingsRow, error) {
+	rows, err := q.db.Query(ctx, ciMappingPolicyBindings, principalIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CiMappingPolicyBindingsRow{}
+	for rows.Next() {
+		var i CiMappingPolicyBindingsRow
+		if err := rows.Scan(
+			&i.PrincipalID,
+			&i.Policy,
+			&i.Actions,
+			&i.PolicyID,
+			&i.Project,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ciMappingPrincipalDelete = `-- name: CiMappingPrincipalDelete :exec
 DELETE FROM principal WHERE id = $1::text::uuid AND kind = 'ci_mapping'
 `
@@ -412,6 +663,133 @@ func (q *Queries) CiMappingPrincipalSetStatus(ctx context.Context, arg CiMapping
 	return err
 }
 
+const ciMappingPriorityHolder = `-- name: CiMappingPriorityHolder :many
+SELECT name FROM ci_mappings
+ WHERE issuer_id = $1::text::uuid AND tier = $2::text AND priority = $3::int
+   AND id <> $4::text::uuid
+`
+
+type CiMappingPriorityHolderParams struct {
+	IssuerID string
+	Tier     string
+	Priority int32
+	ID       string
+}
+
+// The mapping, other than id, that holds the priority in the issuer's tier: the 409 priority_taken.
+func (q *Queries) CiMappingPriorityHolder(ctx context.Context, arg CiMappingPriorityHolderParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, ciMappingPriorityHolder,
+		arg.IssuerID,
+		arg.Tier,
+		arg.Priority,
+		arg.ID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ciMappingUpdate = `-- name: CiMappingUpdate :many
+UPDATE ci_mappings
+   SET priority = $1::int, enabled = $2::boolean, subject_kinds = $3::text[],
+       match = $4::text::jsonb, grants = $5::text::jsonb,
+       max_ttl = CASE WHEN $6::bigint > 0 THEN make_interval(secs => $6::bigint::float8) END,
+       options = $7::text::jsonb, description = $8::text,
+       version = version + 1, updated_at = now()
+ WHERE id = $9::text::uuid
+RETURNING version
+`
+
+type CiMappingUpdateParams struct {
+	Priority     int32
+	Enabled      bool
+	SubjectKinds []string
+	Match        string
+	Grants       string
+	MaxTtlSecs   int64
+	Options      string
+	Description  string
+	ID           string
+}
+
+// The full replacement of a mapping row after the issuer row was locked; name, tier and project are
+// immutable. version moves by one.
+func (q *Queries) CiMappingUpdate(ctx context.Context, arg CiMappingUpdateParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, ciMappingUpdate,
+		arg.Priority,
+		arg.Enabled,
+		arg.SubjectKinds,
+		arg.Match,
+		arg.Grants,
+		arg.MaxTtlSecs,
+		arg.Options,
+		arg.Description,
+		arg.ID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var version int64
+		if err := rows.Scan(&version); err != nil {
+			return nil, err
+		}
+		items = append(items, version)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ciMappingVersions = `-- name: CiMappingVersions :many
+SELECT version, mappings_version FROM ci_issuers WHERE id = $1::text::uuid
+`
+
+type CiMappingVersionsRow struct {
+	Version         int64
+	MappingsVersion int64
+}
+
+// The issuer's two counters, read before the mapping rows of a set: a write that lands between the
+// two statements leaves the set newer than its label, so the exchange compares, finds a mismatch and
+// evaluates again from PostgreSQL (R-CI-009, Q-CI-15). The other order would label a set with a
+// counter newer than its content.
+func (q *Queries) CiMappingVersions(ctx context.Context, issuerID string) ([]CiMappingVersionsRow, error) {
+	rows, err := q.db.Query(ctx, ciMappingVersions, issuerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CiMappingVersionsRow{}
+	for rows.Next() {
+		var i CiMappingVersionsRow
+		if err := rows.Scan(&i.Version, &i.MappingsVersion); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ciMappingsOfIssuerID = `-- name: CiMappingsOfIssuerID :many
 SELECT m.id::text AS id, m.issuer_id::text AS issuer_id, i.name AS issuer, m.principal_id::text AS principal_id, m.tier, COALESCE(m.project_id::text, '')::text AS project_id,
        COALESCE(m.delegation_id::text, '')::text AS delegation_id, m.name, m.priority, m.enabled, m.subject_kinds,
@@ -420,7 +798,7 @@ SELECT m.id::text AS id, m.issuer_id::text AS issuer_id, i.name AS issuer, m.pri
        (extract(epoch FROM m.updated_at) * 1000000)::bigint AS updated_us
   FROM ci_mappings m JOIN ci_issuers i ON i.id = m.issuer_id
  WHERE m.issuer_id = $1::text::uuid
- ORDER BY m.tier, m.priority
+ ORDER BY (m.tier <> 'system'), m.tier, m.priority
 `
 
 type CiMappingsOfIssuerIDRow struct {
@@ -479,6 +857,264 @@ func (q *Queries) CiMappingsOfIssuerID(ctx context.Context, issuerID string) ([]
 			&i.CreatedUs,
 			&i.UpdatedUs,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ciMappingsOfIssuerIDShare = `-- name: CiMappingsOfIssuerIDShare :many
+SELECT m.id::text AS id, m.issuer_id::text AS issuer_id, i.name AS issuer, m.principal_id::text AS principal_id, m.tier, COALESCE(m.project_id::text, '')::text AS project_id,
+       COALESCE(m.delegation_id::text, '')::text AS delegation_id, m.name, m.priority, m.enabled, m.subject_kinds,
+       m.match, m.grants, COALESCE(extract(epoch FROM m.max_ttl), 0)::bigint AS max_ttl_secs, m.options, m.description, m.version,
+       m.created_by, (extract(epoch FROM m.created_at) * 1000000)::bigint AS created_us,
+       (extract(epoch FROM m.updated_at) * 1000000)::bigint AS updated_us
+  FROM ci_mappings m JOIN ci_issuers i ON i.id = m.issuer_id
+ WHERE m.issuer_id = $1::text::uuid
+ ORDER BY (m.tier <> 'system'), m.tier, m.priority
+   FOR SHARE OF m
+`
+
+type CiMappingsOfIssuerIDShareRow struct {
+	ID           string
+	IssuerID     string
+	Issuer       string
+	PrincipalID  string
+	Tier         string
+	ProjectID    string
+	DelegationID string
+	Name         string
+	Priority     int32
+	Enabled      bool
+	SubjectKinds []string
+	Match        []byte
+	Grants       []byte
+	MaxTtlSecs   int64
+	Options      []byte
+	Description  string
+	Version      int64
+	CreatedBy    string
+	CreatedUs    int64
+	UpdatedUs    int64
+}
+
+// The set the exchange re-reads inside its transaction (R-CI-007): every mapping row FOR SHARE, so a
+// concurrent write of one of them waits for the exchange.
+func (q *Queries) CiMappingsOfIssuerIDShare(ctx context.Context, issuerID string) ([]CiMappingsOfIssuerIDShareRow, error) {
+	rows, err := q.db.Query(ctx, ciMappingsOfIssuerIDShare, issuerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CiMappingsOfIssuerIDShareRow{}
+	for rows.Next() {
+		var i CiMappingsOfIssuerIDShareRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.IssuerID,
+			&i.Issuer,
+			&i.PrincipalID,
+			&i.Tier,
+			&i.ProjectID,
+			&i.DelegationID,
+			&i.Name,
+			&i.Priority,
+			&i.Enabled,
+			&i.SubjectKinds,
+			&i.Match,
+			&i.Grants,
+			&i.MaxTtlSecs,
+			&i.Options,
+			&i.Description,
+			&i.Version,
+			&i.CreatedBy,
+			&i.CreatedUs,
+			&i.UpdatedUs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ciPoliciesLock = `-- name: CiPoliciesLock :many
+SELECT p.id::text AS id, p.name, COALESCE(pr.key, '')::text AS project, COALESCE(p.project_id::text, '')::text AS project_id
+  FROM authz_policy p LEFT JOIN project pr ON pr.id = p.project_id
+ WHERE p.name = ANY($1::text[])
+ ORDER BY p.name
+   FOR UPDATE OF p
+`
+
+type CiPoliciesLockRow struct {
+	ID        string
+	Name      string
+	Project   string
+	ProjectID string
+}
+
+// The named policies, locked in name order so that two writers never wait for each other crosswise;
+// project is the key of the project of a project policy, empty for a global one.
+func (q *Queries) CiPoliciesLock(ctx context.Context, names []string) ([]CiPoliciesLockRow, error) {
+	rows, err := q.db.Query(ctx, ciPoliciesLock, names)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CiPoliciesLockRow{}
+	for rows.Next() {
+		var i CiPoliciesLockRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Project,
+			&i.ProjectID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ciPolicyEntryDelete = `-- name: CiPolicyEntryDelete :exec
+WITH g AS (DELETE FROM authz_policy_entry WHERE policy_id = $1::text::uuid AND principal_id = $2::text::uuid)
+DELETE FROM authz_project_policy_entry WHERE policy_id = $1::text::uuid AND principal_id = $2::text::uuid
+`
+
+type CiPolicyEntryDeleteParams struct {
+	PolicyID    string
+	PrincipalID string
+}
+
+// Removes the entry of a principal from a policy of either kind.
+func (q *Queries) CiPolicyEntryDelete(ctx context.Context, arg CiPolicyEntryDeleteParams) error {
+	_, err := q.db.Exec(ctx, ciPolicyEntryDelete, arg.PolicyID, arg.PrincipalID)
+	return err
+}
+
+const ciPolicyTouch = `-- name: CiPolicyTouch :exec
+UPDATE authz_policy SET version = version + 1, updated_at = now() WHERE id = $1::text::uuid
+`
+
+// Moves the version of a policy whose principal list changed, so its ETag changes (R-AUTHZ-028).
+func (q *Queries) CiPolicyTouch(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, ciPolicyTouch, id)
+	return err
+}
+
+const ciProjectID = `-- name: CiProjectID :many
+SELECT id::text AS id FROM project WHERE key = $1::text
+`
+
+func (q *Queries) CiProjectID(ctx context.Context, key string) ([]string, error) {
+	rows, err := q.db.Query(ctx, ciProjectID, key)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ciProjectLock = `-- name: CiProjectLock :many
+SELECT id::text AS id FROM project WHERE key = $1::text FOR UPDATE
+`
+
+// The project row, locked: a project delete counts the project's CI mappings under the same lock, so a
+// create and a delete never miss each other. No row back means the project does not exist.
+func (q *Queries) CiProjectLock(ctx context.Context, key string) ([]string, error) {
+	rows, err := q.db.Query(ctx, ciProjectLock, key)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ciProjectRepositories = `-- name: CiProjectRepositories :many
+SELECT key FROM repositories
+ WHERE project_id = $1::text::uuid AND lifecycle = 'active' AND key = ANY($2::text[])
+`
+
+type CiProjectRepositoriesParams struct {
+	ProjectID string
+	Keys      []string
+}
+
+// Which of the keys are active repositories of the project.
+func (q *Queries) CiProjectRepositories(ctx context.Context, arg CiProjectRepositoriesParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, ciProjectRepositories, arg.ProjectID, arg.Keys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		items = append(items, key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ciRepositoryFormats = `-- name: CiRepositoryFormats :many
+SELECT key, format FROM repositories WHERE lifecycle = 'active' AND key = ANY($1::text[])
+`
+
+type CiRepositoryFormatsRow struct {
+	Key    string
+	Format string
+}
+
+// The format of each of the keys that is an active repository, for the snippet: it configures the repositories
+// of the client's format only.
+func (q *Queries) CiRepositoryFormats(ctx context.Context, keys []string) ([]CiRepositoryFormatsRow, error) {
+	rows, err := q.db.Query(ctx, ciRepositoryFormats, keys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CiRepositoryFormatsRow{}
+	for rows.Next() {
+		var i CiRepositoryFormatsRow
+		if err := rows.Scan(&i.Key, &i.Format); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

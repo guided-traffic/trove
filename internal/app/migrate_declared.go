@@ -66,11 +66,12 @@ func applyDeclaredCIIssuers(ctx context.Context, s *postgres.MigrationSession, c
 	issuers, err := ci.New(ci.Options{
 		DB: s, Changes: changes, Recorder: recorder, Config: cfg.CI, OutboundConfig: cfg.Proxy.Outbound,
 		EpochPollInterval: cfg.Cluster.EpochPollInterval, BaseURL: cfg.Server.BaseURL,
-		// The revoker and the mapping store of the replicas are built with them; the migration disables an
+		// The revoker of the replicas is built with them and the mapping store is never asked (the migration
+		// disables an issuer and deletes none); the migration disables an
 		// issuer only when the configuration no longer declares it, and revokes through the stub until
 		// work package W5 builds the revoker (an issuer with an issuance record then stops the migration
 		// loudly).
-		Revoker: ci.StubRevoker{}, Mappings: ci.StubMappings{}, Log: log,
+		Revoker: ci.StubRevoker{}, Log: log,
 	})
 	if err != nil {
 		return fmt.Errorf("ci.issuers: %w", err)

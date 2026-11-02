@@ -139,7 +139,10 @@ func TestR_CI_003_AFetchHoldsNoTransactionOpenAndAnUnchangedSetLeavesTheEpoch(t 
 				case <-stop:
 					return
 				case <-time.After(150 * time.Millisecond):
-					if n := e.number(`SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND state LIKE 'idle in transaction%'`); n > idle {
+					// A connection that held its transaction over the fetch is idle in transaction for the whole 4 s of the
+					// delayed response; every multi-statement transaction of any replica (a job insert, a gauge read) passes
+					// through that state for well under a millisecond between two statements, which is no held connection.
+					if n := e.number(`SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND state LIKE 'idle in transaction%' AND now() - state_change > interval '1 second'`); n > idle {
 						idle = n
 					}
 				}

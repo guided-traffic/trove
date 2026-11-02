@@ -1864,8 +1864,8 @@ and repositories read-only and changes nothing; only `admin` holds `projects:wri
 (`projects`), which is what the UI reads to show a project administrator the project screens without any system
 capability ([R-UI-041](api-and-ui.md#r-ui-041--projects), [Q-AUTHZ-181](#q-authz-181--authzme-names-the-projects-the-caller-administers)).
 
-**Deleting a project.** A project can be deleted only when no repository, in any lifecycle state, is assigned and no
-service account belongs to it (409 `project_not_empty`). Its policies are deleted with it, each through the policy
+**Deleting a project.** A project can be deleted only when no repository, in any lifecycle state, is assigned, no
+service account belongs to it and no CI mapping has its tier (409 `project_not_empty`, [Q-CI-26](gitlab-ci-oidc.md#q-ci-26--project-administrators-manage-the-ci-mappings-of-their-project)). Its policies are deleted with it, each through the policy
 store (audited and journaled like any policy deletion), and its administrator entries go ([Q-AUTHZ-185](#q-authz-185--versions-delete-order-the-epoch-and-the-journal-of-project-writes)).
 Each deletion carries the version read before it as its `If-Match` and names the project, so a policy that took the name in
 between, global or of another project, is never removed ([Q-AUTHZ-204](#q-authz-204--a-project-delete-passes-the-version-it-read-as-the-if-match-of-each-policy-deletion),
@@ -1922,7 +1922,7 @@ API:
 | `POST /api/v1/projects` | Create | 201; 409 key exists, `project_key_overlap`; 422 | `projects:write` |
 | `GET /api/v1/projects/{key}` | Read; `If-None-Match` is ignored, the body is never answered with 304 ([Q-AUTHZ-202](#q-authz-202--a-read-of-a-project-is-never-answered-with-304)) | 200 with `ETag: "<version>"`; 404 | `projects:read` or one of its administrators |
 | `PUT /api/v1/projects/{key}` | Replace display name, description, switches; `If-Match` required | 200 with the new `ETag`; 404; 412 `precondition_failed`; 422; 428 `precondition_required` | `projects:write` |
-| `DELETE /api/v1/projects/{key}` | Delete (`If-Match` optional) | 204; 404; 409 `project_not_empty`; 412 | `projects:write` |
+| `DELETE /api/v1/projects/{key}` | Delete (`If-Match` optional) | 204; 404; 409 `project_not_empty` (repositories, service accounts or CI mappings); 412 | `projects:write` |
 | `PUT /api/v1/projects/{key}/admins/{principalRef}` | Add a project administrator | 201 or 200; 404 unknown principal; 422 a kind that cannot administer | `projects:write` |
 | `DELETE /api/v1/projects/{key}/admins/{principalRef}` | Remove a project administrator | 204; 404 | `projects:write` |
 | `PUT /api/v1/projects/{key}/repositories/{repoKey}` | Assign (`?move=true` to move; `?from=<key>` names the expected current owner, empty for none) | 204; 404; 409 `repository_assigned`; 409 `project_owner_changed` with `currentProject` | `repositories:write-config` |

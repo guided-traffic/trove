@@ -71,12 +71,14 @@ type Project struct {
 	Rights
 	// Admins are the administrators, users and groups, ordered by kind and name.
 	Admins []PrincipalRef
-	// Repositories, ServiceAccounts and Policies count what belongs to the project;
-	// a project with a repository (in any lifecycle state) or a service account is
-	// not empty and cannot be deleted (Q-AUTHZ-169).
+	// Repositories, ServiceAccounts, Policies and CIMappings count what belongs to the
+	// project; a project with a repository (in any lifecycle state), a service account
+	// or a CI mapping of its tier is not empty and cannot be deleted (Q-AUTHZ-169,
+	// Q-CI-26).
 	Repositories    int
 	ServiceAccounts int
 	Policies        int
+	CIMappings      int
 	// Version is the ETag source. It moves with the fields of the PUT (display name,
 	// description, switches) and with nothing else: administrators and assignments
 	// leave it (Q-AUTHZ-185).
@@ -88,4 +90,6 @@ type Project struct {
 }
 
 // Empty reports whether the project has nothing that keeps it from being deleted.
-func (p Project) Empty() bool { return p.Repositories == 0 && p.ServiceAccounts == 0 }
+func (p Project) Empty() bool {
+	return p.Repositories == 0 && p.ServiceAccounts == 0 && p.CIMappings == 0
+}

@@ -186,8 +186,9 @@ type Mapping struct {
 	Ref  string
 	Name string
 	Tier string
-	// Project is the project key of a project-tier mapping, "" otherwise.
+	// Project is the project key of a project-tier mapping and ProjectID its ID, "" otherwise.
 	Project       string
+	ProjectID     string
 	Priority      int
 	Enabled       bool
 	SubjectKinds  []string

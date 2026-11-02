@@ -139,7 +139,7 @@ All in [codes.go](../../internal/errs/codes.go) (`>>> M5a projects`). `not_imple
 | `project_prefix_required` | 422 | a repository, policy or service account name without `<key>-` |
 | `name_reserved_by_project` | 422 | a global service account or a new global policy named `<key>-…` of an existing project |
 | `project_account_not_groupable` | 422 | a project service account as a group member |
-| `project_not_empty` | 409 | delete of a project with repositories (any lifecycle) or service accounts |
+| `project_not_empty` | 409 | delete of a project with repositories (any lifecycle), service accounts or CI mappings of its tier (`Project.CIMappings`, [below](#ci-mappings-of-a-project)) |
 | `repository_assigned` | 409 | assign without `move=true` |
 | `project_owner_changed` | 409 | assign with `?from=` naming another owner than the one under the locks (Q-AUTHZ-205); `currentProject` holds the current owner or null |
 | `project_key_overlap` | 409 | a key that is another's dash-prefix, or the prefix of a global service account name |
@@ -164,6 +164,33 @@ for the packages: `ProjectList`, `ProjectGet`, `ProjectLock`, `ProjectInsert`, `
 `ProjectAssignRepository`, `ProjectRepositoryKeys`, `ProjectServiceAccountNames`, `ProjectKeysOverlapping`, `ProjectKeysPrefixing`,
 `ProjectGlobalAccountsWithPrefix`, `ProjectLookupPrincipals`, `AuthzBuildProjects`,
 `AuthzBuildProjectAdmins`, `AuthzInsertProjectEntry`, `IdentityInsertProjectServiceAccount`.
+
+### CI mappings of a project
+
+Added by the CI federation (beta phase 5, work package W3; [ci-oidc.md](ci-oidc.md#w3-the-mappings), spec Q-CI-26 and Q-CI-37).
+A project administrator with `managePolicies` manages the mappings of the tier `project:<key>` of every CI issuer through
+`/api/v1/projects/{key}/ci/…` ([ci_project_api.go](../../internal/api/v1/ci_project_api.go)); the handlers narrow with
+`requireProject(…, managePolicies)` before they read the body, and the service ([internal/ci](../../internal/ci)) enforces the
+bounds on every write.
+
+- **What belongs to the project.** A mapping row carries `project_id` (foreign key `ON DELETE RESTRICT`) and the tier. The project
+  reads `ProjectGet`/`ProjectList` with the count `ci_mappings`, `Project.CIMappings`, and `Project.Empty()` includes it, so
+  `Delete` answers 409 `project_not_empty` ([checkDeletable](../../internal/project/crud.go)). The statement `ProjectCountMembers`
+  counts them too.
+- **The lock.** A mapping create in the tier takes the project row `FOR UPDATE` (`CiProjectLock`) before the issuer row; the delete
+  counts under the same lock (`ProjectLock`), so a create and the delete exclude each other: the delete answers 409, or the create
+  404. Locks are taken in the order project, issuer, policies (by name).
+- **The bounds** ([mappings_bind.go](../../internal/ci/mappings_bind.go), [mappings_write.go](../../internal/ci/mappings_write.go)):
+  the name starts `<key>-` (`claims.Check`, `project_prefix_required`); no groups; `policies` are policies of the project, and a
+  name that does not exist answers `policy_outside_project` like one of another project (no oracle); a literal key selector of an
+  inline grant is an active repository of the project (`repository_outside_project`, a missing key answers the same), while
+  `@any`, patterns and templates mean the project's repositories because the token's contribution names the project
+  (`claims.FrozenMapping.Project`); `manage` never.
+- **The view.** A project's mapping lists and rewrites only the bindings in the project's own policies; a binding that a system
+  administrator made in a global policy is neither shown to nor removed by the project administrator. A system administrator who
+  replaces a project's mapping through the issuer routes keeps the bounds of its tier.
+- **The policy entries** go into `authz_project_policy_entry` (the table the previous release does not read, ADR-145) and move the
+  policy's version and the change area `authz`; the entries of a deleted mapping go with its principal.
 
 ## Who built what
 

@@ -2,11 +2,12 @@
 
 Spec [gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md) (R-CI-001 to R-CI-030), beta phase 5 (M4). The page is the contract between the work packages
 that build the federation in parallel, in the shape of [projects.md](projects.md). The decisions behind it are
-[Q-CI-17 to Q-CI-22, Q-CI-26 and, from W2, Q-CI-27 to Q-CI-29](../decisions.md) with [ADR-147](../decisions.md#adr-147--a-ci-token-carries-its-frozen-grants-in-its-cache-entry-and-the-management-api-refuses-ci-tokens-by-default).
+[Q-CI-17 to Q-CI-22, Q-CI-26, from W2 Q-CI-27 to Q-CI-29 and, from W3, Q-CI-35 to Q-CI-37](../decisions.md) with [ADR-147](../decisions.md#adr-147--a-ci-token-carries-its-frozen-grants-in-its-cache-entry-and-the-management-api-refuses-ci-tokens-by-default).
 
-Status: contracts laid; W1 (issuers and keys, [below](#w1-issuers-and-signing-keys)) and W2 (the claim engine, the subject-token
-validation and the shared JWS leaf, [below](#w2-the-claim-engine-and-the-validation)) built; W3 to W7 pending. Every other operation of the
-document answers `501 ci_not_implemented` (the exchange too, as problem details until W4). The issuer double the end-to-end tests exchange
+Status: contracts laid; W1 (issuers and keys, [below](#w1-issuers-and-signing-keys)), W2 (the claim engine, the subject-token
+validation and the shared JWS leaf, [below](#w2-the-claim-engine-and-the-validation)) and W3 (the mappings, the dry run and the snippet,
+[below](#w3-the-mappings)) built; W4 to W7 pending. The issuance operations and the exchange answer `501 ci_not_implemented` (the exchange
+as problem details until W4). The issuer double the end-to-end tests exchange
 against is built separately (test/oidcstub).
 
 ## What has to be in your head
@@ -64,7 +65,7 @@ values are `NULLIF(text, '')` or `0`. [TestCIMigration](../../test/integration/p
 
 | Step | Where |
 |---|---|
-| W4 builds the bundle | `Frozen{Version: claims.FrozenVersion, Issuer, IssuerID, ProjectID, ProjectPath, CrossProject}`, then `Frozen.Add(claims.Freeze(ref, id, tier, project, rendered, caps))` per contributing mapping in evaluation order (`Freeze` bounds the inline grants by the mapping's caps), then `claims.NarrowFrozen` with the request's `scope` items; `Frozen.Check` before the write |
+| W4 builds the bundle | `Frozen{Version: claims.FrozenVersion, Issuer, IssuerID, ProjectID, ProjectPath, CrossProject}`, then `Frozen.Add(c.Frozen())` per `Selection.Contributions` entry in evaluation order (`Contribution.Frozen` calls `claims.Freeze(ref, id, tier, project, rendered, caps)`, which bounds the inline grants by the mapping's caps), then `claims.NarrowFrozen` with the request's `scope` items; `Frozen.Check` before the write |
 | W4 issues the token in the exchange transaction | `token.Service.IssueCITx(ctx, tx, token.CITRequest{OwnerID: mapping principal, Frozen, Scope, TTL})` in [cit.go](../../internal/auth/token/cit.go); `created_via` `ci-exchange`; no user token list, no per-principal limit; the issuance record is written beside it (`CiExchangeInsertIssuance`) with `grants` = the same bundle |
 | the validator reads it | `Service.load` decodes `ci_context` into `Info.CI` for type `cit` (a missing bundle is a storage fault, never an acceptance). `decodeCIContext` still uses `json.Unmarshal`; W4 switches it to `claims.DecodeFrozen`, which also refuses another version and an inconsistent bundle |
 | the stage and the chain pass it on | `auth.Result.CI`, `Principal.CI` and `Principal.Mappings` ([m1_convert.go](../../internal/app/m1_convert.go)), `authz.Subject.CI` ([edge/subject.go](../../internal/api/edge/subject.go)) (done) |
@@ -108,7 +109,7 @@ general API rate limit (`limitedPath` in [ratelimit.go](../../internal/api/v1/ra
 |---|---|---|
 | **W1** issuers and keys (built) | R-CI-001 to R-CI-003, R-CI-005, Q-CI-16; the issuer, key and `Choices` operations; `ApplyDeclared` (migrate: call it always); `ci-keys-refresh`; the key source | `internal/ci/issuers*.go`, `keys*.go`, `ci_issuers_api.go`, `queries/ci_issuers.sql`, the issuer part of `wire_ci.go`, `migrate_declared.go` |
 | **W2** claim engine and validation (built) | R-CI-004, R-CI-010 to R-CI-014, the save-time rules and warnings; `internal/auth/jws`; [what it built and the contract changes](#w2-the-claim-engine-and-the-validation) | `internal/ci/claims/**`, `internal/ci/subject/**`, `internal/auth/jws/**`, `internal/auth/oidc/jws*.go` |
-| **W3** mappings | store, principals, `mappings_version`, R-CI-009, the system and the project routes, the project bounds, the dry run, `Select`, the snippet; `project_not_empty` for a project with mappings | `internal/ci/mappings*.go`, `select.go`, `ci_mappings_api.go`, `ci_snippets_api.go`, `queries/ci_mappings.sql`, `internal/project` (the delete check) |
+| **W3** mappings (built) | store, principals, `mappings_version`, R-CI-009, the system and the project routes, the project bounds, the dry run, `Select`, the snippet; `project_not_empty` for a project with mappings; [what it built and the contract changes](#w3-the-mappings) | `internal/ci/mappings*.go`, `select.go`, `ci_mappings_api.go`, `ci_snippets_api.go`, `queries/ci_mappings.sql`, `internal/project` (the delete check) |
 | **W4** exchange | R-CI-007, R-CI-008, R-CI-016, R-CI-018, R-CI-021, the issuance write; `IssueCITx` | `internal/ci/exchange*.go`, `ttl.go`, `internal/auth/token/cit.go`, `ci_exchange.go`, `queries/ci_exchange.sql` |
 | **W5** use time | R-AUTHZ-014 in the evaluator, R-CI-015 ownership, R-CI-017 revocation, issuances (also a project's), bulk revoke, the two retention tasks, the metrics' increments | `internal/authz/ci.go`, `ownership.go` (CI parts), `internal/ci/revoke*.go`, `issuances*.go`, `ci_issuances_api.go`, `queries/ci_issuances.sql` |
 | **W6** admin UI | R-UI-035, R-UI-036, the issuances tab, the project's CI screens. **Built** against the fakes (see [web-ui.md](web-ui.md#ci-identity)); the browser journey is W7's | `web/**` |
@@ -167,8 +168,8 @@ What the later work packages need to know:
   specification names by its code (`pin_required`, `catch_all_condition`, `priority_taken` is a 409, …) is also the problem's `code`
   (`validationError` in issuers_validate.go; `errs.E(errs.Invalid, <named code>, …, errs.WithFields(…))`). Any other violation is
   `validation_failed`.
-- **`Mappings.DeleteForIssuerTx` (W3).** Added to the interface for the cascade of an issuer's deletion; the stub answers 501, so
-  `DELETE …?cascade=true` of an issuer that has mappings answers 501 until W3.
+- **`Mappings.DeleteForIssuerTx` (W3, built).** Added to the interface for the cascade of an issuer's deletion; W3's store deletes the
+  mappings and their principals on the issuer's transaction, one `ci.mapping.deleted` each.
 - **The revoker (W5).** `Issuers.Replace` (disable), `Delete` and `ApplyDeclared` (removal) call `Revoker.RevokeIssuerTx` in their
   transaction only when the issuer has a row in `ci_token_issuances`. With the stub revoker such a write answers 501 and changes
   nothing (and a `trove migrate` that removes such an issuer stops).
@@ -187,16 +188,20 @@ What the later work packages need to know:
 
 ## Pending criteria
 
-Criteria of R-CI-001 and R-CI-002 that need a work package that is not built. The tests exist in
+Criteria of R-CI-001, R-CI-002, R-CI-009, R-CI-013, R-CI-017 and R-CI-019 that need a work package that is not built. The tests exist in
 [pending_test.go](../../test/integration/ci/pending_test.go) behind the build tag `ci_pending` (run with
 `-tags 'integration ci_pending'`); the work package named removes the tag from its tests when it builds its part.
 
 | Test | Needs |
 |---|---|
-| `TestR_CI_002_DisablingAnIssuerRevokesItsTokens`, `TestR_CI_002_DeletingAnIssuerRevokesItsTokens` | W3 (a mapping), W4 (the exchange issues a token), W5 (the revoker) |
-| `TestR_CI_002_CascadeDeletesTheMappingsAndTheirPrincipals` | W3 (`DeleteForIssuerTx`) |
+| `TestR_CI_002_DisablingAnIssuerRevokesItsTokens`, `TestR_CI_002_DeletingAnIssuerRevokesItsTokens` | W4 (the exchange issues a token), W5 (the revoker) |
 | `TestR_CI_001_ARemovedConfigurationIssuerKeepsItsRecords` | W5 (the revoker, for an issuer with issuance records) |
 | `TestR_CI_001_ExchangeAnswersIssuerDisabledForARemovedIssuer` | W4 |
+| `TestR_CI_009_AMergeRequestPipelineOfAProtectedBranchCannotPublish` | W4 (the exchange), W5 (the evaluator judges the publish) |
+| `TestR_CI_009_AnAbsentClaimFailsTheExchangeEvenIfALaterMappingMatches` | W4 |
+| `TestR_CI_019_AMappingCreatedOnAIsUsedByTheNextExchangeOnBWithPropagationBlocked` | W4 (the mapping-set check of R-CI-007) |
+| `TestR_CI_017_DisablingAMappingRevokesItsTokensOnEveryReplica`, `TestR_CI_009_DeletingAMappingRevokesItsTokens` | W4, W5 |
+| `TestR_CI_013_RemovingTheMappingFromAPolicyFailsAnIssuedToken` | W4, W5 (the evaluator reads the policy bindings of the token's mappings) |
 
 The tests of W1 itself are [test/integration/ci](../../test/integration/ci) (`issuers_test.go`, `keys_test.go`, `declared_test.go`,
 `tasks_test.go`) and the unit tests of [internal/ci](../../internal/ci).
@@ -281,3 +286,86 @@ Run each locally for a minute (`-fuzztime 1m`); a failing input stays in the pac
 ```sh
 go test ./internal/ci/claims -run '^$' -fuzz '^FuzzR_CI_014_Template$' -fuzztime 1m
 ```
+
+## W3: the mappings
+
+Built: the mapping store with its principals and the issuer's `mappings_version`, the save-time rules of R-CI-010 to R-CI-014 on every
+write, the policy binding of R-CI-013, the per-replica copy of the mapping sets, `Select`, the dry run, the snippet, the project tier
+with its bounds and its routes, and the delete check of a project. Decided on the way:
+[Q-CI-35](../spec/gitlab-ci-oidc.md#q-ci-35--what-a-mapping-save-writes-into-a-policys-principal-list) (what a save writes into a
+policy's principal list),
+[Q-CI-36](../spec/gitlab-ci-oidc.md#q-ci-36--what-the-dry-run-answers-where-it-cannot-know) (what the dry run answers where it cannot know),
+[Q-CI-37](../spec/gitlab-ci-oidc.md#q-ci-37--the-edges-of-a-projects-mapping-the-policies-it-sees-the-project-lock-and-a-system-administrators-edit)
+(the edges of a project's mapping).
+
+### Files
+
+| File | Responsibility |
+|---|---|
+| [mappings.go](../../internal/ci/mappings.go) | `MappingService`, `MappingsOptions`, `NewMappings`, the copy `CacheMappings` (key: issuer ID, area `ci_mappings`, `SafetyTTL` `ci.mappings.cache_safety_ttl`), the two notifies |
+| [mappings_store.go](../../internal/ci/mappings_store.go) | row to `Mapping`, the stored forms (`grants` without `policies`), the record, `mappingEvent` with its journal entry, the PUT event rule |
+| [mappings_validate.go](../../internal/ci/mappings_validate.go) | the shape rules, `mappingViolation` (the answer of Q-CI-30 with the named codes), the defaults |
+| [mappings_read.go](../../internal/ci/mappings_read.go) | `List`, `Get`, `ListIn`, `GetIn`, `CountIn`, `Set`, `SetTx`; the policies are filled from the principal lists |
+| [mappings_write.go](../../internal/ci/mappings_write.go) | `Create(In)`, `Replace(In)`, `Delete(In)`, `DeleteForIssuerTx`, the revocation, the principal's status |
+| [mappings_bind.go](../../internal/ci/mappings_bind.go) | the policies and groups of a save, `applyBindings`, the project's repositories |
+| [mappings_evaluate.go](../../internal/ci/mappings_evaluate.go) | `Evaluate`, `EvaluateIn` |
+| [mappings_snippet.go](../../internal/ci/mappings_snippet.go) | `Snippet`, `renderSnippet` |
+| [select.go](../../internal/ci/select.go) | `Select`, `Selection`, `Contribution`, `TraceEntry` (moved out of exchange.go) |
+| [subject/times.go](../../internal/ci/subject/times.go) | `CheckTimes`, step 8 of R-CI-004 for a claim set, called by the dry run |
+| [ci_mappings_api.go](../../internal/api/v1/ci_mappings_api.go), [ci_snippets_api.go](../../internal/api/v1/ci_snippets_api.go), [ci_project_api.go](../../internal/api/v1/ci_project_api.go) | the handlers; the condition goes through `claims.ParseCondition`, so the pointers of a violation are the body's |
+| [ci_mappings.sql](../../internal/meta/postgres/queries/ci_mappings.sql) | the statements; `project.sql` counts `ci_mappings` for the project |
+
+### The write
+
+One READ COMMITTED transaction: the project row `FOR UPDATE` (a project's create only), the issuer row `FOR UPDATE`
+(`lockIssuer`), the mapping, the policies named (`CiPoliciesLock`, in name order), then the rules (`check`: the policies and groups,
+`claims.Check` with `SaveInput.PolicyActions` and `IssuerFacts.Project`, the project's repositories), the priority, the principal, the
+row, the bindings, `CiIssuerBumpMappings` and `cluster.Notify` on `ci_mappings`, and the event with the journal entry. A name that
+exists is 409 `already_exists`, a priority held by another mapping of the tier 409 `priority_taken`, a limit 422
+`mapping_limit_reached`. A disable or delete revokes only when the mapping has a row in `ci_token_issuances`
+(`CiMappingHasIssuances`) and then calls `Revoker.RevokeMappingTx`; with the stub that answers 501 and nothing changes.
+
+### What the other packages rely on
+
+- **W4, the exchange.** `Mappings.Set(ctx, issuerID)` is the copy with the versions it was read at (read as: the issuer's counters first,
+  then the rows, so a set is never labelled newer than it is); `SetTx` reads PostgreSQL in the exchange's transaction with every mapping
+  row `FOR SHARE` and refreshes the copy. `Select(set, "id_token", claims)` returns `Selection{CrossProject, Trace, Contributions,
+  Failure, Detail}`; there is no flat union of the rendered grants, because a cap and a project bound only their own mapping's. Build the
+  bundle with `Frozen.Add(c.Frozen())` per contribution. `Contribution.Mapping` has `ID`, `Ref`, `Tier`, `Project`, `ProjectID`,
+  `Version` and `PrincipalID`. `Mapping.Grants.Policies` is read from the policies' principal lists for display; the evaluator reads
+  the live index, not this field. The dry run computes the lifetime itself (`dryRunTTL`, Q-CI-36): call `ComputeTTL` from there once
+  it exists.
+- **W5, the revoker.** `RevokeMappingTx(ctx, tx, actor, mapping, CauseMapping)` runs in the write's transaction before the mapping row
+  and its principal are deleted (delete) and before the principal's status is set (disable); the mapping is the one read under the issuer
+  lock. W3 notifies the change area `auth` for the principal (`principal.NotifyPrincipals`) on a status change and a delete, and the
+  area `authz` for each policy it touches; the tokens' own eviction is the revoker's. `wireCI` builds the store with `Revoker:
+  out.revoker`: replace `out.revoker` before `NewMappings` is called. `DeleteForIssuerTx` leaves the tokens to `RevokeIssuerTx`.
+- **W6, the UI.** The wire forms are `ciMappingOut`, `ciEvaluateOut` in ci_mappings_api.go: `grants` always has `policies`, `groups` and
+  `inline`; `options` is resolved; `warnings` is on the answer of a save only; `failedLeaf` is present for a mapping that did not
+  match (`""` for a root leaf).
+
+### Contract changes
+
+- `Selection.Mappings`, `Selection.Rendered` and `Selection.Caps` are gone: `Selection.Contributions` (`Contribution{Mapping,
+  Rendered, Caps}`) replaces them, `Selection.Mappings()` is a method. `Select`, `Selection` and `TraceEntry` moved from exchange.go
+  to select.go (the one edit of W4's file).
+- `Mapping.ProjectID` is new. `TraceEntry.Contributes` is false for a mapping that did not match, too.
+- `StubMappings` is gone; `migrate_declared.go` passes no mapping store to the issuer service (the migration deletes no issuer).
+- `Project.CIMappings` and `ProjectGet`/`ProjectList`'s `ci_mappings` column; the problem text of `project_not_empty` names CI mappings
+  (the web message in problem-messages-access.ts still names repositories and service accounts: W6).
+- The route `GET /projects/{key}/ci/issuers/{issuer}/snippets/{kind}` (`getProjectCiSnippet`) is new.
+- The list of mappings is ordered with the system tier first, then the projects' tiers by key (the SQL order `tier` alone put
+  `project:…` before `system`).
+- The reference pipeline's closing revocation is a block scalar (the plain form is a YAML mapping) and its error line prints
+  `requestId`.
+
+### Tests
+
+| Test | What it proves |
+|---|---|
+| `TestR_CI_009_*`, `TestR_CI_020_*`, `TestThePrincipalOfAMappingMirrorsEnabled`, `TestR_CI_002_CascadeDeletesTheMappingsAndTheirPrincipals` ([mappings_test.go](../../test/integration/ci/mappings_test.go)) | the lifecycle, the ETags, the first match with p10 and p20, the render failure without fall-through, equal priority 409, two issuers' principals and the policy after delete and re-create, the principal mirroring `enabled`, the PUT event rule and the journal, the cascade, the 501 for a mapping with issuance records, the copy on replica B (100 trials in 1 s with Valkey, 12 trials in the poll interval plus 1 s without), `SetTx` |
+| `TestR_CI_010_*`, `TestR_CI_013_*` ([mappings_rules_test.go](../../test/integration/ci/mappings_rules_test.go)) | every save-time rule over HTTP with its code and pointer, the warnings, the policy binding in both directions, the write rules counting policies and groups |
+| `TestR_CI_019_*`, `TestR_CI_012_*` ([dryrun_test.go](../../test/integration/ci/dryrun_test.go)) | the dry run of the example claim set and the failing leaf, the scope, `now`, nothing issued, the fork classification and the opt-in |
+| `TestQ_CI_26_*` ([project_mappings_test.go](../../test/integration/ci/project_mappings_test.go)) | the project tier's bounds and narrowing, the union with the system tier, `project_switch_off`, `project_not_empty`, create against delete |
+| `TestR_API_035_*`, `TestQ_CI_26_AProjectAdministratorReadsTheSnippet…` ([snippets_test.go](../../test/integration/ci/snippets_test.go)), `TestTheSnippetIsYAML` ([mappings_snippet_test.go](../../internal/ci/mappings_snippet_test.go)) | the snippet for npm and NuGet, the project route, the YAML |
+| `TestR_CI_009_Select*`, `TestR_CI_012_Select*` ([select_test.go](../../internal/ci/select_test.go)) | `Select` without a database |

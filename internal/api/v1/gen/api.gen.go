@@ -2530,6 +2530,24 @@ func (e ListProjectsParamsSort) Valid() bool {
 	}
 }
 
+// Defines values for GetProjectCiSnippetParamsFormat.
+const (
+	GetProjectCiSnippetParamsFormatNpm   GetProjectCiSnippetParamsFormat = "npm"
+	GetProjectCiSnippetParamsFormatNuget GetProjectCiSnippetParamsFormat = "nuget"
+)
+
+// Valid indicates whether the value is a known member of the GetProjectCiSnippetParamsFormat enum.
+func (e GetProjectCiSnippetParamsFormat) Valid() bool {
+	switch e {
+	case GetProjectCiSnippetParamsFormatNpm:
+		return true
+	case GetProjectCiSnippetParamsFormatNuget:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for LookupProjectPrincipalsParamsKind.
 const (
 	LookupProjectPrincipalsParamsKindGroup LookupProjectPrincipalsParamsKind = "group"
@@ -6476,6 +6494,18 @@ type ListProjectCiIssuancesParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// GetProjectCiSnippetParams defines parameters for GetProjectCiSnippet.
+type GetProjectCiSnippetParams struct {
+	// Mapping The mapping the snippet is for.
+	Mapping string `form:"mapping" json:"mapping"`
+
+	// Format The package client the snippet configures.
+	Format *GetProjectCiSnippetParamsFormat `form:"format,omitempty" json:"format,omitempty"`
+}
+
+// GetProjectCiSnippetParamsFormat defines parameters for GetProjectCiSnippet.
+type GetProjectCiSnippetParamsFormat string
+
 // DeleteProjectCiMappingParams defines parameters for DeleteProjectCiMapping.
 type DeleteProjectCiMappingParams struct {
 	// IfMatch The ETag loaded with the resource, or `*`. A `DELETE` honours it when sent and answers `412` for a stale one (R-API-012).
@@ -7381,6 +7411,9 @@ type ServerInterface interface {
 	// EvaluateProjectCiMappings Dry-run the project's mappings against a claim set
 	// (POST /api/v1/projects/{key}/ci/issuers/{issuer}/evaluate)
 	EvaluateProjectCiMappings(w http.ResponseWriter, r *http.Request, key string, issuer string)
+	// GetProjectCiSnippet Read a ready-to-paste CI snippet for a mapping of a project
+	// (GET /api/v1/projects/{key}/ci/issuers/{issuer}/snippets/{kind})
+	GetProjectCiSnippet(w http.ResponseWriter, r *http.Request, key string, issuer string, kind string, params GetProjectCiSnippetParams)
 	// ListProjectCiMappings List the CI mappings of a project
 	// (GET /api/v1/projects/{key}/ci/mappings)
 	ListProjectCiMappings(w http.ResponseWriter, r *http.Request, key string)
@@ -11191,6 +11224,79 @@ func (siw *ServerInterfaceWrapper) EvaluateProjectCiMappings(w http.ResponseWrit
 	handler.ServeHTTP(w, r)
 }
 
+// GetProjectCiSnippet operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectCiSnippet(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "key" -------------
+	var key string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "issuer" -------------
+	var issuer string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "issuer", r.PathValue("issuer"), &issuer, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "issuer", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "kind" -------------
+	var kind string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "kind", r.PathValue("kind"), &kind, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetProjectCiSnippetParams
+
+	// ------------- Required query parameter "mapping" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "mapping", r.URL.Query(), &params.Mapping, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "mapping"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "mapping", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "format" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "format", r.URL.Query(), &params.Format, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "format"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "format", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectCiSnippet(w, r, key, issuer, kind, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListProjectCiMappings operation middleware
 func (siw *ServerInterfaceWrapper) ListProjectCiMappings(w http.ResponseWriter, r *http.Request) {
 
@@ -14970,6 +15076,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{key}/ci/mappings/{issuer}/{name}", wrapper.GetProjectCiMapping)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/projects/{key}/ci/mappings/{issuer}/{name}", wrapper.ReplaceProjectCiMapping)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{key}/ci/issuers/{issuer}/evaluate", wrapper.EvaluateProjectCiMappings)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{key}/ci/issuers/{issuer}/snippets/{kind}", wrapper.GetProjectCiSnippet)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{key}/ci/issuances", wrapper.ListProjectCiIssuances)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/items", wrapper.DeleteItem)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/items", wrapper.GetItem)
