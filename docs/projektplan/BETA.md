@@ -322,6 +322,11 @@ to denial-of-service attempts.
   the first expires, it reaches the Bastion's Secret through GitOps, the old one is revoked; the Bastion reloads a changed
   Secret without a restart, exports the remaining lifetime as a metric and warns in its log from a chart-set period before
   expiry (proposed 30 days). The Bastion holds no right to write Secrets or to issue tokens
+- ⚪ Interface version (owner, 2026-11-02): the Bastion interface of the main installation (token checks, revocation feed,
+  audit intake) has a version of its own, separate from the release number, raised only when that interface changes,
+  which after the stable release is rare. Main installation and Bastion talk only when they speak the same interface
+  version; on a mismatch the Bastion treats the main installation as unreachable (the grace period, then nothing) and
+  raises a Prometheus alert (a metric plus a rule its chart ships)
 - ⚪ The main installation counts the real client: the Bastion stops abuse before a request reaches the main installation,
   and the main installation lists the Bastion's addresses in `server.trusted_proxies`, so its per-address limits apply to
   the client and not to the Bastion
