@@ -677,6 +677,31 @@ lists as system scope items (R-AUTH-025) use the same names; the others extend t
   endpoints). Such bindings are rejected with 422 `role_not_allowed`.
 - The break-glass administrator (R-AUTH-014) always holds `admin` without a role binding, so
   recovery never depends on the state it recovers.
+- **Bindings from the configuration (owner, [Q-AUTHZ-170](#q-authz-170--system-role-bindings-declared-in-the-configuration)).**
+  `authz.role_bindings` in the system configuration file (rendered by the chart from its `config` values) declares role
+  bindings, so that a GitOps repository decides which IdP group administers trove:
+
+  ```yaml
+  authz:
+    role_bindings:
+      - role: admin                          # one of the system roles of this table that is built
+        group: gh-wds18-k8s-main-admins      # example; or user: <name> or service_account: <name>, exactly one
+  ```
+
+  - `trove migrate` (the chart's pre-install and pre-upgrade Job) applies them in one transaction: each declared binding
+    exists afterwards with `source = 'configuration'`, and a configuration binding that is no longer declared is removed;
+    both are audited (`authz.role.bound`, `authz.role.unbound`) with the actor `system:configuration`. No `web` or `worker` replica
+    writes them.
+  - A declared group that does not exist yet is created as a local group, so the binding holds before the first login
+    of a member; the login provider's group sync (R-AUTH-008) then writes its memberships into that group. A declared
+    user or service account that does not exist stops `trove migrate` with an error that names it.
+  - A role that is not built yet, or `anonymous` / `authenticated` as principal, stops `trove migrate`
+    (`role_not_allowed`), as the API refuses them.
+  - The API lists configuration bindings with `source: "configuration"`; `DELETE` on one answers 409
+    `role_binding_managed_by_configuration`, and the UI shows it without the remove control. Bindings made through the
+    API stay as they are, beside the declared ones.
+  - Whoever can change membership of the declared IdP group administers trove: with a GitHub team behind Dex, the team's
+    maintainers decide who is an administrator.
 - A UI session exercises every role of its user. A token exercises roles only as its scope allows
   (R-AUTHZ-013).
 - `content:bypass` makes the subject pass every repository check and the ownership check. It does
@@ -697,6 +722,10 @@ Acceptance criteria:
   user from the group and the user logs in again, the same call answers 403.
 - `PUT /api/v1/role-bindings/auditor/ci:gitlab-internal%2Facme-publish` answers 422
   `role_not_allowed`.
+- `authz.role_bindings: [{role: admin, group: gh-ops}]` and no group `gh-ops`: after `trove migrate` the group exists and
+  is bound to `admin`; a user whose IdP groups map to `gh-ops` logs in and can create a repository. `DELETE
+  /api/v1/role-bindings/admin/group:gh-ops` answers 409. With the entry removed, the next `trove migrate` unbinds it and
+  the same user's next request needs no new login to be refused (R-AUTHZ-032).
 
 ### R-AUTHZ-011 · Security administrator and auditor roles
 Priority: **P1** · Covers: IAM-006, ADMAPI-041, TOK-014
@@ -1712,6 +1741,10 @@ adding `sa:sa-web-release` with `["delete"]`.
 
 ### R-AUTHZ-026 · Projects for delegated administration
 Priority: **P1** · Covers: IAM-051, IAM-052, IAM-057
+
+The owner wants projects in the beta (2026-11-02), with project service accounts that project administrators create
+([Q-AUTHZ-169](#q-authz-169--a-technical-account-for-a-project-belongs-to-the-project)); the plan places them, and the
+priority of this requirement is raised with that placement.
 
 Decision: projects are not part of the MVP. In the MVP, administration is centralized (system
 roles), and delegation happens per policy (`manage`, R-AUTHZ-025, P1) and, for CI, per CI issuer
@@ -3796,6 +3829,48 @@ Context: R-AUTHZ-007 and R-NPM-019 gave `npm whoami` (and `npm ping`) the requir
 **Rationale:** the only subjects that use the endpoint are npm clients configured for a repository they use, and those hold `read` at least (`npm publish` and `npm install` need it). The development agent revisits this if a client is found that calls `whoami` before it holds any grant.
 
 **Applied in the spec:** R-AUTHZ-007 (npm table), [formats/npm.md](formats/npm.md) R-NPM-019. Tests: `TestR_AUTHZ_007_NPMActionMap` (the `whoami` and `ping` cases).
+
+### Q-AUTHZ-169 · A technical account for a project belongs to the project
+
+Status: **Decided by the owner on 2026-11-02** — option (a).
+
+Context: the owner wants project administrators who create technical accounts for external parties and grant them fine
+or coarse access to chosen repositories of their project. R-AUTH-020 lets only an administrator create service accounts;
+owners who manage a service account's tokens are P1, and R-AUTHZ-026 lets a project administrator grant to service
+accounts but not create them.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Project service accounts (chosen) | A project administrator creates, disables and deletes service accounts of the project, named `<projectKey>-…`; it issues and revokes their tokens (endpoint-bound tokens included); they are granted only through the project's policies; a project with service accounts is not empty | No system administrator per partner; what a project creates never reaches beyond the project; the partner is one identity that the audit names and that can be disabled | A `project` attribute on service accounts and its rules |
+| (b) Global service accounts with project administrators as owners | An administrator creates the account and names an owner who manages its tokens | The owner model of R-AUTH-020 exists (P1) | Every new partner needs a system administrator |
+| (c) No accounts, project tokens on roles | Project administrators mint short tokens without an identity | Least model | No identity to audit or disable per partner |
+
+**Choice:** (a), the owner's decision on the development agent's recommendation.
+
+**Rationale:** external partners need an identity that can be disabled and that the audit names, and the project
+administrator creates it without a detour; nothing a project administrator creates acts outside the project.
+
+**Applied in the spec:** R-AUTHZ-026 (the note on the owner's request); the requirement text for project service
+accounts is written when the plan places projects.
+
+### Q-AUTHZ-170 · System role bindings declared in the configuration
+
+Status: **Decided by the owner on 2026-11-02**.
+
+Context: the owner's IdP group `gh-wds18-k8s-main-admins` (a GitHub team behind Dex) is synchronized into trove, and it
+should make its members administrators. Role bindings existed only as objects of the API, and the installation is
+provisioned from a GitOps repository; configuration documents (R-OPS-029, P1) are not built.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `authz.role_bindings` in the system configuration, applied by `trove migrate`, read-only in the API and the UI (chosen) | The pattern of Q-CI-16 for CI issuers | GitOps for who administers trove; a binding holds before the first login | A second source of bindings beside the API |
+| (b) Bind once through the API as the break-glass administrator | No code | Works today | Not in Git; lost with a restore into an empty installation |
+
+**Choice:** (a), the owner's request ("a configuration option in Helm to make an OIDC group the administrator").
+
+**Rationale:** the owner's decision; it follows Q-CI-16. The development agent records no revisit condition.
+
+**Applied in the spec:** R-AUTHZ-010 (bindings from the configuration, one acceptance criterion).
 
 ## What this does not cover
 
