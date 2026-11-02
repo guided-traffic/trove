@@ -89,13 +89,19 @@ func SnupkgPath(lowerID, lowerVersion string) string {
 
 // lowerID normalizes an ID for lookup (R-NUGET-003): the upstream rule decides whether it
 // can be an ID at all, the lower-case form is the package name. Looking up accepts every ID
-// a remote repository may serve, so a legacy ID outside ASCII is a valid lookup; the
-// narrower rule of a local repository is checked at ingestion.
+// a remote repository may serve, so a legacy ID outside ASCII is a valid lookup in the form a
+// client sends it (id.ClientForm); the narrower rule of a local repository is checked at
+// ingestion. An ID with a character outside ASCII that a client would have lowercased is no
+// ID: it is no name a pattern, a claim or a pin rule could be compared with.
 func lowerID(s string) (string, bool) {
 	if id.ValidateUpstream(s) != nil {
 		return "", false
 	}
-	return id.Lower(s), true
+	l := id.Lower(s)
+	if !id.ClientForm(l) {
+		return "", false
+	}
+	return l, true
 }
 
 // urlForm normalizes a version of a path to its URL form (R-NUGET-003): any spelling, any

@@ -47,7 +47,7 @@ func TestR_NUGET_015_ACanonicalPathIsTakenApartOrIsNoResourceOfARemote(t *testin
 		{"acme.widgets/.registration/page/1.0.0/2.0.0-beta.1.json", target{kind: kindRegPage, id: "acme.widgets", lower: "1.0.0", upper: "2.0.0-beta.1"}},
 		{"acme.widgets/1.2.3/acme.widgets.1.2.3.nupkg", target{kind: kindPackage, id: "acme.widgets", version: "1.2.3"}},
 		{"acme.widgets/1.2.3/acme.widgets.nuspec", target{kind: kindSpec, id: "acme.widgets", version: "1.2.3"}},
-		{"Ünïcode.pkg/1.0.0/Ünïcode.pkg.1.0.0.nupkg", target{kind: kindPackage, id: "Ünïcode.pkg", version: "1.0.0"}},
+		{"ünïcode.pkg/1.0.0/ünïcode.pkg.1.0.0.nupkg", target{kind: kindPackage, id: "ünïcode.pkg", version: "1.0.0"}},
 	} {
 		got, err := parseTarget(formats.Path{Path: tc.path})
 		if err != nil || got != tc.want {
@@ -59,6 +59,8 @@ func TestR_NUGET_015_ACanonicalPathIsTakenApartOrIsNoResourceOfARemote(t *testin
 		"acme.widgets/1.2.3/other.1.2.3.nupkg", "acme.widgets/1.2.3/acme.widgets.1.2.3.snupkg", "acme.widgets/.registration/page/1.0.0.json",
 		"acme.widgets/.registration/page/1.0/2.0.json", "acme.widgets/.registration/page/x/y.json", ".symbols/a.pdb/0/a.pdb",
 		".vulnerabilities/index.json", "acme.widgets/.embedded/icon", "acme.widgets/1.2.3/acme.widgets.nupkg/extra",
+		// IDs no client sends: it lowercases every character (id.ClientForm).
+		"Ünïcode.pkg/1.0.0/Ünïcode.pkg.1.0.0.nupkg", "\u212Aontoso.lib/index.json", "\u212Aontoso.lib/1.0.0/\u212Aontoso.lib.1.0.0.nupkg",
 	} {
 		if got, err := parseTarget(formats.Path{Path: p}); err == nil {
 			t.Errorf("%q is a resource of a remote: %+v", p, got)
@@ -76,7 +78,7 @@ func TestR_NUGET_015_TheUpstreamRequestComesFromTheServiceIndexAndThePath(t *tes
 		"acme.widgets/1.2.3/acme.widgets.nuspec":                "https://content.up.test/flat/acme.widgets/1.2.3/acme.widgets.nuspec",
 		"acme.widgets/.registration/index.json":                 "https://api.up.test/v3/reg-gz/acme.widgets/index.json",
 		"acme.widgets/.registration/page/1.0.0/2.0.0-rc.1.json": "https://api.up.test/v3/reg-gz/acme.widgets/page/1.0.0/2.0.0-rc.1.json",
-		"Ünïcode.pkg/1.0.0/Ünïcode.pkg.1.0.0.nupkg":             "https://content.up.test/flat/%C3%9Cn%C3%AFcode.pkg/1.0.0/%C3%9Cn%C3%AFcode.pkg.1.0.0.nupkg",
+		"ünïcode.pkg/1.0.0/ünïcode.pkg.1.0.0.nupkg":             "https://content.up.test/flat/%C3%BCn%C3%AFcode.pkg/1.0.0/%C3%BCn%C3%AFcode.pkg.1.0.0.nupkg",
 	} {
 		req, err := a.UpstreamRequest(context.Background(), rc, formats.Path{Path: path}, documentVariant)
 		if err != nil || req.URL.String() != want || req.Method != http.MethodGet {
@@ -267,7 +269,7 @@ func TestR_NUGET_015_InspectFillHoldsTheDeclaredIdentityToThePath(t *testing.T) 
 }
 
 func TestR_NUGET_003_InspectFillComparesANonASCIIIDAsAClientLowerCasesIt(t *testing.T) {
-	const path = "Ünïcode.pkg/1.0.0/Ünïcode.pkg.1.0.0.nupkg" // trove lowercases ASCII letters only
+	const path = "ünïcode.pkg/1.0.0/ünïcode.pkg.1.0.0.nupkg" // the path a client builds; trove lowercases ASCII letters only
 	if got, err := inspectFill(t, path, buildNupkg(t, "Ünïcode.Pkg", "1.0.0")); err != nil || got == nil {
 		t.Errorf("the declared casing: %v %v", got, err)
 	}
@@ -848,5 +850,32 @@ func TestR_NUGET_034_TheValidatorOfARemoteDocumentOnAnEndpointWithRulesFollowsOn
 		if r.Code != want {
 			t.Errorf("%s after an upstream change of a shown version = %d, want %d", p, r.Code, want)
 		}
+	}
+}
+
+// TestR_NUGET_003_ARemotePathWithAnIDNoClientSendsIsNoResource: a client lowercases every
+// character of an ID before it builds a path (.NET ToLowerInvariant), so a path whose ID holds a
+// character that lowercasing changes (U+212A KELVIN SIGN, a capital letter outside ASCII) comes
+// from no client. An upstream that lowercases such a path itself would answer it with another
+// ID's package, while patterns, claims and pin rules compare the name character by character and
+// would not see that ID in it: the path is the 404 of a missing resource, and nothing is asked of
+// the upstream. The path in the client's form is served.
+func TestR_NUGET_003_ARemotePathWithAnIDNoClientSendsIsNoResource(t *testing.T) {
+	list := []byte(`{"versions":["1.0.0"]}`)
+	m := &formattest.MemRemote{Docs: map[string][]byte{
+		"Kontoso.lib/index.json": list, "Ünïcode.pkg/index.json": list, "ünïcode.pkg/index.json": list,
+	}}
+	h := remoteHost(t, m)
+	for _, p := range []string{"v3/flatcontainer/Kontoso.lib/index.json", "v3/flatcontainer/%E2%84%AAontoso.lib/index.json", "v3/flatcontainer/Ünïcode.pkg/index.json"} {
+		r, err := h.Serve(context.Background(), http.MethodGet, p, nil, false)
+		if e, ok := errs.As(err); ok && e.Kind == errs.NotFound {
+			continue // the route's match refuses the ID: the 404 of a missing resource
+		}
+		if err != nil || r.Code != http.StatusNotFound {
+			t.Errorf("%s = %v %v, want 404", p, r, err)
+		}
+	}
+	if r := rget(t, h, "v3/flatcontainer/ünïcode.pkg/index.json"); r.Code != http.StatusOK {
+		t.Errorf("the client's form = %d %s", r.Code, r.Body.String())
 	}
 }

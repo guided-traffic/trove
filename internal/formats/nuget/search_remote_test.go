@@ -445,10 +445,10 @@ func TestR_NUGET_016_TheUpstreamIsSentOnlyTheTermsTheWithheldRuleChecked(t *test
 		}
 	}
 	for q, want := range map[string]string{
-		"q=Json++Library":                    "json library",
-		"q=Json+%22Fast+Library%22":          "json \"fast library\"",
+		"q=Json++Library":                     "json library",
+		"q=Json+%22Fast+Library%22":           "json \"fast library\"",
 		"q=ID:Newtonsoft.Json+version:13.0.3": "id:newtonsoft.json version:13.0.3",
-		"q=version:13.0.3.0":                 "version:13.0.3",
+		"q=version:13.0.3.0":                  "version:13.0.3",
 	} {
 		before := len(fw.asked())
 		doSearch(t, fw.h, q)
@@ -538,5 +538,21 @@ func TestR_NUGET_016_AnUpstreamAnswerIsReadWithinItsBounds(t *testing.T) {
 	}
 	if len(d.Data[0].Versions) != 1 {
 		t.Errorf("Acme.Same lists %d versions, want 1", len(d.Data[0].Versions))
+	}
+}
+
+// TestR_NUGET_003_AForwardedResultWithAnIDNoClientRequestsIsRemoved: a result whose ID holds a
+// character a client's lowercasing changes (U+212A KELVIN SIGN, a capital letter outside ASCII)
+// names no path a client requests, and patterns and claims compare names character by character,
+// so they would not see the ID it lowercases to: the result is removed and totalHits reduced.
+func TestR_NUGET_003_AForwardedResultWithAnIDNoClientRequestsIsRemoved(t *testing.T) {
+	fw := newForwarding(t, authz.Subject{})
+	fw.answer = `{"totalHits":3,"data":[
+	  {"id":"Kontoso.Lib","version":"1.0.0","versions":[{"version":"1.0.0","downloads":1}]},
+	  {"id":"Ünïcode.Pkg","version":"1.0.0","versions":[{"version":"1.0.0","downloads":1}]},
+	  {"id":"Kontoso.Lib","version":"1.0.0","versions":[{"version":"1.0.0","downloads":1}]}]}`
+	d := forwardedOf(t, doSearch(t, fw.h, "q=ontoso"))
+	if !slices.Equal(namesOf(d), []string{"Kontoso.Lib"}) || d.TotalHits != 1 {
+		t.Errorf("results %v, totalHits %d, want Kontoso.Lib alone and 1", namesOf(d), d.TotalHits)
 	}
 }

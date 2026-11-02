@@ -290,7 +290,12 @@ Package IDs:
   rule it is the ASCII-lowercased ID, which equals .NET's `ToLowerInvariant` for ASCII. For a
   cached upstream package it is the ID segment of the request path that filled the cache,
   percent-decoded as UTF-8 with only its ASCII letters lowercased: for non-ASCII characters this is
-  the client's own lowercasing, which the upstream accepted. The declared ID MUST equal it once both
+  the client's own lowercasing, which the upstream accepted. An ID with a character that the
+  client's lowercasing would change (a capital letter outside ASCII, U+212A KELVIN SIGN) is in no
+  path a client sends; such a path is no resource (404) and asks nothing of the upstream, and a
+  forwarded search result with such an ID is removed, because an upstream would lowercase it into
+  another ID's while patterns, claims and pin rules compare the name character by character
+  (`id.ClientForm`; security audit of the fix wave). The declared ID MUST equal it once both
   are lowercased character by character with Unicode's simple lowercase mapping, as .NET's
   `ToLowerInvariant` lowercases an ID into its path, and the rows of the cached package take the path's
   ID (R-NUGET-015, Q-NUGET-84). trove never lowercases a non-ASCII ID to build a name or a URL, so no ID

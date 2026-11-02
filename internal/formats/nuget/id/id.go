@@ -100,6 +100,21 @@ func Lower(id string) string {
 	return id
 }
 
+// ClientForm reports whether lower, an ID with its ASCII letters lowercased (Lower), is a form a
+// client requests. .NET lowercases every character of an ID with ToLowerInvariant, Unicode's
+// simple lowercase mapping, before it builds a path, so an ID with a character that mapping
+// changes (a capital letter outside ASCII, U+212A KELVIN SIGN) is in no path a client sends. Such
+// a path is refused: the upstream would lowercase it into another ID's, while patterns, claims and
+// pin rules, which compare names character by character, would not (R-NUGET-003).
+func ClientForm(lower string) bool {
+	for _, r := range lower {
+		if unicode.ToLower(r) != r {
+			return false
+		}
+	}
+	return true
+}
+
 // SameID reports whether two IDs are the same ID: equal once both are lower-cased character by
 // character with Unicode's simple lowercase mapping, which is what .NET's ToLowerInvariant does
 // and so how a client turns an ID into the path it requests (R-NUGET-003, Q-NUGET-84). R-NUGET-015

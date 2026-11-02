@@ -59,7 +59,10 @@ package is inspected after the digest check and before the item is committed, ou
   a client lowercases an ID into its path (U+212A KELVIN SIGN matches `k`, U+017F LONG S does not match `s`), and the version's URL form must equal the
   path's. A package that fails is 502 `upstream_package_mismatch` to every request of the fetch, and nothing is stored: no blob, no item, no row and no
   negative entry, so the right package is served as soon as the upstream serves it. The rows of an accepted package are keyed by the path's ID, the name of
-  its item (Q-NUGET-84).
+  its item (Q-NUGET-84). A path whose ID holds a character a client's lowercasing would change (U+212A KELVIN SIGN, a capital letter outside ASCII)
+  is the 404 of a missing resource before anything is asked of the upstream, and a forwarded search result with such an ID is removed: an upstream that
+  lowercases it itself would serve another ID's package, while the patterns, claims and pin rules compare the name character by character
+  (R-NUGET-003, `id.ClientForm`).
 - Content that no reader takes for a package is served and cached as the upstream sent it, logged and counted in
   `trove_nuget_remote_unparseable_packages_total{repo}`, and gets no NuGet row: no ZIP end record in the window a ZIP reader searches, a ZIP archive without a
   `.nuspec` at its root, a `.nuspec` that is not well-formed XML. The bytes are never altered. A client cannot read such content as a package either.
