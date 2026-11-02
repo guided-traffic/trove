@@ -430,11 +430,15 @@ npm:
 | `npm deprecate` | name | `deploy` | yes |
 | `npm search` | repository level; results filtered per name | `read` | — |
 | npm metadata recalculation | repository level | `manage` | — |
-| `npm whoami` | none | an authenticated subject | — |
+| `npm whoami` | none | an authenticated subject who can read the repository (Q-AUTHZ-167) | — |
 
-A package document `PUT` is classified by comparing it with the stored document: an added version
-needs `deploy`, a removed version `delete`, changed dist-tags or deprecation messages `deploy`. A
-request that does several of these needs every action involved.
+The npm package document is written by two requests, and the path says which. The revisioned `PUT
+{name}/-rev/{rev}` (the first request of `npm unpublish name@version`) removes the versions its
+document lacks and needs `delete`; the dist-tags in that document are not a write of tags, they
+follow the rule of an unpublish ([formats/npm.md](formats/npm.md) R-NPM-017). Dist-tag writes have
+their own endpoints and need `deploy`. The unrevisioned `PUT {name}` is a publish (`deploy`);
+without an attachment it is the metadata update of `npm deprecate`, which is not built and answers
+404 whatever the actions (R-NPM-043); once it is built it needs `deploy` (Q-AUTHZ-166).
 
 NuGet:
 
@@ -450,6 +454,27 @@ NuGet:
 | Symbol package push | ID | `deploy` | yes |
 
 The NuGet API key header carries a credential (INV-8) and plays no further part in authorization.
+
+**Per-format notes and tests (E3.4).** Every row of the two tables has one test per format, or a note below, each
+holding a principal with exactly the action of the row (plus `read`, which a client needs to see
+the repository) against one who lacks it: `TestR_AUTHZ_007_NPMActionMap`
+([test/integration/npm/actions_test.go](../../test/integration/npm/actions_test.go)) and
+`TestR_AUTHZ_007_NuGetActionMap`
+([test/integration/nuget/actions_test.go](../../test/integration/nuget/actions_test.go)). The
+repositories of these tests have `packageOwnership: off`, so that only the action is shown;
+ownership and the shadowing check have their own tests (R-AUTHZ-018, R-REPO-048). A row that does
+not apply to a format, or that the format does not serve yet, is recorded here and not tested for
+the action:
+
+| Row | npm | NuGet |
+|---|---|---|
+| Dist-tag add and remove, deprecate | applies; deprecate is not built: the metadata update answers 404 with every action (R-NPM-043), and the test pins that answer so that it fails the day deprecation is built | not applicable: NuGet has neither dist-tags nor deprecation |
+| Search | not built: `-/v1/search` answers 404 (R-NPM-043); pinned the same way | applies |
+| Autocomplete | not applicable | not built (P1, R-NUGET-011): answers 501 `nuget_not_implemented` with every action; pinned the same way |
+| Metadata recalculation | not built: the endpoint (R-REPO-016, R-API-024) is not in the API document before M7 | no row in the NuGet table; the NuGet reindex (R-NUGET-025) is covered by R-REPO-016 |
+| `npm whoami` (and `npm ping`) | applies: an authenticated subject who may read the repository (Q-AUTHZ-167) | not applicable |
+| Unlist, relist, symbol package push | not applicable | applies; the delete row is tested in a repository of each `deleteMode` |
+| Push of an existing, deleted or moved-away version | applies: 409 `npm_version_exists` | applies: 409 `nuget_version_exists`, `nuget_version_deleted`; the `reserved` tombstone of a restore and a moved-away version arrive with P1 operations and have no test here |
 
 **First version of a name.** A write that gives a local repository the first version of a name
 passes the shadowing check of [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-048 in
@@ -3737,6 +3762,40 @@ Context: the lift of Q-AUTHZ-163 needs `Addressed` on the coordinate of every de
 **Amended 2026-11-01 (Q-ARCH-252):** the revisit condition was met (the tiers of the virtual engine, the npm audit forwarder and the re-target of a write-intent read each built a member request, and the read check of the forwarder's member carried no addressed repository, so a token scoped to the virtual repository by its exact key could not run `npm audit` through it). The field is now unexported (`via`); a member request is made only by `Request.Member(m)`, which keeps the outermost addressed key and refuses a repository that is no member; `Request.Addressed()` is the one reader, and both coordinate builders (`coordinate()` for `Host.Authorize`, `populateCoordinate`) put it into `Coordinate.Addressed`. A read that stands for a write (`GET {name}?write=true`, R-NPM-029) is derived with `Request.WriteTarget`, which carries no addressed key: the scope must name the deployment target itself. `virtual.RemoteCall.Via` is `RemoteCall.Addressed`.
 
 **Applied in the spec:** R-AUTHZ-009, R-AUTHZ-013. Code: `internal/formats/route.go` (`Request.Addressed`, `Member`, `WriteTarget`; was `Request.Via`), `internal/formathost/virtual.go` (`forMember`), `internal/formathost/host.go` (`coordinate`), `internal/formathost/remote.go` (`populateCoordinate`). Tests: `TestR_AUTHZ_013_AMemberRequestCarriesTheOutermostAddressedKeyIntoBothCoordinates`, `TestR_AUTHZ_013_ASetupTokenRunsTheAuditThroughTheVirtualRepository`, `TestR_AUTHZ_013_ThePopulateCheckOfARemoteMemberFollowsTheAddressedVirtualRepository`, `TestR_AUTHZ_013_ASetupTokenFillsAndReadsARemoteMemberThroughTheVirtualRepository`.
+
+### Q-AUTHZ-166 · The path classifies a write to an npm package document
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-AUTHZ-007 said a package document `PUT` is classified by comparing it with the stored document (an added version `deploy`, a removed version `delete`, changed dist-tags or deprecation messages `deploy`, several of them every action). The E3.4 tests found that the format does not compare: `PUT {name}/-rev/{rev}` is the unpublish route (action `delete`, it removes the versions the document lacks and ignores the document's dist-tags), `PUT {name}` is the publish route (`deploy`), and a `PUT {name}` without an attachment is the metadata update of `npm deprecate`, which answers 404 until it is built (R-NPM-043).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The path classifies | The route fixes the action: revisioned `PUT` is `delete`, unrevisioned `PUT` is `deploy`, tags and deprecation never ride on the unpublish route | What npm sends is exactly two request shapes, each with one purpose; no request can need two actions, so no partial-grant case exists | A client that sends a hand-made document to the revisioned route cannot move a tag with it (it never could) |
+| (b) Compare with the stored document | Diff the document against the stored one and require every action involved | Matches the sentence the spec carried | The body must be read and diffed before the check; the revisioned route would write tags, a second way to change them next to the dist-tag endpoints; more code on the one path that must stay a pure removal |
+
+**Choice:** (a).
+
+**Rationale:** the comparison was never built and nothing needs it: npm unpublish, dist-tag and publish each have their own request shape. The development agent revisits this if deprecation is built on the revisioned route or a client is found that changes tags through the document.
+
+**Applied in the spec:** R-AUTHZ-007 (the paragraph on the package document `PUT`, the per-format notes). Tests: `TestR_AUTHZ_007_NPMActionMap` (the cases for unpublish, dist-tag add and remove, and the revisioned document `PUT`).
+
+### Q-AUTHZ-167 · npm whoami and ping need a subject that can read the repository
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-AUTHZ-007 and R-NPM-019 gave `npm whoami` (and `npm ping`) the requirement "an authenticated subject" and no action. The route is registered with the action `read`, so an authenticated subject without `read` on the repository gets 404 (R-AUTHZ-016), an anonymous caller 401.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Authenticated and able to read the repository | Keep the route as built; the spec says so | A subject who may not read a repository does not learn from `whoami` or `ping` that it exists (R-AUTHZ-016); a client that can install or publish can always read | `npm whoami` against a repository the subject cannot read fails with `E404` instead of printing the name |
+| (b) Any authenticated subject | The route needs no action | `whoami` works against any repository URL | Any valid token confirms which repository keys exist; a second code path that skips the repository check |
+
+**Choice:** (a).
+
+**Rationale:** the only subjects that use the endpoint are npm clients configured for a repository they use, and those hold `read` at least (`npm publish` and `npm install` need it). The development agent revisits this if a client is found that calls `whoami` before it holds any grant.
+
+**Applied in the spec:** R-AUTHZ-007 (npm table), [formats/npm.md](formats/npm.md) R-NPM-019. Tests: `TestR_AUTHZ_007_NPMActionMap` (the `whoami` and `ping` cases).
 
 ## What this does not cover
 

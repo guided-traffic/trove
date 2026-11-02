@@ -1098,8 +1098,8 @@ Priority: **MVP** · Covers: PKG-NPM-011, PKG-NPM-058
 
 | Method | Path | Response | Permission |
 |---|---|---|---|
-| GET | `-/whoami` | 200 `{"username": "<name>"}`, the name rendered per R-AUTH-033 (user name, `sa:<name>`, `ci:<CI issuer name>/<mapping name>`); 401 for anonymous callers | authenticated subject (R-AUTHZ-007) |
-| GET | `-/ping` (query `write=true` accepted and ignored) | 200 `{}`; 401 for anonymous callers, also where the repository is anonymously readable (Q-NPM-29) | authenticated subject (R-AUTHZ-007) |
+| GET | `-/whoami` | 200 `{"username": "<name>"}`, the name rendered per R-AUTH-033 (user name, `sa:<name>`, `ci:<CI issuer name>/<mapping name>`); 401 for anonymous callers | authenticated subject who can read the repository, 404 for one who cannot (R-AUTHZ-007, Q-AUTHZ-167) |
+| GET | `-/ping` (query `write=true` accepted and ignored) | 200 `{}`; 401 for anonymous callers, also where the repository is anonymously readable (Q-NPM-29) | authenticated subject who can read the repository, 404 for one who cannot (R-AUTHZ-007, Q-AUTHZ-167) |
 
 Acceptance criteria:
 
