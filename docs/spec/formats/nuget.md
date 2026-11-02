@@ -633,6 +633,8 @@ API ([package publish](https://learn.microsoft.com/en-us/nuget/api/package-publi
 - The request runs the ingestion pipeline of R-NUGET-005. A body that is not
   `multipart/form-data` MAY be accepted as the raw `.nupkg`, for scripted uploads with `curl`.
 - This is an API-key endpoint (R-NUGET-012).
+- The address is `<feed>/package` with or without one trailing slash: the clients extend the address of the service index by
+  a slash before they PUT to it (Q-NUGET-66). `<feed>/symbolpackage` behaves the same (R-NUGET-020).
 - Versions are immutable for the lifetime of the repository (Q-NUGET-6). These rules hold
   whatever permissions the caller holds, `overwrite` included (R-AUTHZ-006 lets a format refuse
   overwrites), and for every ingestion path into a local repository (protocol push,
@@ -3464,6 +3466,90 @@ Context: the skeleton routes every operation of the table and serves the service
 
 **Applied in the spec:** R-NUGET-002 (the note on the resources). Code: [handlers_stub.go](../../../internal/formats/nuget/handlers_stub.go), [format.go](../../../internal/formats/nuget/format.go) `Inspect`. Tests: `TestR_NUGET_001_AnOperationThatIsNotBuiltAnswers501`. The `Inspect` clause is replaced by [Q-NUGET-38](#q-nuget-38--the-roads-around-the-push-route-inspect-reads-the-package-the-commit-refuses-it): `Inspect` reads the package, and the 501 moved to the commit of an upload that is not a push; the push, the unlist, the relist and the delete are built.
 
+### Q-NUGET-33 · The clients image: one .NET SDK, and nuget.exe on Mono
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-NUGET-027 runs the .NET 10 SDK on Linux and nuget.exe on a Windows runner. The e2e suite runs in kind on Linux, so a
+nuget.exe row there needs a runtime for a .NET Framework executable. The SDK image of the golden vectors
+(`NUGETVECTORS_SDK_IMAGE`) is Ubuntu 24.04, whose `universe` archive carries Mono 6.8.0.105 for amd64 and arm64.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The SDK image plus Mono from its Ubuntu, nuget.exe by version and SHA-256 | `test/e2e/nugetclients/Dockerfile`: `mono-complete` and `ca-certificates-mono` at an exact apt version, `nuget.exe` from dist.nuget.org checked against a digest in `tools/versions.env` | The protocol of nuget.exe (its own HTTP stack, `nuget.config` handling, `-ApiKey`, `search`, `install`) runs against trove on every change, not only on the Windows runner; one base image with the SDK of the vectors; nothing from a third-party apt repository | Mono 6.8 is unmaintained and its TLS stack stops at TLS 1.2 (a listener with `min_version: "1.3"` cannot be reached by it); the apt version is exact, so Ubuntu replacing the package fails the build until the pin is moved |
+| (b) nuget.exe on the Windows runner only | No Mono; the Linux image has `dotnet` only | No unmaintained runtime in CI | The Windows runner is outside the per-change kind suite, so every nuget.exe-specific behavior (the pre-authentication of R-NUGET-001 for clients older than the SDK's, `-ApiKey` header, the symbol push address) is seen only on the closing run |
+| (c) A current Mono from the Mono project's apt repository | A newer runtime | Maintained; TLS 1.3 may work | An apt source outside the pinned images, whose packages cannot be pinned by digest; a second source of base packages in a test image |
+
+**Choice:** (a). The .NET SDK is the image of the golden vectors: `E2E_NUGETCLIENTS_SDK_IMAGE` and `NUGETVECTORS_SDK_IMAGE` are
+the same value and `make versions-check` (`test/e2e/nugetclients/check-pins.mjs`) fails when they differ, so the repository has one
+.NET SDK. nuget.exe is 7.9.0 (the NuGet.Versioning of the vectors is 7.9.0, too), with its SHA-256.
+
+**Rationale:**
+- Verified in this change, on linux/arm64: `nuget help` prints 7.9.0.83 on Mono 6.8.0.105; `nuget install` fetches a package
+  from the counting test upstream over TLS and verifies the dev CA's chain; `nuget search` against the dev edge gets trove's
+  HTTP status, not a certificate error; the same two commands without the CA fail on the certificate
+  (`test/e2e/nugetclients/smoke.sh`, `TestNuGetClients`). Not verified: linux/amd64 (CI's architecture; the Ubuntu package and
+  nuget.exe are the same, the image is not built there yet), and any push, delete or symbol push by nuget.exe on Mono.
+- The Windows row of R-NUGET-027 stays: Mono is a substitute for the protocol coverage per change, not for the platform.
+- The development agent would revisit this if a nuget.exe scenario of the suite fails on Mono and passes on Windows for a reason
+  of the runtime (then that scenario runs on the Windows runner only and the Mono row keeps the rest), if Ubuntu drops Mono
+  (then (b)), or if the suite needs TLS 1.3 on a listener nuget.exe talks to.
+
+**Applied in the spec:** none (R-NUGET-027's table already lists nuget.exe; the Linux row for it is the addition this entry
+describes). Elsewhere: [test/e2e/nugetclients](../../../test/e2e/nugetclients), [tools/versions.env](../../../tools/versions.env),
+[docs/developer/e2e.md](../../developer/e2e.md#the-nuget-clients).
+
+### Q-NUGET-34 · The e2e sets of the NuGet tests
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+`deploy/dev/e2e.sh` runs a set as `go test -run <regexp>`. The npm sets list their test families by name. The NuGet tests are written
+by later packages, and the tests that run only nightly or on the closing run (the HA scenarios, the additions of the last
+run) must not run on every change.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An explicit list per set, as for npm | `^TestNuGet(Clients\|Matrix\|...)` | The set says what it contains | Every new test family edits the script, and a test whose family is not listed is silently not run by any set |
+| (b) `^TestNuGet` with `-skip '^TestNuGet(Closing\|HA)'` | The sets `nuget-closing` (`^TestNuGetClosing`) and `nuget-ha` (`^TestNuGetHA`) take the families the name rule reserves; `nuget` takes the rest | A new test is in the per-change set by being named `TestNuGet...`; the exceptions are two prefixes, not a list | A name decides the tier: a nightly test must start with `TestNuGetClosing` or `TestNuGetHA` |
+| (c) One set per test file | A set per `nuget_*_test.go` | Fine control | A file per set, and the same drift as (a) |
+
+**Choice:** (b). `TROVE_E2E_RUN` replaces both the expression and the skip, so a single subtest can be run by hand. The set
+`nuget-clients` runs `^TestNuGetClients$` alone (the smoke test of the pods).
+
+**Rationale:** the run that finds "matched no test" a failure (`e2e.sh`) cannot find a family that no set names, so the rule must
+be the one that includes by default. The development agent would revisit this if a third tier appears (then a prefix per tier, or a
+list as in (a)).
+
+**Applied in the spec:** none. Elsewhere: [deploy/dev/e2e.sh](../../../deploy/dev/e2e.sh) (marker `M3 nuget-clients`),
+[docs/developer/e2e.md](../../developer/e2e.md#the-nuget-clients).
+
+### Q-NUGET-35 · How the clients pod gets the dev CA, and what a test must set per run
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The dev CA is generated per cluster (cert-manager), so it cannot be in the image. `dotnet` reads its trust from OpenSSL
+(`SSL_CERT_FILE`, `SSL_CERT_DIR`), Mono from its own store (`~/.config/.mono/certs`, filled by `cert-sync`). The pod's root
+filesystem is read-only. NuGet keeps a package folder (`NUGET_PACKAGES`) and an HTTP cache (`NUGET_HTTP_CACHE_PATH`) in the home directory.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The entrypoint builds the trust at pod start | `entrypoint.sh` writes `$SSL_CERT_FILE` (the system roots plus the mounted CA), runs `cert-sync --user` on it, writes a `ready` file that the readiness probe checks, then becomes `fwd` | Every `kubectl exec` of every test finds the trust done; the CA is mounted, never baked; the pod is not ready before both runtimes trust the CA | A pod start takes a few seconds longer (the sync of about 120 roots) |
+| (b) The CA is mounted and each test passes options | `-p:...`/`--ca` flags per call | No start step | `dotnet` and nuget.exe have no option for an extra CA; it would be a wrapper per call, with the sync cost on every Mono invocation |
+| (c) The CA in the image | Built per cluster | No start step | The CA of a recreated cluster differs from the image's; a stale CA looks like a client bug (a stale copy of `.dev/pki/ca.crt` in a checkout showed exactly that while this was built: the clients failed on the certificate of a cluster that had been recreated) |
+
+**Choice:** (a). A test gives every run its own `NUGET_PACKAGES` and `NUGET_HTTP_CACHE_PATH` below `/work`, because the
+default folders are shared by all tests of a pod: a package already unpacked there, or a metadata document in the HTTP cache,
+makes a restore skip the server and the counters of the test upstream (E3.2: one request per `.nupkg`) would count nothing.
+`HOME` stays `/work` (an emptyDir), where Mono keeps its store.
+
+**Rationale:** verified in a pod of the dev cluster (restricted security context, read-only root): both runtimes verify the edge
+and the test upstream, and refuse a certificate without the CA. The development agent would revisit this if a client needs the CA
+in a place this does not reach (a tool that reads `/etc/ssl/certs` directly): the entrypoint would then also write a hashed
+directory for `SSL_CERT_DIR`.
+
+**Applied in the spec:** none. Elsewhere: [test/e2e/nugetclients/entrypoint.sh](../../../test/e2e/nugetclients/entrypoint.sh),
+[docs/developer/e2e.md](../../developer/e2e.md#the-nuget-clients).
+
 ### Q-NUGET-36 · The order of the checks of a push, and how a repeated push is told from a rebuild
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -3553,90 +3639,6 @@ Context: the tombstone is read inside the commit transaction, after the package 
 **Rationale:** the failure is a property of the design, and the test that found it is part of the suite. `READ COMMITTED` makes a read in the transaction after the lock see every removal that committed before. The development agent would revisit this if the runner's isolation level changed.
 
 **Applied in the spec:** none. Code: [store.go](../../../internal/formats/nuget/store.go) `Tombstone`, [internal/formatdata/nuget/store.go](../../../internal/formatdata/nuget/store.go). Tests: `TestR_NUGET_006_ConcurrentPushesOfOneVersion`, `TestR_NUGET_006_APushRacingAHardDeleteSeesTheVersionOrItsTombstone`.
-
-### Q-NUGET-33 · The clients image: one .NET SDK, and nuget.exe on Mono
-
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
-
-R-NUGET-027 runs the .NET 10 SDK on Linux and nuget.exe on a Windows runner. The e2e suite runs in kind on Linux, so a
-nuget.exe row there needs a runtime for a .NET Framework executable. The SDK image of the golden vectors
-(`NUGETVECTORS_SDK_IMAGE`) is Ubuntu 24.04, whose `universe` archive carries Mono 6.8.0.105 for amd64 and arm64.
-
-| Option | What it means | For | Against |
-|---|---|---|---|
-| (a) The SDK image plus Mono from its Ubuntu, nuget.exe by version and SHA-256 | `test/e2e/nugetclients/Dockerfile`: `mono-complete` and `ca-certificates-mono` at an exact apt version, `nuget.exe` from dist.nuget.org checked against a digest in `tools/versions.env` | The protocol of nuget.exe (its own HTTP stack, `nuget.config` handling, `-ApiKey`, `search`, `install`) runs against trove on every change, not only on the Windows runner; one base image with the SDK of the vectors; nothing from a third-party apt repository | Mono 6.8 is unmaintained and its TLS stack stops at TLS 1.2 (a listener with `min_version: "1.3"` cannot be reached by it); the apt version is exact, so Ubuntu replacing the package fails the build until the pin is moved |
-| (b) nuget.exe on the Windows runner only | No Mono; the Linux image has `dotnet` only | No unmaintained runtime in CI | The Windows runner is outside the per-change kind suite, so every nuget.exe-specific behavior (the pre-authentication of R-NUGET-001 for clients older than the SDK's, `-ApiKey` header, the symbol push address) is seen only on the closing run |
-| (c) A current Mono from the Mono project's apt repository | A newer runtime | Maintained; TLS 1.3 may work | An apt source outside the pinned images, whose packages cannot be pinned by digest; a second source of base packages in a test image |
-
-**Choice:** (a). The .NET SDK is the image of the golden vectors: `E2E_NUGETCLIENTS_SDK_IMAGE` and `NUGETVECTORS_SDK_IMAGE` are
-the same value and `make versions-check` (`test/e2e/nugetclients/check-pins.mjs`) fails when they differ, so the repository has one
-.NET SDK. nuget.exe is 7.9.0 (the NuGet.Versioning of the vectors is 7.9.0, too), with its SHA-256.
-
-**Rationale:**
-- Verified in this change, on linux/arm64: `nuget help` prints 7.9.0.83 on Mono 6.8.0.105; `nuget install` fetches a package
-  from the counting test upstream over TLS and verifies the dev CA's chain; `nuget search` against the dev edge gets trove's
-  HTTP status, not a certificate error; the same two commands without the CA fail on the certificate
-  (`test/e2e/nugetclients/smoke.sh`, `TestNuGetClients`). Not verified: linux/amd64 (CI's architecture; the Ubuntu package and
-  nuget.exe are the same, the image is not built there yet), and any push, delete or symbol push by nuget.exe on Mono.
-- The Windows row of R-NUGET-027 stays: Mono is a substitute for the protocol coverage per change, not for the platform.
-- The development agent would revisit this if a nuget.exe scenario of the suite fails on Mono and passes on Windows for a reason
-  of the runtime (then that scenario runs on the Windows runner only and the Mono row keeps the rest), if Ubuntu drops Mono
-  (then (b)), or if the suite needs TLS 1.3 on a listener nuget.exe talks to.
-
-**Applied in the spec:** none (R-NUGET-027's table already lists nuget.exe; the Linux row for it is the addition this entry
-describes). Elsewhere: [test/e2e/nugetclients](../../../test/e2e/nugetclients), [tools/versions.env](../../../tools/versions.env),
-[docs/developer/e2e.md](../../developer/e2e.md#the-nuget-clients).
-
-### Q-NUGET-34 · The e2e sets of the NuGet tests
-
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
-
-`deploy/dev/e2e.sh` runs a set as `go test -run <regexp>`. The npm sets list their test families by name. The NuGet tests are written
-by later packages, and the tests that run only nightly or on the closing run (the HA scenarios, the additions of the last
-run) must not run on every change.
-
-| Option | What it means | For | Against |
-|---|---|---|---|
-| (a) An explicit list per set, as for npm | `^TestNuGet(Clients\|Matrix\|...)` | The set says what it contains | Every new test family edits the script, and a test whose family is not listed is silently not run by any set |
-| (b) `^TestNuGet` with `-skip '^TestNuGet(Closing\|HA)'` | The sets `nuget-closing` (`^TestNuGetClosing`) and `nuget-ha` (`^TestNuGetHA`) take the families the name rule reserves; `nuget` takes the rest | A new test is in the per-change set by being named `TestNuGet...`; the exceptions are two prefixes, not a list | A name decides the tier: a nightly test must start with `TestNuGetClosing` or `TestNuGetHA` |
-| (c) One set per test file | A set per `nuget_*_test.go` | Fine control | A file per set, and the same drift as (a) |
-
-**Choice:** (b). `TROVE_E2E_RUN` replaces both the expression and the skip, so a single subtest can be run by hand. The set
-`nuget-clients` runs `^TestNuGetClients$` alone (the smoke test of the pods).
-
-**Rationale:** the run that finds "matched no test" a failure (`e2e.sh`) cannot find a family that no set names, so the rule must
-be the one that includes by default. The development agent would revisit this if a third tier appears (then a prefix per tier, or a
-list as in (a)).
-
-**Applied in the spec:** none. Elsewhere: [deploy/dev/e2e.sh](../../../deploy/dev/e2e.sh) (marker `M3 nuget-clients`),
-[docs/developer/e2e.md](../../developer/e2e.md#the-nuget-clients).
-
-### Q-NUGET-35 · How the clients pod gets the dev CA, and what a test must set per run
-
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
-
-The dev CA is generated per cluster (cert-manager), so it cannot be in the image. `dotnet` reads its trust from OpenSSL
-(`SSL_CERT_FILE`, `SSL_CERT_DIR`), Mono from its own store (`~/.config/.mono/certs`, filled by `cert-sync`). The pod's root
-filesystem is read-only. NuGet keeps a package folder (`NUGET_PACKAGES`) and an HTTP cache (`NUGET_HTTP_CACHE_PATH`) in the home directory.
-
-| Option | What it means | For | Against |
-|---|---|---|---|
-| (a) The entrypoint builds the trust at pod start | `entrypoint.sh` writes `$SSL_CERT_FILE` (the system roots plus the mounted CA), runs `cert-sync --user` on it, writes a `ready` file that the readiness probe checks, then becomes `fwd` | Every `kubectl exec` of every test finds the trust done; the CA is mounted, never baked; the pod is not ready before both runtimes trust the CA | A pod start takes a few seconds longer (the sync of about 120 roots) |
-| (b) The CA is mounted and each test passes options | `-p:...`/`--ca` flags per call | No start step | `dotnet` and nuget.exe have no option for an extra CA; it would be a wrapper per call, with the sync cost on every Mono invocation |
-| (c) The CA in the image | Built per cluster | No start step | The CA of a recreated cluster differs from the image's; a stale CA looks like a client bug (a stale copy of `.dev/pki/ca.crt` in a checkout showed exactly that while this was built: the clients failed on the certificate of a cluster that had been recreated) |
-
-**Choice:** (a). A test gives every run its own `NUGET_PACKAGES` and `NUGET_HTTP_CACHE_PATH` below `/work`, because the
-default folders are shared by all tests of a pod: a package already unpacked there, or a metadata document in the HTTP cache,
-makes a restore skip the server and the counters of the test upstream (E3.2: one request per `.nupkg`) would count nothing.
-`HOME` stays `/work` (an emptyDir), where Mono keeps its store.
-
-**Rationale:** verified in a pod of the dev cluster (restricted security context, read-only root): both runtimes verify the edge
-and the test upstream, and refuse a certificate without the CA. The development agent would revisit this if a client needs the CA
-in a place this does not reach (a tool that reads `/etc/ssl/certs` directly): the entrypoint would then also write a hashed
-directory for `SSL_CERT_DIR`.
-
-**Applied in the spec:** none. Elsewhere: [test/e2e/nugetclients/entrypoint.sh](../../../test/e2e/nugetclients/entrypoint.sh),
-[docs/developer/e2e.md](../../developer/e2e.md#the-nuget-clients).
 
 ### Q-NUGET-41 · The instant a document shows: whole seconds, UTC
 
@@ -3841,79 +3843,6 @@ Context: R-UI-049 and R-UI-019 want a guide for every class and every client the
 
 **Applied in the spec:** R-NUGET-026 (the guide bullet). Code: [guide.go](../../../internal/formats/nuget/guide.go), [guide/](../../../internal/formats/nuget/guide). Tests: `TestR_UI_049_NuGetHasAGuideForEveryVariant`, `TestR_UI_049_TheNuGetTroubleshootingCodesAreTroves`, `TestR_UI_049_EveryCodeTheNuGetGuideNamesExists`, `TestR_NUGET_026_TheGuideStatesTheDefaults`, `TestR_UI_049_TheNuGetGuideShowsTheSnippetsOfTheClientSetup`.
 
-### Q-NUGET-60 · What the symbol indexing job does before the symbol server exists
-
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
-
-Context: Q-NUGET-11 decided that the symbol push enqueues one `nuget-symbol-index` job per symbol package, and R-NUGET-020 placed the enqueue "from R-NUGET-021 on". The work package that ships the symbol push also registers the job kind, so the pushes of the MVP already leave jobs behind. The extraction of PDBs, their keys and the checksum belong to the symbol server (R-NUGET-021, P1), which does not exist yet. The job needs a defined effect until then.
-
-| Option | What it means | For | Against |
-|---|---|---|---|
-| (a) No enqueue until R-NUGET-021 ships | The push stores only; the P1 release backfills every package | No job rows that do nothing | The enqueue path, the kind, the queue and the dedup key ship untested with the P1 release; R-NUGET-021's acceptance test of a push that enqueues in the same transaction starts from nothing |
-| (b) Enqueue now; the handler reads the state of the package, records it as its result and leaves `indexed_at` unset (chosen) | `gone` when the version or its symbol package was removed, `indexed` when `indexed_at` is set, `stored` otherwise; `files` is 0 | The queue, the kind, the dedup key and the transactional enqueue are exercised from the first push; every package stays pending, so the P1 release finds exactly the packages to index with `indexed_at IS NULL` and the partial index `nuget_symbol_package_pending` | A job row per symbol push that extracts nothing |
-| (c) Enqueue now; the handler sets `indexed_at` | The package counts as indexed | The pending set stays empty | The P1 release would skip every package stored before it (it skips packages with `indexed_at` set), so it would need a second marker or a reindex of everything |
-| (d) Build the extraction and the keys now | The full R-NUGET-021 job without the HTTP route | One step less later | The PDB readers (the `#Pdb` stream, the MSF container) and the ranged-read and spool code are P1 scope, unrelated to the push; building them here delays the push |
-
-**Choice:** (b).
-
-**Rationale:** it keeps the one property that matters for the later work, that `indexed_at IS NULL` means "not yet indexed", and it makes the transactional enqueue and the worker path a tested fact now. The handler is idempotent and reads one row. The development agent revisits this when R-NUGET-021 is built: the handler then gains the extraction and sets `indexed_at`, and the data migration enqueues the packages with `indexed_at` unset.
-
-**Applied in the spec:** R-NUGET-020 (the job paragraph and the acceptance criteria). Code: [symbols.go](../../../internal/formatdata/nuget/symbols.go), [handlers_symbols.go](../../../internal/formats/nuget/handlers_symbols.go). Tests: `TestR_NUGET_020_TheIndexingJobRunsOnAWorkerAndRecordsWhatItFound`, `TestR_NUGET_020_ASymbolPushIsStoredLinkedAndQueuedForIndexing`.
-
-### Q-NUGET-61 · How deep a symbol push looks, and what it writes
-
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
-
-Context: R-NUGET-020 requires every `.pdb` to be a Portable PDB or a Windows PDB "by its file signature" and says the push extracts nothing. A symbol package can hold files of tens of megabytes, and the push runs on a `web` replica (P-11). The item must also be removable with its version.
-
-| Option | What it means | For | Against |
-|---|---|---|---|
-| (a) Read the first 32 bytes of each `.pdb`; link the item to the version; raise the package revision (chosen) | `BSJB` is a Portable PDB, the `Microsoft C/C++ MSF 7.00` banner a Windows PDB; the entry is held to the compression ratio of the archive rules | Constant memory per entry, whatever its size; the removal of the version takes the symbol package along with no code of the format; one rule for all generic writes | A `.pdb` with a valid signature and a corrupt body passes the push and ends in `index_error` at the job (R-NUGET-021), as its acceptance test expects |
-| (b) Parse the PDB streams at the push | Validate the `#Pdb` stream or the MSF directory | Corrupt files are refused with 400 | Reads (and for a deflated entry inflates) the file in full inside the request; the parsers are P1 scope |
-| (c) Store the item without linking it to the version | Only the `nuget_symbol_package` row ties them | One call less | The hard delete of a version removes the items of the version; an unlinked `.snupkg` would stay, orphaned, and a later symbol push for the number would meet a different file at its path |
-
-**Choice:** (a). The extensions are compared case-insensitively on the decoded entry path, directory entries are skipped, and the first entry that breaks a rule is named in the 400. The dependencies of a symbol package are not read. The `.snupkg` is a plain item (not generated); its `nuget.id` and `nuget.version` properties are set like those of the other items of the version. The push raises `packages.rev_seq` because it changes the generic rows (the item link); that invalidates merged documents of virtual repositories earlier than needed, which is harmless.
-
-**Rationale:** it meets the "extracts nothing" rule with memory bounded independently of the file size. The development agent revisits this if the P1 indexing shows corrupt packages are common enough to deserve an early refusal.
-
-**Applied in the spec:** R-NUGET-020 (the symbol push paragraph and the acceptance criteria). Code: [symbols.go](../../../internal/formats/nuget/symbols/symbols.go), [head.go](../../../internal/formats/nuget/nupkg/head.go). Tests: `TestR_NUGET_020_ARefusedSymbolPackageIs400`, `TestR_NUGET_020_ASymbolPackageGoesWithItsVersion`, `TestR_NUGET_020_EveryPdbIsChecked`, `TestR_NUGET_020_HeadReadsTheStartOfAnEntryOnly`.
-
-### Q-NUGET-62 · The version a NuGet rule is asked about: the normalized lower-case URL form
-
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
-
-Context: a rule's range is compared by the format's adapter (`InRange`), which parses both sides, so `2.0` and `2.0.0.0` agree. Its `versions` include and exclude lists are patterns the decision point compares with the version string the format passes with a request. NuGet has several spellings of one version (`2.1`, `2.1.0.0`, `2.1.0+build`, `2.1.0-Beta.1`) and the format decides which one it asks about.
-
-| Option | What it means | For | Against |
-|---|---|---|---|
-| (a) The normalized, lower-case URL form of R-NUGET-003 for every question (chosen) | Documents, files and search ask `lower_id` and `lower_version`; an administrator writes `2.1.0-beta.1` | One spelling for the route, the document and the decision, so a file is served exactly when a document lists it; no second normalizer in the hot path | A pattern in another spelling matches nothing, and an exclude of that kind exposes the version (H-380) |
-| (b) The version as the client wrote it in the request | The path segment unchanged | Matches what a person types | Two requests for one version are decided differently; a document lists a version the file route refuses |
-| (c) Ask under every spelling | The format asks for the original, the full and the URL form | A pattern in any of the three matches | Three decisions per version and row, and a fourth spelling (`2.1.0.0`) still escapes |
-
-**Choice:** (a). The range is the supported way to name versions in any spelling; the manual says that the lists are compared letter by letter with the canonical form.
-
-**Rationale:** the one spelling is what the registration page bounds, the flat container and the canonical paths use already (R-NUGET-003), so exposure cannot disagree with them. The development agent revisits this when the decision point can fold version patterns with a format rule (Q-EP-69 option (b)); (a) then keeps its meaning and the folding only widens what matches.
-
-**Applied in the spec:** R-NUGET-034 (Version ranges). Code: [exposure.go](../../../internal/formats/nuget/exposure.go) `hiddenVersion`, [documents.go](../../../internal/formats/nuget/documents.go) `exposes`. Tests: `TestR_NUGET_034_RangeNotationOfRules`, `TestR_NUGET_034_VersionIncludesAndExcludesCompareTheCanonicalForm` (integration).
-
-### Q-NUGET-63 · Where the exposure filter sits: on the rows before a document is rendered, and in the read scope for search
-
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
-
-Context: R-NUGET-034 has the filter run "after the merge of a virtual repository and the rewrite of a remote document", and R-NUGET-009 pages over the exposed versions. npm filters the bytes of a merged document because its documents are one JSON object per package. A NuGet document is rendered by the format from rows, and the paging, the counts and the bounds depend on which rows are in it.
-
-| Option | What it means | For | Against |
-|---|---|---|---|
-| (a) A predicate over the version rows, applied before the document is rendered and paged; search by the read scope of the decision point; one version by `hiddenVersion` (chosen) | `viewOf` gives the handler its view, `exposes` the predicate over one ID, `Visible` applies it, `Resolver.ReadScope` carries the same rules for search | Paging, counts and bounds are computed once over the right list; no document is parsed back; a file and a document agree because both ask the view | Every handler that serves a version or a list must call it; a merge that yields bytes needs its rows back (H-295) |
-| (b) Filter the rendered bytes | Render everything, remove leaves and rebuild bounds | One place for merged and local documents | Counts, bounds and inlining must be rebuilt by a second implementation of R-NUGET-009 |
-| (c) A rendition per endpoint stored by the writer | Render on write | Fast reads | A rule change must re-render every document; the rule store is not the writer's |
-
-**Choice:** (a). The ETag and the rendition key carry the endpoint and its exposure fingerprint, so a change of rule is a new document without any invalidation.
-
-**Rationale:** the paging of R-NUGET-009 is a function of the list, so the filter belongs before it. The development agent revisits this if a remote or virtual class can only produce bytes; it then rebuilds rows from them before the predicate.
-
-**Applied in the spec:** R-NUGET-034. Code: [handlers_flat.go](../../../internal/formats/nuget/handlers_flat.go), [handlers_registration.go](../../../internal/formats/nuget/handlers_registration.go), [handlers_search.go](../../../internal/formats/nuget/handlers_search.go) (unchanged: the scope holds the rules), [exposure.go](../../../internal/formats/nuget/exposure.go). Tests: `TestR_NUGET_034_AcceptanceDocumentsOfTheExampleRule`, `TestR_NUGET_034_PagingRunsOverTheExposedVersions`, `TestR_NUGET_034_SearchOnAnEndpointWithRules`, `TestR_NUGET_034_DocumentsOnAnEndpointWithRules` (integration).
-
 ### Q-NUGET-51 · What a NuGet remote stores of an upstream, and where its registration pages live
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -4074,6 +4003,157 @@ Context: R-NUGET-019 says that without a deploy target a publish answers 405 `no
 **Rationale:** the refusal is the same fail-closed outcome with a less specific code. The development agent revisits this if the owner wants the 405 (the change is one case in the decision point and the dispatcher, for every format at once).
 
 **Applied in the spec:** R-NUGET-019 (the second bullet and the second acceptance criterion). Code: [index.go](../../../internal/formats/nuget/index.go) `takesPushes`. Tests: `TestR_NUGET_019_ThePublishResourcesAreListedWhenThereIsADeploymentTarget`, and the integration test `TestR_NUGET_019_PublishingThroughAVirtualRepositoryGoesToItsDeploymentTarget`.
+
+### Q-NUGET-60 · What the symbol indexing job does before the symbol server exists
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-NUGET-11 decided that the symbol push enqueues one `nuget-symbol-index` job per symbol package, and R-NUGET-020 placed the enqueue "from R-NUGET-021 on". The work package that ships the symbol push also registers the job kind, so the pushes of the MVP already leave jobs behind. The extraction of PDBs, their keys and the checksum belong to the symbol server (R-NUGET-021, P1), which does not exist yet. The job needs a defined effect until then.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) No enqueue until R-NUGET-021 ships | The push stores only; the P1 release backfills every package | No job rows that do nothing | The enqueue path, the kind, the queue and the dedup key ship untested with the P1 release; R-NUGET-021's acceptance test of a push that enqueues in the same transaction starts from nothing |
+| (b) Enqueue now; the handler reads the state of the package, records it as its result and leaves `indexed_at` unset (chosen) | `gone` when the version or its symbol package was removed, `indexed` when `indexed_at` is set, `stored` otherwise; `files` is 0 | The queue, the kind, the dedup key and the transactional enqueue are exercised from the first push; every package stays pending, so the P1 release finds exactly the packages to index with `indexed_at IS NULL` and the partial index `nuget_symbol_package_pending` | A job row per symbol push that extracts nothing |
+| (c) Enqueue now; the handler sets `indexed_at` | The package counts as indexed | The pending set stays empty | The P1 release would skip every package stored before it (it skips packages with `indexed_at` set), so it would need a second marker or a reindex of everything |
+| (d) Build the extraction and the keys now | The full R-NUGET-021 job without the HTTP route | One step less later | The PDB readers (the `#Pdb` stream, the MSF container) and the ranged-read and spool code are P1 scope, unrelated to the push; building them here delays the push |
+
+**Choice:** (b).
+
+**Rationale:** it keeps the one property that matters for the later work, that `indexed_at IS NULL` means "not yet indexed", and it makes the transactional enqueue and the worker path a tested fact now. The handler is idempotent and reads one row. The development agent revisits this when R-NUGET-021 is built: the handler then gains the extraction and sets `indexed_at`, and the data migration enqueues the packages with `indexed_at` unset.
+
+**Applied in the spec:** R-NUGET-020 (the job paragraph and the acceptance criteria). Code: [symbols.go](../../../internal/formatdata/nuget/symbols.go), [handlers_symbols.go](../../../internal/formats/nuget/handlers_symbols.go). Tests: `TestR_NUGET_020_TheIndexingJobRunsOnAWorkerAndRecordsWhatItFound`, `TestR_NUGET_020_ASymbolPushIsStoredLinkedAndQueuedForIndexing`.
+
+### Q-NUGET-61 · How deep a symbol push looks, and what it writes
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-020 requires every `.pdb` to be a Portable PDB or a Windows PDB "by its file signature" and says the push extracts nothing. A symbol package can hold files of tens of megabytes, and the push runs on a `web` replica (P-11). The item must also be removable with its version.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Read the first 32 bytes of each `.pdb`; link the item to the version; raise the package revision (chosen) | `BSJB` is a Portable PDB, the `Microsoft C/C++ MSF 7.00` banner a Windows PDB; the entry is held to the compression ratio of the archive rules | Constant memory per entry, whatever its size; the removal of the version takes the symbol package along with no code of the format; one rule for all generic writes | A `.pdb` with a valid signature and a corrupt body passes the push and ends in `index_error` at the job (R-NUGET-021), as its acceptance test expects |
+| (b) Parse the PDB streams at the push | Validate the `#Pdb` stream or the MSF directory | Corrupt files are refused with 400 | Reads (and for a deflated entry inflates) the file in full inside the request; the parsers are P1 scope |
+| (c) Store the item without linking it to the version | Only the `nuget_symbol_package` row ties them | One call less | The hard delete of a version removes the items of the version; an unlinked `.snupkg` would stay, orphaned, and a later symbol push for the number would meet a different file at its path |
+
+**Choice:** (a). The extensions are compared case-insensitively on the decoded entry path, directory entries are skipped, and the first entry that breaks a rule is named in the 400. The dependencies of a symbol package are not read. The `.snupkg` is a plain item (not generated); its `nuget.id` and `nuget.version` properties are set like those of the other items of the version. The push raises `packages.rev_seq` because it changes the generic rows (the item link); that invalidates merged documents of virtual repositories earlier than needed, which is harmless.
+
+**Rationale:** it meets the "extracts nothing" rule with memory bounded independently of the file size. The development agent revisits this if the P1 indexing shows corrupt packages are common enough to deserve an early refusal.
+
+**Applied in the spec:** R-NUGET-020 (the symbol push paragraph and the acceptance criteria). Code: [symbols.go](../../../internal/formats/nuget/symbols/symbols.go), [head.go](../../../internal/formats/nuget/nupkg/head.go). Tests: `TestR_NUGET_020_ARefusedSymbolPackageIs400`, `TestR_NUGET_020_ASymbolPackageGoesWithItsVersion`, `TestR_NUGET_020_EveryPdbIsChecked`, `TestR_NUGET_020_HeadReadsTheStartOfAnEntryOnly`.
+
+### Q-NUGET-62 · The version a NuGet rule is asked about: the normalized lower-case URL form
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a rule's range is compared by the format's adapter (`InRange`), which parses both sides, so `2.0` and `2.0.0.0` agree. Its `versions` include and exclude lists are patterns the decision point compares with the version string the format passes with a request. NuGet has several spellings of one version (`2.1`, `2.1.0.0`, `2.1.0+build`, `2.1.0-Beta.1`) and the format decides which one it asks about.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The normalized, lower-case URL form of R-NUGET-003 for every question (chosen) | Documents, files and search ask `lower_id` and `lower_version`; an administrator writes `2.1.0-beta.1` | One spelling for the route, the document and the decision, so a file is served exactly when a document lists it; no second normalizer in the hot path | A pattern in another spelling matches nothing, and an exclude of that kind exposes the version (H-380) |
+| (b) The version as the client wrote it in the request | The path segment unchanged | Matches what a person types | Two requests for one version are decided differently; a document lists a version the file route refuses |
+| (c) Ask under every spelling | The format asks for the original, the full and the URL form | A pattern in any of the three matches | Three decisions per version and row, and a fourth spelling (`2.1.0.0`) still escapes |
+
+**Choice:** (a). The range is the supported way to name versions in any spelling; the manual says that the lists are compared letter by letter with the canonical form.
+
+**Rationale:** the one spelling is what the registration page bounds, the flat container and the canonical paths use already (R-NUGET-003), so exposure cannot disagree with them. The development agent revisits this when the decision point can fold version patterns with a format rule (Q-EP-69 option (b)); (a) then keeps its meaning and the folding only widens what matches.
+
+**Applied in the spec:** R-NUGET-034 (Version ranges). Code: [exposure.go](../../../internal/formats/nuget/exposure.go) `hiddenVersion`, [documents.go](../../../internal/formats/nuget/documents.go) `exposes`. Tests: `TestR_NUGET_034_RangeNotationOfRules`, `TestR_NUGET_034_VersionIncludesAndExcludesCompareTheCanonicalForm` (integration).
+
+### Q-NUGET-63 · Where the exposure filter sits: on the rows before a document is rendered, and in the read scope for search
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-034 has the filter run "after the merge of a virtual repository and the rewrite of a remote document", and R-NUGET-009 pages over the exposed versions. npm filters the bytes of a merged document because its documents are one JSON object per package. A NuGet document is rendered by the format from rows, and the paging, the counts and the bounds depend on which rows are in it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A predicate over the version rows, applied before the document is rendered and paged; search by the read scope of the decision point; one version by `hiddenVersion` (chosen) | `viewOf` gives the handler its view, `exposes` the predicate over one ID, `Visible` applies it, `Resolver.ReadScope` carries the same rules for search | Paging, counts and bounds are computed once over the right list; no document is parsed back; a file and a document agree because both ask the view | Every handler that serves a version or a list must call it; a merge that yields bytes needs its rows back (H-295) |
+| (b) Filter the rendered bytes | Render everything, remove leaves and rebuild bounds | One place for merged and local documents | Counts, bounds and inlining must be rebuilt by a second implementation of R-NUGET-009 |
+| (c) A rendition per endpoint stored by the writer | Render on write | Fast reads | A rule change must re-render every document; the rule store is not the writer's |
+
+**Choice:** (a). The ETag and the rendition key carry the endpoint and its exposure fingerprint, so a change of rule is a new document without any invalidation.
+
+**Rationale:** the paging of R-NUGET-009 is a function of the list, so the filter belongs before it. The development agent revisits this if a remote or virtual class can only produce bytes; it then rebuilds rows from them before the predicate.
+
+**Applied in the spec:** R-NUGET-034. Code: [handlers_flat.go](../../../internal/formats/nuget/handlers_flat.go), [handlers_registration.go](../../../internal/formats/nuget/handlers_registration.go), [handlers_search.go](../../../internal/formats/nuget/handlers_search.go) (unchanged: the scope holds the rules), [exposure.go](../../../internal/formats/nuget/exposure.go). Tests: `TestR_NUGET_034_AcceptanceDocumentsOfTheExampleRule`, `TestR_NUGET_034_PagingRunsOverTheExposedVersions`, `TestR_NUGET_034_SearchOnAnEndpointWithRules`, `TestR_NUGET_034_DocumentsOnAnEndpointWithRules` (integration).
+
+### Q-NUGET-64 · Where the fixture packages of the e2e tests come from
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-NUGET-027 says the fixture packages are generated by `dotnet pack` from small projects in the test tree. The e2e tests need
+many packages (an ID per scenario and run, so that a rerun never meets a stored version or a tombstone), and several builds of
+one version with other bytes (the conflict and the replay).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Projects checked into the test tree, one per package | `test/e2e/nugetfixtures/<Id>/<Id>.csproj` | Literal reading of R-NUGET-027 | A directory per package ID, and an ID per run is not a checked-in name |
+| (b) Archives built in Go (`archive/zip`) | The test writes a `.nupkg` itself | No SDK in the loop, fast | The package is not what a client produces; a field `dotnet pack` writes and the server mishandles is never seen |
+| (c) One project template, rendered by the test and packed by the pod's SDK | `nugetPack(id, version, description)` writes `pack.csproj` and one class, runs `dotnet pack` in clients pod 0, reads the archive back; the bytes are kept for the run and written into any pod that pushes them | The package is the SDK's own; an ID, a version and a description (other bytes of one version) are arguments; a replay pushes the same bytes from every pod | One `dotnet pack` per distinct package (about 2 s each) |
+
+**Choice:** (c). The template carries `NuGetAudit` off (the audit would ask each source for the vulnerability resource) and a
+`<clear />` source, so the pack needs no network. The hand-built archives for the malformed cases of R-NUGET-005 stay where
+they are, in the Go tests.
+
+**Rationale:** the clients' reads and writes are the subject of the suite; a package built by the tool they come from is the
+fixture that finds a mismatch (the first push of this suite found the trailing slash of Q-NUGET-66, which no test with a
+hand-built request had sent). The development agent would revisit this if a scenario needs more than one class or several target frameworks
+(then (a) for that package), or if the pack time dominates a run.
+
+**Applied in the spec:** none (R-NUGET-027's bullet is met in the form of a template). Elsewhere:
+[nuget_env_test.go](../../../test/e2e/nuget_env_test.go), [docs/developer/e2e.md](../../developer/e2e.md#the-nuget-local-tests).
+
+### Q-NUGET-65 · How the push criteria of R-NUGET-012 get an anonymously readable feed
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The criteria `--api-key "$TOKEN"` and `--api-key "ci:$TOKEN"` "without credentials" succeed only when the client can read the
+service index without credentials, because a push reads the index first and the API key is examined on the write routes alone
+(R-NUGET-012). The dev installation has `auth.anonymous.allowed: true` (the ceiling) and `anonymousAccess: false` (the
+runtime switch, R-AUTH-040).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Switch `anonymousAccess` on in the test and back at its end | A policy grants `read` on `nuget-e2e-open` to `anonymous`; the test patches the setting and restores it in `t.Cleanup` | Tests the criterion as written, on the real switch; nothing in the installation changes beyond the test's duration | The switch is global while it is on: every repository with an anonymous grant is readable; the suite runs its tests one after the other and only this repository has such a grant |
+| (b) Put the Basic credentials in `nuget.config` for these cases too | The key and the credentials are both present | No global state | Does not test "without credentials": the API key never decides, so a broken key rule is invisible |
+| (c) Set `anonymousAccess` in the chart values of the dev profile | On for the whole cluster | No test-time switch | A different installation for every test of every suite |
+
+**Choice:** (a), in `withAnonymousRead`, which also waits until all three web replicas answer the anonymous read. The revoked-key
+case runs against this feed too, to show that a revoked key does not fall back to the anonymous principal that could read.
+
+**Rationale:** the switch is documented to take effect on every replica within the revocation bound, and the helper waits for
+exactly that. The development agent would revisit this if another suite runs in parallel with this one on the same cluster (then
+(b) plus a feed of its own), or if the dev profile gets anonymous access for another reason (then the toggle goes).
+
+**Applied in the spec:** none. Elsewhere: [nuget_env_test.go](../../../test/e2e/nuget_env_test.go).
+
+### Q-NUGET-66 · The publish resources accept a trailing slash
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The first real push of the e2e suite (`dotnet nuget push` of the .NET 10 SDK) was answered 404: the service index names
+`PackagePublish/2.0.0` as `<feed>/v3/package`, and the client sends `PUT <feed>/v3/package/`, with a slash it appends to the
+address. The route table matched `v3/package` and `v3/symbolpackage` exactly, and `segments` refuses a trailing slash (only the
+service index tolerates one), so every push of the SDK ended in `nuget_v2_unsupported`. The integration tests PUT to the exact
+address and did not see it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The matcher of the two publish resources takes the path with or without one trailing slash | `matchPublish` in `match.go`; the route templates read `/v3/package[/]` and `/v3/symbolpackage[/]` | One place, the two routes that clients extend; the other routes keep the strict match that makes `v3//index.json` a refusal | Two spellings for two routes |
+| (b) The service index names the address with a slash | `PackagePublish/2.0.0` = `<feed>/v3/package/` | The client then PUTs what it was told | A client may append a second slash, and nuget.exe and the SDK differ in what they do with a given address; the index is a published document with a byte-identical body (R-NUGET-001) |
+| (c) The dispatcher strips a trailing slash for every format | A general rule of the request path | Every route is tolerant | Changes the match of the other formats and of `v3/flatcontainer/…/`, which today is a refusal; a contract change for one client habit |
+
+**Choice:** (a). The relist and delete addresses `v3/package/{id}/{version}` are built by the clients from the same address
+without a trailing slash problem (the delete and relist scenarios passed unchanged).
+
+**Rationale:** the clients' address is fixed by the clients; the server decides which spelling it understands, and the narrowest
+answer is the route that needs it. The development agent would revisit this if a second route turns out to be extended the
+same way (then (c) with the dispatcher's clean path), or if the symbol push of nuget.exe sends yet another form (W2-SY owns that test).
+
+**Applied in the spec:** R-NUGET-006 and R-NUGET-020 name the address `PUT <feed>/package`; both accept the trailing slash
+(sentence added to R-NUGET-006). Code: [match.go](../../../internal/formats/nuget/match.go),
+[routes.go](../../../internal/formats/nuget/routes.go). Tests: `TestR_NUGET_001_MatchResolvesEveryRoute` (the two cases with the
+slash), and `TestNuGetPush` in the e2e suite, which failed with the 404 before the change.
 
 ## What this does not cover
 

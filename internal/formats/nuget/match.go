@@ -139,6 +139,17 @@ func matchResource(resource string) func(string) (formats.Params, bool) {
 	}
 }
 
+// matchPublish matches "v3/{resource}" and "v3/{resource}/", the address of a publish resource. The
+// clients put the trailing slash on the address the service index names before they PUT to it (the
+// .NET SDK sends "PUT .../v3/package/" for the index entry ".../v3/package"), so both spellings are
+// the resource (R-NUGET-006, R-NUGET-020).
+func matchPublish(resource string) func(string) (formats.Params, bool) {
+	exact := matchResource(resource)
+	return func(escaped string) (formats.Params, bool) {
+		return exact(strings.TrimSuffix(escaped, "/"))
+	}
+}
+
 // matchPackageVersion matches "v3/package/{id}/{version}", the address of the unlist,
 // delete and relist operations.
 func matchPackageVersion(escaped string) (formats.Params, bool) {

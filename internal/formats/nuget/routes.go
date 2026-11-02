@@ -102,14 +102,14 @@ func (f *Format) buildRoutes() []formats.Route {
 			matchResource(resAutocomplete), []string{"v3/autocomplete"}, f.handleAutocomplete),
 
 		// Push, unlist, relist and the symbol push (R-NUGET-006, R-NUGET-007, R-NUGET-020).
-		route(routePush, http.MethodPut, "/v3/package", formats.Upload, deploy,
-			matchResource(resPackage), []string{"v3/package"}, f.handlePush),
+		route(routePush, http.MethodPut, "/v3/package[/]", formats.Upload, deploy,
+			matchPublish(resPackage), []string{"v3/package", "v3/package/"}, f.handlePush),
 		route(routeDelete, http.MethodDelete, "/v3/package/{id}/{version}", formats.Delete, del,
 			matchPackageVersion, []string{"v3/package/" + pkg + "/" + ver, "v3/package/Acme.Widgets/1.2.3.0"}, f.handleDelete),
 		route(routeRelist, http.MethodPost, "/v3/package/{id}/{version}", formats.Admin, deploy,
 			matchPackageVersion, []string{"v3/package/" + pkg + "/" + ver, "v3/package/Acme.Widgets/1.2.3.0"}, f.handleRelist),
-		route(routeSymbolPush, http.MethodPut, "/v3/symbolpackage", formats.Upload, deploy,
-			matchResource(resSymbolPackage), []string{"v3/symbolpackage"}, f.handleSymbolPush),
+		route(routeSymbolPush, http.MethodPut, "/v3/symbolpackage[/]", formats.Upload, deploy,
+			matchPublish(resSymbolPackage), []string{"v3/symbolpackage", "v3/symbolpackage/"}, f.handleSymbolPush),
 
 		// The symbol server (R-NUGET-021, P1): the key is <file>/<index>/<file>.
 		route(routeSymbols, http.MethodGet, "/v3/symbols/{key...}", formats.Download, read,

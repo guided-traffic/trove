@@ -50,11 +50,14 @@ Names are the handler names of R-NUGET-028; paths are relative to `/api/nuget/<k
 | `nuget.flatcontainer.embedded` | GET `v3/flatcontainer/{id}/{version}/{icon,license,readme}` (P1) | download, read |
 | `nuget.registration.index`, `.page`, `.leaf` | GET `v3/{registration,registration-gz,registration-semver2}/{id}/index.json`, `…/page/{lower}/{upper}.json`, `…/{version}.json` | metadata, read |
 | `nuget.search`, `nuget.autocomplete` (P1) | GET `v3/search`, `v3/autocomplete` | volatile, read |
-| `nuget.push` | PUT `v3/package` | upload, deploy, API key |
+| `nuget.push` | PUT `v3/package`, `v3/package/` | upload, deploy, API key |
 | `nuget.delete` | DELETE `v3/package/{id}/{version}` | delete, delete, API key |
 | `nuget.relist` | POST `v3/package/{id}/{version}` | admin, deploy, API key |
-| `nuget.symbolpush` | PUT `v3/symbolpackage` | upload, deploy, API key |
+| `nuget.symbolpush` | PUT `v3/symbolpackage`, `v3/symbolpackage/` | upload, deploy, API key |
 | `nuget.symbols` (P1) | GET `v3/symbols/{key...}` | download, read |
+
+The two publish routes take one trailing slash (`matchPublish`): the .NET SDK sends `PUT <feed>/v3/package/` for the index entry `<feed>/v3/package` ([Q-NUGET-66](../spec/formats/nuget.md#q-nuget-66--the-publish-resources-accept-a-trailing-slash)).
+Every other route keeps the strict match, in which a trailing slash is a refusal.
 
 `Match` normalizes what the path names: the ID is validated with the upstream rule and lowercased, the version resolved to its URL form, and a file name must be the ID and
 version of the directories above it (`{id}.{version}.nupkg`, `{id}.nuspec`) in any casing and spelling. An ID, version or file that cannot exist answers 404 `not_found`
@@ -162,6 +165,7 @@ registration hives, flat container, search, weak ETags, per-host counters and fa
 already in `proxy.outbound.tls.ca_files` of the dev profile, and a remote repository under test names the content host in its
 `extraHosts` ([e2e.md](e2e.md#in-the-cluster-1)). The clients that talk to trove are the image of [test/e2e/nugetclients](../../test/e2e/nugetclients)
 (`make nuget-clients-image`, `make nuget-clients-smoke`; [e2e.md](e2e.md#the-nuget-clients)).
+The tests that drive them against the local repositories (`make e2e SET=nuget`) are described in [e2e.md](e2e.md#the-nuget-local-tests).
 
 ## What the contract gives the format
 

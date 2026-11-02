@@ -1204,8 +1204,9 @@ test/e2e/nugetclients/
 - **Mono is the Ubuntu package** of the SDK image (24.04: 6.8.0.105), `mono-complete` plus `ca-certificates-mono` for `cert-sync`.
   The apt version is exact, so a superseded package fails the build. Mono's TLS stack ends at TLS 1.2: a listener with
   `min_version: "1.3"` is not reachable by nuget.exe here (the defaults are 1.2). Verified: nuget.exe 7.9.0.83 starts, installs from
-  the test upstream and reaches the dev edge through the forwarder (linux/arm64). Not verified: linux/amd64, push, delete and the
-  symbol push by nuget.exe on Mono.
+  the test upstream and reaches the dev edge through the forwarder (linux/arm64); push, install, search and delete by nuget.exe on Mono
+  pass against the local repositories ([The NuGet local tests](#the-nuget-local-tests)). Not verified: linux/amd64 and the symbol push
+  by nuget.exe on Mono.
 - **Trust.** `entrypoint.sh` writes `$SSL_CERT_FILE` (`/tmp/trove-ca/bundle.crt`: the system roots plus the CA mounted at
   `/etc/trove-ca/ca.crt`), runs `cert-sync --user` on it (the Mono store below `$HOME/.config/.mono/certs`, `HOME=/work`), then writes
   `/tmp/trove-ca/ready`, which the readiness probe checks, and executes `fwd`. The pod sets `SSL_CERT_FILE` in its environment,
@@ -1245,6 +1246,48 @@ test/e2e/nugetclients/
   set still fails when its expression matches no test, and once a test of the name exists, a run that ran nothing still fails.
 - **Not built.** The Windows row (nuget.exe and the SDK on a Windows runner) and Visual Studio (manual). The run against nuget.org of the
   closing run (R-NUGET-027) is not in CI.
+
+## The NuGet local tests
+
+`make e2e SET=nuget` runs the acceptance tests of the local repositories with the real clients (R-NUGET-027; exit criteria E3.1 Linux
+part, E3.5, and the replica part of E3.6). Everything runs in the `scatter` profile, so consecutive requests of one client reach
+different web replicas. Verified on the dev cluster (linux/arm64, .NET SDK of `E2E_NUGETCLIENTS_SDK_IMAGE`, nuget.exe 7.9.0 on Mono):
+the set is green, 40 tests and subtests, about 220 s, twice in a row. Not verified: linux/amd64.
+
+| File | Content |
+|---|---|
+| [nuget_env_test.go](../../test/e2e/nuget_env_test.go) | the fixture (three repositories, the publisher `e2e-nuget` and its token), `nugetClient` (a scenario in a pod: directory, `NUGET_PACKAGES`, `NUGET_HTTP_CACHE_PATH`, `nuget.config`, consumer project), `nugetPack` |
+| [nuget_local_test.go](../../test/e2e/nuget_local_test.go) | `TestNuGetPush`, `TestNuGetRestore`, `TestNuGetExe`, `TestNuGetUnlistRelistDelete` |
+| [nuget_replicas_test.go](../../test/e2e/nuget_replicas_test.go) | `TestNuGetReplicas`: body and ETag of every document on all three replicas, 304 from any |
+| [nuget_handover_test.go](../../test/e2e/nuget_handover_test.go) | comments only: the remote, virtual, E3.2, E3.6 fault and E3.7 cases that wait for their packages |
+
+- **Repositories** (created idempotently): `nuget-e2e` (`requireAuthentication`), `nuget-e2e-open` (the `anonymous` principal may
+  `read`; `requireAuthentication` off), `nuget-e2e-hard` (`nuget.deleteMode: delete`). IDs are `E2e.Nuget<run>.<Group>`, so a rerun on the
+  same cluster never meets a stored version or a tombstone.
+- **Packages** are packed by the pod's SDK from a template ([Q-NUGET-64](../spec/formats/nuget.md#q-nuget-64--where-the-fixture-packages-of-the-e2e-tests-come-from)); the same
+  arguments return the same bytes for the whole run, another description makes other bytes of one version.
+- **Credentials** come from a `nuget.config` that is written the way the setup snippets print it (`<clear />`, user name `token`,
+  `ClearTextPassword` = `%TROVE_TOKEN%`, which both clients expand from the environment, on Mono too). A scenario never touches the
+  user's `NuGet.Config` in `HOME`, which all scenarios of a pod share.
+- **The push without credentials** needs an anonymously readable feed, because the client reads the service index first
+  ([Q-NUGET-65](../spec/formats/nuget.md#q-nuget-65--how-the-push-criteria-of-r-nuget-012-get-an-anonymously-readable-feed)).
+  `withAnonymousRead` turns the runtime switch `anonymousAccess` on, waits until all three replicas answer, and puts it back with `t.Cleanup`.
+  A suite that runs next to this one on the cluster must not rely on anonymous access being off while `TestNuGetPush` runs.
+- **A revoked token** is revoked through `DELETE /api/v1/tokens/{id}`, then refused by all three replicas (nine requests, three replicas seen)
+  before the client runs; the revocation bound of R-AUTHZ-028 would otherwise make the scenario flaky.
+- **What the clients showed** (kept here because a test author meets them again):
+  - `dotnet nuget push` sends `PUT <feed>/v3/package/`, with a trailing slash the index does not have ([Q-NUGET-66](../spec/formats/nuget.md#q-nuget-66--the-publish-resources-accept-a-trailing-slash)).
+  - `dotnet nuget push` and `nuget push` print the status as `Response status code does not indicate success: 409 (Conflict)`; a
+    test matches the number.
+  - nuget.exe 7.9 cannot `list` a v3 source (it prints "does not support listing packages" and `No packages found`, exit 0); use
+    `nuget search`, which takes the `nuget.config` of the working directory and has no `-ConfigFile`. `install` and `push` take `-ConfigFile`.
+  - `dotnet package search --exact-match` shows the newest listed version only; a prerelease needs `--prerelease`.
+  - A stored file (the `.nuspec`) carries the strong ETag of its blob; only the rendered documents carry weak ETags (Q-NUGET-9).
+  - `dotnet pack` with a description that contains `<` fails on the XML; the template escapes it.
+
+Not covered here, and named in [nuget_handover_test.go](../../test/e2e/nuget_handover_test.go): remote and virtual repositories against the
+counting test upstream, the cold-cache run of E3.2, the dropped answer of a push (E3.6; needs the forwarder to drop one answer), the customer
+endpoint (E3.7) and the symbol packages.
 
 ## Extension checklist
 

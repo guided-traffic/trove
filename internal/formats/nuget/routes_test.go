@@ -78,9 +78,11 @@ func TestR_NUGET_001_MatchResolvesEveryRoute(t *testing.T) {
 		{"search", http.MethodGet, "v3/search", routeSearch, formats.Params{}},
 		{"autocomplete", http.MethodGet, "v3/autocomplete", routeAutocomplete, formats.Params{}},
 		{"push", http.MethodPut, "v3/package", routePush, formats.Params{}},
+		{"push with the trailing slash the clients add", http.MethodPut, "v3/package/", routePush, formats.Params{}},
 		{"unlist and delete", http.MethodDelete, "v3/package/Acme.Widgets/1.2.3.0", routeDelete, formats.Params{"id": "acme.widgets", "version": "1.2.3"}},
 		{"relist", http.MethodPost, "v3/package/acme.widgets/1.2.3", routeRelist, formats.Params{"id": "acme.widgets", "version": "1.2.3"}},
 		{"symbol push", http.MethodPut, "v3/symbolpackage", routeSymbolPush, formats.Params{}},
+		{"symbol push with the trailing slash", http.MethodPut, "v3/symbolpackage/", routeSymbolPush, formats.Params{}},
 		{
 			"symbol file", http.MethodGet, "v3/symbols/acme.widgets.pdb/0123456789abcdef0123456789abcdefFFFFFFFF/acme.widgets.pdb", routeSymbols,
 			formats.Params{"key": "acme.widgets.pdb/0123456789abcdef0123456789abcdefFFFFFFFF/acme.widgets.pdb"},
