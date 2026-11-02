@@ -66,9 +66,8 @@ func (fx *nugetFixture) documentsOnEveryReplica(t *testing.T, repo, id, version 
 	t.Helper()
 	lower := strings.ToLower(id)
 	base := "/api/nuget/" + repo + "/"
-	// the answer that fills a cache streams the upstream response and carries no validator; the files are compared once stored
-	fx.adm.get(base+"v3/flatcontainer/"+lower+"/"+version+"/"+lower+".nuspec").want(t, "warm the .nuspec", 200)
-	// path -> the ETag it carries
+	// path -> the ETag it carries; the .nuspec is not fetched first: the first answer of a cache miss within the
+	// withheld tail carries the validator of the stored answer (Q-NUGET-86)
 	docs := map[string]string{
 		base + "v3/index.json":                                                       "weak",
 		base + "v3/flatcontainer/" + lower + "/index.json":                           "weak",
