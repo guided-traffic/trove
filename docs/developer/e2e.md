@@ -1277,7 +1277,7 @@ different web replicas. Verified on the dev cluster (linux/arm64, .NET SDK of `E
 | [nuget_local_test.go](../../test/e2e/nuget_local_test.go) | `TestNuGetPush`, `TestNuGetRestore`, `TestNuGetExe`, `TestNuGetUnlistRelistDelete` |
 | [nuget_replicas_test.go](../../test/e2e/nuget_replicas_test.go) | `TestNuGetReplicas` (`sameOnEveryReplica`, `documentsOnEveryReplica`: body and ETag of every document on all three replicas, 304 from any), `TestNuGetPushRetry` (E3.6, the dropped answer) |
 | [nuget_remote_test.go](../../test/e2e/nuget_remote_test.go) | `TestNuGetRemote`: `dotnet restore` and `nuget install` through a remote of the test upstream, the cache filled once, a stopped upstream |
-| [nuget_virtual_test.go](../../test/e2e/nuget_virtual_test.go) | `TestNuGetVirtual`: push through the virtual repository into its deployment target, restores and installs of local and uncached remote packages, search, the documents on every replica, no deployment target |
+| [nuget_virtual_test.go](../../test/e2e/nuget_virtual_test.go) | `TestNuGetVirtual`: push through the virtual repository into its deployment target, restores and installs of local and uncached remote packages, search (the local package, and the counting upstream's package through the remote's forwarded search and the virtual repository's merge), the documents on every replica, no deployment target |
 | [nuget_collapse_test.go](../../test/e2e/nuget_collapse_test.go) | `TestNuGetCollapse` (E3.2), `coldRestoreOfReference` (shared with the closing run) |
 | [nuget_endpoint_test.go](../../test/e2e/nuget_endpoint_test.go) | `TestNuGetEndpoint` (E3.7) |
 | [nuget_closing_test.go](../../test/e2e/nuget_closing_test.go) | `TestNuGetClosing`: the closing run's additions |
@@ -1407,8 +1407,10 @@ Three cases fail on defects that are being fixed:
   registration index", `merge.DecodeUpstream`). The merge parses the remote's stored index without inflating the gzip bytes
   nuget.org sent. For Serilog, the next refusal would be the pages listed by address (F-22).
 
-**Not covered here:** the forwarded search of a remote and its per-replica cache against the counting upstream (R-NUGET-016, Q-NUGET-8; not
-built; the subset above asks nuget.org for it), the digest check of a cached package against the upstream (R-NUGET-029, P1; not built, so a
+**Not covered here:** the timing criterion of R-NUGET-016 for a claim added after a cached forwarded answer (no `Partner.*` result on either
+replica within 1 s, and within `cluster.epoch_poll_interval` plus 1 s with Valkey stopped; the integration test
+`TestR_NUGET_016_ARemoteForwardsItsSearchAndFallsBackToItsCache` shows the claim reaching both replicas without the bound, F-31 of
+[promt.md](../projektplan/promt.md#8--open-findings)), the digest check of a cached package against the upstream (R-NUGET-029, P1; not built, so a
 `packageHash` mismatch is not tested), the symbol packages beyond the push (the symbol server is P1, against nuget.org too), the Windows row
 and Visual Studio, and the drain and failover part of E3.6 (phase 7).
 

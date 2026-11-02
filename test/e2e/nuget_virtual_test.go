@@ -80,23 +80,23 @@ func TestNuGetVirtual(t *testing.T) {
 		}
 	})
 
-	// R-NUGET-010: the search through the virtual repository lists the local package. The forwarded search of a remote
-	// (R-NUGET-016, Q-NUGET-8) is not built (Q-NUGET-55): a remote answers from the rows of its cache, and a virtual
-	// repository merges no remote member's hits yet (searchRemote contributes nothing), so the search of nuget-all does
-	// not list a remote package. The test pins the two parts that exist and leaves the missing one to its package.
-	t.Run("R-NUGET-010 R-NUGET-018 search lists the local package through the virtual repository and the cached remote package through the remote", func(t *testing.T) {
+	// R-NUGET-010, R-NUGET-016, R-NUGET-018: the search through the virtual repository lists the local package, the
+	// remote forwards its search to the counting test upstream, and the virtual repository merges the remote member's
+	// forwarded results after the local ones (Q-NUGET-81).
+	t.Run("R-NUGET-010 R-NUGET-016 R-NUGET-018 search lists the local package and the remote member's forwarded results through the virtual repository", func(t *testing.T) {
 		c := fx.client(t, 1, "virtual-search")
 		c.config(all, true)
 		out := c.exec("dotnet", "package", "search", id, "--source", all, "--exact-match")
 		if !strings.Contains(out, id) || !strings.Contains(out, "1.1.0") {
 			t.Fatalf("search for the local package through the virtual repository:\n%s", out)
 		}
-		// the rows of a cached remote package are written after the fill, not by it
-		path := "/api/nuget/" + repos.remote + "/v3/search?take=50&q=" + strings.ToLower(nugetDepLeaf)
-		waitFor(t, "the search of the remote to list its cached package", time.Minute, time.Second, func() bool {
-			r := newAPI(t).withToken(fx.token).get(path)
-			return r.Status == 200 && strings.Contains(strings.ToLower(string(r.Body)), strings.ToLower(nugetDepLeaf))
-		})
+		for _, repo := range []string{repos.remote, repos.all} {
+			path := "/api/nuget/" + repo + "/v3/search?take=50&q=" + strings.ToLower(nugetDepLeaf)
+			waitFor(t, "the search of "+repo+" to list the upstream's package", time.Minute, time.Second, func() bool {
+				r := newAPI(t).withToken(fx.token).get(path)
+				return r.Status == 200 && strings.Contains(strings.ToLower(string(r.Body)), strings.ToLower(nugetDepLeaf))
+			})
+		}
 	})
 
 	t.Run("R-NUGET-030 E3.6 the documents of the virtual repository are the same on every replica", func(t *testing.T) {

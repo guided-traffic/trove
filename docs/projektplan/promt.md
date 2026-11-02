@@ -222,6 +222,13 @@ started and stopped before it changed the tree; phase 4 stays open until these a
   before keep `is_semver2 = false`, so such a version still shows to clients older than NuGet 4.3 in the SemVer 1 hives and in a
   search without `semVerLevel=2.0.0`. Migration 00017 is released and stays as it is. Decide between a recomputation job over the
   stored `.nuspec` files and migration 00018; done when no stored row of such a version says `false`.
+- **F-31 · The claim timing criterion of R-NUGET-016 has no e2e test** (confirmed). R-NUGET-016's last criterion: after
+  `nuget-local` claims `Partner.*`, neither replica returns a `Partner.*` result of `nuget-org` for a cached `q=partner` within
+  1 s, and within `cluster.epoch_poll_interval` plus 1 s with Valkey stopped. The integration test
+  `TestR_NUGET_016_ARemoteForwardsItsSearchAndFallsBackToItsCache` shows the claim reaching both replicas and the cached answer
+  being filtered, but asserts no bound and never stops Valkey; F-20 named this case as its done condition and was closed
+  without it. Build it in the `nuget` set with a package the counting upstream publishes at runtime, the way
+  `e1_14_exposure_test.go` times rule changes.
 
 Found on 2026-11-01 while writing the manual (`docs/manual`) and the design change of Q-UI-88:
 
