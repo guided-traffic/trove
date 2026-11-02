@@ -113,7 +113,7 @@ On an endpoint in mode `rules`, exposure rules are a ceiling on what anyone may 
 - **Read-only.** Every write on such an endpoint answers `403 endpoint_read_only`, whether or not the target exists.
 - **Rules add up.** A rule belongs to one endpoint and one repository; content is exposed when any enabled rule admits it. Inside a rule, an exclude pattern wins over an include, and an empty include list leaves that dimension open. A rule with no patterns exposes the whole repository.
 - **Listings follow.** Repository lists on the endpoint show only repositories with an enabled rule.
-- **Formats.** Generic repositories are narrowed by paths; npm repositories by package names, versions, version range, pre-releases and dist-tags. A repository of a format without exposure support takes no rule and serves nothing on such an endpoint.
+- **Formats.** Generic repositories are narrowed by paths; npm repositories by package names, versions, version range, pre-releases and dist-tags; NuGet repositories by package IDs, versions, version range and pre-releases (NuGet has no tags). A repository of a format without exposure support takes no rule and serves nothing on such an endpoint.
 
 An endpoint in mode `all` has no ceiling; its rules have no effect. At most 1,000 rules can exist per endpoint.
 
@@ -125,8 +125,8 @@ An endpoint in mode `all` has no ceiling; its rules have no effect. At most 1,00
 | **Repository** | the repository the rule is about; fixed after creation. For a virtual repository, the rule applies to what is requested through it |
 | **Description**, **Enabled** | free text; a disabled rule exposes nothing |
 | **Package names** | include and exclude patterns (formats with package names) |
-| **Version range** | in the format's syntax, for npm a node-semver range such as `>=2.0.0` |
-| **Versions** | include and exclude patterns for exact versions |
+| **Version range** | in the format's syntax: for npm a node-semver range such as `>=2.0.0`, for NuGet the interval notation of its dependency ranges, such as `[2.0,4.0)`; a bare `2.0` means 2.0 or higher, and floating versions such as `1.*` are refused |
+| **Versions** | include and exclude patterns for exact versions. They are compared letter by letter with the version in its canonical form; for NuGet that is the normalized lower-case form without build metadata (`2.1.0-beta.1`, never `2.1`, `2.1.0.0` or `2.1.0-Beta.1`), so use the version range when you are not sure of the spelling |
 | **Expose pre-release versions** | off by default: pre-releases stay hidden even inside the range |
 | **Tags (formats with tags only)** | include and exclude patterns for dist-tags |
 | **Paths** | include and exclude patterns (generic repositories) |
@@ -173,6 +173,17 @@ An npm client configured with the endpoint's client address (the base URL plus `
 - `npm audit` answers `501` on such an endpoint, because forwarding the audit would reveal which packages the remote has fetched.
 
 The package-level times `time.created`, `time.modified` and the `Last-Modified` header keep their real values, so a customer can tell that a package changed even when the change is hidden.
+
+## NuGet through a customer endpoint
+
+A NuGet client configured with the endpoint's feed (the base URL plus `/api/nuget/<repository>/v3/index.json`) sees only what the rules expose:
+
+- The version list (`flatcontainer/<id>/index.json`), the registration index, its pages and its leaves, in all three hives, list only exposed versions. The paging of the registration follows the exposed versions, so the page bounds and counts are those of the filtered list.
+- Search lists only exposed packages and versions. `version` is the latest exposed version that the request's filters leave, `totalHits` counts exposed packages only.
+- A hidden version, its `.nupkg` and `.nuspec`, and a package without an exposed version answer `404` like a missing one. The NuGet client reports `NU1102` for a version it asked for and that is hidden, and "unable to find package" for a package that is hidden. Dependencies in a package are not filtered: a package that depends on an ID the endpoint hides fails the restore, use **Check exposure** on the dependency's ID beforehand.
+- The service index lists no publish and no symbol publish resource. `dotnet nuget push` against the endpoint's `index.json` therefore stops in the client; a push, an unlist or a relist sent to the package URL directly (for example with `curl`) answers `403 endpoint_read_only`. Push through the default endpoint.
+- Every URL in a document uses the endpoint's base URL host. A change to a rule changes the validators of the documents, so a client revalidating a cached document gets the new one.
+- Pre-releases stay hidden unless the rule exposes them, whatever the client's `prerelease` setting says.
 
 ## How fast a change takes effect
 

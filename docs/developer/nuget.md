@@ -25,7 +25,7 @@ imports the format contract and the leaf packages below, and reaches its tables 
 | [view.go](../../internal/formats/nuget/view.go) | The `ViewAdapter` of the package screens: `Compare`, `Describe`, `Find`, `Withheld`, `Stored`, and `viewPort`, the part of the data port it reads (Q-NUGET-48) |
 | [setup.go](../../internal/formats/nuget/setup.go) | `clients` (dotnet, nuget, visual-studio) and `SetupTemplates` (Q-NUGET-49) |
 | [guide.go](../../internal/formats/nuget/guide.go), [guide/](../../internal/formats/nuget/guide) | `Guide` and its Markdown templates, one file per section (Q-NUGET-50) |
-| [exposure.go](../../internal/formats/nuget/exposure.go) | The exposure adapter: packages and versions, no tags; NuGet's range grammar. The filter of the documents is written with them (R-NUGET-034, H-295) |
+| [exposure.go](../../internal/formats/nuget/exposure.go) | The exposure adapter: packages and versions, no tags; NuGet's range grammar. `hiddenVersion` and `onRulesEndpoint` are the questions the handlers ask (R-NUGET-034, [NuGet on a customer endpoint](#nuget-on-a-customer-endpoint)) |
 | [handlers_stub.go](../../internal/formats/nuget/handlers_stub.go) | One method per route that is not built; the package that builds it moves the method into a file of its own |
 | [nugettest](../../internal/formats/nuget/nugettest/store.go), [view.go](../../internal/formats/nuget/nugettest/view.go) | The in-memory twin of the port, for the conformance kit and unit tests; it records the versions `InsertVersion` is handed and answers the view reads over them |
 
@@ -271,6 +271,40 @@ Things to know when changing a document:
   `deprecation` and `vulnerabilities` of an upstream entry.
 - Tests: the fixture in [documents_fixture_test.go](../../internal/formats/nuget/documents_fixture_test.go) is a Host of the kit over a `docStore` (the twin, with the two document
   reads) and commits versions the way a write does, raising the revision. It is the place to start a test of a document.
+
+## NuGet on a customer endpoint
+
+An endpoint with `exposure: rules` narrows what a NuGet repository serves (R-NUGET-034, R-EP-018). Two pieces cooperate, and the format adds no filter of its own to the second.
+
+| Piece | Where | What it decides |
+|---|---|---|
+| The ceiling | the decision point, called by `Authorize`, `ReadScope` and the route-level check | The package and version of a request, and every write (403 `endpoint_read_only`, R-EP-013). Its rules are compiled from the rule rows with the adapter in [exposure.go](../../internal/formats/nuget/exposure.go): `ValidateRange`, `InRange`, `Prerelease`, `Dimensions` (packages and versions, no tags) |
+| The view | `rq.Endpoint.Exposure`, read by `viewOf` ([documents.go](../../internal/formats/nuget/documents.go)) | What a list or a document contains: the rows are narrowed before the document is rendered and paged (Q-NUGET-63) |
+
+What each route does with it:
+
+| Route | Call | Hidden means |
+|---|---|---|
+| `flatcontainer/{id}/index.json` | `exposes(viewOf(rq), id)` over `Store.Versions` | the version is not listed; none left is a 404 |
+| registration index, page, leaf, three hives | `registration.Visible(versions, hive, keep)` | the leaf is not listed, counts and bounds follow the rest; a leaf of a hidden version is a 404 |
+| `.nupkg`, `.nuspec` | `serveFile` asks `hiddenVersion` after `Authorize` | 404, the same body as a missing version |
+| search | `Resolver.ReadScope` answers `ReadRows`; `MayRead` is the ceiling | the version is not in `versions`, the package is not counted when none is left |
+| service index | `handleIndex`: `takesPushes(rq) && !onRulesEndpoint(rq)` | no publish resource (Q-EP-68) |
+| push, delete, relist | the route-level `Authorize` of the write action | 403 `endpoint_read_only` before the body is read |
+
+Rules for a handler that serves a list or a version, in the order they matter:
+
+1. Ask the view with `lower_id` and the URL form of the version (Q-NUGET-62); never with the original spelling. The decision point compares version names letter by letter with what the format passes (Q-EP-69, H-380).
+2. A package the view does not expose answers the 404 of a missing package before any lookup (`serveDocument` does this for every document).
+3. The rendition key and the validator include `rq.Endpoint.Name` and `rq.Endpoint.ExposureFingerprint`; `serveDocument` and `indexETag` do. A new document that bypasses `serveDocument` must add both, or a rule change leaves the old document valid.
+4. Embedded files, the symbol server and autocomplete, when built, call `hiddenVersion` for a version they serve; the symbol server answers 404 on `onRulesEndpoint(rq)` until its filter is specified (R-NUGET-034).
+5. A remote or virtual handler that merges versions filters the rows, not the merged bytes (Q-NUGET-63, H-295).
+
+Tests. Adapter, documents, paging, the service index and search over the real adapter's semantics:
+[exposure_test.go](../../internal/formats/nuget/exposure_test.go) (`rulesView` stands in for the decision point). The whole stack with real rules, a bound token on a second listener, the writes and
+the validators on two replicas: [test/integration/nuget/exposure_test.go](../../test/integration/nuget/exposure_test.go) and
+[exposure_versions_test.go](../../test/integration/nuget/exposure_versions_test.go). Run them with `make integration-up` and
+`go test -tags integration ./test/integration/nuget -run 'R_NUGET_034|R_EP_018'`.
 
 ## Search
 

@@ -74,7 +74,7 @@ func (f *Format) serveFile(ctx context.Context, rq *formats.Request, w http.Resp
 	}
 	// The ceiling decided the version above; the view repeats it from the same rules, so a
 	// file is served exactly when a filtered document lists its version (R-NUGET-034).
-	if view := viewOf(rq); view != nil && (!view.Package(lowerID) || !view.Version(lowerID, ver)) {
+	if hiddenVersion(rq, lowerID, ver) {
 		return errNoSuchResource()
 	}
 	it, found, err := rq.Host.Items().Stat(ctx, rq.RepoRef(), formats.Path{Path: path})

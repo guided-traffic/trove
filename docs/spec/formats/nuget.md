@@ -2361,12 +2361,15 @@ document:
   client's `prerelease` parameter says; the SemVer 2.0.0 visibility of R-NUGET-004 applies to what
   remains. Exposure does not change a version's listed state.
 - **Service index.** On an endpoint with `exposure: rules` it lists no publish and no symbol publish
-  resource, because the endpoint accepts no writes; push, delete and relist answer 403
-  `endpoint_read_only`. The symbol server and vulnerability resources (P1) are not listed there and
+  resource, because the endpoint accepts no writes (Q-EP-68); a push, delete or relist sent to the
+  package URL answers 403 `endpoint_read_only`. The symbol server and vulnerability resources (P1) are not listed there and
   answer 404 until their requirements specify their filter.
 - **Version ranges** in rules use NuGet's interval notation (`[2.0,4.0)`; a bare `2.0` means "2.0
   or higher"), compared after the normalization of R-NUGET-003; `ValidateRange` refuses what the
-  NuGet client's range parser refuses.
+  NuGet client's range parser refuses, floating versions included. The version names of a rule's
+  `versions` include and exclude lists are not ranges: they are compared literally with the
+  canonical form the format asks about, the normalized lower-case URL form (`2.1.0-beta.1`), so an
+  exclude written as `2.1` or `2.1.0-Beta.1` hides nothing (Q-NUGET-62, Q-EP-69, H-380).
 - **Validators.** The ETag of R-NUGET-002 includes the endpoint and its exposure fingerprint.
 
 Acceptance criteria (`Acme.Sdk` 1.9.0, 2.0.0, 2.1.0-beta.1 and 2.1.0 in `nuget-internal`, a member
@@ -2379,7 +2382,10 @@ pre-releases):
   all four versions are listed.
 - `dotnet add package Acme.Sdk --version 1.9.0` against `customers` fails with `NU1102`; a restore of
   2.1.0 with the bound token as password succeeds.
-- `dotnet nuget push` with the bound token as API key against `customers` answers 403.
+- `curl -X PUT <customers feed>/package` with the bound token as API key (`X-NuGet-ApiKey`) answers 403
+  `endpoint_read_only`, and so do `DELETE` and `POST <feed>/package/acme.sdk/2.0.0`. `dotnet nuget push`
+  against `customers`' `index.json` stops in the client, which finds no `PackagePublish` resource
+  (Q-EP-68).
 
 ## Deferred
 
@@ -3842,6 +3848,42 @@ Context: R-NUGET-020 requires every `.pdb` to be a Portable PDB or a Windows PDB
 **Rationale:** it meets the "extracts nothing" rule with memory bounded independently of the file size. The development agent revisits this if the P1 indexing shows corrupt packages are common enough to deserve an early refusal.
 
 **Applied in the spec:** R-NUGET-020 (the symbol push paragraph and the acceptance criteria). Code: [symbols.go](../../../internal/formats/nuget/symbols/symbols.go), [head.go](../../../internal/formats/nuget/nupkg/head.go). Tests: `TestR_NUGET_020_ARefusedSymbolPackageIs400`, `TestR_NUGET_020_ASymbolPackageGoesWithItsVersion`, `TestR_NUGET_020_EveryPdbIsChecked`, `TestR_NUGET_020_HeadReadsTheStartOfAnEntryOnly`.
+
+### Q-NUGET-62 · The version a NuGet rule is asked about: the normalized lower-case URL form
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a rule's range is compared by the format's adapter (`InRange`), which parses both sides, so `2.0` and `2.0.0.0` agree. Its `versions` include and exclude lists are patterns the decision point compares with the version string the format passes with a request. NuGet has several spellings of one version (`2.1`, `2.1.0.0`, `2.1.0+build`, `2.1.0-Beta.1`) and the format decides which one it asks about.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The normalized, lower-case URL form of R-NUGET-003 for every question (chosen) | Documents, files and search ask `lower_id` and `lower_version`; an administrator writes `2.1.0-beta.1` | One spelling for the route, the document and the decision, so a file is served exactly when a document lists it; no second normalizer in the hot path | A pattern in another spelling matches nothing, and an exclude of that kind exposes the version (H-380) |
+| (b) The version as the client wrote it in the request | The path segment unchanged | Matches what a person types | Two requests for one version are decided differently; a document lists a version the file route refuses |
+| (c) Ask under every spelling | The format asks for the original, the full and the URL form | A pattern in any of the three matches | Three decisions per version and row, and a fourth spelling (`2.1.0.0`) still escapes |
+
+**Choice:** (a). The range is the supported way to name versions in any spelling; the manual says that the lists are compared letter by letter with the canonical form.
+
+**Rationale:** the one spelling is what the registration page bounds, the flat container and the canonical paths use already (R-NUGET-003), so exposure cannot disagree with them. The development agent revisits this when the decision point can fold version patterns with a format rule (Q-EP-69 option (b)); (a) then keeps its meaning and the folding only widens what matches.
+
+**Applied in the spec:** R-NUGET-034 (Version ranges). Code: [exposure.go](../../../internal/formats/nuget/exposure.go) `hiddenVersion`, [documents.go](../../../internal/formats/nuget/documents.go) `exposes`. Tests: `TestR_NUGET_034_RangeNotationOfRules`, `TestR_NUGET_034_VersionIncludesAndExcludesCompareTheCanonicalForm` (integration).
+
+### Q-NUGET-63 · Where the exposure filter sits: on the rows before a document is rendered, and in the read scope for search
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-034 has the filter run "after the merge of a virtual repository and the rewrite of a remote document", and R-NUGET-009 pages over the exposed versions. npm filters the bytes of a merged document because its documents are one JSON object per package. A NuGet document is rendered by the format from rows, and the paging, the counts and the bounds depend on which rows are in it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A predicate over the version rows, applied before the document is rendered and paged; search by the read scope of the decision point; one version by `hiddenVersion` (chosen) | `viewOf` gives the handler its view, `exposes` the predicate over one ID, `Visible` applies it, `Resolver.ReadScope` carries the same rules for search | Paging, counts and bounds are computed once over the right list; no document is parsed back; a file and a document agree because both ask the view | Every handler that serves a version or a list must call it; a merge that yields bytes needs its rows back (H-295) |
+| (b) Filter the rendered bytes | Render everything, remove leaves and rebuild bounds | One place for merged and local documents | Counts, bounds and inlining must be rebuilt by a second implementation of R-NUGET-009 |
+| (c) A rendition per endpoint stored by the writer | Render on write | Fast reads | A rule change must re-render every document; the rule store is not the writer's |
+
+**Choice:** (a). The ETag and the rendition key carry the endpoint and its exposure fingerprint, so a change of rule is a new document without any invalidation.
+
+**Rationale:** the paging of R-NUGET-009 is a function of the list, so the filter belongs before it. The development agent revisits this if a remote or virtual class can only produce bytes; it then rebuilds rows from them before the predicate.
+
+**Applied in the spec:** R-NUGET-034. Code: [handlers_flat.go](../../../internal/formats/nuget/handlers_flat.go), [handlers_registration.go](../../../internal/formats/nuget/handlers_registration.go), [handlers_search.go](../../../internal/formats/nuget/handlers_search.go) (unchanged: the scope holds the rules), [exposure.go](../../../internal/formats/nuget/exposure.go). Tests: `TestR_NUGET_034_AcceptanceDocumentsOfTheExampleRule`, `TestR_NUGET_034_PagingRunsOverTheExposedVersions`, `TestR_NUGET_034_SearchOnAnEndpointWithRules`, `TestR_NUGET_034_DocumentsOnAnEndpointWithRules` (integration).
 
 ## What this does not cover
 

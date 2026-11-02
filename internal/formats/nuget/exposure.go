@@ -13,9 +13,12 @@ import (
 // Prerelease, InRange) and the dimensions the rules may narrow: packages and versions.
 // NuGet has no tags. formats.Register puts both into the catalog, and authz reads them there.
 //
-// The filter that removes what an endpoint does not expose from a rendered document is the
-// work of the packages that render the documents (R-NUGET-034); until they exist no route
-// returns a document that lists versions.
+// The filter that removes what an endpoint does not expose is a predicate over the rows of a
+// document, applied before the document is rendered and paged (Q-NUGET-63): viewOf and
+// exposes (documents.go) give a handler the view of its request and the predicate over the
+// versions of one ID; hiddenVersion and onRulesEndpoint below are the questions of the
+// handlers that serve one version or no version at all. A search is not filtered by the view
+// but by the read scope of the decision point, which holds the same rules (Q-NUGET-63).
 
 // maxRanges bounds the parsed ranges InRange keeps. A range is typed by an administrator and
 // there are at most 1,000 rules per endpoint; the bound only keeps a replica's memory
@@ -89,3 +92,19 @@ func (x *exposure) rangeOf(expr string) *version.Range {
 	x.mu.Unlock()
 	return r
 }
+
+// hiddenVersion reports whether the endpoint of the request does not expose a version of an
+// ID: the ID is outside the rules, or the version is outside them. The names are the
+// canonical ones, lower_id and the URL form of the version (Q-NUGET-62). A request on an
+// endpoint without rules hides nothing. Every handler that serves one version - a file, a
+// leaf, an embedded file - answers the 404 of a missing version when this is true, so a
+// file is served exactly when a filtered document lists its version (R-NUGET-034).
+func hiddenVersion(rq *formats.Request, lowerID, lowerVersion string) bool {
+	view := viewOf(rq)
+	return view != nil && (!view.Package(lowerID) || !view.Version(lowerID, lowerVersion))
+}
+
+// onRulesEndpoint reports whether the request arrived on an endpoint with exposure rules:
+// one that takes no writes and lists no resource of a feature whose filter is not
+// specified (R-NUGET-034).
+func onRulesEndpoint(rq *formats.Request) bool { return rq.Endpoint.Rules }

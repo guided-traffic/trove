@@ -2229,6 +2229,42 @@ Context: Q-EP-61 and Q-EP-63 said "the versions the repository serves, newest fi
 
 **Applied in the spec:** R-EP-016, Q-EP-61, Q-EP-63. Code: `internal/formats/view.go`, `internal/formats/npm/view.go`, `internal/formatdata/npm/view.go`, `internal/meta/postgres/queries/npm_view.sql`. Tests: `TestR_EP_016_NPMAdapterListsStoredVersions`, `TestR_ARCH_010_Check11ViewAdapter`.
 
+### Q-EP-68 · A NuGet endpoint with rules lists no publish resource and answers a write sent to the package URL with 403
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: an endpoint with rules takes no writes (R-EP-013). A NuGet client finds the URL to push to in the service index, so what the index lists decides what the client does before any request reaches the server. The spec's acceptance criterion said that a `dotnet nuget push` answers 403.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The index lists no `PackagePublish` and no `SymbolPackagePublish`; a write sent to the package URL answers 403 `endpoint_read_only` (chosen) | A client stops with "no PackagePublish resource"; `curl` and a hand-built URL get the 403 | The endpoint does not advertise what it refuses; the 403 protects the URL a person can guess | `dotnet nuget push` against `index.json` shows the client's message, not the server's |
+| (b) List the resources and answer 403 | The client reaches the server and prints the 403 | The refusal is the server's own, with the code | A customer's tooling offers a function the endpoint never has; the symbol resource would need a filter that is not specified |
+| (c) Answer 404 for writes | A write looks like a missing route | Reveals nothing | Hides the reason from the one who has a token with a grant; contradicts R-EP-013, which has 403 |
+
+**Choice:** (a). The service index of the endpoint has its own validator (it names the endpoint and the fingerprint already).
+
+**Rationale:** the read-only fact is stated twice, by what is advertised and by what is refused; neither depends on the other. The e2e test of the real client therefore pushes to the package URL to see the 403. The development agent revisits this if a client turns out to treat a missing `PackagePublish` as a retryable fault.
+
+**Applied in the spec:** R-NUGET-034 (Service index, acceptance criteria). Code: [index.go](../../internal/formats/nuget/index.go) `handleIndex`, [exposure.go](../../internal/formats/nuget/exposure.go) `onRulesEndpoint`. Tests: `TestR_NUGET_034_ServiceIndexOfAnEndpointWithRulesListsNoPublish`, `TestR_NUGET_034_DocumentsOnAnEndpointWithRules` (integration, the writes).
+
+### Q-EP-69 · Version names in a rule are compared letter by letter with the form the format asks about
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `compileRule` compiles the `versions` include and exclude lists as name globs without folding (the range is the format's, through `Versioning.InRange`). A format with several spellings of one version (NuGet: `2.1`, `2.1.0.0`, `2.1.0-Beta.1`) therefore matches a pattern only when it is written in the form the format passes. Measured on the NuGet fixture: an exclude list of `["2.0", "2.1.0.0", "2.1.0-BETA.1"]` hid none of 2.0.0, 2.1.0 and 2.1.0-beta.1; the canonical spellings hid them.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Literal comparison with the form the format passes (chosen) | As built; the manual and the spec say which form that is | No new contract; npm and NuGet behave the same way | An exclude in another spelling exposes the version (H-380) |
+| (b) A format hook that folds a version pattern | `catalog.Versioning` gains an optional method; the engine folds patterns and versions with it | The administrator's spelling does not matter | A contract addition after the freeze of Q-ARCH-256 to 262; the folding of a glob is not the folding of a version (`2.*`) |
+| (c) A warning or refusal when a pattern is not in the canonical form | `ValidateRange` is joined by a version-name check | The author learns at once | Needs the same hook as (b), and a refusal makes valid globs unwritable |
+
+**Choice:** (a), with the range as the documented way to name versions in any spelling. The gap is open as H-380.
+
+**Rationale:** (b) and (c) change the contract that phase 4 froze, for a case the range already covers. The development agent revisits this before the release that freezes the contract (WP3.5): a hook that turns a version pattern into the canonical form, or a warning in the rule's response, are the candidates.
+
+**Applied in the spec:** none (the rule dimensions are unchanged). Code: [exposure.go](../../internal/authz/exposure.go) `compileRule` (unchanged). Tests: `TestR_NUGET_034_VersionIncludesAndExcludesCompareTheCanonicalForm` (integration).
+
 ## What this does not cover
 
 ### H-57 · A further endpoint runs with every credential of a `web` replica

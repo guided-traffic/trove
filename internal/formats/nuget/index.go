@@ -112,7 +112,9 @@ const jsonContentType = document.ContentType
 func (f *Format) handleIndex(_ context.Context, rq *formats.Request, w http.ResponseWriter) error {
 	links := rq.Host.Links(rq)
 	feed := links.Registry(rq.Addressed()+servingSuffix(rq)) + FeedSegment + "/"
-	publish := takesPushes(rq)
+	// An endpoint with exposure rules accepts no writes, so it advertises no publish resource
+	// (R-NUGET-034, Q-EP-68).
+	publish := takesPushes(rq) && !onRulesEndpoint(rq)
 	etag := indexETag(rq, links.Base(), publish)
 	h := w.Header()
 	h.Set("ETag", etag)

@@ -174,3 +174,9 @@ package, would let every version of that document through to the listing. Downlo
 list of every exposed package of such a class. What makes it real: a remote or virtual document handler without the call; the
 checklist in [developer/endpoints.md](../developer/endpoints.md#extension-checklists) and a test on the R-EP-012 fixture per class
 are the guard.
+
+### H-380 · A version name in an exposure rule that is not in the format's canonical form hides nothing
+
+Stage: the `versions` include and exclude lists of an exposure rule on a repository of a format that has more than one spelling of a version (NuGet: `2.1`, `2.1.0.0`, `2.1.0-Beta.1`), compiled by `compileRule` as name globs without folding (Q-EP-69, Q-NUGET-62).
+
+Live today for NuGet; npm has fewer spellings (a leading `v` or `=` is not a version in a document). The range of a rule is compared by the format's own parser and does not have the gap. The lists are compared letter by letter with the form the format asks about, the normalized lower-case form without build metadata. An exclude written as `2.1`, `2.1.0.0` or `2.1.0-Beta.1` therefore matches no request, and the version it was meant to hide is exposed, to the version list, the registrations, the search and the files. An include in another spelling fails closed: it exposes nothing. Measured on the NuGet fixture: an exclude list of those three spellings left 2.0.0, 2.1.0 and 2.1.0-beta.1 visible; the canonical spellings hid them. Subject: the versions an administrator meant to withdraw from a customer endpoint. What makes it real: an exclude entry typed in a non-canonical spelling; the manual names the canonical form and the range as the way to cover every spelling, and the rule's response gives no warning.
