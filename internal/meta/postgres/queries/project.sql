@@ -72,9 +72,6 @@ DELETE FROM project
    AND (sqlc.arg(expected)::bigint < 0 OR version = sqlc.arg(expected)::bigint)
 RETURNING id::text AS id, version;
 
--- name: ProjectVersion :many
-SELECT version FROM project WHERE key = sqlc.arg(key)::text;
-
 -- name: ProjectCountMembers :one
 -- What keeps a project from being deleted: repositories in every lifecycle state
 -- and service accounts (Q-AUTHZ-169).
@@ -84,7 +81,9 @@ SELECT (SELECT count(*) FROM repositories WHERE project_id = sqlc.arg(id)::text:
 -- name: ProjectPolicyNames :many
 -- The policies of a project, for the delete that removes them through the policy
 -- store so that each deletion is audited and journaled.
-SELECT name FROM authz_policy WHERE project_id = sqlc.arg(id)::text::uuid ORDER BY name;
+-- The version comes with the name: the delete passes it as If-Match, so a policy that
+-- changed or was replaced under the same name since this read is not removed (Q-AUTHZ-202).
+SELECT name, version FROM authz_policy WHERE project_id = sqlc.arg(id)::text::uuid ORDER BY name;
 
 -- name: ProjectAdmins :many
 -- The administrators of one project.
@@ -199,12 +198,3 @@ SELECT kind, name
 SELECT id::text AS id, kind, name, status
   FROM principal
  WHERE kind = sqlc.arg(kind)::text AND name = sqlc.arg(name)::text;
-
--- name: ProjectsOfPrincipals :many
--- The projects administered by any of the principals (a subject and its groups),
--- for the callers that decide outside an index, such as a job.
-SELECT p.key, p.manage_policies, p.manage_repositories
-  FROM project p
- WHERE EXISTS (SELECT 1 FROM project_admin a
-                WHERE a.project_id = p.id AND a.principal_id = ANY (sqlc.arg(principal_ids)::text[]::uuid[]))
- ORDER BY p.key;

@@ -1856,6 +1856,8 @@ capability ([R-UI-041](api-and-ui.md#r-ui-041--projects), [Q-AUTHZ-181](#q-authz
 **Deleting a project.** A project can be deleted only when no repository, in any lifecycle state, is assigned and no
 service account belongs to it (409 `project_not_empty`). Its policies are deleted with it, each through the policy
 store (audited and journaled like any policy deletion), and its administrator entries go ([Q-AUTHZ-185](#q-authz-185--versions-delete-order-the-epoch-and-the-journal-of-project-writes)).
+Each deletion carries the version read before it as its `If-Match` ([Q-AUTHZ-204](#q-authz-204--a-project-delete-passes-the-version-it-read-as-the-if-match-of-each-policy-deletion),
+[H-407](#h-407--a-project-delete-can-remove-a-global-policy-that-took-the-name-of-a-just-deleted-project-policy-at-the-same-version)).
 Everything a client can cause is refused before the first policy is deleted; the delete is not one transaction
 ([Q-AUTHZ-192](#q-authz-192--a-project-delete-is-not-one-transaction),
 [H-398](#h-398--a-failed-project-delete-can-leave-the-project-without-some-of-its-policies)).
@@ -1906,7 +1908,7 @@ API:
 |---|---|---|---|
 | `GET /api/v1/projects` | List with administrators, counts and switches | 200 | `projects:read` (all) or project administrator (own) |
 | `POST /api/v1/projects` | Create | 201; 409 key exists, `project_key_overlap`; 422 | `projects:write` |
-| `GET /api/v1/projects/{key}` | Read | 200 with `ETag: "<version>"`; 404 | `projects:read` or one of its administrators |
+| `GET /api/v1/projects/{key}` | Read; `If-None-Match` is ignored, the body is never answered with 304 ([Q-AUTHZ-202](#q-authz-202--a-read-of-a-project-is-never-answered-with-304)) | 200 with `ETag: "<version>"`; 404 | `projects:read` or one of its administrators |
 | `PUT /api/v1/projects/{key}` | Replace display name, description, switches; `If-Match` required | 200 with the new `ETag`; 404; 412 `precondition_failed`; 422; 428 `precondition_required` | `projects:write` |
 | `DELETE /api/v1/projects/{key}` | Delete (`If-Match` optional) | 204; 404; 409 `project_not_empty`; 412 | `projects:write` |
 | `PUT /api/v1/projects/{key}/admins/{principalRef}` | Add a project administrator | 201 or 200; 404 unknown principal; 422 a kind that cannot administer | `projects:write` |
@@ -4173,7 +4175,7 @@ project administrator never granted, and a project administrator could not see t
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Refuse every path outside the project's policies (chosen) | A project service account is no group member (422 `project_account_not_groupable`, trigger `AI002`), no role holder (`role_not_allowed`, as for any non-bindable principal), no entry of a global policy or of another project's policy and no package owner outside its project (422 `principal_outside_project`) | What the project administrator sees in its policies is everything the account can do; no global group changes it | One more rule in five places |
+| (a) Refuse every path outside the project's policies (chosen) | A project service account is no group member (422 `project_account_not_groupable`, trigger `AI002`), no role holder (`role_not_allowed`, as for any non-bindable principal), no entry of a global policy or of another project's policy and no package owner outside its project (422 `principal_outside_project`); the database refuses the role binding, the global entry and a foreign project's entry with `AI005` ([Q-AUTHZ-203](#q-authz-203--the-migration-of-projects-is-expand-class-in-seven-steps-and-the-database-refuses-a-project-account-as-a-global-principal)) | What the project administrator sees in its policies is everything the account can do; no global group changes it | One more rule in five places |
 | (b) Allow groups, let the administrator of trove take care | Only policies and roles are limited | Fewer rules | A group the project administrator cannot see widens the account; the account's grants are no longer the project's |
 | (c) Allow global policies naming the account | An administrator of trove may grant | Flexible | An account created by a delegate then has rights the delegate cannot review |
 
@@ -4595,6 +4597,72 @@ Context: the shared step admits a project administrator to an operation by capab
 
 **Applied in the spec:** R-AUTHZ-026 (the declaration paragraph). Code: `internal/api/v1/repositories_api.go`, `internal/api/v1/groups_api.go`, `internal/api/v1/tokens_api.go`, `internal/api/v1/upstream_api.go`.
 
+### Q-AUTHZ-202 · A read of a project is never answered with 304
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the ETag of a project is its `version` (R-API-012), which by Q-AUTHZ-185 moves with the fields a `PUT` replaces and not
+with administrators or assignments. The body of `GET /projects/{key}` holds administrators and counts, so a client that sent the
+tag as `If-None-Match` got `304` for a body that had changed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The read does not honour `If-None-Match` and always answers the whole body; the tag stays for `If-Match` (chosen) | `getProject` has no 304 response and no `If-None-Match` parameter in the OpenAPI description; the `ETag` header is still sent | A client can never hold a stale body behind a valid tag; the `PUT` precondition keeps its meaning (version) | A project read is never cheaper than the body, which is small |
+| (b) A validator that covers the whole body | A second tag derived from the body (or a counter that every administrator change and assignment moves) | Conditional reads work | Either a second tag next to `version`, which a client must not confuse with the `If-Match` one, or the version moves with administrators, which Q-AUTHZ-185 (b) rejects |
+
+**Choice:** (a).
+
+**Rationale:** a project is read by a few administrators and the UI; saving a small body is not worth a second validator.
+Revisit when a client polls the project at a rate where the body matters.
+
+**Applied in the spec:** R-AUTHZ-026 (the read). Code: `internal/api/v1/projects_api.go`, `api/openapi.yaml`.
+
+### Q-AUTHZ-203 · The migration of projects is expand-class in seven steps, and the database refuses a project account as a global principal
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: migration 00019 (not released when this was decided) built indexes and a unique constraint on existing tables inside
+one transaction and added the foreign keys already valid, against R-HA-018's expand class. Q-AUTHZ-175 also left the refusal of a
+project service account as the principal of a role binding or of a global entry to the code alone.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Seven steps: tables, columns, triggers and the foreign keys `NOT VALID` (00019); one `CREATE INDEX CONCURRENTLY` step per index (00020 to 00023); the unique constraint from its index, the entry table and the guards (00024); `VALIDATE CONSTRAINT` (00025) (chosen) | The step shape of R-HA-018: no scan under a long lock, every step idempotent or transactional | The lock on `repositories`, `service_account` and `authz_policy` is short at every step; a failed index build leaves an `INVALID` index the runner drops | Seven files for one feature; the composite foreign key waits for the unique constraint, so the entry table is created in 00024 |
+| (b) Keep one file | As before | One file | A rollout blocks writes of repositories while an index is built and a foreign key validated |
+| (c) Leave the unique constraint inline | `ADD CONSTRAINT ... UNIQUE` | Fewer steps | It builds the index under `ACCESS EXCLUSIVE` on `authz_policy` |
+
+The guard of Q-AUTHZ-175 is a trigger function with SQLSTATE `AI005`: a project service account is refused as the principal of
+`authz_role_binding` and of `authz_policy_entry`, and as the principal of an `authz_project_policy_entry` of another project's
+policy. A global service account and the project's own accounts pass. The API answers 422 before it gets there.
+
+**Choice:** (a), with the guard.
+
+**Rationale:** a rolling upgrade must not hold writes (R-HA-018), and the rule that keeps a delegate's account inside its project
+should not depend on one code path. The development agent records no revisit condition.
+
+**Applied in the spec:** R-HA-018 (no text change), R-AUTHZ-026 (data model). Code: `internal/meta/postgres/migrations/00019_projects.sql`
+to `00025_projects_validate.sql`; the guards are listed in [database.md](../developer/database.md#projects-tables-00019-to-00025).
+
+### Q-AUTHZ-204 · A project delete passes the version it read as the If-Match of each policy deletion
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the delete (Q-AUTHZ-192) removed the policies of a project by name, with a blind write. A policy deleted by someone else
+after the first read, and a global policy created under the freed name, would have been removed in its place.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The deletion carries the version read (chosen) | `ProjectPolicyNames` returns name and version; a `412` from the policy store marks the round as changed and the delete reads again (three rounds at most); a `404` is skipped | Closes the window in every case where the versions differ; no change to the policy store | A global policy at the same version as the project policy it replaced is still removed (H-407) |
+| (b) A store method that deletes by id or by project | `Delete(name, project)` | Closes it fully | A change in the policy store, which another work package owns |
+| (c) Keep the blind write | As before | Nothing | A global policy can be removed by a project delete |
+
+**Choice:** (a).
+
+**Rationale:** it removes the window for every policy that was edited and for every case where the global policy differs in
+version, without touching the store. The development agent revisits it when the policy store takes the project in its deletion.
+
+**Applied in the spec:** R-AUTHZ-026 (deleting a project). Gap: [H-407](#h-407--a-project-delete-can-remove-a-global-policy-that-took-the-name-of-a-just-deleted-project-policy-at-the-same-version).
+
 ## What this does not cover
 
 ### H-21 · No reservation of name prefixes
@@ -4668,3 +4736,12 @@ reads. The two checks do not share a lock: a project `web` and a global service 
 can both succeed. The name is then a global account that starts with a project's prefix, which the administrator of `web` could
 mistake for its own; the account has no project grant, and nothing is granted by the name. The overlap is found by
 `ProjectGlobalAccountsWithPrefix` the next time a project key is created and by the listing of global service accounts.
+
+### H-407 · A project delete can remove a global policy that took the name of a just-deleted project policy at the same version
+
+The delete of a project removes its policies by name with the version it read (Q-AUTHZ-204). If a project policy that was never
+edited (version 1) is deleted by someone else after that read, and a global policy of the same name is created before the policy
+store runs, the version matches and the global policy is removed, audited and journaled as any policy deletion. It needs three
+actors inside a window of milliseconds and a global policy under a project's prefix, which the name rules allow
+(Q-AUTHZ-176 covers accounts and repositories, not policies). Closing it needs a deletion in the policy store that names the
+project.

@@ -38,8 +38,8 @@ Four layers, none of which depends on the one before it:
    administrator, a switch turned off or a repository unassigned takes effect on every replica with the authorization epoch
    ([permissions.md](permissions.md)).
 4. **The database.** Administrators are users or groups; a project service account is no group member, its name starts with the
-   project key and its project never changes; the grants of a project policy cannot be written to the table of global grants
-   (SQLSTATE `AI001` to `AI004`, [developer/database.md](../developer/database.md#projects-tables-00019)).
+   project key and its project never changes; the grants of a project policy cannot be written to the table of global grants, and a project service account is no principal of a role binding, of a global entry or of another project's entry
+   (SQLSTATE `AI001` to `AI005`, [developer/database.md](../developer/database.md#projects-tables-00019-to-00025)).
 
 ## Credentials
 
@@ -84,3 +84,5 @@ The gaps of these mechanisms are recorded on the spec page that describes them, 
   delete that fails after the policy deletions leaves the project with fewer policies;
 - [H-399](../spec/authorization.md#h-399--a-global-service-account-and-a-project-key-created-at-the-same-instant-can-overlap) —
   a global service account and a project key created at the same instant can overlap.
+- [H-407](../spec/authorization.md#h-407--a-project-delete-can-remove-a-global-policy-that-took-the-name-of-a-just-deleted-project-policy-at-the-same-version) —
+  a project delete can remove a global policy that took a just-freed name at the same version.

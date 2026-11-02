@@ -227,18 +227,31 @@ const maxJournaledPolicies = 1000
 func (s *service) Delete(ctx context.Context, actor authz.Subject, key string, expected int64) (int64, error) {
 	var deleted []string
 	for range maxDeleteRounds {
-		names, err := s.precheckDelete(ctx, key, expected)
+		policies, err := s.precheckDelete(ctx, key, expected)
 		if err != nil {
 			return 0, err
 		}
-		for _, name := range names {
+		changed := false
+		for _, pol := range policies {
 			if s.o.Policies == nil {
 				return 0, errs.E(errs.Unavailable, errs.CodeUnavailable, "The policy store is not available on this replica.")
 			}
-			if _, err := s.o.Policies.Delete(ctx, actor, name, errs.AnyRevision); err != nil && errs.KindOf(err) != errs.NotFound {
+			// The version read in the precheck is the If-Match of the deletion: a policy
+			// that was edited, or replaced under the same name by a global one, since
+			// then is not removed (Q-AUTHZ-202). A stale answer sends the round again.
+			_, err := s.o.Policies.Delete(ctx, actor, pol.Name, pol.Version)
+			switch {
+			case err == nil:
+				deleted = append(deleted, pol.Name)
+			case errs.KindOf(err) == errs.NotFound:
+			case errs.KindOf(err) == errs.PreconditionFailed:
+				changed = true
+			default:
 				return 0, err
 			}
-			deleted = append(deleted, name)
+		}
+		if changed {
+			continue
 		}
 		epoch, again, err := s.deleteEmpty(ctx, actor, key, expected, deleted)
 		if err != nil || !again {
@@ -250,9 +263,9 @@ func (s *service) Delete(ctx context.Context, actor authz.Subject, key string, e
 
 // precheckDelete reads the project and refuses what Delete refuses before it
 // touches a policy: an unknown project, a stale version, a project that is not
-// empty. It returns the names of the project's policies.
-func (s *service) precheckDelete(ctx context.Context, key string, expected int64) ([]string, error) {
-	var names []string
+// empty. It returns the project's policies with the version each has now.
+func (s *service) precheckDelete(ctx context.Context, key string, expected int64) ([]q.ProjectPolicyNamesRow, error) {
+	var names []q.ProjectPolicyNamesRow
 	err := s.inTx(ctx, func(_ meta.Tx, qs *q.Queries) error {
 		p, err := load(ctx, qs, key)
 		if err != nil {

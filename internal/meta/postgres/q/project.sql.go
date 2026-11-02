@@ -605,24 +605,31 @@ func (q *Queries) ProjectOfRepository(ctx context.Context, repositoryKey string)
 }
 
 const projectPolicyNames = `-- name: ProjectPolicyNames :many
-SELECT name FROM authz_policy WHERE project_id = $1::text::uuid ORDER BY name
+SELECT name, version FROM authz_policy WHERE project_id = $1::text::uuid ORDER BY name
 `
+
+type ProjectPolicyNamesRow struct {
+	Name    string
+	Version int64
+}
 
 // The policies of a project, for the delete that removes them through the policy
 // store so that each deletion is audited and journaled.
-func (q *Queries) ProjectPolicyNames(ctx context.Context, id string) ([]string, error) {
+// The version comes with the name: the delete passes it as If-Match, so a policy that
+// changed or was replaced under the same name since this read is not removed (Q-AUTHZ-202).
+func (q *Queries) ProjectPolicyNames(ctx context.Context, id string) ([]ProjectPolicyNamesRow, error) {
 	rows, err := q.db.Query(ctx, projectPolicyNames, id)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []string{}
+	items := []ProjectPolicyNamesRow{}
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
+		var i ProjectPolicyNamesRow
+		if err := rows.Scan(&i.Name, &i.Version); err != nil {
 			return nil, err
 		}
-		items = append(items, name)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -811,66 +818,6 @@ func (q *Queries) ProjectUpdate(ctx context.Context, arg ProjectUpdateParams) ([
 	for rows.Next() {
 		var i ProjectUpdateRow
 		if err := rows.Scan(&i.ID, &i.Version); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const projectVersion = `-- name: ProjectVersion :many
-SELECT version FROM project WHERE key = $1::text
-`
-
-func (q *Queries) ProjectVersion(ctx context.Context, key string) ([]int64, error) {
-	rows, err := q.db.Query(ctx, projectVersion, key)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []int64{}
-	for rows.Next() {
-		var version int64
-		if err := rows.Scan(&version); err != nil {
-			return nil, err
-		}
-		items = append(items, version)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const projectsOfPrincipals = `-- name: ProjectsOfPrincipals :many
-SELECT p.key, p.manage_policies, p.manage_repositories
-  FROM project p
- WHERE EXISTS (SELECT 1 FROM project_admin a
-                WHERE a.project_id = p.id AND a.principal_id = ANY ($1::text[]::uuid[]))
- ORDER BY p.key
-`
-
-type ProjectsOfPrincipalsRow struct {
-	Key                string
-	ManagePolicies     bool
-	ManageRepositories bool
-}
-
-// The projects administered by any of the principals (a subject and its groups),
-// for the callers that decide outside an index, such as a job.
-func (q *Queries) ProjectsOfPrincipals(ctx context.Context, principalIds []string) ([]ProjectsOfPrincipalsRow, error) {
-	rows, err := q.db.Query(ctx, projectsOfPrincipals, principalIds)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ProjectsOfPrincipalsRow{}
-	for rows.Next() {
-		var i ProjectsOfPrincipalsRow
-		if err := rows.Scan(&i.Key, &i.ManagePolicies, &i.ManageRepositories); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

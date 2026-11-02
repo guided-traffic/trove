@@ -75,6 +75,10 @@ What the project service does beyond its interface:
 - `Delete` is not one transaction: it refuses everything a client can cause first, deletes the policies through the policy store, then
   one closing transaction locks, counts again and deletes the project (Q-AUTHZ-192; gap
   [H-398](../spec/authorization.md#h-398--a-failed-project-delete-can-leave-the-project-without-some-of-its-policies)).
+  Each policy deletion carries the version `ProjectPolicyNames` read as its `If-Match` (Q-AUTHZ-204): a `412` sends the round
+  again (three rounds at most, then 409), a `404` is skipped; the residual window is
+  [H-407](../spec/authorization.md#h-407--a-project-delete-can-remove-a-global-policy-that-took-the-name-of-a-just-deleted-project-policy-at-the-same-version).
+  `Options.Policies` is the interface `PolicyDeleter` (`*authz.Service` in the composition), so a test can act between two steps.
 - `CreateIn` takes `cluster.ConfigProjects` before the overlap rule (Q-AUTHZ-194; gap
   [H-399](../spec/authorization.md#h-399--a-global-service-account-and-a-project-key-created-at-the-same-instant-can-overlap)).
 
@@ -87,7 +91,7 @@ The paths are in [api/openapi.yaml](../../api/openapi.yaml) (`# >>> M5a projects
 |---|---|---|---|
 | `listProjects` `GET /projects` | `projects:read` + `projectAdmin: any` | a caller without the capability sees its administered projects | cursor paging by key; `q`, `sort` |
 | `createProject` `POST /projects` | `projects:write` | — | idempotent (`s.idem.Do`); 409 `already_exists`, `project_key_overlap`; epoch |
-| `getProject` `GET /projects/{key}` | `projects:read` + `projectAdmin: any` | `delegatedScope.Sees(key)` else 404 | `ETag`, `If-None-Match` |
+| `getProject` `GET /projects/{key}` | `projects:read` + `projectAdmin: any` | `delegatedScope.Sees(key)` else 404 | `ETag` (the PUT version) for `If-Match`; `If-None-Match` is ignored, no 304 (Q-AUTHZ-202) |
 | `replaceProject` `PUT /projects/{key}` | `projects:write`, recent auth, `x-trove-if-match: required` | — | 412, 428 from the binder; epoch; `authz.project.updated` |
 | `deleteProject` `DELETE /projects/{key}` | `projects:write`, recent auth | — | `If-Match` optional; 409 `project_not_empty`; epoch |
 | `addProjectAdmin` `PUT /projects/{key}/admins/{principalRef}` | `projects:write`, recent auth | — | 201 or 200; exempt from `If-Match` (ifmatch_test.go) |
@@ -146,11 +150,11 @@ their schemas carry the member `project` ([events_identity.go](../../internal/au
 ### Database
 
 Migration `00019_projects.sql`, queries `project.sql`, `authz.sql` (extended), `identity.sql` and `repository.sql`
-(`InsertRepository` takes `project_id`); the table list is in [database.md](database.md#projects-tables-00019). New statements
+(`InsertRepository` takes `project_id`); the table list is in [database.md](database.md#projects-tables-00019-to-00025). New statements
 for the packages: `ProjectList`, `ProjectGet`, `ProjectLock`, `ProjectInsert`, `ProjectUpdate`, `ProjectDelete`, `ProjectCountMembers`,
 `ProjectPolicyNames`, `ProjectAdmins`, `ProjectAdminsOfAll`, `ProjectAddAdmin`, `ProjectRemoveAdmin`, `ProjectOfRepository`,
 `ProjectAssignRepository`, `ProjectRepositoryKeys`, `ProjectServiceAccountNames`, `ProjectKeysOverlapping`, `ProjectKeysPrefixing`,
-`ProjectGlobalAccountsWithPrefix`, `ProjectLookupPrincipals`, `ProjectsOfPrincipals`, `AuthzBuildProjects`,
+`ProjectGlobalAccountsWithPrefix`, `ProjectLookupPrincipals`, `AuthzBuildProjects`,
 `AuthzBuildProjectAdmins`, `AuthzInsertProjectEntry`, `IdentityInsertProjectServiceAccount`.
 
 ## Who built what
@@ -178,7 +182,7 @@ Tests named after the requirement (`TestR_AUTHZ_026_…`); the integration tier 
 | `TestR_AUTHZ_026_ProjectsOnAnswers…`, `…_ProjectAdministratorsHoldManageOnTheirRepositories`, `…_ProjectPolicyIsScopedToItsProject`, `…_MatchCacheKeyIncludesTheProject`, `…_ProjectPolicyValidation`, `…_ProjectServiceAccountTakesNoRole`, `…_ListFilterByProject` | [project_test.go](../../internal/authz/project_test.go) | the engine |
 | `TestR_AUTHZ_026_EmptyProject`, `TestR_AUTHZ_031_ProjectEventsCarryTheirJournalEntries` | [service_test.go](../../internal/project/service_test.go) | the service |
 | `TestR_AUTHZ_026_ProjectAdministratorWritesPolicies`, `…_ProjectSwitchOffRefusesPolicyWrites`, `…_ProjectPolicyIsInvisibleToTheOldBuild`, `…_ProjectServiceAccountIsGrantedByItsProjectOnly`, `…_AuthzMeListsAdministeredProjects`, `…_PolicyOfARepositoryThatLeftTheProjectWarns`, `TestR_AUTHZ_028_ProjectAdministratorRemovalIsRefusedOnAnotherReplica` | [test/integration/authz/projects_test.go](../../test/integration/authz/projects_test.go) | policies of a project over HTTP and on replicas |
-| `TestR_AUTHZ_026_ProjectLifecycleOverHTTP`, `…_Administrators`, `…_AssignAndUnassign`, `…_DeleteNeedsAnEmptyProject`, `…_PrincipalLookupBounds`, `…_SwitchesNeedTheCurrentIfMatch`, `…_AProjectAdministratorSeesItsOwnProjectsOnly`, `TestR_AUTHZ_032_EveryProjectWriteRaisesTheEpochAndAnswersIt` | [test/integration/projects](../../test/integration/projects) | the project API; the last-but-one: an administrator without `projects:read` lists exactly its projects and gets 404 on another's |
+| `TestR_AUTHZ_026_ProjectLifecycleOverHTTP`, `…_ReadIgnoresIfNoneMatch`, `…_DeleteRetriesForNewPolicies`, `…_DeleteSparesAGlobalPolicyOfTheSameName` (the last two build a project service with a wrapped policy store), `…_Administrators`, `…_AssignAndUnassign`, `…_DeleteNeedsAnEmptyProject`, `…_PrincipalLookupBounds`, `…_SwitchesNeedTheCurrentIfMatch`, `…_AProjectAdministratorSeesItsOwnProjectsOnly`, `TestR_AUTHZ_032_EveryProjectWriteRaisesTheEpochAndAnswersIt` | [test/integration/projects](../../test/integration/projects) | the project API; the last-but-one: an administrator without `projects:read` lists exactly its projects and gets 404 on another's |
 | `TestR_AUTHZ_026_RepositoryProjectMember`, `…_ProjectAdministratorRepositoryWrites` (including the `DeleteIn` recheck), `…_ProjectAdministratorOverHTTP` | [test/integration/transfer/projects_test.go](../../test/integration/transfer/projects_test.go) | repositories of a project, service level and over HTTP; the replica `off` is asked before the switch is turned on, because later writes refresh its index |
 | `TestR_AUTH_020_ProjectServiceAccountsOfTheDomain`, `TestR_AUTHZ_026_ProjectServiceAccountsOverHTTP`, `…_ProjectAdministratorServiceAccountsAndTokens` | [test/integration/identity/projects_test.go](../../test/integration/identity/projects_test.go) | project accounts, the tokens of a project administrator, and who sees which token of another owner |
 | `TestProjectsMigration`, `TestTableRegistry`, `TestRevisionColumns` | [test/integration/postgres](../../test/integration/postgres) | the schema |

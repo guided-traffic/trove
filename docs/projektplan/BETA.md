@@ -329,8 +329,9 @@ Bastion serves those parties. Phase 5 then maps GitLab pipelines into projects.
   token may be self-rotatable and so unbounded; "New policy" in a project-scoped list creates a global policy; the spec
   puts a service account's description change under two different rights; refusals of a project administrator may leave
   no audit event
-- ⚪ MEDIUM (code review) · `GET /projects/{key}` answers `304` for a body that changed: its ETag is `version`, which an
-  administrator or assignment change does not move (Q-AUTHZ-185) (`projects_api.go`)
+- 🟢 MEDIUM (code review) · `GET /projects/{key}` answered `304` for a body that changed: its ETag is `version`, which an
+  administrator or assignment change does not move (Q-AUTHZ-185) (`projects_api.go`); the read now ignores
+  `If-None-Match` and `PUT` keeps `If-Match` on `version` (Q-AUTHZ-202)
 - ⚪ MEDIUM (code review) · A service account named exactly `<key>-` (the UI prefills it) passes the code check and fails
   the trigger `AI003`, which is not mapped: `500` instead of `422 project_prefix_required` (`serviceaccounts.go`)
 - ⚪ LOW (code review) · Migration `00019_projects` builds indexes and constraints on existing tables without
@@ -340,6 +341,11 @@ Bastion serves those parties. Phase 5 then maps GitLab pipelines into projects.
   `repository.created` of a project repository carries no `project`; the project dialog's retry after a refusal reuses
   its idempotency key and treats a `404` of an undo step as failure; doc drift (Q-AUTH-189 against H-399, R-REPO-008's
   code, `internal/project` package comment, two unused queries); the delete retry branch has no test
+  - 🟢 fixed by the fix wave: migration `00019` split into the expand steps `00019` to `00025` (indexes `CONCURRENTLY`,
+    constraints `NOT VALID` then validated, Q-AUTHZ-203) with the database guard `AI005` against a project service account
+    in a role binding, a global entry or another project's policy; the project delete removes each policy at the version
+    it read (Q-AUTHZ-204; H-407 left: a never-edited policy replaced by a global one of the same name at version 1); the
+    retry rounds are tested; the package comment and the unused queries corrected
 - ⚪ LOW (UI fix wave) · `PUT /projects/{key}/repositories/{repoKey}?move=true` takes no expected current owner, so an
   administrator's move can take a repository from a project it was moved to between the dialog's read and the request; the
   dialog re-reads the owners right before and asks when one changed, which leaves only that window

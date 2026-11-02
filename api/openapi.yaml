@@ -3873,12 +3873,12 @@ paths:
       description: |
         The project with its administrators, counts and `ETag` (the version, R-API-012). Readable with
         `projects:read` and by an administrator of the project; any other caller, also for a project that
-        does not exist, gets `404`.
+        does not exist, gets `404`. The `ETag` is the version of the fields `PUT` replaces; the body also holds
+        administrators and counts, which do not move it (Q-AUTHZ-185), so the read ignores `If-None-Match` and
+        always answers the whole body (Q-AUTHZ-202). Send the tag as `If-Match` on `PUT` and `DELETE`.
       x-trove-permission:
         permission: projects:read
         projectAdmin: any
-      parameters:
-        - $ref: "#/components/parameters/IfNoneMatch"
       responses:
         "200":
           description: The project.
@@ -3889,8 +3889,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Project"
-        "304":
-          description: The `If-None-Match` tag is current.
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -3899,8 +3897,6 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
-        "412":
-          $ref: "#/components/responses/PreconditionFailed"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":

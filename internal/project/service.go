@@ -14,7 +14,9 @@ import (
 // handlers over it (internal/api/v1/projects_api.go): they add ETags, idempotency,
 // paging and the declared permission, and call these functions.
 //
-// Every method that writes runs in one transaction, notifies the change area authz
+// Every other method that writes runs in one transaction; Delete (Q-AUTHZ-192: the
+// policies go one by one through the policy store, then one transaction closes the
+// project). A write transaction notifies the change area authz
 // (an assignment also repo_config, and project administrators' effect reaches the
 // index of every replica through it), records its audit event of events_projects.go
 // in that transaction, and returns the epoch the transaction produced for the header
@@ -73,6 +75,12 @@ const (
 	MinLookupPrefix = 2
 )
 
+// PolicyDeleter is the one function of the policy store a project delete needs: the
+// deletion of a policy by name with its If-Match version (errs.AnyRevision for none).
+type PolicyDeleter interface {
+	Delete(ctx context.Context, actor authz.Subject, name string, expected int64) (int64, error)
+}
+
 // Options configure [New].
 type Options struct {
 	// DB runs the writes in READ COMMITTED transactions.
@@ -87,8 +95,10 @@ type Options struct {
 	// stay options so that the composition names the dependency.
 	Principals   principal.Store
 	Repositories repository.Reader
-	// Policies deletes the policies of a deleted project through the policy store.
-	Policies *authz.Service
+	// Policies deletes the policies of a deleted project through the policy store;
+	// *authz.Service is the implementation, a test wraps it to act between two steps of
+	// a delete.
+	Policies PolicyDeleter
 	// Recorder records the events of events_projects.go in the transaction of the write.
 	Recorder audit.Recorder
 }

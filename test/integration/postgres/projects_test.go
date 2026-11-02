@@ -3,10 +3,12 @@
 package postgres
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/guided-traffic/trove/internal/backup/tables"
 	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/meta/postgres"
 )
 
 // TestProjectsMigration checks 00019_projects: the tables with their export class, the
@@ -28,6 +30,40 @@ func TestProjectsMigration(t *testing.T) {
 		}
 		if !meta.IsRevisionColumn("project", "version") {
 			t.Error("project.version is not registered")
+		}
+	})
+
+	t.Run("R-HA-018 the project steps are expand steps: indexes concurrently, keys validated, the unique constraint from its index", func(t *testing.T) {
+		steps, err := postgres.EmbeddedSteps()
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen := 0
+		for _, s := range steps {
+			if s.Version < 19 || s.Version > 25 {
+				continue
+			}
+			seen++
+			if s.Phase != "expand" || s.RequiresApp != "" {
+				t.Errorf("%s: phase %q, requires-app %q", s.Name, s.Phase, s.RequiresApp)
+			}
+			if s.NoTx && !strings.Contains(strings.ToUpper(s.SQL), "CONCURRENTLY") {
+				t.Errorf("%s is a no-transaction step without CONCURRENTLY", s.Name)
+			}
+		}
+		if seen != 7 {
+			t.Errorf("project steps = %d, want 7 (00019 to 00025)", seen)
+		}
+		if n := scalar[int](t, admin, "SELECT count(*) FROM pg_constraint WHERE contype = 'f' AND NOT convalidated AND connamespace = $1::regnamespace", schemaName); n != 0 {
+			t.Errorf("%d foreign keys are still NOT VALID", n)
+		}
+		for _, idx := range []string{"repositories_project", "service_account_project", "authz_policy_project", "authz_policy_id_project"} {
+			if !scalar[bool](t, admin, "SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass($1)", schemaName+"."+idx) {
+				t.Errorf("index %s is missing or invalid", idx)
+			}
+		}
+		if got := scalar[string](t, admin, "SELECT contype::text FROM pg_constraint WHERE conname = 'authz_policy_id_project'"); got != "u" {
+			t.Errorf("authz_policy_id_project is %q, want a unique constraint", got)
 		}
 	})
 
@@ -85,6 +121,39 @@ func TestProjectsMigration(t *testing.T) {
 			VALUES ('aaaaaaaa-0000-0000-0000-000000000022', 'aaaaaaaa-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000011', ARRAY['read'])`)
 		wantState(t, admin, "23514", `INSERT INTO trove.authz_project_policy_entry (policy_id, project_id, principal_id, actions)
 			VALUES ('aaaaaaaa-0000-0000-0000-000000000021', 'aaaaaaaa-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000011', ARRAY['write'])`)
+	})
+
+	t.Run("R-AUTHZ-026 a project service account is the principal of no global grant and of a project policy of its own project only", func(t *testing.T) {
+		const web, ops = "aaaaaaaa-0000-0000-0000-000000000001", "aaaaaaaa-0000-0000-0000-000000000031"
+		mustExec(t, admin, "INSERT INTO trove.project (id, key, display_name) VALUES ($1, 'ops', 'Operations')", ops)
+		mustExec(t, admin, "INSERT INTO trove.principal (id, kind, name) VALUES ('aaaaaaaa-0000-0000-0000-000000000032', 'service_account', 'ops-bot')")
+		mustExec(t, admin, "INSERT INTO trove.service_account (principal_id, project_id) VALUES ('aaaaaaaa-0000-0000-0000-000000000032', $1)", ops)
+		mustExec(t, admin, "INSERT INTO trove.authz_policy (id, name, project_id) VALUES ('aaaaaaaa-0000-0000-0000-000000000033', 'ops-read', $1)", ops)
+
+		// A role binding and an entry of a global policy.
+		wantState(t, admin, "AI005", "INSERT INTO trove.authz_role_binding (role, principal_id) VALUES ('auditor', 'aaaaaaaa-0000-0000-0000-000000000013')")
+		wantState(t, admin, "AI005", "INSERT INTO trove.authz_policy_entry (policy_id, principal_id, actions) VALUES ('aaaaaaaa-0000-0000-0000-000000000022', 'aaaaaaaa-0000-0000-0000-000000000013', ARRAY['read'])")
+		// A global service account stays bindable and grantable.
+		mustExec(t, admin, "INSERT INTO trove.authz_role_binding (role, principal_id) VALUES ('auditor', 'aaaaaaaa-0000-0000-0000-000000000014')")
+		mustExec(t, admin, "INSERT INTO trove.authz_policy_entry (policy_id, principal_id, actions) VALUES ('aaaaaaaa-0000-0000-0000-000000000022', 'aaaaaaaa-0000-0000-0000-000000000014', ARRAY['read'])")
+		// An update to a project account is refused as well.
+		wantState(t, admin, "AI005", "UPDATE trove.authz_role_binding SET principal_id = 'aaaaaaaa-0000-0000-0000-000000000013' WHERE principal_id = 'aaaaaaaa-0000-0000-0000-000000000014'")
+		mustExec(t, admin, "DELETE FROM trove.authz_role_binding WHERE principal_id = 'aaaaaaaa-0000-0000-0000-000000000014'")
+		mustExec(t, admin, "DELETE FROM trove.authz_policy_entry WHERE principal_id = 'aaaaaaaa-0000-0000-0000-000000000014'")
+
+		// A project policy takes its own project's accounts and global accounts, not another project's.
+		wantState(t, admin, "AI005", `INSERT INTO trove.authz_project_policy_entry (policy_id, project_id, principal_id, actions)
+			VALUES ('aaaaaaaa-0000-0000-0000-000000000033', $1, 'aaaaaaaa-0000-0000-0000-000000000013', ARRAY['read'])`, ops)
+		wantState(t, admin, "AI005", `INSERT INTO trove.authz_project_policy_entry (policy_id, project_id, principal_id, actions)
+			VALUES ('aaaaaaaa-0000-0000-0000-000000000021', $1, 'aaaaaaaa-0000-0000-0000-000000000032', ARRAY['read'])`, web)
+		mustExec(t, admin, `INSERT INTO trove.authz_project_policy_entry (policy_id, project_id, principal_id, actions)
+			VALUES ('aaaaaaaa-0000-0000-0000-000000000033', $1, 'aaaaaaaa-0000-0000-0000-000000000032', ARRAY['read'])`, ops)
+		mustExec(t, admin, `INSERT INTO trove.authz_project_policy_entry (policy_id, project_id, principal_id, actions)
+			VALUES ('aaaaaaaa-0000-0000-0000-000000000033', $1, 'aaaaaaaa-0000-0000-0000-000000000014', ARRAY['read'])`, ops)
+		wantState(t, admin, "AI005", "UPDATE trove.authz_project_policy_entry SET principal_id = 'aaaaaaaa-0000-0000-0000-000000000013' WHERE policy_id = 'aaaaaaaa-0000-0000-0000-000000000033' AND principal_id = 'aaaaaaaa-0000-0000-0000-000000000014'")
+
+		mustExec(t, admin, "DELETE FROM trove.service_account WHERE principal_id = 'aaaaaaaa-0000-0000-0000-000000000032'")
+		mustExec(t, admin, "DELETE FROM trove.project WHERE id = $1", ops)
 	})
 
 	t.Run("R-AUTHZ-026 a project with a repository or a service account cannot be deleted, and its policies go with it", func(t *testing.T) {

@@ -45,7 +45,7 @@ func TestR_AUTHZ_026_ProjectLifecycleOverHTTP(t *testing.T) {
 			t.Error("a create is not a revocation and has no journal entry")
 		}
 	})
-	t.Run("R-AUTHZ-026 a read answers the ETag and 304 for the current tag", func(t *testing.T) {
+	t.Run("R-AUTHZ-026 a read answers the ETag, and a conditional read still answers the body (Q-AUTHZ-202)", func(t *testing.T) {
 		for range 2 { // both replicas
 			g := f.do(f.admin, "GET", base+"/web", nil)
 			wantStatus(t, g, 200, "")
@@ -53,7 +53,7 @@ func TestR_AUTHZ_026_ProjectLifecycleOverHTTP(t *testing.T) {
 				t.Fatalf("%v", g.Header)
 			}
 		}
-		wantStatus(t, f.do(f.admin, "GET", base+"/web", nil, "If-None-Match", `"1"`), 304, "")
+		wantStatus(t, f.do(f.admin, "GET", base+"/web", nil, "If-None-Match", `"1"`), 200, "")
 		wantStatus(t, f.do(f.admin, "GET", base+"/nothing", nil), 404, "")
 	})
 	t.Run("R-AUTHZ-026 a key that exists answers 409 already_exists and changes nothing", func(t *testing.T) {

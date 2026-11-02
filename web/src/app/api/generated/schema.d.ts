@@ -1419,7 +1419,9 @@ export interface paths {
          * Read a project
          * @description The project with its administrators, counts and `ETag` (the version, R-API-012). Readable with
          *     `projects:read` and by an administrator of the project; any other caller, also for a project that
-         *     does not exist, gets `404`.
+         *     does not exist, gets `404`. The `ETag` is the version of the fields `PUT` replaces; the body also holds
+         *     administrators and counts, which do not move it (Q-AUTHZ-185), so the read ignores `If-None-Match` and
+         *     always answers the whole body (Q-AUTHZ-202). Send the tag as `If-Match` on `PUT` and `DELETE`.
          */
         get: operations["getProject"];
         /**
@@ -8167,10 +8169,7 @@ export interface operations {
     getProject: {
         parameters: {
             query?: never;
-            header?: {
-                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
-                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
-            };
+            header?: never;
             path: {
                 /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
                 key: string;
@@ -8189,18 +8188,10 @@ export interface operations {
                     "application/json": components["schemas"]["Project"];
                 };
             };
-            /** @description The `If-None-Match` tag is current. */
-            304: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthenticated"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            412: components["responses"]["PreconditionFailed"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];

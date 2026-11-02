@@ -172,8 +172,10 @@ func (s *Server) CreateProject(w http.ResponseWriter, r *http.Request, _ gen.Cre
 
 // GetProject implements GET /api/v1/projects/{key}. A caller that neither holds
 // projects:read nor administers the project gets 404, also for one that does not
-// exist.
-func (s *Server) GetProject(w http.ResponseWriter, r *http.Request, key string, _ gen.GetProjectParams) {
+// exist. The ETag is the version of the PUT fields; administrators and counts are in
+// the body and do not move it (Q-AUTHZ-185), so If-None-Match is not honoured: a 304
+// would hide an administrator added after the read (Q-AUTHZ-202).
+func (s *Server) GetProject(w http.ResponseWriter, r *http.Request, key string) {
 	svc, err := s.projects()
 	var scope DelegatedScope
 	if err == nil {
@@ -190,11 +192,7 @@ func (s *Server) GetProject(w http.ResponseWriter, r *http.Request, key string, 
 		httpserver.Problem(w, r, err)
 		return
 	}
-	tag := ETag(p.Version, "")
-	if NotModified(w, r, tag) {
-		return
-	}
-	w.Header().Set("ETag", tag)
+	SetETag(w, p.Version, "")
 	writeJSON(w, r, http.StatusOK, toProject(p))
 }
 

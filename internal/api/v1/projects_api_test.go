@@ -120,14 +120,14 @@ func TestR_API_047_ListProjectsNarrowsToTheCaller(t *testing.T) {
 func TestR_AUTHZ_026_GetProjectIsNotFoundForAnotherProject(t *testing.T) {
 	web := projectCaller{projects: []authz.AdministeredProject{{Key: "web"}}}
 	s := projectsSetup(t, web)
-	t.Run("R-AUTHZ-026 an administrator reads its project with an ETag and gets 304 for the current tag", func(t *testing.T) {
+	t.Run("R-AUTHZ-026 an administrator reads its project with an ETag, and a conditional read still answers the body (Q-AUTHZ-202)", func(t *testing.T) {
 		w := s.get("/api/v1/projects/web")
 		if w.Code != 200 || w.Header().Get("ETag") != `"3"` {
 			t.Fatalf("%d %v", w.Code, w.Header())
 		}
 		w = s.do("GET", "/api/v1/projects/web", "", map[string]string{"If-None-Match": `"3"`})
-		if w.Code != http.StatusNotModified {
-			t.Errorf("If-None-Match: %d", w.Code)
+		if w.Code != http.StatusOK || w.Body.Len() == 0 {
+			t.Errorf("If-None-Match: %d, want the body", w.Code)
 		}
 	})
 	t.Run("R-AUTHZ-026 a project the caller does not administer answers 404, existing or not", func(t *testing.T) {

@@ -15,6 +15,12 @@
 -- (trigger below), so a 0.9.x replica that rewrites such a policy fails instead
 -- of turning its grants global. Both statements are enforced by the database, not
 -- only by the new code.
+--
+-- Expand class (R-HA-018). The tables that already exist are touched without a long
+-- lock: the columns are added plain, their foreign keys NOT VALID, their indexes are
+-- built CONCURRENTLY in the steps 00020 to 00023, the unique constraint comes from
+-- such an index (00024), and the foreign keys are validated in 00025. The tables this
+-- step creates are empty and take their indexes and keys inline.
 
 CREATE TABLE project (
     id                   uuid        PRIMARY KEY,
@@ -47,33 +53,24 @@ CREATE TRIGGER project_admin_kind BEFORE INSERT OR UPDATE OF principal_id ON pro
 -- while a repository is assigned (the default NO ACTION; the service answers
 -- 409 project_not_empty first). Assignment is a write of this column, by an
 -- administrator or in the transaction that creates the repository.
-ALTER TABLE repositories ADD COLUMN project_id uuid REFERENCES project (id);
-CREATE INDEX repositories_project ON repositories (project_id) WHERE project_id IS NOT NULL;
+ALTER TABLE repositories ADD COLUMN project_id uuid;
+ALTER TABLE repositories ADD CONSTRAINT repositories_project_id_fkey
+    FOREIGN KEY (project_id) REFERENCES project (id) NOT VALID;
 
 -- A project service account belongs to its project for good (Q-AUTHZ-169). The
 -- project is deleted only without accounts (NO ACTION). The column is set when
 -- the account is created and never changes.
-ALTER TABLE service_account ADD COLUMN project_id uuid REFERENCES project (id);
-CREATE INDEX service_account_project ON service_account (project_id) WHERE project_id IS NOT NULL;
+ALTER TABLE service_account ADD COLUMN project_id uuid;
+ALTER TABLE service_account ADD CONSTRAINT service_account_project_id_fkey
+    FOREIGN KEY (project_id) REFERENCES project (id) NOT VALID;
 
 -- A project policy: deleted with its project. Its grants are stored in
 -- authz_project_policy_entry, not in authz_policy_entry (Q-AUTHZ-174). The
--- unique constraint lets the entry table name the project together with the
--- policy, so a row for a global policy cannot exist.
-ALTER TABLE authz_policy ADD COLUMN project_id uuid REFERENCES project (id) ON DELETE CASCADE;
-ALTER TABLE authz_policy ADD CONSTRAINT authz_policy_id_project UNIQUE (id, project_id);
-CREATE INDEX authz_policy_project ON authz_policy (project_id) WHERE project_id IS NOT NULL;
-
-CREATE TABLE authz_project_policy_entry (
-    policy_id     uuid   NOT NULL,
-    project_id    uuid   NOT NULL,
-    principal_id  uuid   NOT NULL REFERENCES principal (id) ON DELETE CASCADE,
-    actions       text[] NOT NULL CHECK (cardinality(actions) > 0
-                    AND actions <@ ARRAY['read', 'annotate', 'deploy', 'overwrite', 'delete', 'manage']::text[]),
-    PRIMARY KEY (policy_id, principal_id),
-    FOREIGN KEY (policy_id, project_id) REFERENCES authz_policy (id, project_id) ON DELETE CASCADE
-);
-CREATE INDEX authz_project_policy_entry_principal ON authz_project_policy_entry (principal_id);
+-- unique constraint (00024) lets the entry table name the project together with
+-- the policy, so a row for a global policy cannot exist.
+ALTER TABLE authz_policy ADD COLUMN project_id uuid;
+ALTER TABLE authz_policy ADD CONSTRAINT authz_policy_project_id_fkey
+    FOREIGN KEY (project_id) REFERENCES project (id) ON DELETE CASCADE NOT VALID;
 
 -- A row of authz_policy_entry for a project policy is refused: the binaries of
 -- the previous release write there, and a project policy they rewrite must fail

@@ -5310,12 +5310,6 @@ type DeleteProjectParams struct {
 	IfMatch *IfMatchOptional `json:"If-Match,omitempty"`
 }
 
-// GetProjectParams defines parameters for GetProject.
-type GetProjectParams struct {
-	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
-	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
-}
-
 // ReplaceProjectParams defines parameters for ReplaceProject.
 type ReplaceProjectParams struct {
 	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
@@ -6106,7 +6100,7 @@ type ServerInterface interface {
 	DeleteProject(w http.ResponseWriter, r *http.Request, key string, params DeleteProjectParams)
 	// GetProject Read a project
 	// (GET /api/v1/projects/{key})
-	GetProject(w http.ResponseWriter, r *http.Request, key string, params GetProjectParams)
+	GetProject(w http.ResponseWriter, r *http.Request, key string)
 	// ReplaceProject Replace a project's display name, description and switches
 	// (PUT /api/v1/projects/{key})
 	ReplaceProject(w http.ResponseWriter, r *http.Request, key string, params ReplaceProjectParams)
@@ -8882,32 +8876,8 @@ func (siw *ServerInterfaceWrapper) GetProject(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Parameter object where we will unmarshal all parameters from the context
-	var params GetProjectParams
-
-	headers := r.Header
-
-	// ------------- Optional header parameter "If-None-Match" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
-		var IfNoneMatch IfNoneMatch
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
-			return
-		}
-
-		params.IfNoneMatch = &IfNoneMatch
-
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetProject(w, r, key, params)
+		siw.Handler.GetProject(w, r, key)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
