@@ -49,6 +49,72 @@ type ProjectLookup interface {
 	// AccountProject returns the key of the project a service account (by
 	// principal ID) belongs to, "" for a global account.
 	AccountProject(ctx context.Context, principalID string) (string, error)
+	// KeyPrefixing returns the key of a project whose key and a hyphen start the
+	// name, "" when none does (Q-AUTHZ-200).
+	KeyPrefixing(ctx context.Context, name string) (string, error)
+	// AutoJoinGroup reports whether the principal is an auto-join group (Q-AUTHZ-200).
+	AutoJoinGroup(ctx context.Context, principalID string) (bool, error)
+}
+
+// WriteOption changes how a policy write or validation is judged.
+type WriteOption func(*writeOpts)
+
+type writeOpts struct {
+	// delegate is the key of the project a project administrator writes for, "" for a
+	// caller that holds the capability (Q-AUTHZ-197, Q-AUTHZ-199).
+	delegate string
+	// projects answers the lookups of the write; the writer sets the queries of its
+	// own transaction here, so the checks and the insert see one state (Q-AUTHZ-199).
+	projects ProjectLookup
+	// expectProject, when expectSet, is the project the policy under change must
+	// belong to, nil for a global policy ([ExpectProject]).
+	expectProject *string
+	expectSet     bool
+	// create is set for a new policy, whose name is checked against the reserved
+	// prefixes of the projects (Q-AUTHZ-200); a stored global policy keeps its name.
+	create bool
+}
+
+// AsDelegate marks the write as that of a project administrator of the project:
+// the policy under change must be the project's (checked under the policy lock)
+// and the answers of the validation do not tell what lies outside the project
+// (Q-AUTHZ-197, Q-AUTHZ-199).
+func AsDelegate(project string) WriteOption { return func(o *writeOpts) { o.delegate = project } }
+
+// ExpectProject makes an update or a delete refuse, under the policy lock, a policy
+// that does not belong to the project: a key names a project, nil a global policy. A
+// caller that read the policy by name earlier (the delete of a project, which removes
+// the policies it listed) uses it so that a policy deleted and created again under
+// the same name, in another project or as a global one, is never touched; the answer
+// is 404, as for a policy that does not exist (Q-AUTHZ-199).
+func ExpectProject(project *string) WriteOption {
+	return func(o *writeOpts) { o.expectProject, o.expectSet = project, true }
+}
+
+func collectOptions(opts []WriteOption) writeOpts {
+	var o writeOpts
+	for _, f := range opts {
+		f(&o)
+	}
+	return o
+}
+
+// lookup returns the project lookups of the write.
+func (o writeOpts) lookup(s *Service) ProjectLookup {
+	if o.projects != nil {
+		return o.projects
+	}
+	return s.o.Projects
+}
+
+// inTx binds the project lookups to the queries of the writer's transaction when the
+// service reads from PostgreSQL; a test double stays what it is.
+func (s *Service) inTx(qs *q.Queries) WriteOption {
+	return func(o *writeOpts) {
+		if _, ok := s.o.Projects.(pgProjects); ok {
+			o.projects = txProjects{qs}
+		}
+	}
 }
 
 // Service is the domain API of policies, role bindings and caller checks
@@ -96,6 +162,8 @@ type resolvedPolicy struct {
 	covers    []string
 	// project is the ID of the policy's project, "" for a global policy.
 	project string
+	// o is the options of the write that asked for the resolution.
+	o writeOpts
 	// outside counts the key selectors of a stored project policy whose repository
 	// left the project (Q-AUTHZ-179): they stay and cover nothing.
 	outside int
@@ -125,8 +193,8 @@ func problemError(ps []ProblemField) error {
 
 // Validate checks a policy without storing it and reports what it would cover
 // (POST /api/v1/authz/validate-policy).
-func (s *Service) Validate(ctx context.Context, in PolicyInput) (Report, error) {
-	rp, problems, err := s.resolve(ctx, in, false)
+func (s *Service) Validate(ctx context.Context, in PolicyInput, opts ...WriteOption) (Report, error) {
+	rp, problems, err := s.resolve(ctx, in, false, append(opts, func(o *writeOpts) { o.create = true })...)
 	if err != nil {
 		return Report{}, err
 	}
@@ -138,7 +206,8 @@ func (s *Service) Validate(ctx context.Context, in PolicyInput) (Report, error) 
 }
 
 // pgProjects reads the project lookups from PostgreSQL, each in a transaction of
-// its own: the validation does not run in the caller's write transaction.
+// its own: the validation of a read-only caller does not run in a write transaction.
+// A policy write binds the lookups to its own transaction instead ([txProjects]).
 type pgProjects struct{ db meta.Runner }
 
 func (p pgProjects) read(ctx context.Context, fn func(qs *q.Queries) error) error {
@@ -152,29 +221,68 @@ func (p pgProjects) read(ctx context.Context, fn func(qs *q.Queries) error) erro
 }
 
 // ProjectID implements [ProjectLookup].
-func (p pgProjects) ProjectID(ctx context.Context, key string) (string, error) {
-	var id string
-	err := p.read(ctx, func(qs *q.Queries) error {
-		rows, err := qs.AuthzProjectByKey(ctx, key)
-		if len(rows) > 0 {
-			id = rows[0]
-		}
-		return err
-	})
+func (p pgProjects) ProjectID(ctx context.Context, key string) (id string, err error) {
+	err = p.read(ctx, func(qs *q.Queries) (err error) { id, err = txProjects{qs}.ProjectID(ctx, key); return })
 	return id, err
 }
 
 // AccountProject implements [ProjectLookup].
-func (p pgProjects) AccountProject(ctx context.Context, principalID string) (string, error) {
-	var key string
-	err := p.read(ctx, func(qs *q.Queries) error {
-		rows, err := qs.AuthzServiceAccountProject(ctx, principalID)
-		if len(rows) > 0 {
-			key = rows[0]
-		}
-		return err
-	})
+func (p pgProjects) AccountProject(ctx context.Context, principalID string) (key string, err error) {
+	err = p.read(ctx, func(qs *q.Queries) (err error) { key, err = txProjects{qs}.AccountProject(ctx, principalID); return })
 	return key, err
+}
+
+// KeyPrefixing implements [ProjectLookup].
+func (p pgProjects) KeyPrefixing(ctx context.Context, name string) (key string, err error) {
+	err = p.read(ctx, func(qs *q.Queries) (err error) { key, err = txProjects{qs}.KeyPrefixing(ctx, name); return })
+	return key, err
+}
+
+// AutoJoinGroup implements [ProjectLookup].
+func (p pgProjects) AutoJoinGroup(ctx context.Context, principalID string) (auto bool, err error) {
+	err = p.read(ctx, func(qs *q.Queries) (err error) { auto, err = txProjects{qs}.AutoJoinGroup(ctx, principalID); return })
+	return auto, err
+}
+
+// txProjects answers the project lookups on the queries of a transaction, so a policy
+// write judges and stores in one transaction and opens no second connection
+// (Q-AUTHZ-199).
+type txProjects struct{ qs *q.Queries }
+
+// ProjectID implements [ProjectLookup].
+func (t txProjects) ProjectID(ctx context.Context, key string) (string, error) {
+	rows, err := t.qs.AuthzProjectByKey(ctx, key)
+	if len(rows) > 0 {
+		return rows[0], err
+	}
+	return "", err
+}
+
+// AccountProject implements [ProjectLookup].
+func (t txProjects) AccountProject(ctx context.Context, principalID string) (string, error) {
+	rows, err := t.qs.AuthzServiceAccountProject(ctx, principalID)
+	if len(rows) > 0 {
+		return rows[0], err
+	}
+	return "", err
+}
+
+// KeyPrefixing implements [ProjectLookup].
+func (t txProjects) KeyPrefixing(ctx context.Context, name string) (string, error) {
+	rows, err := t.qs.AuthzProjectKeyPrefixing(ctx, name)
+	if len(rows) > 0 {
+		return rows[0], err
+	}
+	return "", err
+}
+
+// AutoJoinGroup implements [ProjectLookup].
+func (t txProjects) AutoJoinGroup(ctx context.Context, principalID string) (bool, error) {
+	rows, err := t.qs.AuthzGroupAutoJoin(ctx, principalID)
+	if len(rows) > 0 {
+		return rows[0], err
+	}
+	return false, err
 }
 
 // projectID returns the ID of the project with the key, "" when none exists.
@@ -193,11 +301,25 @@ func (s *Service) accountProject(ctx context.Context, principalID string) (strin
 // stored policy (stored is true) was valid when it was written, so only the
 // existence is read.
 func (s *Service) resolveProject(ctx context.Context, rp *resolvedPolicy, stored bool) ([]ProblemField, error) {
+	pl := rp.o.lookup(s)
 	if rp.in.Project == nil {
+		if !rp.o.create || stored {
+			return nil, nil
+		}
+		// A global policy never takes the name of a project's policies, so a project
+		// administrator's create never meets a global policy of the same name
+		// (Q-AUTHZ-176, Q-AUTHZ-200).
+		key, err := pl.KeyPrefixing(ctx, rp.in.Name)
+		if err != nil {
+			return nil, err
+		}
+		if key != "" {
+			return []ProblemField{field("/name", errs.CodeNameReservedByProject, fmt.Sprintf("The names that start with %q belong to the policies of the project %q.", key+"-", key))}, nil
+		}
 		return nil, nil
 	}
 	key := *rp.in.Project
-	id, err := s.projectID(ctx, key)
+	id, err := pl.ProjectID(ctx, key)
 	if err != nil {
 		return nil, err
 	}
@@ -216,9 +338,9 @@ func (s *Service) resolveProject(ctx context.Context, rp *resolvedPolicy, stored
 // error is a failure of a dependency. stored is true for a policy that was read
 // from the store to compute its warnings: a key selector whose repository left the
 // project is then kept and warned about (Q-AUTHZ-179), where a write refuses it.
-func (s *Service) resolve(ctx context.Context, in PolicyInput, stored bool) (*resolvedPolicy, []ProblemField, error) {
+func (s *Service) resolve(ctx context.Context, in PolicyInput, stored bool, opts ...WriteOption) (*resolvedPolicy, []ProblemField, error) {
 	var ps []ProblemField
-	rp := &resolvedPolicy{in: in}
+	rp := &resolvedPolicy{in: in, o: collectOptions(opts)}
 	if in.ResourceType == "" {
 		rp.in.ResourceType = "repository"
 	}
@@ -346,10 +468,23 @@ func (s *Service) projectRule(ctx context.Context, ptr string, ref Ref, id strin
 		p := field(ptr+"/principal", errs.CodePrincipalOutsideProject, "A project policy grants to users, groups, service accounts and CI mappings, never to "+ref.String()+".")
 		return &p, nil
 	}
+	pl := rp.o.lookup(s)
+	if ref.Kind == principal.KindGroup && rp.in.Project != nil {
+		// An auto-join group holds every user that signs in: in a project policy it
+		// would stand in for authenticated, which the policy never names (Q-AUTHZ-200).
+		auto, err := pl.AutoJoinGroup(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if auto {
+			p := field(ptr+"/principal", errs.CodePrincipalOutsideProject, ref.String()+" is an auto-join group: every user is a member, so a project policy does not grant to it.")
+			return &p, nil
+		}
+	}
 	if ref.Kind != principal.KindServiceAccount {
 		return nil, nil
 	}
-	project, err := s.accountProject(ctx, id)
+	project, err := pl.AccountProject(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -357,6 +492,11 @@ func (s *Service) projectRule(ctx context.Context, ptr string, ref Ref, id strin
 	case project == "":
 	case rp.in.Project == nil:
 		p := field(ptr+"/principal", errs.CodePrincipalOutsideProject, fmt.Sprintf("%s belongs to the project %q and is granted by its policies only.", ref, project))
+		return &p, nil
+	case project != *rp.in.Project && rp.o.delegate != "":
+		// A project administrator learns nothing about the accounts of other
+		// projects: the answer is the one of a name that does not exist (Q-AUTHZ-197).
+		p := field(ptr+"/principal", errs.CodeUnknownPrincipal, fmt.Sprintf("No principal %s exists.", ref))
 		return &p, nil
 	case project != *rp.in.Project:
 		p := field(ptr+"/principal", errs.CodePrincipalOutsideProject, fmt.Sprintf("%s belongs to another project and is granted by its policies only.", ref))

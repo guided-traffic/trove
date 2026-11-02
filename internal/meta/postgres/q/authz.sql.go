@@ -80,14 +80,19 @@ func (q *Queries) AuthzBindingSource(ctx context.Context, arg AuthzBindingSource
 }
 
 const authzBuildBindings = `-- name: AuthzBuildBindings :many
-SELECT role, principal_id::text AS principal_id FROM authz_role_binding ORDER BY role, principal_id
+SELECT b.role, b.principal_id::text AS principal_id, COALESCE(sa.project_id::text, '')::text AS principal_project
+  FROM authz_role_binding b
+  LEFT JOIN service_account sa ON sa.principal_id = b.principal_id
+ ORDER BY b.role, b.principal_id
 `
 
 type AuthzBuildBindingsRow struct {
-	Role        string
-	PrincipalID string
+	Role             string
+	PrincipalID      string
+	PrincipalProject string
 }
 
+// principal_project: see AuthzBuildEntries (Q-AUTHZ-198).
 func (q *Queries) AuthzBuildBindings(ctx context.Context) ([]AuthzBuildBindingsRow, error) {
 	rows, err := q.db.Query(ctx, authzBuildBindings)
 	if err != nil {
@@ -97,7 +102,7 @@ func (q *Queries) AuthzBuildBindings(ctx context.Context) ([]AuthzBuildBindingsR
 	items := []AuthzBuildBindingsRow{}
 	for rows.Next() {
 		var i AuthzBuildBindingsRow
-		if err := rows.Scan(&i.Role, &i.PrincipalID); err != nil {
+		if err := rows.Scan(&i.Role, &i.PrincipalID, &i.PrincipalProject); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -110,28 +115,40 @@ func (q *Queries) AuthzBuildBindings(ctx context.Context) ([]AuthzBuildBindingsR
 
 const authzBuildEntries = `-- name: AuthzBuildEntries :many
 SELECT e.policy_id::text AS policy_id, e.principal_id::text AS principal_id, p.kind AS principal_kind,
-       p.name AS principal_name, e.actions
+       p.name AS principal_name, e.actions, COALESCE(sa.project_id::text, '')::text AS principal_project,
+       COALESCE(ug.auto_join, false)::boolean AS principal_auto_join
   FROM authz_policy_entry e
   JOIN principal p ON p.id = e.principal_id
+  LEFT JOIN service_account sa ON sa.principal_id = e.principal_id
+  LEFT JOIN user_group ug ON ug.principal_id = e.principal_id
 UNION ALL
-SELECT e.policy_id::text, e.principal_id::text, p.kind, p.name, e.actions
+SELECT e.policy_id::text, e.principal_id::text, p.kind, p.name, e.actions, COALESCE(sa.project_id::text, '')::text,
+       COALESCE(ug.auto_join, false)::boolean
   FROM authz_project_policy_entry e
   JOIN principal p ON p.id = e.principal_id
+  LEFT JOIN service_account sa ON sa.principal_id = e.principal_id
+  LEFT JOIN user_group ug ON ug.principal_id = e.principal_id
  ORDER BY 1, 2
 `
 
 type AuthzBuildEntriesRow struct {
-	PolicyID      string
-	PrincipalID   string
-	PrincipalKind string
-	PrincipalName string
-	Actions       []string
+	PolicyID          string
+	PrincipalID       string
+	PrincipalKind     string
+	PrincipalName     string
+	Actions           []string
+	PrincipalProject  string
+	PrincipalAutoJoin bool
 }
 
 // The grants of global policies and, from the same statement, those of project
 // policies, which live in their own table so that the binaries of the previous
 // release, which read only authz_policy_entry, see a project policy without
 // entries (Q-AUTHZ-174).
+// principal_project is the ID of the project of a service account, empty for every
+// other principal: the build refuses a project account in a global policy and in
+// another project's policy (Q-AUTHZ-198); principal_auto_join is true for an
+// auto-join group, which a project policy never grants to (Q-AUTHZ-200).
 func (q *Queries) AuthzBuildEntries(ctx context.Context) ([]AuthzBuildEntriesRow, error) {
 	rows, err := q.db.Query(ctx, authzBuildEntries)
 	if err != nil {
@@ -147,6 +164,8 @@ func (q *Queries) AuthzBuildEntries(ctx context.Context) ([]AuthzBuildEntriesRow
 			&i.PrincipalKind,
 			&i.PrincipalName,
 			&i.Actions,
+			&i.PrincipalProject,
+			&i.PrincipalAutoJoin,
 		); err != nil {
 			return nil, err
 		}
@@ -1114,6 +1133,32 @@ func (q *Queries) AuthzProjectByKey(ctx context.Context, key string) ([]string, 
 			return nil, err
 		}
 		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const authzProjectKeyPrefixing = `-- name: AuthzProjectKeyPrefixing :many
+SELECT key::text AS key FROM project WHERE starts_with($1::text, key || '-') ORDER BY length(key) DESC LIMIT 1
+`
+
+// The key of the project whose key and a hyphen start the name, no row when none does:
+// the names a global policy may not take (Q-AUTHZ-200).
+func (q *Queries) AuthzProjectKeyPrefixing(ctx context.Context, name string) ([]string, error) {
+	rows, err := q.db.Query(ctx, authzProjectKeyPrefixing, name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		items = append(items, key)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

@@ -11,6 +11,7 @@ import (
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
 
@@ -206,6 +207,18 @@ func resolveOne(ctx context.Context, tx meta.Tx, qs *q.Queries, b config.AuthzRo
 		d.id = g.ID
 		out.GroupsCreated = append(out.GroupsCreated, name)
 	}
+	if kind == config.DeclaredServiceAccount {
+		// A project service account is granted by its project's policies only; no
+		// system role ever reaches it (Q-AUTHZ-175, Q-AUTHZ-198).
+		project, err := qs.AuthzServiceAccountProject(ctx, d.id)
+		if err != nil {
+			return d, "", err
+		}
+		if len(project) == 1 && project[0] != "" {
+			return d, d.ref.String() + " belongs to a project and takes no system role (role_not_allowed)", nil
+		}
+		return d, "", nil
+	}
 	if kind != config.DeclaredGroup {
 		return d, "", nil
 	}
@@ -229,6 +242,9 @@ func resolveOne(ctx context.Context, tx meta.Tx, qs *q.Queries, b config.AuthzRo
 func (s *Service) declare(ctx context.Context, tx meta.Tx, qs *q.Queries, d declaredBinding, out *DeclaredOutcome) (*declaredChange, error) {
 	n, err := qs.AuthzInsertDeclaredBinding(ctx, q.AuthzInsertDeclaredBindingParams{Role: string(d.role), PrincipalID: d.id})
 	if err != nil {
+		if postgres.IsState(err, stateAccountOutsideProject) {
+			return nil, fmt.Errorf("%w: %s belongs to a project and takes no system role (role_not_allowed)", ErrDeclared, d.ref)
+		}
 		return nil, err
 	}
 	c := &declaredChange{event: EventRoleBound, binding: d}

@@ -32,6 +32,14 @@ func queriesOf(tx meta.Tx) (*q.Queries, error) {
 	return q.New(ptx), nil
 }
 
+// stateAccountOutsideProject is the SQLSTATE of the integrity trigger that refuses a
+// project service account in authz_role_binding and authz_policy_entry (AI005,
+// Q-AUTHZ-175); the writes turn it into the answer the validation gives.
+const stateAccountOutsideProject = "AI005"
+
+// pgForeignKeyViolation is the SQLSTATE of a row that names a row that is not there.
+const pgForeignKeyViolation = "23503"
+
 func notFoundPolicy(name string) error {
 	return errs.E(errs.NotFound, errs.CodeNotFound, fmt.Sprintf("The permission policy %q does not exist.", name))
 }
@@ -80,11 +88,11 @@ func afterEpoch(tx meta.Tx, epoch *int64, fn func(ctx context.Context, tx meta.T
 
 // Create stores a new policy (R-AUTHZ-021). The answer carries the epoch the
 // write produced, for the header Trove-Authz-Epoch (R-AUTHZ-032).
-func (s *Service) Create(ctx context.Context, actor Subject, in PolicyInput) (Policy, int64, error) {
+func (s *Service) Create(ctx context.Context, actor Subject, in PolicyInput, opts ...WriteOption) (Policy, int64, error) {
 	var out Policy
 	var epoch int64
 	err := s.o.DB.InTx(ctx, func(tx meta.Tx) (err error) {
-		out, err = s.CreateIn(ctx, tx, actor, in, &epoch)
+		out, err = s.CreateIn(ctx, tx, actor, in, &epoch, opts...)
 		return err
 	})
 	if err != nil {
@@ -100,23 +108,28 @@ func (s *Service) Create(ctx context.Context, actor Subject, in PolicyInput) (Po
 // answer registers its own hook after this call returns (meta.Tx.Before runs the
 // hooks in registration order). The returned policy is complete, with the
 // warnings of the validation.
-func (s *Service) CreateIn(ctx context.Context, tx meta.Tx, actor Subject, in PolicyInput, epoch *int64) (Policy, error) {
-	rp, problems, err := s.resolve(ctx, in, false)
+func (s *Service) CreateIn(ctx context.Context, tx meta.Tx, actor Subject, in PolicyInput, epoch *int64, opts ...WriteOption) (Policy, error) {
+	qs, err := queriesOf(tx)
+	if err != nil {
+		return Policy{}, err
+	}
+	// The project lookups run on this transaction, like the insert (Q-AUTHZ-199).
+	rp, problems, err := s.resolve(ctx, in, false, append(opts, s.inTx(qs), func(o *writeOpts) { o.create = true })...)
 	if err != nil {
 		return Policy{}, err
 	}
 	if len(problems) > 0 {
 		return Policy{}, problemError(problems)
 	}
-	qs, err := queriesOf(tx)
-	if err != nil {
-		return Policy{}, err
-	}
 	id := newID()
 	rows, err := qs.AuthzInsertPolicy(ctx, q.AuthzInsertPolicyParams{
 		ID: id, Name: in.Name, Description: in.Description, ResourceType: rp.in.ResourceType, ProjectID: rp.project, Actor: actorID(actor),
 	})
 	if err != nil {
+		if rp.project != "" && postgres.IsState(err, pgForeignKeyViolation) {
+			// The project was deleted between the lookup and the insert.
+			return Policy{}, problemError([]ProblemField{field("/project", errs.CodeUnknownProject, fmt.Sprintf("No project %q exists or it is not administered by the caller.", *in.Project))})
+		}
 		return Policy{}, err
 	}
 	if len(rows) == 0 {
@@ -142,23 +155,13 @@ func (s *Service) CreateIn(ctx context.Context, tx meta.Tx, actor Subject, in Po
 // Update replaces a policy as a whole (R-AUTHZ-021: full replacements). expected
 // is the version the client saw (If-Match); errs.AnyRevision is the deliberate blind
 // write. A different version answers 412, a missing policy 404.
-func (s *Service) Update(ctx context.Context, actor Subject, name string, expected int64, in PolicyInput) (Policy, int64, error) {
+func (s *Service) Update(ctx context.Context, actor Subject, name string, expected int64, in PolicyInput, opts ...WriteOption) (Policy, int64, error) {
 	in.Name = name // the name is immutable
-	if cur, perr := s.ProjectOf(ctx, name); perr == nil && !sameProject(cur, in.Project) {
-		// Before the rules of the new project: the project is fixed, so a change is
-		// the error, not whatever the other project would say (Q-AUTHZ-186).
-		return Policy{}, 0, problemError([]ProblemField{field("/project", "immutable", "The project of a policy is fixed when it is created.")})
-	}
-	rp, problems, err := s.resolve(ctx, in, false)
-	if err != nil {
-		return Policy{}, 0, err
-	}
-	if len(problems) > 0 {
-		return Policy{}, 0, problemError(problems)
-	}
+	o := collectOptions(opts)
 	var out Policy
 	var epoch int64
-	err = s.o.DB.InTx(ctx, func(tx meta.Tx) error {
+	var rp *resolvedPolicy
+	err := s.o.DB.InTx(ctx, func(tx meta.Tx) error {
 		qs, err := queriesOf(tx)
 		if err != nil {
 			return err
@@ -170,8 +173,20 @@ func (s *Service) Update(ctx context.Context, actor Subject, name string, expect
 		if err != nil {
 			return err
 		}
+		if err := delegateOwns(o, current); err != nil {
+			return err
+		}
+		// Before the rules of the new project: the project is fixed, so a change is
+		// the error, not whatever the other project would say (Q-AUTHZ-186).
 		if !sameProject(current.Project, in.Project) {
 			return problemError([]ProblemField{field("/project", "immutable", "The project of a policy is fixed when it is created.")})
+		}
+		var problems []ProblemField
+		if rp, problems, err = s.resolve(ctx, in, false, append(opts, s.inTx(qs))...); err != nil {
+			return err
+		}
+		if len(problems) > 0 {
+			return problemError(problems)
 		}
 		before, err := s.snapshotState(ctx, qs, current)
 		if err != nil {
@@ -218,9 +233,30 @@ func (s *Service) Update(ctx context.Context, actor Subject, name string, expect
 	return out, epoch, nil
 }
 
+// delegateOwns checks, under the policy lock, that the policy under change is the
+// project's of a project administrator: a handler asked it before, on a state a
+// concurrent write may have changed (a policy deleted and created again under the
+// same name). Another project's policy answers 404 as a missing one does, a global
+// policy 403 (Q-AUTHZ-199).
+func delegateOwns(o writeOpts, current Policy) error {
+	if o.expectSet && !sameProject(current.Project, o.expectProject) {
+		return notFoundPolicy(current.Name)
+	}
+	switch {
+	case o.delegate == "":
+		return nil
+	case current.Project == nil:
+		return errs.E(errs.Forbidden, errs.CodeForbidden, "A global policy needs the capability policies:write.")
+	case *current.Project != o.delegate:
+		return notFoundPolicy(current.Name)
+	}
+	return nil
+}
+
 // Delete removes a policy with its selectors, patterns and entries. expected
 // follows the rules of Update.
-func (s *Service) Delete(ctx context.Context, actor Subject, name string, expected int64) (int64, error) {
+func (s *Service) Delete(ctx context.Context, actor Subject, name string, expected int64, opts ...WriteOption) (int64, error) {
+	o := collectOptions(opts)
 	var epoch int64
 	err := s.o.DB.InTx(ctx, func(tx meta.Tx) error {
 		qs, err := queriesOf(tx)
@@ -232,6 +268,9 @@ func (s *Service) Delete(ctx context.Context, actor Subject, name string, expect
 		}
 		current, err := s.load(ctx, qs, name)
 		if err != nil {
+			return err
+		}
+		if err := delegateOwns(o, current); err != nil {
 			return err
 		}
 		before, err := s.snapshotState(ctx, qs, current)
@@ -518,6 +557,12 @@ func writeChildren(ctx context.Context, qs *q.Queries, id string, rp *resolvedPo
 			continue
 		}
 		if err := qs.AuthzInsertEntry(ctx, q.AuthzInsertEntryParams{PolicyID: id, PrincipalID: e.id, Actions: e.actions.Strings()}); err != nil {
+			if postgres.IsState(err, stateAccountOutsideProject) {
+				// The trigger the validation precedes: a project service account in a
+				// global policy (Q-AUTHZ-175, Q-AUTHZ-198).
+				return problemError([]ProblemField{field(e.pointer+"/principal", errs.CodePrincipalOutsideProject,
+					fmt.Sprintf("%s belongs to a project and is granted by its policies only.", e.ref))})
+			}
 			return err
 		}
 	}

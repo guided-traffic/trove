@@ -329,10 +329,10 @@ The label sets of the M1 families are not restated per family in this pass; read
 |---|---|---|
 | Project key | `^[a-z][a-z0-9-]{1,31}$` | immutable; no key is another key followed by a hyphen and more, and none is the start of a global service account's name |
 | Repository of a project administrator | `<projectKey>-…` | 422 `project_prefix_required`; an existing repository keeps its key when it is assigned |
-| Project policy | `<projectKey>-…` | with `"project": "<key>"` |
+| Project policy | `<projectKey>-…` | with `"project": "<key>"`; a new global policy takes no such name (422 `name_reserved_by_project`) |
 | Project service account | `<projectKey>-…` | with `"project": "<key>"`; a global service account takes no such name (422 `name_reserved_by_project`) |
-| Grant of a project administrator in the index | `project:<key>` | `manage` on every repository of the project |
-| Database guards | SQLSTATE `AI002`, `AI003`, `AI004` | project service account in a group; name prefix and project of a service account; entry of a project policy in the table of global grants |
+| Source of a project administrator's `manage` in a decision | `project:<key>` | `manage` on every repository of the project; decided from the administration of the project, not stored as a grant |
+| Database guards | SQLSTATE `AI002`, `AI003`, `AI004`, `AI005` | project service account in a group; name prefix and project of a service account; entry of a project policy in the table of global grants; project service account in a role binding or an entry of a global policy (the writes map it to 422 `role_not_allowed` and `principal_outside_project`) |
 
 ### Audit event types
 

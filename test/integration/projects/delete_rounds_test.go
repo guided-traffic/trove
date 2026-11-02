@@ -22,12 +22,12 @@ type policyHook struct {
 	calls         atomic.Int32
 }
 
-func (h *policyHook) Delete(ctx context.Context, actor authz.Subject, name string, expected int64) (int64, error) {
+func (h *policyHook) Delete(ctx context.Context, actor authz.Subject, name string, expected int64, opts ...authz.WriteOption) (int64, error) {
 	h.calls.Add(1)
 	if h.before != nil {
 		h.before(name)
 	}
-	epoch, err := h.real.Delete(ctx, actor, name, expected)
+	epoch, err := h.real.Delete(ctx, actor, name, expected, opts...)
 	if h.after != nil {
 		h.after(name)
 	}
@@ -98,26 +98,36 @@ func TestR_AUTHZ_026_DeleteRetriesForNewPolicies(t *testing.T) {
 // the policy store ran (Q-AUTHZ-204). The version read in the precheck is the If-Match
 // of the deletion, so the global policy stays.
 func TestR_AUTHZ_026_DeleteSparesAGlobalPolicyOfTheSameName(t *testing.T) {
-	f := newFixture(t)
-	f.create("web")
-	f.seedProjectPolicy("web", "web-x")
-	f.e.Exec("UPDATE authz_policy SET version = 2 WHERE name = 'web-x'")
-	h := &policyHook{}
-	h.before = func(name string) {
-		if name != "web-x" {
-			return
-		}
-		f.e.Exec("DELETE FROM authz_policy WHERE name = 'web-x'")
-		f.e.Exec("INSERT INTO authz_policy (id, name) VALUES (gen_random_uuid(), 'web-x')")
-	}
-	svc, actor := f.serviceWith(h)
-	if _, err := svc.Delete(context.Background(), actor, "web", -1); err != nil {
-		t.Fatalf("Delete: %v", err)
-	}
-	if f.e.Number("SELECT count(*) FROM authz_policy WHERE name = 'web-x' AND project_id IS NULL") != 1 {
-		t.Error("the global policy that took the name was deleted")
-	}
-	if f.e.Number("SELECT count(*) FROM project WHERE key = 'web'") != 0 {
-		t.Error("the project remains")
+	// The project delete lists its policies, then deletes each at the version it read and
+	// for its project (Q-AUTHZ-204, Q-AUTHZ-199). A global policy created under the freed name
+	// in between survives, whether its version differs from the one read or not (H-407).
+	for _, c := range []struct {
+		name    string
+		version int
+	}{{"an edited project policy (version 2)", 2}, {"a never-edited project policy (version 1)", 1}} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.create("web")
+			f.seedProjectPolicy("web", "web-x")
+			f.e.Exec(fmt.Sprintf("UPDATE authz_policy SET version = %d WHERE name = 'web-x'", c.version))
+			h := &policyHook{}
+			h.before = func(name string) {
+				if name != "web-x" {
+					return
+				}
+				f.e.Exec("DELETE FROM authz_policy WHERE name = 'web-x'")
+				f.e.Exec("INSERT INTO authz_policy (id, name) VALUES (gen_random_uuid(), 'web-x')")
+			}
+			svc, actor := f.serviceWith(h)
+			if _, err := svc.Delete(context.Background(), actor, "web", -1); err != nil {
+				t.Fatalf("Delete: %v", err)
+			}
+			if f.e.Number("SELECT count(*) FROM authz_policy WHERE name = 'web-x' AND project_id IS NULL") != 1 {
+				t.Error("the global policy that took the name was deleted")
+			}
+			if f.e.Number("SELECT count(*) FROM project WHERE key = 'web'") != 0 {
+				t.Error("the project remains")
+			}
+		})
 	}
 }

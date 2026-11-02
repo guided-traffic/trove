@@ -236,10 +236,12 @@ func (s *service) Delete(ctx context.Context, actor authz.Subject, key string, e
 			if s.o.Policies == nil {
 				return 0, errs.E(errs.Unavailable, errs.CodeUnavailable, "The policy store is not available on this replica.")
 			}
-			// The version read in the precheck is the If-Match of the deletion: a policy
-			// that was edited, or replaced under the same name by a global one, since
-			// then is not removed (Q-AUTHZ-202). A stale answer sends the round again.
-			_, err := s.o.Policies.Delete(ctx, actor, pol.Name, pol.Version)
+			// The version read in the precheck is the If-Match of the deletion, and the
+			// project is checked under the policy lock: a policy that was edited since, or
+			// replaced under the same name by a global one or another project's, is not
+			// removed, whatever its version (Q-AUTHZ-204, Q-AUTHZ-199). A stale answer
+			// sends the round again; a policy of another owner answers 404 and is skipped.
+			_, err := s.o.Policies.Delete(ctx, actor, pol.Name, pol.Version, authz.ExpectProject(&key))
 			switch {
 			case err == nil:
 				deleted = append(deleted, pol.Name)

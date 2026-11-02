@@ -307,6 +307,15 @@ func (st *evalState) grantedBy(a Action, r *repoInfo, repoLevel bool, pkg, path 
 			}
 		}
 	}
+	if a == Manage && st.idx.administersRepo(st.sub, r) {
+		// A project administrator holds manage on every repository of the project,
+		// unrestricted in packages and paths. It is decided from the administration
+		// of the project (a user or a group member, through a session or a token with
+		// admin: true), not from a grant keyed by the principal ID, which a service
+		// account in an administrator group or a token without admin: true would
+		// match as well (R-AUTHZ-026, Q-AUTHZ-183, Q-AUTHZ-196).
+		out = append(out, "project:"+r.project)
+	}
 	return out
 }
 

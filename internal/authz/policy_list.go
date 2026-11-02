@@ -8,6 +8,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/meta"
 )
 
 // ListFilter selects policies for GET /api/v1/permission-policies (R-AUTHZ-021).
@@ -21,6 +22,11 @@ type ListFilter struct {
 	// Project is a project key: the policies of that project (R-AUTHZ-026). An
 	// unknown project is 422, like an unknown repository.
 	Project string
+	// Delegated is set for a caller that holds policies:read only as a project
+	// administrator: a principal or a repository that does not exist answers like
+	// one that has no policy of the project (an empty list, not 422), so the filter
+	// is no test for the existence of principals or repositories (Q-AUTHZ-197).
+	Delegated bool
 }
 
 // unprocessable is the 422 of a filter value that names nothing: validation_failed
@@ -44,12 +50,15 @@ func (s *Service) Select(ctx context.Context, all []Policy, f ListFilter) ([]Pol
 		id, err := s.principalID(ctx, ref)
 		if err != nil {
 			if errors.Is(err, principal.ErrNotFound) {
+				if f.Delegated {
+					return []Policy{}, nil
+				}
 				return nil, unprocessable("principal", errs.CodeUnknownPrincipal, fmt.Sprintf("No principal %s exists.", f.Principal))
 			}
 			return nil, err
 		}
 		refs = map[string]bool{ref.String(): true}
-		if f.ExpandGroups && ref.Kind != principal.KindAnonymous && ref.Kind != principal.KindAuthenticated {
+		if f.ExpandGroups && !f.Delegated && ref.Kind != principal.KindAnonymous && ref.Kind != principal.KindAuthenticated {
 			groups, err := s.o.Principals.Groups(ctx, id)
 			if err != nil {
 				return nil, err
@@ -66,6 +75,9 @@ func (s *Service) Select(ctx context.Context, all []Policy, f ListFilter) ([]Pol
 		if err != nil {
 			var ee *errs.Error
 			if errors.As(err, &ee) && ee.Kind == errs.NotFound {
+				if f.Delegated {
+					return []Policy{}, nil
+				}
 				return nil, unprocessable("repository", errs.CodeUnknownRepository, fmt.Sprintf("No repository %q exists.", f.Repository))
 			}
 			return nil, err
@@ -142,17 +154,24 @@ func covers(p Policy, r repoView) bool {
 // computation resolves principals and the repository list). A policy that does
 // not validate any more, because a principal was deleted, keeps an empty list.
 func (s *Service) Annotate(ctx context.Context, ps []Policy) error {
-	for i := range ps {
-		rp, problems, err := s.resolve(ctx, ps[i].PolicyInput, true)
+	// One read transaction serves the project lookups of the whole page (Q-AUTHZ-199).
+	return s.o.DB.InTx(ctx, func(tx meta.Tx) error {
+		qs, err := queriesOf(tx)
 		if err != nil {
 			return err
 		}
-		if len(problems) == 0 && rp != nil {
-			ps[i].Warnings = rp.warnings
+		for i := range ps {
+			rp, problems, err := s.resolve(ctx, ps[i].PolicyInput, true, s.inTx(qs))
+			if err != nil {
+				return err
+			}
+			if len(problems) == 0 && rp != nil {
+				ps[i].Warnings = rp.warnings
+			}
+			if ps[i].Warnings == nil {
+				ps[i].Warnings = []string{}
+			}
 		}
-		if ps[i].Warnings == nil {
-			ps[i].Warnings = []string{}
-		}
-	}
-	return nil
+		return nil
+	})
 }

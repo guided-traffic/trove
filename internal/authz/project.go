@@ -68,24 +68,42 @@ func (e *Engine) ProjectsOn(idx *Index, sub Subject) []AdministeredProject {
 	if idx == nil || len(idx.projects) == 0 || !mayAdminister(sub) {
 		return nil
 	}
-	ids := make([]string, 0, len(sub.Groups)+1)
-	if sub.ID != "" {
-		ids = append(ids, sub.ID)
-	}
-	for _, g := range sub.Groups {
-		ids = append(ids, g.ID)
-	}
 	var out []AdministeredProject
 	for _, p := range idx.projects {
-		for _, id := range ids {
-			if p.admins[id] {
-				out = append(out, AdministeredProject{Key: p.key, ManagePolicies: p.managePolicies, ManageRepositories: p.manageRepositories})
-				break
-			}
+		if p.administeredBy(sub) {
+			out = append(out, AdministeredProject{Key: p.key, ManagePolicies: p.managePolicies, ManageRepositories: p.manageRepositories})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	return out
+}
+
+// administeredBy reports whether the subject's user ID or one of its group IDs is
+// an administrator row of the project and the credential may exercise it. It is the
+// one rule behind ProjectsOn and behind manage on a project repository.
+func (p *projectInfo) administeredBy(sub Subject) bool {
+	if !mayAdminister(sub) {
+		return false
+	}
+	if sub.ID != "" && p.admins[sub.ID] {
+		return true
+	}
+	for _, g := range sub.Groups {
+		if p.admins[g.ID] {
+			return true
+		}
+	}
+	return false
+}
+
+// administersRepo reports whether the subject administers the project the
+// repository belongs to, false for a repository without one.
+func (x *Index) administersRepo(sub Subject, r *repoInfo) bool {
+	if r == nil || r.project == "" {
+		return false
+	}
+	p := x.projects[r.project]
+	return p != nil && p.administeredBy(sub)
 }
 
 // mayAdminister reports whether the credential can exercise a project right at

@@ -199,6 +199,12 @@ func BuildIndex(s *Snapshot, reg *catalog.Registry, log *slog.Logger) *Index {
 	b.addRepositories(s.Repositories, s.VirtualMembers, s.DeployTargets)
 	b.x.exposure = buildExposure(s.Exposure, b.byID, b.reg, log)
 	for _, r := range s.Bindings {
+		if r.PrincipalProject != "" {
+			// A project service account takes no system role (Q-AUTHZ-175); the write
+			// refuses it, so a row like this came in some other way. Fail closed.
+			log.Error("authz: role binding skipped, its principal is a project service account", "role", r.Role, "principal", r.PrincipalID)
+			continue
+		}
 		b.x.bindings[r.PrincipalID] |= Role(r.Role).bit()
 	}
 	for _, r := range s.Selectors {
@@ -228,7 +234,6 @@ func BuildIndex(s *Snapshot, reg *catalog.Registry, log *slog.Logger) *Index {
 		}
 		b.addPolicy(p)
 	}
-	b.addProjectAdminGrants()
 	return b.x
 }
 
@@ -244,39 +249,6 @@ func (b *builder) addProjects(rows []q.AuthzBuildProjectsRow, admins []q.AuthzBu
 	for _, a := range admins {
 		if pi := b.projectByID[a.ProjectID]; pi != nil {
 			pi.admins[a.PrincipalID] = true
-		}
-	}
-}
-
-// addProjectAdminGrants gives every administrator of a project manage on every
-// repository of the project, as one grant named project:<key>, unrestricted in
-// packages and paths (R-AUTHZ-026). A group administrator expands through the
-// group's members like a group entry of a policy does: the grant is keyed by the
-// group's principal ID and the principal set of a request holds its groups.
-func (b *builder) addProjectAdminGrants() {
-	keys := make([]string, 0, len(b.x.projects))
-	for k := range b.x.projects {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	var unrestricted resourceSet // no pattern: every package and path
-	for _, key := range keys {
-		pi := b.x.projects[key]
-		if len(pi.admins) == 0 {
-			continue
-		}
-		for _, r := range b.list {
-			if r.projectID != pi.id {
-				continue
-			}
-			m := b.x.grants[r.ID]
-			if m == nil {
-				m = map[string][]grant{}
-				b.x.grants[r.ID] = m
-			}
-			for id := range pi.admins {
-				m[id] = append(m[id], grant{policy: "project:" + key, actions: bitManage, res: unrestricted})
-			}
 		}
 	}
 }
@@ -407,6 +379,18 @@ func (b *builder) addPolicy(p q.AuthzBuildPoliciesRow) {
 			byRule[key] = &rs
 		}
 		for _, e := range b.entries[p.ID] {
+			if e.PrincipalProject != "" && e.PrincipalProject != p.ProjectID {
+				// A project service account is granted by the policies of its project
+				// only (Q-AUTHZ-175), whatever the stored entry says.
+				b.log.Error("authz: entry skipped, its principal is a service account of another project", "policy", p.Name, "principal", e.PrincipalName)
+				continue
+			}
+			if e.PrincipalAutoJoin && p.ProjectID != "" {
+				// An auto-join group is every user: in a project policy it would stand in
+				// for authenticated, which a project policy never names (Q-AUTHZ-200).
+				b.log.Error("authz: entry skipped, a project policy names an auto-join group", "policy", p.Name, "principal", e.PrincipalName)
+				continue
+			}
 			acts, err := actionsFromStored(e.Actions)
 			if err != nil {
 				b.log.Error("authz: entry skipped", "policy", p.Name, "err", err)

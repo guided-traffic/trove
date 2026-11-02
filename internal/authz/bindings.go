@@ -10,6 +10,7 @@ import (
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
 
@@ -93,7 +94,7 @@ func (s *Service) BindRole(ctx context.Context, actor Subject, role Role, ref st
 		}
 		n, err := qs.AuthzInsertBinding(ctx, q.AuthzInsertBindingParams{Role: string(role), PrincipalID: id, Actor: actorID(actor)})
 		if err != nil {
-			return err
+			return bindingWriteError(err)
 		}
 		created = n == 1
 		if !created {
@@ -108,6 +109,15 @@ func (s *Service) BindRole(ctx context.Context, actor Subject, role Role, ref st
 		return nil
 	})
 	return created, epoch, err
+}
+
+// bindingWriteError turns the refusal of the integrity trigger for a project service
+// account into the answer of the validation: role_not_allowed (Q-AUTHZ-175).
+func bindingWriteError(err error) error {
+	if postgres.IsState(err, stateAccountOutsideProject) {
+		return roleProblem("/principal", errs.CodeRoleNotAllowed, "The service account belongs to a project and takes no system role.")
+	}
+	return err
 }
 
 // BindAdmin binds the system role admin to a principal inside the transaction
@@ -134,7 +144,7 @@ func (s *Service) BindAdmin(ctx context.Context, tx meta.Tx, principalID, grante
 	}
 	n, err := qs.AuthzInsertBinding(ctx, q.AuthzInsertBindingParams{Role: string(RoleAdmin), PrincipalID: principalID, Actor: grantedBy})
 	if err != nil || n == 0 {
-		return err
+		return bindingWriteError(err)
 	}
 	if err := s.o.Changes.Notify(tx, AreaAuthz, payloadVersion, changePayload{Type: "role_binding", ID: principalID}); err != nil {
 		return err

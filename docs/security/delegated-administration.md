@@ -34,7 +34,9 @@ Four layers, none of which depends on the one before it:
 2. **The handler narrows.** A project the caller does not administer answers 404, as an unknown one does; a switch that is off
    answers 403 `project_switch_off`. A repository outside the project answers like an unknown repository.
 3. **The index.** A project policy covers the repositories of its project only, whatever its stored selectors say, and the memoized
-   result of a selector is keyed by the project. The administrator's own `manage` is a grant per project repository. A removed
+   result of a selector is keyed by the project. The administrator's own `manage` is not a grant: the decision allows it when the subject administers the project, by the rule
+   of the three questions, so a service account in an administrator group and a token without `admin: true` hold none
+   ([Q-AUTHZ-196](../spec/authorization.md#q-authz-196--the-manage-of-a-project-administrator-is-decided-from-the-administration-not-from-a-grant-per-repository)). A removed
    administrator, a switch turned off or a repository unassigned takes effect on every replica with the authorization epoch
    ([permissions.md](permissions.md)).
 4. **The database.** Administrators are users or groups; a project service account is no group member, its name starts with the
@@ -58,7 +60,18 @@ Repositories, policies and service accounts of a project are named `<key>-…`; 
 service account never takes a project's prefix
 ([Q-AUTHZ-176](../spec/authorization.md#q-authz-176--names-of-a-project-are-prefixed-with-its-key-and-a-global-name-never-takes-a-project-prefix)).
 A delegate therefore cannot create a name in another project's space or a global name, and a 409 on a global name does not tell it
-whether one exists.
+whether one exists; a global policy that was named like that before the project existed is the exception
+([H-405](../spec/authorization.md#h-405--a-global-policy-that-predates-a-project-keeps-the-projects-prefix)).
+
+## What a delegate can test
+
+The policy list of a project administrator answers an empty list for a principal or a repository that does not exist, as for one of
+another project, and does not expand the groups of a principal (`expandGroups=true` is 403); a validation names another project's
+service account like a name that does not exist ([Q-AUTHZ-197](../spec/authorization.md#q-authz-197--what-a-project-administrators-policy-list-and-validation-tell-about-other-objects)).
+The names of users and groups remain readable through the lookup ([H-392](../spec/authorization.md#h-392--a-project-administrator-can-enumerate-user-and-group-names)).
+A project policy names no auto-join group, which would stand in for `authenticated`. A refusal of the narrowing is recorded as
+`authz.denied` of the operation's capability ([Q-AUTHZ-201](../spec/authorization.md#q-authz-201--a-project-administrators-refusals-are-audited-as-the-denial-of-the-capability),
+[H-406](../spec/authorization.md#h-406--the-audit-event-of-a-refused-project-administrator-does-not-name-the-project)).
 
 ## During an upgrade from 0.9.x
 
@@ -83,6 +96,8 @@ The gaps of these mechanisms are recorded on the spec page that describes them, 
 - [H-398](../spec/authorization.md#h-398--a-failed-project-delete-can-leave-the-project-without-some-of-its-policies) — a project
   delete that fails after the policy deletions leaves the project with fewer policies;
 - [H-399](../spec/authorization.md#h-399--a-global-service-account-and-a-project-key-created-at-the-same-instant-can-overlap) —
-  a global service account and a project key created at the same instant can overlap.
-- [H-407](../spec/authorization.md#h-407--a-project-delete-can-remove-a-global-policy-that-took-the-name-of-a-just-deleted-project-policy-at-the-same-version) —
-  a project delete can remove a global policy that took a just-freed name at the same version.
+  a global service account and a project key created at the same instant can overlap;
+- [H-405](../spec/authorization.md#h-405--a-global-policy-that-predates-a-project-keeps-the-projects-prefix) — a global policy that
+  predates a project keeps the project's prefix;
+- [H-406](../spec/authorization.md#h-406--the-audit-event-of-a-refused-project-administrator-does-not-name-the-project) — the audit
+  event of a refused project administrator does not name the project.

@@ -1803,8 +1803,8 @@ What they may do, per right:
 
 | Right | What it allows, within the project and nowhere else |
 |---|---|
-| Administration (always) | `manage` on every project repository (package ownership, cache invalidation, claims of scope `members`). Read the project, its administrators and counts, its policies, the full configuration of its repositories (as `repositories:read-config` does, never a secret value), its service accounts and their tokens' metadata. Disable and delete the project's service accounts, revoke their tokens ([Q-AUTHZ-177](#q-authz-177--what-a-project-administrator-may-do-with-service-accounts-and-their-tokens)). |
-| `managePolicies` | Create, change and delete project policies (`"project": "<key>"`), granting any action (`manage` included, except to CI mappings) to users, groups, service accounts and CI mappings, never to `anonymous` or `authenticated`; validate a policy. Create and enable project service accounts, change their description, issue their tokens. Look up the users and groups to name in policies ([Q-AUTHZ-182](#q-authz-182--how-a-project-administrator-finds-the-users-and-groups-it-names)). |
+| Administration (always) | `manage` on every project repository (package ownership, cache invalidation, claims of scope `members`); it is decided from the administration of the project, never from a stored grant ([Q-AUTHZ-196](#q-authz-196--the-manage-of-a-project-administrator-is-decided-from-the-administration-not-from-a-grant-per-repository)). Read the project, its administrators and counts, its policies, the full configuration of its repositories (as `repositories:read-config` does, never a secret value), its service accounts and their tokens' metadata. Change the description of the project's service accounts, disable and delete them, revoke their tokens ([Q-AUTHZ-177](#q-authz-177--what-a-project-administrator-may-do-with-service-accounts-and-their-tokens)). |
+| `managePolicies` | Create, change and delete project policies (`"project": "<key>"`), granting any action (`manage` included, except to CI mappings) to users, groups, service accounts and CI mappings, never to `anonymous` or `authenticated`; validate a policy. Create and enable project service accounts, issue their tokens. Look up the users and groups to name in policies ([Q-AUTHZ-182](#q-authz-182--how-a-project-administrator-finds-the-users-and-groups-it-names)). |
 | `manageRepositories` | Create, change and delete the project's repositories, of every class: local, remote and virtual (owner, [Q-AUTHZ-173](#q-authz-173--a-project-administrator-creates-remote-repositories)). Test the saved and the unsaved upstream of a remote. A remote's upstream stays subject to the outbound address rules of the installation ([security/egress.md](../security/egress.md)); a virtual repository's members and deploy target are repositories of the project ([Q-AUTHZ-178](#q-authz-178--a-virtual-repository-of-a-project-administrator-stays-inside-the-project)). |
 
 They cannot bind system roles, cannot see global policies (unless they hold `policies:read`), cannot see or change
@@ -1815,14 +1815,19 @@ projects in P1; an administrator can name a project's administrator group as the
 
 **Project policies.**
 
-- A project policy carries `"project": "<key>"` (immutable) and is named `<key>-…` (422 `project_prefix_required`).
+- A project policy carries `"project": "<key>"` (immutable) and is named `<key>-…` (422 `project_prefix_required`). A new
+  global policy takes no name that starts with the key of a project and a hyphen (422 `name_reserved_by_project`,
+  [Q-AUTHZ-200](#q-authz-200--a-global-policy-never-takes-a-projects-prefix-and-a-project-policy-names-no-auto-join-group)).
 - Project policies may select only repositories of their project: key selectors must name project repositories (422
   `repository_outside_project`; an unknown key answers the same), and pattern and class selectors are evaluated only
   against the project's repositories. A key selector whose repository left the project covers nothing and carries the
   warning `selector_outside_project` ([Q-AUTHZ-179](#q-authz-179--a-repository-that-leaves-a-project-leaves-its-policies-inert)).
   Global policies keep applying to project repositories; the effect is the union.
 - Entries of a project policy may name users, groups, global service accounts, CI mappings and the service accounts of
-  the same project. A service account of another project is refused (422 `principal_outside_project`).
+  the same project. A service account of another project is refused (422 `principal_outside_project`; to a project
+  administrator it answers `unknown_principal` as a name that does not exist, [Q-AUTHZ-197](#q-authz-197--what-a-project-administrators-policy-list-and-validation-tell-about-other-objects)).
+  An auto-join group is refused (422 `principal_outside_project`): every user is a member, so it would stand in for
+  `authenticated` ([Q-AUTHZ-200](#q-authz-200--a-global-policy-never-takes-a-projects-prefix-and-a-project-policy-names-no-auto-join-group)).
 - The grants of a project policy are stored in their own table, which releases before projects do not read, so that a
   replica of such a release never grants beyond the project
   ([Q-AUTHZ-174](#q-authz-174--the-grants-of-a-project-policy-live-where-the-previous-release-does-not-read-them),
@@ -1856,8 +1861,9 @@ capability ([R-UI-041](api-and-ui.md#r-ui-041--projects), [Q-AUTHZ-181](#q-authz
 **Deleting a project.** A project can be deleted only when no repository, in any lifecycle state, is assigned and no
 service account belongs to it (409 `project_not_empty`). Its policies are deleted with it, each through the policy
 store (audited and journaled like any policy deletion), and its administrator entries go ([Q-AUTHZ-185](#q-authz-185--versions-delete-order-the-epoch-and-the-journal-of-project-writes)).
-Each deletion carries the version read before it as its `If-Match` ([Q-AUTHZ-204](#q-authz-204--a-project-delete-passes-the-version-it-read-as-the-if-match-of-each-policy-deletion),
-[H-407](#h-407--a-project-delete-can-remove-a-global-policy-that-took-the-name-of-a-just-deleted-project-policy-at-the-same-version)).
+Each deletion carries the version read before it as its `If-Match` and names the project, so a policy that took the name in
+between, global or of another project, is never removed ([Q-AUTHZ-204](#q-authz-204--a-project-delete-passes-the-version-it-read-as-the-if-match-of-each-policy-deletion),
+[Q-AUTHZ-199](#q-authz-199--a-delegates-policy-write-is-checked-under-the-policy-lock-and-its-project-lookups-run-in-the-writes-transaction)).
 Everything a client can cause is refused before the first policy is deleted; the delete is not one transaction
 ([Q-AUTHZ-192](#q-authz-192--a-project-delete-is-not-one-transaction),
 [H-398](#h-398--a-failed-project-delete-can-leave-the-project-without-some-of-its-policies)).
@@ -4201,7 +4207,7 @@ project's. An administrator of trove may also create a global service account `w
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) One rule: names are `<key>-…`, keys do not overlap, global accounts do not take project prefixes (chosen) | Project repositories, policies and service accounts start with `<key>-` (422 `project_prefix_required`); a project key is no dash-prefix of another key (409 `project_key_overlap`); a global service account name starting with an existing project's key and a hyphen is refused (422 `name_reserved_by_project`), and a new project whose key and hyphen start the name of a global account is refused (409 `project_key_overlap`) | A name tells its project; a delegate cannot squat or impersonate another namespace; no oracle on global policy names (a project policy name is always in the project's own space) | Projects `web` and `web-app` cannot coexist |
+| (a) One rule: names are `<key>-…`, keys do not overlap, global accounts do not take project prefixes (chosen) | Project repositories, policies and service accounts start with `<key>-` (422 `project_prefix_required`); a project key is no dash-prefix of another key (409 `project_key_overlap`); a global service account name or a new global policy name starting with an existing project's key and a hyphen is refused (422 `name_reserved_by_project`, for policies [Q-AUTHZ-200](#q-authz-200--a-global-policy-never-takes-a-projects-prefix-and-a-project-policy-names-no-auto-join-group)), and a new project whose key and hyphen start the name of a global account is refused (409 `project_key_overlap`) | A name tells its project; a delegate cannot squat or impersonate another namespace; no oracle on global policy names (a project policy name is always in the project's own space) | Projects `web` and `web-app` cannot coexist |
 | (b) Prefix for repositories only | The text of R-AUTHZ-026 as it stood | Less to explain | A delegate creates a global policy named like another team's, or a service account `admin-ci`, and a 409 answers whether a global name exists |
 | (c) Prefix without reservation | Names are prefixed, keys may overlap | Simple | Two projects own overlapping name spaces; `web-app-x` is created by either |
 
@@ -4597,6 +4603,131 @@ Context: the shared step admits a project administrator to an operation by capab
 
 **Applied in the spec:** R-AUTHZ-026 (the declaration paragraph). Code: `internal/api/v1/repositories_api.go`, `internal/api/v1/groups_api.go`, `internal/api/v1/tokens_api.go`, `internal/api/v1/upstream_api.go`.
 
+### Q-AUTHZ-196 · The manage of a project administrator is decided from the administration, not from a grant per repository
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the index materialised one grant `project:<key>` per project repository and administrator principal, keyed by the
+principal ID of the administrator. The decision matches a grant for every principal of the request's set, and that set holds the
+user, its groups and, for a service account, the account and its groups. So a global service account that is a member of an
+administrator group held `manage` on every repository of the project through its tokens, and a user's token without
+`admin: true` held it while `GET /authz/me` named no project for it. Both contradict [Q-AUTHZ-183](#q-authz-183--who-administers-a-project-and-through-which-credentials)
+and R-AUTHZ-026 (a project is administered through a session or a token with `admin: true`, by users and groups).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Decide `manage` from the administration (chosen) | The index holds no grant for it. `manage` on a repository of a project is allowed when the subject administers that project by the rule of the three project questions (`projectInfo.administeredBy`: a user or a member of a listed group, a session or a token with `admin: true`); the decision names `project:<key>` as its source. The token's repository scope still applies, as for a grant | One rule for the questions and the decision, so they cannot disagree; no P×R grants, so the build and the index memory no longer grow with projects times repositories | `manage` is no entry of the grant map any more; the consumers go through the decision, which they did already |
+| (b) Keep the grants and filter them in the decision | The decision skips a `project:` grant unless the subject administers | A smaller change | Two places hold the rule; the grants stay a trap for the next reader of the map |
+| (c) Key the grants by credential | Grants for sessions only | No change in the decision | A token with `admin: true` needs a second kind of grant; a group still expands |
+
+**Choice:** (a).
+
+**Rationale:** every consumer of `manage` (the decision, package ownership, cache invalidation, claims, the virtual shadow check,
+`Effective`) asks the engine's decision, so none reads a grant directly; `ReadScope` and the read shapes look at `read` only,
+which a project administrator never holds by this rule. The development agent records no revisit condition.
+
+**Applied in the spec:** R-AUTHZ-026 (the right table). Code: `internal/authz/decide.go` (`grantedBy`), `project.go`
+(`administeredBy`, `administersRepo`, `ProjectsOn`), `index.go` (`addProjectAdminGrants` removed).
+
+### Q-AUTHZ-197 · What a project administrator's policy list and validation tell about other objects
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a caller that holds `policies:read` only as a project administrator lists the policies of one project. The filters
+`principal` and `repository` answered 422 for a name that does not exist and an empty list for one that does, so the filter tested
+which principals and repositories exist; `expandGroups` (default on) tested the group memberships of any user; and a project
+service account of another project in a validated project policy answered `principal_outside_project` where a name that does not
+exist answers `unknown_principal`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The same answer for what does not exist and what is not the caller's (chosen) | For a project administrator an unknown principal or repository in a filter answers 200 with an empty list, as one of another project does; the groups of a principal are not expanded, and `expandGroups=true` is 403 `forbidden`; another project's service account in a project policy answers `unknown_principal`. A caller that holds the capability keeps the 422 answers and `principal_outside_project` | No oracle for existence or membership; no new code | `expandGroups=true` is refused although the parameter exists |
+| (b) Refuse the filters for a project administrator | 403 for `principal`, `repository`, `expandGroups` | Simplest to explain | The UI filters a project's policies by principal |
+| (c) Leave it | The answers as they were | No work | Existence and membership tests for any user, group, repository and project account |
+
+**Choice:** (a). The malformed reference stays 422 for every caller, as it tells nothing about existence.
+
+**Rationale:** R-AUTHZ-016 asks for answers that do not tell what the caller may not see. The development agent records no
+revisit condition.
+
+**Applied in the spec:** R-AUTHZ-021 (the filters), R-AUTHZ-026 (the entries). Code: `internal/authz/policy_list.go`
+(`ListFilter.Delegated`), `validate.go` (`projectRule`, `AsDelegate`), `internal/api/v1/authz_api.go` (`narrowPolicyList`).
+
+### Q-AUTHZ-198 · A project service account outside its project is refused in every path and skipped by the build
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: [Q-AUTHZ-175](#q-authz-175--a-project-service-account-is-granted-by-its-projects-policies-only) refuses a project service account as a group member (trigger `AI002`), as a role binding and as an entry of a global policy or another project's policy, in the write. Two paths did not: the role bindings declared in `authz.role_bindings` (a `service_account` that belongs to a project), and the build, which compiled whatever the tables held.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Refuse in the declaration and fail closed in the build (chosen) | The declaration is refused with `role_not_allowed` like the API; `BuildIndex` skips an entry of a global policy or of another project's policy that names a project service account, and a role binding of one, and logs each skip at error level. The two entry tables and the role binding table refuse such a row with SQLSTATE `AI005` (a trigger of the project work package); the writes map it to 422 `principal_outside_project` and `role_not_allowed`. The snapshot carries the account's project on each entry and binding row | A row that got there by SQL, by a rollout or by a restore grants nothing | A skip is a log line, not a metric (`BuildIndex` is a pure function without an engine) |
+| (b) Write-time refusals only | The state before | No work | A row from another path grants the account |
+| (c) A metric as well | A counter of skipped rows | Alertable | A registry in a pure function; the log carries the policy and the principal |
+
+**Choice:** (a).
+
+**Rationale:** skipping only removes rights, as for every row that cannot be compiled. The development agent revisits the log line when an installation needs to alert on it; the remedy is a counter on the engine's install step.
+
+**Applied in the spec:** R-AUTHZ-026 (project service accounts). H-397 is closed by the trigger `AI005` ([Q-AUTHZ-203](#q-authz-203--the-migration-of-projects-is-expand-class-in-seven-steps-and-the-database-refuses-a-project-account-as-a-global-principal)), which refuses such a row from any writer, a replica of the previous release included; [H-395](#h-395--during-a-rollout-from-09x-the-rights-of-a-project-are-partly-absent-and-its-name-rules-are-not-enforced) (amended). Code: `internal/authz/declared.go` (`resolveOne`, `declare`), `index.go`, `store.go` (`writeChildren`), `bindings.go`, `queries/authz.sql` (`AuthzBuildEntries`, `AuthzBuildBindings`).
+
+### Q-AUTHZ-199 · A delegate's policy write is checked under the policy lock, and its project lookups run in the write's transaction
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the handler narrows a project administrator to the project of a stored policy before the write, and the write compared only the project of the body. A policy deleted and created again under the same name (a global one, or another project's) between the two was then rewritten or deleted by the delegate. And the project and account lookups of a policy write opened a transaction of their own per lookup, also once per entry of a listed page: a second connection per lookup, and a create racing a project delete reached the foreign key (500 instead of 422).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The delegate's project goes into the write; the lookups use the writer's queries (chosen) | `authz.AsDelegate(project)` is a write option of `Create`, `Update`, `Delete` and `Validate`; `Update` and `Delete` compare the stored policy's project with it after `AuthzLockPolicy` (a global policy 403, another project's 404). `Update` resolves inside its transaction, after the lock; `CreateIn` resolves on the caller's transaction; `Annotate` reads a page in one transaction. A foreign key violation on the insert is 422 `unknown_project` | No window between the narrowing and the write; one connection per write | `Update` holds its transaction while it validates |
+| (b) Lock the project row as well | `FOR SHARE` on the project in every write | No FK window at all | A lock per policy write against the project service, which takes `FOR UPDATE`; the FK already refuses |
+| (c) Leave it | The state before | No work | The race; a connection per lookup |
+
+**Choice:** (a). The key of the project in the write option, not a flag. The same check serves a caller that is no delegate:
+`authz.ExpectProject(project)` (nil for a global policy) makes `Update` and `Delete` answer 404 for a policy that does not belong to
+the project, so the delete of a project, which removes the policies it listed by name and version, never removes a policy that was
+deleted and created again under the same name in another project or as a global one.
+
+**Rationale:** the rules of the service read the database, so the check under the lock is the same as the one in the handler on a state that cannot change under it. The development agent records no revisit condition.
+
+**Applied in the spec:** R-AUTHZ-026 (project policies). Gap: [H-396](../security/permissions.md#h-396--a-project-administrators-policy-write-is-decided-on-the-replicas-index) is unchanged (the index staleness). Code: `internal/authz/store.go` (`Update`, `Delete`, `delegateOwns`, `CreateIn`), `validate.go` (`WriteOption`, `txProjects`), `policy_list.go` (`Annotate`).
+
+### Q-AUTHZ-200 · A global policy never takes a project's prefix, and a project policy names no auto-join group
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: [Q-AUTHZ-176](#q-authz-176--names-of-a-project-are-prefixed-with-its-key-and-a-global-name-never-takes-a-project-prefix) promises "no oracle on global policy names" and refuses global service account names with a project's prefix, but a global policy could still be named `web-…`; a delegate's create of `web-x` then answered 409 `already_exists` for a global policy of that name. Separately, an auto-join group holds every user that signs in, so an entry for it in a project policy stands in for `authenticated`, which a project policy never names ([Q-AUTHZ-188](#q-authz-188--a-project-policy-that-names-anonymous-or-authenticated-is-a-principal-outside-the-project)).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Reserve the prefix for new global policies; refuse auto-join groups in project policies, whatever the action (chosen) | A new global policy named `<key>-…` of an existing project is 422 `name_reserved_by_project` (create and validate; an update of a policy that already has such a name is left alone); an auto-join group in a project policy is 422 `principal_outside_project`, and the build skips such an entry should a group turn auto-join afterwards | One rule for the names of all three objects; `authenticated` and the auto-join group are treated alike | A global policy `web-…` that exists before the project `web` stays (H-405) |
+| (b) Correct the text of Q-AUTHZ-176 | Say that global policies are exempt | No code | The 409 oracle stays |
+| (c) Refuse auto-join groups for write actions only | `read` stays open | Smaller change | `authenticated` is refused for read, so the group would be a way around it |
+
+**Choice:** (a).
+
+**Rationale:** the refusal of `authenticated` in a project policy is for a reason that holds for read as well: what a project grants it grants to people it named. The development agent records no revisit condition.
+
+**Applied in the spec:** R-AUTHZ-026 (project policies, entries), [Q-AUTHZ-176](#q-authz-176--names-of-a-project-are-prefixed-with-its-key-and-a-global-name-never-takes-a-project-prefix) (option (a) reads "a global service account or policy name"). Gap: [H-405](#h-405--a-global-policy-that-predates-a-project-keeps-the-projects-prefix). Code: `internal/authz/validate.go` (`resolveProject`, `projectRule`), `index.go`, `queries/authz.sql` (`AuthzProjectKeyPrefixing`, `AuthzBuildEntries`).
+
+### Q-AUTHZ-201 · A project administrator's refusals are audited as the denial of the capability
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a project administrator passes the shared step through the project declaration and is refused by the handler's narrowing (a project it does not administer, a switch that is off, a repository of another project). No layer audited that: the engine audits the capability checks and the decisions on repositories, and the refusals of the narrowing are neither.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The narrowing records the capability's denial (chosen) | A refusal of a narrowing asks the access for the operation's capability once more, as a caller that holds none; the engine answers and audits `authz.denied` as for any capability refusal (the dedup window, `audit.record_anonymous_denials`), with the permission, the reason and the credential | The rules of R-AUTHZ-029 apply unchanged; no new event type | The event names the capability, not the project |
+| (b) A new event `authz.project.denied` | The project and the right in the details | More precise | A second event family for the same fact; the schema and the table of events grow |
+| (c) Leave it | No event | No work | A delegate's probing of other projects leaves no trace |
+
+**Choice:** (a).
+
+**Rationale:** the refusal is a denied request like the other; its details are those of the capability. The project is in the request log. The development agent revisits it when an installation asks to filter the denials by project (H-406).
+
+**Applied in the spec:** R-AUTHZ-029 (the denied events). Gap: [H-406](#h-406--the-audit-event-of-a-refused-project-administrator-does-not-name-the-project). Code: `internal/api/v1/project_scope.go` (`DelegatedScope.noteRefusal`, `refuseProject`), `authz_api.go`.
+
 ### Q-AUTHZ-202 · A read of a project is never answered with 304
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -4659,9 +4790,11 @@ after the first read, and a global policy created under the freed name, would ha
 **Choice:** (a).
 
 **Rationale:** it removes the window for every policy that was edited and for every case where the global policy differs in
-version, without touching the store. The development agent revisits it when the policy store takes the project in its deletion.
+version, without touching the store. Since [Q-AUTHZ-199](#q-authz-199--a-delegates-policy-write-is-checked-under-the-policy-lock-and-its-project-lookups-run-in-the-writes-transaction) the deletion also names the project
+(`authz.ExpectProject`), which closes the last case, a never-edited policy replaced at version 1 (formerly H-407).
 
-**Applied in the spec:** R-AUTHZ-026 (deleting a project). Gap: [H-407](#h-407--a-project-delete-can-remove-a-global-policy-that-took-the-name-of-a-just-deleted-project-policy-at-the-same-version).
+**Applied in the spec:** R-AUTHZ-026 (deleting a project). Code: `internal/project/crud.go` (`Delete`); test
+`TestR_AUTHZ_026_DeleteSparesAGlobalPolicyOfTheSameName` (versions 1 and 2).
 
 ## What this does not cover
 
@@ -4718,7 +4851,14 @@ project policies cover nothing, and requests that replica decides are refused wh
 not security), and a rewrite of a project policy on it fails. The name rules (Q-AUTHZ-176) are not enforced by that
 replica's creation of a global service account or repository. After the last 0.9.x replica is gone the rights hold on
 every replica; a global service account that was created in the window with a project's prefix stays and is listed as
-global.
+global, and so does a global policy created there with a project's prefix (H-405).
+
+A 0.9.x replica can rewrite a project policy that has no entries (it reads none): the rewrite replaces the policy's selectors and
+patterns, and the project entries, which it does not know, stay. The new build compiles every policy that names a project against
+that project's repositories only (`builder.covered`, `policyRepos`), so a selector written by the old release can change which of
+the project's repositories the policy covers, never reach beyond the project; an entry of a project service account of another
+project or of an auto-join group is skipped by the build (Q-AUTHZ-198, Q-AUTHZ-200). The old release cannot add entries: the
+database refuses a row of `authz_policy_entry` for a project policy (`AI004`).
 
 ### H-398 · A failed project delete can leave the project without some of its policies
 
@@ -4737,11 +4877,21 @@ can both succeed. The name is then a global account that starts with a project's
 mistake for its own; the account has no project grant, and nothing is granted by the name. The overlap is found by
 `ProjectGlobalAccountsWithPrefix` the next time a project key is created and by the listing of global service accounts.
 
-### H-407 · A project delete can remove a global policy that took the name of a just-deleted project policy at the same version
+### H-405 · A global policy that predates a project keeps the project's prefix
 
-The delete of a project removes its policies by name with the version it read (Q-AUTHZ-204). If a project policy that was never
-edited (version 1) is deleted by someone else after that read, and a global policy of the same name is created before the policy
-store runs, the version matches and the global policy is removed, audited and journaled as any policy deletion. It needs three
-actors inside a window of milliseconds and a global policy under a project's prefix, which the name rules allow
-(Q-AUTHZ-176 covers accounts and repositories, not policies). Closing it needs a deletion in the policy store that names the
-project.
+A new global policy takes no name that starts with a project key and a hyphen (Q-AUTHZ-200), and a project key is not checked against
+the names of global policies when the project is created. A global policy `web-readers` that exists before the project `web`
+therefore stays, and a delegate of `web` that creates `web-readers` meets 409 `already_exists`, which tells it a global policy of that
+name exists. The same holds for a global policy and a project created in the same instant (no lock covers both). Live only for an
+installation that has global policies named like a project it creates later; what makes it real is a delegate that guesses names.
+Nothing is granted by the name, and the policy stays writable by the holders of `policies:write`. Renaming is not possible (the name
+is immutable); the remedy is to create the policy again under another name.
+
+### H-406 · The audit event of a refused project administrator does not name the project
+
+A refusal by the narrowing of a project administrator (a project it does not administer, a switch that is off, a repository of another
+project) is recorded as `authz.denied` of the operation's capability (Q-AUTHZ-201): the event carries the permission, the reason and
+the credential, not the project or the right asked for, so denials of probing across projects can be counted per caller but not
+filtered per project. Two handlers answer a foreign service account on their own before the shared refusal (`groups_api.go`,
+`tokens_api.go`: the account of no project or of one the caller does not see answers 404) and record nothing. Live for every
+delegated refusal of those kinds; what makes it real is a delegate that probes account names across projects.

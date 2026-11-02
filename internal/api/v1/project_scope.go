@@ -27,6 +27,20 @@ type DelegatedScope struct {
 	// Projects are the projects the caller administers, with their switches, empty
 	// for a caller without any. A Global caller may administer some as well.
 	Projects []authz.AdministeredProject
+
+	// refused records a refusal of the caller as the denied-request audit of the
+	// capability does (R-AUTHZ-029, Q-AUTHZ-201); nil records nothing.
+	refused func()
+}
+
+// noteRefusal records that the caller was refused by its narrowing. The shared step
+// admitted it as a project administrator, so no layer above has audited the
+// refusal: the capability's own denial is recorded here, once per refusal, under
+// the rules of authz.denied (the dedup window and the anonymous switch).
+func (d DelegatedScope) noteRefusal() {
+	if d.refused != nil {
+		d.refused()
+	}
 }
 
 // May reports whether the caller may act on the project with the right.
@@ -60,6 +74,10 @@ func (s *Server) delegatedScope(ctx context.Context, capability string) (Delegat
 			return DelegatedScope{}, err
 		}
 	}
+	if !d.Global && s.o.Access != nil {
+		access := s.o.Access
+		d.refused = func() { _ = access.Require(ctx, capability) } // refused: the call records authz.denied
+	}
 	return d, nil
 }
 
@@ -79,6 +97,7 @@ func refuseProject(d DelegatedScope, project string, right authz.ProjectRight) e
 	if d.May(project, right) {
 		return nil
 	}
+	d.noteRefusal()
 	if d.Sees(project) {
 		if right == authz.ProjectManagePolicies || right == authz.ProjectManageRepositories {
 			return errs.E(errs.Forbidden, errs.CodeProjectSwitchOff, "The project does not allow this: its switch "+string(right)+" is off.")
@@ -107,8 +126,19 @@ func (s *Server) requireProjectOfRepository(ctx context.Context, capability, rep
 		if project, admin, err := pa.AdministersRepository(ctx, repository, authz.ProjectAny); err != nil {
 			return "", err
 		} else if admin {
-			return "", refuseProject(DelegatedScope{Projects: []authz.AdministeredProject{{Key: project}}}, project, right)
+			return "", refuseProject(DelegatedScope{Projects: []authz.AdministeredProject{{Key: project}}, refused: s.refusalOf(ctx, capability)}, project, right)
 		}
 	}
+	s.refusalOf(ctx, capability)()
 	return "", errs.E(errs.NotFound, errs.CodeNotFound, "The repository does not exist or is not visible to the caller.")
+}
+
+// refusalOf is the recorder of a refusal of the capability for a caller that does
+// not hold it (see [DelegatedScope.noteRefusal]).
+func (s *Server) refusalOf(ctx context.Context, capability string) func() {
+	return func() {
+		if s.o.Access != nil {
+			_ = s.o.Access.Require(ctx, capability)
+		}
+	}
 }

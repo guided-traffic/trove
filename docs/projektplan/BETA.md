@@ -314,21 +314,31 @@ Bastion serves those parties. Phase 5 then maps GitLab pipelines into projects.
   unsaved upstream test resolves any `secretRef` (`env` `TROVE_CAC_…`, a file in `secrets_dir`) and sends it to the URL of
   the request, and a `PATCH` that changes the URL of an assigned remote keeps its sealed password (`{"set": true}`)
   (`upstream_api.go`, `repository/upstream.go`, `secrets_store.go`); H-281 covered `repositories:write-config` only
-- ⚪ HIGH · The `manage` grant of a project administrator works through any credential (an `inherit` token without
+- 🟢 HIGH · The `manage` grant of a project administrator worked through any credential (an `inherit` token without
   `admin: true`) and for a global service account that is a member of an administrator group, against Q-AUTHZ-183
   (`authz/index.go`; confirmed by the code review with a probe: both cases hold `manage` on `web-npm`, while `ProjectsOn`
-  reports no project for the token; the tests that should catch it use subjects without groups)
+  reports no project for the token; the tests that should catch it used subjects without groups). Fixed: `manage` on a
+  project repository is decided from the administration under the same rule as `ProjectsOn`, no grant per repository
+  (Q-AUTHZ-196, `TestR_AUTHZ_026_ManageOfAProjectAdministratorFollowsTheCredential`)
 - ⚪ MEDIUM · Deleting a project repository with `detach=true` changes virtual repositories outside the project, and the
   409 without it names them (`repository/delete.go`, `members.go`)
-- ⚪ MEDIUM · The policy list filters (`principal` with `expandGroups`, `repository`) and the policy validation tell a
+- 🟢 MEDIUM · The policy list filters (`principal` with `expandGroups`, `repository`) and the policy validation told a
   project administrator about group memberships, repositories and service accounts outside its project
-  (`authz_api.go`, `policy_list.go`, `validate.go`)
+  (`authz_api.go`, `policy_list.go`, `validate.go`). Fixed: unknown and foreign answer alike, `expandGroups` is 403 for a
+  delegate (Q-AUTHZ-197)
 - ⚪ LOW · A project service account bound through `authz.role_bindings` or named in a global entry is refused only in
   code, not by the database; a race between a handler's narrowing and the policy write or the saved upstream test; global
   policy names under a project's prefix; an auto-join group in a project policy stands in for `authenticated`; a delegated
   token may be self-rotatable and so unbounded; "New policy" in a project-scoped list creates a global policy; the spec
   puts a service account's description change under two different rights; refusals of a project administrator may leave
   no audit event
+  - 🟢 fixed by the fix wave: the database guard `AI005` and the build's skip of such rows (Q-AUTHZ-198, Q-AUTHZ-203; H-397
+    closed), the delegate's project checked under the policy lock and the project lookups in the write's transaction
+    (Q-AUTHZ-199), the project delete names the project (H-407 closed), global policy names never take a project's prefix
+    and a project policy names no auto-join group (Q-AUTHZ-200), a delegate's refusals audited as `authz.denied`
+    (Q-AUTHZ-201), the description row of R-AUTHZ-026 corrected; "New policy" of a project-scoped list (fix(ui) above);
+    left: H-405 (a global policy that predates a project keeps its prefix), H-406 (the refusal event does not name the
+    project); open in the fix wave: the race of the saved upstream test and the self-rotatable delegated token
 - 🟢 MEDIUM (code review) · `GET /projects/{key}` answered `304` for a body that changed: its ETag is `version`, which an
   administrator or assignment change does not move (Q-AUTHZ-185) (`projects_api.go`); the read now ignores
   `If-None-Match` and `PUT` keeps `If-Match` on `version` (Q-AUTHZ-202)
@@ -344,7 +354,7 @@ Bastion serves those parties. Phase 5 then maps GitLab pipelines into projects.
   - 🟢 fixed by the fix wave: migration `00019` split into the expand steps `00019` to `00025` (indexes `CONCURRENTLY`,
     constraints `NOT VALID` then validated, Q-AUTHZ-203) with the database guard `AI005` against a project service account
     in a role binding, a global entry or another project's policy; the project delete removes each policy at the version
-    it read (Q-AUTHZ-204; H-407 left: a never-edited policy replaced by a global one of the same name at version 1); the
+    it read and for its project (Q-AUTHZ-204, Q-AUTHZ-199; H-407 closed); the
     retry rounds are tested; the package comment and the unused queries corrected
 - ⚪ LOW (UI fix wave) · `PUT /projects/{key}/repositories/{repoKey}?move=true` takes no expected current owner, so an
   administrator's move can take a repository from a project it was moved to between the dialog's read and the request; the

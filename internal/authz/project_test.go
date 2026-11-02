@@ -26,6 +26,20 @@ const (
 type fakeProjects struct {
 	ids      map[string]string // key -> ID
 	accounts map[string]string // service account principal ID -> project key
+	autoJoin map[string]bool   // group principal ID -> auto-join
+}
+
+func (f fakeProjects) KeyPrefixing(_ context.Context, name string) (string, error) {
+	for key := range f.ids {
+		if strings.HasPrefix(name, key+"-") {
+			return key, nil
+		}
+	}
+	return "", nil
+}
+
+func (f fakeProjects) AutoJoinGroup(_ context.Context, id string) (bool, error) {
+	return f.autoJoin[id], nil
 }
 
 func (f fakeProjects) ProjectID(_ context.Context, key string) (string, error) {
@@ -107,18 +121,12 @@ func TestR_AUTHZ_026_ProjectAdministratorsHoldManageOnTheirRepositories(t *testi
 			t.Fatal("an administrator holds deploy without a policy")
 		}
 	})
-	t.Run("the grant names the project", func(t *testing.T) {
-		idx, err := e.Begin(t.Context(), aliceSub, "web-npm")
-		if err != nil {
-			t.Fatal(err)
-		}
-		r := idx.repo("web-npm")
-		var names []string
-		for _, g := range idx.grantsFor(r.ID, idAlice) {
-			names = append(names, g.policy)
-		}
-		if !slices.Equal(names, []string{"project:web"}) {
-			t.Fatalf("grants of alice: %v", names)
+	t.Run("the decision names the project", func(t *testing.T) {
+		for _, sub := range []Subject{aliceSub, userSub("user-dave", "dave", idWeb)} {
+			d := e.Decide(t.Context(), sub, write("web-npm", "p", "", Manage))
+			if !slices.Equal(d.Sources, []string{"project:web"}) {
+				t.Fatalf("sources of %s: %v", sub.Name, d.Sources)
+			}
 		}
 	})
 }
@@ -317,7 +325,7 @@ func TestR_AUTHZ_026_MatchCacheKeyIncludesTheProject(t *testing.T) {
 func projectService() *Service {
 	p := fakePrincipals{}
 	for kind, names := range map[principal.Kind][]string{
-		principal.KindUser: {"alice", "lead-web"}, principal.KindGroup: {"web-leads", "team-web"},
+		principal.KindUser: {"alice", "lead-web"}, principal.KindGroup: {"web-leads", "team-web", "everyone"},
 		principal.KindServiceAccount: {"ci-bot", "web-bot", "shop-bot"}, principal.KindCI: {"gitlab-internal/acme-publish"},
 	} {
 		for _, n := range names {
@@ -340,6 +348,7 @@ func projectService() *Service {
 		Projects: fakeProjects{
 			ids:      map[string]string{"web": pWeb, "shop": pShop},
 			accounts: map[string]string{"id-web-bot": "web", "id-shop-bot": "shop"},
+			autoJoin: map[string]bool{"id-everyone": true},
 		},
 	})
 }

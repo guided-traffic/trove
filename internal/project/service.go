@@ -78,7 +78,7 @@ const (
 // PolicyDeleter is the one function of the policy store a project delete needs: the
 // deletion of a policy by name with its If-Match version (errs.AnyRevision for none).
 type PolicyDeleter interface {
-	Delete(ctx context.Context, actor authz.Subject, name string, expected int64) (int64, error)
+	Delete(ctx context.Context, actor authz.Subject, name string, expected int64, opts ...authz.WriteOption) (int64, error)
 }
 
 // Options configure [New].
