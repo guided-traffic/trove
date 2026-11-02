@@ -666,7 +666,8 @@ lists as system scope items (R-AUTH-025) use the same names; the others extend t
 | `security-settings:write`: the authorization settings of this page | yes | yes | — | — | — |
 | `audit:read` | yes | yes | yes | — | — |
 | `endpoints:read`, `endpoints:write`: endpoints and their exposure rules ([endpoints.md](endpoints.md) R-EP-016) | yes, yes | yes, yes | yes, — | yes, — | — |
-| `vulnerabilities:triage`, from M4b: change the status of vulnerability findings, which sets, lifts or restores download blocks (a block on a confirmed finding, the dismissal of a malicious one); effective only together with `read` on the finding's repository ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-013, Q-VULN-8, Q-VULN-20) | yes | yes | — | — | — |
+| `vulnerabilities:triage`, from M4b: change the status of vulnerability findings, which sets, lifts or restores download blocks (a block on a confirmed finding, the dismissal of a malicious one); effective only together with `read` on the finding's repository or `content:metadata-read` ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-013, Q-VULN-8, Q-VULN-20) | yes | yes | yes | — | — |
+| `content:metadata-read`: read the metadata of every repository (package lists, versions, documents, search, package pages, vulnerability findings), never an artifact (owner, [Q-AUTHZ-172](#q-authz-172--the-auditor-reads-every-repositorys-metadata-and-triages-but-downloads-nothing)) | yes | — | yes | — | — |
 
 - Roles are bound to users, groups and service accounts (R-AUTHZ-022). A role bound to a group
   applies to every member, including members synchronized from the identity provider. This is how
@@ -728,7 +729,10 @@ Acceptance criteria:
   the same user's next request needs no new login to be refused (R-AUTHZ-032).
 
 ### R-AUTHZ-011 · Security administrator and auditor roles
-Priority: **P1** · Covers: IAM-006, ADMAPI-041, TOK-014
+Priority: **MVP** · Covers: IAM-006, ADMAPI-041, TOK-014
+
+The `auditor` role is MVP (owner, [Q-AUTHZ-172](#q-authz-172--the-auditor-reads-every-repositorys-metadata-and-triages-but-downloads-nothing));
+`security-admin` stays P1.
 
 - `security-admin` manages who may do what: users, groups, service accounts, permission policies,
   CI issuers and identity mappings, token listing and revocation for any principal, and the
@@ -752,10 +756,15 @@ Priority: **P1** · Covers: IAM-006, ADMAPI-041, TOK-014
   not carry, so a security administrator triages only where a policy grants it `read`. A dismissal
   lifts a block, and a block set in triage refuses a version, for every consumer of the repository
   ([H-312](vulnerability-scanning.md#h-312--a-dismissal-lifts-a-block-for-every-consumer-of-the-repository)).
-- `auditor` reads everything that is not secret: configuration, policies, role bindings,
-  identities, CI mappings, token metadata (never token values), settings and the audit log. It
-  changes nothing and holds no content rights through its role. Secrets are write-only for every
-  caller anyway.
+- `auditor` reads everything that is not secret, instance-wide: configuration, policies, role bindings,
+  identities, projects, CI mappings, token metadata (never token values), settings, the audit log and, through
+  `content:metadata-read`, the metadata of every repository: package lists, versions, the format's documents (an npm
+  package document, a NuGet version list or registration), search and the package pages, and from M4b the
+  vulnerability findings. It downloads no artifact (a tarball, a `.nupkg`, a raw file: `KindArtifact` is refused),
+  uploads, publishes, deletes and changes nothing, with one exception: from M4b it triages vulnerability findings
+  instance-wide (`vulnerabilities:triage`), the security metadata of R-VULN-013. Exposure ceilings of an endpoint apply
+  to it as to everyone. It can be bound to a group through `authz.role_bindings` (R-AUTHZ-010). Secrets are write-only
+  for every caller anyway.
 - Read-only automation (ADMAPI-041, TOK-014) uses a service account bound to `auditor` and a token
   whose scope lists the needed system items, for example `"system": ["policies:read"]`
   (R-AUTHZ-013, R-AUTH-025).
@@ -3871,6 +3880,28 @@ provisioned from a GitOps repository; configuration documents (R-OPS-029, P1) ar
 **Rationale:** the owner's decision; it follows Q-CI-16. The development agent records no revisit condition.
 
 **Applied in the spec:** R-AUTHZ-010 (bindings from the configuration, one acceptance criterion).
+
+### Q-AUTHZ-172 · The auditor reads every repository's metadata and triages, but downloads nothing
+
+Status: **Decided by the owner on 2026-11-02**.
+
+Context: the `auditor` role read configuration, identities and the audit log but held no content rights, so it saw no
+package and no version; triage of vulnerability findings belonged to `security-admin` and needed `read` on the finding's
+repository, which includes downloads. The owner: the auditor has instance-wide access to all projects, metadata and
+above all vulnerabilities, takes part in triage instance-wide, may change nothing except security metadata, and can
+neither download, upload nor change artifacts; the role is bound to a group through the Helm configuration.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A capability `content:metadata-read` for metadata of every repository, `KindArtifact` refused; `vulnerabilities:triage` for the auditor, effective with metadata read; the role MVP (chosen) | The decision point allows `read` on metadata, documents and search through the capability and never on an artifact | The authorization already tells metadata from artifacts (`KindMetadata`, `KindSearch`, `KindArtifact`); one capability, no per-repository policy to keep current | Metadata of every repository is visible to the role, internal names included |
+| (b) Policies granting `read` on every repository to an auditor group | No new capability | Uses what exists | `read` includes downloads, and new repositories need the policy extended |
+
+**Choice:** (a), the owner's definition of the role.
+
+**Rationale:** the owner's decision. The development agent records no revisit condition.
+
+**Applied in the spec:** R-AUTHZ-010 (the capability `content:metadata-read`, the triage row), R-AUTHZ-011 (the auditor
+paragraph, its priority).
 
 ## What this does not cover
 

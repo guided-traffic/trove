@@ -252,6 +252,8 @@ applies to the npm and NuGet parts of this phase.
 - ⚪ Known-exploited marking from the CISA catalog
 - ⚪ Matching by package identity with each format's version order, as an optional interface of the frozen format contract; public advisories never applied to claimed names, claimed-name matches as a security alert
 - ⚪ Findings: severity from CVSS, triage statuses and history, re-evaluation when the advisory data changes, rescan on demand, retention
+- ⚪ Triage instance-wide by the `auditor` role, which sees every repository's metadata and findings but downloads, uploads
+  and changes no artifact ([Q-AUTHZ-172](../spec/authorization.md#q-authz-172--the-auditor-reads-every-repositorys-metadata-and-triages-but-downloads-nothing), owner 2026-11-02)
 - ⚪ Download blocking: malicious versions by default, every other block set and lifted in triage on a confirmed finding, no severity threshold (owner, 2026-10-31); on every route that serves a version, in the one item-lookup query; report mode for the whole installation
 
 **Formats**
