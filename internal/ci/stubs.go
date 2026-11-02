@@ -3,7 +3,6 @@ package ci
 import (
 	"context"
 
-	"github.com/guided-traffic/trove/internal/ci/subject"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta"
 )
@@ -20,8 +19,6 @@ func NotImplemented(workPackage string) error {
 // The stubs: one type per service, every method answering [NotImplemented]. A work package replaces
 // its stub in internal/app/wire_ci.go and deletes its type from this file.
 type (
-	// StubIssuers is the stub of [Issuers] (W1).
-	StubIssuers struct{}
 	// StubMappings is the stub of [Mappings] (W3).
 	StubMappings struct{}
 	// StubExchanger is the stub of [Exchanger] (W4).
@@ -33,62 +30,11 @@ type (
 )
 
 var (
-	_ Issuers   = StubIssuers{}
 	_ Mappings  = StubMappings{}
 	_ Exchanger = StubExchanger{}
 	_ Revoker   = StubRevoker{}
 	_ Issuances = StubIssuances{}
 )
-
-func (StubIssuers) List(context.Context) ([]Issuer, error) { return nil, NotImplemented("W1") }
-
-func (StubIssuers) Get(context.Context, string) (Issuer, error) {
-	return Issuer{}, NotImplemented("W1")
-}
-
-func (StubIssuers) Create(context.Context, Actor, IssuerInput, bool) (Issuer, error) {
-	return Issuer{}, NotImplemented("W1")
-}
-
-func (StubIssuers) Replace(context.Context, Actor, string, int64, IssuerInput) (Issuer, error) {
-	return Issuer{}, NotImplemented("W1")
-}
-
-func (StubIssuers) Delete(context.Context, Actor, string, bool, int64) error {
-	return NotImplemented("W1")
-}
-
-func (StubIssuers) Keys(context.Context, string) (KeyStatus, error) {
-	return KeyStatus{}, NotImplemented("W1")
-}
-
-func (StubIssuers) RefreshKeys(context.Context, Actor, string, RefreshTrigger) (KeyStatus, error) {
-	return KeyStatus{}, NotImplemented("W1")
-}
-
-func (StubIssuers) Resolve(context.Context, string) (Issuer, bool, error) {
-	return Issuer{}, false, NotImplemented("W1")
-}
-
-func (StubIssuers) LockShareTx(context.Context, meta.Tx, string) (Issuer, error) {
-	return Issuer{}, NotImplemented("W1")
-}
-
-func (StubIssuers) Reload(context.Context, Issuer) {}
-
-func (StubIssuers) KeySource(Issuer) subject.KeySource { return stubKeys{} }
-
-func (StubIssuers) RefreshDue(context.Context) (int, error) { return 0, NotImplemented("W1") }
-
-func (StubIssuers) ApplyDeclared(context.Context, meta.Tx, []DeclaredIssuer) error {
-	return NotImplemented("W1")
-}
-
-type stubKeys struct{}
-
-func (stubKeys) Keys(context.Context, string, string) ([]subject.Key, error) {
-	return nil, subject.ErrKeysUnavailable
-}
 
 func (StubMappings) List(context.Context, string) ([]Mapping, error) {
 	return nil, NotImplemented("W3")
@@ -161,10 +107,6 @@ func (StubIssuances) RetainIssuances(context.Context) (int64, error) {
 	return 0, NotImplemented("W5")
 }
 
-func (StubIssuers) Choices(context.Context) ([]IssuerChoice, error) {
-	return nil, NotImplemented("W1")
-}
-
 func (StubMappings) ListIn(context.Context, string) ([]Mapping, error) {
 	return nil, NotImplemented("W3")
 }
@@ -195,4 +137,8 @@ func (StubMappings) CountIn(context.Context, string) (int, error) {
 
 func (StubIssuances) ListForProject(context.Context, string, IssuanceFilter) (IssuancePage, error) {
 	return IssuancePage{}, NotImplemented("W5")
+}
+
+func (StubMappings) DeleteForIssuerTx(context.Context, meta.Tx, Actor, string, string) (int, error) {
+	return 0, NotImplemented("W3")
 }

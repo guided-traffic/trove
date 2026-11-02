@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -37,26 +38,56 @@ const (
 	DefaultCIIssuanceRetentionSchedule = "40 3 * * *"
 )
 
-// ciSet is the set of CI services of the replica. A work package replaces its member.
-type ciSet struct {
+// AreaCI is the CI federation's services (docs/developer/ci-oidc.md). Every role builds it: a web replica
+// resolves issuers and keys for the exchange, a worker replica runs the tasks.
+const AreaCI Area = "ci"
+
+// ciArea is the set of CI services of the replica. A work package replaces its member of the stubs.
+type ciArea struct {
 	issuers   ci.Issuers
 	mappings  ci.Mappings
 	revoker   ci.Revoker
 	issuances ci.Issuances
 	exchanger ci.Exchanger
+	metrics   *ci.Metrics
 }
 
-// ciServices builds the set: the stubs until the work packages exist.
-func (a *App) ciServices() ciSet {
-	return ciSet{
-		issuers: ci.StubIssuers{}, mappings: ci.StubMappings{}, revoker: ci.StubRevoker{},
-		issuances: ci.StubIssuances{}, exchanger: ci.StubExchanger{},
+// wireCI builds the services: the issuer and key service of work package W1 over the database, the change
+// log, the cache registry and the outbound factory; the stubs of the other work packages until they build
+// theirs (the revoker and the mapping store are the issuer service's collaborators).
+func (a *App) wireCI(_ context.Context, in infra) (ciArea, error) {
+	if err := requireInputs(AreaCI, given("database", in.db), given("change log", in.changes), given("cache registry", in.caches),
+		given("outbound factory", in.out), given("audit recorder", in.rec)); err != nil {
+		return ciArea{}, err
 	}
+	metrics, err := ci.NewMetrics(a.tele.metrics.Registry())
+	if err != nil {
+		return ciArea{}, fmt.Errorf("ci metrics: %w", err)
+	}
+	out := ciArea{
+		mappings: ci.StubMappings{}, revoker: ci.StubRevoker{}, issuances: ci.StubIssuances{}, exchanger: ci.StubExchanger{},
+		metrics: metrics,
+	}
+	issuers, err := ci.New(ci.Options{
+		DB: in.db, Changes: in.changes, Recorder: in.rec, Caches: in.caches, Outbound: in.out,
+		Config: a.cfg.CI, OutboundConfig: a.cfg.Proxy.Outbound, EpochPollInterval: a.cfg.Cluster.EpochPollInterval,
+		BaseURL: a.cfg.Server.BaseURL, Revoker: out.revoker, Mappings: out.mappings, Metrics: metrics,
+		Log: a.log.With("component", "ci"),
+	})
+	if err != nil {
+		return ciArea{}, err
+	}
+	out.issuers = issuers
+	return out, nil
 }
+
+// CIIssuers returns the issuer and key service; nil in the shell profile. The integration tests of the key
+// source call it the way the exchange does.
+func (a *App) CIIssuers() ci.Issuers { return part[ciArea](a.parts).issuers }
 
 // ciAPI hands the services to the management API.
 func (a *App) ciAPI() v1.CIServices {
-	s := a.ciServices()
+	s := part[ciArea](a.parts)
 	return v1.CIServices{Issuers: s.issuers, Mappings: s.mappings, Issuances: s.issuances, Revoker: s.revoker, Exchanger: s.exchanger}
 }
 
@@ -94,27 +125,30 @@ func (a *App) ciRateLimit() rateLimitCI {
 // "nothing to do yet", so the tasks succeed until their work package exists and need no edit when it
 // does.
 func (a *App) registerCIJobs(r *jobs.Registry) {
-	s := a.ciServices()
 	tasks := []struct {
 		name, schedule string
-		run            func(context.Context) (map[string]int64, error)
+		run            func(context.Context, ciArea) (map[string]int64, error)
 	}{
-		{TaskCIKeysRefresh, DefaultCIKeysRefreshSchedule, func(ctx context.Context) (map[string]int64, error) {
+		{TaskCIKeysRefresh, DefaultCIKeysRefreshSchedule, func(ctx context.Context, s ciArea) (map[string]int64, error) {
 			n, err := s.issuers.RefreshDue(ctx)
 			return map[string]int64{"refreshed": int64(n)}, err
 		}},
-		{TaskCIReplayCleanup, DefaultCIReplayCleanupSchedule, func(ctx context.Context) (map[string]int64, error) {
+		{TaskCIReplayCleanup, DefaultCIReplayCleanupSchedule, func(ctx context.Context, s ciArea) (map[string]int64, error) {
 			n, err := s.issuances.CleanupReplay(ctx)
 			return map[string]int64{"deleted": n}, err
 		}},
-		{TaskCIIssuanceRetention, DefaultCIIssuanceRetentionSchedule, func(ctx context.Context) (map[string]int64, error) {
+		{TaskCIIssuanceRetention, DefaultCIIssuanceRetentionSchedule, func(ctx context.Context, s ciArea) (map[string]int64, error) {
 			n, err := s.issuances.RetainIssuances(ctx)
 			return map[string]int64{"deleted": n}, err
 		}},
 	}
 	for _, t := range tasks {
 		handler := func(ctx context.Context, run *jobs.Run) error {
-			res, err := t.run(ctx)
+			set := part[ciArea](a.parts)
+			if set.issuers == nil {
+				return errors.New("CI services: this replica has not wired them yet")
+			}
+			res, err := t.run(ctx, set)
 			if e, ok := errs.As(err); ok && e.Kind == errs.NotImplemented {
 				return run.SetResult(map[string]string{"pending": "not built in this release"})
 			}
@@ -132,15 +166,12 @@ func (a *App) registerCIJobs(r *jobs.Registry) {
 	}
 }
 
-// registerCIMetrics registers the counters and histograms of R-CI-020 and the two gauges read from
-// PostgreSQL (trove_ci_signing_keys_age_seconds, trove_ci_tokens_active) as a database gauge source,
-// evaluated once per metrics.db_gauge_interval and aggregated with max, never sum, across replicas
-// (R-OPS-007). The counters are the replica's own; W1 and W4 increment them.
+// registerCIMetrics registers the two gauges of R-CI-020 that are read from PostgreSQL
+// (trove_ci_signing_keys_age_seconds, trove_ci_tokens_active) as a database gauge source, evaluated once
+// per metrics.db_gauge_interval and aggregated with max, never sum, across replicas (R-OPS-007). The
+// counters and histograms are the replica's own, created by wireCI; W1 and W4 increment them.
 func (a *App) registerCIMetrics() error {
 	m := a.tele.metrics
-	if _, err := ci.NewMetrics(m.Registry()); err != nil {
-		return fmt.Errorf("ci metrics: %w", err)
-	}
 	age := prometheus.NewDesc(ci.MetricKeysAge, "Age of the stored signing key set of a CI issuer, from fetched_at in PostgreSQL (aggregate with max, not sum, across replicas).", []string{"issuer"}, nil)
 	active := prometheus.NewDesc(ci.MetricTokensActive, "Unexpired, unrevoked CI tokens by issuer, from PostgreSQL (aggregate with max, not sum, across replicas).", []string{"issuer"}, nil)
 	m.DBGauges().Add(observability.GaugeSource{
@@ -148,7 +179,8 @@ func (a *App) registerCIMetrics() error {
 		Collect: func(ctx context.Context) ([]prometheus.Metric, error) {
 			var out []prometheus.Metric
 			rows, err := a.database().Main().Query(ctx,
-				`SELECT i.name, extract(epoch FROM now() - k.fetched_at)::float8 FROM ci_issuer_keys k JOIN ci_issuers i ON i.id = k.issuer_id`)
+				`SELECT i.name, extract(epoch FROM now() - k.fetched_at)::float8 FROM ci_issuer_keys k JOIN ci_issuers i ON i.id = k.issuer_id
+				  WHERE k.fetched_at > to_timestamp(0)`) // an issuer whose first fetch failed has a placeholder row and no set
 			if err != nil {
 				return nil, err
 			}

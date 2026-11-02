@@ -4,7 +4,7 @@ Spec [gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md) (R-CI-001 to R-CI-030), beta
 that build the federation in parallel, in the shape of [projects.md](projects.md). The decisions behind it are
 [Q-CI-17 to Q-CI-22 and Q-CI-26](../decisions.md) with [ADR-147](../decisions.md#adr-147--a-ci-token-carries-its-frozen-grants-in-its-cache-entry-and-the-management-api-refuses-ci-tokens-by-default).
 
-Status: contracts laid; work packages pending. The schema, the packages with their types and interfaces, the stubs, the wiring, the
+Status: contracts laid; W1 (issuers and keys) built, the other work packages pending. The schema, the packages with their types and interfaces, the stubs, the wiring, the
 API document and its 501 handlers, the configuration, the audit events, the areas, limiters, tasks and metrics exist; no behavior does. Every
 operation of the document answers `501 ci_not_implemented` (the exchange too, as problem details until W4), the three tasks succeed and do
 nothing. The issuer double the end-to-end tests exchange against is built separately (test/oidcstub).
@@ -92,7 +92,7 @@ general API rate limit (`limitedPath` in [ratelimit.go](../../internal/api/v1/ra
 
 | Where | What |
 |---|---|
-| [config/ci.go](../../internal/config/ci.go) | every `ci.*` key with its default; refusals: `ci.token.max_ttl` above `auth.tokens.cit.max_ttl` (both keys named), the retired `ci.exchange.rate_limit.per_issuer_per_second` (file and environment, names the replacements), `ci.job_token_fallback.enabled`; `ci.issuers` (list elements now hold pointers to scalars and string lists, [schema.go](../../internal/config/schema.go)); `trove migrate` calls `ApplyDeclared` only with a non-empty list until W1 exists (see [migrate_declared.go](../../internal/app/migrate_declared.go)) |
+| [config/ci.go](../../internal/config/ci.go) | every `ci.*` key with its default; refusals: `ci.token.max_ttl` above `auth.tokens.cit.max_ttl` (both keys named), the retired `ci.exchange.rate_limit.per_issuer_per_second` (file and environment, names the replacements), `ci.job_token_fallback.enabled`; `ci.issuers` (list elements now hold pointers to scalars and string lists, [schema.go](../../internal/config/schema.go)); `trove migrate` calls `ApplyDeclared` always ([migrate_declared.go](../../internal/app/migrate_declared.go)) |
 | [cluster/areas.go](../../internal/cluster/areas.go) | `ci_mappings`, `ci_issuer_keys` |
 | [app/wire_ci.go](../../internal/app/wire_ci.go) | stubs, limiters `ci_exchange_address` and `ci_exchange_subject` (cluster scope, held in `limitsArea`), tasks `ci-keys-refresh` `*/5 * * * *`, `ci-replay-cleanup` `7 * * * *`, `ci-issuance-retention` `40 3 * * *` (exclusive; a stub's not-implemented answer is a success), the metrics and the two database gauges |
 | [audit/events_ci.go](../../internal/audit/events_ci.go) | the events of R-CI-020, categories and modes in Q-CI-22; journal flag on `ci.token.revoked` and the `.updated`, `.disabled`, `.deleted` events of issuers and mappings; the record schema has `project` |
@@ -102,7 +102,7 @@ general API rate limit (`limitedPath` in [ratelimit.go](../../internal/api/v1/ra
 
 | Package | Builds | Files it owns |
 |---|---|---|
-| **W1** issuers and keys | R-CI-001 to R-CI-003, R-CI-005, Q-CI-16; the issuer, key and `Choices` operations; `ApplyDeclared` (migrate: call it always); `ci-keys-refresh`; the key source | `internal/ci/issuers*.go`, `keys*.go`, `ci_issuers_api.go`, `queries/ci_issuers.sql`, the issuer part of `wire_ci.go`, `migrate_declared.go` |
+| **W1** issuers and keys (built) | R-CI-001 to R-CI-003, R-CI-005, Q-CI-16; the issuer, key and `Choices` operations; `ApplyDeclared` (migrate: call it always); `ci-keys-refresh`; the key source | `internal/ci/issuers*.go`, `keys*.go`, `ci_issuers_api.go`, `queries/ci_issuers.sql`, the issuer part of `wire_ci.go`, `migrate_declared.go` |
 | **W2** claim engine and validation | R-CI-004, R-CI-010 to R-CI-014, the save-time rules and warnings; `internal/auth/jws` | `internal/ci/claims/**`, `internal/ci/subject/**`, `internal/auth/jws/**`, `internal/auth/oidc/jws*.go` |
 | **W3** mappings | store, principals, `mappings_version`, R-CI-009, the system and the project routes, the project bounds, the dry run, `Select`, the snippet; `project_not_empty` for a project with mappings | `internal/ci/mappings*.go`, `select.go`, `ci_mappings_api.go`, `ci_snippets_api.go`, `queries/ci_mappings.sql`, `internal/project` (the delete check) |
 | **W4** exchange | R-CI-007, R-CI-008, R-CI-016, R-CI-018, R-CI-021, the issuance write; `IssueCITx` | `internal/ci/exchange*.go`, `ttl.go`, `internal/auth/token/cit.go`, `ci_exchange.go`, `queries/ci_exchange.sql` |
@@ -138,3 +138,55 @@ the evidence comes from the tests of each work package.
 | `TestCIMigration` ([test/integration/postgres/ci_test.go](../../test/integration/postgres/ci_test.go)) | schema, classes, areas, every CI statement |
 | `TestDeclaredCIIssuersReachTheMigrationJob` ([test/chart/ci_test.go](../../test/chart/ci_test.go)) | `config.ci.*` reaches the migration Job and the replicas |
 | the document tests of [internal/api/v1](../../internal/api/v1) | declarations, recent authentication, reserved names, problem responses |
+
+## W1: issuers and signing keys
+
+Built in [internal/ci](../../internal/ci) (`issuers*.go`, `keys*.go`), [ci_issuers_api.go](../../internal/api/v1/ci_issuers_api.go),
+[ci_issuers.sql](../../internal/meta/postgres/queries/ci_issuers.sql), [wire_ci.go](../../internal/app/wire_ci.go) and
+[migrate_declared.go](../../internal/app/migrate_declared.go). The wiring is the step `wireCI` (area `ci`, every role): W3 to W5 replace
+their member of `ciArea` there.
+
+| What | Where |
+|---|---|
+| validation and defaults of an issuer (pure) | [issuers_validate.go](../../internal/ci/issuers_validate.go) |
+| create, replace, delete, events, journal entries | [issuers_write.go](../../internal/ci/issuers_write.go) |
+| `ApplyDeclared` (Q-CI-16): create or replace by name, disable the removed, stop with an error naming both on a clash; `trove migrate` calls it always | [issuers_declared.go](../../internal/ci/issuers_declared.go) |
+| the key rules and the stored form (public members only, at most 100 keys) | [keys_jwks.go](../../internal/ci/keys_jwks.go) |
+| discovery and key fetch through the outbound factory, failure classes | [keys_fetch.go](../../internal/ci/keys_fetch.go) |
+| the write rule, the failure record, metrics | [keys_store.go](../../internal/ci/keys_store.go) |
+| the copy, the unknown-kid protocol, the age check (`KeySource`) | [keys_source.go](../../internal/ci/keys_source.go) |
+| status, forced refresh, the task `ci-keys-refresh` | [keys_task.go](../../internal/ci/keys_task.go) |
+
+What the later work packages need to know:
+
+- **The shape of a rule violation (Q-CI-30), for W3.** Every violation is in `errors[]` with its pointer and code; a rule the
+  specification names by its code (`pin_required`, `catch_all_condition`, `priority_taken` is a 409, …) is also the problem's `code`
+  (`validationError` in issuers_validate.go; `errs.E(errs.Invalid, <named code>, …, errs.WithFields(…))`). Any other violation is
+  `validation_failed`.
+- **`Mappings.DeleteForIssuerTx` (W3).** Added to the interface for the cascade of an issuer's deletion; the stub answers 501, so
+  `DELETE …?cascade=true` of an issuer that has mappings answers 501 until W3.
+- **The revoker (W5).** `Issuers.Replace` (disable), `Delete` and `ApplyDeclared` (removal) call `Revoker.RevokeIssuerTx` in their
+  transaction only when the issuer has a row in `ci_token_issuances`. With the stub revoker such a write answers 501 and changes
+  nothing (and a `trove migrate` that removes such an issuer stops).
+- **The key source (W4).** `Issuers.KeySource(issuer).Keys(ctx, kid, alg)` returns `subject.ErrUnknownKey` and
+  `subject.ErrKeysUnavailable`; a token without kid for an issuer with no stored set counts as an unknown kid. `Resolve` answers from
+  the copy of all issuers, so an unknown `iss` costs no query. The JWK rules are in keys_jwks.go, not in `internal/auth/jws` (W2
+  builds that package in parallel): W2 may replace `parseStored` with its `ParseJWKS` if the two agree.
+- **The metric** `trove_ci_signing_keys_refresh_total{issuer,trigger,outcome}` is incremented by every fetch; the gauge
+  `trove_ci_signing_keys_age_seconds` skips an issuer whose first fetch failed (the placeholder row, Q-CI-32).
+
+## Pending criteria
+
+Criteria of R-CI-001 and R-CI-002 that need a work package that is not built. The tests exist in
+[pending_test.go](../../test/integration/ci/pending_test.go) behind the build tag `ci_pending` (run with
+`-tags 'integration ci_pending'`); the work package named removes the tag from its tests when it builds its part.
+
+| Test | Needs |
+|---|---|
+| `TestR_CI_002_DisablingAnIssuerRevokesItsTokens`, `TestR_CI_002_DeletingAnIssuerRevokesItsTokens` | W3 (a mapping), W4 (the exchange issues a token), W5 (the revoker) |
+| `TestR_CI_002_CascadeDeletesTheMappingsAndTheirPrincipals` | W3 (`DeleteForIssuerTx`) |
+| `TestR_CI_001_ARemovedConfigurationIssuerKeepsItsRecords` | W5 (the revoker, for an issuer with issuance records) |
+| `TestR_CI_001_ExchangeAnswersIssuerDisabledForARemovedIssuer` | W4 |
+
+The tests of W1 itself are [test/integration/ci](../../test/integration/ci) (`issuers_test.go`, `keys_test.go`, `declared_test.go`,
+`tasks_test.go`) and the unit tests of [internal/ci](../../internal/ci).

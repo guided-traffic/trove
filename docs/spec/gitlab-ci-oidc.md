@@ -130,7 +130,7 @@ cannot be mixed up):
 | `pin_claims` | Claims that count as immutable identifiers for the pinning rule | `gitlab`: `project_id`, `namespace_id`, `job_project_id`, `job_namespace_id` # default (proposed) |
 | `single_use_subject_tokens` | Reject a second exchange of the same `jti` (R-CI-018, Q-CI-4) | kind preset: `false` for `gitlab`, `true` for `github` and `generic` # default (proposed) |
 | `max_ttl_seconds` | Upper bound for CI tokens of this issuer, at most `ci.token.max_ttl` | `null` (global bound only) # default (proposed) |
-| `ca_bundle_ref` | Reference to a PEM bundle (file or environment variable, INV-15) for instances behind a private CA | `null` # default (proposed) |
+| `ca_bundle_ref` | Reference to a PEM bundle for instances behind a private CA: `file:<absolute path>` or `env:TROVE_CIC_<NAME>`, a variable that holds the PEM text ([Q-CI-31](#q-ci-31--the-syntax-of-ca_bundle_ref-and-the-trust-an-issuers-fetches-use)). It adds to the installation's trust (system roots and `proxy.outbound.tls.ca_files`), never replaces it | `null` # default (proposed) |
 | `use_outbound_proxy` | Route discovery, key and GitLab API calls through the system outbound proxy ([repositories-and-proxy.md](repositories-and-proxy.md)) | `false` # default (proposed) |
 | `job_token_fallback` | R-CI-022 settings (P2) | `{"enabled": false}` # default (proposed) |
 | `enabled` | Disabled issuers reject every exchange | `true` # default (proposed) |
@@ -266,7 +266,8 @@ Q-CI-16) is shown like any other, with its `source`, and is read-only: `PUT`, `D
 Once it is `removedFromConfiguration`, `DELETE` is allowed. Its mappings stay writable. Pagination and the error envelope
 follow [api-and-ui.md](api-and-ui.md): errors are problem details (R-API-009), and the reason names
 this page gives for management operations (`pin_required`, `discovery_unreachable`, …) are their
-`code`. Optimistic concurrency follows R-API-012: GET returns `ETag: "<version>"`, PUT requires
+`code` and also stand in `errors[]` with the pointer of the member, like every named rule of the
+management API ([Q-CI-30](#q-ci-30--the-shape-of-a-rule-violation-on-a-ci-management-write)); a violation without a name of its own answers `validation_failed`. Optimistic concurrency follows R-API-012: GET returns `ETag: "<version>"`, PUT requires
 `If-Match` (428 `precondition_required` without it, and nothing changes; `If-Match: *` for a
 deliberate blind write), DELETE accepts it, and a stale tag answers 412 `precondition_failed` with
 `currentEtag`. A lost update here is a grant change: a stale `PUT` of a mapping can restore
@@ -460,7 +461,8 @@ Caching and refresh (Q-CI-12):
   key sets; the first exchange per issuer (as an unknown `kid`) or the next `ci-keys-refresh` run
   fetches the current set. A restored copy would accept, until its next refresh, a key that the
   issuer removed after the snapshot, which undoes the issuer's revocation of that key.
-- Outbound requests use TLS with the system roots plus `ca_bundle_ref`. They follow at most 3
+- Outbound requests use TLS with the installation's trust (the system roots and `proxy.outbound.tls.ca_files`, R-ARCH-022) plus the
+  issuer's `ca_bundle_ref`, which adds to it and never replaces it ([Q-CI-31](#q-ci-31--the-syntax-of-ca_bundle_ref-and-the-trust-an-issuers-fetches-use)). They follow at most 3
   redirects, and only to `https` URLs. Responses are limited to
   `ci.signing_keys.max_response_bytes` and requests time out after
   `ci.signing_keys.fetch_timeout`. URLs come only from the CI issuer record and never from a
@@ -3767,6 +3769,90 @@ issuances of a shared mapping leak more than the project's mappings (the record 
 (what stays P1), R-AUTHZ-026 (the table), R-API-035, R-UI-035. Code: migration 00026 (`project_id`), `internal/ci` (the
 `…In` methods of `Mappings`, `Issuers.Choices`, `Issuances.ListForProject`, `MappingSet.OnlyTier`), `claims.Frozen.Project`,
 `claims.IssuerFacts.Project`, `internal/api/v1/ci_project_api.go`, `api/openapi.yaml`.
+
+### Q-CI-30 · The shape of a rule violation on a CI management write
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-CI-002 says the reason names of a management write (`pin_claim_not_immutable`, `discovery_unreachable`, …) are the problem's
+`code`. `internal/errs` and the other management areas put a rule violation into `errors[]` of a `validation_failed` problem
+(R-API-009); projects, policies and repositories also make a rule that the specification names by its code the top-level
+`code` (`project_prefix_required`, `reserved_name`, `repository_outside_project`).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Top-level `code` only | The named rule is the `code`, no `errors[]` | Literal reading of R-CI-002 | No pointer for a form; breaks the shape of every other 422 |
+| (b) `validation_failed` with the rule in `errors[]` only | The generic shape | One rule for all | A client that matches on `code` as R-CI-002 says never sees `pin_claim_not_immutable` |
+| (c) Both: every violation in `errors[]` with its pointer and code, and a rule that the specification names by its code is also the top-level `code` (chosen) | The shape projects, policies and repositories already use (`isTopLevelCode`) | One shape across the API; the client matches on `code`, a form reads `errors[]` | A request with several violations answers the first named rule as `code` and the others only in `errors[]` |
+
+**Choice:** (c). The named rules of the issuers are `pin_claim_not_immutable`, `public_issuer_required`, `kind_not_available`,
+`job_token_fallback_not_available` and the four validation codes `discovery_unreachable`, `issuer_mismatch`, `no_usable_keys`,
+`algorithms_not_offered` (pointer `/issuer`); every other violation (`invalid_name`, `invalid_kind`, `algorithm_not_allowed`,
+`invalid_issuer`, `immutable`, …) answers `validation_failed`. The mapping rules of R-CI-010 to R-CI-014 follow the same shape
+(work package W3): the rules of R-CI-019 that the specification names (`pin_required`, `catch_all_condition`, …) are the `code` and
+stay in `errors[]` with the pointer of the member.
+
+**Rationale:** it is what the rest of the management API does, so the UI's handling by `code` (R-UI-042) and by pointer works
+unchanged. The development agent would revisit this if a client needs every violation of a request as a top-level code.
+
+**Applied in the spec:** R-CI-002 (the representation list names the shape). Code: `internal/ci/issuers_validate.go`
+(`validationError`), [docs/developer/ci-oidc.md](../developer/ci-oidc.md) (the contract for W3).
+
+### Q-CI-31 · The syntax of `ca_bundle_ref` and the trust an issuer's fetches use
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-CI-001 calls `ca_bundle_ref` a reference to a PEM bundle, "file or environment variable (INV-15)", and gives one example,
+`file:/var/run/secrets/gitlab-ca/ca.crt`. The existing references of trove are the `secretRef` of a remote repository (a file name
+under `config_as_code.secrets_dir`, or a variable `TROVE_CAC_<NAME>`, so that trove's own variables and files cannot be routed to an
+upstream, R-REPO-033) and the `*_file` and `*_env` keys of the configuration. A CA bundle holds certificates, no secret, but a
+reference that names any variable of the process would still let an administrator of issuers read trove's own variables into a
+trust store and so observe them through the TLS error classes.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `file:` only | An absolute path | The example of R-CI-001; the trust store re-reads a changed file without a restart | No environment form, which R-CI-001 promises |
+| (b) `file:<absolute path>` and `env:TROVE_CIC_<NAME>` (chosen) | The file form as in the example; the variable holds the PEM text and must carry the prefix | Both forms; trove's own variables cannot be named; the prefix follows the `TROVE_CAC_` precedent | An environment form needs a restart to change, because a variable is fixed for the life of a process |
+| (c) Any variable | `env:<NAME>` | Simplest | A reference to `TROVE_DATABASE_PASSWORD_FILE` or a key ring path becomes a probe |
+
+**Choice:** (b). The trust store of an issuer's fetch is the system roots and `proxy.outbound.tls.ca_files` (the installation's
+trust, R-ARCH-022, with `proxy.outbound.tls.use_system_roots` as it is set) **plus** the issuer's bundle; the bundle adds, it
+never replaces, and the installation's `ca_files` always apply to discovery and key fetches of every issuer. A file is re-read by
+the trust store when it changes (R-ARCH-035). A variable is written once to a private file of the process (mode 0600 in a 0700
+directory) because the trust store reads files. A reference that does not load fails the fetch with the class
+`trust_store_unavailable` and the next fetch tries again.
+
+**Rationale:** the choice keeps R-CI-001's two promises and the precedent that a reference cannot name trove's own state. The
+development agent would revisit the prefix if the chart gains a values key that renders the variables, and the environment form if
+rotating a bundle without a restart is needed (then the file form is the answer).
+
+**Applied in the spec:** R-CI-001 (the `ca_bundle_ref` row and the TLS paragraph of R-CI-003). Code: `internal/ci/keys_fetch.go`
+(`validBundleRef`, `bundleFile`).
+
+### Q-CI-32 · Where the issuer service stands in the contract: the failed first fetch, the cascade and the revoker
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Three points of the contract page could not be built as written. (1) `ci_issuer_keys.jwks` is `NOT NULL`, so an issuer whose first
+fetch fails has no row to carry `last_error`, yet R-CI-003 expects `GET …/keys` to show the class. (2) `?cascade=true` must delete
+the mappings in the issuer's transaction, but `Mappings` had only methods that open their own. (3) Disabling or deleting an issuer
+must revoke its tokens in the same transaction, but the revoker is work package W5's and a stub answers 501.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (1a) Record the failure only on an existing row | A never-fetched issuer shows nothing | No placeholder | The case an operator needs most (a new issuer that cannot be reached) is invisible, and the task retries every run |
+| (1b) A placeholder row: an empty set and `fetched_at` at the epoch (chosen) | The failure is stored; the placeholder has no keys and is older than `max_stale`, so it fails closed | `last_error` and `next_refresh_at` work for every issuer | A row without a set: the status, the age gauge and the due query treat `fetched_at <= epoch` as "no set" |
+| (2) `Mappings.DeleteForIssuerTx` (chosen) | W3's store deletes the issuer's mappings and principals on the caller's transaction | One transaction, one event per mapping | Adds a method to the contract; the stub answers 501 until W3 |
+| (3a) Always call the revoker | A stub answers 501 for every disable and delete | Simple | An issuer that never issued a token cannot be disabled until W5 |
+| (3b) Call it when the issuer has an issuance record (chosen) | A token exists only with its issuance record, written in the exchange transaction | Nothing to revoke without a record; fails closed (501, nothing written) with one | A second place that knows how tokens are found; W5's revoker still decides what to revoke |
+
+**Choice:** (1b), (2), (3b).
+
+**Rationale:** each keeps the write atomic and fails closed. The development agent would revisit (3b) if a token can exist without
+an issuance record (then always call the revoker).
+
+**Applied in the spec:** R-CI-003 (the failure record). Code: `queries/ci_issuers.sql` (`CiKeysRecordError`), `internal/ci/services.go`
+(`Mappings.DeleteForIssuerTx`), `internal/ci/issuers_write.go` (`revokeTokens`).
 
 ## What this does not cover
 

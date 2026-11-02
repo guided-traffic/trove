@@ -5,6 +5,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/authz"
+	"github.com/guided-traffic/trove/internal/ci"
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
 
@@ -17,7 +18,7 @@ import (
 //
 // What each handler must do beyond the narrowing, with the service of internal/ci:
 //
-//   - listProjectCiIssuers: Issuers.Choices, read-only.
+//   - listProjectCiIssuers: Issuers.Choices, read-only (built, W1).
 //   - list, get, create, replace, delete of a mapping: Mappings.ListIn, GetIn, CreateIn, ReplaceIn,
 //     DeleteIn with the project from the path; the bounds of a project mapping (name prefix, no groups,
 //     the project's policies and repositories) are the service's; a mapping of another tier is 404.
@@ -32,9 +33,27 @@ func (s *Server) ciProject(w http.ResponseWriter, r *http.Request, capability, p
 	ciPending(w, r, available, what, workPackage)
 }
 
-// ListProjectCiIssuers implements GET /api/v1/projects/{key}/ci/issuers.
+// ListProjectCiIssuers implements GET /api/v1/projects/{key}/ci/issuers: the issuers read-only, name,
+// kind, issuer URL and public_issuer, for a project administrator who chooses one (Q-CI-26).
 func (s *Server) ListProjectCiIssuers(w http.ResponseWriter, r *http.Request, key string) {
-	s.ciProject(w, r, "ci:read", key, s.o.CI.Issuers != nil, "The CI issuer service", "W1")
+	if err := s.requireProject(r.Context(), "ci:read", key, authz.ProjectManagePolicies); err != nil {
+		httpserver.Problem(w, r, err)
+		return
+	}
+	svc, err := s.ciIssuerService()
+	var choices []ci.IssuerChoice
+	if err == nil {
+		choices, err = svc.Choices(r.Context())
+	}
+	if err != nil {
+		httpserver.Problem(w, r, err)
+		return
+	}
+	items := make([]gen.CiIssuerChoice, 0, len(choices))
+	for _, c := range choices {
+		items = append(items, gen.CiIssuerChoice{Name: c.Name, Kind: c.Kind, Issuer: c.Issuer, PublicIssuer: c.PublicIssuer})
+	}
+	writeJSON(w, r, http.StatusOK, gen.CiIssuerChoiceList{Items: items})
 }
 
 // ListProjectCiMappings implements GET /api/v1/projects/{key}/ci/mappings.

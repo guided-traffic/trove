@@ -162,6 +162,7 @@ func wiringSteps() []step {
 		newStep(AreaIdentity, everyRole, (*App).wireIdentity),
 		newStep(AreaAuthz, everyRole, (*App).wireAuthz),
 		newStep(AreaOwnership, everyRole, (*App).wireOwnership),
+		newStep(AreaCI, everyRole, (*App).wireCI),
 		newStep(AreaFormats, everyRole, (*App).wireFormats),
 		newStep(AreaFiles, everyRole, (*App).wireFiles),
 		newStep(AreaLimits, withListener, (*App).wireLimits),

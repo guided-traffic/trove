@@ -47,7 +47,7 @@ func DeclaredState(cfg *config.Config, instance string, log *slog.Logger) func(c
 		}
 		log.Info("role bindings of the configuration applied", "declared", len(cfg.Authz.RoleBindings),
 			"bound", out.Bound, "taken_over", out.Adopted, "unbound", out.Unbound, "groups_created", out.GroupsCreated)
-		return applyDeclaredCIIssuers(ctx, s, cfg, log)
+		return applyDeclaredCIIssuers(ctx, s, changes, recorder, cfg, log)
 	}
 }
 
@@ -56,17 +56,25 @@ func DeclaredState(cfg *config.Config, instance string, log *slog.Logger) func(c
 // issuer that is no longer declared is disabled with removedFromConfiguration. No replica writes
 // them, so replicas of two releases during a rolling update never overwrite each other.
 //
-// Work package W1 builds the issuer service over the session and replaces the stub below. The stub
-// answers 501 for a declared issuer, so a configuration that declares issuers stops the migration
-// loudly while the service does not exist; with none declared nothing is called. W1 calls the
-// service unconditionally, because an empty list must disable the configuration issuers that were
-// removed from it.
-func applyDeclaredCIIssuers(ctx context.Context, s *postgres.MigrationSession, cfg *config.Config, log *slog.Logger) error {
+// The issuer service is the one a replica uses, over the runner's one connection, so the API and the
+// configuration agree on the defaults and the rules, and the change log writes the ci_mappings change in
+// the transaction. It runs always, also with an empty list: the issuers that were removed from the
+// configuration are disabled then, and that is the one case where nothing is declared and something
+// must be written.
+func applyDeclaredCIIssuers(ctx context.Context, s *postgres.MigrationSession, changes *cluster.Changes, recorder audit.Recorder, cfg *config.Config, log *slog.Logger) error {
 	declared := ci.DeclaredFromConfigList(cfg.CI.Issuers)
-	if len(declared) == 0 {
-		return nil
+	issuers, err := ci.New(ci.Options{
+		DB: s, Changes: changes, Recorder: recorder, Config: cfg.CI, OutboundConfig: cfg.Proxy.Outbound,
+		EpochPollInterval: cfg.Cluster.EpochPollInterval, BaseURL: cfg.Server.BaseURL,
+		// The revoker and the mapping store of the replicas are built with them; the migration disables an
+		// issuer only when the configuration no longer declares it, and revokes through the stub until
+		// work package W5 builds the revoker (an issuer with an issuance record then stops the migration
+		// loudly).
+		Revoker: ci.StubRevoker{}, Mappings: ci.StubMappings{}, Log: log,
+	})
+	if err != nil {
+		return fmt.Errorf("ci.issuers: %w", err)
 	}
-	var issuers ci.Issuers = ci.StubIssuers{}
 	if err := s.InTx(ctx, func(tx meta.Tx) error { return issuers.ApplyDeclared(ctx, tx, declared) }); err != nil {
 		return fmt.Errorf("ci.issuers: %w", err)
 	}

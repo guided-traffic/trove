@@ -6,6 +6,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/backup/tables"
 	"github.com/guided-traffic/trove/internal/meta"
@@ -149,10 +150,10 @@ func TestCIMigration(t *testing.T) {
 		}
 
 		// The key row: store, lock, store again with a later time, record an error, find due issuers.
-		if err := qs.CiKeysStore(ctx, q.CiKeysStoreParams{IssuerID: ciIssuerA, Jwks: `{"keys":[{"kid":"k1","kty":"RSA"}]}`, JwksUri: "https://gitlab.a.example/oauth/discovery/keys", NextRefreshSecs: 3600}); err != nil {
+		if err := qs.CiKeysStore(ctx, q.CiKeysStoreParams{IssuerID: ciIssuerA, Jwks: `{"keys":[{"kid":"k1","kty":"RSA"}]}`, JwksUri: "https://gitlab.a.example/oauth/discovery/keys", FetchedUs: time.Now().UnixMicro(), NextRefreshSecs: 3600}); err != nil {
 			t.Fatalf("CiKeysStore: %v", err)
 		}
-		if rows, err := qs.CiKeysLock(ctx, ciIssuerA); err != nil || len(rows) != 1 {
+		if rows, err := qs.CiKeysLock(ctx, q.CiKeysLockParams{IssuerID: ciIssuerA, Jwks: `{"keys":[{"kid":"k1","kty":"RSA"}]}`}); err != nil || len(rows) != 1 || !rows[0].Same {
 			t.Fatalf("CiKeysLock: %v %v", rows, err)
 		}
 		if err := qs.CiKeysRecordError(ctx, q.CiKeysRecordErrorParams{IssuerID: ciIssuerA, LastError: "egress_denied host=169.254.169.254", RetrySecs: 300}); err != nil {
@@ -161,7 +162,7 @@ func TestCIMigration(t *testing.T) {
 		if due, err := qs.CiKeysDue(ctx); err != nil || len(due) != 0 {
 			t.Fatalf("CiKeysDue: %v %v", due, err)
 		}
-		if l, err := qs.CiIssuerList(ctx); err != nil || l[0].KeyCount != 1 || l[0].LastError == "" {
+		if l, err := qs.CiIssuerList(ctx); err != nil || !strings.Contains(l[0].Jwks, "k1") || l[0].LastError == "" {
 			t.Fatalf("CiIssuerList after a key store: %+v %v", l, err)
 		}
 

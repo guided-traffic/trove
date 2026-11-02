@@ -405,10 +405,10 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   snippet (W3)
 - 🟡 R-AUTHZ-026 "Deleting a project" and its table row do not name CI mappings as a blocker (`project_not_empty`, Q-CI-26) (W3)
 - 🟡 The spec lists three save-time warnings, `internal/ci/reason` six more; R-CI-010 lists them all (W2)
-- 🟡 A rule violation of a management write: R-CI-002 makes the rule the problem's `code`, `internal/errs` puts it into
-  `errors[].code` of a `validation_failed` problem; one shape, decided and written back (W1)
-- 🟡 `ca_bundle_ref`: only `file:` has a syntax, the environment form of R-CI-001 has none; whether
-  `proxy.outbound.tls.ca_files` applies to issuer fetches is unstated (W1)
+- 🟢 A rule violation of a management write: every violation in `errors[]` with its pointer and code, a rule the spec names
+  also as the problem's `code` (Q-CI-30)
+- 🟢 `ca_bundle_ref`: `file:/abs/path` or `env:TROVE_CIC_<NAME>`; the installation's trust always applies and the bundle
+  only adds to it (Q-CI-31)
 - 🟡 The exchange: a `ttl` below `ci.token.min_ttl` answers `subject_token_expires_too_soon`, which names the wrong cause; an
   empty `subject_token` has no stated reason; `ci.exchange.enabled: false` answering 404 is only in the code; the 405 of
   R-CI-007 is not in OpenAPI (W4)
@@ -420,9 +420,14 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   events, change areas, limiters, tasks, metrics, and the seam between the CI token and the evaluator (`claims.Frozen` on
   the token, the gate for CI tokens) ([ci-oidc.md](../developer/ci-oidc.md), Q-CI-17 to Q-CI-22, ADR-147); the GitLab-shaped
   issuer double `test/oidcstub` (Q-CI-23, Q-CI-24)
-- ⚪ GitLab as trusted issuer: discovery, signing keys, key rotation; several GitLab instances side by side (R-CI-005)
-- ⚪ GitLab issuers declared in the Helm values (`config.ci.issuers`), applied by `trove migrate`, shown in trove and
-  read-only there ([Q-CI-16](../spec/gitlab-ci-oidc.md#q-ci-16--ci-issuers-provisioned-through-the-helm-values-are-read-only-in-trove), owner 2026-11-02)
+- 🟡 GitLab as trusted issuer: discovery, signing keys, key rotation; several GitLab instances side by side (R-CI-005).
+  Built (W1): the issuer API, the key fetch through the egress policy with the issuer's own CA, the shared key row and the
+  per-replica copy, the unknown-`kid` re-read and refetch throttles, `max_stale`, `ci-keys-refresh` on workers
+  (`test/integration/ci`, [ci-federation.md](../security/ci-federation.md), Q-CI-30 to Q-CI-32); open: the criteria that need
+  the exchange and the revoker (W4, W5), listed as pending on the contract page
+- 🟡 GitLab issuers declared in the Helm values (`config.ci.issuers`), applied by `trove migrate`, shown in trove and
+  read-only there ([Q-CI-16](../spec/gitlab-ci-oidc.md#q-ci-16--ci-issuers-provisioned-through-the-helm-values-are-read-only-in-trove), owner 2026-11-02); built (`ApplyDeclared` in `trove migrate`, `TestR_CI_001_*` in `test/integration/ci`), open: removing
+  an issuer that has issuance records waits for the revoker (W5)
 - ⚪ Token exchange: GitLab ID token (`id_tokens:` with trove as audience) in, short-lived CI token (`trv_cit_`) out;
   `CI_JOB_TOKEN` is not accepted (owner 2026-11-02; its fallback stays P2, R-CI-022)
 - ⚪ Audit of the exchange: which pipeline (instance, group, project, branch, pipeline, job) signed in when, as issuance

@@ -166,6 +166,13 @@ type Mappings interface {
 	// project with any (409 project_not_empty).
 	CountIn(ctx context.Context, project string) (int, error)
 
+	// DeleteForIssuerTx deletes every mapping of an issuer and its principal in the caller's transaction,
+	// for the cascade of an issuer's deletion (R-CI-002, work package W1 calls it): one
+	// ci.mapping.deleted per mapping with the journal entry, the mapping's tokens are left to the
+	// issuer's revocation in the same transaction, and the issuer row stays locked by the caller, so the
+	// store neither locks it nor bumps its mappings_version. It returns the number deleted.
+	DeleteForIssuerTx(ctx context.Context, tx meta.Tx, actor Actor, issuerID, issuerName string) (int, error)
+
 	// Evaluate is the dry run (R-CI-019): [Select] on the issuer's mapping set with the request's
 	// claims, then the scope narrowing and the TTL. It issues nothing, records no jti and writes no
 	// audit event.

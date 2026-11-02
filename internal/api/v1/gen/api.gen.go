@@ -5964,6 +5964,9 @@ type PackageId = string
 // PackageVersionPath defines model for PackageVersionPath.
 type PackageVersionPath = string
 
+// BadGateway RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+type BadGateway = Problem
+
 // BadRequest RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
 type BadRequest = Problem
 

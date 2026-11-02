@@ -9,6 +9,192 @@ import (
 	"context"
 )
 
+const ciIssuerByID = `-- name: CiIssuerByID :many
+SELECT i.id::text AS id, i.name, i.kind, i.issuer, COALESCE(i.discovery_url, '')::text AS discovery_url, COALESCE(i.jwks_uri, '')::text AS jwks_uri, i.allowed_audiences, i.exclusive_audience,
+       i.allowed_algorithms, i.allowed_typ, i.allow_missing_typ, extract(epoch FROM i.clock_skew)::bigint AS clock_skew_secs,
+       i.required_claims, i.public_issuer, i.pin_claims, i.single_use_subject_tokens,
+       COALESCE(extract(epoch FROM i.max_ttl), 0)::bigint AS max_ttl_secs, COALESCE(i.ca_bundle_ref, '')::text AS ca_bundle_ref, i.use_outbound_proxy, i.job_token_fallback,
+       i.enabled, i.description, i.source, i.removed_from_configuration, i.version, i.mappings_version,
+       (extract(epoch FROM i.created_at) * 1000000)::bigint AS created_us,
+       (extract(epoch FROM i.updated_at) * 1000000)::bigint AS updated_us
+  FROM ci_issuers i
+ WHERE i.id = $1::text::uuid
+`
+
+type CiIssuerByIDRow struct {
+	ID                       string
+	Name                     string
+	Kind                     string
+	Issuer                   string
+	DiscoveryUrl             string
+	JwksUri                  string
+	AllowedAudiences         []string
+	ExclusiveAudience        bool
+	AllowedAlgorithms        []string
+	AllowedTyp               []string
+	AllowMissingTyp          bool
+	ClockSkewSecs            int64
+	RequiredClaims           []string
+	PublicIssuer             bool
+	PinClaims                []string
+	SingleUseSubjectTokens   bool
+	MaxTtlSecs               int64
+	CaBundleRef              string
+	UseOutboundProxy         bool
+	JobTokenFallback         []byte
+	Enabled                  bool
+	Description              string
+	Source                   string
+	RemovedFromConfiguration bool
+	Version                  int64
+	MappingsVersion          int64
+	CreatedUs                int64
+	UpdatedUs                int64
+}
+
+func (q *Queries) CiIssuerByID(ctx context.Context, id string) ([]CiIssuerByIDRow, error) {
+	rows, err := q.db.Query(ctx, ciIssuerByID, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CiIssuerByIDRow{}
+	for rows.Next() {
+		var i CiIssuerByIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Kind,
+			&i.Issuer,
+			&i.DiscoveryUrl,
+			&i.JwksUri,
+			&i.AllowedAudiences,
+			&i.ExclusiveAudience,
+			&i.AllowedAlgorithms,
+			&i.AllowedTyp,
+			&i.AllowMissingTyp,
+			&i.ClockSkewSecs,
+			&i.RequiredClaims,
+			&i.PublicIssuer,
+			&i.PinClaims,
+			&i.SingleUseSubjectTokens,
+			&i.MaxTtlSecs,
+			&i.CaBundleRef,
+			&i.UseOutboundProxy,
+			&i.JobTokenFallback,
+			&i.Enabled,
+			&i.Description,
+			&i.Source,
+			&i.RemovedFromConfiguration,
+			&i.Version,
+			&i.MappingsVersion,
+			&i.CreatedUs,
+			&i.UpdatedUs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ciIssuerByIDShare = `-- name: CiIssuerByIDShare :many
+SELECT i.id::text AS id, i.name, i.kind, i.issuer, COALESCE(i.discovery_url, '')::text AS discovery_url, COALESCE(i.jwks_uri, '')::text AS jwks_uri, i.allowed_audiences, i.exclusive_audience,
+       i.allowed_algorithms, i.allowed_typ, i.allow_missing_typ, extract(epoch FROM i.clock_skew)::bigint AS clock_skew_secs,
+       i.required_claims, i.public_issuer, i.pin_claims, i.single_use_subject_tokens,
+       COALESCE(extract(epoch FROM i.max_ttl), 0)::bigint AS max_ttl_secs, COALESCE(i.ca_bundle_ref, '')::text AS ca_bundle_ref, i.use_outbound_proxy, i.job_token_fallback,
+       i.enabled, i.description, i.source, i.removed_from_configuration, i.version, i.mappings_version,
+       (extract(epoch FROM i.created_at) * 1000000)::bigint AS created_us,
+       (extract(epoch FROM i.updated_at) * 1000000)::bigint AS updated_us
+  FROM ci_issuers i
+ WHERE i.id = $1::text::uuid FOR SHARE OF i
+`
+
+type CiIssuerByIDShareRow struct {
+	ID                       string
+	Name                     string
+	Kind                     string
+	Issuer                   string
+	DiscoveryUrl             string
+	JwksUri                  string
+	AllowedAudiences         []string
+	ExclusiveAudience        bool
+	AllowedAlgorithms        []string
+	AllowedTyp               []string
+	AllowMissingTyp          bool
+	ClockSkewSecs            int64
+	RequiredClaims           []string
+	PublicIssuer             bool
+	PinClaims                []string
+	SingleUseSubjectTokens   bool
+	MaxTtlSecs               int64
+	CaBundleRef              string
+	UseOutboundProxy         bool
+	JobTokenFallback         []byte
+	Enabled                  bool
+	Description              string
+	Source                   string
+	RemovedFromConfiguration bool
+	Version                  int64
+	MappingsVersion          int64
+	CreatedUs                int64
+	UpdatedUs                int64
+}
+
+// The exchange's read (R-CI-007): FOR SHARE on the issuer row, so a concurrent issuer write waits for the
+// exchange transaction and the exchange compares version and mappings_version with what it evaluated.
+func (q *Queries) CiIssuerByIDShare(ctx context.Context, id string) ([]CiIssuerByIDShareRow, error) {
+	rows, err := q.db.Query(ctx, ciIssuerByIDShare, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CiIssuerByIDShareRow{}
+	for rows.Next() {
+		var i CiIssuerByIDShareRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Kind,
+			&i.Issuer,
+			&i.DiscoveryUrl,
+			&i.JwksUri,
+			&i.AllowedAudiences,
+			&i.ExclusiveAudience,
+			&i.AllowedAlgorithms,
+			&i.AllowedTyp,
+			&i.AllowMissingTyp,
+			&i.ClockSkewSecs,
+			&i.RequiredClaims,
+			&i.PublicIssuer,
+			&i.PinClaims,
+			&i.SingleUseSubjectTokens,
+			&i.MaxTtlSecs,
+			&i.CaBundleRef,
+			&i.UseOutboundProxy,
+			&i.JobTokenFallback,
+			&i.Enabled,
+			&i.Description,
+			&i.Source,
+			&i.RemovedFromConfiguration,
+			&i.Version,
+			&i.MappingsVersion,
+			&i.CreatedUs,
+			&i.UpdatedUs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ciIssuerByIssuer = `-- name: CiIssuerByIssuer :many
 SELECT i.id::text AS id, i.name, i.kind, i.issuer, COALESCE(i.discovery_url, '')::text AS discovery_url, COALESCE(i.jwks_uri, '')::text AS jwks_uri, i.allowed_audiences, i.exclusive_audience,
        i.allowed_algorithms, i.allowed_typ, i.allow_missing_typ, extract(epoch FROM i.clock_skew)::bigint AS clock_skew_secs,
@@ -195,6 +381,43 @@ func (q *Queries) CiIssuerByName(ctx context.Context, name string) ([]CiIssuerBy
 	return items, nil
 }
 
+const ciIssuerConfigured = `-- name: CiIssuerConfigured :many
+SELECT id::text AS id, name, enabled, removed_from_configuration FROM ci_issuers WHERE source = 'configuration' ORDER BY name
+`
+
+type CiIssuerConfiguredRow struct {
+	ID                       string
+	Name                     string
+	Enabled                  bool
+	RemovedFromConfiguration bool
+}
+
+// The issuers of the configuration, for the removal step of trove migrate (Q-CI-16).
+func (q *Queries) CiIssuerConfigured(ctx context.Context) ([]CiIssuerConfiguredRow, error) {
+	rows, err := q.db.Query(ctx, ciIssuerConfigured)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CiIssuerConfiguredRow{}
+	for rows.Next() {
+		var i CiIssuerConfiguredRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Enabled,
+			&i.RemovedFromConfiguration,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ciIssuerDelete = `-- name: CiIssuerDelete :exec
 DELETE FROM ci_issuers WHERE id = $1::text::uuid
 `
@@ -204,6 +427,32 @@ DELETE FROM ci_issuers WHERE id = $1::text::uuid
 func (q *Queries) CiIssuerDelete(ctx context.Context, id string) error {
 	_, err := q.db.Exec(ctx, ciIssuerDelete, id)
 	return err
+}
+
+const ciIssuerHasIssuances = `-- name: CiIssuerHasIssuances :many
+SELECT 1::int AS one FROM ci_token_issuances WHERE issuer_id = $1::text::uuid LIMIT 1
+`
+
+// Whether the exchange ever issued a token through the issuer: a token exists only with its issuance
+// record, written in the exchange transaction (R-CI-020), so no row means nothing to revoke.
+func (q *Queries) CiIssuerHasIssuances(ctx context.Context, id string) ([]int32, error) {
+	rows, err := q.db.Query(ctx, ciIssuerHasIssuances, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int32{}
+	for rows.Next() {
+		var one int32
+		if err := rows.Scan(&one); err != nil {
+			return nil, err
+		}
+		items = append(items, one)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const ciIssuerInsert = `-- name: CiIssuerInsert :many
@@ -309,7 +558,7 @@ SELECT i.id::text AS id, i.name, i.kind, i.issuer, COALESCE(i.discovery_url, '')
        (extract(epoch FROM i.created_at) * 1000000)::bigint AS created_us,
        (extract(epoch FROM i.updated_at) * 1000000)::bigint AS updated_us,
        (SELECT count(*) FROM ci_mappings m WHERE m.issuer_id = i.id)::bigint AS mapping_count,
-       COALESCE(jsonb_array_length(k.jwks -> 'keys'), 0)::bigint AS key_count,
+       COALESCE(k.jwks, '{"keys": []}'::jsonb)::text AS jwks,
        COALESCE(extract(epoch FROM k.fetched_at) * 1000000, 0)::bigint AS fetched_us,
        COALESCE(k.last_error, '')::text AS last_error,
        COALESCE(extract(epoch FROM k.last_error_at) * 1000000, 0)::bigint AS last_error_us
@@ -348,7 +597,7 @@ type CiIssuerListRow struct {
 	CreatedUs                int64
 	UpdatedUs                int64
 	MappingCount             int64
-	KeyCount                 int64
+	Jwks                     string
 	FetchedUs                int64
 	LastError                string
 	LastErrorUs              int64
@@ -361,8 +610,8 @@ type CiIssuerListRow struct {
 // Intervals are read and written as seconds. Every write of an issuer runs on the caller's meta.Tx, in
 // which it notifies the area ci_mappings; every write of a key row notifies ci_issuer_keys, and only
 // when the key set's content changed (R-CI-003). W1 adds its further statements here.
-// Every issuer with its mapping count and the summary of its key row: the number of keys in the
-// stored set, the fetch time and the last error.
+// Every issuer with its mapping count and the summary of its key row: the keys of the stored set (the
+// caller counts the usable and the ignored ones), the fetch time and the last error.
 func (q *Queries) CiIssuerList(ctx context.Context) ([]CiIssuerListRow, error) {
 	rows, err := q.db.Query(ctx, ciIssuerList)
 	if err != nil {
@@ -402,7 +651,7 @@ func (q *Queries) CiIssuerList(ctx context.Context) ([]CiIssuerListRow, error) {
 			&i.CreatedUs,
 			&i.UpdatedUs,
 			&i.MappingCount,
-			&i.KeyCount,
+			&i.Jwks,
 			&i.FetchedUs,
 			&i.LastError,
 			&i.LastErrorUs,
@@ -450,6 +699,124 @@ func (q *Queries) CiIssuerLock(ctx context.Context, name string) ([]CiIssuerLock
 			&i.RemovedFromConfiguration,
 			&i.Enabled,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ciIssuerMappingCount = `-- name: CiIssuerMappingCount :many
+SELECT count(*)::bigint AS n FROM ci_mappings WHERE issuer_id = $1::text::uuid
+`
+
+func (q *Queries) CiIssuerMappingCount(ctx context.Context, id string) ([]int64, error) {
+	rows, err := q.db.Query(ctx, ciIssuerMappingCount, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var n int64
+		if err := rows.Scan(&n); err != nil {
+			return nil, err
+		}
+		items = append(items, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ciIssuerUpdate = `-- name: CiIssuerUpdate :many
+UPDATE ci_issuers
+   SET kind = $1::text, issuer = $2::text,
+       discovery_url = NULLIF($3::text, ''), jwks_uri = NULLIF($4::text, ''),
+       allowed_audiences = $5::text[], exclusive_audience = $6::boolean,
+       allowed_algorithms = $7::text[], allowed_typ = $8::text[],
+       allow_missing_typ = $9::boolean,
+       clock_skew = make_interval(secs => $10::bigint::float8),
+       required_claims = $11::text[], public_issuer = $12::boolean,
+       pin_claims = $13::text[], single_use_subject_tokens = $14::boolean,
+       max_ttl = CASE WHEN $15::bigint > 0 THEN make_interval(secs => $15::bigint::float8) END,
+       ca_bundle_ref = NULLIF($16::text, ''), use_outbound_proxy = $17::boolean,
+       job_token_fallback = $18::text::jsonb, enabled = $19::boolean,
+       description = $20::text, removed_from_configuration = $21::boolean,
+       version = version + 1, updated_at = now()
+ WHERE id = $22::text::uuid
+RETURNING version, (extract(epoch FROM updated_at) * 1000000)::bigint AS updated_us
+`
+
+type CiIssuerUpdateParams struct {
+	Kind                     string
+	Issuer                   string
+	DiscoveryUrl             string
+	JwksUri                  string
+	AllowedAudiences         []string
+	ExclusiveAudience        bool
+	AllowedAlgorithms        []string
+	AllowedTyp               []string
+	AllowMissingTyp          bool
+	ClockSkewSecs            int64
+	RequiredClaims           []string
+	PublicIssuer             bool
+	PinClaims                []string
+	SingleUseSubjectTokens   bool
+	MaxTtlSecs               int64
+	CaBundleRef              string
+	UseOutboundProxy         bool
+	JobTokenFallback         string
+	Enabled                  bool
+	Description              string
+	RemovedFromConfiguration bool
+	ID                       string
+}
+
+type CiIssuerUpdateRow struct {
+	Version   int64
+	UpdatedUs int64
+}
+
+// The full replacement of an issuer row by id, after CiIssuerLock took the row: the caller compared the
+// version it read. name and source are immutable. version moves by one.
+func (q *Queries) CiIssuerUpdate(ctx context.Context, arg CiIssuerUpdateParams) ([]CiIssuerUpdateRow, error) {
+	rows, err := q.db.Query(ctx, ciIssuerUpdate,
+		arg.Kind,
+		arg.Issuer,
+		arg.DiscoveryUrl,
+		arg.JwksUri,
+		arg.AllowedAudiences,
+		arg.ExclusiveAudience,
+		arg.AllowedAlgorithms,
+		arg.AllowedTyp,
+		arg.AllowMissingTyp,
+		arg.ClockSkewSecs,
+		arg.RequiredClaims,
+		arg.PublicIssuer,
+		arg.PinClaims,
+		arg.SingleUseSubjectTokens,
+		arg.MaxTtlSecs,
+		arg.CaBundleRef,
+		arg.UseOutboundProxy,
+		arg.JobTokenFallback,
+		arg.Enabled,
+		arg.Description,
+		arg.RemovedFromConfiguration,
+		arg.ID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CiIssuerUpdateRow{}
+	for rows.Next() {
+		var i CiIssuerUpdateRow
+		if err := rows.Scan(&i.Version, &i.UpdatedUs); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -542,19 +909,24 @@ func (q *Queries) CiKeysGet(ctx context.Context, issuerID string) ([]CiKeysGetRo
 }
 
 const ciKeysLock = `-- name: CiKeysLock :many
-SELECT jwks, (extract(epoch FROM fetched_at) * 1000000)::bigint AS fetched_us
-  FROM ci_issuer_keys WHERE issuer_id = $1::text::uuid FOR UPDATE
+SELECT (jwks = $1::text::jsonb) AS same, (extract(epoch FROM fetched_at) * 1000000)::bigint AS fetched_us
+  FROM ci_issuer_keys WHERE issuer_id = $2::text::uuid FOR UPDATE
 `
 
+type CiKeysLockParams struct {
+	Jwks     string
+	IssuerID string
+}
+
 type CiKeysLockRow struct {
-	Jwks      []byte
+	Same      bool
 	FetchedUs int64
 }
 
 // The write rule of R-CI-003: a key store locks the key row alone, never the ci_issuers row. The row
 // it reads is what it compares the fetched set with, to notify ci_issuer_keys only on a change.
-func (q *Queries) CiKeysLock(ctx context.Context, issuerID string) ([]CiKeysLockRow, error) {
-	rows, err := q.db.Query(ctx, ciKeysLock, issuerID)
+func (q *Queries) CiKeysLock(ctx context.Context, arg CiKeysLockParams) ([]CiKeysLockRow, error) {
+	rows, err := q.db.Query(ctx, ciKeysLock, arg.Jwks, arg.IssuerID)
 	if err != nil {
 		return nil, err
 	}
@@ -562,7 +934,7 @@ func (q *Queries) CiKeysLock(ctx context.Context, issuerID string) ([]CiKeysLock
 	items := []CiKeysLockRow{}
 	for rows.Next() {
 		var i CiKeysLockRow
-		if err := rows.Scan(&i.Jwks, &i.FetchedUs); err != nil {
+		if err := rows.Scan(&i.Same, &i.FetchedUs); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -574,29 +946,39 @@ func (q *Queries) CiKeysLock(ctx context.Context, issuerID string) ([]CiKeysLock
 }
 
 const ciKeysRecordError = `-- name: CiKeysRecordError :exec
-UPDATE ci_issuer_keys
-   SET last_error = $1::text, last_error_at = now(),
-       next_refresh_at = now() + make_interval(secs => $2::bigint::float8)
- WHERE issuer_id = $3::text::uuid
+INSERT INTO ci_issuer_keys (issuer_id, jwks, jwks_uri, fetched_at, next_refresh_at, last_error, last_error_at)
+VALUES ($1::text::uuid, '{"keys": []}'::jsonb, $2::text, to_timestamp(0),
+        now() + make_interval(secs => $3::bigint::float8), $4::text, now())
+ON CONFLICT (issuer_id) DO UPDATE
+   SET last_error = EXCLUDED.last_error, last_error_at = EXCLUDED.last_error_at, next_refresh_at = EXCLUDED.next_refresh_at
 `
 
 type CiKeysRecordErrorParams struct {
-	LastError string
-	RetrySecs int64
 	IssuerID  string
+	JwksUri   string
+	RetrySecs int64
+	LastError string
 }
 
-// A failed fetch on an existing row: the last good set stays, the next attempt is due after
-// min_refresh_interval (R-CI-003). The class, the HTTP status and the host, never a response body.
+// A failed fetch: the last good set stays, the next attempt is due after min_refresh_interval (R-CI-003).
+// An issuer that never had a set gets a placeholder row (an empty set, fetched_at at the epoch), so the
+// failure is visible in the key status and the age check fails closed; the placeholder is replaced by
+// the first stored set. The class, the HTTP status and the host, never a response body.
 func (q *Queries) CiKeysRecordError(ctx context.Context, arg CiKeysRecordErrorParams) error {
-	_, err := q.db.Exec(ctx, ciKeysRecordError, arg.LastError, arg.RetrySecs, arg.IssuerID)
+	_, err := q.db.Exec(ctx, ciKeysRecordError,
+		arg.IssuerID,
+		arg.JwksUri,
+		arg.RetrySecs,
+		arg.LastError,
+	)
 	return err
 }
 
 const ciKeysStore = `-- name: CiKeysStore :exec
 INSERT INTO ci_issuer_keys (issuer_id, jwks, jwks_uri, fetched_at, etag, next_refresh_at)
-VALUES ($1::text::uuid, $2::text::jsonb, $3::text, now(),
-        NULLIF($4::text, ''), now() + make_interval(secs => $5::bigint::float8))
+VALUES ($1::text::uuid, $2::text::jsonb, $3::text,
+        LEAST(to_timestamp($4::bigint / 1000000.0), now()),
+        NULLIF($5::text, ''), now() + make_interval(secs => $6::bigint::float8))
 ON CONFLICT (issuer_id) DO UPDATE
    SET jwks = EXCLUDED.jwks, jwks_uri = EXCLUDED.jwks_uri, fetched_at = EXCLUDED.fetched_at, etag = EXCLUDED.etag,
        next_refresh_at = EXCLUDED.next_refresh_at, last_error = NULL, last_error_at = NULL
@@ -607,17 +989,20 @@ type CiKeysStoreParams struct {
 	IssuerID        string
 	Jwks            string
 	JwksUri         string
+	FetchedUs       int64
 	Etag            string
 	NextRefreshSecs int64
 }
 
-// Inserts the row or replaces it, unless a concurrent fetch stored a set with a later fetched_at. A
-// stored set clears the last error.
+// Inserts the row or replaces it, unless a concurrent fetch stored a set with a later fetched_at. The
+// fetch time is the time the replica received the response, never later than now(), so a fetch that
+// finished earlier but stores later does not overwrite a later one. A stored set clears the last error.
 func (q *Queries) CiKeysStore(ctx context.Context, arg CiKeysStoreParams) error {
 	_, err := q.db.Exec(ctx, ciKeysStore,
 		arg.IssuerID,
 		arg.Jwks,
 		arg.JwksUri,
+		arg.FetchedUs,
 		arg.Etag,
 		arg.NextRefreshSecs,
 	)

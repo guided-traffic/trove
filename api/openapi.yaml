@@ -4993,6 +4993,8 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/Internal"
+        "502":
+          $ref: "#/components/responses/BadGateway"
         "503":
           $ref: "#/components/responses/Unavailable"
         "501":
@@ -8666,6 +8668,12 @@ components:
           schema:
             type: integer
             minimum: 1
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    BadGateway:
+      description: An upstream system the operation contacts could not be reached or answered unusably (`upstream_failed`); the detail names the failure class, the HTTP status and the host, never a response body.
       content:
         application/problem+json:
           schema:

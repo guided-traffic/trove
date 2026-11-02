@@ -269,6 +269,7 @@ func TestR_ARCH_024_AStepRefusesANilInput(t *testing.T) {
 			"api":          {second(a.wireAPI(ctx, limitsArea{}, authzArea{})), "api: no limiter set, no authorizer"},
 			"repository":   {second(a.wireRepository(ctx, infra{}, exposureArea{})), "repository: no exposure rule service"},
 			"ownership":    {second(a.wireOwnership(ctx, infra{}, authzArea{})), "ownership: no decision point"},
+			"ci":           {second(a.wireCI(ctx, infra{})), "ci: no database, no change log, no cache registry, no outbound factory, no audit recorder"},
 			"formathost":   {second(a.wireFormatHost(ctx, infra{}, formatsArea{}, repositoryArea{}, exposureArea{}, filesArea{}, proxyEngineArea{}, virtualEngineArea{})), "formathost: no item store, no decision point, no repository reader, no exposure ceiling"},
 			"proxy-engine": {second(a.wireProxyEngine(ctx, infra{}, proxyArea{}, invalidationArea{}, filesArea{}, limitsArea{})), "proxy-engine: no upstream clients, no invalidation set, no item store, no replica count"},
 			"virtual":      {second(a.wireVirtual(ctx, infra{}, repositoryArea{})), "virtual: no repository snapshot"},

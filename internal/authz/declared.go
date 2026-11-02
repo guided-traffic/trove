@@ -33,6 +33,11 @@ const (
 // authz.role_bindings: system:configuration.
 func ConfigurationActor() audit.Actor { return audit.Actor{Kind: "system", Name: "configuration"} }
 
+// ConfigurationSubject is the caller of the writes `trove migrate` makes for declared state that go through
+// a service taking a subject (the CI issuers, whose disabling revokes tokens): the same system:configuration
+// as [ConfigurationActor]. Only this package builds a Subject (R-EP-013).
+func ConfigurationSubject() Subject { return Subject{Kind: "system", Name: "configuration"} }
+
 // declaredGroupDescription is the description of a group trove migrate creates
 // for a declaration, shown on the group's page.
 const declaredGroupDescription = "Created for authz.role_bindings of the system configuration."
