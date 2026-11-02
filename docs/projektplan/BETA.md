@@ -303,14 +303,15 @@ Bastion serves those parties. Phase 5 then maps GitLab pipelines into projects.
   (commit fb53a61)
 - 🟢 F-31 (upstream client cache) fixed; F-19 closed on the green failover leg of nightly run 41420733312
 
-**Security audit of the phase (2026-11-02, read in the code, not yet reproduced; fix wave planned)**
+**Security audit and code review of the phase (2026-11-02; fix wave planned)**
 - ⚪ HIGH · A project administrator with `manageRepositories` can send installation secrets to a host it chooses: the
   unsaved upstream test resolves any `secretRef` (`env` `TROVE_CAC_…`, a file in `secrets_dir`) and sends it to the URL of
   the request, and a `PATCH` that changes the URL of an assigned remote keeps its sealed password (`{"set": true}`)
   (`upstream_api.go`, `repository/upstream.go`, `secrets_store.go`); H-281 covered `repositories:write-config` only
-- ⚪ MEDIUM · The `manage` grant of a project administrator works through any credential (an `inherit` token without
+- ⚪ HIGH · The `manage` grant of a project administrator works through any credential (an `inherit` token without
   `admin: true`) and for a global service account that is a member of an administrator group, against Q-AUTHZ-183
-  (`authz/index.go`)
+  (`authz/index.go`; confirmed by the code review with a probe: both cases hold `manage` on `web-npm`, while `ProjectsOn`
+  reports no project for the token; the tests that should catch it use subjects without groups)
 - ⚪ MEDIUM · Deleting a project repository with `detach=true` changes virtual repositories outside the project, and the
   409 without it names them (`repository/delete.go`, `members.go`)
 - ⚪ MEDIUM · The policy list filters (`principal` with `expandGroups`, `repository`) and the policy validation tell a
@@ -322,6 +323,19 @@ Bastion serves those parties. Phase 5 then maps GitLab pipelines into projects.
   token may be self-rotatable and so unbounded; "New policy" in a project-scoped list creates a global policy; the spec
   puts a service account's description change under two different rights; refusals of a project administrator may leave
   no audit event
+- ⚪ MEDIUM (code review) · `GET /projects/{key}` answers `304` for a body that changed: its ETag is `version`, which an
+  administrator or assignment change does not move (Q-AUTHZ-185) (`projects_api.go`)
+- ⚪ MEDIUM (code review) · A service account named exactly `<key>-` (the UI prefills it) passes the code check and fails
+  the trigger `AI003`, which is not mapped: `500` instead of `422 project_prefix_required` (`serviceaccounts.go`)
+- ⚪ LOW (code review) · Migration `00019_projects` builds indexes and constraints on existing tables without
+  `CONCURRENTLY` / `NOT VALID`, against R-HA-018's expand class (fixable in the file: not released yet); a 0.9.x rewrite of
+  a project policy with no entries succeeds; the project checks of a policy write open their own transactions (500 on a
+  race with a project delete, a second pool connection per lookup); the project delete removes policies by name;
+  `repository.created` of a project repository carries no `project`; the project dialog's retry after a refusal reuses
+  its idempotency key and treats a `404` of an undo step as failure; doc drift (Q-AUTH-189 against H-399, R-REPO-008's
+  code, `internal/project` package comment, two unused queries); the delete retry branch has no test
+- ⚪ Not verified (code review, predates the phase) · `repository.Service.List` orders in SQL and compares its cursor
+  bytewise in Go; under a non-C collation hyphenated keys could be skipped across pages
 
 ## Phase 5 · GitLab CI OIDC (M4)
 
