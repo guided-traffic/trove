@@ -15,7 +15,7 @@ func TestQ_AUTHZ_172_AuditorReadScope(t *testing.T) {
 	keys := []string{"npm-internal", "nuget-local", "npm-all"}
 	shapes := func(t *testing.T, sub Subject) (ReadScope, map[string]ReadShape) {
 		t.Helper()
-		rs, err := e.ReadScopeOn(t.Context(), e.Index(), sub, keys)
+		rs, err := e.ReadScopeOn(t.Context(), e.Index(), sub, "", keys)
 		if err != nil {
 			t.Fatal(err)
 		}
