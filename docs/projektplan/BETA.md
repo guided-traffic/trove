@@ -439,7 +439,9 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   system administrators'
 - ⚪ Identity mappings: conditions on project, branch, protected ref, environment; templated grants
 - ⚪ Package ownership: a CI project writes only the packages it owns, reads what it is granted
-- ⚪ Admin UI: CI issuers, mappings, dry run and claim tester
+- 🟡 Admin UI: CI issuers, mappings, dry run and claim tester; built against the API fakes with the issuances, bulk revoke
+  and the project's CI screens (`/admin/ci…`, `/admin/projects/:key/ci…`, Q-UI-99, Q-UI-100; 713 web tests); open: against
+  the backend of W1 to W5, and a browser journey (W7)
 - ⚪ Reference pipeline: `.gitlab-ci.yml` publishing an npm package and pushing a NuGet package
 - 🟡 GitLab's behaviour validated against the owner's unused GitLab instance and recorded as fixtures of the issuer
   double; no integration or e2e test runs against a real GitLab or gitlab.com (owner, 2026-11-02; Q-CI-25)

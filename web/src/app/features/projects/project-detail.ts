@@ -132,6 +132,18 @@ import { ProjectServiceAccounts } from './project-service-accounts';
         <trove-project-policies [project]="p.key" />
       </section>
 
+      <!-- >>> M4 ci -->
+      @if (canCi()) {
+        <section class="card" aria-labelledby="project-ci">
+          <h2 id="project-ci" i18n="@@project.ci">CI identity</h2>
+          <p class="muted" i18n="@@project.ci-hint">
+            Let the GitLab jobs of your projects publish to and read from this project's repositories without a stored secret. A mapping states which jobs get which permissions.
+          </p>
+          <a mat-stroked-button [routerLink]="['/admin/projects', p.key, 'ci']" i18n="@@project.ci-open">Open CI identity</a>
+        </section>
+      }
+      <!-- <<< M4 ci -->
+
       <section class="card" aria-labelledby="project-sas">
         <h2 id="project-sas" i18n="@@project.service-accounts">Service accounts</h2>
         <p class="muted" i18n="@@project.service-accounts-hint">
@@ -170,6 +182,8 @@ export class ProjectDetail {
   protected readonly off = $localize`:@@project.off:off`;
 
   protected readonly canWrite = computed(() => this.session.has('projects:write'));
+  /** The CI screens of the project: the capability, or administration of the project (Q-CI-26). */
+  protected readonly canCi = computed(() => this.session.has('ci:read') || this.session.projectRights(this.key()) !== null);
   protected readonly empty = computed(() => {
     const p = this.project();
     return p !== null && p.repositories === 0 && p.serviceAccounts === 0;

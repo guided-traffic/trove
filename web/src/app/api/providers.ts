@@ -24,6 +24,9 @@ import { ClientSetupApi, HttpClientSetupApi, HttpPackagesApi, PackagesApi } from
 import { GuidesApi, HttpGuidesApi } from './guides-api';
 import { HttpManualApi, ManualApi } from './manual-api';
 // <<< M2 ui-packages
+// >>> M4 ci
+import { CiApi, HttpCiApi } from './ci-api';
+// <<< M4 ci
 
 /**
  * Binds every service interface of `api/` to its HTTP implementation. Specs and component tests
@@ -59,5 +62,8 @@ export function provideApiServices(): Provider[] {
     { provide: GuidesApi, useClass: HttpGuidesApi },
     { provide: ManualApi, useClass: HttpManualApi },
     // <<< M2 ui-packages
+    // >>> M4 ci
+    { provide: CiApi, useClass: HttpCiApi },
+    // <<< M4 ci
   ];
 }

@@ -66,6 +66,9 @@ export const NAV_AREAS: readonly NavArea[] = [
           { route: '/admin/groups', icon: 'group', label: $localize`:@@nav.groups:Groups`, capability: 'identities:read' },
           { route: '/admin/service-accounts', icon: 'smart_toy', label: $localize`:@@nav.service-accounts:Service accounts`, capability: 'identities:read' },
           { route: '/admin/tokens', icon: 'key', label: $localize`:@@nav.tokens:Tokens`, capability: 'tokens:read' },
+          // >>> M4 ci
+          { route: '/admin/ci', icon: 'rocket_launch', label: $localize`:@@nav.ci:CI identity`, capability: 'ci:read' },
+          // <<< M4 ci
         ],
       },
       {

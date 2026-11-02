@@ -547,6 +547,50 @@ How the pieces fit:
   (policy editor, service account, wizard, session helpers, messages), [app.projects.spec.ts](../../web/src/app/app.projects.spec.ts) (navigation rule, top-bar filter, filtered lists). The
   browser journey is [12-projects.spec.ts](../../web/e2e/tests/12-projects.spec.ts) ([e2e.md](e2e.md#browser-journeys)); it needs the deployed backend and is not run by the component tier.
 
+## CI identity
+
+Requirements: [R-UI-035, R-UI-036](../spec/api-and-ui.md), [R-CI-009 to R-CI-014, R-CI-019, R-CI-020](../spec/gitlab-ci-oidc.md), Q-CI-16, Q-CI-26, Q-UI-99, Q-UI-100; the contract between the
+work packages is [ci-oidc.md](ci-oidc.md). The manual page is `docs/manual/admin/gitlab-ci.md` (written by another work package; `HELP_TOPICS` names it, and `helpFor` maps
+the project routes to it as well). Folder `web/src/app/features/ci/`; the service is [ci-api.ts](../../web/src/app/api/ci-api.ts), its fake
+[fakes-ci.ts](../../web/src/app/api/testing/fakes-ci.ts).
+
+| Route | Screen | Shown to |
+|---|---|---|
+| `/admin/ci` | `IssuerList`: name, kind, URL, audiences, mapping count, key status (last fetch or error), source (`configuration` marked) | `ci:read` (navigation: Identity > CI identity) |
+| `/admin/ci/new` | `IssuerCreate` with `IssuerForm` (discovery and key check through `validate`) | `ci:write` |
+| `/admin/ci/:issuer` | `IssuerDetail`: tabs Settings (`IssuerForm`; read-only with the source named for a configuration issuer), Keys (`IssuerKeys`, "Refresh keys"), Mappings (`MappingList`), Issuances (`IssuanceList`); `?tab=` | `ci:read` |
+| `/admin/ci/:issuer/mappings/new`, `/…/mappings/:mapping` | `MappingEditor` | `ci:write` writes, `ci:read` reads |
+| `/admin/ci/:issuer/test` (`?mapping=`) | `ClaimTester` | `ci:read` |
+| `/admin/ci/issuances` | `IssuancesPage` over `IssuanceList` (filters, bulk revoke) | `tokens:read`; revoke `tokens:revoke` |
+| `/admin/projects/:key/ci`, `…/ci/mappings/new?issuer=`, `…/ci/mappings/:mapping?issuer=`, `…/ci/test?issuer=&mapping=` | `ProjectCi`, and the same `MappingEditor`, `ClaimTester` with `key` set | `ci:read` or an administrator of the project (`managePolicies` for writes) |
+
+How the pieces fit:
+
+- **One implementation, two scopes.** `MappingList`, `MappingEditor`, `ClaimTester` and `IssuanceList` take the project key (`key` from the route, `project` as an input of the lists). `CiApi` takes the same
+  key and picks the system or the project route; `ciRoutes` in [ci-common.ts](../../web/src/app/features/ci/ci-common.ts) builds the links for both. The project bounds are the editor's:
+  the name starts `<key>-`, the repositories offered are `RepositoriesApi.list({project})` plus `@any`, the policies are `PolicyApi.list({project})`, no groups are shown or sent. The
+  writability is `createState` (the capability, or `managePolicies` on): off shows `<trove-project-needs>`. The snippet is offered only to `ci:read` (the operation is the administrators').
+- **501 is a state.** `<trove-ci-error>` renders `501 ci_not_implemented` as a calm "Not available yet" card (a status, no alert); any other failure is the shared error notice. `ProjectCi` reads the issuers
+  first and, when that fails (the 501, or `403 project_switch_off`), shows that one message instead of three.
+- **The condition builder** ([condition-builder.ts](../../web/src/app/features/ci/condition-builder.ts), model in [ci-model.ts](../../web/src/app/features/ci/ci-model.ts)): an immutable tree
+  (`CondNode`) edited by path (`editAt`); `all`, `any`, `not` and leaves with claim, operator (`equals`, `in`, `glob`, `regex`, `present`) and `ignoreCase`; claim names are a `datalist`
+  of `GITLAB_CLAIMS`; a leaf with `path` (a nested value) is kept and shown read-only; the JSON view edits the same tree and blocks the save while it does not parse. `ref_protected` and
+  `environment_protected` literals are written as booleans, every other value as text.
+- **Hints mirror the server, the server decides.** `unprotectedWrite`, `pinsProject` (issuer `publicIssuer`), depth four and 64 leaves, and `shared_ownership` are shown before the save; the
+  422 reasons come back as `errors[].code` with a pointer and show under the member (`pointerOf` gives a leaf's pointer, `/grants/inline/<i>` groups a grant's problems) and in the error summary;
+  the codes' sentences are [problem-messages-ci.ts](../../web/src/app/core/http/problem-messages-ci.ts). The warnings of a save come back in `warnings`: a replace shows them in place, a create carries them
+  in the navigation state to the stored mapping's page.
+- **The claim tester never keeps a token.** A pasted compact JWT is decoded in the browser (`parseClaimsInput`: header and payload, no signature check) and the text is replaced by the pretty-printed claims in
+  the same input event; the request is `{subjectKind, claims}` and nothing else (the unit tests assert the body and that the signature segment appears nowhere). The claims are signals of the component, not in a store or in
+  browser storage, and are cleared when the component is destroyed. `exp` in the future shows the warning. Opened from a mapping, the sample is tuned to that mapping's leaves (`claimsSatisfying`).
+- **Issuances.** Filters are the API's (`projectId`, `projectPath`, `pipelineId`, `jobId`, `mapping`, `active`, time range; a project's list: issuer, job, state). The bulk revoke is offered for one issuer plus one narrowing filter,
+  counts the active matches first and names the number in the confirmation (Q-UI-100).
+- **Text answers.** `ApiClient.getText` reads the snippet (`text/plain`); the problem interceptor parses a problem document that arrives as a string.
+- **Tests.** [ci-model.spec.ts](../../web/src/app/features/ci/ci-model.spec.ts) (conditions, rules, claim input), [ci-api.spec.ts](../../web/src/app/api/ci-api.spec.ts) (what leaves the browser),
+  [ci-issuer-screens.spec.ts](../../web/src/app/features/ci/ci-issuer-screens.spec.ts) (list, issuer, keys, create, issuances), [ci-editor-screens.spec.ts](../../web/src/app/features/ci/ci-editor-screens.spec.ts)
+  (editor, tester, project screens), [ci-routes.spec.ts](../../web/src/app/features/ci/ci-routes.spec.ts) (every route navigated with input binding, which catches a parameter named differently in the route and the screen).
+  There is **no browser journey yet**: the e2e suite runs against the deployed stack, where the backend answers 501 until its work packages land, and a journey cannot be written pending without skipping; it is W7's.
+
 ## How to add a feature area
 
 1. Create `web/src/app/features/<area>/` with a standalone component per screen (`Component` with

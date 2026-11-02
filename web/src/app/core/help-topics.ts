@@ -24,6 +24,9 @@ export const HELP_TOPICS: readonly (readonly [route: string, topic: HelpTopic])[
   ['/admin/service-accounts', { section: 'admin', page: 'sign-in-and-identity' }],
   ['/admin/settings', { section: 'admin', page: 'sign-in-and-identity' }],
   ['/admin/tokens', { section: 'admin', page: 'tokens' }],
+  // >>> M4 ci
+  ['/admin/ci', { section: 'admin', page: 'gitlab-ci' }],
+  // <<< M4 ci
   ['/admin/permissions', { section: 'admin', page: 'permissions' }],
   ['/admin/roles', { section: 'admin', page: 'permissions' }],
   ['/admin/system', { section: 'admin', page: 'operations' }],
@@ -33,6 +36,10 @@ export const HELP_TOPICS: readonly (readonly [route: string, topic: HelpTopic])[
 /** The router commands of the help for a URL: the matching page, or the overview. */
 export function helpFor(url: string): readonly string[] {
   const path = url.split(/[?#]/, 1)[0] ?? '';
+  // >>> M4 ci
+  // The CI screens of a project (Q-CI-26) live under the project, and explain themselves on the CI page.
+  if (/^\/admin\/projects\/[^/]+\/ci(\/|$)/.test(path)) return ['/help', 'admin', 'gitlab-ci'];
+  // <<< M4 ci
   let best: readonly [string, HelpTopic] | undefined;
   for (const entry of HELP_TOPICS) {
     const [route] = entry;

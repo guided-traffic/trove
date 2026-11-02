@@ -107,7 +107,7 @@ general API rate limit (`limitedPath` in [ratelimit.go](../../internal/api/v1/ra
 | **W3** mappings | store, principals, `mappings_version`, R-CI-009, the system and the project routes, the project bounds, the dry run, `Select`, the snippet; `project_not_empty` for a project with mappings | `internal/ci/mappings*.go`, `select.go`, `ci_mappings_api.go`, `ci_snippets_api.go`, `queries/ci_mappings.sql`, `internal/project` (the delete check) |
 | **W4** exchange | R-CI-007, R-CI-008, R-CI-016, R-CI-018, R-CI-021, the issuance write; `IssueCITx` | `internal/ci/exchange*.go`, `ttl.go`, `internal/auth/token/cit.go`, `ci_exchange.go`, `queries/ci_exchange.sql` |
 | **W5** use time | R-AUTHZ-014 in the evaluator, R-CI-015 ownership, R-CI-017 revocation, issuances (also a project's), bulk revoke, the two retention tasks, the metrics' increments | `internal/authz/ci.go`, `ownership.go` (CI parts), `internal/ci/revoke*.go`, `issuances*.go`, `ci_issuances_api.go`, `queries/ci_issuances.sql` |
-| **W6** admin UI | R-UI-035, R-UI-036, the issuances tab, the project's CI screens | `web/**` |
+| **W6** admin UI | R-UI-035, R-UI-036, the issuances tab, the project's CI screens. **Built** against the fakes (see [web-ui.md](web-ui.md#ci-identity)); the browser journey is W7's | `web/**` |
 | **W7** tests and e2e | the acceptance criteria of R-CI-001 to R-CI-030 against the issuer double (test/oidcstub) | `test/integration/ci/**`, `test/e2e/**` |
 
 Order: W2 first (pure), then W1 and W3, then W4, then W5 and W6; W7 throughout.

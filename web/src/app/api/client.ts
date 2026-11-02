@@ -69,6 +69,15 @@ export class ApiClient {
     return this.send<T>('GET', url, undefined, { params: options.params, headers });
   }
 
+  /** A plain-text answer, such as a CI snippet (R-UI-035); a problem answer is still an `ApiError`. */
+  async getText(url: string, options: ReadOptions = {}): Promise<ApiResponse<string>> {
+    return this.send<string>('GET', url, undefined, {
+      params: options.params,
+      headers: { Accept: 'text/plain, application/problem+json' },
+      responseType: 'text',
+    });
+  }
+
   /** A list page (R-API-010): `limit` and the opaque `cursor`, plus the caller's filters. */
   page<T>(url: string, params: QueryParams = {}): PageFetcher<T> {
     return async (cursor, limit): Promise<Page<T>> => {
@@ -135,6 +144,7 @@ export class ApiClient {
       readonly params?: QueryParams;
       readonly headers?: Record<string, string>;
       readonly idempotencyKey?: string;
+      readonly responseType?: 'json' | 'text';
     },
   ): Promise<ApiResponse<T>> {
     let context = new HttpContext();
@@ -146,7 +156,7 @@ export class ApiClient {
         headers: extra.headers,
         context,
         observe: 'response',
-        responseType: 'json',
+        responseType: (extra.responseType ?? 'json') as 'json',
       }),
     );
     return {

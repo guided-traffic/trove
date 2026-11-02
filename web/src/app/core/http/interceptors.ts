@@ -39,7 +39,16 @@ export const RETRY_STATE = new HttpContextToken<RetryState>(() => ({
 }));
 
 function problemOf(err: HttpErrorResponse): Problem | null {
-  return isProblem(err.error) ? err.error : null;
+  let body: unknown = err.error;
+  // A request that reads text (a CI snippet) receives its problem document as a string.
+  if (typeof body === 'string') {
+    try {
+      body = JSON.parse(body);
+    } catch {
+      return null;
+    }
+  }
+  return isProblem(body) ? body : null;
 }
 
 function retryAfterSeconds(err: HttpErrorResponse): number | null {

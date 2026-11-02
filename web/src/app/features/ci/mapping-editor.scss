@@ -1,0 +1,144 @@
+// The mapping editor (R-UI-035). Colours and lengths come from the tokens only, so both schemes follow (R-UI-044).
+
+fieldset.plain {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+
+.form-grid.wide {
+  max-inline-size: 44rem;
+  gap: var(--trove-space-1);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--trove-space-4);
+}
+
+h3 {
+  margin: var(--trove-space-4) 0 var(--trove-space-2);
+  font: var(--mat-sys-title-small);
+}
+
+.view-switch {
+  display: inline-flex;
+  gap: var(--trove-space-1);
+  margin-block-end: var(--trove-space-2);
+
+  .switch[aria-pressed='true'] {
+    background: var(--trove-accent-container);
+    color: var(--trove-on-accent-container);
+    font-weight: 600;
+  }
+}
+
+.block-label {
+  display: block;
+  margin-block: var(--trove-space-2) var(--trove-space-1);
+  font: var(--mat-sys-label-large);
+}
+
+.json-input {
+  box-sizing: border-box;
+  inline-size: 100%;
+  padding: var(--trove-space-2);
+  border: 1px solid var(--trove-border-strong);
+  border-radius: var(--trove-radius-s);
+  background: var(--trove-surface-raised);
+  color: var(--mat-sys-on-surface);
+  font-family: var(--trove-font-mono);
+  font-size: 0.8125rem;
+}
+
+.summary {
+  margin-block: var(--trove-space-3) 0;
+  overflow-wrap: anywhere;
+}
+
+.hint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--trove-space-2);
+  align-items: center;
+  margin-block: var(--trove-space-2);
+  padding: var(--trove-space-2) var(--trove-space-3);
+  border: 1px solid var(--trove-border-strong);
+  border-radius: var(--trove-radius-s);
+
+  &.warn {
+    border-color: var(--trove-status-warn);
+  }
+
+  &.bad {
+    border-color: var(--trove-status-bad);
+  }
+}
+
+.inline-grant {
+  margin-block: var(--trove-space-3);
+  padding: var(--trove-space-3);
+  border: 1px solid var(--trove-border);
+  border-radius: var(--trove-radius-m);
+  background: var(--trove-surface-raised);
+}
+
+.inline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--trove-space-2);
+}
+
+.quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--trove-space-2);
+  margin-block-end: var(--trove-space-3);
+}
+
+.actions-set {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--trove-space-1) var(--trove-space-3);
+  margin: var(--trove-space-2) 0;
+  padding: 0;
+  border: 0;
+
+  legend {
+    padding: 0;
+    font: var(--mat-sys-label-large);
+  }
+}
+
+.snippet-head {
+  display: flex;
+  align-items: center;
+  gap: var(--trove-space-2);
+}
+
+.snippet {
+  margin: 0;
+  padding: var(--trove-space-3);
+  overflow: auto;
+  max-block-size: 24rem;
+  border: 1px solid var(--trove-border);
+  border-radius: var(--trove-radius-s);
+  background: var(--trove-surface-raised);
+  font-family: var(--trove-font-mono);
+  font-size: 0.8125rem;
+  white-space: pre;
+}
+
+// A select with long option texts takes the width of the form, so no option is cut off.
+trove-select-field {
+  display: block;
+  max-inline-size: 44rem;
+  inline-size: 100%;
+
+  ::ng-deep .mat-mdc-form-field {
+    inline-size: 100%;
+  }
+}

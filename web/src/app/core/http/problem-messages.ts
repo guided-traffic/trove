@@ -2,6 +2,9 @@ import { ApiError } from '../../api/problem';
 // >>> M1 ui-b
 import { describeAccessProblem } from './problem-messages-access';
 // <<< M1 ui-b
+// >>> M4 ci
+import { describeCiProblem } from './problem-messages-ci';
+// <<< M4 ci
 
 export interface ProblemText {
   /** The message to show. */
@@ -119,7 +122,7 @@ export function describeProblem(error: ApiError): ProblemText {
     // <<< M2 ownership
     default:
       // >>> M1 ui-b
-      return accessProblem(error) ?? fallback(error);
+      return accessProblem(error) ?? ciProblem(error) ?? fallback(error);
       // <<< M1 ui-b
   }
 }
@@ -130,6 +133,13 @@ function accessProblem(error: ApiError): ProblemText | null {
   return text === null ? null : { text, known: true };
 }
 // <<< M1 ui-b
+
+// >>> M4 ci
+function ciProblem(error: ApiError): ProblemText | null {
+  const text = describeCiProblem(error.code);
+  return text === null ? null : { text, known: true };
+}
+// <<< M4 ci
 
 function rateLimited(seconds: number | null): string {
   return seconds === null

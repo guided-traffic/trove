@@ -3667,7 +3667,9 @@ Priority: **MVP** · Covers: UI-049, CIOIDC-024
 - Delegations (P1) and issuances (R-UI-030) are tabs of the issuer.
 - A project administrator reaches the project's CI mappings from the project (the project route family of
   R-API-035): the mapping list and editor, the claim tester over the project's tier and the issuances of its mappings, with
-  the issuers as a read-only choice (Q-CI-26). The editor offers the project's repositories and policies and no groups.
+  the issuers as a read-only choice (Q-CI-26). The editor offers the project's repositories and policies and no groups. The
+  screens and routes are those of [Q-UI-99](#q-ui-99--the-ci-screens-sit-under-identity-and-a-projects-ci-screens-are-the-same-components-under-the-project);
+  the bulk revoke and the detail of an issuance are Q-UI-100.
 
 Acceptance criteria:
 
@@ -5915,6 +5917,54 @@ splitter is real work (a keyboard-operable separator, persistence) for a width t
 Revisit when a key or path in the tree is regularly cut off, or the owner asks for a resizable tree at the walkthrough.
 
 **Applied in the spec:** R-UI-010, R-UI-011; [web-ui.md](../developer/web-ui.md); [files.md](../manual/user/files.md).
+
+### Q-UI-99 · The CI screens sit under Identity, and a project's CI screens are the same components under the project
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-035 and Q-CI-26 put the CI mappings with the system administrators and, bounded, with the administrators of a
+project, who have no administration entry of their own besides Projects (R-UI-041). The screens needed a place in the
+navigation and a shape for the project's copy.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One entry "CI identity" in the group Identity (`ci:read`); the project's screens are the same components mounted under `/admin/projects/:key/ci` with the project as a parameter | The mapping list, editor, claim tester and issuance list take an optional project key and call the project routes; the project page gets a card that links to them | One implementation of the editor and the tester, so the bounds (no groups, the project's repositories and policies, the name prefix) are the only differences; a project administrator reaches it from the page they already use; the breadcrumb reads Projects > key > CI identity | The components carry a scope parameter |
+| (b) Its own group "CI" in the navigation with the issuers, mappings and issuances as entries | Three entries | Short path to each list | CI mappings are principals of the same kind as service accounts and tokens, which Identity already holds; the navigation grows by a group for one feature; a project administrator still needs another way in |
+| (c) A separate set of project screens | Copies of the editor and tester for the project | Each can diverge freely | Two editors to keep equal; the evaluation trace and the condition builder are exactly what must not drift |
+
+**Choice:** (a). Routes: `/admin/ci` (issuers), `/admin/ci/new`, `/admin/ci/issuances`, `/admin/ci/:issuer` (tabs through
+`?tab=settings|keys|mappings|issuances`, default `mappings`), `/admin/ci/:issuer/test`, `/admin/ci/:issuer/mappings/new` and
+`/…/mappings/:mapping`; under a project `/admin/projects/:key/ci`, `…/ci/test`, `…/ci/mappings/new` and
+`…/ci/mappings/:mapping`, with the issuer in the query (`?issuer=`), because the issuer name in the path would give the
+breadcrumb a step that is no page. The project card is shown for `ci:read` and for an administrator of the project; a switch
+that is off answers `403 project_switch_off` on the first read and the screen shows that message alone.
+
+**Rationale:** the editor and the tester are the parts of the feature that carry the rules; two copies would drift. Revisit
+when a third tier (delegations to a group, R-CI-023, P1) needs its own screen shape.
+
+**Applied in the spec:** R-UI-035 (routes and the project card); [web-ui.md](../developer/web-ui.md#ci-identity).
+
+### Q-UI-100 · The bulk revoke counts first, and one issued token opens in a dialog
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-CI-020 lets a token administrator revoke the tokens that match `issuer` and at least one of project, pipeline,
+job or mapping; the confirmation must say how many tokens it revokes, which the revoke answer only tells afterwards.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Count the active tokens that match the applied filters (the list operation with `active=true`, all pages), name the number in the confirmation, then revoke | Two requests before the write | The number is the one the request revokes, up to a token issued in between; no new API operation | The count is read, not reserved |
+| (b) Confirm without a number and report it afterwards | One request | Simple | The confirmation cannot say what it does, against R-CI-020 |
+| (c) Ask the API for a dry-run count | A new operation | Exact | Beyond the contract; the work packages are fixed |
+
+The detail of one issuance opens in a dialog over the list, in the system and in the project screens alike (the project's
+list cannot call `GET /ci/issuances/{tokenId}`, so the dialog shows the record of the list and adds the usage summary only
+where `tokens:read` allows it).
+
+**Choice:** (a), with the dialog. **Rationale:** the confirmation must be truthful, and the existing operations suffice. Revisit
+when the API offers a count or when issuances need a linkable address (the audit log linking to one token).
+
+**Applied in the spec:** R-UI-035; [web-ui.md](../developer/web-ui.md#ci-identity).
 
 ### Q-API-16 · A `limit` above the maximum is clamped
 

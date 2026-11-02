@@ -1,0 +1,323 @@
+<header class="page-header">
+  <h1 tabindex="-1">
+    @if (isNew()) {
+      <ng-container i18n="@@ci.editor.heading-new">New mapping</ng-container>
+    } @else {
+      <ng-container i18n="@@ci.editor.heading">Mapping</ng-container>
+    }
+  </h1>
+  <a mat-button [routerLink]="back()" i18n="@@ci.editor.back">Back to the mappings</a>
+</header>
+@if (!isNew()) {
+  <p class="subject" translate="no">{{ issuerName() }}/{{ mapping() }}</p>
+} @else if (project()) {
+  <p class="subject" translate="no">{{ project() }}</p>
+}
+
+@if (project()) {
+  <trove-project-needs [state]="state()" capability="ci:write" right="managePolicies" />
+} @else {
+  <trove-needs capability="ci:write" />
+}
+
+@if (loadError(); as e) {
+  <trove-ci-error [error]="e" (retry)="load()" />
+}
+@if (saveError(); as e) {
+  @if (summaryItems().length > 0) {
+    <trove-error-summary [items]="summaryItems()" />
+  } @else {
+    <trove-error-notice [error]="e" />
+  }
+}
+<trove-ci-warnings [warnings]="warnings()" />
+
+@if (!loadError()) {
+  <form (submit)="save($event)" novalidate>
+    <fieldset class="plain" [disabled]="!writable()">
+      <legend class="visually-hidden" i18n="@@ci.editor.legend">Mapping</legend>
+
+      <section class="card" aria-labelledby="ci-m-general">
+        <h2 id="ci-m-general" tabindex="-1" i18n="@@ci.editor.general">General</h2>
+        <div class="form-grid wide">
+          @if (project() && !issuer()) {
+            <trove-select-field
+              i18n-label="@@ci.editor.issuer"
+              label="Issuer"
+              name="issuer"
+              [options]="issuerNames()"
+              [value]="issuerChoice()"
+              (valueChange)="chooseIssuer($event)"
+              [error]="fieldError('/issuer')"
+            />
+          }
+          <trove-text-field
+            i18n-label="@@ci.editor.name"
+            label="Name"
+            name="name"
+            [value]="form().name"
+            (valueChange)="patch({ name: $event })"
+            [readonly]="!isNew() || !writable()"
+            [required]="true"
+            [error]="nameError()"
+            [hint]="nameHint()"
+          />
+          <trove-text-field
+            i18n-label="@@ci.editor.description"
+            label="Description"
+            name="description"
+            [value]="form().description"
+            (valueChange)="patch({ description: $event })"
+            [error]="fieldError('/description')"
+          />
+          <trove-text-field
+            i18n-label="@@ci.editor.priority"
+            label="Priority"
+            name="priority"
+            type="number"
+            [value]="form().priority"
+            (valueChange)="patch({ priority: $event })"
+            [required]="true"
+            [error]="priorityError()"
+            i18n-hint="@@ci.editor.priority-hint"
+            hint="A lower number is evaluated first. Priorities are unique within a tier."
+          />
+          <mat-checkbox [checked]="form().enabled" (change)="patch({ enabled: $event.checked })" i18n="@@ci.editor.enabled">Enabled</mat-checkbox>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="ci-m-condition">
+        <h2 id="ci-m-condition" tabindex="-1" i18n="@@ci.editor.condition">Condition</h2>
+        <p class="muted" i18n="@@ci.editor.condition-hint">
+          The mapping applies to a job when this is true of the claims of its ID token. Pin a project or namespace by its ID, which a rename cannot change.
+        </p>
+        <div class="view-switch" role="group" aria-label="View" i18n-aria-label="@@ci.editor.view">
+          <button mat-stroked-button type="button" class="switch" [attr.aria-pressed]="view() === 'builder'" (click)="showBuilder()" i18n="@@ci.editor.view-builder">Builder</button>
+          <button mat-stroked-button type="button" class="switch" [attr.aria-pressed]="view() === 'json'" (click)="showJson()" i18n="@@ci.editor.view-json">JSON</button>
+        </div>
+        @if (fieldError('/match'); as text) {
+          <p class="field-error" id="ci-m-match-error">{{ text }}</p>
+        }
+        @if (view() === 'builder') {
+          <trove-ci-condition-builder [value]="form().match" [readonly]="!writable()" [errorAt]="errorAt" (valueChange)="setMatch($event)" />
+        } @else {
+          <label class="block-label" for="ci-m-json" i18n="@@ci.editor.json">Condition as JSON</label>
+          <textarea
+            id="ci-m-json"
+            class="json-input"
+            rows="12"
+            spellcheck="false"
+            [readOnly]="!writable()"
+            [value]="jsonText()"
+            [attr.aria-invalid]="jsonError() ? 'true' : null"
+            [attr.aria-describedby]="jsonError() ? 'ci-m-json-error' : null"
+            (input)="editJson($any($event.target).value)"
+          ></textarea>
+          @if (jsonError(); as text) {
+            <p class="field-error" id="ci-m-json-error">{{ text }}</p>
+          }
+        }
+        <p class="summary" aria-live="polite">
+          <span class="muted" i18n="@@ci.editor.reads-as">Reads as:</span>&ngsp;<code translate="no">{{ summary() }}</code>
+        </p>
+        @if (tooDeep()) {
+          <p class="hint bad" role="note"><span class="material-icons" aria-hidden="true">error</span> <ng-container i18n="@@ci.editor.too-deep">A condition may be nested four levels deep at most.</ng-container></p>
+        }
+        @if (tooMany()) {
+          <p class="hint bad" role="note"><span class="material-icons" aria-hidden="true">error</span> <ng-container i18n="@@ci.editor.too-many">A condition may have 64 conditions at most.</ng-container></p>
+        }
+        @if (unpinned()) {
+          <p class="hint warn" role="note">
+            <span class="material-icons" aria-hidden="true">warning</span>
+            <span i18n="@@ci.editor.unpinned">This issuer is public, so the top level must pin a project or namespace: an equals or in condition on project_id or namespace_id. The server refuses the save otherwise.</span>
+          </p>
+        }
+        @if (unprotected()) {
+          <p class="hint warn" role="note">
+            <span class="material-icons" aria-hidden="true">warning</span>
+            <span i18n="@@ci.editor.unprotected">The grants can publish, overwrite or delete, so the top level must require ref_protected = true. Otherwise anyone who can push a branch can publish.</span>
+            @if (writable()) {
+              <button mat-stroked-button type="button" (click)="addProtectedRef()" i18n="@@ci.editor.add-protected">Require protected refs</button>
+            }
+          </p>
+        }
+      </section>
+
+      <section class="card" aria-labelledby="ci-m-grants">
+        <h2 id="ci-m-grants" tabindex="-1" i18n="@@ci.editor.grants">Grants</h2>
+        <p class="muted" i18n="@@ci.editor.grants-hint">
+          A matching job receives the union of its policies, groups and inline grants. Manage is never granted. Policies and groups are evaluated when the token is used; inline grants are frozen when the token is issued.
+        </p>
+        <div class="stack">
+          <trove-ci-name-picker
+            i18n-label="@@ci.editor.policies"
+            label="Policies"
+            i18n-addLabel="@@ci.editor.policies-add"
+            addLabel="Add a policy"
+            [options]="policyOptions()"
+            [value]="form().policies"
+            (valueChange)="patch({ policies: $event })"
+            [readonly]="!writable()"
+            [error]="underError('/grants/policies') ?? fieldError('/grants')"
+          />
+          @if (project()) {
+            <p class="muted" i18n="@@ci.editor.project-policies">Only the permission policies of this project can be named. Groups are global and not available here.</p>
+          } @else {
+            <trove-ci-name-picker
+              i18n-label="@@ci.editor.groups"
+              label="Groups"
+              i18n-addLabel="@@ci.editor.groups-add"
+              addLabel="Add a group"
+              [options]="groupOptions()"
+              [value]="form().groups"
+              (valueChange)="patch({ groups: $event })"
+              [readonly]="!writable()"
+              [error]="underError('/grants/groups')"
+            />
+          }
+        </div>
+
+        <h3 i18n="@@ci.editor.inline">Inline grants</h3>
+        @if (project()) {
+          <p class="muted" i18n="@@ci.editor.inline-project">Inline grants reach the repositories of this project only; &#64;any means every one of them.</p>
+        }
+        @for (row of form().inline; track row.id; let i = $index) {
+          <div class="inline-grant" role="group" [attr.aria-label]="rowLabel(i)">
+            <div class="inline-head">
+              <strong>{{ rowLabel(i) }}</strong>
+              @if (writable()) {
+                <button mat-button type="button" (click)="removeRow(row.id)" i18n="@@ci.editor.remove-grant">Remove grant</button>
+              }
+            </div>
+            @for (text of rowProblems(i); track text) {
+              <p class="field-error">{{ text }}</p>
+            }
+            <trove-text-field
+              i18n-label="@@ci.editor.repositories"
+              label="Repositories"
+              [name]="'repositories-' + i"
+              type="textarea"
+              [value]="row.repositories"
+              (valueChange)="setRow(row.id, { repositories: $event })"
+              i18n-hint="@@ci.editor.repositories-hint"
+              hint="One key or pattern per line. A template needs literal text next to the claim."
+            />
+            @if (project() && projectRepositories().length > 0 && writable()) {
+              <div class="quick" role="group" aria-label="Repositories of the project" i18n-aria-label="@@ci.editor.project-repos">
+                @for (r of projectRepositories(); track r) {
+                  <button mat-stroked-button type="button" (click)="addRepository(row, r)">{{ r }}</button>
+                }
+                <button mat-stroked-button type="button" (click)="addRepository(row, '@any')">&#64;any</button>
+              </div>
+            }
+            <trove-select-field i18n-label="@@ci.editor.kind" label="Applies to" [name]="'kind-' + i" [options]="kindOptions" [value]="row.kind" (valueChange)="setRow(row.id, { kind: $any($event) })" />
+            <trove-text-field
+              i18n-label="@@ci.editor.include"
+              label="Include"
+              [name]="'include-' + i"
+              type="textarea"
+              [value]="row.include"
+              (valueChange)="setRow(row.id, { include: $event })"
+              [hint]="includeHint"
+            />
+            <trove-text-field i18n-label="@@ci.editor.exclude" label="Exclude" [name]="'exclude-' + i" type="textarea" [value]="row.exclude" (valueChange)="setRow(row.id, { exclude: $event })" />
+            <fieldset class="actions-set">
+              <legend i18n="@@ci.editor.actions">Actions</legend>
+              @for (a of actions; track a) {
+                <mat-checkbox [checked]="row.actions.includes(a)" (change)="toggleAction(row, a, $event.checked)">{{ a }}</mat-checkbox>
+              }
+            </fieldset>
+            <trove-select-field i18n-label="@@ci.editor.ownership" label="Ownership of package names" [name]="'ownership-' + i" [options]="ownershipOptions" [value]="row.ownership" (valueChange)="setRow(row.id, { ownership: $any($event) })" />
+            @if (row.ownership === 'none' && row.actions.some(isWrite)) {
+              <p class="hint warn" role="note">
+                <span class="material-icons" aria-hidden="true">warning</span>
+                <span i18n="@@ci.editor.shared-ownership">Without a binding the mapping owns the names it claims, so every project it matches co-owns them (shared_ownership).</span>
+              </p>
+            }
+          </div>
+        }
+        @if (writable()) {
+          <button mat-stroked-button type="button" (click)="addInline()" i18n="@@ci.editor.add-grant">Add inline grant</button>
+        }
+      </section>
+
+      <section class="card" aria-labelledby="ci-m-options">
+        <h2 id="ci-m-options" tabindex="-1" i18n="@@ci.editor.options">Options and lifetime</h2>
+        <div class="form-grid wide">
+          <trove-text-field
+            i18n-label="@@ci.editor.max-ttl"
+            label="Maximum token lifetime (seconds)"
+            name="maxTtlSeconds"
+            type="number"
+            [value]="form().maxTtlSeconds"
+            (valueChange)="patch({ maxTtlSeconds: $event })"
+            [error]="fieldError('/maxTtlSeconds')"
+            i18n-hint="@@ci.editor.max-ttl-hint"
+            hint="Empty: the limit of the issuer and of the installation."
+          />
+          <trove-select-field
+            i18n-label="@@ci.editor.cross"
+            label="Pipelines from other projects"
+            name="crossProjectSource"
+            [options]="crossOptions"
+            [value]="form().crossProjectSource"
+            (valueChange)="patch({ crossProjectSource: $any($event) })"
+            [error]="fieldError('/options/crossProjectSource')"
+          />
+          <mat-checkbox [checked]="form().allowUnprotectedRefs" (change)="patch({ allowUnprotectedRefs: $event.checked })" i18n="@@ci.editor.allow-unprotected">
+            Allow unprotected refs to use write grants
+          </mat-checkbox>
+          @if (form().allowUnprotectedRefs) {
+            <p class="hint warn" role="note" id="ci-m-unprotected-warning">
+              <span class="material-icons" aria-hidden="true">warning</span>
+              <span i18n="@@ci.editor.allow-unprotected-warning">
+                Anyone who can push a branch of a matching project can run a pipeline on it and publish, overwrite or delete with these grants. Protected refs are the guard; use this only where every branch is trusted. The option is recorded in the audit log.
+              </span>
+            </p>
+          }
+        </div>
+      </section>
+    </fieldset>
+
+    <div class="row-actions">
+      @if (writable()) {
+        <button mat-flat-button type="submit" [disabled]="busy() || !!jsonError()">
+          @if (isNew()) {
+            <ng-container i18n="@@ci.editor.create">Create mapping</ng-container>
+          } @else {
+            <ng-container i18n="@@ci.editor.save">Save mapping</ng-container>
+          }
+        </button>
+      }
+      @if (!isNew()) {
+        <a mat-stroked-button [routerLink]="testLink()" [queryParams]="testQuery()" i18n="@@ci.editor.test">Test with claims</a>
+        @if (canSnippet()) {
+          <button mat-stroked-button type="button" [attr.aria-expanded]="snippetOpen()" aria-controls="ci-m-snippet" (click)="toggleSnippet()" i18n="@@ci.editor.snippet">CI snippet</button>
+        }
+      }
+    </div>
+    @if (!isNew() && dirty()) {
+      <p class="muted" role="note" i18n="@@ci.editor.test-stored">Test with claims uses the saved mapping. Save your changes first to test them.</p>
+    }
+  </form>
+
+  @if (snippetOpen()) {
+    <section class="card" id="ci-m-snippet" aria-labelledby="ci-m-snippet-title">
+      <h2 id="ci-m-snippet-title" i18n="@@ci.editor.snippet-title">CI snippet</h2>
+      <p class="muted" i18n="@@ci.editor.snippet-hint">
+        A .gitlab-ci.yml fragment for this mapping: the ID token with the audience of the issuer, the exchange and the client configuration. It holds no secret.
+      </p>
+      <trove-select-field i18n-label="@@ci.editor.snippet-format" label="Package client" name="snippetFormat" [options]="formatOptions" [value]="snippetFormat()" (valueChange)="setFormat($event)" />
+      @if (snippetError(); as e) {
+        <trove-ci-error [error]="e" />
+      }
+      @if (snippet(); as text) {
+        <div class="snippet-head">
+          <trove-copy-button [value]="text" i18n-label="@@ci.editor.snippet-copy" label="Copy the snippet" />
+          <span class="muted" i18n="@@ci.editor.snippet-copy-note">Copy the snippet</span>
+        </div>
+        <pre class="snippet" translate="no" tabindex="0" aria-label="CI snippet" i18n-aria-label="@@ci.editor.snippet-aria">{{ text }}</pre>
+      }
+    </section>
+  }
+}

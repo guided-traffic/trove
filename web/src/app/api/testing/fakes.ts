@@ -25,6 +25,9 @@ import { provideGuideFakes } from './fakes-guides';
 import { provideManualFakes } from './fakes-manual';
 // <<< M2 manual
 import { provideProjectFakes } from './fakes-projects';
+// >>> M4 ci
+import { provideCiFakes } from './fakes-ci';
+// <<< M4 ci
 
 /*
  * In-memory fakes of the typed service interfaces (R-UI-047 component tier). Screens of the later
@@ -51,6 +54,8 @@ export const ADMIN_CAPABILITIES: readonly string[] = [
   'audit:read',
   'endpoints:read',
   'endpoints:write',
+  'ci:read',
+  'ci:write',
 ];
 
 export class FakeSessionApi extends SessionApi {
@@ -278,5 +283,8 @@ export function provideFakeApis(): Provider[] {
     ...provideManualFakes(),
     // <<< M2 manual
     ...provideProjectFakes(),
+    // >>> M4 ci
+    ...provideCiFakes(),
+    // <<< M4 ci
   ];
 }

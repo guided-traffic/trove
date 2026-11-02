@@ -129,6 +129,13 @@ export const routes: Routes = [
             data: wrapper($localize`:@@route.tokens.title:Token administration`),
             loadChildren: () => import('./features/tokens/tokens.routes').then((m) => m.TOKENS_ROUTES),
           },
+          // >>> M4 ci
+          {
+            path: 'ci',
+            data: wrapper($localize`:@@route.ci.title:CI identity`),
+            loadChildren: () => import('./features/ci/ci.routes').then((m) => m.CI_ROUTES),
+          },
+          // <<< M4 ci
           {
             path: 'endpoints',
             data: wrapper($localize`:@@route.endpoints.title:Endpoints`),

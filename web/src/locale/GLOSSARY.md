@@ -62,3 +62,7 @@ before using a new term in a German text.
 | theme (light, dark, follow the system) | Design (Hell, Dunkel, Systemeinstellung folgen) |
 | lockfile | Lockfile |
 | unlisted (NuGet version), target framework | nicht gelistet, Zielframework |
+| CI identity, CI issuer, mapping (of a CI issuer), tier (of mappings) | CI-Identität, CI-Aussteller, Zuordnung, Ebene |
+| claim, claim tester, dry run | Claim, Claim-Tester, Testlauf |
+| ID token, exchange (of an ID token for a token) | ID-Token, Austausch |
+| inline grant, signing key, issuance (of a token) | Inline-Berechtigung, Signaturschlüssel, Ausstellung |
