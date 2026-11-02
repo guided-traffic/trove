@@ -34,7 +34,7 @@
 #                       NuGet test upstream and three client pods; CI: job e2e-nuget
 #   e2e.sh nuget-closing  TestNuGetClosing...: the additions of the run that closes the phase (CI: job e2e-nuget, closing=true)
 #   e2e.sh nuget-ha     TestNuGetHA...: drain and failover under the NuGet load (CI: job e2e-nuget in the nightly HA and
-#                       Performance workflow). Both may name no test yet: then the set passes with a notice (Q-ARCH-276)
+#                       Performance workflow). A set may name no test (nuget-ha today): then it passes with a notice (Q-ARCH-276)
 #   e2e.sh <regex>      any other argument is a `go test -run` expression
 #
 # Environment: TROVE_DEV_HTTP_PORT (the port the cluster was created with; read back from the node),

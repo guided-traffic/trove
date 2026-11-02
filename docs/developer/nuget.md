@@ -165,7 +165,7 @@ registration hives, flat container, search, weak ETags, per-host counters and fa
 already in `proxy.outbound.tls.ca_files` of the dev profile, and a remote repository under test names the content host in its
 `extraHosts` ([e2e.md](e2e.md#in-the-cluster-1)). The clients that talk to trove are the image of [test/e2e/nugetclients](../../test/e2e/nugetclients)
 (`make nuget-clients-image`, `make nuget-clients-smoke`; [e2e.md](e2e.md#the-nuget-clients)).
-The tests that drive them against the local repositories (`make e2e SET=nuget`) are described in [e2e.md](e2e.md#the-nuget-local-tests).
+The tests that drive them against the local, remote and virtual repositories and the customer endpoint (`make e2e SET=nuget`, `SET=nuget-closing`) are described in [e2e.md](e2e.md#the-nuget-tests).
 
 ## What the contract gives the format
 

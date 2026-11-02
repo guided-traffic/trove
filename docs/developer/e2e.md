@@ -112,8 +112,8 @@ make e2e SET=npm-ha-closing  # npm-ha, npm-ha-soak and the 5-minute Valkey outag
 make npm-clients-image       # only build the image into the local Docker
 make e2e SET=nuget-clients   # build the NuGet clients image, start the client pods, run the smoke test (the pods stay up)
 make e2e SET=nuget-clients-down  # remove the NuGet client pods
-make e2e SET=nuget           # every TestNuGet... but TestNuGetClosing... and TestNuGetHA...; the test upstream and three client pods (Q-NUGET-34); CI job e2e-nuget on every change
-make e2e SET=nuget-closing   # the additions of the closing run (TestNuGetClosing...; exports TROVE_E2E_NUGET_CLOSING=1); CI leg of a closing dispatch; no such test yet: a notice and exit 0 (Q-ARCH-276)
+make e2e SET=nuget           # every TestNuGet... but TestNuGetClosing... and TestNuGetHA...: local, remote and virtual repositories, E3.2, E3.6 and E3.7 with the real clients; the test upstream and three client pods (Q-NUGET-34, Q-NUGET-70); CI job e2e-nuget on every change
+make e2e SET=nuget-closing   # the additions of the closing run (TestNuGetClosing: R-NUGET-030 and R-NUGET-031 with Valkey stopped; exports TROVE_E2E_NUGET_CLOSING=1); CI leg of a closing dispatch
 make e2e SET=nuget-ha        # TestNuGetHA...: drain and failover under the NuGet load; CI job e2e-nuget in the nightly workflow; no such test yet: a notice and exit 0 (Q-ARCH-276)
 make nuget-clients-image     # only build the NuGet clients image into the local Docker
 make nuget-clients-smoke     # the image like a pod against the counting NuGet test upstream, without a cluster
@@ -353,7 +353,7 @@ and, with `@axe-core/playwright`, `color-contrast` and the document-level rules 
 | `07-german-dark.spec.ts` | German, dark theme | R-UI-044, R-UI-045 | the break-glass sign-in at `/ui/de/...`, five screens in German with axe in the dark theme, the language menu back to English, sign-out |
 | `08-packages.spec.ts` | packages and client setup (E2.8); npm settings | R-UI-006, R-UI-008, R-UI-016, R-UI-021 | `beforeAll` creates an npm local repository and publishes a version to it with the npm protocol (`PUT /api/npm/<key>/<name>`, a tarball built in the journey whose README carries a `<script>`, an `onerror` image, a `javascript:` link and an `<iframe>`). The version is found in the packages list through the repository filter; its README tab shows the Markdown (a heading with its `user-content-` anchor, the code block) and none of the hostile elements, and none of them ran; "Set up your client for this repository" opens the setup page, where the configure snippet of npm, pnpm, Yarn Berry and Yarn Classic, with the environment-variable credential, equals character for character what `setupSnippet` of the npm matrix writes for that repository, with the same file name ([Q-UI-82](../spec/api-and-ui.md#q-ui-82--the-packages-journey-compares-the-setup-page-with-the-matrixs-snippet-written-out)). The second journey creates a local npm repository in the wizard with `latestGuard` off (the API shows `{"npm": {"latestGuard": false}}`), reads it back on the edit form's "npm settings" tab and turns it on again (the API shows no `npm` member) |
 | `09-guides.spec.ts` | the guides (E2.13) | R-UI-049, R-API-053 | `beforeAll` creates a local npm repository and a virtual one over it with the local one as deployment target. The side bar's "Guides" opens the guides area with generic and curl preselected, the first format of the catalog; choosing npm offers its four clients and the virtual class's guide; the virtual repository's "How to use" tab shows the virtual repository's sections and names its deployment target; its configure snippet is read and equals, character for character, the first configure snippet of the client setup page that the tab's link opens, with the environment-variable credential; the setup page's link opens the guide of the same repository again ([Q-UI-87](../spec/api-and-ui.md#q-ui-87--the-guides-journey-compares-the-guide-with-the-setup-page)) |
-| `11-nuget.spec.ts` | NuGet clients, snippets, guide and settings | R-UI-018, R-UI-019, R-UI-021 | `beforeAll` creates a local NuGet repository and a virtual one over it with the local one as deployment target. Test 1: the setup page for the virtual repository offers NuGet with `.NET CLI (dotnet)`, `NuGet CLI (nuget.exe)` and `Visual Studio`; the .NET CLI's source command carries the repository's `index.json` URL and `--store-password-in-clear-text`, its `nuget.config` has `<clear />` and `%TROVE_TOKEN%`, its publish snippet names the local member; nuget.exe and Visual Studio show their source instructions; axe runs on the setup page and the guide in the light and in the dark scheme (`page.emulateMedia`). Test 2: the wizard creates a local NuGet repository with `deleteMode` `delete` (the API shows `{"nuget": {"deleteMode": "delete"}}`; `forwardSearch` is not offered for a local repository), the edit form reads it back and the default removes the member. No package is published ([Q-UI-95](../spec/api-and-ui.md#q-ui-95--what-the-nuget-browser-journey-covers)); the file was written without a run (no kind stack in its work package) |
+| `11-nuget.spec.ts` | NuGet clients, snippets, guide and settings | R-UI-018, R-UI-019, R-UI-021 | `beforeAll` creates a local NuGet repository and a virtual one over it with the local one as deployment target. Test 1: the setup page for the virtual repository offers NuGet with `.NET CLI (dotnet)`, `NuGet CLI (nuget.exe)` and `Visual Studio`; the .NET CLI's source command carries the repository's `index.json` URL and `--store-password-in-clear-text`, its `nuget.config` has `<clear />` and `%TROVE_TOKEN%`, its publish snippet names the local member; nuget.exe and Visual Studio show their source instructions; axe runs on the setup page and the guide in the light and in the dark scheme (`page.emulateMedia`). Test 2: the wizard creates a local NuGet repository with `deleteMode` `delete` (the API shows `{"nuget": {"deleteMode": "delete"}}`; `forwardSearch` is not offered for a local repository), the edit form reads it back and the default removes the member. No package is published ([Q-UI-95](../spec/api-and-ui.md#q-ui-95--what-the-nuget-browser-journey-covers)); run on the dev cluster 2026-11-02 (`SET=access-long`): the first run corrected two assertions of the journey (the nuget.exe snippet is rendered in the shell and in the PowerShell form, so the locator takes the first; the `deleteMode` select carries the option index as value, so the test reads the text of the selected option) |
 | `10-help.spec.ts` | the help area and the "?" (F-16) | R-UI-050, R-API-054, R-UI-044, R-UI-045 | two tests, the break-glass administrator in each: light and English, then dark and German. `/help` lists the manual and a page opens from the list; the "?" of the top bar on `/profile/tokens` opens `user/access-tokens`, on `/admin/groups` `admin/sign-in-and-identity`. Axe with `color-contrast` runs on each of the five screens per scheme (the manual's own text is English with `lang="en"`, Q-UI-89). No data is prepared |
 
 The files run in this order, in one worker: the audit journey reads what the journeys before it did (the packages journey runs after it and is
@@ -1205,7 +1205,7 @@ test/e2e/nugetclients/
   The apt version is exact, so a superseded package fails the build. Mono's TLS stack ends at TLS 1.2: a listener with
   `min_version: "1.3"` is not reachable by nuget.exe here (the defaults are 1.2). Verified: nuget.exe 7.9.0.83 starts, installs from
   the test upstream and reaches the dev edge through the forwarder (linux/arm64); push, install, search and delete by nuget.exe on Mono
-  pass against the local repositories ([The NuGet local tests](#the-nuget-local-tests)). Not verified: linux/amd64 and the symbol push
+  pass against the local repositories ([The NuGet tests](#the-nuget-tests)). Not verified: linux/amd64 and the symbol push
   by nuget.exe on Mono.
 - **Trust.** `entrypoint.sh` writes `$SSL_CERT_FILE` (`/tmp/trove-ca/bundle.crt`: the system roots plus the CA mounted at
   `/etc/trove-ca/ca.crt`), runs `cert-sync --user` on it (the Mono store below `$HOME/.config/.mono/certs`, `HOME=/work`), then writes
@@ -1240,32 +1240,39 @@ test/e2e/nugetclients/
   [performance.yml](../../.github/workflows/performance.yml)). The job builds the clients image with `make nuget-clients-image` first
   and sets `TROVE_E2E_NUGET_CLIENTS_IMAGE_BUILD=0`, so the set loads it instead of building it again. The fuzz targets of the closing run
   are in [releasing.md](releasing.md#ci) too.
-- **Sets that name no test yet.** `nuget-closing` and `nuget-ha` are declared `empty_ok` in [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh).
+- **Sets that name no test yet.** `nuget-closing` and `nuget-ha` are declared `empty_ok` in [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh); `nuget-closing` names `TestNuGetClosing` since phase 4, `nuget-ha` none yet.
   While no `func Test...` in `test/e2e/*_test.go` matches their expression, the script logs a notice and exits 0 before it looks for a
   cluster ([Q-ARCH-276](../spec/architecture.md#q-arch-276--how-does-an-e2e-set-that-names-no-test-pass-and-when-does-it-fail)). Every other
   set still fails when its expression matches no test, and once a test of the name exists, a run that ran nothing still fails.
 - **Not built.** The Windows row (nuget.exe and the SDK on a Windows runner) and Visual Studio (manual). The run against nuget.org of the
   closing run (R-NUGET-027) is not in CI.
 
-## The NuGet local tests
+## The NuGet tests
 
-`make e2e SET=nuget` runs the acceptance tests of the local repositories with the real clients (R-NUGET-027; exit criteria E3.1 Linux
-part, E3.5, and the replica part of E3.6). Everything runs in the `scatter` profile, so consecutive requests of one client reach
-different web replicas. Verified on the dev cluster (linux/arm64, .NET SDK of `E2E_NUGETCLIENTS_SDK_IMAGE`, nuget.exe 7.9.0 on Mono):
-the set is green, 40 tests and subtests, about 220 s, twice in a row. Not verified: linux/amd64.
+`make e2e SET=nuget` runs the acceptance tests of the NuGet format with the real clients (R-NUGET-027; exit criteria E3.1 Linux part,
+E3.2, E3.5, E3.6 without the drain part, E3.7). Everything runs in the `scatter` profile, so consecutive requests of one client reach
+different web replicas. Verified on the dev cluster (linux/arm64, .NET SDK of `E2E_NUGETCLIENTS_SDK_IMAGE`, nuget.exe 7.9.0 on Mono,
+2026-11-02): the set is green, 78 tests and subtests, 234 s of test time. Not verified: linux/amd64, and the time on the CI runner.
+`make e2e SET=nuget-closing` adds what stops Valkey ([Q-NUGET-70](../spec/formats/nuget.md#q-nuget-70--which-of-the-remaining-e3-cases-run-on-every-change-and-which-in-the-closing-run)).
 
 | File | Content |
 |---|---|
-| [nuget_env_test.go](../../test/e2e/nuget_env_test.go) | the fixture (three repositories, the publisher `e2e-nuget` and its token), `nugetClient` (a scenario in a pod: directory, `NUGET_PACKAGES`, `NUGET_HTTP_CACHE_PATH`, `nuget.config`, consumer project), `nugetPack` |
+| [nuget_env_test.go](../../test/e2e/nuget_env_test.go) | the fixture (four local repositories, the publisher `e2e-nuget` and its token), `nugetClient` (a scenario in a pod: directory, `NUGET_PACKAGES`, `NUGET_HTTP_CACHE_PATH`, `nuget.config`, consumer project), `nugetPack` and `nugetPackSymbols` (a package with its `.snupkg`) |
+| [nuget_upstream_test.go](../../test/e2e/nuget_upstream_test.go) | the control client of the counting test upstream (`nugetStub`, `nugetCounts`, `nugetMode`), `upstreamRepos` (a remote and a virtual repository per test), `nugetPin` (a clients pod to one web replica), `runTogether` |
 | [nuget_local_test.go](../../test/e2e/nuget_local_test.go) | `TestNuGetPush`, `TestNuGetRestore`, `TestNuGetExe`, `TestNuGetUnlistRelistDelete` |
-| [nuget_replicas_test.go](../../test/e2e/nuget_replicas_test.go) | `TestNuGetReplicas`: body and ETag of every document on all three replicas, 304 from any |
-| [nuget_handover_test.go](../../test/e2e/nuget_handover_test.go) | comments only: the remote, virtual, E3.2, E3.6 fault and E3.7 cases that wait for their packages |
+| [nuget_replicas_test.go](../../test/e2e/nuget_replicas_test.go) | `TestNuGetReplicas` (`sameOnEveryReplica`, `documentsOnEveryReplica`: body and ETag of every document on all three replicas, 304 from any), `TestNuGetPushRetry` (E3.6, the dropped answer) |
+| [nuget_remote_test.go](../../test/e2e/nuget_remote_test.go) | `TestNuGetRemote`: `dotnet restore` and `nuget install` through a remote of the test upstream, the cache filled once, a stopped upstream |
+| [nuget_virtual_test.go](../../test/e2e/nuget_virtual_test.go) | `TestNuGetVirtual`: push through the virtual repository into its deployment target, restores and installs of local and uncached remote packages, search, the documents on every replica, no deployment target |
+| [nuget_collapse_test.go](../../test/e2e/nuget_collapse_test.go) | `TestNuGetCollapse` (E3.2), `coldRestoreOfReference` (shared with the closing run) |
+| [nuget_endpoint_test.go](../../test/e2e/nuget_endpoint_test.go) | `TestNuGetEndpoint` (E3.7) |
+| [nuget_closing_test.go](../../test/e2e/nuget_closing_test.go) | `TestNuGetClosing`: the closing run's additions |
 
 - **Repositories** (created idempotently): `nuget-e2e` (`requireAuthentication`), `nuget-e2e-open` (the `anonymous` principal may
-  `read`; `requireAuthentication` off), `nuget-e2e-hard` (`nuget.deleteMode: delete`). IDs are `E2e.Nuget<run>.<Group>`, so a rerun on the
-  same cluster never meets a stored version or a tombstone.
+  `read`; `requireAuthentication` off), `nuget-e2e-hard` (`nuget.deleteMode: delete`), `nuget-customers` (the repository the endpoint
+  `customers` exposes). IDs are `E2e.Nuget<run>.<Group>`, so a rerun on the same cluster never meets a stored version or a tombstone.
 - **Packages** are packed by the pod's SDK from a template ([Q-NUGET-64](../spec/formats/nuget.md#q-nuget-64--where-the-fixture-packages-of-the-e2e-tests-come-from)); the same
-  arguments return the same bytes for the whole run, another description makes other bytes of one version.
+  arguments return the same bytes for the whole run, another description makes other bytes of one version. `nugetPackSymbols` adds
+  `IncludeSymbols` and the `snupkg` format; `dotnet nuget push` pushes the `.snupkg` that lies next to the `.nupkg` by itself.
 - **Credentials** come from a `nuget.config` that is written the way the setup snippets print it (`<clear />`, user name `token`,
   `ClearTextPassword` = `%TROVE_TOKEN%`, which both clients expand from the environment, on Mono too). A scenario never touches the
   user's `NuGet.Config` in `HOME`, which all scenarios of a pod share.
@@ -1275,6 +1282,7 @@ the set is green, 40 tests and subtests, about 220 s, twice in a row. Not verifi
   A suite that runs next to this one on the cluster must not rely on anonymous access being off while `TestNuGetPush` runs.
 - **A revoked token** is revoked through `DELETE /api/v1/tokens/{id}`, then refused by all three replicas (nine requests, three replicas seen)
   before the client runs; the revocation bound of R-AUTHZ-028 would otherwise make the scenario flaky.
+
 - **What the clients showed** (kept here because a test author meets them again):
   - `dotnet nuget push` sends `PUT <feed>/v3/package/`, with a trailing slash the index does not have ([Q-NUGET-66](../spec/formats/nuget.md#q-nuget-66--the-publish-resources-accept-a-trailing-slash)).
   - `dotnet nuget push` and `nuget push` print the status as `Response status code does not indicate success: 409 (Conflict)`; a
@@ -1284,10 +1292,72 @@ the set is green, 40 tests and subtests, about 220 s, twice in a row. Not verifi
   - `dotnet package search --exact-match` shows the newest listed version only; a prerelease needs `--prerelease`.
   - A stored file (the `.nuspec`) carries the strong ETag of its blob; only the rendered documents carry weak ETags (Q-NUGET-9).
   - `dotnet pack` with a description that contains `<` fails on the XML; the template escapes it.
+  - nuget.exe restores only a file named `packages.config` or `packages.*.config`; a scenario that needs two puts them in two directories.
+  - `dotnet package search --exact-match` reads the registration, not the search service; a test of the search uses the API or no `--exact-match`. The
+    table it prints wraps a long ID over two lines; use `--format json` to match an ID.
+  - `dotnet add package --version 1.9.0` is the range `>= 1.9.0` and resolves upwards; a test that needs one exact version writes `[1.9.0]`.
+  - A push with an answer lost at the edge prints "The response ended prematurely (ResponseEnded)" and is repeated up to three times.
+  - A push to a feed whose index lists no publish resource stops in the client; the 403 of the server is reached with a raw request.
 
-Not covered here, and named in [nuget_handover_test.go](../../test/e2e/nuget_handover_test.go): remote and virtual repositories against the
-counting test upstream, the cold-cache run of E3.2, the dropped answer of a push (E3.6; needs the forwarder to drop one answer), the customer
-endpoint (E3.7) and the symbol packages.
+### Remote and virtual repositories, E3.2
+
+- **The pair per test** ([Q-NUGET-68](../spec/formats/nuget.md#q-nuget-68--the-repositories-of-the-remote-and-virtual-e2e-tests-a-fresh-pair-per-test-and-a-short-circuit-period-where-the-test-stops-the-upstream)).
+  `upstreamRepos(t, purpose, settings)` creates `nuget-<purpose>-<run>-remote` (the URL `https://$TROVE_E2E_NUGETSTUB_HOST/v3/index.json`, the content
+  host in `extraHosts`) and `…-all` (members `nuget-e2e` and the remote, deployment target `nuget-e2e`), a read policy for the publisher, and waits until
+  every replica reads both. The repositories go with `t.Cleanup`. The circuit of a remote opens after 5 failures for 300 s: the stopped-upstream
+  test creates its remote with threshold 3 and 5 s, or the repository would stay refused for five minutes after the upstream is back.
+- **What the upstream recorded is the evidence.** `nugetCounts` returns the stub's counters; `Nupkg(id, version)` is the number of `.nupkg` requests,
+  `Hosts()` the Host headers it saw (both hosts of the service index must appear), `Searches()` the searches. `TestNuGetRemote` fills a package and its
+  dependency once (`Contoso.Core.Extensions` 1.0.0 needs `Contoso.Core.Abstractions` 1.0.0) and shows a second client on another replica causes no further
+  `.nupkg` request; nuget.exe installs `Newtonsoft.Json` 13.0.1; with the upstream down (`nugetstub.Mode{Down: "503"}`) a cached package still restores, an
+  uncached one fails, and it restores once the upstream is back.
+- **E3.2** (`TestNuGetCollapse`). Three client pods are pinned to the three web pods (`nugetPin`: the forwarder of the pod relays to the pod's listener, the
+  base URL and the verified certificate stay those of the edge), each gets the files of [perf/nuget/reference](../../perf/nuget/reference) with the
+  `nuget.config` of the test, and `dotnet restore Reference.sln --no-cache` runs on all three at once through a fresh virtual repository. All succeed; each
+  extracted the same number of packages (at least 100); the upstream served exactly one `.nupkg` request per distinct path. On the dev cluster the three
+  restores of 120 packages took 11 s.
+- **The documents of a virtual repository** are compared on the three replicas as those of a local one (`documentsOnEveryReplica`). The `.nuspec` of a remote package
+  is fetched once before the comparison: the answer that fills the cache is streamed from the upstream and carries neither an `ETag` nor `Accept-Ranges`, the stored
+  file's answer does.
+- **Search.** The remote's search (R-NUGET-016) forwards the query to the upstream: not built ([Q-NUGET-55](../spec/formats/nuget.md#q-nuget-55--the-seam-for-the-forwarded-search-the-adapter-maps-the-search-resource-a-remote-searches-its-cache-until-then)),
+  so a remote lists the packages it has cached, after the rows of a fill are written (seconds). A virtual repository asks its remote members for nothing
+  (`searchRemote` in [search_virtual.go](../../internal/formats/nuget/search_virtual.go) returns no hit), so the search of `nuget-all` lists the local packages and
+  not the remote ones. `TestNuGetVirtual` asserts the two parts that exist; the criterion "forwarded search cached per replica" (Q-NUGET-8) has no test
+  until the forwarding exists. `dotnet package search --exact-match` does not call the search service: it reads the registration, so it finds remote packages
+  and is no evidence for the search.
+
+### The dropped answer (E3.6)
+
+`TestNuGetPushRetry` makes the Ingress drop the answer of one push. [dropOneAnswerOf](../../test/e2e/npm_replicas_test.go) puts HAProxy rules into the
+`config-backend` annotation of trove's Ingress (`http-response silent-drop` for the first answer of a `PUT` whose path ends in `/v3/package` or `/v3/package/`
+with status 201, counted in a stick table; [Q-NUGET-69](../spec/formats/nuget.md#q-nuget-69--how-the-edge-drops-the-answer-of-a-push-the-ingress-rule-of-the-npm-test-with-a-path-and-a-status)).
+The 201 matters: a push first draws the 401 of the credential challenge, and that answer is not the one to lose. The client prints "The response ended
+prematurely", repeats the push, and the repeat finds the version stored; `dotnet nuget push` exits 0. The evidence that it was repeated is
+`trove_nuget_push_replayed_total`, summed over the web pods, rising. The edge has two HAProxy pods with a stick table each, so two answers are lost and
+the third attempt is the one that succeeds (the client tries three times, R-NUGET-032). The test restores the annotation at its end.
+
+### The customer endpoint (E3.7)
+
+`TestNuGetEndpoint` ([Q-NUGET-71](../spec/formats/nuget.md#q-nuget-71--the-customer-endpoint-test-a-package-id-of-the-run-an-exact-range-for-the-hidden-version-and-what-the-clients-can-and-cannot-show))
+pushes four versions of `E2e.Nuget<run>.Sdk` and one of another package to `nuget-customers`, creates the exposure rule (from 2.0, no pre-releases), a service
+account `e2e-nuget-cust` with `read` and a token bound to `customers`, waits until all three replicas serve only the exposed versions on their `:8443` listener,
+and then checks, through the edge and the host `packages.trove.localhost` (the pods resolve it to their forwarder): the version list, the three registration
+hives and the search list exactly 2.0.0 and 2.1.0; the `.nupkg` of 1.9.0 is a 404; the service index has no `PackagePublish` and the index of the default endpoint has;
+`PUT <feed>/v3/package` answers 403 `endpoint_read_only`, and `dotnet nuget push` fails in the client. `dotnet restore` of `*` takes 2.1.0; `dotnet add package`
+of `[1.9.0]` and of `[9.9.9]` both fail with `NU1102`; nuget.exe restores a `packages.config` with 2.1.0 and fails on one with 1.9.0.
+
+### The closing run
+
+`make e2e SET=nuget-closing` runs `TestNuGetClosing` (it fails, never skips, without `TROVE_E2E_NUGET_CLOSING=1`, which the set exports). With Valkey and the Sentinels
+stopped (`withValkeyStopped`, every web pod ready with `valkey` degraded): the documents of a package on all three replicas; 51 iterations of `dotnet nuget push` of a
+`.nupkg` with its `.snupkg` through a virtual repository, each followed by `dotnet restore --no-http-cache` of the package, 17 on each of three clients at once
+(also once with Valkey running); the cold restore of the reference solution with at most three requests per `.nupkg` (one per replica); twelve concurrent restores
+of one uncached package on two replicas cost one or two upstream requests. The drain part of E3.6 moved to phase 7 (owner, 2026-11-01); `FLUSHALL` and the Sentinel
+failover under the NuGet load of R-NUGET-031 go with it. Verified on the dev cluster (2026-11-02): green, 14 tests and subtests, 322 s.
+
+**Not covered here:** the forwarded search of a remote and its per-replica cache (R-NUGET-016, Q-NUGET-8; not built), the digest check of a
+cached package against the upstream (R-NUGET-029, P1; not built, so a `packageHash` mismatch is not tested), the symbol packages beyond the push
+(the symbol server is P1), the Windows row and Visual Studio, and the drain and failover part of E3.6 (phase 7).
 
 ## Extension checklist
 

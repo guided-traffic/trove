@@ -13,10 +13,17 @@ const virtualKey = unique('ui-nuget-all');
 const wizardKey = unique('ui-nuget-wizard');
 
 test.beforeAll(async ({ admin }) => {
-  const local = await admin.post('/api/v1/repositories', { data: { key: localKey, class: 'local', format: 'nuget' } });
+  const local = await admin.post('/api/v1/repositories', {
+    data: { key: localKey, class: 'local', format: 'nuget' },
+  });
   expect(local.status(), await local.text()).toBe(201);
   const virtual = await admin.post('/api/v1/repositories', {
-    data: { key: virtualKey, class: 'virtual', format: 'nuget', virtual: { members: [localKey], deployTarget: localKey } },
+    data: {
+      key: virtualKey,
+      class: 'virtual',
+      format: 'nuget',
+      virtual: { members: [localKey], deployTarget: localKey },
+    },
   });
   expect(virtual.status(), await virtual.text()).toBe(201);
 });
@@ -39,7 +46,11 @@ test('R-UI-018 R-UI-019 the NuGet clients, their snippets with the index.json UR
   await test.step('the client setup page offers NuGet with its three clients', async () => {
     await page.goto(`/ui/en/setup?repository=${virtualKey}`);
     await expect(page.getByRole('heading', { name: 'Client setup', level: 1 })).toBeVisible();
-    await expect(page.getByRole('group', { name: /Package type/ }).getByRole('radio', { name: 'NuGet', exact: true })).toBeChecked();
+    await expect(
+      page
+        .getByRole('group', { name: /Package type/ })
+        .getByRole('radio', { name: 'NuGet', exact: true }),
+    ).toBeChecked();
     const clientStep = page.getByRole('group', { name: /^2\s*Client$/ });
     for (const label of ['.NET CLI (dotnet)', 'NuGet CLI (nuget.exe)', 'Visual Studio']) {
       await expect(clientStep.getByRole('radio', { name: label, exact: true })).toBeVisible();
@@ -52,27 +63,37 @@ test('R-UI-018 R-UI-019 the NuGet clients, their snippets with the index.json UR
     const configure = page.getByRole('tabpanel', { name: 'Configure' });
     // The server renders the shell form, the PowerShell form and the nuget.config, in that order; the source is
     // always the index.json URL, and the push names the repository the caller chose (a virtual one forwards it).
-    await expect(configure.locator('.snippet pre').first()).toContainText(`dotnet nuget add source ${feed(virtualKey)} --name trove`);
-    await expect(configure.locator('.snippet pre').nth(1)).toContainText(`dotnet nuget add source ${feed(virtualKey)} --name trove`);
-    await expect(configure.locator('.snippet pre').nth(2)).toContainText('<clear />');
-    await expect(configure.locator('.snippet pre').nth(2)).toContainText(`value="${feed(virtualKey)}" protocolVersion="3"`);
-    await page.getByRole('tab', { name: 'Publish' }).click();
-    await expect(page.getByRole('tabpanel', { name: 'Publish' }).locator('.snippet pre').first()).toContainText(
-      `--source ${feed(virtualKey)}`,
+    await expect(configure.locator('.snippet pre').first()).toContainText(
+      `dotnet nuget add source ${feed(virtualKey)} --name trove`,
     );
+    await expect(configure.locator('.snippet pre').nth(1)).toContainText(
+      `dotnet nuget add source ${feed(virtualKey)} --name trove`,
+    );
+    await expect(configure.locator('.snippet pre').nth(2)).toContainText('<clear />');
+    await expect(configure.locator('.snippet pre').nth(2)).toContainText(
+      `value="${feed(virtualKey)}" protocolVersion="3"`,
+    );
+    await page.getByRole('tab', { name: 'Publish' }).click();
+    await expect(
+      page.getByRole('tabpanel', { name: 'Publish' }).locator('.snippet pre').first(),
+    ).toContainText(`--source ${feed(virtualKey)}`);
   });
 
   await test.step('nuget.exe and Visual Studio', async () => {
     const clientStep = page.getByRole('group', { name: /^2\s*Client$/ });
     await clientStep.getByRole('radio', { name: 'NuGet CLI (nuget.exe)', exact: true }).check();
     await page.getByRole('tab', { name: 'Configure' }).click();
-    await expect(page.getByRole('tabpanel', { name: 'Configure' }).locator('.snippet pre').filter({ hasText: 'nuget sources add' })).toContainText(
-      feed(virtualKey),
-    );
+    await expect(
+      page
+        .getByRole('tabpanel', { name: 'Configure' })
+        .locator('.snippet pre')
+        .filter({ hasText: 'nuget sources add' })
+        .first(),
+    ).toContainText(feed(virtualKey));
     await clientStep.getByRole('radio', { name: 'Visual Studio', exact: true }).check();
-    await expect(page.getByRole('tabpanel', { name: 'Configure' }).locator('.snippet pre').first()).toContainText(
-      `<add key="trove" value="${feed(virtualKey)}" protocolVersion="3" />`,
-    );
+    await expect(
+      page.getByRole('tabpanel', { name: 'Configure' }).locator('.snippet pre').first(),
+    ).toContainText(`<add key="trove" value="${feed(virtualKey)}" protocolVersion="3" />`);
   });
 
   for (const scheme of ['light', 'dark'] as const) {
@@ -83,7 +104,11 @@ test('R-UI-018 R-UI-019 the NuGet clients, their snippets with the index.json UR
       await expectAccessible(page, `client setup, NuGet (${scheme})`);
       await page.goto(`/ui/en/guides?format=nuget&client=dotnet&repository=${virtualKey}`);
       await expect(page.getByRole('heading', { name: 'Guides', level: 1 })).toBeVisible();
-      await expect(page.getByRole('group', { name: 'Package type' }).getByRole('radio', { name: 'NuGet', exact: true })).toBeChecked();
+      await expect(
+        page
+          .getByRole('group', { name: 'Package type' })
+          .getByRole('radio', { name: 'NuGet', exact: true }),
+      ).toBeChecked();
       await expectAccessible(page, `guides, NuGet (${scheme})`);
     });
   }
@@ -116,7 +141,7 @@ test('R-UI-021 R-ARCH-004 the NuGet settings in the wizard and on the edit form,
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page.getByRole('heading', { name: 'NuGet settings', level: 2 })).toBeVisible();
     await expect(page.getByRole('checkbox', { name: 'forwardSearch' })).toHaveCount(0);
-    await expect(mode).toHaveValue('unlist');
+    await expect(mode.locator('option:checked')).toHaveText('unlist'); // the options carry their index as value (format-settings.ts)
     await mode.selectOption('delete');
     for (const scheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme: scheme });
@@ -132,7 +157,7 @@ test('R-UI-021 R-ARCH-004 the NuGet settings in the wizard and on the edit form,
   await test.step('the edit form reads it back and setting the default back removes it from the document', async () => {
     await page.reload();
     await page.getByRole('tab', { name: 'NuGet settings' }).click();
-    await expect(mode).toHaveValue('delete');
+    await expect(mode.locator('option:checked')).toHaveText('delete');
     await expectAccessible(page, 'repository detail, NuGet settings');
     await mode.selectOption('unlist');
     await page.getByRole('button', { name: 'Save changes' }).click();

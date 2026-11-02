@@ -5,8 +5,10 @@ package e2e
 // The harness of the NuGet acceptance tests (M3, R-NUGET-027): the local repositories of the installation, a publisher
 // with tokens, the clients of nuget_clients_test.go driven through `kubectl exec`, and the fixture packages, which the
 // real .NET SDK packs (`dotnet pack`, as R-NUGET-027 asks). The scenarios are in nuget_local_test.go (the write path
-// and the clients' reads, E3.1 Linux part, E3.5) and nuget_replicas_test.go (E3.6, the documents on all replicas);
-// the remote and virtual cases are the hand-overs of nuget_handover_test.go. docs/developer/e2e.md describes the whole.
+// and the clients' reads, E3.1 Linux part, E3.5), nuget_replicas_test.go (E3.6, the documents on all replicas, the dropped
+// answer), nuget_remote_test.go, nuget_virtual_test.go and nuget_collapse_test.go (E3.2) against the counting test upstream
+// (nuget_upstream_test.go), nuget_endpoint_test.go (E3.7) and nuget_closing_test.go (Valkey stopped). docs/developer/e2e.md
+// describes the whole.
 //
 // Everything a client needs beyond the base URL (a cache directory, no telemetry) goes through the environment of the
 // command; the registry, the source and the credentials come from a nuget.config of the scenario's directory, written
@@ -27,10 +29,11 @@ import (
 )
 
 const (
-	nugetAuthKey = "nuget-e2e"      // requireAuthentication: true; the repository of the clients with credentials
-	nugetOpenKey = "nuget-e2e-open" // anonymous read: the repository a client reaches with the API key alone
-	nugetHardKey = "nuget-e2e-hard" // deleteMode delete: the protocol DELETE removes the version
-	nugetPubSA   = "e2e-nuget"      // the publisher: read, deploy and delete on the three repositories
+	nugetAuthKey = "nuget-e2e"       // requireAuthentication: true; the repository of the clients with credentials
+	nugetOpenKey = "nuget-e2e-open"  // anonymous read: the repository a client reaches with the API key alone
+	nugetHardKey = "nuget-e2e-hard"  // deleteMode delete: the protocol DELETE removes the version
+	nugetCustKey = "nuget-customers" // the repository the customers endpoint exposes through rules (E3.7)
+	nugetPubSA   = "e2e-nuget"       // the publisher: read, deploy and delete on the four repositories
 )
 
 // nugetFixture is the installation the NuGet tests share: created once per run, idempotent over runs.
@@ -71,6 +74,7 @@ func buildNuGetFixture(t testing.TB) (*nugetFixture, error) {
 		{"key": nugetAuthKey, "class": "local", "format": "nuget", "requireAuthentication": true},
 		{"key": nugetOpenKey, "class": "local", "format": "nuget"},
 		{"key": nugetHardKey, "class": "local", "format": "nuget", "requireAuthentication": true, "nuget": map[string]any{"deleteMode": "delete"}},
+		{"key": nugetCustKey, "class": "local", "format": "nuget", "requireAuthentication": true},
 	} {
 		r, err := adm.send(http.MethodPost, "/api/v1/repositories", body)
 		if err != nil {
@@ -81,7 +85,7 @@ func buildNuGetFixture(t testing.TB) (*nugetFixture, error) {
 		}
 	}
 	ensureSA(t, adm, nugetPubSA)
-	ensurePolicy(t, adm, nugetPubSA, []string{nugetAuthKey, nugetOpenKey, nugetHardKey}, [2]any{"sa:" + nugetPubSA, []string{"read", "deploy", "delete"}})
+	ensurePolicy(t, adm, nugetPubSA, []string{nugetAuthKey, nugetOpenKey, nugetHardKey, nugetCustKey}, [2]any{"sa:" + nugetPubSA, []string{"read", "deploy", "delete"}})
 	ensurePolicy(t, adm, nugetPubSA+"-anonymous", []string{nugetOpenKey}, [2]any{"anonymous", []string{"read"}})
 	fx.token = freshSAToken(t, adm, nugetPubSA, 4*3600, map[string]any{"inherit": true}).Token
 	return fx, nil
@@ -238,9 +242,11 @@ func (c *nugetClient) hasPackage(id, version string) bool {
 
 // ── the fixture packages ─────────────────────────────────────────────────────
 
+type packed struct{ nupkg, snupkg []byte }
+
 var (
 	packMu    sync.Mutex
-	packCache = map[string][]byte{}
+	packCache = map[string]packed{}
 )
 
 // nugetPack builds a package with the pod's .NET SDK (`dotnet pack` of a project with one class) and returns the
@@ -248,13 +254,33 @@ var (
 // the same version (a conflict needs them).
 func (fx *nugetFixture) nugetPack(t testing.TB, id, version, description string) []byte {
 	t.Helper()
-	key := id + "|" + version + "|" + description
+	return fx.pack(t, 0, id, version, description, false).nupkg
+}
+
+// nugetPackSymbols is nugetPack on clients pod `pod` with the symbol package next to it (the snupkg format):
+// `dotnet nuget push` pushes a .snupkg that lies next to the .nupkg by itself (R-NUGET-020). Packs of different
+// pods run side by side; the cache is locked only for the lookup and the store.
+func (fx *nugetFixture) nugetPackSymbols(t testing.TB, pod int, id, version, description string) (nupkg, snupkg []byte) {
+	t.Helper()
+	p := fx.pack(t, pod, id, version, description, true)
+	return p.nupkg, p.snupkg
+}
+
+func (fx *nugetFixture) pack(t testing.TB, pod int, id, version, description string, symbols bool) packed {
+	t.Helper()
+	key := fmt.Sprintf("%s|%s|%s|%t", id, version, description, symbols)
 	packMu.Lock()
-	defer packMu.Unlock()
 	if b, ok := packCache[key]; ok {
+		packMu.Unlock()
 		return b
 	}
-	c := fx.client(t, 0, "pack-"+strings.ToLower(strings.ReplaceAll(id, ".", "-"))+"-"+version+"-"+fmt.Sprint(len(packCache)))
+	n := len(packCache)
+	packMu.Unlock()
+	c := fx.client(t, pod, "pack-"+strings.ToLower(strings.ReplaceAll(id, ".", "-"))+"-"+version+"-"+fmt.Sprint(n)+"-"+fmt.Sprint(time.Now().UnixNano()%100000))
+	extra := ""
+	if symbols {
+		extra = "\n    <IncludeSymbols>true</IncludeSymbols>\n    <SymbolPackageFormat>snupkg</SymbolPackageFormat>\n    <DebugType>portable</DebugType>"
+	}
 	c.write("pack.csproj", []byte(`<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -262,7 +288,7 @@ func (fx *nugetFixture) nugetPack(t testing.TB, id, version, description string)
     <Version>`+version+`</Version>
     <Authors>trove end-to-end</Authors>
     <Description>`+xmlText(description)+`</Description>
-    <NuGetAudit>false</NuGetAudit>
+    <NuGetAudit>false</NuGetAudit>`+extra+`
   </PropertyGroup>
 </Project>
 `))
@@ -271,13 +297,25 @@ func (fx *nugetFixture) nugetPack(t testing.TB, id, version, description string)
 	if out, err := c.try("dotnet", "pack", "pack.csproj", "-c", "Release", "-o", "out", "--nologo"); err != nil {
 		t.Fatalf("dotnet pack of %s %s: %v\n%s", id, version, err, out)
 	}
-	raw := c.exec("base64", "-w0", "out/"+id+"."+version+".nupkg")
-	b, err := base64.StdEncoding.DecodeString(strings.TrimSpace(raw))
-	if err != nil || len(b) == 0 {
-		t.Fatalf("dotnet pack of %s %s: no package (%v)", id, version, err)
+	read := func(ext string) []byte {
+		raw := c.exec("base64", "-w0", "out/"+id+"."+version+ext)
+		b, err := base64.StdEncoding.DecodeString(strings.TrimSpace(raw))
+		if err != nil || len(b) == 0 {
+			t.Fatalf("dotnet pack of %s %s: no %s (%v)", id, version, ext, err)
+		}
+		return b
 	}
-	packCache[key] = b
-	return b
+	out := packed{nupkg: read(".nupkg")}
+	if symbols {
+		out.snupkg = read(".snupkg")
+	}
+	packMu.Lock()
+	defer packMu.Unlock()
+	if b, ok := packCache[key]; ok {
+		return b // another goroutine packed the same package first: its bytes are the ones the run uses
+	}
+	packCache[key] = out
+	return out
 }
 
 // place writes the package into the scenario's directory and returns its file name.

@@ -334,17 +334,27 @@ func cacheInvalidationOnEveryReplica(t *testing.T, fx *npmFixture) {
 // of an unpublish), after the replica has committed it: HAProxy Ingress takes the rules through the config-backend
 // annotation of trove's Ingress, a stick-table counter lets exactly one answer through the rule. The returned function
 // restores the annotation the profile set.
-func dropOneAnswer(t *testing.T) func() {
+func dropOneAnswer(t *testing.T) func() { return dropOneAnswerOf(t, "path_sub /-rev/", "") }
+
+// dropOneAnswerOf is dropOneAnswer for the first PUT whose path the HAProxy ACL criterion matches ("path_sub /-rev/" for an
+// unpublish of npm, "path_end /v3/package /v3/package/" for the push of NuGet, whichever spelling of the address the client
+// uses, Q-NUGET-66). A status other than "" limits the drop to an answer with that status: a NuGet push first draws the 401 of
+// the credential challenge, and only the 201 of the committed push is the answer worth losing.
+func dropOneAnswerOf(t *testing.T, pathACL, status string) func() {
 	t.Helper()
+	statusCond := ""
+	if status != "" { // only an answer with this status counts: a push first draws the 401 of the credential challenge
+		statusCond = " { status " + status + " }"
+	}
 	const key = "haproxy-ingress.github.io/config-backend"
 	was := kn(t, "get", "ingress", "trove", "-o", `jsonpath={.metadata.annotations.haproxy-ingress\.github\.io/config-backend}`)
 	rules := was + `
 stick-table type string size 1 expire 1m store gpc0
 acl e2e_put method PUT
-acl e2e_rev path_sub /-rev/
+acl e2e_rev ` + pathACL + `
 http-request track-sc0 str(e2e-drop) if e2e_put e2e_rev
 http-request set-var(txn.e2e_rev) int(1) if e2e_put e2e_rev
-http-response silent-drop if { var(txn.e2e_rev) -m found } { sc0_get_gpc0 eq 0 } { sc0_inc_gpc0 gt 0 }`
+http-response silent-drop if { var(txn.e2e_rev) -m found }` + statusCond + ` { sc0_get_gpc0 eq 0 } { sc0_inc_gpc0 gt 0 }`
 	kn(t, "annotate", "ingress", "trove", "--overwrite", key+"="+rules)
 	time.Sleep(8 * time.Second) // the controller renders the backend and reloads HAProxy
 	return func() {

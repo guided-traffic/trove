@@ -4101,7 +4101,7 @@ hand-built request had sent). The development agent would revisit this if a scen
 (then (a) for that package), or if the pack time dominates a run.
 
 **Applied in the spec:** none (R-NUGET-027's bullet is met in the form of a template). Elsewhere:
-[nuget_env_test.go](../../../test/e2e/nuget_env_test.go), [docs/developer/e2e.md](../../developer/e2e.md#the-nuget-local-tests).
+[nuget_env_test.go](../../../test/e2e/nuget_env_test.go), [docs/developer/e2e.md](../../developer/e2e.md#the-nuget-tests).
 
 ### Q-NUGET-65 · How the push criteria of R-NUGET-012 get an anonymously readable feed
 
@@ -4173,6 +4173,78 @@ Context: a virtual repository asks every member for the document it merges, with
 **Rationale:** the documents are small and bounded by `MaxDocumentBytes`; the engine's validators make the three entries refresh independently, as they would for any two variants. The development agent revisits this when the engine can alias variants of one path.
 
 **Applied in the spec:** none in a requirement. Code: `storesVariant` in [remote.go](../../../internal/formats/nuget/remote.go). Tests: `TestR_NUGET_015_...` fill cases in `remote_test.go` and `TestR_NUGET_018_AVirtualRepositoryMergesALocalAndARemoteMember`.
+
+### Q-NUGET-68 · The repositories of the remote and virtual e2e tests: a fresh pair per test, and a short circuit period where the test stops the upstream
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the tests that read what the counting upstream recorded (one request per `.nupkg`, a cache that fills on the first request) need a cache that starts empty, and the test of a stopped upstream needs a circuit that closes again within the test. A remote repository opens its circuit after `failureThreshold` (5) failures for `circuitOpenSeconds` (300, R-REPO-029). The first run of the stopped-upstream test left the repository assumed offline for the five minutes after the upstream was back (`trove.remote_upstream_state.open_until` read 04:04:21 for a failure at 03:59:21), which is the specified behaviour and not a defect.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A remote and a virtual repository per test, named `nuget-<purpose>-<run>-remote` and `-all`, removed with `t.Cleanup`; the remote of the stopped-upstream test sets `availability.failureThreshold` 3 and `circuitOpenSeconds` 5 (chosen) | `upstreamRepos` in `nuget_upstream_test.go`; the virtual repository has `nuget-e2e` as first member and as deployment target | A cold cache for every test, whatever ran before; a circuit left open by one test touches nothing else; the shadowing check of a later first push (R-REPO-048) never meets a remote whose upstream was stopped | Four more repository writes per test, and each waits until three replicas read the new repository (at most 3 s, R-AUTHZ-028) |
+| (b) One pair for the suite, the counters of the upstream reset between tests | A fixture like `nuget-e2e` | One creation | A package cached by an earlier test makes "one request per `.nupkg`" depend on test order; the stopped upstream would leave the circuit open for the next test |
+| (c) The `nuget-all` of the dev profile | `up.sh` creates it | The name of the criterion | `up.sh` creates no NuGet repository (the wiring is a later step), and the cache is shared with whoever uses the cluster |
+
+**Choice:** (a). The criterion's `nuget-all` is the role of the virtual repository, not its key.
+
+**Rationale:** the cost of (a) is seconds per test and the benefit is that every assertion on the upstream's counters holds on a cold cache by construction. The development agent revisits this if the number of tests that need the pair makes the creation the larger part of the set's time.
+
+**Applied in the spec:** none. Code: `upstreamRepos` in [nuget_upstream_test.go](../../../test/e2e/nuget_upstream_test.go). Tests: `TestNuGetRemote`, `TestNuGetVirtual`, `TestNuGetCollapse`, `TestNuGetClosing`.
+
+### Q-NUGET-69 · How the edge drops the answer of a push: the Ingress rule of the npm test, with a path and a status
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: E3.6 asks for a `dotnet nuget push` whose answer a fault-injecting edge drops, repeated by the client, exit 0. The npm test drops the answer of the first `PUT` below `/-rev/` through the `config-backend` annotation of trove's Ingress (a stick-table counter, `http-response silent-drop`). Two things differ for NuGet. The push is `PUT <feed>/v3/package` with or without a slash (Q-NUGET-66). And it first draws a 401: the client sends the push without credentials and repeats it with the `nuget.config` credentials, so the first `PUT` that matches is not the one worth losing; the first run of this test dropped the 401, the client repeated it, and the push went through without any replay.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The npm rule with the path as a parameter and a status condition: `path_end /v3/package /v3/package/`, and the drop only for an answer with status 201 (chosen) | `dropOneAnswerOf(t, pathACL, status)`; `dropOneAnswer` of npm is the call with the `/-rev/` path and no status | One mechanism for both formats; the drop is after the replica has committed, which is the case the criterion names | The edge has two HAProxy pods and each has its own stick table, so the push loses two answers (the third attempt is the last the client makes) |
+| (b) A fault proxy in the clients pod (the forwarder `fwd` gets a drop switch) | The forwarder closes the connection after the answer's headers | Independent of the Ingress controller | A second way to produce the fault; the npm test would not use it; the forwarder is not on the path of a real client |
+| (c) A hook in the server that commits and then closes the connection | A test-only branch | Exactly one drop | Test code in the release binary |
+
+**Choice:** (a). The evidence that the client repeated the push is `trove_nuget_push_replayed_total` (R-NUGET-028), summed over the web pods, which rises by at least one: the repeat of a committed push is the replay of Q-NUGET-6. The test requires "at least one" because of the two stick tables.
+
+**Rationale:** the criterion is about what the client does when it loses an answer, and the edge is where an answer is lost in production. The development agent revisits this if the Ingress controller is replaced or runs a single pod, where the count becomes exact.
+
+**Applied in the spec:** none. Code: `dropOneAnswerOf` in [npm_replicas_test.go](../../../test/e2e/npm_replicas_test.go). Test: `TestNuGetPushRetry`.
+
+### Q-NUGET-70 · Which of the remaining E3 cases run on every change and which in the closing run
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the set `nuget` runs on every change and has to stay within about 20 minutes on the CI runner (Q-NUGET-34); `nuget-closing` is the additions of the dispatch that closes the phase. On the dev cluster (linux/arm64, 2026-11-02) the set with the remote, virtual, E3.2, dropped-answer and customer-endpoint tests ran 234 s of test time (78 tests and subtests), of which E3.2 took 11 s for 120 packages on three clients at once and the dropped answer 33 s (the client waits for the answer it lost before it repeats the push).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Everything that needs no stopped Valkey runs on every change; the closing run holds what stops Valkey (chosen) | `nuget`: `TestNuGetRemote`, `TestNuGetVirtual`, `TestNuGetCollapse` (E3.2), `TestNuGetPushRetry`, `TestNuGetEndpoint` (E3.7), `TestNuGetReplicas`; `nuget-closing`: `TestNuGetClosing` (documents with Valkey stopped, 51 pushes with symbol packages each followed by a restore with Valkey running and again stopped, the cold restore of the reference solution with Valkey stopped, concurrent cold restores on two replicas with Valkey stopped) | R-NUGET-030 and E3.2, E3.6 (dropped answer), E3.7 are checked on every change that touches the plug-in, as R-NUGET-027 asks for the `scatter` row; each stop of Valkey costs half a minute or more (the health check needs two intervals to see it go); the closing set took 322 s here (the 51-iteration loops 76 s with Valkey running and 104 s stopped) | The Valkey-stopped criteria R-NUGET-031 are checked only at the closing run, as R-NUGET-027 says |
+| (b) E3.2 in the closing run | The cold restore is the heaviest case | A shorter set | It takes 11 s here; the one case that proves the collapse across replicas would not run per change |
+| (c) Everything on every change | The closing tests join `nuget` | One set | About 5 more minutes per change and a Valkey outage in every run, for criteria that R-NUGET-027 assigns to the closing run |
+
+**Choice:** (a).
+
+**Rationale:** the split follows the rows of R-NUGET-027: the `scatter` row on every change, the Valkey-stopped row at the end of the phase. The development agent revisits this when the CI runner's measured time for `nuget` leaves the 20 minutes (the numbers above are from a laptop).
+
+**Applied in the spec:** none. Code: [nuget_closing_test.go](../../../test/e2e/nuget_closing_test.go); `deploy/dev/e2e.sh` needs no change (`nuget` skips `TestNuGet(Closing|HA)`, `nuget-closing` runs `^TestNuGetClosing`). Tests: as listed.
+
+### Q-NUGET-71 · The customer endpoint test: a package ID of the run, an exact range for the hidden version, and what the clients can and cannot show
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: E3.7 names `Acme.Sdk` in `nuget-customers`, a hidden version that `dotnet add package` fails on with `NU1102`, and a push that answers 403. Three things in the suite make that literal reading wrong. A stored version cannot be pushed again with other bytes, and `dotnet pack` does not produce the same bytes twice, so a fixed ID breaks the second run on a cluster. `dotnet add package --version 1.9.0` is the range `>= 1.9.0`, which NuGet resolves to the lowest version that satisfies it: with 2.0.0 exposed that is 2.0.0 and the command succeeds, so it does not show a hidden version. And with no publish resource in the service index, `dotnet nuget push` stops in the client with "the source does not support push" and never sends the request that answers 403.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The package is `E2e.Nuget<run>.Sdk`; the hidden version is asked for as the exact range `[1.9.0]`; the 403 is a raw `PUT <feed>/v3/package` with the bound token as `X-NuGet-ApiKey`, and `dotnet nuget push` is run as well and must fail; nuget.exe restores a `packages.config` (chosen) | The rule names the ID of the run; `NU1102` is compared with the failure for `[9.9.9]`, a version that exists nowhere | Every run starts from nothing; the failure shown is the one of R-EP-013 (hidden is missing); the 403 and its code `endpoint_read_only` are asserted | The ID is not the literal `Acme.Sdk` |
+| (b) The literal `Acme.Sdk`, the repository emptied before a run | Delete the versions first | The names of the criterion | A delete leaves a tombstone (R-NUGET-006), so the second run cannot push the version again |
+| (c) `dotnet add package` without a range, expecting `NU1102` | The notation of the criterion | None | It succeeds and installs 2.0.0 |
+
+**Choice:** (a). nuget.exe 7.9 restores only a file named `packages.config` (or `packages.*.config`); the test writes one per directory (`exposed/`, `hidden/`) with `targetFramework="net48"`.
+
+**Rationale:** the criterion's intent is that a hidden version behaves like a missing one for every client and that the endpoint offers no write; (a) shows both with the real clients and says where a client cannot reach the server. The development agent revisits this if a NuGet client sends a push without a publish resource.
+
+**Applied in the spec:** none. Code: [nuget_endpoint_test.go](../../../test/e2e/nuget_endpoint_test.go). Test: `TestNuGetEndpoint`.
 
 ## What this does not cover
 
