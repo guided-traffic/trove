@@ -143,13 +143,14 @@ trove/
 │   ├── audit/                # event registry (journal flag), recorder (transactional and async), store and query
 │   ├── auth/                 # the authentication stage and the failed-credential throttle; principal/ (users, groups,
 │   │                         # service accounts, provisioner), token/ (format, store, lifetime, revocation), scope/ (the scope value type, a leaf),
-│   │                         # session/ (UI sessions, CSRF, the session cache), oidc/ (providers, login flow, callback, break-glass)
+│   │                         # session/ (UI sessions, CSRF, the session cache), oidc/ (providers, login flow, callback, break-glass),
+│   │                         # jws/ (compact JWS and JWK sets, a leaf the login and the CI validation share)
 │   ├── authz/                # decision point: engine, compiled grant index, epochs, policy and role service, decision audit
 │   ├── backup/tables/        # table registry: the export class of every table (leaf layer)
 │   ├── blob/                 # store, spool, digests, commit, download, GC; s3/ is the S3 client; blobtest/ fixtures
 │   ├── buildinfo/            # version, commit and build date from -ldflags
 │   ├── cache/                # bounded in-process caches with change-area invalidation
-│   ├── ci/                   # GitLab CI OIDC federation (contracts laid, ci-oidc.md): types, service interfaces, stubs, metrics; reason/, claims/ and subject/ are pure leaves
+│   ├── ci/                   # GitLab CI OIDC federation (contracts laid, ci-oidc.md): types, service interfaces, stubs, metrics; reason/, claims/ (claim engine, built) and subject/ (subject-token validation, built) are pure leaves
 │   ├── cluster/              # the only Valkey client and key registry (valkey_keys.go), change log, signals,
 │   │                         # FlightLock, leases, lock categories, replica registry, watchdog loops, the cluster limiter
 │   ├── config/               # struct tree with defaults, loader, validation, schema.json (generated)

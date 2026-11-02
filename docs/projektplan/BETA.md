@@ -398,13 +398,13 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - 🟢 The manual uses the width of the screen (phase 8, beta documentation; Q-UI-97)
 
 **Findings of the run (2026-11-02, while writing the manual against the contracts; status per item)**
-- 🟡 HIGH (design) · `claims.Frozen` carries one `Project` for all inline grants, while a token can unite the match of the
-  system tier with matches of several project tiers (R-CI-009): the evaluator could not bound each inline grant to its own
-  tier's project. Each frozen inline grant names its tier and project; W2 changes the type, W5 evaluates per grant
+- 🟢 HIGH (design) · `claims.Frozen` carried one `Project` for all inline grants, while a token can unite the match of the
+  system tier with matches of several project tiers (R-CI-009). Now one contribution per matched mapping with its tier, its
+  project, its inline grants and its caps, and a versioned bundle (W2, Q-CI-17 amended); W5 evaluates per contribution
 - 🟡 The snippet operation (R-API-035, R-UI-035) has no project route, so a project administrator cannot get a mapping's
   snippet (W3)
 - 🟡 R-AUTHZ-026 "Deleting a project" and its table row do not name CI mappings as a blocker (`project_not_empty`, Q-CI-26) (W3)
-- 🟡 The spec lists three save-time warnings, `internal/ci/reason` six more; R-CI-010 lists them all (W2)
+- 🟢 The spec listed three save-time warnings, `internal/ci/reason` six more; R-CI-010 lists all nine now
 - 🟢 A rule violation of a management write: every violation in `errors[]` with its pointer and code, a rule the spec names
   also as the problem's `code` (Q-CI-30)
 - 🟢 `ca_bundle_ref`: `file:/abs/path` or `env:TROVE_CIC_<NAME>`; the installation's trust always applies and the bundle
@@ -449,7 +449,11 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - ⚪ Project administrators manage the CI mappings of their project (owner, 2026-11-02; Q-CI-26): a mapping tier per
   project, grants only over the project's repositories and policies, the save-time rules unchanged; issuers stay the
   system administrators'
-- ⚪ Identity mappings: conditions on project, branch, protected ref, environment; templated grants
+- 🟡 Identity mappings: conditions on project, branch, protected ref, environment; templated grants. The claim engine is
+  built (W2: conditions with their limits and trace, glob, RE2, templates with escaping per context, grants with the
+  ownership default, the scope grammar, the cross-project cap per mapping, every save-time rule and warning, the project
+  tier's rules; Q-CI-27 to Q-CI-29); the subject-token validation of R-CI-004 and the shared JWS leaf `internal/auth/jws`
+  the login uses too; open: the mapping store and API (W3)
 - ⚪ Package ownership: a CI project writes only the packages it owns, reads what it is granted
 - 🟡 Admin UI: CI issuers, mappings, dry run and claim tester; built against the API fakes with the issuances, bulk revoke
   and the project's CI screens (`/admin/ci…`, `/admin/projects/:key/ci…`, Q-UI-99, Q-UI-100; 713 web tests); open: against

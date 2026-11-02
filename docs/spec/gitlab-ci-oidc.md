@@ -1,8 +1,9 @@
 # GitLab CI OIDC federation
 
 Status: specification — the contracts of beta phase 5 are laid (schema, packages, interfaces, API document, configuration,
-audit events, coordination; [developer/ci-oidc.md](../developer/ci-oidc.md)); work packages W1 to W7 are pending, so the
-behavior below is not implemented yet
+audit events, coordination; [developer/ci-oidc.md](../developer/ci-oidc.md)); work package W2 is built (the subject-token
+validation of R-CI-004 and the claim engine of R-CI-010 to R-CI-014, pure and unit-tested), W1 and W3 to W7 are pending, so
+the exchange, the management API and the use of a CI token are not implemented yet
 
 This page specifies how a CI job gets trove permissions without a stored secret. A GitLab job
 asks GitLab for an OIDC ID token addressed to trove. It exchanges that token at
@@ -565,7 +566,10 @@ reason code in brackets appears in the error response and the audit event (R-CI-
 8. Time ([RFC 7519 §4.1.4–4.1.6](https://www.rfc-editor.org/rfc/rfc7519#section-4.1.4)): `exp`
    required and `now < exp + skew` [`token_expired`]; `nbf`, when present,
    `now >= nbf - skew` [`token_not_yet_valid`]; `iat` required and `iat <= now + skew`
-   [`issued_in_future`]. NumericDate values may be non-integer.
+   [`issued_in_future`]. NumericDate values may be non-integer. A missing or `null` `exp` or
+   `iat` answers [`required_claim_missing`] with the claim's name, and a time claim that is not a
+   non-negative number up to 2^40 answers [`subject_token_malformed`]
+   ([Q-CI-27](#q-ci-27--the-reason-of-a-missing-or-malformed-time-claim)).
 9. Required claims: every claim in `required_claims` is present and not `null`
    [`required_claim_missing`, with the claim name in `error_description`].
 
@@ -1080,8 +1084,10 @@ A condition is a tree of combinators and leaves:
 ```
 
 Combinators: `all` (true if every child is true; an empty list is invalid), `any` (true if any
-child is true; an empty list is invalid) and `not` (one child). The maximum depth is 4, a
-condition has at most 64 leaves, and an `in` list has at most 256 values.
+child is true; an empty list is invalid) and `not` (one child). The maximum depth is 4, counted
+in nodes on the longest path from the root to a leaf, the leaf included (so `all` → `any` → `not` →
+leaf is the deepest condition), a condition has at most 64 leaves, and an `in` list has at most 256
+values ([Q-CI-28](#q-ci-28--what-a-condition-accepts-where-r-ci-010-sets-no-rule)).
 
 Leaves name a top-level claim with `claim`, or a nested value with `path` (an array of member
 names, e.g. `["job_config", "url"]`; dots in claim names are never interpreted). Each leaf has
@@ -1095,15 +1101,19 @@ exactly one operator:
 | `regex` | It fully matches the regular expression (below) |
 | `present` | `true`: the claim exists and is not `null`; `false`: it is absent or `null` |
 
-Optional modifier `ignore_case: true` (Unicode simple case folding) for `equals`, `in`, `glob` and
-`regex`. Comparison is case-sensitive by default.
+Optional modifier `ignore_case: true` (`ignoreCase` on the wire; Unicode simple case folding) for
+`equals`, `in`, `glob` and `regex`; on `present` it is refused with 422 (Q-CI-28). Comparison is
+case-sensitive by default.
 
 Value normalization, applied to claim values and literals alike:
 
 - Strings are compared byte for byte, with no Unicode normalization.
 - Booleans become `"true"` and `"false"`. Integers become their decimal form. So
   `{"equals": true}` matches GitLab's `"ref_protected": "true"` and `{"equals": 20}` matches
-  `"project_id": "20"`.
+  `"project_id": "20"`. A number is an integer when it is a JSON integer literal, without
+  fraction or exponent; any other number (`20.5`, `2e1`, `20.0`) contributes no value, so no
+  leaf but `present` matches it, and a literal that is not an integer or is `null` is refused when
+  the mapping is saved (Q-CI-28).
 - `null` counts as absent.
 - An array claim is multi-valued. A leaf is true if any element matches. Elements that are
   objects or arrays never match.
@@ -1120,10 +1130,12 @@ Glob semantics (explicit; the separator is always `/`):
 | `*` | Zero or more characters within one segment (never `/`) |
 | `?` | Exactly one character other than `/` |
 | `**` | Only as a whole segment. In the middle (`a/**/b`): zero or more whole segments. At the end (`a/**`): one or more segments. At the start (`**/b`): zero or more leading segments. |
-| `\x` | The literal character `x` (escapes `*`, `?`, `\`, `[`, `]`, `{`, `}`) |
+| `\x` | The literal character `x` (escapes `*`, `?`, `\`, `[`, `]`, `{`, `}`); an escaped `/` is the separator like an unescaped one |
 
 The whole value must match. There are no character classes and no `{a,b}` alternation (use `in`
-or `any`). `a**`, `**b` and unescaped `[`, `]`, `{`, `}` are rejected when the mapping is saved.
+or `any`). `a**`, `**b` and unescaped `[`, `]`, `{`, `}`, a trailing `\` and a glob longer than
+1024 characters (the pattern limit of [authorization.md](authorization.md) R-AUTHZ-005, Q-CI-28)
+are rejected when the mapping is saved.
 
 | Pattern | Value | Match |
 |---|---|---|
@@ -1155,12 +1167,12 @@ Save-time rules (422 with a `reason` on violation):
   ownership keyed by the immutable `project_id` (R-CI-015) keeps a project that inherits a
   released path from writing to packages another project published.
 
-Warnings (returned in the save response's `warnings` array; the save succeeds):
+Warnings (returned in the save response's `warnings` array with their `code`; the save succeeds):
 
-- a `glob` or `regex` on `sub`;
-- a condition on `user_login` or `user_email` (GitLab users can change these);
-- a template that references a claim neither in `required_claims` nor guarded by
-  `present: true` at the top level;
+- `sub_pattern`: a `glob` or `regex` on `sub`;
+- `mutable_user_claim`: a condition on `user_login` or `user_email` (GitLab users can change these);
+- `unguarded_template_claim`: a template that references a claim neither in `required_claims` nor
+  guarded by `present: true` at the top level;
 - `unpinned_condition`: a mapping of a CI issuer with `public_issuer: false` whose condition has
   no pin leaf (H-30);
 - `repository_template_unconstrained`: a `repositories` template (R-CI-014) without a `require`
@@ -1168,7 +1180,15 @@ Warnings (returned in the save response's `warnings` array; the save succeeds):
   can select any existing repository whose key fits the literal part;
 - `shared_ownership`: an inline grant with `deploy`, `overwrite` or `delete` and an explicit
   `ownership: none`. Names it claims are owned by the mapping, so every project the mapping
-  matches can publish versions of them (R-CI-013, Q-CI-6).
+  matches can publish versions of them (R-CI-013, Q-CI-6);
+- `write_without_pipeline_source`: a mapping that grants `deploy`, `overwrite` or `delete` (inline
+  or through its policies and groups) and has no leaf on `pipeline_source` (R-CI-011);
+- `unprotected_refs_allowed`: `options.allow_unprotected_refs: true`, the visible opt-in of
+  R-CI-011;
+- `cross_project_read_only`: `options.cross_project_source: read_only`, the visible opt-in of
+  R-CI-012.
+
+These nine codes are the whole list; the reason names live in `internal/ci/reason`.
 
 **Acceptance criteria**
 
@@ -1393,8 +1413,12 @@ In `groups_from_claim` (R-CI-024), the source name `value` stands for the curren
 - `slug`: lowercase; every run of characters outside `[a-z0-9]` becomes `-`; leading and
   trailing `-` are removed; an empty result is a render error.
 - A literal `{{` is written `{{ "{{" }}`.
-- Claim values are normalized as in R-CI-010. An array, object, missing or `null` claim is a
-  render error [`grant_render_failed`].
+- Claim values are normalized as in R-CI-010. An array, object, missing or `null` claim, and a
+  number that is not an integer, is a render error [`grant_render_failed`].
+- `segment` with an index outside the value is a render error, and so is `require` on a value it
+  does not fully match. `replace` with an empty search string, and a `require` expression longer
+  than 512 characters or that does not compile, are refused on save with 422 `template_invalid`
+  ([Q-CI-29](#q-ci-29--what-a-template-substitution-may-render)).
 
 Escaping and validation by context (applied to each substituted value after its filters, before
 the value is inserted into literal text):
@@ -1404,13 +1428,17 @@ the value is inserted into literal text):
 | `repositories` | The value MUST match `^[a-z0-9._-]+$`, otherwise it is a render error. No glob characters can be inserted. |
 | `packages` | Glob metacharacters (`\ * ? [ ] { }`) are backslash-escaped. The value MUST NOT contain `/`, so a claim cannot add a segment to an npm scope. |
 | `paths` | Glob metacharacters are escaped. The value MUST NOT be empty, contain `..` or empty segments, or start with `/`. |
-| all | Control characters (U+0000–U+001F, U+007F) are a render error. The rendered pattern is at most 1024 characters (IAM-021). |
+| all | The value MUST NOT be empty (Q-CI-29). Control characters (U+0000–U+001F, U+007F) are a render error. The rendered pattern is at most 1024 characters (IAM-021). |
 
-So a claim can never widen a pattern: a value of `*` renders as the literal `\*`. A template in
+So a claim can never widen a pattern: a value of `*` renders as the literal `\*`, and an empty
+value cannot turn `{{ … }}*` into `*`. A template in
 `repositories` MUST contain at least one literal character next to its substitution (for example
-`{{ … }}-releases`). Without that rule, a claim value alone (such as a GitLab subgroup that a
+`{{ … }}-releases`); the wildcards `*` and `?` do not count, because `{{ … }}*` lets the value
+alone select a repository (Q-CI-29). Without that rule, a claim value alone (such as a GitLab subgroup that a
 group member names `npm-internal`) could select an arbitrary existing repository. The save fails
-with 422 `template_unanchored`.
+with 422 `template_unanchored`. A `repositories` template with a substitution never starts with
+`@`, since templating never produces a class selector ([authorization.md](authorization.md)
+R-AUTHZ-004): 422 `template_invalid`.
 
 Points the catalog leaves open (CIOIDC-011), fixed for trove:
 
@@ -1555,7 +1583,8 @@ Priority: **MVP** · Covers: CIOIDC-010, CIOIDC-014, CIOIDC-018
 - CI tokens do not appear in any user's token list. Administrators find them through the
   issuance API (R-CI-020).
 - The token row carries what its use needs: `api_token.ci_context` holds the frozen bundle (the issuer, the project
-  identity, the contributing mappings and groups, the rendered inline grants, the caps), written in the exchange's
+  identity and, per contributing mapping, its tier and for a project tier its project, its groups, its rendered inline
+  grants and its caps; the bundle carries its format version, Q-CI-17), written in the exchange's
   transaction. The token cache entry of R-AUTH-023 carries it to the request, so the evaluator reads no row of
   PostgreSQL for it (R-AUTHZ-015, Q-CI-17). The issuance record holds the same bundle for the administrator.
 - Revocation is immediate (INV-8) and happens:
@@ -3491,7 +3520,7 @@ evaluation in the steady state, and a revocation must reach every replica within
 | (c) The evaluator queries the issuance record per token | A per-token cache of `ci_token_issuances.grants` | The issuance record is the one copy | A second cache with its own invalidation beside the token cache, and a PostgreSQL read for a token that is already in the cache |
 
 **Choice:** (a). The policy grants and the group grants of the token stay live: its principal set is its mappings
-(`Subject.Mappings`, resolved to principals by the index) and the groups its mappings listed (`Frozen.Groups`, resolved by
+(`Subject.Mappings`, resolved to principals by the index) and the groups its mappings listed (`FrozenMapping.Groups` since the amendment below, resolved by
 name), so removing a mapping from a policy takes effect at once without a new exchange (R-CI-013 acceptance criterion).
 
 **Rationale:** (a) adds no read to a hot path and no cache to keep consistent: the token cache is the one cache that
@@ -3503,6 +3532,21 @@ in which case the cache entry would hold a digest and the grants would load thro
 **Applied in the spec:** R-CI-017 (the token row carries the bundle). Code: `internal/ci/claims` (`Frozen`),
 `internal/auth/token` (`Info.CI`, `CITRequest`, `IssueCITx`), `internal/auth` (`Result.CI`), `internal/httpserver`
 (`Principal.CI`), `internal/authz` (`Subject.CI`, `CIGrantSet`, `CIProject`).
+
+**Amended 2026-11-02 (work package W2, a finding of the manual work):** the bundle of the contracts held one project, one
+group list, one list of inline grants and one list of caps for the whole token, but a token unites the match of the system
+tier with the matches of any number of project tiers (R-CI-009 steps 2 to 4, Q-CI-26), and a cap `read` bounds only the
+grants of the mapping that opted in (R-CI-012). With one bundle-wide project the evaluator could not bound each inline grant
+by its own tier's project, and a bundle-wide cap would cap the system mapping's grants too. The choice (a) stands; the
+bundle is now per contributing mapping: `claims.Frozen` keeps the identity (issuer, GitLab project), the principal set
+(`Mappings`, `MappingIDs`) and the classification, and `Contributions` holds one `claims.FrozenMapping` per mapping with its
+reference and ID, its tier, for a project tier its project by key and ID, its groups, its rendered inline grants (already
+bounded by its caps, `claims.Freeze`) and its caps, which the evaluator applies to that mapping's policy, group and inline
+grants only. The JSON carries `version` (`claims.FrozenVersion`, 1); `claims.DecodeFrozen` refuses another version and a
+bundle whose contributions disagree with its mappings or whose project tier lacks its project, and the token validator
+treats that as a storage fault, never as an acceptance. No row with the earlier shape exists (the exchange was not built).
+Applied in the spec: R-CI-017. Code: `internal/ci/claims/grants.go` (`Frozen`, `FrozenMapping`, `FrozenProject`, `Add`,
+`Check`, `DecodeFrozen`), `scope.go` (`Freeze`, `NarrowFrozen`, `InlineScope`).
 
 ### Q-CI-18 · Where the gate lives that admits CI tokens on a few operations only
 
@@ -3755,7 +3799,7 @@ it; a pipeline creates its token through the exchange (unchanged). R-CI-023 had 
 **Choice:** (a). `ci_mappings` carries `tier = 'project:<key>'` and `project_id` (foreign key `ON DELETE RESTRICT`); a project
 with mappings answers `409 project_not_empty`. A project administrator sees the issuers read-only, its own tier's mappings
 and dry run, and the issuances of tokens whose mappings include one of the project's (in the MVP, because an administrator
-who writes the mapping must see what it issued); the token carries `Frozen.Project`, so the evaluator compiles the inline
+who writes the mapping must see what it issued); the token carries each contributing mapping's project (`FrozenMapping.Project`, Q-CI-17 as amended), so the evaluator compiles the inline
 grants only against the project's repositories. The bounds are in R-CI-019.
 
 **Rationale:** the owner decided the direction. The mechanism follows the project model already built: the switch that
@@ -3767,8 +3811,88 @@ issuances of a shared mapping leak more than the project's mappings (the record 
 
 **Applied in the spec:** R-CI-009 (tiers, the project tier, `project_id`), R-CI-019 (the project routes and bounds), R-CI-023
 (what stays P1), R-AUTHZ-026 (the table), R-API-035, R-UI-035. Code: migration 00026 (`project_id`), `internal/ci` (the
-`…In` methods of `Mappings`, `Issuers.Choices`, `Issuances.ListForProject`, `MappingSet.OnlyTier`), `claims.Frozen.Project`,
+`…In` methods of `Mappings`, `Issuers.Choices`, `Issuances.ListForProject`, `MappingSet.OnlyTier`), `claims.FrozenMapping.Project`,
 `claims.IssuerFacts.Project`, `internal/api/v1/ci_project_api.go`, `api/openapi.yaml`.
+
+### Q-CI-27 · The reason of a missing or malformed time claim
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-CI-004 step 8 requires `exp` and `iat` and names `token_expired`, `token_not_yet_valid` and `issued_in_future` in
+its brackets, but not the reason of a token whose `exp` is missing, `null` or a string. The steps stop at the first failure
+and step 8 runs before step 9 (`required_claims`), so the preset's `exp` and `iat` entries of step 9 never decide it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The time reasons of the step | A missing `exp` is `token_expired`, a missing `iat` `issued_in_future`, a string `nbf` `token_not_yet_valid` | Only the reasons in the step's brackets | The answer names a clock problem that is not there: an operator compares clocks for a token whose claim is simply absent |
+| (b) Name the defect, still at step 8 | A missing or `null` `exp` or `iat` is `required_claim_missing` with the claim's name; a present `exp`, `nbf` or `iat` that is not a non-negative number up to 2^40 is `subject_token_malformed`; a `null` `nbf` is absent | The reason says what is wrong; both reasons are in R-CI-008's table and both are 400 `invalid_request`; the order of the steps is unchanged | A step answers with a reason outside its own brackets |
+| (c) `subject_token_malformed` for every unusable time claim | One reason | Simplest | A token without a claim is not a malformed JWS, and `required_claim_missing` exists for exactly this case |
+
+**Choice:** (b).
+
+**Rationale:** the reason is read by the person behind a failed job and in the audit event, so it should point at the claim.
+No status, no step order and no security property changes: every variant is refused at step 8, before any claim is used.
+The bound of 2^40 seconds is the login's (R-AUTH-006), the largest time the standard library represents. The development
+agent would revisit this if a client keys a retry on `token_expired` (requesting a fresh ID token) and needs a missing `exp`
+to look the same.
+
+**Applied in the spec:** R-CI-004 step 8. Code: `internal/ci/subject` (`checkTimes`, `numericDate`); the cases "8 no exp",
+"8 a null iat", "8 an exp that is a string" and "8 a negative nbf" of `TestR_CI_004_EachStepRefusesWithItsReason`.
+
+### Q-CI-28 · What a condition accepts where R-CI-010 sets no rule
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-CI-010 bounds the depth (4), the leaves (64), an `in` list (256) and a regular expression (512 characters), and it
+normalizes "integers". It leaves open what the depth counts, how a number that is not an integer (`20.5`, `2e1`, `20.0`) compares,
+how long a glob may be and whether `ignore_case` goes with `present`. A glob's match costs at most the product of the pattern's
+and the value's length, so without a bound it is the one matcher whose cost a stored mapping does not limit; the exchange runs
+it on every leaf of every mapping it evaluates.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Permissive | Depth as combinator nesting; numbers compared by value (`20.0` equals `20`); globs of any length; `ignore_case` ignored on `present` | Accepts the most | Exact decimal comparison of attacker-chosen numbers (`1e100000000`) inside the exchange; an administrator's glob of megabytes is evaluated on every exchange; a modifier that silently does nothing |
+| (b) Strict and bounded | Depth counts the nodes on the longest path from the root to a leaf, the leaf included; a number is an integer only as a JSON integer literal (no fraction, no exponent), any other number contributes no value and is refused as a literal; a glob has at most 1024 characters, the pattern limit of R-AUTHZ-005; `ignoreCase` only with `equals`, `in`, `glob` and `regex`, otherwise 422 `condition_invalid` | Every open point refuses instead of guessing, with a 422 the administrator fixes by writing `20`; no arithmetic on claim values; the glob bound is the one the evaluator applies to every policy pattern | `20.0` in a hand-written condition is refused although it means 20 |
+| (c) Numbers by their text | A number compares as written (`20.0` is not `20`); globs bounded at 512 like a regular expression | No arithmetic either | `{"equals": 20.0}` matches nothing and is accepted, a silent miss; a glob of a long path pattern hits a bound tighter than the policies' |
+
+**Choice:** (b).
+
+**Rationale:** GitLab writes IDs and booleans as JSON strings and `runner_id` as an integer, so no claim GitLab sends is affected;
+refusing a literal at save time beats a condition that silently never matches. Counting the leaf keeps the deepest example of
+the spec (`all` → `any` → `not` → leaf) inside the limit and the "depth 5" criterion meaningful. The development agent would
+revisit this if an issuer sends identifiers as non-integer JSON numbers, or a real condition needs a glob longer than 1024
+characters.
+
+**Applied in the spec:** R-CI-010 (the depth, the normalization of numbers and literals, `ignore_case` on `present`, the glob
+length, the escaped separator). Code: `internal/ci/claims` (`integerText`, `scalar`, `literal`, `Node.Validate`, `GlobValid`,
+`MaxGlobLength`); `TestR_CI_010_Normalization`, `TestR_CI_010_TheLimitsOfACondition`, `TestR_CI_010_TheShapeOfANode`.
+
+### Q-CI-29 · What a template substitution may render
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-CI-014 promises that a claim can never widen a pattern and gives the escaping and validation of each context. It
+leaves open an empty substituted value (`{{ name }}*` with an empty `name` renders `*`, every unscoped package), a `segment` index
+outside the value, `replace` with an empty search string (which inserts the replacement between every character), the length
+of a `require` expression, whether a wildcard counts as the literal anchor of a `repositories` template (`{{ group }}*` with the
+value `npm-internal` selects `npm-internal`), and a `repositories` template whose literal text starts with `@`, a class.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The context rules as written | Whatever the table admits renders: an empty value in `packages`, an empty out-of-range segment, `*` as an anchor | Nothing beyond the text | An empty or out-of-range value widens a pattern, the very thing R-CI-014 rules out; `{{ group }}*` passes the anchor rule and selects any repository whose key starts with the value |
+| (b) Every gap closes toward a refusal | An empty value after its filters is a render error in every context; `segment` outside the value is a render error; `replace ""` is 422 `template_invalid`; a `require` expression has at most 512 characters and compiles at save; the anchor is a literal character other than `*` and `?`; a `repositories` template with a substitution never starts with `@` (422 `template_invalid`) | Each case becomes a visible failure: the exchange answers `grant_render_failed` and does not fall through (R-CI-009), the save answers 422 | A mapping that relied on an empty value matching "nothing extra" fails its exchanges instead |
+| (c) Clamp | An out-of-range `segment` gives the nearest segment, an empty value a placeholder | Fewer failed exchanges | A partial or substituted outcome, which R-CI-014 excludes ("there is no partial or no-op outcome") |
+
+**Choice:** (b).
+
+**Rationale:** the template language exists to narrow grants by claims, so every value it cannot render as written must stop the
+exchange; the failure is the job's, visible in its log, and an administrator sees the reason in the dry run. The 512
+characters are the limit of the other regular expressions of a mapping. The development agent would revisit this if a real
+mapping needs an optional segment; the answer would be an explicit filter such as a default value, never an implicit empty one.
+
+**Applied in the spec:** R-CI-014 (the render errors, the `template_invalid` refusals, the anchor). Code:
+`internal/ci/claims/template.go` (`substitute`, `filter.apply`, the parser, `Anchored`), `check.go` (`checkRepositories`);
+`TestR_CI_014_RenderErrors`, `TestR_CI_014_TheGrammar`, `TestR_CI_014_TheAnchorOfARepositoriesTemplate`.
 
 ### Q-CI-30 · The shape of a rule violation on a CI management write
 

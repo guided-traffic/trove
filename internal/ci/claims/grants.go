@@ -1,5 +1,15 @@
 package claims
 
+import (
+	"encoding/json"
+	"errors"
+	"slices"
+	"strconv"
+	"strings"
+
+	"github.com/guided-traffic/trove/internal/ci/reason"
+)
+
 // Action is an action of an inline grant (R-CI-013). `manage` is never grantable to a CI token and
 // has no constant here: a spec that names it is refused with 422 action_not_allowed.
 type Action string
@@ -16,6 +26,15 @@ const (
 // Writes reports whether the action changes content (`deploy`, `overwrite`, `delete`): the actions
 // the unprotected-write, unpinned-write and ownership rules look at.
 func (a Action) Writes() bool { return a == Deploy || a == Overwrite || a == Delete }
+
+// Valid reports whether the action may be granted to a CI token: one of the five above.
+func (a Action) Valid() bool {
+	switch a {
+	case Read, Annotate, Deploy, Overwrite, Delete:
+		return true
+	}
+	return false
+}
 
 // Ownership is the ownership value of an inline grant (R-CI-013, R-CI-015, Q-CI-6).
 type Ownership string
@@ -53,6 +72,36 @@ type InlineGrant struct {
 	Ownership Ownership   `json:"ownership,omitempty"`
 }
 
+// Writes reports whether the grant holds deploy, overwrite or delete.
+func (g InlineGrant) Writes() bool { return slices.ContainsFunc(g.Actions, Action.Writes) }
+
+// ResolvedOwnership is the ownership the grant has: its own value, or the default of R-CI-013 and
+// R-AUTHZ-014 when it names none (bind_project for a writing grant, none otherwise).
+func (g InlineGrant) ResolvedOwnership() Ownership {
+	switch {
+	case g.Ownership != "":
+		return g.Ownership
+	case g.Writes():
+		return OwnershipBindProject
+	}
+	return OwnershipNone
+}
+
+func (g InlineGrant) clone() InlineGrant {
+	out := InlineGrant{
+		Repositories: slices.Clone(g.Repositories),
+		Actions:      slices.Clone(g.Actions),
+		Ownership:    g.Ownership,
+	}
+	if g.Packages != nil {
+		out.Packages = &PatternSet{Include: slices.Clone(g.Packages.Include), Exclude: slices.Clone(g.Packages.Exclude)}
+	}
+	if g.Paths != nil {
+		out.Paths = &PatternSet{Include: slices.Clone(g.Paths.Include), Exclude: slices.Clone(g.Paths.Exclude)}
+	}
+	return out
+}
+
 // Spec is the grant specification of a mapping (R-CI-013): the three combinable ways. The JSON form
 // is the stored and the wire form of ci_mappings.grants.
 type Spec struct {
@@ -82,13 +131,77 @@ func (s Spec) Actions() []Action {
 // packages in ContextPackages and paths in ContextPaths. Policies and groups pass through. A render
 // error fails the whole exchange (grant_render_failed); evaluation never falls through to another
 // mapping (R-CI-009). The result carries the resolved ownership of every grant.
-func (s Spec) Render(_ Claims) (Rendered, error) {
-	panic("not implemented: W2")
+//
+// The error is an *Error whose Pointer is relative to the grants ("/inline/0/packages/include/1")
+// and whose Detail names the claim, never its value.
+func (s Spec) Render(c Claims) (Rendered, error) {
+	out := Rendered{Policies: slices.Clone(s.Policies), Groups: slices.Clone(s.Groups)}
+	for i, g := range s.Inline {
+		ptr := "/inline/" + strconv.Itoa(i)
+		rg := InlineGrant{Actions: slices.Clone(g.Actions), Ownership: g.ResolvedOwnership()}
+		var err error
+		if rg.Repositories, err = renderList(g.Repositories, c, ContextRepositories, ptr+"/repositories"); err != nil {
+			return Rendered{}, err
+		}
+		if rg.Packages, err = renderSet(g.Packages, c, ContextPackages, ptr+"/packages"); err != nil {
+			return Rendered{}, err
+		}
+		if rg.Paths, err = renderSet(g.Paths, c, ContextPaths, ptr+"/paths"); err != nil {
+			return Rendered{}, err
+		}
+		out.Inline = append(out.Inline, rg)
+	}
+	return out, nil
+}
+
+func renderSet(set *PatternSet, c Claims, ctx Context, ptr string) (*PatternSet, error) {
+	if set == nil {
+		return nil, nil
+	}
+	inc, err := renderList(set.Include, c, ctx, ptr+"/include")
+	if err != nil {
+		return nil, err
+	}
+	exc, err := renderList(set.Exclude, c, ctx, ptr+"/exclude")
+	if err != nil {
+		return nil, err
+	}
+	return &PatternSet{Include: inc, Exclude: exc}, nil
+}
+
+func renderList(list []string, c Claims, ctx Context, ptr string) ([]string, error) {
+	if list == nil {
+		return nil, nil
+	}
+	out := make([]string, 0, len(list))
+	for i, src := range list {
+		p := ptr + "/" + strconv.Itoa(i)
+		t, err := ParseTemplate(src)
+		if err != nil {
+			return nil, renderErrorAt(err, p)
+		}
+		v, err := t.Render(c, ctx)
+		if err != nil {
+			return nil, renderErrorAt(err, p)
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+// renderErrorAt turns any error of a template into grant_render_failed at the pattern's pointer.
+func renderErrorAt(err error, ptr string) *Error {
+	var e *Error
+	detail := err.Error()
+	if errors.As(err, &e) {
+		detail = e.Detail
+	}
+	return &Error{Reason: reason.GrantRenderFailed, Pointer: ptr, Detail: detail}
 }
 
 // Rendered is what one matched mapping contributes to a token before narrowing: the policy and group
 // names and the rendered inline grants. It is frozen into the issuance record and into the token
-// ([Frozen]).
+// ([Frozen], one [FrozenMapping] per contributing mapping).
 type Rendered struct {
 	Policies []string      `json:"policies,omitempty"`
 	Groups   []string      `json:"groups,omitempty"`
@@ -101,6 +214,25 @@ type Cap string
 
 // CapRead is the cap of a cross-project token whose mapping opted in with read_only.
 const CapRead Cap = "read"
+
+// ApplyCaps returns the rendered grants bounded by the caps: under CapRead every inline grant keeps
+// its read action only, and a grant left without an action is dropped. Policies and groups pass
+// through; their caps apply at use time, because their actions are not known here.
+func ApplyCaps(r Rendered, caps []Cap) Rendered {
+	if !slices.Contains(caps, CapRead) {
+		return r
+	}
+	out := Rendered{Policies: r.Policies, Groups: r.Groups}
+	for _, g := range r.Inline {
+		if !slices.Contains(g.Actions, Read) {
+			continue
+		}
+		c := g.clone()
+		c.Actions = []Action{Read}
+		out.Inline = append(out.Inline, c)
+	}
+	return out
+}
 
 // Options are the options of a mapping (R-CI-009, R-CI-011, R-CI-012). The JSON form is the stored
 // and the wire form of ci_mappings.options.
@@ -116,52 +248,147 @@ const (
 	CrossProjectReadOnly = "read_only"
 )
 
-// Frozen is what a CI token carries to its use (R-AUTHZ-014, Q-CI-17): the identity, the mappings and
-// groups that make its principal set, the frozen inline grants and the caps. The exchange writes it as
-// api_token.ci_context in the transaction that inserts the token; the token cache entry carries it
-// ([internal/auth/token.Info.CI]), so the evaluator reads it without a query (R-AUTHZ-015). The JSON
-// form is the stored form of that column.
+// FrozenVersion is the version of the JSON form of [Frozen] that this code writes and reads. A
+// bundle of another version is a storage fault, never an acceptance (DecodeFrozen).
+const FrozenVersion = 1
+
+// Frozen is what a CI token carries to its use (R-AUTHZ-014, Q-CI-17): the identity, the mappings that
+// make its principal set and, per contributing mapping, its tier, its groups, its frozen inline
+// grants and its caps. The exchange writes it as api_token.ci_context in the transaction that
+// inserts the token; the token cache entry carries it ([internal/auth/token.Info.CI]), so the
+// evaluator reads it without a query (R-AUTHZ-015). The JSON form is the stored form of that column
+// and of the issuance record's grants.
+//
+// A token unites at most one match per tier (R-CI-009): the system tier and any number of project
+// tiers. Everything that differs between them is per mapping ([FrozenMapping]), so the evaluator
+// bounds each mapping's inline grants by its own tier's project and each mapping's caps bound only
+// that mapping's grants (R-CI-012).
 type Frozen struct {
+	// Version is FrozenVersion.
+	Version int `json:"version"`
 	// Issuer is the CI issuer name and IssuerID its ID; both are immutable.
 	Issuer   string `json:"issuer"`
 	IssuerID string `json:"issuerId"`
-	// ProjectID and ProjectPath are the verified project claims (ProjectPath is a display value);
-	// with the issuer they give the owner identity of R-CI-015.
+	// ProjectID and ProjectPath are the verified GitLab project claims (ProjectPath is a display
+	// value); with the issuer they give the owner identity of R-CI-015. They are not a trove project.
 	ProjectID   string `json:"projectId"`
 	ProjectPath string `json:"projectPath,omitempty"`
 	// Mappings are the references "ci:<issuer>/<mapping>" of the matched mappings that contribute (a
-	// cross-project mapping that denies contributes nothing, R-CI-012). MappingIDs are their IDs.
+	// cross-project mapping that denies contributes nothing, R-CI-012), in the order of
+	// Contributions; MappingIDs are their IDs. They are the token's principal set.
 	Mappings   []string `json:"mappings"`
 	MappingIDs []string `json:"mappingIds"`
-	// Groups are the group names the contributing mappings list, evaluated at use time.
-	Groups []string `json:"groups,omitempty"`
-	// Inline are the rendered inline grants, narrowed by the request's scope; a later edit of the
-	// mapping does not change them.
-	Inline []InlineGrant `json:"inline,omitempty"`
-	// Caps bound policy, group and inline grants; empty means none.
-	Caps []Cap `json:"caps,omitempty"`
+	// Contributions are the contributing mappings, one per tier that matched, in evaluation order.
+	Contributions []FrozenMapping `json:"contributions"`
 	// CrossProject records the classification of R-CI-012.
 	CrossProject bool `json:"crossProject,omitempty"`
-	// Project is the key of the project whose mapping contributed, "" for a system-tier mapping. The
-	// evaluator compiles the inline grants of a project mapping only against that project's repositories,
-	// so `@any` means "every repository of the project" (Q-CI-26, Q-AUTHZ-179).
-	Project string `json:"project,omitempty"`
+}
+
+// FrozenMapping is what one contributing mapping gives a token: the evaluator applies its Caps to the
+// policies naming Ref, to the groups in Groups and to Inline, and compiles Inline against the
+// repositories of Project when the tier is a project's.
+type FrozenMapping struct {
+	// Ref is "ci:<issuer>/<mapping>" and ID the mapping's ID.
+	Ref string `json:"ref"`
+	ID  string `json:"id"`
+	// Tier is "system" or "project:<key>" (Q-CI-26).
+	Tier string `json:"tier"`
+	// Project is the trove project of a project tier, nil for the system tier. The evaluator compiles
+	// Inline only against that project's repositories, so `@any` means "every repository of the
+	// project" (Q-CI-26, Q-AUTHZ-179).
+	Project *FrozenProject `json:"project,omitempty"`
+	// Groups are the group names the mapping lists, evaluated at use time.
+	Groups []string `json:"groups,omitempty"`
+	// Inline are the mapping's rendered inline grants, narrowed by the request's scope; a later edit
+	// of the mapping does not change them.
+	Inline []InlineGrant `json:"inline,omitempty"`
+	// Caps bound this mapping's policy, group and inline grants; empty means none.
+	Caps []Cap `json:"caps,omitempty"`
+}
+
+// FrozenProject names the trove project of a project-tier mapping by key and ID; the ID survives a
+// rename of the key.
+type FrozenProject struct {
+	Key string `json:"key"`
+	ID  string `json:"id"`
+}
+
+// HasCap reports whether the mapping's grants carry the cap.
+func (m FrozenMapping) HasCap(c Cap) bool { return slices.Contains(m.Caps, c) }
+
+// Add appends a contributing mapping and keeps Mappings and MappingIDs in step with it.
+func (f *Frozen) Add(m FrozenMapping) {
+	f.Contributions = append(f.Contributions, m)
+	f.Mappings = append(f.Mappings, m.Ref)
+	f.MappingIDs = append(f.MappingIDs, m.ID)
+}
+
+// Groups returns the group names of every contributing mapping, each once, in order of first use.
+// A group listed by a capped and an uncapped mapping is granted uncapped through the latter: the
+// evaluator asks per mapping, this list is for display and the issuance record.
+func (f Frozen) Groups() []string {
+	var out []string
+	for _, m := range f.Contributions {
+		for _, g := range m.Groups {
+			if !slices.Contains(out, g) {
+				out = append(out, g)
+			}
+		}
+	}
+	return out
+}
+
+// Check reports why a bundle must not be used: another version, no issuer, no contribution,
+// Mappings and MappingIDs out of step with Contributions, a contribution without ref or tier, a
+// project tier without its project or with another project's key, a system tier with a project.
+func (f Frozen) Check() error {
+	switch {
+	case f.Version != FrozenVersion:
+		return errors.New("claims: frozen bundle of version " + strconv.Itoa(f.Version) + ", this code reads " + strconv.Itoa(FrozenVersion))
+	case f.Issuer == "" || f.IssuerID == "":
+		return errors.New("claims: frozen bundle without issuer")
+	case len(f.Contributions) == 0:
+		return errors.New("claims: frozen bundle without a contributing mapping")
+	case len(f.Mappings) != len(f.Contributions) || len(f.MappingIDs) != len(f.Contributions):
+		return errors.New("claims: frozen bundle whose mappings are out of step with its contributions")
+	}
+	for i, m := range f.Contributions {
+		if m.Ref == "" || m.ID == "" || m.Ref != f.Mappings[i] || m.ID != f.MappingIDs[i] {
+			return errors.New("claims: frozen contribution " + strconv.Itoa(i) + " without ref or ID, or out of step with mappings")
+		}
+		switch key, isProject := strings.CutPrefix(m.Tier, "project:"); {
+		case m.Tier == "system":
+			if m.Project != nil {
+				return errors.New("claims: frozen contribution " + strconv.Itoa(i) + " of the system tier names a project")
+			}
+		case isProject:
+			if m.Project == nil || m.Project.Key != key || m.Project.ID == "" {
+				return errors.New("claims: frozen contribution " + strconv.Itoa(i) + " of a project tier without its project")
+			}
+		default:
+			return errors.New("claims: frozen contribution " + strconv.Itoa(i) + " of an unknown tier")
+		}
+	}
+	return nil
+}
+
+// DecodeFrozen decodes api_token.ci_context or the grants of an issuance record and checks it
+// ([Frozen.Check]): the token validator treats an error as a storage fault, never as an acceptance.
+func DecodeFrozen(raw []byte) (*Frozen, error) {
+	var f Frozen
+	if err := json.Unmarshal(raw, &f); err != nil {
+		return nil, errors.New("claims: frozen bundle is not JSON of the bundle's shape")
+	}
+	if err := f.Check(); err != nil {
+		return nil, err
+	}
+	return &f, nil
 }
 
 // OwnerRef is the owner identity of the token's project, "ci:<issuer>:project:<project_id>"
 // (R-CI-015, R-AUTHZ-018): the issuer by name, as the API refers to it. The ownership store keeps the
 // issuer ID.
 func (f Frozen) OwnerRef() string { return "ci:" + f.Issuer + ":project:" + f.ProjectID }
-
-// HasCap reports whether the token carries the cap.
-func (f Frozen) HasCap(c Cap) bool {
-	for _, have := range f.Caps {
-		if have == c {
-			return true
-		}
-	}
-	return false
-}
 
 // MappingRef is the reference of a mapping principal, "ci:<issuer>/<mapping>" (R-CI-009).
 func MappingRef(issuer, mapping string) string { return "ci:" + issuer + "/" + mapping }

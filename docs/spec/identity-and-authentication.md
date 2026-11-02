@@ -4336,7 +4336,9 @@ Status: **Decided by the development agent** — selected from the options below
 | (b) A minimal verifier on the standard library | Compact JWS only; `RS256/384/512`, `PS256/384/512`, `ES256`, `ES384`; keys from the JWK Set by `kid`, of the algorithm's type and curve | About 250 lines that refuse everything else by construction: no `none`, no HMAC, no JWE, no `crit`, no key whose type or curve does not fit, no RSA key below 2048 bits | trove maintains the parser; a provider that signs only with `EdDSA` or `ES512` cannot be used |
 
 **Choice:** (b) — [internal/auth/oidc/jws.go](../../internal/auth/oidc/jws.go) verifies ID tokens with the standard library
-only.
+only. Since [Q-CI-19](gitlab-ci-oidc.md#q-ci-19--the-jws-code-of-the-subject-token-validation-and-the-order-of-its-steps) the
+verifier is the leaf [internal/auth/jws](../../internal/auth/jws), which the subject-token validation of the CI exchange shares;
+the login keeps its algorithm list and its key selection.
 
 **Rationale:** The ID token path needs one serialization and three key families, and the most common verifier bugs (algorithm
 confusion between a public key and an HMAC secret, `none`, unchecked curves) are refusals a minimal verifier makes by not having

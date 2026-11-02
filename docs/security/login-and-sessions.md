@@ -64,9 +64,12 @@ lock or a rotation reaches every replica.
   outbound call, so a callback is single-use on every replica and holds no transaction while the IdP answers; the flow's
   provider is the path's (mix-up defense); the binding cookie's SHA-256 is the flow's (login CSRF); `iss` per RFC 9207; then the
   code exchange with the verifier.
-- **ID token** ([jws.go](../../internal/auth/oidc/jws.go), [idtoken.go](../../internal/auth/oidc/idtoken.go)): compact JWS only;
+- **ID token** ([internal/auth/jws](../../internal/auth/jws), shared with the CI exchange since Q-CI-19;
+  [jws.go](../../internal/auth/oidc/jws.go), [idtoken.go](../../internal/auth/oidc/idtoken.go)): compact JWS only, each part strict
+  base64url, a header that is a UTF-8 JSON object with unique member names and a `kid` of at most 256 characters;
   `RS*`, `PS*`, `ES256`, `ES384` within `allowed_signing_algs`; the key by `kid` from the provider's JWK Set, of the algorithm's
-  type and curve, RSA at least 2048 bits, `use` absent or `sig`; `crit` refused; then `iss`, `aud` and `azp`, `exp`/`nbf` with
+  type and curve, RSA at least 2048 bits, `use` absent or `sig`, `key_ops` absent or holding `verify`, its own `alg` absent or
+  the token's; a JWK that carries private key material is never used; `crit` refused; no key or URL from the token header; then `iss`, `aud` and `azp`, `exp`/`nbf` with
   `clock_skew`, `iat` within `max_id_token_age`, the nonce compared by hash in constant time, `sub` present (Q-AUTH-31).
 - **Claims and gates** ([claims.go](../../internal/auth/oidc/claims.go)): the username in NFC, lower case, with the prefix,
   against the pattern and the reserved names (the break-glass username among them); `require_verified_email`;
