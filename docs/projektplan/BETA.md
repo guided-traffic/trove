@@ -413,10 +413,7 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   empty `subject_token` has no stated reason; `ci.exchange.enabled: false` answering 404 is only in the code; the 405 of
   R-CI-007 is not in OpenAPI (W4)
 - 🟡 The reference pipeline's error line (R-CI-028) prints no `requestId`, which the administrator needs to find the refusal (W7)
-- 🟡 `TestR_CI_003_ARotationCausesOneFetchAndRandomKidsCauseNone` fails in 2 of 4 runs on main after the merge of W1:
-  100 random `kid`s within about 100 ms cause exactly 10 more reads of `ci_issuer_keys` than an idle window, the bound is
-  2 (one re-read per issuer, replica and `cluster.epoch_poll_interval`, R-CI-003); passed in W1's worktree and in one run on
-  main. Cause not known yet (a throttle that lets reads through, or the measurement by `pg_stat_user_tables`)
+- 🟢 `TestR_CI_003_ARotationCausesOneFetchAndRandomKidsCauseNone` failed in 2 of 4 runs: the lookups caused no extra read (the key source lets at most one re-read per `cluster.epoch_poll_interval` through), but PostgreSQL flushed the 10 reads of the preceding rotation into `pg_stat_user_tables` between 0.9 s and 1.6 s late, on either side of the test's 1.5 s wait, so they landed in the measured window; the test now waits 2.5 s (`statsFlushWait`) before each reading and the bound is unchanged
 - 🟡 Two implementations of R-CI-003's key rules: W1's `internal/ci/keys_jwks.go` (built while the shared leaf did not exist)
   and W2's `jws.ParseJWKS`; one of them goes, so the key status and the validation cannot disagree (W4)
 - 🟢 Test and Release run 41518863868 failed in `e2e on kind (access-long)`: the journey `06` clicked "Refresh now" by a

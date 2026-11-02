@@ -14,6 +14,10 @@ import (
 	"github.com/guided-traffic/trove/test/oidcstub"
 )
 
+// statsFlushWait bounds the delay of the table statistics: one second between two flushes of a backend plus
+// the 500 ms poll that keeps it busy, plus a margin.
+const statsFlushWait = 2500 * time.Millisecond
+
 func TestR_CI_003_ARotationCausesOneFetchAndRandomKidsCauseNone(t *testing.T) {
 	d := startDouble(t, oidcstub.Config{})
 	// A 60 s throttle: the 100 random kids all fall into it.
@@ -39,11 +43,16 @@ func TestR_CI_003_ARotationCausesOneFetchAndRandomKidsCauseNone(t *testing.T) {
 	}
 
 	d.stub.Reset()
-	// The reads of the table are counted by its statistics, which idle backends flush within about a
-	// second. Other readers (the database gauge of the key age) read the table too, so the same window
-	// without tokens is measured as the baseline.
+	// The reads of the table are counted by its statistics, which a backend flushes to the shared
+	// statistics only when it ends a statement at least one second after its last flush, or after one
+	// second of idleness (PGSTAT_MIN_INTERVAL, PGSTAT_IDLE_INTERVAL). A backend that a replica polls every
+	// 500 ms therefore lands its pending counts up to 1.5 s late: the reads of the rotation above were
+	// seen arriving between 0.9 s and 1.6 s after it, on either side of a 1.5 s wait. The wait before each
+	// reading is long enough that every count of the activity before it has arrived, which makes both ends
+	// of a window exact. Other readers (the database gauge of the key age) read the table too, so the same
+	// window without tokens is measured as the baseline.
 	reads := func() int64 {
-		time.Sleep(1500 * time.Millisecond)
+		time.Sleep(statsFlushWait)
 		return e.number("SELECT coalesce(sum(seq_scan + coalesce(idx_scan, 0)), 0) FROM pg_stat_user_tables WHERE relname = 'ci_issuer_keys'")
 	}
 	r0 := reads()

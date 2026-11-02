@@ -178,6 +178,12 @@ What the later work packages need to know:
   builds that package in parallel): W2 may replace `parseStored` with its `ParseJWKS` if the two agree.
 - **The metric** `trove_ci_signing_keys_refresh_total{issuer,trigger,outcome}` is incremented by every fetch; the gauge
   `trove_ci_signing_keys_age_seconds` skips an issuer whose first fetch failed (the placeholder row, Q-CI-32).
+- **Counting the reads of `ci_issuer_keys` in a test.** The test of the random-kid bound
+  (`TestR_CI_003_ARotationCausesOneFetchAndRandomKidsCauseNone`) reads `pg_stat_user_tables`, which a backend fills late: it flushes
+  its counts when a statement ends at least 1 s after its last flush, or after 1 s of idleness, so a replica backend that is
+  polled every 500 ms lands them up to 1.5 s late. A test that measures a window waits `statsFlushWait` (2.5 s) before each
+  reading, so the reads of the activity before the window are not counted inside it. A shorter wait makes the count drift by the
+  reads of the previous step (exactly 10 for the rotation of that test).
 
 ## Pending criteria
 
