@@ -32,7 +32,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Artifact management](#artifact-management-art) | `ART` | 53 | 10 of 10 | 32 | 21 | 12 |
 | [Search and query language](#search-and-query-language-srch) | `SRCH` | 64 | – | 3 | 61 | 0 |
 | [Builds and CI integration](#builds-and-ci-integration-bld) | `BLD` | 49 | – | 0 | 49 | 0 |
-| [Identity and access](#identity-and-access-iam) | `IAM` | 69 | 21 of 21 | 35 | 34 | 26 |
+| [Identity and access](#identity-and-access-iam) | `IAM` | 69 | 24 of 24 | 35 | 34 | 26 |
 | [Authentication providers and human login](#authentication-providers-and-human-login-authn) | `AUTHN` | 44 | 13 of 13 | 18 | 26 | 10 |
 | [Access tokens](#access-tokens-tok) | `TOK` | 48 | 24 of 24 | 27 | 21 | 25 |
 | [OIDC federation for CI systems](#oidc-federation-for-ci-systems-cioidc) | `CIOIDC` | 40 | 20 of 20 | 31 | 9 | 0 |
@@ -43,7 +43,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Events and extensibility](#events-and-extensibility-evt) | `EVT` | 82 | 1 of 1 | 26 | 56 | 2 |
 | [Distribution and release lifecycle](#distribution-and-release-lifecycle-dist) | `DIST` | 70 | 2 of 2 | 2 | 68 | 0 |
 | [Security scanning and curation](#security-scanning-and-curation-sec) | `SEC` | 98 | 18 of 18 | 18 | 80 | 0 |
-| [UI inventory](#ui-inventory-ui) | `UI` | 61 | 30 of 30 | 47 | 14 | 1 |
+| [UI inventory](#ui-inventory-ui) | `UI` | 61 | 33 of 33 | 47 | 14 | 1 |
 | [Content API operation catalog](#content-api-operation-catalog-api) | `API` | 166 | 11 of 11 | 67 | 99 | 14 |
 | [Operation catalog: administration API](#operation-catalog-administration-api-admapi) | `ADMAPI` | 114 | 34 of 34 | 54 | 60 | 4 |
 | [Package formats: matrix and cross-format behavior](#package-formats-matrix-and-cross-format-behavior-fmt) | `FMT` | 14 | 8 of 8 | 9 | 5 | 6 |
@@ -518,7 +518,7 @@ Catalog page: [builds-and-ci.md](../features/builds-and-ci.md) · specified by p
 
 ## Identity and access (IAM)
 
-Catalog page: [identity-and-access.md](../features/identity-and-access.md) · specified by priority: MVP 21 of 21 · P1 11 of 11 · P2 3 of 26 · Later 0 of 6 · Out of scope 0 of 5
+Catalog page: [identity-and-access.md](../features/identity-and-access.md) · specified by priority: MVP 24 of 24 · P1 11 of 11 · P2 0 of 23 · Later 0 of 6 · Out of scope 0 of 5
 
 <details>
 <summary>69 features: 35 specified, 34 open, 26 implemented</summary>
@@ -576,13 +576,13 @@ Catalog page: [identity-and-access.md](../features/identity-and-access.md) · sp
 | IAM-048 | JAR signing keystore for virtual repositories | P2 | open | – |
 | IAM-049 | Trusted public keys | Later | open | – |
 | IAM-050 | SSH authentication | P2 | open | – |
-| IAM-051 | Projects | P2 | specified | [R-AUTHZ-026](../spec/authorization.md) |
-| IAM-052 | Project administrators and delegated privileges | P2 | specified | [R-AUTHZ-026](../spec/authorization.md) |
+| IAM-051 | Projects | MVP | specified | [R-AUTHZ-026](../spec/authorization.md) |
+| IAM-052 | Project administrators and delegated privileges | MVP | specified | [R-AUTHZ-026](../spec/authorization.md) |
 | IAM-053 | Project members | P2 | open | – |
 | IAM-054 | Global roles | P2 | open | – |
 | IAM-055 | Project roles | P2 | open | – |
 | IAM-056 | Role action catalog | P2 | open | – |
-| IAM-057 | Repository ownership by projects | P2 | specified | [R-AUTHZ-026](../spec/authorization.md) |
+| IAM-057 | Repository ownership by projects | MVP | specified | [R-AUTHZ-026](../spec/authorization.md) |
 | IAM-058 | Sharing repositories across projects | P2 | open | – |
 | IAM-059 | Project-aware sharing through internal remote repositories | Later | open | – |
 | IAM-060 | Builds in projects | P2 | open | – |
@@ -1363,7 +1363,7 @@ Catalog page: [security-scanning-and-curation.md](../features/security-scanning-
 
 ## UI inventory (UI)
 
-Catalog page: [ui-inventory.md](../features/ui-inventory.md) · specified by priority: MVP 30 of 30 · P1 17 of 17 · P2 0 of 8 · Later 0 of 3 · Out of scope 0 of 3
+Catalog page: [ui-inventory.md](../features/ui-inventory.md) · specified by priority: MVP 33 of 33 · P1 14 of 14 · P2 0 of 8 · Later 0 of 3 · Out of scope 0 of 3
 
 <details>
 <summary>61 features: 47 specified, 14 open, 1 implemented</summary>
@@ -1372,7 +1372,7 @@ Catalog page: [ui-inventory.md](../features/ui-inventory.md) · specified by pri
 |---|---|---|---|---|
 | UI-001 | Application shell and header | MVP | specified | [R-UI-002](../spec/api-and-ui.md) |
 | UI-002 | Areas and navigation map | MVP | specified | [R-UI-003](../spec/api-and-ui.md) |
-| UI-003 | Project scope selector | P1 | specified | [R-UI-041](../spec/api-and-ui.md) |
+| UI-003 | Project scope selector | MVP | specified | [R-UI-041](../spec/api-and-ui.md) |
 | UI-004 | User menu | MVP | specified | [R-UI-002](../spec/api-and-ui.md) |
 | UI-005 | Permission-driven rendering | MVP | specified | [R-UI-005](../spec/api-and-ui.md), [R-AUTHZ-023](../spec/authorization.md) (implemented) |
 | UI-006 | Login screen | MVP | specified | [R-UI-004](../spec/api-and-ui.md) |
@@ -1420,8 +1420,8 @@ Catalog page: [ui-inventory.md](../features/ui-inventory.md) · specified by pri
 | UI-047 | Webhook editor | P1 | specified | [R-UI-039](../spec/api-and-ui.md) |
 | UI-048 | Webhook troubleshooting tab | P2 | open | – |
 | UI-049 | CI identity integration screen | MVP | specified | [R-UI-035](../spec/api-and-ui.md), [R-CI-027](../spec/gitlab-ci-oidc.md) |
-| UI-050 | Projects overview | P1 | specified | [R-UI-041](../spec/api-and-ui.md) |
-| UI-051 | Create and edit project dialog | P1 | specified | [R-UI-041](../spec/api-and-ui.md) |
+| UI-050 | Projects overview | MVP | specified | [R-UI-041](../spec/api-and-ui.md) |
+| UI-051 | Create and edit project dialog | MVP | specified | [R-UI-041](../spec/api-and-ui.md) |
 | UI-052 | Project storage quota indicators | P2 | open | – |
 | UI-056 | Project members screen | P2 | open | – |
 | UI-057 | Global roles and project roles screens | P2 | open | – |

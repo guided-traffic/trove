@@ -273,6 +273,7 @@ Every operation in `api/openapi.yaml` carries `x-trove-permission`. `parseRequir
 | `public: true` | nobody is checked |
 | `authenticated: true` [`publicSwitch: …`] | any authenticated caller |
 | `permission: <capability>` | `Access.Require(ctx, capability)`; the name must be a capability of R-AUTHZ-010 |
+| `permission: <capability>`, `projectAdmin: any \| managePolicies \| manageRepositories` | the capability, or administration of at least one project with the right (`ProjectAccess`); the handler narrows to the addressed project ([projects.md](projects.md), Q-AUTHZ-180) |
 | `role: <role>` | `Access.Require(ctx, "role:<role>")`: the subject holds the role and its credential exercises roles |
 | `action: deploy`, `repository: query.repository` [, `package: …`] [, `path: query.path`] | `ActionAccess.RequireAction` with a coordinate built from the request; sources are `query.<name>` and `path.<name>` |
 
@@ -287,6 +288,12 @@ on one index; a handler of a `public` or `authenticated` operation that decides 
 Q-API-158; [http-api.md](http-api.md) "One index per request").
 
 The existing operations of M0 declare `settings:read` (formerly `system.read`).
+
+## Projects
+
+The engine's three questions about projects (`ProjectsOn`, `AdministersOn`, `AdministersRepositoryOn`), the project-scoped compile of
+project policies, the `manage` grants of project administrators and the second entry table are described with their contracts in
+[projects.md](projects.md); they are built by the projects work package of phase 5a.
 
 ## The populate check and `MemberUsable`
 
@@ -408,6 +415,7 @@ the files seam share. `ownershipHook` is the last entry of the hook list in `wir
 | `authz.read.allowed` | async | an allowed read with `authz.audit.reads: all` |
 | `authz.write.allowed` | transactional | the writer calls `Engine.RecordAllowed(ctx, tx, sub, coordinate, decision)` in the transaction of the change |
 | `authz.policy.created`, `.updated`, `.deleted`; `authz.role.bound`, `.unbound` | transactional | the writes of `Service`; updated, deleted and unbound are journaled |
+| `authz.project.created`, `.updated`, `.deleted`, `.admin_added`, `.admin_removed`, `.repository_assigned`, `.repository_unassigned` | transactional | the writes of the project service ([projects.md](projects.md)); updated, deleted, admin_removed and repository_unassigned are journaled |
 | `authz.settings.changed` | transactional, journaled | `SettingsHook`, called by the repository update when `requireAuthentication`, `hideExistence`, `cacheFillAction` or `packageOwnership` changed; the event and its journal entry name the changed settings, before and after |
 | `authz.denied` with `deny.populate` or `deny.ownership` | async | `PopulateOn` and `CheckTx`/`ClaimTx`; recorded like a refused write, whatever `authz.audit.reads` says |
 | `authz.ownership.claimed` | transactional | `ClaimTx`: the owners and the claim ID that `package_ownership.claim_event` stores (Q-AUTHZ-158) |

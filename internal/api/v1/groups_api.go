@@ -236,7 +236,7 @@ func (s *Server) PatchGroupMembers(w http.ResponseWriter, r *http.Request, name 
 // ---- service accounts -------------------------------------------------------------------------------------
 
 func toServiceAccount(a principal.ServiceAccount) gen.ServiceAccount {
-	return gen.ServiceAccount{Id: uuidOf(a.ID), Name: a.Name, Description: a.Description, Status: gen.ServiceAccountStatus(a.Status), CreatedAt: utc(a.CreatedAt)}
+	return gen.ServiceAccount{Id: uuidOf(a.ID), Name: a.Name, Description: a.Description, Status: gen.ServiceAccountStatus(a.Status), CreatedAt: utc(a.CreatedAt), Project: optString(a.Project)}
 }
 
 // ListServiceAccounts implements GET /api/v1/service-accounts (R-AUTH-020).
@@ -281,7 +281,7 @@ func (s *Server) CreateServiceAccount(w http.ResponseWriter, r *http.Request, _ 
 	}
 	c := s.caller(r)
 	err = s.idem.Do(w, r, body, IdempotentOp{Run: func(ctx context.Context, tx meta.Tx) (Outcome, error) {
-		a, err := s.o.Auth.Manager.CreateServiceAccountTx(ctx, tx, c, principal.NewServiceAccount{Name: in.Name, Description: derefString(in.Description)})
+		a, err := s.o.Auth.Manager.CreateServiceAccountTx(ctx, tx, c, principal.NewServiceAccount{Name: in.Name, Description: derefString(in.Description), Project: derefString(in.Project)})
 		if err != nil {
 			return Outcome{}, identityErr(err)
 		}

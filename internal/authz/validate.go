@@ -130,6 +130,11 @@ func (s *Service) resolve(ctx context.Context, in PolicyInput) (*resolvedPolicy,
 	if utf8.RuneCountInString(in.Description) > 1024 {
 		ps = append(ps, field("/description", "invalid_description", "The description has at most 1024 characters."))
 	}
+	if in.Project != nil {
+		// WP-A replaces this refusal with the project rules of R-AUTHZ-026: the project
+		// must exist, the name starts with its key, the selectors stay inside it.
+		ps = append(ps, field("/project", errs.CodeNotImplemented, "Project policies are not available in this build yet."))
+	}
 	switch rp.in.ResourceType {
 	case "repository":
 	case "build":

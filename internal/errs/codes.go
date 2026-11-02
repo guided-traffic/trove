@@ -144,6 +144,49 @@ const CodeRoleBindingManagedByConfiguration = "role_binding_managed_by_configura
 
 // <<< M1 authz
 //
+// >>> M5a projects
+
+// Codes of projects and delegated administration (R-AUTHZ-026, Q-AUTHZ-174 to
+// Q-AUTHZ-185). The 422 codes also appear as errors[].code of validation_failed.
+const (
+	// CodeNotImplemented answers an operation the interface declares and this build
+	// does not serve yet.
+	CodeNotImplemented = "not_implemented"
+	// CodeRepositoryOutsideProject: a project policy selector, a virtual member or the
+	// deploy target of a project administrator's repository names a repository that
+	// is not in the project. An unknown key answers the same, so the answer never
+	// tells whether a repository outside the project exists.
+	CodeRepositoryOutsideProject = "repository_outside_project"
+	// CodePrincipalOutsideProject: a project service account named in a global
+	// policy, in another project's policy, or as a package owner outside its project.
+	CodePrincipalOutsideProject = "principal_outside_project"
+	// CodeProjectPrefixRequired: the name of a project repository, project policy or
+	// project service account does not start with <projectKey>-.
+	CodeProjectPrefixRequired = "project_prefix_required"
+	// CodeNameReservedByProject: a global service account takes a name that starts
+	// with the key of a project and a hyphen.
+	CodeNameReservedByProject = "name_reserved_by_project"
+	// CodeProjectAccountNotGroupable: a project service account as a group member.
+	CodeProjectAccountNotGroupable = "project_account_not_groupable"
+	// CodeProjectNotEmpty: a delete of a project that still has repositories (also
+	// those being deleted) or service accounts.
+	CodeProjectNotEmpty = "project_not_empty"
+	// CodeRepositoryAssigned: an assignment of a repository that belongs to another
+	// project, without ?move=true.
+	CodeRepositoryAssigned = "repository_assigned"
+	// CodeProjectKeyOverlap: a project key that is another key's prefix up to a
+	// hyphen, or the prefix of the name of a global service account.
+	CodeProjectKeyOverlap = "project_key_overlap"
+	// CodeUnknownProject: a policy names a project that does not exist, or one the
+	// caller does not administer; the answer does not tell them apart.
+	CodeUnknownProject = "unknown_project"
+	// CodeProjectSwitchOff: a project administrator's operation that a privilege
+	// switch of the project (managePolicies, manageRepositories) does not allow.
+	CodeProjectSwitchOff = "project_switch_off"
+)
+
+// <<< M5a projects
+//
 // >>> M1 repository
 // Repository model (R-REPO-001 to R-REPO-013, R-ARCH-005). invalid_pattern,
 // reserved_name and out_of_range are registered by the authz and api areas; the
@@ -438,6 +481,20 @@ var registry = []CodeInfo{
 	{CodeVirtualActionNotApplicable, Invalid, "Action not applicable to a virtual repository", "A key selector that names a virtual repository accepts only read and manage."},
 	{CodeRoleBindingManagedByConfiguration, Conflict, "Role binding managed by the configuration", "The binding is declared in authz.role_bindings of the system configuration and is applied by trove migrate; remove it there."},
 	// <<< M1 authz
+	//
+	// >>> M5a projects
+	{CodeNotImplemented, NotImplemented, "Not implemented", "The operation is declared in the interface and this build does not serve it yet."},
+	{CodeRepositoryOutsideProject, Invalid, "Repository outside the project", "A project policy, or a virtual repository of a project administrator, names a repository that is not assigned to the project; a key that does not exist answers the same."},
+	{CodePrincipalOutsideProject, Invalid, "Principal outside the project", "A service account of a project is granted only through the policies of its project and owns packages only in its project's repositories."},
+	{CodeProjectPrefixRequired, Invalid, "Project prefix required", "The names of a project's repositories, policies and service accounts start with the project key and a hyphen."},
+	{CodeNameReservedByProject, Invalid, "Name reserved by a project", "A service account that belongs to no project cannot take a name that starts with the key of a project and a hyphen."},
+	{CodeProjectAccountNotGroupable, Invalid, "Project service account cannot join a group", "A service account of a project is no group member: a group's grants would reach the project's account."},
+	{CodeProjectNotEmpty, Conflict, "Project not empty", "The project still has repositories (also ones being deleted) or service accounts; unassign the repositories and delete the accounts first."},
+	{CodeRepositoryAssigned, Conflict, "Repository assigned to another project", "The repository belongs to another project; send move=true to move it."},
+	{CodeProjectKeyOverlap, Conflict, "Project key overlaps", "A project key is not the prefix, up to a hyphen, of another project's key or of a global service account's name."},
+	{CodeUnknownProject, Invalid, "Unknown project", "The project does not exist, or the caller does not administer it; the answer does not tell which."},
+	{CodeProjectSwitchOff, Forbidden, "Project switch off", "The project's administrator right for this operation (managePolicies or manageRepositories) is switched off; an administrator turns it on."},
+	// <<< M5a projects
 	//
 	// >>> M1 repository
 	{CodeRepositoryDisabled, NotFound, "Repository disabled", "The repository is disabled and takes no part in resolution, download or deploy; the management API still works."},

@@ -8,6 +8,7 @@ import (
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/httpserver"
+	"github.com/guided-traffic/trove/internal/project"
 )
 
 // withMinEpoch wraps the authentication stage: once a request authenticated, the
@@ -66,7 +67,10 @@ func (a *App) wireAuthz(ctx context.Context, in infra, repo repositoryArea, id i
 		DB: in.db, Changes: in.changes, Principals: id.principals, Repositories: repo.reader, Recorder: in.rec,
 		Formats: catalog.Default(),
 	})
-	return authzArea{engine: eng, service: svc}, nil
+	projects := project.New(project.Options{
+		DB: in.db, Changes: in.changes, Principals: id.principals, Repositories: repo.reader, Policies: svc, Recorder: in.rec,
+	})
+	return authzArea{engine: eng, service: svc, projects: projects}, nil
 }
 
 // decider returns the decision point the request paths decide through, nil on a
@@ -94,5 +98,5 @@ func (a *App) readScoper() authz.ReadScoper {
 // use; a member is nil on a replica without the authz area.
 func (a *App) authzServices() v1.AuthzServices {
 	az := part[authzArea](a.parts)
-	return v1.AuthzServices{Policies: az.service, Engine: az.engine, Owners: part[ownershipArea](a.parts).service}
+	return v1.AuthzServices{Policies: az.service, Engine: az.engine, Owners: part[ownershipArea](a.parts).service, Projects: az.projects}
 }

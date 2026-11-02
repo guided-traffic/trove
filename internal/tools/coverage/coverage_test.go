@@ -53,11 +53,12 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 	m := newModel(c, pageOrder(filepath.Join(repoRoot(t), "docs", "features"), c.Pages), map[string]bool{})
 
 	// Catalog priority -> entries, listed in a Covers: line; measured 2026-11-02, after the page
-	// bastion.md raised its features to MVP.
+	// bastion.md raised its features to MVP and the projects of R-AUTHZ-026 (IAM-051, IAM-052, IAM-057,
+	// UI-003, UI-050, UI-051) moved into the beta.
 	want := map[string][2]int{
-		prioMVP:   {384, 384},
-		prioP1:    {517, 293},
-		prioP2:    {892, 23},
+		prioMVP:   {390, 390},
+		prioP1:    {514, 290},
+		prioP2:    {889, 20},
 		prioLater: {374, 0},
 		prioOut:   {72, 0},
 	}
@@ -91,8 +92,8 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 		for _, r := range m.Reqs {
 			count[r.Priority]++
 		}
-		if len(m.Reqs) != 678 || count[prioMVP] != 526 || count[prioP1] != 147 || count[prioP2] != 5 {
-			t.Errorf("requirements: got %d (MVP %d, P1 %d, P2 %d), want 678 (526, 147, 5)",
+		if len(m.Reqs) != 678 || count[prioMVP] != 528 || count[prioP1] != 145 || count[prioP2] != 5 {
+			t.Errorf("requirements: got %d (MVP %d, P1 %d, P2 %d), want 678 (528, 145, 5)",
 				len(m.Reqs), count[prioMVP], count[prioP1], count[prioP2])
 		}
 	})

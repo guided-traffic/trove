@@ -7,7 +7,9 @@
 -- the one REPEATABLE READ READ ONLY transaction of the build (R-AUTHZ-028).
 
 -- name: AuthzBuildPolicies :many
-SELECT id::text AS id, name, resource_type FROM authz_policy ORDER BY name;
+-- project_id is empty for a global policy; a project policy covers only the
+-- repositories of its project (R-AUTHZ-026).
+SELECT id::text AS id, name, resource_type, COALESCE(project_id::text, '')::text AS project_id FROM authz_policy ORDER BY name;
 
 -- name: AuthzBuildSelectors :many
 SELECT policy_id::text AS policy_id, ordinal, kind, COALESCE(repository_id, 0)::bigint AS repository_id,
@@ -19,36 +21,60 @@ SELECT policy_id::text AS policy_id, dimension, mode, pattern
   FROM authz_policy_pattern ORDER BY policy_id, dimension, mode, pattern;
 
 -- name: AuthzBuildEntries :many
+-- The grants of global policies and, from the same statement, those of project
+-- policies, which live in their own table so that the binaries of the previous
+-- release, which read only authz_policy_entry, see a project policy without
+-- entries (Q-AUTHZ-174).
 SELECT e.policy_id::text AS policy_id, e.principal_id::text AS principal_id, p.kind AS principal_kind,
        p.name AS principal_name, e.actions
   FROM authz_policy_entry e
   JOIN principal p ON p.id = e.principal_id
- ORDER BY e.policy_id, e.principal_id;
+UNION ALL
+SELECT e.policy_id::text, e.principal_id::text, p.kind, p.name, e.actions
+  FROM authz_project_policy_entry e
+  JOIN principal p ON p.id = e.principal_id
+ ORDER BY 1, 2;
+
+-- name: AuthzBuildProjects :many
+SELECT id::text AS id, key, manage_policies, manage_repositories FROM project ORDER BY key;
+
+-- name: AuthzBuildProjectAdmins :many
+-- The administrators of every project, users and groups (Q-AUTHZ-183).
+SELECT a.project_id::text AS project_id, a.principal_id::text AS principal_id, p.kind AS principal_kind, p.name AS principal_name
+  FROM project_admin a
+  JOIN principal p ON p.id = a.principal_id
+ ORDER BY a.project_id, a.principal_id;
 
 -- name: AuthzBuildBindings :many
 SELECT role, principal_id::text AS principal_id FROM authz_role_binding ORDER BY role, principal_id;
 
 -- name: AuthzBuildRepositories :many
-SELECT id, key, class, format, config FROM repositories WHERE lifecycle = 'active' ORDER BY id;
+-- project_id is empty for a repository that belongs to no project.
+SELECT id, key, class, format, config, COALESCE(project_id::text, '')::text AS project_id
+  FROM repositories WHERE lifecycle = 'active' ORDER BY id;
 
 -- name: AuthzGetPolicy :many
 SELECT p.id::text AS id, p.name, p.description, p.resource_type, p.version,
+       COALESCE(p.project_id::text, '')::text AS project_id, COALESCE(pr.key, '')::text AS project_key,
        (extract(epoch FROM p.created_at) * 1000000)::bigint AS created_us,
        (extract(epoch FROM p.updated_at) * 1000000)::bigint AS updated_us,
        COALESCE(cb.kind, '')::text AS created_by_kind, COALESCE(cb.name, '')::text AS created_by_name,
        COALESCE(ub.kind, '')::text AS updated_by_kind, COALESCE(ub.name, '')::text AS updated_by_name
   FROM authz_policy p
+  LEFT JOIN project pr ON pr.id = p.project_id
   LEFT JOIN principal cb ON cb.id = p.created_by
   LEFT JOIN principal ub ON ub.id = p.updated_by
  WHERE p.name = sqlc.arg(name)::text;
 
 -- name: AuthzListPolicies :many
 SELECT p.id::text AS id, p.name, p.description, p.resource_type, p.version,
+       COALESCE(p.project_id::text, '')::text AS project_id, COALESCE(pr.key, '')::text AS project_key,
        (extract(epoch FROM p.created_at) * 1000000)::bigint AS created_us,
        (extract(epoch FROM p.updated_at) * 1000000)::bigint AS updated_us,
        COALESCE(cb.kind, '')::text AS created_by_kind, COALESCE(cb.name, '')::text AS created_by_name,
        COALESCE(ub.kind, '')::text AS updated_by_kind, COALESCE(ub.name, '')::text AS updated_by_name
   FROM authz_policy p
+  LEFT JOIN project pr ON pr.id = p.project_id
   LEFT JOIN principal cb ON cb.id = p.created_by
   LEFT JOIN principal ub ON ub.id = p.updated_by
  ORDER BY p.name;
@@ -67,17 +93,25 @@ SELECT dimension, mode, pattern FROM authz_policy_pattern
  ORDER BY dimension, mode, pattern;
 
 -- name: AuthzPolicyEntries :many
+-- The entries of a policy of either kind: a global policy has its rows in
+-- authz_policy_entry, a project policy in authz_project_policy_entry.
 SELECT e.principal_id::text AS principal_id, p.kind AS principal_kind, p.name AS principal_name, e.actions
   FROM authz_policy_entry e
   JOIN principal p ON p.id = e.principal_id
  WHERE e.policy_id = sqlc.arg(policy_id)::text::uuid
- ORDER BY p.kind, p.name;
+UNION ALL
+SELECT e.principal_id::text, p.kind, p.name, e.actions
+  FROM authz_project_policy_entry e
+  JOIN principal p ON p.id = e.principal_id
+ WHERE e.policy_id = sqlc.arg(policy_id)::text::uuid
+ ORDER BY 2, 3;
 
 -- name: AuthzInsertPolicy :many
--- No row back means the name exists (409).
-INSERT INTO authz_policy (id, name, description, resource_type, created_by, updated_by)
+-- No row back means the name exists (409). project_id is empty for a global policy;
+-- it is never changed afterwards.
+INSERT INTO authz_policy (id, name, description, resource_type, project_id, created_by, updated_by)
 VALUES (sqlc.arg(id)::text::uuid, sqlc.arg(name)::text, sqlc.arg(description)::text, sqlc.arg(resource_type)::text,
-        NULLIF(sqlc.arg(actor)::text, '')::uuid, NULLIF(sqlc.arg(actor)::text, '')::uuid)
+        NULLIF(sqlc.arg(project_id)::text, '')::uuid, NULLIF(sqlc.arg(actor)::text, '')::uuid, NULLIF(sqlc.arg(actor)::text, '')::uuid)
 ON CONFLICT (name) DO NOTHING
 RETURNING version;
 
@@ -111,6 +145,12 @@ INSERT INTO authz_policy_selector (policy_id, ordinal, kind, repository_id, key_
 VALUES (sqlc.arg(policy_id)::text::uuid, sqlc.arg(ordinal)::smallint, sqlc.arg(kind)::text, NULLIF(sqlc.arg(repository_id)::bigint, 0),
         NULLIF(sqlc.arg(key_pattern)::text, ''), NULLIF(sqlc.arg(repo_class)::text, ''), NULLIF(sqlc.arg(format)::text, ''));
 
+-- name: AuthzInsertProjectEntry :exec
+-- The entry of a project policy; the foreign key to (policy, project) refuses a
+-- project that is not the policy's.
+INSERT INTO authz_project_policy_entry (policy_id, project_id, principal_id, actions)
+VALUES (sqlc.arg(policy_id)::text::uuid, sqlc.arg(project_id)::text::uuid, sqlc.arg(principal_id)::text::uuid, sqlc.arg(actions)::text[]);
+
 -- name: AuthzInsertPattern :exec
 INSERT INTO authz_policy_pattern (policy_id, dimension, mode, pattern)
 VALUES (sqlc.arg(policy_id)::text::uuid, sqlc.arg(dimension)::text, sqlc.arg(mode)::text, sqlc.arg(pattern)::text);
@@ -122,7 +162,8 @@ VALUES (sqlc.arg(policy_id)::text::uuid, sqlc.arg(principal_id)::text::uuid, sql
 -- name: AuthzClearPolicyChildren :exec
 -- The children of an updated policy are replaced as a whole (R-AUTHZ-021: updates are full replacements).
 WITH s AS (DELETE FROM authz_policy_selector WHERE policy_id = sqlc.arg(policy_id)::text::uuid),
-     p AS (DELETE FROM authz_policy_pattern WHERE policy_id = sqlc.arg(policy_id)::text::uuid)
+     p AS (DELETE FROM authz_policy_pattern WHERE policy_id = sqlc.arg(policy_id)::text::uuid),
+     pe AS (DELETE FROM authz_project_policy_entry WHERE policy_id = sqlc.arg(policy_id)::text::uuid)
 DELETE FROM authz_policy_entry WHERE policy_id = sqlc.arg(policy_id)::text::uuid;
 
 -- name: AuthzInsertBinding :execrows
@@ -195,7 +236,8 @@ SELECT (SELECT count(*) FROM authz_role_binding WHERE role = 'admin')::bigint AS
 -- ETag of the representation changes when the principal is renamed or deleted
 -- (R-AUTHZ-028); the principal's own rows are removed or renamed by the caller.
 UPDATE authz_policy SET version = version + 1
- WHERE id IN (SELECT policy_id FROM authz_policy_entry WHERE principal_id = sqlc.arg(principal_id)::text::uuid)
+ WHERE id IN (SELECT policy_id FROM authz_policy_entry WHERE principal_id = sqlc.arg(principal_id)::text::uuid
+              UNION SELECT policy_id FROM authz_project_policy_entry WHERE principal_id = sqlc.arg(principal_id)::text::uuid)
 RETURNING id::text AS id;
 
 -- name: AuthzPrincipalHasBinding :one

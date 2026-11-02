@@ -206,6 +206,8 @@ checked every earlier decision against them:
 | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) | The trove Bastion: an internet-facing, read-only cache instance in the beta | Accepted (owner constraint, 2026-10-31 and 2026-11-02) |
 | [ADR-143](#adr-143--the-bastion-decides-through-the-main-installations-own-routes-and-answers-it-keeps-briefly) | The Bastion decides through the main installation's own routes and answers it keeps briefly | Decided by the development agent — owner review at the walkthrough |
 | [ADR-144](#adr-144--the-bastion-token-is-a-type-of-its-own-and-the-interface-a-version-of-its-own) | The Bastion token is a type of its own, and the interface a version of its own | Decided by the development agent — owner review at the walkthrough |
+| [ADR-145](#adr-145--the-grants-of-a-project-policy-are-stored-where-the-previous-release-does-not-read-them) | The grants of a project policy are stored where the previous release does not read them | Decided by the development agent — owner review at the walkthrough |
+| [ADR-146](#adr-146--an-operation-admits-project-administrators-through-a-declaration-of-its-own) | An operation admits project administrators through a declaration of its own | Decided by the development agent — owner review at the walkthrough |
 
 </details>
 
@@ -5391,6 +5393,59 @@ stable release.
 
 **Spec:** [spec/bastion.md](spec/bastion.md) R-BAS-004, R-BAS-005, R-BAS-008, R-BAS-009.
 
+### ADR-145 · The grants of a project policy are stored where the previous release does not read them
+
+**Status:** Decided by the development agent — owner review at the walkthrough
+
+**Context.** Projects (R-AUTHZ-026) let a delegate write policies whose pattern and class selectors apply to the project's
+repositories only. The released 0.9.x binaries build their grant index without any notion of a project; during a rolling
+upgrade, and after a rollback, such a replica reads a project policy as a global one and grants on every repository what the
+delegate wrote for the project. Only a contract step raises the schema's compatibility floor (R-HA-018).
+
+**Decision.** The entries of project policies live in `authz_project_policy_entry`, which the previous release does not
+read; for it a project policy has no entries and covers nobody. A composite foreign key lets the table hold rows of project
+policies only, and a trigger on `authz_policy_entry` refuses rows for them, so a rewrite by the old release fails. The
+current release reads both tables in the same statements.
+
+**Consequences.** Fail closed by construction, in the database. The index build, the policy read, the policy write, the
+cleanup of a principal's entries and the test harness handle two tables. A rollout shows a project's rights as absent on
+old replicas (availability, not security); H-395 records it. A contract step may merge the tables once no 0.9.x installation
+runs.
+
+**Alternatives considered.** Refusing project policies while a 0.9.x replica lives (checked at write time only; a later
+replica or a rollback reads existing ones as global); accepting the window; a selector form the old build skips with an
+error log. Decided in Q-AUTHZ-174.
+
+**Revisit condition:** no installation can run 0.9.x any more.
+
+**Spec:** [spec/authorization.md](spec/authorization.md) R-AUTHZ-026, R-AUTHZ-028.
+
+### ADR-146 · An operation admits project administrators through a declaration of its own
+
+**Status:** Decided by the development agent — owner review at the walkthrough
+
+**Context.** Every management operation names the permission it needs in `x-trove-permission`, and one shared step enforces
+it before the handler (R-API-008). A project administrator holds no capability, and which project an operation addresses
+is often known only to the handler.
+
+**Decision.** A declaration may carry `projectAdmin: <right>` next to `permission`: the step admits the holder of the
+capability, or a caller that administers at least one project with the right, and the handler narrows to the addressed
+project with `requireProject`, `requireProjectOfRepository` or `delegatedScope`. The engine answers three questions on the
+request's index (`ProjectsOn`, `AdministersOn`, `AdministersRepositoryOn`). `GET /authz/me` carries `projects`.
+
+**Consequences.** The document says who may call each operation; a build that does not know the member refuses the
+document at start-up; a refused caller is refused before any lookup. The step is coarse, so a handler that forgets to
+narrow lets a project administrator reach another project: the helpers exist to make that a one-line call, and the
+integration tests of R-AUTHZ-026 cover every operation of the table.
+
+**Alternatives considered.** `authenticated: true` and a handler check (the document stops saying who may call); a resolver
+per operation in the step (a source for every case). Decided in Q-AUTHZ-180.
+
+**Revisit condition:** an operation needs a project source the handler cannot supply after the step, or a third kind of
+delegate appears.
+
+**Spec:** [spec/authorization.md](spec/authorization.md) R-AUTHZ-026; [spec/api-and-ui.md](spec/api-and-ui.md) R-API-008.
+
 ## Decisions by the development agent
 
 The development agent selected each of these decisions from the options documented in the
@@ -5743,6 +5798,18 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-AUTHZ-171](spec/authorization.md#q-authz-171--a-configuration-binding-follows-the-rules-of-the-api) | What do `PUT`, a declared API binding and the guards of R-AUTHZ-022 do with configuration bindings? | (a) the rules of the API bind both ways: `PUT` answers 200 and keeps the source, a declared API binding is taken over, `auto_join_admin_conflict` and `last_admin` stop `trove migrate` | (b) the configuration wins; (c) `PUT` answers 409 |
 | [Q-AUTHZ-172](spec/authorization.md#q-authz-172--the-auditor-reads-every-repositorys-metadata-and-triages-but-downloads-nothing) | What may the auditor see and do? | (a) metadata of every repository through `content:metadata-read`, no artifact; triage instance-wide from M4b; MVP (owner) | (b) `read` policies on every repository |
 | [Q-AUTHZ-173](spec/authorization.md#q-authz-173--a-project-administrator-creates-remote-repositories) | May a project administrator create remote repositories? | (a) yes, `manageRepositories` covers every class, bounded by the outbound address rules (owner) | (b) remote repositories stay with system administrators |
+| [Q-AUTHZ-174](spec/authorization.md#q-authz-174--the-grants-of-a-project-policy-live-where-the-previous-release-does-not-read-them) | How does a rollout from 0.9.x stay safe once project policies exist? | (a) the grants of a project policy are stored in a table the previous release does not read; a trigger refuses them in the old one | [ADR-145](#adr-145--the-grants-of-a-project-policy-are-stored-where-the-previous-release-does-not-read-them) |
+| [Q-AUTHZ-175](spec/authorization.md#q-authz-175--a-project-service-account-is-granted-by-its-projects-policies-only) | How is a project service account kept to its project's policies? | (a) no group membership, no role, no global or foreign policy entry, no package owner outside its project | (b) groups allowed; (c) global policies naming it |
+| [Q-AUTHZ-176](spec/authorization.md#q-authz-176--names-of-a-project-are-prefixed-with-its-key-and-a-global-name-never-takes-a-project-prefix) | How are the names of a project kept apart from global names? | (a) repositories, policies and service accounts are `<key>-…`; project keys do not overlap; global accounts take no project prefix | (b) prefix for repositories only; (c) prefix without reservation |
+| [Q-AUTHZ-177](spec/authorization.md#q-authz-177--what-a-project-administrator-may-do-with-service-accounts-and-their-tokens) | Which switch gates service accounts, and what may their tokens be? | (a) `managePolicies` gates creating, enabling and issuing; reducing stays open; tokens expire, carry no `system` item and `admin: false` | (b) a third switch; (c) no switch; (d) capabilities in the scope |
+| [Q-AUTHZ-178](spec/authorization.md#q-authz-178--a-virtual-repository-of-a-project-administrator-stays-inside-the-project) | May a project administrator's virtual repository contain outside repositories? | (a) new members and the deploy target are project repositories; stored members stay | (b) any repository; (c) any repository it may read |
+| [Q-AUTHZ-179](spec/authorization.md#q-authz-179--a-repository-that-leaves-a-project-leaves-its-policies-inert) | What happens to a project policy that selects a repository that left the project? | (a) the selector stays, covers nothing and warns | (b) the assignment deletes it; (c) the assignment is refused |
+| [Q-AUTHZ-180](spec/authorization.md#q-authz-180--a-declaration-admits-project-administrators-in-a-form-of-its-own-and-the-handler-narrows) | How does the API declare "capability, or project administrator"? | (a) `{permission, projectAdmin}` and a narrowing helper | [ADR-146](#adr-146--an-operation-admits-project-administrators-through-a-declaration-of-its-own) |
+| [Q-AUTHZ-181](spec/authorization.md#q-authz-181--authzme-names-the-projects-the-caller-administers) | How does the UI learn which projects the caller administers? | (a) a member `projects` of `GET /authz/me` | (b) the UI asks `GET /projects` |
+| [Q-AUTHZ-182](spec/authorization.md#q-authz-182--how-a-project-administrator-finds-the-users-and-groups-it-names) | How does a project administrator find users and groups to name? | (a) a bounded lookup of kind and name by prefix | (b) free text; (c) `identities:read` |
+| [Q-AUTHZ-183](spec/authorization.md#q-authz-183--who-administers-a-project-and-through-which-credentials) | Who can administer a project, through which credentials? | (a) users and groups; sessions and `admin: true` tokens | (b) any principal; (c) every token |
+| [Q-AUTHZ-184](spec/authorization.md#q-authz-184--the-repository-operations-of-a-project-administrator) | How do project administrators call the repository operations? | (a) the same operations, narrowed by the handler | (b) a route family under the project |
+| [Q-AUTHZ-185](spec/authorization.md#q-authz-185--versions-delete-order-the-epoch-and-the-journal-of-project-writes) | What do a project's version, its deletion and its journal cover? | (a) the version covers the PUT fields; policies are deleted through the store first; removals are journaled | (b) every write moves the version; (c) the cascade alone |
 | [Q-CI-1](spec/gitlab-ci-oidc.md#q-ci-1--first-match-per-tier-or-union-of-all-matching-mappings) | First match per tier, or union of all matching mappings? | (a) first match within a tier, union across tiers | [ADR-060](#adr-060--ordered-identity-mappings-first-match-per-tier-union-across-tiers) |
 | [Q-CI-2](spec/gitlab-ci-oidc.md#q-ci-2--grammar-of-the-scope-request-parameter) | Grammar of the exchange's `scope` parameter? | (c) an RFC 6749 scope string as notation for the repository part of the R-AUTH-024 scope | [ADR-059](#adr-059--ci-tokens-through-a-standard-token-exchange-endpoint) |
 | [Q-CI-3](spec/gitlab-ci-oidc.md#q-ci-3--default-for-id-tokens-with-several-audiences) | Accept ID tokens with several audiences? | (c) only if every audience is an allowed audience of the CI issuer | [ADR-021](#adr-021--gitlab-ci-identity-through-id-token-exchange-inv-10) |

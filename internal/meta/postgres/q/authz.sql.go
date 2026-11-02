@@ -113,7 +113,11 @@ SELECT e.policy_id::text AS policy_id, e.principal_id::text AS principal_id, p.k
        p.name AS principal_name, e.actions
   FROM authz_policy_entry e
   JOIN principal p ON p.id = e.principal_id
- ORDER BY e.policy_id, e.principal_id
+UNION ALL
+SELECT e.policy_id::text, e.principal_id::text, p.kind, p.name, e.actions
+  FROM authz_project_policy_entry e
+  JOIN principal p ON p.id = e.principal_id
+ ORDER BY 1, 2
 `
 
 type AuthzBuildEntriesRow struct {
@@ -124,6 +128,10 @@ type AuthzBuildEntriesRow struct {
 	Actions       []string
 }
 
+// The grants of global policies and, from the same statement, those of project
+// policies, which live in their own table so that the binaries of the previous
+// release, which read only authz_policy_entry, see a project policy without
+// entries (Q-AUTHZ-174).
 func (q *Queries) AuthzBuildEntries(ctx context.Context) ([]AuthzBuildEntriesRow, error) {
 	rows, err := q.db.Query(ctx, authzBuildEntries)
 	if err != nil {
@@ -189,13 +197,14 @@ func (q *Queries) AuthzBuildPatterns(ctx context.Context) ([]AuthzBuildPatternsR
 
 const authzBuildPolicies = `-- name: AuthzBuildPolicies :many
 
-SELECT id::text AS id, name, resource_type FROM authz_policy ORDER BY name
+SELECT id::text AS id, name, resource_type, COALESCE(project_id::text, '')::text AS project_id FROM authz_policy ORDER BY name
 `
 
 type AuthzBuildPoliciesRow struct {
 	ID           string
 	Name         string
 	ResourceType string
+	ProjectID    string
 }
 
 // Queries of the authorization store (R-AUTHZ-021, R-AUTHZ-022, R-AUTHZ-028).
@@ -205,6 +214,8 @@ type AuthzBuildPoliciesRow struct {
 // imports the driver types (R-ARCH-002). The writes run on the caller's
 // meta.Tx; the statements that read the inputs of the grant index run inside
 // the one REPEATABLE READ READ ONLY transaction of the build (R-AUTHZ-028).
+// project_id is empty for a global policy; a project policy covers only the
+// repositories of its project (R-AUTHZ-026).
 func (q *Queries) AuthzBuildPolicies(ctx context.Context) ([]AuthzBuildPoliciesRow, error) {
 	rows, err := q.db.Query(ctx, authzBuildPolicies)
 	if err != nil {
@@ -214,7 +225,88 @@ func (q *Queries) AuthzBuildPolicies(ctx context.Context) ([]AuthzBuildPoliciesR
 	items := []AuthzBuildPoliciesRow{}
 	for rows.Next() {
 		var i AuthzBuildPoliciesRow
-		if err := rows.Scan(&i.ID, &i.Name, &i.ResourceType); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.ResourceType,
+			&i.ProjectID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const authzBuildProjectAdmins = `-- name: AuthzBuildProjectAdmins :many
+SELECT a.project_id::text AS project_id, a.principal_id::text AS principal_id, p.kind AS principal_kind, p.name AS principal_name
+  FROM project_admin a
+  JOIN principal p ON p.id = a.principal_id
+ ORDER BY a.project_id, a.principal_id
+`
+
+type AuthzBuildProjectAdminsRow struct {
+	ProjectID     string
+	PrincipalID   string
+	PrincipalKind string
+	PrincipalName string
+}
+
+// The administrators of every project, users and groups (Q-AUTHZ-183).
+func (q *Queries) AuthzBuildProjectAdmins(ctx context.Context) ([]AuthzBuildProjectAdminsRow, error) {
+	rows, err := q.db.Query(ctx, authzBuildProjectAdmins)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuthzBuildProjectAdminsRow{}
+	for rows.Next() {
+		var i AuthzBuildProjectAdminsRow
+		if err := rows.Scan(
+			&i.ProjectID,
+			&i.PrincipalID,
+			&i.PrincipalKind,
+			&i.PrincipalName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const authzBuildProjects = `-- name: AuthzBuildProjects :many
+SELECT id::text AS id, key, manage_policies, manage_repositories FROM project ORDER BY key
+`
+
+type AuthzBuildProjectsRow struct {
+	ID                 string
+	Key                string
+	ManagePolicies     bool
+	ManageRepositories bool
+}
+
+func (q *Queries) AuthzBuildProjects(ctx context.Context) ([]AuthzBuildProjectsRow, error) {
+	rows, err := q.db.Query(ctx, authzBuildProjects)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuthzBuildProjectsRow{}
+	for rows.Next() {
+		var i AuthzBuildProjectsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.ManagePolicies,
+			&i.ManageRepositories,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -226,17 +318,20 @@ func (q *Queries) AuthzBuildPolicies(ctx context.Context) ([]AuthzBuildPoliciesR
 }
 
 const authzBuildRepositories = `-- name: AuthzBuildRepositories :many
-SELECT id, key, class, format, config FROM repositories WHERE lifecycle = 'active' ORDER BY id
+SELECT id, key, class, format, config, COALESCE(project_id::text, '')::text AS project_id
+  FROM repositories WHERE lifecycle = 'active' ORDER BY id
 `
 
 type AuthzBuildRepositoriesRow struct {
-	ID     int64
-	Key    string
-	Class  string
-	Format string
-	Config []byte
+	ID        int64
+	Key       string
+	Class     string
+	Format    string
+	Config    []byte
+	ProjectID string
 }
 
+// project_id is empty for a repository that belongs to no project.
 func (q *Queries) AuthzBuildRepositories(ctx context.Context) ([]AuthzBuildRepositoriesRow, error) {
 	rows, err := q.db.Query(ctx, authzBuildRepositories)
 	if err != nil {
@@ -252,6 +347,7 @@ func (q *Queries) AuthzBuildRepositories(ctx context.Context) ([]AuthzBuildRepos
 			&i.Class,
 			&i.Format,
 			&i.Config,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -309,7 +405,8 @@ func (q *Queries) AuthzBuildSelectors(ctx context.Context) ([]AuthzBuildSelector
 
 const authzClearPolicyChildren = `-- name: AuthzClearPolicyChildren :exec
 WITH s AS (DELETE FROM authz_policy_selector WHERE policy_id = $1::text::uuid),
-     p AS (DELETE FROM authz_policy_pattern WHERE policy_id = $1::text::uuid)
+     p AS (DELETE FROM authz_policy_pattern WHERE policy_id = $1::text::uuid),
+     pe AS (DELETE FROM authz_project_policy_entry WHERE policy_id = $1::text::uuid)
 DELETE FROM authz_policy_entry WHERE policy_id = $1::text::uuid
 `
 
@@ -438,11 +535,13 @@ func (q *Queries) AuthzDeletePolicy(ctx context.Context, arg AuthzDeletePolicyPa
 
 const authzGetPolicy = `-- name: AuthzGetPolicy :many
 SELECT p.id::text AS id, p.name, p.description, p.resource_type, p.version,
+       COALESCE(p.project_id::text, '')::text AS project_id, COALESCE(pr.key, '')::text AS project_key,
        (extract(epoch FROM p.created_at) * 1000000)::bigint AS created_us,
        (extract(epoch FROM p.updated_at) * 1000000)::bigint AS updated_us,
        COALESCE(cb.kind, '')::text AS created_by_kind, COALESCE(cb.name, '')::text AS created_by_name,
        COALESCE(ub.kind, '')::text AS updated_by_kind, COALESCE(ub.name, '')::text AS updated_by_name
   FROM authz_policy p
+  LEFT JOIN project pr ON pr.id = p.project_id
   LEFT JOIN principal cb ON cb.id = p.created_by
   LEFT JOIN principal ub ON ub.id = p.updated_by
  WHERE p.name = $1::text
@@ -454,6 +553,8 @@ type AuthzGetPolicyRow struct {
 	Description   string
 	ResourceType  string
 	Version       int64
+	ProjectID     string
+	ProjectKey    string
 	CreatedUs     int64
 	UpdatedUs     int64
 	CreatedByKind string
@@ -477,6 +578,8 @@ func (q *Queries) AuthzGetPolicy(ctx context.Context, name string) ([]AuthzGetPo
 			&i.Description,
 			&i.ResourceType,
 			&i.Version,
+			&i.ProjectID,
+			&i.ProjectKey,
 			&i.CreatedUs,
 			&i.UpdatedUs,
 			&i.CreatedByKind,
@@ -600,9 +703,9 @@ func (q *Queries) AuthzInsertPattern(ctx context.Context, arg AuthzInsertPattern
 }
 
 const authzInsertPolicy = `-- name: AuthzInsertPolicy :many
-INSERT INTO authz_policy (id, name, description, resource_type, created_by, updated_by)
+INSERT INTO authz_policy (id, name, description, resource_type, project_id, created_by, updated_by)
 VALUES ($1::text::uuid, $2::text, $3::text, $4::text,
-        NULLIF($5::text, '')::uuid, NULLIF($5::text, '')::uuid)
+        NULLIF($5::text, '')::uuid, NULLIF($6::text, '')::uuid, NULLIF($6::text, '')::uuid)
 ON CONFLICT (name) DO NOTHING
 RETURNING version
 `
@@ -612,16 +715,19 @@ type AuthzInsertPolicyParams struct {
 	Name         string
 	Description  string
 	ResourceType string
+	ProjectID    string
 	Actor        string
 }
 
-// No row back means the name exists (409).
+// No row back means the name exists (409). project_id is empty for a global policy;
+// it is never changed afterwards.
 func (q *Queries) AuthzInsertPolicy(ctx context.Context, arg AuthzInsertPolicyParams) ([]int64, error) {
 	rows, err := q.db.Query(ctx, authzInsertPolicy,
 		arg.ID,
 		arg.Name,
 		arg.Description,
 		arg.ResourceType,
+		arg.ProjectID,
 		arg.Actor,
 	)
 	if err != nil {
@@ -640,6 +746,30 @@ func (q *Queries) AuthzInsertPolicy(ctx context.Context, arg AuthzInsertPolicyPa
 		return nil, err
 	}
 	return items, nil
+}
+
+const authzInsertProjectEntry = `-- name: AuthzInsertProjectEntry :exec
+INSERT INTO authz_project_policy_entry (policy_id, project_id, principal_id, actions)
+VALUES ($1::text::uuid, $2::text::uuid, $3::text::uuid, $4::text[])
+`
+
+type AuthzInsertProjectEntryParams struct {
+	PolicyID    string
+	ProjectID   string
+	PrincipalID string
+	Actions     []string
+}
+
+// The entry of a project policy; the foreign key to (policy, project) refuses a
+// project that is not the policy's.
+func (q *Queries) AuthzInsertProjectEntry(ctx context.Context, arg AuthzInsertProjectEntryParams) error {
+	_, err := q.db.Exec(ctx, authzInsertProjectEntry,
+		arg.PolicyID,
+		arg.ProjectID,
+		arg.PrincipalID,
+		arg.Actions,
+	)
+	return err
 }
 
 const authzInsertSelector = `-- name: AuthzInsertSelector :exec
@@ -731,11 +861,13 @@ func (q *Queries) AuthzListBindings(ctx context.Context, arg AuthzListBindingsPa
 
 const authzListPolicies = `-- name: AuthzListPolicies :many
 SELECT p.id::text AS id, p.name, p.description, p.resource_type, p.version,
+       COALESCE(p.project_id::text, '')::text AS project_id, COALESCE(pr.key, '')::text AS project_key,
        (extract(epoch FROM p.created_at) * 1000000)::bigint AS created_us,
        (extract(epoch FROM p.updated_at) * 1000000)::bigint AS updated_us,
        COALESCE(cb.kind, '')::text AS created_by_kind, COALESCE(cb.name, '')::text AS created_by_name,
        COALESCE(ub.kind, '')::text AS updated_by_kind, COALESCE(ub.name, '')::text AS updated_by_name
   FROM authz_policy p
+  LEFT JOIN project pr ON pr.id = p.project_id
   LEFT JOIN principal cb ON cb.id = p.created_by
   LEFT JOIN principal ub ON ub.id = p.updated_by
  ORDER BY p.name
@@ -747,6 +879,8 @@ type AuthzListPoliciesRow struct {
 	Description   string
 	ResourceType  string
 	Version       int64
+	ProjectID     string
+	ProjectKey    string
 	CreatedUs     int64
 	UpdatedUs     int64
 	CreatedByKind string
@@ -770,6 +904,8 @@ func (q *Queries) AuthzListPolicies(ctx context.Context) ([]AuthzListPoliciesRow
 			&i.Description,
 			&i.ResourceType,
 			&i.Version,
+			&i.ProjectID,
+			&i.ProjectKey,
 			&i.CreatedUs,
 			&i.UpdatedUs,
 			&i.CreatedByKind,
@@ -804,7 +940,12 @@ SELECT e.principal_id::text AS principal_id, p.kind AS principal_kind, p.name AS
   FROM authz_policy_entry e
   JOIN principal p ON p.id = e.principal_id
  WHERE e.policy_id = $1::text::uuid
- ORDER BY p.kind, p.name
+UNION ALL
+SELECT e.principal_id::text, p.kind, p.name, e.actions
+  FROM authz_project_policy_entry e
+  JOIN principal p ON p.id = e.principal_id
+ WHERE e.policy_id = $1::text::uuid
+ ORDER BY 2, 3
 `
 
 type AuthzPolicyEntriesRow struct {
@@ -814,6 +955,8 @@ type AuthzPolicyEntriesRow struct {
 	Actions       []string
 }
 
+// The entries of a policy of either kind: a global policy has its rows in
+// authz_policy_entry, a project policy in authz_project_policy_entry.
 func (q *Queries) AuthzPolicyEntries(ctx context.Context, policyID string) ([]AuthzPolicyEntriesRow, error) {
 	rows, err := q.db.Query(ctx, authzPolicyEntries, policyID)
 	if err != nil {
@@ -955,7 +1098,8 @@ func (q *Queries) AuthzPrincipalHasBinding(ctx context.Context, principalID stri
 
 const authzTouchPoliciesOfPrincipal = `-- name: AuthzTouchPoliciesOfPrincipal :many
 UPDATE authz_policy SET version = version + 1
- WHERE id IN (SELECT policy_id FROM authz_policy_entry WHERE principal_id = $1::text::uuid)
+ WHERE id IN (SELECT policy_id FROM authz_policy_entry WHERE principal_id = $1::text::uuid
+              UNION SELECT policy_id FROM authz_project_policy_entry WHERE principal_id = $1::text::uuid)
 RETURNING id::text AS id
 `
 

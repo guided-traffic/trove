@@ -19,6 +19,10 @@ type ServiceAccount struct {
 	CreatedAt   time.Time
 	// Revision is the ETag of the account (principal.revision, R-API-012); filled by GetServiceAccount.
 	Revision int64
+	// Project is the key of the project the account belongs to, "" for a global
+	// account (R-AUTHZ-026, Q-AUTHZ-169). It is set when the account is created and
+	// never changes.
+	Project string
 }
 
 // NewServiceAccount is the request of CreateServiceAccount.
@@ -29,6 +33,12 @@ type NewServiceAccount struct {
 	// account (`trove admin service-account create --admin`, R-AUTH-015). It
 	// needs an [AdminBinder]; without one the call fails with [ErrAdminBinding].
 	Admin bool
+	// Project makes the account a project service account (Q-AUTHZ-169): its name
+	// starts with <Project>-, it is no group member and no role holder, and only the
+	// project's own policies grant to it. The caller has checked the right to create
+	// it (an administrator, or an administrator of the project with managePolicies).
+	// WP-C implements the rules; until then a request that sets it is refused.
+	Project string
 }
 
 // CreateServiceAccount creates a service account (R-AUTH-020).
@@ -65,6 +75,9 @@ func (m *Manager) checkNewServiceAccount(in NewServiceAccount) error {
 	}
 	if in.Admin && m.admin == nil {
 		return ErrAdminBinding
+	}
+	if in.Project != "" {
+		return errs.E(errs.NotImplemented, errs.CodeNotImplemented, "Project service accounts are not available in this build yet.")
 	}
 	return nil
 }
@@ -122,7 +135,7 @@ func loadServiceAccount(ctx context.Context, qs *q.Queries, name string) (Servic
 		return ServiceAccount{}, ErrNotFound
 	}
 	r := rows[0]
-	return ServiceAccount{Revision: r.Revision, ID: r.ID, Name: r.Name, Description: r.Description, Status: Status(r.Status), CreatedAt: r.CreatedAt.Time}, nil
+	return ServiceAccount{Revision: r.Revision, ID: r.ID, Name: r.Name, Description: r.Description, Status: Status(r.Status), CreatedAt: r.CreatedAt.Time, Project: r.Project}, nil
 }
 
 // ListServiceAccounts lists service accounts ordered by name; after is the name
@@ -138,7 +151,7 @@ func (m *Manager) ListServiceAccounts(ctx context.Context, query, after string, 
 		}
 		out = out[:0]
 		for _, r := range rows {
-			out = append(out, ServiceAccount{Revision: r.Revision, ID: r.ID, Name: r.Name, Description: r.Description, Status: Status(r.Status), CreatedAt: r.CreatedAt.Time})
+			out = append(out, ServiceAccount{Revision: r.Revision, ID: r.ID, Name: r.Name, Description: r.Description, Status: Status(r.Status), CreatedAt: r.CreatedAt.Time, Project: r.Project})
 		}
 		return nil
 	})

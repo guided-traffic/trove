@@ -1045,7 +1045,7 @@ UI location: security, keys management, SSH keys tab.
 ## Projects, roles and environments
 
 ### IAM-051 · Projects
-Priority: **P2**
+Priority: **MVP**
 
 A project is a management unit that owns resources (repositories, builds, release sets, CI
 pipeline resources) and has members who act on those resources through roles. Projects serve as a
@@ -1097,7 +1097,7 @@ IAM-040); webhooks can be project-scoped for builds and release sets
 managed per project ([retention-and-cleanup.md](retention-and-cleanup.md)).
 
 ### IAM-052 · Project administrators and delegated privileges
-Priority: **P2**
+Priority: **MVP**
 
 The project administrator role (a predefined global role, IAM-054) is the project-level
 equivalent of a system administrator. Its powers are bounded by privileges a system administrator
@@ -1241,7 +1241,7 @@ depend on installed subsystems.
 Interactions: IAM-022 and IAM-025 to IAM-027 define the per-resource semantics.
 
 ### IAM-057 · Repository ownership by projects
-Priority: **P2**
+Priority: **MVP**
 
 A repository belongs to at most one project (it is "assigned" to it); unassigned repositories
 belong to no project.

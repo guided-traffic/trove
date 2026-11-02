@@ -30,11 +30,17 @@ type Entry struct {
 
 // PolicyInput is what a client writes (R-AUTHZ-021).
 type PolicyInput struct {
-	Name         string    `json:"name"`
-	Description  string    `json:"description"`
-	ResourceType string    `json:"resourceType"`
-	Resources    Resources `json:"resources"`
-	Entries      []Entry   `json:"entries"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	ResourceType string `json:"resourceType"`
+	// Project is the key of the project the policy belongs to, nil for a global
+	// policy (R-AUTHZ-026). It is written with the policy and never changes; a
+	// project policy covers only the repositories of its project, is named
+	// <project>-… and grants only to principals the project may name (Q-AUTHZ-175,
+	// Q-AUTHZ-176).
+	Project   *string   `json:"project"`
+	Resources Resources `json:"resources"`
+	Entries   []Entry   `json:"entries"`
 }
 
 // Policy is a stored permission policy as the API returns it.

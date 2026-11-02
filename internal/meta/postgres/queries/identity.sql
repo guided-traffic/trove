@@ -311,16 +311,30 @@ SELECT (SELECT count(*) FROM principal p
 -- name: IdentityInsertServiceAccount :exec
 INSERT INTO service_account (principal_id, description) VALUES (sqlc.arg(id)::text::uuid, sqlc.arg(description)::text);
 
+-- name: IdentityInsertProjectServiceAccount :exec
+-- A service account of a project (Q-AUTHZ-169): the row's trigger refuses a name
+-- that does not start with the project key and a hyphen.
+INSERT INTO service_account (principal_id, description, project_id)
+VALUES (sqlc.arg(id)::text::uuid, sqlc.arg(description)::text, sqlc.arg(project_id)::text::uuid);
+
 -- name: IdentityGetServiceAccount :many
-SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision, s.description
+-- project is the key of the account's project, empty for a global account.
+SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision, s.description,
+       COALESCE(pr.key, '')::text AS project
   FROM principal p JOIN service_account s ON s.principal_id = p.id
+  LEFT JOIN project pr ON pr.id = s.project_id
  WHERE p.kind = 'service_account' AND p.name = sqlc.arg(name)::text;
 
 -- name: IdentityListServiceAccounts :many
-SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision, s.description
+-- project filters by the key of the project; empty lists every account, global and
+-- project ones.
+SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision, s.description,
+       COALESCE(pr.key, '')::text AS project
   FROM principal p JOIN service_account s ON s.principal_id = p.id
+  LEFT JOIN project pr ON pr.id = s.project_id
  WHERE p.kind = 'service_account' AND p.name > sqlc.arg(after)::text
    AND (sqlc.arg(query)::text = '' OR p.name ILIKE '%' || sqlc.arg(query)::text || '%')
+   AND (sqlc.arg(project)::text = '' OR pr.key = sqlc.arg(project)::text)
  ORDER BY p.name
  LIMIT sqlc.arg(max_rows)::int;
 

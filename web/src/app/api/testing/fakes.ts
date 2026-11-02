@@ -75,7 +75,7 @@ export class FakeSessionApi extends SessionApi {
 
   override async authzMe(): Promise<AuthzMe> {
     if (this.meResult instanceof ApiError) throw this.meResult;
-    return { roles: [], principals: [], scope: null, epoch: 1, ...this.meResult };
+    return { roles: [], principals: [], projects: [], scope: null, epoch: 1, ...this.meResult };
   }
 
   override async check(checks: readonly PermissionCheck[]): Promise<PermissionCheckAnswer> {

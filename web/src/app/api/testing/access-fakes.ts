@@ -190,6 +190,7 @@ export class FakeIdentityApi extends IdentityApi {
       name: 'ci-bot',
       description: 'Deploy jobs',
       status: 'active',
+      project: null,
       createdAt: '2026-09-01T08:00:00Z',
     },
   ];
@@ -435,6 +436,7 @@ export class FakeIdentityApi extends IdentityApi {
     const created: ServiceAccount = {
       id: `sa-${body.name}`,
       name: body.name,
+      project: body.project ?? null,
       description: body.description ?? '',
       status: 'active',
       createdAt: '2026-10-29T10:00:00Z',
@@ -712,6 +714,7 @@ export function samplePolicy(over: Partial<PermissionPolicy> = {}): PermissionPo
     name: 'team-web-publish',
     description: 'Team web publishes its npm scope',
     resourceType: 'repository',
+    project: null,
     resources: {
       repositories: ['npm-internal'],
       packages: { include: ['@team-web/*'], exclude: [] },

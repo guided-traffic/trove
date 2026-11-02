@@ -54,11 +54,12 @@ func init() {
 
 	token(EventTokenCreated, Transactional, NoJournal, `{"type":"object","properties":{`+
 		`"type":{"type":"string","enum":["pat","sat","cit"]},"owner":{"type":"string"},"scope":`+eventSchemaScope+`,`+
-		`"expiresAt":{"type":["string","null"]},"createdVia":{"type":"string"},"description":{"type":"string"},"derivedFrom":{"type":"string"}}}`)
+		`"expiresAt":{"type":["string","null"]},"createdVia":{"type":"string"},"description":{"type":"string"},"derivedFrom":{"type":"string"},`+
+		`"project":{"type":"string"}}}`)
 	token(EventTokenRotated, Transactional, JournalRevocation, `{"type":"object","properties":{`+
 		`"predecessor":{"type":"string"},"overlapSeconds":{"type":"integer"},"predecessorExpiresAt":{"type":["string","null"]}}}`)
 	token(EventTokenRevoked, Transactional, JournalRevocation, `{"type":"object","properties":{`+
-		`"reason":{"type":"string"},"cascaded":`+eventSchemaNames+`,"owner":{"type":"string"}}}`)
+		`"reason":{"type":"string"},"cascaded":`+eventSchemaNames+`,"owner":{"type":"string"},"project":{"type":"string"}}}`)
 	token(EventTokenExpiring, Transactional, NoJournal, `{"type":"object","properties":{`+
 		`"owner":{"type":"string"},"hint":{"type":"string"},"description":{"type":"string"},"expiresAt":{"type":"string"}}}`)
 	token(EventTokenRejected, Async, NoJournal, `{"type":"object","properties":{`+
@@ -89,10 +90,12 @@ func init() {
 	ident(EventGroupMembersChanged, JournalRevocation, `{"type":"object","properties":{`+
 		`"added":`+eventSchemaMemberships+`,"removed":`+eventSchemaMemberships+`}}`)
 
-	ident(EventSACreated, NoJournal, `{"type":"object","properties":{"source":{"type":"string"},"admin":{"type":"boolean"}}}`)
-	ident(EventSAUpdated, NoJournal, `{"type":"object","properties":{"fields":`+eventSchemaNames+`}}`)
-	ident(EventSADisabled, JournalRevocation, `{"type":"object","properties":{"tokensRevoked":{"type":"integer"}}}`)
-	ident(EventSADeleted, JournalRevocation, `{"type":"object","properties":{"tokensDeleted":{"type":"integer"},"membershipsDeleted":{"type":"integer"}}}`)
+	// project is the key of the project of a project service account (Q-AUTHZ-169),
+	// absent for a global one.
+	ident(EventSACreated, NoJournal, `{"type":"object","properties":{"source":{"type":"string"},"admin":{"type":"boolean"},"project":{"type":"string"}}}`)
+	ident(EventSAUpdated, NoJournal, `{"type":"object","properties":{"fields":`+eventSchemaNames+`,"project":{"type":"string"}}}`)
+	ident(EventSADisabled, JournalRevocation, `{"type":"object","properties":{"tokensRevoked":{"type":"integer"},"project":{"type":"string"}}}`)
+	ident(EventSADeleted, JournalRevocation, `{"type":"object","properties":{"tokensDeleted":{"type":"integer"},"membershipsDeleted":{"type":"integer"},"project":{"type":"string"}}}`)
 
 	// The entry carries anonymousAccess before and after on every change, not
 	// only when the change sets it: an unchanged value is a no-op for the replay

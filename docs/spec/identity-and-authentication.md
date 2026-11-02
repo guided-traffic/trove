@@ -1540,8 +1540,18 @@ account or to its groups, never from placeholder users.
 - Names match `^[a-z0-9][a-z0-9-]{1,62}$` and are shown as `sa:<name>` in member lists, audit
   events and `whoami`.
 - A service account has no login, no session, no UI access and no IdP link.
-- It can be a group member (R-AUTH-018) and a policy principal.
+- It can be a group member (R-AUTH-018) and a policy principal, unless it is a project service account (below).
 - It holds `trv_sat_` tokens, at most `max_active_per_principal`.
+
+**Project service accounts (owner, [Q-AUTHZ-169](authorization.md#q-authz-169--a-technical-account-for-a-project-belongs-to-the-project)).**
+A service account may belong to a project (`project`, the project's key; fixed at creation, `null` for a global account).
+A project service account's name starts with `<projectKey>-`; it is created, disabled, enabled and deleted by
+administrators of the project and by `identities:write`, and its tokens are issued and revoked by them
+([R-AUTHZ-026](authorization.md)). It is no group member (422 `project_account_not_groupable`), holds no system role
+(422 `role_not_allowed`), and is granted only through policies of its project (422 `principal_outside_project`
+elsewhere). A global service account takes no name that starts with an existing project's key and a hyphen (422
+`name_reserved_by_project`). A project with a service account is not empty. Disabling and deleting follow the rules above
+for every service account.
 
 **Owners (P1).** Owners are users who may create, rotate and revoke the account's tokens without
 being administrators. They cannot change the account's grants.
@@ -1564,11 +1574,11 @@ CREATE TABLE service_account_owner (            -- P1
 );
 ```
 
-API (administrator; token operations also by owners from P1):
+API (administrator; token operations also by owners from P1; the operations on a project's service accounts also by administrators of the project, R-AUTHZ-026; `GET /service-accounts?project=<key>`):
 
 | Method and path | Request | Status codes |
 |---|---|---|
-| `POST /api/v1/service-accounts` | `{"name": "ci-bot", "description": "…", "owners": ["alice"]}` | 201, 400, 409 |
+| `POST /api/v1/service-accounts` | `{"name": "ci-bot", "description": "…", "owners": ["alice"]}`; for a project service account `{"name": "web-partner", "project": "web"}` | 201, 400, 409, 422 |
 | `GET /api/v1/service-accounts?q=&limit=&cursor=`, `GET /api/v1/service-accounts/{name}` | — | 200, 404 |
 | `PATCH /api/v1/service-accounts/{name}` | `description`, `owners` | 200, 404, 412, 428 |
 | `POST /api/v1/service-accounts/{name}/disable`, `…/enable` | — | 204, 404 |
@@ -2092,7 +2102,7 @@ Priority: **MVP** · Covers: TOK-025, TOK-006, AUTHN-040, ADMAPI-039, IAM-037
 | Method and path | Creates | Caller |
 |---|---|---|
 | `POST /api/v1/tokens` | A PAT for the caller | user with a session (recent authentication, R-AUTH-011), or a PAT under the derivation rule |
-| `POST /api/v1/service-accounts/{name}/tokens` | A SAT | administrator (session with recent authentication, or token with `admin: true`); owners from P1; a SAT of that account under the derivation rule |
+| `POST /api/v1/service-accounts/{name}/tokens` | A SAT | administrator (session with recent authentication, or token with `admin: true`); owners from P1; administrator of the account's project with `managePolicies` (Q-AUTHZ-177); a SAT of that account under the derivation rule |
 
 **Derivation rule** (IAM-037: token creation by non-interactive callers). A token-authenticated
 create call must satisfy all of the following:
@@ -2110,6 +2120,11 @@ create call must satisfy all of the following:
   it and every token on its `derived_from` chain and refuses with 401 `invalid_token` when one of
   them was revoked or expired meanwhile, also when a replica's cache still accepted the presenting
   token within the revocation bound of R-AUTH-023 (Q-AUTH-89).
+
+**Tokens of a project administrator** ([Q-AUTHZ-177](authorization.md#q-authz-177--what-a-project-administrator-may-do-with-service-accounts-and-their-tokens)).
+A token that an administrator of a project issues for a project service account is never non-expiring (the administrator
+rule of R-AUTH-026 applies to administrators of trove only), lives at most `auth.tokens.sat.max_ttl`, has `admin: false`
+and no `system` item (422 `invalid_scope`); repository grants, `inherit` and an `endpoints` binding are allowed.
 
 This holds for `Bearer` and for Basic with a token as password. A token can never mint a
 credential that outlives or outranks itself. The new token records the presenting token in

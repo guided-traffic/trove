@@ -94,7 +94,7 @@ screen and object (package version, build run, artifact path) have a bookmarkabl
 unspecified; "show in artifact tree" links (UI-011) imply at least an addressable tree selection.
 
 ### UI-003 · Project scope selector
-Priority: **P1**
+Priority: **MVP**
 
 A project drop-down in the header defines the scope of what the content pane shows.
 
@@ -1274,7 +1274,7 @@ Gap: there is no snippet for GitLab CI; a GitLab-first product needs one (an
 ## Projects
 
 ### UI-050 · Projects overview
-Priority: **P1**
+Priority: **MVP**
 
 UI location: administration area, first tab; content follows the project selector (UI-003).
 
@@ -1290,7 +1290,7 @@ Edge case: only an empty project can be deleted (its repositories, builds and ot
 removed or reassigned first).
 
 ### UI-051 · Create and edit project dialog
-Priority: **P1**
+Priority: **MVP**
 
 Only system administrators create projects and edit their basic settings ("edit settings" on the
 project overview).

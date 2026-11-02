@@ -126,6 +126,7 @@ type AuthzPolicy struct {
 	CreatedBy    pgtype.UUID
 	UpdatedAt    pgtype.Timestamptz
 	UpdatedBy    pgtype.UUID
+	ProjectID    pgtype.UUID
 }
 
 type AuthzPolicyEntry struct {
@@ -149,6 +150,13 @@ type AuthzPolicySelector struct {
 	KeyPattern   pgtype.Text
 	RepoClass    pgtype.Text
 	Format       pgtype.Text
+}
+
+type AuthzProjectPolicyEntry struct {
+	PolicyID    pgtype.UUID
+	ProjectID   pgtype.UUID
+	PrincipalID pgtype.UUID
+	Actions     []string
 }
 
 type AuthzRoleBinding struct {
@@ -487,6 +495,25 @@ type Principal struct {
 	Revision  int64
 }
 
+type Project struct {
+	ID                 pgtype.UUID
+	Key                string
+	DisplayName        string
+	Description        string
+	ManagePolicies     bool
+	ManageRepositories bool
+	Version            int64
+	CreatedAt          pgtype.Timestamptz
+	CreatedBy          pgtype.UUID
+	UpdatedAt          pgtype.Timestamptz
+	UpdatedBy          pgtype.UUID
+}
+
+type ProjectAdmin struct {
+	ProjectID   pgtype.UUID
+	PrincipalID pgtype.UUID
+}
+
 type RemoteCacheEntry struct {
 	ID                   pgtype.Int8
 	RepoID               int64
@@ -563,6 +590,7 @@ type Repository struct {
 	UpdatedBy      pgtype.UUID
 	LastActivityAt pgtype.Timestamptz
 	ClaimsVersion  int64
+	ProjectID      pgtype.UUID
 }
 
 type RepositorySecret struct {
@@ -615,6 +643,7 @@ type SecretKeyCanary struct {
 type ServiceAccount struct {
 	PrincipalID pgtype.UUID
 	Description string
+	ProjectID   pgtype.UUID
 }
 
 type StorageUsageDelta struct {

@@ -145,6 +145,23 @@ func (a *Access) Holds(permission string) bool {
 	return a.D.HoldsOn(a.Index(), a.Subject, permission)
 }
 
+// Projects lists the projects the subject administers, with their switches, on the
+// request's index (R-AUTHZ-026).
+func (a *Access) Projects() []authz.AdministeredProject {
+	return a.D.ProjectsOn(a.Index(), a.Subject)
+}
+
+// Administers reports whether the subject administers the project with the right.
+func (a *Access) Administers(project string, right authz.ProjectRight) bool {
+	return a.D.AdministersOn(a.Index(), a.Subject, project, right)
+}
+
+// AdministersRepository reports whether the subject administers the project of the
+// repository with the right, and names the project.
+func (a *Access) AdministersRepository(repository string, right authz.ProjectRight) (string, bool) {
+	return a.D.AdministersRepositoryOn(a.Index(), a.Subject, repository, right)
+}
+
 // Check evaluates the subject's own rights for the given coordinates.
 func (a *Access) Check(items []authz.CheckItem) ([]bool, error) {
 	return a.D.CheckOn(a.Index(), a.Subject, items)

@@ -322,6 +322,17 @@ The label sets of the M1 families are not restated per family in this pass; read
 | Network policies | `<fullname>-web`, `<fullname>-worker`, `<fullname>-migrate` | yes |
 | Backup CronJob, restore Job | `<fullname>-backup`, `<fullname>-restore` | planned (M5) |
 
+### Projects
+
+| Name | Pattern | Rule |
+|---|---|---|
+| Project key | `^[a-z][a-z0-9-]{1,31}$` | immutable; no key is another key followed by a hyphen and more, and none is the start of a global service account's name |
+| Repository of a project administrator | `<projectKey>-…` | 422 `project_prefix_required`; an existing repository keeps its key when it is assigned |
+| Project policy | `<projectKey>-…` | with `"project": "<key>"` |
+| Project service account | `<projectKey>-…` | with `"project": "<key>"`; a global service account takes no such name (422 `name_reserved_by_project`) |
+| Grant of a project administrator in the index | `project:<key>` | `manage` on every repository of the project |
+| Database guards | SQLSTATE `AI002`, `AI003`, `AI004` | project service account in a group; name prefix and project of a service account; entry of a project policy in the table of global grants |
+
 ### Audit event types
 
 The names of the event registry ([internal/audit](internal/audit/)). Each event carries an actor and a source; the registry says which types the journal always keeps. The list is read from the `events_*.go` files, not from the running system.
@@ -332,7 +343,7 @@ The names of the event registry ([internal/audit](internal/audit/)). Each event 
 | Area | Event types |
 |---|---|
 | Login | `auth.login.succeeded`, `auth.login.failed`, `auth.breakglass.login`, `auth.breakglass.locked`, `auth.breakglass.unlocked`, `auth.logout`, `auth.session.ended`, `auth.csrf_failed`, `auth.credential.rejected` |
-| Authorization | `authz.denied`, `authz.read.allowed`, `authz.write.allowed`, `authz.policy.created`, `authz.policy.updated`, `authz.policy.deleted`, `authz.role.bound`, `authz.role.unbound`, `authz.settings.changed`, `authz.ownership.claimed`, `authz.ownership.added`, `authz.ownership.removed`, `authz.ownership.released` |
+| Authorization | `authz.denied`, `authz.read.allowed`, `authz.write.allowed`, `authz.policy.created`, `authz.policy.updated`, `authz.policy.deleted`, `authz.project.created`, `authz.project.updated`, `authz.project.deleted`, `authz.project.admin_added`, `authz.project.admin_removed`, `authz.project.repository_assigned`, `authz.project.repository_unassigned`, `authz.role.bound`, `authz.role.unbound`, `authz.settings.changed`, `authz.ownership.claimed`, `authz.ownership.added`, `authz.ownership.removed`, `authz.ownership.released` |
 | Tokens | `token.created`, `token.rotated`, `token.revoked`, `token.expiring`, `token.rejected` |
 | Users | `user.created`, `user.updated`, `user.renamed`, `user.rename_conflict`, `user.disabled`, `user.enabled`, `user.deleted`, `user.dormancy_warning`, `user.groups.synced`, `user.groups.claim_missing` |
 | Groups and service accounts | `group.created`, `group.updated`, `group.deleted`, `group.members.changed`, `serviceaccount.created`, `serviceaccount.updated`, `serviceaccount.disabled`, `serviceaccount.deleted` |
@@ -349,12 +360,12 @@ The names of the event registry ([internal/audit](internal/audit/)). Each event 
 The code registry is [internal/errs/codes.go](internal/errs/codes.go). Every problem answer carries one of these values as `code`. The HTTP status of each code is in the registry.
 
 <details>
-<summary>Error codes (157 codes in the registry, grouped as the file groups them)</summary>
+<summary>Error codes (168 codes in the registry, grouped as the file groups them)</summary>
 
 - General: `internal`, `malformed_request`, `validation_failed`, `unauthenticated`, `forbidden`, `not_found`, `method_not_allowed`, `conflict`, `precondition_failed`, `payload_too_large`, `unsupported_media_type`, `rate_limited`, `insufficient_storage`, `unavailable`, `upstream_failed`, `upstream_timeout`, `repository_not_found`, `database_unavailable`, `egress_denied`, `key_ring_incompatible`, `object_store_unavailable`, `shutting_down`, `server_busy`, `database_timeout`, `misdirected_request`, `invalid_cursor`, `invalid_header`, `already_exists`, `idempotency_in_progress`, `idempotency_key_reused`, `precondition_required`, `reserved_name`, `managed_by_config`
 - Tokens: `invalid_token`, `credentials_required`, `invalid_credentials`, `principal_disabled`, `invalid_scope`, `invalid_ttl`, `ttl_exceeds_maximum`, `default_above_maximum`, `exceeds_ceiling`, `non_expiring_not_allowed`, `non_expiring_restricted`, `pat_not_allowed`, `ci_token_restricted`, `token_already_issued`, `token_limit_reached`, `derivation_exceeds_parent`, `description_required`, `not_a_token`
 - Identities and login: `managed_by_scim`, `last_admin`, `anonymous_not_allowed`, `auto_join_admin_conflict`, `username_invalid`, `session_expired`, `reauthentication_required`, `csrf_failed`, `browser_mismatch`, `flow_expired`, `provider_unavailable`, `break_glass_restricted`, `break_glass_immutable`, `break_glass_rotating`, `local_login_disabled`, `break_glass_locked`, `too_many_pending_logins`
-- Authorization: `authz_stale`, `authz_epoch_unknown`, `role_not_allowed`, `unknown_role`, `authenticated_write_action`, `anonymous_write_action`, `anonymous_dynamic_selector`, `action_not_allowed`, `invalid_action`, `invalid_pattern`, `unknown_principal`, `unknown_repository`, `unknown_format`, `duplicate_principal`, `virtual_action_not_applicable`, `role_binding_managed_by_configuration`
+- Authorization: `authz_stale`, `authz_epoch_unknown`, `role_not_allowed`, `unknown_role`, `authenticated_write_action`, `anonymous_write_action`, `anonymous_dynamic_selector`, `action_not_allowed`, `invalid_action`, `invalid_pattern`, `unknown_principal`, `unknown_repository`, `unknown_format`, `duplicate_principal`, `virtual_action_not_applicable`, `role_binding_managed_by_configuration`, `not_implemented`, `repository_outside_project`, `unknown_project`, `principal_outside_project`, `project_prefix_required`, `name_reserved_by_project`, `project_account_not_groupable`, `project_not_empty`, `repository_assigned`, `project_key_overlap`, `project_switch_off`
 - Repositories and formats: `repository_disabled`, `repository_referenced`, `invalid_key`, `invalid_member`, `invalid_document`, `not_applicable`, `unsupported_class`, `unsupported_layout`, `batch_too_large`, `not_a_package`, `no_deploy_target`
 - Files: `invalid_path`, `not_admitted`, `path_conflict`, `content_unavailable`, `range_not_satisfiable`
 - Endpoints and exposure: `endpoint_read_only`, `invalid_version_range`, `dimension_not_supported`, `format_not_exposable`, `endpoint_not_configured`, `exposure_rule_limit_reached`
@@ -1203,13 +1214,13 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 
 | Method and path | Operation | Permission |
 |---|---|---|
-| `GET /api/v1/service-accounts` | `listServiceAccounts` | `identities:read` |
-| `POST /api/v1/service-accounts` | `createServiceAccount` | `identities:write` |
-| `GET /api/v1/service-accounts/{name}` | `getServiceAccount` | `identities:read` |
-| `PATCH /api/v1/service-accounts/{name}` | `updateServiceAccount` | `identities:write` |
-| `DELETE /api/v1/service-accounts/{name}` | `deleteServiceAccount` | `identities:write` |
-| `POST /api/v1/service-accounts/{name}/disable` | `disableServiceAccount` | `identities:write` |
-| `POST /api/v1/service-accounts/{name}/enable` | `enableServiceAccount` | `identities:write` |
+| `GET /api/v1/service-accounts` | `listServiceAccounts` | `identities:read` or project administrator (`any`) |
+| `POST /api/v1/service-accounts` | `createServiceAccount` | `identities:write` or project administrator (`managePolicies`) |
+| `GET /api/v1/service-accounts/{name}` | `getServiceAccount` | `identities:read` or project administrator (`any`) |
+| `PATCH /api/v1/service-accounts/{name}` | `updateServiceAccount` | `identities:write` or project administrator (`any`) |
+| `DELETE /api/v1/service-accounts/{name}` | `deleteServiceAccount` | `identities:write` or project administrator (`any`) |
+| `POST /api/v1/service-accounts/{name}/disable` | `disableServiceAccount` | `identities:write` or project administrator (`any`) |
+| `POST /api/v1/service-accounts/{name}/enable` | `enableServiceAccount` | `identities:write` or project administrator (`managePolicies`) |
 
 **tokens**
 
@@ -1227,7 +1238,7 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 | `DELETE /api/v1/users/me/tokens` | `revokeOwnTokens` | authenticated |
 | `DELETE /api/v1/users/{username}/tokens` | `revokeUserTokens` | `tokens:revoke` |
 | `POST /api/v1/service-accounts/{name}/tokens` | `createServiceAccountToken` | authenticated · recent sign-in |
-| `DELETE /api/v1/service-accounts/{name}/tokens` | `revokeServiceAccountTokens` | `tokens:revoke` |
+| `DELETE /api/v1/service-accounts/{name}/tokens` | `revokeServiceAccountTokens` | `tokens:revoke` or project administrator (`any`) |
 
 **auth-settings**
 
@@ -1264,13 +1275,13 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 
 | Method and path | Operation | Permission |
 |---|---|---|
-| `GET /api/v1/permission-policies` | `listPermissionPolicies` | `policies:read` |
-| `POST /api/v1/permission-policies` | `createPermissionPolicy` | `policies:write` · recent sign-in |
-| `GET /api/v1/permission-policies/{name}` | `getPermissionPolicy` | `policies:read` |
-| `PUT /api/v1/permission-policies/{name}` | `replacePermissionPolicy` | `policies:write` · recent sign-in |
-| `PATCH /api/v1/permission-policies/{name}` | `patchPermissionPolicy` | `policies:write` · recent sign-in |
-| `DELETE /api/v1/permission-policies/{name}` | `deletePermissionPolicy` | `policies:write` · recent sign-in |
-| `POST /api/v1/authz/validate-policy` | `validatePermissionPolicy` | `policies:read` |
+| `GET /api/v1/permission-policies` | `listPermissionPolicies` | `policies:read` or project administrator (`any`) |
+| `POST /api/v1/permission-policies` | `createPermissionPolicy` | `policies:write` or project administrator (`managePolicies`) · recent sign-in |
+| `GET /api/v1/permission-policies/{name}` | `getPermissionPolicy` | `policies:read` or project administrator (`any`) |
+| `PUT /api/v1/permission-policies/{name}` | `replacePermissionPolicy` | `policies:write` or project administrator (`managePolicies`) · recent sign-in |
+| `PATCH /api/v1/permission-policies/{name}` | `patchPermissionPolicy` | `policies:write` or project administrator (`managePolicies`) · recent sign-in |
+| `DELETE /api/v1/permission-policies/{name}` | `deletePermissionPolicy` | `policies:write` or project administrator (`managePolicies`) · recent sign-in |
+| `POST /api/v1/authz/validate-policy` | `validatePermissionPolicy` | `policies:read` or project administrator (`managePolicies`) |
 | `GET /api/v1/roles` | `listRoles` | authenticated |
 | `GET /api/v1/role-bindings` | `listRoleBindings` | `roles:read` |
 | `PUT /api/v1/role-bindings/{role}/{principalRef}` | `bindRole` | `roles:write` · recent sign-in |
@@ -1278,17 +1289,32 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 | `GET /api/v1/authz/me` | `getAuthzMe` | authenticated |
 | `POST /api/v1/authz/check` | `checkPermissions` | authenticated |
 
+**projects**
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/projects` | `listProjects` | `projects:read` or project administrator (`any`) |
+| `POST /api/v1/projects` | `createProject` | `projects:write` |
+| `GET /api/v1/projects/{key}` | `getProject` | `projects:read` or project administrator (`any`) |
+| `PUT /api/v1/projects/{key}` | `replaceProject` | `projects:write` · recent sign-in |
+| `DELETE /api/v1/projects/{key}` | `deleteProject` | `projects:write` · recent sign-in |
+| `PUT /api/v1/projects/{key}/admins/{principalRef}` | `addProjectAdmin` | `projects:write` · recent sign-in |
+| `DELETE /api/v1/projects/{key}/admins/{principalRef}` | `removeProjectAdmin` | `projects:write` · recent sign-in |
+| `PUT /api/v1/projects/{key}/repositories/{repoKey}` | `assignProjectRepository` | `repositories:write-config` · recent sign-in |
+| `DELETE /api/v1/projects/{key}/repositories/{repoKey}` | `unassignProjectRepository` | `repositories:write-config` · recent sign-in |
+| `GET /api/v1/projects/{key}/principals` | `lookupProjectPrincipals` | `identities:read` or project administrator (`managePolicies`) |
+
 **repositories**
 
 | Method and path | Operation | Permission |
 |---|---|---|
 | `GET /api/v1/formats` | `listFormats` | public; also carries `baseUrl`, the configured base URL of the endpoint (`null` when none is configured) |
 | `GET /api/v1/repositories` | `listRepositories` | public |
-| `POST /api/v1/repositories` | `createRepository` | `repositories:write-config` |
+| `POST /api/v1/repositories` | `createRepository` | `repositories:write-config` or project administrator (`manageRepositories`) |
 | `GET /api/v1/repositories/{key}` | `getRepository` | public |
-| `PUT /api/v1/repositories/{key}` | `replaceRepository` | `repositories:write-config` |
-| `PATCH /api/v1/repositories/{key}` | `updateRepository` | `repositories:write-config` |
-| `DELETE /api/v1/repositories/{key}` | `deleteRepository` | `repositories:write-config` · recent sign-in |
+| `PUT /api/v1/repositories/{key}` | `replaceRepository` | `repositories:write-config` or project administrator (`manageRepositories`) |
+| `PATCH /api/v1/repositories/{key}` | `updateRepository` | `repositories:write-config` or project administrator (`manageRepositories`) |
+| `DELETE /api/v1/repositories/{key}` | `deleteRepository` | `repositories:write-config` or project administrator (`manageRepositories`) · recent sign-in |
 
 **items**
 

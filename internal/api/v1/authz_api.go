@@ -13,6 +13,7 @@ import (
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/project"
 )
 
 // The permission operations of R-AUTHZ-021 to R-AUTHZ-023: policies, role
@@ -30,6 +31,9 @@ type AuthzServices struct {
 	// Owners is the package ownership service behind the ownership operations
 	// (ownership_api.go, R-AUTHZ-019); they decide on Engine.
 	Owners *authz.Ownership
+	// Projects is the project service behind the project operations
+	// (projects_api.go, R-AUTHZ-026); nil answers them with 503.
+	Projects project.Service
 }
 
 func (s *Server) policies() (*authz.Service, error) {
@@ -464,11 +468,14 @@ type scopeSummary struct {
 }
 
 type authzMe struct {
-	Roles        []string      `json:"roles"`
-	Capabilities []string      `json:"capabilities"`
-	Principals   []string      `json:"principals"`
-	Scope        *scopeSummary `json:"scope"`
-	Epoch        int64         `json:"epoch"`
+	Roles        []string `json:"roles"`
+	Capabilities []string `json:"capabilities"`
+	Principals   []string `json:"principals"`
+	// Projects are the projects the caller administers, with their switches
+	// (R-AUTHZ-026, Q-AUTHZ-181); [] for a caller that administers none.
+	Projects []authz.AdministeredProject `json:"projects"`
+	Scope    *scopeSummary               `json:"scope"`
+	Epoch    int64                       `json:"epoch"`
 }
 
 // GetAuthzMe implements GET /api/v1/authz/me (R-AUTHZ-022).
@@ -486,7 +493,10 @@ func (s *Server) GetAuthzMe(w http.ResponseWriter, r *http.Request) {
 		httpserver.Problem(w, r, err)
 		return
 	}
-	out := authzMe{Roles: []string{}, Capabilities: []string{}, Principals: nonNil(me.Principals), Epoch: me.Epoch}
+	out := authzMe{Roles: []string{}, Capabilities: []string{}, Principals: nonNil(me.Principals), Projects: me.Projects, Epoch: me.Epoch}
+	if out.Projects == nil {
+		out.Projects = []authz.AdministeredProject{}
+	}
 	for _, role := range me.Roles {
 		out.Roles = append(out.Roles, string(role))
 	}

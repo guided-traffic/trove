@@ -254,6 +254,15 @@ type Decider interface {
 	// serve without a fetch asks it; the allowed populate is recorded with
 	// RecordAllowed in the fill transaction.
 	PopulateOn(ctx context.Context, idx *Index, sub Subject, c Coordinate) Decision
+	// ProjectsOn lists the projects the subject administers with their switches, on
+	// the index the request decides on (R-AUTHZ-026, Q-AUTHZ-183).
+	ProjectsOn(idx *Index, sub Subject) []AdministeredProject
+	// AdministersOn asks whether the subject administers the named project with a
+	// right; it is a question and audits nothing (Q-AUTHZ-180).
+	AdministersOn(idx *Index, sub Subject, project string, right ProjectRight) bool
+	// AdministersRepositoryOn asks the same for the project of a repository and
+	// returns that project's key ("" and false when the repository has none).
+	AdministersRepositoryOn(idx *Index, sub Subject, repository string, right ProjectRight) (string, bool)
 	// MemberUsableOn is MemberUsable of R-AUTHZ-015 for a member of the virtual
 	// repository the coordinate addresses: read says the resolver may consult the
 	// member, fill that it may also populate the member's cache (a remote member

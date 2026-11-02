@@ -68,10 +68,43 @@ func (x authzAccess) RequireAction(ctx context.Context, c authz.Coordinate) erro
 	return a.Decide(ctx, c).Err()
 }
 
+// ProjectAccess is the optional fourth method set of an [Access]: the questions of
+// a delegable operation about the projects of the caller (R-AUTHZ-026, Q-AUTHZ-180).
+// They are answered on the request's index and audit nothing; the answer of a stub
+// engine is "no project", so a delegated operation refuses until the engine answers.
+type ProjectAccess interface {
+	// AdministeredProjects lists the projects the caller administers, with their
+	// switches (authz.Decider.ProjectsOn).
+	AdministeredProjects(ctx context.Context) ([]authz.AdministeredProject, error)
+	// AdministersRepository reports whether the caller administers the project of the
+	// repository with the right, and names the project (authz.Decider.AdministersRepositoryOn).
+	AdministersRepository(ctx context.Context, repository string, right authz.ProjectRight) (project string, ok bool, err error)
+}
+
+// AdministeredProjects implements [ProjectAccess].
+func (x authzAccess) AdministeredProjects(ctx context.Context) ([]authz.AdministeredProject, error) {
+	a, err := x.holder(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return a.Projects(), nil
+}
+
+// AdministersRepository implements [ProjectAccess].
+func (x authzAccess) AdministersRepository(ctx context.Context, repository string, right authz.ProjectRight) (string, bool, error) {
+	a, err := x.holder(ctx, repository)
+	if err != nil {
+		return "", false, err
+	}
+	project, ok := a.AdministersRepository(repository, right)
+	return project, ok, nil
+}
+
 var (
-	_ ActionAccess = authzAccess{}
-	_ Prober       = authzAccess{}
-	_ Beginner     = authzAccess{}
+	_ ProjectAccess = authzAccess{}
+	_ ActionAccess  = authzAccess{}
+	_ Prober        = authzAccess{}
+	_ Beginner      = authzAccess{}
 )
 
 // requestHolder is the holder a handler decides through when its declaration

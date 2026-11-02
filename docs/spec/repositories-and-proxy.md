@@ -99,7 +99,8 @@ ALTER TABLE repositories
 ```
 
 The M1 migration adds `lifecycle`, `config_version`, `created_by`, `updated_by`, `last_activity_at` and the key
-constraint; `claims_version` and `project_id` come with the migrations of their requirements (Q-REPO-11).
+constraint; `claims_version` and `project_id` come with the migrations of their requirements (Q-REPO-11); `project_id`
+is `00019_projects.sql` (R-AUTHZ-026).
 
 `config` never contains secret values; they are in `repository_secrets` (R-REPO-033). References
 that need referential integrity (members, deploy targets, pin targets, client certificates,
@@ -135,7 +136,8 @@ Priority: **MVP** · Covers: REPO-004, REPO-005
   as keys with 422 `reserved_name` ([api-and-ui.md](api-and-ui.md) R-API-004, Q-API-7). The
   OpenAPI key schema lists them as `x-trove-reserved-names`.
 - Repositories created by project administrators carry the project key as prefix
-  (`<projectKey>-…`, [R-AUTHZ-026](authorization.md)).
+  (`<projectKey>-…`, 422 `project_prefix_required`, [R-AUTHZ-026](authorization.md)); a repository an administrator
+  creates, or one that already exists, is assigned to a project without any prefix rule.
 - A key stays taken while its repository is being deleted and becomes free when the deletion job
   completes (R-REPO-013).
 - Addresses of a repository (INV-6):
@@ -239,7 +241,7 @@ read (R-REPO-010) and the object body of configuration as code
 | `priorityMember` | R-REPO-022; local and remote only | `false` | this page |
 | `hideExistence` | `inherit`, `true`, `false` | `inherit` | [R-AUTHZ-017](authorization.md) |
 | `layout` | R-REPO-006, read-only | the format's layout | this page |
-| `project` | Project key, read-only; assigned through the project API | `null` | [R-AUTHZ-026](authorization.md) |
+| `project` | Project key. Written on create only (the repository is assigned in the transaction that creates it, by a project administrator, who must send it, or by `repositories:write-config`); read-only afterwards, assigned and moved through the project API | `null` | [R-AUTHZ-026](authorization.md) |
 | `local` | `packageOwnership`, `ownershipDomain` ([R-AUTHZ-018](authorization.md), [R-AUTHZ-020](authorization.md)); `autoClaim` (R-REPO-023); `caps` (R-REPO-007). An omitted `packageOwnership` is the format's default, stored with the document; `ownershipDomain` answers `not_applicable` until R-AUTHZ-020 (P1) is built (Q-AUTHZ-155) | see owners | mixed |
 | `remote` | R-REPO-024; `cacheFillAction` within it is [R-AUTHZ-008](authorization.md) | — | this page |
 | `virtual` | R-REPO-017 | — | this page |
@@ -412,7 +414,7 @@ own transaction, wherever they run:
   `detach=true` removes the repository from member lists, pin rules and deploy targets, and the
   job transaction that removes the row (R-REPO-013);
 - every change of the virtual membership (R-REPO-017, R-REPO-018), the deploy target (R-REPO-021),
-  the project assignment ([R-AUTHZ-026](authorization.md), P1) or one of the authorization
+  the project assignment ([R-AUTHZ-026](authorization.md)) or one of the authorization
   settings `cacheFillAction`, `packageOwnership`, `hideExistence` and `requireAuthentication`
   ([R-AUTHZ-031](authorization.md)).
 
@@ -479,7 +481,7 @@ Priority: **MVP** · Covers: REPO-053, RMT-002, API-052
 | Request | `POST /api/v1/repositories`, body: the configuration document; omitted settings take their defaults, format defaults included |
 | Success | 201, `Location: /api/v1/repositories/<key>`, `ETag: "<config_version>"`, body: the stored document as R-REPO-010 returns it, plus `warnings` |
 | Errors | 400 `malformed_request`; 401; 403; 409 `already_exists`; 422 (R-REPO-008) |
-| Permission | `repositories:write-config`; or project administrator of a project with `manageRepositories`, for keys `<projectKey>-…`, which are assigned to that project ([R-AUTHZ-026](authorization.md)) |
+| Permission | `repositories:write-config`; or project administrator of a project with `manageRepositories`, with `project` in the body and a key `<projectKey>-…`: the repository is assigned to that project in the same transaction, and a virtual repository's members and deploy target are repositories of the project ([R-AUTHZ-026](authorization.md), Q-AUTHZ-178, Q-AUTHZ-184) |
 
 - Create is never an upsert. Configuration, relational rows, sealed secrets and the audit event are
   written in one transaction.
@@ -769,6 +771,9 @@ Priority: **MVP** · Covers: REPO-033
 | `pinning` | R-REPO-023 | `{"rules": []}` | R-REPO-023 |
 | `effectiveMembers` | R-REPO-018, read-only | — | — |
 
+- A write by a project administrator (R-AUTHZ-026) adds only members of its own project and sets a deploy target in it
+  (422 `repository_outside_project`, the same for an unknown key); members that an administrator of trove placed stay
+  (Q-AUTHZ-178).
 - Members MUST be of the virtual repository's format. In the MVP they are local or remote
   repositories; virtual members arrive with R-REPO-018 and are refused with 422 `validation_failed` with `invalid_member` in `errors[]`
   until then.

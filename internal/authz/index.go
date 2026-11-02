@@ -43,6 +43,10 @@ type Snapshot struct {
 	Entries      []q.AuthzBuildEntriesRow
 	Bindings     []q.AuthzBuildBindingsRow
 	Repositories []q.AuthzBuildRepositoriesRow
+	// Projects and ProjectAdmins are the rows of project and project_admin in the
+	// same snapshot (R-AUTHZ-026). WP-A reads them in pgSource.Snapshot.
+	Projects      []q.AuthzBuildProjectsRow
+	ProjectAdmins []q.AuthzBuildProjectAdminsRow
 	// Exposure are the endpoint exposure rules of the active repositories
 	// (endpoints.md R-EP-012), read in the same snapshot.
 	Exposure []q.EndpointsExposureBuildRow
@@ -198,6 +202,12 @@ func BuildIndex(s *Snapshot, reg *catalog.Registry, log *slog.Logger) *Index {
 	for _, p := range s.Policies {
 		if p.ResourceType != "repository" {
 			continue // build policies are P1 (R-AUTHZ-027)
+		}
+		if p.ProjectID != "" {
+			// A project policy covers only the repositories of its project. Until the
+			// scoped compile exists (WP-A) it covers nothing: skipping only removes
+			// rights, it never adds any.
+			continue
 		}
 		b.addPolicy(p)
 	}

@@ -28,6 +28,15 @@ type Requirement struct {
 	// Permission is the capability Access.Require must grant:
 	// {permission: <capability>}, a name of R-AUTHZ-010.
 	Permission string
+	// ProjectAdmin widens a Permission declaration to project administrators
+	// (R-AUTHZ-026, Q-AUTHZ-180): {permission: <capability>, projectAdmin: <right>}
+	// admits a caller that holds the capability, or administers at least one project
+	// with the right (any, managePolicies or manageRepositories). The step is coarse
+	// on purpose: which project the operation addresses is known only to the handler,
+	// which narrows with requireProject and delegatedScope (project_scope.go). A
+	// caller that holds the capability has the whole installation, a project
+	// administrator only the projects it administers.
+	ProjectAdmin authz.ProjectRight
 	// Role is the system role the caller must hold: {role: admin}.
 	Role string
 	// Action is a repository action on the coordinate the request names:
@@ -50,6 +59,8 @@ func (q Requirement) String() string {
 		return "authenticated, or public with " + q.PublicSwitch
 	case q.Authenticated:
 		return "authenticated"
+	case q.Permission != "" && q.ProjectAdmin != "":
+		return "permission " + q.Permission + ", or administrator of a project (" + string(q.ProjectAdmin) + ")"
 	case q.Permission != "":
 		return "permission " + q.Permission
 	case q.Role != "":
@@ -99,7 +110,7 @@ func parseRequirement(raw map[string]any) (Requirement, error) {
 			q.PublicSwitch = name
 		}
 		return q, nil
-	case "permission":
+	case "permission", "permission,projectAdmin":
 		name, ok := raw["permission"].(string)
 		if !ok || name == "" {
 			return Requirement{}, fmt.Errorf("permission must name a permission")
@@ -107,7 +118,15 @@ func parseRequirement(raw map[string]any) (Requirement, error) {
 		if !authz.Capability(name).Valid() {
 			return Requirement{}, fmt.Errorf("permission %q is not a capability of R-AUTHZ-010", name)
 		}
-		return Requirement{Permission: name}, nil
+		q := Requirement{Permission: name}
+		if v, has := raw["projectAdmin"]; has {
+			right, _ := v.(string)
+			if !authz.ProjectRight(right).Valid() {
+				return Requirement{}, fmt.Errorf("projectAdmin %v is not one of any, managePolicies, manageRepositories", v)
+			}
+			q.ProjectAdmin = authz.ProjectRight(right)
+		}
+		return q, nil
 	case "role":
 		name, ok := raw["role"].(string)
 		if !ok || !authz.Role(name).Valid() {
@@ -115,7 +134,7 @@ func parseRequirement(raw map[string]any) (Requirement, error) {
 		}
 		return Requirement{Role: name}, nil
 	}
-	return Requirement{}, fmt.Errorf("the declaration %v has a form this build does not enforce (public, authenticated[+publicSwitch], permission, role, action+repository[+package][+path])", raw)
+	return Requirement{}, fmt.Errorf("the declaration %v has a form this build does not enforce (public, authenticated[+publicSwitch], permission[+projectAdmin], role, action+repository[+package][+path])", raw)
 }
 
 // parseActionForm decodes {action, repository[, package][, path]}.
@@ -280,6 +299,9 @@ func (s *Server) decide(r *http.Request, q Requirement) error {
 		if s.o.Access == nil {
 			return refuse()
 		}
+		if q.ProjectAdmin != "" && s.projectAdminAdmits(ctx, q) {
+			return nil
+		}
 		return s.o.Access.Require(ctx, q.Permission)
 	case q.Role != "":
 		if s.o.Access == nil {
@@ -346,6 +368,32 @@ func (s *Server) switchOn(name string) bool {
 	switch name {
 	case "system.public_version":
 		return s.o.PublicVersion
+	}
+	return false
+}
+
+// projectAdminAdmits is the extra way in of a declaration that names projectAdmin
+// (Q-AUTHZ-180): the caller does not hold the capability, as a question without an
+// audit event, and administers at least one project with the declared right. A
+// caller that holds the capability, or that administers none, is left to
+// Access.Require, so the refusal and its audit event are the ones of any
+// capability. An Access that cannot answer the question admits nobody here.
+func (s *Server) projectAdminAdmits(ctx context.Context, q Requirement) bool {
+	if held, err := s.holds(ctx, q.Permission); err != nil || held {
+		return false
+	}
+	pa, ok := s.o.Access.(ProjectAccess)
+	if !ok {
+		return false
+	}
+	projects, err := pa.AdministeredProjects(ctx)
+	if err != nil {
+		return false
+	}
+	for _, p := range projects {
+		if p.Holds(q.ProjectAdmin) {
+			return true
+		}
 	}
 	return false
 }

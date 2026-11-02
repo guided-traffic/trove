@@ -409,8 +409,10 @@ func (q *Queries) IdentityGetGroup(ctx context.Context, name string) ([]Identity
 }
 
 const identityGetServiceAccount = `-- name: IdentityGetServiceAccount :many
-SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision, s.description
+SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision, s.description,
+       COALESCE(pr.key, '')::text AS project
   FROM principal p JOIN service_account s ON s.principal_id = p.id
+  LEFT JOIN project pr ON pr.id = s.project_id
  WHERE p.kind = 'service_account' AND p.name = $1::text
 `
 
@@ -421,8 +423,10 @@ type IdentityGetServiceAccountRow struct {
 	CreatedAt   pgtype.Timestamptz
 	Revision    int64
 	Description string
+	Project     string
 }
 
+// project is the key of the account's project, empty for a global account.
 func (q *Queries) IdentityGetServiceAccount(ctx context.Context, name string) ([]IdentityGetServiceAccountRow, error) {
 	rows, err := q.db.Query(ctx, identityGetServiceAccount, name)
 	if err != nil {
@@ -439,6 +443,7 @@ func (q *Queries) IdentityGetServiceAccount(ctx context.Context, name string) ([
 			&i.CreatedAt,
 			&i.Revision,
 			&i.Description,
+			&i.Project,
 		); err != nil {
 			return nil, err
 		}
@@ -895,6 +900,24 @@ func (q *Queries) IdentityInsertPrincipal(ctx context.Context, arg IdentityInser
 	return items, nil
 }
 
+const identityInsertProjectServiceAccount = `-- name: IdentityInsertProjectServiceAccount :exec
+INSERT INTO service_account (principal_id, description, project_id)
+VALUES ($1::text::uuid, $2::text, $3::text::uuid)
+`
+
+type IdentityInsertProjectServiceAccountParams struct {
+	ID          string
+	Description string
+	ProjectID   string
+}
+
+// A service account of a project (Q-AUTHZ-169): the row's trigger refuses a name
+// that does not start with the project key and a hyphen.
+func (q *Queries) IdentityInsertProjectServiceAccount(ctx context.Context, arg IdentityInsertProjectServiceAccountParams) error {
+	_, err := q.db.Exec(ctx, identityInsertProjectServiceAccount, arg.ID, arg.Description, arg.ProjectID)
+	return err
+}
+
 const identityInsertServiceAccount = `-- name: IdentityInsertServiceAccount :exec
 
 INSERT INTO service_account (principal_id, description) VALUES ($1::text::uuid, $2::text)
@@ -1065,17 +1088,21 @@ func (q *Queries) IdentityListGroups(ctx context.Context, arg IdentityListGroups
 }
 
 const identityListServiceAccounts = `-- name: IdentityListServiceAccounts :many
-SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision, s.description
+SELECT p.id::text AS id, p.name, p.status, p.created_at, p.revision, s.description,
+       COALESCE(pr.key, '')::text AS project
   FROM principal p JOIN service_account s ON s.principal_id = p.id
+  LEFT JOIN project pr ON pr.id = s.project_id
  WHERE p.kind = 'service_account' AND p.name > $1::text
    AND ($2::text = '' OR p.name ILIKE '%' || $2::text || '%')
+   AND ($3::text = '' OR pr.key = $3::text)
  ORDER BY p.name
- LIMIT $3::int
+ LIMIT $4::int
 `
 
 type IdentityListServiceAccountsParams struct {
 	After   string
 	Query   string
+	Project string
 	MaxRows int32
 }
 
@@ -1086,10 +1113,18 @@ type IdentityListServiceAccountsRow struct {
 	CreatedAt   pgtype.Timestamptz
 	Revision    int64
 	Description string
+	Project     string
 }
 
+// project filters by the key of the project; empty lists every account, global and
+// project ones.
 func (q *Queries) IdentityListServiceAccounts(ctx context.Context, arg IdentityListServiceAccountsParams) ([]IdentityListServiceAccountsRow, error) {
-	rows, err := q.db.Query(ctx, identityListServiceAccounts, arg.After, arg.Query, arg.MaxRows)
+	rows, err := q.db.Query(ctx, identityListServiceAccounts,
+		arg.After,
+		arg.Query,
+		arg.Project,
+		arg.MaxRows,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1104,6 +1139,7 @@ func (q *Queries) IdentityListServiceAccounts(ctx context.Context, arg IdentityL
 			&i.CreatedAt,
 			&i.Revision,
 			&i.Description,
+			&i.Project,
 		); err != nil {
 			return nil, err
 		}

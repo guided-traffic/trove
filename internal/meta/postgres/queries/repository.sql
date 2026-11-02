@@ -31,10 +31,12 @@ SELECT *
 -- name: InsertRepository :many
 -- A key that is taken (also by a repository being deleted) conflicts on the
 -- unique index; ON CONFLICT DO NOTHING returns no row and the caller answers
--- repository_exists.
-INSERT INTO repositories (key, format, class, config, created_by, updated_by)
+-- repository_exists. project_id is empty for a repository without a project; a
+-- project administrator's repository is assigned in this statement, in the
+-- transaction that creates it (R-AUTHZ-026).
+INSERT INTO repositories (key, format, class, config, project_id, created_by, updated_by)
 VALUES (sqlc.arg(key)::text, sqlc.arg(format)::text, sqlc.arg(class)::text, sqlc.arg(config)::text::jsonb,
-        NULLIF(sqlc.arg(actor)::text, '')::uuid, NULLIF(sqlc.arg(actor)::text, '')::uuid)
+        NULLIF(sqlc.arg(project_id)::text, '')::uuid, NULLIF(sqlc.arg(actor)::text, '')::uuid, NULLIF(sqlc.arg(actor)::text, '')::uuid)
 ON CONFLICT (key) DO NOTHING
 RETURNING *;
 

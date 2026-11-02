@@ -21,6 +21,7 @@ import (
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/outbound"
+	"github.com/guided-traffic/trove/internal/project"
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/secrets"
 )
@@ -138,6 +139,8 @@ type identityArea struct {
 type authzArea struct {
 	engine  *authz.Engine
 	service *authz.Service
+	// projects is the project service (R-AUTHZ-026); WP-B implements it.
+	projects project.Service
 }
 
 // filesArea is the item store, the generic layer over it and the decider the

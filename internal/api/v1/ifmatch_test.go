@@ -16,7 +16,11 @@ var ifMatchExempt = map[string]string{
 	"patchUserGroups":   "membership delta (R-API-012)",
 	"patchGroupMembers": "membership delta (R-API-012)",
 	"bindRole":          "binds one pair (R-API-012)",
-	"deployFile":        "file content on /files (R-API-012)",
+	// R-AUTHZ-026: adding an administrator binds one pair and an assignment binds a repository to a
+	// project; the version of a project covers its fields only (Q-AUTHZ-185).
+	"addProjectAdmin":         "binds one pair (R-API-012)",
+	"assignProjectRepository": "binds one pair (R-API-012)",
+	"deployFile":              "file content on /files (R-API-012)",
 }
 
 // TestR_API_012_OneMechanismForAMissingIfMatch holds the declaration side of

@@ -294,7 +294,7 @@ builder the architecture test allows to assemble SQL text.
 
 Columns added to `repositories`: `lifecycle` (`active`, `deleting`), `config_version` (ETag, registered),
 `created_by`, `updated_by` (plain uuid), `last_activity_at`, and the constraint `repositories_key_dots`. The row of the
-change area `repo_config` is seeded. `claims_version` is added by 00015 (M2) and `project_id` later (Q-REPO-11). The authorization
+change area `repo_config` is seeded. `claims_version` is added by 00015 (M2) and `project_id` by 00019 (projects, Q-REPO-11). The authorization
 settings of a repository (`cacheFillAction`, `packageOwnership`, `requireAuthentication`, `hideExistence`) stay in
 `config` (R-REPO-004).
 
@@ -399,6 +399,7 @@ only `errs` and the standard library; `archtest.CheckLayers` enforces it).
 |---|---|---|---|
 | [00017_nuget](../../internal/meta/postgres/migrations/00017_nuget.sql) | NuGet (WP3.S) | `nuget_version` (with the `search_doc` GIN index and the latest-version index), `nuget_tombstone`, `nuget_symbol_package`, `nuget_symbol_file` (P1) | R-NUGET-005, R-NUGET-006, R-NUGET-020, R-NUGET-021, R-NUGET-033 |
 | [00018_role_binding_source](../../internal/meta/postgres/migrations/00018_role_binding_source.sql) | authorization | `authz_role_binding.source` (`api` by default, `configuration` for `authz.role_bindings`), an expand step; a binary of the previous release inserts `api` | R-AUTHZ-010, Q-AUTHZ-170 |
+| [00019_projects](../../internal/meta/postgres/migrations/00019_projects.sql) | projects (phase 5a) | `project`, `project_admin`, `authz_project_policy_entry`; `project_id` on `repositories`, `service_account` and `authz_policy`; four guard triggers | R-AUTHZ-026, Q-AUTHZ-174 to Q-AUTHZ-176 |
 
 There is no trigram index and no `CREATE EXTENSION` (Q-NUGET-12). `search_doc` is built by `NuGetInsertVersion` with the
 `simple` configuration (Q-NUGET-18). The checks and indexes beyond the specification's sketch are Q-NUGET-19. The
@@ -424,3 +425,24 @@ server connections per database. The stack serves TLS only (verify-full from the
 connection uses it. Not covered: client-certificate authentication against the real server (the stack requests no
 client certificate; the unit tests prove the per-connection reload against a fake server that answers the SSLRequest),
 and a real PostgreSQL switchover (E0.13, e2e harness).
+
+## Projects tables (00019)
+
+Migration [00019_projects](../../internal/meta/postgres/migrations/00019_projects.sql) is an expand step (R-AUTHZ-026). The
+queries are in [project.sql](../../internal/meta/postgres/queries/project.sql); the registrations (`project`, `project_admin`,
+`authz_project_policy_entry`, and `project.version` as a revision column) are in
+[tables_projects.go](../../internal/meta/postgres/tables_projects.go). The page [projects.md](projects.md) lists who uses what.
+
+| Table or column | Purpose | Notes | Class |
+|---|---|---|---|
+| `project` | A project: key (immutable), display name, description, the two switches, `version` (ETag) | `version` moves with the PUT fields only (Q-AUTHZ-185) | data |
+| `project_admin` | Administrators of a project: users and groups | trigger `principal_kind_guard` (SQLSTATE `AI001`) refuses other kinds; cascade on both sides | data |
+| `repositories.project_id` | The project a repository is assigned to | `REFERENCES project (id)`, no cascade: the project cannot be deleted while a repository is assigned | (column) |
+| `service_account.project_id` | The project of a project service account | no cascade; trigger `AI003`: the name starts with `<key>-`, the project never changes | (column) |
+| `authz_policy.project_id` | The project of a project policy | `ON DELETE CASCADE`; `UNIQUE (id, project_id)` lets the entry table name the project | (column) |
+| `authz_project_policy_entry` | The grants of project policies | composite foreign key `(policy_id, project_id)` allows rows of project policies only; the previous release does not read it (Q-AUTHZ-174) | data |
+
+Guards that the database enforces whatever the API checked: `AI002` (a project service account in `group_membership`),
+`AI003` (the name prefix and the immutable project of a service account), `AI004` (a row in `authz_policy_entry` for a
+project policy: the binaries before projects write there and must fail rather than make a project policy global). Tested
+in [projects_test.go](../../test/integration/postgres/projects_test.go).

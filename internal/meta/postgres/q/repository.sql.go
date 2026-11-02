@@ -56,7 +56,7 @@ func (q *Queries) DeleteRepositoryRow(ctx context.Context, id int64) (int64, err
 }
 
 const getRepositoryByID = `-- name: GetRepositoryByID :many
-SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version
+SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id
   FROM repositories
  WHERE id = $1::bigint
 `
@@ -84,6 +84,7 @@ func (q *Queries) GetRepositoryByID(ctx context.Context, id int64) ([]Repository
 			&i.UpdatedBy,
 			&i.LastActivityAt,
 			&i.ClaimsVersion,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -96,7 +97,7 @@ func (q *Queries) GetRepositoryByID(ctx context.Context, id int64) ([]Repository
 }
 
 const getRepositoryByKey = `-- name: GetRepositoryByKey :many
-SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version
+SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id
   FROM repositories
  WHERE key = $1::text
 `
@@ -124,6 +125,7 @@ func (q *Queries) GetRepositoryByKey(ctx context.Context, key string) ([]Reposit
 			&i.UpdatedBy,
 			&i.LastActivityAt,
 			&i.ClaimsVersion,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -136,30 +138,34 @@ func (q *Queries) GetRepositoryByKey(ctx context.Context, key string) ([]Reposit
 }
 
 const insertRepository = `-- name: InsertRepository :many
-INSERT INTO repositories (key, format, class, config, created_by, updated_by)
+INSERT INTO repositories (key, format, class, config, project_id, created_by, updated_by)
 VALUES ($1::text, $2::text, $3::text, $4::text::jsonb,
-        NULLIF($5::text, '')::uuid, NULLIF($5::text, '')::uuid)
+        NULLIF($5::text, '')::uuid, NULLIF($6::text, '')::uuid, NULLIF($6::text, '')::uuid)
 ON CONFLICT (key) DO NOTHING
-RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version
+RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id
 `
 
 type InsertRepositoryParams struct {
-	Key    string
-	Format string
-	Class  string
-	Config string
-	Actor  string
+	Key       string
+	Format    string
+	Class     string
+	Config    string
+	ProjectID string
+	Actor     string
 }
 
 // A key that is taken (also by a repository being deleted) conflicts on the
 // unique index; ON CONFLICT DO NOTHING returns no row and the caller answers
-// repository_exists.
+// repository_exists. project_id is empty for a repository without a project; a
+// project administrator's repository is assigned in this statement, in the
+// transaction that creates it (R-AUTHZ-026).
 func (q *Queries) InsertRepository(ctx context.Context, arg InsertRepositoryParams) ([]Repository, error) {
 	rows, err := q.db.Query(ctx, insertRepository,
 		arg.Key,
 		arg.Format,
 		arg.Class,
 		arg.Config,
+		arg.ProjectID,
 		arg.Actor,
 	)
 	if err != nil {
@@ -183,6 +189,7 @@ func (q *Queries) InsertRepository(ctx context.Context, arg InsertRepositoryPara
 			&i.UpdatedBy,
 			&i.LastActivityAt,
 			&i.ClaimsVersion,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -196,7 +203,7 @@ func (q *Queries) InsertRepository(ctx context.Context, arg InsertRepositoryPara
 
 const listRepositories = `-- name: ListRepositories :many
 
-SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version
+SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id
   FROM repositories
  ORDER BY key
 `
@@ -231,6 +238,7 @@ func (q *Queries) ListRepositories(ctx context.Context) ([]Repository, error) {
 			&i.UpdatedBy,
 			&i.LastActivityAt,
 			&i.ClaimsVersion,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -243,7 +251,7 @@ func (q *Queries) ListRepositories(ctx context.Context) ([]Repository, error) {
 }
 
 const lockRepositoryByKey = `-- name: LockRepositoryByKey :many
-SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version
+SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id
   FROM repositories
  WHERE key = $1::text
    FOR UPDATE
@@ -273,6 +281,7 @@ func (q *Queries) LockRepositoryByKey(ctx context.Context, key string) ([]Reposi
 			&i.UpdatedBy,
 			&i.LastActivityAt,
 			&i.ClaimsVersion,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -291,7 +300,7 @@ UPDATE repositories
        updated_at = now(),
        updated_by = NULLIF($1::text, '')::uuid
  WHERE id = $2::bigint AND lifecycle = 'active'
-RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version
+RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id
 `
 
 type MarkRepositoryDeletingParams struct {
@@ -324,6 +333,7 @@ func (q *Queries) MarkRepositoryDeleting(ctx context.Context, arg MarkRepository
 			&i.UpdatedBy,
 			&i.LastActivityAt,
 			&i.ClaimsVersion,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -342,7 +352,7 @@ UPDATE repositories
        updated_at = now(),
        updated_by = NULLIF($2::text, '')::uuid
  WHERE id = $3::bigint AND config_version = $4::bigint AND lifecycle = 'active'
-RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version
+RETURNING id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id
 `
 
 type UpdateRepositoryConfigParams struct {
@@ -382,6 +392,7 @@ func (q *Queries) UpdateRepositoryConfig(ctx context.Context, arg UpdateReposito
 			&i.UpdatedBy,
 			&i.LastActivityAt,
 			&i.ClaimsVersion,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}

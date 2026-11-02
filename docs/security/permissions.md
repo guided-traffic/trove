@@ -7,7 +7,8 @@ bundle, a dist-tag write and an unpublish, the generic layer asks it for every d
 items API (Q-AUTHZ-161), the remote engine asks the populate check before a fill, the virtual engine asks `MemberUsableOn` per
 member and the shadowing check before a first version, and the host decides a format's write again when it commits
 (Q-ARCH-225). The role bindings of the system configuration (`authz.role_bindings`, applied by `trove migrate`) and the
-auditor's metadata read (`content:metadata-read`) are built. CI inline grants and projects do not exist yet.
+auditor's metadata read (`content:metadata-read`) are built. CI inline grants do not exist yet. Projects and the rights of their administrators are on
+[delegated-administration.md](delegated-administration.md).
 
 This page says what keeps a request from doing more than it was granted, how long a removed grant can still work, and what
 an attacker who controls one of the inputs gains. The mechanics are in

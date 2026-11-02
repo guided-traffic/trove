@@ -787,6 +787,7 @@ func (e *Engine) Effective(ctx context.Context, sub Subject) (Me, error) {
 		}
 	}
 	me.Capabilities = e.capabilities(idx, sub).list()
+	me.Projects = e.ProjectsOn(idx, sub)
 	switch kindOf(sub) {
 	case kindServiceAccount:
 		me.Principals = append(me.Principals, "sa:"+sub.Name)

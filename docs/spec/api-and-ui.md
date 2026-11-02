@@ -331,6 +331,7 @@ operations that require it when called with a session; the OpenAPI document mark
 | Tokens | Creating and rotating personal and service-account tokens (R-API-032) |
 | Command-line login | Approving or denying an `npm login` or a device-code login (P1; R-AUTH-034, R-AUTH-036) |
 | Permissions | Creating, replacing and deleting permission policies; binding and unbinding system roles (R-API-033) |
+| Projects | Replacing and deleting a project, adding and removing a project administrator, assigning and unassigning a repository ([authorization.md](authorization.md) R-AUTHZ-026) |
 | Package ownership | Adding and removing package owners, releasing a name ([authorization.md](authorization.md) R-AUTHZ-019, Q-AUTHZ-157) |
 | CI identity | Creating, replacing and deleting CI issuers, identity mappings and delegations (R-API-035) |
 | Settings | Changing authentication settings (R-API-037) |
@@ -354,6 +355,11 @@ Priority: **MVP** · Covers: ADMAPI-001, ADMAPI-041, IAM-032
   enforced by one shared step that calls the evaluator of [authorization.md](authorization.md)
   before the handler runs. Handlers add checks only where the decision depends on the request body
   (for example the target repository of a copy).
+- An operation that project administrators may call declares `{"permission": "<capability>", "projectAdmin": "<right>"}`
+  with the right `any`, `managePolicies` or `manageRepositories` ([authorization.md](authorization.md) R-AUTHZ-026,
+  Q-AUTHZ-180). The shared step admits the holder of the capability, or a caller that administers at least one
+  project with the right, and refuses everyone else with the refusal of the capability; the handler then narrows to the
+  addressed project (a project the caller does not administer: 404; a switch that is off: 403 `project_switch_off`).
 - Administrative read operations are reachable by a token carrying the matching system scope item
   instead of the administrator role (`identities:read`, `policies:read`, `settings:read`,
   `audit:read`, `repositories:read-config`, `tokens:read`; R-AUTH-025), so read-only automation
@@ -2155,15 +2161,19 @@ Acceptance criteria:
   `/Groups`; `GET /api/v1/groups/{name}/members` lists the user.
 
 ### R-API-047 · Projects
-Priority: **P1** · Covers: ADMAPI-063, ADMAPI-064, ADMAPI-065, ADMAPI-067
+Priority: **MVP** · Covers: ADMAPI-063, ADMAPI-064, ADMAPI-065, ADMAPI-067
+
+Raised from P1 on 2026-11-02 with R-AUTHZ-026 (beta phase 5a).
 
 Owned by [authorization.md](authorization.md) (R-AUTHZ-026, reduced project model):
 `/api/v1/projects` (list, create), `/api/v1/projects/{key}` (read, replace, delete when empty),
 `/api/v1/projects/{key}/admins/{principalRef}` (add and remove project administrators, which
 covers the user and group membership operations of ADMAPI-064 and ADMAPI-065 in the reduced
-model), and `/api/v1/projects/{key}/repositories/{repoKey}` (assign with `?move=true`, unassign).
-List endpoints of repositories, permission policies, webhooks and retention policies accept
-`project=` when projects exist. Project roles, global custom roles and environments are P2 there
+model), `/api/v1/projects/{key}/repositories/{repoKey}` (assign with `?move=true`, unassign) and
+`/api/v1/projects/{key}/principals` (the lookup of users and groups for project administrators).
+List endpoints of repositories, permission policies and service accounts accept `project=`
+(webhooks and retention policies when they exist). `GET /api/v1/authz/me` lists the projects
+the caller administers (`projects`). Project roles, global custom roles and environments are P2 there
 (see Deferred). Project writes, administrators and repository assignments included, answer with
 `Trove-Authz-Epoch` (R-API-052, R-AUTHZ-032).
 
@@ -2171,6 +2181,7 @@ Acceptance criteria:
 
 - A project administrator of `team-a` with `managePolicies` creates a project policy (201) and
   gets 403 for a global policy.
+- `GET /api/v1/projects` answers a project administrator its own projects and the `auditor` every project.
 
 ### R-API-048 · Package ownership surface
 Priority: **P1** · Covers: trove-only
@@ -3829,9 +3840,10 @@ Acceptance criteria: defined on `builds.md` (Q-API-5), which is written before P
 starts.
 
 ### R-UI-041 · Projects
-Priority: **P1** · Covers: UI-003, UI-050, UI-051
+Priority: **MVP** · Covers: UI-003, UI-050, UI-051
 
-Follows the reduced project model of R-AUTHZ-026 in [authorization.md](authorization.md):
+Raised from P1 on 2026-11-02 with R-AUTHZ-026 (beta phase 5a). Follows the reduced project model of R-AUTHZ-026 in
+[authorization.md](authorization.md):
 
 - A project filter in the header appears when projects exist and the caller administers at least
   one (or is administrator); the selection is stored as `projectFilter` (R-API-021) and filters the
@@ -3839,12 +3851,22 @@ Follows the reduced project model of R-AUTHZ-026 in [authorization.md](authoriza
 - Projects overview: key, display name, administrators, number of repositories, switches.
 - Create and edit dialog (administrators): key (`^[a-z][a-z0-9-]{1,31}$`, immutable), display name,
   description, `managePolicies`, `manageRepositories`, administrators (users and groups), assigned
-  repositories. Delete is offered only for projects without repositories.
+  repositories. Delete is offered only for projects without repositories and service accounts.
+- The administration area is shown to a caller whose `authz/me` lists at least one project in `projects`, also without
+  any capability (Q-AUTHZ-181). For such a project administrator it holds the project screens only: the project's overview
+  (read-only switches and administrators), its repositories (create, edit and delete with `manageRepositories`; the
+  assignment itself stays with administrators), its policies (with `managePolicies`; the editor offers the project's
+  repositories and the principal lookup of Q-AUTHZ-182), its service accounts (create, enable, disable and delete) and
+  their tokens (issue, with the lifetime cap and without a `system` scope, and revoke). An action whose switch is off is
+  shown disabled with the reason.
+- The `auditor` and the other holders of `projects:read` see every project and its screens read-only.
 
 Acceptance criteria:
 
 - An administrator creates project `team-a` with one repository and one administrator group; a
   member of that group sees the project in the filter and can create a project policy.
+- A member of that group, without any system role, sees the administration area with the project's screens and none of
+  the global ones; the global policy list is not offered to it.
 
 ### R-UI-042 · Errors, conflicts and feedback
 Priority: **MVP** · Covers: trove-only

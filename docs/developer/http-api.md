@@ -44,6 +44,7 @@ so start-up stops before an operation can run with a declaration nobody checks):
 | `{authenticated: true}` | anonymous → 401 with `WWW-Authenticate: Bearer` | — |
 | `{authenticated: true, publicSwitch: system.public_version}` | as above, unless the switch is on (`Options.PublicVersion`); the switch names are fixed in `publicSwitches()` | version |
 | `{permission: <capability>}` | `Options.Access.Require(ctx, name)`: 401 for an anonymous caller who needs credentials, 403 without the capability; with `Access` nil: 401 anonymous, 403 otherwise; the name must be a capability of R-AUTHZ-010 | info, replicas (`settings:read`, `system.read` in M0) |
+| `{permission: <capability>, projectAdmin: any \| managePolicies \| manageRepositories}` | the capability as a question first (`Holds`, no audit event); then, if the caller lacks it, `ProjectAccess.AdministeredProjects` must hold a project with the right, else `Access.Require` gives the refusal of the capability. The step is coarse: the handler narrows with `requireProject`, `requireProjectOfRepository` or `delegatedScope` ([project_scope.go](../../internal/api/v1/project_scope.go), [projects.md](projects.md), Q-AUTHZ-180, ADR-146) | projects, project policies, service accounts, repositories |
 | `{role: <role>}` | `Access.Require(ctx, "role:<role>")`: the caller holds the system role | — |
 | `{action: <action>, repository: query.<n> \| path.<n>[, package: …][, path: …]}` | `ActionAccess.RequireAction` decides the action on the coordinate built from the request (R-AUTHZ-015) | — |
 

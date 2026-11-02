@@ -18,11 +18,11 @@ regenerated.
 | Number | Value | Kind |
 |---|---|---|
 | **Implemented** | **12.8%** (286 of 2,239 catalog features) | measured from passing tests that name requirements (Q-ROAD-4) |
-| **MVP features covered by spec requirements** | **100%** (384 of 384) | measured from `Covers:` lines |
-| P1 features covered by spec requirements | 56.7% (293 of 517) | measured from `Covers:` lines |
+| **MVP features covered by spec requirements** | **100%** (390 of 390) | measured from `Covers:` lines |
+| P1 features covered by spec requirements | 56.4% (290 of 514) | measured from `Covers:` lines |
 | In-scope features covered (MVP, P1, P2, Later) | 32.3% (700 of 2,167) | measured from `Covers:` lines |
 | Catalog features | 2,239 on 60 pages | measured from catalog headings |
-| Spec requirements | 678 on 16 pages (526 MVP, 147 P1, 5 P2) | measured from spec headings |
+| Spec requirements | 678 on 16 pages (528 MVP, 145 P1, 5 P2) | measured from spec headings |
 | Requirements covering no catalog feature | 135 (`trove-only`) | measured from `Covers:` lines |
 <!-- coverage-gen:end headline -->
 
@@ -51,12 +51,12 @@ see [Honesty notes](#honesty-notes).
 <!-- coverage-gen:begin priority -->
 | Priority | Features | Specified | Open | Specified share | Covered by an MVP requirement | Implemented |
 |---|---:|---:|---:|---:|---:|---:|
-| **MVP** | 384 | 384 | 0 | 100% | 384 | 228 |
-| **P1** | 517 | 293 | 224 | 56.7% | 64 | 50 |
-| **P2** | 892 | 23 | 869 | 2.6% | 15 | 8 |
+| **MVP** | 390 | 390 | 0 | 100% | 390 | 228 |
+| **P1** | 514 | 290 | 224 | 56.4% | 68 | 50 |
+| **P2** | 889 | 20 | 869 | 2.2% | 12 | 8 |
 | **Later** | 374 | 0 | 374 | 0% | 0 | 0 |
 | **Out of scope** | 72 | 0 | 72 | 0% | 0 | 0 |
-| **Total** | 2,239 | 700 | 1,539 | 31.3% | 463 | 286 |
+| **Total** | 2,239 | 700 | 1,539 | 31.3% | 470 | 286 |
 <!-- coverage-gen:end priority -->
 
 The column *Covered by an MVP requirement* shows where the spec pulls work forward: 55 P1 features
@@ -80,7 +80,7 @@ Each page name links to that page's section of the checklist.
 | [Artifact management](checklist.md#artifact-management-art) | 53 | 10 | 20 | 22 | 0 | 1 | 32 | 21 |
 | [Search and query language](checklist.md#search-and-query-language-srch) | 64 | 0 | 24 | 35 | 5 | 0 | 3 | 61 |
 | [Builds and CI integration](checklist.md#builds-and-ci-integration-bld) | 49 | 0 | 15 | 22 | 11 | 1 | 0 | 49 |
-| [Identity and access](checklist.md#identity-and-access-iam) | 69 | 21 | 11 | 26 | 6 | 5 | 35 | 34 |
+| [Identity and access](checklist.md#identity-and-access-iam) | 69 | 24 | 11 | 23 | 6 | 5 | 35 | 34 |
 | [Authentication providers and human login](checklist.md#authentication-providers-and-human-login-authn) | 44 | 13 | 5 | 25 | 0 | 1 | 18 | 26 |
 | [Access tokens](checklist.md#access-tokens-tok) | 48 | 24 | 3 | 12 | 6 | 3 | 27 | 21 |
 | [OIDC federation for CI systems](checklist.md#oidc-federation-for-ci-systems-cioidc) | 40 | 20 | 9 | 10 | 1 | 0 | 31 | 9 |
@@ -91,7 +91,7 @@ Each page name links to that page's section of the checklist.
 | [Events and extensibility](checklist.md#events-and-extensibility-evt) | 82 | 1 | 24 | 12 | 43 | 2 | 26 | 56 |
 | [Distribution and release lifecycle](checklist.md#distribution-and-release-lifecycle-dist) | 70 | 2 | 0 | 0 | 67 | 1 | 2 | 68 |
 | [Security scanning and curation](checklist.md#security-scanning-and-curation-sec) | 98 | 18 | 18 | 17 | 43 | 2 | 18 | 80 |
-| [UI inventory](checklist.md#ui-inventory-ui) | 61 | 30 | 17 | 8 | 3 | 3 | 47 | 14 |
+| [UI inventory](checklist.md#ui-inventory-ui) | 61 | 33 | 14 | 8 | 3 | 3 | 47 | 14 |
 | [Content API operation catalog](checklist.md#content-api-operation-catalog-api) | 166 | 11 | 56 | 48 | 48 | 3 | 67 | 99 |
 | [Operation catalog: administration API](checklist.md#operation-catalog-administration-api-admapi) | 114 | 34 | 23 | 23 | 28 | 6 | 54 | 60 |
 | [Package formats: matrix and cross-format behavior](checklist.md#package-formats-matrix-and-cross-format-behavior-fmt) | 14 | 8 | 3 | 1 | 1 | 1 | 9 | 5 |
@@ -187,9 +187,9 @@ table.
 <!-- coverage-gen:begin audiences -->
 | Audience | MVP entries | MVP and P1 entries | Implemented | Most open entries (MVP and P1) |
 |---|---|---|---:|---|
-| **npm-only team** | 205 of 205 specified, 0 open (100%) | 319 of 367 specified, 48 open (86.9%) | 162 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
-| **.NET team** | 203 of 203 specified, 0 open (100%) | 309 of 357 specified, 48 open (86.6%) | 163 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
-| **platform/ops team** | 263 of 263 specified, 0 open (100%) | 445 of 465 specified, 20 open (95.7%) | 175 | Repositories 9; Operations, monitoring and configuration 4; High availability and deployment 3 |
+| **npm-only team** | 211 of 211 specified, 0 open (100%) | 322 of 370 specified, 48 open (87.0%) | 162 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
+| **.NET team** | 209 of 209 specified, 0 open (100%) | 312 of 360 specified, 48 open (86.7%) | 163 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
+| **platform/ops team** | 269 of 269 specified, 0 open (100%) | 448 of 468 specified, 20 open (95.7%) | 175 | Repositories 9; Operations, monitoring and configuration 4; High availability and deployment 3 |
 
 Pages counted per audience:
 
@@ -339,11 +339,11 @@ and the report formats are in
 
   | Concept | On the identity page | Elsewhere in the catalog |
   |---|---|---|
-  | Projects | P2 (IAM-051) | P1: project settings of repositories (REPO-013, REPO-045) |
+  | Projects | MVP (IAM-051, IAM-052, IAM-057, UI-003, UI-050, UI-051; raised from P2 and P1 on 2026-11-02, beta phase 5a) | P1: project settings of repositories (REPO-013, REPO-045) |
   | Roles | P2 (IAM-054 global roles, IAM-055 project roles) | P1: role operations (ADMAPI-019, ADMAPI-066) |
   | Environments | P2 (IAM-063) | P1: environment operations (ADMAPI-068); REPO-013 also assigns environments |
 
-  The spec follows the P1 side for projects (R-AUTHZ-026) and the identity page's P2 for roles and
+  The spec follows the P1 side for projects (R-AUTHZ-026, raised to MVP and moved into the beta on 2026-11-02 as phase 5a of [BETA.md](../projektplan/BETA.md#phase-5a--projects-and-delegated-administration)) and the identity page's P2 for roles and
   environments. [authorization.md](../spec/authorization.md) and
   [api-and-ui.md](../spec/api-and-ui.md) defer ADMAPI-019, ADMAPI-066 and ADMAPI-068 to P2, each
   with a reason, and the fixed system roles of R-AUTHZ-010 cover P1. Five of the open P1 entries

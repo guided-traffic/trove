@@ -27,7 +27,7 @@ numbers (owner, 2026-11-02).
 | [2 · Access core](#phase-2--access-core-m1) | Login, tokens, permissions, repositories, admin UI | 🟢 |
 | [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | 🟢 |
 | [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual | 🟢 |
-| [5a · Projects](#phase-5a--projects-and-delegated-administration) | Projects with project administrators who manage their repositories, policies and the technical accounts of external parties | ⚪ |
+| [5a · Projects](#phase-5a--projects-and-delegated-administration) | Projects with project administrators who manage their repositories, policies and the technical accounts of external parties | 🟡 |
 | [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | ⚪ |
 | [5b · trove Bastion](#phase-5b--trove-bastion-m13) | An exposed, read-only cache instance in front of the main installation that serves released content to external parties and takes load off it | ⚪ |
 | [6 · Vulnerability scanning](#phase-6--vulnerability-scanning-m4b) | Own advisory mirror, findings and vulnerability report, malicious versions blocked, npm and NuGet audits from trove's data | ⚪ |
@@ -261,7 +261,7 @@ The owner moved projects into the beta on 2026-11-02, before GitLab CI OIDC: pro
 accounts for external parties and give them fine or coarse access to chosen repositories of their project, and the
 Bastion serves those parties. Phase 5 then maps GitLab pipelines into projects.
 
-- ⚪ Spec first: R-AUTHZ-026 completed with project service accounts (Q-AUTHZ-169) and the project screens; a project
+- 🟡 Spec first: R-AUTHZ-026 completed with project service accounts (Q-AUTHZ-169) and the project screens; a project
   administrator creates remote repositories too, bounded by the outbound address rules
   ([Q-AUTHZ-173](../spec/authorization.md#q-authz-173--a-project-administrator-creates-remote-repositories), owner 2026-11-02)
 - ⚪ Projects: an immutable key, display name and description, the switches `managePolicies` and `manageRepositories`

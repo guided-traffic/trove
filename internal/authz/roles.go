@@ -145,6 +145,9 @@ type Me struct {
 	Capabilities []Capability
 	// Principals are the references of the principal set.
 	Principals []string
+	// Projects are the projects the subject administers, with their switches
+	// (R-AUTHZ-026, Q-AUTHZ-181); empty for a subject that administers none.
+	Projects []AdministeredProject
 	// Epoch is the epoch of the index that answered.
 	Epoch int64
 }

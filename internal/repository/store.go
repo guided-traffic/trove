@@ -54,6 +54,9 @@ func toRepository(r q.Repository, cat *catalog.Registry) (Repository, error) {
 	if r.LastActivityAt.Valid {
 		out.LastActivityAt = r.LastActivityAt.Time
 	}
+	if r.ProjectID.Valid {
+		out.ProjectID = r.ProjectID.String()
+	}
 	var s Settings
 	if err := json.Unmarshal(r.Config, &s); err != nil {
 		out.Disabled = true
