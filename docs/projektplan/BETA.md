@@ -413,6 +413,10 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   empty `subject_token` has no stated reason; `ci.exchange.enabled: false` answering 404 is only in the code; the 405 of
   R-CI-007 is not in OpenAPI (W4)
 - 🟡 The reference pipeline's error line (R-CI-028) prints no `requestId`, which the administrator needs to find the refusal (W7)
+- 🟡 `TestR_CI_003_ARotationCausesOneFetchAndRandomKidsCauseNone` fails in 2 of 4 runs on main after the merge of W1:
+  100 random `kid`s within about 100 ms cause exactly 10 more reads of `ci_issuer_keys` than an idle window, the bound is
+  2 (one re-read per issuer, replica and `cluster.epoch_poll_interval`, R-CI-003); passed in W1's worktree and in one run on
+  main. Cause not known yet (a throttle that lets reads through, or the measurement by `pg_stat_user_tables`)
 
 **Phase**
 - 🟢 Contracts: schema (migrations `00026` to `00028`), packages (`internal/ci`, `claims`, `subject`, `reason`), every
