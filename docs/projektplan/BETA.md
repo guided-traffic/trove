@@ -318,6 +318,10 @@ to denial-of-service attempts.
   confirmed a full read of the repository (an answer kept like the others, under the revocation feed). A filtered
   document is never shared: it goes to the main installation per caller with a conditional request. Artifacts are shared
   after the main installation said the caller may read them
+- ⚪ The Bastion's token (owner, 2026-11-02): renewed by hand with an overlap: an administrator issues a second token before
+  the first expires, it reaches the Bastion's Secret through GitOps, the old one is revoked; the Bastion reloads a changed
+  Secret without a restart, exports the remaining lifetime as a metric and warns in its log from a chart-set period before
+  expiry (proposed 30 days). The Bastion holds no right to write Secrets or to issue tokens
 - ⚪ The main installation counts the real client: the Bastion stops abuse before a request reaches the main installation,
   and the main installation lists the Bastion's addresses in `server.trusted_proxies`, so its per-address limits apply to
   the client and not to the Bastion
