@@ -399,6 +399,10 @@ The service index lists the publish resources when `Resolver.DeployTarget` resol
 
 **What a remote member must hand over** (the contract with the remote adapter, Q-NUGET-56). For `{lower_id}/index.json` the stored upstream version list; for `{lower_id}/.registration/index.json`, variant `registration`, the upstream's registration index
 with every page inlined (`items` present on each page). `merge.DecodeUpstream` fails a member with `upstream_failed` when a page has none.
+The remote adapter does not keep that contract yet: since Q-NUGET-67 it hands over the stored upstream bytes, which are gzip-coded for the gzip hives
+and list the pages of an ID with 128 or more versions by URL, and `DecodeUpstream` and `decodeFlat` inflate nothing. A registration of a nuget.org ID
+through a virtual repository therefore answers 502; the test upstream gzips only when asked and has no ID that large, so the tests pass. Open finding
+F-22 of [promt.md](../projektplan/promt.md#8--open-findings).
 
 **Tests.** The merge: `go test ./internal/formats/nuget/merge/`. The handlers over a stand-in for the engine that merges the documents a test names ([virtual_test.go](../../internal/formats/nuget/virtual_test.go), `mergeResolver`), the search over a port per
 repository ([search_virtual_test.go](../../internal/formats/nuget/search_virtual_test.go)), and check 5 of the conformance kit ([virtual_fixture_test.go](../../internal/formats/nuget/virtual_fixture_test.go)). Over PostgreSQL, with the real engine, pin rules, claims, grants and two replicas:

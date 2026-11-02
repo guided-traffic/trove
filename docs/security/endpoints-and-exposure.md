@@ -180,3 +180,48 @@ are the guard.
 Stage: the `versions` include and exclude lists of an exposure rule on a repository of a format that has more than one spelling of a version (NuGet: `2.1`, `2.1.0.0`, `2.1.0-Beta.1`), compiled by `compileRule` as name globs without folding (Q-EP-69, Q-NUGET-62).
 
 Live today for NuGet; npm has fewer spellings (a leading `v` or `=` is not a version in a document). The range of a rule is compared by the format's own parser and does not have the gap. The lists are compared letter by letter with the form the format asks about, the normalized lower-case form without build metadata. An exclude written as `2.1`, `2.1.0.0` or `2.1.0-Beta.1` therefore matches no request, and the version it was meant to hide is exposed, to the version list, the registrations, the search and the files. An include in another spelling fails closed: it exposes nothing. Measured on the NuGet fixture: an exclude list of those three spellings left 2.0.0, 2.1.0 and 2.1.0-beta.1 visible; the canonical spellings hid them. Subject: the versions an administrator meant to withdraw from a customer endpoint. What makes it real: an exclude entry typed in a non-canonical spelling; the manual names the canonical form and the range as the way to cover every spelling, and the rule's response gives no warning.
+
+### H-341 · A NuGet search term matches versions the caller cannot read
+
+Stage: the NuGet search of a local repository, and of each local member of a virtual one, for a caller whose read is narrowed by version (an endpoint with
+exposure rules, a grant or token scope with a version pattern) ([nuget_search.sql](../../internal/meta/postgres/queries/nuget_search.sql),
+[handlers_search.go](../../internal/formats/nuget/handlers_search.go) `searchRows`).
+
+Subject: the existence and the metadata of a hidden version.
+
+Live today (confirmed by reading the code; found by the code review and the security audit of 2026-11-02). The statement matches the text terms against the
+latest listed version of each package and a `version:` term against any listed version, whether or not the caller may read it; the read scope is applied
+afterwards, to the versions the answer shows. A customer of an endpoint whose rule exposes `Acme.Sdk` from 2.0.0 sends
+`q=packageid:acme.sdk version:3.0.0-rc.1&prerelease=true` and learns from `totalHits` (1 or 0) whether the hidden 3.0.0-rc.1 exists, and probes the words of a
+hidden latest version's description the same way. The versions listed stay the exposed ones, and the documents and files of a hidden version stay refused.
+What makes it real: a consumer who must not learn of unreleased versions. The fix matches `version:` against readable versions and the text terms against the
+latest readable version (open finding F-21 of [promt.md](../projektplan/promt.md#8--open-findings)).
+
+### H-342 · A NuGet search through a virtual repository decides exposure on its members
+
+Stage: the merged search of a NuGet virtual repository ([search_virtual.go](../../internal/formats/nuget/search_virtual.go) →
+[virtual.go](../../internal/formathost/virtual.go) `ReadScope` → [visible.go](../../internal/authz/visible.go) `readScope.MayRead`).
+
+Subject: the search answer of a virtual repository addressed through an endpoint with rules, and of a token scoped to a virtual repository by its key.
+
+Live today (confirmed by reading the code: the coordinate `MayRead` builds has no `Addressed`). The exposure ceiling then looks up the rules of the member,
+not those of the virtual repository the client addressed (Q-EP-11), and the scope lift of Q-AUTHZ-163 does not apply. With the rule on the virtual repository
+the search fails closed: it lists nothing (`totalHits: 0`), while the version lists and registrations of the same repository list the exposed versions, and a
+token scoped to the virtual key finds nothing either. It leaks where an operator also exposes the members on the endpoint: the search through the virtual
+repository then follows the members' rules while its documents follow the virtual repository's, so search can list versions the documents hide. The
+integration test of R-NUGET-034 builds `nuget-customers` as a local repository and does not see it. What makes it real: a customer endpoint that serves a
+NuGet virtual repository, as [endpoints.md](../spec/endpoints.md) describes it. The fix sets the addressed repository on the read scope of the merged search
+(open finding F-21).
+
+### H-343 · On an endpoint with rules a NuGet document's ETag changes with hidden versions
+
+Stage: the weak ETag of the NuGet documents of a local and of a virtual repository ([documents.go](../../internal/formats/nuget/documents.go),
+[handlers_virtual.go](../../internal/formats/nuget/handlers_virtual.go)).
+
+Subject: the activity on hidden versions of an exposed package.
+
+Live today (read in the code; found by the security audit of 2026-11-02). The ETag is derived from the package's revision, which a push, unlist, relist or
+delete of any version raises, also of a hidden one; the filtered body does not change. A customer that polls a version list or registration with
+`If-None-Match` learns when hidden versions change, the same kind of signal as `Last-Modified` (H-60). The virtual ETag also lacks the package ID, so two IDs of
+one member at the same revision share an ETag. What makes it real: a consumer who must not learn when unreleased versions move. The fix derives the ETag on
+an endpoint with rules from the filtered inputs (open finding F-23).

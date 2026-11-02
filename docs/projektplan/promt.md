@@ -207,6 +207,67 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
+Found on 2026-11-02 by the code review and the security audit of phase 4 (NuGet), at commit 42f7a1d. A fix wave was
+started and stopped before it changed the tree; phase 4 stays open until these are fixed (BETA.md):
+
+### NuGet
+
+- **F-20 · The forwarded search of a remote is not built** (confirmed). R-NUGET-016 is MVP and in M3's scope (WP3.2), and
+  Q-NUGET-55 left it to "the package that forwards". A remote searches only what it has cached, and `searchRemote` in
+  [search_virtual.go](../../internal/formats/nuget/search_virtual.go) returns nothing, so the search of `nuget-all` lists no
+  package of nuget.org. Also: `Classify("v3/search")` names the package `v3`, so a populate check on a forwarded search would
+  be decided for that package. Done when R-NUGET-016's and R-NUGET-018's criteria pass, the two-replica and Valkey-stopped
+  timing case in e2e.
+- **F-21 · NuGet search: hidden versions, the addressed repository, the fan-out and the patterns** (confirmed in the code).
+  Search terms match versions the caller cannot read ([H-341](../security/endpoints-and-exposure.md#h-341--a-nuget-search-term-matches-versions-the-caller-cannot-read));
+  the merged search decides exposure and the scope lift on the members instead of the addressed virtual repository
+  ([H-342](../security/endpoints-and-exposure.md#h-342--a-nuget-search-through-a-virtual-repository-decides-exposure-on-its-members)),
+  which breaks E3.7 when `nuget-customers` is virtual; the fan-out over members has no concurrency bound and a scan budget per
+  member ([H-335](../security/permissions.md#h-335--a-nuget-search-by-a-caller-with-row-level-grants-scans-up-to-200000-matches-per-request));
+  the search of a local repository ignores its patterns ([H-344](../security/repository-model.md#h-344--the-nuget-search-of-a-local-repository-ignores-its-include-and-exclude-patterns)).
+  Tests to add: E3.7 with a virtual `nuget-customers`, a token scoped to the virtual key, PostgreSQL cases where a `version:`
+  and a `description:` term match only a hidden version.
+- **F-22 · A virtual repository with a nuget.org member answers 502 on registration documents** (confirmed by a probe test of
+  the code review). `merge.DecodeUpstream` and `decodeFlat` ([merge/](../../internal/formats/nuget/merge)) do not inflate the
+  gzip bytes a remote stores unchanged, and refuse an index whose pages are listed by URL (more than 128 versions), although
+  Q-NUGET-56 wants every page inlined for the merge (Q-NUGET-67 hands over the raw index). Every nuget.org ID through
+  `nuget-all` fails; the stub only gzips when asked and its IDs have two versions, so
+  `TestR_NUGET_018_AVirtualRepositoryMergesALocalAndARemoteMember` passes, and
+  `TestR_NUGET_017_AnIndexWithPagesByUrlIsAnUpstreamFailureNotAShortList` pins the defect. With it (read): the merge counts a
+  version as cached from any cached file, not only its `.nupkg` (`formathost/virtual.go` `CachedVersion`); the merge drops parts
+  of a remote entry (reuse `remote.Convert`); `MergeFingerprint` covers only the index digest, so a changed page under an unchanged
+  index keeps the old ETag.
+- **F-23 · Local NuGet documents** (read, except the first). `is_semver2` ignores a SemVer-2-specific bound of a dependency range
+  for pushed and cached packages (`publish.go` `versionInput`, `remote_fill.go`; confirmed by a probe test), so such a version
+  shows to clients older than 4.3. On an endpoint with rules the ETag changes with hidden versions and the virtual ETag lacks the
+  ID ([H-343](../security/endpoints-and-exposure.md#h-343--on-an-endpoint-with-rules-a-nuget-documents-etag-changes-with-hidden-versions)).
+  A push of a new version and a hard delete of another version of the same ID take the folder and the package row in opposite
+  order (40P01, resolved by the retry). The local flat index renders with revision 0 (`handlers_flat.go`).
+- **F-24 · Upstream addresses in `deprecation` and `vulnerabilities`** (read). The remote and the merge copy them verbatim,
+  with `advisoryUrl` and any upstream `@id`; [nuget.md](../spec/formats/nuget.md) R-NUGET-015 says both "passed through" and
+  "every URL except projectUrl, licenseUrl and iconUrl is trove's". Decide, write back, and add a vulnerability and a deprecation to
+  the stub's corpus; the run against nuget.org (F-27) would see it on `newtonsoft.json` below 13.0.1.
+- **F-25 · The cache fill of a remote** (confirmed in the code). Every refusal of the archive reader skips the identity check
+  ([H-338](../security/nuget-remote.md#h-338--a-package-the-archive-reader-refuses-is-cached-without-its-identity-check)); an index
+  may list any number of pages ([H-339](../security/nuget-remote.md#h-339--one-registration-index-of-an-upstream-can-list-any-number-of-pages));
+  the identity check folds Unicode case while the rows keep the declared ID
+  ([H-340](../security/nuget-remote.md#h-340--the-identity-check-folds-unicode-case-the-rows-keep-the-declared-spelling)). And (seen in
+  e2e): the first answer to a cache miss on a remote file has no `ETag`, `Accept-Ranges` or `Cache-Control`, a stored answer has them.
+- **F-26 · The package reader may read another central directory than `archive/zip`** (read, not checked against Go 1.27.3).
+  `nupkg/scan.go` takes the end record whose comment ends at the end of the file, `archive/zip` the last signature; the entries
+  are compared by name, flags, method and sizes, not by data offset. Names and sizes must still match, so the limits hold.
+- **F-27 · The run against nuget.org of E3.1 has no test** (confirmed). npm has a read-only subset against the public
+  registry in `TestNPMClosing`; NuGet's closing set has none. Planned: a remote of `https://api.nuget.org/v3/index.json` and a
+  virtual repository with it, `dotnet restore` of `Newtonsoft.Json` and of an ID with more than 128 versions, nuget.exe through the
+  remote, the URLs of the registration, `dotnet package search` (needs F-20, and F-22 for the virtual registration).
+- **F-28 · `TestE1_11Scatter` of `access-long` meets the write budget** (confirmed, 2 of 5 runs of R-API-014 and R-API-052 alone on
+  kind at 42f7a1d). The class `api_write` of R-API-016 is a sliding window of 50 writes per 5 s per token; one token carries both
+  subtests, 18 and 41 writes in about 5 s, and the pacing comment at `e1_11_scatter_test.go:253` still describes the token bucket
+  that Q-API-3 replaced. CI has not hit it (R-API-052 takes 4.8 to 6.7 s there). Fix in the test: a token per subtest, and a guard
+  that reads the class's `RateLimit-Policy` and fails a write that would exceed it.
+- **F-29 · `Discoverer` has no kit check** (confirmed). R-ARCH-025 wants a kit check with every new behaviour; the engine caps a
+  discovery document's size and NuGet's own tests cover its parser. A crafted-document fixture needs its own design.
+
 Found on 2026-11-01 while writing the manual (`docs/manual`) and the design change of Q-UI-88:
 
 ### Tests and tools
@@ -226,4 +287,8 @@ Found on 2026-11-01 while writing the manual (`docs/manual`) and the design chan
   owned by root (`sudo rm /usr/local/bin/kubectl /usr/local/bin/kind`), and the Command Line Tools 26.6,
   which Homebrew reports as too old for Xcode 27
   (`sudo softwareupdate --install "Command Line Tools for Xcode 27.2-27.2"`, no restart).
+  Since Docker Desktop's restart of 2026-11-02 (after the disk ran full) `~/.docker/cli-plugins/docker-buildx` points at
+  Docker Desktop's own buildx again (v0.28.0-desktop.1, pin v0.38.1), so `make versions-check` fails locally; the Homebrew
+  copy is in place (`ln -sf /opt/homebrew/bin/docker-buildx ~/.docker/cli-plugins/docker-buildx`, no admin password; Docker
+  Desktop may relink it on its next update unless its CLI plugin management is turned off).
   Machine-level: the owner runs these; a run does not change the machine.

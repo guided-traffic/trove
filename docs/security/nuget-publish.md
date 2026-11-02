@@ -2,7 +2,8 @@
 
 Status: built (M3, phase 4): the push, the unlist, the relist and the delete of a NuGet package, the immutability of a version number
 with its tombstones, and the journal entries of R-NUGET-033. The reads of package content and documents, search, symbols and the
-remote and virtual classes of NuGet have no page yet; they are not built. The symbol push is below.
+remote and virtual classes of NuGet are built; the remote class has its own page, [nuget-remote.md](nuget-remote.md), and the
+exposure of documents and search on endpoints with rules is on [endpoints-and-exposure.md](endpoints-and-exposure.md). The symbol push is below.
 
 This page describes what a caller can do to a local NuGet repository through the protocol and what stops a caller from doing more.
 The authorization it relies on is on [permissions.md](permissions.md), the credentials on [tokens-and-credentials.md](tokens-and-credentials.md),
@@ -89,7 +90,7 @@ outcome of the namespace claim, `package.deleted`, `package.metadata_changed` wi
 `repository.remote_package_shadowed` for a first version published on the strength of `manage` over a package a remote member serves, and, from the item
 store, `artifact.deployed` for the `.nupkg` and for the generated `.nuspec` and `artifact.deleted` for each removed file. The two package events
 carry the journal entry of R-NUGET-033, `{"repository": <id>, "id": <lower id>, "version": <URL form>, "sha512": <hex>}`: identifiers and a digest, no token, no
-principal name. A push of a cache fill (a remote class that does not exist yet) records no event.
+principal name. The cache fill of a remote repository is no push and records none of these events.
 
 ## What this does not cover
 

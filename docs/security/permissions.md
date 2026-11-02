@@ -287,4 +287,7 @@ asking `MayRead` per listed version; the scan stops with `400` above 200,000 mat
 is CPU on the replica that answers, proportional to the matches (not to the page): a query that matches a large repository, repeated, can
 hold a replica busy, and each request pays the scan again because nothing caches it. A caller with an unrestricted read (`ReadAll`) is
 counted and paged by SQL and pays no scan. What bounds it today is the 1,024-byte and 16-term limit of `q` and the 200,000 cap; nothing caches or rate-limits the scan itself. Closing it needs the readable package names handed to the statement (the condition is in
-Q-NUGET-45); H-299 is the same cost for the package list.
+Q-NUGET-45); H-299 is the same cost for the package list. Through a virtual repository the scan runs once per local member, each member in a goroutine of
+its own with no bound on how many run at once and a budget of 200,000 matches each ([search_virtual.go](../../internal/formats/nuget/search_virtual.go)); with
+`max_virtual_members` at its default of 100, one request can hold a database connection per member and multiply the cost by the members (read in the code,
+open finding F-21 of [promt.md](../projektplan/promt.md#8--open-findings)).

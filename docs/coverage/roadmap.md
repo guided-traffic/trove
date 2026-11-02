@@ -720,6 +720,12 @@ and then freezes it.
   - the run against nuget.org, in the full run of Test and Release on the commit that closes the phase.
 
   The manual Visual Studio 2022 checklist has been run once against the M3 build.
+
+  *Status (2026-11-02):* the Linux row runs on every change (job `e2e-nuget`, set `nuget`: the .NET 10 SDK and nuget.exe on
+  Mono through local, remote and virtual repositories of the counting test upstream). The Windows row and the Visual Studio
+  checklist run by hand in the owner walkthrough of phase 8
+  ([Q-NUGET-72](../spec/formats/nuget.md#q-nuget-72--the-windows-row-of-e31-and-the-visual-studio-checklist-run-in-the-owner-walkthrough-not-on-a-ci-runner)).
+  The run against nuget.org has no test yet (F-27 of [promt.md](../projektplan/promt.md#8--open-findings)).
 - **E3.2** Cold cache, concurrent clients: three clients run `dotnet restore --no-cache` at once
   against three replicas. They restore the reference solution in `perf/` (at least 100 packages in
   its restore graph) through `nuget-all`. All three succeed, and the counting upstream records one
@@ -740,6 +746,14 @@ and then freezes it.
   adapter of E3.7 is part of the frozen surface.
 - **E3.4** Every row of R-AUTHZ-007's action map has one test per format. The test shows the
   operation succeeds with the action and fails without it.
+
+  *Evidence (2026-11-02):* `TestR_AUTHZ_007_NPMActionMap` ([test/integration/npm/actions_test.go](../../test/integration/npm/actions_test.go))
+  and `TestR_AUTHZ_007_NuGetActionMap` ([test/integration/nuget/actions_test.go](../../test/integration/nuget/actions_test.go)) run each
+  built row with and without its action, on repositories with `packageOwnership: off` so that only the action decides. The rows
+  that are not built yet (npm deprecate, npm search, metadata recalculation, NuGet autocomplete) pin their current answer and
+  fail once the feature lands. R-AUTHZ-007 now states what the code does for an npm document `PUT` and for `whoami` and `ping`
+  ([Q-AUTHZ-166](../spec/authorization.md#q-authz-166--the-path-classifies-a-write-to-an-npm-package-document),
+  [Q-AUTHZ-167](../spec/authorization.md#q-authz-167--npm-whoami-and-ping-need-a-subject-that-can-read-the-repository)).
 - **E3.5** A push with a personal access token as `X-NuGet-ApiKey` succeeds, and so does a restore
   with a token as Basic password. A revoked token gets `401` on both (INV-8, R-NUGET-012).
 - **E3.6** NuGet on interchangeable replicas. R-NUGET-030 to R-NUGET-032 pass in the `scatter`
@@ -749,6 +763,10 @@ and then freezes it.
   same body and the same weak `ETag` on all three `web` replicas (R-NUGET-030, Q-NUGET-9). Variant
   A of the drain test gains the NuGet part of its load, and R-ARCH-024's drain criterion, whose
   load needs both formats, passes.
+
+  *Status (2026-11-02):* the scatter profile, the dropped answer (`TestNuGetPushRetry`), equal bodies and ETags on every
+  replica and the Valkey-stopped cases (`TestNuGetClosing`) pass on kind. The drain part moved to phase 7
+  ([Q-NUGET-73](../spec/formats/nuget.md#q-nuget-73--the-nuget-part-of-the-drain-test-moves-to-phase-7-with-the-other-long-legs)).
 - **E3.7** NuGet on a customer endpoint. Through `customers` and its own Ingress, with a bound
   token as password, `dotnet restore` and nuget.exe restore only exposed versions of `Acme.Sdk` from
   `nuget-customers`: the version list, the three registration hives and search list exactly the

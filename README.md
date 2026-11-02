@@ -5,12 +5,15 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/guided-traffic/trove)](https://goreportcard.com/report/github.com/guided-traffic/trove)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-> **Status: pre-release. Phases 1 to 3 are built (milestones M0 to M2).** The platform: the binary, its configuration, the PostgreSQL
+> **Status: pre-release. Phases 1 to 3 are built (milestones M0 to M2); phase 4, NuGet (M3), is built and open for the findings of its reviews.** The platform: the binary, its configuration, the PostgreSQL
 > and Valkey connections, replica coordination, the S3 blob layer, the TLS of every connection, the system API, the ops endpoints
 > and the Helm chart. The access core: OIDC login, own tokens, permission policies, endpoints and exposure rules, generic
 > repositories with raw transfer, audit, the admin UI and the in-app manual. The npm registry: local, remote (pull-through) and
 > virtual repositories, the package screens, client setup, npm on customer endpoints, the security audit and the in-app guides. The npm load in the drain and failover tests runs nightly and is not reliable yet; phase 7 owns it.
-> Not built yet: the NuGet protocols, GitLab CI federation, vulnerability scanning, backup and restore, and the HA hardening of
+> The NuGet registry: local, remote and virtual repositories, symbol package push, the package screens, client setup and guides,
+> NuGet on customer endpoints, and the format contract frozen at version 1; the forwarded search and the fixes of the review
+> findings are open ([open findings](docs/projektplan/promt.md#8--open-findings)).
+> Not built yet: GitLab CI federation, vulnerability scanning, backup and restore, and the HA hardening of
 > phase 7. Everything else is the target design in [docs/spec/](docs/spec/README.md). `v0.1.0` is the
 > last release made before the switch to the organisation's CI and release standard; it was published to `ghcr.io`. Releases
 > from now on are cut by Semantic Release from the conventional commits on `main`, and published to Docker Hub and to the chart
@@ -29,7 +32,7 @@ restart.
 
 ```mermaid
 flowchart LR
-  cl["Clients<br/>curl, browser, npm, pnpm, Yarn"]
+  cl["Clients<br/>curl, browser, npm, pnpm, Yarn, dotnet, nuget.exe"]
   subgraph k8s["Kubernetes (Helm chart)"]
     edge["Ingress controller<br/>HAProxy Ingress, HTTPS to the backend"]
     svc["Service trove<br/>web pods"]
@@ -93,14 +96,17 @@ Built (M2, npm registry):
 - 🖼️ **Package screens and client setup.** The package list and detail with the README, an install panel, client setup snippets, and repository settings rendered from the format's schema. See [packages](docs/developer/packages.md) and [web UI](docs/developer/web-ui.md).
 - 📖 **In-app guides.** A guide for every npm variant (local, remote and virtual) with npm, pnpm, Yarn Berry and Yarn Classic, in the UI's guides area. See [npm](docs/developer/npm.md) and [web UI](docs/developer/web-ui.md).
 
-Built (M3, NuGet skeleton and write side):
+Built (M3, NuGet; the phase is open for its [review findings](docs/projektplan/promt.md#8--open-findings)):
 
 - 🧱 **NuGet format registered.** The format `nuget` for local repositories, with the settings `deleteMode` and `forwardSearch`, the `nuget.archive`, `nuget.registration` and `nuget.search` configuration keys, the NuGet v3 route table, the service index at its three spellings, the native one-line error shape and the 404 that points a NuGet v2 client at the v3 service index. The other operations answer `501` until they are built. See [NuGet](docs/developer/nuget.md).
 - 📦 **NuGet push, unlist, relist and delete.** `dotnet nuget push` and `nuget push` store a package byte for byte with its generated `.nuspec`; a version never changes, a removed version number is blocked for good by a tombstone, and the identical package pushed again is accepted without a change, so a client's retry after a lost answer succeeds. `dotnet nuget delete` unlists by default, or removes with `deleteMode: delete`. Every change is audited in its transaction and journaled for a restore. See [NuGet](docs/developer/nuget.md#the-write-side) and [NuGet publishing](docs/security/nuget-publish.md).
 - 🔣 **NuGet symbol packages.** `dotnet nuget push` of a `.nupkg` with its `.snupkg` stores both: the symbol package is validated (the entry types, the `.pdb` signatures), stored byte for byte next to its package and indexed by a `nuget-symbol-index` job on the `worker`; serving the symbols to a debugger is not built yet. See [NuGet](docs/developer/nuget.md#symbol-packages).
 - 📄 **NuGet documents and package files.** The version list of the flat container, the `.nupkg` and the `.nuspec` of a version, and the registration index, pages and leaves in the three hives (SemVer 1, SemVer 1 gzip, SemVer 2 gzip), with a weak `ETag` that gzip and identity share, `304` on `If-None-Match`, paging at 64 versions per page and inlined below 128 versions, and the filter of an endpoint with exposure rules. See [NuGet](docs/developer/nuget.md#rendered-documents-and-package-files).
 - 🔁 **NuGet remote repositories.** A pull-through proxy of a NuGet v3 feed (nuget.org by default): the service index is read as the discovery document and the resources may live on several hosts, the registration is rendered again with trove's paging and addresses in the three hives (an upstream's gzip-coded hive is read within a bound), the version list and the packages are cached, every package is held to the ID and version of its request before it is stored (`502 upstream_package_mismatch` otherwise), and a cached package gets the rows of origin `cache`. Request collapsing, stale metadata and the gone-ID rule come from the engine. The forwarded search is not built. See [NuGet](docs/developer/nuget.md#the-remote-class) and [NuGet remote repositories](docs/security/nuget-remote.md).
-- 🔀 **NuGet virtual repositories.** One source for local packages and, nuget.org through a remote: the service index, the version list and the registration documents are the union of the members that remain after permissions, pin rules and claims; a version two members hold comes from the first one, and its package is the one the registration describes (`Trove-Resolved-From`). A push, unlist, relist or delete addressed to the virtual repository runs on its deployment target. Search merges the members (exact ID first, window `nuget.search.virtual_merge_window`). See [NuGet](docs/developer/nuget.md#virtual-repositories).
+- 🔀 **NuGet virtual repositories.** One source for local packages and, nuget.org through a remote: the service index, the version list and the registration documents are the union of the members that remain after permissions, pin rules and claims; a version two members hold comes from the first one, and its package is the one the registration describes (`Trove-Resolved-From`). A push, unlist, relist or delete addressed to the virtual repository runs on its deployment target. Search merges the local members (exact ID first, window `nuget.search.virtual_merge_window`); a remote member contributes once the forwarded search is built. Open: the registration of a nuget.org member does not merge yet (F-22). See [NuGet](docs/developer/nuget.md#virtual-repositories).
+- 🌐 **NuGet on customer endpoints.** Version lists and registrations list only the versions an endpoint exposes; `dotnet add package` of a hidden version fails with `NU1102`, and the endpoint offers no push (`403`). Open: search still leaks the existence of hidden versions ([H-341](docs/security/endpoints-and-exposure.md#h-341--a-nuget-search-term-matches-versions-the-caller-cannot-read), [H-342](docs/security/endpoints-and-exposure.md#h-342--a-nuget-search-through-a-virtual-repository-decides-exposure-on-its-members)). See [endpoints](docs/developer/endpoints.md).
+- 🖥️ **NuGet package screens, setup and guides.** The package pages of NuGet repositories, setup snippets for `dotnet`, nuget.exe and `nuget.config` with the token in each shell's spelling, and a guide for local, remote and virtual repositories with the .NET CLI, nuget.exe and Visual Studio. See [NuGet](docs/developer/nuget.md) and [web UI](docs/developer/web-ui.md).
+- 🔒 **Format contract frozen.** The contract between the core and a format is at version 1, its surface is recorded and checked, and npm and NuGet pass all eleven conformance checks; every later change is an ADR ([ADR-141](docs/decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)). See [formats](docs/developer/formats.md).
 
 Not built yet (see the [roadmap](docs/coverage/roadmap.md)): the symbol server of NuGet and the forwarded search of a remote or virtual repository; GitLab CI OIDC federation;
 vulnerability scanning; backup and restore and the HA hardening of phase 7; remote and virtual repositories for the generic format; the UI
@@ -134,7 +140,7 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 | `/auth/oidc/{providerId}/start`, `/auth/oidc/{providerId}/callback` | GET | yes (M1; [login](docs/developer/login.md)) |
 | `/auth/local/login`, `/auth/logout` | POST | yes (M1; the break-glass login and logout) |
 | `/api/v1/…` (the management API) | see the [API families](#management-api) | yes (M1; [api/openapi.yaml](api/openapi.yaml)) |
-| `/api/<format>/<repoKey>/…` | per route (npm: GET, PUT, DELETE, POST) | yes, npm (M2; [dispatcher](internal/api/dispatch/dispatcher.go)) |
+| `/api/<format>/<repoKey>/…` | per route (npm: GET, PUT, DELETE, POST; NuGet: GET, HEAD, PUT, DELETE, POST) | yes, npm (M2) and NuGet (M3; [dispatcher](internal/api/dispatch/dispatcher.go)) |
 | `/api/nuget/<repoKey>/v3`, `…/v3/`, `…/v3/index.json` | GET, HEAD | yes, the service index of a local or virtual repository (M3 skeleton; the same body at the three spellings) |
 | `/api/nuget/<repoKey>/v3/flatcontainer/{id}/index.json`, `…/{version}/{id}.{version}.nupkg`, `…/{version}/{id}.nuspec` | GET, HEAD | yes, the version list, the package and the `.nuspec` of a local repository (M3; [documents](docs/developer/nuget.md#rendered-documents-and-package-files)) |
 | `/api/nuget/<repoKey>/v3/{registration,registration-gz,registration-semver2}/{id}/index.json`, `…/page/{lower}/{upper}.json`, `…/{version}.json` | GET, HEAD | yes, the registration index, page and leaf in three hives; the gzip hives compress for a client that accepts it |

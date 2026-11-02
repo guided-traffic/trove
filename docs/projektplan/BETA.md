@@ -1,7 +1,7 @@
 # trove · Project plan to the beta release
 
 **Status:** ⚪ not started · 🟡 in progress or partly done · 🟢 done
-**Last updated:** 2026-11-01
+**Last updated:** 2026-11-02
 
 The way from zero to the beta release. The beta is trove with two package registries, **npm** and
 **NuGet (.NET)**, each with local, remote (pull-through) and virtual repositories, running on the
@@ -192,24 +192,42 @@ Details: [roadmap M3](../coverage/roadmap.md#m3--nuget) · spec: [formats/nuget.
 - 🟢 CI checks against the latest release: `api/openapi.yaml` with a breaking-change checker (R-ARCH-025) and the embedded migration files (R-ARCH-026), job `compat` and `make compat-check`
 
 **NuGet v3**
-- ⚪ Local: service index, package content, registrations, search, push, unlist, relist, delete
-- ⚪ Symbol package push (`.snupkg`)
-- ⚪ Remote: proxy of nuget.org with resource URL rewriting
-- ⚪ Virtual: merged package content, metadata and search; publishing through the deployment target
-- ⚪ Authentication: token as password in `nuget.config`, token as API key for push
-- ⚪ Clients: .NET CLI, nuget.exe; setup instructions for Visual Studio
-- ⚪ Package UI and client setup snippets for .NET
-- ⚪ In-app guide for every NuGet variant: local, remote and virtual repositories with the .NET CLI, nuget.exe and Visual Studio, and `nuget.config` (R-UI-049, owner 2026-10-31)
-- ⚪ NuGet on a customer endpoint: version lists, registrations and search list only exposed versions; no push there
-- 🟡 Format contract additions found by the M2 architecture review (roadmap M3, WP3.0): a hook on a remote fill, discovery documents and the URL map for metadata, pass-through and fan-out for search, content on `Volatile` routes, a format that can name only its own repository, rendered-document mechanics in the contract, validation of remote configuration, the format's rules on the raw routes, a typed environment for a format, the dormant methods, the writer-owned eviction signal, no format knowledge in the virtual bridge, one engine value type each, links in refusals, the declared length of a body, a minimal contract, the per-format data-port leaf rule, the real populate decision in the audit event; and from the review of 2026-11-01 (WP3.0u to WP3.0w): the addressed repository on member requests through one derivation, stored versions as a method of the view adapter, and a test that the written contract equals the code
-- ⚪ Format contract frozen for all later registries
+- 🟢 Local: service index, package content, registrations, search, push, unlist, relist, delete. Open: a search term matches
+  versions the caller cannot read, and the search ignores the repository's patterns (F-21, F-23 of
+  [promt.md section 8](promt.md#8--open-findings))
+- 🟢 Symbol package push (`.snupkg`): validated and stored, one indexing job per symbol package (Q-NUGET-11)
+- 🟡 Remote: proxy of nuget.org with resource URL rewriting, discovery, re-paging, the identity check of a cached package.
+  Open: the forwarded search (R-NUGET-016, F-20), the cache fill's identity check and page bound (F-25), the upstream
+  addresses in deprecations and vulnerabilities (F-24)
+- 🟡 Virtual: merged package content and metadata, merged search over local members, publishing through the deployment
+  target. Open: the registration of a nuget.org member fails to merge (502, F-22), remote members contribute no search
+  results until F-20, and the merged search decides exposure on the members (F-21)
+- 🟢 Authentication: token as password in `nuget.config`, token as API key for push (`X-NuGet-ApiKey`, Q-AUTH-186)
+- 🟡 Clients: the .NET 10 SDK on Linux and nuget.exe on Mono run against trove on every change (e2e `nuget`); setup
+  instructions for Visual Studio in the guide. The Windows row and the manual Visual Studio checklist run in the owner
+  walkthrough of phase 8 ([Q-NUGET-72](../spec/formats/nuget.md#q-nuget-72--the-windows-row-of-e31-and-the-visual-studio-checklist-run-in-the-owner-walkthrough-not-on-a-ci-runner))
+- 🟢 Package UI and client setup snippets for .NET (`dotnet`, nuget.exe, `nuget.config`, the token in each shell's spelling)
+- 🟢 In-app guide for every NuGet variant: local, remote and virtual repositories with the .NET CLI, nuget.exe and Visual Studio, and `nuget.config` (R-UI-049, owner 2026-10-31); browser journeys `10-help` and `11-nuget`
+- 🟡 NuGet on a customer endpoint: version lists and registrations list only exposed versions, no push there (`TestNuGetEndpoint`
+  green). Open: search leaks the existence of hidden versions through its terms and, through a virtual repository, applies the
+  members' rules (F-21, [H-341](../security/endpoints-and-exposure.md#h-341--a-nuget-search-term-matches-versions-the-caller-cannot-read),
+  [H-342](../security/endpoints-and-exposure.md#h-342--a-nuget-search-through-a-virtual-repository-decides-exposure-on-its-members))
+- 🟢 Format contract additions found by the M2 architecture review (roadmap M3, WP3.0): a hook on a remote fill, discovery documents and the URL map for metadata, pass-through and fan-out for search, content on `Volatile` routes, a format that can name only its own repository, rendered-document mechanics in the contract, validation of remote configuration, the format's rules on the raw routes, a typed environment for a format, the dormant methods, the writer-owned eviction signal, no format knowledge in the virtual bridge, one engine value type each, links in refusals, the declared length of a body, a minimal contract, the per-format data-port leaf rule, the real populate decision in the audit event; and from the review of 2026-11-01 (WP3.0u to WP3.0w): the addressed repository on member requests through one derivation, stored versions as a method of the view adapter, and a test that the written contract equals the code
+- 🟢 Format contract frozen for all later registries: `ContractVersion` 1, its surface recorded in
+  `internal/formats/testdata/contract.txt`, npm and NuGet pass all eleven kit checks
+  ([ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)). Open: a kit check for discovery documents (F-29)
 
 **Tests**
-- ⚪ NuGet integration tests: protocol over HTTP, conformance kit, SemVer 2 and ID normalization
-- ⚪ NuGet e2e tests: `dotnet restore`, `dotnet nuget push` and nuget.exe through local, remote and virtual repositories
-- ⚪ NuGet e2e: cold cache with three clients at once, push and delete across drains and retries, Valkey stopped
-- ⚪ NuGet load joins the drain and failover tests
-- ⚪ NuGet e2e: `dotnet restore` through a customer endpoint gets only exposed versions; a hidden version fails to resolve
+- 🟢 NuGet integration tests: protocol over HTTP, conformance kit, SemVer 2 and ID normalization, golden vectors of the
+  .NET version rules, the action map of R-AUTHZ-007 with and without each action (E3.4)
+- 🟡 NuGet e2e tests: `dotnet restore`, `dotnet nuget push` and nuget.exe through local, remote and virtual repositories
+  against the counting test upstream (set `nuget`, per change). Open: the run against nuget.org of E3.1 (F-27)
+- 🟡 NuGet e2e: cold cache with three clients at once (E3.2, one upstream request per `.nupkg`), a push whose answer the edge
+  drops, documents and restores with Valkey stopped (set `nuget-closing`); the drain part moved to phase 7
+  ([Q-NUGET-73](../spec/formats/nuget.md#q-nuget-73--the-nuget-part-of-the-drain-test-moves-to-phase-7-with-the-other-long-legs))
+- ⚪ NuGet load joins the drain and failover tests: moved to phase 7 (Q-NUGET-73); the nightly leg `nuget-ha` runs its set
+- 🟢 NuGet e2e: `dotnet restore` through a customer endpoint gets only exposed versions; a hidden version fails to resolve
+  with `NU1102`, and a push answers 403 (`TestNuGetEndpoint`, Q-NUGET-71)
 
 **Release**
 - ⚪ the release that closes the phase (cut by Semantic Release; the version goes into the table)
@@ -269,7 +287,8 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
 
 **High availability**
 - ⚪ Failure suite: pod crash, PostgreSQL switchover and failover, Valkey failover and outage, S3 outage, node loss
-- ⚪ Node drain under npm and NuGet load with zero failed requests
+- ⚪ Node drain under npm and NuGet load with zero failed requests; the NuGet load (`TestNuGetHA`) and R-ARCH-024's drain
+  criterion move here from phase 4 ([Q-NUGET-73](../spec/formats/nuget.md#q-nuget-73--the-nuget-part-of-the-drain-test-moves-to-phase-7-with-the-other-long-legs))
 - 🟡 npm load in the drain and failover tests reliably green (moved from phase 3, owner 2026-11-01). Diagnosis of
   2026-11-01: `make e2e SET=npm-ha` passes on a 17-CPU kind cluster (drain: 40,894 k6 requests, 0 failures, every job at
   attempt 1); with the kind nodes held to 6 CPUs the drain gets 1,062 `503`s, all `memory_slots` shedding of Q-ARCH-240 (no
@@ -305,7 +324,9 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
 
 - ⚪ Guided walkthrough of the running beta candidate with the owner:
   - ⚪ OIDC sign-in, users, groups, tokens, permission policies
-  - ⚪ npm and .NET clients against local, remote and virtual repositories
+  - ⚪ npm and .NET clients against local, remote and virtual repositories, with nuget.exe and the .NET SDK on Windows and
+    the Visual Studio 2022 checklist of R-NUGET-027 (E3.1, moved from phase 4,
+    [Q-NUGET-72](../spec/formats/nuget.md#q-nuget-72--the-windows-row-of-e31-and-the-visual-studio-checklist-run-in-the-owner-walkthrough-not-on-a-ci-runner))
   - ⚪ GitLab reference pipeline
   - ⚪ Vulnerability report, a blocked malicious version, and the npm and .NET audits from trove's data
   - ⚪ Node drain and PostgreSQL and Valkey failover under load
@@ -330,7 +351,7 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
 | Foundation (storage, coordination) | 🟢 | — | 🟢 |
 | Access core (login, tokens, permissions) | 🟢 | 🟢 | 🟢 |
 | **npm** | 🟢 | 🟢 | 🟡 |
-| **NuGet (.NET)** | ⚪ | ⚪ | ⚪ |
+| **NuGet (.NET)** | 🟢 | 🟡 | ⚪ |
 | GitLab CI OIDC | ⚪ | ⚪ | ⚪ |
 | Vulnerability scanning | ⚪ | ⚪ | ⚪ |
 | Backup and restore | ⚪ | ⚪ | — |

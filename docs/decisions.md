@@ -200,6 +200,8 @@ checked every earlier decision against them:
 | [ADR-136](#adr-136--the-format-contract-freezes-at-version-1-as-the-smaller-contract-and-grows-by-optional-interfaces) | The format contract freezes at version 1 as the smaller contract and grows by optional interfaces | Decided by the development agent — owner review at the walkthrough |
 | [ADR-137](#adr-137--every-route-that-returns-package-derived-bytes-carries-the-content-headers) | Every route that returns package-derived bytes carries the content headers | Decided by the development agent — owner review at the walkthrough |
 | [ADR-138](#adr-138--what-the-core-knows-of-a-request-reaches-a-format-as-a-typed-value-never-as-an-untyped-slot-or-a-request-copy) | What the core knows of a request reaches a format as a typed value, never as an untyped slot or a request copy | Decided by the development agent — owner review at the walkthrough |
+| [ADR-139](#adr-139--compatibility-is-checked-against-the-latest-release-in-ci) | Compatibility is checked against the latest release in CI | Decided by the development agent — owner review at the walkthrough |
+| [ADR-140](#adr-140--typescript-is-held-below-61-until-angulars-peer-range-admits-7x) | TypeScript is held below 6.1 until Angular's peer range admits 7.x | Decided by the development agent — owner review at the walkthrough |
 | [ADR-141](#adr-141--the-format-contract-is-frozen-at-version-1) | The format contract is frozen at version 1 | Decided by the development agent — owner review at the walkthrough |
 
 </details>
@@ -5121,6 +5123,8 @@ signal. Vendored public packages under claimed names and internal mirrors of the
 
 **Spec:** [spec/vulnerability-scanning.md](spec/vulnerability-scanning.md) R-VULN-010, R-VULN-017, R-VULN-018.
 
+## The format contract before the freeze
+
 ### ADR-136 · The format contract freezes at version 1 as the smaller contract and grows by optional interfaces
 
 **Status:** Decided by the development agent — owner review at the walkthrough
@@ -5787,6 +5791,8 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-NUGET-69](spec/formats/nuget.md#q-nuget-69--how-the-edge-drops-the-answer-of-a-push-the-ingress-rule-of-the-npm-test-with-a-path-and-a-status) | How does the edge drop the answer of a push? | (a) the Ingress rule of the npm test with a path and a status 201 condition; the replay counter is the evidence | (b) a drop switch in the clients forwarder; (c) a server hook |
 | [Q-NUGET-70](spec/formats/nuget.md#q-nuget-70--which-of-the-remaining-e3-cases-run-on-every-change-and-which-in-the-closing-run) | Which E3 cases run on every change and which in the closing run? | (a) all that need no stopped Valkey on every change; the Valkey-stopped loops, documents and cold restores in `nuget-closing` | (b) E3.2 in the closing run; (c) everything on every change |
 | [Q-NUGET-71](spec/formats/nuget.md#q-nuget-71--the-customer-endpoint-test-a-package-id-of-the-run-an-exact-range-for-the-hidden-version-and-what-the-clients-can-and-cannot-show) | How does the customer endpoint test show a hidden version and the 403? | (a) a package ID of the run, the exact range `[1.9.0]` for `NU1102`, a raw `PUT` for the 403 next to the failing `dotnet nuget push`, `packages.config` for nuget.exe | (b) the literal `Acme.Sdk`; (c) `dotnet add package` without a range |
+| [Q-NUGET-72](spec/formats/nuget.md#q-nuget-72--the-windows-row-of-e31-and-the-visual-studio-checklist-run-in-the-owner-walkthrough-not-on-a-ci-runner) | Where do the Windows row of E3.1 and the Visual Studio checklist run? | (a) by hand in the owner walkthrough of phase 8; nuget.exe on Mono and the SDK on Linux per change | (b) a GitHub-hosted Windows job against a reachable trove; (c) a self-hosted Windows runner |
+| [Q-NUGET-73](spec/formats/nuget.md#q-nuget-73--the-nuget-part-of-the-drain-test-moves-to-phase-7-with-the-other-long-legs) | Where is the NuGet part of the drain test built? | (a) in phase 7 with npm's drain reliability (owner's rule of 2026-11-01 for long legs) | (b) now, run by the nightly leg `nuget-ha` |
 | [Q-GENERIC-1](spec/formats/generic.md#q-generic-1--the-format-is-generic-flat-paths-and-the-descriptor-lists-only-implemented-classes) | Is the format `generic` with flat paths, and which classes does the descriptor list? | (a) the implemented classes only | — |
 | [Q-GENERIC-2](spec/formats/generic.md#q-generic-2--path-limits-of-the-generic-format) | Path limits of the generic format? | (a) 4096 bytes per path, 255 bytes per segment, valid UTF-8 | — |
 | [Q-GENERIC-3](spec/formats/generic.md#q-generic-3--a-path-is-a-file-or-a-folder-not-both) | May a path be a file and a folder at once? | (a) refuse with 409 `path_conflict` | — |

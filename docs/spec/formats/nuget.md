@@ -4246,6 +4246,41 @@ Context: E3.7 names `Acme.Sdk` in `nuget-customers`, a hidden version that `dotn
 
 **Applied in the spec:** none. Code: [nuget_endpoint_test.go](../../../test/e2e/nuget_endpoint_test.go). Test: `TestNuGetEndpoint`.
 
+### Q-NUGET-72 · The Windows row of E3.1 and the Visual Studio checklist run in the owner walkthrough, not on a CI runner
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: E3.1 asks for nuget.exe and the .NET 10 SDK on a Windows runner and for the manual Visual Studio 2022 checklist once against the M3 build. Every job of the project runs on the owner's self-hosted Linux runners (ARC); the e2e suite needs trove deployed in kind with its PostgreSQL, Valkey and S3, which a Windows runner cannot host. nuget.exe's protocol already runs on every change on Mono in the clients image (Q-NUGET-33), and the .NET 10 SDK on Linux runs the same NuGet client libraries the Windows SDK runs.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The Windows row and the Visual Studio checklist are run by hand against the beta candidate in the owner walkthrough of phase 8; the per-change suite keeps nuget.exe on Mono and the SDK on Linux (chosen) | Phase 8's walkthrough item "npm and .NET clients against local, remote and virtual repositories" takes both | Nothing outside the repository changes; the Windows-only behaviour (Windows credential providers, Visual Studio's browse tab paging) is looked at by a person on the real client | The Windows row is not automated; a regression in it is seen only at the walkthrough |
+| (b) A GitHub-hosted `windows-latest` job against a trove reachable from it | The repository is public, so the minutes cost nothing | Automated | It needs a trove instance reachable from the internet with a public certificate, or trove with PostgreSQL, Valkey and S3 on Windows; both are infrastructure outside the repository, and the owner's standard is self-hosted runners |
+| (c) A self-hosted Windows runner in the owner's cluster | Like the Linux runners | Automated, inside the owner's network | A machine change outside the repository that only the owner can make |
+
+**Choice:** (a). The roadmap's E3.1 keeps both rows; their evidence is the walkthrough record.
+
+**Rationale:** the protocol the Windows clients speak is covered on Linux on every change; what only Windows shows needs the real client in front of a person, which the walkthrough already plans. The development agent revisits this when the owner provides a Windows runner or approves a GitHub-hosted one against a reachable test instance.
+
+**Applied in the spec:** none. Plan: [BETA.md](../../projektplan/BETA.md) phases 4 and 8; [roadmap](../../coverage/roadmap.md) E3.1.
+
+### Q-NUGET-73 · The NuGet part of the drain test moves to phase 7 with the other long legs
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: E3.6 asks that variant A of the drain test gains the NuGet part of its load and that R-ARCH-024's drain criterion, whose load needs both formats, passes. On 2026-11-01 the owner moved the drain, failover and soak legs out of the per-change pipeline into `HA and Performance (nightly)`, and npm's drain reliability with them into phase 7 ([ha-and-helm.md](../ha-and-helm.md) Q-HA-67): the scenario needs about twelve cores and the CI runners are held to fewer. The nightly leg `nuget-ha` exists and runs its set (Q-ARCH-276, Q-ARCH-277); the set names no test yet.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The NuGet drain load (`TestNuGetHA`) and R-ARCH-024's drain criterion are built in phase 7 with npm's drain reliability (chosen) | Phase 7 "Node drain under npm and NuGet load with zero failed requests" takes it | One place for the drain work and its runner capacity; the per-change suite keeps the functional NuGet criteria of E3.6 (scatter, Valkey stopped, dropped answers, equal bodies and ETags) | E3.6 is not complete at the end of phase 4 |
+| (b) Build `TestNuGetHA` now and let the nightly leg run it | Same scenario as npm's | Closer to E3.6's letter | It would run on the runners on which npm's same scenario is red for capacity, so it adds a red nightly leg without new information |
+
+**Choice:** (a).
+
+**Rationale:** the owner's rule of 2026-11-01 says long legs run nightly and their reliability is phase 7's; building the NuGet load where its capacity question is answered avoids a second leg that is red for the same reason. The development agent revisits this when phase 7 starts.
+
+**Applied in the spec:** none. Plan: [BETA.md](../../projektplan/BETA.md) phases 4 and 7; [roadmap](../../coverage/roadmap.md) E3.6.
+
 ## What this does not cover
 
 ### H-35 · Cached NuGet packages are not checked against an upstream digest
