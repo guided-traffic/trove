@@ -204,5 +204,11 @@ version is shown. The rank tier is taken from the latest visible version, as for
 The tier of a term that is no substring of the ID but meets its ID tokens (the phrase `"acme widgets"` against `AcmeWidgets`) depends on how that version's
 declared ID splits into tokens (`IDTokens`, R-NUGET-010), and the split follows the casing the version's `.nuspec` declares: a newer hidden version declared
 as `Acmewidgets` moves the package from the token tier to the tier of the other fields. A consumer who compares the order of results can learn that a newer
-hidden version exists and declares the ID in another casing, and nothing more of it. What makes it real: a package whose versions declare the ID in
-different casings, and a consumer who must not learn that a hidden version exists.
+hidden version exists and declares the ID in another casing, and nothing more of it.
+
+The displayed ID has the same source. A result shows `id` as `packages.display_name`, the casing of the version that created the package row: the first
+version ever pushed or cached, kept when later versions declare another casing and when that version is unlisted, deleted or hidden by the endpoint
+([packages.sql](../../internal/meta/postgres/queries/packages.sql), `NuGetSearchPage` and `NuGetSearchVersions` in
+[nuget_search.sql](../../internal/meta/postgres/queries/nuget_search.sql), `hitOf` in [search.go](../../internal/formatdata/nuget/search.go)). A consumer who
+reads only a newer version can see the casing of an older hidden one. What makes it real: a package whose versions declare the ID in different casings, and
+a consumer who must not learn that a hidden version exists.

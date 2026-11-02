@@ -226,7 +226,7 @@ func exposedHit(view formats.ExposureView, h rows.SearchHit) (rows.SearchHit, bo
 // withheld-query rule of this virtual repository, or its cache-only search (search_remote.go).
 // The cache-only search scans with the member's and the virtual repository's patterns (admits)
 // on the request's budget, as a local member does, so its count is exact; a forwarded count is
-// the upstream's less what the page removed (H-346, H-347).
+// the upstream's less what the page removed (H-347).
 func (f *Format) searchRemote(ctx context.Context, rq *formats.Request, st Store, m formats.PlannedMember, p search.Params, admits func(string) bool, budget *scanBudget) ([]rows.SearchHit, int, error) {
 	return f.searchRemoteMember(ctx, rq, st, m, p, admits, budget)
 }

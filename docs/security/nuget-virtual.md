@@ -1,8 +1,9 @@
 # NuGet virtual repositories
 
 Status: built (M3, phase 4): the virtual class of NuGet (R-NUGET-017 to R-NUGET-019): the merged version list and registrations, the package files
-through the members, the merged search over the local members, and the writes through the deployment target. A remote member contributes its documents
-and files; its contribution to the search waits for the forwarded search (R-NUGET-016).
+through the members, the merged search over the members, and the writes through the deployment target. A remote member contributes its documents, its
+files and its search: its registration is read as the remote reads it (Q-NUGET-82), and it is searched by its forwarded search or its cache
+(R-NUGET-016, Q-NUGET-81). Nested virtual repositories (R-REPO-018) are not built.
 
 This page describes how a NuGet virtual repository decides what a caller reads through it, what an endpoint with exposure rules lets through, how the
 search fans out over the members, and where a write goes. A virtual repository holds no package of its own: every answer is built from members, so the
@@ -62,7 +63,8 @@ pattern, claim or pin rule to a search) and merges their answers.
   waits for a slot asks no further member.
 - **Count.** `totalHits` is the sum of the members' counts minus the duplicates and removals seen in the merge window (R-NUGET-018 step 6). A local
   member's count, and the count of a remote member that answers from its cache, is exact for the caller: its scan applied the read scope and the
-  patterns before it counted. A remote member's forwarded count is the upstream's less what the page removed (H-346).
+  patterns before it counted. A remote member's forwarded count is the upstream's less what the page removed
+  ([H-347](nuget-remote.md#h-347--the-count-of-a-forwarded-search-tells-a-caller-with-row-level-reads-how-many-upstream-matches-it-may-not-see)).
 
 ## Writes: the deployment target
 
@@ -90,19 +92,29 @@ only where its handler calls the filter
 without `rq.Member` ([H-329](repository-model.md#h-329--a-format-that-reads-a-member-without-rqmember-skips-the-per-member-read-check)); a merge that
 ignores `Restricted` ([H-283](repository-model.md#h-283--honouring-restricted-is-up-to-the-formats-merge)).
 
-### H-346 · The merged count takes a remote member's forwarded count before the view and the patterns narrow it
+### H-351 · The merged search and registration of a NuGet virtual repository look only at its direct members
 
-Stage: the `totalHits` of the search through a NuGet virtual repository ([search_virtual.go](../../internal/formats/nuget/search_virtual.go)
-`runVirtualSearch`), for a remote member that forwards the search to its upstream ([search_remote.go](../../internal/formats/nuget/search_remote.go)).
+Stage: the members a NuGet virtual repository asks ([search_virtual.go](../../internal/formats/nuget/search_virtual.go) `memberPatterns`,
+[virtual_remote.go](../../internal/formats/nuget/virtual_remote.go) `memberRequest`, used by the merged registration and by `searchRemoteMember`).
 
-Subject: how many packages of a remote member's upstream match a query, among them packages the endpoint does not expose or the patterns of the virtual
-repository or the member keep out.
+Subject: a virtual repository whose effective member list holds a member reached through a nested virtual repository (R-REPO-018).
 
-Live today, narrowly. A remote member that answers from its cache scans with the read scope and with its own and the virtual repository's patterns, as a
-local member does, so its count is exact (`TestR_REPO_005_TheCacheSearchOfARemoteMemberAppliesTheVirtualRepositorysPatterns`). A forwarded count is the
-upstream's less what the remote removed from the page it was asked for (H-347 on [nuget-remote.md](nuget-remote.md)); the merge then narrows every
-result it holds by the view, the patterns and the claims and subtracts what it removed, but only within the merge window
-(`nuget.search.virtual_merge_window`). The upstream's matches beyond that page are counted whatever the view or the virtual repository's patterns say, so
-`take=0` through the virtual repository returns the upstream's count. What makes it real: a remote member whose upstream is a private feed, served
-through a virtual repository on a customer endpoint; for a public upstream the count is what anyone learns from the upstream itself. Closing it is the
-decision H-347 names: a count of what the pages seen support changes the count R-NUGET-034 promises.
+Dormant: nested virtual repositories are not built and the configuration refuses a virtual repository as a member, so every planned member is a direct
+one. Both functions find a planned member among `rq.Repo.Members()`, the direct members of the addressed repository, and answer an internal error (500)
+for one that is not there; the patterns of a nested virtual repository on the member's chain are not read either. Once R-REPO-018 is built, a member
+reached through a nested virtual repository would make the merged search and registration answer 500, and a remote member reached that way would reach
+the engine's remote (`proxy.NewRemote`) without the chain's patterns. What makes it real: building R-REPO-018 without walking the chain here; the fix
+reads the member and every virtual repository on its chain from the plan.
+
+### H-352 · A remote member the caller may not fill drops cached versions whose registration page was never stored
+
+Stage: the merge of a remote member's registration for a caller who may not fill the remote ([virtual_remote.go](../../internal/formats/nuget/virtual_remote.go)
+`remoteMemberEntries` with `Restricted`, Q-NUGET-82).
+
+Subject: the versions of an ID that a remote member lists through a virtual repository to a caller without the populate right (R-AUTHZ-008).
+
+Live today, failing closed. Such a caller reads only what the remote has stored, so a page of the upstream's index that no one fetched yet is left out,
+and with it every version listed on it, also a version whose `.nupkg` is cached and that the caller could download by its file path. The merge is not
+marked partial for it: the answer is a complete-looking registration with fewer versions, and a restore of such a version through the virtual repository
+fails with `NU1102` until a caller who may fill reads the ID once. Nothing is shown that the caller may not see. What makes it real: an ID of more than
+127 versions upstream (pages by address) read through a virtual repository first by callers without the populate right.

@@ -158,16 +158,21 @@ registration of a version that it has cached unchanged. The cached rows of origi
 ### H-347 · The count of a forwarded search tells a caller with row-level reads how many upstream matches it may not see
 
 Stage: the filter of a forwarded answer ([search_remote.go](../../internal/formats/nuget/search_remote.go) `keepForCaller`), for a remote addressed directly
-and for a remote member of a virtual repository.
+and for a remote member of a virtual repository, and the count of the merged search through a virtual repository
+([search_virtual.go](../../internal/formats/nuget/search_virtual.go) `runVirtualSearch`).
 
 Subject: a caller whose read of a remote is decided per package or version (a grant with package patterns, a token scope, an endpoint with exposure rules)
 searching a remote whose upstream holds packages that caller may not read; also the packages an exclude pattern or a claim keeps away from the remote,
-when the query itself names none of them.
+and through a virtual repository the packages its exposure view and its own patterns keep out, when the query itself names none of them.
 
 Live today, as R-NUGET-016 and R-NUGET-034 specify it: `totalHits` is the upstream's count less the results removed from the returned page. The upstream's
-matches beyond the page are counted whatever the caller may read, and a request with `take=0` returns the upstream's count unreduced, so
-`q=packageid:<name>&take=0` tells whether a package of a guessed name exists upstream, and a free-text query how many match. The names themselves stay
-hidden.
+matches beyond the page are counted whatever the caller may read. Through a virtual repository the merge narrows the results it holds by the view, the
+patterns and the claims and subtracts what it removed, but only within the merge window (`nuget.search.virtual_merge_window`); beyond it a remote member's
+forwarded count is added as reported. A remote member that answers from its cache scans with the read scope and every pattern and counts exactly
+(`TestR_REPO_005_TheCacheSearchOfARemoteMemberAppliesTheVirtualRepositorysPatterns`). Three requests return the upstream's count with nothing subtracted:
+`take=0`; a `skip` past the upstream's results, so the page the upstream returns is empty; and through a virtual repository a `skip` at or beyond the
+merge window, where the members are asked to count only. So `q=packageid:<name>&take=0` tells whether a package of a guessed name exists upstream, and a
+free-text query how many match. The names themselves stay hidden.
 
 What makes it real: an upstream that holds packages the caller may not read and that the remote's credential reads, such as another installation or a
 private feed. For nuget.org the count is public anyway. Closing it gives a caller with row-level reads a count of what the pages seen so far support (the
@@ -187,6 +192,26 @@ not serve (`nuget_invalid_upstream_document`), or a page that cannot be fetched 
 documents of that ID with 502, where a failing index would have left the member out. The version list and the package files are not affected; a member
 the caller may not fill leaves out the pages it has not stored instead of failing.
 
+The same holds for the bounds of one rendering (Q-NUGET-83): the budget of a merge is shared by its remote members
+([remote/budget.go](../../internal/formats/nuget/remote/budget.go) `take`, [virtual.go](../../internal/formats/nuget/virtual.go) `Merge`), so one member whose
+registration is larger than the budget answers the whole merged registration with 502 instead of being left out.
+
 What makes it real: an upstream that is down, or that lists a page it does not serve, for an ID that a local member of the same virtual repository also holds
 and that no claim or pin rule keeps away from the remote. A claim of the local member (`local.autoClaim`) keeps the remote out of the ID's merge and closes
 it for that ID (R-REPO-023).
+
+### H-353 · Forwarded searches share the remote's circuit and fetch slots with its downloads
+
+Stage: the engine's query path that a forwarded search takes ([internal/proxy/query.go](../../internal/proxy/query.go) `queryFetch`, the classification in
+[classify.go](../../internal/proxy/classify.go)); npm's audit takes the same path.
+
+Subject: every remote with `forwardSearch` on; the downloads of its uncached packages.
+
+Live today. A query takes a slot of the remote's `limits.maxConcurrentFetches` and is admitted by the remote's circuit like a download, and a 429 or 5xx
+answer of the upstream's search host counts towards opening that circuit. A burst of searches against a search host that rate-limits or fails therefore
+opens the circuit of the whole remote, and every request for a package that is not cached answers 503 for `availability.circuitOpenSeconds`, for every
+caller; queries also hold slots that downloads wait for (`proxy.queue_timeout`). Search falls back to the cache meanwhile, so search itself degrades
+gracefully; downloads do not. What makes it real: an upstream whose search resource lives on another host or service than its package content (nuget.org's
+search runs on its own hosts) and fails or rate-limits on its own, and callers that search often (IDE package browsers). Closing it gives queries a circuit
+and a small slot budget of their own in the engine, for npm's audit as well; it changes the engine's contract of Q-ARCH-270 and needs a decision of its own.
+
