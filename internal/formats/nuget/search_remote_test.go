@@ -422,3 +422,39 @@ func TestR_NUGET_016_AForwardedResultComesWithoutTheUpstreamsAddresses(t *testin
 		t.Errorf("vulnerabilities %s, want %s", n.Vulnerabilities, want)
 	}
 }
+
+// TestR_NUGET_016_TheUpstreamIsSentOnlyTheTermsTheWithheldRuleChecked: the withheld rule asks about
+// the terms Parse read, so the upstream is sent those terms and not the client's text (Q-NUGET-80).
+// A version: term whose text is no version is folded to nothing and matches nothing (R-NUGET-010):
+// such a query is not forwarded, so a protected name written as one (version:Acme.Payments, or a
+// quoted phrase after version:) never reaches the upstream. Other queries reach it in the form the
+// rule saw.
+func TestR_NUGET_016_TheUpstreamIsSentOnlyTheTermsTheWithheldRuleChecked(t *testing.T) {
+	fw := newForwarding(t, authz.Subject{}, pkg("Acme.Cached", "1.0.0"))
+	fw.res.keeps = func(term string) bool { return term == "acme.payments" || term == "acme" }
+	for _, q := range []string{"q=acme.payments", "q=version:Acme.Payments", "q=version:%22acme+payments%22", "q=json+version:Acme.Payments"} {
+		r := doSearch(t, fw.h, q)
+		if r.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", q, r.Code, r.Body.String())
+		}
+		if n := len(fw.asked()); n != 0 {
+			t.Fatalf("%s reached the upstream as q=%q", q, fw.asked()[0].Params.Get("q"))
+		}
+	}
+	for q, want := range map[string]string{
+		"q=Json++Library":                    "json library",
+		"q=Json+%22Fast+Library%22":          "json \"fast library\"",
+		"q=ID:Newtonsoft.Json+version:13.0.3": "id:newtonsoft.json version:13.0.3",
+		"q=version:13.0.3.0":                 "version:13.0.3",
+	} {
+		before := len(fw.asked())
+		doSearch(t, fw.h, q)
+		qs := fw.asked()
+		if len(qs) != before+1 {
+			t.Fatalf("%s was not forwarded", q)
+		}
+		if got := qs[len(qs)-1].Params.Get("q"); got != want {
+			t.Errorf("%s: the upstream was sent q=%q, want %q", q, got, want)
+		}
+	}
+}

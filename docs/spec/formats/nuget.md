@@ -1413,8 +1413,11 @@ Acceptance criteria (against a stub v3 upstream in CI and, in the full run of Te
 Priority: **MVP** · Covers: PKG-NUGET-024, PKG-NUGET-028
 
 - `forwardSearch: true`: search requests are forwarded to the upstream's search resource with the
-  same `q`, `prerelease`, `semVerLevel` and `packageType`, and with `skip` and `take` clamped to
-  trove's limits (R-REPO-025 lets the plug-in map these parameters). Result URLs are rewritten as
+  terms of `q` as R-NUGET-010 parses them, written back in the query syntax (so the upstream gets
+  exactly the terms the withheld rule below checked, Q-NUGET-80), the same `prerelease`,
+  `semVerLevel` and `packageType`, and with `skip` and `take` clamped to trove's limits
+  (R-REPO-025 lets the plug-in map these parameters). A query with a `version:` term that is no
+  version matches nothing (R-NUGET-010) and is not forwarded. Result URLs are rewritten as
   in R-NUGET-015 (`registration`, `versions[].@id` into the hive that matches the request's
   `semVerLevel`); `owners`, `verified`, `deprecation`, `vulnerabilities`, download counts and
   `packageTypes` are kept, `deprecation` and `vulnerabilities` without the upstream's addresses as
@@ -4502,7 +4505,7 @@ Context: R-NUGET-016 asks `Resolver.KeepsAway` about each term of a query, after
 
 **Rationale:** the rule exists so that a query for a protected namespace does not leave the network; a rule that a stray `!` defeats protects only careful users. Splitting further at dots (c) would withhold queries for other organisations' packages that merely contain the word. The development agent revisits this if users report public results missing for queries with punctuation, or when an upstream is seen to tokenize at characters that are part of IDs.
 
-**Applied in the spec:** R-NUGET-016 (withheld queries). Code: [search_remote.go](../../../internal/formats/nuget/search_remote.go) `withheldNames`. Tests: `TestR_NUGET_016_TheWithheldRuleAsksAboutEveryNameAQueryCarries`, `TestR_NUGET_016_AWithheldQueryIsAnsweredFromTheCacheAndCounted`.
+**Applied in the spec:** R-NUGET-016 (withheld queries; the upstream is sent the parsed terms the rule checked, and a query with a `version:` term that is no version is not forwarded, because Parse folds such a text to nothing the rule could ask about, found by the code review of the fix wave). Code: [search_remote.go](../../../internal/formats/nuget/search_remote.go) `withheldNames`, `forwardedQ`, `namesNoVersion`. Tests: `TestR_NUGET_016_TheWithheldRuleAsksAboutEveryNameAQueryCarries`, `TestR_NUGET_016_AWithheldQueryIsAnsweredFromTheCacheAndCounted`, `TestR_NUGET_016_TheUpstreamIsSentOnlyTheTermsTheWithheldRuleChecked`.
 
 ### Q-NUGET-81 · A remote member of a virtual repository is searched by the code that searches a remote addressed directly
 

@@ -101,11 +101,11 @@ func (f *Format) remoteSearch(ctx context.Context, s searchSource, st Store, p s
 
 // mayForward decides whether a query goes to the upstream (R-NUGET-016, Q-NUGET-79): not when the
 // remote turned forwarding off, not on its cache view, not on an endpoint that fills no caches
-// (R-NUGET-034, R-EP-019), and not when a name of the query is protected for this remote; a
-// withheld query is counted.
+// (R-NUGET-034, R-EP-019), not when a version: term is no version (the query matches nothing),
+// and not when a name of the query is protected for this remote; a withheld query is counted.
 func (f *Format) mayForward(ctx context.Context, s searchSource, p search.Params) (bool, error) {
 	switch {
-	case !settingsOf(s.call.Repo.Config).ForwardSearch, s.rq.CacheView:
+	case !settingsOf(s.call.Repo.Config).ForwardSearch, s.rq.CacheView, namesNoVersion(p.Terms):
 		return false, nil
 	case s.rq.Subject.Endpoint != "" && !s.rq.Subject.CacheFill:
 		return false, nil
@@ -161,7 +161,7 @@ func notIDRune(r rune) bool {
 // counted.
 func (f *Format) forwardSearch(ctx context.Context, s searchSource, scope formats.ReadScope, p search.Params) (hits []rows.SearchHit, total int, answered bool, err error) {
 	rep := f.replicaOf(s.rq.Host)
-	params := forwardParams(s.rq, p)
+	params := forwardParams(p)
 	res, err := s.rq.Host.Remote().Query(ctx, s.call, formats.Query{
 		Path: formats.Path{Path: FeedSegment + "/" + resSearch}, Params: params, TTL: rep.cfg.Search.RemoteResultTTL,
 	})
@@ -201,12 +201,13 @@ func logOf(rq *formats.Request) *slog.Logger {
 	return slog.Default()
 }
 
-// forwardParams are the parameters of the upstream request (R-NUGET-016): the client's q, and
-// the filters and the page in the form trove validated and clamped them to, so that equal
-// searches share one cached answer.
-func forwardParams(rq *formats.Request, p search.Params) url.Values {
+// forwardParams are the parameters of the upstream request (R-NUGET-016): the terms of the
+// client's q as Parse read them and the withheld rule checked them (forwardedQ), and the filters
+// and the page in the form trove validated and clamped them to, so that equal searches share one
+// cached answer.
+func forwardParams(p search.Params) url.Values {
 	v := url.Values{}
-	if q := strings.TrimSpace(rq.URL.Query().Get("q")); q != "" {
+	if q := forwardedQ(p.Terms); q != "" {
 		v.Set("q", q)
 	}
 	v.Set("skip", strconv.Itoa(p.Skip))
@@ -219,6 +220,31 @@ func forwardParams(rq *formats.Request, p search.Params) url.Values {
 		v.Set("packageType", p.PackageType)
 	}
 	return v
+}
+
+// forwardedQ writes the terms of a query back in the query syntax of R-NUGET-010: a field and its
+// colon, a phrase in quotes. The upstream is sent these and not the client's text, so nothing
+// reaches it that the withheld rule did not see (Q-NUGET-80); the text of a version: term that is
+// no version, which Parse folds to "", never leaves (mayForward does not forward such a query).
+func forwardedQ(terms []rows.SearchTerm) string {
+	parts := make([]string, 0, len(terms))
+	for _, t := range terms {
+		v := t.Value
+		if t.Phrase || strings.ContainsAny(v, " \t") {
+			v = `"` + v + `"`
+		}
+		if t.Field != "" {
+			v = t.Field + ":" + v
+		}
+		parts = append(parts, v)
+	}
+	return strings.Join(parts, " ")
+}
+
+// namesNoVersion reports whether a version: term of the query is no version: such a query
+// matches nothing (R-NUGET-010), so it is not forwarded and the cache-only search answers it.
+func namesNoVersion(terms []rows.SearchTerm) bool {
+	return slices.ContainsFunc(terms, func(t rows.SearchTerm) bool { return t.Field == search.FieldVersion && t.Value == "" })
 }
 
 // upstreamSearch is an upstream's answer to a search: the count and the results, each read on

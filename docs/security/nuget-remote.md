@@ -82,7 +82,7 @@ member the same way (R-NUGET-018).
 
 | What | Leaves | Where it is decided |
 |---|---|---|
-| The text of `q` as the client typed it | yes, unless a name in it is protected (below) | `mayForward` |
+| The terms of `q` as trove parsed them (R-NUGET-010), written back in the query syntax: each term lowercased like an ID, a field with its colon, a phrase in quotes; never the client's text, so nothing leaves that the withheld rule did not see | yes, unless a name in them is protected (below), or a `version:` term is no version (the query matches nothing) | `mayForward`, `forwardedQ` |
 | `skip` and `take` (clamped to `nuget.search.max_skip` and `max_take`), `prerelease`, `semVerLevel` (sent only as `2.0.0`), `packageType` (lowercased) | yes, in the form trove validated | `forwardParams` |
 | The caller's name, token, cookie or address | no; the request carries `User-Agent: trove/<version>`, the remote's own credential and custom headers only to a host its hop policy names (step 5 above), and a trace context only with `tracing.propagate_to_upstreams` | the engine's upstream client ([internal/outbound](../../internal/outbound)) |
 | The address | the search resource of the stored service index; its host is the upstream's origin or an `extraHosts` entry, as for every address (steps 1, 2 and 4 above) | the host resolves the index (Q-ARCH-282), the engine checks the host |
