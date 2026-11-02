@@ -32,7 +32,11 @@ test.describe('light, English', () => {
     for (const { section, page: slug, screen } of manual) {
       await test.step(`the "?" on ${screen} opens ${section}/${slug}`, async () => {
         await page.goto(`/ui/en${screen}`);
-        await page.getByRole('link', { name: 'Help' }).first().click();
+        // The "?" follows the route once its navigation has ended (the shell is up before the guard
+        // of the first navigation answers), so the step waits for the link of this screen, then clicks.
+        const help = page.getByRole('link', { name: 'Help' }).first();
+        await expect(help).toHaveAttribute('href', new RegExp(`/help/${section}/${slug}$`));
+        await help.click();
         await expect(page).toHaveURL(new RegExp(`/ui/en/help/${section}/${slug}$`));
         await expect(page.locator('article.help-article h1')).toBeVisible();
         await expectAccessible(page, `help from ${screen} (en, light)`);
@@ -66,7 +70,11 @@ test.describe('dark, German', () => {
     for (const { section, page: slug, screen } of manual) {
       await test.step(`the "?" on ${screen} opens ${section}/${slug}`, async () => {
         await page.goto(`/ui/de${screen}`);
-        await page.getByRole('link', { name: 'Hilfe' }).first().click();
+        // The "?" follows the route once its navigation has ended (the shell is up before the guard
+        // of the first navigation answers), so the step waits for the link of this screen, then clicks.
+        const help = page.getByRole('link', { name: 'Hilfe' }).first();
+        await expect(help).toHaveAttribute('href', new RegExp(`/help/${section}/${slug}$`));
+        await help.click();
         await expect(page).toHaveURL(new RegExp(`/ui/de/help/${section}/${slug}$`));
         await expect(page.locator('article.help-article h1')).toBeVisible();
         await expectAccessible(page, `help from ${screen} (de, dark)`);
