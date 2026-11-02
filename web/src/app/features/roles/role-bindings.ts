@@ -17,9 +17,12 @@ import { ErrorNotice } from '../../shared/error-notice';
  * System roles and their bindings (R-UI-024, R-AUTHZ-022). The five roles are fixed (R-AUTHZ-010);
  * each shows its capabilities and who holds it, and offers bind and unbind with `roles:write`.
  * The last administrator binding cannot be removed: the button is disabled with the reason before
- * the API would answer 409 `last_admin` (R-UI-005). A write answers `Trove-Authz-Epoch`; the HTTP
- * layer sends it as `Trove-Authz-Min-Epoch` on the reads that follow (R-AUTHZ-032), and the
- * caller's own capabilities are read again because a binding may have changed them.
+ * the API would answer 409 `last_admin` (R-UI-005). A binding declared in the system configuration
+ * (`source: configuration`, R-AUTHZ-010, Q-AUTHZ-170) has no unbind control and a hint where it is
+ * changed, before the API would answer 409 `role_binding_managed_by_configuration`. A write
+ * answers `Trove-Authz-Epoch`; the HTTP layer sends it as `Trove-Authz-Min-Epoch` on the reads
+ * that follow (R-AUTHZ-032), and the caller's own capabilities are read again because a binding
+ * may have changed them.
  */
 @Component({
   selector: 'trove-role-bindings',
@@ -66,6 +69,15 @@ export class RoleBindings {
 
   protected isLastAdmin(b: RoleBinding): boolean {
     return b.role === 'admin' && this.adminHolders().length <= 1;
+  }
+
+  /** A binding `authz.role_bindings` declares: the API refuses to remove it (R-AUTHZ-010, Q-AUTHZ-170). */
+  protected fromConfiguration(b: RoleBinding): boolean {
+    return b.source === 'configuration';
+  }
+
+  protected hasConfigured(role: RoleName): boolean {
+    return this.holders(role).some((b) => this.fromConfiguration(b));
   }
 
   protected draft(role: RoleName): string {

@@ -141,6 +141,39 @@ At every sign-in, the user's memberships from this provider become exactly the g
 
 A membership change at the provider reaches trove only at the user's next sign-in. The sync can remove the last member of a group that holds the `admin` role; keep the break-glass account or a service account with `admin` for recovery.
 
+## Administrators from the Helm values
+
+To decide in your GitOps repository which group of your identity provider administers trove, list the role bindings under `config.authz.role_bindings` in the chart values. The migration Job (`trove migrate`) applies the list on every `helm install` and `helm upgrade`, after the schema steps and in one transaction. The group name is the trove group your group-sync rule produces, not the claim value.
+
+```yaml
+config:
+  auth:
+    oidc:
+      providers:
+        dex:                                          # example: the provider ID
+          group_sync:
+            rules:
+              - match: wds18:k8s-main-admins          # example: the value the provider sends in the groups claim
+                group: gh-wds18-k8s-main-admins       # example: the trove group
+  authz:
+    role_bindings:
+      - role: admin                                   # example: admin | security-admin | auditor | repository-admin | webhook-admin
+        group: gh-wds18-k8s-main-admins               # example; or user: <name>, or service_account: <name>; exactly one
+```
+
+- A group that does not exist yet is created as a local group, so the binding holds before anyone has signed in. At sign-in, group synchronization puts the members in; `create_groups` is not needed.
+- A declared user or service account must exist. If it does not, the Job fails and its log names the entry: `kubectl -n trove logs job/trove-migrate`.
+- An unknown role, an entry with two principals or none, and `anonymous` or `authenticated` fail the Job before it touches the database, and the message names the key, for example `authz.role_bindings[0].role "root" is not a system role`.
+- **Administration › Access › System roles** shows these bindings with the source **Configuration** and without **Unbind**; the API answers `409 role_binding_managed_by_configuration`. Bindings you made on that screen stay as they are. A binding you made there and then add to the list is taken over by the configuration.
+- An entry you remove from the list is unbound at the next upgrade. The Job refuses to remove the last administrator while the break-glass account is disabled (`last_admin`). To hand administration from one group to another, add the new group first and remove the old one in a later upgrade, after a member of the new group has signed in, or keep `secrets.breakGlass` set.
+- A group with auto-join cannot be declared (`auto_join_admin_conflict`).
+- Deleting a declared user or group on the **Users** or **Groups** screen removes its binding until the next upgrade, which creates a declared group again (empty until its members sign in) and fails for a declared user.
+- Every change is in the audit log as `authz.role.bound` or `authz.role.unbound` with the actor `system:configuration`.
+
+Whoever can change the membership of the declared group at your identity provider decides who administers trove. With a GitHub team behind Dex, that is the team's maintainers and the organization's owners. A membership change there reaches trove at the member's next sign-in.
+
+To check an upgrade, look for the line `role bindings of the configuration applied` in the Job's log, then sign in as a member of the group: the **Administration** area appears.
+
 ## Sessions
 
 A browser sign-in creates a server-side session. The session cookie and the CSRF cookie are `__Host-` cookies; the session lives in PostgreSQL, so any replica can serve the next request.

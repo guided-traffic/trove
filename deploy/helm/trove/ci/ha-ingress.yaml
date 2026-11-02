@@ -29,6 +29,12 @@ config:
       primary_name: trove                          # example
   metrics:
     auth: static
+  authz:
+    role_bindings:                                 # R-AUTHZ-010: applied by the migration Job
+      - role: admin                                # example
+        group: gh-wds18-k8s-main-admins            # example
+      - role: auditor                              # example
+        group: gh-wds18-k8s-main-auditors          # example
 secrets:
   database:
     existingSecret: trove-db-app                   # example

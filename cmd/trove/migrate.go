@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/guided-traffic/trove/internal/app"
 	"github.com/guided-traffic/trove/internal/backup/tables"
 	"github.com/guided-traffic/trove/internal/buildinfo"
 	"github.com/guided-traffic/trove/internal/config"
@@ -64,7 +65,10 @@ func migrateCmd(args []string, s streams) error {
 		// The runner is the schema owner and so the only writer of the retention
 		// in two-role mode (R-OPS-015).
 		AuditRetentionDays: &cfg.Audit.RetentionDays,
-		Log:                log,
+		// authz.role_bindings, applied after the steps under the migration lock in
+		// one transaction (R-AUTHZ-010, Q-AUTHZ-170); `status` never calls it.
+		Declared: app.DeclaredState(cfg, instanceName(s.environ), log),
+		Log:      log,
 	}
 	switch action {
 	case "status":

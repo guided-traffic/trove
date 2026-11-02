@@ -48,6 +48,12 @@ type MigrateOptions struct {
 	// into audit_policy and calls audit_maintain_partitions() once the steps are
 	// applied (R-OPS-015); nil leaves the row alone (tests with their own steps).
 	AuditRetentionDays *int
+	// Declared applies the state the configuration declares to the database
+	// (authz.role_bindings, R-AUTHZ-010, Q-AUTHZ-170). Every run calls it, applied
+	// or not, after the steps and the audit policy, under the migration lock and on
+	// the runner's connection; its error fails the run (exit status 1). Nil skips
+	// it (tests with their own steps).
+	Declared func(ctx context.Context, s *MigrationSession) error
 	// Log receives the progress lines; nil means slog.Default.
 	Log *slog.Logger
 }
@@ -252,7 +258,7 @@ func Migrate(ctx context.Context, cfg config.Database, opts MigrateOptions) (Res
 	if len(pending) == 0 {
 		res.NothingToDo = true
 		log.Info("nothing to do", "schema_applied", st.schemaApplied, "required_schema", res.RequiredSchema)
-		return res, syncAudit(ctx, conn, opts, log)
+		return res, finish(ctx, conn, opts, log)
 	}
 
 	// 5. Apply.
@@ -264,7 +270,17 @@ func Migrate(ctx context.Context, cfg config.Database, opts MigrateOptions) (Res
 		res.Applied = append(res.Applied, sr)
 	}
 	res.SchemaApplied, res.CompatFloor = st.schemaApplied, st.compatFloor
-	return res, syncAudit(ctx, conn, opts, log)
+	return res, finish(ctx, conn, opts, log)
+}
+
+// finish is the part of every run, applied or not, that follows the steps: the
+// audit policy, then the declared state of the configuration, which writes audit
+// events into the partitions the first made sure of.
+func finish(ctx context.Context, conn *pgx.Conn, opts MigrateOptions, log *slog.Logger) error {
+	if err := syncAudit(ctx, conn, opts, log); err != nil {
+		return err
+	}
+	return applyDeclared(ctx, conn, opts)
 }
 
 // syncAudit is the audit part of every run, applied or not: the retention and

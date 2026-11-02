@@ -37,14 +37,17 @@ type Auth struct {
 	// <<< M1 login
 }
 
-// Authz is the authz section (R-AUTHZ-017, R-AUTHZ-028, R-AUTHZ-029): hiding,
-// cache bounds, audit of reads. WP1.3 owns it.
+// Authz is the authz section (R-AUTHZ-010, R-AUTHZ-017, R-AUTHZ-028, R-AUTHZ-029):
+// hiding, cache bounds, audit of reads, declared role bindings. WP1.3 owns it.
 type Authz struct {
 	// >>> M1 authz
 
 	HideExistence bool       `yaml:"hide_existence" default:"true" doc:"A refused read answers 404, indistinguishable from a missing resource (R-AUTHZ-016, R-AUTHZ-017); false answers 403 for a resource that exists, for troubleshooting only. A repository's hideExistence overrides it."`
 	Cache         AuthzCache `yaml:"cache"`
 	Audit         AuthzAudit `yaml:"audit"`
+	// RoleBindings are the system role bindings this file declares (R-AUTHZ-010,
+	// Q-AUTHZ-170); the type and its validation are in authz.go.
+	RoleBindings []AuthzRoleBinding `yaml:"role_bindings" default:"[]" doc:"System role bindings declared here (R-AUTHZ-010, Q-AUTHZ-170): trove migrate applies them with source configuration and removes the configuration bindings no longer listed; the API and the UI show them read-only. Each entry names role and exactly one of group, user and service_account. Whoever controls the membership of a declared IdP group holds the role."`
 
 	// <<< M1 authz
 }

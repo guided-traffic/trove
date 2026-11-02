@@ -12,6 +12,7 @@ import (
 
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/api/v1/apitest"
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/test/integration/stack"
 )
 
@@ -505,7 +506,7 @@ func TestR_AUTHZ_023_ChecksOverHTTP(t *testing.T) {
 			t.Fatalf("%v", m)
 		}
 		adm := f.cl.Do(me, "GET", "/api/v1/authz/me", nil, f.current()...).JSON(t)
-		if fmt.Sprint(adm["roles"]) != "[admin]" || len(adm["capabilities"].([]any)) != 23 {
+		if fmt.Sprint(adm["roles"]) != "[admin]" || len(adm["capabilities"].([]any)) != len(authz.Capabilities()) {
 			t.Fatalf("admin: %v", adm)
 		}
 		wantStatus(t, f.cl.Do("", "GET", "/api/v1/authz/me", nil), 401, "")

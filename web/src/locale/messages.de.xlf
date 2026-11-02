@@ -6696,6 +6696,15 @@
         <target>Eine Gruppe mit automatischem Beitritt kann die Administratorrolle nicht tragen.</target>
       </segment>
     </unit>
+    <unit id="problem.role_binding_managed_by_configuration">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:38</note>
+      </notes>
+      <segment>
+        <source>This role binding is declared in the system configuration and can only be removed there.</source>
+        <target>Diese Rollenzuweisung ist in der Systemkonfiguration festgelegt und kann nur dort entfernt werden.</target>
+      </segment>
+    </unit>
     <unit id="problem.role_not_allowed">
       <notes>
         <note category="location">src/app/core/http/problem-messages-access.ts:38</note>
@@ -9201,6 +9210,15 @@
         <target>Zugewiesen von</target>
       </segment>
     </unit>
+    <unit id="roles.source">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:36,37</note>
+      </notes>
+      <segment>
+        <source>Source</source>
+        <target>Quelle</target>
+      </segment>
+    </unit>
     <unit id="roles.actions">
       <notes>
         <note category="location">src/app/features/roles/role-bindings.html:37,38</note>
@@ -9208,6 +9226,33 @@
       <segment>
         <source>Actions</source>
         <target>Aktionen</target>
+      </segment>
+    </unit>
+    <unit id="roles.source-configuration">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:50,52</note>
+      </notes>
+      <segment>
+        <source>Configuration</source>
+        <target>Konfiguration</target>
+      </segment>
+    </unit>
+    <unit id="roles.source-api">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:52,54</note>
+      </notes>
+      <segment>
+        <source>API</source>
+        <target>API</target>
+      </segment>
+    </unit>
+    <unit id="roles.managed-by-configuration">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:58,60</note>
+      </notes>
+      <segment>
+        <source>Managed in the configuration</source>
+        <target>In der Konfiguration verwaltet</target>
       </segment>
     </unit>
     <unit id="roles.unbind-button">
@@ -9226,6 +9271,15 @@
       <segment>
         <source>The last administrator binding cannot be removed.</source>
         <target>Die letzte Administrator-Zuweisung kann nicht entfernt werden.</target>
+      </segment>
+    </unit>
+    <unit id="roles.configuration-hint">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:83,86</note>
+      </notes>
+      <segment>
+        <source> Bindings with the source Configuration are declared in authz.role_bindings of the system configuration and applied when trove is installed or upgraded. Change or remove them there, not here. </source>
+        <target> Zuweisungen mit der Quelle Konfiguration sind in authz.role_bindings der Systemkonfiguration festgelegt und werden bei der Installation oder Aktualisierung von trove angewendet. Ändern oder entfernen Sie sie dort, nicht hier. </target>
       </segment>
     </unit>
     <unit id="roles.bind-principal">

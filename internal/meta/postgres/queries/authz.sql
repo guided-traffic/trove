@@ -133,8 +133,42 @@ ON CONFLICT (role, principal_id) DO NOTHING;
 -- name: AuthzDeleteBinding :execrows
 DELETE FROM authz_role_binding WHERE role = sqlc.arg(role)::text AND principal_id = sqlc.arg(principal_id)::text::uuid;
 
+-- name: AuthzDeleteAPIBinding :execrows
+-- The API's unbind: a binding the configuration keeps stays (R-AUTHZ-010,
+-- Q-AUTHZ-170), so the source is part of the condition and a concurrent trove
+-- migrate that takes the binding over cannot lose it.
+DELETE FROM authz_role_binding
+ WHERE role = sqlc.arg(role)::text AND principal_id = sqlc.arg(principal_id)::text::uuid AND source = 'api';
+
+-- name: AuthzBindingSource :many
+-- The source of one binding; no row when it does not exist.
+SELECT source FROM authz_role_binding WHERE role = sqlc.arg(role)::text AND principal_id = sqlc.arg(principal_id)::text::uuid;
+
+-- name: AuthzInsertDeclaredBinding :execrows
+-- A binding of authz.role_bindings that does not exist yet (Q-AUTHZ-170). It has
+-- no granting principal: the configuration granted it.
+INSERT INTO authz_role_binding (role, principal_id, source)
+VALUES (sqlc.arg(role)::text, sqlc.arg(principal_id)::text::uuid, 'configuration')
+ON CONFLICT (role, principal_id) DO NOTHING;
+
+-- name: AuthzAdoptBinding :execrows
+-- A declared binding that the API made earlier: the configuration keeps it from
+-- now on, with its grant time and granting principal (Q-AUTHZ-170).
+UPDATE authz_role_binding SET source = 'configuration'
+ WHERE role = sqlc.arg(role)::text AND principal_id = sqlc.arg(principal_id)::text::uuid AND source <> 'configuration';
+
+-- name: AuthzDeclaredBindings :many
+-- The bindings the configuration keeps, for trove migrate to remove the ones no
+-- longer declared (Q-AUTHZ-170).
+SELECT b.role, b.principal_id::text AS principal_id, p.kind AS principal_kind, p.name AS principal_name
+  FROM authz_role_binding b
+  JOIN principal p ON p.id = b.principal_id
+ WHERE b.source = 'configuration'
+ ORDER BY b.role, p.kind, p.name;
+
 -- name: AuthzListBindings :many
 SELECT b.role, b.principal_id::text AS principal_id, p.kind AS principal_kind, p.name AS principal_name,
+       b.source,
        (extract(epoch FROM b.granted_at) * 1000000)::bigint AS granted_us,
        COALESCE(gb.kind, '')::text AS granted_by_kind, COALESCE(gb.name, '')::text AS granted_by_name
   FROM authz_role_binding b

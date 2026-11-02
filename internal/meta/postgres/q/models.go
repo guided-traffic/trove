@@ -156,6 +156,7 @@ type AuthzRoleBinding struct {
 	PrincipalID pgtype.UUID
 	GrantedBy   pgtype.UUID
 	GrantedAt   pgtype.Timestamptz
+	Source      string
 }
 
 type Blob struct {

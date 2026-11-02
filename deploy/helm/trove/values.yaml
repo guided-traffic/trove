@@ -173,6 +173,17 @@ config:
   #     max_skip: 3000                  # default: a larger skip answers 400
   #     virtual_merge_window: 1000      # default: results per member a virtual repository merges
   #     remote_result_ttl: 60s          # default: how long a forwarded search answer is kept, at most 1h
+  # System role bindings (R-AUTHZ-010, Q-AUTHZ-170). The migration Job (trove migrate) applies the list on every install
+  # and upgrade and removes the bindings taken out of it; the API and the UI show them read-only. A group that does not
+  # exist is created, and the login provider's group sync fills it: a rule of config.auth.oidc.providers.<id>.group_sync
+  # must map the IdP group to the same name. A user or service account must exist, or the Job fails. Whoever controls the
+  # membership of a declared IdP group holds the role. The default is no declaration.
+  # authz:
+  #   role_bindings:
+  #     - role: admin                   # example: admin | security-admin | auditor | repository-admin | webhook-admin
+  #       group: gh-wds18-k8s-main-admins   # example; exactly one of group, user, service_account
+  #     - role: auditor                 # example: reads every repository's metadata and the configuration, changes nothing
+  #       group: gh-wds18-k8s-main-auditors # example
 
 # ── TLS on trove's own listeners (R-HA-063, R-ARCH-035) ────────────────────
 # The chart never creates the Secret. It holds the keys of a cert-manager TLS Secret (tls.crt,

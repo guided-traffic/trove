@@ -370,10 +370,12 @@ type bindingView struct {
 	Principal string    `json:"principal"`
 	GrantedAt time.Time `json:"grantedAt"`
 	GrantedBy string    `json:"grantedBy"`
+	// Source is api or configuration (R-AUTHZ-010, Q-AUTHZ-170).
+	Source string `json:"source"`
 }
 
 func toBinding(b authz.Binding) bindingView {
-	return bindingView{Role: string(b.Role), Principal: b.Principal, GrantedAt: b.GrantedAt.UTC(), GrantedBy: b.GrantedBy}
+	return bindingView{Role: string(b.Role), Principal: b.Principal, GrantedAt: b.GrantedAt.UTC(), GrantedBy: b.GrantedBy, Source: b.Source}
 }
 
 // ListRoleBindings implements GET /api/v1/role-bindings: ordered by role and
@@ -431,7 +433,7 @@ func (s *Server) BindRole(w http.ResponseWriter, r *http.Request, role gen.RoleN
 	if created {
 		status = http.StatusCreated
 	}
-	view := bindingView{Role: string(role), Principal: principalRef, GrantedAt: time.Now().UTC()}
+	view := bindingView{Role: string(role), Principal: principalRef, GrantedAt: time.Now().UTC(), Source: authz.SourceAPI}
 	if got, err := svc.ListBindings(r.Context(), authz.Role(role), principalRef); err == nil && len(got) > 0 {
 		view = toBinding(got[0])
 	}

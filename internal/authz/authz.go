@@ -52,6 +52,12 @@ const (
 	AuditRead             Capability = "audit:read"
 	EndpointsRead         Capability = "endpoints:read"
 	EndpointsWrite        Capability = "endpoints:write"
+	// ContentMetadataRead is read on the metadata of every repository (request
+	// kinds metadata and search: package lists, versions, the format's documents,
+	// search, the package pages) and never on an artifact (Q-AUTHZ-172). Unlike
+	// content:bypass it is a system scope item, and a token's repository scope
+	// narrows it like a grant (R-AUTHZ-013).
+	ContentMetadataRead Capability = "content:metadata-read"
 )
 
 // RequestKind is the request kind of the request descriptor (R-REPO-003); the

@@ -6,7 +6,8 @@ ownership in the decision point, and their callers: npm's writers ask the owners
 bundle, a dist-tag write and an unpublish, the generic layer asks it for every delete of npm content through `/files/` and the
 items API (Q-AUTHZ-161), the remote engine asks the populate check before a fill, the virtual engine asks `MemberUsableOn` per
 member and the shadowing check before a first version, and the host decides a format's write again when it commits
-(Q-ARCH-225). CI inline grants and projects do not exist yet.
+(Q-ARCH-225). The role bindings of the system configuration (`authz.role_bindings`, applied by `trove migrate`) and the
+auditor's metadata read (`content:metadata-read`) are built. CI inline grants and projects do not exist yet.
 
 This page says what keeps a request from doing more than it was granted, how long a removed grant can still work, and what
 an attacker who controls one of the inputs gains. The mechanics are in
@@ -36,6 +37,7 @@ an attacker who controls one of the inputs gains. The mechanics are in
 | No implication | `deploy` does not imply `read`, `manage` does not imply `deploy`; presets are expanded when written | [action.go](../../internal/authz/action.go) |
 | Token scope | Intersected with the owner's rights at use time; never grants; a malformed element admits nothing. An element that admits `read` on a virtual repository also admits `read` on the members reached through it, for that request only (Q-AUTHZ-163, below) | `scopeAdmits`, `scopeAdmitsThrough` |
 | Roles through tokens | A token exercises roles only with `admin: true` (and only if the owner holds `admin` at that moment) or through `system` items the owner's roles grant; `content:bypass` is never an item | `capabilities` |
+| Metadata read | `content:metadata-read` allows `read` on a coordinate of kind metadata or search of every repository and nothing else: no artifact, no write, no coordinate without a kind; the repository part of a token scope narrows it like a grant (Q-AUTHZ-172, [below](#the-auditor)) | `allowedAction`, `metadataKind` |
 | `authenticated` and `anonymous` | Entries hold `read` only; `anonymous` entries select repositories by key only; neither holds a role; a service account and a CI token are never `authenticated` | `Service.entryRules`, `Index.principalIDs` |
 | Endpoint ceiling | Consulted first for every action and every subject, `content:bypass` included; nil is none | [ceiling.go](../../internal/authz/ceiling.go) |
 | Virtual repositories | `read` on the virtual repository is a gate, not a source of content rights; anonymous passes only if it reads every member | `evaluate` |
@@ -189,6 +191,57 @@ binding rows first and counts in a statement of its own afterwards, so two of th
 other (`TestR_AUTHZ_022_ConcurrentUnbindsLeaveAnAdministrator`, `TestR_AUTHZ_022_LastAdministratorAcrossTheIdentityOperations`).
 The guard steps aside while the break-glass administrator is enabled.
 
+## Role bindings from the configuration
+
+`authz.role_bindings` (R-AUTHZ-010, Q-AUTHZ-170, Q-AUTHZ-171) lets the system configuration decide who holds a system role.
+Only `trove migrate` writes these bindings: the chart's migration Job, with the migration credential (the schema owner in
+two-role mode), under the migration lock and in one transaction that also writes the authz change and the audit events with
+the actor `system:configuration` ([declared.go](../../internal/authz/declared.go), `Service.ApplyDeclared`;
+[migrate_declared.go](../../internal/app/migrate_declared.go)). Every running replica applies the result from the change log
+within the bound of R-AUTHZ-028, Valkey or not. No `web` or `worker` replica writes a binding with the source
+`configuration`; the API answers `DELETE` of one with 409 `role_binding_managed_by_configuration` and `PUT` of one with 200,
+leaving it to the configuration. The API's delete removes only rows with the source `api`, in the statement itself, so a
+concurrent take-over by `trove migrate` cannot be lost (`AuthzDeleteAPIBinding`).
+
+Who decides, and what makes it real:
+
+- Whoever can change the chart values and run the upgrade (the GitOps repository and whoever merges to it) decides the role
+  holders, as they decide the rest of the configuration and its Secrets.
+- For a declared group, whoever controls the group's membership at the identity provider administers trove: with a GitHub
+  team behind Dex, the team's maintainers and the organization's owners. trove sees the membership only at each member's
+  sign-in (R-AUTH-008, H-212) and cannot tell who changed it at the provider.
+- The group-sync rule that maps a claim value to the declared group's name is part of the same trust. A rule that a claim
+  value anyone can obtain matches makes anyone a role holder; R-AUTH-007 refuses a `match_regex` without a namespace for a
+  public issuer, and [H-85](tokens-and-credentials.md#h-85--group-names-from-the-login-flow-are-applied-as-given) applies.
+- A declared group that does not exist is created as a local group without members, so it holds nobody until the sync or an
+  administrator adds one.
+
+The rules of the API bind the declaration (Q-AUTHZ-171): a declared auto-join group stops the run
+(`auto_join_admin_conflict`), and so does a removal that would leave no active user or service account holding `admin` while
+the break-glass administrator is disabled (`last_admin`), with an error that names the binding. A declaration the binary
+cannot accept (an unknown role, two principals, `anonymous` or `authenticated`) fails at configuration load in every process
+that reads the file. Tests: `TestR_AUTHZ_010_BindingsFromTheConfiguration`, `TestR_AUTHZ_022_DeclaredRemovalKeepsAnAdministrator`,
+`TestR_AUTHZ_010_MigrateCommandAppliesTheDeclaredBindings`, `TestR_AUTHZ_010_RoleBindingsFromTheConfiguration`.
+
+## The auditor
+
+The role `auditor` (R-AUTHZ-011, Q-AUTHZ-172) reads the configuration, the identities, the policies and bindings, the token
+metadata, the settings and the audit log, and through `content:metadata-read` the metadata of every repository. The decision
+point allows that capability `read` on the request kinds metadata and search only ([decide.go](../../internal/authz/decide.go),
+`allowedAction`): the repository list, package lists and pages, versions, the format's documents (an npm package document, a
+NuGet version list, registration and search) and the folder listings of raw repositories. An artifact (a tarball, a `.nupkg`,
+a `.nuspec`, a raw file) is refused like a missing one, every write with 403, and a coordinate without a request kind is no
+metadata read. The gate of a virtual repository is decided with the request's kind, so an artifact through a virtual
+repository stops at the gate. Exposure rules bind the auditor as every subject (R-EP-013). A token carries the capability only
+when its scope lists the system item `content:metadata-read`, and its repository part narrows it like a grant (R-AUTHZ-013).
+Tests: `TestQ_AUTHZ_172_AuditorReadsMetadataNeverArtifacts`, `TestQ_AUTHZ_172_AuditorReadsNpmMetadata`,
+`TestQ_AUTHZ_172_AuditorReadsNuGetMetadata`.
+
+What the auditor learns is everything the metadata says: every repository key, every package name and version, the dist-tags
+and maintainers of an npm package, the dependencies of a NuGet version, the names, sizes and digests of raw files, internal
+names included. It knows the digest of an artifact it cannot fetch. When the role is bound to a declared IdP group, whoever
+controls that group decides who sees all of it.
+
 ## The ownership operations
 
 Who may change the owners of a name is decided on the owners the transaction reads under the claim row's lock, so a refused
@@ -250,6 +303,16 @@ not refused (Q-AUTHZ-70, option c). Live whenever an administrator group is sync
 break-glass administrator is disabled; what makes it real is a change of the group at the identity provider, by mistake or by
 someone who administers the provider but not trove. R-HA-054 reports an installation without an administrator; recovery is
 the break-glass administrator or `trove admin`.
+
+### H-381 · Deleting a declared principal removes its configuration binding until the next `trove migrate`
+
+Component: role bindings from the configuration (R-AUTHZ-010, Q-AUTHZ-171). Subject: a holder of `identities:write` and
+`roles:write` (an administrator). Live today. Deleting a principal deletes its role bindings through the foreign key
+(R-AUTHZ-002), the configuration's included, although the API refuses to remove such a binding directly. Until the next run of
+`trove migrate` the binding is gone; that run creates a declared group again as a new, empty group (its synchronized members
+return at their next sign-in) and stops for a declared user or service account. What makes it real: an administrator who
+deletes the declared group or user, by mistake or to take the role away outside the GitOps review. The deletion is audited
+(`group.deleted`, `authz.role.unbound` is not written for the cascade), and the last_admin guard still applies to it.
 
 ### H-299 · The cost of a package list for a caller with row-level grants depends on versions the caller cannot read
 

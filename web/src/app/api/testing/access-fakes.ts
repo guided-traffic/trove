@@ -827,8 +827,8 @@ export const ROLES: readonly Role[] = [
 export class FakeRolesApi extends RolesApi {
   readonly calls: string[] = [];
   bindingList: RoleBinding[] = [
-    { role: 'admin', principal: 'group:platform', grantedAt: '2026-09-01T08:00:00Z', grantedBy: '' },
-    { role: 'auditor', principal: 'user:bob', grantedAt: '2026-09-02T08:00:00Z', grantedBy: 'user:alice' },
+    { role: 'admin', principal: 'group:platform', grantedAt: '2026-09-01T08:00:00Z', grantedBy: '', source: 'api' },
+    { role: 'auditor', principal: 'user:bob', grantedAt: '2026-09-02T08:00:00Z', grantedBy: 'user:alice', source: 'api' },
   ];
   failure: ApiError | null = null;
 
@@ -851,7 +851,13 @@ export class FakeRolesApi extends RolesApi {
       throw e;
     }
     this.calls.push(`bind ${role} ${principal}`);
-    const binding: RoleBinding = { role, principal, grantedAt: '2026-10-29T10:00:00Z', grantedBy: 'user:alice' };
+    const binding: RoleBinding = {
+      role,
+      principal,
+      grantedAt: '2026-10-29T10:00:00Z',
+      grantedBy: 'user:alice',
+      source: 'api',
+    };
     this.bindingList = [...this.bindingList, binding];
     return binding;
   }

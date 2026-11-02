@@ -315,25 +315,25 @@ func (e EndpointConfigurationReplicaHeader) Valid() bool {
 
 // Defines values for EndpointConfigurationSurface.
 const (
-	Api        EndpointConfigurationSurface = "api"
-	CiExchange EndpointConfigurationSurface = "ci_exchange"
-	Files      EndpointConfigurationSurface = "files"
-	Packages   EndpointConfigurationSurface = "packages"
-	Ui         EndpointConfigurationSurface = "ui"
+	EndpointConfigurationSurfaceApi        EndpointConfigurationSurface = "api"
+	EndpointConfigurationSurfaceCiExchange EndpointConfigurationSurface = "ci_exchange"
+	EndpointConfigurationSurfaceFiles      EndpointConfigurationSurface = "files"
+	EndpointConfigurationSurfacePackages   EndpointConfigurationSurface = "packages"
+	EndpointConfigurationSurfaceUi         EndpointConfigurationSurface = "ui"
 )
 
 // Valid indicates whether the value is a known member of the EndpointConfigurationSurface enum.
 func (e EndpointConfigurationSurface) Valid() bool {
 	switch e {
-	case Api:
+	case EndpointConfigurationSurfaceApi:
 		return true
-	case CiExchange:
+	case EndpointConfigurationSurfaceCiExchange:
 		return true
-	case Files:
+	case EndpointConfigurationSurfaceFiles:
 		return true
-	case Packages:
+	case EndpointConfigurationSurfacePackages:
 		return true
-	case Ui:
+	case EndpointConfigurationSurfaceUi:
 		return true
 	default:
 		return false
@@ -1399,6 +1399,24 @@ func (e RepositorySummaryLifecycle) Valid() bool {
 	case RepositorySummaryLifecycleActive:
 		return true
 	case RepositorySummaryLifecycleDeleting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RoleBindingSource.
+const (
+	RoleBindingSourceApi           RoleBindingSource = "api"
+	RoleBindingSourceConfiguration RoleBindingSource = "configuration"
+)
+
+// Valid indicates whether the value is a known member of the RoleBindingSource enum.
+func (e RoleBindingSource) Valid() bool {
+	switch e {
+	case RoleBindingSourceApi:
+		return true
+	case RoleBindingSourceConfiguration:
 		return true
 	default:
 		return false
@@ -4119,13 +4137,19 @@ type Role struct {
 type RoleBinding struct {
 	GrantedAt time.Time `json:"grantedAt"`
 
-	// GrantedBy A principal reference; empty for a binding made by a command or whose granter was deleted.
+	// GrantedBy A principal reference; empty for a binding made by a command, by the configuration or whose granter was deleted.
 	GrantedBy string `json:"grantedBy"`
 
 	// Principal A principal reference.
 	Principal string   `json:"principal"`
 	Role      RoleName `json:"role"`
+
+	// Source Who keeps the binding (R-AUTHZ-010, Q-AUTHZ-170): `api` for one made through this API or an administration command, `configuration` for one that `authz.role_bindings` of the system configuration declares and `trove migrate` applies. A `configuration` binding cannot be removed here (`409 role_binding_managed_by_configuration`).
+	Source RoleBindingSource `json:"source"`
 }
+
+// RoleBindingSource Who keeps the binding (R-AUTHZ-010, Q-AUTHZ-170): `api` for one made through this API or an administration command, `configuration` for one that `authz.role_bindings` of the system configuration declares and `trove migrate` applies. A `configuration` binding cannot be removed here (`409 role_binding_managed_by_configuration`).
+type RoleBindingSource string
 
 // RoleBindingList defines model for RoleBindingList.
 type RoleBindingList struct {

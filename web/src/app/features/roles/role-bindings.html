@@ -33,6 +33,7 @@
                 <th scope="col" i18n="@@roles.principal">Principal</th>
                 <th scope="col" i18n="@@roles.granted-at">Granted</th>
                 <th scope="col" i18n="@@roles.granted-by">Granted by</th>
+                <th scope="col" i18n="@@roles.source">Source</th>
                 @if (canWrite()) {
                   <th scope="col"><span class="visually-hidden" i18n="@@roles.actions">Actions</span></th>
                 }
@@ -44,18 +45,29 @@
                   <th scope="row" translate="no">{{ b.principal }}</th>
                   <td>{{ b.grantedAt | date: 'medium' }}</td>
                   <td translate="no">{{ b.grantedBy }}</td>
+                  <td>
+                    @if (fromConfiguration(b)) {
+                      <span i18n="@@roles.source-configuration">Configuration</span>
+                    } @else {
+                      <span i18n="@@roles.source-api">API</span>
+                    }
+                  </td>
                   @if (canWrite()) {
                     <td class="actions">
-                      <button
-                        mat-button
-                        type="button"
-                        [disabled]="busy() || isLastAdmin(b)"
-                        [attr.aria-describedby]="isLastAdmin(b) ? 'last-admin-guard' : null"
-                        (click)="unbind(b)"
-                      >
-                        <ng-container i18n="@@roles.unbind-button">Unbind</ng-container>
-                        <span class="visually-hidden" translate="no"> {{ b.principal }}</span>
-                      </button>
+                      @if (fromConfiguration(b)) {
+                        <span class="muted" i18n="@@roles.managed-by-configuration">Managed in the configuration</span>
+                      } @else {
+                        <button
+                          mat-button
+                          type="button"
+                          [disabled]="busy() || isLastAdmin(b)"
+                          [attr.aria-describedby]="isLastAdmin(b) ? 'last-admin-guard' : null"
+                          (click)="unbind(b)"
+                        >
+                          <ng-container i18n="@@roles.unbind-button">Unbind</ng-container>
+                          <span class="visually-hidden" translate="no"> {{ b.principal }}</span>
+                        </button>
+                      }
                     </td>
                   }
                 </tr>
@@ -63,8 +75,14 @@
             </tbody>
           </table>
         </div>
-        @if (r.name === 'admin' && holders('admin').length <= 1) {
+        @if (r.name === 'admin' && holders('admin').length <= 1 && !hasConfigured('admin')) {
           <p id="last-admin-guard" class="muted" i18n="@@roles.last-admin">The last administrator binding cannot be removed.</p>
+        }
+        @if (hasConfigured(r.name)) {
+          <p class="muted" i18n="@@roles.configuration-hint">
+            Bindings with the source Configuration are declared in authz.role_bindings of the system configuration and applied when
+            trove is installed or upgraded. Change or remove them there, not here.
+          </p>
         }
       }
 

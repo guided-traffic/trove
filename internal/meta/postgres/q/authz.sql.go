@@ -29,6 +29,56 @@ func (q *Queries) AuthzAdminBindings(ctx context.Context) (AuthzAdminBindingsRow
 	return i, err
 }
 
+const authzAdoptBinding = `-- name: AuthzAdoptBinding :execrows
+UPDATE authz_role_binding SET source = 'configuration'
+ WHERE role = $1::text AND principal_id = $2::text::uuid AND source <> 'configuration'
+`
+
+type AuthzAdoptBindingParams struct {
+	Role        string
+	PrincipalID string
+}
+
+// A declared binding that the API made earlier: the configuration keeps it from
+// now on, with its grant time and granting principal (Q-AUTHZ-170).
+func (q *Queries) AuthzAdoptBinding(ctx context.Context, arg AuthzAdoptBindingParams) (int64, error) {
+	result, err := q.db.Exec(ctx, authzAdoptBinding, arg.Role, arg.PrincipalID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const authzBindingSource = `-- name: AuthzBindingSource :many
+SELECT source FROM authz_role_binding WHERE role = $1::text AND principal_id = $2::text::uuid
+`
+
+type AuthzBindingSourceParams struct {
+	Role        string
+	PrincipalID string
+}
+
+// The source of one binding; no row when it does not exist.
+func (q *Queries) AuthzBindingSource(ctx context.Context, arg AuthzBindingSourceParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, authzBindingSource, arg.Role, arg.PrincipalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var source string
+		if err := rows.Scan(&source); err != nil {
+			return nil, err
+		}
+		items = append(items, source)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const authzBuildBindings = `-- name: AuthzBuildBindings :many
 SELECT role, principal_id::text AS principal_id FROM authz_role_binding ORDER BY role, principal_id
 `
@@ -269,6 +319,69 @@ func (q *Queries) AuthzClearPolicyChildren(ctx context.Context, policyID string)
 	return err
 }
 
+const authzDeclaredBindings = `-- name: AuthzDeclaredBindings :many
+SELECT b.role, b.principal_id::text AS principal_id, p.kind AS principal_kind, p.name AS principal_name
+  FROM authz_role_binding b
+  JOIN principal p ON p.id = b.principal_id
+ WHERE b.source = 'configuration'
+ ORDER BY b.role, p.kind, p.name
+`
+
+type AuthzDeclaredBindingsRow struct {
+	Role          string
+	PrincipalID   string
+	PrincipalKind string
+	PrincipalName string
+}
+
+// The bindings the configuration keeps, for trove migrate to remove the ones no
+// longer declared (Q-AUTHZ-170).
+func (q *Queries) AuthzDeclaredBindings(ctx context.Context) ([]AuthzDeclaredBindingsRow, error) {
+	rows, err := q.db.Query(ctx, authzDeclaredBindings)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuthzDeclaredBindingsRow{}
+	for rows.Next() {
+		var i AuthzDeclaredBindingsRow
+		if err := rows.Scan(
+			&i.Role,
+			&i.PrincipalID,
+			&i.PrincipalKind,
+			&i.PrincipalName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const authzDeleteAPIBinding = `-- name: AuthzDeleteAPIBinding :execrows
+DELETE FROM authz_role_binding
+ WHERE role = $1::text AND principal_id = $2::text::uuid AND source = 'api'
+`
+
+type AuthzDeleteAPIBindingParams struct {
+	Role        string
+	PrincipalID string
+}
+
+// The API's unbind: a binding the configuration keeps stays (R-AUTHZ-010,
+// Q-AUTHZ-170), so the source is part of the condition and a concurrent trove
+// migrate that takes the binding over cannot lose it.
+func (q *Queries) AuthzDeleteAPIBinding(ctx context.Context, arg AuthzDeleteAPIBindingParams) (int64, error) {
+	result, err := q.db.Exec(ctx, authzDeleteAPIBinding, arg.Role, arg.PrincipalID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const authzDeleteBinding = `-- name: AuthzDeleteBinding :execrows
 DELETE FROM authz_role_binding WHERE role = $1::text AND principal_id = $2::text::uuid
 `
@@ -427,6 +540,27 @@ func (q *Queries) AuthzInsertBinding(ctx context.Context, arg AuthzInsertBinding
 	return result.RowsAffected(), nil
 }
 
+const authzInsertDeclaredBinding = `-- name: AuthzInsertDeclaredBinding :execrows
+INSERT INTO authz_role_binding (role, principal_id, source)
+VALUES ($1::text, $2::text::uuid, 'configuration')
+ON CONFLICT (role, principal_id) DO NOTHING
+`
+
+type AuthzInsertDeclaredBindingParams struct {
+	Role        string
+	PrincipalID string
+}
+
+// A binding of authz.role_bindings that does not exist yet (Q-AUTHZ-170). It has
+// no granting principal: the configuration granted it.
+func (q *Queries) AuthzInsertDeclaredBinding(ctx context.Context, arg AuthzInsertDeclaredBindingParams) (int64, error) {
+	result, err := q.db.Exec(ctx, authzInsertDeclaredBinding, arg.Role, arg.PrincipalID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const authzInsertEntry = `-- name: AuthzInsertEntry :exec
 INSERT INTO authz_policy_entry (policy_id, principal_id, actions)
 VALUES ($1::text::uuid, $2::text::uuid, $3::text[])
@@ -539,6 +673,7 @@ func (q *Queries) AuthzInsertSelector(ctx context.Context, arg AuthzInsertSelect
 
 const authzListBindings = `-- name: AuthzListBindings :many
 SELECT b.role, b.principal_id::text AS principal_id, p.kind AS principal_kind, p.name AS principal_name,
+       b.source,
        (extract(epoch FROM b.granted_at) * 1000000)::bigint AS granted_us,
        COALESCE(gb.kind, '')::text AS granted_by_kind, COALESCE(gb.name, '')::text AS granted_by_name
   FROM authz_role_binding b
@@ -559,6 +694,7 @@ type AuthzListBindingsRow struct {
 	PrincipalID   string
 	PrincipalKind string
 	PrincipalName string
+	Source        string
 	GrantedUs     int64
 	GrantedByKind string
 	GrantedByName string
@@ -578,6 +714,7 @@ func (q *Queries) AuthzListBindings(ctx context.Context, arg AuthzListBindingsPa
 			&i.PrincipalID,
 			&i.PrincipalKind,
 			&i.PrincipalName,
+			&i.Source,
 			&i.GrantedUs,
 			&i.GrantedByKind,
 			&i.GrantedByName,

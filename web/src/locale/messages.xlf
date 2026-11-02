@@ -518,9 +518,17 @@
         <source>An auto-join group cannot hold the administrator role.</source>
       </segment>
     </unit>
-    <unit id="problem.role_not_allowed">
+    <unit id="problem.role_binding_managed_by_configuration">
       <notes>
         <note category="location">src/app/core/http/problem-messages-access.ts:38</note>
+      </notes>
+      <segment>
+        <source>This role binding is declared in the system configuration and can only be removed there.</source>
+      </segment>
+    </unit>
+    <unit id="problem.role_not_allowed">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:40</note>
       </notes>
       <segment>
         <source>This role cannot be bound to this kind of principal.</source>
@@ -528,7 +536,7 @@
     </unit>
     <unit id="problem.unknown_role">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:40</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:42</note>
       </notes>
       <segment>
         <source>This role does not exist.</source>
@@ -536,7 +544,7 @@
     </unit>
     <unit id="problem.invalid_member">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:42</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:44</note>
       </notes>
       <segment>
         <source>A member does not exist or cannot be added.</source>
@@ -544,7 +552,7 @@
     </unit>
     <unit id="problem.invalid_ttl">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:44</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:46</note>
       </notes>
       <segment>
         <source>The lifetime is not valid.</source>
@@ -552,7 +560,7 @@
     </unit>
     <unit id="problem.ttl_exceeds_maximum">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:46</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:48</note>
       </notes>
       <segment>
         <source>The lifetime is longer than the maximum for this kind of token.</source>
@@ -560,7 +568,7 @@
     </unit>
     <unit id="problem.default_above_maximum">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:48</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:50</note>
       </notes>
       <segment>
         <source>The default lifetime cannot be longer than the maximum.</source>
@@ -568,7 +576,7 @@
     </unit>
     <unit id="problem.exceeds_ceiling">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:50</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:52</note>
       </notes>
       <segment>
         <source>The value is above the ceiling set in the installation&apos;s configuration.</source>
@@ -576,7 +584,7 @@
     </unit>
     <unit id="problem.non_expiring_not_allowed">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:52</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:54</note>
       </notes>
       <segment>
         <source>A token without an expiry is not allowed here.</source>
@@ -584,7 +592,7 @@
     </unit>
     <unit id="problem.non_expiring_restricted">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:54</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:56</note>
       </notes>
       <segment>
         <source>Only a service-account token can be created without an expiry.</source>
@@ -592,7 +600,7 @@
     </unit>
     <unit id="problem.invalid_scope">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:56</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:58</note>
       </notes>
       <segment>
         <source>The scope is not valid.</source>
@@ -600,7 +608,7 @@
     </unit>
     <unit id="problem.derivation_exceeds_parent">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:58</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:60</note>
       </notes>
       <segment>
         <source>A token cannot grant more than the token that creates it.</source>
@@ -608,7 +616,7 @@
     </unit>
     <unit id="problem.description_required">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:60</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:62</note>
       </notes>
       <segment>
         <source>Enter a description.</source>
@@ -616,7 +624,7 @@
     </unit>
     <unit id="problem.token_limit_reached">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:62</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:64</note>
       </notes>
       <segment>
         <source>The limit of tokens for this owner is reached. Revoke a token first.</source>
@@ -624,7 +632,7 @@
     </unit>
     <unit id="problem.pat_not_allowed">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:64</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:66</note>
       </notes>
       <segment>
         <source>A personal token cannot be created with this credential.</source>
@@ -632,7 +640,7 @@
     </unit>
     <unit id="problem.ci_token_restricted">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:66</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:68</note>
       </notes>
       <segment>
         <source>A token issued to a pipeline cannot do this.</source>
@@ -640,7 +648,7 @@
     </unit>
     <unit id="problem.not_a_token">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:68</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:70</note>
       </notes>
       <segment>
         <source>The current credential is not a token.</source>
@@ -648,7 +656,7 @@
     </unit>
     <unit id="problem.anonymous_not_allowed">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:70</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:72</note>
       </notes>
       <segment>
         <source>Anonymous access is not allowed by the installation&apos;s configuration.</source>
@@ -656,7 +664,7 @@
     </unit>
     <unit id="problem.invalid_action">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:72</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:74</note>
       </notes>
       <segment>
         <source>An action is not valid.</source>
@@ -664,7 +672,7 @@
     </unit>
     <unit id="problem.unknown_principal">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:74</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:76</note>
       </notes>
       <segment>
         <source>A principal does not exist.</source>
@@ -672,7 +680,7 @@
     </unit>
     <unit id="problem.unknown_repository">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:76</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:78</note>
       </notes>
       <segment>
         <source>A repository selector names a repository that does not exist.</source>
@@ -680,7 +688,7 @@
     </unit>
     <unit id="problem.unknown_format">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:78</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:80</note>
       </notes>
       <segment>
         <source>A selector names a format that does not exist.</source>
@@ -688,7 +696,7 @@
     </unit>
     <unit id="problem.duplicate_principal">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:80</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:82</note>
       </notes>
       <segment>
         <source>A principal appears twice in the policy.</source>
@@ -696,7 +704,7 @@
     </unit>
     <unit id="problem.anonymous_write_action">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:82</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:84</note>
       </notes>
       <segment>
         <source>The anonymous principal can only read.</source>
@@ -704,7 +712,7 @@
     </unit>
     <unit id="problem.anonymous_dynamic_selector">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:84</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:86</note>
       </notes>
       <segment>
         <source>The anonymous principal needs named repositories, not patterns or classes.</source>
@@ -712,7 +720,7 @@
     </unit>
     <unit id="problem.authenticated_write_action">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:86</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:88</note>
       </notes>
       <segment>
         <source>The group of all signed-in users can only read.</source>
@@ -720,7 +728,7 @@
     </unit>
     <unit id="problem.action_not_allowed">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:88</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:90</note>
       </notes>
       <segment>
         <source>This principal cannot hold this action.</source>
@@ -728,7 +736,7 @@
     </unit>
     <unit id="problem.virtual_action_not_applicable">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:90</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:92</note>
       </notes>
       <segment>
         <source>A virtual repository accepts only read and manage.</source>
@@ -8389,17 +8397,49 @@
         <source>Granted by</source>
       </segment>
     </unit>
+    <unit id="roles.source">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:36,37</note>
+      </notes>
+      <segment>
+        <source>Source</source>
+      </segment>
+    </unit>
     <unit id="roles.actions">
       <notes>
-        <note category="location">src/app/features/roles/role-bindings.html:37,38</note>
+        <note category="location">src/app/features/roles/role-bindings.html:38,39</note>
       </notes>
       <segment>
         <source>Actions</source>
       </segment>
     </unit>
+    <unit id="roles.source-configuration">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:50,52</note>
+      </notes>
+      <segment>
+        <source>Configuration</source>
+      </segment>
+    </unit>
+    <unit id="roles.source-api">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:52,54</note>
+      </notes>
+      <segment>
+        <source>API</source>
+      </segment>
+    </unit>
+    <unit id="roles.managed-by-configuration">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:58,60</note>
+      </notes>
+      <segment>
+        <source>Managed in the configuration</source>
+      </segment>
+    </unit>
     <unit id="roles.unbind-button">
       <notes>
-        <note category="location">src/app/features/roles/role-bindings.html:56,57</note>
+        <note category="location">src/app/features/roles/role-bindings.html:67,68</note>
       </notes>
       <segment>
         <source>Unbind</source>
@@ -8407,15 +8447,23 @@
     </unit>
     <unit id="roles.last-admin">
       <notes>
-        <note category="location">src/app/features/roles/role-bindings.html:67,71</note>
+        <note category="location">src/app/features/roles/role-bindings.html:79,81</note>
       </notes>
       <segment>
         <source>The last administrator binding cannot be removed.</source>
       </segment>
     </unit>
+    <unit id="roles.configuration-hint">
+      <notes>
+        <note category="location">src/app/features/roles/role-bindings.html:83,86</note>
+      </notes>
+      <segment>
+        <source> Bindings with the source Configuration are declared in authz.role_bindings of the system configuration and applied when trove is installed or upgraded. Change or remove them there, not here. </source>
+      </segment>
+    </unit>
     <unit id="roles.bind-principal">
       <notes>
-        <note category="location">src/app/features/roles/role-bindings.html:76</note>
+        <note category="location">src/app/features/roles/role-bindings.html:94</note>
       </notes>
       <segment>
         <source>Bind to</source>
@@ -8423,7 +8471,7 @@
     </unit>
     <unit id="roles.bind-hint">
       <notes>
-        <note category="location">src/app/features/roles/role-bindings.html:81,83</note>
+        <note category="location">src/app/features/roles/role-bindings.html:99,101</note>
       </notes>
       <segment>
         <source>user:name, group:name or sa:name</source>
@@ -8431,7 +8479,7 @@
     </unit>
     <unit id="roles.bind-button">
       <notes>
-        <note category="location">src/app/features/roles/role-bindings.html:84,85</note>
+        <note category="location">src/app/features/roles/role-bindings.html:102,103</note>
       </notes>
       <segment>
         <source>Bind</source>
@@ -8439,7 +8487,7 @@
     </unit>
     <unit id="roles.loading">
       <notes>
-        <note category="location">src/app/features/roles/role-bindings.html:92,94</note>
+        <note category="location">src/app/features/roles/role-bindings.html:110,112</note>
       </notes>
       <segment>
         <source>Loading roles.</source>
@@ -8447,7 +8495,7 @@
     </unit>
     <unit id="roles.bound">
       <notes>
-        <note category="location">src/app/features/roles/role-bindings.ts:90</note>
+        <note category="location">src/app/features/roles/role-bindings.ts:102</note>
       </notes>
       <segment>
         <source>Role bound.</source>
@@ -8455,7 +8503,7 @@
     </unit>
     <unit id="roles.unbind-title">
       <notes>
-        <note category="location">src/app/features/roles/role-bindings.ts:95</note>
+        <note category="location">src/app/features/roles/role-bindings.ts:107</note>
       </notes>
       <segment>
         <source>Unbind this role?</source>
@@ -8463,7 +8511,7 @@
     </unit>
     <unit id="roles.unbind-text">
       <notes>
-        <note category="location">src/app/features/roles/role-bindings.ts:96</note>
+        <note category="location">src/app/features/roles/role-bindings.ts:108</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="role" disp="b.role"/> will no longer apply to <ph id="1" equiv="principal" disp="b.principal"/>.</source>
@@ -8471,7 +8519,7 @@
     </unit>
     <unit id="roles.unbind">
       <notes>
-        <note category="location">src/app/features/roles/role-bindings.ts:97</note>
+        <note category="location">src/app/features/roles/role-bindings.ts:109</note>
       </notes>
       <segment>
         <source>Unbind</source>
@@ -8479,7 +8527,7 @@
     </unit>
     <unit id="roles.unbound">
       <notes>
-        <note category="location">src/app/features/roles/role-bindings.ts:100</note>
+        <note category="location">src/app/features/roles/role-bindings.ts:112</note>
       </notes>
       <segment>
         <source>Role unbound.</source>

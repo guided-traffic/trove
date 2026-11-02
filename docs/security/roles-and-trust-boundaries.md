@@ -14,7 +14,7 @@ value crosses a boundary. The code that implements each rule is linked. Open gap
 | `web` | `trove serve --role web` | the client listener of the default endpoint and of the further endpoints its pool serves; the ops listener | none: no job loop, no lease pool ([roles.go](../../internal/app/roles.go), `SubsystemsFor`) | Deployment `<fullname>-web` and the pools of further endpoints |
 | `worker` | `trove serve --role worker` | the ops listener only | the job claim loop, scheduler and reaper; the lease pool | Deployment `<fullname>-worker` |
 | `all` | `trove serve --role all` | both listeners | both sets | not rendered by the chart; for a local run outside the chart ([spec INV-2](../spec/README.md#design-invariants)) |
-| migration | `trove migrate up` | nothing: no listener | none | Job `<fullname>-migrate` ([migrate.yaml](../../deploy/helm/trove/templates/migrate.yaml)) |
+| migration | `trove migrate up` | nothing: no listener | none; after the schema steps it applies the role bindings of `authz.role_bindings` under the migration lock ([permissions](permissions.md#role-bindings-from-the-configuration)) | Job `<fullname>-migrate` ([migrate.yaml](../../deploy/helm/trove/templates/migrate.yaml)) |
 
 `trove backup` is reserved and answers "not implemented yet". Its role has no code yet.
 

@@ -34,6 +34,8 @@ export function describeAccessProblem(code: string | null): string | null {
       return $localize`:@@problem.last_admin:The last administrator binding cannot be removed.`;
     case 'auto_join_admin_conflict':
       return $localize`:@@problem.auto_join_admin_conflict:An auto-join group cannot hold the administrator role.`;
+    case 'role_binding_managed_by_configuration':
+      return $localize`:@@problem.role_binding_managed_by_configuration:This role binding is declared in the system configuration and can only be removed there.`;
     case 'role_not_allowed':
       return $localize`:@@problem.role_not_allowed:This role cannot be bound to this kind of principal.`;
     case 'unknown_role':

@@ -114,6 +114,13 @@ A new section is a new file next to the others and a field on `Config`.
 are strings, sizes are strings or integers. The chart may reference or copy the file to validate
 `config:` values; the loader does not read it.
 
+## Declared role bindings
+
+`authz.role_bindings` ([authz.go](../../internal/config/authz.go), `AuthzRoleBinding`) is a list of structs: `role` and
+exactly one of `group`, `user`, `service_account`, in the environment as JSON (`TROVE_AUTHZ_ROLE_BINDINGS`). `Authz.Validate`
+checks what can be checked without a database (R-AUTHZ-010): a role of `SystemRoles()`, one principal, a valid name, never
+`anonymous` or `authenticated`, no entry twice. Only `trove migrate` reads the list ([authorization.md](authorization.md#role-bindings-from-the-configuration)).
+
 ## Endpoint keys
 
 `server.endpoints` (a map of endpoint name to entry) and `server.endpoint_rate_limits` are one key each, so their environment

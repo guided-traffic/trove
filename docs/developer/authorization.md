@@ -53,13 +53,14 @@ security view is [permissions.md](../security/permissions.md).
 | [wait.go](../../internal/authz/wait.go) | `forRequest`: confirmation, the stale wait, `Trove-Authz-Min-Epoch` |
 | [index.go](../../internal/authz/index.go) | `Index`, `Label`, `Snapshot`, `BuildIndex` (a pure function), the principal set of a request |
 | [source.go](../../internal/authz/source.go) | `Source` and its PostgreSQL implementation: the `REPEATABLE READ READ ONLY` build and the epoch read |
-| [roles.go](../../internal/authz/roles.go) | The five system roles and the capability table of R-AUTHZ-010 |
+| [roles.go](../../internal/authz/roles.go) | The five system roles and the capability table of R-AUTHZ-010, `content:metadata-read` of the auditor (Q-AUTHZ-172) included |
 | [action.go](../../internal/authz/action.go), [ref.go](../../internal/authz/ref.go) | Action sets and presets; principal references and the IDs of the built-in principals |
 | [pattern.go](../../internal/authz/pattern.go), [selector.go](../../internal/authz/selector.go) | The limits, the folding of names and patterns with the format's catalog rule (`fold`, `namesIn`) and the include and exclude semantics of R-AUTHZ-005 on top of `repository.CompilePattern`, the one compiler of the syntax (Q-AUTHZ-25); a package dimension with a name rule and any pattern fails a coordinate without a package (`globSet.match`, Q-AUTHZ-160); repository selectors (R-AUTHZ-004) |
 | [paths.go](../../internal/authz/paths.go) | `PathsAllowed`/`PathsAllowedOn`, the listing form of `Decide`, with the `Classifier` that gives each path the package and version of its format (R-EP-014) |
 | [errors.go](../../internal/authz/errors.go) | `Decision.Err` (the table of R-AUTHZ-016), `NotFound`, `ParseMinEpoch`, the reason codes |
 | [ceiling.go](../../internal/authz/ceiling.go), [exposure.go](../../internal/authz/exposure.go), [exposure_service.go](../../internal/authz/exposure_service.go) | `Ceiling` (evaluated on the request's index, for the endpoint of the subject); the endpoint exposure of R-EP-013 compiled into the index (`ExposureCeiling`) and its rule service; see [endpoints.md](endpoints.md#exposure-r-ep-012-to-r-ep-014) |
 | [validate.go](../../internal/authz/validate.go), [store.go](../../internal/authz/store.go), [bindings.go](../../internal/authz/bindings.go), [policy.go](../../internal/authz/policy.go) | `Service`: validate, create (`CreateIn` on the caller's transaction), update, delete and read policies; bind and unbind roles |
+| [declared.go](../../internal/authz/declared.go) | `Service.ApplyDeclared`: the role bindings of `authz.role_bindings`, which `trove migrate` applies ([below](#role-bindings-from-the-configuration)); `SourceAPI`, `SourceConfiguration`, `ConfigurationActor`, `ErrDeclared` |
 | [policy_list.go](../../internal/authz/policy_list.go) | The filters of the policy list (`principal`, `expandGroups`, `repository`) and the warnings of a page |
 | [settings.go](../../internal/authz/settings.go) | `SettingsHook`, the `repository.Hooks` that records `authz.settings.changed` in the transaction of a repository update (R-AUTHZ-031) |
 | [populate.go](../../internal/authz/populate.go) | The populate check of R-AUTHZ-008 (`MayPopulateOn`, `PopulateOn`) and `MemberUsableOn` of R-AUTHZ-015 |
@@ -110,7 +111,12 @@ Subject (who, groups, credential scope, MinEpoch)  +  Coordinate (repository, pa
   break-glass kind holds `admin` without a row. A session exercises every role of its user. A token exercises all roles
   only with `admin: true` and only if the subject holds `admin` at use time; otherwise its capabilities are the `system`
   items that one of the subject's roles grants, and `content:bypass` is never a system item. `content:bypass` makes
-  `Decide` allow every action except where the ceiling refuses.
+  `Decide` allow every action except where the ceiling refuses. `content:metadata-read` (the auditor's, Q-AUTHZ-172) makes
+  `allowedAction` allow `read` on a coordinate of kind `metadata` or `search` (`metadataKind`) when the token scope admits it,
+  before the grants; an artifact, a write and a coordinate without a kind fall through to the grants. The gate of a virtual
+  repository is decided with the request's kind for the same reason. `evalState.metadata` carries the capability; the read
+  scope of a listing (`readShape` in [visible.go](../../internal/authz/visible.go)) treats it like `content:bypass` for
+  listing, and `MayRead` decides its rows as metadata reads.
 - **Token scope** (`scopeAdmits`): `inherit` admits everything; otherwise an element must match the repository selectors
   (key, key pattern, class, format filter), the package and path patterns, and list the action. A malformed element admits
   nothing. A scope never grants: `granted` is evaluated first, so `deny.scope` is reported only when a grant exists.
@@ -207,7 +213,8 @@ index only forward. Losing the holder costs a second index, never a ceiling, bec
 | `Validate(ctx, input)` | `Report{Errors, Warnings, Covers}` for `POST /authz/validate-policy` |
 | `Create`, `Update(…, expectedVersion, …)`, `Delete(…, expectedVersion)` | the policy and the epoch of the write; `authz.AnyVersion` is `If-Match: *`; the handler answers 428 for a missing `If-Match` |
 | `Get`, `List` | a policy with its warnings; every policy sorted by name (cursor paging is the handler's) |
-| `BindRole`, `UnbindRole`, `ListBindings` | `created` (201 or 200), the epoch; 409 `auto_join_admin_conflict` (the group row is locked first, as `UpdateGroup` locks it), 409 `last_admin` from `principal.LastAdminGuard` (active holders, not bindings; Q-AUTHZ-70), 404 |
+| `BindRole`, `UnbindRole`, `ListBindings` | `created` (201 or 200; an existing binding keeps its source, Q-AUTHZ-171), the epoch; 409 `auto_join_admin_conflict` (the group row is locked first, as `UpdateGroup` locks it), 409 `last_admin` from `principal.LastAdminGuard` (active holders, not bindings; Q-AUTHZ-70), 409 `role_binding_managed_by_configuration` (the delete removes only `source = 'api'`, then `AuthzBindingSource` tells 409 from 404), 404; `Binding.Source` |
+| `ApplyDeclared(ctx, declared, groups)` | `DeclaredOutcome` (bound, taken over, unbound, groups created); an error wrapping `ErrDeclared` that names every refused entry |
 | `Engine.Check`, `Engine.Effective` | `POST /authz/check` (up to 100 checks, one index) and `GET /authz/me` |
 
 Validation answers 422 with the code of the **first** problem and every problem as a field error with a JSON pointer:
@@ -228,6 +235,33 @@ Every write does, in one transaction: the row changes, `Changes.Notify("authz", 
 the ID of the object (never a grant), and the audit event. `authz.policy.updated`, `.deleted` and `authz.role.unbound` carry a
 journal entry with the policy ID and name and the state before and after, identified by principal and repository IDs
 (R-AUTHZ-031). The index is rebuilt from the tables; there is nothing incremental.
+
+### Role bindings from the configuration
+
+`authz.role_bindings` (R-AUTHZ-010, Q-AUTHZ-170, Q-AUTHZ-171) is applied by `trove migrate` only:
+
+```text
+cmd/trove migrate ──► postgres.Migrate ──► steps ──► audit policy ──► MigrateOptions.Declared(ctx, *MigrationSession)
+                       (session connection,                            app.DeclaredState: change log, audit writer,
+                        migration lock held)                           principal.Manager, authz.Service on that one connection
+                                                                       └► Service.ApplyDeclared, one transaction
+```
+
+- `config.Authz.Validate` ([authz.go](../../internal/config/authz.go)) refuses at load an unknown role, an entry with no or
+  several principals, `anonymous` and `authenticated`, an invalid name and a duplicate; `config.SystemRoles` is kept equal to
+  `Roles()` by `TestR_AUTHZ_010_ConfigurationKnowsTheSystemRoles`.
+- `ApplyDeclared` resolves every entry in the transaction (`IdentityPrincipalByName`), creates a missing group with
+  `principal.Manager.CreateGroupTx` (origin `admin`, actor `system:configuration`), locks a declared group's row and refuses an
+  auto-join group, and collects every problem before it fails. It then inserts a missing binding with source `configuration`
+  (`AuthzInsertDeclaredBinding`), takes over a binding the API made (`AuthzAdoptBinding`), removes every configuration binding
+  that is no longer declared under `principal.LastAdminGuard`, notifies `authz` once per changed binding and records
+  `authz.role.bound` / `authz.role.unbound` (details `source`, and `previousSource` for a take-over) with the epoch of the
+  transaction.
+- [migrate_session.go](../../internal/meta/postgres/migrate_session.go): `MigrationSession` is the runner's connection as a
+  `meta.Runner` (plus `Read` for the audit writer), so the step costs no connection beyond the Job's budget (R-HA-016) and
+  runs under the migration lock, which serialises two migrators. Every run calls it, `nothingToDo` or not; nil skips it.
+- The API: `UnbindRole` deletes with `AuthzDeleteAPIBinding`; `ListBindings` returns the source; `BindRole` is unchanged
+  (`ON CONFLICT DO NOTHING` keeps the source).
 
 ## Declaring the permission of an operation
 
@@ -445,9 +479,9 @@ idempotent policy create answers the epoch of the first answer (`Outcome.Finish`
 | `deletePermissionPolicy` | `DELETE /permission-policies/{name}` | `policies:write` | `If-Match` optional; `204` with the epoch |
 | `validatePermissionPolicy` | `POST /authz/validate-policy` | `policies:read` | `200` with `valid`, `errors`, `warnings`, `covers` |
 | `listRoles` | `GET /roles` | any authenticated caller | the five roles and their capabilities |
-| `listRoleBindings` | `GET /role-bindings` | `roles:read` | filters `role`, `principal`; cursor paging |
-| `bindRole` | `PUT /role-bindings/{role}/{principalRef}` | `roles:write` | `201` new, `200` existing; `409 auto_join_admin_conflict`; `422 role_not_allowed` |
-| `unbindRole` | `DELETE /role-bindings/{role}/{principalRef}` | `roles:write` | `204`; `404`; `409 last_admin` |
+| `listRoleBindings` | `GET /role-bindings` | `roles:read` | filters `role`, `principal`; cursor paging; each item's `source` (`api`, `configuration`) |
+| `bindRole` | `PUT /role-bindings/{role}/{principalRef}` | `roles:write` | `201` new, `200` existing (its source kept); `409 auto_join_admin_conflict`; `422 role_not_allowed` |
+| `unbindRole` | `DELETE /role-bindings/{role}/{principalRef}` | `roles:write` | `204`; `404`; `409 last_admin`; `409 role_binding_managed_by_configuration` |
 | `getAuthzMe` | `GET /authz/me` | any authenticated caller | roles, capabilities, principals, scope summary, epoch |
 | `checkPermissions` | `POST /authz/check` | any authenticated caller | up to 100 checks, one index; nothing is audited |
 | `getPackageOwners` | `GET /repositories/{repoKey}/packages/{packageName}/owners` | action `read` on the repository; `read` on the package in the handler | `state` `claimed`, `released` or `unclaimed`; 404 for a caller without `read` and where ownership does not exist |
@@ -497,8 +531,11 @@ the anonymous gate and before the repository lookup, on the index the request de
 | Tier | Where | What |
 |---|---|---|
 | Unit | [internal/authz](../../internal/authz) | `TestE1_3_AuthorizationCases` (284 cases against the compiled engine), patterns and selectors, the engine's change-log behaviour on fakes, the 422 rules, the audit, `Decision.Err`; names carry the requirement IDs |
-| Unit | [internal/api/v1/authorize_test.go](../../internal/api/v1/authorize_test.go), [internal/config/authz_test.go](../../internal/config/authz_test.go) | the declaration forms, the staleness floor |
+| Unit | [internal/api/v1/authorize_test.go](../../internal/api/v1/authorize_test.go), [internal/config/authz_test.go](../../internal/config/authz_test.go) | the declaration forms, the staleness floor, `TestR_AUTHZ_010_RoleBindingsFromTheConfiguration` |
+| Unit | [metadata_read_test.go](../../internal/authz/metadata_read_test.go) | `TestQ_AUTHZ_172_AuditorReadsMetadataNeverArtifacts`: metadata and search allowed, artifacts, writes and unclassified reads refused, the virtual gate, the token scope, the endpoint ceiling, `Readable`; `TestQ_AUTHZ_172_CapabilityIsASystemScopeItem` |
 | Integration | [test/integration/authz](../../test/integration/authz) | E1.3 against PostgreSQL, the policy and role store, the reused epoch, the consistent build, E1.12 with three replicas, Valkey stopped and propagation slowed to 30 s |
+| Integration | [declared_test.go](../../test/integration/authz/declared_test.go), [declared_cmd_test.go](../../test/integration/postgres/declared_cmd_test.go) | `TestR_AUTHZ_010_BindingsFromTheConfiguration` (the declared group created and bound, a repeat that changes nothing, `DELETE` 409 and `PUT` 200 over HTTP, a member synced by the real provisioner holds `admin`, a take-over, a removal that the member's next request sees, a missing user or service account and an auto-join group stop the run and apply nothing), `TestR_AUTHZ_022_DeclaredRemovalKeepsAnAdministrator`, `TestR_AUTHZ_010_MigrateCommandAppliesTheDeclaredBindings` (the binary with a configuration file); `testenv.DeclareRoleBindings` runs the step as the command composes it |
+| Integration, HTTP | [auditor_test.go](../../test/integration/packages/auditor_test.go) (npm, raw files), [auditor_test.go](../../test/integration/nuget/auditor_test.go) (NuGet) | `TestQ_AUTHZ_172_AuditorReadsNpmMetadata`, `TestQ_AUTHZ_172_AuditorReadsNuGetMetadata`: an auditor bound directly and one through a declared group read documents, version lists, registrations, folder listings and the configuration, and get 404 for every download and 403 for every write |
 | Unit | [populate_test.go](../../internal/authz/populate_test.go), [ownership_test.go](../../internal/authz/ownership_test.go) | `TestR_AUTHZ_008_PopulateCheck` (session cookie, frozen mirror, endpoint cache fill, anonymous), `TestR_AUTHZ_015_MemberUsable` (the table), `TestR_AUTHZ_018_OwnershipRules` (rules 1, 2, 3, 6 on the read state), `TestR_AUTHZ_018_WhenOwnershipIsChecked`, `TestR_AUTHZ_018_ClaimOwners` |
 | Integration | [ownership_test.go](../../test/integration/authz/ownership_test.go) | `TestR_AUTHZ_018_TwoReplicasClaimOneNewName` (a held claim on replica a, replica b's insert waiting on it, exactly one wins; a rolled-back claim; 20 pairs started at once), group owner, unclaimed with versions needs `manage`, the owner operations of R-AUTHZ-019 (pre-assignment, 409 `last_owner`, release, concurrent removals, `ci_token_restricted`, 403 for refused writes), the deletion hook through the real deletion job, the populate check and the `anonymous_populates_remote` warning on PostgreSQL |
 | Integration, HTTP | [ownership_api_test.go](../../test/integration/authz/ownership_api_test.go) | `TestR_AUTHZ_019_OwnershipOperationsOverHTTP`: the four operations on two replicas through `idapi.Handler` with the replicas' engines, every answer validated against the document (the encoded name, `Location`, 409 and an `Idempotency-Key` replay, 403 whatever exists, `ci_token_restricted`, 422, `last_owner` and release, the list with its cursor) |

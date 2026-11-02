@@ -69,6 +69,54 @@ describe('System roles (R-UI-024)', () => {
     expect(text(root)).toContain('An auto-join group cannot hold the administrator role');
   });
 
+  it('R-AUTHZ-010 shows the source of every binding and no unbind control for one from the configuration', async () => {
+    const { root } = await renderScreen(RoleBindings, {
+      setup: (get) => {
+        const api = get(RolesApi) as FakeRolesApi;
+        api.bindingList = [
+          ...api.bindingList,
+          {
+            role: 'admin',
+            principal: 'group:gh-wds18-k8s-main-admins',
+            grantedAt: '2026-11-02T08:00:00Z',
+            grantedBy: '',
+            source: 'configuration',
+          },
+        ];
+      },
+    });
+    const admin = root.querySelectorAll('section.card')[0] as HTMLElement;
+    const rows = Array.from(admin.querySelectorAll('tbody tr')) as HTMLElement[];
+    const declared = rows.find((r) => text(r).includes('group:gh-wds18-k8s-main-admins'))!;
+    const made = rows.find((r) => text(r).includes('group:platform'))!;
+    expect(text(declared)).toContain('Configuration');
+    expect(text(declared)).toContain('Managed in the configuration');
+    expect(declared.querySelector('button')).toBeNull();
+    expect(text(made)).toContain('API');
+    expect(made.querySelector('button')).not.toBeNull();
+    expect(text(admin)).toContain('declared in authz.role_bindings of the system configuration');
+    // Two holders of admin: the binding made through the API may go, the configuration's stays.
+    expect((made.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
+    expect(admin.querySelector('#last-admin-guard')).toBeNull();
+    expect(await seriousViolations(root)).toEqual([]);
+  });
+
+  it('R-AUTHZ-010 without a binding from the configuration there is no configuration hint', async () => {
+    const { root } = await renderScreen(RoleBindings);
+    expect(text(root)).not.toContain('authz.role_bindings');
+  });
+
+  it('R-UI-042 a refused unbind of a binding from the configuration shows the translated reason', async () => {
+    const { fixture, root, get } = await renderScreen(RoleBindings);
+    (get(RolesApi) as FakeRolesApi).failure = problem(409, 'role_binding_managed_by_configuration');
+    const auditor = root.querySelectorAll('section.card')[2] as HTMLElement;
+    auditor.querySelector('tbody button')!.dispatchEvent(new Event('click'));
+    await settle(fixture);
+    buttonByText(overlay().querySelector('trove-confirm-dialog') as HTMLElement, 'Unbind').click();
+    await sleep(fixture, 300);
+    expect(text(root)).toContain('This role binding is declared in the system configuration and can only be removed there.');
+  });
+
   it('R-UI-005 without roles:write there is no bind or unbind', async () => {
     const { root } = await renderScreen(RoleBindings, { capabilities: ['roles:read'] });
     expect(root.querySelector('tbody button')).toBeNull();

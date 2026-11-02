@@ -48,7 +48,9 @@ func (s *Service) bindable(ctx context.Context, role Role, ref string) (Ref, str
 }
 
 // BindRole binds a role to a principal (R-AUTHZ-022). It is idempotent: the
-// result says whether the binding is new (201) or existed (200). Binding a role
+// result says whether the binding is new (201) or existed (200). A binding that
+// exists keeps its source, so binding one that authz.role_bindings declares
+// answers 200 and leaves it to the configuration (Q-AUTHZ-171). Binding a role
 // to an auto-join group is refused with 409 auto_join_admin_conflict. The second
 // result is the epoch to return in Trove-Authz-Epoch: the epoch the write
 // produced, or the current one when nothing changed.
@@ -137,10 +139,12 @@ func (s *Service) BindAdmin(ctx context.Context, tx meta.Tx, principalID, grante
 }
 
 // UnbindRole removes a role binding. It answers 404 for a binding that does not
-// exist and 409 last_admin when no active user or service account would hold
-// admin any more while the break-glass administrator is disabled (R-AUTHZ-022);
-// the guard is the one the identity operations use, so concurrent unbinds and
-// removals run one after the other.
+// exist, 409 role_binding_managed_by_configuration for one that
+// authz.role_bindings declares (R-AUTHZ-010, Q-AUTHZ-170), and 409 last_admin
+// when no active user or service account would hold admin any more while the
+// break-glass administrator is disabled (R-AUTHZ-022); the guard is the one the
+// identity operations use, so concurrent unbinds and removals run one after the
+// other.
 func (s *Service) UnbindRole(ctx context.Context, actor Subject, role Role, ref string) (int64, error) {
 	r, id, err := s.bindable(ctx, role, ref)
 	if err != nil {
@@ -158,12 +162,12 @@ func (s *Service) UnbindRole(ctx context.Context, actor Subject, role Role, ref 
 				return err
 			}
 		}
-		n, err := qs.AuthzDeleteBinding(ctx, q.AuthzDeleteBindingParams{Role: string(role), PrincipalID: id})
+		n, err := qs.AuthzDeleteAPIBinding(ctx, q.AuthzDeleteAPIBindingParams{Role: string(role), PrincipalID: id})
 		if err != nil {
 			return err
 		}
 		if n == 0 {
-			return errs.E(errs.NotFound, errs.CodeNotFound, fmt.Sprintf("The role %s is not bound to %s.", role, ref))
+			return notUnbound(ctx, qs, role, id, ref)
 		}
 		if err := last.Check(ctx, qs); err != nil {
 			return err
@@ -177,6 +181,20 @@ func (s *Service) UnbindRole(ctx context.Context, actor Subject, role Role, ref 
 		return nil
 	})
 	return epoch, err
+}
+
+// notUnbound is the refusal of an unbind that removed no row: the binding is
+// kept by the configuration (409), or it does not exist (404).
+func notUnbound(ctx context.Context, qs *q.Queries, role Role, id, ref string) error {
+	src, err := qs.AuthzBindingSource(ctx, q.AuthzBindingSourceParams{Role: string(role), PrincipalID: id})
+	if err != nil {
+		return err
+	}
+	if len(src) == 1 && src[0] == SourceConfiguration {
+		return errs.E(errs.Conflict, errs.CodeRoleBindingManagedByConfiguration,
+			fmt.Sprintf("The binding of %s to %s is declared in authz.role_bindings of the system configuration; remove it there.", role, ref))
+	}
+	return errs.E(errs.NotFound, errs.CodeNotFound, fmt.Sprintf("The role %s is not bound to %s.", role, ref))
 }
 
 func (s *Service) currentEpoch(ctx context.Context, qs *q.Queries, out *int64) error {
@@ -224,6 +242,7 @@ func (s *Service) ListBindings(ctx context.Context, role Role, ref string) ([]Bi
 			out = append(out, Binding{
 				Role: Role(r.Role), Principal: refOfRow(r.PrincipalKind, r.PrincipalName),
 				GrantedAt: time.UnixMicro(r.GrantedUs).UTC(), GrantedBy: refOfRow(r.GrantedByKind, r.GrantedByName),
+				Source: r.Source,
 			})
 		}
 		return nil

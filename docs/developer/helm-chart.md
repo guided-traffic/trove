@@ -97,7 +97,7 @@ deploy/helm/trove/
 | PodDisruptionBudget | `<fullname>-web`, `<fullname>-worker` | `maxUnavailable: 1`, `unhealthyPodEvictionPolicy: AlwaysAllow` |
 | NetworkPolicy | `<fullname>-web`, `<fullname>-worker`, `<fullname>-migrate` (hook) | `networkPolicy.enabled`, ingress only, see [Network policy](#network-policy) |
 | ConfigMap, ServiceAccount (hook, weight -10) | `<fullname>-migrate` | same `trove.yaml` as `<fullname>-config` |
-| Job (hook, weight 0) | `<fullname>-migrate` | `trove migrate up`; `backoffLimit` 2, deadline 1800 s, TTL 86400 s |
+| Job (hook, weight 0) | `<fullname>-migrate` | `trove migrate up`, which also applies `config.authz.role_bindings` (R-AUTHZ-010; `TestR_AUTHZ_010_DeclaredRoleBindingsReachTheMigrationJob`); `backoffLimit` 2, deadline 1800 s, TTL 86400 s |
 | Service, Ingress, NetworkPolicy; Deployment and PodDisruptionBudget `<fullname>-web-ep-<name>` | `<fullname>-ep-<name>` | per further endpoint, see [Endpoints](#endpoints) |
 | Ingress | `<fullname>` | `ingress.enabled`; one rule per host, path `/`, `Prefix`, backend `<fullname>:http`; backend-over-TLS annotations per controller, see [TLS](#tls) |
 | BackendTLSPolicy | `<fullname>` | `tls.backendTLSPolicy.enabled` only; Gateway API CRD, see [TLS](#tls) |

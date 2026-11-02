@@ -194,14 +194,24 @@ type evalState struct {
 	pset   []string
 	caps   capSet
 	bypass bool
+	// metadata is content:metadata-read: read on the metadata of every
+	// repository, never on an artifact (Q-AUTHZ-172).
+	metadata bool
 }
 
 func (e *Engine) newEvalState(idx *Index, sub Subject) *evalState {
 	st := &evalState{idx: idx, sub: sub, pset: idx.principalIDs(sub)}
 	st.caps = e.capabilities(idx, sub)
 	st.bypass = st.caps.has(ContentBypass)
+	st.metadata = st.caps.has(ContentMetadataRead)
 	return st
 }
+
+// metadataKind reports whether a request kind reads metadata and no artifact:
+// package lists, versions, the format's documents and search (R-REPO-003). A
+// coordinate without a kind is none of them, so content:metadata-read never
+// reads what its caller did not classify (Q-AUTHZ-172).
+func metadataKind(k RequestKind) bool { return k == KindMetadata || k == KindSearch }
 
 // rolesOf returns the system roles the subject holds: the roles bound to the
 // subject and its groups, and admin for the break-glass administrator
@@ -309,6 +319,14 @@ func (e *Engine) allowedAction(st *evalState, a Action, r *repoInfo, c Coordinat
 		return true, ReasonAllowRole, []string{"role:admin"}
 	}
 	repoLevel := c.Package == "" && c.Path == ""
+	if st.metadata && a == Read && metadataKind(c.Kind) &&
+		(e.scopeAdmits(st.sub.Scope, a, r, repoLevel, c.Package, c.Path) || e.scopeAdmitsThrough(st, a, r, repoLevel, c)) {
+		// content:metadata-read (Q-AUTHZ-172): read on the metadata of every
+		// repository, under the token's repository scope like a grant
+		// (R-AUTHZ-013). An artifact, a write and a coordinate without a kind
+		// fall through to the grants.
+		return true, ReasonAllowRole, []string{"capability:" + string(ContentMetadataRead)}
+	}
 	by := st.grantedBy(a, r, repoLevel, c.Package, c.Path)
 	if len(by) == 0 {
 		return false, ReasonNoGrant, nil
@@ -426,7 +444,9 @@ func (e *Engine) evaluate(idx *Index, sub Subject, c Coordinate) Decision {
 	target := r
 	var sources []string
 	if r.Class == repository.Virtual {
-		ok, reason, by := e.allowedAction(st, Read, r, Coordinate{Repository: c.Repository, Addressed: c.Addressed})
+		// The gate carries the request kind, so content:metadata-read opens it for
+		// metadata and search and never for an artifact (Q-AUTHZ-172).
+		ok, reason, by := e.allowedAction(st, Read, r, Coordinate{Repository: c.Repository, Addressed: c.Addressed, Kind: c.Kind})
 		if !ok {
 			if reason == ReasonNoGrant || reason == ReasonScope {
 				reason = ReasonVirtualGate

@@ -1973,6 +1973,7 @@ used for monitoring and audit tokens:
 | `settings:read` | `GET /api/v1/settings/auth` and other settings reads |
 | `audit:read` | Read audit events ([operations-and-observability.md](operations-and-observability.md)) |
 | `repositories:read-config` | Read repository configurations ([repositories-and-proxy.md](repositories-and-proxy.md)) |
+| `content:metadata-read` | Read the metadata of every repository the repository part of the scope admits (package lists, versions, the format's documents, search, the package pages), never an artifact; held by `auditor` and `admin` ([authorization.md](authorization.md) R-AUTHZ-011, R-AUTHZ-013, Q-AUTHZ-172) |
 | `vulnerabilities:triage` | From M4b: change the status of vulnerability findings; the token also needs `read` on the finding's repository, so a scope with this item alone reads and changes no finding ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-013, R-VULN-019) |
 
 **Declaring items.** Every administration operation declares the item that admits it, in the

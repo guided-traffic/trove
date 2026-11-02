@@ -701,6 +701,13 @@ lists as system scope items (R-AUTH-025) use the same names; the others extend t
   - The API lists configuration bindings with `source: "configuration"`; `DELETE` on one answers 409
     `role_binding_managed_by_configuration`, and the UI shows it without the remove control. Bindings made through the
     API stay as they are, beside the declared ones.
+  - The rules of the API bind a declaration as they bind a request ([Q-AUTHZ-171](#q-authz-171--a-configuration-binding-follows-the-rules-of-the-api)):
+    `PUT` of a binding the configuration keeps answers 200 and leaves it to the configuration; a declared binding the API
+    made before is taken over (its `source` turns to `configuration`, audited with `previousSource: "api"`); a declared
+    auto-join group stops `trove migrate` (`auto_join_admin_conflict`); and a removal that would leave no active user or
+    service account holding `admin` while the break-glass administrator is disabled stops it (`last_admin`), naming the
+    binding. A principal deleted through the API takes its configuration bindings with it like any other (R-AUTHZ-002);
+    the next `trove migrate` creates a declared group again and stops for a declared user or service account.
   - Whoever can change membership of the declared IdP group administers trove: with a GitHub team behind Dex, the team's
     maintainers decide who is an administrator.
 - A UI session exercises every role of its user. A token exercises roles only as its scope allows
@@ -858,7 +865,10 @@ requirement fixes how the evaluator applies a scope:
 - **Roles.** `admin: true` lets the token exercise every capability of `admin`, `content:bypass`
   included, if and only if the subject holds `admin` at use time. Otherwise the token's
   capabilities are the `system` items for which one of the subject's roles grants that
-  capability. `content:bypass` is never a `system` item.
+  capability. `content:bypass` is never a `system` item. `content:metadata-read` is one, and the
+  reads it allows are content reads, so the repository part admits them as it admits a grant's
+  (ceiling, never grant; Q-AUTHZ-172): `{"inherit": true, "system": ["content:metadata-read"]}`
+  reads the metadata of every repository, a restricted scope only of the repositories it names.
 - **Use time.** Everything is evaluated when the token is used. A right the subject loses
   disappears from the token at once (within the bound of R-AUTHZ-028); a right it gains appears
   only as far as the scope admits it.
@@ -1600,8 +1610,8 @@ Priority: **MVP** · Covers: IAM-002, IAM-016, ADMAPI-001
 |---|---|---|---|
 | `GET /api/v1/roles` | The fixed roles and their capabilities (R-AUTHZ-010) | 200 | any authenticated subject |
 | `GET /api/v1/role-bindings?role=&principal=` | List bindings | 200 | `roles:read` |
-| `PUT /api/v1/role-bindings/{role}/{principalRef}` | Bind (idempotent) | 201 new, 200 existing; 409 `auto_join_admin_conflict`; 422 `role_not_allowed`, unknown role or principal | `roles:write` |
-| `DELETE /api/v1/role-bindings/{role}/{principalRef}` | Unbind | 204; 404; 409 `last_admin` | `roles:write` |
+| `PUT /api/v1/role-bindings/{role}/{principalRef}` | Bind (idempotent) | 201 new, 200 existing (a binding from the configuration stays one, Q-AUTHZ-171); 409 `auto_join_admin_conflict`; 422 `role_not_allowed`, unknown role or principal | `roles:write` |
+| `DELETE /api/v1/role-bindings/{role}/{principalRef}` | Unbind | 204; 404; 409 `last_admin`; 409 `role_binding_managed_by_configuration` for a binding from the configuration (R-AUTHZ-010) | `roles:write` |
 | `GET /api/v1/authz/me` | The caller's effective capabilities, scope summary and principal set | 200 | any subject |
 
 - `principalRef` is percent-encoded (`group:platform-admins`, `sa:ci-bot`).
@@ -1624,6 +1634,7 @@ CREATE TABLE authz_role_binding (
   principal_id  uuid NOT NULL REFERENCES principal (id) ON DELETE CASCADE,
   granted_by    uuid NULL REFERENCES principal (id) ON DELETE SET NULL,
   granted_at    timestamptz NOT NULL DEFAULT now(),
+  source        text NOT NULL DEFAULT 'api' CHECK (source IN ('api', 'configuration')),  -- Q-AUTHZ-170
   PRIMARY KEY (role, principal_id)
 );
 ```
@@ -3880,6 +3891,33 @@ provisioned from a GitOps repository; configuration documents (R-OPS-029, P1) ar
 **Rationale:** the owner's decision; it follows Q-CI-16. The development agent records no revisit condition.
 
 **Applied in the spec:** R-AUTHZ-010 (bindings from the configuration, one acceptance criterion).
+
+### Q-AUTHZ-171 · A configuration binding follows the rules of the API
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-AUTHZ-170 says that `trove migrate` applies `authz.role_bindings`, that the API refuses `DELETE` of a
+configuration binding and lists it with its source. It leaves open what `PUT` answers for such a binding, what happens to a
+binding the API made that is declared later, and whether the guards of R-AUTHZ-022 (`auto_join_admin_conflict`,
+`last_admin`) bind `trove migrate` as they bind a request.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The rules of the API bind both ways (chosen) | `PUT` of a configuration binding answers 200 and leaves its source; a declared binding the API made is taken over; a declared auto-join group and the removal of the last active administrator stop `trove migrate` with an error that names the entry | `PUT` stays idempotent for scripts that ensure a binding; no Git commit can lock every administrator out or put a role on everyone; the Job fails before the release starts, where the change was made | A GitOps change that drops the old administrator group together with an empty new one fails until a member of the new group has signed in or break-glass is on |
+| (b) The configuration wins | `trove migrate` removes the last administrator, or turns auto-join off on a declared group | The declaration always applies | One commit locks administration out, or silently changes a group's membership rule |
+| (c) `PUT` answers 409 like `DELETE` | Every write of a configuration binding is refused | One rule for both methods | A client that ensures a binding fails although the binding exists as asked |
+
+**Choice:** (a).
+
+**Rationale:** `PUT` asks for a state that holds, so 200 is the honest answer, and leaving the source keeps the binding
+the configuration's to remove. Taking a declared API binding over makes the declaration the one record of that binding
+without a second row. The guards exist because a single change must not leave the installation without an administrator
+or give a role to every member of an auto-join group; a change that arrives through Git is such a change too, and it
+fails in the migration Job, before any replica runs the new release. The development agent revisits this if an
+installation needs to hand administration over from one IdP group to another in one release without break-glass.
+
+**Applied in the spec:** R-AUTHZ-010 (the rules of the API bind a declaration), R-AUTHZ-022 (the `PUT` and `DELETE` rows,
+the `source` column). Tests: `TestR_AUTHZ_010_BindingsFromTheConfiguration`, `TestR_AUTHZ_022_DeclaredRemovalKeepsAnAdministrator`.
 
 ### Q-AUTHZ-172 · The auditor reads every repository's metadata and triages, but downloads nothing
 

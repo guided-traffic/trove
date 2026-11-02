@@ -82,4 +82,7 @@ type Binding struct {
 	Principal string
 	GrantedAt time.Time
 	GrantedBy string
+	// Source is who keeps the binding: SourceAPI or SourceConfiguration
+	// (R-AUTHZ-010, Q-AUTHZ-170).
+	Source string
 }

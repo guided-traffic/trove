@@ -86,7 +86,7 @@ Roles are fixed; there are no custom roles. A role is bound to a user, a group o
 |---|---|
 | `admin` | All capabilities, including `content:bypass`, which passes every repository action |
 | `security-admin` | `identities:read`, `identities:write`, `policies:read`, `policies:write`, `roles:read`, `ci:read`, `ci:write`, `tokens:read`, `tokens:revoke`, `repositories:read-config`, `projects:read`, `settings:read`, `security-settings:write`, `audit:read`, `endpoints:read`, `endpoints:write` |
-| `auditor` | `identities:read`, `policies:read`, `roles:read`, `ci:read`, `tokens:read`, `repositories:read-config`, `projects:read`, `webhooks:read`, `settings:read`, `audit:read`, `endpoints:read` |
+| `auditor` | `identities:read`, `policies:read`, `roles:read`, `ci:read`, `tokens:read`, `repositories:read-config`, `projects:read`, `webhooks:read`, `settings:read`, `audit:read`, `endpoints:read`, `content:metadata-read` |
 | `repository-admin` | `repositories:read-config`, `repositories:write-config`, `projects:read`, `endpoints:read` |
 | `webhook-admin` | `webhooks:read`, `webhooks:write` |
 
@@ -95,6 +95,7 @@ Roles are fixed; there are no custom roles. A role is bound to a user, a group o
 | Capability | Opens |
 |---|---|
 | `content:bypass` | Every repository action on every repository, within the endpoint ceiling |
+| `content:metadata-read` | The metadata of every repository, within the endpoint ceiling: the repository list, the package lists and package pages, versions, the npm package document, the NuGet version list, registration and search, and the folder listings of raw repositories. Never a download (a tarball, a `.nupkg`, a raw file) and no write |
 | `identities:read`, `identities:write` | **Users**, **Groups**, **Service accounts**: read; create, change, disable, delete, end sessions |
 | `policies:read`, `policies:write` | **Permission policies**: read and the preview; create, change, delete |
 | `roles:read`, `roles:write` | **System roles**: read; bind and unbind. Changing a user or group that holds a role needs `roles:write` too |
@@ -108,6 +109,8 @@ Roles are fixed; there are no custom roles. A role is bound to a user, a group o
 </details>
 
 The **Administration** area of the UI appears for anyone who holds at least one capability, and each entry only with its capability. Only the `admin` role unlocks the break-glass account.
+
+The `auditor` reads everything that is not secret and changes nothing: the configuration, users, groups, service accounts, policies, role bindings, token metadata, settings, the audit log, and the metadata of every repository. It downloads no file, publishes, tags and deletes nothing, and the exposure rules of an endpoint apply to it as to everyone. A token of an auditor carries the metadata read only when its scope lists the system item `content:metadata-read`, for example `{"inherit": true, "system": ["content:metadata-read", "repositories:read-config"]}`. To make an identity provider group the auditor from your Helm values, see [Administrators from the Helm values](sign-in-and-identity.md#administrators-from-the-helm-values).
 
 ## The Permission policies screen
 
@@ -133,7 +136,7 @@ The answer evaluates only the draft. Other policies, token scopes, exposure rule
 
 ## The System roles screen
 
-**Administration › Access › System roles** shows every role with its **Capabilities** and the principals that hold it, with **Granted** and **Granted by**. To bind a role, enter `user:<name>`, `group:<name>` or `sa:<name>` in **Bind to** and select **Bind**; **Unbind** removes a holder. Both need `roles:write` and a recent sign-in. The last administrator cannot be removed (`last_admin`) while the break-glass account is disabled, and a group with auto-join cannot hold a role.
+**Administration › Access › System roles** shows every role with its **Capabilities** and the principals that hold it, with **Granted**, **Granted by** and **Source**. To bind a role, enter `user:<name>`, `group:<name>` or `sa:<name>` in **Bind to** and select **Bind**; **Unbind** removes a holder. Both need `roles:write` and a recent sign-in. The last administrator cannot be removed (`last_admin`) while the break-glass account is disabled, and a group with auto-join cannot hold a role. A binding with the source **Configuration** is declared in `authz.role_bindings` and shows **Managed in the configuration** instead of **Unbind**; change it in your Helm values ([Administrators from the Helm values](sign-in-and-identity.md#administrators-from-the-helm-values)).
 
 ## Anonymous and all signed-in users
 

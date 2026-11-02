@@ -136,6 +136,12 @@ steps, also when none was pending (`MigrateOptions.AuditRetentionDays`, [audit.g
 [audit.md](audit.md)). `trove migrate` passes the configured value; a caller that leaves the option nil (a test with steps of its own) leaves
 the row alone.
 
+Last, still under the migration lock and on the same connection, the runner calls `MigrateOptions.Declared` with a
+`MigrationSession` ([migrate_session.go](../../internal/meta/postgres/migrate_session.go)), also when no step was pending:
+`trove migrate` passes `app.DeclaredState`, which applies the role bindings of `authz.role_bindings` in one transaction
+(R-AUTHZ-010, [authorization.md](authorization.md#role-bindings-from-the-configuration)). Its error fails the run with exit
+status 1; nil skips it.
+
 Not implemented yet: the `database.backup_role` grants and the grants check (no backup tables), and the restore mode of the runner (M5).
 The CI check of the migration files against the latest release is in place (R-ARCH-026, [Compatibility](releasing.md#compatibility)).
 
@@ -391,6 +397,7 @@ only `errs` and the standard library; `archtest.CheckLayers` enforces it).
 | Migration | Area (work package) | Tables | Requirements |
 |---|---|---|---|
 | [00017_nuget](../../internal/meta/postgres/migrations/00017_nuget.sql) | NuGet (WP3.S) | `nuget_version` (with the `search_doc` GIN index and the latest-version index), `nuget_tombstone`, `nuget_symbol_package`, `nuget_symbol_file` (P1) | R-NUGET-005, R-NUGET-006, R-NUGET-020, R-NUGET-021, R-NUGET-033 |
+| [00018_role_binding_source](../../internal/meta/postgres/migrations/00018_role_binding_source.sql) | authorization | `authz_role_binding.source` (`api` by default, `configuration` for `authz.role_bindings`), an expand step; a binary of the previous release inserts `api` | R-AUTHZ-010, Q-AUTHZ-170 |
 
 There is no trigram index and no `CREATE EXTENSION` (Q-NUGET-12). `search_doc` is built by `NuGetInsertVersion` with the
 `simple` configuration (Q-NUGET-18). The checks and indexes beyond the specification's sketch are Q-NUGET-19. The

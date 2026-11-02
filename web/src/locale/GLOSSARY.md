@@ -25,6 +25,8 @@ before using a new term in a German text.
 | browse (file tree) | Durchsuchen |
 | principal | Prinzipal |
 | role binding | Rollenzuweisung |
+| system configuration (the installation's configuration file) | Systemkonfiguration |
+| source (of a role binding: API, configuration) | Quelle (API, Konfiguration) |
 | identity provider | Identitätsanbieter |
 | break-glass account | Break-Glass-Konto |
 | ceiling (configuration limit) | Obergrenze |

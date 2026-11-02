@@ -138,6 +138,10 @@ const (
 	CodeVirtualActionNotApplicable = "virtual_action_not_applicable"
 )
 
+// CodeRoleBindingManagedByConfiguration refuses to remove a role binding that
+// authz.role_bindings declares (R-AUTHZ-010, Q-AUTHZ-170).
+const CodeRoleBindingManagedByConfiguration = "role_binding_managed_by_configuration"
+
 // <<< M1 authz
 //
 // >>> M1 repository
@@ -432,6 +436,7 @@ var registry = []CodeInfo{
 	{CodeUnknownRepository, Invalid, "Unknown repository", "A key selector names a repository that does not exist."},
 	{CodeDuplicatePrincipal, Invalid, "Duplicate principal", "A policy holds at most one entry per principal."},
 	{CodeVirtualActionNotApplicable, Invalid, "Action not applicable to a virtual repository", "A key selector that names a virtual repository accepts only read and manage."},
+	{CodeRoleBindingManagedByConfiguration, Conflict, "Role binding managed by the configuration", "The binding is declared in authz.role_bindings of the system configuration and is applied by trove migrate; remove it there."},
 	// <<< M1 authz
 	//
 	// >>> M1 repository

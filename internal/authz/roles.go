@@ -4,9 +4,9 @@ package authz
 // roles.
 type Role string
 
-// The system roles. admin is MVP; the others are P1 (R-AUTHZ-011,
-// R-AUTHZ-012) but the table of capabilities and the role bindings are fixed
-// now, so the API names them from the start.
+// The system roles. admin and auditor are MVP (Q-AUTHZ-172); the others are P1
+// (R-AUTHZ-011, R-AUTHZ-012) but the table of capabilities and the role
+// bindings are fixed now, so the API names them from the start.
 const (
 	RoleAdmin           Role = "admin"
 	RoleSecurityAdmin   Role = "security-admin"
@@ -59,7 +59,7 @@ func Capabilities() []Capability {
 		RolesRead, RolesWrite, CIRead, CIWrite, TokensRead, TokensRevoke,
 		RepositoriesRead, RepositoriesWrite, ProjectsRead, ProjectsWrite,
 		WebhooksRead, WebhooksWrite, SettingsRead, SettingsWrite, SecuritySettingsWrite,
-		AuditRead, EndpointsRead, EndpointsWrite,
+		AuditRead, EndpointsRead, EndpointsWrite, ContentMetadataRead,
 	}
 }
 
@@ -113,8 +113,11 @@ func roleCaps(r Role) capSet {
 			CIRead, CIWrite, TokensRead, TokensRevoke, RepositoriesRead, ProjectsRead,
 			SettingsRead, SecuritySettingsWrite, AuditRead, EndpointsRead, EndpointsWrite)
 	case RoleAuditor:
+		// The metadata of every repository, never an artifact (Q-AUTHZ-172).
+		// vulnerabilities:triage joins when the findings are built (M4b).
 		return capsOf(IdentitiesRead, PoliciesRead, RolesRead, CIRead, TokensRead,
-			RepositoriesRead, ProjectsRead, WebhooksRead, SettingsRead, AuditRead, EndpointsRead)
+			RepositoriesRead, ProjectsRead, WebhooksRead, SettingsRead, AuditRead, EndpointsRead,
+			ContentMetadataRead)
 	case RoleRepositoryAdmin:
 		return capsOf(RepositoriesRead, RepositoriesWrite, ProjectsRead, EndpointsRead)
 	case RoleWebhookAdmin:

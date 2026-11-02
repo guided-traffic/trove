@@ -1229,7 +1229,8 @@ export interface paths {
          * List role bindings
          * @description The system roles bound to users, groups and service accounts (R-AUTHZ-022), ordered by role and
          *     principal, with cursor pagination. Filters: `role` and `principal` (a reference such as
-         *     `group:platform-admins`).
+         *     `group:platform-admins`). Each binding carries its `source`: `configuration` for the bindings
+         *     `authz.role_bindings` declares (R-AUTHZ-010, Q-AUTHZ-170).
          */
         get: operations["listRoleBindings"];
         put?: never;
@@ -1254,17 +1255,20 @@ export interface paths {
         get?: never;
         /**
          * Bind a role to a principal
-         * @description Idempotent (R-AUTHZ-022): `201` for a new binding, `200` for one that exists. Roles bind to users,
-         *     groups and service accounts only (`422 role_not_allowed`); a role on an auto-join group is
-         *     `409 auto_join_admin_conflict`. A new binding writes `authz.role.bound` and carries
-         *     `Trove-Authz-Epoch`; for an existing one the header is the current epoch.
+         * @description Idempotent (R-AUTHZ-022): `201` for a new binding, `200` for one that exists. An existing binding keeps
+         *     its `source`, so a binding the configuration declares answers `200` and stays `configuration`
+         *     (Q-AUTHZ-171). Roles bind to users, groups and service accounts only (`422 role_not_allowed`); a role
+         *     on an auto-join group is `409 auto_join_admin_conflict`. A new binding writes `authz.role.bound` and
+         *     carries `Trove-Authz-Epoch`; for an existing one the header is the current epoch.
          */
         put: operations["bindRole"];
         post?: never;
         /**
          * Remove a role binding
          * @description Removes the binding (`authz.role.unbound`, journaled). Removing the last `admin` binding while
-         *     the break-glass administrator is disabled answers `409 last_admin`; a binding that does not
+         *     the break-glass administrator is disabled answers `409 last_admin`; a binding that
+         *     `authz.role_bindings` of the system configuration declares answers `409
+         *     role_binding_managed_by_configuration` (R-AUTHZ-010, Q-AUTHZ-170); a binding that does not
          *     exist answers `404`.
          */
         delete: operations["unbindRole"];
@@ -3551,8 +3555,13 @@ export interface components {
             principal: string;
             /** Format: date-time */
             grantedAt: string;
-            /** @description A principal reference; empty for a binding made by a command or whose granter was deleted. */
+            /** @description A principal reference; empty for a binding made by a command, by the configuration or whose granter was deleted. */
             grantedBy: string;
+            /**
+             * @description Who keeps the binding (R-AUTHZ-010, Q-AUTHZ-170): `api` for one made through this API or an administration command, `configuration` for one that `authz.role_bindings` of the system configuration declares and `trove migrate` applies. A `configuration` binding cannot be removed here (`409 role_binding_managed_by_configuration`).
+             * @enum {string}
+             */
+            source: "api" | "configuration";
         };
         RoleBindingList: {
             items: components["schemas"]["RoleBinding"][];
@@ -7477,7 +7486,15 @@ export interface operations {
                      *           "role": "admin",
                      *           "principal": "group:platform-admins",
                      *           "grantedAt": "2026-10-28T09:00:00Z",
-                     *           "grantedBy": "user:root"
+                     *           "grantedBy": "user:root",
+                     *           "source": "api"
+                     *         },
+                     *         {
+                     *           "role": "admin",
+                     *           "principal": "group:gh-ops",
+                     *           "grantedAt": "2026-11-02T09:00:00Z",
+                     *           "grantedBy": "",
+                     *           "source": "configuration"
                      *         }
                      *       ],
                      *       "nextCursor": null

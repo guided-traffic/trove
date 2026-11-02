@@ -81,7 +81,7 @@ describe('access services over HTTP', () => {
     expect(put.request.method).toBe('PUT');
     expect(put.request.headers.has('If-Match')).toBe(false);
     put.flush(
-      { role: 'auditor', principal: 'group:platform-admins', grantedAt: '2026-10-29T10:00:00Z', grantedBy: '' },
+      { role: 'auditor', principal: 'group:platform-admins', grantedAt: '2026-10-29T10:00:00Z', grantedBy: '', source: 'api' },
       { status: 201, statusText: 'Created', headers: { 'Trove-Authz-Epoch': '77' } },
     );
     await bind;

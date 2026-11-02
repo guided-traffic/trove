@@ -202,6 +202,13 @@ func (e *Env) User(name string) Person {
 	return e.remember(Person{ID: id, Name: name, Kind: principal.KindUser})
 }
 
+// Known makes a principal that another writer created (the provisioner of a
+// login, trove migrate) nameable in X-Test-Person.
+func (e *Env) Known(kind principal.Kind, name string) Person {
+	id := e.Text("SELECT id::text FROM principal WHERE kind = $1 AND name = $2", string(kind), name)
+	return e.remember(Person{ID: id, Name: name, Kind: kind})
+}
+
 // Group creates a group.
 func (e *Env) Group(name string) Person {
 	id := e.principalRow("group", name)
