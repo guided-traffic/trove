@@ -285,6 +285,9 @@ to denial-of-service attempts.
 - ⚪ The main installation unreachable (owner, 2026-11-02): answers the Bastion already holds stay valid for a configurable
   grace period (proposed 15 minutes) beyond their normal period; callers with a valid answer get cached artifacts and
   possibly stale metadata, a token the Bastion has not seen gets `503`, and after the grace period it serves nothing
+- ⚪ The cache (owner, 2026-11-02): a small part of the artifacts, never the main installation's object store, which the
+  Bastion cannot read; its backend is chosen in the chart, a bucket of the Bastion's own shared by its replicas or a local
+  volume per replica, with size limit, eviction by last access and the metadata revalidation period configurable
 - ⚪ The main installation counts the real client: the Bastion stops abuse before a request reaches the main installation,
   and the main installation lists the Bastion's addresses in `server.trusted_proxies`, so its per-address limits apply to
   the client and not to the Bastion
