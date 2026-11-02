@@ -261,25 +261,47 @@ The owner moved projects into the beta on 2026-11-02, before GitLab CI OIDC: pro
 accounts for external parties and give them fine or coarse access to chosen repositories of their project, and the
 Bastion serves those parties. Phase 5 then maps GitLab pipelines into projects.
 
-- 🟡 Spec first: R-AUTHZ-026 completed with project service accounts (Q-AUTHZ-169) and the project screens; a project
+- 🟢 Spec first: R-AUTHZ-026 completed with project service accounts (Q-AUTHZ-169) and the project screens; a project
   administrator creates remote repositories too, bounded by the outbound address rules
-  ([Q-AUTHZ-173](../spec/authorization.md#q-authz-173--a-project-administrator-creates-remote-repositories), owner 2026-11-02)
-- ⚪ Projects: an immutable key, display name and description, the switches `managePolicies` and `manageRepositories`
+  ([Q-AUTHZ-173](../spec/authorization.md#q-authz-173--a-project-administrator-creates-remote-repositories), owner 2026-11-02);
+  R-API-047 and R-UI-041 raised to MVP; decisions Q-AUTHZ-174 to Q-AUTHZ-195, Q-AUTH-189 to Q-AUTH-191, Q-REPO-125 and
+  Q-REPO-126, ADR-145 and ADR-146; contract page [projects.md](../developer/projects.md)
+- 🟢 Projects: an immutable key, display name and description, the switches `managePolicies` and `manageRepositories`
   set by an administrator; a repository belongs to at most one project, repositories a project administrator creates
-  carry the project key as prefix
-- ⚪ Project administrators: users and groups named on the project; they hold `manage` on the project's repositories and,
-  with the switches, manage its policies and repositories; they never bind system roles and see no global policy
-- ⚪ Project policies: fine (one repository by key) or coarse (pattern or class) and only over the project's own
-  repositories; the effect is the union with global policies
-- ⚪ Project service accounts (owner, Q-AUTHZ-169): created, disabled and deleted by project administrators, named
+  carry the project key as prefix (migration `00019_projects`, `/api/v1/projects…`, `test/integration/projects`)
+- 🟡 Project administrators: users and groups named on the project; they hold `manage` on the project's repositories and,
+  with the switches, manage its policies and repositories; they never bind system roles and see no global policy. Built
+  and tested over three replicas (`TestR_AUTHZ_026_*` in `test/integration/authz`); open: a switch that is off answers
+  `403 forbidden` instead of `403 project_switch_off` when the caller administers only that project (being fixed)
+- 🟢 Project policies: fine (one repository by key) or coarse (pattern or class) and only over the project's own
+  repositories; the effect is the union with global policies; their grants live where an older replica does not read
+  them, so a rolling upgrade never widens them ([ADR-145](../decisions.md#adr-145--the-grants-of-a-project-policy-are-stored-where-the-previous-release-does-not-read-them))
+- 🟡 Project service accounts (owner, Q-AUTHZ-169): created, disabled and deleted by project administrators, named
   `<projectKey>-…`, their tokens issued and revoked by them, granted only through the project's policies; a project is
-  empty, and can be deleted, only without repositories and service accounts
-- ⚪ Admin UI: projects for administrators; for a project administrator the project's repositories, policies, service
-  accounts and their tokens; the auditor sees every project read-only
-- ⚪ Audit of every project change; security page for delegated administration
-- ⚪ Integration tests: a project administrator cannot reach a repository, policy or principal outside the project, cannot
-  bind a system role, cannot create a token that outlives or outranks the project's grants; e2e: a partner's project
-  service account installs with npm and restores with dotnet through the main installation
+  empty, and can be deleted, only without repositories and service accounts. Built; open: the project administrator's
+  journey over HTTP (`TestR_AUTHZ_026_ProjectAdministratorServiceAccountsAndTokens`) is red, see the findings below
+- 🟡 Admin UI: projects for administrators; for a project administrator the project's repositories, policies, service
+  accounts and their tokens; the auditor sees every project read-only. Built and in the component tests (594 web tests);
+  open: the browser journey `12-projects` on kind
+- 🟡 Audit of every project change (`authz.project.*`, journal entries for the removals); security page
+  [delegated-administration.md](../security/delegated-administration.md) with H-392 to H-401; open: the findings of the
+  security audit and the code review of the phase
+- 🟡 Integration tests: a project administrator cannot reach a repository, policy or principal outside the project, cannot
+  bind a system role, cannot create a token that outlives or outranks the project's grants (`test/integration/authz`,
+  `projects`, `transfer`, `identity`; the transfer journey still skips on a probe written before the engine existed);
+  ⚪ e2e: a partner's project service account installs with npm and restores with dotnet through the main installation
+
+**Findings of the run (2026-11-02)**
+- 🟡 Listing the tokens of project service account `ext-bot` returned a personal token of user `wanda` in
+  `TestR_AUTHZ_026_ProjectAdministratorServiceAccountsAndTokens` (read, not yet established whether the list leaks or the
+  test reads the wrong list; under investigation with a regression test first)
+- 🟡 A switch that is off answered `403 forbidden` or `403 project_switch_off` for the same request depending on whether
+  the caller administers another project with the switch on; the declaration step now admits every project
+  administrator and the handler decides (Q-AUTHZ-180 amended; being fixed)
+- 🟢 A shared session lookup answered a request that came after its end, so `TestR_AUTH_023_PeekLeavesTheCacheAsItFound`
+  failed in Test and Release run 41466257735 (6 of 9,000 local runs); the flight now leaves the map before it answers
+  (commit fb53a61)
+- 🟢 F-31 (upstream client cache) fixed; F-19 closed on the green failover leg of nightly run 41420733312
 
 ## Phase 5 · GitLab CI OIDC (M4)
 
@@ -530,6 +552,7 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
 | Access core (login, tokens, permissions) | 🟢 | 🟢 | 🟢 |
 | **npm** | 🟢 | 🟢 | 🟡 |
 | **NuGet (.NET)** | 🟢 | 🟡 | ⚪ |
+| Projects (delegated administration) | 🟡 | ⚪ | — |
 | GitLab CI OIDC | ⚪ | ⚪ | ⚪ |
 | Vulnerability scanning | ⚪ | ⚪ | ⚪ |
 | Backup and restore | ⚪ | ⚪ | — |

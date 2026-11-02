@@ -81,6 +81,7 @@ Built (M1, access core):
 - 🛂 **Permission policies.** Deny by default; allow-only policies over repository and package-name patterns, five system roles and role bindings; a grant index per replica that is consistent through an epoch. See [authorization](docs/developer/authorization.md) and [permissions](docs/security/permissions.md).
 - 🪪 **Role bindings from the Helm values.** `authz.role_bindings` makes an IdP group the administrator or the auditor from a GitOps repository: `trove migrate` applies the list, the API and the UI show it read-only. See [sign-in and identity](docs/manual/admin/sign-in-and-identity.md#administrators-from-the-helm-values).
 - 🔎 **Auditor.** Reads the configuration, the audit log and the metadata of every repository (package lists, documents, search, package pages) and downloads, publishes and changes nothing. See [permissions](docs/security/permissions.md#the-auditor).
+- 🗂️ **Projects and delegated administration.** A project groups repositories under a key; its administrators (users and groups) hold `manage` on them and, with the switches `managePolicies` and `manageRepositories`, write the project's policies, create its repositories of every class and the service accounts of external partners with their tokens, all named `<projectKey>-…` and never reaching beyond the project; an older replica of a rolling upgrade sees a project policy as covering nobody. See [projects](docs/developer/projects.md), [delegated administration](docs/security/delegated-administration.md) and the [manual](docs/manual/admin/projects.md).
 - 🚪 **Endpoints and exposure rules.** Further endpoints on their own listeners and hosts; exposure rules are a ceiling on what each endpoint serves. See [endpoints](docs/developer/endpoints.md) and [endpoints and exposure](docs/security/endpoints-and-exposure.md).
 - 📦 **Generic repositories.** Local repositories with flat paths; raw transfer under `/files/{repoKey}/{path}` with `PUT`, `GET` (with `Range`), `HEAD` and `DELETE`; folders and the items API. See [files](docs/developer/files.md) and [repository model](docs/security/repository-model.md).
 - 🧾 **Audit.** An event registry, transactional and asynchronous recording, a PostgreSQL journal with partitions and retention, and the query and export API. See [audit](docs/developer/audit.md) and [audit trail](docs/security/audit.md).
@@ -112,7 +113,7 @@ Built (M3, NuGet; the phase is open for its [remaining findings](docs/projektpla
 
 Not built yet (see the [roadmap](docs/coverage/roadmap.md)): the symbol server of NuGet; GitLab CI OIDC federation;
 vulnerability scanning; backup and restore and the HA hardening of phase 7; remote and virtual repositories for the generic format; the UI
-screens of search, trash, builds, webhooks, CI identity and projects.
+screens of search, trash, builds, webhooks and CI identity.
 
 ## 📛 Naming conventions
 
@@ -406,8 +407,8 @@ Registrations at start-up, in `internal/app/wire_*.go` and in the packages that 
 | Document | What it holds |
 |---|---|
 | [docs/manual/](docs/manual/README.md) | The user and administrator manual; the binary embeds it and the UI shows it behind the "?" of the top bar |
-| [docs/developer/](docs/developer/README.md) | Contributor entry point; the M1 pages: [login](docs/developer/login.md), [identity](docs/developer/identity.md), [authorization](docs/developer/authorization.md), [files](docs/developer/files.md), [m1-contracts](docs/developer/m1-contracts.md), [audit](docs/developer/audit.md), [repositories](docs/developer/repositories.md); the package screens: [packages](docs/developer/packages.md) |
-| [docs/security/](docs/security/README.md) | Security architecture, one page per perspective, with the open gaps of each page: trust boundaries, transport encryption, data and secret flow, privilege footprint, isolation and coordination, egress, login and sessions, tokens and credentials, permissions, endpoints and exposure, repository model, file transfer, audit |
+| [docs/developer/](docs/developer/README.md) | Contributor entry point; the M1 pages: [login](docs/developer/login.md), [identity](docs/developer/identity.md), [authorization](docs/developer/authorization.md), [files](docs/developer/files.md), [m1-contracts](docs/developer/m1-contracts.md), [audit](docs/developer/audit.md), [repositories](docs/developer/repositories.md); the package screens: [packages](docs/developer/packages.md); projects: [projects](docs/developer/projects.md) |
+| [docs/security/](docs/security/README.md) | Security architecture, one page per perspective, with the open gaps of each page: trust boundaries, transport encryption, data and secret flow, privilege footprint, isolation and coordination, egress, login and sessions, tokens and credentials, permissions, delegated administration, endpoints and exposure, repository model, file transfer, audit |
 | [SECURITY.md](SECURITY.md) | How to report a vulnerability, the supported versions and the pointer to the known gaps |
 | [docs/spec/](docs/spec/README.md) | Target design: owner constraints, invariants `INV-1` to `INV-20`, requirements `R-<AREA>-nnn`, open gaps `H-<n>` |
 | [docs/coverage/](docs/coverage/README.md) | Which catalog entries the spec covers, and which requirements have passing tests |
