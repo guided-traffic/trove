@@ -4464,7 +4464,7 @@ Context: R-NUGET-016 rewrites the addresses of a forwarded result as R-NUGET-015
 
 **Choice:** (a). A result whose ID is no NuGet ID, or that lists no version that parses, is removed like a result a pattern excludes, so `totalHits` is reduced for it too. The versions are deduplicated by their URL form and sorted ascending; `version` is the highest of them. The metadata (title, summary, description, authors, tags, the three web links, the package types) is the result's only when the upstream's own `version` is that highest version, and otherwise left out, as are `deprecation` and `vulnerabilities`, which describe the upstream's latest version. `owners` is a list (a single string is one owner). `totalDownloads` is the upstream's, or, once a version was removed for the caller, the sum of the versions shown. `deprecation` and `vulnerabilities` pass as received; the address in a vulnerability's `advisoryUrl` is a link for people like `projectUrl`.
 
-**Rationale:** the search, the cache-only search and the merge already speak one row shape, and carrying the forwarded members on the latest version is exactly where R-NUGET-018 wants the package-level fields to come from; a second renderer for the upstream's JSON would have to repeat every rule of R-NUGET-010 and R-NUGET-034 a second time. Dropping the metadata of a hidden latest version is the fail-closed reading of R-NUGET-034 ("only exposed IDs and versions"); fetching the readable version's metadata (c) would turn a search into a registration fill. The development agent revisits this when a client is seen to rely on a member that is dropped, or when the decision on upstream addresses in `deprecation` and `vulnerabilities` (open finding F-24) changes what a remote's registration passes on; the search then follows it.
+**Rationale:** the search, the cache-only search and the merge already speak one row shape, and carrying the forwarded members on the latest version is exactly where R-NUGET-018 wants the package-level fields to come from; a second renderer for the upstream's JSON would have to repeat every rule of R-NUGET-010 and R-NUGET-034 a second time. Dropping the metadata of a hidden latest version is the fail-closed reading of R-NUGET-034 ("only exposed IDs and versions"); fetching the readable version's metadata (c) would turn a search into a registration fill. The development agent revisits this when a client is seen to rely on a member that is dropped, or when the decision on upstream addresses in `deprecation` and `vulnerabilities` (Q-NUGET-85, which the search follows) changes what a remote's registration passes on.
 
 **Applied in the spec:** R-NUGET-016 (the first bullet). Code: [search_remote.go](../../../internal/formats/nuget/search_remote.go) `hit`, `readableOnly`, [forwarded.go](../../../internal/formats/nuget/rows/forwarded.go), [document.go](../../../internal/formats/nuget/search/document.go) `Render`. Tests: `TestR_NUGET_016_AForwardedSearchIsRewrittenIntoTheRemoteAndKeepsTheUpstreamMembers`, `TestR_NUGET_034_AForwardedResultShowsOnlyTheVersionsTheCallerMayRead`, `TestR_NUGET_016_ARemoteForwardsItsSearchAndFallsBackToItsCache` (`test/integration/nuget`).
 
@@ -4734,16 +4734,18 @@ starts with `<base>/api/nuget/<key>/v3/`. nuget.org's documents carry three more
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) Every string member that is an absolute `http` or `https` URL, except `projectUrl`, `licenseUrl`, `iconUrl`, `advisoryUrl` and the whole `@context` (chosen) | `foreignAddresses` walks the document | It catches any upstream address a client could follow (a page, a `packageContent`, an `@id` in a vulnerability), including members that no table names | `advisoryUrl` is left out while F-24 of [promt.md](../../projektplan/promt.md#8--open-findings) decides it |
-| (b) Only the members of R-NUGET-015's rewriting table | — | The letter of the table | It misses members nobody listed, such as the `@id` in `vulnerabilities`, which is what F-24 found |
+| (a) Every string member that is an absolute `http` or `https` URL, except `projectUrl`, `licenseUrl`, `iconUrl`, `advisoryUrl` and the whole `@context` (chosen) | `foreignAddresses` walks the document | It catches any upstream address a client could follow (a page, a `packageContent`, an `@id` in a vulnerability), including members that no table names | `advisoryUrl` is left out, as Q-NUGET-85 keeps it |
+| (b) Only the members of R-NUGET-015's rewriting table | — | The letter of the table | It misses members nobody listed, such as the `@id` in `vulnerabilities`, which is what Q-NUGET-85 removes |
 | (c) Every URL, without exceptions | — | Simple | The web links and the vocabulary IRIs are not trove's by design, so the check could never pass |
 
-**Choice:** (a). `advisoryUrl` is a page for people, like `projectUrl`. The check treats it that way until F-24's decision is
-written back; if that decision rewrites the member, the exception goes. A NuGet client never requests an IRI of `@context`.
+**Choice:** (a). `advisoryUrl` is a page for people, like `projectUrl`, and Q-NUGET-85 keeps it in the registration and the
+forwarded search only as an absolute `http` or `https` address without user info, so the check leaves it out like the other
+links for people; every `@id` and `@type` inside `deprecation` and `vulnerabilities` is dropped there and is checked here. A
+NuGet client never requests an IRI of `@context`.
 
 **Rationale:** the criterion is about where a client goes next, and every member that holds an address can send it somewhere.
 Listing the exceptions instead of the rules keeps a new upstream member from slipping past the check. The development agent
-would revisit this if a NuGet client starts to resolve JSON-LD IRIs, or when F-24 is decided.
+would revisit this if a NuGet client starts to resolve JSON-LD IRIs, or if Q-NUGET-85 is revisited for `advisoryUrl`.
 
 **Applied in the spec:** none (R-NUGET-015's criterion is unchanged; the check reads it). Code: `foreignAddresses` in
 [nuget_public_test.go](../../../test/e2e/nuget_public_test.go).

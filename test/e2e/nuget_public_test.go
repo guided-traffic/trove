@@ -30,7 +30,7 @@ const (
 )
 
 // nugetPeopleLinks are the members whose addresses stay the upstream's: the web links shown to people (R-NUGET-015's
-// table) and a vulnerability's advisory page (F-24 of docs/projektplan/promt.md decides it; Q-NUGET-92).
+// table) and a vulnerability's advisory page, which Q-NUGET-85 keeps as a link for people (Q-NUGET-92).
 var nugetPeopleLinks = map[string]bool{"projectUrl": true, "licenseUrl": true, "iconUrl": true, "advisoryUrl": true}
 
 // addressCheck is what foreignAddresses saw in a document.
