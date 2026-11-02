@@ -278,7 +278,10 @@ func mergeHits(results []memberResult, exact map[string]bool) (out []rows.Search
 // unionHit merges a hit of a later member into the hit of an earlier one: the versions are
 // the union, for equal versions the earlier member's wins (the member tier resolution would
 // pick), and the package-level fields come from the member that holds the highest version
-// (R-NUGET-018 step 4). Downloads are not counted, so the sum of them is 0 as well.
+// (R-NUGET-018 step 4), a forwarded member's owners, verified flag, deprecation,
+// vulnerabilities and total downloads (rows.Forwarded) with them. Each version keeps its
+// download count in VersionEntry.Downloads (a local version counts none); search.Render sums
+// them, or shows the forwarded total when the latest version is a forwarded member's.
 func unionHit(a, b rows.SearchHit) rows.SearchHit {
 	type listed struct {
 		entry rows.VersionEntry
