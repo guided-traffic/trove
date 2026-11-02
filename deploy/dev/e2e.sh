@@ -65,7 +65,7 @@ case "$set_name" in
   clients-down) NPM_CLIENTS=down ;;
   # The npm acceptance matrix and the criteria E2.1 to E2.12 (test/e2e/npm_*_test.go): the counting test upstream,
   # three client pods (one per web replica), the scatter profile. CI runs it as the job e2e-npm on every change.
-  npm) run='^TestNPM(Clients|Matrix|Replicas|Collapse|Upstream|Endpoint)'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
+  npm) run='^TestNPM(Clients|Matrix|Replicas|Collapse|Upstream|Endpoint|Project)'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
   # The additions of the run that closes the phase: the matrix again with Valkey stopped, the read-only subset against
   # the public registry. Started by the workflow only when it is dispatched with closing=true (Q-NPM-46).
   npm-closing) run='^TestNPMClosing'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NPM_CLOSING=1 ;;

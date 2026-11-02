@@ -103,7 +103,7 @@ make e2e SET=drain           # E0.14 only (with the transfer loop of E1.13)
 make e2e SET='^TestE06'      # any go test -run expression
 make e2e SET=clients         # build the npm clients image, start the client pods, run the smoke test (the pods stay up)
 make e2e SET=clients-down    # remove the client pods
-make e2e SET=npm             # the npm acceptance matrix and E2.2 to E2.12 but E2.11 (CI job e2e-npm, every change); three client pods
+make e2e SET=npm             # the npm acceptance matrix and E2.2 to E2.12 but E2.11, and TestNPMProjectPartner (CI job e2e-npm, every change); three client pods
 make e2e SET=npm-closing     # the additions of the closing run (below); fails unless TROVE_E2E_NPM_CLOSING=1, which the set exports
 make e2e SET=npm-ha          # E2.11: drain variant A and the failovers under the npm load (CI leg npm-ha: nightly and on dispatch, since 2026-11-01)
 make e2e SET=npm-ha-crash    # E2.11: the pod crash under the npm load, three force-deletes (no CI leg since 2026-11-01; run by hand)
@@ -112,7 +112,7 @@ make e2e SET=npm-ha-closing  # npm-ha, npm-ha-soak and the 5-minute Valkey outag
 make npm-clients-image       # only build the image into the local Docker
 make e2e SET=nuget-clients   # build the NuGet clients image, start the client pods, run the smoke test (the pods stay up)
 make e2e SET=nuget-clients-down  # remove the NuGet client pods
-make e2e SET=nuget           # every TestNuGet... but TestNuGetClosing... and TestNuGetHA...: local, remote and virtual repositories, E3.2, E3.6 and E3.7 with the real clients; the test upstream and three client pods (Q-NUGET-34, Q-NUGET-70); CI job e2e-nuget on every change
+make e2e SET=nuget           # every TestNuGet... but TestNuGetClosing... and TestNuGetHA...: local, remote and virtual repositories, a project's partner (TestNuGetProjectPartner), E3.2, E3.6 and E3.7 with the real clients; the test upstream and three client pods (Q-NUGET-34, Q-NUGET-70); CI job e2e-nuget on every change
 make e2e SET=nuget-closing   # the additions of the closing run (TestNuGetClosing: R-NUGET-030 and R-NUGET-031 with Valkey stopped; TestNuGetClosingPublic: the read-only subset against nuget.org; exports TROVE_E2E_NUGET_CLOSING=1); CI leg of a closing dispatch
 make e2e SET=nuget-ha        # TestNuGetHA...: drain and failover under the NuGet load; CI job e2e-nuget in the nightly workflow; no such test yet: a notice and exit 0 (Q-ARCH-276)
 make nuget-clients-image     # only build the NuGet clients image into the local Docker
@@ -363,7 +363,7 @@ and, with `@axe-core/playwright`, `color-contrast` and the document-level rules 
 | `08-packages.spec.ts` | packages and client setup (E2.8); npm settings | R-UI-006, R-UI-008, R-UI-016, R-UI-021 | `beforeAll` creates an npm local repository and publishes a version to it with the npm protocol (`PUT /api/npm/<key>/<name>`, a tarball built in the journey whose README carries a `<script>`, an `onerror` image, a `javascript:` link and an `<iframe>`). The version is found in the packages list through the repository filter; its README tab shows the Markdown (a heading with its `user-content-` anchor, the code block) and none of the hostile elements, and none of them ran; "Set up your client for this repository" opens the setup page, where the configure snippet of npm, pnpm, Yarn Berry and Yarn Classic, with the environment-variable credential, equals character for character what `setupSnippet` of the npm matrix writes for that repository, with the same file name ([Q-UI-82](../spec/api-and-ui.md#q-ui-82--the-packages-journey-compares-the-setup-page-with-the-matrixs-snippet-written-out)). The second journey creates a local npm repository in the wizard with `latestGuard` off (the API shows `{"npm": {"latestGuard": false}}`), reads it back on the edit form's "npm settings" tab and turns it on again (the API shows no `npm` member) |
 | `09-guides.spec.ts` | the guides (E2.13) | R-UI-049, R-API-053 | `beforeAll` creates a local npm repository and a virtual one over it with the local one as deployment target. The side bar's "Guides" opens the guides area with generic and curl preselected, the first format of the catalog; choosing npm offers its four clients and the virtual class's guide; the virtual repository's "How to use" tab shows the virtual repository's sections and names its deployment target; its configure snippet is read and equals, character for character, the first configure snippet of the client setup page that the tab's link opens, with the environment-variable credential; the setup page's link opens the guide of the same repository again ([Q-UI-87](../spec/api-and-ui.md#q-ui-87--the-guides-journey-compares-the-guide-with-the-setup-page)) |
 | `11-nuget.spec.ts` | NuGet clients, snippets, guide and settings | R-UI-018, R-UI-019, R-UI-021 | `beforeAll` creates a local NuGet repository and a virtual one over it with the local one as deployment target. Test 1: the setup page for the virtual repository offers NuGet with `.NET CLI (dotnet)`, `NuGet CLI (nuget.exe)` and `Visual Studio`; the .NET CLI's source command carries the repository's `index.json` URL and `--store-password-in-clear-text`, its `nuget.config` has `<clear />` and `%TROVE_TOKEN%`, its publish snippet names the local member; nuget.exe and Visual Studio show their source instructions; axe runs on the setup page and the guide in the light and in the dark scheme (`page.emulateMedia`). Test 2: the wizard creates a local NuGet repository with `deleteMode` `delete` (the API shows `{"nuget": {"deleteMode": "delete"}}`; `forwardSearch` is not offered for a local repository), the edit form reads it back and the default removes the member. No package is published ([Q-UI-95](../spec/api-and-ui.md#q-ui-95--what-the-nuget-browser-journey-covers)); run on the dev cluster 2026-11-02 (`SET=access-long`): the first run corrected two assertions of the journey (the nuget.exe snippet is rendered in the shell and in the PowerShell form, so the locator takes the first; the `deleteMode` select carries the option index as value, so the test reads the text of the selected option) |
-| `12-projects.spec.ts` | projects and delegated administration | R-UI-041, R-AUTHZ-026 | `beforeAll` creates a local generic repository and a group through the API; bob signs in first (JIT) and is added to the group. The administrator creates the project in the dialog (key, display name, the group found through "Find a user or group", the repository chosen in "Add a repository") and sees the group, the repository and a disabled "Delete project" on the project page. bob, without any system role, finds only **Projects** in the navigation, picks the project in the filter of the top bar, sees "Create repository" disabled with the reason (`manageRepositories` is off), creates a project policy with the lookup of principals and the project's repository as selector, creates a project service account (name prefilled with the key), issues a token (no "Never expires", the cap said, `trv_sat_` value shown once) and revokes it. The administrator then sees the policy and the account on the project page. axe runs on every screen. **Not yet run:** the journey needs the deployed backend of phase 5a on kind (the project API, `authz/me` `projects`, the delegated writes of repositories, policies and service accounts); it was written against the generated types and the component-tier fakes, so the first run may correct locators and timing |
+| `12-projects.spec.ts` | projects and delegated administration | R-UI-041, R-AUTHZ-026 | `beforeAll` creates a local generic repository and a group through the API; bob signs in first (JIT) and is added to the group. The administrator creates the project in the dialog (key, display name, the group found through "Find a user or group", the repository chosen in "Add a repository") and sees the group, the repository and a disabled "Delete project" on the project page. bob, without any system role, finds only **Projects** in the navigation, picks the project in the filter of the top bar, sees "Create repository" disabled with the reason (`manageRepositories` is off), creates a project policy with the lookup of principals and the project's repository as selector, creates a project service account (name prefilled with the key), issues a token (no "Never expires", the cap said, `trv_sat_` value shown once) and revokes it. The administrator then sees the policy and the account on the project page. axe runs on every screen. run on the dev cluster 2026-11-02 (`SET=access-long`, the image of 3a77016 on kind): the journey passed on its first run, 14.7 s, with no locator or timing corrected, in the run of 17 journeys that took 1.7 min |
 | `10-help.spec.ts` | the help area and the "?" (F-16) | R-UI-050, R-API-054, R-UI-044, R-UI-045 | two tests, the break-glass administrator in each: light and English, then dark and German. `/help` lists the manual and a page opens from the list; the "?" of the top bar on `/profile/tokens` opens `user/access-tokens`, on `/admin/groups` `admin/sign-in-and-identity`. Axe with `color-contrast` runs on each of the five screens per scheme (the manual's own text is English with `lang="en"`, Q-UI-89). No data is prepared |
 
 The files run in this order, in one worker: the audit journey reads what the journeys before it did (the packages journey runs after it and is
@@ -715,6 +715,7 @@ test/e2e/clients/
 | `TestNPMCollapse` | E2.2, E2.9 | three `npm ci` at once against three replicas from the reference lockfile of [perf/npm](../../perf/npm) through a fresh virtual repository over `npm-local` and a fresh remote on the counting upstream (the lockfile's registry key is the only thing rewritten): exactly one tarball request each, at most one document request each; 100 concurrent misses on two replicas with `pg_stat_activity` and `pg_locks` sampled; Valkey stopped (bursts from client pods pinned to two replicas); a flight lock lost with `FLUSHALL` (at most one duplicate fetch, one cache entry); a killed holder |
 | `TestNPMUpstream` | E2.4, E2.5 | an install on a warm cache with the upstream down and the metadata expired; the negative cache; a claimed namespace never requested from the upstream; the shadowing check of R-REPO-048 with a `deploy` holder, a `manage` holder and the upstream down |
 | `TestNPMEndpoint` | E2.12 | every row lists and installs only the exposed versions of `@acme<run>/sdk` through the endpoint `customers` with a bound token, the hidden version is a 404, tarball URLs and bodies name only the endpoint, a narrowed rule invalidates the ETag on every replica, an uncached remote version is a 404 with no upstream request and the same install through `default` fills the cache |
+| `TestNPMProjectPartner` | R-AUTHZ-026, R-AUTH-020 | a project service account with npm ([The project tests](#the-project-tests)): publish into the project's local repository, `npm` and `pnpm` installs through the project's virtual repository (the local member's package and one from the remote member), a package outside the project is `E404`, the revoked token is a `401` |
 | `TestNPMClosing` | E2.1, E2.2, R-NPM-045 | closing run only: the matrix and the cold install with Valkey stopped (every replica ready and degraded), and a read-only subset against `https://registry.npmjs.org` for every row |
 
 ### The matrix and what is not applicable
@@ -1305,6 +1306,7 @@ different web replicas. Verified on the dev cluster (linux/arm64, .NET SDK of `E
 | [nuget_collapse_test.go](../../test/e2e/nuget_collapse_test.go) | `TestNuGetCollapse` (E3.2), `coldRestoreOfReference` (shared with the closing run) |
 | [nuget_endpoint_test.go](../../test/e2e/nuget_endpoint_test.go) | `TestNuGetEndpoint` (E3.7) |
 | [nuget_search_claims_test.go](../../test/e2e/nuget_search_claims_test.go) | `TestNuGetSearchClaimTiming`: R-NUGET-016's claim criterion with Valkey (no replica lists a package of the upstream for a cached forwarded query within 1 s of a claim, plus one second for the poll; no new upstream search); `claimTiming`, shared with `TestNuGetClosing` for the case with Valkey stopped |
+| [nuget_project_test.go](../../test/e2e/nuget_project_test.go) | `TestNuGetProjectPartner`: a project service account with `dotnet nuget push` and `dotnet restore` ([The project tests](#the-project-tests)) |
 | [nuget_closing_test.go](../../test/e2e/nuget_closing_test.go) | `TestNuGetClosing`: the closing run's additions |
 | [nuget_public_test.go](../../test/e2e/nuget_public_test.go) | `TestNuGetClosingPublic`: the closing run's read-only subset against nuget.org; `foreignAddresses` (the address check of R-NUGET-015), `registrationLeaves` (a registration with every page followed) |
 
@@ -1439,6 +1441,51 @@ index and refused pages listed by address).
 **Not covered here:** the digest check of a cached package against the upstream (R-NUGET-029, P1; not built, so a
 `packageHash` mismatch is not tested), the symbol packages beyond the push (the symbol server is P1, against nuget.org too), the Windows row
 and Visual Studio, and the drain and failover part of E3.6 (phase 7).
+
+## The project tests
+
+`TestNPMProjectPartner` (set `npm`) and `TestNuGetProjectPartner` (set `nuget`) are the end-to-end half of the beta phase 5a item "a
+partner's project service account installs with npm and restores with dotnet through the main installation" (R-AUTHZ-026). They run
+in the `scatter` profile through the edge, so every request of a client reaches another web replica. The regexp of the set `npm` names
+`Project` (deploy/dev/e2e.sh); `nuget` takes every `TestNuGet...`.
+
+The harness is [project_env_test.go](../../test/e2e/project_env_test.go). `newPartnerProject` creates the project `<label>-<run>`
+(`partner-npm-<hex>`, `partner-nuget-<hex>`) with `managePolicies` and `manageRepositories` on, signs bob in through the IdP (a
+session, no system role) and makes him the project's administrator (`PUT /projects/{key}/admins/user%3Abob`), then waits until
+nine requests, spread over the replicas, all show the project in bob's `authz/me` `projects` and no role. Everything inside the project
+is done with bob's session (the project administrator's credential is a session or a token with `admin: true`, Q-AUTHZ-183), not
+with the administrator token. The administrator token only creates the project and cleans up.
+
+| Step | Who | Request |
+|---|---|---|
+| project, administrator | administrator | `POST /projects`, `PUT /projects/{key}/admins/user%3Abob` |
+| local, remote and virtual repository `<key>-local`, `<key>-remote`, `<key>-all` | bob | `POST /repositories` with `project` (the virtual one: both as members, the local one as deployment target) |
+| service account `<key>-ci` | bob | `POST /service-accounts` with `project` |
+| policies `<key>-write` (`read`, `deploy` on the local repository) and `<key>-read` (`read` on the remote and the virtual repository) | bob | `POST /permission-policies` with `project` |
+| a token, no endpoint, scope `inherit`, one hour | bob | `POST /service-accounts/<key>-ci/tokens` |
+| publish, install, refusals | the partner, with that token only | the real clients |
+| revoke | bob | `DELETE /tokens/{id}`; the test then waits until the replicas refuse the token |
+| clean up | administrator | the account, the repositories, the project (the project is deleted when the workers have removed the repositories: a repository of any lifecycle counts as a member, `project_not_empty`) |
+
+What the partner does, per format:
+
+| | npm | NuGet |
+|---|---|---|
+| publish | `npm publish` with the token into `<key>-local` | `dotnet nuget push --api-key <token>` into the feed of `<key>-local` |
+| read through the project | `npm` and `pnpm` install the package, and `@cobalt/eager-lantern` from the remote member of the counting upstream, through `<key>-all` | `dotnet restore` of the package, and of `Contoso.Core.Extensions` from the remote member of the counting upstream, through `<key>-all` |
+| outside the project | `npm-local` holds a package of the run; the partner's token has no grant there: the raw read is `404`, `npm install` fails with `E404` | `nuget-e2e` holds a package of the run; the raw read is `404`, `dotnet restore` fails with `NU1301` over `404 (Not Found)` on the service index |
+| revoked token | the next `npm install` (a home of its own, nothing cached) fails with `401` | the next `dotnet restore` fails with `401` |
+
+Verified on the dev cluster (2026-11-02, the image of 3a77016 built from the worktree and rolled out; linux/arm64): `TestNPMProjectPartner`
+33 to 53 s (alone and inside the set), `TestNuGetProjectPartner` 27 to 67 s. `make e2e SET=npm` is green with 209 tests and subtests,
+629 s of test time (10 min 54 s with the image builds and the pods); `make e2e SET=nuget` is green with 84 tests and subtests (79 before
+the new test, plus its five), 352 s of test time (6 min 16 s with the loads), against 226 s noted for the 79 tests earlier the same day;
+the new test accounts for 30 s of the 126 s, the rest was not investigated (every other test of the set took about as long as before
+or longer, no test failed or was retried). Not verified: the time on the CI runner. What the answers were: a push into a repository
+outside the project, and a publish into the project's remote repository, are `403` ("The action deploy is not permitted on <key>"),
+while a read of a repository outside the project is `404`.
+Not covered: a project whose switches are off (R-AUTHZ-026's `project_switch_off` is a case of the API tests, the browser journey
+`12-projects.spec.ts` shows it), the yarn rows of npm, nuget.exe, and a project administrator through a group.
 
 ## Extension checklist
 

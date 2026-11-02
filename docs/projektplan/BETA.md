@@ -269,29 +269,32 @@ Bastion serves those parties. Phase 5 then maps GitLab pipelines into projects.
 - 🟢 Projects: an immutable key, display name and description, the switches `managePolicies` and `manageRepositories`
   set by an administrator; a repository belongs to at most one project, repositories a project administrator creates
   carry the project key as prefix (migration `00019_projects`, `/api/v1/projects…`, `test/integration/projects`)
-- 🟡 Project administrators: users and groups named on the project; they hold `manage` on the project's repositories and,
+- 🟢 Project administrators: users and groups named on the project; they hold `manage` on the project's repositories and,
   with the switches, manage its policies and repositories; they never bind system roles and see no global policy. Built
   and tested over three replicas (`TestR_AUTHZ_026_*` in `test/integration/authz`); a switch that is off answers
-  `403 project_switch_off` whatever else the caller administers (Q-AUTHZ-180 amended); open: the HIGH finding of the
-  review below (the `manage` grant ignores the credential)
+  `403 project_switch_off` whatever else the caller administers (Q-AUTHZ-180 amended); `manage` follows the credential
+  (Q-AUTHZ-196)
 - 🟢 Project policies: fine (one repository by key) or coarse (pattern or class) and only over the project's own
   repositories; the effect is the union with global policies; their grants live where an older replica does not read
   them, so a rolling upgrade never widens them ([ADR-145](../decisions.md#adr-145--the-grants-of-a-project-policy-are-stored-where-the-previous-release-does-not-read-them))
-- 🟡 Project service accounts (owner, Q-AUTHZ-169): created, disabled and deleted by project administrators, named
+- 🟢 Project service accounts (owner, Q-AUTHZ-169): created, disabled and deleted by project administrators, named
   `<projectKey>-…`, their tokens issued and revoked by them, granted only through the project's policies; a project is
   empty, and can be deleted, only without repositories and service accounts. Built, and the project administrator's
-  journey over HTTP passes (`TestR_AUTHZ_026_ProjectAdministratorServiceAccountsAndTokens`); open: the name `<key>-`
-  alone answers 500 and a delegated token may be self-rotatable (findings below)
-- 🟡 Admin UI: projects for administrators; for a project administrator the project's repositories, policies, service
-  accounts and their tokens; the auditor sees every project read-only. Built and in the component tests (594 web tests);
-  open: the browser journey `12-projects` on kind
-- 🟡 Audit of every project change (`authz.project.*`, journal entries for the removals); security page
-  [delegated-administration.md](../security/delegated-administration.md) with H-392 to H-401; open: the findings of the
-  security audit and the code review of the phase
-- 🟡 Integration tests: a project administrator cannot reach a repository, policy or principal outside the project, cannot
+  journey over HTTP passes (`TestR_AUTHZ_026_ProjectAdministratorServiceAccountsAndTokens`); a delegated token is never
+  self-rotatable (Q-AUTH-192), a name needs a character after `<key>-` (Q-AUTH-193)
+- 🟢 Admin UI: projects for administrators; for a project administrator the project's repositories, policies, service
+  accounts and their tokens; the auditor sees every project read-only. Component tests (608 web tests) and the browser
+  journey `12-projects` on kind (`TestE1_11Journeys`, set `access-long`, green with 17 journeys)
+- 🟢 Audit of every project change (`authz.project.*`, journal entries for the removals, repository events name the
+  project, a delegate's refusals as `authz.denied`); security page
+  [delegated-administration.md](../security/delegated-administration.md); the findings of the security audit and the code
+  review fixed below, the open gaps are the H-items of that page
+- 🟢 Integration tests: a project administrator cannot reach a repository, policy or principal outside the project, cannot
   bind a system role, cannot create a token that outlives or outranks the project's grants (`test/integration/authz`,
   `projects`, `transfer`, `identity`; the whole integration tier green, 25 packages, no project test skips any more);
-  ⚪ e2e: a partner's project service account installs with npm and restores with dotnet through the main installation
+  🟢 e2e: a partner's project service account installs with npm and pnpm and restores with dotnet through the main
+  installation (`TestNPMProjectPartner`, `TestNuGetProjectPartner` in the per-change sets `npm` and `nuget`, green on kind;
+  outside the project 404 / `E404` / `NU1301`, a revoked token 401)
 
 **Findings of the run (2026-11-02)**
 - 🟢 Listing the tokens of project service account `ext-bot` returned a personal token of user `wanda`: no leak. Without
@@ -620,7 +623,7 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
 | Access core (login, tokens, permissions) | 🟢 | 🟢 | 🟢 |
 | **npm** | 🟢 | 🟢 | 🟡 |
 | **NuGet (.NET)** | 🟢 | 🟡 | ⚪ |
-| Projects (delegated administration) | 🟡 | ⚪ | — |
+| Projects (delegated administration) | 🟢 | 🟢 | — |
 | GitLab CI OIDC | ⚪ | ⚪ | ⚪ |
 | Vulnerability scanning | ⚪ | ⚪ | ⚪ |
 | Backup and restore | ⚪ | ⚪ | — |
