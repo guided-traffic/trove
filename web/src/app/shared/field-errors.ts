@@ -75,7 +75,7 @@ export function problemsAt(
       padding: 0;
       border: 0;
       background: none;
-      color: var(--mat-sys-primary);
+      color: var(--trove-link);
       font: inherit;
       text-decoration: underline;
       cursor: pointer;

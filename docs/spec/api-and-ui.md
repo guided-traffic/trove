@@ -2499,8 +2499,8 @@ Priority: **MVP** · Covers: UI-001, UI-004
   button in the top bar below that width. Where it is pinned, a button at its foot compacts it to
   an icon rail and back; the rail keeps every entry's accessible name. The rail state and the
   folded groups are kept in browser storage per signed-in principal (non-secret, R-UI-043) and are
-  a convenience only. The active entry is marked by a filled row, a bar in the accent colour and
-  bold text, never by colour alone. Tables, lists and form fields use compact density (Angular
+  a convenience only. The active entry is marked by a filled row, a bar in the accent colour (blue, Q-UI-96)
+  and bold text, never by colour alone. Tables, lists and form fields use compact density (Angular
   Material density scale `-2`) on every screen; interactive targets stay at least 24 × 24 CSS px
   (R-UI-044). Screen layouts that switch between one and two columns use CSS container queries on
   the content area, so collapsing the side bar never breaks them.
@@ -5572,7 +5572,7 @@ Context: E2.13 asks that the guide of a virtual npm repository show the configur
 
 ### Q-UI-88 · The design language and its two colour schemes
 
-Status: **The owner's requirement of 2026-11-01; the adaptation decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **The owner's requirement of 2026-11-01; the adaptation decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by [Q-UI-96](#q-ui-96--cogpit-blue-as-the-primary-colour-green-only-for-positive-status)**: the accent is cogpit's blue (light `#0a62c2`, dark `#4aa8ff`) instead of the screens' green, and green marks a positive status only; the surfaces, borders, chrome and type stay as chosen here.
 
 Context: the owner sent two example screens, one dark and one light, and asked that trove take their design language and
 colours, with a dark and a light mode. The measured values and the reading of both screens are in
@@ -5728,6 +5728,55 @@ R-UI-047 gives each format a browser journey. The npm journey publishes a packag
 **Rationale:** The part of the screen that depends on the server's rendering (the snippets, the settings schema, the guide) is what a browser journey adds; the package page depends on metadata the component tier fixes. The development agent revisits this when the NuGet matrix publishes a package that a journey can open by name.
 
 **Applied in the spec:** none; [developer/web-ui.md](../developer/web-ui.md) lists the journey.
+
+### Q-UI-96 · cogpit blue as the primary colour, green only for positive status
+
+Status: **Decided by the owner on 2026-11-02.**
+
+Context: Q-UI-88 took the green of the owner's example screens as trove's one accent, so green marked the current
+navigation entry, the primary button, links, the focus ring and a selected row as well as a positive status
+(`--trove-status-ok` was the accent green). The owner wants the blue of his other product, cogpit, as the regular primary
+colour, and green only for a positive status. cogpit's palettes (`internal/ui/fyneui/theme.go` in guided-traffic/cogpit)
+give: dark primary `#4aa8ff` (glow blue) with `#04111f` on it, hyperlink `#7cc4ff`, selection `#22406a`, focus the
+primary at alpha `0xaa`; light primary `#0a6fd6` with white on it, hyperlink `#0a62c2`, selection `#cfe2ff`, focus
+`#0a6fd6` at alpha `0x99`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) cogpit's blue as the primary, green for a positive status only | The accent, the link, the focus ring, the selection fills and the navigation's accent take cogpit's values; `--trove-status-ok` keeps its green | The owner's two products share one accent; green has one meaning, "fine", instead of "here", "go" and "fine" at once | Departs from the example screens' green; cogpit's light primary and its translucent focus miss WCAG AA on some of trove's surfaces and need the rule of Q-UI-88 |
+| (b) Keep green | Q-UI-88 as built | No change | A positive status and the accent are one colour, so a green mark does not say which of the two it is; not what the owner wants |
+
+**Choice:** (a). Where a cogpit value misses AA on a surface of trove, the rule of Q-UI-88 applies (darkened in the light
+scheme, lightened in the dark one, in its own hue):
+
+- The light primary is `#0a62c2`, cogpit's own light hyperlink, for the primary as a whole. cogpit's `#0a6fd6` is 4.9:1
+  on white but 4.0:1 on the filled form field (`#e4e7ec`), 4.2:1 on a dialog and 4.47:1 on a hovered row, so a focused
+  label would fail; `#0a62c2` is 5.9:1 on white and under white text, 4.8:1 on the field, 5.1:1 on a dialog. One value
+  for the whole primary rather than one per use, because Material reads the same `primary` token for the filled button,
+  the focused label and the checkbox.
+- The dark primary is `#4aa8ff` with `#04111f` on it, as in cogpit: 7.8:1 on the page, 5.7:1 on the field, 7.5:1 on a
+  filled button.
+- Links take cogpit's hyperlink through a new token, `--trove-link`: `#0a62c2` in the light scheme (the primary itself),
+  `#7cc4ff` in the dark one (10.5:1 on the page).
+- The focus ring stays a solid 2 px line in the primary: cogpit's light focus at alpha `0x99` is 2.5:1 on white, below the
+  3:1 of WCAG 1.4.11.
+- `primary-container` is cogpit's selection (`#cfe2ff`, `#22406a`); `secondary-container`, the fill of the selected tree
+  item, the current audit row and the active access tab, is cogpit's selected row (`#d6e6ff`, `#183252`); the text on
+  both is cogpit's selected-row text (`#0b1a33`, `#f2f7ff`).
+- The navigation's accent (`--trove-nav-accent`, and in the dark scheme the current entry's text and fill) is cogpit's
+  glow blue `#4aa8ff` in both schemes, because the frame is dark in both: 4.7:1 on the light side bar.
+- The Material base palette is `mat.$azure-palette`, whose tone 40 has cogpit's hue of 210° (`mat.$blue-palette` is at
+  237°, toward violet).
+- `--trove-status-ok` keeps `#1a6e3c` and `#3db064`. Every positive status of the UI already used it and none used the
+  accent, so no screen changes its status colour. No other token is green; `web/src/styles/palette.spec.ts` checks that,
+  and the contrast of every accent pair, in the unit tier.
+
+**Rationale:** the owner's decision. The contrast adjustments are the rule of Q-UI-88 applied to the new hue; every pair
+is in [design-language.md](../developer/design-language.md#contrast-of-the-text-tones-on-the-surfaces-they-sit-on).
+The browser tier's axe run has not seen the blue palette yet.
+
+**Applied in the spec:** Q-UI-88 (superseded in part: the accent); R-UI-002 names the accent;
+[design-language.md](../developer/design-language.md); [web-ui.md](../developer/web-ui.md#design-tokens).
 
 ### Q-API-16 · A `limit` above the maximum is clamped
 

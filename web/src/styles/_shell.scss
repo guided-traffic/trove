@@ -151,9 +151,9 @@ trove-root {
     }
   }
 
-  // Links in the page: the accent colour and an underline, so a link is not told apart by colour alone.
+  // Links in the page: the link colour and an underline, so a link is not told apart by colour alone.
   .content a:not([class*='mat-']):not([class*='mdc-']) {
-    color: var(--trove-accent);
+    color: var(--trove-link);
     text-underline-offset: 0.2em;
 
     &:focus-visible {
@@ -183,7 +183,7 @@ trove-root {
     }
 
     a {
-      color: var(--trove-accent);
+      color: var(--trove-link);
       text-decoration: none;
 
       &:hover {

@@ -27,11 +27,15 @@
   --trove-elevation-2: 0 4px 12px light-dark(rgb(16 24 40 / 12%), rgb(0 0 0 / 55%));
 
   // Content area: whitespace, borders and the one accent. The accent is the Material primary, so
-  // a theme change moves every accent-coloured control with it.
+  // a theme change moves every accent-coloured control with it. It is the blue of the owner's
+  // cogpit (Q-UI-96), not a status: a positive status is --trove-status-ok.
   --trove-border: var(--mat-sys-outline-variant);
   --trove-border-strong: var(--mat-sys-outline);
   --trove-text-muted: var(--mat-sys-on-surface-variant);
   --trove-accent: var(--mat-sys-primary);
+  // The text of a link: cogpit's hyperlink blue. In the light scheme it is the accent itself, in the
+  // dark one a step lighter than the accent, as in cogpit, so a link and a button are told apart.
+  --trove-link: light-dark(#0a62c2, #7cc4ff);
   --trove-accent-container: var(--mat-sys-secondary-container);
   --trove-on-accent-container: var(--mat-sys-on-secondary-container);
   // A raised surface (card, panel, table frame) is white on the white page in the light scheme
@@ -39,22 +43,24 @@
   --trove-surface-raised: light-dark(#ffffff, #121822);
   --trove-table-head-bg: light-dark(#f8f9fc, #121822);
   --trove-row-hover: light-dark(#f1f4f8, #0d141e);
+  // Solid in both schemes: cogpit's translucent focus (#0a6fd6 at alpha 0x99) is 2.5:1 on white.
   --trove-focus-ring: 2px solid var(--mat-sys-primary);
 
   // Navigation sidebar and top bar: dark in both schemes, navy in the light one and near-black
-  // in the dark one. Measured contrast (R-UI-044, AA asks 4.5:1 for text and 3:1 for marks):
-  // text 11.9:1 (light) and 14.8:1 (dark), muted text 6.7:1 and 6.9:1, the accent on the
-  // sidebar 4.3:1 and on the nested group 5.3:1, the active text of the dark scheme 6.4:1.
-  // Recompute when a value changes.
+  // in the dark one, so the accent is cogpit's glow blue of the dark scheme in both (Q-UI-96).
+  // Measured contrast (R-UI-044, AA asks 4.5:1 for text and 3:1 for marks): text 11.9:1 (light)
+  // and 14.8:1 (dark), muted text 6.7:1 and 6.9:1, the accent on the sidebar 4.7:1 and 7.1:1, on
+  // the nested group 5.8:1 and 7.4:1, the current entry's icon 3.3:1 (light, a mark) and its text
+  // 5.8:1 (dark). Recompute when a value changes; palette.spec.ts holds the accent pairs.
   --trove-nav-bg: light-dark(#233564, #121822);
   --trove-nav-bg-deep: light-dark(#1e2e4a, #060e19);
   --trove-nav-bg-nested: light-dark(#1a264e, #0d131c);
   --trove-nav-fg: light-dark(#ffffff, #e8eaec);
   --trove-nav-fg-muted: light-dark(#b9c3d9, #9aa1ad);
   --trove-nav-hover: rgb(255 255 255 / 8%);
-  --trove-nav-active: light-dark(rgb(255 255 255 / 12%), rgb(61 176 100 / 12%));
-  --trove-nav-active-fg: light-dark(#ffffff, #3db064);
-  --trove-nav-accent: #3db064;
+  --trove-nav-active: light-dark(rgb(255 255 255 / 12%), rgb(74 168 255 / 12%));
+  --trove-nav-active-fg: light-dark(#ffffff, #4aa8ff);
+  --trove-nav-accent: #4aa8ff;
   --trove-nav-border: light-dark(rgb(255 255 255 / 10%), #1e2530);
   --trove-nav-width: 15rem;
   --trove-nav-width-collapsed: 3.75rem;
@@ -69,7 +75,8 @@
   --trove-surface: var(--mat-sys-surface);
   --trove-on-surface: var(--mat-sys-on-surface);
   // Status colours reinforce an icon and a text, never replace them (R-UI-044); the pairs keep
-  // a contrast ratio of at least 4.5:1 on the surface of their scheme. OK is the accent green.
+  // a contrast ratio of at least 4.5:1 on the surface of their scheme. Green is OK's alone: no
+  // other token is green, so green always means a positive status (Q-UI-96).
   --trove-status-ok: light-dark(#1a6e3c, #3db064);
   --trove-status-warn: light-dark(#8a5a00, #ffc857);
   --trove-status-bad: light-dark(#b3261e, #ffb4ab);
