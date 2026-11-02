@@ -10,7 +10,7 @@ and `worker` roles, node drains without outage, and a backup job. Everything aft
 (further registries such as Ansible Galaxy, PyPI, Docker, and platform breadth) is in
 [FULL.md](FULL.md).
 
-The beta release is what the [roadmap](../coverage/roadmap.md) builds in M0 to M5, M4b included, after
+The beta release is what the [roadmap](../coverage/roadmap.md) builds in M0 to M5, M4b and the Bastion of M13 included, after
 the owner walkthrough. Details, exit criteria and requirement IDs of every phase are in the roadmap
 section linked under each heading.
 
@@ -28,6 +28,7 @@ numbers (owner, 2026-11-02).
 | [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | 🟢 |
 | [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual | 🟡 |
 | [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | ⚪ |
+| [5b · trove Bastion](#phase-5b--trove-bastion-m13) | An exposed, read-only cache instance in front of the main installation that serves released content to external parties and takes load off it | ⚪ |
 | [6 · Vulnerability scanning](#phase-6--vulnerability-scanning-m4b) | Own advisory mirror, findings and vulnerability report, malicious versions blocked, npm and NuGet audits from trove's data | ⚪ |
 | [7 · HA, backup, Helm](#phase-7--ha-hardening-backup-and-helm-m5) | Drains and failovers without errors, backup and restore; beta candidate | ⚪ |
 | [8 · Walkthrough and beta](#phase-8--walkthrough-and-beta-release) | Owner review, objections fixed; **beta release** | ⚪ |
@@ -238,6 +239,44 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - ⚪ Integration tests: invalid signatures, wrong audience, expired tokens, fork merge requests
 - ⚪ E2E tests against a GitLab test instance for npm and NuGet, with a `web` node drained during the run
 
+## Phase 5b · trove Bastion (M13)
+
+Details: [roadmap M13](../coverage/roadmap.md#p1-platform-milestones) · spec: `docs/spec/bastion.md` (to be written first)
+
+The owner moved the Bastion into the beta on 2026-11-02, before vulnerability scanning, so that phase 7 hardens it with
+everything else. Its main purpose (owner): an exposed artifact instance that gives external parties read access to released
+content, caches artifacts and takes as much load as possible off the main installation. It is exposed to the internet and
+to denial-of-service attempts.
+
+- ⚪ Spec page `docs/spec/bastion.md` first: deployment profile, trust between Bastion and main installation, the cache, and
+  what the Bastion refuses. Decided by the owner on 2026-10-31: the Bastion asks the main installation whether a
+  credential is valid and what it may read, and keeps the answers for a short, bounded time; it holds no copy of
+  users, tokens or policies. Decided by the owner on 2026-11-02: the Bastion's own credential towards the main
+  installation is a token that a trove administrator of the main installation issues for the Bastion (read only, nothing
+  else), bound to an endpoint of the main installation that serves the Bastion; a client certificate is not its
+  identity, because a TLS-terminating reverse proxy in front of the main installation would not pass it on (a certificate
+  on that endpoint's listener stays possible as a second factor where the proxy passes TLS through). Open for the page:
+  the bound, the interface on the main installation, the rotation of the Bastion's token, and the state it keeps beyond
+  its cache. Catalog entries it pulls forward: the chained
+  remote repository RMT-040 to RMT-046 (P2) and the edge deployment profile and its trust pairing DIST-024 and DIST-025
+  (Later); their priorities are raised with the page
+- ⚪ A second Helm chart (`trove-bastion`) for this instance type (owner, 2026-11-02) with its own Ingress, Service, NetworkPolicy and TLS Secret; horizontal replicas
+  without PostgreSQL of its own if the design allows, otherwise the smallest state that keeps the replicas consistent
+- ⚪ Same authentication as the main installation: personal, service-account and CI tokens and the same login, with
+  revocation reaching the Bastion within a stated bound; permissions and exposure rules of the main installation
+  enforced on every request, cached content included
+- ⚪ Package cache: immutable content (tarballs, `.nupkg`) kept and served without asking the main installation again,
+  metadata revalidated against it with conditional requests; collapsing of concurrent misses; behavior while the main
+  installation is unreachable (stale metadata, cached content) as for remote repositories
+- ⚪ Read-only for package content (owner, 2026-10-31): publish, unpublish and tag writes answer in each protocol's shape and
+  point at the main installation; client setup snippets for a Bastion
+- ⚪ Observability: cache hit rate, bytes served from the cache, upstream requests to the main installation
+- ⚪ Integration and e2e tests: npm and NuGet clients against a Bastion on kind in front of a main installation, cold and
+  warm cache, main installation unreachable, token revoked at the main installation, drain of a Bastion replica
+- ⚪ Internet exposure (owner, 2026-11-02): rate limits per client address, automatic blocking of addresses that flood it,
+  a timeout for an address after too many failed authentication attempts, and a configurable cache (size, retention,
+  metadata revalidation)
+
 ## Phase 6 · Vulnerability scanning (M4b)
 
 Details: [roadmap M4b](../coverage/roadmap.md#m4b--vulnerability-scanning) · spec: [vulnerability-scanning.md](../spec/vulnerability-scanning.md)
@@ -293,6 +332,8 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
 - ⚪ The drain criterion of the security audit (R-NPM-038, moved from phase 3): the `web` pod that forwards an `npm audit`
   to a provider answering after 20 s is deleted 1 s in; `npm audit` succeeds and no pod gets `SIGKILL`
 - ⚪ The default of `health.shutdown_drain_delay` (5 s, proposed) set from the endpoint-removal time of the target Ingress measured under load; the dev profile needs 15 s on the CI runners (Actions run 41241903588)
+- ⚪ The Bastion under the failure suite: a Bastion replica drained and lost, the main installation unreachable and
+  failing over, a rolling upgrade of either side
 - ⚪ Vulnerability scanning under the failure suite: sync and evaluation jobs across drains and failovers, blocks and triage after a restore (E5.13)
 - ⚪ Rolling upgrade from the previous pre-release with mixed versions
 - ⚪ Performance targets met in two nightly runs in a row
