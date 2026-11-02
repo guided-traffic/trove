@@ -112,6 +112,19 @@ general API rate limit (`limitedPath` in [ratelimit.go](../../internal/api/v1/ra
 
 Order: W2 first (pure), then W1 and W3, then W4, then W5 and W6; W7 throughout.
 
+### The manual pages
+
+The behaviour is documented for users while it is built (owner, 2026-11-02): [admin/gitlab-ci.md](../manual/admin/gitlab-ci.md) (issuers,
+the project administrator's how-tos, dry run, issuances, revocation, every refusal reason, rate limits, the `ci.*` keys) and
+[user/gitlab-ci-pipelines.md](../manual/user/gitlab-ci-pipelines.md) (`id_tokens:`, the exchange, `scope`, npm and NuGet, the closing
+revocation). A work package that changes a documented path, field, code, default or rule updates the page in the same change.
+Both pages open with a **Not available in this version yet** note, and [tokens.md](../manual/admin/tokens.md),
+[permissions.md](../manual/admin/permissions.md), [projects.md](../manual/admin/projects.md), [limitations.md](../manual/admin/limitations.md),
+[configuration.md](../manual/admin/configuration.md), [access-tokens.md](../manual/user/access-tokens.md),
+[client-setup.md](../manual/user/client-setup.md) and [getting-started.md](../manual/user/getting-started.md) say "not released yet"
+where they link them; the change that ships the exchange removes those notes. The open point on pinning a group with subgroups
+(admin page, "Groups with subgroups") is updated with the result of the check against a real GitLab (Q-CI-25).
+
 ## Tests that pass now
 
 | Test | What it pins |

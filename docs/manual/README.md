@@ -17,7 +17,8 @@ Readers on GitHub can browse the same files here.
 4. [Browsing and transferring files](user/files.md)
 5. [Connecting a package client](user/client-setup.md)
 6. [Personal access tokens](user/access-tokens.md)
-7. [Errors and troubleshooting](user/troubleshooting.md)
+7. [GitLab CI pipelines](user/gitlab-ci-pipelines.md)
+8. [Errors and troubleshooting](user/troubleshooting.md)
 
 ## Administrator guide
 
@@ -30,10 +31,11 @@ Readers on GitHub can browse the same files here.
 7. [Permissions](admin/permissions.md)
 8. [Projects and delegated administration](admin/projects.md)
 9. [Managing tokens](admin/tokens.md)
-10. [Managing repositories](admin/repositories.md)
-11. [Monitoring and operations](admin/operations.md)
-12. [Upgrades](admin/upgrades.md)
-13. [Known limitations](admin/limitations.md)
+10. [GitLab CI federation](admin/gitlab-ci.md)
+11. [Managing repositories](admin/repositories.md)
+12. [Monitoring and operations](admin/operations.md)
+13. [Upgrades](admin/upgrades.md)
+14. [Known limitations](admin/limitations.md)
 
 The order of these two lists is the order of the manual in the UI; a test in
 [internal/manual](../../internal/manual/) fails when this page and the embedded contents disagree.

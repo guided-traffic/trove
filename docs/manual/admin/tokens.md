@@ -8,7 +8,7 @@ How administrators oversee the tokens of an installation: the Tokens screen, the
 |---|---|---|---|
 | Personal access token (`pat`) | `trv_pat_` | A user | The user, under **Personal tokens**; nobody creates one for somebody else |
 | Service-account token (`sat`) | `trv_sat_` | A service account | An administrator, on the service account's screen or with the command line |
-| CI token (`cit`) | `trv_cit_` | A CI pipeline | Not built yet: no route issues one, see [Known limitations](limitations.md) |
+| CI token (`cit`) | `trv_cit_` | A CI pipeline | The token exchange of a GitLab CI job; not built yet, no route issues one. See [GitLab CI federation](gitlab-ci.md) |
 
 A token acts as its owner and its scope can only narrow the owner's permissions. trove stores the SHA-256 of a token, never the value; no event, log line or answer except the one that creates it holds the value. [Personal access tokens](../user/access-tokens.md) is the users' view of the same mechanisms.
 

@@ -17,7 +17,7 @@ Every token has 57 characters: a prefix, 43 random letters and digits, and a 6-c
 |---|---|---|
 | `trv_pat_` | Personal access token (`pat`) | A user; created by the user |
 | `trv_sat_` | Service-account token (`sat`) | A service account; created by an administrator |
-| `trv_cit_` | CI token (`cit`) | Reserved; this version issues none |
+| `trv_cit_` | CI token (`cit`) | A GitLab CI job, through the token exchange; this version issues none yet ([GitLab CI pipelines](gitlab-ci-pipelines.md)) |
 
 Lists show a token by its description and its **hint**, the prefix plus the first four random characters, such as `trv_pat_Ab3x`.
 
@@ -146,4 +146,4 @@ An expired token is refused with `401` `invalid_token`, the same answer as for a
 | Lifetime | Always expires | Expires; can be non-expiring where the installation allows it |
 | Further endpoints | Refused unless an administrator allows personal tokens there | The token type further endpoints accept by default |
 
-For a CI job, ask an administrator for a service-account token with only the permissions the job needs, and store it as a masked, protected CI/CD variable named `TROVE_TOKEN`.
+For a CI job, ask an administrator for a service-account token with only the permissions the job needs, and store it as a masked, protected CI/CD variable named `TROVE_TOKEN`. GitLab CI jobs will get a short-lived token without any stored secret once the GitLab CI federation is released; [GitLab CI pipelines](gitlab-ci-pipelines.md) describes it.

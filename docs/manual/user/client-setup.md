@@ -102,7 +102,7 @@ read -rs TROVE_TOKEN && export TROVE_TOKEN
 npm whoami
 ```
 
-`npm whoami`, `pnpm whoami` and `yarn npm whoami` print your trove user name (`sa:<name>` for a service-account token); Yarn Classic has no such command. In CI, store a service-account token with only the permissions the job needs as a masked, protected variable named `TROVE_TOKEN`. The variable has this name unless an administrator configured another; the snippets always show the name in use. `npm login` and its pnpm and Yarn equivalents do not work with trove: put the token into the configuration instead.
+`npm whoami`, `pnpm whoami` and `yarn npm whoami` print your trove user name (`sa:<name>` for a service-account token); Yarn Classic has no such command. In CI, store a service-account token with only the permissions the job needs as a masked, protected variable named `TROVE_TOKEN`; for GitLab CI without a stored token, see [GitLab CI pipelines](gitlab-ci-pipelines.md), which is not released yet. The variable has this name unless an administrator configured another; the snippets always show the name in use. `npm login` and its pnpm and Yarn equivalents do not work with trove: put the token into the configuration instead.
 
 ## Configure a NuGet client
 

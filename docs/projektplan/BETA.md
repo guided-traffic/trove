@@ -397,6 +397,23 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   before phase 5a split it)
 - 🟢 The manual uses the width of the screen (phase 8, beta documentation; Q-UI-97)
 
+**Findings of the run (2026-11-02, while writing the manual against the contracts; status per item)**
+- 🟡 HIGH (design) · `claims.Frozen` carries one `Project` for all inline grants, while a token can unite the match of the
+  system tier with matches of several project tiers (R-CI-009): the evaluator could not bound each inline grant to its own
+  tier's project. Each frozen inline grant names its tier and project; W2 changes the type, W5 evaluates per grant
+- 🟡 The snippet operation (R-API-035, R-UI-035) has no project route, so a project administrator cannot get a mapping's
+  snippet (W3)
+- 🟡 R-AUTHZ-026 "Deleting a project" and its table row do not name CI mappings as a blocker (`project_not_empty`, Q-CI-26) (W3)
+- 🟡 The spec lists three save-time warnings, `internal/ci/reason` six more; R-CI-010 lists them all (W2)
+- 🟡 A rule violation of a management write: R-CI-002 makes the rule the problem's `code`, `internal/errs` puts it into
+  `errors[].code` of a `validation_failed` problem; one shape, decided and written back (W1)
+- 🟡 `ca_bundle_ref`: only `file:` has a syntax, the environment form of R-CI-001 has none; whether
+  `proxy.outbound.tls.ca_files` applies to issuer fetches is unstated (W1)
+- 🟡 The exchange: a `ttl` below `ci.token.min_ttl` answers `subject_token_expires_too_soon`, which names the wrong cause; an
+  empty `subject_token` has no stated reason; `ci.exchange.enabled: false` answering 404 is only in the code; the 405 of
+  R-CI-007 is not in OpenAPI (W4)
+- 🟡 The reference pipeline's error line (R-CI-028) prints no `requestId`, which the administrator needs to find the refusal (W7)
+
 **Phase**
 - 🟢 Contracts: schema (migrations `00026` to `00028`), packages (`internal/ci`, `claims`, `subject`, `reason`), every
   operation of R-API-035 and the project routes in OpenAPI (answering 501 until built), configuration `ci.*`, the audit
@@ -410,11 +427,13 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   `CI_JOB_TOKEN` is not accepted (owner 2026-11-02; its fallback stays P2, R-CI-022)
 - ⚪ Audit of the exchange: which pipeline (instance, group, project, branch, pipeline, job) signed in when, as issuance
   records with a tab per issuer in the admin UI (R-CI-020)
-- ⚪ Admin manual: a runbook page for GitLab CI (register an instance in the Helm values, the `id_tokens:` block, a
+- 🟡 Admin manual: a runbook page for GitLab CI (register an instance in the Helm values, the `id_tokens:` block, a
   mapping, verify with the dry run, read the issuances, troubleshoot refusals) (owner 2026-11-02), written while the phase is
   built (owner, 2026-11-02), with three how-tos: how a project administrator lets the pipelines of a GitLab project write
   to the project's repositories; how a project administrator gives a whole GitLab instance or group read access to the
-  whole project or to one repository; how a pipeline gets its trove token
+  whole project or to one repository; how a pipeline gets its trove token. Written against the contracts:
+  [admin/gitlab-ci.md](../manual/admin/gitlab-ci.md) and [user/gitlab-ci-pipelines.md](../manual/user/gitlab-ci-pipelines.md), each
+  with a "not available yet" note that the change shipping the exchange removes ([ci-oidc.md](../developer/ci-oidc.md#the-manual-pages))
 - ⚪ Project administrators manage the CI mappings of their project (owner, 2026-11-02; Q-CI-26): a mapping tier per
   project, grants only over the project's repositories and policies, the save-time rules unchanged; issuers stay the
   system administrators'
