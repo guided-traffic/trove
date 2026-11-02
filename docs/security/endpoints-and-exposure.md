@@ -73,11 +73,13 @@ same rules (R-EP-018, [developer/endpoints.md](../developer/endpoints.md#package
   document cannot carry an unfiltered copy past the filter (Q-NPM-40). What stays visible: `time.created`, `time.modified` and
   `Last-Modified` (H-60).
 - **NuGet** (R-NUGET-034): the version list and the registrations are narrowed row by row before they are rendered and paged
-  (Q-NUGET-63). On a local or virtual repository their weak `ETag` is derived from the filtered rendering instead of the package's
-  revision or the merge fingerprint, so a push, unlist, relist or delete of a hidden version leaves a polling consumer with a `304`
-  and the value it had ([documents.go](../../internal/formats/nuget/documents.go) `serveFiltered`, [handlers_virtual.go](../../internal/formats/nuget/handlers_virtual.go)
-  `serveVirtualFiltered`, Q-NUGET-87; `TestR_NUGET_034_TheValidatorOnAnEndpointWithRulesFollowsOnlyWhatTheEndpointShows`).
-  The documents of a remote repository keep the digest of the stored upstream document (H-350). The search decides every version
+  (Q-NUGET-63). Their weak `ETag` is derived from the filtered rendering instead of the package's revision, the stored upstream
+  digests of a remote or the merge fingerprint, so a push, unlist, relist or delete of a hidden version, and an upstream change that
+  touches only hidden versions, leave a polling consumer with a `304` and the value it had
+  ([documents.go](../../internal/formats/nuget/documents.go) `serveFiltered`, [handlers_remote.go](../../internal/formats/nuget/handlers_remote.go)
+  `serveRemoteFiltered`, [handlers_virtual.go](../../internal/formats/nuget/handlers_virtual.go) `serveVirtualFiltered`, Q-NUGET-87;
+  `TestR_NUGET_034_TheValidatorOnAnEndpointWithRulesFollowsOnlyWhatTheEndpointShows`,
+  `TestR_NUGET_034_TheValidatorOfARemoteDocumentOnAnEndpointWithRulesFollowsOnlyWhatItShows`). The search decides every version
   by the read scope that holds the same rules, and a term meets only the versions the caller may read, so `totalHits` tells
   nothing of a hidden version (Q-NUGET-74, H-345 for the order). Through a virtual repository the virtual repository's rules
   decide, for the search as for the documents ([nuget-virtual.md](nuget-virtual.md), Q-NUGET-75).
@@ -204,16 +206,3 @@ declared ID splits into tokens (`IDTokens`, R-NUGET-010), and the split follows 
 as `Acmewidgets` moves the package from the token tier to the tier of the other fields. A consumer who compares the order of results can learn that a newer
 hidden version exists and declares the ID in another casing, and nothing more of it. What makes it real: a package whose versions declare the ID in
 different casings, and a consumer who must not learn that a hidden version exists.
-
-### H-350 · On an endpoint with rules the ETag of a NuGet remote document follows the whole upstream document
-
-Stage: the weak ETag of the version list and the registration documents of a NuGet remote repository addressed on an endpoint with `exposure: rules`
-([handlers_remote.go](../../internal/formats/nuget/handlers_remote.go) `serveRemote`).
-
-Subject: the activity at the remote's upstream on versions of an exposed package that the endpoint hides, and when trove took the upstream's new document.
-
-Live today (read in the code). The value is a hash of the SHA-256 of every stored upstream document the rendering reads (Q-NUGET-52), so an upstream change
-that touches only hidden versions changes the value while the filtered body stays the same, and a consumer polling with `If-None-Match` learns that the
-upstream changed something about the ID, not what. The documents of local and virtual repositories follow their filtered rendering (Q-NUGET-87), a virtual
-repository with a remote member included. What makes it real: a remote whose upstream is private, another trove or a company feed, addressed directly on a
-customer endpoint; the activity of nuget.org is public anyway. The fix is the one of Q-NUGET-87 in `serveRemote`.

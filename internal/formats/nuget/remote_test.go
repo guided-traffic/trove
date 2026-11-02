@@ -766,3 +766,87 @@ func TestR_NUGET_004_ADependencyRangeWithASemVer2BoundMakesACachedVersionSemVer2
 		}
 	}
 }
+
+// TestR_NUGET_034_TheValidatorOfARemoteDocumentOnAnEndpointWithRulesFollowsOnlyWhatItShows: on an
+// endpoint with exposure rules the weak validator of a remote's version list and registration
+// documents is derived from the filtered rendering, not from the digests of the stored upstream
+// documents (Q-NUGET-87). An upstream change that touches only versions the endpoint hides leaves
+// the validator alone, so a consumer polling with If-None-Match gets 304; a change of what the
+// endpoint shows changes it. The value is the same on a replica that renders afresh, and for gzip
+// and identity; on the default endpoint the validator still follows the stored documents.
+func TestR_NUGET_034_TheValidatorOfARemoteDocumentOnAnEndpointWithRulesFollowsOnlyWhatItShows(t *testing.T) {
+	upstream := func(versions ...string) map[string][]byte {
+		docs := registrationUpstream(versions, 64, true)
+		list, err := json.Marshal(map[string][]string{"versions": versions})
+		if err != nil {
+			t.Fatal(err)
+		}
+		docs[PackageDocumentPath("acme.widgets")] = list
+		return docs
+	}
+	m := &formattest.MemRemote{Docs: upstream("1.0.0", "2.0.0", "2.1.0")}
+	h, replica := remoteHost(t, m), remoteHost(t, m)
+	view := exposureView{packages: map[string]bool{"acme.widgets": true}, versions: map[string]bool{"2.0.0": true, "2.1.0": true, "2.2.0": true}}
+	customers := &formats.EndpointFacts{Name: "customers", Rules: true, ExposureFingerprint: "fp1", Exposure: view}
+	on := func(h *formattest.Host, path string, endpoint *formats.EndpointFacts, hdr ...string) *formattest.Response {
+		t.Helper()
+		rq, err := h.NewRequest(context.Background(), http.MethodGet, path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i+1 < len(hdr); i += 2 {
+			rq.Header.Set(hdr[i], hdr[i+1])
+		}
+		if endpoint != nil {
+			rq.Endpoint = *endpoint
+		}
+		return h.ServeRequest(rq, false)
+	}
+	const flat = "v3/flatcontainer/acme.widgets/index.json"
+	const leaf = "v3/registration-semver2/acme.widgets/2.1.0.json"
+	paths := []string{flat, "v3/registration/acme.widgets/index.json", "v3/registration-gz/acme.widgets/index.json",
+		"v3/registration-semver2/acme.widgets/index.json", leaf}
+	etags := map[string]string{}
+	for _, p := range paths {
+		r := on(h, p, customers)
+		etags[p] = r.Header().Get("ETag")
+		if r.Code != http.StatusOK || !strings.HasPrefix(etags[p], `W/"`) {
+			t.Fatalf("%s = %d, ETag %q: %s", p, r.Code, etags[p], r.Body.String())
+		}
+		if b := r.Body.String(); strings.Contains(b, `"1.0.0"`) || strings.Contains(b, "acme.widgets/1.0.0") {
+			t.Fatalf("%s shows the hidden 1.0.0: %s", p, r.Body.String())
+		}
+		if got := on(replica, p, customers).Header().Get("ETag"); got != etags[p] {
+			t.Errorf("%s: the other replica sends %q, this one %q", p, got, etags[p])
+		}
+		if got := on(h, p, customers, "Accept-Encoding", "gzip").Header().Get("ETag"); got != etags[p] {
+			t.Errorf("%s: gzip sends %q, identity %q", p, got, etags[p])
+		}
+	}
+	defaultFlat := on(h, flat, nil).Header().Get("ETag")
+
+	// The upstream adds a version the endpoint hides: every stored document changes.
+	m.Docs = upstream("1.0.0", "1.5.0", "2.0.0", "2.1.0")
+	for _, p := range paths {
+		r := on(h, p, customers, "If-None-Match", etags[p])
+		if r.Code != http.StatusNotModified || r.Header().Get("ETag") != etags[p] {
+			t.Errorf("%s after an upstream change of hidden versions = %d, ETag %q, want 304 with %q", p, r.Code, r.Header().Get("ETag"), etags[p])
+		}
+	}
+	if on(h, flat, nil).Header().Get("ETag") == defaultFlat {
+		t.Error("the validator of the default endpoint did not follow the upstream's change")
+	}
+
+	// The upstream adds a version the endpoint shows: the lists change, the leaf of 2.1.0 does not.
+	m.Docs = upstream("1.0.0", "1.5.0", "2.0.0", "2.1.0", "2.2.0")
+	for _, p := range paths {
+		r := on(h, p, customers, "If-None-Match", etags[p])
+		want := http.StatusOK
+		if p == leaf {
+			want = http.StatusNotModified
+		}
+		if r.Code != want {
+			t.Errorf("%s after an upstream change of a shown version = %d, want %d", p, r.Code, want)
+		}
+	}
+}

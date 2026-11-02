@@ -181,10 +181,10 @@ HTTP conventions for every NuGet endpoint:
     entry is listed (R-VULN-018);
   - for every document: the endpoint of the request and its exposure fingerprint (R-NUGET-034,
     [endpoints.md](../endpoints.md) R-EP-018);
-  - on an endpoint with `exposure: rules`, for the documents of local and virtual repositories:
-    the SHA-256 of the filtered identity rendering in place of `rev_seq` and of the member
-    fingerprint, which rise with writes of versions the endpoint hides; the value then moves only
-    with what the endpoint shows (R-NUGET-034, Q-NUGET-87).
+  - on an endpoint with `exposure: rules`, for the documents of local, remote and virtual
+    repositories: the SHA-256 of the filtered identity rendering in place of `rev_seq`, of the
+    stored upstream digests and of the member fingerprint, which move with versions the endpoint
+    hides; the value then moves only with what the endpoint shows (R-NUGET-034, Q-NUGET-87).
 
   The same value is sent with and without gzip content coding, and replicas of two releases send
   the same value for documents built from the same inputs; RFC 9110 calls such a shared validator
@@ -2484,11 +2484,11 @@ document:
   canonical form the format asks about, the normalized lower-case URL form (`2.1.0-beta.1`), so an
   exclude written as `2.1` or `2.1.0-Beta.1` hides nothing (Q-NUGET-62, Q-EP-69, H-380).
 - **Validators.** The ETag of R-NUGET-002 includes the endpoint and its exposure fingerprint. For
-  the documents of local and virtual repositories it is derived from the filtered rendering, not
-  from the package's revision or the merge fingerprint, so a push, unlist, relist or delete of a
-  hidden version leaves it as it was and a consumer polling with `If-None-Match` gets 304
-  (Q-NUGET-87). A remote repository's documents keep the digest of the stored upstream document
-  ([H-350](../../security/endpoints-and-exposure.md#h-350--on-an-endpoint-with-rules-the-etag-of-a-nuget-remote-document-follows-the-whole-upstream-document)).
+  the documents of local, remote and virtual repositories it is derived from the filtered
+  rendering, not from the package's revision, the stored upstream digests or the merge
+  fingerprint, so a push, unlist, relist or delete of a hidden version, and an upstream change
+  that touches only hidden versions, leave it as it was and a consumer polling with
+  `If-None-Match` gets 304 (Q-NUGET-87).
 
 Acceptance criteria (`Acme.Sdk` 1.9.0, 2.0.0, 2.1.0-beta.1 and 2.1.0 in `nuget-internal`, a member
 of `nuget-customers`; a rule on `customers` exposing `Acme.Sdk` with `"range": "[2.0.0, )"` and no
@@ -4633,9 +4633,9 @@ Context: the weak ETag of a local document was a hash of its inputs with `packag
 
 **Choice:** (a). The variant of a virtual value carries the lower-case ID, as the remote's does.
 
-**Rationale:** the bytes the endpoint shows are the one input that may move the value there, and hashing them is the one definition that cannot drift from the renderer; the cost falls on endpoints with rules only, and only after a write. The new inputs change the value of every virtual document and of every document on an endpoint with rules once: during the rolling upgrade a client may get a 200 where a 304 was possible, never a 304 for other bytes. The remote class keeps the digest of the stored upstream document (Q-NUGET-52), which an upstream change of a hidden version moves (H-350). The development agent revisits this if the renderings on endpoints with rules show in the request latency.
+**Rationale:** the bytes the endpoint shows are the one input that may move the value there, and hashing them is the one definition that cannot drift from the renderer; the cost falls on endpoints with rules only, and only after a write. The new inputs change the value of every virtual document and of every document on an endpoint with rules once: during the rolling upgrade a client may get a 200 where a 304 was possible, never a 304 for other bytes. The remote class first kept the digest of the stored upstream documents (Q-NUGET-52), which an upstream change of a hidden version moves; the development agent applied the same choice to it (`serveRemoteFiltered` in `serveRemote`), and the stored digests stay in the rendition key only. The development agent revisits this if the renderings on endpoints with rules show in the request latency.
 
-**Applied in the spec:** R-NUGET-002 (the inputs of the value), R-NUGET-034 (Validators). Code: [documents.go](../../../internal/formats/nuget/documents.go), [handlers_virtual.go](../../../internal/formats/nuget/handlers_virtual.go), [document.go](../../../internal/formats/nuget/document/document.go). Tests: `TestR_NUGET_034_TheValidatorOnAnEndpointWithRulesFollowsOnlyWhatTheEndpointShows`, `TestR_NUGET_034_TheValidatorOfAVirtualDocumentOnAnEndpointWithRulesFollowsOnlyWhatItShows`, `TestR_NUGET_002_TheValidatorOfAVirtualDocumentNamesThePackage`, `TestR_NUGET_002_AnEmptyContentKeepsTheValueOfEarlierReleases`.
+**Applied in the spec:** R-NUGET-002 (the inputs of the value), R-NUGET-034 (Validators). Code: [documents.go](../../../internal/formats/nuget/documents.go), [handlers_virtual.go](../../../internal/formats/nuget/handlers_virtual.go), [handlers_remote.go](../../../internal/formats/nuget/handlers_remote.go), [document.go](../../../internal/formats/nuget/document/document.go). Tests: `TestR_NUGET_034_TheValidatorOnAnEndpointWithRulesFollowsOnlyWhatTheEndpointShows`, `TestR_NUGET_034_TheValidatorOfAVirtualDocumentOnAnEndpointWithRulesFollowsOnlyWhatItShows`, `TestR_NUGET_034_TheValidatorOfARemoteDocumentOnAnEndpointWithRulesFollowsOnlyWhatItShows`, `TestR_NUGET_002_TheValidatorOfAVirtualDocumentNamesThePackage`, `TestR_NUGET_002_AnEmptyContentKeepsTheValueOfEarlierReleases`.
 
 ### Q-NUGET-88 · A removal never waits for a folder inside its transaction; a folder another transaction holds goes after the commit
 

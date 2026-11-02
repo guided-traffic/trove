@@ -40,7 +40,7 @@ on its members. A rule on a member does not narrow what the virtual repository s
 | Version list, registrations | the package is checked with the view before the merge is asked for; the merged rows are narrowed by `exposes(viewOf(rq), id)` before the document is rendered and paged | `serveVirtual`, `virtualFlat`, `virtualRegistration` |
 | `.nupkg`, `.nuspec` | `Authorize` on the version (the ceiling decides on the addressed repository) | `virtualFile` |
 | Search | every row of a local member is decided by `MayRead` as a read through the virtual repository (`ReadScopeOn` with the addressed repository, Q-AUTHZ-168), so the ceiling applies the virtual repository's rules; every member's results are then narrowed by the view, and a result whose latest version the view hides is dropped whole (Q-NUGET-75) | `runVirtualSearch`, `exposedHit` |
-| Validators | the ETag and the rendition key carry the endpoint and its exposure fingerprint | `serveVirtual` |
+| Validators | the ETag and the rendition key carry the endpoint and its exposure fingerprint; on an endpoint with rules the ETag follows the filtered rendering instead of the merge fingerprint (Q-NUGET-87) | `serveVirtual`, `serveVirtualFiltered` |
 
 A search term meets only the versions the caller may read (Q-NUGET-74): a `version:` term must name an exposed version and the other terms are tested on
 the latest exposed version, so `totalHits` tells nothing of a hidden version.
