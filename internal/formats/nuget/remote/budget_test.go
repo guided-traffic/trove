@@ -124,3 +124,48 @@ func TestR_NUGET_015_APassThroughMemberWithNothingLeftIsAbsent(t *testing.T) {
 		}
 	}
 }
+
+// leavesJSON is n leaves of the ID a, versions 1.0.0 to 1.0.<n-1>, each naming a package address.
+func leavesJSON(n int) string {
+	leaves := make([]string, n)
+	for i := range leaves {
+		leaves[i] = fmt.Sprintf(`{"packageContent":"https://elsewhere.test/a.1.0.%d.nupkg","catalogEntry":{"id":"A","version":"1.0.%d"}}`, i, i)
+	}
+	return strings.Join(leaves, ",")
+}
+
+// TestR_NUGET_015_AFilledPageOrIndexHoldsNoMoreLeavesThanOneRenderingReads (Q-NUGET-83): the fill
+// of a registration page or index reads, converts and maps its leaves before anything is stored,
+// so the bound one rendering reads holds there already: a page of more than MaxLeaves leaves and
+// an index that inlines more than MaxLeaves over its pages are no documents
+// (nuget_invalid_upstream_document); MaxLeaves itself is read.
+func TestR_NUGET_015_AFilledPageOrIndexHoldsNoMoreLeavesThanOneRenderingReads(t *testing.T) {
+	const max = 1 << 30
+	page := func(n int) []byte {
+		return []byte(fmt.Sprintf(`{"@id":"https://up.test/reg/a/page/1.0.0/1.0.%d.json","count":%d,"lower":"1.0.0","upper":"1.0.%d","items":[%s]}`, n-1, n, n-1, leavesJSON(n)))
+	}
+	if _, err := ParsePage(page(40_000), max); !isInvalidDocument(err) {
+		t.Errorf("a page of 40,000 leaves: %v, want nuget_invalid_upstream_document", err)
+	}
+	if leaves, err := ParsePage(page(MaxLeaves), max); err != nil || len(leaves) != MaxLeaves {
+		t.Errorf("a page of MaxLeaves leaves: %d %v", len(leaves), err)
+	}
+	inline := func(per, pages int) []byte {
+		items := make([]string, pages)
+		for i := range items {
+			items[i] = fmt.Sprintf(`{"@id":"https://up.test/reg/a/index.json#page/%d","count":%d,"lower":"1.0.0","upper":"1.0.%d","items":[%s]}`, i, per, per-1, leavesJSON(per))
+		}
+		return []byte(`{"count":` + fmt.Sprint(pages) + `,"items":[` + strings.Join(items, ",") + `]}`)
+	}
+	if _, err := ParseIndex(inline(20_000, 2), max); !isInvalidDocument(err) {
+		t.Errorf("an index that inlines 40,000 leaves: %v, want nuget_invalid_upstream_document", err)
+	}
+	if _, err := ParseIndex(inline(MaxLeaves/2, 2), max); err != nil {
+		t.Errorf("an index that inlines MaxLeaves leaves: %v", err)
+	}
+}
+
+func isInvalidDocument(err error) bool {
+	e, ok := errs.As(err)
+	return ok && e.Code == errs.CodeNuGetInvalidUpstreamDocument
+}

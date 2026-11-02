@@ -875,3 +875,53 @@ func TestR_NUGET_015_APackageOfAnotherVersionAtTheURLOfThisOneIs502(t *testing.T
 }
 
 var _ = http.StatusOK
+
+// wideLeaves answers the registration of contoso.wide in both hives with an index that lists one
+// page by address, and that page with leaves leaves, each naming a package address that is not
+// the one the flat container derives, so every leaf a fill reads would be a URL-map row.
+type wideLeaves struct {
+	next   http.Handler
+	leaves int
+}
+
+func (m *wideLeaves) wrap(next http.Handler) http.Handler { m.next = next; return m }
+
+func (m *wideLeaves) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	for _, hive := range []string{"/v3/registration/contoso.wide/", "/v3/registration-gz/contoso.wide/"} {
+		rest, ok := strings.CutPrefix(r.URL.Path, hive)
+		if !ok {
+			continue
+		}
+		upper := fmt.Sprintf("1.0.%d", m.leaves-1)
+		w.Header().Set("Content-Type", "application/json")
+		if rest == "index.json" {
+			_, _ = fmt.Fprintf(w, `{"count":1,"items":[{"@id":"https://%s%spage/1.0.0/%s.json","count":%d,"lower":"1.0.0","upper":"%s"}]}`,
+				r.Host, hive, upper, m.leaves, upper)
+			return
+		}
+		leaves := make([]string, m.leaves)
+		for i := range leaves {
+			leaves[i] = fmt.Sprintf(`{"packageContent":"https://%s/elsewhere/contoso.wide.1.0.%d.nupkg","catalogEntry":{"id":"Contoso.Wide","version":"1.0.%d"}}`, r.Host, i, i)
+		}
+		_, _ = fmt.Fprintf(w, `{"count":%d,"lower":"1.0.0","upper":"%s","items":[%s]}`, m.leaves, upper, strings.Join(leaves, ","))
+		return
+	}
+	m.next.ServeHTTP(w, r)
+}
+
+// TestR_NUGET_015_APageOfMoreLeavesThanTroveReadsIs502AndMapsNothing (Q-NUGET-83): a registration
+// page that holds more leaves than one rendering reads is refused at its fill with 502
+// nuget_invalid_upstream_document, before a leaf is converted or an address mapped: no URL-map
+// row is written. Before, the fill wrote one row per leaf in its transaction (40,000 here) and
+// only the rendering afterwards refused the page.
+func TestR_NUGET_015_APageOfMoreLeavesThanTroveReadsIs502AndMapsNothing(t *testing.T) {
+	e := newRemoteEnv(t, remoteOptions{Wrap: (&wideLeaves{leaves: 40_000}).wrap})
+	rep := e.start(1)[0]
+	a := e.get(rep, rRemote, "v3/registration-semver2/contoso.wide/index.json")
+	if a.Status != 502 || !strings.Contains(string(a.Body), "nuget_invalid_upstream_document") {
+		t.Fatalf("%d %.300s, want 502 nuget_invalid_upstream_document", a.Status, a.Body)
+	}
+	if n := e.st.Number(`SELECT count(*) FROM remote_url_map m JOIN repositories r ON r.id = m.repo_id WHERE r.key = $1`, rRemote); n != 0 {
+		t.Errorf("%d URL-map rows, want none", n)
+	}
+}

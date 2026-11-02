@@ -98,13 +98,25 @@ type rawPage struct {
 	Items json.RawMessage `json:"items"`
 }
 
-func (p rawPage) leaves() ([]Leaf, bool, error) {
+// leaves reads the leaves of a page, at most limit of them: a page that holds more is refused
+// before a leaf is decoded, so a fill never converts or maps more leaves than one rendering reads
+// (Q-NUGET-83).
+func (p rawPage) leaves(limit int) ([]Leaf, bool, error) {
 	if len(bytes.TrimSpace(p.Items)) == 0 || string(bytes.TrimSpace(p.Items)) == "null" {
 		return nil, false, nil
 	}
-	var raw []rawLeaf
-	if err := json.Unmarshal(p.Items, &raw); err != nil {
+	var items []json.RawMessage
+	if err := json.Unmarshal(p.Items, &items); err != nil {
 		return nil, true, invalid("A page of the upstream's registration has leaves that are no list of leaf objects: " + shorten(err.Error()))
+	}
+	if len(items) > limit {
+		return nil, true, invalid("The upstream's registration lists more than " + strconv.Itoa(MaxLeaves) + " versions; trove reads at most that many of one ID.")
+	}
+	raw := make([]rawLeaf, len(items))
+	for i, it := range items {
+		if err := json.Unmarshal(it, &raw[i]); err != nil {
+			return nil, true, invalid("A page of the upstream's registration has leaves that are no list of leaf objects: " + shorten(err.Error()))
+		}
 	}
 	out := make([]Leaf, 0, len(raw))
 	for _, l := range raw {
@@ -130,7 +142,8 @@ const MaxLeaves = 32768
 
 // ParseIndex reads a registration index (R-NUGET-009 shape): a list of pages, each inlined
 // with its leaves or listed by bounds and address. The coding of the stored bytes is undone
-// first (Decode). An index that lists more than MaxPages pages is refused.
+// first (Decode). An index that lists more than MaxPages pages, or inlines more than MaxLeaves
+// leaves over all its pages, is refused.
 func ParseIndex(doc []byte, max int64) (*Index, error) {
 	doc, err := Decode(doc, max)
 	if err != nil {
@@ -150,20 +163,23 @@ func parseIndex(doc []byte) (*Index, error) {
 		return nil, invalid("The upstream's registration index lists " + strconv.Itoa(len(d.Items)) + " pages; trove reads at most " + strconv.Itoa(MaxPages) + ".")
 	}
 	idx := &Index{Pages: make([]PageRef, 0, len(d.Items))}
+	left := MaxLeaves
 	for _, p := range d.Items {
-		leaves, inline, err := p.leaves()
+		leaves, inline, err := p.leaves(left)
 		if err != nil {
 			return nil, err
 		}
 		if !inline && (p.ID == "" || p.Lower == "" || p.Upper == "") {
 			return nil, invalid("A page of the upstream's registration index names neither its address nor its bounds.")
 		}
+		left -= len(leaves)
 		idx.Pages = append(idx.Pages, PageRef{ID: p.ID, Lower: p.Lower, Upper: p.Upper, Inline: inline, Leaves: leaves})
 	}
 	return idx, nil
 }
 
-// ParsePage reads a registration page fetched on its own.
+// ParsePage reads a registration page fetched on its own; a page of more than MaxLeaves leaves is
+// refused.
 func ParsePage(doc []byte, max int64) ([]Leaf, error) {
 	doc, err := Decode(doc, max)
 	if err != nil {
@@ -177,7 +193,7 @@ func parsePage(doc []byte) ([]Leaf, error) {
 	if err := json.Unmarshal(doc, &p); err != nil {
 		return nil, invalid("The upstream's registration page is not a registration document: " + shorten(err.Error()))
 	}
-	leaves, inline, err := p.leaves()
+	leaves, inline, err := p.leaves(MaxLeaves)
 	if err != nil {
 		return nil, err
 	}
