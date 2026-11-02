@@ -64,7 +64,8 @@ func TestR_CI_010_TheSaveTimeRulesOverHTTP(t *testing.T) {
 			}}}),
 			"template_unanchored", "/grants/inline/0/repositories/0 template_unanchored",
 		},
-		"R-CI-022 the job token kind is not available": {
+		// R-CI-022 is P2 and not built: the refusal of its subject kind is no evidence of it.
+		"the job token kind is not available": {
 			"gitlab-main", mapping("mm", 1, pinned, read, map[string]any{"subjectKinds": []string{"job_token"}}),
 			"job_token_fallback_not_available", "/subjectKinds/0 job_token_fallback_not_available",
 		},

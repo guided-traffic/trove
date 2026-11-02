@@ -9,13 +9,13 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 347 of 678 spec requirements are implemented: a passing test names them and no
+**Status.** 353 of 678 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
 requirement does. For entries with priority *Out of scope*, open is the intended end state.
 
-**Totals.** 2,239 catalog features on 60 pages: 700 specified (300 of them implemented), 1,539 open.
+**Totals.** 2,239 catalog features on 60 pages: 700 specified (307 of them implemented), 1,539 open.
 678 spec requirements: 543 cover catalog features, 135 cover none (`trove-only`, [listed at the
 end](#requirements-that-cover-no-catalog-feature)).
 
@@ -35,7 +35,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Identity and access](#identity-and-access-iam) | `IAM` | 69 | 24 of 24 | 35 | 34 | 29 |
 | [Authentication providers and human login](#authentication-providers-and-human-login-authn) | `AUTHN` | 44 | 13 of 13 | 18 | 26 | 10 |
 | [Access tokens](#access-tokens-tok) | `TOK` | 48 | 24 of 24 | 27 | 21 | 25 |
-| [OIDC federation for CI systems](#oidc-federation-for-ci-systems-cioidc) | `CIOIDC` | 40 | 20 of 20 | 31 | 9 | 7 |
+| [OIDC federation for CI systems](#oidc-federation-for-ci-systems-cioidc) | `CIOIDC` | 40 | 20 of 20 | 31 | 9 | 12 |
 | [Storage and blob providers](#storage-and-blob-providers-stor) | `STOR` | 41 | 12 of 12 | 21 | 20 | 14 |
 | [Retention, cleanup and archiving](#retention-cleanup-and-archiving-ret) | `RET` | 42 | – | 26 | 16 | 0 |
 | [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 61 | 18 | 28 |
@@ -45,7 +45,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [Security scanning and curation](#security-scanning-and-curation-sec) | `SEC` | 98 | 18 of 18 | 18 | 80 | 0 |
 | [UI inventory](#ui-inventory-ui) | `UI` | 61 | 33 of 33 | 47 | 14 | 1 |
 | [Content API operation catalog](#content-api-operation-catalog-api) | `API` | 166 | 11 of 11 | 67 | 99 | 14 |
-| [Operation catalog: administration API](#operation-catalog-administration-api-admapi) | `ADMAPI` | 114 | 34 of 34 | 54 | 60 | 8 |
+| [Operation catalog: administration API](#operation-catalog-administration-api-admapi) | `ADMAPI` | 114 | 34 of 34 | 54 | 60 | 10 |
 | [Package formats: matrix and cross-format behavior](#package-formats-matrix-and-cross-format-behavior-fmt) | `FMT` | 14 | 8 of 8 | 9 | 5 | 6 |
 | [npm package format](#npm-package-format-pkg-npm) | `PKG-NPM` | 62 | 37 of 37 | 52 | 10 | 34 |
 | [NuGet](#nuget-pkg-nuget) | `PKG-NUGET` | 56 | 35 of 35 | 42 | 14 | 35 |
@@ -718,7 +718,7 @@ Catalog page: [access-tokens.md](../features/access-tokens.md) · specified by p
 Catalog page: [oidc-ci-integration.md](../features/oidc-ci-integration.md) · specified by priority: MVP 20 of 20 · P1 9 of 9 · P2 2 of 10 · Later 0 of 1
 
 <details>
-<summary>40 features: 31 specified, 9 open, 7 implemented</summary>
+<summary>40 features: 31 specified, 9 open, 12 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -728,23 +728,23 @@ Catalog page: [oidc-ci-integration.md](../features/oidc-ci-integration.md) · sp
 | CIOIDC-004 | Azure DevOps provider type | P1 | specified | [R-CI-026](../spec/gitlab-ci-oidc.md) |
 | CIOIDC-005 | Provider configuration management operations | MVP | implemented | [R-CI-002](../spec/gitlab-ci-oidc.md) (implemented) |
 | CIOIDC-006 | Project association of provider configurations | P1 | specified | [R-CI-023](../spec/gitlab-ci-oidc.md) |
-| CIOIDC-007 | Identity mapping | MVP | specified | [R-CI-009](../spec/gitlab-ci-oidc.md), [R-CI-016](../spec/gitlab-ci-oidc.md) |
+| CIOIDC-007 | Identity mapping | MVP | specified | [R-CI-009](../spec/gitlab-ci-oidc.md) (implemented), [R-CI-016](../spec/gitlab-ci-oidc.md) |
 | CIOIDC-008 | Claims filter matching | MVP | implemented | [R-CI-010](../spec/gitlab-ci-oidc.md) (implemented) |
-| CIOIDC-009 | Mapping evaluation order | MVP | specified | [R-CI-009](../spec/gitlab-ci-oidc.md) |
-| CIOIDC-010 | Mapped token subject kinds and their combinations | MVP | specified | [R-CI-013](../spec/gitlab-ci-oidc.md) (implemented), [R-CI-017](../spec/gitlab-ci-oidc.md), [R-CI-024](../spec/gitlab-ci-oidc.md) |
+| CIOIDC-009 | Mapping evaluation order | MVP | implemented | [R-CI-009](../spec/gitlab-ci-oidc.md) (implemented) |
+| CIOIDC-010 | Mapped token subject kinds and their combinations | MVP | specified | [R-CI-013](../spec/gitlab-ci-oidc.md) (implemented), [R-CI-017](../spec/gitlab-ci-oidc.md) (implemented), [R-CI-024](../spec/gitlab-ci-oidc.md) |
 | CIOIDC-011 | Dynamic mapping pattern language | MVP | implemented | [R-CI-014](../spec/gitlab-ci-oidc.md) (implemented) |
 | CIOIDC-012 | Dynamic user and group subjects | P1 | specified | [R-CI-024](../spec/gitlab-ci-oidc.md) |
-| CIOIDC-013 | Dynamic resource scope from a claim | MVP | specified | [R-AUTHZ-014](../spec/authorization.md) (implemented), [R-CI-013](../spec/gitlab-ci-oidc.md) (implemented), [R-CI-014](../spec/gitlab-ci-oidc.md) (implemented), [R-CI-015](../spec/gitlab-ci-oidc.md) |
-| CIOIDC-014 | Transient users from user-subject mappings | P1 | specified | [R-AUTHZ-014](../spec/authorization.md) (implemented), [R-CI-013](../spec/gitlab-ci-oidc.md) (implemented), [R-CI-017](../spec/gitlab-ci-oidc.md) |
+| CIOIDC-013 | Dynamic resource scope from a claim | MVP | implemented | [R-AUTHZ-014](../spec/authorization.md) (implemented), [R-CI-013](../spec/gitlab-ci-oidc.md) (implemented), [R-CI-014](../spec/gitlab-ci-oidc.md) (implemented), [R-CI-015](../spec/gitlab-ci-oidc.md) (implemented) |
+| CIOIDC-014 | Transient users from user-subject mappings | P1 | implemented | [R-AUTHZ-014](../spec/authorization.md) (implemented), [R-CI-013](../spec/gitlab-ci-oidc.md) (implemented), [R-CI-017](../spec/gitlab-ci-oidc.md) (implemented) |
 | CIOIDC-015 | Project-scoped identity mappings | P1 | specified | [R-CI-023](../spec/gitlab-ci-oidc.md) |
 | CIOIDC-016 | Hiding global identity mappings from project administrators | P2 | open | – |
-| CIOIDC-017 | Identity mapping management operations | MVP | specified | [R-CI-019](../spec/gitlab-ci-oidc.md) |
-| CIOIDC-018 | OIDC token exchange operation | MVP | specified | [R-NPM-022](../spec/formats/npm.md), [R-CI-007](../spec/gitlab-ci-oidc.md), [R-CI-008](../spec/gitlab-ci-oidc.md), [R-CI-017](../spec/gitlab-ci-oidc.md), [R-CI-018](../spec/gitlab-ci-oidc.md), [R-CI-020](../spec/gitlab-ci-oidc.md), [R-CI-021](../spec/gitlab-ci-oidc.md) |
+| CIOIDC-017 | Identity mapping management operations | MVP | implemented | [R-CI-019](../spec/gitlab-ci-oidc.md) (implemented) |
+| CIOIDC-018 | OIDC token exchange operation | MVP | specified | [R-NPM-022](../spec/formats/npm.md), [R-CI-007](../spec/gitlab-ci-oidc.md), [R-CI-008](../spec/gitlab-ci-oidc.md), [R-CI-017](../spec/gitlab-ci-oidc.md) (implemented), [R-CI-018](../spec/gitlab-ci-oidc.md), [R-CI-020](../spec/gitlab-ci-oidc.md) (implemented), [R-CI-021](../spec/gitlab-ci-oidc.md) |
 | CIOIDC-019 | ID-token verification during exchange | MVP | specified | [R-CI-003](../spec/gitlab-ci-oidc.md) (implemented), [R-CI-004](../spec/gitlab-ci-oidc.md) (implemented), [R-CI-018](../spec/gitlab-ci-oidc.md) |
 | CIOIDC-020 | Reference token in the exchange response | P2 | open | – |
 | CIOIDC-021 | Explicit identity-mapping selection on exchange | P2 | open | – |
 | CIOIDC-022 | Application-scoped exchange | Later | open | – |
-| CIOIDC-023 | CI run metadata on exchange | P2 | specified | [R-CI-020](../spec/gitlab-ci-oidc.md) |
+| CIOIDC-023 | CI run metadata on exchange | P2 | implemented | [R-CI-020](../spec/gitlab-ci-oidc.md) (implemented) |
 | CIOIDC-024 | Workflow snippet generator | P2 | specified | [R-UI-035](../spec/api-and-ui.md), [R-CI-027](../spec/gitlab-ci-oidc.md) |
 | CIOIDC-025 | Companion CLI token exchange | P2 | open | – |
 | CIOIDC-026 | GitHub App onboarding mode | P2 | open | – |
@@ -1617,7 +1617,7 @@ Catalog page: [api-content-operations.md](../features/api-content-operations.md)
 Catalog page: [api-admin-operations.md](../features/api-admin-operations.md) · specified by priority: MVP 34 of 34 · P1 20 of 23 · P2 0 of 23 · Later 0 of 28 · Out of scope 0 of 6
 
 <details>
-<summary>114 features: 54 specified, 60 open, 8 implemented</summary>
+<summary>114 features: 54 specified, 60 open, 10 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -1649,10 +1649,10 @@ Catalog page: [api-admin-operations.md](../features/api-admin-operations.md) · 
 | ADMAPI-025 | Older permission interface with resource sections | P2 | open | – |
 | ADMAPI-026 | Oldest repository-only permission interface | P2 | open | – |
 | ADMAPI-027 | Webhook management rights and webhook token scope | P1 | specified | [R-API-041](../spec/api-and-ui.md), [R-AUTHZ-012](../spec/authorization.md) (implemented), [R-OPS-039](../spec/operations-and-observability.md) |
-| ADMAPI-028 | OIDC provider configuration operations | MVP | specified | [R-API-035](../spec/api-and-ui.md), [R-CI-002](../spec/gitlab-ci-oidc.md) (implemented) |
-| ADMAPI-029 | Identity mapping operations | MVP | specified | [R-API-035](../spec/api-and-ui.md), [R-CI-019](../spec/gitlab-ci-oidc.md) |
-| ADMAPI-030 | Project-scoped identity mappings | P1 | specified | [R-API-035](../spec/api-and-ui.md), [R-CI-023](../spec/gitlab-ci-oidc.md) |
-| ADMAPI-031 | OIDC token exchange | MVP | specified | [R-API-035](../spec/api-and-ui.md), [R-CI-007](../spec/gitlab-ci-oidc.md) |
+| ADMAPI-028 | OIDC provider configuration operations | MVP | implemented | [R-API-035](../spec/api-and-ui.md) (implemented), [R-CI-002](../spec/gitlab-ci-oidc.md) (implemented) |
+| ADMAPI-029 | Identity mapping operations | MVP | implemented | [R-API-035](../spec/api-and-ui.md) (implemented), [R-CI-019](../spec/gitlab-ci-oidc.md) (implemented) |
+| ADMAPI-030 | Project-scoped identity mappings | P1 | specified | [R-API-035](../spec/api-and-ui.md) (implemented), [R-CI-023](../spec/gitlab-ci-oidc.md) |
+| ADMAPI-031 | OIDC token exchange | MVP | specified | [R-API-035](../spec/api-and-ui.md) (implemented), [R-CI-007](../spec/gitlab-ci-oidc.md) |
 | ADMAPI-032 | SAML configuration operations | P2 | open | – |
 | ADMAPI-033 | Directory (LDAP) connection operations | P2 | open | – |
 | ADMAPI-034 | Directory group settings, search and import operations | P2 | open | – |
