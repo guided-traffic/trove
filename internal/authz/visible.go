@@ -131,7 +131,10 @@ func (e *Engine) readShape(st *evalState, sub Subject, r *repoInfo, allEndpoint 
 		return ReadNone
 	}
 	scoped := sub.Scope != nil && !sub.Scope.Inherit
-	if st.bypass {
+	if st.bypass || st.metadata {
+		// content:metadata-read (Q-AUTHZ-172) lists every package like content:bypass;
+		// a row it may not read (a token scope, an exposure rule) is decided by MayRead
+		// as a metadata read, which never admits an artifact.
 		return rowsUnless(allEndpoint && !scoped)
 	}
 	unrestricted, any := false, false
