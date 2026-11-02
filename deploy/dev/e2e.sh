@@ -32,8 +32,9 @@
 #   e2e.sh nuget-clients-down  removes the NuGet client pods
 #   e2e.sh nuget        the NuGet acceptance tests (every TestNuGet... except TestNuGetClosing... and TestNuGetHA...), the counting
 #                       NuGet test upstream and three client pods; CI: job e2e-nuget
-#   e2e.sh nuget-closing  TestNuGetClosing...: the additions of the run that closes the phase (dispatch with closing=true)
-#   e2e.sh nuget-ha     TestNuGetHA...: drain and failover under the NuGet load (nightly HA and Performance workflow)
+#   e2e.sh nuget-closing  TestNuGetClosing...: the additions of the run that closes the phase (CI: job e2e-nuget, closing=true)
+#   e2e.sh nuget-ha     TestNuGetHA...: drain and failover under the NuGet load (CI: job e2e-nuget in the nightly HA and
+#                       Performance workflow). Both may name no test yet: then the set passes with a notice (Q-ARCH-276)
 #   e2e.sh <regex>      any other argument is a `go test -run` expression
 #
 # Environment: TROVE_DEV_HTTP_PORT (the port the cluster was created with; read back from the node),
@@ -48,7 +49,6 @@
 set -euo pipefail
 # shellcheck source=deploy/dev/lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
-require_cluster
 for tool in docker jq go helm kubectl; do command -v "$tool" >/dev/null 2>&1 || die "$tool is required"; done
 
 set_name="${1:-default}"
@@ -78,8 +78,9 @@ case "$set_name" in
   nuget-clients) run='^TestNuGetClients$'; NUGET_CLIENTS=1 ;;
   nuget-clients-down) NUGET_CLIENTS=down ;;
   nuget) run='^TestNuGet'; skip='^TestNuGet(Closing|HA)'; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NUGETSTUB=1 ;;
-  nuget-closing) run='^TestNuGetClosing'; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NUGETSTUB=1 TROVE_E2E_NUGET_CLOSING=1 ;;
-  nuget-ha) run='^TestNuGetHA'; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NUGETSTUB=1 ;;
+  # empty_ok: the set may name no test yet (Q-ARCH-276); see the check after the case statement.
+  nuget-closing) run='^TestNuGetClosing'; empty_ok=1; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NUGETSTUB=1 TROVE_E2E_NUGET_CLOSING=1 ;;
+  nuget-ha) run='^TestNuGetHA'; empty_ok=1; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NUGETSTUB=1 ;;
   # <<< M3 nuget-clients
   # Drain and failover under npm load (E2.11, test/e2e/npm_ha_test.go): drain variant A of R-HA-059, the PostgreSQL
   # switchover and the Valkey failover of R-HA-052 under eight npm ci loops, a publish loop and k6 (CI: e2e-npm leg
@@ -99,6 +100,19 @@ run="${TROVE_E2E_RUN:-${run:-}}"
 # A set may skip tests (go test -skip); TROVE_E2E_RUN names the tests itself, so it drops the skip.
 skip="${skip:-}"
 [ -z "${TROVE_E2E_RUN:-}" ] || skip=
+
+# A set declared empty_ok (Q-ARCH-276) passes with a notice while its expression names no test in test/e2e. The names are
+# read from the sources (func Test... in *_test.go): the check needs neither a cluster nor a compile, because TestMain of
+# the package needs both. Once a test of the name exists, the set runs it and the rule below applies (a run that ran
+# nothing fails).
+if [ "${empty_ok:-}" = 1 ] && [ -z "${TROVE_E2E_RUN:-}" ]; then
+  named="$(grep -h -o '^func Test[A-Za-z0-9_]*' "$REPO_ROOT"/test/e2e/*_test.go | sed 's/^func //' | grep -c -E "$run" || true)"
+  if [ "$named" = 0 ]; then
+    log "e2e set '$set_name' names no test yet ('$run' matches nothing in test/e2e): nothing to run (Q-ARCH-276)"
+    exit 0
+  fi
+fi
+require_cluster
 
 EDGE_PORT="$(docker port "${CLUSTER}-control-plane" 30443/tcp 2>/dev/null | head -1 | sed 's/.*://' || true)"
 EDGE_PORT="${EDGE_PORT:-$DEV_HTTP_PORT}"

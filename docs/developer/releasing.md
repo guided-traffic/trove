@@ -24,7 +24,7 @@ Node.js from `web/.nvmrc`, and the pinned helm, kubectl, kind and Docker Buildx.
 | GoSec Security Scan | `make gosec` | golangci-lint with only gosec enabled, the settings and the accepted findings of [.golangci.yml](../../.golangci.yml) |
 | Vulnerability Check | `make vuln` | govulncheck (pinned) over the module |
 | Cyclomatic Complexity | `make cyclo` | gocyclo (pinned), fails above `CYCLO_THRESHOLD`; the job summary lists the 20 most complex functions with `make -s cyclo-report` |
-| generate (E0.1) | `make generate-check` | `go generate`, then `git diff --exit-code` and a check for generated files that are not committed |
+| generate (E0.1) | `make generate-check`, then `make nuget-reference-check` | `go generate`, then `git diff --exit-code` and a check for generated files that are not committed; then the NuGet reference solution of [perf/nuget](../../perf/README.md), regenerated from the counting upstream's package set and compared with the committed files (`go run ./test/nugetstub/cmd/nugetstub reference -check`, [Q-ARCH-279](../spec/architecture.md#q-arch-279--how-are-the-nuget-sdk-pins-and-the-reference-solution-kept-in-step)) |
 | nuget vectors (R-NUGET-003) | `make nuget-vectors-check` | regenerates the golden vectors of the NuGet version, range and ID rules with NuGet.Versioning in the pinned .NET SDK image (`NUGETVECTORS_SDK_IMAGE`, `NUGET_VERSIONING_VERSION`) and compares them with the committed file; needs Docker |
 | build without Node.js (E0.1) | `make build` | with every Node.js executable off `PATH`; `file` must say *statically linked*, `go version -m` must record `CGO_ENABLED=0` |
 | unit tests | `make test` | the race detector; uploads `.out/test-unit.json` (`test-unit`) and `.out/coverage/unit.out` (`profile-unit`) |
@@ -37,6 +37,8 @@ Node.js from `web/.nvmrc`, and the pinned helm, kubectl, kind and Docker Buildx.
 | S3 conformance (MinIO) | `make minio-up`, `make s3-conformance`, `make minio-down` | the conformance tests of R-STOR-035 against MinIO, built from source at `MINIO_COMMIT` and served over TLS only; the server log is uploaded on failure |
 | e2e-npm on kind (npm) | `make image VERSION=dev`, `make dev-up`, `make e2e SET=npm`, `make dev-down` | the npm acceptance matrix (eight real clients, [R-NPM-045](../spec/formats/npm.md#r-npm-045--client-acceptance-matrix)) and E2.2 to E2.12 on the scatter profile with the counting test upstream; gates every change, own cluster name and edge port (8082). A dispatch with `closing=true` adds the leg `npm-closing` (port 8083): the matrix and the cold install with Valkey stopped, and the read-only subset against the public registry ([Q-NPM-46](../spec/formats/npm.md#q-npm-46--what-marks-the-run-that-closes-the-phase)); the legs `npm-ha` and `npm-ha-crash` left this job on 2026-11-01 (owner): `npm-ha` runs nightly and on dispatch in [HA and Performance (nightly)](#ha-and-performance-nightly) (port 8087), `npm-ha-crash` (three force-deletes) runs by hand only; for them the step budget is 80 minutes and the job 120, and they are E2.11: drain variant A, the PostgreSQL switchover and the Valkey failover under the npm load, and the pod crash with three force-deletes ([e2e.md](e2e.md#drain-and-failover-under-npm-load)); a closing dispatch runs both as one leg `npm-ha-closing` with the 20-minute pod crash, the R-ARCH-027 report and the 5-minute Valkey outage ([Q-HA-67](../spec/ha-and-helm.md#q-ha-67--where-and-how-often-the-scenarios-under-npm-load-run)); uploads `e2e-npm-report-<set>`, `e2e-npm-artifacts-<set>` and on failure the cluster state |
 | fuzz npm (closing run only) | `make fuzz-npm FUZZ=<target> FUZZTIME=30m` | three legs (`FuzzR_ARCH_028_Match`, `FuzzR_ARCH_028_Inspect`, `FuzzMatch`) of 30 minutes each; runs only on a dispatch with `closing=true`; uploads the failing input |
+| fuzz nuget (closing run only) | `make fuzz-nuget NUGET_FUZZ_TARGETS=<pkg>:<target> NUGET_FUZZTIME=30m` | six legs of 30 minutes, one per target of `NUGET_FUZZ_TARGETS`: the readers `nupkg:FuzzR_ARCH_028_Inspect` and `nuspec:FuzzR_NUGET_005_Nuspec`, and the version and ID rules `version:FuzzNormalize`, `version:FuzzCompare`, `version:FuzzRange`, `id:FuzzID`; they run side by side ([Q-ARCH-278](../spec/architecture.md#q-arch-278--how-is-the-nuget-fuzz-run-of-the-closing-run-laid-out)); runs only on a dispatch with `closing=true`; uploads `fuzz-nuget-<pkg>-<target>` with the failing input |
+| e2e-nuget on kind (nuget) | `make nuget-clients-image`, `make image VERSION=dev`, `make dev-up`, `make e2e SET=nuget`, `make dev-down` | the NuGet acceptance suite (R-NUGET-027, E3.1 to E3.8 as they land): the .NET 10 SDK and nuget.exe on Mono in the client pods, the scatter profile and the counting NuGet test upstream; gates every change, own cluster name and edge port (8088). The clients image is built by its own step and not again by the set (`TROVE_E2E_NUGET_CLIENTS_IMAGE_BUILD=0`). A dispatch with `closing=true` adds the leg `nuget-closing` (port 8089): the tests named `TestNuGetClosing...`, the additions of the closing run. The nightly leg `nuget-ha` (port 8090) is in [HA and Performance (nightly)](#ha-and-performance-nightly). A set whose expression names no test yet passes with a notice, as `nuget-closing` and `nuget-ha` do today ([Q-ARCH-276](../spec/architecture.md#q-arch-276--how-does-an-e2e-set-that-names-no-test-pass-and-when-does-it-fail)); uploads `e2e-nuget-report-<set>`, `e2e-nuget-artifacts-<set>` and on failure the cluster state ([e2e.md](e2e.md#the-nuget-clients)) |
 | e2e on kind (push, access-long) | `make image VERSION=dev`, `make dev-up`, `make e2e SET=<set>`, `make dev-down` | the dev profile on a kind cluster, one leg per set, every change: `push` and `access-long` (E1.1, E1.11 with the Playwright journeys, E1.13; the only leg that installs Node.js and the browser). The set `failover` (E0.13, E1.8) left this job on 2026-11-01 (owner) and runs nightly and on dispatch in [HA and Performance (nightly)](#ha-and-performance-nightly); the legs and those of e2e-npm build their own image and wait for no other job; each leg has its own cluster name and edge port; uploads the reports, `e2e-artifacts-<set>`, and on failure the cluster state |
 | workflow files (actionlint) | `actionlint` (pinned `ACTIONLINT_VERSION`) | every file of `.github/workflows`, with [.github/actionlint.yaml](../../.github/actionlint.yaml) |
 | compatibility (R-ARCH-025, R-ARCH-026) | `make compat-check` | the OpenAPI document against the latest `v0.*` release with the pinned oasdiff (`--fail-on ERR`), and the migration files: only additions that continue the numbering; needs the history and the tags (`fetch-depth: 0`, `fetch-tags: true`); see [Compatibility](#compatibility) |
@@ -135,7 +137,8 @@ make image VERSION=dev && make dev-up && make e2e SET=push && make dev-down
 make image VERSION=dev && make dev-up && make e2e SET=npm && make dev-down   # TROVE_DEV_HTTP_PORT=8080 is the port of the committed reference lockfile; any port works
 make fuzz-npm FUZZ=FuzzMatch FUZZTIME=1m
 make nuget-vectors-check                # needs Docker; make nuget-vectors writes the file
-make fuzz-nuget NUGET_FUZZTIME=1m       # the six NuGet fuzz targets, one minute each (not a CI leg yet)
+make nuget-reference-check              # perf/nuget/reference against a regeneration (no Docker)
+make fuzz-nuget NUGET_FUZZTIME=1m       # the six NuGet fuzz targets, one minute each (CI: 30 minutes each, closing run only)
 ```
 
 ### The run that closes a phase
@@ -146,8 +149,9 @@ the 30-minute fuzz run of npm's `Match` and `Inspect`). Nothing in a push or a p
 the run ([Q-NPM-46](../spec/formats/npm.md#q-npm-46--what-marks-the-run-that-closes-the-phase)):
 *Actions, Test and Release, Run workflow*, the closing commit as the ref, `closing` ticked; or
 `gh workflow run release.yml --ref main -f closing=true`. Every job of the workflow runs, except that the `e2e` job no longer has the `failover` set (owner, 2026-11-01): the closing run does not start [HA and Performance (nightly)](#ha-and-performance-nightly), so a closing commit whose criteria need the failover set needs that run too. Plus the legs `e2e-npm (npm-closing)` and
-the three `fuzz npm` legs, and the legs `e2e-npm (npm-ha)` and `e2e-npm (npm-ha-crash)` run as one leg `npm-ha-closing`, with the 20-minute pod crash, the R-ARCH-027 report and the Valkey outage under npm load. A dispatch does not release (Semantic Release runs on `push`), and a failed closing leg means the phase
-is not closed.
+the three `fuzz npm` legs, the leg `e2e-nuget (nuget-closing)` and the six `fuzz nuget` legs of 30 minutes each ([Q-ARCH-278](../spec/architecture.md#q-arch-278--how-is-the-nuget-fuzz-run-of-the-closing-run-laid-out)), and the legs `e2e-npm (npm-ha)` and `e2e-npm (npm-ha-crash)` run as one leg `npm-ha-closing`, with the 20-minute pod crash, the R-ARCH-027 report and the Valkey outage under npm load. A dispatch does not release (Semantic Release runs on `push`), and a failed closing leg means the phase
+is not closed. Not in this workflow yet: the run of the NuGet criteria against nuget.org that R-NUGET-027 names for the closing
+run (the remote and symbol criteria); the closing run covers the NuGet legs above and nothing against the public registry for NuGet.
 
 `make generate-check` runs `git diff --exit-code`, so it fails on a tree with uncommitted changes for
 reasons unrelated to generation. `make dev-up` needs an amd64 host or the emulator of
@@ -156,11 +160,12 @@ the arm64 note of [local-profile.md](local-profile.md).
 ### HA and Performance (nightly)
 
 The long tests run here and not on every change (owner, 2026-11-01), so a slow leg no longer holds the release. Per change,
-Test and Release runs `push` and `access-long` (job `e2e`) and `npm` (job `e2e-npm`). This workflow runs the `failover` set
-(job `e2e`, E0.13 and E1.8), the `npm-ha` leg (job `e2e-npm`, E2.11) and `npm-ha-soak`, beside the latency job. Dispatch it with
-`gh workflow run "HA and Performance (nightly)" --ref main`. Locally, from the repository root, after `make image VERSION=dev` and
-`make dev-up`: `make e2e SET=failover`, `make e2e SET=npm-ha`, `make e2e SET=npm-ha-crash` (the three-force-delete crash, which has
-no CI job) or `make e2e SET=npm-ha-soak`, then `make dev-down`; the latency tests need `make integration-up && make test-performance`.
+Test and Release runs `push` and `access-long` (job `e2e`), `npm` (job `e2e-npm`) and `nuget` (job `e2e-nuget`). This workflow runs the
+`failover` set (job `e2e`, E0.13 and E1.8), the `npm-ha` leg (job `e2e-npm`, E2.11), `npm-ha-soak` and the `nuget-ha` leg (job
+`e2e-nuget`, Q-ARCH-277), beside the latency job. Dispatch it with `gh workflow run "HA and Performance (nightly)" --ref main`.
+Locally, from the repository root, after `make image VERSION=dev` and `make dev-up`: `make e2e SET=failover`, `make e2e SET=npm-ha`,
+`make e2e SET=npm-ha-crash` (the three-force-delete crash, which has no CI job), `make e2e SET=npm-ha-soak` or `make e2e SET=nuget-ha`,
+then `make dev-down`; the latency tests need `make integration-up && make test-performance`.
 A red long leg does not hold the release: it is recorded as an open finding instead (owner, 2026-11-01).
 
 [`performance.yml`](../../.github/workflows/performance.yml) ("HA and Performance (nightly)") runs every night at 02:17 UTC and on demand
@@ -176,6 +181,11 @@ load scripts of R-ARCH-027 against one replica (`TestNPMPerf`, reported, not gat
 in its leg `npm-ha-closing` ([Q-HA-67](../spec/ha-and-helm.md#q-ha-67--where-and-how-often-the-scenarios-under-npm-load-run)). Its reports
 `e2e-npm-report-npm-ha-soak` and `e2e-npm-artifacts-npm-ha-soak` are kept for 30 days. A failed night is not wired to an issue or a
 notification: look at the Actions list. The other targets of R-ARCH-027 (`perf/`) are not part of this workflow.
+
+Job `e2e-nuget` runs `make e2e SET=nuget-ha` on a kind cluster (edge port 8090, cluster `trove-nuget-ha-<run id>`, reports
+`e2e-nuget-report-nuget-ha` and `e2e-nuget-artifacts-nuget-ha`, kept 14 days). No test is named `TestNuGetHA...` yet, so the set passes
+with a notice and the job checks nothing beyond the cluster coming up ([Q-ARCH-276](../spec/architecture.md#q-arch-276--how-does-an-e2e-set-that-names-no-test-pass-and-when-does-it-fail)).
+The nightly run therefore costs a cluster bring-up and proves no NuGet behavior under load until the drain and failover tests land.
 
 ### Renovate
 
@@ -200,6 +210,9 @@ number of branches is bounded (owner, 2026-10-31):
   `# renovate:` comment directly above a tool or chart pin names its datasource and package; image lines
   are read by their digest, and tag and digest move together. The k6 image and `K6_VERSION` are one
   group, because [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) refuses a mismatch.
+- The two .NET SDK pins of the NuGet tests, `NUGETVECTORS_SDK_IMAGE` and `E2E_NUGETCLIENTS_SDK_IMAGE` (both
+  `mcr.microsoft.com/dotnet/sdk`), are one group, `.NET SDK (NuGet tests)`, so one pull request moves both; `make versions-check`
+  fails when they differ ([Q-ARCH-279](../spec/architecture.md#q-arch-279--how-are-the-nuget-sdk-pins-and-the-reference-solution-kept-in-step)).
 - The release tooling of [package.json](../../package.json) (semantic-release and its presets) is one
   group and never merges on its own. The Angular packages of `web/package.json` are one group, reviewed.
 - Every automerged dependency update is a `fix` commit (valkey-operator's policy), so under

@@ -7259,6 +7259,123 @@ Context: Renovate PR #42 proposes typescript 6.0.3 → 7.0.2 in `web/package.jso
 
 **Applied in the spec:** none (dependency policy). Code: `renovate.json` (the `typescript` package rule). Documented in [releasing.md](../developer/releasing.md#renovate) and [ADR-140](../decisions.md#adr-140--typescript-is-held-below-61-until-angulars-peer-range-admits-7x). Not verified: that Renovate closes PR #42 on its next run, because the rule has not run.
 
+### Q-ARCH-276 · How does an e2e set that names no test pass, and when does it fail?
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `deploy/dev/e2e.sh` fails a set whose `-run` expression matches no test, so that a mistyped set name cannot pass. The NuGet
+sets `nuget-closing` and `nuget-ha` run before any test of their name exists (the NuGet suite of this commit has `TestNuGetClients` only),
+and the nightly job must run its set. Before this change the script also required the kind cluster before it read the set, so an empty
+set would have brought a cluster up to run nothing.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A per-set flag `empty_ok`; the set passes with a notice when no `func Test...` in `test/e2e/*_test.go` matches its expression, checked before the cluster is required (chosen) | `deploy/dev/e2e.sh`: `nuget-closing` and `nuget-ha` carry the flag; the names come from the source, so neither a cluster nor a compile is needed | Every other set keeps the check; the exemption is named where it applies; once a test of the name exists, the rule applies to it | A flag per set to maintain; a test name that the source scan does not see (a name written by a generator) would count as absent |
+| (b) Every set with no matching test passes | Drop the check | Nothing to maintain | A mistyped set name passes silently in every workflow |
+| (c) A placeholder test named `TestNuGetHA...` that skips | A skip counts as a run, so the rule passes | No script change | The empty set hides behind a test that checks nothing |
+| (d) `go test -list` as the check | The compiled list of the package | Exact, as the test binary sees it | `TestMain` of `test/e2e` requires the cluster environment and starts `kubectl proxy`, so the check would need the cluster it is meant to avoid |
+| (e) No nightly job until a test exists | Leave `nuget-ha` out of the schedule | Nothing runs that proves nothing | Contradicts the request that the nightly job run the set; the wiring would stay untested until a test lands |
+
+**Choice:** (a). The exemption is named in the script for the two sets that need it, and the check reads the expression the set runs.
+
+**Rationale:** Verified in this change, without a cluster: `deploy/dev/e2e.sh nuget-ha` and `nuget-closing` log the notice and exit 0, and
+`deploy/dev/e2e.sh nuget` with a cluster name that does not exist stops at `require_cluster` before anything is applied. Verified by a read of the
+script only: `TROVE_E2E_RUN` set disables the flag, so an override is never an empty pass. A run that finds a test and runs none of it still fails
+(the count of passed tests). Not verified: the flag path on a live cluster; the first nightly run of `nuget-ha` is the first one.
+The development agent revisits this when a third tier of empty sets appears (then a list instead of flags), or when a test of `test/e2e` is
+compiled under a name the source scan does not show (a generated name, a build tag that changes the file set).
+
+**Applied in the spec:** none (script and CI behavior). Code: [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) (`empty_ok`, the check after the case
+statement, `require_cluster` below it). Elsewhere: [e2e.md](../developer/e2e.md#the-nuget-clients), [releasing.md](../developer/releasing.md#ci).
+
+### Q-ARCH-277 · Which legs run the NuGet sets, in which jobs, on which ports?
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: The NuGet sets are `nuget` (every change), `nuget-closing` (a closing dispatch) and `nuget-ha` (nightly, [Q-NUGET-34](formats/nuget.md#q-nuget-34--the-e2e-sets-of-the-nuget-tests)).
+The owner moved the HA legs out of Test and Release on 2026-11-01. Every kind leg needs a cluster name and an edge port of its own, distinct from
+all others of both workflows: 8080 and 8086 (`e2e`), 8082 to 8084 (`e2e-npm` and its closing legs), 8081 (`failover`), 8085 (`npm-ha-soak`) and 8087
+(`npm-ha`) are taken.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One job `e2e-nuget` per workflow, with the matrix shape of `e2e-npm`: `nuget` on 8088 and, on a closing dispatch, `nuget-closing` on 8089 in Test and Release; `nuget-ha` on 8090 in its own job in performance.yml (chosen) | `.github/workflows/release.yml`, `.github/workflows/performance.yml` | The shape of the npm leg, reviewed once; the closing leg reuses the job's steps and the `fromJSON` matrix of `e2e-npm`; the nightly leg follows the owner's split of 2026-11-01; 8088 to 8090 are the first ports unused by both workflows | A third copy of the job's steps in each workflow |
+| (b) `nuget-closing` in a job of its own in Test and Release | One job per set | Each leg has its own timeouts | Two jobs with the same steps, and the closing matrix would not be where the npm legs are |
+| (c) `nuget` and `nuget-ha` in one nightly job | One workflow for every NuGet leg | Fewer jobs | Removes the per-change gate that R-NUGET-027 requires for every change |
+| (d) `nuget-ha` in the closing matrix of Test and Release | The npm-ha-closing leg of before 2026-11-01 | One place for the closing run | The owner moved the HA legs out of Test and Release on 2026-11-01 |
+
+**Choice:** (a). Cluster names carry the set (`trove-nuget-<run id>`, `trove-nuget-closing-<run id>`, `trove-nuget-ha-<run id>`), so legs on one runner
+host do not collide, and the port is the only other value a leg needs.
+
+**Rationale:** the leg has the shape the other kind legs have, so a change to one of them is a change to the family. The first free ports keep the
+rule of the file ("the ports differ from the others so that the jobs can share a runner host") without a new scheme. Verified by a read of both
+workflow files: no other port or cluster name uses 8088 to 8090 or `trove-nuget-`. Not verified: the legs themselves, which need a kind cluster the
+development agent did not use.
+
+**Revisit:** when a NuGet set needs its own image set or timeout that the matrix cannot express (then a job of its own, option (b)), or when the owner
+moves the NuGet closing legs to another workflow.
+
+**Applied in the spec:** none (CI wiring). Elsewhere: [release.yml](../../.github/workflows/release.yml) (job `e2e-nuget`, `semantic-release` needs),
+[performance.yml](../../.github/workflows/performance.yml) (job `e2e-nuget`), [releasing.md](../developer/releasing.md#ci),
+[e2e.md](../developer/e2e.md#the-nuget-clients).
+
+### Q-ARCH-278 · How is the NuGet fuzz run of the closing run laid out?
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `make fuzz-nuget` runs the six targets of `NUGET_FUZZ_TARGETS` one after another. At 30 minutes each that is three hours, longer than any job
+of the workflow may run. The closing run has to fuzz the NuGet readers (`nupkg`, `nuspec`), which parse untrusted archives and XML, and the version and ID rules
+(`version`, `id`), which define the order of every version.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One leg per target, six legs side by side, 30 minutes each (chosen) | A matrix of six `pkg`/`fuzz` pairs; each leg runs `make fuzz-nuget NUGET_FUZZ_TARGETS=<pkg>:<target> NUGET_FUZZTIME=30m` | The wall clock is 30 minutes; a crash fails its own leg and uploads its own input | Six runner slots for 30 minutes in the closing run only |
+| (b) One leg per package | `nupkg`, `nuspec`, `version` (three targets, 90 minutes in sequence) and `id` | Fewer legs | The `version` leg runs 90 minutes, longer than the 50-minute job budget of the fuzz job |
+| (c) Three legs as `fuzz-npm` has them, each sequential | Same as (b) with the sequence inside a leg | The shape of the npm job | The same budget problem: two targets of 30 minutes each in one leg, and six in all |
+| (d) The root package's `FuzzR_ARCH_028_Match` joins the run | A target of the root package | Covers the classifier of NuGet | `fuzz-nuget` takes `package:Target` pairs under `internal/formats/nuget/<pkg>`, which the root package is not |
+
+**Choice:** (a). The matrix names the same six pairs as `NUGET_FUZZ_TARGETS` in the Makefile, so the closing run fuzzes what the local target fuzzes.
+
+**Rationale:** the wall clock stays at 30 minutes, and a finding is isolated to one leg with its input. The cost is a second copy of the list: a target
+added to `NUGET_FUZZ_TARGETS` is fuzzed in the closing run only when the matrix names it too.
+
+**Revisit:** when the runner pool cannot hold six legs at once, or when the copy of the list drifts (then the workflow reads the list from the Makefile).
+Not decided here: whether the root package's match fuzz belongs to the closing run (option (d)).
+
+**Applied in the spec:** none (CI wiring). Elsewhere: [release.yml](../../.github/workflows/release.yml) (job `fuzz-nuget`),
+[releasing.md](../developer/releasing.md#ci), [nuget.md](../developer/nuget.md#fuzzing), [build-and-test.md](../developer/build-and-test.md).
+
+### Q-ARCH-279 · How are the NuGet SDK pins and the reference solution kept in step?
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Two lines of [tools/versions.env](../../tools/versions.env) pin the same .NET SDK image: `NUGETVECTORS_SDK_IMAGE` (the golden vectors)
+and `E2E_NUGETCLIENTS_SDK_IMAGE` (the clients image). The file takes literal values only, so one line cannot read the other. `make versions-check`
+(`test/e2e/nugetclients/check-pins.mjs`) fails when they differ, but only in the pull request that moved one of them. The reference solution
+[perf/nuget/reference](../../perf/nuget/reference) is generated by `nugetstub reference` from the counting upstream's package set; its unit test already
+compares it with a regeneration, and no CI job runs that comparison on its own.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One Renovate group on the depName `mcr.microsoft.com/dotnet/sdk` in `tools/versions.env` (`.NET SDK (NuGet tests)`), with `versions-check` as the guard; the reference check is a step of the existing `generate` job (chosen) | [renovate.json](../../renovate.json), [release.yml](../../.github/workflows/release.yml) (job `generate`), `Makefile` (`nuget-reference-check`) | One pull request moves both lines, and the guard holds for any pull request that moves one of them; the job that checks generated trees already has Go | Relies on Renovate's grouping, which has not run yet |
+| (b) Status quo: Renovate updates one line and a person moves the other | None | No configuration | The `versions-check` failure lands in Renovate's own pull request, which must then be fixed by hand |
+| (c) One pin that the other line reads | A variable reference | One value | `tools/versions.env` takes literal values, by its own header and by `load-pins` |
+| (d) The clients image takes its SDK from the vectors' image at build time | A build argument from one pin | One value in use | The clients image would no longer be checked against the pin it is built from |
+| (e) The reference check as a job of its own | A new runner for one command | Isolated | A runner for a command that runs in under a second, while the `generate` job already has Go |
+
+**Choice:** (a). Renovate groups by the depName, so a third .NET image of the same name would join the group too.
+
+**Rationale:** verified here: `check-pins.mjs` exits 0 on equal pins and 1 with a message on a different tag (`10.0.404` against `10.0.403`).
+`make nuget-reference-check` passes on the committed tree and fails on a copy with one byte added to `nuget.config`
+(`nugetstub: reference: differs from a regeneration: nuget.config`). Not verified: that Renovate applies the group, because the rule has not run;
+the file parses as JSON.
+
+**Revisit:** when Renovate's regex manager stops reading the `_IMAGE` lines of `tools/versions.env`, the group does nothing and `versions-check` is the
+only guard; when the reference solution is generated by `go generate`, the step moves with it.
+
+**Applied in the spec:** none (dependency policy and CI wiring). Code: [renovate.json](../../renovate.json) (rule `.NET SDK (NuGet tests)`),
+[tools/versions.env](../../tools/versions.env) (comment), `Makefile` (`nuget-reference-check`). Elsewhere: [releasing.md](../developer/releasing.md#renovate).
+
 ## What this does not cover
 
 

@@ -466,4 +466,10 @@ nuget-stub-image: ## Build the counting NuGet test upstream image (NUGET_STUB_IM
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(IMAGE_ARCH) go build -trimpath -ldflags '-s -w' -o .out/nugetstub/nugetstub-linux-$(IMAGE_ARCH) ./test/nugetstub/cmd/nugetstub
 	docker buildx build --load --platform linux/$(IMAGE_ARCH) --build-arg RUNTIME_BASE_IMAGE=$(RUNTIME_BASE_IMAGE) \
 	  -f test/nugetstub/Containerfile -t $(NUGET_STUB_IMAGE) .out/nugetstub
+
+# The reference solution of the NuGet tests (perf/nuget/reference) is generated from the counting upstream's package set,
+# so a change of the set changes the files. CI runs this in the generate job (releasing.md#ci, Q-ARCH-279).
+.PHONY: nuget-reference-check
+nuget-reference-check: ## Fail when perf/nuget/reference differs from a regeneration by the counting NuGet test upstream (the corpus is deterministic; CI: generate)
+	go run ./test/nugetstub/cmd/nugetstub reference -check perf/nuget/reference
 # <<< M3 nuget

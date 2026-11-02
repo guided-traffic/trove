@@ -273,6 +273,17 @@
       "groupSlug": "k6"
     },
     {
+      "description": ".NET SDK of the NuGet tests: NUGETVECTORS_SDK_IMAGE (the golden vectors) and E2E_NUGETCLIENTS_SDK_IMAGE (the clients image) are one SDK in tools/versions.env; make versions-check (test/e2e/nugetclients/check-pins.mjs) fails when they differ, so one pull request moves both",
+      "matchFileNames": [
+        "tools/versions.env"
+      ],
+      "matchDepNames": [
+        "mcr.microsoft.com/dotnet/sdk"
+      ],
+      "groupName": ".NET SDK (NuGet tests)",
+      "groupSlug": "dotnet-sdk"
+    },
+    {
       "description": "npm client matrix (test/e2e/clients/package.json, R-NPM-045): the eight gate rows are npm aliases that move within their major, in one pull request, because the e2e matrix runs all of them. A new major is a change of the gate rows themselves, decided by the rule of R-NPM-045 and made by hand, so Renovate does not open it. No automerge: the matrix is reviewed.",
       "matchFileNames": [
         "test/e2e/clients/package.json"

@@ -149,7 +149,8 @@ make fuzz-nuget NUGET_FUZZTIME=1m   # nupkg Inspect, nuspec Parse, version Norma
 ```
 
 `NUGET_FUZZ_TARGETS` holds the `package:Target` pairs. A failing input stays in the package's `testdata/fuzz`; the one under `version/` is a
-kept regression input. No CI leg runs these yet (the npm legs run on the closing dispatch only, see [releasing.md](releasing.md)).
+kept regression input. The closing dispatch of Test and Release runs each of the six targets as its own leg for 30 minutes (job
+`fuzz-nuget`, [releasing.md](releasing.md#ci)); a push or a pull request runs none of them.
 
 ## The counting test upstream
 

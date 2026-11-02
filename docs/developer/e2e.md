@@ -112,11 +112,12 @@ make e2e SET=npm-ha-closing  # npm-ha, npm-ha-soak and the 5-minute Valkey outag
 make npm-clients-image       # only build the image into the local Docker
 make e2e SET=nuget-clients   # build the NuGet clients image, start the client pods, run the smoke test (the pods stay up)
 make e2e SET=nuget-clients-down  # remove the NuGet client pods
-make e2e SET=nuget           # every TestNuGet... but TestNuGetClosing... and TestNuGetHA...; the test upstream and three client pods (Q-NUGET-34)
-make e2e SET=nuget-closing   # the additions of the closing run (TestNuGetClosing...; exports TROVE_E2E_NUGET_CLOSING=1)
-make e2e SET=nuget-ha        # TestNuGetHA...: drain and failover under the NuGet load (nightly)
+make e2e SET=nuget           # every TestNuGet... but TestNuGetClosing... and TestNuGetHA...; the test upstream and three client pods (Q-NUGET-34); CI job e2e-nuget on every change
+make e2e SET=nuget-closing   # the additions of the closing run (TestNuGetClosing...; exports TROVE_E2E_NUGET_CLOSING=1); CI leg of a closing dispatch; no such test yet: a notice and exit 0 (Q-ARCH-276)
+make e2e SET=nuget-ha        # TestNuGetHA...: drain and failover under the NuGet load; CI job e2e-nuget in the nightly workflow; no such test yet: a notice and exit 0 (Q-ARCH-276)
 make nuget-clients-image     # only build the NuGet clients image into the local Docker
 make nuget-clients-smoke     # the image like a pod against the counting NuGet test upstream, without a cluster
+make nuget-reference-check   # perf/nuget/reference against a regeneration (no cluster, no Docker)
 make fuzz-npm FUZZ=FuzzMatch FUZZTIME=1m   # npm's fuzz targets (CI: 30 minutes, closing run only)
 ```
 
@@ -1233,7 +1234,17 @@ test/e2e/nugetclients/
 - **A stale CA looks like a client bug.** `.dev/pki/ca.crt` is written by `up.sh` and is not refreshed when the cluster is
   recreated another way; compare with `kubectl -n trove get secret trove-dev-ca -o jsonpath='{.data.ca\.crt}' | base64 -d`, or set
   `TROVE_DEV_CA_FILE`.
-- **Not built.** The Windows row (nuget.exe and the SDK on a Windows runner), Visual Studio (manual), and the CI job `e2e-nuget`.
+- **CI.** The job `e2e-nuget` of [releasing.md](releasing.md#ci) runs the set `nuget` on every change (edge port 8088, cluster
+  `trove-nuget-<run id>`), the set `nuget-closing` on a closing dispatch (port 8089) and the set `nuget-ha` nightly (port 8090, in
+  [performance.yml](../../.github/workflows/performance.yml)). The job builds the clients image with `make nuget-clients-image` first
+  and sets `TROVE_E2E_NUGET_CLIENTS_IMAGE_BUILD=0`, so the set loads it instead of building it again. The fuzz targets of the closing run
+  are in [releasing.md](releasing.md#ci) too.
+- **Sets that name no test yet.** `nuget-closing` and `nuget-ha` are declared `empty_ok` in [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh).
+  While no `func Test...` in `test/e2e/*_test.go` matches their expression, the script logs a notice and exits 0 before it looks for a
+  cluster ([Q-ARCH-276](../spec/architecture.md#q-arch-276--how-does-an-e2e-set-that-names-no-test-pass-and-when-does-it-fail)). Every other
+  set still fails when its expression matches no test, and once a test of the name exists, a run that ran nothing still fails.
+- **Not built.** The Windows row (nuget.exe and the SDK on a Windows runner) and Visual Studio (manual). The run against nuget.org of the
+  closing run (R-NUGET-027) is not in CI.
 
 ## Extension checklist
 
