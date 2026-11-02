@@ -832,9 +832,17 @@
         <source>The repository belongs to another project. Move it to take it over.</source>
       </segment>
     </unit>
-    <unit id="problem.project_key_overlap">
+    <unit id="problem.project_owner_changed">
       <notes>
         <note category="location">src/app/core/http/problem-messages-access.ts:110</note>
+      </notes>
+      <segment>
+        <source>The repository was moved to another project in the meantime. Read it again and decide again.</source>
+      </segment>
+    </unit>
+    <unit id="problem.project_key_overlap">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:112</note>
       </notes>
       <segment>
         <source>The key overlaps another project&apos;s key (no key is another&apos;s key followed by a hyphen) or the start of a service account&apos;s name.</source>
@@ -842,7 +850,7 @@
     </unit>
     <unit id="problem.project_switch_off">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:112</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:114</note>
       </notes>
       <segment>
         <source>This is switched off for the project. An administrator of trove can switch it on.</source>
@@ -850,7 +858,7 @@
     </unit>
     <unit id="problem.secret_value_required">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:114</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:116</note>
       </notes>
       <segment>
         <source>Enter the password or token of this upstream again.</source>
@@ -858,7 +866,7 @@
     </unit>
     <unit id="problem.outbound_path_restricted">
       <notes>
-        <note category="location">src/app/core/http/problem-messages-access.ts:116</note>
+        <note category="location">src/app/core/http/problem-messages-access.ts:118</note>
       </notes>
       <segment>
         <source>The outbound path of this repository is set by an administrator of trove.</source>
@@ -7929,7 +7937,7 @@
     </unit>
     <unit id="project-dialog.title-edit">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:43,44</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:44,45</note>
       </notes>
       <segment>
         <source>Edit project <ph id="0" equiv="INTERPOLATION" disp="{{ p.value.key }}"/></source>
@@ -7937,7 +7945,7 @@
     </unit>
     <unit id="project-dialog.title-new">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:45,48</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:46,49</note>
       </notes>
       <segment>
         <source>New project</source>
@@ -7945,7 +7953,7 @@
     </unit>
     <unit id="project-dialog.key">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:56,57</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:57,58</note>
       </notes>
       <segment>
         <source>Key</source>
@@ -7953,7 +7961,7 @@
     </unit>
     <unit id="project-dialog.key-hint">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:62,64</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:63,65</note>
       </notes>
       <segment>
         <source>Lower-case letters, digits and -, two to 32 characters, starting with a letter. Cannot be changed later.</source>
@@ -7961,7 +7969,7 @@
     </unit>
     <unit id="project-dialog.display-name">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:66,68</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:67,69</note>
       </notes>
       <segment>
         <source>Display name</source>
@@ -7969,7 +7977,7 @@
     </unit>
     <unit id="project-dialog.description">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:74,76</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:75,77</note>
       </notes>
       <segment>
         <source>Description</source>
@@ -7977,7 +7985,7 @@
     </unit>
     <unit id="project-dialog.switches">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:82,83</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:83,84</note>
       </notes>
       <segment>
         <source>What the administrators may do</source>
@@ -7985,7 +7993,7 @@
     </unit>
     <unit id="project-dialog.manage-policies">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:84,86</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:85,87</note>
       </notes>
       <segment>
         <source>Manage policies and service accounts</source>
@@ -7993,7 +8001,7 @@
     </unit>
     <unit id="project-dialog.manage-policies-hint">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:87,89</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:88,90</note>
       </notes>
       <segment>
         <source> Create and change the project&apos;s permission policies, create and enable its service accounts, issue their tokens and look up users and groups. </source>
@@ -8001,7 +8009,7 @@
     </unit>
     <unit id="project-dialog.manage-repositories">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:90,92</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:91,93</note>
       </notes>
       <segment>
         <source>Manage repositories</source>
@@ -8009,7 +8017,7 @@
     </unit>
     <unit id="project-dialog.manage-repositories-hint">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:93,97</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:94,98</note>
       </notes>
       <segment>
         <source> Create, change and delete the project&apos;s repositories, also remote ones that reach other servers. Assigning repositories stays with you. </source>
@@ -8017,7 +8025,7 @@
     </unit>
     <unit id="project-dialog.admins">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:98,99</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:99,100</note>
       </notes>
       <segment>
         <source>Administrators</source>
@@ -8025,7 +8033,7 @@
     </unit>
     <unit id="project-dialog.no-admins">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:100,102</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:101,103</note>
       </notes>
       <segment>
         <source>No administrator yet. Users and groups can administer a project.</source>
@@ -8033,7 +8041,7 @@
     </unit>
     <unit id="project-dialog.remove-admin">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:108,109</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:109,110</note>
       </notes>
       <segment>
         <source>Remove administrator</source>
@@ -8041,7 +8049,7 @@
     </unit>
     <unit id="project-dialog.find-admin">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:116,118</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:117,119</note>
       </notes>
       <segment>
         <source>Find a user or group</source>
@@ -8049,7 +8057,7 @@
     </unit>
     <unit id="project-dialog.repositories">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:125,126</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:126,127</note>
       </notes>
       <segment>
         <source>Repositories</source>
@@ -8057,7 +8065,7 @@
     </unit>
     <unit id="project-dialog.no-repositories">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:127,129</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:128,130</note>
       </notes>
       <segment>
         <source>No repository is assigned.</source>
@@ -8065,7 +8073,7 @@
     </unit>
     <unit id="project-dialog.moves">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:134,135</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:135,136</note>
       </notes>
       <segment>
         <source>moves from <ph id="0" equiv="INTERPOLATION" disp="{{ from }}"/></source>
@@ -8073,7 +8081,7 @@
     </unit>
     <unit id="project-dialog.remove-repository">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:138,139</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:139,140</note>
       </notes>
       <segment>
         <source>Remove repository</source>
@@ -8081,7 +8089,7 @@
     </unit>
     <unit id="project-dialog.add-repository">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:146,148</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:147,149</note>
       </notes>
       <segment>
         <source>Add a repository</source>
@@ -8089,7 +8097,7 @@
     </unit>
     <unit id="project-dialog.cancel">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:155,156</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:156,157</note>
       </notes>
       <segment>
         <source>Cancel</source>
@@ -8097,7 +8105,7 @@
     </unit>
     <unit id="project-dialog.save">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:158,159</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:159,160</note>
       </notes>
       <segment>
         <source>Save project</source>
@@ -8105,7 +8113,7 @@
     </unit>
     <unit id="project-dialog.create">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:160,162</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:161,163</note>
       </notes>
       <segment>
         <source>Create project</source>
@@ -8113,7 +8121,7 @@
     </unit>
     <unit id="project-dialog.admins-label">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:232</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:233</note>
       </notes>
       <segment>
         <source>Administrators of the project</source>
@@ -8121,7 +8129,7 @@
     </unit>
     <unit id="project-dialog.repositories-label">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:233</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:234</note>
       </notes>
       <segment>
         <source>Repositories of the project</source>
@@ -8129,7 +8137,7 @@
     </unit>
     <unit id="project-dialog.choose-repository">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:244</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:245</note>
       </notes>
       <segment>
         <source>Choose a repository</source>
@@ -8137,7 +8145,7 @@
     </unit>
     <unit id="project-dialog.repository-of">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:251</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:252</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="key" disp="r.key"/> (belongs to <ph id="1" equiv="project" disp="r.project"/>)</source>
@@ -8145,7 +8153,7 @@
     </unit>
     <unit id="project-dialog.key-invalid">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:290</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:291</note>
       </notes>
       <segment>
         <source>The key does not match the pattern.</source>
@@ -8153,7 +8161,7 @@
     </unit>
     <unit id="project-dialog.display-name-invalid">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:298</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:299</note>
       </notes>
       <segment>
         <source>The display name is required, 1 to 128 characters.</source>
@@ -8161,7 +8169,7 @@
     </unit>
     <unit id="project-dialog.move-title">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:472</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:475</note>
       </notes>
       <segment>
         <source>Move <ph id="0" equiv="repository" disp="repository"/> to <ph id="1" equiv="project" disp="key"/>?</source>
@@ -8169,7 +8177,7 @@
     </unit>
     <unit id="project-dialog.move-line">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:474</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:477</note>
       </notes>
       <segment>
         <source>The repository now belongs to project <ph id="0" equiv="owner" disp="owner"/>. Moving it takes it away from that project.</source>
@@ -8177,7 +8185,7 @@
     </unit>
     <unit id="project-dialog.move-confirm">
       <notes>
-        <note category="location">src/app/features/projects/project-dialog.ts:476</note>
+        <note category="location">src/app/features/projects/project-dialog.ts:479</note>
       </notes>
       <segment>
         <source>Move repository</source>

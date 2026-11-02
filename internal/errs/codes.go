@@ -171,6 +171,10 @@ const (
 	// CodeRepositoryAssigned: an assignment of a repository that belongs to another
 	// project, without ?move=true.
 	CodeRepositoryAssigned = "repository_assigned"
+	// CodeProjectOwnerChanged: an assignment that names the project it expects the
+	// repository to belong to (?from=) finds another owner under the locks of the
+	// write (Q-AUTHZ-205).
+	CodeProjectOwnerChanged = "project_owner_changed"
 	// CodeProjectKeyOverlap: a project key that is another key's prefix up to a
 	// hyphen, or the prefix of the name of a global service account.
 	CodeProjectKeyOverlap = "project_key_overlap"
@@ -496,6 +500,7 @@ var registry = []CodeInfo{
 	{CodeProjectAccountNotGroupable, Invalid, "Project service account cannot join a group", "A service account of a project is no group member: a group's grants would reach the project's account."},
 	{CodeProjectNotEmpty, Conflict, "Project not empty", "The project still has repositories (also ones being deleted) or service accounts; unassign the repositories and delete the accounts first."},
 	{CodeRepositoryAssigned, Conflict, "Repository assigned to another project", "The repository belongs to another project; send move=true to move it."},
+	{CodeProjectOwnerChanged, Conflict, "Project owner changed", "The repository belongs to another project than the request expected (from); the extension currentProject names it, null for none. Read it again and decide again."},
 	{CodeProjectKeyOverlap, Conflict, "Project key overlaps", "A project key is not the prefix, up to a hyphen, of another project's key or of a global service account's name."},
 	{CodeUnknownProject, Invalid, "Unknown project", "The project does not exist, or the caller does not administer it; the answer does not tell which."},
 	{CodeProjectSwitchOff, Forbidden, "Project switch off", "The project's administrator right for this operation (managePolicies or manageRepositories) is switched off; an administrator turns it on."},

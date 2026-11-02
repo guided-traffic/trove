@@ -275,6 +275,7 @@ describe('Session helpers and messages of the project screens (R-UI-041, R-UI-04
       'project_account_not_groupable',
       'project_not_empty',
       'repository_assigned',
+      'project_owner_changed',
       'project_key_overlap',
       'project_switch_off',
       'secret_value_required',
@@ -296,7 +297,7 @@ describe('Session helpers and messages of the project screens (R-UI-041, R-UI-04
     const { get } = await renderScreen(RepositoryWizard);
     const api = get(ProjectsApi) as FakeProjectsApi;
     await expect(api.create({ key: 'web-app', displayName: 'x', description: '' }, 'k')).rejects.toMatchObject({ code: 'project_key_overlap' });
-    await expect(api.assignRepository('web', 'nope', false)).rejects.toMatchObject({ status: 404 });
+    await expect(api.assignRepository('web', 'nope', false, null)).rejects.toMatchObject({ status: 404 });
     expect(sampleProject().key).toBe('web');
   });
 });

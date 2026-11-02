@@ -150,6 +150,60 @@ describe('The project dialog saves a sequence of calls (R-UI-041, R-UI-042, R-AP
     expect((get(ProjectsApi) as FakeProjectsApi).calls).toContain('assign web generic-local move');
   });
 
+  it('R-UI-041 R-AUTHZ-026 (F-32) the assignment names the owner it read; a move in the window after the read answers 409 and asks about the new owner', async () => {
+    const { fixture, root, get } = await renderScreen(ProjectList, {
+      setup: (g) => {
+        (g(ProjectsApi) as FakeProjectsApi).projects = [
+          sampleProject(),
+          sampleProject({ key: 'data', displayName: 'Data' }),
+          sampleProject({ key: 'ops', displayName: 'Ops' }),
+        ];
+        (g(RepositoriesApi) as FakeRepositoriesApi).repositories[0]!.project = 'data';
+      },
+    });
+    buttonByText(root, 'Edit web').click();
+    await settle(fixture);
+    const dialog = dialogOf();
+    type(dialog.querySelector<HTMLSelectElement>('select[name="add-repository"]')!, 'generic-local');
+    await settle(fixture);
+    // The refresh before the assignment still reads "data"; the repository goes to "ops" right after it.
+    const repos = get(RepositoriesApi) as FakeRepositoriesApi;
+    const listAll = repos.listAll.bind(repos);
+    let reads = 0;
+    repos.listAll = async () => {
+      const real = await listAll();
+      if (++reads > 1) return real;
+      repos.repositories[0]!.project = 'ops';
+      return real;
+    };
+    buttonByText(dialog, 'Save project').click();
+    await sleep(fixture, 100);
+    const api = get(ProjectsApi) as FakeProjectsApi;
+    expect(api.expectedOwners).toEqual(['data']);
+    expect(repos.repositories[0]!.project).toBe('ops');
+    const ask = overlay().querySelector('trove-confirm-dialog') as HTMLElement;
+    expect(text(ask)).toContain('ops');
+    buttonByText(ask, 'Move repository').click();
+    await sleep(fixture, 100);
+    expect(api.expectedOwners).toEqual(['data', 'ops']);
+    expect(repos.repositories[0]!.project).toBe('web');
+  });
+
+  it('R-AUTHZ-026 (F-32) an unassigned repository is assigned with an empty expected owner', async () => {
+    const { fixture, root, get } = await renderScreen(ProjectList, {
+      setup: (g) => {
+        (g(ProjectsApi) as FakeProjectsApi).projects = [sampleProject()];
+      },
+    });
+    buttonByText(root, 'Edit web').click();
+    await settle(fixture);
+    type(dialogOf().querySelector<HTMLSelectElement>('select[name="add-repository"]')!, 'generic-local');
+    await settle(fixture);
+    buttonByText(dialogOf(), 'Save project').click();
+    await sleep(fixture, 100);
+    expect((get(ProjectsApi) as FakeProjectsApi).expectedOwners).toEqual([null]);
+  });
+
   async function openWithRepositoryAssignedElsewhere() {
     const screen = await renderScreen(ProjectList, {
       setup: (g) => {

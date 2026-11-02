@@ -194,6 +194,22 @@ func lockProjects(ctx context.Context, qs *q.Queries, repo string, first assigne
 	return now, nil
 }
 
+// expectOwner compares the project the caller expects (from; nil: no expectation, empty:
+// none) with the one read under the locks of the write (Q-AUTHZ-205). The answer names
+// the current project, so the caller can ask again without another read.
+func expectOwner(repo string, from *string, cur assigned) error {
+	if from == nil || *from == cur.key {
+		return nil
+	}
+	var current any
+	detail := fmt.Sprintf("The repository %q belongs to no project now.", repo)
+	if cur.key != "" {
+		current = cur.key
+		detail = fmt.Sprintf("The repository %q belongs to the project %q now.", repo, cur.key)
+	}
+	return errs.E(errs.Conflict, errs.CodeProjectOwnerChanged, detail, errs.WithExtension("currentProject", current))
+}
+
 // notifyAssignment tells both areas: authz (the index gives project administrators
 // manage on the project's repositories and scopes project policies to them) and
 // repo_config (the repository's document carries its project, and a replica's
@@ -208,9 +224,10 @@ func (s *service) notifyAssignment(tx meta.Tx, repoID, repoKey string, version i
 
 // Assign assigns a repository to the project (R-AUTHZ-026). The repository row
 // changes only when it belongs to no project or to the one read under the locks, so
-// two assignments cannot both win; its config_version moves on because the project
+// two assignments cannot both win; a caller that names the owner it expects (from) is
+// refused when the owner read under the locks is another one; its config_version moves on because the project
 // is a member of its document.
-func (s *service) Assign(ctx context.Context, actor authz.Subject, key, repo string, move bool) (int64, error) {
+func (s *service) Assign(ctx context.Context, actor authz.Subject, key, repo string, move bool, from *string) (int64, error) {
 	var epoch int64
 	err := s.inTx(ctx, func(tx meta.Tx, qs *q.Queries) error {
 		first, err := currentProject(ctx, qs, repo)
@@ -219,6 +236,9 @@ func (s *service) Assign(ctx context.Context, actor authz.Subject, key, repo str
 		}
 		cur, err := lockProjects(ctx, qs, repo, first, key)
 		if err != nil {
+			return err
+		}
+		if err := expectOwner(repo, from, cur); err != nil {
 			return err
 		}
 		target, err := load(ctx, qs, key)

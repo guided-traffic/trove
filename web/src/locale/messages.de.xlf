@@ -14864,6 +14864,15 @@
         <target>Das Repository gehört zu einem anderen Projekt. Verschieben Sie es, um es zu übernehmen.</target>
       </segment>
     </unit>
+    <unit id="problem.project_owner_changed">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:110</note>
+      </notes>
+      <segment>
+        <source>The repository was moved to another project in the meantime. Read it again and decide again.</source>
+        <target>Das Repository wurde inzwischen in ein anderes Projekt verschoben. Lesen Sie es neu ein und entscheiden Sie erneut.</target>
+      </segment>
+    </unit>
     <unit id="problem.project_key_overlap">
       <notes>
         <note category="location">src/app/core/http/problem-messages-access.ts:110</note>

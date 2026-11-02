@@ -55,8 +55,11 @@ type Service interface {
 	// Assign assigns a repository to the project. A repository of another project is
 	// refused with 409 repository_assigned unless move is true; a move records an
 	// unassignment and an assignment in one transaction. Assigning a repository to
-	// the project it already belongs to is a no-op that answers success.
-	Assign(ctx context.Context, actor authz.Subject, key, repository string, move bool) (epoch int64, err error)
+	// the project it already belongs to is a no-op that answers success. from, when
+	// set, is the project the caller expects to hold the repository (empty: none);
+	// another current owner answers 409 project_owner_changed before anything else
+	// and writes nothing (Q-AUTHZ-205).
+	Assign(ctx context.Context, actor authz.Subject, key, repository string, move bool, from *string) (epoch int64, err error)
 	// Unassign removes the repository from the project; 404 when it does not belong
 	// to this project.
 	Unassign(ctx context.Context, actor authz.Subject, key, repository string) (epoch int64, err error)

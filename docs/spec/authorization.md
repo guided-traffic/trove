@@ -1789,7 +1789,10 @@ accounts of its partners without a system administrator. Delegation per policy (
   [H-399](#h-399--a-global-service-account-and-a-project-key-created-at-the-same-instant-can-overlap)).
 - A repository belongs to at most one project. `admin` and `repository-admin` (`repositories:write-config`) assign and
   unassign existing repositories; moving one between projects requires `?move=true` (409 `repository_assigned`
-  otherwise). Repository keys stay globally unique and URLs do not change (INV-5, INV-6). An assignment and an
+  otherwise); a request that names the owner it expects (`?from=<key>`, empty for none) is refused with 409
+  `project_owner_changed` (the extension `currentProject` holds the current owner) when the owner read under the locks of the
+  write is another one, whatever `move` says ([Q-AUTHZ-205](#q-authz-205--an-assignment-names-the-owner-it-expects-and-the-write-compares-it-under-its-locks)).
+  Repository keys stay globally unique and URLs do not change (INV-5, INV-6). An assignment and an
   unassignment move the repository's `config_version` (its ETag) and notify `authz` and `repo_config`
   ([Q-AUTHZ-191](#q-authz-191--an-assignment-moves-the-repositorys-configuration-version-and-tells-both-areas)).
 - A repository that a project administrator creates (with `manageRepositories`) names its project in the create request,
@@ -1919,7 +1922,7 @@ API:
 | `DELETE /api/v1/projects/{key}` | Delete (`If-Match` optional) | 204; 404; 409 `project_not_empty`; 412 | `projects:write` |
 | `PUT /api/v1/projects/{key}/admins/{principalRef}` | Add a project administrator | 201 or 200; 404 unknown principal; 422 a kind that cannot administer | `projects:write` |
 | `DELETE /api/v1/projects/{key}/admins/{principalRef}` | Remove a project administrator | 204; 404 | `projects:write` |
-| `PUT /api/v1/projects/{key}/repositories/{repoKey}` | Assign (`?move=true` to move) | 204; 404; 409 `repository_assigned` | `repositories:write-config` |
+| `PUT /api/v1/projects/{key}/repositories/{repoKey}` | Assign (`?move=true` to move; `?from=<key>` names the expected current owner, empty for none) | 204; 404; 409 `repository_assigned`; 409 `project_owner_changed` with `currentProject` | `repositories:write-config` |
 | `DELETE /api/v1/projects/{key}/repositories/{repoKey}` | Unassign | 204; 404 | `repositories:write-config` |
 | `GET /api/v1/projects/{key}/principals?q=&kind=&limit=` | Users and groups whose name starts with `q` (2 characters at least, 20 at most): kind and name only | 200; 404; 422 | `identities:read` or administrator of the project with `managePolicies` |
 
@@ -4795,6 +4798,39 @@ version, without touching the store. Since [Q-AUTHZ-199](#q-authz-199--a-delegat
 
 **Applied in the spec:** R-AUTHZ-026 (deleting a project). Code: `internal/project/crud.go` (`Delete`); test
 `TestR_AUTHZ_026_DeleteSparesAGlobalPolicyOfTheSameName` (versions 1 and 2).
+
+### Q-AUTHZ-205 · An assignment names the owner it expects, and the write compares it under its locks
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a move (`?move=true`) took the repository from whichever project held it. The project dialog reads the owners right
+before the assignments and asks when one changed, which leaves the window between that read and the request: another
+administrator's move could be overwritten by a move the person agreed to for a different owner.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Query parameter `from` on the assignment, compared under the locks (chosen) | `?from=<key>` names the expected owner, `?from=` none; absent: no expectation. A different owner answers 409 `project_owner_changed` with `currentProject` | No new operation or body; an old client keeps working; the comparison uses the owner read after the project locks, so it is the state the write acts on | The client has to send it to be protected |
+| (b) `If-Match` on the repository's `config_version` | The ETag of the repository document guards the move | One mechanism for all repository writes | The version moves with every configuration change, so an unrelated edit refuses a move that is still right; the assignment is exempt from `If-Match` by design (Q-AUTHZ-191) |
+| (c) `move=<key>` instead of `move=true` | The value of `move` is the owner moved from | One parameter | Breaks the boolean the API shipped; no way to say "expected unassigned" for a plain assignment |
+| (d) Keep the UI-side re-read only | As before | Nothing | The window stays |
+
+**Choice:** (a). The parameter is validated as a project key or empty (400 otherwise). The comparison runs in `Assign` after
+`lockProjects` has taken the row locks of the projects involved and read the repository's project again, before the target is
+loaded and before the no-op check: a repository that already belongs to the target still answers 409 for a wrong `from`.
+When the owner changes between the first read and the locks, the existing 409 `repository_assigned` ("assigned by another
+request meanwhile") is answered; `ProjectAssignRepository` still moves only from the owner it read. Nothing is written when
+the answer is 409.
+
+**Rationale:** the only state a move may rely on is the one read under the locks, and the caller's expectation is a fact about
+that state, not about the document. An absent parameter keeps every existing client and script working. The dialog sends the
+owner it read for every assignment, and on 409 `project_owner_changed` (or `repository_assigned`) reads the owners again and
+asks about the owner that holds the repository now. Revisit when other repository writes (the document `PUT`, a delete) need
+the same expectation, or when a client cannot be changed and needs the check made mandatory.
+
+**Applied in the spec:** R-AUTHZ-026 (the assignment and the API table). Code: `internal/project/members.go` (`Assign`,
+`expectOwner`), `internal/api/v1/projects_api.go`, `api/openapi.yaml` (`from`, `currentProject`), `internal/errs/codes.go`
+(`project_owner_changed`), `web/src/app/features/projects/project-dialog.ts`; test
+`TestR_AUTHZ_026_AssignNamesTheExpectedOwner`.
 
 ## What this does not cover
 

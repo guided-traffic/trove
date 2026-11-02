@@ -204,18 +204,6 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
-Found on 2026-11-02 in the fix wave of phase 5a:
-
-### Projects
-
-- **F-32 · A move of a repository between projects takes no expected current owner** (confirmed, by the development agent
-  that fixed the project dialog). `PUT /api/v1/projects/{key}/repositories/{repoKey}?move=true`
-  ([projects_api.go](../../internal/api/v1/projects_api.go)) moves the repository from whichever project holds it. The
-  project dialog re-reads the owners right before the assignment and asks when one changed, which leaves the window between
-  that read and the request: an administrator's move can take a repository from a project it was moved to in between.
-  Administrators only (`repositories:write-config`). Done when the request can name the expected current owner (for example
-  `?from=<key>` or an empty value for unassigned) and answers 409 when it differs, and the dialog sends it.
-
 Found on 2026-11-01 while writing the manual (`docs/manual`) and the design change of Q-UI-88:
 
 ### Tests and tools

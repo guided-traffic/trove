@@ -538,7 +538,7 @@ How the pieces fit:
   outcome under its key and a corrected retry (another key, another name) would answer 422 `idempotency_key_reused` (R-API-014); a 404 from the removal of an administrator or the
   unassignment of a repository counts as done; the repositories are read again right before the assignments, and `move=true` is sent only for an
   owner the person saw: the dialog remembers the owner each repository showed ("moves from") when it was chosen, and a repository whose owner now differs from that (or that is owned
-  although it showed as unassigned) is asked about through the confirm dialog first; a 409 `repository_assigned` in the window after that read reads the owner again and asks the same way
+  although it showed as unassigned) is asked about through the confirm dialog first; every assignment names the owner it read (`from`, empty for none; `ProjectsApi.assignRepository`), and a 409 `project_owner_changed` or `repository_assigned` in the window after that read reads the owner again and asks about the owner that holds the repository now (Q-AUTHZ-205)
   (declining stops the save and keeps the dialog open with the 409 notice). The repositories already assigned arrive asynchronously and are merged into the list, so one the person added
   before they arrived stays. Intended behaviour, not a gap: when someone else already did a step (an administrator or repository already removed, a repository already assigned to this
   project) the dialog treats it as done and says nothing.

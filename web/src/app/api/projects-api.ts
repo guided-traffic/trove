@@ -36,8 +36,12 @@ export abstract class ProjectsApi {
   /** `principal` is `user:<name>` or `group:<name>`; idempotent. */
   abstract addAdmin(key: string, principal: string): Promise<void>;
   abstract removeAdmin(key: string, principal: string): Promise<void>;
-  /** `move` also takes a repository away from another project (409 `repository_assigned` otherwise). */
-  abstract assignRepository(key: string, repository: string, move: boolean): Promise<void>;
+  /**
+   * `move` also takes a repository away from another project (409 `repository_assigned` otherwise).
+   * `from` is the owner the caller read (null: none): the server answers 409 `project_owner_changed`
+   * when the repository belongs to another project by then (Q-AUTHZ-205).
+   */
+  abstract assignRepository(key: string, repository: string, move: boolean, from: string | null): Promise<void>;
   abstract unassignRepository(key: string, repository: string): Promise<void>;
   /** Users and groups whose name starts with `q` (two characters at least), for the entries of a project policy. */
   abstract lookupPrincipals(
@@ -83,9 +87,9 @@ export class HttpProjectsApi extends ProjectsApi {
     await this.client.delete(`/api/v1/projects/${seg(key)}/admins/${seg(principal)}`);
   }
 
-  override async assignRepository(key: string, repository: string, move: boolean): Promise<void> {
-    const url = `/api/v1/projects/${seg(key)}/repositories/${seg(repository)}`;
-    await this.client.putBinding(move ? `${url}?move=true` : url);
+  override async assignRepository(key: string, repository: string, move: boolean, from: string | null): Promise<void> {
+    const query = [...(move ? ['move=true'] : []), `from=${encodeURIComponent(from ?? '')}`].join('&');
+    await this.client.putBinding(`/api/v1/projects/${seg(key)}/repositories/${seg(repository)}?${query}`);
   }
 
   override async unassignRepository(key: string, repository: string): Promise<void> {

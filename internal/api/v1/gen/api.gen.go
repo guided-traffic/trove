@@ -3789,9 +3789,12 @@ type Problem struct {
 	Code string `json:"code"`
 
 	// CurrentEtag Extension of `precondition_failed`: the current ETag of the resource (R-API-012).
-	CurrentEtag *string       `json:"currentEtag,omitempty"`
-	Detail      *string       `json:"detail,omitempty"`
-	Errors      *[]FieldError `json:"errors,omitempty"`
+	CurrentEtag *string `json:"currentEtag,omitempty"`
+
+	// CurrentProject Extension of `project_owner_changed`: the key of the project the repository belongs to now, `null` when it belongs to none (Q-AUTHZ-205).
+	CurrentProject *string       `json:"currentProject,omitempty"`
+	Detail         *string       `json:"detail,omitempty"`
+	Errors         *[]FieldError `json:"errors,omitempty"`
 
 	// Instance The request path.
 	Instance *string       `json:"instance,omitempty"`
@@ -5335,6 +5338,9 @@ type LookupProjectPrincipalsParamsKind string
 type AssignProjectRepositoryParams struct {
 	// Move Move a repository that belongs to another project.
 	Move *bool `form:"move,omitempty" json:"move,omitempty"`
+
+	// From The key of the project the repository is expected to belong to now; empty: expected to belong to no project. Absent: no expectation.
+	From *string `form:"from,omitempty" json:"from,omitempty"`
 }
 
 // ListRepositoriesParams defines parameters for ListRepositories.
@@ -9150,6 +9156,19 @@ func (siw *ServerInterfaceWrapper) AssignProjectRepository(w http.ResponseWriter
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "move"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "move", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "from", r.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
 		}
 		return
 	}

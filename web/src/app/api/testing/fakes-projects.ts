@@ -41,6 +41,8 @@ export class FakeProjectsApi extends ProjectsApi {
   private readonly repos = inject(RepositoriesApi);
   /** Every mutating call, for assertions. */
   readonly calls: string[] = [];
+  /** The owner each assignment expected (`from`), in call order; null: none. */
+  readonly expectedOwners: (string | null)[] = [];
   readonly keys: string[] = [];
   /** The `If-Match` of every replace, in order. */
   readonly ifMatch: string[] = [];
@@ -196,13 +198,15 @@ export class FakeProjectsApi extends ProjectsApi {
     this.put({ ...p, admins: p.admins.filter((a) => a !== principal) });
   }
 
-  override async assignRepository(key: string, repository: string, move: boolean): Promise<void> {
+  override async assignRepository(key: string, repository: string, move: boolean, expected: string | null): Promise<void> {
     this.fail();
     this.calls.push(`assign ${key} ${repository}${move ? ' move' : ''}`);
+    this.expectedOwners.push(expected);
     const target = this.find(key);
     const repo = this.catalog().repositories.find((r) => r.key === repository);
     if (!repo) throw problem(404, 'not_found');
     const from = repo.project ?? null;
+    if (from !== expected) throw problem(409, 'project_owner_changed', { currentProject: from });
     if (from === key) return;
     if (from !== null && !move) throw problem(409, 'repository_assigned');
     if (from !== null) {

@@ -106,6 +106,8 @@ export function describeAccessProblem(code: string | null): string | null {
       return $localize`:@@problem.project_not_empty:The project still has repositories or service accounts. Unassign the repositories and delete the service accounts first.`;
     case 'repository_assigned':
       return $localize`:@@problem.repository_assigned:The repository belongs to another project. Move it to take it over.`;
+    case 'project_owner_changed':
+      return $localize`:@@problem.project_owner_changed:The repository was moved to another project in the meantime. Read it again and decide again.`;
     case 'project_key_overlap':
       return $localize`:@@problem.project_key_overlap:The key overlaps another project's key (no key is another's key followed by a hyphen) or the start of a service account's name.`;
     case 'project_switch_off':

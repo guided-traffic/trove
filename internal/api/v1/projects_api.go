@@ -302,8 +302,11 @@ func (s *Server) RemoveProjectAdmin(w http.ResponseWriter, r *http.Request, key,
 func (s *Server) AssignProjectRepository(w http.ResponseWriter, r *http.Request, key, repoKey string, params gen.AssignProjectRepositoryParams) {
 	svc, err := s.projects()
 	var epoch int64
+	if err == nil && params.From != nil && *params.From != "" && !project.KeyRE.MatchString(*params.From) {
+		err = badParam("from", "is not a project key")
+	}
 	if err == nil {
-		epoch, err = svc.Assign(r.Context(), caller(r), key, repoKey, params.Move != nil && *params.Move)
+		epoch, err = svc.Assign(r.Context(), caller(r), key, repoKey, params.Move != nil && *params.Move, params.From)
 	}
 	if err != nil {
 		httpserver.Problem(w, r, err)

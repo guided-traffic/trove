@@ -1503,6 +1503,12 @@ export interface paths {
          *     URLs do not change. The assignment notifies `authz` and `repo_config` and needs no `If-Match`. Policies
          *     of the old project that select the repository by key stop covering it and report
          *     `selector_outside_project` (Q-AUTHZ-179).
+         *
+         *     `from` names the project the caller expects the repository to belong to now (an empty value: to no
+         *     project). It is compared under the locks of the write, before anything else, and a different current
+         *     owner answers `409 project_owner_changed` with the extension `currentProject` (the key, or `null` for
+         *     none) and writes nothing; this includes an assignment to the project the repository already belongs to.
+         *     Without `from` the request acts on whichever project holds the repository (Q-AUTHZ-205).
          */
         put: operations["assignProjectRepository"];
         post?: never;
@@ -2588,6 +2594,8 @@ export interface components {
             errors?: components["schemas"]["FieldError"][];
             /** @description Extension of `precondition_failed`: the current ETag of the resource (R-API-012). */
             currentEtag?: string;
+            /** @description Extension of `project_owner_changed`: the key of the project the repository belongs to now, `null` when it belongs to none (Q-AUTHZ-205). */
+            currentProject?: string | null;
             job?: components["schemas"]["JobReference"];
         };
         FieldError: {
@@ -8355,6 +8363,8 @@ export interface operations {
             query?: {
                 /** @description Move a repository that belongs to another project. */
                 move?: boolean;
+                /** @description The key of the project the repository is expected to belong to now; empty: expected to belong to no project. Absent: no expectation. */
+                from?: string;
             };
             header?: never;
             path: {

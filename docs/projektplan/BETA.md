@@ -312,7 +312,7 @@ Bastion serves those parties. Phase 5 then maps GitLab pipelines into projects.
   (commit fb53a61)
 - 🟢 F-31 (upstream client cache) fixed; F-19 closed on the green failover leg of nightly run 41420733312
 
-**Security audit and code review of the phase (2026-11-02; fixed in the fix wave, what stays open is an H-item of its page or F-32)**
+**Security audit and code review of the phase (2026-11-02; fixed in the fix wave, what stays open is an H-item of its page)**
 - 🟢 HIGH · A project administrator with `manageRepositories` could send installation secrets to a host it chooses: the
   unsaved upstream test resolves any `secretRef` (`env` `TROVE_CAC_…`, a file in `secrets_dir`) and sends it to the URL of
   the request, and a `PATCH` that changes the URL of an assigned remote keeps its sealed password (`{"set": true}`)
@@ -366,8 +366,10 @@ Bastion serves those parties. Phase 5 then maps GitLab pipelines into projects.
     in a role binding, a global entry or another project's policy; the project delete removes each policy at the version
     it read and for its project (Q-AUTHZ-204, Q-AUTHZ-199; H-407 closed); the
     retry rounds are tested; the package comment and the unused queries corrected
-- ➡️ LOW (UI fix wave) · The assignment API takes no expected current owner: moved to the open findings as
-  [F-32](promt.md#8--open-findings)
+- 🟢 LOW (UI fix wave) · The assignment API took no expected current owner (F-32): `PUT …/repositories/{repoKey}` takes
+  `?from=<key>` (empty: none; absent: no expectation), compared under the project locks of the write, and answers 409
+  `project_owner_changed` with `currentProject` (Q-AUTHZ-205); the project dialog sends the owner it read and asks again on
+  that answer; test `TestR_AUTHZ_026_AssignNamesTheExpectedOwner` and the dialog's component test
 - 🟢 (code review, predates the phase) · `repository.Service.List` ordered in SQL and compared its cursor bytewise in Go;
   under the integration database's `en_US.utf8` it lost `web-b`, `web-c` and `web.d` across pages
   (`TestR_REPO_012_ListPagesEveryKeyOnceInByteOrder`). Fixed: `ORDER BY key COLLATE "C"`; the column itself is not
@@ -377,6 +379,15 @@ Bastion serves those parties. Phase 5 then maps GitLab pipelines into projects.
 
 Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md)
 
+**Open findings, worked off first (2026-11-02)**
+- 🟢 F-32: a move of a repository between projects names the expected current owner (`?from=<key>`, empty for unassigned)
+  and answers 409 `project_owner_changed` when it differs; the project dialog sends it
+  ([Q-AUTHZ-205](../spec/authorization.md#q-authz-205--an-assignment-names-the-owner-it-expects-and-the-write-compares-it-under-its-locks), `TestR_AUTHZ_026_AssignNamesTheExpectedOwner`)
+- 🟢 F-33: the e2e sign-ins wait out the break-glass rotation hold (`test/e2e/rotationhold`, `submitLocalForm` in
+  `web/e2e/support.ts`, [Q-AUTH-194](../spec/identity-and-authentication.md#q-auth-194--the-e2e-sign-ins-wait-out-the-break-glass-rotation-hold));
+  verified on kind inside a forced rotation (the first sign-in waited 33 s, 19 journeys green)
+
+**Phase**
 - ⚪ GitLab as trusted issuer: discovery, signing keys, key rotation; several GitLab instances side by side (R-CI-005)
 - ⚪ GitLab issuers declared in the Helm values (`config.ci.issuers`), applied by `trove migrate`, shown in trove and
   read-only there ([Q-CI-16](../spec/gitlab-ci-oidc.md#q-ci-16--ci-issuers-provisioned-through-the-helm-values-are-read-only-in-trove), owner 2026-11-02)

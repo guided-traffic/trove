@@ -72,6 +72,9 @@ What the project service does beyond its interface:
 - `AddAdmin` and `RemoveAdmin` resolve the reference in the write's transaction with `ProjectPrincipalByRef`, not from the principal
   store's cache; a no-op (an administrator that already is one, an assignment to the project the repository already belongs to)
   records nothing, notifies nothing and answers the current epoch (Q-AUTHZ-193).
+- `Assign` compares the owner the caller expects (`from`: a key, empty for none, absent for no expectation) with the one it reads
+  after `lockProjects`, before the target is loaded and before the no-op check (`expectOwner`): 409 `project_owner_changed` with
+  `currentProject`, nothing written (Q-AUTHZ-205). The handler refuses a `from` that is not empty and not a project key with 400.
 - `Assign` and `Unassign` write `repositories.project_id` and, in the same statement (`ProjectAssignRepository`), move
   `config_version`, so the document's ETag changes; they notify `authz` and `repo_config` (Q-AUTHZ-191).
 - `Delete` is not one transaction: it refuses everything a client can cause first, deletes the policies through the policy store, then
@@ -98,7 +101,7 @@ The paths are in [api/openapi.yaml](../../api/openapi.yaml) (`# >>> M5a projects
 | `deleteProject` `DELETE /projects/{key}` | `projects:write`, recent auth | — | `If-Match` optional; 409 `project_not_empty`; epoch |
 | `addProjectAdmin` `PUT /projects/{key}/admins/{principalRef}` | `projects:write`, recent auth | — | 201 or 200; exempt from `If-Match` (ifmatch_test.go) |
 | `removeProjectAdmin` `DELETE …` | `projects:write`, recent auth | — | 204; 404 |
-| `assignProjectRepository` `PUT /projects/{key}/repositories/{repoKey}` | `repositories:write-config`, recent auth | — | `?move=true`; 409 `repository_assigned`; exempt from `If-Match` |
+| `assignProjectRepository` `PUT /projects/{key}/repositories/{repoKey}` | `repositories:write-config`, recent auth | — | `?move=true`, `?from=<key or empty>`; 409 `repository_assigned`, 409 `project_owner_changed` (extension `currentProject`); exempt from `If-Match` |
 | `unassignProjectRepository` `DELETE …` | `repositories:write-config`, recent auth | — | 204; 404 |
 | `lookupProjectPrincipals` `GET /projects/{key}/principals` | `identities:read` + `projectAdmin: managePolicies` | `requireProject(…, ProjectManagePolicies)` | `q` ≥ 2 characters, at most 20, kind and name only |
 
@@ -138,6 +141,7 @@ All in [codes.go](../../internal/errs/codes.go) (`>>> M5a projects`). `not_imple
 | `project_account_not_groupable` | 422 | a project service account as a group member |
 | `project_not_empty` | 409 | delete of a project with repositories (any lifecycle) or service accounts |
 | `repository_assigned` | 409 | assign without `move=true` |
+| `project_owner_changed` | 409 | assign with `?from=` naming another owner than the one under the locks (Q-AUTHZ-205); `currentProject` holds the current owner or null |
 | `project_key_overlap` | 409 | a key that is another's dash-prefix, or the prefix of a global service account name |
 | `project_switch_off` | 403 | the addressed project's switch is off; answered by the handler's narrowing helper whatever other projects the caller administers |
 | `secret_value_required` | 422 | a project administrator's remote names a reference of the installation (`secretRef`), or keeps a stored credential while `url`, a credential-receiving extra host or `forwardAuthOnRedirect` changes ([Q-REPO-127](../spec/repositories-and-proxy.md#q-repo-127--a-project-administrator-gives-an-upstream-secret-as-a-value-and-a-stored-one-stays-with-its-hosts); `checkDelegatedRemote` in [delegated.go](../../internal/repository/delegated.go)) |

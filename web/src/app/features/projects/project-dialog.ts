@@ -30,7 +30,8 @@ export interface ProjectDialogData {
  * a project that was just created is no longer created again. A repository that belongs to another
  * project is listed with that project and is moved only because the person chose it (`?move=true`);
  * the owners are read again right before the assignments, and a repository whose owner is not the one
- * the dialog showed when it was chosen is asked about first (`move=true` only for a seen owner).
+ * the dialog showed when it was chosen is asked about first (`move=true` only for a seen owner), and every
+ * assignment names the owner it read (`from`), so a move in between answers 409 and asks again.
  * The display name and the key are checked before the first request; the idempotency key of the create
  * is replaced after a refusal, because the server stores a 4xx outcome under it.
  */
@@ -445,8 +446,10 @@ export class ProjectDialog {
 
   /**
    * Assigns one repository. `move=true` is only ever sent for an owner the person saw: the one the
-   * dialog showed when the repository was chosen ("moves from"). A different owner now, or a 409
-   * `repository_assigned` in the window after the read, reads the owner again and asks first.
+   * dialog showed when the repository was chosen ("moves from"). A different owner now reads the owner
+   * again and asks first. The request names the owner that was read (`from`, empty for none); a 409
+   * `project_owner_changed` (the owner changed in the window after the read) or `repository_assigned`
+   * reads the owner again and asks about the one that holds it now (Q-AUTHZ-205).
    */
   private async assign(key: string, repository: string): Promise<void> {
     const owner = this.ownerOf(repository);
@@ -455,14 +458,14 @@ export class ProjectDialog {
       await this.askToMove(key, repository, owner);
     }
     try {
-      await this.api.assignRepository(key, repository, owner !== null);
+      await this.api.assignRepository(key, repository, owner !== null, owner);
     } catch (e) {
-      if (!(e instanceof ApiError) || e.code !== 'repository_assigned') throw e;
+      if (!(e instanceof ApiError) || (e.code !== 'repository_assigned' && e.code !== 'project_owner_changed')) throw e;
       this.fresh.set(await this.repositoriesApi.listAll());
       const now = this.ownerOf(repository);
       if (now === key) return;
       if (now !== null) await this.askToMove(key, repository, now);
-      await this.api.assignRepository(key, repository, now !== null);
+      await this.api.assignRepository(key, repository, now !== null, now);
     }
   }
 
