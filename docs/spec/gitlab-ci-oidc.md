@@ -3811,7 +3811,10 @@ A mapping meant for "every project below group `acme`" on a public issuer must e
 list every subgroup's `namespace_id` or project ID, or fall back on `namespace_path` globs. Path
 globs can be satisfied by a group created later under a released path. The pinning rule forces at
 least one ID, so the exposure is limited to subgroups added later and not yet listed. Keeping
-those ID lists current is a manual task.
+those ID lists current is a manual task. Resolving a group's ID to its subgroups through the GitLab API is parked in
+[FULL.md](../projektplan/FULL.md#m10--identity-access-and-ci-breadth) as a topic the owner wants to discuss first
+(2026-11-02), not as a decided feature: a lookup with a credential of trove's own could show a user groups and projects
+that the user cannot see in GitLab, so each user would likely bring their own GitLab token.
 
 ### H-28 · The fallback hands trove a GitLab credential
 

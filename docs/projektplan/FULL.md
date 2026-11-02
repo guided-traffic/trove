@@ -1,7 +1,7 @@
 # trove · Full product plan after the beta
 
 **Status:** ⚪ not started · 🟡 in progress or partly done · 🟢 done
-**Last updated:** 2026-11-01
+**Last updated:** 2026-11-02
 
 Everything that goes beyond the beta release in [BETA.md](BETA.md): the beta phase, the remaining
 registry types, and platform features. Releases after the beta are cut by Semantic Release from the
@@ -138,6 +138,12 @@ parallel.
 - ⚪ Token rotation and last-used tracking; browser login handoff for other command-line tools
 - ⚪ Further CI identity providers: GitHub Actions and generic OIDC issuers; CI setup snippets
 - ⚪ npm trusted publishing and provenance from CI
+- ⚪ **To be discussed with the owner, not decided:** resolving a GitLab group's ID to the IDs of its subgroups, so a
+  mapping can pin a whole group by immutable ID (GitLab's ID tokens carry only the direct namespace's ID, H-27, observed on
+  GitLab 19.0.1). Parked by the owner on 2026-11-02, explicitly without confirming that it is built. His first thought:
+  each trove user would have to bring their own GitLab token for it, because a lookup with a credential of trove's own
+  could show a user groups and projects that the user cannot see in GitLab. Until then the beta pins groups by a list of
+  `namespace_id`s or, on a self-managed instance, by a path glob ([gitlab-ci.md](../manual/admin/gitlab-ci.md))
 
 ### M11 · HA and deployment breadth
 - ⚪ Worker pools: further splits of the worker role by job queue
