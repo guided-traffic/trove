@@ -70,8 +70,9 @@ func (x authzAccess) RequireAction(ctx context.Context, c authz.Coordinate) erro
 
 // ProjectAccess is the optional fourth method set of an [Access]: the questions of
 // a delegable operation about the projects of the caller (R-AUTHZ-026, Q-AUTHZ-180).
-// They are answered on the request's index and audit nothing; the answer of a stub
-// engine is "no project", so a delegated operation refuses until the engine answers.
+// They are answered on the request's index and audit nothing; an Access that does not
+// implement them (or a replica without a decision point) knows no project, so a
+// delegated operation refuses its project administrators.
 type ProjectAccess interface {
 	// AdministeredProjects lists the projects the caller administers, with their
 	// switches (authz.Decider.ProjectsOn).

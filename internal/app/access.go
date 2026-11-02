@@ -27,10 +27,11 @@ type bridgeAccess struct {
 }
 
 var (
-	_ v1.Access       = bridgeAccess{}
-	_ v1.Prober       = bridgeAccess{}
-	_ v1.ActionAccess = bridgeAccess{}
-	_ v1.Beginner     = bridgeAccess{}
+	_ v1.Access        = bridgeAccess{}
+	_ v1.Prober        = bridgeAccess{}
+	_ v1.ActionAccess  = bridgeAccess{}
+	_ v1.Beginner      = bridgeAccess{}
+	_ v1.ProjectAccess = bridgeAccess{}
 )
 
 func newBridgeAccess(d authz.Decider, anonymousRead bool) bridgeAccess {
@@ -127,4 +128,22 @@ func (b bridgeAccess) RequireAction(ctx context.Context, c authz.Coordinate) err
 		return authz.Unauthenticated()
 	}
 	return errs.E(errs.Forbidden, errs.CodeForbidden, "The operation is not permitted.")
+}
+
+// AdministeredProjects implements [v1.ProjectAccess]: the questions about the
+// projects of the caller are the engine's; the bridge opens no project. Without
+// a decision point the caller administers none.
+func (b bridgeAccess) AdministeredProjects(ctx context.Context) ([]authz.AdministeredProject, error) {
+	if pa, ok := b.inner.(v1.ProjectAccess); ok {
+		return pa.AdministeredProjects(ctx)
+	}
+	return nil, nil
+}
+
+// AdministersRepository implements [v1.ProjectAccess].
+func (b bridgeAccess) AdministersRepository(ctx context.Context, repository string, right authz.ProjectRight) (string, bool, error) {
+	if pa, ok := b.inner.(v1.ProjectAccess); ok {
+		return pa.AdministersRepository(ctx, repository, right)
+	}
+	return "", false, nil
 }

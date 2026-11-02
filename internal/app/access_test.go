@@ -6,6 +6,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/api/edge"
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
+	"github.com/guided-traffic/trove/internal/authz"
 )
 
 // beginAccess is an Access that takes an index of its own, as the access over the
@@ -41,6 +42,42 @@ func TestR_AUTHZ_015_TheBridgeBeginsThroughTheAccessBehindIt(t *testing.T) {
 		// A nil *authz.Engine in the interface would not be nil: decider answers the untyped nil.
 		if d := (&App{parts: &wiring{}}).decider(); d != nil {
 			t.Fatalf("decider = %v on a replica without the authz area", d)
+		}
+	})
+}
+
+// projectInner answers the project questions of the Access behind the bridge.
+type projectInner struct {
+	v1.Access
+	projects []authz.AdministeredProject
+}
+
+func (p projectInner) AdministeredProjects(context.Context) ([]authz.AdministeredProject, error) {
+	return p.projects, nil
+}
+
+func (p projectInner) AdministersRepository(_ context.Context, repository string, _ authz.ProjectRight) (string, bool, error) {
+	return "web", repository == "web-npm", nil
+}
+
+func TestR_AUTHZ_026_TheBridgeForwardsTheProjectQuestions(t *testing.T) {
+	t.Run("R-AUTHZ-026 the bridge answers the project questions of the access behind it", func(t *testing.T) {
+		b := bridgeAccess{inner: projectInner{projects: []authz.AdministeredProject{{Key: "web"}}}}
+		got, err := b.AdministeredProjects(t.Context())
+		if err != nil || len(got) != 1 || got[0].Key != "web" {
+			t.Fatalf("%v %v", got, err)
+		}
+		if p, ok, err := b.AdministersRepository(t.Context(), "web-npm", authz.ProjectAny); err != nil || !ok || p != "web" {
+			t.Fatalf("%q %v %v", p, ok, err)
+		}
+	})
+	t.Run("R-AUTHZ-026 without a decision point the caller administers no project", func(t *testing.T) {
+		got, err := bridgeAccess{}.AdministeredProjects(t.Context())
+		if err != nil || len(got) != 0 {
+			t.Fatalf("%v %v", got, err)
+		}
+		if _, ok, _ := (bridgeAccess{}).AdministersRepository(t.Context(), "web-npm", authz.ProjectAny); ok {
+			t.Fatal("administers")
 		}
 	})
 }
