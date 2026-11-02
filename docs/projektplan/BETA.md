@@ -416,6 +416,9 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - 🟢 `TestR_CI_003_ARotationCausesOneFetchAndRandomKidsCauseNone` failed in 2 of 4 runs: the lookups caused no extra read (the key source lets at most one re-read per `cluster.epoch_poll_interval` through), but PostgreSQL flushed the 10 reads of the preceding rotation into `pg_stat_user_tables` between 0.9 s and 1.6 s late, on either side of the test's 1.5 s wait, so they landed in the measured window; the test now waits 2.5 s (`statsFlushWait`) before each reading and the bound is unchanged
 - 🟡 Two implementations of R-CI-003's key rules: W1's `internal/ci/keys_jwks.go` (built while the shared leaf did not exist)
   and W2's `jws.ParseJWKS`; one of them goes, so the key status and the validation cannot disagree (W4)
+- 🟢 Test and Release run 41525937899 failed in `integration (shard b)`: since W1, `trove migrate` applies `ci.issuers` on
+  every run, and the test helper `testenv.DeclareRoleBindings` built a bare configuration without the CI caches' SafetyTTL
+  (`cache: "ci_issuers" needs a SafetyTTL`); the helper sets them as `config.Load` does
 - 🟢 Test and Release run 41518863868 failed in `e2e on kind (access-long)`: the journey `06` clicked "Refresh now" by a
   substring match, and the new task `ci-keys-refresh` added a "Run task ci-keys-refresh now" button to the same screen; the
   locator is exact now

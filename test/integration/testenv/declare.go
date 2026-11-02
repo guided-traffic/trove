@@ -29,6 +29,10 @@ func DeclareRoleBindings(db config.Database, bindings ...config.AuthzRoleBinding
 	cfg.Health.WatchdogTimeout = 30 * time.Second
 	cfg.Audit = config.Audit{AsyncBuffer: 100, RetentionDays: 365}
 	cfg.Auth.BreakGlass.Username = "admin"
+	// trove migrate applies ci.issuers on every run (R-CI-001, Q-CI-16), also with none declared; its issuer
+	// service registers its caches with the SafetyTTL that config.Load fills from the defaults (R-ARCH-018).
+	cfg.CI.Mappings.CacheSafetyTTL = 10 * time.Minute
+	cfg.CI.SigningKeys.CacheSafetyTTL = 10 * time.Minute
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	_, err := postgres.Migrate(ctx, db, postgres.MigrateOptions{
