@@ -372,6 +372,28 @@ its data through the API with the administrator token (INV-17: `beforeAll` creat
 deletes them) and does through the UI only what it tests. Every name carries a base-36 timestamp, so a rerun needs no
 cleanup first.
 
+### The break-glass rotation hold
+
+The dev cluster is long-lived, and the internal-secrets-operator rotates `trove-break-glass` every 24 h
+([local-profile.md](local-profile.md#secrets)). For `login.break_glass.rotation_hold` (2 m) after the replicas
+notice the new file, the local login answers `503 break_glass_rotating` with a `Retry-After` (R-AUTH-014, Q-AUTH-14). A fresh
+cluster in CI never meets that window; a run on the dev cluster can. Every break-glass sign-in of the suite therefore goes
+through one of two shared helpers, which wait for the `Retry-After` and ask again, at most 3 m in total, and fail with a message
+that names the hold beyond that ([Q-AUTH-194](../spec/identity-and-authentication.md#q-auth-194--the-e2e-sign-ins-wait-out-the-break-glass-rotation-hold)):
+
+| Where | Helper | Used by |
+|---|---|---|
+| Go tests | `rotationhold.Wait` in [test/e2e/rotationhold](../../test/e2e/rotationhold/rotationhold.go), called by `browser.localLogin` | E1.1, the break-glass lockout of R-AUTH-042 |
+| Playwright journeys | `submitLocalForm` in [web/e2e/support.ts](../../web/e2e/support.ts), called by `signInLocal` and by the form journey of `01-sign-in.spec.ts` | every journey that signs in as the administrator |
+
+Only 503 with the code `break_glass_rotating` is waited for; a 401, a 429 `break_glass_locked` and a 503 `server_busy` reach
+the test's own assertion at once. The Go helper is unit-tested without a cluster (`go test ./test/e2e/rotationhold/`); the two
+journeys at the end of `01-sign-in.spec.ts` stub the answer (two holds with `Retry-After: 1`, then the real login; and a
+`server_busy` that is not waited for). The Playwright helper grows the test's timeout by the time it waits, so the wait is not
+charged to the journey's 120 s. A wait is printed (`break-glass rotation hold (R-AUTH-014): waiting ...`) in `playwright.log`
+and in the Go test's log. To see it for real, rotate by hand and start the run at once
+([local-profile.md](local-profile.md#secrets)).
+
 ### Every journey is scattered, and every page is checked
 
 - **Replicas.** The `replicas` fixture collects the `X-Trove-Replica` of every response the page received; a journey

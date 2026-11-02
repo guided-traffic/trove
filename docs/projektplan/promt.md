@@ -216,16 +216,6 @@ Found on 2026-11-02 in the fix wave of phase 5a:
   Administrators only (`repositories:write-config`). Done when the request can name the expected current owner (for example
   `?from=<key>` or an empty value for unassigned) and answers 409 when it differs, and the dialog sends it.
 
-### Tests and tools
-
-- **F-33 · The browser journeys on a long-lived dev cluster fail inside the break-glass rotation hold** (confirmed, by the
-  development agent while closing phase 5a). internal-secrets-operator rotates `trove-break-glass` every 24 h
-  (`iso.gtrfc.com/rotate: 24h`); for `login.break_glass.rotation_hold` (2 m) after the change a local login answers `503
-  break_glass_rotating` (R-AUTH-014, Q-AUTH-14, as designed). A `TestE1_11Journeys` run on 2026-11-02 that started two
-  minutes after the rotation at 18:01:19Z failed `01-sign-in` and `02-repository-and-files` at the break-glass sign-in. A
-  fresh cluster in CI does not meet it. Done when the journeys' sign-in honours the `Retry-After` of
-  `break_glass_rotating`, or the dev profile's rotation is set so that it cannot fall into a run.
-
 Found on 2026-11-01 while writing the manual (`docs/manual`) and the design change of Q-UI-88:
 
 ### Tests and tools

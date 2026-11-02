@@ -5319,6 +5319,25 @@ Context: the trigger `AI003` of migration `00019_projects.sql` refuses a project
 
 **Applied in the spec:** R-AUTH-020 (the name rule). Code: `internal/auth/principal/serviceaccounts.go` (`bindProject`, `prefixRequired`, `createServiceAccount`).
 
+### Q-AUTH-194 · The e2e sign-ins wait out the break-glass rotation hold
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the internal-secrets-operator rotates `trove-break-glass` every 24 h on the dev cluster (`iso.gtrfc.com/rotate: 24h`); for `login.break_glass.rotation_hold` (2 m) after the replicas notice the new file, the local login answers 503 `break_glass_rotating` with a `Retry-After` (R-AUTH-014, Q-AUTH-14). A `TestE1_11Journeys` run on 2026-11-02, two minutes after a rotation, failed `01-sign-in` and `02-repository-and-files` at the break-glass sign-in. A fresh cluster in CI never meets the window.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The sign-in helpers wait for the `Retry-After` and ask again (chosen) | One Go helper (`test/e2e/rotationhold`, used by `browser.localLogin`) and one Playwright helper (`submitLocalForm` in `web/e2e/support.ts`, used by every local sign-in) retry on 503 with the code `break_glass_rotating` only, for at most 3 m in total, then fail with a message that names the hold | The designed answer is honoured where it is met; a manual rotation, or a rotation that falls into the middle of a run, is covered too; the operator's rotation stays a live exercise of R-AUTH-014 | A run inside the hold takes up to 3 m longer |
+| (b) Take the rotation out of the dev profile (no `rotate`, or an interval of days) | The window shrinks or goes away | No wait in the tests | A window of days is still met once; without a rotation nothing exercises the operator path of Q-AUTH-14 on the dev cluster; the profile no longer resembles an installation that rotates |
+| (c) Both | The helper and a longer interval | The wait is rare | Two mechanisms for one cause; the interval buys nothing the helper does not already give |
+| (d) Wait once in the global setup | Probe before the first journey | One place | A hold that starts during the run (the 24 h rotation can) is still met; the probe needs a login or counts a failed credential |
+
+**Choice:** (a). The interval of 24 h stays as it is.
+
+**Rationale:** the 503 is the contract of R-AUTH-014, and `Retry-After` is how a client is told when to ask again; a test client that honours it exercises that contract instead of avoiding it. The retry is not a blind one: only 503 with `break_glass_rotating` is waited for, the wait is bounded by the 2 m hold plus a minute, and every other answer (401, 429 `break_glass_locked`, 503 `server_busy`) reaches the test's own assertion unchanged. The development agent revisits (b) when the waits cost more than a minute per run on a cluster that rotates daily.
+
+**Applied in the spec:** R-AUTH-014 and Q-AUTH-14 are unchanged. Code: `test/e2e/rotationhold/rotationhold.go` (`Wait`, with `rotationhold_test.go`), `test/e2e/m1_env_test.go` (`localLogin`), `web/e2e/support.ts` (`submitLocalForm`, `signInLocal`), `web/e2e/tests/01-sign-in.spec.ts`. Documentation: [e2e.md](../developer/e2e.md#the-break-glass-rotation-hold), [local-profile.md](../developer/local-profile.md).
+
 ## What this does not cover
 
 ### H-15 · Consent phishing of command-line browser login

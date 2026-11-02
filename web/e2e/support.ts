@@ -111,12 +111,42 @@ export async function signInWithKeycloak(page: Page, user: 'alice' | 'bob', pass
   await expect(page.getByRole('button', { name: /User menu|Benutzermen/ })).toBeVisible();
 }
 
+/** The most one local sign-in waits for the break-glass rotation hold (2 minutes, R-AUTH-014) and the replicas that notice it. */
+export const rotationHoldCapMs = 3 * 60_000;
+
+/**
+ * Submits the local sign-in form with `submit` (the click on its button) and waits out the break-glass rotation
+ * hold: for `login.break_glass.rotation_hold` after the operator rotated `trove-break-glass`, the local login
+ * answers `503 break_glass_rotating` with a `Retry-After` (R-AUTH-014, Q-AUTH-14). A long-lived dev cluster meets
+ * that window once a day; the sign-in then waits for the Retry-After and submits again, for at most
+ * `rotationHoldCapMs` in total (Q-AUTH-194). Any other answer, 503 or not, ends the wait and is left to the
+ * journey's own assertion. The test's timeout grows by the time waited, so that the wait is not charged to the journey.
+ */
+export async function submitLocalForm(page: Page, submit: () => Promise<void>): Promise<void> {
+  let waited = 0;
+  for (;;) {
+    const answered = page.waitForResponse((r) => r.url().endsWith('/auth/local/login') && r.request().method() === 'POST');
+    await submit();
+    const res = await answered;
+    if (res.status() !== 503 || ((await res.json().catch(() => ({}))) as { code?: string }).code !== 'break_glass_rotating') return;
+    const retryAfter = Number(res.headers()['retry-after']);
+    const wait = (Number.isFinite(retryAfter) && retryAfter >= 1 ? retryAfter : 1) * 1000 + 1000;
+    if (waited + wait > rotationHoldCapMs) {
+      throw new Error(`the break-glass login is still in its rotation hold (503 break_glass_rotating) after ${waited / 1000} s, limit ${rotationHoldCapMs / 1000} s`);
+    }
+    console.log(`break-glass rotation hold (R-AUTH-014): waiting ${wait / 1000} s for the Retry-After, ${waited / 1000} s waited so far`);
+    test.info().setTimeout(test.info().timeout + wait);
+    await page.waitForTimeout(wait);
+    waited += wait;
+  }
+}
+
 /** Signs in as the break-glass administrator with the local form and waits for the session. */
 export async function signInLocal(page: Page, ui = '/ui/en'): Promise<void> {
   await page.goto(`${ui}/login?local=1`);
   await page.getByLabel(/Username|Benutzername/).fill('admin');
   await page.getByLabel(/Password|Passwort/).fill(breakGlassPassword);
-  await page.locator('form.local button[type=submit]').click();
+  await submitLocalForm(page, () => page.locator('form.local button[type=submit]').click());
   await expect(page.locator('.user-name')).toHaveText('admin');
 }
 

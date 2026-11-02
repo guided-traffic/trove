@@ -33,6 +33,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/guided-traffic/trove/test/e2e/rotationhold"
 )
 
 // ── profile ──────────────────────────────────────────────────────────────────
@@ -1060,10 +1062,19 @@ func htmlUnescape(s string) string {
 	return strings.NewReplacer("&amp;", "&", "&#61;", "=", "&#43;", "+", "&quot;", `"`, "&#39;", "'").Replace(s)
 }
 
-// localLogin posts the break-glass credentials.
+// localLogin posts the break-glass credentials. Inside the rotation hold after the operator rotated the Secret
+// (503 break_glass_rotating, R-AUTH-014, Q-AUTH-14) it waits for the Retry-After and posts again, for at most
+// rotationhold.MaxWait; every other answer, 503 or not, is returned as it is (Q-AUTH-194).
 func (b *browser) localLogin(user, password string) reply {
 	b.t.Helper()
-	r := b.do(http.MethodPost, "/auth/local/login", map[string]string{"username": user, "password": password})
+	var r reply
+	_, err := rotationhold.Wait(func() rotationhold.Answer {
+		r = b.do(http.MethodPost, "/auth/local/login", map[string]string{"username": user, "password": password})
+		return rotationhold.Answer{Status: r.Status, Header: r.Header, Body: r.Body}
+	}, rotationhold.MaxWait, time.Sleep, b.t.Logf)
+	if err != nil {
+		b.t.Fatalf("%v", err)
+	}
 	if r.Status == 204 {
 		b.syncCSRF()
 	}

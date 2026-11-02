@@ -145,8 +145,11 @@ Go duration plus a `d` suffix, overwrites the field when the interval has passed
 reaches the `web` pods through the kubelet (a directory mount, no `subPath`); trove notices the new file within
 `auth.break_glass.check_interval` (10 s), then answers the local login with 503 `break_glass_rotating` for the 2-minute
 `rotation_hold` and ends the break-glass sessions (Q-AUTH-14). That is acceptable in the dev profile, and it is why the interval is
-24 h and not minutes: a rotation inside an e2e run (E1.1, E1.11) would turn their local logins into 503. To trigger a
-rotation on demand, set a short interval and put it back:
+24 h and not minutes. A rotation that falls into an e2e run (E1.1, E1.11) does not fail it: the local sign-ins of the suite
+wait for the `Retry-After` of the 503, at most 3 minutes ([Q-AUTH-194](../spec/identity-and-authentication.md#q-auth-194--the-e2e-sign-ins-wait-out-the-break-glass-rotation-hold),
+[e2e.md](e2e.md#the-break-glass-rotation-hold)); a hand-made client has to do the same. To trigger a
+rotation on demand, set a short interval, wait until `generated-at` changes, and put it back; the hold starts when the pods
+notice the new file (kubelet sync and `check_interval`, about a minute), not at the rotation:
 
 ```shell
 kubectl --context kind-trove -n trove annotate secret trove-break-glass --overwrite iso.gtrfc.com/rotate=5m   # rotates when 5m passed since generated-at
