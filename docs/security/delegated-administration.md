@@ -2,7 +2,8 @@
 
 Status: built in beta phase 5a ([R-AUTHZ-026](../spec/authorization.md#r-authz-026--projects-for-delegated-administration)). The schema with
 its guards, the engine's questions, the declaration form and the handlers are in the code ([developer/projects.md](../developer/projects.md));
-the integration tests of the phase check each rule below. The open gaps are the `H-` items at the end of the pages that own the mechanism.
+the integration tests of the phase check each rule below. The open gaps are the `H-` items at the end of the pages that own the mechanism;
+the one of a project administrator's remote repositories, which only this page describes, is at the end of this page.
 
 This page says what a project administrator can reach, what bounds it, and what a stolen credential of one gains. It does not repeat
 the model of permissions ([permissions.md](permissions.md)) or of tokens ([tokens-and-credentials.md](tokens-and-credentials.md)).
@@ -52,7 +53,33 @@ Four layers, none of which depends on the one before it:
   installation allows for service-account tokens, has `admin: false` and no `system` item, and may be bound to endpoints
   ([Q-AUTHZ-177](../spec/authorization.md#q-authz-177--what-a-project-administrator-may-do-with-service-accounts-and-their-tokens)).
   The account holds repository rights only, through the project's policies. Revoking, disabling and deleting never depend on a switch.
+- Such a token is not self-rotatable (422 at `/selfRotatable`,
+  [Q-AUTH-192](../spec/identity-and-authentication.md#q-auth-192--a-token-a-project-administrator-issues-is-not-self-rotatable)): each
+  rotation would give its successor the original lifetime, so the partner holding it could renew it for as long as it kept rotating.
+  A project administrator cannot rotate it either (Q-AUTH-190).
 - Creating a token requires a recent sign-in with a session (R-API-007), as for every token.
+
+## Remote repositories of a project
+
+A project administrator with `manageRepositories` names the upstream of its project's remote repositories and tests it
+([Q-AUTHZ-173](../spec/authorization.md#q-authz-173--a-project-administrator-creates-remote-repositories)). The installation's
+address rules bound where a request goes ([egress.md](egress.md)); what the request carries and which path it takes is bounded by
+the repository service, in the transaction of the write, against the stored section
+([delegated.go](../../internal/repository/delegated.go), `checkDelegatedRemote`):
+
+| What | A project administrator's write and unsaved test | Why |
+|---|---|---|
+| a secret it types (`{"value": …}`) | accepted, sealed for this repository | it is the project administrator's own |
+| a `secretRef` (a file of `secrets_dir`, a `TROVE_CAC_` variable) | 422 `secret_value_required`, except the reference the repository holds, sent back unchanged | the references are the installation's and visible in the documents of the project; one would send a partner's token to the project administrator's host ([Q-REPO-127](../spec/repositories-and-proxy.md#q-repo-127--a-project-administrator-gives-an-upstream-secret-as-a-value-and-a-stored-one-stays-with-its-hosts)) |
+| a stored credential, sealed or referenced, kept while `url` changes, a `sendCredentials` host is added or `forwardAuthOnRedirect` turns on | 422 `secret_value_required` at `/remote/password`: a new value, or none | the credential an administrator of trove stored goes to the hosts it was stored for and nowhere else |
+| `outboundProxy.mode` other than `default`, a `sourceNetwork` | 422 `outbound_path_restricted`, except the stored values kept while `url` and the extra hosts stay | the outbound proxy sees every delegate's traffic, and a source address a partner trusts is used only for the upstream an administrator chose ([Q-REPO-128](../spec/repositories-and-proxy.md#q-repo-128--a-project-administrators-remote-repository-takes-the-installations-outbound-path)) |
+
+The saved upstream test reads the repository's project again in the service, as a replace, a patch and a delete do, so a repository that
+left the project after the handler decided is not contacted (404). A delete with `detach=true` edits the project's virtual repositories only:
+while one outside the project lists the repository, the delete answers 409 and names the project's own
+([Q-REPO-129](../spec/repositories-and-proxy.md#q-repo-129--a-project-administrators-delete-leaves-virtual-repositories-outside-the-project-alone)).
+The events `repository.created`, `.updated` and `.deleted` of a project's repository carry `project`. A holder of
+`repositories:write-config` is not bound by the rules of the table ([H-281](data-and-secret-flow.md#h-281--a-holder-of-repositorieswrite-config-can-send-any-file-of-secrets_dir-to-an-upstream-of-their-choice)).
 
 ## Names
 
@@ -83,7 +110,8 @@ What a rollout costs is a project's rights absent on old replicas, never a grant
 
 ## What this does not cover
 
-The gaps of these mechanisms are recorded on the spec page that describes them, and only linked here:
+The gaps of these mechanisms are recorded on the spec page that describes them, and only linked here, except H-403, whose mechanism
+only this page describes:
 
 - [H-392](../spec/authorization.md#h-392--a-project-administrator-can-enumerate-user-and-group-names) — the lookup of users and
   groups lists the names of every active user and group by prefix;
@@ -101,3 +129,23 @@ The gaps of these mechanisms are recorded on the spec page that describes them, 
   predates a project keeps the project's prefix;
 - [H-406](../spec/authorization.md#h-406--the-audit-event-of-a-refused-project-administrator-does-not-name-the-project) — the audit
   event of a refused project administrator does not name the project.
+
+### H-403 · What a project administrator still reaches of an upstream an administrator configured
+
+Stage: the remote repositories an administrator of trove assigned to a project, and the rules of
+[the table above](#remote-repositories-of-a-project) ([delegated.go](../../internal/repository/delegated.go)). Subject: the upstream
+credentials, references and outbound path an administrator configured for such a repository, and the partner networks they open.
+
+- **Live, by design of the assignment.** While `url` and the credential hosts stay, a project administrator causes fetches and saved
+  upstream tests with the stored credential, the stored reference and the stored `sourceNetwork` or `direct` mode, and reads
+  `authenticated` and the status of the answer. It cannot send them elsewhere, and it cannot read a value. What makes it real: an
+  administrator who assigns a repository whose upstream credential the project is not meant to use; unassign it, or move the credential
+  to a repository outside the project.
+- **Live, names only.** The full document shows a reference by name (`{"secretRef": {"file": "partner-token"}}`), so a project
+  administrator learns the file names under `secrets_dir` and the `TROVE_CAC_` variable names its repositories use, not their content.
+- **Live, one bit.** The 409 of a delete tells a project administrator that a virtual repository outside the project lists one of its
+  repositories (Q-REPO-129), without the key.
+- **Dormant until R-REPO-034, R-REPO-036 and R-REPO-037.** A named client certificate, a sensitive header value and a named outbound
+  proxy are installation objects of the same kind as a reference; today every document that sets them is refused with `not_applicable`,
+  for every writer. What makes it real: building one of them without extending `checkDelegatedRemote` to it, so that a project
+  administrator could present the installation's client certificate, or send a header value an administrator stored, to a host it names.

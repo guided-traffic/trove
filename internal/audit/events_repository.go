@@ -8,14 +8,16 @@ package audit
 
 // repositoryEventSchema is the data of the three types. changes lists the
 // top-level members of the document that the write changed (key, class and format
-// on a create); phase tells the two events of a deletion apart.
+// on a create); phase tells the two events of a deletion apart; project is the key of
+// the repository's project, absent for a repository of none (R-AUTHZ-026).
 const repositoryEventSchema = `{
   "type": "object",
   "properties": {
     "class": {"type": "string", "enum": ["local", "remote", "virtual"]},
     "format": {"type": "string"},
     "changes": {"type": "array", "maxItems": 1000, "items": {"type": "string"}},
-    "phase": {"type": "string", "enum": ["started", "completed"]}
+    "phase": {"type": "string", "enum": ["started", "completed"]},
+    "project": {"type": "string"}
   },
   "required": ["class", "format", "changes"],
   "additionalProperties": false

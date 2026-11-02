@@ -180,6 +180,15 @@ const (
 	// CodeProjectSwitchOff: a project administrator's operation that a privilege
 	// switch of the project (managePolicies, manageRepositories) does not allow.
 	CodeProjectSwitchOff = "project_switch_off"
+	// CodeSecretValueRequired: a project administrator's remote section, or its
+	// unsaved upstream test, names a secret reference other than the stored one, or
+	// keeps a stored credential while it changes where credentials go (url, an extra
+	// host with sendCredentials, forwardAuthOnRedirect) (Q-REPO-127).
+	CodeSecretValueRequired = "secret_value_required"
+	// CodeOutboundPathRestricted: a project administrator's remote section chooses
+	// outboundProxy.mode direct or a sourceNetwork, or keeps the stored ones while it
+	// changes the url or adds an extra host (Q-REPO-128).
+	CodeOutboundPathRestricted = "outbound_path_restricted"
 )
 
 // <<< M5a projects
@@ -490,6 +499,8 @@ var registry = []CodeInfo{
 	{CodeProjectKeyOverlap, Conflict, "Project key overlaps", "A project key is not the prefix, up to a hyphen, of another project's key or of a global service account's name."},
 	{CodeUnknownProject, Invalid, "Unknown project", "The project does not exist, or the caller does not administer it; the answer does not tell which."},
 	{CodeProjectSwitchOff, Forbidden, "Project switch off", "The project's administrator right for this operation (managePolicies or manageRepositories) is switched off; an administrator turns it on."},
+	{CodeSecretValueRequired, Invalid, "Secret value required", "A project administrator gives an upstream secret as a value: a secret reference is the installation's, and a stored credential does not follow a change of url, of an extra host that receives credentials or of forwardAuthOnRedirect."},
+	{CodeOutboundPathRestricted, Invalid, "Outbound path restricted", "A project administrator's remote repository takes the installation's outbound path: outboundProxy.mode direct and a sourceNetwork are an administrator's, and stay only while the url and the extra hosts do."},
 	// <<< M5a projects
 	//
 	// >>> M1 repository

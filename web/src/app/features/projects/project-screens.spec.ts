@@ -277,6 +277,8 @@ describe('Session helpers and messages of the project screens (R-UI-041, R-UI-04
       'repository_assigned',
       'project_key_overlap',
       'project_switch_off',
+      'secret_value_required',
+      'outbound_path_restricted',
     ]) {
       const p = describeProblem(new ApiError(409, { code, detail: 'English detail' }, 'rid-1'));
       expect(p.known, code).toBe(true);

@@ -14882,6 +14882,24 @@
         <target>Das ist für das Projekt ausgeschaltet. Ein Administrator von trove kann es einschalten.</target>
       </segment>
     </unit>
+    <unit id="problem.secret_value_required">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:114</note>
+      </notes>
+      <segment>
+        <source>Enter the password or token of this upstream again.</source>
+        <target>Geben Sie das Passwort oder Token dieses Upstreams erneut ein.</target>
+      </segment>
+    </unit>
+    <unit id="problem.outbound_path_restricted">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:116</note>
+      </notes>
+      <segment>
+        <source>The outbound path of this repository is set by an administrator of trove.</source>
+        <target>Den ausgehenden Weg dieses Repositorys legt ein Administrator von trove fest.</target>
+      </segment>
+    </unit>
     <unit id="nav.projects">
       <notes>
         <note category="location">src/app/core/navigation.ts:56</note>

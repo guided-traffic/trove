@@ -254,6 +254,7 @@ func (s *Service) CreateTxIn(ctx context.Context, tx meta.Tx, c Caller, body []b
 	if err != nil {
 		return Stored{}, err
 	}
+	delegatedRemote(v, w, nil, &d)
 	// >>> M2 virtual
 	rel, err := s.resolveVirtual(ctx, qs, v, &d, newVirtualGuard(w, nil))
 	if err != nil {
@@ -415,6 +416,7 @@ func (s *Service) update(ctx context.Context, c Caller, key string, pre Precondi
 		}
 		nd, v := s.checkUpdate(cur, nd)
 		refuseProjectChange(v, w, project)
+		delegatedRemote(v, w, &cur, &nd)
 		// >>> M2 virtual
 		rel, err := s.resolveVirtual(ctx, qs, v, &nd, newVirtualGuard(w, curRel))
 		if err != nil {
@@ -642,20 +644,23 @@ func ChangeEviction(payload json.RawMessage) (id int64, older func(version int64
 	return id, func(v int64) bool { return v < p.Version }, true
 }
 
-// eventDetails is the data of the repository.* events (R-OPS-016).
+// eventDetails is the data of the repository.* events (R-OPS-016). Project is the
+// key of the repository's project, absent for a repository of none (R-AUTHZ-026), as
+// the events of a project service account carry it.
 type eventDetails struct {
 	Class   Class    `json:"class"`
 	Format  string   `json:"format"`
 	Changes []string `json:"changes"`
 	Phase   string   `json:"phase,omitempty"`
+	Project string   `json:"project,omitempty"`
 }
 
 // afterWrite records the audit event and the change-log row of a write in the
-// writer's transaction.
+// writer's transaction. r.ProjectKey names the project in the event.
 func (s *Service) afterWrite(ctx context.Context, tx meta.Tx, c Caller, event string, r Repository,
 	changes []string,
 ) error {
-	return s.recordAndNotify(ctx, tx, c, event, r, eventDetails{Class: r.Class, Format: r.Format, Changes: changes},
+	return s.recordAndNotify(ctx, tx, c, event, r, eventDetails{Class: r.Class, Format: r.Format, Changes: changes, Project: r.ProjectKey},
 		strings.TrimPrefix(event, "repository."))
 }
 

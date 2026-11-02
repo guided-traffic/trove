@@ -205,7 +205,7 @@ const listRepositories = `-- name: ListRepositories :many
 
 SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config_version, created_by, updated_by, last_activity_at, claims_version, project_id
   FROM repositories
- ORDER BY key
+ ORDER BY key COLLATE "C"
 `
 
 // Queries of the repository model (R-REPO-001 to R-REPO-013). The repository
@@ -215,6 +215,10 @@ SELECT id, key, format, class, config, created_at, updated_at, lifecycle, config
 // package reads its pgtype fields through their methods and never imports the
 // driver. Statements that return at most one row are :many, so the caller never
 // meets the driver's no-rows error.
+// Byte order, whatever the database's collation: the list's cursor is the last key
+// of a page compared in Go, byte by byte (R-REPO-012). Under en_US.UTF-8 the hyphen
+// weighs nothing at the first level, so `weba` sorted before `web-b` and the page
+// after `weba` skipped `web-b`.
 func (q *Queries) ListRepositories(ctx context.Context) ([]Repository, error) {
 	rows, err := q.db.Query(ctx, listRepositories)
 	if err != nil {

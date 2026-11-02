@@ -66,6 +66,12 @@ makes that repository's client fail with `502 upstream_secret_unavailable` and l
 and when the client reads it (`SecretRef.Valid`): a file name has no path separator, no `..` and no leading dot, a variable carries the
 prefix `TROVE_CAC_`, so `TROVE_DATABASE_PASSWORD` and the files of the key ring cannot be routed to an upstream whatever a row says.
 
+A project administrator (R-AUTHZ-026) gives a secret as a value only: its writes and its unsaved upstream test refuse a reference other
+than the one the repository holds (422 `secret_value_required`), and a write of it that changes `url`, adds a `sendCredentials` host or turns
+`forwardAuthOnRedirect` on keeps no stored credential, sealed or referenced: it sends a new value or none
+([Q-REPO-127](../spec/repositories-and-proxy.md#q-repo-127--a-project-administrator-gives-an-upstream-secret-as-a-value-and-a-stored-one-stays-with-its-hosts),
+[delegated-administration.md](delegated-administration.md#remote-repositories-of-a-project)).
+
 The plaintext lives in the replica that sends a request: in the client's credential object for as long as the client is cached, and in
 the `Authorization` header of the request in flight. The credential policy of the client removes every `Authorization` header and sets it
 again only for the hosts of [egress.md](egress.md#which-hosts-receive-credentials), and over `https` only while the upstream itself is
@@ -241,6 +247,14 @@ upstream tokens that the operator mounts under `config_as_code.secrets_dir`, one
 
 What makes it real: one `secrets_dir` that holds the tokens of several upstreams and a repository administrator who is not meant to
 know all of them. The mitigation is operational: mount only the references that the holders of the capability may use.
+
+Not reached by a project administrator: its writes and its unsaved upstream test take no reference but the one the repository holds,
+and a stored credential does not follow a change of `url`, of a credential host or of `forwardAuthOnRedirect`
+([Q-REPO-127](../spec/repositories-and-proxy.md#q-repo-127--a-project-administrator-gives-an-upstream-secret-as-a-value-and-a-stored-one-stays-with-its-hosts),
+pinned by `TestR_AUTHZ_026_ADelegatedUpstreamSendsOnlyItsOwnSecret`). Until that fix of phase 5a, the holder of the capability and a
+project administrator with `manageRepositories` alike could send any file of the directory, and the sealed credential of a repository
+assigned to the project, to a host of their choice. What a project administrator still reaches is
+[H-403](delegated-administration.md#h-403--what-a-project-administrator-still-reaches-of-an-upstream-an-administrator-configured).
 
 ### H-300 · The advisory provider's answer is trusted as it is
 

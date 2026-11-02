@@ -210,6 +210,7 @@ the command and a test have the same rule (Q-AUTH-190):
 |---|---|---|
 | lifetime | never non-expiring (`Admin` stays false), at most the SAT maximum | `resolveLifetime` |
 | scope | no `system` item and `admin: false`, else 422 `invalid_scope`; repository grants, `inherit` and an `endpoints` binding are allowed | `checkDelegated` in `prepareCreate` |
+| rotation by itself | never: `selfRotatable: true` is 422 at `/selfRotatable`, because each self-rotation gives the successor the original lifetime and the partner would renew the token for good (Q-AUTH-192) | `checkDelegated` |
 | owner | an account of a project the caller administers with `managePolicies`; any other caller gets the plain 403 whether the account exists or not | `delegatedTokenAccount` |
 | visibility | `GET /tokens`, `GET /tokens/{id}`, `DELETE /tokens/{id}` and `DELETE /service-accounts/{name}/tokens` reach the tokens of the project's accounts and no others; a token elsewhere answers 404; a rotation is not delegated | `seesProject`, `visible` |
 | audit | `token.created` and `token.revoked` carry `project` | `insertTx`, `recordRevoked` |

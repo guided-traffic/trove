@@ -28,17 +28,18 @@ virtual class (members, deploy target, pin rules, claims and their routing) is b
 | [delete.go](../../internal/repository/delete.go) | `Service.Delete`, the job kind `repository-delete` and its handler `RunDeleteJob` |
 | [activity.go](../../internal/repository/activity.go) | `Activity`: the in-memory buffer of `last_activity_at` (R-REPO-012), flushed once a minute and at shutdown |
 | [reader.go](../../internal/repository/reader.go) | `SnapshotReader` (the `Reader` implementation): the snapshot, the negative cache of unknown keys, the lookup of R-ARCH-011 step 2 |
-| [project.go](../../internal/repository/project.go) | the project side of a write (R-AUTHZ-026): `Write{Project, Delegate}`, `resolveProject` (locks the project `FOR SHARE`, 422 `unknown_project`, 422 `project_prefix_required` for a delegate), `projectKeys`, `virtualGuard` (Q-AUTHZ-178) |
+| [project.go](../../internal/repository/project.go) | the project side of a write (R-AUTHZ-026): `Write{Project, Delegate}`, `resolveProject` (locks the project `FOR SHARE`, 422 `unknown_project`, 422 `project_prefix_required` for a delegate's key without `<project>-` and a character after it), `projectKeys`, `virtualGuard` (Q-AUTHZ-178) |
+| [delegated.go](../../internal/repository/delegated.go) | the upstream rules of a delegate's write and unsaved test: `delegatedRemote`, `checkDelegatedRemote` (422 `secret_value_required` for a reference other than the stored one and a stored credential kept across a change of its hosts, Q-REPO-127; 422 `outbound_path_restricted` for a mode or a source network the delegate chooses, Q-REPO-128) |
 | [codes.go](../../internal/repository/codes.go) | codes of other areas that the validation names as strings |
 | [remote.go](../../internal/repository/remote.go) | `RemoteSettings` and its parts, `SecretField`, `SecretRef`, the strict request form (`remoteInput`, `checkRemoteShape`), `Repository.Remote()`, `upstreamIdentityChanged` |
 | [validate_remote.go](../../internal/repository/validate_remote.go) | `validateRemote`: defaults from the catalog, ranges, `normalizeUpstreamURL`, the warnings, the refusal of the P1 members, the secret fields into `pendingSecret`s |
 | [secrets_store.go](../../internal/repository/secrets_store.go) | `SealSecret`, `OpenSecret`, `SecretStore` (rows for the clients), `RemoteDeps` and `Service.Bind`, `writeSecrets`, `ResealSecrets` |
-| [upstream.go](../../internal/repository/upstream.go) | `UpstreamProber`, `UpstreamTestResult`, `Service.UpstreamTest`, `Service.UpstreamTestUnsaved` |
+| [upstream.go](../../internal/repository/upstream.go) | `UpstreamProber`, `UpstreamTestResult`, `Service.UpstreamTest`, `UpstreamTestIn` (the project of the row checked again for a delegate), `Service.UpstreamTestUnsaved`, `UpstreamTestUnsavedIn` (a delegate's section under `delegatedRemote`) |
 | [formats/catalog/catalog.go](../../internal/formats/catalog/catalog.go) | the format catalog (a leaf): `Facts`, `Names`, `Exposure`, `Entry`, `Registry`, `Default` |
 | [formats/formats.go](../../internal/formats/formats.go) | `Descriptor` (the catalog's `Facts` plus the contract's own members), `Format`, `Register` (validates and fills the catalog), `Lookup`, `Descriptors`, and the aliases of the catalog's types; the contract is described in [formats.md](formats.md) |
 | [formats/generic/generic.go](../../internal/formats/generic/generic.go) | the generic format: descriptor and request classification |
 | [formats/all/all.go](../../internal/formats/all/all.go) | registers every format; the composition root imports it |
-| [audit/events_repository.go](../../internal/audit/events_repository.go) | `repository.created`, `.updated`, `.deleted`, `.claims_changed` |
+| [audit/events_repository.go](../../internal/audit/events_repository.go) | `repository.created`, `.updated`, `.deleted` (details `class`, `format`, `changes`, `phase`, and `project` for a repository of a project), `.claims_changed` |
 | [app/wire_repository.go](../../internal/app/wire_repository.go) | `wireRepository` (reader and service, both on `catalog.Default()`), the job kind registration |
 | [app/wire_proxy.go](../../internal/app/wire_proxy.go) | `wireProxy`: the upstream clients, and `Service.Bind` with the key ring and the prober |
 | [queries/remote_settings.sql](../../internal/meta/postgres/queries/remote_settings.sql) | the statements on `repository_secrets` |
@@ -79,8 +80,8 @@ change back, R-OPS-015) and the change-log row (`Changes.Notify` on `repo_config
 | `GET /repositories/{key}` | `Get(ctx, key)` | from PostgreSQL (R-API-052); `Document.WithoutAdminNotes`, `Document.ConsumerView` for the narrower views |
 | `PATCH` | `Patch(ctx, caller, key, pre, apply Patcher)`, `PatchIn(…, Write)` | `apply` turns the stored document, as JSON, into the patched one under the row lock; the handler passes `v1.MergePatcher(patch)`, the API's one RFC 7396 merge (Q-API-157), and the result is read strictly like a PUT body; `pre` is `MatchVersion(n)` or `MatchAny()`; 428 is the handler's, because the header is |
 | `PUT` | `Replace(ctx, caller, key, pre, body)`, `ReplaceIn(…, Write)` | omitted settings revert to defaults; an omitted `key`, `class` or `format` means "unchanged"; a `Write.Project` that differs from the stored project is 422 `immutable` at `/project`; a `Write.Delegate` whose project is not the repository's is 404 (the repository moved out since the handler decided) |
-| `GET /repositories` | `List(ctx, filter)` | sorted by key, keyset paging (`After`, `Limit`, `HasMore`), filters of R-REPO-012 (`Project` keeps the repositories of one project; an unknown key keeps none); every reader (`Get`, `List`, `SnapshotReader`) fills `Repository.ProjectKey` from the project table |
-| `DELETE` | `Delete(ctx, caller, key, detach)`, `DeleteTx(ctx, tx, …, pre)` | `DeleteResult{JobID, JobState, Done}`: 202 with the job, or 204 for a repository without content; `pre` is the optional `If-Match` (412 on a stale version) |
+| `GET /repositories` | `List(ctx, filter)` | sorted by key in byte order (`ListRepositories` sorts `COLLATE "C"`, because `After` is compared in Go byte by byte; R-REPO-012, H-404), keyset paging (`After`, `Limit`, `HasMore`), filters of R-REPO-012 (`Project` keeps the repositories of one project; an unknown key keeps none); every reader (`Get`, `List`, `SnapshotReader`) fills `Repository.ProjectKey` from the project table |
+| `DELETE` | `Delete(ctx, caller, key, detach)`, `DeleteTx(ctx, tx, …, pre)`; a delegate's `DeleteIn`, `DeleteTxIn(…, delegate)` | `DeleteResult{JobID, JobState, Done}`: 202 with the job, or 204 for a repository without content; `pre` is the optional `If-Match` (412 on a stale version); a delegate's delete checks the project of the locked row and never detaches from a virtual repository outside it (Q-REPO-129) |
 
 Errors are `*errs.Error`: `malformed_request` (400, field code `invalid_document` when no pointer is known), `validation_failed` (422, the codes of R-REPO-008 in `Fields`), `already_exists`
 (409), `repository_not_found` (404), `precondition_failed` (412, with `*StaleVersion` as the cause carrying the current
@@ -105,7 +106,10 @@ registered in `app.jobRegistry` through `registerRepositoryJobs`; its handler fi
 registry is built and frozen before the repository component is wired. A virtual repository has no content and is
 removed in the first transaction. A local or remote repository that a virtual repository lists answers 409
 `repository_referenced` unless `detach` is set, in which case the same transaction removes the references
-([virtual.md](virtual.md) "Deleting a repository").
+([virtual.md](virtual.md) "Deleting a repository"). For a delegate, `detachReferences` asks `refuseForeignReferences` first: while a
+virtual repository outside the project lists the repository the delete answers 409 with or without `detach`, and the detail names the
+project's own referencing virtual repositories only (Q-REPO-129). The events of a project's repository carry `project` in their details;
+the delete paths resolve it from the row (`projectKeyOf`), because `toRepository` fills only `ProjectID`.
 
 ## Remote settings
 
@@ -137,7 +141,15 @@ The `remote` section of a remote repository (R-REPO-024) is validated in the sam
   invalidation rolls the update back.
 - **Upstream test.** `UpstreamTest(ctx, key)` reads the saved repository from PostgreSQL and hands it to the prober;
   `UpstreamTestUnsaved(ctx, body)` runs the whole validation for `{format, remote}` and hands the result, with the inline password
-  apart, to the prober. The prober is `upstream.Clients` ([proxy.md](proxy.md)).
+  apart, to the prober. The prober is `upstream.Clients` ([proxy.md](proxy.md)). The `…In` forms take the delegate: `UpstreamTestIn`
+  answers 404 for a repository that is no longer the delegate's project's, before any probe; `UpstreamTestUnsavedIn` applies
+  `delegatedRemote` as a create does.
+- **A delegate's section.** `delegatedRemote(v, w, cur, nd)` runs in `CreateTxIn` (no stored section), in `update` under the row lock
+  (the stored section), and in `UpstreamTestUnsavedIn`, only when `Write.Delegate` is set. It compares the canonical sections: a
+  `secretReference` op is allowed only for the stored reference; a `secretKeep` or the stored reference is refused when `url` changed,
+  a `sendCredentials` pattern is new or `forwardAuthOnRedirect` turned on (`credentialHostsWiden`); `outboundProxy.mode` other than
+  `default` and a `sourceNetwork` are allowed only stored and with `url` and the extra-host patterns unchanged (`pathHostsWiden`). The two
+  codes are field errors and also the top-level code (`isTopLevelCode` in validate.go).
 
 How to add a setting to the section: add the member to `RemoteSettings` and to `remoteInput`, give it its default and its range in
 `validateRemote`, add it to the OpenAPI schema `RemoteSettings` (inside the `M2 proxy` markers), and a row to the table of R-REPO-024. A
@@ -153,8 +165,8 @@ secret member also needs a field pointer, a `pendingSecret` and a row key in `se
 | `GET /api/v1/repositories/{key}` | `GetRepository` | `public` | the capability holder passes the exposure ceiling of the endpoint (`visibleKeys`) and reads from PostgreSQL; the others pass the decision first (`edge.Access.Decide`; the unknown key is looked up and the index caught up when the holder begins with the key, Q-ARCH-40) and get the consumer view; hidden and missing are `authz.NotFound()` |
 | `PUT`, `PATCH /api/v1/repositories/{key}` | `ReplaceRepository`, `UpdateRepository` | `repositories:write-config`, `x-trove-if-match: required` | 428 before the body is read; the domain applies the merge patch and returns `*StaleVersion`, which becomes 412 with `currentEtag` |
 | `DELETE /api/v1/repositories/{key}` | `DeleteRepository` | `repositories:write-config` | optional `If-Match` and `Idempotency-Key`; 202 with the job reference or 204 |
-| `POST /api/v1/repositories/{key}/upstream-test` | `TestRepositoryUpstream` | `repositories:write-config` | [upstream_api.go](../../internal/api/v1/upstream_api.go); `Service.UpstreamTest`; always 200 with a result for a remote repository, 404, 400 `not_applicable` |
-| `POST /api/v1/upstream-tests` | `TestUpstream` | `repositories:write-config` | `Service.UpstreamTestUnsaved`; the body is `{format, remote}`; 422 with every violation, 400 for a misspelt member |
+| `POST /api/v1/repositories/{key}/upstream-test` | `TestRepositoryUpstream` | `repositories:write-config` + `projectAdmin: manageRepositories` | [upstream_api.go](../../internal/api/v1/upstream_api.go); `Service.UpstreamTestIn` with the delegate of `writeDelegate`; always 200 with a result for a remote repository, 404, 400 `not_applicable` |
+| `POST /api/v1/upstream-tests` | `TestUpstream` | `repositories:write-config` + `projectAdmin: manageRepositories` | `Service.UpstreamTestUnsavedIn` with the project `requireAnyRepositoriesSwitch` returns; the body is `{format, remote}`; 422 with every violation, 400 for a misspelt member |
 
 ### Projects and project administrators
 
@@ -164,14 +176,14 @@ A repository belongs to at most one project ([projects.md](projects.md)). The ha
 | Operation | Narrowing (repositories_api.go, upstream_api.go) | Service input |
 |---|---|---|
 | create | `createDelegate`: a holder of `repositories:write-config` acts without a project; otherwise the body names a project the caller administers with `manageRepositories` (403 `forbidden` without `project`, 404 for another project, 403 `project_switch_off`) | `Write{Project, Delegate}` |
-| replace, patch, delete, `upstream-test` | `writeDelegate` = `requireProjectOfRepository(…, ProjectManageRepositories)`: 404 for a repository outside the project, 403 `project_switch_off` | `Write{Project, Delegate}` on replace and patch |
-| `POST /upstream-tests` | `requireAnyRepositoriesSwitch`: any project with the switch; the egress rules are checked when the probe connects, whoever sends it (Q-AUTHZ-173) | none |
+| replace, patch, delete, `upstream-test` | `writeDelegate` = `requireProjectOfRepository(…, ProjectManageRepositories)`: 404 for a repository outside the project, 403 `project_switch_off` | `Write{Project, Delegate}` on replace and patch; the delegate on delete and `upstream-test`, whose service checks the project of the row again |
+| `POST /upstream-tests` | `requireAnyRepositoriesSwitch`: any project with the switch, whose key it returns; the egress rules are checked when the probe connects, whoever sends it (Q-AUTHZ-173) | `Write{Delegate}`: the section follows a delegate's create (Q-REPO-127, Q-REPO-128) |
 | read | `readsConfig`: the capability, or administration of the repository's project (`AdministersRepository(…, ProjectAny)`), gives the full document | none |
 | list | `delegatedScope`: the project administrator sees readable repositories and those of its projects (deleting ones too); `view=full` only for the latter | `ListFilter.Project` |
 
 The `project` member is not part of the stored document: `takeProject` removes it from a body and the service compares or assigns it
-(Q-REPO-125). A violation is a field error of the validation pass; `project_prefix_required` and `repository_outside_project` also
-become the top-level `code` (Q-REPO-126).
+(Q-REPO-125). A violation is a field error of the validation pass; `project_prefix_required`, `repository_outside_project`,
+`secret_value_required` and `outbound_path_restricted` also become the top-level `code` (Q-REPO-126 to Q-REPO-128).
 
 The representation ([repositoryRep](../../internal/api/v1/repositories_api.go)) is the `repository.Document` plus `project`, `lifecycle`,
 `createdAt`, `updatedAt`, `lastActivityAt` and, on a write, `warnings`. The input drops those members before the strict decode, so a
@@ -247,9 +259,10 @@ name-pattern table of R-AUTHZ-005 through it.
 
 | Tier | Where | Proves |
 |---|---|---|
-| unit | [internal/repository](../../internal/repository/) | path canonicalisation, keys, patterns and admission, document decoding, merge patch (RFC 7396 examples), validation (R-REPO-002, -005, -006, -008, R-GENERIC-001, -002, -007, -008); `remote_test.go`: the defaults, ranges, URL normalization, warnings, refusals and secret forms of the remote section (R-REPO-024, R-REPO-033) |
+| unit | [internal/repository](../../internal/repository/) | path canonicalisation, keys, patterns and admission, document decoding, merge patch (RFC 7396 examples), validation (R-REPO-002, -005, -006, -008, R-GENERIC-001, -002, -007, -008); `remote_test.go`: the defaults, ranges, URL normalization, warnings, refusals and secret forms of the remote section (R-REPO-024, R-REPO-033); `delegated_test.go`: the upstream rules of a delegate (`TestR_AUTHZ_026_DelegatedRemoteRules`, Q-REPO-127, Q-REPO-128) |
 | unit | [internal/formats](../../internal/formats/) and below | registry rules; the generic descriptor and classification (R-GENERIC-001, -003) |
-| integration | [test/integration/repository](../../test/integration/repository/) | create, read, update, list, delete against PostgreSQL with audit and change-log rows; the snapshot, the lookup and the poll bound on two replicas without Valkey (R-REPO-009 to -013, R-REPO-049, R-ARCH-011); `remote_test.go`: the remote settings, the sealed secrets (nothing in any table, a copied value, a rotation), the upstream test and the invalidation hook, against a TLS test upstream (R-REPO-024, R-REPO-033, R-REPO-038) |
+| integration | [test/integration/repository](../../test/integration/repository/) | create, read, update, list, delete against PostgreSQL with audit and change-log rows; the snapshot, the lookup and the poll bound on two replicas without Valkey (R-REPO-009 to -013, R-REPO-049, R-ARCH-011); `remote_test.go`: the remote settings, the sealed secrets (nothing in any table, a copied value, a rotation), the upstream test and the invalidation hook, against a TLS test upstream (R-REPO-024, R-REPO-033, R-REPO-038); `list_order_test.go`: pages of hyphenated keys in byte order under the stack's `en_US.utf8` database (`TestR_REPO_012_ListPagesEveryKeyOnceInByteOrder`); `project_events_test.go`: `project` in the `repository.*` events |
+| integration | [test/integration/transfer](../../test/integration/transfer/) (`projects_test.go`, `delegated_upstream_test.go`) | a project administrator's repository writes at the service and over HTTP; what its remote repositories may send where, against a plain-http stub that records `Authorization` (`TestR_AUTHZ_026_ADelegatedUpstreamSendsOnlyItsOwnSecret`); its delete with foreign virtual repositories (`…_ADelegatedDeleteLeavesForeignVirtualsAlone`); the saved test of a repository that left the project (`…_TheSavedUpstreamTestRechecksTheProject`) |
 | integration | [test/integration/api](../../test/integration/api/) (`upstream_test.go`) | both upstream-test operations over HTTP on a real database, every answer validated against the OpenAPI document |
 | integration | [test/integration/files](../../test/integration/files/) (`repository_api_test.go`) | the repository API over HTTP on two replicas: the contract suite of E1.6 (`apitest.RunContract`: cursor walk, ETag with If-Match, merge patch, idempotency keys), validation, permissions, the consumer view, list visibility, the delete job on a worker, an idempotent create replayed through the other replica |
 

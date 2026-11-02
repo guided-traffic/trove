@@ -216,11 +216,23 @@ func applyOwnershipDefault(info catalog.Entry, d *Document) {
 	}
 }
 
+// isTopLevelCode reports whether a field code also answers as the top-level code:
+// the rules the contract names by their code (R-API-004, R-AUTHZ-026, Q-REPO-126 to
+// Q-REPO-128).
+func isTopLevelCode(code string) bool {
+	switch code {
+	case codeReservedName, errs.CodeProjectPrefixRequired, errs.CodeRepositoryOutsideProject,
+		errs.CodeSecretValueRequired, errs.CodeOutboundPathRestricted:
+		return true
+	}
+	return false
+}
+
 // err turns the violations into the error of a 422 response (R-API-009, Q-REPO-84):
 // the top-level code is validation_failed whatever the number of violations, and
-// every violation, with its own code, is in errors[] (R-REPO-008). A reserved key
-// is the one exception, because R-API-004 defines reserved_name as the code of
-// that refusal.
+// every violation, with its own code, is in errors[] (R-REPO-008). The exceptions
+// are the codes of isTopLevelCode: reserved_name, because R-API-004 defines it as
+// the code of that refusal, and the project rules, whose code the contract names.
 func (v *validation) err() error {
 	if len(v.fields) == 0 {
 		return nil
@@ -232,7 +244,7 @@ func (v *validation) err() error {
 	// A rule the contract names by its code answers with it at the top as well
 	// as in errors[] (R-AUTHZ-026).
 	for _, f := range v.fields {
-		if f.Code == codeReservedName || f.Code == errs.CodeProjectPrefixRequired || f.Code == errs.CodeRepositoryOutsideProject {
+		if isTopLevelCode(f.Code) {
 			code, detail = f.Code, f.Detail
 			break
 		}

@@ -87,7 +87,9 @@ answers with 401.
 
 A failure is `502 upstream_secret_unavailable` (`errs.CodeUpstreamSecretUnavailable`), logged once when the build fails with the cause (the log
 line names the repository and the field, never the value); the text for the client names the repository only. `Clients` remembers the refusal
-for 5 s. The `Ephemeral` client of the unsaved test takes the inline value or a reference from the request and reads no row.
+for 5 s. The `Ephemeral` client of the unsaved test takes the inline value or a reference from the request and reads no row. Whether
+the request may name a reference is the repository service's to decide before the probe: a project administrator's section never reaches
+`Ephemeral` with one (`UpstreamTestUnsavedIn`, Q-REPO-127), so the client has no rule of its own about the caller.
 
 ### The cache
 

@@ -226,7 +226,13 @@ func (s *Service) notifyPins(tx meta.Tx, r Repository) error {
 // repository_referenced naming them. With detach the same transaction removes
 // the repository from every member list, deploy target and pin rule, moves the
 // ETag of each virtual repository and records an update of it.
-func (s *Service) detachReferences(ctx context.Context, tx meta.Tx, qs *q.Queries, c Caller, row q.Repository, detach bool) error {
+//
+// delegate is the project of a project administrator's delete, "" for a holder of
+// repositories:write-config. A project administrator changes nothing outside its
+// project and learns no key there: while a virtual repository outside the project
+// lists the repository, its delete answers 409 with or without detach, naming the
+// project's own virtual repositories only (Q-REPO-129).
+func (s *Service) detachReferences(ctx context.Context, tx meta.Tx, qs *q.Queries, c Caller, row q.Repository, detach bool, delegate string) error {
 	refs, err := qs.ListReferencingVirtuals(ctx, row.ID)
 	if err != nil {
 		return err
@@ -234,11 +240,16 @@ func (s *Service) detachReferences(ctx context.Context, tx meta.Tx, qs *q.Querie
 	if len(refs) == 0 {
 		return nil
 	}
-	if !detach {
-		keys := make([]string, len(refs))
-		for i, r := range refs {
-			keys[i] = r.Key
+	keys := make([]string, len(refs))
+	for i, r := range refs {
+		keys[i] = r.Key
+	}
+	if delegate != "" {
+		if err := refuseForeignReferences(ctx, qs, keys, delegate); err != nil {
+			return err
 		}
+	}
+	if !detach {
 		return errs.E(errs.Conflict, errs.CodeRepositoryReferenced,
 			"The repository is referenced by the virtual repositories "+strings.Join(keys, ", ")+"; delete with detach=true or remove the references first.")
 	}
@@ -264,9 +275,41 @@ func (s *Service) detachReferences(ctx context.Context, tx meta.Tx, qs *q.Querie
 			return err
 		}
 		v, _ := toRepository(rows[0], s.cat)
+		if v.ProjectKey, err = projectKeyOf(ctx, qs, rows[0]); err != nil {
+			return err
+		}
 		if err := s.afterWrite(ctx, tx, c, EventUpdated, v, []string{"virtual"}); err != nil {
 			return err
 		}
 	}
 	return s.notif.Notify(tx, cluster.AreaClaims, 1, claimsPayload{ID: strconv.FormatInt(row.ID, 10), Key: row.Key, Op: "detach"})
+}
+
+// refuseForeignReferences is the 409 of a project administrator's delete while a
+// virtual repository outside its project lists the repository (Q-REPO-129). keys are
+// the referencing virtual repositories; the answer names those of the project and
+// none of the others.
+func refuseForeignReferences(ctx context.Context, qs *q.Queries, keys []string, project string) error {
+	rows, err := qs.RepositoryProjectsByKeys(ctx, keys)
+	if err != nil {
+		return err
+	}
+	var own []string
+	foreign := false
+	for _, r := range rows {
+		if r.Project == project {
+			own = append(own, r.Key)
+		} else {
+			foreign = true
+		}
+	}
+	if !foreign {
+		return nil
+	}
+	slices.Sort(own)
+	detail := "The repository is referenced by virtual repositories outside the project; an administrator of trove removes those references."
+	if len(own) > 0 {
+		detail += " It is also referenced by the project's virtual repositories " + strings.Join(own, ", ") + "."
+	}
+	return errs.E(errs.Conflict, errs.CodeRepositoryReferenced, detail)
 }

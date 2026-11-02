@@ -8,6 +8,7 @@ import (
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
 
@@ -108,12 +109,20 @@ func bindProject(ctx context.Context, qs *q.Queries, in NewServiceAccount) (stri
 		return "", errs.E(errs.Invalid, errs.CodeUnknownProject, "No project has this key.",
 			errs.WithFields(errs.FieldError{Pointer: "/project", Code: errs.CodeUnknownProject, Detail: "no project has the key " + in.Project}))
 	}
-	if !strings.HasPrefix(in.Name, in.Project+"-") {
-		return "", errs.E(errs.Invalid, errs.CodeProjectPrefixRequired,
-			"The name of a service account of the project "+in.Project+" starts with "+in.Project+"-.",
-			errs.WithFields(errs.FieldError{Pointer: "/name", Code: errs.CodeProjectPrefixRequired, Detail: "starts with " + in.Project + "-"}))
+	// The key and the hyphen alone are no name in the project's space: the trigger AI003
+	// refuses it as well (Q-AUTH-193).
+	if !strings.HasPrefix(in.Name, in.Project+"-") || len(in.Name) == len(in.Project)+1 {
+		return "", prefixRequired(in.Project)
 	}
 	return rows[0].ID, nil
+}
+
+// prefixRequired is the 422 of a project service account whose name is not
+// <project>-… with at least one character after the hyphen (Q-AUTHZ-176).
+func prefixRequired(project string) error {
+	return errs.E(errs.Invalid, errs.CodeProjectPrefixRequired,
+		"The name of a service account of the project "+project+" starts with "+project+"- and goes on after it.",
+		errs.WithFields(errs.FieldError{Pointer: "/name", Code: errs.CodeProjectPrefixRequired, Detail: "starts with " + project + "- and goes on after it"}))
 }
 
 // createServiceAccount writes the account in tx and returns the record as tx sees it.
@@ -135,6 +144,9 @@ func (m *Manager) createServiceAccount(ctx context.Context, tx meta.Tx, c Caller
 		err = qs.IdentityInsertServiceAccount(ctx, q.IdentityInsertServiceAccountParams{ID: id, Description: in.Description})
 	} else {
 		err = qs.IdentityInsertProjectServiceAccount(ctx, q.IdentityInsertProjectServiceAccountParams{ID: id, Description: in.Description, ProjectID: projectID})
+		if postgres.IsState(err, "AI003") { // the trigger behind bindProject's name rule
+			return ServiceAccount{}, prefixRequired(in.Project)
+		}
 	}
 	if err != nil {
 		return ServiceAccount{}, err

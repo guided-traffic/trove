@@ -114,7 +114,7 @@ Operations of other pages that gain a project path:
 | `listServiceAccounts`, `getServiceAccount` | `identities:read` + `projectAdmin: any` | the project's accounts; `project=<key>` required on the list |
 | `createServiceAccount`, `enableServiceAccount` | `identities:write` + `projectAdmin: managePolicies` | `project` in the body (create); the account's project (enable) |
 | `updateServiceAccount`, `disableServiceAccount`, `deleteServiceAccount` | `identities:write` + `projectAdmin: any` | the account's project; never blocked by a switch |
-| `createServiceAccountToken` | `authenticated` (the handler decides: administrator, the account itself, or the project administrator through `delegatedTokenAccount`) | the account's project with `managePolicies` (`project_switch_off` while it is off); the token rules of Q-AUTHZ-177 |
+| `createServiceAccountToken` | `authenticated` (the handler decides: administrator, the account itself, or the project administrator through `delegatedTokenAccount`) | the account's project with `managePolicies` (`project_switch_off` while it is off); the token rules of Q-AUTHZ-177, and never `selfRotatable` (Q-AUTH-192) |
 | `listTokens`, `getToken`, `revokeToken` | `authenticated` | tokens of the project's accounts (`seesProject`, `visible`); `owner=sa:<name>` of an account the caller does not administer is the caller's own list (R-AUTH-028) |
 | `revokeServiceAccountTokens` | `tokens:revoke` + `projectAdmin: any` | the account's project |
 | `getAuthzMe` | `authenticated` | `projects` |
@@ -140,6 +140,8 @@ All in [codes.go](../../internal/errs/codes.go) (`>>> M5a projects`). `not_imple
 | `repository_assigned` | 409 | assign without `move=true` |
 | `project_key_overlap` | 409 | a key that is another's dash-prefix, or the prefix of a global service account name |
 | `project_switch_off` | 403 | the addressed project's switch is off; answered by the handler's narrowing helper whatever other projects the caller administers |
+| `secret_value_required` | 422 | a project administrator's remote names a reference of the installation (`secretRef`), or keeps a stored credential while `url`, a credential-receiving extra host or `forwardAuthOnRedirect` changes ([Q-REPO-127](../spec/repositories-and-proxy.md#q-repo-127--a-project-administrator-gives-an-upstream-secret-as-a-value-and-a-stored-one-stays-with-its-hosts); `checkDelegatedRemote` in [delegated.go](../../internal/repository/delegated.go)) |
+| `outbound_path_restricted` | 422 | a project administrator's remote sets `outboundProxy.mode` other than `default` or a `sourceNetwork` that an administrator did not set ([Q-REPO-128](../spec/repositories-and-proxy.md#q-repo-128--a-project-administrators-remote-repository-takes-the-installations-outbound-path)) |
 
 ### Audit events
 

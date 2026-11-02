@@ -5,6 +5,7 @@ package identity
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/guided-traffic/trove/internal/audit"
@@ -87,6 +88,13 @@ func TestR_AUTH_020_ProjectServiceAccountsOfTheDomain(t *testing.T) {
 		wantCode(t, err, 422, errs.CodeUnknownProject)
 		_, err = a.manager.CreateServiceAccount(ctx, admin, principal.NewServiceAccount{Name: "web-adm", Project: "web", Admin: true})
 		wantCode(t, err, 400, errs.CodeRoleNotAllowed)
+		// The key and the hyphen alone name nothing: the trigger (AI003) refuses it, and the
+		// code answers before it does (Q-AUTH-193).
+		_, err = create("web-", "web")
+		wantCode(t, err, 422, errs.CodeProjectPrefixRequired)
+		if n := e.scalar(`SELECT count(*) FROM principal WHERE name = 'web-'`); n != 0 {
+			t.Fatal("the refused create left a principal")
+		}
 	})
 	t.Run("Q-AUTHZ-176 a global service account takes no name that a project reserves", func(t *testing.T) {
 		_, err := create("web-global", "")
@@ -204,6 +212,15 @@ func TestR_AUTH_020_ProjectServiceAccountsOfTheDomain(t *testing.T) {
 			t.Fatal("the insert was accepted")
 		}
 	})
+	t.Run("Q-AUTH-193 the schema refuses a project account named by the key and the hyphen alone", func(t *testing.T) {
+		id := principal.NewID()
+		e.exec(`INSERT INTO principal (id, kind, name) VALUES ($1::uuid, 'service_account', 'web-')`, id)
+		_, err := e.admin.Exec(ctx, `INSERT INTO service_account (principal_id, description, project_id)
+			SELECT $1::uuid, '', id FROM project WHERE key = 'web'`, id)
+		if err == nil || !strings.Contains(err.Error(), "AI003") {
+			t.Fatalf("the insert answered %v", err)
+		}
+	})
 }
 
 // TestR_AUTHZ_026_ProjectServiceAccountsOverHTTP drives what a holder of identities:write
@@ -317,6 +334,17 @@ func TestR_AUTHZ_026_ProjectAdministratorServiceAccountsAndTokens(t *testing.T) 
 		want(t, s.call(post, path, wandaTok, map[string]any{"description": "ci", "scope": map[string]any{"inherit": true, "system": []string{"identities:read"}}}), 422, "invalid_scope")
 		want(t, s.call(post, path, wandaTok, map[string]any{"description": "ci", "scope": map[string]any{"inherit": true, "admin": true}}), 422, "invalid_scope")
 		want(t, s.call(post, path, wandaTok, map[string]any{"description": "ci", "scope": map[string]any{"repositories": []any{map[string]any{"repositories": []string{"web-*"}, "actions": []string{"read"}}}}}), 201, "")
+	})
+	t.Run("Q-AUTH-192 a token a project administrator issues is not self-rotatable, so it never outlives the cap", func(t *testing.T) {
+		path := "/api/v1/service-accounts/web-ci/tokens"
+		rp := s.call(post, path, wandaTok, map[string]any{"description": "renews itself", "ttlSeconds": 3600, "selfRotatable": true})
+		want(t, rp, 422, "validation_failed")
+		if errs, _ := rp.json(t)["errors"].([]any); len(errs) != 1 || errs[0].(map[string]any)["pointer"] != "/selfRotatable" {
+			t.Fatalf("%s", rp.Body)
+		}
+		want(t, s.call(post, path, wandaTok, map[string]any{"description": "fixed", "ttlSeconds": 3600, "selfRotatable": false}), 201, "")
+		// An administrator of trove still issues one (R-AUTH-030).
+		want(t, s.call(post, path, fx.adminToken, map[string]any{"description": "renews itself", "ttlSeconds": 3600, "selfRotatable": true}), 201, "")
 	})
 	t.Run("Q-AUTHZ-177 the tokens of the project's accounts are seen and revoked, no others", func(t *testing.T) {
 		toks := list(t, s.call(get, "/api/v1/tokens?owner=sa:web-ci", wandaTok, nil))

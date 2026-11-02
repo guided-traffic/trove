@@ -848,6 +848,22 @@
         <source>This is switched off for the project. An administrator of trove can switch it on.</source>
       </segment>
     </unit>
+    <unit id="problem.secret_value_required">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:114</note>
+      </notes>
+      <segment>
+        <source>Enter the password or token of this upstream again.</source>
+      </segment>
+    </unit>
+    <unit id="problem.outbound_path_restricted">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-access.ts:116</note>
+      </notes>
+      <segment>
+        <source>The outbound path of this repository is set by an administrator of trove.</source>
+      </segment>
+    </unit>
     <unit id="problem.unauthenticated">
       <notes>
         <note category="location">src/app/core/http/problem-messages.ts:25</note>

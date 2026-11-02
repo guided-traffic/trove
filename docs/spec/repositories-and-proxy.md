@@ -442,7 +442,10 @@ leaves the operator believing it is in effect.
 
 | Rule | Code |
 |---|---|
-| Key syntax (R-REPO-002), project prefix for project administrators | `invalid_key` |
+| Key syntax (R-REPO-002) | `invalid_key` |
+| Key of a project administrator's create without `<projectKey>-` and at least one character after it (R-AUTHZ-026, Q-REPO-126) | `project_prefix_required`, also the top-level code |
+| A project administrator's `secretRef` other than the stored one, or a stored credential kept while its hosts change (R-REPO-033, Q-REPO-127) | `secret_value_required`, also the top-level code |
+| A project administrator's `outboundProxy.mode` other than `default` or `sourceNetwork`, unless stored and kept with the url and the extra hosts (Q-REPO-128) | `outbound_path_restricted`, also the top-level code |
 | Key is a reserved name (R-REPO-002) | `reserved_name` |
 | Key taken, also by a repository being deleted | `already_exists` (409) |
 | Class or format unknown, or the format does not support the class | `unsupported_class`, `unknown_format` |
@@ -599,6 +602,11 @@ Priority: **MVP** · Covers: REPO-007, REPO-057, REPO-058, API-060, API-061
   `offline`, `assumed-offline`). Holders of `repositories:read-config` also get the upstream URL.
 - `view=full` returns complete documents (the catalog's "all configurations").
 - Class and format values are spelled as in configuration documents (lower case).
+- The list is sorted by key in byte order (`ORDER BY key COLLATE "C"`), whatever the collation the
+  database was created with, because the cursor is the last key of a page compared byte by byte: under
+  `en_US.UTF-8` the hyphen weighs nothing at the first level, so `weba` sorted before `web-b` and the
+  page after `weba` skipped `web-b` (`TestR_REPO_012_ListPagesEveryKeyOnceInByteOrder`). The key column
+  itself carries the database's collation ([H-404](#h-404--the-repository-key-column-carries-the-databases-collation)).
 - `lastActivityAt` is the latest upload to or download from the repository. Each replica MUST
   aggregate activity in memory and write it at most once per minute per repository, so downloads do
   not turn into database writes. No request reads that buffer; it is flushed at shutdown
@@ -622,6 +630,12 @@ Priority: **MVP** · Covers: REPO-063, RMT-002, API-063
 | Success | 204 for a virtual repository (no content); 202 with a job reference for local and remote repositories; repeated while the job runs: 202 with the same job |
 | Errors | 401; 403; 404; 409 `repository_referenced` naming the referencing virtual repositories, when `detach` is false; 409 managed by configuration as code |
 | Permission | as create (R-REPO-009) |
+
+- A project administrator (R-AUTHZ-026) deletes a repository of its project, and its `detach` edits the
+  virtual repositories of the project only: while a virtual repository outside the project lists the
+  repository, the delete answers 409 `repository_referenced` with or without `detach`, and the answer
+  names the project's own referencing virtual repositories and no other key
+  ([Q-REPO-129](#q-repo-129--a-project-administrators-delete-leaves-virtual-repositories-outside-the-project-alone)).
 
 - The first transaction MUST set `lifecycle = 'deleting'`. From then on the repository is not
   resolvable, not addressable by clients, absent from virtual resolution and listed only to holders
@@ -649,6 +663,9 @@ Acceptance criteria:
 - Deleting `npm-local` while `npm-all` lists it returns 409 naming `npm-all`; with `detach=true` it
   returns 202, `npm-all` no longer lists it, and `npm view @acme/util --registry
   …/api/npm/npm-local/` returns `E404` at once.
+- An administrator of project `web` deleting `web-npm`, which `web-all` (of the project) and `company-npm`
+  (of no project) list, gets 409 naming `web-all` and not `company-npm`, also with `detach=true`;
+  `company-npm` keeps its member.
 - After the job completes, a new repository named `npm-local` can be created and is empty.
 - Killing the `worker` replica that runs the job does not prevent completion: another `worker`
   replica resumes it.
@@ -1461,8 +1478,8 @@ API, besides R-REPO-009 to R-REPO-013:
 
 | Method and path | Purpose | Response | Permission |
 |---|---|---|---|
-| `POST /api/v1/repositories/{key}/upstream-test` | Probe the saved upstream configuration | 200 with the result below | `repositories:write-config` |
-| `POST /api/v1/upstream-tests` | Probe an unsaved `remote` section (body: `format` and `remote`); secret values in the body are used once and not stored | 200 with the result below | `repositories:write-config` |
+| `POST /api/v1/repositories/{key}/upstream-test` | Probe the saved upstream configuration | 200 with the result below | `repositories:write-config`; an administrator of the repository's project with `manageRepositories` (R-AUTHZ-026) |
+| `POST /api/v1/upstream-tests` | Probe an unsaved `remote` section (body: `format` and `remote`); secret values in the body are used once and not stored | 200 with the result below | `repositories:write-config`; an administrator of a project with `manageRepositories` |
 
 ```json
 {
@@ -1501,6 +1518,11 @@ egress rules, proxy and credentials that real fetches use (Q-REPO-90).
   the section like a create (422 with every violation, 400 for a misspelt member); a secret value in
   it is used for the probe and stored nowhere; `{"set": true}` is 422 `invalid_secret`, because it
   refers to a stored value.
+- A project administrator's saved test reads the repository's project from PostgreSQL again: a
+  repository that left the project after the handler decided answers 404 and is not contacted, as a
+  replace, a patch and a delete do (Q-AUTHZ-184). Its unsaved test follows the rules of its creates: no
+  `secretRef` (422 `secret_value_required`, Q-REPO-127), no `sourceNetwork` and no `outboundProxy.mode`
+  but `default` (422 `outbound_path_restricted`, Q-REPO-128).
 
 Acceptance criteria:
 
@@ -2159,6 +2181,15 @@ Priority: **MVP** · Covers: RMT-005, RMT-006, IAM-045
     secrets can never be routed to an upstream. A changed file takes effect on each replica within
     10 s of the change, which keeps R-REPO-033's bound of 60 s (Q-REPO-89). The file content has its
     trailing line break removed and holds at most 8 KiB.
+- A project administrator's write (R-AUTHZ-026) and its unsaved upstream test give a secret as a value:
+  a `secretRef` is refused (422 `secret_value_required`), except the reference the repository holds,
+  sent back unchanged. A stored credential, sealed or referenced, stays only while the hosts it goes
+  to stay: a project administrator's write that changes `url`, adds an `extraHosts` entry with
+  `sendCredentials: true` or turns `forwardAuthOnRedirect` on carries a new value or no credential
+  (422 `secret_value_required` otherwise,
+  [Q-REPO-127](#q-repo-127--a-project-administrator-gives-an-upstream-secret-as-a-value-and-a-stored-one-stays-with-its-hosts)).
+  A holder of `repositories:write-config` is not bound by it
+  ([H-281](../security/data-and-secret-flow.md#h-281--a-holder-of-repositorieswrite-config-can-send-any-file-of-secrets_dir-to-an-upstream-of-their-choice)).
 - Secret values MUST never be returned by any API, log line, audit event or error message. Reads show
   `{"set": true}` for sealed values and the reference itself for references. Clients that re-submit a
   document they read therefore cannot blank or leak a secret: `{"set": true}` keeps the stored value,
@@ -2209,6 +2240,11 @@ Acceptance criteria:
 - `PATCH` with `{"remote": {"password": {"value": "new"}}}` moves `config_version` and the next
   request, on every replica, carries the new token; `{"remote": {"password": null}}` removes the
   row; sending back a document that was read changes nothing.
+- An administrator of project `web` patching the `url` of `web-partner`, whose sealed token an
+  administrator of trove stored, gets 422 `secret_value_required` at `/remote/password` and the new
+  host receives nothing; the same patch with `{"password": {"value": "own"}}` succeeds and the saved
+  upstream test sends `own`. Its unsaved test with `{"secretRef": {"file": "partner-token"}}` answers
+  422 `secret_value_required` and sends nothing.
 - A `secretRef` file that disappears after the client was built fails the repository's next fetches
   with 502 `upstream_secret_unavailable` and sends no request; it works again within the refresh
   interval after the file is back.
@@ -2324,6 +2360,8 @@ Priority: **P1** · Covers: RMT-016, RMT-048, RMT-049
   system outbound proxy, such as webhooks in [R-OPS-042](operations-and-observability.md) or GitLab
   discovery in [gitlab-ci-oidc.md](gitlab-ci-oidc.md)). At most one definition is the default per
   scope.
+- A project administrator's remote repository takes `default`; `direct`, and a `named` proxy once it
+  exists, stay an administrator's choice ([Q-REPO-128](#q-repo-128--a-project-administrators-remote-repository-takes-the-installations-outbound-path)).
 - A remote repository's `outboundProxy.mode` is resolved per request: `direct` → no proxy, whatever
   the defaults; `named` → that definition; `default` → the definition that is default for
   `repositories`, else, with `proxy.outbound.proxy_from_environment: true`, the `HTTPS_PROXY`,
@@ -4506,6 +4544,88 @@ Context: Q-AUTHZ-176 and Q-AUTHZ-178 fix the prefix and the virtual rule. Open: 
 
 **Applied in the spec:** R-REPO-008, R-REPO-009. Code: `internal/repository/validate.go`, `internal/repository/project.go`, `internal/repository/members.go`.
 
+### Q-REPO-127 · A project administrator gives an upstream secret as a value, and a stored one stays with its hosts
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a project administrator with `manageRepositories` creates and changes the project's remote repositories and tests
+their upstream, saved and unsaved (Q-AUTHZ-173, Q-AUTHZ-184). The security audit of phase 5a found two ways to send a secret
+that is not the project administrator's to a host it chooses: (1) a `secretRef` names any file of `config_as_code.secrets_dir`
+or any `TROVE_CAC_` variable, and the references are visible in the full documents of its repositories, so an unsaved test or
+a write with its own url sends a partner's token there; (2) a write that changes `url` of a repository an administrator of
+trove assigned to the project keeps the sealed password (`{"set": true}`), and the next fetch or the saved test sends it to the
+new origin, as an `extraHosts` entry with `sendCredentials` or `forwardAuthOnRedirect` does.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Values only, and no carry-over across a change of hosts (chosen) | A project administrator's write and unsaved test refuse a `secretRef` (422 `secret_value_required` at `/remote/password/secretRef`), except the reference the repository holds, sent back unchanged; a write that changes `url`, adds a `sendCredentials` pattern or turns `forwardAuthOnRedirect` on keeps no stored credential, sealed or referenced (422 at `/remote/password`): it gives a new value or none | The project administrator sends only what it knows; a document read and sent back still saves; the code is one comparison with the stored section under the row lock | A team whose upstream token an administrator stored asks the administrator, or enters the token itself, to move the url |
+| (b) An allow list of references per project | The installation names the references each project may use | Teams can use mounted secrets | A configuration surface and its validation for a rare case; the carry-over remains |
+| (c) Keep both and document them (H-281 for delegates) | Mitigation by mounting only what delegates may use | No change | A delegate exfiltrates every mounted partner token and every stored credential of its assigned repositories |
+| (d) Refuse any url change of a repository with a stored credential | The url is fixed while a credential is stored | Simplest rule | The delegate cannot even move to a new path of the same upstream with its own new value |
+
+**Choice:** (a). The comparison is with the canonical stored section: any change of `url` counts (a path on the same origin
+included, because a reverse proxy can route paths to different operators), a `sendCredentials` pattern counts unless the same
+pattern was stored with `sendCredentials`, and `forwardAuthOnRedirect` counts when it turns on; narrowing never needs a value.
+A kept credential is refused whatever `authMode` says, so a later change of the mode cannot send it either. The rule binds the
+project administrator only (`Write.Delegate`); a holder of `repositories:write-config` keeps references (H-281).
+
+**Rationale:** a reference and a stored credential are the installation's, given to one upstream by an administrator; a
+delegate may use them there and nowhere else. The development agent revisits (b) when installations ask for mounted secrets
+per project, and the rule when R-REPO-034 and R-REPO-036 add named client certificates and sensitive headers, which are
+references of the same kind ([H-403](../security/delegated-administration.md#h-403--what-a-project-administrator-still-reaches-of-an-upstream-an-administrator-configured)).
+
+**Applied in the spec:** R-REPO-008 (code), R-REPO-024 (the tests), R-REPO-033 (the rule, an acceptance criterion). Code:
+`internal/repository/delegated.go` (`checkDelegatedRemote`), `Service.CreateTxIn`, `Service.update`,
+`Service.UpstreamTestUnsavedIn`; `internal/api/v1/upstream_api.go`. Gap:
+[H-403](../security/delegated-administration.md#h-403--what-a-project-administrator-still-reaches-of-an-upstream-an-administrator-configured).
+
+### Q-REPO-128 · A project administrator's remote repository takes the installation's outbound path
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `outboundProxy.mode: direct` bypasses the proxy that `default` resolves (`proxy.outbound.proxy_from_environment`, later
+the named default of R-REPO-037), and `sourceNetwork` binds the upstream connections to an address of the pods' interfaces, for
+example a secondary network to a partner's VPN whose firewall trusts that source (Q-REPO-9). Both are how the installation reaches
+the network, and a partner that trusts a source address grants on it. Open: may a project administrator set them?
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Defaults for a project administrator; stored values stay with their url and extra hosts (chosen) | A project administrator's create and unsaved test take `outboundProxy.mode: default` and `sourceNetwork: null` (422 `outbound_path_restricted` at the member otherwise); its write keeps the stored values while `url` and the `extraHosts` patterns stay, and sets the defaults at any time | The outbound proxy keeps seeing every delegate's traffic; a trusted source address goes only to the upstream an administrator chose; a document read and sent back still saves | A team that needs a partner's network asks an administrator |
+| (b) Allow both | The address rules apply at connect time either way | No rule | A delegate bypasses the organisation's proxy, or points a trusted source address at any host of a partner's network |
+| (c) Refuse `direct` only while a proxy is configured | Depends on the configuration | Exact | A rule that changes meaning with a setting; `sourceNetwork` stays open |
+
+**Choice:** (a). A new extra host counts as a new destination for these members, because fetches follow URLs of the upstream's
+metadata to it from the same source address and path.
+
+**Rationale:** the path to the network is installation configuration, like the address rules; the delegate's upstream gets the
+path every other delegate's gets. The development agent revisits it when named proxies (R-REPO-037) give a project a proxy of its
+own to choose.
+
+**Applied in the spec:** R-REPO-008 (code), R-REPO-024 (the unsaved test), R-REPO-037 (the mode). Code:
+`internal/repository/delegated.go`.
+
+### Q-REPO-129 · A project administrator's delete leaves virtual repositories outside the project alone
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-REPO-013's `detach=true` removes the repository from every virtual repository that lists it, and the 409 without it
+names them. For a project administrator that edits virtual repositories outside its project (an administrator of trove may list
+a project repository in a shared virtual repository) and names their keys, which R-AUTHZ-026 keeps from it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Refuse while a virtual repository outside the project lists it, naming only the project's own (chosen) | 409 `repository_referenced` with or without `detach`; the detail says that virtual repositories outside the project list it, without keys, and names the project's referencing virtual repositories; with only the project's own, `detach` works as for anyone | No edit and no key outside the project; the shared composition stays an administrator's | The project administrator learns that some repository outside the project lists one of its repositories |
+| (b) Detach from the project's virtual repositories only and delete | The others keep a member that is being deleted | The delete succeeds | A shared virtual repository silently loses a member when the job finishes |
+| (c) The same answer for every caller | Unchanged | Simple | Edits outside the project and names foreign keys |
+
+**Choice:** (a).
+
+**Rationale:** the fact that some foreign reference exists is the least a refusal can say, and the administrator who placed it
+decides. The development agent revisits it with repository sharing between projects (P2).
+
+**Applied in the spec:** R-REPO-013 (the bullet, an acceptance criterion). Code: `internal/repository/members.go`
+(`detachReferences`, `refuseForeignReferences`).
+
 ## What this does not cover
 
 ### H-4 · Malicious content from a legitimate upstream
@@ -4605,3 +4725,15 @@ remains, live with the MVP:
   before thereby reaches the upstream operator once. Claiming the internal prefix beforehand
   (`@acme/*`, `Acme.*`) removes the probe: with a claim of the publishing repository the check does
   not run, and with a claim in effect in the virtual repository nothing there is exposed.
+
+### H-404 · The repository key column carries the database's collation
+
+Component: `repositories.key` (migration `00002_storage_core.sql`, `text NOT NULL UNIQUE`) and its unique index. Subject: the
+index that makes keys unique and finds a repository by key. [ha-and-helm.md](ha-and-helm.md) says that text columns which carry
+indexed keys, repository keys among them, are declared with `COLLATE "C"`; this one is not, so the column takes the collation
+the database was created with (`en_US.utf8` in the integration stack, the PostgreSQL image's default). The list's order no longer
+depends on it (R-REPO-012, the query sorts with `COLLATE "C"`). Dormant: a collation update of the database server's operating
+system (the glibc 2.28 change of how punctuation sorts) changes the order of keys with `-` and `.` under an existing index, which
+can then miss a key or admit a duplicate until it is rebuilt. What makes it real: an operating-system upgrade of the database
+server without `REINDEX` on a database created with a libc collation. Mitigation: create the database with the `C` collation
+(`initdb --locale=C`), or reindex after such an upgrade; the fix is an expand migration that declares the column `COLLATE "C"`.

@@ -61,8 +61,10 @@ func (s *Service) resolveProject(ctx context.Context, qs *q.Queries, v *validati
 		v.add("/project", errs.CodeUnknownProject, "no project has the key "+strconv.Quote(project))
 		return "", nil
 	}
-	if w.Delegate != "" && !strings.HasPrefix(d.Key, project+"-") {
-		v.add("/key", errs.CodeProjectPrefixRequired, "the key of a repository in the project "+project+" starts with "+project+"-")
+	// The key and the hyphen alone are no name in the project's space, as for a project
+	// service account (Q-AUTH-193).
+	if w.Delegate != "" && (!strings.HasPrefix(d.Key, project+"-") || len(d.Key) == len(project)+1) {
+		v.add("/key", errs.CodeProjectPrefixRequired, "the key of a repository in the project "+project+" starts with "+project+"- and goes on after it")
 	}
 	return rows[0].ID, nil
 }

@@ -1545,7 +1545,8 @@ account or to its groups, never from placeholder users.
 
 **Project service accounts (owner, [Q-AUTHZ-169](authorization.md#q-authz-169--a-technical-account-for-a-project-belongs-to-the-project)).**
 A service account may belong to a project (`project`, the project's key; fixed at creation, `null` for a global account).
-A project service account's name starts with `<projectKey>-`; it is created, disabled, enabled and deleted by
+A project service account's name starts with `<projectKey>-` and goes on after the hyphen (422 `project_prefix_required`,
+[Q-AUTH-193](#q-auth-193--the-key-and-the-hyphen-alone-are-no-project-name-and-the-schemas-refusal-answers-422)); it is created, disabled, enabled and deleted by
 administrators of the project and by `identities:write`, and its tokens are issued and revoked by them
 ([R-AUTHZ-026](authorization.md)). It is no group member (422 `project_account_not_groupable`), holds no system role
 (422 `role_not_allowed`), and is granted only through policies of its project (422 `principal_outside_project`
@@ -2124,7 +2125,9 @@ create call must satisfy all of the following:
 **Tokens of a project administrator** ([Q-AUTHZ-177](authorization.md#q-authz-177--what-a-project-administrator-may-do-with-service-accounts-and-their-tokens)).
 A token that an administrator of a project issues for a project service account is never non-expiring (the administrator
 rule of R-AUTH-026 applies to administrators of trove only), lives at most `auth.tokens.sat.max_ttl`, has `admin: false`
-and no `system` item (422 `invalid_scope`); repository grants, `inherit` and an `endpoints` binding are allowed.
+and no `system` item (422 `invalid_scope`), and is not self-rotatable (422 `validation_failed` at `/selfRotatable`,
+[Q-AUTH-192](#q-auth-192--a-token-a-project-administrator-issues-is-not-self-rotatable)); repository grants, `inherit` and an
+`endpoints` binding are allowed.
 
 This holds for `Bearer` and for Basic with a token as password. A token can never mint a
 credential that outlives or outranks itself. The new token records the presenting token in
@@ -5237,7 +5240,7 @@ Context: Q-AUTHZ-169 and Q-AUTHZ-176 give a project service account its project 
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) The manager checks them in the transaction that inserts the account, with the project row locked `FOR SHARE` (chosen) | `bindProject` reads the project, refuses an unknown one (422 `unknown_project`), a name without the prefix (422 `project_prefix_required`) and, for a global account, a name that a project's key and a hyphen start (422 `name_reserved_by_project`); a deletion of the project waits for the transaction | One place for the API, the command and every other caller; no window between the check and the insert | A global account created at the same moment as a project of that key is caught by the project's own check (409 `project_key_overlap`) |
+| (a) The manager checks them in the transaction that inserts the account, with the project row locked `FOR SHARE` (chosen) | `bindProject` reads the project, refuses an unknown one (422 `unknown_project`), a name without the prefix (422 `project_prefix_required`) and, for a global account, a name that a project's key and a hyphen start (422 `name_reserved_by_project`); a deletion of the project waits for the transaction | One place for the API, the command and every other caller; no window between the check and the insert | A global account and a project whose key and hyphen start its name, created at the same instant, can both succeed: the account's check reads the project keys and the project's check reads the account names, and the two share no lock ([H-399](authorization.md#h-399--a-global-service-account-and-a-project-key-created-at-the-same-instant-can-overlap)) |
 | (b) The API handler checks | The handler reads the project first | Closer to the request | The command and the tests bypass it; the project can go between the read and the insert |
 
 **Choice:** (a). An administrator of a project must send `project` and cannot create a global account (403 `forbidden`); the audit events of an account (`serviceaccount.*`) and of its tokens (`token.created`, `token.revoked`) carry `project`.
@@ -5259,7 +5262,7 @@ Context: Q-AUTHZ-177 lets a project administrator issue a token for a project se
 
 **Choice:** (a). A caller that may not issue gets the same 403 `forbidden` whether the account exists or not; an administrator of the account's project with `managePolicies` off gets 403 `project_switch_off`.
 
-**Rationale:** the account holds repository rights only, so its token carries no more; the rotation stays out because it would let a delegate extend a token beyond what it issued. The development agent revisits it when an installation wants delegates to rotate.
+**Rationale:** the account holds repository rights only, so its token carries no more; the rotation stays out because it would let a delegate extend a token beyond what it issued. The development agent revisits it when an installation wants delegates to rotate. The token's own rotation is closed by [Q-AUTH-192](#q-auth-192--a-token-a-project-administrator-issues-is-not-self-rotatable).
 
 **Applied in the spec:** R-AUTH-020, R-AUTH-027, R-AUTH-028, R-AUTH-029. Code: `internal/auth/token/service.go`, `internal/api/v1/tokens_api.go`.
 
@@ -5279,6 +5282,42 @@ Context: Q-AUTHZ-175 refuses a project service account as a group member (422 `p
 **Rationale:** the rule has two enforcers so that neither a code path nor a manual SQL write can bring a global group's grants to a project account. The development agent records no revisit condition.
 
 **Applied in the spec:** R-AUTH-018, R-AUTH-020. Code: `internal/auth/principal/groups.go`, `internal/meta/postgres/sqlstate.go`.
+
+### Q-AUTH-192 · A token a project administrator issues is not self-rotatable
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-AUTHZ-177 bounds a token a project administrator issues by the installation's maximum for service-account tokens, and Q-AUTH-190 keeps the rotation from the delegate. The security audit of phase 5a found that the create still passed `selfRotatable`: the token service did not refuse it, and `POST /tokens/current/rotate` gives each successor the original lifetime (R-AUTH-030), so the partner holding the token renews it for as long as it keeps rotating, beyond any end the project administrator set and without the switch `managePolicies`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Refuse `selfRotatable: true` for a delegated create (chosen) | 422 `validation_failed` with `/selfRotatable` (`invalid_value`) in the token service, beside the scope rule of Q-AUTH-190; `false` and an omitted member are accepted | One check where the other delegated rules are; every caller of the service has it; the token's end is the one issued | A partner rotates its secret by asking the project administrator for a new token |
+| (b) Allow it, and cap every successor at the end of the token the project administrator issued | The lineage carries the first token's expiry as a ceiling | Secret hygiene without extension | A ceiling stored per lineage, read by every rotation; more than this phase needs |
+| (c) Ignore the member for a delegated create | The token is created without it | No error for the client | A request that says one thing is silently stored as another |
+
+**Choice:** (a). An administrator of trove still issues self-rotatable tokens for any account (R-AUTH-030).
+
+**Rationale:** Q-AUTHZ-177 says the token lives at most the cap, and the derivation rule of R-AUTH-027 already forbids a token to outlive what issued it; self-rotation is the one path that extends a lifetime, and its holder here is the partner, not the project administrator. The development agent revisits (b) when a project asks for rotating partner credentials.
+
+**Applied in the spec:** R-AUTH-027 (the paragraph on tokens of a project administrator). Code: `internal/auth/token/service.go` (`checkDelegated`).
+
+### Q-AUTH-193 · The key and the hyphen alone are no project name, and the schema's refusal answers 422
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the trigger `AI003` of migration `00019_projects.sql` refuses a project service account whose name is the key and the hyphen alone (`web-`), while `bindProject` only asked for the prefix. Such a create passed the code's check, failed in the trigger and, with `AI003` unmapped, answered 500; the UI prefills `web-`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The code asks for at least one character after the hyphen, and `AI003` is mapped to the same 422 (chosen) | `bindProject` refuses `len(name) == len(key)+1` with 422 `project_prefix_required`; the insert's `AI003` answers the same through `postgres.IsState`, as `AI002` does (Q-AUTH-191) | The code and the schema state one rule; a path that misses the check answers 422, not 500 | — |
+| (b) Map `AI003` only | The trigger decides | One change | The code states a weaker rule than the schema |
+| (c) Accept `web-` and relax the trigger | The prefix alone suffices | Shorter names | A name that tells nothing but the project; the trigger changes in a new migration |
+
+**Choice:** (a). The repository key of a project administrator's create follows the same rule (`internal/repository/project.go`), so the three names of a project read alike.
+
+**Rationale:** a name in a project's space names something in it. The development agent records no revisit condition.
+
+**Applied in the spec:** R-AUTH-020 (the name rule). Code: `internal/auth/principal/serviceaccounts.go` (`bindProject`, `prefixRequired`, `createServiceAccount`).
 
 ## What this does not cover
 

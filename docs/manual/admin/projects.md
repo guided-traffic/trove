@@ -25,9 +25,9 @@ Project administrators cannot bind system roles, see global permission policies,
 
 ## Names carry the project key
 
-- A repository that a project administrator creates has a key that starts with the project key and a hyphen, for example `web-libs` in project `web` (`project_prefix_required` otherwise). The key is fixed at creation.
+- A repository that a project administrator creates has a key that starts with the project key and a hyphen and goes on after it, for example `web-libs` in project `web`; `web-` alone is refused like `libs` (`project_prefix_required`). The key is fixed at creation.
 - A permission policy of a project is named `<key>-…`, and cannot change its project.
-- A service account of a project is named `<key>-…` and belongs to the project for good. A service account that belongs to no project cannot take a name that starts with the key of a project and a hyphen (`name_reserved_by_project`).
+- A service account of a project is named `<key>-…`, with at least one character after the hyphen, and belongs to the project for good. A service account that belongs to no project cannot take a name that starts with the key of a project and a hyphen (`name_reserved_by_project`).
 
 ## Permission policies of a project
 
@@ -42,8 +42,19 @@ A project service account is granted only by the policies of its project. It can
 - The token always expires, at most after the maximum lifetime of service-account tokens (see [Managing tokens](tokens.md#lifetime-limits-and-defaults)); **Never expires** is not offered.
 - The token has no administrator scope and names no system item.
 - The token can be bound to endpoints, as any service-account token.
+- The token cannot rotate itself: a request with `selfRotatable: true` is refused, because each rotation would give it its full lifetime again and the partner could keep it alive for good. Issue a new token when it nears its end.
 
 Disabling the account makes all of its tokens fail. Deleting it removes its tokens.
+
+## Remote repositories of a project
+
+A project administrator with **Manage repositories** sets up the project's remote repositories and tests their upstream. Three things stay with the administrators of trove, so that a project's remote repository never sends a secret of the installation to a host the project chose:
+
+- **Passwords and tokens are entered, not referenced.** A project administrator types the upstream password or token itself. A reference to a file or variable of the installation (`secretRef`) is refused, in a save and in the upstream test of an unsaved configuration (`secret_value_required`). A reference that an administrator of trove set stays when you save the repository unchanged.
+- **A stored password does not follow a new address.** Changing the upstream **URL**, adding an extra host that receives credentials, or turning on forwarding credentials on redirects needs the password or token again in the same save (`secret_value_required`). Without it, remove the credential, or ask an administrator of trove.
+- **The outbound path is the installation's.** A project's remote repository uses the installation's outbound proxy (mode **default**) and no source network of its own (`outbound_path_restricted`). A direct connection or a source network that an administrator of trove set stays while the URL and the extra hosts stay; with a new URL, set them back to the defaults.
+
+Deleting a repository that a virtual repository outside the project lists is refused, also when you choose to remove it from the virtual repositories that include it: the answer names the project's own virtual repositories, and an administrator of trove removes the other references.
 
 ## The Projects screen
 
@@ -94,6 +105,9 @@ After you sign in, **Administration** shows **Projects** only. The global lists,
 | A service account of a project can only be granted by the policies of its own project | `principal_outside_project` |
 | The project still has repositories or service accounts | `project_not_empty`: unassign the repositories and delete the service accounts first |
 | The repository belongs to another project | `repository_assigned`: move it explicitly |
+| Enter the password or token of this upstream again | `secret_value_required`: a reference of the installation, or a stored password kept while the URL or a credential host changes |
+| The outbound path of this repository is set by an administrator of trove | `outbound_path_restricted`: a direct connection or a source network chosen by the project |
+| Other repositories still include this one | `repository_referenced`; for a project administrator also when a virtual repository outside the project includes it, which an administrator of trove removes |
 
 ## Limits of this version
 

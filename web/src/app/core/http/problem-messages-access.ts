@@ -110,6 +110,10 @@ export function describeAccessProblem(code: string | null): string | null {
       return $localize`:@@problem.project_key_overlap:The key overlaps another project's key (no key is another's key followed by a hyphen) or the start of a service account's name.`;
     case 'project_switch_off':
       return $localize`:@@problem.project_switch_off:This is switched off for the project. An administrator of trove can switch it on.`;
+    case 'secret_value_required':
+      return $localize`:@@problem.secret_value_required:Enter the password or token of this upstream again.`;
+    case 'outbound_path_restricted':
+      return $localize`:@@problem.outbound_path_restricted:The outbound path of this repository is set by an administrator of trove.`;
     default:
       return null;
   }

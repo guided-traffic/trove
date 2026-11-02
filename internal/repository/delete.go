@@ -86,7 +86,8 @@ func (s *Service) DeleteTx(ctx context.Context, tx meta.Tx, c Caller, key string
 // repositories:write-config. The project of the locked row is checked again here,
 // so a repository that moved or was assigned between the handler's decision and the
 // write answers 404 as an unknown one does (R-AUTHZ-026, Q-AUTHZ-184), before the
-// precondition can tell anything about it.
+// precondition can tell anything about it. A virtual repository outside the project
+// that lists the repository refuses the delete, detach or not (Q-REPO-129).
 func (s *Service) DeleteTxIn(ctx context.Context, tx meta.Tx, c Caller, key string, detach bool, pre *Precondition, delegate string) (DeleteResult, error) {
 	qs, err := queries(tx)
 	if err != nil {
@@ -100,7 +101,8 @@ func (s *Service) DeleteTxIn(ctx context.Context, tx meta.Tx, c Caller, key stri
 		return DeleteResult{}, notFound(key)
 	}
 	row := rows[0]
-	if _, err := checkProjectOfUpdate(ctx, qs, row, Write{Delegate: delegate}); err != nil {
+	project, err := checkProjectOfUpdate(ctx, qs, row, Write{Delegate: delegate})
+	if err != nil {
 		return DeleteResult{}, err
 	}
 	if pre != nil && !pre.Any && pre.Version != row.ConfigVersion {
@@ -108,11 +110,11 @@ func (s *Service) DeleteTxIn(ctx context.Context, tx meta.Tx, c Caller, key stri
 	}
 	var res DeleteResult
 	if Class(row.Class) == Virtual {
-		return res, s.deleteNow(ctx, tx, qs, c, row, &res)
+		return res, s.deleteNow(ctx, tx, qs, c, row, project, &res)
 	}
 	if Lifecycle(row.Lifecycle) == Active {
 		// >>> M2 virtual
-		if err := s.detachReferences(ctx, tx, qs, c, row, detach); err != nil {
+		if err := s.detachReferences(ctx, tx, qs, c, row, detach, delegate); err != nil {
 			return DeleteResult{}, err
 		}
 		// <<< M2 virtual
@@ -126,7 +128,7 @@ func (s *Service) DeleteTxIn(ctx context.Context, tx meta.Tx, c Caller, key stri
 		row = marked[0]
 		r, _ := toRepository(row, s.cat)
 		if err := s.recordAndNotify(ctx, tx, c, EventDeleted, r,
-			eventDetails{Class: r.Class, Format: r.Format, Changes: []string{"lifecycle"}, Phase: "started"}, ChangeOpDeleting); err != nil {
+			eventDetails{Class: r.Class, Format: r.Format, Changes: []string{"lifecycle"}, Phase: "started", Project: project}, ChangeOpDeleting); err != nil {
 			return DeleteResult{}, err
 		}
 	}
@@ -146,8 +148,8 @@ func (s *Service) DeleteTxIn(ctx context.Context, tx meta.Tx, c Caller, key stri
 }
 
 // deleteNow removes a repository that has no content: the row goes in the
-// transaction that decided it.
-func (s *Service) deleteNow(ctx context.Context, tx meta.Tx, qs *q.Queries, c Caller, row q.Repository, res *DeleteResult) error {
+// transaction that decided it. project is the key of its project, "" for none.
+func (s *Service) deleteNow(ctx context.Context, tx meta.Tx, qs *q.Queries, c Caller, row q.Repository, project string, res *DeleteResult) error {
 	if Lifecycle(row.Lifecycle) == Active {
 		if _, err := qs.MarkRepositoryDeleting(ctx, q.MarkRepositoryDeletingParams{ID: row.ID, Actor: c.principalID()}); err != nil {
 			return err
@@ -162,7 +164,7 @@ func (s *Service) deleteNow(ctx context.Context, tx meta.Tx, qs *q.Queries, c Ca
 	}
 	res.Done = true
 	return s.recordAndNotify(ctx, tx, c, EventDeleted, r,
-		eventDetails{Class: r.Class, Format: r.Format, Changes: []string{"lifecycle"}, Phase: "completed"}, ChangeOpDeleted)
+		eventDetails{Class: r.Class, Format: r.Format, Changes: []string{"lifecycle"}, Phase: "completed", Project: project}, ChangeOpDeleted)
 }
 
 // onDelete runs the delete hook in the transaction that removes the row.
@@ -249,6 +251,10 @@ func (s *Service) finishDelete(ctx context.Context, a DeleteArgs) error {
 			return nil // an earlier attempt finished
 		}
 		r, _ := toRepository(rows[0], s.cat)
+		project, err := projectKeyOf(ctx, qs, rows[0])
+		if err != nil {
+			return err
+		}
 		if err := s.onDelete(ctx, tx, Caller{Actor: a.Actor}, r); err != nil {
 			return err
 		}
@@ -276,6 +282,6 @@ func (s *Service) finishDelete(ctx context.Context, a DeleteArgs) error {
 		}
 		// <<< M2 virtual
 		return s.recordAndNotify(ctx, tx, Caller{Actor: a.Actor}, EventDeleted, r,
-			eventDetails{Class: r.Class, Format: r.Format, Changes: []string{"lifecycle"}, Phase: "completed"}, ChangeOpDeleted)
+			eventDetails{Class: r.Class, Format: r.Format, Changes: []string{"lifecycle"}, Phase: "completed", Project: project}, ChangeOpDeleted)
 	})
 }

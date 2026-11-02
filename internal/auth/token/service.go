@@ -213,7 +213,7 @@ func (s *Service) prepareCreate(ctx context.Context, r CreateRequest) (insertSpe
 		if r.Admin {
 			return insertSpec{}, errs.E(errs.Internal, errs.CodeInternal, "", errs.WithOp("token.prepareCreate"))
 		}
-		if err := checkDelegated(sc); err != nil {
+		if err := checkDelegated(sc, r.SelfRotatable); err != nil {
 			return insertSpec{}, err
 		}
 	}
@@ -276,11 +276,20 @@ func (s *Service) maxActive(t Type) int {
 // issues: it mirrors the derivation rule (a token carries no more than its owner
 // holds, and the account holds repository rights only), so the scope names no
 // system item and does not exercise system roles. A lifetime of "never" is refused
-// by the lifetime rules, because such a request is no administrator's.
-func checkDelegated(sc scope.Scope) error {
+// by the lifetime rules, because such a request is no administrator's. The token is
+// not self-rotatable: each rotation gives the successor the original lifetime, so a
+// token that rotates itself would outlive the cap the project administrator issued
+// it under, for as long as its holder keeps rotating (Q-AUTH-192).
+func checkDelegated(sc scope.Scope, selfRotatable bool) error {
 	if sc.Admin || len(sc.System) > 0 {
 		return errs.E(errs.Unprocessable, errs.CodeInvalidScope,
 			"The scope is invalid: a token of a project service account carries no system item and has admin false.")
+	}
+	if selfRotatable {
+		return errs.E(errs.Invalid, errs.CodeValidation, "1 field is invalid.", errs.WithFields(errs.FieldError{
+			Pointer: "/selfRotatable", Code: "invalid_value",
+			Detail: "a token a project administrator issues is not self-rotatable: it lives at most as long as it was issued for",
+		}))
 	}
 	return nil
 }

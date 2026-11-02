@@ -57,8 +57,8 @@ func TestR_AUTHZ_026_RepositoryOperationsOfAProjectAdministrator(t *testing.T) {
 		if got, err := holder.writeDelegate(ctx, "plain"); err != nil || got != "" {
 			t.Errorf("%q %v", got, err)
 		}
-		if err := holder.requireAnyRepositoriesSwitch(ctx); err != nil {
-			t.Error(err)
+		if got, err := holder.requireAnyRepositoriesSwitch(ctx); err != nil || got != "" {
+			t.Errorf("%q %v", got, err)
 		}
 	})
 	t.Run("R-AUTHZ-026 Q-AUTHZ-184 a write of an existing repository needs its project and the switch", func(t *testing.T) {
@@ -77,15 +77,17 @@ func TestR_AUTHZ_026_RepositoryOperationsOfAProjectAdministrator(t *testing.T) {
 		}
 	})
 	t.Run("R-AUTHZ-026 the unsaved upstream test needs any project with the switch", func(t *testing.T) {
-		if err := s.requireAnyRepositoriesSwitch(ctx); err != nil {
-			t.Fatal(err)
+		if got, err := s.requireAnyRepositoriesSwitch(ctx); err != nil || got != "web" {
+			t.Fatalf("%q %v", got, err) // the project with the switch: its rules apply to the section (Q-REPO-127)
 		}
 		off := projectServer(projectCaller{projects: []authz.AdministeredProject{lab}})
-		if kind, code := codeOf(t, off.requireAnyRepositoriesSwitch(ctx)); kind != errs.Forbidden || code != errs.CodeProjectSwitchOff {
+		_, err := off.requireAnyRepositoriesSwitch(ctx)
+		if kind, code := codeOf(t, err); kind != errs.Forbidden || code != errs.CodeProjectSwitchOff {
 			t.Errorf("switch off: %v %s", kind, code)
 		}
 		none := projectServer(projectCaller{})
-		if kind, code := codeOf(t, none.requireAnyRepositoriesSwitch(ctx)); kind != errs.Forbidden || code != errs.CodeForbidden {
+		_, err = none.requireAnyRepositoriesSwitch(ctx)
+		if kind, code := codeOf(t, err); kind != errs.Forbidden || code != errs.CodeForbidden {
 			t.Errorf("no project: %v %s", kind, code)
 		}
 	})

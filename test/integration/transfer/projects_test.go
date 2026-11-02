@@ -189,9 +189,11 @@ func TestR_AUTHZ_026_ProjectAdministratorRepositoryWrites(t *testing.T) {
 	mustCreate(repository.Write{}, "shared-npm", "local", "")
 
 	t.Run("Q-AUTHZ-176 a project administrator's key starts with the project key and a hyphen", func(t *testing.T) {
-		_, err := svc.CreateIn(ctx, caller, doc("npm-web-extra", "local", ""), web)
-		if ce, _ := errs.As(err); ce == nil || ce.Status() != 422 || ce.Code != errs.CodeProjectPrefixRequired || fieldsOf(t, err)["/key"] != errs.CodeProjectPrefixRequired {
-			t.Fatalf("%v", err)
+		for _, key := range []string{"npm-web-extra", "web-"} { // the key and the hyphen alone name nothing (Q-AUTH-193)
+			_, err := svc.CreateIn(ctx, caller, doc(key, "local", ""), web)
+			if ce, _ := errs.As(err); ce == nil || ce.Status() != 422 || ce.Code != errs.CodeProjectPrefixRequired || fieldsOf(t, err)["/key"] != errs.CodeProjectPrefixRequired {
+				t.Fatalf("%s: %v", key, err)
+			}
 		}
 		st := mustCreate(web, "web-extra", "local", "")
 		if st.Repository.ProjectKey != "web" || st.Repository.ProjectID == "" {

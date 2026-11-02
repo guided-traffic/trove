@@ -7,9 +7,13 @@
 -- meets the driver's no-rows error.
 
 -- name: ListRepositories :many
+-- Byte order, whatever the database's collation: the list's cursor is the last key
+-- of a page compared in Go, byte by byte (R-REPO-012). Under en_US.UTF-8 the hyphen
+-- weighs nothing at the first level, so `weba` sorted before `web-b` and the page
+-- after `weba` skipped `web-b`.
 SELECT *
   FROM repositories
- ORDER BY key;
+ ORDER BY key COLLATE "C";
 
 -- name: GetRepositoryByKey :many
 SELECT *

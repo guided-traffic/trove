@@ -327,8 +327,10 @@ func (s *Service) resolveProject(ctx context.Context, rp *resolvedPolicy, stored
 		return []ProblemField{field("/project", errs.CodeUnknownProject, fmt.Sprintf("No project %q exists or it is not administered by the caller.", key))}, nil
 	}
 	rp.project = id
-	if !stored && !strings.HasPrefix(rp.in.Name, key+"-") {
-		return []ProblemField{field("/name", errs.CodeProjectPrefixRequired, fmt.Sprintf("The name of a policy of the project %q starts with %q.", key, key+"-"))}, nil
+	// The prefix and at least one character after it, as for the project's repositories and
+	// service accounts (Q-AUTH-193).
+	if !stored && (!strings.HasPrefix(rp.in.Name, key+"-") || len(rp.in.Name) == len(key)+1) {
+		return []ProblemField{field("/name", errs.CodeProjectPrefixRequired, fmt.Sprintf("The name of a policy of the project %q starts with %q and goes on after it.", key, key+"-"))}, nil
 	}
 	return nil, nil
 }
