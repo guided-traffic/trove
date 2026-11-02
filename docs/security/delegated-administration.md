@@ -1,10 +1,8 @@
 # Delegated administration
 
-Status: specified for beta phase 5a ([R-AUTHZ-026](../spec/authorization.md#r-authz-026--projects-for-delegated-administration)). The schema with
-its guards, the engine's questions, the declaration form and the error codes exist as contracts
-([developer/projects.md](../developer/projects.md)); the rules that this page describes are built by the work packages of the phase,
-so a statement here is what the code must do and the tests of the phase check, not yet what a release does. This status line goes
-when they land.
+Status: built in beta phase 5a ([R-AUTHZ-026](../spec/authorization.md#r-authz-026--projects-for-delegated-administration)). The schema with
+its guards, the engine's questions, the declaration form and the handlers are in the code ([developer/projects.md](../developer/projects.md));
+the integration tests of the phase check each rule below. The open gaps are the `H-` items at the end of the pages that own the mechanism.
 
 This page says what a project administrator can reach, what bounds it, and what a stolen credential of one gains. It does not repeat
 the model of permissions ([permissions.md](permissions.md)) or of tokens ([tokens-and-credentials.md](tokens-and-credentials.md)).
@@ -32,7 +30,7 @@ the model of permissions ([permissions.md](permissions.md)) or of tokens ([token
 Four layers, none of which depends on the one before it:
 
 1. **The declaration.** An operation names the capability and the right a project administrator needs (`projectAdmin`); the shared
-   step refuses a caller that holds neither before any lookup ([ADR-146](../decisions.md#adr-146--an-operation-admits-project-administrators-through-a-declaration-of-its-own)).
+   step refuses a caller that holds the capability and administers no project before any lookup (it does not ask for the right: the handler answers a switch that is off, so the answer never depends on other projects) ([ADR-146](../decisions.md#adr-146--an-operation-admits-project-administrators-through-a-declaration-of-its-own)).
 2. **The handler narrows.** A project the caller does not administer answers 404, as an unknown one does; a switch that is off
    answers 403 `project_switch_off`. A repository outside the project answers like an unknown repository.
 3. **The index.** A project policy covers the repositories of its project only, whatever its stored selectors say, and the memoized

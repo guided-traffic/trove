@@ -56,10 +56,16 @@ type DeleteResult struct {
 // in batches and the row last. A repeated delete while the job runs answers with
 // the same job. A virtual repository has no content and is removed at once.
 func (s *Service) Delete(ctx context.Context, c Caller, key string, detach bool) (DeleteResult, error) {
+	return s.DeleteIn(ctx, c, key, detach, "")
+}
+
+// DeleteIn is [Service.Delete] for a project administrator's delete (see
+// [Service.DeleteTxIn]).
+func (s *Service) DeleteIn(ctx context.Context, c Caller, key string, detach bool, delegate string) (DeleteResult, error) {
 	var res DeleteResult
 	err := s.run.InTx(ctx, func(tx meta.Tx) error {
 		var err error
-		res, err = s.DeleteTx(ctx, tx, c, key, detach, nil)
+		res, err = s.DeleteTxIn(ctx, tx, c, key, detach, nil, delegate)
 		return err
 	})
 	if err != nil {
@@ -72,6 +78,16 @@ func (s *Service) Delete(ctx context.Context, c Caller, key string, detach bool)
 // of R-API-012 (a delete honours it when it is sent): a version that differs from
 // the stored one answers 412 and nothing changes.
 func (s *Service) DeleteTx(ctx context.Context, tx meta.Tx, c Caller, key string, detach bool, pre *Precondition) (DeleteResult, error) {
+	return s.DeleteTxIn(ctx, tx, c, key, detach, pre, "")
+}
+
+// DeleteTxIn is [Service.DeleteTx] for a delete that is a project administrator's:
+// delegate is the key of the project it administers, "" for a holder of
+// repositories:write-config. The project of the locked row is checked again here,
+// so a repository that moved or was assigned between the handler's decision and the
+// write answers 404 as an unknown one does (R-AUTHZ-026, Q-AUTHZ-184), before the
+// precondition can tell anything about it.
+func (s *Service) DeleteTxIn(ctx context.Context, tx meta.Tx, c Caller, key string, detach bool, pre *Precondition, delegate string) (DeleteResult, error) {
 	qs, err := queries(tx)
 	if err != nil {
 		return DeleteResult{}, err
@@ -84,6 +100,9 @@ func (s *Service) DeleteTx(ctx context.Context, tx meta.Tx, c Caller, key string
 		return DeleteResult{}, notFound(key)
 	}
 	row := rows[0]
+	if _, err := checkProjectOfUpdate(ctx, qs, row, Write{Delegate: delegate}); err != nil {
+		return DeleteResult{}, err
+	}
 	if pre != nil && !pre.Any && pre.Version != row.ConfigVersion {
 		return DeleteResult{}, stale(row.ConfigVersion)
 	}

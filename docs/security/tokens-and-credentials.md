@@ -214,6 +214,15 @@ the command and a test have the same rule (Q-AUTH-190):
 | visibility | `GET /tokens`, `GET /tokens/{id}`, `DELETE /tokens/{id}` and `DELETE /service-accounts/{name}/tokens` reach the tokens of the project's accounts and no others; a token elsewhere answers 404; a rotation is not delegated | `seesProject`, `visible` |
 | audit | `token.created` and `token.revoked` carry `project` | `insertTx`, `recordRevoked` |
 
+**Owner filter of the token list (verified, no leak).** `GET /tokens?owner=sa:<name>` by a caller without `tokens:read` is answered with the
+caller's own tokens, never the named account's, unless the caller administers the account's project (`listOwner`). A user whose list for an
+account it does not administer shows its own personal tokens is the documented behaviour (R-AUTH-028, Q-AUTH-190), not a leak: it was
+reported once because a test expected an empty list. The behaviour is unchanged since before projects (`87b0e2e`: the filter is forced to
+the caller when `tokens:read` is missing). Who sees which tokens: a holder of `tokens:read` (`admin`, `security-admin`) every token, filtered by
+`owner`; an administrator of a project its own tokens and those of the accounts of that project; any other user its own tokens only. The
+pinning test is `TestR_AUTHZ_026_ProjectAdministratorServiceAccountsAndTokens` (the list for another account is the caller's own, the administrator's
+list is the account's alone, and another account's token answers 404 to the project administrator).
+
 A project service account has no group, no role and only its project's policies, so what its token can reach is what the project's policies grant it
 ([Q-AUTHZ-175](../spec/authorization.md#q-authz-175--a-project-service-account-is-granted-by-its-projects-policies-only)).
 

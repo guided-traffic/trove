@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/test/integration/stack"
 )
 
@@ -327,5 +328,44 @@ func TestR_AUTHZ_032_EveryProjectWriteRaisesTheEpochAndAnswersIt(t *testing.T) {
 		if !strings.Contains(entry, `"manageRepositories"`) || !strings.Contains(entry, "projectId") {
 			t.Errorf("the journal entry of the update: %s", entry)
 		}
+	})
+}
+
+// A project administrator holds no projects:read and sees exactly the projects it
+// administers: the list names them and nothing else, the read of another project
+// answers as an unknown one does (R-AUTHZ-026, R-AUTHZ-016).
+func TestR_AUTHZ_026_AProjectAdministratorSeesItsOwnProjectsOnly(t *testing.T) {
+	f := newFixture(t)
+	for _, k := range []string{"web", "shop", "lab"} {
+		f.create(k)
+	}
+	wantStatus(t, f.do(f.admin, "PUT", base+"/web/admins/group:web-leads", nil), 201, "")
+	last := f.do(f.admin, "PUT", base+"/lab/admins/user:alice", nil)
+	wantStatus(t, last, 201, "")
+	// The decision point of each replica takes the epoch of the write (R-AUTHZ-032).
+	epoch := fmt.Sprint(last.Epoch())
+	t.Run("R-AUTHZ-026 the list holds the administered projects and no other", func(t *testing.T) {
+		for range 2 { // both replicas
+			r := f.do(f.alice, "GET", base, nil, authz.HeaderMinEpoch, epoch)
+			wantStatus(t, r, 200, "")
+			if got := keys(r, t); got != "lab,web" {
+				t.Fatalf("alice sees %s", got)
+			}
+		}
+	})
+	t.Run("R-AUTHZ-026 the read of an administered project is 200, of another 404 as of an unknown one", func(t *testing.T) {
+		wantStatus(t, f.do(f.alice, "GET", base+"/web", nil, authz.HeaderMinEpoch, epoch), 200, "")
+		wantStatus(t, f.do(f.alice, "GET", base+"/lab", nil, authz.HeaderMinEpoch, epoch), 200, "")
+		shop := f.do(f.alice, "GET", base+"/shop", nil, authz.HeaderMinEpoch, epoch)
+		wantStatus(t, shop, 404, "")
+		unknown := f.do(f.alice, "GET", base+"/nothing", nil, authz.HeaderMinEpoch, epoch)
+		wantStatus(t, unknown, 404, "")
+		if shop.Code() != unknown.Code() {
+			t.Errorf("another project %q, an unknown one %q", shop.Code(), unknown.Code())
+		}
+	})
+	t.Run("R-AUTHZ-026 a caller that administers nothing is refused at the declaration", func(t *testing.T) {
+		wantStatus(t, f.do(f.bob, "GET", base, nil), 403, "forbidden")
+		wantStatus(t, f.do(f.bob, "GET", base+"/web", nil), 403, "forbidden")
 	})
 }

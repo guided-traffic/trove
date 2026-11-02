@@ -149,9 +149,6 @@ const CodeRoleBindingManagedByConfiguration = "role_binding_managed_by_configura
 // Codes of projects and delegated administration (R-AUTHZ-026, Q-AUTHZ-174 to
 // Q-AUTHZ-185). The 422 codes also appear as errors[].code of validation_failed.
 const (
-	// CodeNotImplemented answers an operation the interface declares and this build
-	// does not serve yet.
-	CodeNotImplemented = "not_implemented"
 	// CodeRepositoryOutsideProject: a project policy selector, a virtual member or the
 	// deploy target of a project administrator's repository names a repository that
 	// is not in the project. An unknown key answers the same, so the answer never
@@ -483,7 +480,6 @@ var registry = []CodeInfo{
 	// <<< M1 authz
 	//
 	// >>> M5a projects
-	{CodeNotImplemented, NotImplemented, "Not implemented", "The operation is declared in the interface and this build does not serve it yet."},
 	{CodeRepositoryOutsideProject, Invalid, "Repository outside the project", "A project policy, or a virtual repository of a project administrator, names a repository that is not assigned to the project; a key that does not exist answers the same."},
 	{CodePrincipalOutsideProject, Invalid, "Principal outside the project", "A service account of a project is granted only through the policies of its project and owns packages only in its project's repositories."},
 	{CodeProjectPrefixRequired, Invalid, "Project prefix required", "The names of a project's repositories, policies and service accounts start with the project key and a hyphen."},

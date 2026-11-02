@@ -30,8 +30,10 @@ type Requirement struct {
 	Permission string
 	// ProjectAdmin widens a Permission declaration to project administrators
 	// (R-AUTHZ-026, Q-AUTHZ-180): {permission: <capability>, projectAdmin: <right>}
-	// admits a caller that holds the capability, or administers at least one project
-	// with the right (any, managePolicies or manageRepositories). The step is coarse
+	// admits a caller that holds the capability, or administers at least one project,
+	// whichever right is named (any, managePolicies or manageRepositories): the
+	// right is the handler's to enforce, so a switch that is off answers
+	// project_switch_off whatever other projects the caller administers. The step is coarse
 	// on purpose: which project the operation addresses is known only to the handler,
 	// which narrows with requireProject and delegatedScope (project_scope.go). A
 	// caller that holds the capability has the whole installation, a project
@@ -374,10 +376,13 @@ func (s *Server) switchOn(name string) bool {
 
 // projectAdminAdmits is the extra way in of a declaration that names projectAdmin
 // (Q-AUTHZ-180): the caller does not hold the capability, as a question without an
-// audit event, and administers at least one project with the declared right. A
-// caller that holds the capability, or that administers none, is left to
-// Access.Require, so the refusal and its audit event are the ones of any
-// capability. An Access that cannot answer the question admits nobody here.
+// audit event, and administers at least one project. The declared right is not
+// asked here: a switch that is off is the answer of the project the handler
+// narrows to (403 project_switch_off), and it must not depend on whether the
+// caller administers other projects (Q-AUTHZ-180, amended). A caller that holds
+// the capability, or that administers none, is left to Access.Require, so the
+// refusal and its audit event are the ones of any capability. An Access that
+// cannot answer the question admits nobody here.
 func (s *Server) projectAdminAdmits(ctx context.Context, q Requirement) bool {
 	if held, err := s.holds(ctx, q.Permission); err != nil || held {
 		return false
@@ -390,10 +395,5 @@ func (s *Server) projectAdminAdmits(ctx context.Context, q Requirement) bool {
 	if err != nil {
 		return false
 	}
-	for _, p := range projects {
-		if p.Holds(q.ProjectAdmin) {
-			return true
-		}
-	}
-	return false
+	return len(projects) > 0
 }

@@ -48,10 +48,8 @@ How to report a vulnerability is in [SECURITY.md](../../SECURITY.md). This direc
 | [delegated-administration.md](delegated-administration.md) | What a project administrator can reach, what bounds it (the declaration, the handler, the index, the database), what its tokens may be, and what a rollout from 0.9.x shows (specified for phase 5a) | the declaration `projectAdmin` and its helpers; the project-scoped grants of the index; the guards of migration 00019; the names of a project |
 | [bastion.md](bastion.md) | What the internet-facing Bastion is trusted with, what an attacker who reaches it can do, what its own token can do, and where abuse is stopped (specified for phase 5b, not built) | the design of [spec/bastion.md](../spec/bastion.md): answers of the main installation instead of a copy of identities; the Bastion token's type and rights; the two blocking stages and the concurrency budget; signed records and verified bytes in its cache |
 
-Mechanisms of the spec that are not built yet have no page, with two exceptions: [bastion.md](bastion.md) describes the trove
-Bastion before it is built, because the threat model of an instance exposed to the internet is part of its design, and
-[delegated-administration.md](delegated-administration.md) describes the projects of phase 5a while their work packages are
-under way, because a delegate's bounds are part of the design; their status lines say so. The other rules stay in the spec pages until the code exists:
+Mechanisms of the spec that are not built yet have no page, with one exception: [bastion.md](bastion.md) describes the trove
+Bastion before it is built, because the threat model of an instance exposed to the internet is part of its design. The other rules stay in the spec pages until the code exists:
 input validation of package content, the rotation and propagation of identity and upstream changes, the GitLab CI federation and the
 backup data flow ([docs/spec/](../spec/README.md)).
 

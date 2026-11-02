@@ -1861,8 +1861,8 @@ Everything a client can cause is refused before the first policy is deleted; the
 [H-398](#h-398--a-failed-project-delete-can-leave-the-project-without-some-of-its-policies)).
 
 **The declaration.** An operation that project administrators may call declares `permission: <capability>` and
-`projectAdmin: <right>` (R-API-008): the capability, or administration of at least one project with the right. The
-shared step is coarse; the handler narrows to the project the request addresses
+`projectAdmin: <right>` (R-API-008): the capability, or administration of at least one project (the right is
+the handler's to enforce). The shared step is coarse; the handler narrows to the project the request addresses
 ([Q-AUTHZ-180](#q-authz-180--a-declaration-admits-project-administrators-in-a-form-of-its-own-and-the-handler-narrows),
 [ADR-146](../decisions.md#adr-146--an-operation-admits-project-administrators-through-a-declaration-of-its-own)).
 A project the caller does not administer answers 404, a project whose switch is off 403 `project_switch_off`.
@@ -4298,7 +4298,7 @@ the addressed project".
 
 | Option | What it means | For | Against |
 |---|---|---|---|
-| (a) `{permission: <cap>, projectAdmin: <right>}` and a narrowing helper (chosen) | The step admits a holder of the capability, or a caller that administers at least one project with the right (`any`, `managePolicies`, `manageRepositories`); the handler narrows with `requireProject`, `requireProjectOfRepository` or `delegatedScope`. The capability is asked as a question first, so a project administrator causes no denial event | The document says it; the contract tests and the UI read the declaration; a refused caller is refused before any lookup; no handler forgets the first check | The step is coarse: a project administrator of `web` passes the step for an operation on `docs` and is refused by the handler (404) |
+| (a) `{permission: <cap>, projectAdmin: <right>}` and a narrowing helper (chosen) | The step admits a holder of the capability, or a caller that administers at least one project, whatever the declared right (`any`, `managePolicies`, `manageRepositories`; see the amendment below); the handler narrows with `requireProject`, `requireProjectOfRepository` or `delegatedScope`. The capability is asked as a question first, so a project administrator causes no denial event | The document says it; the contract tests and the UI read the declaration; a refused caller is refused before any lookup; no handler forgets the first check | The step is coarse: a project administrator of `web` passes the step for an operation on `docs` and is refused by the handler (404) |
 | (b) `authenticated: true` and a handler check | As `createServiceAccountToken` does | No new form | The document no longer says who may call; a forgotten check is an open operation |
 | (c) A resolver in the step per operation | The step names the project source (`path.key`, a lookup of a repository's project) | Exact | A source for each case (body, a service account's project) and a second lookup before the handler |
 
@@ -4311,6 +4311,17 @@ form, so a build that does not know the member refuses the document at start-up 
 
 **Applied in the spec:** R-API-008 (the form), R-AUTHZ-026 (the table of operations). Code: `internal/api/v1/authorize.go`,
 `project_scope.go`, `internal/authz/project.go`.
+
+**Amendment (Decided by the development agent, 2026-11-02; the owner reviews it at the walkthrough): the step asks for
+administration, not for the right.** As first built, the step admitted a caller only if one of its projects held the
+declared right. A caller whose only project had the switch off then got 403 `forbidden` ("The permission
+identities:write is required."), while a caller that also administered another project with the switch on got 403
+`project_switch_off` for the same request: the answer depended on projects the request did not address. Now the step
+for `managePolicies` and `manageRepositories` admits every caller that administers at least one project (any right), as
+`any` always did. The handler narrows: a project the caller does not administer answers 404 (a policy body naming one,
+422 `unknown_project`, as before), the addressed project's switch off 403 `project_switch_off`, and every delegated
+operation answers it from its narrowing helper. A caller that administers no project is still refused by the step with
+the capability's 403 and its audit event. Revisit when an operation needs the right known before the handler runs.
 
 ### Q-AUTHZ-181 · /authz/me names the projects the caller administers
 

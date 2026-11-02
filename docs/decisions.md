@@ -5429,7 +5429,7 @@ it before the handler (R-API-008). A project administrator holds no capability, 
 is often known only to the handler.
 
 **Decision.** A declaration may carry `projectAdmin: <right>` next to `permission`: the step admits the holder of the
-capability, or a caller that administers at least one project with the right, and the handler narrows to the addressed
+capability, or a caller that administers at least one project (whatever the right), and the handler narrows to the addressed
 project with `requireProject`, `requireProjectOfRepository` or `delegatedScope`. The engine answers three questions on the
 request's index (`ProjectsOn`, `AdministersOn`, `AdministersRepositoryOn`). `GET /authz/me` carries `projects`.
 
@@ -5443,6 +5443,12 @@ per operation in the step (a source for every case). Decided in Q-AUTHZ-180.
 
 **Revisit condition:** an operation needs a project source the handler cannot supply after the step, or a third kind of
 delegate appears.
+
+**Amendment (Decided by the development agent, 2026-11-02; owner review at the walkthrough).** The step does not ask for the
+declared right, only for administration of at least one project. Reason: a caller whose only project had the switch off
+got 403 `forbidden`, one that also administered a project with the switch on got 403 `project_switch_off` for the same
+request; the answer must not depend on other projects. The handler narrows (404 for a project not administered, 403
+`project_switch_off` for the addressed project's switch off). Decided in Q-AUTHZ-180 (amendment).
 
 **Spec:** [spec/authorization.md](spec/authorization.md) R-AUTHZ-026; [spec/api-and-ui.md](spec/api-and-ui.md) R-API-008.
 

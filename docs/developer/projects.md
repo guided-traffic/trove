@@ -2,13 +2,14 @@
 
 Projects are the unit of delegated administration (spec [R-AUTHZ-026](../spec/authorization.md#r-authz-026--projects-for-delegated-administration),
 beta phase 5a): a team's administrators manage its repositories, its policies and the service accounts of its partners without
-a system administrator. This page is the contract between the work packages that build it. The decisions behind it are
-[Q-AUTHZ-174 to Q-AUTHZ-185](../decisions.md) with [ADR-145](../decisions.md#adr-145--the-grants-of-a-project-policy-are-stored-where-the-previous-release-does-not-read-them)
+a system administrator. The page began as the contract between the work packages that built it and now describes what was built.
+The decisions behind it are [Q-AUTHZ-174 to Q-AUTHZ-195](../decisions.md) with [ADR-145](../decisions.md#adr-145--the-grants-of-a-project-policy-are-stored-where-the-previous-release-does-not-read-them)
 and [ADR-146](../decisions.md#adr-146--an-operation-admits-project-administrators-through-a-declaration-of-its-own).
 
-Status: the contracts compile and the schema, the queries, the document and the stubs exist. The engine answers "no project",
-the project service and its handlers answer 501 `not_implemented`, and the other packages refuse the project forms they were
-given (a policy with `project`, a service account with `project`) until their work package replaces the refusal.
+Status: built. The engine answers the three project questions and compiles project policies scoped to their project; the project
+service and its ten handlers are wired (`project.New` in [wire_authz.go](../../internal/app/wire_authz.go)); the repository,
+service-account, token and upstream-test operations narrow to the project; the UI has the admin area and the project filter.
+Open gaps are the `H-` items named in the sections below. Nothing answers 501 any more and no stub is left.
 
 ## What has to be in your head
 
@@ -18,10 +19,16 @@ given (a policy with `project`, a service account with `project`) until their wo
 - **Three rights.** `any` (administration), `managePolicies`, `manageRepositories`. What each allows is the table of
   R-AUTHZ-026.
 - **The shared step is coarse, the handler narrows.** An operation declares `{permission: <cap>, projectAdmin: <right>}`
-  ([authorize.go](../../internal/api/v1/authorize.go)): the step admits the capability holder or a caller that administers any
-  project with the right. The handler then calls `requireProject`, `requireProjectOfRepository` or `delegatedScope`
-  ([project_scope.go](../../internal/api/v1/project_scope.go)). A project the caller does not administer answers 404; a switch
-  that is off answers 403 `project_switch_off`.
+  ([authorize.go](../../internal/api/v1/authorize.go)): the step admits the capability holder or a caller that administers at least one
+  project, whatever the right (Q-AUTHZ-180, amended: a caller's answer must not depend on its other projects). The handler then calls `requireProject`, `requireProjectOfRepository` or `delegatedScope`
+  ([project_scope.go](../../internal/api/v1/project_scope.go)). A project the caller does not administer answers 404; the
+  addressed project's switch off answers 403 `project_switch_off`, from the narrowing helper of every delegated operation (a
+  policy body naming a project the caller does not administer is the field error 422 `unknown_project`, as the table below says).
+  A caller that administers no project is refused by the step itself with the capability's 403.
+- **The access behind the API must forward the project questions.** [bridgeAccess](../../internal/app/access.go) sits in front of
+  the engine's access; it implements `v1.ProjectAccess` and forwards `AdministeredProjects` and `AdministersRepository`. Without
+  that the step sees no project and refuses every project administrator (`TestR_AUTHZ_026_TheBridgeForwardsTheProjectQuestions`,
+  `TestR_AUTHZ_026_ProjectAdministratorOverHTTP`).
 - **Project policies are scoped twice.** The write refuses selectors outside the project (422 `repository_outside_project`);
   the index covers only the project's repositories, whatever the stored selectors say (Q-AUTHZ-179). The `matchCache` of the
   builder must be keyed by selector and project.
@@ -36,17 +43,20 @@ given (a policy with `project`, a service account with `project`) until their wo
 
 ### Types and methods
 
-| Where | What | State |
-|---|---|---|
-| [internal/project](../../internal/project/service.go) | `Project`, `Input`, `Rights`, `PrincipalRef`, `PrincipalKind`, `KeyRE`; `Service` (List, Get, CreateIn, Replace, Delete, AddAdmin, RemoveAdmin, Assign, Unassign, LookupPrincipals), `Options`, `New`. Layer: domain ([layers.go](../../internal/archtest/layers.go)) | the stub of `New` answers 501 |
-| [internal/authz/project.go](../../internal/authz/project.go) | `ProjectRight` (`ProjectAny`, `ProjectManagePolicies`, `ProjectManageRepositories`), `AdministeredProject{Key, ManagePolicies, ManageRepositories}`, `Engine.ProjectsOn`, `Engine.AdministersOn`, `Engine.AdministersRepositoryOn`, `Index.ProjectOf`; the same three on `authz.Decider` and on `edge.Access` (`Projects`, `Administers`, `AdministersRepository`) | stubs: nil, false, ("", false), "" |
-| [internal/authz/roles.go](../../internal/authz/roles.go) | `Me.Projects`, filled by `Effective` from `ProjectsOn`; `GET /authz/me` emits it | follows the stub |
-| [internal/authz/policy.go](../../internal/authz/policy.go) | `PolicyInput.Project *string` (JSON `project`, `null` for a global policy) | `resolve` refuses a non-nil value (422 `not_implemented` at `/project`) |
-| [internal/authz/index.go](../../internal/authz/index.go) | `Snapshot.Projects`, `Snapshot.ProjectAdmins` (sqlc rows `AuthzBuildProjectsRow`, `AuthzBuildProjectAdminsRow`); `AuthzBuildPolicies` and `AuthzBuildRepositories` carry `project_id` | `BuildIndex` skips project policies; `pgSource.Snapshot` does not read the new rows |
-| [internal/repository/repository.go](../../internal/repository/repository.go) | `Repository.ProjectID` (filled by every reader), `Repository.ProjectKey` (to be filled by the service readers) | `ProjectKey` empty |
-| [internal/auth/principal/serviceaccounts.go](../../internal/auth/principal/serviceaccounts.go) | `ServiceAccount.Project`, `NewServiceAccount.Project`; the read queries return the project key | `checkNewServiceAccount` refuses a non-empty `Project` (501) |
-| [internal/api/v1/authorize.go](../../internal/api/v1/authorize.go), [access.go](../../internal/api/v1/access.go), [project_scope.go](../../internal/api/v1/project_scope.go) | `Requirement.ProjectAdmin`; `ProjectAccess` (`AdministeredProjects`, `AdministersRepository`); `DelegatedScope`, `delegatedScope`, `requireProject`, `requireProjectOfRepository`, `refuseProject` | complete |
-| [internal/api/v1/projects_api.go](../../internal/api/v1/projects_api.go) | the ten handlers; `AuthzServices.Projects`; `projects()` | 503 without a service, else 501 |
+| Where | What |
+|---|---|
+| [internal/project](../../internal/project/service.go) | `Project`, `Input`, `Rights`, `PrincipalRef`, `PrincipalKind`, `KeyRE`; `Service` (List, Get, CreateIn, Replace, Delete, AddAdmin, RemoveAdmin, Assign, Unassign, LookupPrincipals), `Options`, `New`; the bodies in `crud.go`, `members.go`, `store.go`. Layer: domain ([layers.go](../../internal/archtest/layers.go)) |
+| [internal/authz/project.go](../../internal/authz/project.go) | `ProjectRight` (`ProjectAny`, `ProjectManagePolicies`, `ProjectManageRepositories`), `AdministeredProject{Key, ManagePolicies, ManageRepositories}`, `Engine.ProjectsOn`, `Engine.AdministersOn`, `Engine.AdministersRepositoryOn`, `Index.ProjectOf`; the same three on `authz.Decider` and on `edge.Access` (`Projects`, `Administers`, `AdministersRepository`) |
+| [internal/authz/roles.go](../../internal/authz/roles.go) | `Me.Projects`, filled by `Effective` from `ProjectsOn`; `GET /authz/me` emits it |
+| [internal/authz/policy.go](../../internal/authz/policy.go) | `PolicyInput.Project *string` (JSON `project`, `null` for a global policy); the project is fixed at creation (Q-AUTHZ-186) and validated in `resolve` (existence, `<key>-` name, selectors, entries) |
+| [internal/authz/index.go](../../internal/authz/index.go), [source.go](../../internal/authz/source.go) | `Snapshot.Projects`, `Snapshot.ProjectAdmins` read by `pgSource.Snapshot` in its one transaction; `BuildIndex` compiles a project policy against its project's repositories only, adds one `project:<key>` grant per project repository and administrator, and keys `matchCache` by selector and project |
+| [internal/repository](../../internal/repository/project.go) | `Repository.ProjectID`, `Repository.ProjectKey` (filled by every reader); `Write{Project, Delegate}`; `Service.CreateIn`, `CreateTxIn`, `ReplaceIn`, `PatchIn`, `DeleteIn`, `DeleteTxIn` carry it; the project of the locked row is checked again in the write transaction by each of them; `ListFilter.Project` |
+| [internal/auth/principal/serviceaccounts.go](../../internal/auth/principal/serviceaccounts.go) | `ServiceAccount.Project`, `NewServiceAccount.Project`; `bindProject` locks the project `FOR SHARE` in the creating transaction; `ListServiceAccounts(ctx, query, project, after, limit)` takes the project filter |
+| [internal/auth/token](../../internal/auth/token/service.go) | `CreateRequest.Delegated`: a delegated request keeps `Admin` false, refuses `admin: true` and a `system` scope item (422 `invalid_scope`) and takes the SAT maximum lifetime (Q-AUTH-190); `token.created` and `token.revoked` carry `project` |
+| [internal/meta/postgres/sqlstate.go](../../internal/meta/postgres/sqlstate.go) | `IsState(err, code)`: the domain packages turn the `AI001` to `AI004` refusals of the integrity triggers into API answers without the driver |
+| [internal/cluster/locks.go](../../internal/cluster/locks.go) | `ConfigProjects`: the transaction-scoped lock every project create takes before the overlap rule (Q-AUTHZ-194) |
+| [internal/api/v1/authorize.go](../../internal/api/v1/authorize.go), [access.go](../../internal/api/v1/access.go), [project_scope.go](../../internal/api/v1/project_scope.go) | `Requirement.ProjectAdmin`; `ProjectAccess` (`AdministeredProjects`, `AdministersRepository`); `DelegatedScope`, `delegatedScope`, `requireProject`, `requireProjectOfRepository`, `refuseProject` |
+| [internal/api/v1/projects_api.go](../../internal/api/v1/projects_api.go) | the ten handlers; `AuthzServices.Projects`; `projects()` answers 503 without a service |
 
 The engine rule for the three questions: a subject administers a project when its user ID or one of its group IDs is a row of
 `project_admin` for that project, and the credential may exercise it (a session, or a token with `admin: true`); a service
@@ -54,6 +64,19 @@ account, a CI identity and anonymous never do. `AdministersOn` and `AdministersR
 project and for one the subject does not administer alike. Project administrators also hold `manage` on every repository of the
 project: one grant `project:<key>` per project repository and administrator principal, unrestricted in packages and paths,
 added after the policy loop of `BuildIndex`.
+
+What the project service does beyond its interface:
+
+- `AddAdmin` and `RemoveAdmin` resolve the reference in the write's transaction with `ProjectPrincipalByRef`, not from the principal
+  store's cache; a no-op (an administrator that already is one, an assignment to the project the repository already belongs to)
+  records nothing, notifies nothing and answers the current epoch (Q-AUTHZ-193).
+- `Assign` and `Unassign` write `repositories.project_id` and, in the same statement (`ProjectAssignRepository`), move
+  `config_version`, so the document's ETag changes; they notify `authz` and `repo_config` (Q-AUTHZ-191).
+- `Delete` is not one transaction: it refuses everything a client can cause first, deletes the policies through the policy store, then
+  one closing transaction locks, counts again and deletes the project (Q-AUTHZ-192; gap
+  [H-398](../spec/authorization.md#h-398--a-failed-project-delete-can-leave-the-project-without-some-of-its-policies)).
+- `CreateIn` takes `cluster.ConfigProjects` before the overlap rule (Q-AUTHZ-194; gap
+  [H-399](../spec/authorization.md#h-399--a-global-service-account-and-a-project-key-created-at-the-same-instant-can-overlap)).
 
 ### API operations
 
@@ -73,20 +96,20 @@ The paths are in [api/openapi.yaml](../../api/openapi.yaml) (`# >>> M5a projects
 | `unassignProjectRepository` `DELETE …` | `repositories:write-config`, recent auth | — | 204; 404 |
 | `lookupProjectPrincipals` `GET /projects/{key}/principals` | `identities:read` + `projectAdmin: managePolicies` | `requireProject(…, ProjectManagePolicies)` | `q` ≥ 2 characters, at most 20, kind and name only |
 
-Operations of other pages that gain a project path (declarations changed in the document; the handler work is WP-A and WP-C):
+Operations of other pages that gain a project path:
 
 | Operation | Declaration | The project administrator's case |
 |---|---|---|
 | `listPermissionPolicies`, `getPermissionPolicy` | `policies:read` + `projectAdmin: any` | only project policies; without the capability `project=<key>` is required on the list (403 without it), 404 for another project |
 | `createPermissionPolicy`, `replacePermissionPolicy`, `patchPermissionPolicy`, `deletePermissionPolicy` | `policies:write` + `projectAdmin: managePolicies` | the policy's project must be one the caller administers with `managePolicies`; a global policy is 403 |
 | `validatePermissionPolicy` | `policies:read` + `projectAdmin: managePolicies` | a policy with a project of its own |
-| `createRepository`, `replaceRepository`, `updateRepository`, `deleteRepository`, `testRepositoryUpstream`, `testUpstream` | `repositories:write-config` + `projectAdmin: manageRepositories` | create: `project` in the body is required and the key starts with `<key>-`; the others: `requireProjectOfRepository(…, ProjectManageRepositories)`; `testUpstream` (no repository) needs any project with the switch |
+| `createRepository`, `replaceRepository`, `updateRepository`, `deleteRepository`, `testRepositoryUpstream`, `testUpstream` | `repositories:write-config` + `projectAdmin: manageRepositories` | create: `project` in the body is required and the key starts with `<key>-`; the others: `requireProjectOfRepository(…, ProjectManageRepositories)`; `testUpstream` (no repository) needs any project with the switch; with every administered switch off the answer is `project_switch_off` |
 | `listRepositories`, `getRepository` | public (the handler decides) | the project's repositories with the full document |
 | `listServiceAccounts`, `getServiceAccount` | `identities:read` + `projectAdmin: any` | the project's accounts; `project=<key>` required on the list |
 | `createServiceAccount`, `enableServiceAccount` | `identities:write` + `projectAdmin: managePolicies` | `project` in the body (create); the account's project (enable) |
 | `updateServiceAccount`, `disableServiceAccount`, `deleteServiceAccount` | `identities:write` + `projectAdmin: any` | the account's project; never blocked by a switch |
-| `createServiceAccountToken` | `authenticated` | the account's project with `managePolicies`; the token rules of Q-AUTHZ-177 |
-| `listTokens`, `getToken`, `revokeToken` | `authenticated` | tokens of the project's accounts |
+| `createServiceAccountToken` | `authenticated` (the handler decides: administrator, the account itself, or the project administrator through `delegatedTokenAccount`) | the account's project with `managePolicies` (`project_switch_off` while it is off); the token rules of Q-AUTHZ-177 |
+| `listTokens`, `getToken`, `revokeToken` | `authenticated` | tokens of the project's accounts (`seesProject`, `visible`); `owner=sa:<name>` of an account the caller does not administer is the caller's own list (R-AUTH-028) |
 | `revokeServiceAccountTokens` | `tokens:revoke` + `projectAdmin: any` | the account's project |
 | `getAuthzMe` | `authenticated` | `projects` |
 
@@ -97,11 +120,10 @@ and the document tests, which load every declaration through `parseRequirement`.
 
 ### Error codes
 
-All in [codes.go](../../internal/errs/codes.go) (`>>> M5a projects`).
+All in [codes.go](../../internal/errs/codes.go) (`>>> M5a projects`). `not_implemented` was the stubs' code and is gone with them.
 
 | Code | Status | Where |
 |---|---|---|
-| `not_implemented` | 501 | the stubs; removed from use when the work packages land |
 | `repository_outside_project` | 422 field | a project policy key selector; a virtual member or deploy target of a project administrator's write; unknown key answers the same |
 | `unknown_project` | 422 field | a policy names a project that does not exist or one the caller does not administer |
 | `principal_outside_project` | 422 field | a project service account in a global policy, another project's policy, or as a package owner outside its project |
@@ -111,7 +133,7 @@ All in [codes.go](../../internal/errs/codes.go) (`>>> M5a projects`).
 | `project_not_empty` | 409 | delete of a project with repositories (any lifecycle) or service accounts |
 | `repository_assigned` | 409 | assign without `move=true` |
 | `project_key_overlap` | 409 | a key that is another's dash-prefix, or the prefix of a global service account name |
-| `project_switch_off` | 403 | an operation whose switch is off |
+| `project_switch_off` | 403 | the addressed project's switch is off; answered by the handler's narrowing helper whatever other projects the caller administers |
 
 ### Audit events
 
@@ -131,47 +153,36 @@ for the packages: `ProjectList`, `ProjectGet`, `ProjectLock`, `ProjectInsert`, `
 `ProjectGlobalAccountsWithPrefix`, `ProjectLookupPrincipals`, `ProjectsOfPrincipals`, `AuthzBuildProjects`,
 `AuthzBuildProjectAdmins`, `AuthzInsertProjectEntry`, `IdentityInsertProjectServiceAccount`.
 
-## Who owns which file
+## Who built what
 
-Edit only your own files; a change in another work package's file goes through a request to its owner.
+Phase 5a was built by four parallel work packages on the contracts of `e72969d`; the order was the dependency order below. All are done.
 
-| Work package | Files |
-|---|---|
-| **WP-A authz engine** | `internal/authz/**` (the index inputs in `source.go`, the scoped compile and the `project:<key>` grants in `index.go`, the `matchCache` key, `project.go` (the bodies), `validate.go` (project rules), `store.go`, `policy_list.go`, `bindings.go` (refuse a project service account), the ownership owner check, the hooks), `internal/meta/postgres/queries/authz.sql`, `internal/api/v1/authz_api.go` (the `project=` filter, the project-scoped list and writes, `GetAuthzMe`), `test/integration/authz/**` |
-| **WP-B projects** | `internal/project/**` (service body), `internal/api/v1/projects_api.go`, `internal/meta/postgres/queries/project.sql`, `internal/app/wire_authz.go` (the `project.New` options only), `test/integration/projects/**` |
-| **WP-C delegated writes** | `internal/repository/**`, `internal/auth/**`, `internal/api/v1/{repositories_api,groups_api,tokens_api,upstream_api}.go`, the queries `repository.sql` and `identity.sql`, the repository readers and `ListFilter.Project`, `test/integration/{transfer,identity}/**` for their parts |
-| **WP-D UI** | `web/**`, `docs/developer/web-ui.md`, `docs/manual/**` for the screens |
-| **Shared, settled by the contracts agent** | `api/openapi.yaml` and `internal/api/v1/gen/**` (change by request: the document is the contract), `internal/api/v1/{authorize,access,project_scope}.go`, `internal/errs/codes.go`, `internal/audit/events_projects.go`, the migration |
-
-What each package still has to do, in order of dependency:
-
-1. **WP-A first.** Read `Snapshot.Projects` and `.ProjectAdmins` in `pgSource.Snapshot`; build the project grants and the
-   project-scoped compile; fill the three questions and `Me.Projects`; replace the refusal in `resolve` with the project rules
-   (existence, `<key>-` name, selectors, entries; write the entries of a project policy with `AuthzInsertProjectEntry`);
-   refuse a project service account in `bindable`, in global and foreign policies and as a package owner outside its project;
-   add `selector_outside_project`; the `project=` filter and the project-scoped list and get.
-2. **WP-B** needs only the schema and the queries, and `AuthzInsertProjectEntry` is not its business: its delete goes through
-   `authz.Service.Delete` for each policy of `ProjectPolicyNames`.
-3. **WP-C** needs `AdministersRepositoryOn` and `ProjectsOn` for the narrowing; it creates a repository with the project in the
-   `CreateTx` transaction (`InsertRepository` has `project_id`), applies the prefix and the virtual rule of Q-AUTHZ-178, serves the
-   project filter and the full document to project administrators, creates project service accounts (`IdentityInsertProjectServiceAccount`),
-   and refuses a project service account as a group member.
-4. **WP-D** reads `authz/me.projects` and the generated types.
+| Work package | Commit | Files |
+|---|---|---|
+| contracts | `e72969d` | the migration, `internal/project` types and interface, `internal/authz/project.go` stubs, `authorize.go`, `access.go`, `project_scope.go`, `codes.go`, `events_projects.go`, the document |
+| **WP-A authz engine** | `c58fb18` | `internal/authz/**`, `queries/authz.sql`, `internal/api/v1/authz_api.go`, `test/integration/authz/**` |
+| **WP-B projects** | `dc809aa` | `internal/project/**`, `projects_api.go`, `queries/project.sql`, `wire_authz.go`, `test/integration/projects/**` |
+| **WP-C delegated writes** | `43f9175` | `internal/repository/**`, `internal/auth/**`, `repositories_api.go`, `groups_api.go`, `tokens_api.go`, `upstream_api.go`, `test/integration/{transfer,identity}/**` |
+| **WP-D UI** | `facd7f6` | `web/**`, `docs/developer/web-ui.md`, `docs/manual/**` |
 
 ## Tests
 
-Tests named after the requirement (`TestR_AUTHZ_026_…`). Expected state of the unit tier and the integration tier after the
-contracts and before the work packages:
+Tests named after the requirement (`TestR_AUTHZ_026_…`); the integration tier needs the stack (`make test-integration`).
 
-| Test | State | Passes after |
+| Test | Where | What it pins |
 |---|---|---|
-| `go test ./internal/...`, `./cmd/...` | green | stays green |
-| `TestR_API_007_DocumentDeclaresRecentAuth`, `TestR_API_012_…`, the document tests | green | stays green |
-| `TestProjectsMigration` ([projects_test.go](../../test/integration/postgres/projects_test.go)), `TestTableRegistry`, `TestRevisionColumns` | green | stays green |
-| `TestR_API_002_EveryPermissionOperationAnswersAsDocumented` (authz) | green; does not walk the project operations | WP-B adds them to its operation list |
-| The web type check | green: the fakes carry `project: null` and `projects: []` | WP-D replaces them with fakes that model projects |
-| `test/integration/transfer/repository_api_test.go` (`?project=acme` empty) | green | WP-C replaces the placeholder |
+| `TestR_AUTHZ_026_TheDeclarationOfAProjectAdministrator`, `…_TheHandlersNarrowToTheProject`, `…_TheProjectOperationsAnswer503WithoutAService` | [project_scope_test.go](../../internal/api/v1/project_scope_test.go) | the step admits the capability and any administrator, refuses the rest; the helpers: 404, `project_switch_off` |
+| `TestR_AUTHZ_026_RepositoryOperationsOfAProjectAdministrator`, `…_UpstreamTestsOfAProjectAdministrator`, `…_ServiceAccountOperationsOfAProjectAdministrator`, `…_ProjectMemberOfARepositoryBody` | [project_delegation_test.go](../../internal/api/v1/project_delegation_test.go) | the narrowing of each delegated operation |
+| `TestR_API_047_ListProjectsNarrowsToTheCaller`, `TestR_AUTHZ_026_GetProjectIsNotFoundForAnotherProject` | [projects_api_test.go](../../internal/api/v1/projects_api_test.go) | the list and read handlers |
+| `TestR_AUTHZ_026_TheBridgeForwardsTheProjectQuestions` | [access_test.go](../../internal/app/access_test.go) | the bridge forwards `ProjectAccess` |
+| `TestR_AUTHZ_026_ProjectsOnAnswers…`, `…_ProjectAdministratorsHoldManageOnTheirRepositories`, `…_ProjectPolicyIsScopedToItsProject`, `…_MatchCacheKeyIncludesTheProject`, `…_ProjectPolicyValidation`, `…_ProjectServiceAccountTakesNoRole`, `…_ListFilterByProject` | [project_test.go](../../internal/authz/project_test.go) | the engine |
+| `TestR_AUTHZ_026_EmptyProject`, `TestR_AUTHZ_031_ProjectEventsCarryTheirJournalEntries` | [service_test.go](../../internal/project/service_test.go) | the service |
+| `TestR_AUTHZ_026_ProjectAdministratorWritesPolicies`, `…_ProjectSwitchOffRefusesPolicyWrites`, `…_ProjectPolicyIsInvisibleToTheOldBuild`, `…_ProjectServiceAccountIsGrantedByItsProjectOnly`, `…_AuthzMeListsAdministeredProjects`, `…_PolicyOfARepositoryThatLeftTheProjectWarns`, `TestR_AUTHZ_028_ProjectAdministratorRemovalIsRefusedOnAnotherReplica` | [test/integration/authz/projects_test.go](../../test/integration/authz/projects_test.go) | policies of a project over HTTP and on replicas |
+| `TestR_AUTHZ_026_ProjectLifecycleOverHTTP`, `…_Administrators`, `…_AssignAndUnassign`, `…_DeleteNeedsAnEmptyProject`, `…_PrincipalLookupBounds`, `…_SwitchesNeedTheCurrentIfMatch`, `…_AProjectAdministratorSeesItsOwnProjectsOnly`, `TestR_AUTHZ_032_EveryProjectWriteRaisesTheEpochAndAnswersIt` | [test/integration/projects](../../test/integration/projects) | the project API; the last-but-one: an administrator without `projects:read` lists exactly its projects and gets 404 on another's |
+| `TestR_AUTHZ_026_RepositoryProjectMember`, `…_ProjectAdministratorRepositoryWrites` (including the `DeleteIn` recheck), `…_ProjectAdministratorOverHTTP` | [test/integration/transfer/projects_test.go](../../test/integration/transfer/projects_test.go) | repositories of a project, service level and over HTTP; the replica `off` is asked before the switch is turned on, because later writes refresh its index |
+| `TestR_AUTH_020_ProjectServiceAccountsOfTheDomain`, `TestR_AUTHZ_026_ProjectServiceAccountsOverHTTP`, `…_ProjectAdministratorServiceAccountsAndTokens` | [test/integration/identity/projects_test.go](../../test/integration/identity/projects_test.go) | project accounts, the tokens of a project administrator, and who sees which token of another owner |
+| `TestProjectsMigration`, `TestTableRegistry`, `TestRevisionColumns` | [test/integration/postgres](../../test/integration/postgres) | the schema |
+| `TestR_API_007_DocumentDeclaresRecentAuth`, `TestR_API_012_…`, `TestR_API_002_EveryPermissionOperationAnswersAsDocumented` | [recent_auth_test.go](../../internal/api/v1/recent_auth_test.go), [ifmatch_test.go](../../internal/api/v1/ifmatch_test.go), [test/integration/authz/api_test.go](../../test/integration/authz/api_test.go) | the document |
 
-Each package adds its integration tests next to its code; the acceptance criteria of R-AUTHZ-026 are the list. The harness
-`testenv` (seed.go: `User`, `ServiceAccount`, `Bind`, `Token`, `Repository`, `Policy`) needs a project variant for each; they are
-shared test code, so the first package that needs one adds it and tells the others.
+Test harness note: the identity and transfer tests use tokens with `admin: true` (Q-AUTHZ-183). After a write that changes who administers a
+project, send `Trove-Authz-Min-Epoch` with the epoch of the write when another replica must see it.

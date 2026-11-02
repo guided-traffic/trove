@@ -769,8 +769,9 @@ func (s *Server) DeleteRepository(w http.ResponseWriter, r *http.Request, key st
 	if err == nil && s.idem == nil {
 		err = unavailable("The repository service")
 	}
+	delegate := ""
 	if err == nil {
-		_, err = s.writeDelegate(r.Context(), key)
+		delegate, err = s.writeDelegate(r.Context(), key)
 	}
 	var pre Precondition
 	if err == nil {
@@ -788,7 +789,7 @@ func (s *Server) DeleteRepository(w http.ResponseWriter, r *http.Request, key st
 	detach := params.Detach != nil && *params.Detach
 	caller := repositoryCaller(r)
 	err = s.idem.Do(w, r, nil, IdempotentOp{Run: func(ctx context.Context, tx meta.Tx) (Outcome, error) {
-		res, err := svc.DeleteTx(ctx, tx, caller, key, detach, cond)
+		res, err := svc.DeleteTxIn(ctx, tx, caller, key, detach, cond, delegate)
 		if err != nil {
 			return Outcome{}, err
 		}

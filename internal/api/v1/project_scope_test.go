@@ -84,7 +84,7 @@ func TestR_AUTHZ_026_TheDeclarationOfAProjectAdministrator(t *testing.T) {
 			t.Errorf("neither: %d", got)
 		}
 	})
-	t.Run("R-AUTHZ-026 the right of the declaration is the switch the administrator needs", func(t *testing.T) {
+	t.Run("R-AUTHZ-026 the step does not ask for the right: the switch is the handler's answer (Q-AUTHZ-180)", func(t *testing.T) {
 		lookup := func(c projectCaller) int {
 			s := newSetup(t, func(o *Options) { o.Access = c }, authed)
 			return s.get("/api/v1/projects/web/principals?q=al").Code
@@ -92,8 +92,14 @@ func TestR_AUTHZ_026_TheDeclarationOfAProjectAdministrator(t *testing.T) {
 		if got := lookup(projectCaller{projects: []authz.AdministeredProject{{Key: "web", ManagePolicies: true}}}); got != 503 {
 			t.Errorf("switch on: %d", got)
 		}
-		if got := lookup(projectCaller{projects: []authz.AdministeredProject{{Key: "web", ManageRepositories: true}}}); got != 403 {
+		// A caller whose project has the switch off is admitted as well, so the answer for it
+		// is the handler's (403 project_switch_off, TheHandlersNarrowToTheProject) and never
+		// depends on other projects.
+		if got := lookup(projectCaller{projects: []authz.AdministeredProject{{Key: "web", ManageRepositories: true}}}); got != 503 {
 			t.Errorf("switch off: %d", got)
+		}
+		if got := lookup(projectCaller{}); got != 403 {
+			t.Errorf("no project: %d", got)
 		}
 	})
 	t.Run("R-AUTHZ-026 an anonymous caller gets 401", func(t *testing.T) {

@@ -243,14 +243,13 @@ func TestR_AUTHZ_026_ProjectSwitchOffRefusesPolicyWrites(t *testing.T) {
 
 	f.e.Exec("UPDATE project SET manage_policies = false WHERE key = 'web'")
 	hdr := f.changed(t)
-	// The shared step admits a caller that administers some project with the
-	// switch; alice administers none, so it refuses before any handler runs.
-	wantStatus(t, f.cl.Do(alice, "POST", policies, projectPolicyBody("web-two", "web", []string{"web-npm"}), hdr...), 403, "forbidden")
+	// The shared step admits a caller that administers any project; the handler names
+	// the switch, whatever other projects the caller administers (Q-AUTHZ-180).
+	wantStatus(t, f.cl.Do(alice, "POST", policies, projectPolicyBody("web-two", "web", []string{"web-npm"}), hdr...), 403, "project_switch_off")
 	wantStatus(t, f.cl.Do(alice, "GET", policies+"/web-publish", nil, hdr...), 200, "")
 	wantStatus(t, f.cl.Do(alice, "GET", policies+"?project=web", nil, hdr...), 200, "")
 
-	// With a second project whose switch is on the step admits her, and the handler
-	// names the switch.
+	// With a second project whose switch is on the answer for web does not change.
 	f.e.Exec("INSERT INTO project_admin (project_id, principal_id) VALUES ($1::uuid, $2::uuid)", f.shopID, f.alice.ID)
 	hdr = f.changed(t)
 	wantStatus(t, f.cl.Do(alice, "POST", policies, projectPolicyBody("web-two", "web", []string{"web-npm"}), hdr...), 403, "project_switch_off")

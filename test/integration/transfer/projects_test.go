@@ -19,10 +19,8 @@ import (
 )
 
 // The repository operations of projects (R-AUTHZ-026, Q-AUTHZ-173, Q-AUTHZ-178,
-// Q-AUTHZ-184). The tests of a project administrator over HTTP need the decision
-// point to know projects (the engine work package); each says so and is skipped by
-// requireProjectEngine until it does. The service tests and the tests of a holder of
-// repositories:write-config run today.
+// Q-AUTHZ-184): the service tests, the tests of a holder of repositories:write-config
+// and the project administrator over HTTP.
 
 // project inserts a project row. It runs before the replica that must know it
 // starts: the decision point builds its index from PostgreSQL when it starts.
@@ -51,17 +49,6 @@ func (e *webEnv) projectAdmin(name string, projects ...string) {
 	e.mu.Lock()
 	e.tokens[name] = e.stack.Token(u, scope.Scope{Inherit: true, Admin: true})
 	e.mu.Unlock()
-}
-
-// requireProjectEngine skips a test that needs the decision point to know the caller
-// as a project administrator: view=full is answered 403 to a caller that holds no
-// capability and administers no project.
-func requireProjectEngine(t *testing.T, r *webReplica, user string) {
-	t.Helper()
-	if r.get(user, "/api/v1/repositories?view=full").status == 200 {
-		return
-	}
-	t.Skip("the grant index does not know projects yet (the engine work package)")
 }
 
 func fieldsOf(t testing.TB, err error) map[string]string {
@@ -306,6 +293,23 @@ func TestR_AUTHZ_026_ProjectAdministratorRepositoryWrites(t *testing.T) {
 			t.Fatalf("a repository without a project: %v", err)
 		}
 	})
+	t.Run("Q-AUTHZ-184 the delete rechecks the project of the locked row, as replace and patch do", func(t *testing.T) {
+		for _, key := range []string{"shop-npm", "shared-npm", "no-such-repo"} {
+			_, err := svc.DeleteIn(ctx, caller, key, false, "web")
+			if ce, _ := errs.As(err); ce == nil || ce.Status() != 404 {
+				t.Fatalf("%s: %v", key, err)
+			}
+		}
+		for _, key := range []string{"shop-npm", "shared-npm"} {
+			if _, err := svc.Get(ctx, key); err != nil {
+				t.Fatalf("%s was deleted by an administrator of another project: %v", key, err)
+			}
+		}
+		mustCreate(repository.Write{Project: ptr("web")}, "web-doomed", "virtual", `"virtual":{"members":["web-npm"],"deployTarget":null}`)
+		if res, err := svc.DeleteIn(ctx, caller, "web-doomed", false, "web"); err != nil || !res.Done {
+			t.Fatalf("the project's own repository: %+v %v", res, err)
+		}
+	})
 	t.Run("R-AUTHZ-026 the readers fill the project key", func(t *testing.T) {
 		got, err := svc.Get(ctx, "web-npm")
 		if err != nil || got.Repository.ProjectKey != "web" {
@@ -343,7 +347,6 @@ func TestR_AUTHZ_026_ProjectAdministratorOverHTTP(t *testing.T) {
 	e.exec(`UPDATE repositories SET project_id = (SELECT id FROM project WHERE key = 'shop') WHERE key = 'shop-api'`)
 	e.stack.Repository("global-one", "local", "generic", "{}")
 	off := e.newReplica("off", webOpts{})
-	requireProjectEngine(t, off, "wanda")
 
 	body := func(key string, extra map[string]any) map[string]any {
 		m := map[string]any{"key": key, "class": "local", "format": "generic", "project": "web", "adminNotes": "team note"}
@@ -355,6 +358,9 @@ func TestR_AUTHZ_026_ProjectAdministratorOverHTTP(t *testing.T) {
 	t.Run("R-AUTHZ-026 with manageRepositories off the same administrator creating npm-web-extra gets 403", func(t *testing.T) {
 		problemOf(t, off.postJSON("wanda", "/api/v1/repositories", body("npm-web-extra", nil)), 403, "project_switch_off")
 		problemOf(t, off.postJSON("wanda", "/api/v1/repositories", body("web-extra", nil)), 403, "project_switch_off")
+		// The replica `off` answers from the index it built; later writes on the stack refresh it, so
+		// every answer of the switch being off is asked before the switch is turned on.
+		problemOf(t, off.postJSON("wanda", "/api/v1/upstream-tests", map[string]any{"format": "npm", "remote": map[string]any{"url": "https://registry.example.test/"}}), 403, "project_switch_off")
 		if n := e.number(`SELECT count(*) FROM repositories WHERE key IN ('npm-web-extra', 'web-extra')`); n != 0 {
 			t.Fatalf("%d rows", n)
 		}
@@ -417,10 +423,7 @@ func TestR_AUTHZ_026_ProjectAdministratorOverHTTP(t *testing.T) {
 			problemOf(t, on.do("wanda", "POST", "/api/v1/repositories/"+key+"/upstream-test", nil), 404, "not_found")
 		}
 	})
-	t.Run("Q-AUTHZ-173 the unsaved upstream test needs a project with the switch, and answers as for anyone", func(t *testing.T) {
-		if res := off.do("wanda", "POST", "/api/v1/upstream-tests", strings.NewReader(`{"format":"npm","remote":{"url":"https://registry.example.test/"}}`), "Content-Type", "application/json"); res.status != 403 {
-			t.Fatalf("switch off: %d %s", res.status, res.body)
-		}
+	t.Run("Q-AUTHZ-173 the unsaved upstream test is answered with the switch on", func(t *testing.T) {
 		if res := on.do("wanda", "POST", "/api/v1/upstream-tests", strings.NewReader(`{"format":"npm","remote":{"url":"https://registry.example.test/"}}`), "Content-Type", "application/json"); res.status != 200 {
 			t.Fatalf("switch on: %d %s", res.status, res.body)
 		}

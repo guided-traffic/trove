@@ -15,10 +15,7 @@ import (
 )
 
 // The project service accounts and the tokens a project administrator issues for them
-// (R-AUTHZ-026, R-AUTH-020, R-AUTH-027, Q-AUTHZ-169, Q-AUTHZ-175 to Q-AUTHZ-177). The
-// tests that need a project administrator to be recognised by the decision point
-// say so: they wait for the grant index to know projects (the engine work package)
-// and are skipped by the check below until it does.
+// (R-AUTHZ-026, R-AUTH-020, R-AUTH-027, Q-AUTHZ-169, Q-AUTHZ-175 to Q-AUTHZ-177).
 
 // project inserts a project row and returns its id. It runs before the replicas
 // serve: the decision point builds its index from PostgreSQL when it starts.
@@ -247,17 +244,6 @@ func TestR_AUTHZ_026_ProjectServiceAccountsOverHTTP(t *testing.T) {
 	})
 }
 
-// requireProjectEngine skips a test that needs a project administrator to be
-// recognised: the shared step admits the list of a project's accounts only once the
-// grant index knows the caller administers it.
-func requireProjectEngine(t *testing.T, s *served, bearer, project string) {
-	t.Helper()
-	if s.call(get, "/api/v1/service-accounts?project="+project, bearer, nil).Status == 200 {
-		return
-	}
-	t.Skip("the grant index does not know projects yet (the engine work package)")
-}
-
 // TestR_AUTHZ_026_ProjectAdministratorServiceAccountsAndTokens is the acceptance of the
 // delegated service accounts: a project administrator creates, disables and deletes the
 // accounts of its project and issues their tokens, and reaches nothing outside it.
@@ -281,7 +267,6 @@ func TestR_AUTHZ_026_ProjectAdministratorServiceAccountsAndTokens(t *testing.T) 
 	}
 	wandaTok, lenaTok := a.projectAdminToken(wanda), a.projectAdminToken(lena)
 	s := a.serve(e, nil)
-	requireProjectEngine(t, s, wandaTok, "web")
 
 	t.Run("R-AUTHZ-026 Q-AUTHZ-169 a project administrator creates an account of its project and only of it", func(t *testing.T) {
 		rp := s.call(post, "/api/v1/service-accounts", wandaTok, map[string]any{"name": "web-ci", "project": "web", "description": "builds"})
@@ -307,9 +292,14 @@ func TestR_AUTHZ_026_ProjectAdministratorServiceAccountsAndTokens(t *testing.T) 
 		}
 	})
 	t.Run("Q-AUTHZ-177 the description changes inside the project only", func(t *testing.T) {
-		want(t, s.call(patch, "/api/v1/service-accounts/web-ci", wandaTok, map[string]any{"description": "release builds"}), 200, "")
-		want(t, s.call(patch, "/api/v1/service-accounts/ext-bot", wandaTok, map[string]any{"description": "x"}), 404, "")
-		want(t, s.call(patch, "/api/v1/service-accounts/shop-bot", wandaTok, map[string]any{"description": "x"}), 404, "")
+		// R-AUTH-020: the write names the revision it read; an account the caller cannot read has none to name.
+		tag := s.call(get, "/api/v1/service-accounts/web-ci", wandaTok, nil).Header.Get("ETag")
+		if tag == "" {
+			t.Fatal("no ETag on the account")
+		}
+		want(t, s.call(patch, "/api/v1/service-accounts/web-ci", wandaTok, map[string]any{"description": "release builds"}, "If-Match", tag), 200, "")
+		want(t, s.call(patch, "/api/v1/service-accounts/ext-bot", wandaTok, map[string]any{"description": "x"}, "If-Match", "*"), 404, "")
+		want(t, s.call(patch, "/api/v1/service-accounts/shop-bot", wandaTok, map[string]any{"description": "x"}, "If-Match", "*"), 404, "")
 	})
 	t.Run("Q-AUTHZ-177 R-AUTH-027 a token is capped, carries no capability and may be bound to an endpoint", func(t *testing.T) {
 		path := "/api/v1/service-accounts/web-ci/tokens"
@@ -336,7 +326,8 @@ func TestR_AUTHZ_026_ProjectAdministratorServiceAccountsAndTokens(t *testing.T) 
 		id := str(toks[0], "id")
 		want(t, s.call(get, "/api/v1/tokens/"+id, wandaTok, nil), 200, "")
 		want(t, s.call(del, "/api/v1/tokens/"+id, wandaTok, nil), 204, "")
-		// Another account's tokens are no business of wanda's: the filter falls back to its own tokens.
+		// Another account's tokens are no business of wanda's: an owner it does not administer is
+		// forced to the caller (R-AUTH-028, Q-AUTHZ-177), so the list is wanda's own tokens and never the account's.
 		for _, owner := range []string{"ext-bot", "shop-bot"} {
 			sa, err := a.manager.GetServiceAccount(context.Background(), owner)
 			if err != nil {
@@ -345,8 +336,21 @@ func TestR_AUTHZ_026_ProjectAdministratorServiceAccountsAndTokens(t *testing.T) 
 			other := a.sat(sa)
 			want(t, s.call(get, "/api/v1/tokens/"+other.Record.ID, wandaTok, nil), 404, "")
 			want(t, s.call(del, "/api/v1/tokens/"+other.Record.ID, wandaTok, nil), 404, "")
-			if got := list(t, s.call(get, "/api/v1/tokens?owner=sa:"+owner, wandaTok, nil)); len(got) != 0 {
-				t.Fatalf("%s: %v", owner, got)
+			for _, tk := range list(t, s.call(get, "/api/v1/tokens?owner=sa:"+owner, wandaTok, nil)) {
+				if o, _ := tk["owner"].(map[string]any); o["kind"] != "user" || o["name"] != "wanda" || str(tk, "id") == other.Record.ID {
+					t.Fatalf("%s: the list of another account shows %v", owner, tk)
+				}
+			}
+			// A global administrator sees the account's own token, and only the account's.
+			seen := false
+			for _, tk := range list(t, s.call(get, "/api/v1/tokens?owner=sa:"+owner, fx.adminToken, nil)) {
+				if o, _ := tk["owner"].(map[string]any); o["kind"] != "service_account" || o["name"] != owner {
+					t.Fatalf("%s: the administrator's list shows %v", owner, tk)
+				}
+				seen = seen || str(tk, "id") == other.Record.ID
+			}
+			if !seen {
+				t.Fatalf("%s: the administrator does not see the account's token", owner)
 			}
 			want(t, s.call(del, "/api/v1/service-accounts/"+owner+"/tokens", wandaTok, nil), 404, "")
 			want(t, s.call(post, "/api/v1/service-accounts/"+owner+"/tokens", wandaTok, map[string]any{"description": "x"}), 403, "forbidden")
@@ -360,7 +364,8 @@ func TestR_AUTHZ_026_ProjectAdministratorServiceAccountsAndTokens(t *testing.T) 
 		want(t, s.call(post, "/api/v1/service-accounts/lab-bot/tokens", lenaTok, map[string]any{"description": "x"}), 403, "project_switch_off")
 		want(t, s.call(post, "/api/v1/service-accounts/lab-bot/disable", lenaTok, nil), 204, "")
 		want(t, s.call(post, "/api/v1/service-accounts/lab-bot/enable", lenaTok, nil), 403, "project_switch_off")
-		want(t, s.call(patch, "/api/v1/service-accounts/lab-bot", lenaTok, map[string]any{"description": "idle"}), 200, "")
+		tag := s.call(get, "/api/v1/service-accounts/lab-bot", lenaTok, nil).Header.Get("ETag")
+		want(t, s.call(patch, "/api/v1/service-accounts/lab-bot", lenaTok, map[string]any{"description": "idle"}, "If-Match", tag), 200, "")
 		want(t, s.call(del, "/api/v1/service-accounts/lab-bot/tokens", lenaTok, nil), 204, "")
 		want(t, s.call(del, "/api/v1/service-accounts/lab-bot", lenaTok, nil), 204, "")
 	})
