@@ -182,42 +182,67 @@ Details: [roadmap M3](../coverage/roadmap.md#m3--nuget) · spec: [formats/nuget.
 - 🟢 CI checks against the latest release: `api/openapi.yaml` with a breaking-change checker (R-ARCH-025) and the embedded migration files (R-ARCH-026), job `compat` and `make compat-check`
 
 **NuGet v3**
-- 🟢 Local: service index, package content, registrations, search, push, unlist, relist, delete. Open: a search term matches
-  versions the caller cannot read, and the search ignores the repository's patterns (F-21, F-23 of
-  [promt.md section 8](promt.md#8--open-findings))
+- 🟡 Local: service index, package content, registrations, search, push, unlist, relist, delete; search terms meet only the
+  versions the caller may read and the repository's patterns apply (Q-NUGET-74, Q-NUGET-77). Open: rows stored before the
+  SemVer 2 classification of dependency ranges keep `is_semver2 = false` (F-30 of [promt.md section 8](promt.md#8--open-findings))
 - 🟢 Symbol package push (`.snupkg`): validated and stored, one indexing job per symbol package (Q-NUGET-11)
-- 🟡 Remote: proxy of nuget.org with resource URL rewriting, discovery, re-paging, the identity check of a cached package.
-  Open: the forwarded search (R-NUGET-016, F-20), the cache fill's identity check and page bound (F-25), the upstream
-  addresses in deprecations and vulnerabilities (F-24)
-- 🟡 Virtual: merged package content and metadata, merged search over local members, publishing through the deployment
-  target. Open: the registration of a nuget.org member fails to merge (502, F-22), remote members contribute no search
-  results until F-20, and the merged search decides exposure on the members (F-21)
+- 🟢 Remote: proxy of nuget.org with resource URL rewriting, discovery, re-paging, the identity check of a cached package
+  (only content that is no package passes without it, Q-NUGET-84), pages and leaves bounded at the fill and the rendering
+  (Q-NUGET-83), deprecations and vulnerabilities without the upstream's addresses (Q-NUGET-85), and the forwarded search
+  with the withheld-query rule (R-NUGET-016); a claim filters the cached forwarded answers of every replica within the bound
+  of R-NUGET-016, with and without Valkey (`TestNuGetSearchClaimTiming`, `TestNuGetClosing`)
+- 🟢 Virtual: merged package content and metadata, a nuget.org member's registration merged whole (gzip-coded, pages by
+  address, Q-NUGET-82), merged search over local and remote members decided on the addressed repository, four members at
+  a time on one scan budget (Q-NUGET-75, Q-NUGET-76, Q-NUGET-81), publishing through the deployment target
 - 🟢 Authentication: token as password in `nuget.config`, token as API key for push (`X-NuGet-ApiKey`, Q-AUTH-186)
 - 🟡 Clients: the .NET 10 SDK on Linux and nuget.exe on Mono run against trove on every change (e2e `nuget`); setup
   instructions for Visual Studio in the guide. The Windows row and the manual Visual Studio checklist run in the owner
   walkthrough of phase 8 ([Q-NUGET-72](../spec/formats/nuget.md#q-nuget-72--the-windows-row-of-e31-and-the-visual-studio-checklist-run-in-the-owner-walkthrough-not-on-a-ci-runner))
 - 🟢 Package UI and client setup snippets for .NET (`dotnet`, nuget.exe, `nuget.config`, the token in each shell's spelling)
 - 🟢 In-app guide for every NuGet variant: local, remote and virtual repositories with the .NET CLI, nuget.exe and Visual Studio, and `nuget.config` (R-UI-049, owner 2026-10-31); browser journeys `10-help` and `11-nuget`
-- 🟡 NuGet on a customer endpoint: version lists and registrations list only exposed versions, no push there (`TestNuGetEndpoint`
-  green). Open: search leaks the existence of hidden versions through its terms and, through a virtual repository, applies the
-  members' rules (F-21, [H-341](../security/endpoints-and-exposure.md#h-341--a-nuget-search-term-matches-versions-the-caller-cannot-read),
-  [H-342](../security/endpoints-and-exposure.md#h-342--a-nuget-search-through-a-virtual-repository-decides-exposure-on-its-members))
+- 🟢 NuGet on a customer endpoint: version lists, registrations and search list only exposed versions, a search term meets
+  only those, through a virtual repository its own rules decide, the validators follow only what the endpoint shows, and
+  there is no push there (`TestNuGetEndpoint`; the search through a virtual `nuget-customers`:
+  `TestR_NUGET_034_SearchThroughAVirtualRepositoryOnAnEndpointWithRules`;
+  [nuget-virtual.md](../security/nuget-virtual.md), [endpoints-and-exposure.md](../security/endpoints-and-exposure.md))
 - 🟢 Format contract additions found by the M2 architecture review (roadmap M3, WP3.0): a hook on a remote fill, discovery documents and the URL map for metadata, pass-through and fan-out for search, content on `Volatile` routes, a format that can name only its own repository, rendered-document mechanics in the contract, validation of remote configuration, the format's rules on the raw routes, a typed environment for a format, the dormant methods, the writer-owned eviction signal, no format knowledge in the virtual bridge, one engine value type each, links in refusals, the declared length of a body, a minimal contract, the per-format data-port leaf rule, the real populate decision in the audit event; and from the review of 2026-11-01 (WP3.0u to WP3.0w): the addressed repository on member requests through one derivation, stored versions as a method of the view adapter, and a test that the written contract equals the code
 - 🟢 Format contract frozen for all later registries: `ContractVersion` 1, its surface recorded in
   `internal/formats/testdata/contract.txt`, npm and NuGet pass all eleven kit checks
-  ([ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)). Open: a kit check for discovery documents (F-29)
+  ([ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)); check 6 also holds a discovery parser to
+  its bounds on crafted service indexes
 
 **Tests**
 - 🟢 NuGet integration tests: protocol over HTTP, conformance kit, SemVer 2 and ID normalization, golden vectors of the
   .NET version rules, the action map of R-AUTHZ-007 with and without each action (E3.4)
-- 🟡 NuGet e2e tests: `dotnet restore`, `dotnet nuget push` and nuget.exe through local, remote and virtual repositories
-  against the counting test upstream (set `nuget`, per change). Open: the run against nuget.org of E3.1 (F-27)
+- 🟢 NuGet e2e tests: `dotnet restore`, `dotnet nuget push` and nuget.exe through local, remote and virtual repositories
+  against the counting test upstream (set `nuget`, per change), and the run against nuget.org of E3.1 (`TestNuGetClosingPublic`,
+  set `nuget-closing`), green on kind after the fix wave; its run in Test and Release on the commit that closes the phase is
+  part of that closing run
 - 🟡 NuGet e2e: cold cache with three clients at once (E3.2, one upstream request per `.nupkg`), a push whose answer the edge
   drops, documents and restores with Valkey stopped (set `nuget-closing`); the drain part moved to phase 7
   ([Q-NUGET-73](../spec/formats/nuget.md#q-nuget-73--the-nuget-part-of-the-drain-test-moves-to-phase-7-with-the-other-long-legs))
 - ⚪ NuGet load joins the drain and failover tests: moved to phase 7 (Q-NUGET-73); the nightly leg `nuget-ha` runs its set
 - 🟢 NuGet e2e: `dotnet restore` through a customer endpoint gets only exposed versions; a hidden version fails to resolve
   with `NU1102`, and a push answers 403 (`TestNuGetEndpoint`, Q-NUGET-71)
+
+**Findings of 2026-11-02**
+- 🟢 F-20 to F-26, F-28 and F-29 of [promt.md section 8](promt.md#8--open-findings), from the code review and the security
+  audit of the phase: the forwarded search; the search decided on the addressed repository and on the versions the caller
+  may read, with a bounded fan-out and the repositories' patterns; a nuget.org member's registration through a virtual
+  repository; the local documents (SemVer 2 dependency ranges, validators on endpoints with rules, the lock order of a
+  removal, the revision of the version list); upstream addresses in deprecations and vulnerabilities; the identity check
+  and the bounds of a remote's cache fill; the package reader's central directory; the write budget of `access-long`; a kit
+  check for discovery documents
+- 🟢 The code review and the security audit of the fix wave: a `version:` term that carried a protected name upstream,
+  upstream addresses in forwarded results, a forwarded result matched on a hidden version, an unbounded forwarded answer,
+  a Unicode path ID past patterns and claims, unbounded leaves at a page fill, the search scan paging by offset, explicit
+  folders left after a subtree delete, the validator of a remote document on an endpoint with rules; the remaining gaps are
+  H-345, H-347, H-348 and H-351 to H-353 on the [security pages](../security/README.md)
+- 🟢 R-NUGET-016's claim timing criterion, which the closing of F-20 left without a test, runs in e2e: no replica lists the
+  claimed package 100 ms after the claim with Valkey and 860 ms after it with Valkey stopped (kind)
+- 🟢 F-27: the run against nuget.org is green on kind, all seven cases (the forwarded search, nuget.exe, the restore and the
+  registrations through the remote and the virtual repository)
+- 🟡 Open: F-30 (`is_semver2` of rows stored before the fix)
 
 ## Phase 5 · GitLab CI OIDC (M4)
 

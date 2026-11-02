@@ -1267,7 +1267,7 @@ test/e2e/nugetclients/
 `make e2e SET=nuget` runs the acceptance tests of the NuGet format with the real clients (R-NUGET-027; exit criteria E3.1 Linux part,
 E3.2, E3.5, E3.6 without the drain part, E3.7). Everything runs in the `scatter` profile, so consecutive requests of one client reach
 different web replicas. Verified on the dev cluster (linux/arm64, .NET SDK of `E2E_NUGETCLIENTS_SDK_IMAGE`, nuget.exe 7.9.0 on Mono,
-2026-11-02): the set is green, 78 tests and subtests, 234 s of test time. Not verified: linux/amd64, and the time on the CI runner.
+2026-11-02, after the fix wave of phase 4): the set is green, 79 tests and subtests, 226 s of test time (5 min 39 s with the image loads). Not verified: linux/amd64, and the time on the CI runner.
 `make e2e SET=nuget-closing` adds what stops Valkey ([Q-NUGET-70](../spec/formats/nuget.md#q-nuget-70--which-of-the-remaining-e3-cases-run-on-every-change-and-which-in-the-closing-run)).
 
 | File | Content |
@@ -1280,6 +1280,7 @@ different web replicas. Verified on the dev cluster (linux/arm64, .NET SDK of `E
 | [nuget_virtual_test.go](../../test/e2e/nuget_virtual_test.go) | `TestNuGetVirtual`: push through the virtual repository into its deployment target, restores and installs of local and uncached remote packages, search (the local package, and the counting upstream's package through the remote's forwarded search and the virtual repository's merge), the documents on every replica, no deployment target |
 | [nuget_collapse_test.go](../../test/e2e/nuget_collapse_test.go) | `TestNuGetCollapse` (E3.2), `coldRestoreOfReference` (shared with the closing run) |
 | [nuget_endpoint_test.go](../../test/e2e/nuget_endpoint_test.go) | `TestNuGetEndpoint` (E3.7) |
+| [nuget_search_claims_test.go](../../test/e2e/nuget_search_claims_test.go) | `TestNuGetSearchClaimTiming`: R-NUGET-016's claim criterion with Valkey (no replica lists a package of the upstream for a cached forwarded query within 1 s of a claim, plus one second for the poll; no new upstream search); `claimTiming`, shared with `TestNuGetClosing` for the case with Valkey stopped |
 | [nuget_closing_test.go](../../test/e2e/nuget_closing_test.go) | `TestNuGetClosing`: the closing run's additions |
 | [nuget_public_test.go](../../test/e2e/nuget_public_test.go) | `TestNuGetClosingPublic`: the closing run's read-only subset against nuget.org; `foreignAddresses` (the address check of R-NUGET-015), `registrationLeaves` (a registration with every page followed) |
 
@@ -1368,8 +1369,10 @@ of `[1.9.0]` and of `[9.9.9]` both fail with `NU1102`; nuget.exe restores a `pac
 stopped (`withValkeyStopped`, every web pod ready with `valkey` degraded): the documents of a package on all three replicas; 51 iterations of `dotnet nuget push` of a
 `.nupkg` with its `.snupkg` through a virtual repository, each followed by `dotnet restore --no-http-cache` of the package, 17 on each of three clients at once
 (also once with Valkey running); the cold restore of the reference solution with at most three requests per `.nupkg` (one per replica); twelve concurrent restores
-of one uncached package on two replicas cost one or two upstream requests. The drain part of E3.6 moved to phase 7 (owner, 2026-11-01); `FLUSHALL` and the Sentinel
-failover under the NuGet load of R-NUGET-031 go with it. Verified on the dev cluster (2026-11-02): green, 14 tests and subtests, 322 s.
+of one uncached package on two replicas cost one or two upstream requests; and R-NUGET-016's claim criterion with Valkey stopped (`claimTiming`: a forwarded answer cached
+on every replica, then a claim; no replica lists the package within `cluster.epoch_poll_interval` plus 1 s, plus one second for the poll). The drain part of E3.6 moved
+to phase 7 (owner, 2026-11-01); `FLUSHALL` and the Sentinel failover under the NuGet load of R-NUGET-031 go with it. Verified on the dev cluster (2026-11-02, after
+the fix wave of phase 4): the set is green with `TestNuGetClosingPublic`, 23 tests and subtests, 7 min 01 s; the claim was in force on every replica after 860 ms.
 
 **The subset against nuget.org** (`TestNuGetClosingPublic` in [nuget_public_test.go](../../test/e2e/nuget_public_test.go),
 [Q-NUGET-91](../spec/formats/nuget.md#q-nuget-91--the-run-against-nugetorg-is-a-read-only-subset-of-the-closing-set-with-the-search-first-and-an-id-of-more-than-128-versions)).
@@ -1394,23 +1397,20 @@ The cases run in this order:
    Serilog lists more than 128 versions. The test logs how many addresses each document had and how many web links were left
    out.
 
-Run on the dev cluster on 2026-11-02 at e0c2cfa (`TROVE_E2E_RUN='^TestNuGetClosingPublic$' make e2e SET=nuget-closing`, twice,
-the same result). Four of the seven cases pass:
-- nuget.exe through the remote;
-- the restore through the virtual repository;
-- the remote's registration of `newtonsoft.json`: 86 versions in 2 inlined pages, 978 addresses, 287 web links left out;
-- the remote's registration of `serilog`: 602 versions in 10 pages of trove's own, all listed by address.
+Run on the dev cluster on 2026-11-02 after the fix wave of phase 4 (`make e2e SET=nuget-closing`): all seven cases pass, 9.7 s.
+- The search through the fresh remote lists Newtonsoft.Json with nuget.org's download count; its answer has 1,054 addresses, all
+  the remote's, and 60 web links left out.
+- nuget.exe installs through the remote; the restore through the virtual repository extracts both packages.
+- The registration of `newtonsoft.json` through the remote and through the virtual repository: 86 versions in 2 inlined pages,
+  978 addresses, 287 web links left out.
+- The registration of `serilog` through both: 602 versions in 10 pages of trove's own, all listed by address, every address the
+  serving repository's.
 
-Three cases fail on defects that are being fixed:
-- The search lists nothing, because the forwarded search is not built (F-20 of [promt.md](../projektplan/promt.md#8--open-findings)).
-- Both registrations through the virtual repository answer `502 upstream_failed` ("A registration index of a member is no
-  registration index", `merge.DecodeUpstream`). The merge parses the remote's stored index without inflating the gzip bytes
-  nuget.org sent. For Serilog, the next refusal would be the pages listed by address (F-22).
+At e0c2cfa, before the fix wave, three of the cases failed: the search listed nothing (the forwarded search was not built), and
+both registrations through the virtual repository answered `502 upstream_failed` (the merge did not inflate nuget.org's gzip-coded
+index and refused pages listed by address).
 
-**Not covered here:** the timing criterion of R-NUGET-016 for a claim added after a cached forwarded answer (no `Partner.*` result on either
-replica within 1 s, and within `cluster.epoch_poll_interval` plus 1 s with Valkey stopped; the integration test
-`TestR_NUGET_016_ARemoteForwardsItsSearchAndFallsBackToItsCache` shows the claim reaching both replicas without the bound, F-31 of
-[promt.md](../projektplan/promt.md#8--open-findings)), the digest check of a cached package against the upstream (R-NUGET-029, P1; not built, so a
+**Not covered here:** the digest check of a cached package against the upstream (R-NUGET-029, P1; not built, so a
 `packageHash` mismatch is not tested), the symbol packages beyond the push (the symbol server is P1, against nuget.org too), the Windows row
 and Visual Studio, and the drain and failover part of E3.6 (phase 7).
 

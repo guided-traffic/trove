@@ -204,31 +204,16 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
-Found on 2026-11-02 by the code review and the security audit of phase 4 (NuGet), at commit 42f7a1d. A fix wave was
-started and stopped before it changed the tree; phase 4 stays open until these are fixed (BETA.md):
+Found on 2026-11-02 by the code review of the fix wave of phase 4 (NuGet); phase 4 stays open until it is fixed (BETA.md):
 
 ### NuGet
 
-- **F-27 · The run against nuget.org of E3.1 is red where it needs F-20 and F-22** (confirmed on kind at e0c2cfa, twice).
-  `TestNuGetClosingPublic` ([nuget_public_test.go](../../test/e2e/nuget_public_test.go), set `nuget-closing`,
-  [Q-NUGET-91](../spec/formats/nuget.md#q-nuget-91--the-run-against-nugetorg-is-a-read-only-subset-of-the-closing-set-with-the-search-first-and-an-id-of-more-than-128-versions))
-  reads nuget.org through a remote and a virtual repository. Four of its seven cases pass: nuget.exe through the remote, the
-  restore of Newtonsoft.Json and Serilog through the virtual repository, and the remote's registrations of both. The search
-  through the remote lists nothing (F-20), and both registrations through the virtual repository answer 502 (F-22). Done when
-  the set is green after those fixes, in the full run of Test and Release on the commit that closes the phase.
 - **F-30 · `is_semver2` of NuGet rows stored before the SemVer 2 fix** (confirmed by the code review of the fix wave). A version
   whose dependency range has a SemVer-2-specific bound is classified SemVer 2 since the fix (`incoming.isSemver2` in
   [publish.go](../../internal/formats/nuget/publish.go), used by pushes and cache fills), but only when it is written: rows stored
   before keep `is_semver2 = false`, so such a version still shows to clients older than NuGet 4.3 in the SemVer 1 hives and in a
   search without `semVerLevel=2.0.0`. Migration 00017 is released and stays as it is. Decide between a recomputation job over the
   stored `.nuspec` files and migration 00018; done when no stored row of such a version says `false`.
-- **F-31 · The claim timing criterion of R-NUGET-016 has no e2e test** (confirmed). R-NUGET-016's last criterion: after
-  `nuget-local` claims `Partner.*`, neither replica returns a `Partner.*` result of `nuget-org` for a cached `q=partner` within
-  1 s, and within `cluster.epoch_poll_interval` plus 1 s with Valkey stopped. The integration test
-  `TestR_NUGET_016_ARemoteForwardsItsSearchAndFallsBackToItsCache` shows the claim reaching both replicas and the cached answer
-  being filtered, but asserts no bound and never stops Valkey; F-20 named this case as its done condition and was closed
-  without it. Build it in the `nuget` set with a package the counting upstream publishes at runtime, the way
-  `e1_14_exposure_test.go` times rule changes.
 
 Found on 2026-11-01 while writing the manual (`docs/manual`) and the design change of Q-UI-88:
 

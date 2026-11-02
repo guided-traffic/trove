@@ -727,11 +727,18 @@ and then freezes it.
   ([Q-NUGET-72](../spec/formats/nuget.md#q-nuget-72--the-windows-row-of-e31-and-the-visual-studio-checklist-run-in-the-owner-walkthrough-not-on-a-ci-runner)).
   The run against nuget.org is `TestNuGetClosingPublic` in the closing set
   ([Q-NUGET-91](../spec/formats/nuget.md#q-nuget-91--the-run-against-nugetorg-is-a-read-only-subset-of-the-closing-set-with-the-search-first-and-an-id-of-more-than-128-versions));
-  on kind its search and its registrations through the virtual repository stay red until F-20 and F-22 are fixed (F-27 of
-  [promt.md](../projektplan/promt.md#8--open-findings)).
+  on kind after the fix wave of phase 4 all seven cases pass (2026-11-02): `dotnet package search Newtonsoft` through a remote
+  that has cached nothing lists Newtonsoft.Json with nuget.org's download count and 1,054 addresses, all trove's; nuget.exe
+  installs through the remote; `dotnet restore` of Newtonsoft.Json and Serilog through the virtual repository; and the
+  registrations of both through the remote and the virtual repository (Serilog: 602 versions in 10 pages listed by address,
+  every address trove's). Its run in Test and Release on the commit that closes the phase is still to come.
 - **E3.2** Cold cache, concurrent clients: three clients run `dotnet restore --no-cache` at once
   against three replicas. They restore the reference solution in `perf/` (at least 100 packages in
   its restore graph) through `nuget-all`. All three succeed, and the counting upstream records one
+  request per `.nupkg`.
+
+  *Status (2026-11-02):* `TestNuGetCollapse` ([test/e2e/nuget_collapse_test.go](../../test/e2e/nuget_collapse_test.go), set
+  `nuget`) passes on kind after the fix wave of phase 4: the three restores succeed and the counting upstream records one
   request per `.nupkg`.
 - **E3.3** Contract freeze: at the end of M3 the format contract (R-ARCH-008, R-ARCH-009) has
   `ContractVersion` 1, and both formats pass the conformance kit. Any contract change that NuGet
@@ -770,7 +777,8 @@ and then freezes it.
   load needs both formats, passes.
 
   *Status (2026-11-02):* the scatter profile, the dropped answer (`TestNuGetPushRetry`), equal bodies and ETags on every
-  replica and the Valkey-stopped cases (`TestNuGetClosing`) pass on kind. The drain part moved to phase 7
+  replica (`TestNuGetReplicas`, since the fix wave without a request that fills the `.nuspec` first) and the Valkey-stopped
+  cases (`TestNuGetClosing`) pass on kind, again after the fix wave of phase 4. The drain part moved to phase 7
   ([Q-NUGET-73](../spec/formats/nuget.md#q-nuget-73--the-nuget-part-of-the-drain-test-moves-to-phase-7-with-the-other-long-legs)).
 - **E3.7** NuGet on a customer endpoint. Through `customers` and its own Ingress, with a bound
   token as password, `dotnet restore` and nuget.exe restore only exposed versions of `Acme.Sdk` from
@@ -778,6 +786,15 @@ and then freezes it.
   exposed versions, `dotnet add package` of a hidden version fails with `NU1102`, the service index
   lists no publish resource, and a push answers `403` (R-NUGET-034). The format contract freeze of
   E3.3 includes the exposure adapter.
+
+  *Evidence (2026-11-02):* `TestNuGetEndpoint` ([test/e2e/nuget_endpoint_test.go](../../test/e2e/nuget_endpoint_test.go), set
+  `nuget`) with `nuget-customers` as a local repository: the version list, the three hives and the search list exactly the
+  exposed versions, `NU1102`, no publish resource, `403`. With `nuget-customers` as the virtual repository the spec's worked
+  example makes it, over PostgreSQL: `TestR_NUGET_034_SearchThroughAVirtualRepositoryOnAnEndpointWithRules` (the search decides
+  on the virtual repository, also for a token scoped to it, Q-NUGET-75, Q-AUTHZ-168) and
+  `TestR_NUGET_034_SearchTermsMeetOnlyExposedVersions` (a `version:` or `description:` term of a hidden version finds nothing,
+  Q-NUGET-74) in [test/integration/nuget/exposure_test.go](../../test/integration/nuget/exposure_test.go); the validators on the
+  endpoint follow only what it shows for local, remote and virtual documents (Q-NUGET-87).
 - **E3.8** NuGet's guide (R-UI-049, R-UI-019, R-NUGET-026): NuGet passes kit check 8 with a guide for
   local, remote and virtual repositories and the .NET CLI, nuget.exe and Visual Studio; the guides area
   offers NuGet without a screen change, and the How to use tab of `nuget-all` shows the setup page's

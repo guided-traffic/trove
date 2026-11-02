@@ -11,8 +11,8 @@
 > repositories with raw transfer, audit, the admin UI and the in-app manual. The npm registry: local, remote (pull-through) and
 > virtual repositories, the package screens, client setup, npm on customer endpoints, the security audit and the in-app guides. The npm load in the drain and failover tests runs nightly and is not reliable yet; phase 7 owns it.
 > The NuGet registry: local, remote and virtual repositories, symbol package push, the package screens, client setup and guides,
-> NuGet on customer endpoints, the forwarded search, and the format contract frozen at version 1; the fixes of the review
-> findings are open ([open findings](docs/projektplan/promt.md#8--open-findings)).
+> NuGet on customer endpoints, the forwarded search, and the format contract frozen at version 1; the findings of its reviews and
+> security audits are fixed but for the open ones ([open findings](docs/projektplan/promt.md#8--open-findings)).
 > Not built yet: GitLab CI federation, vulnerability scanning, backup and restore, and the HA hardening of
 > phase 7. Everything else is the target design in [docs/spec/](docs/spec/README.md). `v0.1.0` is the
 > last release made before the switch to the organisation's CI and release standard; it was published to `ghcr.io`. Releases
@@ -98,7 +98,7 @@ Built (M2, npm registry):
 - 🖼️ **Package screens and client setup.** The package list and detail with the README, an install panel, client setup snippets, and repository settings rendered from the format's schema. See [packages](docs/developer/packages.md) and [web UI](docs/developer/web-ui.md).
 - 📖 **In-app guides.** A guide for every npm variant (local, remote and virtual) with npm, pnpm, Yarn Berry and Yarn Classic, in the UI's guides area. See [npm](docs/developer/npm.md) and [web UI](docs/developer/web-ui.md).
 
-Built (M3, NuGet; the phase is open for its [review findings](docs/projektplan/promt.md#8--open-findings)):
+Built (M3, NuGet; the phase is open for its [remaining findings](docs/projektplan/promt.md#8--open-findings)):
 
 - 🧱 **NuGet format registered.** The format `nuget` for local repositories, with the settings `deleteMode` and `forwardSearch`, the `nuget.archive`, `nuget.registration` and `nuget.search` configuration keys, the NuGet v3 route table, the service index at its three spellings, the native one-line error shape and the 404 that points a NuGet v2 client at the v3 service index. The other operations answer `501` until they are built. See [NuGet](docs/developer/nuget.md).
 - 📦 **NuGet push, unlist, relist and delete.** `dotnet nuget push` and `nuget push` store a package byte for byte with its generated `.nuspec`; a version never changes, a removed version number is blocked for good by a tombstone, and the identical package pushed again is accepted without a change, so a client's retry after a lost answer succeeds. `dotnet nuget delete` unlists by default, or removes with `deleteMode: delete`. Every change is audited in its transaction and journaled for a restore. See [NuGet](docs/developer/nuget.md#the-write-side) and [NuGet publishing](docs/security/nuget-publish.md).
