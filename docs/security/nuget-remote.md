@@ -67,7 +67,8 @@ package is inspected after the digest check and before the item is committed, ou
   `trove_nuget_remote_unparseable_packages_total{repo}`, and gets no NuGet row: no ZIP end record in the window a ZIP reader searches, a ZIP archive without a
   `.nuspec` at its root, a `.nuspec` that is not well-formed XML. The bytes are never altered. A client cannot read such content as a package either.
 - Every other refusal of the reader - a limit, a name the push road refuses, duplicate or overlapping entries, a central directory the local headers
-  contradict, a second end record after the one the reader reads or an entry `archive/zip` would read from another offset (Q-NUGET-89), encryption, several `.nuspec` files, a `.nuspec` of another encoding or shape - and an ID or version that does not parse is 502
+  contradict, a second end record after the one the reader reads or an entry `archive/zip` would read from another offset (Q-NUGET-89), encryption,
+  several `.nuspec` files, a `.nuspec` of another encoding or shape - and an ID or version that does not parse is 502
   `upstream_package_mismatch`, nothing stored: the identity cannot be checked, and another reader may read the archive as a package
   ([remote_fill.go](../../internal/formats/nuget/remote_fill.go) `InspectFill`, `notAPackage`; Q-NUGET-84).
 - The `.nuspec` file of a remote is fetched from the upstream as its own cached artifact and is not checked (Q-NUGET-54).
@@ -104,8 +105,8 @@ caller who may not fill the remote while no answer to the same query is cached o
 **What comes back.** The answer is bounded like a metadata document while it is received (the repository's `limits.maxMetadataBytes`, else
 `proxy.max_metadata_bytes`) and read within 8 MiB inflated, a gzip coding the upstream applies anyway included; a larger answer is no answer and the
 cache-only search answers, counted as a failure. A result that lists more than 32,768 versions is removed, versions are deduplicated in linear time, and a
-request that ends stops the filter (Q-NUGET-90). The answer is kept as received in the replica's memory only (`proxy_query_results`, for `nuget.search.remote_result_ttl`;
-never in Valkey or PostgreSQL). It is filtered on every use, so a claim or a grant change applies to a cached answer as soon as the replica has applied it:
+request that ends stops the filter (Q-NUGET-90). The answer is kept as received in the replica's memory only (`proxy_query_results`, for
+`nuget.search.remote_result_ttl`; never in Valkey or PostgreSQL). It is filtered on every use, so a claim or a grant change applies to a cached answer as soon as the replica has applied it:
 
 - a result whose ID the remote's include and exclude patterns do not admit, that a claim or a pin rule keeps away, that is no NuGet ID, or of which the
   caller may read no version is removed, and `totalHits` is reduced by the results removed from the page (H-347);

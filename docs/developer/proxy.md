@@ -356,7 +356,7 @@ flowchart TD
 | [flight.go](../../internal/proxy/flight.go) | the in-process flight, `lead` (Acquire, Wait, re-check, bypass), `recheck` |
 | [fetch.go](../../internal/proxy/fetch.go), [classify.go](../../internal/proxy/classify.go) | one fetch: slots, circuit, request, the retry, classification of the outcome (R-REPO-029 table) |
 | [exchange.go](../../internal/proxy/exchange.go) | `Exchange`: one request of a format outside the cache, through the repository's client, without slot or circuit (Q-NPM-62) |
-| [query.go](../../internal/proxy/query.go) | `Query`: the pass-through of a `Volatile` request under slot, circuit and egress rules, the registered cache `proxy_query_results`, the in-process collapse of identical queries (Q-ARCH-270) |
+| [query.go](../../internal/proxy/query.go) | `Query`: the pass-through of a `Volatile` request under slot, circuit and egress rules (the slots and the circuit are the remote's own, shared with its downloads: [H-353](../security/nuget-remote.md#h-353--forwarded-searches-share-the-remotes-circuit-and-fetch-slots-with-its-downloads)), the registered cache `proxy_query_results`, the in-process collapse of identical queries (Q-ARCH-270) |
 | [state.go](../../internal/proxy/state.go) | the per-repository state cache (circuit, gone documents), the probe slot, `markGone` |
 | [negative.go](../../internal/proxy/negative.go) | the negative L1 and its readers' validation (R-REPO-028) |
 | [integrity.go](../../internal/proxy/integrity.go), [body.go](../../internal/proxy/body.go) | digests, the withheld tail (`stream`), the size limit, the idle timeout of a body |

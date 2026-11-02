@@ -115,6 +115,7 @@ Subject: the versions of an ID that a remote member lists through a virtual repo
 
 Live today, failing closed. Such a caller reads only what the remote has stored, so a page of the upstream's index that no one fetched yet is left out,
 and with it every version listed on it, also a version whose `.nupkg` is cached and that the caller could download by its file path. The merge is not
-marked partial for it: the answer is a complete-looking registration with fewer versions, and a restore of such a version through the virtual repository
-fails with `NU1102` until a caller who may fill reads the ID once. Nothing is shown that the caller may not see. What makes it real: an ID of more than
+marked partial for it: the answer is a complete-looking registration with fewer versions. The version list of the flat container, which a restore
+reads, is not affected; a client that reads the registration (the package details of Visual Studio, for one) does not show such a version until a caller
+who may fill reads the ID once. Nothing is shown that the caller may not see. What makes it real: an ID of more than
 127 versions upstream (pages by address) read through a virtual repository first by callers without the populate right.
