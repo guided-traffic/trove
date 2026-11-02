@@ -453,6 +453,10 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   answer to a retried publish, without the ownership check; nothing is written (observed by W5, not checked further)
 - 🟢 `make image` failed with "no space left on device": the build context took in `.claude/worktrees`, the worktrees of
   the development sessions with their tool binaries; `.dockerignore` leaves `.claude` out
+- 🟢 The owner's dev cluster runs the current main again (owner, 2026-11-02, option a): its `trove` schema was dropped and the
+  migration Job built it afresh; the database's earlier content is gone
+- 🟡 `make dev-up` on an existing cluster installs a newly loaded `guidedtraffic/trove:dev` without rolling the pods: the tag
+  and the pod spec are unchanged, so the old pods keep the old image until `kubectl rollout restart` (W7)
 - 🟡 `TestR_CI_003_StaleAndUnreachable` failed once in W3's full run of `test/integration/ci` while three agents shared
   the stack, and passed alone and in the next full run; watched, not yet reproduced
 - 🟢 Test and Release run 41518863868 failed in `e2e on kind (access-long)`: the journey `06` clicked "Refresh now" by a
