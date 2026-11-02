@@ -1373,9 +1373,11 @@ jobs:
       - name: actionlint
         run: actionlint -shellcheck=
 
-  # R-ARCH-025 and R-ARCH-026: the OpenAPI document has no breaking change and the migration files only add to
-  # the latest v0.* release. The baseline is a tag, so the clone needs the whole history and the tags. The job
-  # runs `make compat-check` (docs/developer/releasing.md#compatibility).
+  # R-ARCH-025 and R-ARCH-026: the OpenAPI document has no breaking change, the migration files only add to
+  # the latest v0.* release, and no migration that main has committed is changed, removed or renamed (Q-ARCH-283).
+  # The baseline is a tag and the history check reads main, so the clone needs the whole history and the tags. It
+  # runs on a pull request (the merge commit, with main's history) and on a push to main. The job runs
+  # `make compat-check` (docs/developer/releasing.md#compatibility).
   compat:
     name: compatibility with the latest release (R-ARCH-025, R-ARCH-026)
     runs-on: self-hosted

@@ -179,7 +179,8 @@ test-release-tooling: ## Release tooling: npm ci, npm audit signatures, and the 
 	npm audit signatures
 	node hack/verify-release-tooling.mjs
 
-# R-ARCH-025 and R-ARCH-026 against the latest v0.* release (the compat job of release.yml). The checker is built
+# R-ARCH-025 and R-ARCH-026 against the latest v0.* release, and R-ARCH-026 against the history of main (the compat
+# job of release.yml). The checker is built
 # at its pin into .bin, and the name carries the pin and the Go toolchain, as the linters' names do. The tests need
 # the release tags in the clone: fetch-depth 0 and fetch-tags.
 $(OASDIFF_BIN):
@@ -189,7 +190,7 @@ $(OASDIFF_BIN):
 	  mv "$$tmp/oasdiff" $@ && rmdir "$$tmp"
 
 .PHONY: compat-check
-compat-check: $(OASDIFF_BIN) ## R-ARCH-025 (OpenAPI breaking changes) and R-ARCH-026 (migrations only added) against the latest v0.* release (CI: compat; needs the tags)
+compat-check: $(OASDIFF_BIN) ## R-ARCH-025 (OpenAPI breaking changes), R-ARCH-026 (migrations only added since the latest v0.* release; no migration of main changed) (CI: compat; needs the tags and the history)
 	TROVE_OASDIFF=$(abspath $(OASDIFF_BIN)) go test -tags compat -count=1 -v ./test/compat/...
 
 # One version per tool (E0.2): every pin of a tool that is installed on PATH is compared with the

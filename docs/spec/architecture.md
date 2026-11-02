@@ -3920,6 +3920,10 @@ implements them (Q-ARCH-3).
 Files:
 - Migrations are SQL files in `internal/meta/postgres/migrations/NNNNN_<name>.sql`, embedded in the
   binary (INV-3). There are no down migrations (R-HA-018).
+- A migration file is immutable once it is on `main`, released or not. It is never edited, not even
+  in a comment or in whitespace (the runner checksums the bytes), and never renamed or removed. A
+  defect is fixed forward with a new file of the next number, in one of the classes of R-HA-018
+  (Q-ARCH-283). The compat check reads `main`'s history for this (acceptance criteria below).
 - Each file starts with trove's header comments:
   - `-- trove:phase expand` or `-- trove:phase contract`, which is R-HA-018's class;
   - `-- trove:no-transaction` on a step that cannot run in a transaction block, such as
@@ -4021,7 +4025,13 @@ Acceptance criteria:
   finishes (R-BAK-021).
 - A CI check compares the embedded migration files with those of the latest release of the same
   major and fails when one of them is missing, renamed or changed, or when an added file does not continue the
-  numbering after the release's highest number (Q-ARCH-274). The tests are `TestR_ARCH_026_*` in `test/compat`.
+  numbering after the release's highest number (Q-ARCH-274).
+- A CI check reads the history of `main` and fails when a migration file that main has committed is changed,
+  removed or renamed by a later commit, on `main` or on the checked-out branch of a pull request, with the file,
+  the commit and the rule in the message. The allowlist `historicalEdits` names each historical edit by its
+  commit, and an entry that names no edit of `main` fails (Q-ARCH-283). A file that only the checked-out branch
+  has is not checked, because main does not hold it yet.
+- The tests are `TestR_ARCH_026_*` in `test/compat`; the history check runs in the same job and target as the release check.
 - A unit test fails on a migration file without a valid `phase` header, on a contract step without
   `requires-app`, and on a contract-class statement (`DROP`, `RENAME`, `SET NOT NULL`) in an expand
   file.
@@ -7565,6 +7575,50 @@ with a `Discoverer` passes queries through; (b) is the next step then.
 **Applied in the spec:** R-ARCH-013 step 6, R-ARCH-008 (the `Discoverer` block). Code: `internal/formathost/query.go`.
 Tests: `TestR_NUGET_016_ARemoteForwardsItsSearchAndFallsBackToItsCache`, `TestR_NUGET_018_AVirtualRepositoryForwardsThroughItsRemoteMember`
 (`test/integration/nuget`), `TestR_ARCH_013_QueryThroughTheHost` (`test/integration/proxy`, a format without a `Discoverer`).
+
+### Q-ARCH-283 · Is a migration on main immutable, and what does the check hold to?
+
+Status: **Decided by the owner on 2026-11-02** — option (b). The owner's direction after the first message: the installation is
+pre-alpha, so a database reset before the beta is an accepted cost; from the completion of the beta plan
+([BETA.md](../projektplan/BETA.md)) on, reliability of installed data is priority 1, and this rule enforces the part of it that
+costs nothing now.
+
+Context: on 2026-11-02 `00019_projects.sql`, first committed in `007c3dfc` and on `main`, was rewritten in `f5273866` into the
+expand steps 00019 to 00025. The owner's dev cluster had migrated from `main` before that rewrite. Its rollouts then failed with
+`migration 00019_projects.sql was changed after it was applied (checksum mismatch)`, and the database was reset. The check of
+R-ARCH-026 compared the embedded files only with the latest `v0.*` tag, so a change on `main` that no tag held passed. The
+tags `v0.9.0` to `v0.12.0` are commits of `main` dated 2026-11-02; `v0.11.0`, `v0.11.1` and `v0.12.0` hold the rewritten file and
+no earlier version of it, so the baseline cannot see an edit made before the newest tag.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The latest release only (the check as it was) | `checkMigrationChanges` against the `v0.*` tag, no history | No history needed; the tags are what a user installed | An edit made before the newest tag passes: the 00019 rewrite passed, and every tag cut from `main` after it holds the rewrite |
+| (b) Immutable once on `main`, checked against the history of `main` (chosen) | For every file `main` has held, its content and commits after its first commit on `main` must be none, except the allowlist `historicalEdits` of `test/compat/migrations_history_test.go`; a removal or a rename is a change | Catches an edit at the pull request, before any database applies it; reads what the repository already holds; one target, `make compat-check` | Needs the whole history (`fetch-depth: 0`, checked by `--is-shallow-repository`); a force-push to `main` would remove the commits the check reads |
+| (c) Immutable once applied anywhere | A registry of applied checksums, or a database check at start-up | Knows what a database actually holds | No check can know which databases applied which file; the runner's `verifyApplied` already refuses a mismatch in the database that applied it, after the damage of the rollout |
+
+**Choice:** (b), the owner's decision. The rule as written: a migration file on `main` is never edited, not even in a comment or in
+whitespace, because the runner checksums the bytes and a comment-only allowance would need a parser to tell it apart from an edit;
+it is never renamed or removed; a defect is fixed forward with a new file of the next number in an R-HA-018 class; a change that
+must reach an applied database is an expand step, a contract step follows one minor later.
+
+**Rationale:** the incident is the case. The runner refuses an edited file only in a database that has applied it, so the first
+database to find the edit is the one a rollout breaks. The history check moves that finding to the pull request, where it costs a
+failed job. The allowlist names the two historical edits by their commits: `00009_api.sql` in `dbb8d18f` (ten lines appended before
+the rule; the owner's dev cluster reported 00019 and not 00009, and `verifyApplied` checks in ascending order, so its applied 00009
+matched) and `00019_projects.sql` in `f5273866` (the rewrite that caused the incident). An entry names one commit, so a later edit of
+the same file is not covered; an entry that names no edit of `main` fails the check, so the list cannot outlive its history.
+
+**Applied in the spec:** R-ARCH-026 (the immutability bullet in Files, the history criterion in the acceptance criteria), R-HA-018
+(the immutability sentence of the file headers). Code: `test/compat/migrations_history_test.go` (`migrationHistoryProblems`,
+`historicalEdits`); the job `compat` and `make compat-check` run it. Tests: `TestR_ARCH_026_MigrationsOnMainAreNeverEdited`,
+`TestR_ARCH_026_HistoryEditAfterFirstCommitFails`, `TestR_ARCH_026_HistoryNewMigrationPasses`,
+`TestR_ARCH_026_HistoryRemovedMigrationFails`, `TestR_ARCH_026_HistoryRenamedMigrationFails`,
+`TestR_ARCH_026_HistoryAllowlistedEditPasses`, `TestR_ARCH_026_HistoryEditOnBranchFails`,
+`TestR_ARCH_026_HistoryStaleAllowlistFails`, `TestR_ARCH_026_HistoryBranchBeforeMigrationPasses`.
+
+**Revisit condition:** the beta plan is complete (reliability of installed data becomes priority 1, and a database-level guard may
+then be asked for), or the history of `main` is rewritten, or a migration must change after it reached a database, which the rule
+does not allow.
 
 ## What this does not cover
 

@@ -209,6 +209,7 @@ checked every earlier decision against them:
 | [ADR-145](#adr-145--the-grants-of-a-project-policy-are-stored-where-the-previous-release-does-not-read-them) | The grants of a project policy are stored where the previous release does not read them | Decided by the development agent — owner review at the walkthrough |
 | [ADR-146](#adr-146--an-operation-admits-project-administrators-through-a-declaration-of-its-own) | An operation admits project administrators through a declaration of its own | Decided by the development agent — owner review at the walkthrough |
 | [ADR-147](#adr-147--a-ci-token-carries-its-frozen-grants-in-its-cache-entry-and-the-management-api-refuses-ci-tokens-by-default) | A CI token carries its frozen grants in its cache entry, and the management API refuses CI tokens by default | Decided by the development agent — owner review at the walkthrough |
+| [ADR-148](#adr-148--migrations-on-main-are-immutable-and-a-defect-is-fixed-forward) | Migrations on main are immutable, and a defect is fixed forward | Decided by the owner on 2026-11-02 (option (b)) |
 
 </details>
 
@@ -5487,6 +5488,35 @@ to be one a CI token must not call.
 **Spec:** [spec/gitlab-ci-oidc.md](spec/gitlab-ci-oidc.md) R-CI-013, R-CI-017;
 [spec/authorization.md](spec/authorization.md) R-AUTHZ-014.
 
+## Schema migrations
+
+### ADR-148 · Migrations on main are immutable, and a defect is fixed forward
+
+**Status:** Decided by the owner on 2026-11-02 — option (b) of [Q-ARCH-283](spec/architecture.md#q-arch-283--is-a-migration-on-main-immutable-and-what-does-the-check-hold-to)
+
+**Context.** On 2026-11-02 the migration `00019_projects.sql`, committed on `main` in `007c3dfc`, was rewritten in `f5273866` into
+expand steps. The owner's dev cluster had applied the first version, and every rollout then failed with a checksum mismatch; the
+database was reset. The compatibility check compared the migrations only with the latest `v0.*` tag, and the tags `v0.11.0` to `v0.12.0`
+point at commits of `main` made after the rewrite, so the check could not see it. The installation is pre-alpha, so a reset before the beta is an
+accepted cost; reliability of installed data becomes priority 1 once the beta plan is complete.
+
+**Decision.** A migration file on `main` is immutable, released or not: it is never edited (not even in a comment or whitespace),
+renamed or removed. A defect is fixed forward with a new step of the class the change needs (R-HA-018). A CI check reads the history
+of `main` and fails on any change after a file's first commit, except the historical edits named one by one in
+`test/compat/migrations_history_test.go`; the same target, `make compat-check`, runs it on every pull request and push to `main`.
+
+**Consequences.** An edit to a migration fails the pull request, before any database applies it. The check needs the whole history
+(`fetch-depth: 0`), and a force-push to `main` would remove the commits it reads. The developer guide states the rule for a
+contributor ([database.md](developer/database.md#how-to-add-a-migration)).
+
+**Alternatives considered.** The latest release only, as before (an edit before the newest tag passes); immutability once applied
+anywhere (no check can know which databases applied a file; the runner's checksum refuses it only where the file was applied).
+
+**Revisit condition:** the beta plan is complete, or the history of `main` is rewritten, or a migration has to change after it
+reached a database.
+
+**Spec:** [spec/architecture.md](spec/architecture.md) R-ARCH-026 and Q-ARCH-283; [spec/ha-and-helm.md](spec/ha-and-helm.md) R-HA-018.
+
 ## Decisions by the development agent
 
 The development agent selected each of these decisions from the options documented in the
@@ -5631,6 +5661,7 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-ARCH-280](spec/architecture.md#q-arch-280--how-is-the-frozen-format-contract-guarded-so-that-no-change-passes-without-its-adr) | How is the frozen format contract guarded, so that no change passes without its ADR? | (a) a generated surface file `internal/formats/testdata/contract.txt` of `internal/formats` and its catalog leaf, compared by a test; every exported function and value named in the spec | [ADR-141](#adr-141--the-format-contract-is-frozen-at-version-1) |
 | [Q-ARCH-281](spec/architecture.md#q-arch-281--how-does-the-conformance-kit-keep-a-format-from-passing-a-check-it-does-not-run) | How does the conformance kit keep a format from passing a check it does not run? | (a) reasoned `NoContent` and hook `NoRevision` entries, skip guards for checks 6 and 9, the fill hook under the bounds of check 6, a download addresses a canonical path | [ADR-141](#adr-141--the-format-contract-is-frozen-at-version-1) |
 | [Q-ARCH-282](spec/architecture.md#q-arch-282--how-does-the-road-of-a-pass-through-query-resolve-the-discovery-document-of-a-format-that-has-one) | How does the road of a pass-through query resolve the discovery document? | (a) the host's `Build` resolves it through the engine's `Metadata` with the caller's mode and an unaudited populate check, and hands it to `UpstreamQuery` | — |
+| [Q-ARCH-283](spec/architecture.md#q-arch-283--is-a-migration-on-main-immutable-and-what-does-the-check-hold-to) | Is a migration on main immutable, and what does the check hold to? Decided by the owner on 2026-11-02, not by the development agent | (b) immutable once on `main`, checked against the history of `main`, with a named allowlist of the historical edits | [ADR-148](#adr-148--migrations-on-main-are-immutable-and-a-defect-is-fixed-forward) |
 | [Q-REPO-1](spec/repositories-and-proxy.md#q-repo-1--who-specifies-the-stored-secret-mechanism-iam-045) | Which page specifies the stored-secret mechanism? | (b) architecture.md's R-ARCH-021, for every stored secret; repository secrets only use it | [ADR-032](#adr-032--stored-secrets-are-sealed-under-a-key-ring-the-operator-supplies) |
 | [Q-REPO-2](spec/repositories-and-proxy.md#q-repo-2--lower-bound-of-the-metadata-period) | Lower bound of the metadata period? | (a) `0` is allowed and means revalidate on every request; no minimum. Revisited 2026-10-28, choice unchanged | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving) |
 | [Q-REPO-3](spec/repositories-and-proxy.md#q-repo-3--generic-default-when-the-upstream-removes-a-cached-document) | Generic default when the upstream removes a cached document? | (b) mark the package gone; its documents and cached artifacts answer 404 until the upstream serves it again | [ADR-038](#adr-038--upstream-failures-classified-outcomes-a-shared-circuit-bounded-stale-serving), [ADR-069](#adr-069--versions-removed-upstream-are-hidden-by-default) |

@@ -99,16 +99,19 @@ with header comments:
 
 ### How to add a migration
 
-1. Create the next number as an expand file. Unqualified names: the runner sets `search_path`. Until a release contains the
-   file, `make compat-check` accepts it only as an addition that continues the numbering after the release's highest number
-   ([Compatibility](releasing.md#compatibility), R-ARCH-026).
+1. Create the next number as an expand file. Unqualified names: the runner sets `search_path`. Until the file is on `main`
+   you may still change it on your branch. Once it is on `main` it is immutable (step 4). `make compat-check` accepts a new
+   file only as an addition that continues the numbering after the release's highest number, and it refuses a change of a
+   file that `main` has committed ([Compatibility](releasing.md#compatibility), R-ARCH-026, Q-ARCH-283).
 2. New table: register its export class in the owning package (`tables.Register`); a `bigint` revision column
    (`rev_seq`, `revision`, `epoch`, `*_version`) needs `meta.RegisterRevisionColumn`. The integration tests
    `TestTableRegistry` and `TestRevisionColumns` fail otherwise.
 3. A table with a blob reference: column `blob_sha256`, FK to `blobs`, index, both triggers
    (`TestBlobReferenceRules`).
-4. Never edit an applied file (checksum). Backfills are background data migrations (R-HA-022), not migration steps; the first is
-   `data_migration_nuget_semver2` ([nuget.md](nuget.md#the-recomputation-of-is_semver2-q-nuget-93)).
+4. Never edit a file that is on `main`, not even a comment or whitespace (the runner checksums the bytes), and never rename or
+   delete one. A defect is fixed forward, as the next section describes. Backfills are background data migrations (R-HA-022),
+   not migration steps; the first is `data_migration_nuget_semver2`
+   ([nuget.md](nuget.md#the-recomputation-of-is_semver2-q-nuget-93)).
 5. Contract steps ship one minor after the release that stopped using the object, with `requires-app`.
 6. Static queries for the new tables go to `queries/*.sql`, then `make generate`.
    A test that injects a migration of its own names it with `nextStep(n, name)`
@@ -117,6 +120,23 @@ with header comments:
 7. `trove migrate up` checks the migrated schema against the table registry of its own binary
    (`postgres.VerifyTableRegistry`, exit 3 naming the table); [cmd/trove/registry.go](../../cmd/trove/registry.go)
    links every package that owns tables. A new owning package is added there.
+
+### How to fix a migration that is on `main`
+
+1. Do not touch the file. `make compat-check` fails on any change, deletion or rename of a migration that `main` has committed,
+   and names the file, the commit and the rule (`migrationHistoryProblems` in
+   [migrations_history_test.go](../../test/compat/migrations_history_test.go)).
+2. Add the next number, a new file that does what the change needs: an expand step for an addition, a contract step with
+   `requires-app` one minor later for a removal ([R-HA-018](../spec/ha-and-helm.md#r-ha-018--expandcontract-schema-migrations)).
+   Example: a step 00019 that is wrong is kept as it is, and 00029 corrects the object it created.
+3. A database that already applied the broken file keeps it. Until the beta plan is complete the installation is pre-alpha, and
+   a reset of a development database is an accepted cost; from then on the data of an installation is priority 1, and the
+   fix-forward step is the only way it changes ([Q-ARCH-283](../spec/architecture.md#q-arch-283--is-a-migration-on-main-immutable-and-what-does-the-check-hold-to)).
+4. The history check reads the commits of `main`, so a clone needs them: `fetch-depth: 0` in CI, and a full clone locally.
+   The check of a file that exists only on your branch is skipped, so you may change a new file until it is merged.
+
+The historical edits that predate the rule are named one by one in `historicalEdits`, each with its commit and the reason it
+is allowed. A new entry is never the way to get a change through: it is for a commit that already is on `main`.
 
 `sqlc` reads the migration files as its schema. `job_state` is created inside a `DO` block on purpose: sqlc
 then maps it to a Go string instead of generating enum helpers that import `database/sql/driver` (forbidden,
@@ -144,7 +164,7 @@ Last, still under the migration lock and on the same connection, the runner call
 status 1; nil skips it.
 
 Not implemented yet: the `database.backup_role` grants and the grants check (no backup tables), and the restore mode of the runner (M5).
-The CI check of the migration files against the latest release is in place (R-ARCH-026, [Compatibility](releasing.md#compatibility)).
+The CI checks of the migration files are in place: against the latest release, and against the history of `main`, where a committed file may not change (R-ARCH-026, Q-ARCH-283, [Compatibility](releasing.md#compatibility)).
 
 ### Privileges of the runtime role
 

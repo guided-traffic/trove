@@ -388,6 +388,14 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   verified on kind inside a forced rotation (the first sign-in waited 33 s, 19 journeys green)
 
 **The owner's requests during the run (2026-11-02)**
+- 🟢 Migrations are immutable once on `main`, released or not: a committed file is never edited, renamed or removed, and a
+  defect is fixed forward with a new migration of the class R-HA-018 gives it. `make compat-check` (job `compat`) reads the
+  history of `main` and fails on a change, with the file, the commit and the rule in the message; its allowlist
+  `historicalEdits` names the two commits from before the rule ([Q-ARCH-283](../spec/architecture.md#q-arch-283--is-a-migration-on-main-immutable-and-what-does-the-check-hold-to),
+  `TestR_ARCH_026_MigrationsOnMainAreNeverEdited`). The cause: the dev cluster had migrated from `main` before
+  `00019_projects.sql` was rewritten into expand steps, and every rollout then failed on the checksum mismatch; its database was
+  reset. The owner: pre-alpha, that reset was an accepted cost; from the completion of this plan on, reliability of installed
+  data is priority 1
 - 🟡 The Browse screen reinvented: a real two-pane browser over the full height with a compact tree toolbar (filter as you
   type, filter panel with chips, sort), a details pane with the selection's path and actions, folders as the shared data
   table, clear empty states (R-UI-010, R-UI-011; owner: "the worst design I have ever seen";

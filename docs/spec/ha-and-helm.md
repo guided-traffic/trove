@@ -2000,6 +2000,10 @@ CREATE TABLE schema_state (
 
 - A checksum mismatch between an applied step and the embedded SQL (an edited migration) fails the
   Job.
+- A migration file is immutable once it is on `main`, released or not (R-ARCH-026, Q-ARCH-283). A
+  defect in a step is fixed forward with a new step of the class the change needs: expand for an
+  addition, contract one minor later for a removal (the table above). Editing an applied file is
+  never the fix.
 - There are no down migrations. Rolling back one release is supported without a database restore
   (R-HA-019).
 
