@@ -158,8 +158,13 @@ instance in front of a main installation.
 - ⚪ Spec page `docs/spec/bastion.md` first: deployment profile, trust between Bastion and main installation, the cache, and
   what the Bastion refuses. Decided by the owner on 2026-10-31: the Bastion asks the main installation whether a
   credential is valid and what it may read, and keeps the answers for a short, bounded time; it holds no copy of
-  users, tokens or policies. Open for the page: the bound, the interface on the main installation and the Bastion's own
-  credential towards it (read only, nothing else), and the state it keeps beyond its cache. Catalog entries it pulls forward: the chained
+  users, tokens or policies. Decided by the owner on 2026-11-02: the Bastion's own credential towards the main
+  installation is a token that a trove administrator of the main installation issues for the Bastion (read only, nothing
+  else), bound to an endpoint of the main installation that serves the Bastion; a client certificate is not its
+  identity, because a TLS-terminating reverse proxy in front of the main installation would not pass it on (a certificate
+  on that endpoint's listener stays possible as a second factor where the proxy passes TLS through). Open for the page:
+  the bound, the interface on the main installation, the rotation of the Bastion's token, and the state it keeps beyond
+  its cache. Catalog entries it pulls forward: the chained
   remote repository RMT-040 to RMT-046 (P2) and the edge deployment profile and its trust pairing DIST-024 and DIST-025
   (Later); their priorities are raised with the page
 - ⚪ Own Helm chart (`trove-bastion`) with its own Ingress, Service, NetworkPolicy and TLS Secret; horizontal replicas
