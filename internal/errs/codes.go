@@ -314,6 +314,10 @@ const (
 	CodeNuGetVersionReserved = "nuget_version_reserved"
 )
 
+// CodeNuGetSymbolsExist is the code of the immutability of a symbol package (R-NUGET-020): the
+// version holds a symbol package with other bytes.
+const CodeNuGetSymbolsExist = "nuget_symbol_package_exists"
+
 // <<< M3 nuget
 
 // CodeInfo documents one code for the problem catalog.
@@ -517,6 +521,7 @@ var registry = []CodeInfo{
 	{CodeNuGetVersionExists, Conflict, "NuGet version exists", "The version is stored in the repository with other bytes. A version is immutable: push the changed package under a new version."},
 	{CodeNuGetVersionDeleted, Conflict, "NuGet version deleted", "The version was removed from the repository and its number is never accepted again, whatever the bytes. Push the package under a new version."},
 	{CodeNuGetVersionReserved, Conflict, "NuGet version reserved", "A restore of a backup reserved the number of this version for the package that was published after the backup's snapshot. Only that package, byte for byte, is accepted; any other build needs a new version."},
+	{CodeNuGetSymbolsExist, Conflict, "NuGet symbol package exists", "The version holds a symbol package with other bytes. Symbols must match the binaries of the immutable package, so a symbol package is never replaced: push the package and its symbols under a new version."},
 	{CodeNuGetNotImplemented, NotImplemented, "NuGet operation not implemented", "The operation is part of the NuGet v3 protocol and is not served by this build of trove yet."},
 	{CodeUpstreamPackageMismatch, UpstreamFailed, "Upstream served another package", "The upstream answered a package request with a .nupkg whose declared ID or version is not the one asked for. Nothing is stored."},
 	// <<< M3 nuget

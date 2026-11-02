@@ -106,6 +106,8 @@ A NuGet push (`dotnet nuget push`, `nuget push`) goes to a local repository, or 
 | `400` | `nuget_invalid_id`, `nuget_invalid_version`, `nuget_invalid_version_range` | The ID (ASCII letters, digits, `_`, single `.` or `-`), the version or a dependency range does not follow the rules | Correct the `.nuspec` |
 | `403` | `forbidden`, `package_owned_by_other_owner`, `shadows_remote_package` | You may not deploy this ID, you are none of its owners, or the first push of the ID would replace a package a remote repository serves | Ask for deploy or ownership, or a holder of manage |
 | `409` | `nuget_version_exists` | The version is stored with other bytes. A version never changes | Push the changed package under a new version; development feeds use a pre-release counter. `--skip-duplicate` treats the answer as success |
+| `404` | `not_found` | A symbol package (`.snupkg`) was pushed for a version the repository does not hold | Push the `.nupkg` first (`dotnet nuget push` does this in order), then the symbols |
+| `409` | `nuget_symbol_package_exists` | The version has a symbol package with other bytes; symbols must match the binaries of the immutable package | Push the package and its symbols under a new version |
 | `409` | `nuget_version_deleted` | The version was deleted; its number is never accepted again, whatever the bytes | Use a new version number |
 | `409` | `nuget_version_reserved` | After a restore the number is kept for the package that was published after the backup, byte for byte | Push exactly that package again, or use a new version |
 | `503` | `shadow_check_unavailable` | Whether a remote repository serves the ID could not be found out; nothing was stored | Retry after the `Retry-After` period (at most 30 seconds) |

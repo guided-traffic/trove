@@ -213,7 +213,6 @@ func TestR_NUGET_001_AnOperationThatIsNotBuiltAnswers501(t *testing.T) {
 	h := newHost(t, formattest.HostOptions{})
 	for _, c := range []struct{ method, path string }{
 		{http.MethodGet, "v3/flatcontainer/acme.widgets/1.2.3/readme"},
-		{http.MethodPut, "v3/symbolpackage"},
 	} {
 		t.Run(c.method+" "+c.path, func(t *testing.T) {
 			r := get(t, h, c.method, c.path)

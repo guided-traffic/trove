@@ -30,10 +30,6 @@ func (f *Format) handleAutocomplete(ctx context.Context, rq *formats.Request, w 
 	return stub("autocomplete (P1, R-NUGET-011)")(ctx, rq, w)
 }
 
-func (f *Format) handleSymbolPush(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
-	return stub("the symbol push")(ctx, rq, w)
-}
-
 func (f *Format) handleSymbols(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
 	return stub("the symbol server (P1, R-NUGET-021)")(ctx, rq, w)
 }

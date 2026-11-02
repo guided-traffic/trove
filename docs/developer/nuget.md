@@ -2,7 +2,7 @@
 
 Status: the package screens, the setup snippets and the guide of the format are written (phase 4, WP3.1h; see "The package view, the setup snippets and the guide" below). The format is registered with its skeleton (phase 4, WP3.1c): the route table of the whole NuGet v3 protocol, the matching
 and the classification of paths, the service index, the error shape, the settings and the configuration section, and the data port interface.
-The push, the unlist, the relist and the delete are built ([the write side](#the-write-side)). The operations behind the other routes - package content, registrations, search, the symbol resources - are written by
+The push, the unlist, the relist and the delete are built ([the write side](#the-write-side)). The symbol push is built ([symbol packages](#symbol-packages)). The operations behind the other routes - package content, registrations, search, the symbol server - are written by
 the work packages that own them and answer 501 `nuget_not_implemented` until then ([handlers_stub.go](../../internal/formats/nuget/handlers_stub.go)).
 The requirements are in [spec/formats/nuget.md](../spec/formats/nuget.md); the contract the format implements is in [formats.md](formats.md).
 
@@ -206,12 +206,34 @@ does the rest, for the protocol, raw and management deletes alike; `formats.Remo
 
 The authentication stage reads `Authorization` on a push; `X-NuGet-ApiKey` is read once the API-key stage is in the build (R-NUGET-012). The integration tests send a Bearer token.
 
-Not built here: the upload of the management API, copy and move (they reach `OnCommit` without a push payload and answer 501), the symbol push, the restore replay of the journal entries
+Not built here: the upload of the management API, copy and move (they reach `OnCommit` without a push payload and answer 501), the restore replay of the journal entries
 (R-NUGET-033; the entries are written and flagged, nothing reads them yet), the trash can (P1), and the remote and virtual classes.
 
 Tests: `go test ./internal/formats/nuget/ ./internal/formats/nuget/nugettest/ ./internal/formatdata/nuget/` (push, unlist, delete, hooks and the kit's checks 6 and 9 with the twin),
 and [test/integration/nuget](../../test/integration/nuget) `push_test.go` against PostgreSQL and the object store (the rows, the events, the outbox, the replica counter, two replicas,
 concurrent pushes, a push racing a delete).
+
+## Symbol packages
+
+The symbol push `PUT v3/symbolpackage` (WP3.3; R-NUGET-020, Q-NUGET-11, Q-NUGET-60, Q-NUGET-61). The symbol server (R-NUGET-021) is P1 and not built: `GET v3/symbols/{key...}` still answers 501.
+
+| File | Responsibility |
+|---|---|
+| [handlers_symbols.go](../../internal/formats/nuget/handlers_symbols.go) | `readSymbols` (the archive and `.nuspec` rules, the `SymbolsPackage` type, then `symbols.Validate`), `handleSymbolPush` (the spool, the permission on the declared ID, the lookup of the version, the replay or the 409, the commit), `commitSymbols` (the `OnCommit` of the `.snupkg`: package row lock, the live version, the claim, the link to the version, the symbol row) |
+| [symbols](../../internal/formats/nuget/symbols/symbols.go) | A leaf: the allowed entry extensions, the `.pdb` signatures (`Sniff`: `BSJB`, `Microsoft C/C++ MSF 7.00`), `Validate` over an opened archive |
+| [nupkg/head.go](../../internal/formats/nuget/nupkg/head.go) | `Archive.Head`: the first bytes of one entry, held to the compression ratio, not counted against the read budget |
+| [internal/formatdata/nuget/symbols.go](../../internal/formatdata/nuget/symbols.go) | The job kind `nuget-symbol-index` (registered in `jobs.Default` at initialisation, queue `index`, exclusive), the enqueue in the transaction of `Store.InsertSymbolPackage`, the handler `RunIndexJob`; the read is [nuget_symbols.sql](../../internal/meta/postgres/queries/nuget_symbols.sql) |
+
+How a symbol push goes, in the order of the code:
+
+1. `packagePart` and the spool as for a package; `readSymbols` refuses (400 `nuget_invalid_package`) a package without the type, an entry outside `.pdb .nuspec .xml .psmdcp .rels .p7s`, and a `.pdb` that is neither format.
+2. `Authorize` and `CheckOwnership` on the declared ID, then `VersionFacts`: no live version is 404, whatever the reason (never pushed, deleted, tombstoned).
+3. `symbolsStored` compares the SHA-256 of the item at the `.snupkg` path with the body: equal is 201 without a write, different is 409 `nuget_symbol_package_exists`. The row and the item are one fact (the row cascades from the item), so the item alone decides.
+4. `Ingest().Commit` stores the item; `commitSymbols` links it to the version, so the hard delete of the version removes it, and `InsertSymbolPackage` writes the row and enqueues the job in the same transaction. Linking raises the package revision (the generic rule).
+
+The twin (`nugettest.Store`) logs the rows in `SymbolJobs`. `RunIndexJob` reads one row through `run.DB()` and records `gone`, `indexed` or `stored` as the result; it leaves `indexed_at` unset until R-NUGET-021 extracts the files. How to extend: the extraction goes into `RunIndexJob` (ranged reads of the `.snupkg`, one PDB spooled at a time), together with the migration that enqueues the packages with `indexed_at IS NULL`.
+
+Tests: `go test ./internal/formats/nuget/ ./internal/formats/nuget/symbols/ ./internal/formats/nuget/nupkg/` (`TestR_NUGET_020_*`), and [test/integration/nuget/symbols_test.go](../../test/integration/nuget/symbols_test.go) (the rows, the job on a `worker`, two replicas, the delete).
 
 ## Rendered documents and package files
 

@@ -69,10 +69,28 @@ func nugetChanges(f *Format) []formattest.ChangeCase {
 			return h.Remove(ctx, rq, "delete", paths...)
 		}
 	}
+	symbols := func(version string) func(h *formattest.Host) error {
+		return func(h *formattest.Host) error {
+			pkg, err := newSnupkg("Acme.Widgets", version, snupkgSpec{entries: map[string]string{"lib/net8.0/Acme.Widgets.pdb": portablePDB}})
+			if err != nil {
+				return err
+			}
+			body, ct, err := makeMultipart(pkg)
+			if err != nil {
+				return err
+			}
+			r, err := h.Serve(context.Background(), http.MethodPut, "v3/symbolpackage", body, false, func(r *http.Request) { r.Header.Set("Content-Type", ct) })
+			if err == nil && r.Code != http.StatusCreated {
+				err = fmt.Errorf("symbol push %s: status %d: %s", version, r.Code, r.Body.String())
+			}
+			return err
+		}
+	}
 	return []formattest.ChangeCase{
 		{Name: "a first push (OnCommit)", Package: id, Do: do(push("1.0.0"))},
 		{Name: "a later version (OnCommit)", Package: id, Seed: push("1.0.0"), Do: do(push("1.1.0"))},
 		{Name: "an unlist (DELETE in unlist mode)", Package: id, Seed: push("1.0.0"), Do: do(serve(http.MethodDelete, "v3/package/"+id+"/1.0.0", http.StatusNoContent))},
+		{Name: "a symbol push (OnCommit)", Package: id, Seed: push("1.0.0"), Do: do(symbols("1.0.0"))},
 		{
 			Name: "a relist (POST)", Package: id, Seed: seed(push("1.0.0"), serve(http.MethodDelete, "v3/package/"+id+"/1.0.0", http.StatusNoContent)),
 			Do: do(serve(http.MethodPost, "v3/package/"+id+"/1.0.0", http.StatusOK)),
@@ -184,9 +202,6 @@ func conformance(f *Format) formattest.Fixture {
 			{Name: "symbols", Path: feed("symbols/acme.widgets.pdb/0123456789abcdef0123456789abcdefFFFFFFFF/acme.widgets.pdb"), Status: notBuilt},
 		},
 		Changes: nugetChanges(f),
-		NoRevision: map[string]string{
-			"nuget.symbolpush": "the symbol push is a later package (R-NUGET-020): it answers 501 and changes nothing",
-		},
 		Names: []formattest.NameCase{
 			{Spellings: []string{"Acme.Widgets", "acme.widgets", "ACME.WIDGETS"}},
 			{Spellings: []string{"Newtonsoft.Json", "newtonsoft.json"}},

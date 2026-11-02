@@ -63,6 +63,8 @@ func (f *Format) OnCommit(ctx context.Context, tx formats.Tx, c formats.CommitEv
 		return f.commitVersion(ctx, tx, c, p)
 	case *nuspecCommit:
 		return f.commitNuspec(ctx, c, p)
+	case *symbolCommit:
+		return f.commitSymbols(ctx, tx, c, p)
 	}
 	if c.Origin == formats.OriginFill {
 		return nil

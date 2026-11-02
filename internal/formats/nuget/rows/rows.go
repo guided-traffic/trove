@@ -138,4 +138,7 @@ type SymbolPackageInput struct {
 	VersionID int64
 	// ItemID is the .snupkg item.
 	ItemID int64
+	// RepositoryID is the repository that holds the version; the indexing job's arguments
+	// name it (Q-NUGET-11).
+	RepositoryID int64
 }

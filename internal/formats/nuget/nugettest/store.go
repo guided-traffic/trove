@@ -74,6 +74,9 @@ type Store struct {
 	Tombstones []rows.TombstoneInput
 	Promoted   []rows.ReservedInput
 	Listings   []rows.ListingInput
+	// SymbolJobs logs the symbol packages recorded, each of which enqueues its indexing job
+	// in the database store (Q-NUGET-11).
+	SymbolJobs []rows.SymbolPackageInput
 	// Journal holds the journal entry of each published or deleted event, in order, as the
 	// database store would pass it to the audit recorder.
 	Journal []string
@@ -326,10 +329,12 @@ func (s *Store) InsertSymbolPackage(_ context.Context, tx formats.Tx, in rows.Sy
 		return false, nil
 	}
 	s.symbols[in.VersionID] = in.ItemID
+	s.SymbolJobs = append(s.SymbolJobs, in)
 	undo(tx, func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		delete(s.symbols, in.VersionID)
+		s.SymbolJobs = s.SymbolJobs[:len(s.SymbolJobs)-1]
 	})
 	return true, nil
 }

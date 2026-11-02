@@ -2,7 +2,7 @@
 
 Status: built (M3, phase 4): the push, the unlist, the relist and the delete of a NuGet package, the immutability of a version number
 with its tombstones, and the journal entries of R-NUGET-033. The reads of package content and documents, search, symbols and the
-remote and virtual classes of NuGet have no page yet; they are not built.
+remote and virtual classes of NuGet have no page yet; they are not built. The symbol push is below.
 
 This page describes what a caller can do to a local NuGet repository through the protocol and what stops a caller from doing more.
 The authorization it relies on is on [permissions.md](permissions.md), the credentials on [tokens-and-credentials.md](tokens-and-credentials.md),
@@ -66,6 +66,22 @@ row and without a tombstone is 404 before any lock is taken, so a delete never c
 An unlisted version stays downloadable: the serve check ([servecheck.go](../../internal/formats/nuget/servecheck.go)) refuses a file whose number is tombstoned
 and a file of a version the repository holds no NuGet row for, and serves the rest (Q-NUGET-37).
 
+## The symbol push
+
+`PUT <feed>/v3/symbolpackage` (R-NUGET-020) is an API-key route like the push and decides in the same order as steps 1 to 4 above, then:
+
+| Step | What is decided | Where | Answer |
+|---|---|---|---|
+| 5 | The version the symbols belong to is stored and live in this repository; a deleted, tombstoned or never pushed number is the same answer, after the permission and the ownership, so a caller who may not write the ID learns nothing of its versions | `Store.VersionFacts` | 404 |
+| 6 | The symbol package of the version: the same bytes are a replay, other bytes are a conflict, because symbols must match the binaries of the immutable package | `Items().Stat` at the `.snupkg` path, SHA-256 | 201 without a write, or 409 `nuget_symbol_package_exists` |
+| 7 | The commit transaction locks the package row, finds the live version again, decides the ownership again, links the item to the version and writes the row and the job | `commitSymbols` | 404, 403, 409 or 201 |
+
+The content is checked before any of this by `symbols.Validate`: only the entry extensions `.pdb`, `.nuspec`, `.xml`, `.psmdcp`, `.rels` and `.p7s` (so no assembly can be
+smuggled in as "symbols"), and each `.pdb` starts with a Portable or a Windows PDB signature. The signature check inflates 32 bytes of an entry and refuses an entry
+beyond the compression ratio of the archive rules, so a crafted `.pdb` costs no more than a crafted `.nuspec`. Nothing is extracted: the job `nuget-symbol-index` only records the
+state of the package until the symbol server (R-NUGET-021) ships. The symbol push reads its body in full before the permission on the ID is decided, like the package push
+([H-334](#h-334--a-push-is-read-in-full-before-the-permission-on-its-id-can-be-decided)).
+
 ## What the audit and the journal record
 
 The events are written in the transaction of the change, so no change exists without its record (R-OPS-015): `package.published` with the file list and the
@@ -94,7 +110,7 @@ removes the files; it is a different permission and a repository setting (`delet
 
 ### H-334 · A push is read in full before the permission on its ID can be decided
 
-Stage: the spool of `PUT <feed>/v3/package` and the reading of the package ([handlers_publish.go](../../internal/formats/nuget/handlers_publish.go)).
+Stage: the spool of `PUT <feed>/v3/package` and of `PUT <feed>/v3/symbolpackage`, and the reading of the package ([handlers_publish.go](../../internal/formats/nuget/handlers_publish.go), [handlers_symbols.go](../../internal/formats/nuget/handlers_symbols.go)).
 
 Subject: any principal that holds `deploy` on a local NuGet repository, for an ID it may not write, and any principal that is refused at the ownership rule.
 

@@ -1609,11 +1609,18 @@ an API-key endpoint (R-NUGET-012):
 - The symbol push is one request. The client sends it only after the package push has succeeded
   (R-NUGET-032), and the matching `.nupkg` is looked up in PostgreSQL, so the two pushes may reach
   different replicas (R-NUGET-030). The push extracts nothing: it validates, stores the
-  `.snupkg` and commits.
-- Serving PDBs to debuggers is P1 (R-NUGET-021). From then on, the symbol push's commit
-  transaction enqueues the indexing job of that one symbol package (Q-NUGET-11). The release that
-  ships R-NUGET-021 enqueues the same job for every symbol package stored before, through a data
-  migration ([architecture.md](../architecture.md) R-ARCH-026).
+  `.snupkg` and commits. Validation reads the first 32 bytes of each `.pdb` for its signature and
+  no more (Q-NUGET-61); the `.snupkg` is linked to its version, so the removal of the version
+  takes it along, and the push raises the package's revision like every write of the generic
+  rows (Q-ARCH-212).
+- The symbol push's commit transaction enqueues the indexing job of that one symbol package
+  (Q-NUGET-11): kind `nuget-symbol-index` on queue `index`, dedup key
+  `nuget-symbol-index:<version id>` in mode `exclusive`, arguments `version_id` and
+  `repository_id`. Serving PDBs to debuggers is P1 (R-NUGET-021); until it ships, the job reads
+  the state of the symbol package, records it as its result (`gone`, `indexed`, `stored`) and
+  leaves `indexed_at` unset (Q-NUGET-60). The release that ships R-NUGET-021 enqueues the same
+  job for every symbol package whose `indexed_at` is unset, through a data migration
+  ([architecture.md](../architecture.md) R-ARCH-026).
 
 Data model:
 
@@ -1634,6 +1641,12 @@ Acceptance criteria:
 - `nuget push Acme.Widgets.1.5.1.snupkg -Source trove-local -ApiKey %TOKEN%` before the `.nupkg`
   answers 404; after pushing the `.nupkg` it answers 201; pushing it again answers 201.
 - A `.snupkg` containing a `.dll` answers 400; a `.symbols.nupkg` answers 400.
+- A `.snupkg` with a `.pdb` that is neither a Portable PDB (`BSJB`) nor a Windows PDB
+  (`Microsoft C/C++ MSF 7.00`) answers 400; a different `.snupkg` for a version that holds one
+  answers 409 `nuget_symbol_package_exists`.
+- The push enqueues exactly one `nuget-symbol-index` job, also when it is repeated; with the
+  `worker` Deployment running, the job succeeds on the `index` queue and its result names the
+  state of the package.
 
 ### R-NUGET-021 · Symbol server for local repositories
 Priority: **P1** · Covers: PKG-NUGET-030
@@ -3792,6 +3805,43 @@ Context: R-UI-049 and R-UI-019 want a guide for every class and every client the
 **Rationale:** the guide is the user's documentation of the format; the text for a class must not wait for the code of the class. The development agent would revisit this when the remote and virtual adapters land: the change that lists the class deletes nothing here, and the kit then covers the class's sections as well.
 
 **Applied in the spec:** R-NUGET-026 (the guide bullet). Code: [guide.go](../../../internal/formats/nuget/guide.go), [guide/](../../../internal/formats/nuget/guide). Tests: `TestR_UI_049_NuGetHasAGuideForEveryVariant`, `TestR_UI_049_TheNuGetTroubleshootingCodesAreTroves`, `TestR_UI_049_EveryCodeTheNuGetGuideNamesExists`, `TestR_NUGET_026_TheGuideStatesTheDefaults`, `TestR_UI_049_TheNuGetGuideShowsTheSnippetsOfTheClientSetup`.
+
+### Q-NUGET-60 · What the symbol indexing job does before the symbol server exists
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-NUGET-11 decided that the symbol push enqueues one `nuget-symbol-index` job per symbol package, and R-NUGET-020 placed the enqueue "from R-NUGET-021 on". The work package that ships the symbol push also registers the job kind, so the pushes of the MVP already leave jobs behind. The extraction of PDBs, their keys and the checksum belong to the symbol server (R-NUGET-021, P1), which does not exist yet. The job needs a defined effect until then.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) No enqueue until R-NUGET-021 ships | The push stores only; the P1 release backfills every package | No job rows that do nothing | The enqueue path, the kind, the queue and the dedup key ship untested with the P1 release; R-NUGET-021's acceptance test of a push that enqueues in the same transaction starts from nothing |
+| (b) Enqueue now; the handler reads the state of the package, records it as its result and leaves `indexed_at` unset (chosen) | `gone` when the version or its symbol package was removed, `indexed` when `indexed_at` is set, `stored` otherwise; `files` is 0 | The queue, the kind, the dedup key and the transactional enqueue are exercised from the first push; every package stays pending, so the P1 release finds exactly the packages to index with `indexed_at IS NULL` and the partial index `nuget_symbol_package_pending` | A job row per symbol push that extracts nothing |
+| (c) Enqueue now; the handler sets `indexed_at` | The package counts as indexed | The pending set stays empty | The P1 release would skip every package stored before it (it skips packages with `indexed_at` set), so it would need a second marker or a reindex of everything |
+| (d) Build the extraction and the keys now | The full R-NUGET-021 job without the HTTP route | One step less later | The PDB readers (the `#Pdb` stream, the MSF container) and the ranged-read and spool code are P1 scope, unrelated to the push; building them here delays the push |
+
+**Choice:** (b).
+
+**Rationale:** it keeps the one property that matters for the later work, that `indexed_at IS NULL` means "not yet indexed", and it makes the transactional enqueue and the worker path a tested fact now. The handler is idempotent and reads one row. The development agent revisits this when R-NUGET-021 is built: the handler then gains the extraction and sets `indexed_at`, and the data migration enqueues the packages with `indexed_at` unset.
+
+**Applied in the spec:** R-NUGET-020 (the job paragraph and the acceptance criteria). Code: [symbols.go](../../../internal/formatdata/nuget/symbols.go), [handlers_symbols.go](../../../internal/formats/nuget/handlers_symbols.go). Tests: `TestR_NUGET_020_TheIndexingJobRunsOnAWorkerAndRecordsWhatItFound`, `TestR_NUGET_020_ASymbolPushIsStoredLinkedAndQueuedForIndexing`.
+
+### Q-NUGET-61 · How deep a symbol push looks, and what it writes
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-020 requires every `.pdb` to be a Portable PDB or a Windows PDB "by its file signature" and says the push extracts nothing. A symbol package can hold files of tens of megabytes, and the push runs on a `web` replica (P-11). The item must also be removable with its version.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Read the first 32 bytes of each `.pdb`; link the item to the version; raise the package revision (chosen) | `BSJB` is a Portable PDB, the `Microsoft C/C++ MSF 7.00` banner a Windows PDB; the entry is held to the compression ratio of the archive rules | Constant memory per entry, whatever its size; the removal of the version takes the symbol package along with no code of the format; one rule for all generic writes | A `.pdb` with a valid signature and a corrupt body passes the push and ends in `index_error` at the job (R-NUGET-021), as its acceptance test expects |
+| (b) Parse the PDB streams at the push | Validate the `#Pdb` stream or the MSF directory | Corrupt files are refused with 400 | Reads (and for a deflated entry inflates) the file in full inside the request; the parsers are P1 scope |
+| (c) Store the item without linking it to the version | Only the `nuget_symbol_package` row ties them | One call less | The hard delete of a version removes the items of the version; an unlinked `.snupkg` would stay, orphaned, and a later symbol push for the number would meet a different file at its path |
+
+**Choice:** (a). The extensions are compared case-insensitively on the decoded entry path, directory entries are skipped, and the first entry that breaks a rule is named in the 400. The dependencies of a symbol package are not read. The `.snupkg` is a plain item (not generated); its `nuget.id` and `nuget.version` properties are set like those of the other items of the version. The push raises `packages.rev_seq` because it changes the generic rows (the item link); that invalidates merged documents of virtual repositories earlier than needed, which is harmless.
+
+**Rationale:** it meets the "extracts nothing" rule with memory bounded independently of the file size. The development agent revisits this if the P1 indexing shows corrupt packages are common enough to deserve an early refusal.
+
+**Applied in the spec:** R-NUGET-020 (the symbol push paragraph and the acceptance criteria). Code: [symbols.go](../../../internal/formats/nuget/symbols/symbols.go), [head.go](../../../internal/formats/nuget/nupkg/head.go). Tests: `TestR_NUGET_020_ARefusedSymbolPackageIs400`, `TestR_NUGET_020_ASymbolPackageGoesWithItsVersion`, `TestR_NUGET_020_EveryPdbIsChecked`, `TestR_NUGET_020_HeadReadsTheStartOfAnEntryOnly`.
 
 ## What this does not cover
 

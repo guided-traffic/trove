@@ -20,6 +20,7 @@ import (
 	nugetformat "github.com/guided-traffic/trove/internal/formats/nuget"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/items"
+	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/observability"
 	"github.com/guided-traffic/trove/internal/packages"
@@ -48,7 +49,7 @@ func (a *App) wireFormatPorts(_ context.Context, in infra) (formatPortsArea, err
 	if err := requireInputs(AreaFormatPorts, given("database", in.db), given("audit recorder", in.rec)); err != nil {
 		return formatPortsArea{}, err
 	}
-	ports, err := formatPorts(in.db, in.rec, in.blobs)
+	ports, err := formatPorts(in.db, in.rec, in.blobs, in.queue)
 	if err != nil {
 		return formatPortsArea{}, err
 	}
@@ -81,7 +82,7 @@ type formatHostArea struct {
 // its constructor here, and a missing or wrong binding is a start-up error (typed
 // wiring). The npm port records its events with the replica's audit recorder and
 // the source of the request in the context.
-func formatPorts(db meta.Runner, rec audit.Recorder, blobs *blob.Store) (map[formats.ID]any, error) {
+func formatPorts(db meta.Runner, rec audit.Recorder, blobs *blob.Store, queue *jobs.Queue) (map[formats.ID]any, error) {
 	st, err := npm.New(npm.Options{
 		DB: db, Recorder: rec, Source: httpserver.SourceFrom,
 		Actor: func(ctx context.Context) audit.Actor { return edge.ActorFrom(httpserver.PrincipalFrom(ctx)) },
@@ -90,7 +91,7 @@ func formatPorts(db meta.Runner, rec audit.Recorder, blobs *blob.Store) (map[for
 		return nil, fmt.Errorf("formats: npm data port: %w", err)
 	}
 	nuget, err := nugetdata.New(nugetdata.Options{
-		DB: db, Recorder: rec, Blobs: nugetBlobs(blobs), Source: httpserver.SourceFrom,
+		DB: db, Recorder: rec, Blobs: nugetBlobs(blobs), Jobs: queue, Source: httpserver.SourceFrom,
 		Actor: func(ctx context.Context) audit.Actor { return edge.ActorFrom(httpserver.PrincipalFrom(ctx)) },
 	})
 	if err != nil {

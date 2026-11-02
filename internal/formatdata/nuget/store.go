@@ -50,6 +50,9 @@ type Options struct {
 	// Blobs gives the package view ranged reads over a stored package, to read the README
 	// file it holds (view.go). nil leaves the view without README text.
 	Blobs BlobReader
+	// Jobs enqueues the indexing job of a symbol package in the transaction of its push
+	// (Q-NUGET-11).
+	Jobs Jobs
 }
 
 // Store implements the data port of the NuGet format.
@@ -62,6 +65,9 @@ func New(o Options) (*Store, error) {
 	}
 	if o.Recorder == nil {
 		return nil, errs.E(errs.Internal, errs.CodeInternal, "nuget: no audit recorder")
+	}
+	if o.Jobs == nil {
+		return nil, errs.E(errs.Internal, errs.CodeInternal, "nuget: no job queue")
 	}
 	return &Store{o: o}, nil
 }
@@ -315,14 +321,19 @@ func (s *Store) ServeState(ctx context.Context, repoID int64, lowerID, lowerVers
 	return out, err
 }
 
-// InsertSymbolPackage records the symbol package of a version.
+// InsertSymbolPackage records the symbol package of a version and enqueues its indexing job
+// in the same transaction.
 func (s *Store) InsertSymbolPackage(ctx context.Context, tx meta.Tx, in rows.SymbolPackageInput) (bool, error) {
 	qs, err := queries(tx)
 	if err != nil {
 		return false, err
 	}
 	n, err := qs.NuGetInsertSymbolPackage(ctx, q.NuGetInsertSymbolPackageParams{VersionID: in.VersionID, ItemID: in.ItemID})
-	return n > 0, err
+	if err != nil || n == 0 {
+		return false, err
+	}
+	// The job exists exactly if the symbol package commits (Q-NUGET-11).
+	return true, s.enqueueIndex(ctx, tx, in.VersionID, in.RepositoryID)
 }
 
 // record writes a transactional event of a package. version is "" for an event of the ID.

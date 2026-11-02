@@ -97,9 +97,10 @@ Built (M3, NuGet skeleton and write side):
 
 - 🧱 **NuGet format registered.** The format `nuget` for local repositories, with the settings `deleteMode` and `forwardSearch`, the `nuget.archive`, `nuget.registration` and `nuget.search` configuration keys, the NuGet v3 route table, the service index at its three spellings, the native one-line error shape and the 404 that points a NuGet v2 client at the v3 service index. The other operations answer `501` until they are built. See [NuGet](docs/developer/nuget.md).
 - 📦 **NuGet push, unlist, relist and delete.** `dotnet nuget push` and `nuget push` store a package byte for byte with its generated `.nuspec`; a version never changes, a removed version number is blocked for good by a tombstone, and the identical package pushed again is accepted without a change, so a client's retry after a lost answer succeeds. `dotnet nuget delete` unlists by default, or removes with `deleteMode: delete`. Every change is audited in its transaction and journaled for a restore. See [NuGet](docs/developer/nuget.md#the-write-side) and [NuGet publishing](docs/security/nuget-publish.md).
+- 🔣 **NuGet symbol packages.** `dotnet nuget push` of a `.nupkg` with its `.snupkg` stores both: the symbol package is validated (the entry types, the `.pdb` signatures), stored byte for byte next to its package and indexed by a `nuget-symbol-index` job on the `worker`; serving the symbols to a debugger is not built yet. See [NuGet](docs/developer/nuget.md#symbol-packages).
 - 📄 **NuGet documents and package files.** The version list of the flat container, the `.nupkg` and the `.nuspec` of a version, and the registration index, pages and leaves in the three hives (SemVer 1, SemVer 1 gzip, SemVer 2 gzip), with a weak `ETag` that gzip and identity share, `304` on `If-None-Match`, paging at 64 versions per page and inlined below 128 versions, and the filter of an endpoint with exposure rules. See [NuGet](docs/developer/nuget.md#rendered-documents-and-package-files).
 
-Not built yet (see the [roadmap](docs/coverage/roadmap.md)): the operations of the NuGet protocol (search, symbols) and its remote and virtual repositories; GitLab CI OIDC federation;
+Not built yet (see the [roadmap](docs/coverage/roadmap.md)): the symbol server of NuGet and its remote and virtual repositories; GitLab CI OIDC federation;
 vulnerability scanning; backup and restore and the HA hardening of phase 7; remote and virtual repositories for the generic format; the UI
 screens of search, trash, builds, webhooks, CI identity and projects.
 
@@ -136,8 +137,9 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 | `/api/nuget/<repoKey>/v3/flatcontainer/{id}/index.json`, `…/{version}/{id}.{version}.nupkg`, `…/{version}/{id}.nuspec` | GET, HEAD | yes, the version list, the package and the `.nuspec` of a local repository (M3; [documents](docs/developer/nuget.md#rendered-documents-and-package-files)) |
 | `/api/nuget/<repoKey>/v3/{registration,registration-gz,registration-semver2}/{id}/index.json`, `…/page/{lower}/{upper}.json`, `…/{version}.json` | GET, HEAD | yes, the registration index, page and leaf in three hives; the gzip hives compress for a client that accepts it |
 | `/api/nuget/<repoKey>/v3/search?q=&skip=&take=&prerelease=&semVerLevel=&packageType=` | GET, HEAD | yes, the search of a local repository (R-NUGET-010): terms, phrases and the fields `id`, `packageid`, `version`, `title`, `tags`, `author`, `description`, `summary`; `totalHits` counts the packages the caller may read ([NuGet](docs/developer/nuget.md#search)) |
-| `/api/nuget/<repoKey>/v3/{search,autocomplete,symbolpackage,symbols}/…` | per route (GET; PUT, DELETE, POST on the publish resources) | routed, answers `501 nuget_not_implemented` until its work package lands ([NuGet](docs/developer/nuget.md#the-routes)) |
+| `/api/nuget/<repoKey>/v3/{autocomplete,symbols}/…` | GET | routed, answers `501 nuget_not_implemented` until its work package lands ([NuGet](docs/developer/nuget.md#the-routes)) |
 | `/api/nuget/<repoKey>/v3/package` | PUT | yes, the push of a package to a local repository (a multipart form whose first part is the package, or the bare package); `201`, `400`, `403`, `409` ([NuGet](docs/developer/nuget.md#the-write-side)) |
+| `/api/nuget/<repoKey>/v3/symbolpackage` | PUT | yes, the push of a `.snupkg` to a local repository after its package (R-NUGET-020); `201` (also for the identical package again), `400`, `403`, `404` (no such package), `409` `nuget_symbol_package_exists`; one `nuget-symbol-index` job per symbol package ([NuGet](docs/developer/nuget.md#symbol-packages)) |
 | `/api/nuget/<repoKey>/v3/package/{id}/{version}` | DELETE, POST | yes, DELETE unlists (or removes, with `deleteMode: delete`) and answers `204`, POST lists again and answers `200` |
 | any other path below `/api/nuget/<repoKey>/` (every NuGet v2 shape) | any | `404 nuget_v2_unsupported`, the message names `…/v3/index.json` of the repository |
 | `/ui/{locale}/…` | GET, HEAD | yes, locales `en` and `de` ([webui](internal/webui/webui.go)) |
@@ -226,7 +228,7 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 |---|---|---|
 | Schema | `trove` (`database.schema`) | yes |
 | Migration records | `schema_migration`, `schema_state` (the runtime login may only read them) | yes (`internal/meta/postgres/migrations/`) |
-| Job kinds | `gc`, `gc-full`, `repository-delete`, `items-delete` (one job per deletion), `token-cleanup`, `token-expiry-notice`, `session-cleanup`, `audit-retention`, `idempotency-cleanup`, `secrets-reencrypt` (manual only), `cluster-change-prune`, `replica-registry-prune`, `system.probe`. The list of the registrations is in the [job kinds](#job-kinds-and-tasks) reference | yes (`internal/app/wire_*.go`, `internal/jobs`) |
+| Job kinds | `gc`, `gc-full`, `repository-delete`, `items-delete` (one job per deletion), `token-cleanup`, `token-expiry-notice`, `session-cleanup`, `audit-retention`, `idempotency-cleanup`, `secrets-reencrypt` (manual only), `nuget-symbol-index` (one job per symbol package), `cluster-change-prune`, `replica-registry-prune`, `system.probe`. The list of the registrations is in the [job kinds](#job-kinds-and-tasks) reference | yes (`internal/app/wire_*.go`, `internal/jobs`) |
 | Advisory-lock categories | two-`int4` form: `1` lease, `2` fetch (retired, never reused), `3` migration, `4` configuration | yes (`internal/cluster/locks.go`) |
 | Roles and `application_name` | `trove_owner`, `trove_app`, `trove:<replica>:<class>` | planned ([R-HA-014](docs/spec/ha-and-helm.md)) for the role names; the `application_name` is built |
 
@@ -330,7 +332,7 @@ The code registry is [internal/errs/codes.go](internal/errs/codes.go). Every pro
 - Endpoints and exposure: `endpoint_read_only`, `invalid_version_range`, `dimension_not_supported`, `format_not_exposable`, `endpoint_not_configured`, `exposure_rule_limit_reached`
 - Package ownership and populating (M2): `package_owned_by_other_owner`, `last_owner`, `populate_not_permitted`
 - npm (M2): `npm_invalid_name`, `npm_invalid_version`, `npm_invalid_range`, `npm_invalid_tag`, `npm_bad_publish`, `npm_manifest_mismatch`, `npm_too_large`, `npm_class_not_writable`, `npm_version_exists`, `npm_version_unpublished`, `npm_stale_rev`, `npm_not_implemented`, `npm_audit_unavailable`, `npm_invalid_upstream_document`
-- NuGet (M3): `nuget_invalid_package`, `nuget_invalid_version`, `nuget_invalid_version_range`, `nuget_invalid_id`, `nuget_version_exists`, `nuget_version_deleted`, `nuget_version_reserved`, `nuget_v2_unsupported`, `nuget_not_implemented`, `upstream_package_mismatch`
+- NuGet (M3): `nuget_invalid_package`, `nuget_invalid_version`, `nuget_invalid_version_range`, `nuget_invalid_id`, `nuget_version_exists`, `nuget_version_deleted`, `nuget_version_reserved`, `nuget_symbol_package_exists`, `nuget_v2_unsupported`, `nuget_not_implemented`, `upstream_package_mismatch`
 - Remote repositories (M2): `upstream_secret_unavailable`, `source_network_unavailable`, `foreign_host_denied`
 - Package content (M2): `content_refused`
 
@@ -348,6 +350,7 @@ Registrations at start-up, in `internal/app/wire_*.go` and in the packages that 
 | `gc`, `gc-full` | `internal/app/wire_jobs.go` (blob GC) | tasks: `*/30 * * * *`, `0 2 * * 0` |
 | `repository-delete` | `internal/repository/delete.go` | one job per repository deletion, exclusive |
 | `items-delete` | `internal/files/delete.go` | one job per delete of a large subtree, exclusive |
+| `nuget-symbol-index` | `internal/formatdata/nuget/symbols.go` | one job per symbol package, enqueued by the symbol push in its transaction, queue `index`, exclusive per symbol package |
 | `token-cleanup`, `token-expiry-notice` | `internal/app/wire_identity.go`, `internal/auth/token/tasks.go` | tasks (`maintenance` queue, 3 attempts) |
 | `session-cleanup` | `internal/auth/session/cleanup.go` | task |
 | `audit-retention` | `internal/app/wire_audit.go` | task |
