@@ -451,6 +451,8 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   before the fix)
 - 🟡 A second GitLab project that publishes byte-identical content for an existing npm version gets 201, the registry's
   answer to a retried publish, without the ownership check; nothing is written (observed by W5, not checked further)
+- 🟢 `make image` failed with "no space left on device": the build context took in `.claude/worktrees`, the worktrees of
+  the development sessions with their tool binaries; `.dockerignore` leaves `.claude` out
 - 🟡 `TestR_CI_003_StaleAndUnreachable` failed once in W3's full run of `test/integration/ci` while three agents shared
   the stack, and passed alone and in the next full run; watched, not yet reproduced
 - 🟢 Test and Release run 41518863868 failed in `e2e on kind (access-long)`: the journey `06` clicked "Refresh now" by a
