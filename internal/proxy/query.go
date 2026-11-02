@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -113,7 +112,7 @@ func (e *Engine) registerQueries() {
 		},
 		SafetyTTL: maxQueryTTL, Areas: []string{cluster.AreaRepoConfig},
 		OnChange: func(c *cache.Cache[queryKey, *queryEntry], _ string, _ int, payload json.RawMessage) {
-			id, older, ok := queryEviction(payload)
+			id, older, ok := repository.ChangeEviction(payload)
 			if !ok {
 				c.Flush(cache.ReasonChange)
 				return
@@ -121,28 +120,6 @@ func (e *Engine) registerQueries() {
 			c.InvalidateFunc(func(k queryKey) bool { return k.repo == id && older(k.version) })
 		},
 	})
-}
-
-// queryEviction reads a repo_config payload ({"id", "key", "op", "version"}, R-REPO-008): the
-// repository and which of its configuration versions are gone. ok is false for a payload that
-// names no repository.
-func queryEviction(payload json.RawMessage) (id int64, older func(version int64) bool, ok bool) {
-	var p struct {
-		ID      string `json:"id"`
-		Op      string `json:"op"`
-		Version int64  `json:"version"`
-	}
-	if json.Unmarshal(payload, &p) != nil {
-		return 0, nil, false
-	}
-	id, err := strconv.ParseInt(p.ID, 10, 64)
-	if err != nil {
-		return 0, nil, false
-	}
-	if p.Version <= 0 || p.Op == repository.ChangeOpDeleting || p.Op == repository.ChangeOpDeleted {
-		return id, func(int64) bool { return true }, true
-	}
-	return id, func(v int64) bool { return v < p.Version }, true
 }
 
 // Query sends a pass-through request to the upstream of a remote repository and returns its

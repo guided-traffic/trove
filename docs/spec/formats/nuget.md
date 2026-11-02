@@ -4896,10 +4896,10 @@ setting outside `config_version` starts to decide what an upstream answers, whic
 **Applied in the spec:** R-NUGET-016 (the key and the change of the remote's configuration),
 [repositories-and-proxy.md](../repositories-and-proxy.md) (the payload of `repo_config`, in the preamble of the management
 API), [architecture.md](../architecture.md) Q-ARCH-270 (amended). Code: `changePayload` in
-[service.go](../../../internal/repository/service.go), `registerQueries`, `queryEviction` and `Query` in
+[service.go](../../../internal/repository/service.go), `registerQueries`, `repository.ChangeEviction` (the reader of the payload, shared with the client cache) and `Query` in
 [query.go](../../../internal/proxy/query.go). Tests: `TestR_ARCH_013_ACopyOfTheCurrentConfigurationOutlivesTheChange` in
-[query_test.go](../../../test/integration/proxy/query_test.go), `TestQueryEviction` in
-[query_test.go](../../../internal/proxy/query_test.go), `TestCreateReadUpdate` (the payload's version) in
+[query_test.go](../../../test/integration/proxy/query_test.go), `TestChangeEviction` in
+[change_test.go](../../../internal/repository/change_test.go), `TestCreateReadUpdate` (the payload's version) in
 [crud_test.go](../../../test/integration/repository/crud_test.go), `TestNuGetSearchClaimTiming` in
 [nuget_search_claims_test.go](../../../test/e2e/nuget_search_claims_test.go).
 

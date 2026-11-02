@@ -1,14 +1,14 @@
-package proxy
+package repository
 
 import (
 	"encoding/json"
 	"testing"
 )
 
-// TestQueryEviction: a change of repo_config drops the copies of the repository's configuration
+// TestChangeEviction: a change of repo_config drops the copies of the repository's configuration
 // versions below the one the change produced, every copy on a deletion and on a payload without a
-// version, and an unreadable payload names no repository, which flushes the cache (Q-NUGET-94).
-func TestQueryEviction(t *testing.T) {
+// version, and an unreadable payload names no repository, which flushes a cache (Q-NUGET-94).
+func TestChangeEviction(t *testing.T) {
 	for _, c := range []struct {
 		name, payload string
 		ok            bool
@@ -26,9 +26,9 @@ func TestQueryEviction(t *testing.T) {
 		{"an unreadable payload names no repository", `[`, false, 0, [3]bool{}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			id, older, ok := queryEviction(json.RawMessage(c.payload))
+			id, older, ok := ChangeEviction(json.RawMessage(c.payload))
 			if ok != c.ok || id != c.id {
-				t.Fatalf("queryEviction = %d, %v, want %d, %v", id, ok, c.id, c.ok)
+				t.Fatalf("ChangeEviction = %d, %v, want %d, %v", id, ok, c.id, c.ok)
 			}
 			if !ok {
 				return

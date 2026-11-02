@@ -82,7 +82,13 @@ type Clients struct {
 	mu     sync.Mutex
 	calls  map[clientKey]*call
 	failed map[clientKey]failure
-	latest map[int64]*Client // the newest client of each repository, to retire the older one
+	latest map[int64]latestClient // the newest client of each repository, to retire the older one
+}
+
+// latestClient is the newest client handed out for a repository and the version it was built for.
+type latestClient struct {
+	cl      *Client
+	version int64
 }
 
 // clientKey names a client: the repository and the version of its configuration.
@@ -128,26 +134,27 @@ func New(o Options) (*Clients, error) {
 	c := &Clients{
 		o: o, cat: catalog.Or(o.Catalog),
 		res:   resolver{dir: o.SecretsDir, lookup: o.LookupEnv, readFile: o.ReadFile},
-		calls: map[clientKey]*call{}, failed: map[clientKey]failure{}, latest: map[int64]*Client{},
+		calls: map[clientKey]*call{}, failed: map[clientKey]failure{}, latest: map[int64]latestClient{},
 	}
 	c.cache = cache.Register(o.Caches, CacheClients, cache.Options[clientKey, *Client]{
 		MaxEntries: maxClients, SafetyTTL: o.SafetyTTL, Areas: []string{cluster.AreaRepoConfig},
 		OnChange: func(cc *cache.Cache[clientKey, *Client], _ string, _ int, payload json.RawMessage) {
 			// The key carries config_version, so a stale client is unreachable once the
 			// snapshot has the new version; the eviction keeps the cache small and the
-			// pool of a repository that was deleted from living on.
-			var p struct {
-				ID string `json:"id"`
-			}
-			uerr := json.Unmarshal(payload, &p)
-			id, err := strconv.ParseInt(p.ID, 10, 64)
-			if uerr != nil || err != nil {
+			// pool of a repository that was deleted from living on. A replica applies a
+			// change twice, at once and again with the change-log poll (R-ARCH-018), so
+			// only the clients of versions below the one the change produced go, and a
+			// client built after the first application survives the second (Q-NUGET-94).
+			// A deletion and a payload without a version drop every client of the
+			// repository; an unreadable payload flushes the cache.
+			id, older, ok := repository.ChangeEviction(payload)
+			if !ok {
 				cc.Flush(cache.ReasonChange)
 				c.retireAll()
 				return
 			}
-			cc.InvalidateFunc(func(k clientKey) bool { return k.repo == id })
-			c.retireRepo(id)
+			cc.InvalidateFunc(func(k clientKey) bool { return k.repo == id && older(k.version) })
+			c.retireRepo(id, older)
 		},
 	})
 	return c, nil
@@ -170,13 +177,27 @@ func (c *Clients) For(ctx context.Context, r repository.Repository, s repository
 		return nil, err
 	}
 	cl, err := c.once(ctx, k, func(ctx context.Context) (*Client, error) {
-		return c.cache.Load(ctx, k, func(ctx context.Context) (*Client, error) { return c.buildSaved(ctx, id, r.Key, s) })
+		// A caller that began just after the leader of an earlier build ended finds its client.
+		if cl, ok := c.cache.Get(k); ok {
+			return cl, nil
+		}
+		cl, err := c.buildSaved(ctx, id, r.Key, s)
+		if err != nil {
+			return nil, err
+		}
+		// Stored without the fill rule of R-ARCH-018 (Cache.Load stores nothing while the
+		// area's epoch moves): the key holds the configuration version this request read, so
+		// the client is reached only under the configuration it was built for, and a change of
+		// the area during the build, of this repository or of another, makes it stale for
+		// nobody. Not storing it would build, and handshake, again on the next request.
+		c.cache.Set(k, cl)
+		return cl, nil
 	})
 	if err != nil {
 		c.remember(k, err)
 		return nil, err
 	}
-	c.retire(id, cl)
+	c.retire(id, r.Version, cl)
 	return cl, nil
 }
 
@@ -237,26 +258,35 @@ func (c *Clients) remember(k clientKey, err error) {
 }
 
 // retire closes the idle connections of the client a newer version replaced. The
-// requests that still run on it finish; its pool is not reused afterwards.
-func (c *Clients) retire(repo int64, cl *Client) {
+// requests that still run on it finish; its pool is not reused afterwards. A client of an
+// older version than the newest one handed out is not recorded: the newer one stays.
+func (c *Clients) retire(repo, version int64, cl *Client) {
 	c.mu.Lock()
-	old := c.latest[repo]
-	c.latest[repo] = cl
+	old, had := c.latest[repo]
+	if had && old.version > version {
+		c.mu.Unlock()
+		return
+	}
+	c.latest[repo] = latestClient{cl: cl, version: version}
 	c.mu.Unlock()
-	if old != nil && old != cl {
-		old.Close()
+	if had && old.cl != cl {
+		old.cl.Close()
 	}
 }
 
-// retireRepo closes the idle connections of the client a repository change
-// replaces, and forgets it: a deleted repository leaves nothing behind.
-func (c *Clients) retireRepo(repo int64) {
+// retireRepo closes the idle connections of the client a repository change replaces, and
+// forgets it: a deleted repository leaves nothing behind. The client of a version the change
+// did not make gone (older reports false) is the one the change produced, and it stays.
+func (c *Clients) retireRepo(repo int64, older func(version int64) bool) {
 	c.mu.Lock()
-	old := c.latest[repo]
-	delete(c.latest, repo)
+	old, had := c.latest[repo]
+	gone := had && older(old.version)
+	if gone {
+		delete(c.latest, repo)
+	}
 	c.mu.Unlock()
-	if old != nil {
-		old.Close()
+	if gone {
+		old.cl.Close()
 	}
 }
 
@@ -264,10 +294,10 @@ func (c *Clients) retireRepo(repo int64) {
 func (c *Clients) retireAll() {
 	c.mu.Lock()
 	all := c.latest
-	c.latest = map[int64]*Client{}
+	c.latest = map[int64]latestClient{}
 	c.mu.Unlock()
-	for _, cl := range all {
-		cl.Close()
+	for _, l := range all {
+		l.cl.Close()
 	}
 }
 

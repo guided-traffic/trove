@@ -572,6 +572,28 @@ const (
 	ChangeOpDeleted  = "deleted"
 )
 
+// ChangeEviction reads a repo_config payload (a changePayload, R-REPO-008) for a cache keyed by
+// the repository id and its config_version: the repository, and which of its configuration
+// versions the change has made gone. A replica applies every change twice, at once and again
+// with the change-log poll (R-ARCH-018), so an entry of the version the change produced must
+// survive both. older reports true for the versions below the one the change left; for every
+// version on a deletion and on a payload without a version (an older replica's). ok is false
+// for a payload that names no repository, which the cache answers by flushing (Q-NUGET-94).
+func ChangeEviction(payload json.RawMessage) (id int64, older func(version int64) bool, ok bool) {
+	var p changePayload
+	if json.Unmarshal(payload, &p) != nil {
+		return 0, nil, false
+	}
+	id, err := strconv.ParseInt(p.ID, 10, 64)
+	if err != nil {
+		return 0, nil, false
+	}
+	if p.Version <= 0 || p.Op == ChangeOpDeleting || p.Op == ChangeOpDeleted {
+		return id, func(int64) bool { return true }, true
+	}
+	return id, func(v int64) bool { return v < p.Version }, true
+}
+
 // eventDetails is the data of the repository.* events (R-OPS-016).
 type eventDetails struct {
 	Class   Class    `json:"class"`

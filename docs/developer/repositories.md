@@ -24,7 +24,7 @@ virtual class (members, deploy target, pin rules, claims and their routing) is b
 | [key.go](../../internal/repository/key.go), [path.go](../../internal/repository/path.go) | `ValidKeyShape`, `IsReservedKey`; `CleanPath` (R-ARCH-005) |
 | [pattern.go](../../internal/repository/pattern.go) | `CompilePattern`, `PatternSubject` (the catalog's), `Pattern.Match`, `Admission` (include and exclude lists, folder admission). Matching allocates nothing for the sizes in use and refuses an input without the pattern's literal lead first ([Q-EP-64](../spec/endpoints.md#q-ep-64--pattern-matching-in-the-decision-path-allocates-nothing-and-a-literal-lead-refuses-before-any-state-is-built)); [pattern_alloc_test.go](../../internal/repository/pattern_alloc_test.go) holds the former matcher as the reference and a fuzz target |
 | [store.go](../../internal/repository/store.go) | rows to `Repository` and `Document`; the sqlc `queries(tx)` seam; fail-closed load of an undecodable row |
-| [service.go](../../internal/repository/service.go) | `Service`: `Create`, `Get`, `Replace`, `Patch`, `List`; `Precondition`, the `Hooks` seam (`OnUpdated`, `OnDelete`, `MultiHooks`); a stale version is `errs.Stale` |
+| [service.go](../../internal/repository/service.go) | `Service`: `Create`, `Get`, `Replace`, `Patch`, `List`; `Precondition`, the `Hooks` seam (`OnUpdated`, `OnDelete`, `MultiHooks`); `ChangeEviction`, the reader of a `repo_config` payload for the caches keyed by version; a stale version is `errs.Stale` |
 | [delete.go](../../internal/repository/delete.go) | `Service.Delete`, the job kind `repository-delete` and its handler `RunDeleteJob` |
 | [activity.go](../../internal/repository/activity.go) | `Activity`: the in-memory buffer of `last_activity_at` (R-REPO-012), flushed once a minute and at shutdown |
 | [reader.go](../../internal/repository/reader.go) | `SnapshotReader` (the `Reader` implementation): the snapshot, the negative cache of unknown keys, the lookup of R-ARCH-011 step 2 |
@@ -70,7 +70,7 @@ a Valkey client.
 
 Every write is one transaction: the row, the audit event (`audit.Recorder.RecordTx`, so a failing audit insert rolls the
 change back, R-OPS-015) and the change-log row (`Changes.Notify` on `repo_config`, payload `{id, key, op, version}` with the
-`config_version` the write left, never a grant; the ops that end a repository are `ChangeOpDeleting` and `ChangeOpDeleted`). A handler calls, after it has authorized:
+`config_version` the write left, never a grant; the ops that end a repository are `ChangeOpDeleting` and `ChangeOpDeleted`; a cache keyed by repository and version reads the payload with `ChangeEviction`). A handler calls, after it has authorized:
 
 | Operation | Function | Notes |
 |---|---|---|

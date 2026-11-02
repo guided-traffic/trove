@@ -703,6 +703,83 @@ func TestClientCache(t *testing.T) {
 		}
 	})
 
+	t.Run("R-ARCH-018 a client of the current version outlives the second application of its change", func(t *testing.T) {
+		// A replica applies a change at once and again with the change-log poll: the client built
+		// between the two applications is of the version the change produced (Q-NUGET-94).
+		change := json.RawMessage(`{"id":"81","key":"npm-twice","op":"updated","version":3}`)
+		old, _ := f.clients.For(t.Context(), repo(81, "npm-twice", 2), s)
+		counted := countClose(old)
+		f.caches.ApplyChange("repo_config", 1, change)
+		if counted.closed() != 1 {
+			t.Fatalf("the client of version 2 was closed %d times by the change that made version 3, want 1", counted.closed())
+		}
+		cur, _ := f.clients.For(t.Context(), repo(81, "npm-twice", 3), s)
+		current := countClose(cur)
+		f.caches.ApplyChange("repo_config", 2, change)
+		if got, _ := f.clients.For(t.Context(), repo(81, "npm-twice", 3), s); got != cur {
+			t.Fatal("the second application of the change evicted the client of the version it produced")
+		}
+		if current.closed() != 0 {
+			t.Fatalf("the second application closed the current client's connections %d times", current.closed())
+		}
+		if f.latestOf(81) != cur {
+			t.Fatal("the current client is not the repository's newest any more")
+		}
+	})
+
+	t.Run("R-ARCH-018 a change drops the clients of older versions and retires them", func(t *testing.T) {
+		old, _ := f.clients.For(t.Context(), repo(82, "npm-older", 1), s)
+		counted := countClose(old)
+		f.caches.ApplyChange("repo_config", 1, json.RawMessage(`{"id":"82","key":"npm-older","op":"updated","version":2}`))
+		if counted.closed() != 1 || f.latestOf(82) != nil {
+			t.Fatalf("closed %d times, newest %v: the older client is still in use", counted.closed(), f.latestOf(82))
+		}
+		if got, _ := f.clients.For(t.Context(), repo(82, "npm-older", 1), s); got == old {
+			t.Fatal("the client of the older version stayed in the cache")
+		}
+	})
+
+	t.Run("R-ARCH-018 a deletion drops every client of the repository, the others stay", func(t *testing.T) {
+		cur, _ := f.clients.For(t.Context(), repo(83, "npm-gone", 4), s)
+		counted := countClose(cur)
+		other, _ := f.clients.For(t.Context(), repo(84, "npm-stays", 1), s)
+		f.caches.ApplyChange("repo_config", 1, json.RawMessage(`{"id":"83","key":"npm-gone","op":"`+repository.ChangeOpDeleting+`","version":4}`))
+		if got, _ := f.clients.For(t.Context(), repo(83, "npm-gone", 4), s); got == cur {
+			t.Fatal("the mark for deletion left the client of its own version in the cache")
+		}
+		if counted.closed() != 1 {
+			t.Fatalf("the deleted repository's client was closed %d times, want 1", counted.closed())
+		}
+		again, _ := f.clients.For(t.Context(), repo(83, "npm-gone", 4), s)
+		f.caches.ApplyChange("repo_config", 2, json.RawMessage(`{"id":"83","key":"npm-gone","op":"`+repository.ChangeOpDeleted+`","version":4}`))
+		if got, _ := f.clients.For(t.Context(), repo(83, "npm-gone", 4), s); got == again {
+			t.Fatal("the removal of the row left the client of its own version in the cache")
+		}
+		if o, _ := f.clients.For(t.Context(), repo(84, "npm-stays", 1), s); o != other {
+			t.Fatal("a deletion of another repository evicted this client")
+		}
+	})
+
+	t.Run("R-ARCH-018 a payload without a version drops every client of the repository", func(t *testing.T) {
+		cur, _ := f.clients.For(t.Context(), repo(85, "npm-nover", 5), s)
+		f.caches.ApplyChange("repo_config", 1, json.RawMessage(`{"id":"85","key":"npm-nover","op":"updated"}`))
+		if got, _ := f.clients.For(t.Context(), repo(85, "npm-nover", 5), s); got == cur {
+			t.Fatal("the client survived a payload that does not say which version it made")
+		}
+	})
+
+	t.Run("R-ARCH-018 an unreadable payload flushes the cache and retires every client", func(t *testing.T) {
+		a, _ := f.clients.For(t.Context(), repo(86, "npm-flush", 1), s)
+		counted := countClose(a)
+		f.caches.ApplyChange("repo_config", 1, json.RawMessage(`[`))
+		if counted.closed() != 1 {
+			t.Fatalf("closed %d times, want 1", counted.closed())
+		}
+		if b, _ := f.clients.For(t.Context(), repo(86, "npm-flush", 1), s); b == a {
+			t.Fatal("the flush kept the client")
+		}
+	})
+
 	t.Run("R-REPO-049 the cache is registered under its name in the area repo_config", func(t *testing.T) {
 		found := false
 		for _, st := range f.caches.Stats() {
@@ -714,6 +791,29 @@ func TestClientCache(t *testing.T) {
 			t.Fatalf("stats = %+v", f.caches.Stats())
 		}
 	})
+}
+
+// closeCounter counts the idle-connection drops of one client's transport.
+type closeCounter struct {
+	http.RoundTripper
+	n atomic.Int32
+}
+
+func (c *closeCounter) CloseIdleConnections() { c.n.Add(1) }
+func (c *closeCounter) closed() int           { return int(c.n.Load()) }
+
+// countClose puts a counter in front of the transport of cl, to see when its pool is retired.
+func countClose(cl *Client) *closeCounter {
+	cc := &closeCounter{RoundTripper: cl.http.Transport}
+	cl.http.Transport = cc
+	return cc
+}
+
+// latestOf is the newest client recorded for a repository, nil when none is.
+func (f *fixture) latestOf(id int64) *Client {
+	f.clients.mu.Lock()
+	defer f.clients.mu.Unlock()
+	return f.clients.latest[id].cl
 }
 
 func TestSourceNetwork(t *testing.T) {
