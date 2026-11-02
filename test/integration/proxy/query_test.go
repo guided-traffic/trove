@@ -478,6 +478,8 @@ func TestR_ARCH_013_AChangeOfTheRepositoryFlushesItsCopies(t *testing.T) {
 	if entries() != 2 {
 		t.Fatalf("entries = %v", entries())
 	}
+	// A payload without a version, as an older replica writes it during a rolling upgrade, drops
+	// every copy of the repository (Q-NUGET-94).
 	err := r.db.InTx(context.Background(), func(tx meta.Tx) error {
 		return r.changes.Notify(tx, cluster.AreaRepoConfig, 1, map[string]string{"id": fmt.Sprint(rem.ID()), "key": "q-flush", "op": "update"})
 	})
@@ -501,6 +503,134 @@ func TestR_ARCH_013_AChangeOfTheRepositoryFlushesItsCopies(t *testing.T) {
 		next.Repo.Version++
 		if got, err := r.query(next, "search", url.Values{"q": {"x"}}, time.Hour); err != nil || got.Cached {
 			t.Fatalf("%+v %v", got, err)
+		}
+	})
+}
+
+// TestR_ARCH_013_ACopyOfTheCurrentConfigurationOutlivesTheChange: a replica applies every change of
+// repo_config twice, at once (the writer itself, or Valkey's message) and again with the change-log
+// poll up to cluster.epoch_poll_interval later (R-ARCH-018 steps 2 to 4). The key of a copy carries
+// the configuration version, so a change drops the copies of the older versions only: the poll's
+// second application of a change keeps the copy fetched under the version the change produced, and
+// a change of another repository during a fill does not keep the fill out of the cache (Q-NUGET-94).
+// This is what lets R-NUGET-016's replicas still hold the forwarded answer that a claim then filters.
+func TestR_ARCH_013_ACopyOfTheCurrentConfigurationOutlivesTheChange(t *testing.T) {
+	e := newEnv(t)
+	up := e.upstream()
+	s := serveSearch(up, `{}`, 0)
+	// /slow answers when the test releases it, so a change can be applied while a fill runs.
+	gate := make(chan struct{})
+	release := sync.OnceFunc(func() { close(gate) })
+	t.Cleanup(release)
+	var slow atomic.Int64
+	up.Set("/slow", proxytest.Route{Handler: func(w http.ResponseWriter, r *http.Request) {
+		slow.Add(1)
+		<-gate
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{}`)
+	}})
+	e.remote("q-outlive", up)
+	other := e.remote("q-bystander", up)
+	// The poll runs only when the test asks for it, so the order of the two applications is the test's.
+	r := e.newReplica("a", replicaOpts{valkey: vkUnreachable, poll: time.Hour})
+	x := url.Values{"q": {"x"}}
+	entries := func() float64 { return r.metric("trove_cache_entries", "cache", proxy.CacheQueryResults) }
+	// announce writes the change of a repository's row as the repository service does
+	// (internal/repository, recordAndNotify); the writer applies it at once.
+	announce := func(rem proxy.Remote, op string) {
+		t.Helper()
+		err := r.db.InTx(context.Background(), func(tx meta.Tx) error {
+			return r.changes.Notify(tx, cluster.AreaRepoConfig, 1, map[string]any{
+				"id": fmt.Sprint(rem.ID()), "key": rem.Repo.Key, "op": op, "version": rem.Repo.Version,
+			})
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// update writes a new configuration version of a repository and announces it.
+	update := func(key string) proxy.Remote {
+		t.Helper()
+		e.exec("UPDATE repositories SET config_version = config_version + 1 WHERE key = $1", key)
+		next := e.lookup(key)
+		announce(next, "updated")
+		return next
+	}
+	poll := func() {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := r.changes.PollNow(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var next proxy.Remote
+	t.Run("the poll's second application of the creation keeps the copy fetched after the first", func(t *testing.T) {
+		// The e2e run of TestNuGetSearchClaimTiming: a search cached within one poll interval of the
+		// remote's creation, and the claim's search afterwards asked the upstream again.
+		created := e.lookup("q-outlive")
+		announce(created, "created")
+		if got, err := r.query(created, "search", x, time.Hour); err != nil || got.Cached {
+			t.Fatalf("the first query: %+v %v", got, err)
+		}
+		before := s.count()
+		poll()
+		if got, err := r.query(created, "search", x, time.Hour); err != nil || !got.Cached {
+			t.Fatalf("the poll's application of the creation dropped the copy: %+v %v", got, err)
+		}
+		if s.count() != before {
+			t.Fatalf("the upstream saw %d new searches", s.count()-before)
+		}
+	})
+	t.Run("the poll's second application of an update keeps the copy fetched under the new version", func(t *testing.T) {
+		next = update("q-outlive")
+		if entries() != 0 {
+			t.Fatalf("the update left %v copies of the older version", entries())
+		}
+		if got, err := r.query(next, "search", x, time.Hour); err != nil || got.Cached {
+			t.Fatalf("the first query of the new version: %+v %v", got, err)
+		}
+		before := s.count()
+		poll()
+		if got, err := r.query(next, "search", x, time.Hour); err != nil || !got.Cached {
+			t.Fatalf("the poll's application of the update dropped the copy fetched under the version it produced: %+v %v", got, err)
+		}
+		if s.count() != before {
+			t.Fatalf("the upstream saw %d new searches", s.count()-before)
+		}
+	})
+	t.Run("a change of another repository during a fill does not keep the fill out of the cache", func(t *testing.T) {
+		done := make(chan error, 1)
+		go func() {
+			_, err := r.query(next, "slow", x, time.Hour)
+			done <- err
+		}()
+		waitFor(t, "the fill to reach the upstream", 5*time.Second, func() bool { return slow.Load() == 1 })
+		update(other.Repo.Key)
+		poll()
+		release()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		if got, err := r.query(next, "slow", x, time.Hour); err != nil || !got.Cached || slow.Load() != 1 {
+			t.Fatalf("the fill was not kept: %+v %v after %d upstream requests", got, err, slow.Load())
+		}
+	})
+	t.Run("a deletion drops every copy of the repository", func(t *testing.T) {
+		if entries() != 2 {
+			t.Fatalf("entries = %v", entries())
+		}
+		err := r.db.InTx(context.Background(), func(tx meta.Tx) error {
+			return r.changes.Notify(tx, cluster.AreaRepoConfig, 1, map[string]any{
+				"id": fmt.Sprint(next.ID()), "key": next.Repo.Key, "op": "deleted", "version": next.Repo.Version,
+			})
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if entries() != 0 {
+			t.Fatalf("the deletion left %v copies", entries())
 		}
 	})
 }

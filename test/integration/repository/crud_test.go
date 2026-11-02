@@ -28,6 +28,11 @@ func TestCreateReadUpdate(t *testing.T) {
 	events := func() []event { return e.events(rep.Name) }
 	last := func() event { evs := events(); return evs[len(evs)-1] }
 	epoch := func() int64 { return e.scalar(`SELECT epoch FROM cluster_epoch WHERE area = 'repo_config'`) }
+	// changedVersion is the configuration version the last repo_config change carries: a cache keyed by the
+	// version drops the entries of older versions only (R-REPO-008, Q-NUGET-94).
+	changedVersion := func() int64 {
+		return e.scalar(`SELECT (payload->'p'->>'version')::bigint FROM cluster_change WHERE area = 'repo_config' ORDER BY epoch DESC LIMIT 1`)
+	}
 
 	var v1 repository.Stored
 	t.Run("R-REPO-009 R-REPO-001 create writes the row, the audit event and the change-log row in one transaction", func(t *testing.T) {
@@ -52,6 +57,9 @@ func TestCreateReadUpdate(t *testing.T) {
 		}
 		if epoch() != before+1 || e.scalar(`SELECT count(*) FROM cluster_change WHERE area = 'repo_config'`) != before+1 {
 			t.Fatal("the create did not advance the repo_config epoch with a change row")
+		}
+		if changedVersion() != 1 {
+			t.Fatalf("the change of the create carries version %d", changedVersion())
 		}
 		if e.scalar(`SELECT count(*) FROM repositories WHERE key = 'generic-local' AND created_by = '0198a000-0000-7000-8000-000000000001' AND updated_by IS NOT NULL`) != 1 {
 			t.Fatal("created_by and updated_by are not the caller")
@@ -119,6 +127,9 @@ func TestCreateReadUpdate(t *testing.T) {
 		}
 		if epoch() != before+1 {
 			t.Fatal("the update did not advance the epoch")
+		}
+		if changedVersion() != 2 {
+			t.Fatalf("the change of the update carries version %d", changedVersion())
 		}
 		again, err := svc.Get(ctx, "generic-local")
 		if err != nil || again.Repository.Version != 2 || again.Document.Description != "installers" {

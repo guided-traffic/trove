@@ -416,7 +416,10 @@ own transaction, wherever they run:
   settings `cacheFillAction`, `packageOwnership`, `hideExistence` and `requireAuthentication`
   ([R-AUTHZ-031](authorization.md)).
 
-The payload names the repository id, never a grant. R-AUTHZ-028's completeness test runs every
+The payload names the repository id and the `config_version` the write left, never a grant:
+`{"id", "key", "op", "version"}`, where a create writes version 1 and an update and the mark for
+deletion raise it. A cache keyed by the version drops only the entries of older versions
+([formats/nuget.md](formats/nuget.md) Q-NUGET-94). R-AUTHZ-028's completeness test runs every
 write operation of this page's API against a test database and fails when an input of the index
 changed in a transaction that advanced neither the `authz` nor the `repo_config` epoch. Without
 the notification, a replica would keep deciding on the old member list or the old

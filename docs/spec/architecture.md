@@ -7240,6 +7240,8 @@ Context: R-ARCH-013 step 6 says that a `Volatile` path passes through without be
 
 **Applied in the spec:** R-ARCH-013 step 6, R-ARCH-032 (the row of the pass-through answers), R-ARCH-005 (the budgets), R-REPO-025 (the bullet after the metadata bytes), R-NUGET-016, R-NUGET-028, R-OPS metrics (`kind`). Code: `internal/proxy/query.go`, `internal/formathost/query.go`, `internal/formats/remote.go`, `internal/config/outbound.go`, `internal/app/memory.go`, `deploy/helm/trove/templates/_validate.tpl`. Tests: `TestR_ARCH_013_Query*` in `test/integration/proxy`, `TestR_ARCH_013_QueryThroughTheHost`.
 
+Amended by [Q-NUGET-94](formats/nuget.md#q-nuget-94--a-forwarded-answer-fetched-under-the-remotes-current-configuration-outlives-both-applications-of-a-change) (2026-11-02): a change of `repo_config` drops the copies of the repository's older configuration versions only (every copy on a deletion and on a payload without a version), and a fetched answer is stored with `Cache.Set`, without the fill rule's epoch check, because the key carries the configuration version.
+
 ### Q-ARCH-271 · The fan-out over the members of a virtual repository is three methods of the Resolver
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.

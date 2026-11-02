@@ -1470,11 +1470,15 @@ Priority: **MVP** · Covers: PKG-NUGET-024, PKG-NUGET-028
   period; the host resolves the remote's service index first, as a fetch does, and the engine owns
   the request, the cache, the circuit and the metrics ([architecture.md](../architecture.md)
   Q-ARCH-282).
-  - The key is the remote repository and the upstream request URL with its parameters. The entry is
-    the upstream response as received.
+  - The key is the remote repository, its configuration version (`config_version`) and the upstream
+    request URL with its parameters. The entry is the upstream response as received.
   - Pattern, claim, pin-rule and permission filtering and the URL rewriting run on every use, so a
     claim or grant change applies to cached results as soon as the replica has applied it. A
-    change of the remote's configuration flushes its entries (area `repo_config`).
+    change of the remote's configuration drops its entries of the older configuration versions
+    (area `repo_config`), and its deletion drops all of them. An entry fetched under the
+    configuration the change produced stays through both of the replica's applications of that
+    change ([architecture.md](../architecture.md) R-ARCH-018), and so does an entry whose fetch
+    met a change of another repository (Q-NUGET-94).
   - Nothing is persisted and nothing is written to Valkey: search results are content served to
     clients ([architecture.md](../architecture.md) Q-ARCH-16).
   - Two replicas may answer one query from copies fetched up to `remote_result_ttl` apart, and
@@ -4857,6 +4861,47 @@ R-ARCH-016 (the kind). Code: [semver2.go](../../../internal/formatdata/nuget/sem
 `TestR_NUGET_004_AWorkerRecomputesTheSemVer2FlagOfVersionsStoredBeforeTheRule` and
 `TestR_HA_022_TheSemVer2RecomputationWaitsForAReplicaOfTheOldRelease`
 ([semver2_test.go](../../../test/integration/nuget/semver2_test.go)).
+
+### Q-NUGET-94 · A forwarded answer fetched under the remote's current configuration outlives both applications of a change
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-016 keeps a forwarded answer per replica in `proxy_query_results`, keyed by the remote, its configuration
+version and the upstream URL (Q-ARCH-270), and its claim criterion needs every replica to still hold that answer when the
+claim lands. A replica applies a change of `repo_config` twice: at once (the writer itself, or Valkey's message) and again
+with the change-log poll up to `cluster.epoch_poll_interval` later ([architecture.md](../architecture.md) R-ARCH-018 steps
+2 to 4). The cache dropped every copy of the repository on each application, and its fill (`Cache.Load`) stored nothing
+while the applied epoch of `repo_config` moved. A copy fetched within one poll interval after the remote was created or
+changed, under the configuration that change produced, was therefore dropped by the poll's second application, and a fill
+that ran while the poll applied a change of any other repository was not kept at all. Test and Release run 41441061809
+(2026-11-02) showed it: in `TestNuGetSearchClaimTiming` the first of three replicas cached the answer 0.97 s after the
+remote's creation, the other two after 1.0 s, and after the claim only the first asked the upstream again (one new search).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A change drops the copies of older configuration versions only, and a fill is stored without the epoch check (chosen) | The `repo_config` payload carries the `config_version` the write left (`{"id", "key", "op", "version"}`); `proxy_query_results` drops the repository's copies whose key holds an older version, and every copy on `deleting` and `deleted` and on a payload without a version; `Engine.Query` stores a fetched answer with `Cache.Set` | The key already carries the version, which makes it R-ARCH-018's self-validating key: a copy is served only to a request that read the same configuration, so a change message only evicts early. A copy survives both applications of its own change and every change of another repository. The other consumers of the area ignore the new member | A fill that a change of its own repository overtook stores a copy under the older version; no request reads it, and it leaves with the period or the LRU |
+| (b) The e2e test waits one poll interval after it creates its repositories | The test changes, the product does not | No code change | The extra upstream search after every change of a repository stays, per replica and query; a fill of any remote that meets any repository's change is still not kept; "both still hold the cached upstream response" would hold by timing only |
+| (c) The poll skips a change the replica already applied from Valkey | Deduplicate by epoch | No payload change | A lost, early or forged message would then suppress the change; R-ARCH-018 step 4 excludes it |
+| (d) No area for the cache: the versioned key and the period alone | No eviction at all | Simplest | The copies of an older configuration and of a deleted remote stay up to `remote_result_ttl` (at most one hour) in the 8 MiB budget |
+
+**Choice:** (a). A payload without a version is the one an older replica writes during a rolling upgrade
+([ha-and-helm.md](../ha-and-helm.md) R-HA-020), and an unreadable payload still flushes the whole cache. The version is the
+row's `config_version` after the write: a create writes 1, an update and the mark for deletion raise it.
+
+**Rationale:** the key was chosen self-validating so that change messages only evict early; the cache did not use that and
+paid for every change twice on every replica, and the fill rule, which protects caches filled from PostgreSQL, kept answers
+of the upstream out whenever anything in the installation changed a repository. The development agent revisits this if a
+setting outside `config_version` starts to decide what an upstream answers, which the key would then have to carry.
+
+**Applied in the spec:** R-NUGET-016 (the key and the change of the remote's configuration),
+[repositories-and-proxy.md](../repositories-and-proxy.md) (the payload of `repo_config`, in the preamble of the management
+API), [architecture.md](../architecture.md) Q-ARCH-270 (amended). Code: `changePayload` in
+[service.go](../../../internal/repository/service.go), `registerQueries`, `queryEviction` and `Query` in
+[query.go](../../../internal/proxy/query.go). Tests: `TestR_ARCH_013_ACopyOfTheCurrentConfigurationOutlivesTheChange` in
+[query_test.go](../../../test/integration/proxy/query_test.go), `TestQueryEviction` in
+[query_test.go](../../../internal/proxy/query_test.go), `TestCreateReadUpdate` (the payload's version) in
+[crud_test.go](../../../test/integration/repository/crud_test.go), `TestNuGetSearchClaimTiming` in
+[nuget_search_claims_test.go](../../../test/e2e/nuget_search_claims_test.go).
 
 ## What this does not cover
 

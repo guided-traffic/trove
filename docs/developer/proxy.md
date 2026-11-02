@@ -93,7 +93,7 @@ for 5 s. The `Ephemeral` client of the unsaved test takes the inline value or a 
 
 `proxy_upstream_clients` is a registered cache (R-ARCH-018, R-ARCH-032, R-REPO-049) in the area `repo_config`, keyed by `(repository id,
 config_version)`, bounded to 2,048 entries, with `cache.snapshot_safety_ttl` as its `SafetyTTL`. A `repo_config` change evicts the clients of
-that repository (the payload is `{id, key, op}`); an unreadable payload flushes the cache. When a newer version of a repository is built, the
+that repository (the payload is `{id, key, op, version}`; this cache reads the id only); an unreadable payload flushes the cache. When a newer version of a repository is built, the
 idle connections of the older one are closed. A change of a secret value moves `config_version` (Q-REPO-88), so a rotated sealed value is a
 new key.
 
@@ -387,7 +387,7 @@ lets through. The stream is the request's, not the flight's: `detach` ends its s
 | circuit and gone documents of a repository | cache `proxy_upstream_state`, area `upstream_state` | a change reloads the repository in the background; the writer takes the state from `RETURNING` |
 | negative L1 | cache `proxy_negative_l1` (`proxy.negative_l1_entries`) | nothing: readers validate window and invalidations |
 | bytes of metadata by digest | cache `proxy_metadata_bytes` (`proxy.metadata_cache_bytes`) | nothing: content-addressed |
-| answers of pass-through queries | cache `proxy_query_results` (`proxy.query_cache_bytes`, 8 MiB; entries live at most the period of the call and one hour), area `repo_config` | a change of the repository drops its entries; the key carries `config_version`, and a fill that a change overtook is not stored (`Cache.Load`) |
+| answers of pass-through queries | cache `proxy_query_results` (`proxy.query_cache_bytes`, 8 MiB; entries live at most the period of the call and one hour), area `repo_config` | the key carries `config_version`, so a change of the repository drops its entries of older versions only (`queryEviction`), a deletion or a payload without a version all of them, and the poll's second application of a change keeps what was fetched after the first; a fetched answer is stored with `Cache.Set`, without the fill rule's epoch check ([Q-NUGET-94](../spec/formats/nuget.md#q-nuget-94--a-forwarded-answer-fetched-under-the-remotes-current-configuration-outlives-both-applications-of-a-change)) |
 | flights, query calls, probe slots, fetch slots | plain fields of the engine | end with the process |
 
 ### The fill
@@ -422,9 +422,10 @@ virtual request records its allowed populate event with the grant reason of the 
 | unit | [proxy_test.go](../../internal/proxy/proxy_test.go) | the URL builder (`%2e%2e`, `a b`), the `Cache-Status` forms, digest policies, the withheld tail, the size limit, the idle timeout, slot shares, the classification table, the negative readers, `withStatus` |
 | unit | [remote_test.go](../../internal/formathost/remote_test.go) | mode, settings member, currency of the bridge |
 | unit | [fillrefused_test.go](../../internal/proxy/fillrefused_test.go) | `FillRefused` counts per endpoint (R-EP-019) |
+| unit | [query_test.go](../../internal/proxy/query_test.go) | `queryEviction`: which configuration versions a `repo_config` payload drops (Q-NUGET-94) |
 | unit | [remote_caps_test.go](../../internal/formathost/remote_caps_test.go), [remote_caps_test.go](../../internal/formats/remote_caps_test.go) | the adapter binds the parsed discovery data without changing the adapter it was called on; the hook is declared per path, reads the spooled body and its inspection travels as the commit payload; `Register` records the optional interfaces |
 | integration | [hook_test.go](../../test/integration/proxy/hook_test.go) | R-NUGET-015 at the engine: a refusal answers 502 to 40 concurrent requests and stores nothing, no byte before the hook accepted (with a control that streams without one), the object store down, the payload at the storage hook; R-NUGET-014: the discovery document is resolved once, a repository with one fetch slot does not wait for itself, a missing, unparsable or unpopulatable document; R-REPO-043: a mapped metadata path and its foreign host; the metadata-only bound |
-| integration | [query_test.go](../../test/integration/proxy/query_test.go) | the pass-through: cache, period, collapse, offline and fill refusal, circuit, foreign host and credentials, flush by `repo_config`, two replicas, through the `Host` |
+| integration | [query_test.go](../../test/integration/proxy/query_test.go) | the pass-through: cache, period, collapse, offline and fill refusal, circuit, foreign host and credentials, flush by `repo_config`, a copy of the current configuration through both applications of its change and through another repository's change during the fill (Q-NUGET-94), two replicas, through the `Host` |
 | integration | [test/integration/proxy](../../test/integration/proxy/) | R-REPO-025 order and download order (R-ARCH-013); R-REPO-026 on two replicas (100 requests, killed and cancelled holders, draining, polling without messages, foreign locks, duplicate fills); R-REPO-027 to R-REPO-032; R-REPO-040 to R-REPO-043; R-REPO-047, R-OPS-011; R-AUTHZ-008 and R-EP-019 at the engine |
 | integration | [cachefill_test.go](../../test/integration/endpoints/cachefill_test.go) | R-EP-019 through the whole request path (dispatcher, Host populate check, engine) on a replica with a further endpoint and a counting upstream |
 

@@ -14,12 +14,14 @@ import (
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/proxy/upstream"
+	"github.com/guided-traffic/trove/internal/repository"
 )
 
 // CacheQueryResults is the name of the registered cache of pass-through answers
 // (R-ARCH-013 step 6, R-ARCH-032): the upstream's response to a query, kept for the period the
-// caller asked for. It lives in process, per replica, and a change of the repository's
-// configuration (area repo_config) drops the entries of that repository.
+// caller asked for. It lives in process, per replica. The key carries the repository's
+// configuration version, so a change of the configuration (area repo_config) drops the entries
+// of that repository's older versions only, and a deletion all of them (Q-NUGET-94).
 const CacheQueryResults = "proxy_query_results"
 
 // maxQueryTTL bounds how long a pass-through answer is kept, whatever the caller asks: it is the
@@ -92,6 +94,14 @@ type queryCall struct {
 }
 
 // registerQueries creates the cache of pass-through answers; a size of 0 keeps none.
+//
+// A replica applies a change of repo_config twice, at once and again with the change-log poll
+// (R-ARCH-018), and the key holds the configuration version a request read, so an entry is only
+// ever served under the configuration it was fetched with. A change therefore drops the entries
+// of the repository's versions below the one the change produced, which an entry fetched after
+// the first application survives at the second (Q-NUGET-94). A deletion, and a payload without a
+// version (an older replica's), drop every entry of the repository; an unreadable payload flushes
+// the cache.
 func (e *Engine) registerQueries() {
 	if e.o.Config.QueryCacheBytes <= 0 {
 		return
@@ -103,18 +113,36 @@ func (e *Engine) registerQueries() {
 		},
 		SafetyTTL: maxQueryTTL, Areas: []string{cluster.AreaRepoConfig},
 		OnChange: func(c *cache.Cache[queryKey, *queryEntry], _ string, _ int, payload json.RawMessage) {
-			var p struct {
-				ID string `json:"id"`
-			}
-			uerr := json.Unmarshal(payload, &p)
-			id, err := strconv.ParseInt(p.ID, 10, 64)
-			if uerr != nil || err != nil {
+			id, older, ok := queryEviction(payload)
+			if !ok {
 				c.Flush(cache.ReasonChange)
 				return
 			}
-			c.InvalidateFunc(func(k queryKey) bool { return k.repo == id })
+			c.InvalidateFunc(func(k queryKey) bool { return k.repo == id && older(k.version) })
 		},
 	})
+}
+
+// queryEviction reads a repo_config payload ({"id", "key", "op", "version"}, R-REPO-008): the
+// repository and which of its configuration versions are gone. ok is false for a payload that
+// names no repository.
+func queryEviction(payload json.RawMessage) (id int64, older func(version int64) bool, ok bool) {
+	var p struct {
+		ID      string `json:"id"`
+		Op      string `json:"op"`
+		Version int64  `json:"version"`
+	}
+	if json.Unmarshal(payload, &p) != nil {
+		return 0, nil, false
+	}
+	id, err := strconv.ParseInt(p.ID, 10, 64)
+	if err != nil {
+		return 0, nil, false
+	}
+	if p.Version <= 0 || p.Op == repository.ChangeOpDeleting || p.Op == repository.ChangeOpDeleted {
+		return id, func(int64) bool { return true }, true
+	}
+	return id, func(v int64) bool { return v < p.Version }, true
 }
 
 // Query sends a pass-through request to the upstream of a remote repository and returns its
@@ -170,18 +198,23 @@ func (e *Engine) Query(ctx context.Context, rq QueryRequest) (*QueryResponse, er
 		return nil, ErrOffline
 	}
 	return e.queryOnce(ctx, rem.Repo.Key, key, func(ctx context.Context) (*QueryResponse, error) {
-		if e.queries == nil || ttl <= 0 {
-			ent, err := e.queryFetch(ctx, rq, cl, req, ttl)
-			if err != nil {
-				return nil, err
+		keep := e.queries != nil && ttl > 0
+		if keep {
+			// A leader that ended just before this one began has stored the answer.
+			if ent, ok := e.queries.Get(key); ok && e.now().Before(ent.expires) {
+				return &ent.resp, nil
 			}
-			return &ent.resp, nil
 		}
-		ent, err := e.queries.Load(ctx, key, func(ctx context.Context) (*queryEntry, error) {
-			return e.queryFetch(ctx, rq, cl, req, ttl)
-		})
+		ent, err := e.queryFetch(ctx, rq, cl, req, ttl)
 		if err != nil {
 			return nil, err
+		}
+		if keep {
+			// Stored without the fill rule of R-ARCH-018: the key holds the configuration version
+			// this request read, so the answer is served only under the configuration it was
+			// fetched with, and a change of the area during the fetch, of this repository or of
+			// another, makes it stale for nobody (Q-NUGET-94).
+			e.queries.Set(key, ent)
 		}
 		return &ent.resp, nil
 	})

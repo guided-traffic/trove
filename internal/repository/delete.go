@@ -107,7 +107,7 @@ func (s *Service) DeleteTx(ctx context.Context, tx meta.Tx, c Caller, key string
 		row = marked[0]
 		r, _ := toRepository(row, s.cat)
 		if err := s.recordAndNotify(ctx, tx, c, EventDeleted, r,
-			eventDetails{Class: r.Class, Format: r.Format, Changes: []string{"lifecycle"}, Phase: "started"}, "deleting"); err != nil {
+			eventDetails{Class: r.Class, Format: r.Format, Changes: []string{"lifecycle"}, Phase: "started"}, ChangeOpDeleting); err != nil {
 			return DeleteResult{}, err
 		}
 	}
@@ -143,7 +143,7 @@ func (s *Service) deleteNow(ctx context.Context, tx meta.Tx, qs *q.Queries, c Ca
 	}
 	res.Done = true
 	return s.recordAndNotify(ctx, tx, c, EventDeleted, r,
-		eventDetails{Class: r.Class, Format: r.Format, Changes: []string{"lifecycle"}, Phase: "completed"}, "deleted")
+		eventDetails{Class: r.Class, Format: r.Format, Changes: []string{"lifecycle"}, Phase: "completed"}, ChangeOpDeleted)
 }
 
 // onDelete runs the delete hook in the transaction that removes the row.
@@ -257,6 +257,6 @@ func (s *Service) finishDelete(ctx context.Context, a DeleteArgs) error {
 		}
 		// <<< M2 virtual
 		return s.recordAndNotify(ctx, tx, Caller{Actor: a.Actor}, EventDeleted, r,
-			eventDetails{Class: r.Class, Format: r.Format, Changes: []string{"lifecycle"}, Phase: "completed"}, "deleted")
+			eventDetails{Class: r.Class, Format: r.Format, Changes: []string{"lifecycle"}, Phase: "completed"}, ChangeOpDeleted)
 	})
 }

@@ -554,13 +554,23 @@ func (s *Service) document(ctx context.Context, qs *q.Queries, row q.Repository)
 	return d, rel, nil
 }
 
-// changePayload is the payload of a repo_config change: the repository id, never
-// a grant (R-REPO-008).
+// changePayload is the payload of a repo_config change: the repository id and the
+// config_version the write left, never a grant (R-REPO-008). A cache keyed by the
+// version drops only the entries of older versions (Q-NUGET-94).
 type changePayload struct {
-	ID  string `json:"id"`
-	Key string `json:"key"`
-	Op  string `json:"op"`
+	ID      string `json:"id"`
+	Key     string `json:"key"`
+	Op      string `json:"op"`
+	Version int64  `json:"version"`
 }
+
+// The ops of a repo_config change that end a repository: the first transaction of a
+// deletion and the removal of the row (R-REPO-013). The other ops are the event names
+// without "repository.", such as "created" and "updated".
+const (
+	ChangeOpDeleting = "deleting"
+	ChangeOpDeleted  = "deleted"
+)
 
 // eventDetails is the data of the repository.* events (R-OPS-016).
 type eventDetails struct {
@@ -595,7 +605,7 @@ func (s *Service) recordAndNotify(ctx context.Context, tx meta.Tx, c Caller, eve
 	}); err != nil {
 		return err
 	}
-	return s.notif.Notify(tx, cluster.AreaRepoConfig, 1, changePayload{ID: r.ID, Key: r.Key, Op: op})
+	return s.notif.Notify(tx, cluster.AreaRepoConfig, 1, changePayload{ID: r.ID, Key: r.Key, Op: op, Version: r.Version})
 }
 
 // ListFilter selects repositories (R-REPO-012). Class and format values are

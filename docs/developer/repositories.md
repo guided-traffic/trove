@@ -69,8 +69,8 @@ a Valkey client.
 ## Writes: service
 
 Every write is one transaction: the row, the audit event (`audit.Recorder.RecordTx`, so a failing audit insert rolls the
-change back, R-OPS-015) and the change-log row (`Changes.Notify` on `repo_config`, payload `{id, key, op}`, never a
-grant). A handler calls, after it has authorized:
+change back, R-OPS-015) and the change-log row (`Changes.Notify` on `repo_config`, payload `{id, key, op, version}` with the
+`config_version` the write left, never a grant; the ops that end a repository are `ChangeOpDeleting` and `ChangeOpDeleted`). A handler calls, after it has authorized:
 
 | Operation | Function | Notes |
 |---|---|---|

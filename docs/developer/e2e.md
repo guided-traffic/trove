@@ -595,6 +595,27 @@ profile after the fixes (`SET=push` and `SET=failover`, above): the measurements
    rate is still held to its burst) and `TestAuthenticationStage` in [internal/httpserver/chain_test.go](../../internal/httpserver/chain_test.go)
    (`Received` lies before the authentication). After the fix the switchover ran three times in a row with k6 only `2xx` and `304`.
    Not run by this change: the integration tier's rate-limit tests (`test/integration`), whose stack was in use.
+10. **Fixed in trove: one replica lost its cached forwarded search right after the remote was created, and the claim's search
+   asked the upstream again** (`TestNuGetSearchClaimTiming`, `the upstream saw 1 new searches`; Test and Release run 41441061809
+   on 17f0e54, and on the dev cluster 4 of 4 targeted runs with the same cache code). The test warms the three replicas within
+   about one second of creating its remote (CI: 0.97, 1.01 and 1.05 s after the creation; locally 0.75, 0.78 and 0.84 s). A
+   replica applies every `repo_config` change twice, at once and again with its change-log poll up to
+   `cluster.epoch_poll_interval` (1 s) later (R-ARCH-018), and
+   `proxy_query_results` dropped every copy of the repository on each application; its fill (`Cache.Load`) also stored nothing
+   while the area's epoch moved. A replica whose poll applied the creation after its warm-up search lost the copy and fetched
+   again for the claim's search: in CI the one replica that had searched within the second, locally the same one of three in
+   every run; by the times of its searches its poll ticked between 0.59 and 0.65 s into each second, right after its warm-up
+   (the replica logs no poll, so this is inferred, not measured). Fix
+   ([Q-NUGET-94](../spec/formats/nuget.md#q-nuget-94--a-forwarded-answer-fetched-under-the-remotes-current-configuration-outlives-both-applications-of-a-change)):
+   the `repo_config` payload carries the `config_version` the write left, the cache drops only the copies of older versions
+   (every copy on a deletion or a payload without a version), and a fetched answer is stored with `Cache.Set`, because the key
+   holds the version. Regression: `TestR_ARCH_013_ACopyOfTheCurrentConfigurationOutlivesTheChange` in
+   [test/integration/proxy/query_test.go](../../test/integration/proxy/query_test.go) (the creation, an update, another
+   repository's change during a fill: all three fail on 17f0e54), `TestQueryEviction` in
+   [internal/proxy/query_test.go](../../internal/proxy/query_test.go) and the payload's version in `TestCreateReadUpdate`.
+   After the fix, on the dev cluster: `TestNuGetSearchClaimTiming` alone 5 of 5 green, with the warm-ups still 0.76 to 0.90 s
+   after the creation and no upstream search after the claim, then `make e2e SET=nuget` twice in a row green (79 tests and
+   subtests, 274 s and 275 s).
 
 ## TLS in the suite
 
@@ -1338,12 +1359,14 @@ different web replicas. Verified on the dev cluster (linux/arm64, .NET SDK of `E
 - **The documents of a virtual repository** are compared on the three replicas as those of a local one (`documentsOnEveryReplica`). The `.nuspec` of a remote package
   is fetched once before the comparison: the answer that fills the cache is streamed from the upstream and carries neither an `ETag` nor `Accept-Ranges`, the stored
   file's answer does.
-- **Search.** The remote's search (R-NUGET-016) forwards the query to the upstream: not built ([Q-NUGET-55](../spec/formats/nuget.md#q-nuget-55--the-seam-for-the-forwarded-search-the-adapter-maps-the-search-resource-a-remote-searches-its-cache-until-then)),
-  so a remote lists the packages it has cached, after the rows of a fill are written (seconds). A virtual repository asks its remote members for nothing
-  (`searchRemote` in [search_virtual.go](../../internal/formats/nuget/search_virtual.go) returns no hit), so the search of `nuget-all` lists the local packages and
-  not the remote ones. `TestNuGetVirtual` asserts the two parts that exist; the criterion "forwarded search cached per replica" (Q-NUGET-8) has no test
-  until the forwarding exists. `dotnet package search --exact-match` does not call the search service: it reads the registration, so it finds remote packages
-  and is no evidence for the search.
+- **Search.** The remote forwards the query to the upstream's search resource (R-NUGET-016,
+  [search_remote.go](../../internal/formats/nuget/search_remote.go)), and a virtual repository asks its remote members the same way and merges their
+  results after the local ones (`searchRemote` in [search_virtual.go](../../internal/formats/nuget/search_virtual.go), Q-NUGET-81). `TestNuGetVirtual` asserts
+  that the remote and `nuget-all` list a package of the test upstream. The criterion "forwarded search cached per replica" is `TestNuGetSearchClaimTiming`
+  ([nuget_search_claims_test.go](../../test/e2e/nuget_search_claims_test.go)): every replica lists the upstream's package, a claim of the local member then
+  removes it on every replica within the bound, and the upstream sees no further search, so each replica filtered the copy it held
+  ([finding 10](#findings-of-the-suite)). `dotnet package search --exact-match` does not call the search service: it reads the registration, so it finds
+  remote packages and is no evidence for the search.
 
 ### The dropped answer (E3.6)
 
