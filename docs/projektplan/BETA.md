@@ -417,6 +417,8 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   100 random `kid`s within about 100 ms cause exactly 10 more reads of `ci_issuer_keys` than an idle window, the bound is
   2 (one re-read per issuer, replica and `cluster.epoch_poll_interval`, R-CI-003); passed in W1's worktree and in one run on
   main. Cause not known yet (a throttle that lets reads through, or the measurement by `pg_stat_user_tables`)
+- 🟡 Two implementations of R-CI-003's key rules: W1's `internal/ci/keys_jwks.go` (built while the shared leaf did not exist)
+  and W2's `jws.ParseJWKS`; one of them goes, so the key status and the validation cannot disagree (W4)
 - 🟢 Test and Release run 41518863868 failed in `e2e on kind (access-long)`: the journey `06` clicked "Refresh now" by a
   substring match, and the new task `ci-keys-refresh` added a "Run task ci-keys-refresh now" button to the same screen; the
   locator is exact now
