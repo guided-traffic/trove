@@ -1,8 +1,11 @@
 package nuget
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -495,5 +498,45 @@ func TestR_NUGET_034_AForwardedResultMatchedOnAHiddenVersionIsRemoved(t *testing
 				t.Errorf("totalHits %d, want %d", d.TotalHits, want)
 			}
 		})
+	}
+}
+
+// TestR_NUGET_016_AnUpstreamAnswerIsReadWithinItsBounds: the forwarded answer is parsed again on
+// every use, so it is bounded far below a stored document: a gzip-coded answer that inflates
+// beyond maxSearchAnswerBytes is no answer (the cache-only search answers, a failure is counted),
+// a result that lists more versions than trove reads of one ID is removed, and a version listed
+// many times is one version, found without comparing every pair.
+func TestR_NUGET_016_AnUpstreamAnswerIsReadWithinItsBounds(t *testing.T) {
+	fw := newForwarding(t, authz.Subject{}, pkg("Acme.Cached", "1.0.0"))
+	var bomb bytes.Buffer
+	zw := gzip.NewWriter(&bomb)
+	_, _ = zw.Write([]byte(`{"totalHits":1,"data":[],"padding":"`))
+	_, _ = zw.Write(bytes.Repeat([]byte("a"), 8<<20+1)) // maxSearchAnswerBytes
+	_, _ = zw.Write([]byte(`"}`))
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	fw.answer = bomb.String()
+	d := forwardedOf(t, doSearch(t, fw.h, "q=json"))
+	if !slices.Equal(namesOf(d), []string{"Acme.Cached"}) {
+		t.Errorf("an answer beyond the bound: results %v, want the cached package", namesOf(d))
+	}
+	if got := counted(t, fw.metrics, "trove_nuget_search_forward_failures_total"); got != 1 {
+		t.Errorf("trove_nuget_search_forward_failures_total = %v, want 1", got)
+	}
+
+	many := make([]string, 0, 40_000)
+	for i := range 40_000 {
+		many = append(many, fmt.Sprintf(`{"version":"1.0.%d","downloads":1}`, i))
+	}
+	same := strings.Repeat(`{"version":"2.0.0","downloads":1},`, 20_000) + `{"version":"2.0.0","downloads":1}`
+	fw.answer = `{"totalHits":2,"data":[{"id":"Acme.Many","version":"1.0.39999","versions":[` + strings.Join(many, ",") + `]},` +
+		`{"id":"Acme.Same","version":"2.0.0","versions":[` + same + `]}]}`
+	d = forwardedOf(t, doSearch(t, fw.h, "q=acme"))
+	if !slices.Equal(namesOf(d), []string{"Acme.Same"}) || d.TotalHits != 1 {
+		t.Fatalf("results %v, totalHits %d, want Acme.Same alone and 1", namesOf(d), d.TotalHits)
+	}
+	if len(d.Data[0].Versions) != 1 {
+		t.Errorf("Acme.Same lists %d versions, want 1", len(d.Data[0].Versions))
 	}
 }

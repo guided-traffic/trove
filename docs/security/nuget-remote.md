@@ -98,8 +98,10 @@ for which they are sensitive sets `forwardSearch: false` on the remote.
 Nothing is sent either with `forwardSearch: false`, on the cache view `<key>~cache`, on an endpoint with `cache_fill: false`, for an offline remote, and for a
 caller who may not fill the remote while no answer to the same query is cached on the replica (the populate check of R-AUTHZ-008, Q-NUGET-79).
 
-**What comes back.** The answer is bounded like a metadata document (the repository's `limits.maxMetadataBytes`, else `proxy.max_metadata_bytes`, while it
-is received; `MaxDocumentBytes` in memory) and kept as received in the replica's memory only (`proxy_query_results`, for `nuget.search.remote_result_ttl`;
+**What comes back.** The answer is bounded like a metadata document while it is received (the repository's `limits.maxMetadataBytes`, else
+`proxy.max_metadata_bytes`) and read within 8 MiB inflated, a gzip coding the upstream applies anyway included; a larger answer is no answer and the
+cache-only search answers, counted as a failure. A result that lists more than 32,768 versions is removed, versions are deduplicated in linear time, and a
+request that ends stops the filter (Q-NUGET-90). The answer is kept as received in the replica's memory only (`proxy_query_results`, for `nuget.search.remote_result_ttl`;
 never in Valkey or PostgreSQL). It is filtered on every use, so a claim or a grant change applies to a cached answer as soon as the replica has applied it:
 
 - a result whose ID the remote's include and exclude patterns do not admit, that a claim or a pin rule keeps away, that is no NuGet ID, or of which the

@@ -1417,7 +1417,8 @@ Priority: **MVP** · Covers: PKG-NUGET-024, PKG-NUGET-028
   exactly the terms the withheld rule below checked, Q-NUGET-80), the same `prerelease`,
   `semVerLevel` and `packageType`, and with `skip` and `take` clamped to trove's limits
   (R-REPO-025 lets the plug-in map these parameters). A query with a `version:` term that is no
-  version matches nothing (R-NUGET-010) and is not forwarded. Result URLs are rewritten as
+  version matches nothing (R-NUGET-010) and is not forwarded. The answer is read within 8 MiB
+  inflated, and a result that lists more than 32,768 versions is removed (Q-NUGET-90). Result URLs are rewritten as
   in R-NUGET-015 (`registration`, `versions[].@id` into the hive that matches the request's
   `semVerLevel`); `owners`, `verified`, `deprecation`, `vulnerabilities`, download counts and
   `packageTypes` are kept, `deprecation` and `vulnerabilities` without the upstream's addresses as
@@ -4681,6 +4682,24 @@ Context: the bounded scan of R-NUGET-005 step 1 (Q-NUGET-23) takes the end-of-ce
 **Rationale:** the reader's promise is that what was checked is what is served; refusing the ambiguous archive keeps that without following any reader's guess. The price is the refusal of a package whose comment holds the signature where a record fits. The development agent revisits this if a package from a real client is refused for a signature in its comment.
 
 **Applied in the spec:** R-NUGET-005 step 1. Tests: `TestR_NUGET_005_AnEndRecordAfterTheOneTheScanChoseIsRefused`, `TestR_NUGET_005_EveryEntryIsReadFromTheOffsetTheScanChecked`; the seed and the corpus entry `second-end-record` of `FuzzR_ARCH_028_Inspect`.
+
+### Q-NUGET-90 · A forwarded search answer is read within 8 MiB, and a result within the versions trove reads of one ID
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the engine keeps an upstream's search answer as received (`proxy_query_results`, Q-ARCH-270) and the format parses and filters it on every use, so that a claim or a grant change applies to a cached answer at once (R-NUGET-016). The answer was decoded within `MaxDocumentBytes` (128 MiB), a gzip coding the upstream applied although identity was asked included, and each result's versions were deduplicated by comparing every pair: an upstream could make every use of a cached answer inflate a small gzip stream to 128 MiB, and a result of 40,000 versions took about a minute of CPU (security audit of the fix wave, 2026-11-02).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Read the answer within 8 MiB inflated; remove a result that lists more than `remote.MaxLeaves` (32,768) versions; deduplicate with a set; stop when the request ends (chosen) | `maxSearchAnswerBytes`, `upstreamResult.hit`, `keepForCaller` | Each use costs at most 8 MiB of inflation and linear work; 8 MiB is the default of `proxy.query_cache_bytes`, beyond which the engine keeps no copy anyway; nuget.org answers `take=20` in some tens of KiB | A `take` near `nuget.search.max_take` over packages with long version lists can exceed it and is answered from the cache |
+| (b) Keep the converted hits in the engine's cache instead of the bytes | Parse once per fetch | Least work per use | The engine stores bytes for every format (Q-ARCH-270); the frozen contract (ADR-141) would need an ADR |
+| (c) Refuse a gzip coding when identity was asked | Strict | No inflation at all | nuget.org's hosts gzip some answers regardless; the search would fall back to the cache for them |
+
+**Choice:** (a). The same cap of versions that one rendering of a registration reads (Q-NUGET-83) applies to one result, counted before deduplication, because the work is proportional to what the upstream sent.
+
+**Rationale:** the bound follows the one place the answer is kept and keeps the per-use cost of a cached answer small and constant; a result beyond the version cap is the same refusal the registration gives for that ID. The development agent revisits this when a common client asks for pages that exceed 8 MiB, or with the next ADR on the format contract, which could hand the format a parsed copy (b).
+
+**Applied in the spec:** R-NUGET-016 (the answer bound). Code: [search_remote.go](../../../internal/formats/nuget/search_remote.go) `maxSearchAnswerBytes`, `parseUpstreamSearch`, `upstreamResult.hit`, `keepForCaller`. Security: [nuget-remote.md](../../security/nuget-remote.md). Tests: `TestR_NUGET_016_AnUpstreamAnswerIsReadWithinItsBounds`.
 
 ### Q-NUGET-91 · The run against nuget.org is a read-only subset of the closing set, with the search first and an ID of more than 128 versions
 

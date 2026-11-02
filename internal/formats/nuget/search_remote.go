@@ -254,10 +254,18 @@ type upstreamSearch struct {
 	Data      []json.RawMessage `json:"data"`
 }
 
+// maxSearchAnswerBytes bounds an upstream's search answer, inflated. The answer is parsed again on
+// every use (the engine keeps the bytes, the caller's filter applies each time), so a gzip coding
+// the upstream applies anyway is undone on every use too: the bound keeps that cost, and a
+// replica's memory per search, far below MaxDocumentBytes. An answer of take=20 from nuget.org is
+// some tens of KiB; a larger answer is no answer, and the remote answers from its cache and counts
+// a failure.
+const maxSearchAnswerBytes = 8 << 20
+
 // parseUpstreamSearch reads the answer as received: a gzip coding the upstream applied anyway
-// is undone within the bound of documents held in memory.
+// is undone within maxSearchAnswerBytes.
 func parseUpstreamSearch(body []byte) (upstreamSearch, error) {
-	doc, err := remote.Decode(body, MaxDocumentBytes)
+	doc, err := remote.Decode(body, maxSearchAnswerBytes)
 	if err != nil {
 		return upstreamSearch{}, err
 	}
@@ -303,6 +311,9 @@ func (f *Format) keepForCaller(ctx context.Context, s searchSource, scope format
 	hits := make([]rows.SearchHit, 0, len(data))
 	removed := 0
 	for _, raw := range data {
+		if err := ctx.Err(); err != nil {
+			return nil, 0, err
+		}
 		h, ok, err := f.forwardedHit(ctx, s, scope, p.Terms, raw)
 		if err != nil {
 			return nil, 0, err
@@ -381,18 +392,21 @@ func resultHit(raw json.RawMessage) (rows.SearchHit, bool) {
 // members. The deprecation and the vulnerabilities come without the upstream's addresses, as
 // in the remote's registration: every "@id" and "@type" is dropped at any depth, an advisoryUrl
 // is kept only as an absolute http(s) link without user info (Q-NUGET-85). ok is false for a
-// result whose ID is no NuGet ID or that lists no version.
+// result whose ID is no NuGet ID, that lists no version, or that lists more versions than trove
+// reads of one ID (remote.MaxLeaves, Q-NUGET-83).
 func (u upstreamResult) hit() (rows.SearchHit, bool) {
 	lower, ok := lowerID(u.ID)
-	if !ok {
+	if !ok || len(u.Versions) > remote.MaxLeaves {
 		return rows.SearchHit{}, false
 	}
-	var listed []rows.VersionEntry
+	listed := make([]rows.VersionEntry, 0, len(u.Versions))
+	seen := make(map[string]bool, len(u.Versions))
 	for _, uv := range u.Versions {
 		v, err := version.Parse(uv.Version)
-		if err != nil || slices.ContainsFunc(listed, func(e rows.VersionEntry) bool { return e.LowerVersion == v.URLForm() }) {
+		if err != nil || seen[v.URLForm()] {
 			continue
 		}
+		seen[v.URLForm()] = true
 		listed = append(listed, rows.VersionEntry{
 			LowerVersion: v.URLForm(), FullVersion: v.String(), Downloads: max(uv.Downloads, 0),
 			Listed: true, IsPrerelease: v.IsPrerelease(), IsSemver2: v.IsSemver2(),
