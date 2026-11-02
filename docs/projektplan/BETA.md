@@ -388,6 +388,9 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   verified on kind inside a forced rotation (the first sign-in waited 33 s, 19 journeys green)
 
 **Phase**
+- 🟡 Contracts: schema, packages, OpenAPI operations, configuration, audit events, change areas, limiters, tasks and the
+  seam between the CI token and the evaluator ([ci-oidc.md](../developer/ci-oidc.md)); the GitLab-shaped issuer double
+  `test/oidcstub` (Q-CI-23, Q-CI-24) is built
 - ⚪ GitLab as trusted issuer: discovery, signing keys, key rotation; several GitLab instances side by side (R-CI-005)
 - ⚪ GitLab issuers declared in the Helm values (`config.ci.issuers`), applied by `trove migrate`, shown in trove and
   read-only there ([Q-CI-16](../spec/gitlab-ci-oidc.md#q-ci-16--ci-issuers-provisioned-through-the-helm-values-are-read-only-in-trove), owner 2026-11-02)
@@ -396,13 +399,22 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - ⚪ Audit of the exchange: which pipeline (instance, group, project, branch, pipeline, job) signed in when, as issuance
   records with a tab per issuer in the admin UI (R-CI-020)
 - ⚪ Admin manual: a runbook page for GitLab CI (register an instance in the Helm values, the `id_tokens:` block, a
-  mapping, verify with the dry run, read the issuances, troubleshoot refusals) (owner 2026-11-02)
+  mapping, verify with the dry run, read the issuances, troubleshoot refusals) (owner 2026-11-02), written while the phase is
+  built (owner, 2026-11-02), with three how-tos: how a project administrator lets the pipelines of a GitLab project write
+  to the project's repositories; how a project administrator gives a whole GitLab instance or group read access to the
+  whole project or to one repository; how a pipeline gets its trove token
+- ⚪ Project administrators manage the CI mappings of their project (owner, 2026-11-02; Q-CI-26): a mapping tier per
+  project, grants only over the project's repositories and policies, the save-time rules unchanged; issuers stay the
+  system administrators'
 - ⚪ Identity mappings: conditions on project, branch, protected ref, environment; templated grants
 - ⚪ Package ownership: a CI project writes only the packages it owns, reads what it is granted
 - ⚪ Admin UI: CI issuers, mappings, dry run and claim tester
 - ⚪ Reference pipeline: `.gitlab-ci.yml` publishing an npm package and pushing a NuGet package
+- 🟡 GitLab's behaviour validated against the owner's unused GitLab instance and recorded as fixtures of the issuer
+  double; no integration or e2e test runs against a real GitLab or gitlab.com (owner, 2026-11-02; Q-CI-25)
 - ⚪ Integration tests: invalid signatures, wrong audience, expired tokens, fork merge requests
-- ⚪ E2E tests against a GitLab test instance for npm and NuGet, with a `web` node drained during the run
+- ⚪ E2E tests for npm and NuGet against the issuer double (the reference pipeline's exchange and client steps), with a
+  `web` node drained during the run and again with Valkey stopped
 
 ## Phase 5b · trove Bastion (M13)
 
@@ -617,6 +629,8 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
   [manual](../manual/README.md) (7 user and 12 administrator pages, among them installation, configuration and known
   limitations) is written against the code of 2026-11-01, embedded into the binary and shown behind the "?" of the UI
   (R-API-054, R-UI-050, owner 2026-11-01). Open: the pages follow every later phase, and the walkthrough reviews them
+  - 🟡 The manual uses the width it has (owner, 2026-11-02): on a wide screen the article and its tables widen instead of
+    a narrow column with words broken mid-word in table cells; tables that are still too wide scroll in their own box
 - 🟡 Design language of the owner's example screens in both colour schemes (Q-UI-88, owner 2026-11-01): palette, shell and
   theme button built and in the component tests; the primary colour is cogpit's blue and green marks positive status only
   (Q-UI-96, owner 2026-11-02), every pair held at WCAG AA by a palette test; open: the browser tier's colour-contrast check (light and dark) in CI and the
