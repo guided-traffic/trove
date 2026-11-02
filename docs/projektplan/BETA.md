@@ -273,6 +273,9 @@ to denial-of-service attempts.
 - ⚪ Observability: cache hit rate, bytes served from the cache, upstream requests to the main installation
 - ⚪ Integration and e2e tests: npm and NuGet clients against a Bastion on kind in front of a main installation, cold and
   warm cache, main installation unreachable, token revoked at the main installation, drain of a Bastion replica
+- ⚪ What a caller reads (owner, 2026-11-02): there is no release step of its own. The right is the token's: a caller reads
+  through the Bastion exactly what its token may read on the main installation, and read access behaves the same on both,
+  including the exposure ceiling of the endpoint a token is bound to
 - ⚪ Internet exposure (owner, 2026-11-02): rate limits per client address, automatic blocking of addresses that flood it,
   a timeout for an address after too many failed authentication attempts, and a configurable cache (size, retention,
   metadata revalidation)
