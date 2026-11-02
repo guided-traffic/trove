@@ -106,6 +106,9 @@ never in Valkey or PostgreSQL). It is filtered on every use, so a claim or a gra
   caller may read no version is removed, and `totalHits` is reduced by the results removed from the page (H-347);
 - a version the caller may not read is removed; when it is the upstream's latest, the result shows none of the description, links, `deprecation` and
   `vulnerabilities` that describe it (Q-NUGET-78);
+- for a caller whose read is decided per version, a result the upstream may have matched on a hidden version is removed and counted as removed: a
+  `version:` term that names no readable version, or a hidden upstream latest version with any other term in the query (`matchedOnReadable`), so the
+  presence of a result tells nothing of a hidden version;
 - every registration address is the serving repository's; `projectUrl`, `licenseUrl` and `iconUrl` are links for people and pass as the upstream wrote
   them; `deprecation` and `vulnerabilities` are cleaned as in the registration, every `@id` and `@type` dropped at any depth and an `advisoryUrl` kept
   only as an absolute `http` or `https` link without user info (Q-NUGET-85); a member of a result that R-NUGET-016 does not name is dropped.

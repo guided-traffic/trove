@@ -334,13 +334,13 @@ func TestR_NUGET_016_AnUpstreamThatCannotBeAskedOrFailsLeavesTheCacheSearch(t *t
 // decided per version, a forwarded result lists the readable versions, its version is the latest
 // of them and its total downloads their sum; the metadata, the deprecation and the vulnerabilities
 // of a hidden latest version are left out; a result without a readable version is removed and
-// totalHits reduced.
+// totalHits reduced. The query has no term, so no match rests on the hidden version.
 func TestR_NUGET_034_AForwardedResultShowsOnlyTheVersionsTheCallerMayRead(t *testing.T) {
 	fw := newForwarding(t, authz.Subject{})
 	fw.res.scope = scopeFake{shape: formats.ReadRows, may: func(pkg, version string) bool {
 		return pkg == "newtonsoft.json" && version == "13.0.1" || pkg == "semver.two"
 	}}
-	d := forwardedOf(t, doSearch(t, fw.h, "q=json&semVerLevel=2.0.0"))
+	d := forwardedOf(t, doSearch(t, fw.h, "semVerLevel=2.0.0"))
 	if !slices.Equal(namesOf(d), []string{"Newtonsoft.Json", "Semver.Two"}) || d.TotalHits != 6 {
 		t.Fatalf("results %v, totalHits %d", namesOf(d), d.TotalHits)
 	}
@@ -456,5 +456,44 @@ func TestR_NUGET_016_TheUpstreamIsSentOnlyTheTermsTheWithheldRuleChecked(t *test
 		if got := qs[len(qs)-1].Params.Get("q"); got != want {
 			t.Errorf("%s: the upstream was sent q=%q, want %q", q, got, want)
 		}
+	}
+}
+
+// TestR_NUGET_034_AForwardedResultMatchedOnAHiddenVersionIsRemoved: the upstream matches the terms
+// against versions the caller may not read, so for a caller whose read is decided per version a
+// result is removed, and totalHits reduced, when a version: term names no readable version, and
+// when the upstream's latest version, whose metadata the text terms met, is hidden and the query
+// has a text term. Otherwise the result's presence would tell that a hidden version exists or what
+// it says, as Q-NUGET-74 rules out for the local search.
+func TestR_NUGET_034_AForwardedResultMatchedOnAHiddenVersionIsRemoved(t *testing.T) {
+	fw := newForwarding(t, authz.Subject{})
+	fw.answer = `{"totalHits":1,"data":[{"id":"Newtonsoft.Json","version":"13.0.3","description":"Json.NET",
+	  "versions":[{"version":"13.0.1","downloads":1},{"version":"13.0.3","downloads":3}],"totalDownloads":4}]}`
+	hidesLatest := scopeFake{shape: formats.ReadRows, may: func(_, version string) bool { return version == "13.0.1" }}
+	readsAll := scopeFake{shape: formats.ReadRows, may: func(string, string) bool { return true }}
+	for _, c := range []struct {
+		name  string
+		scope formats.ReadScope
+		query string
+		kept  bool
+	}{
+		{"a version: term of the hidden version", hidesLatest, "q=version:13.0.3", false},
+		{"a version: term of a readable version", hidesLatest, "q=version:13.0.1", true},
+		{"a text term met by the hidden latest version", hidesLatest, "q=json.net", false},
+		{"a text term and a readable version: term", hidesLatest, "q=json+version:13.0.1", false},
+		{"no term", hidesLatest, "", true},
+		{"a text term, every version readable", readsAll, "q=json.net", true},
+		{"a version: term of a readable latest version", readsAll, "q=version:13.0.3", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			fw.res.scope = c.scope
+			d := forwardedOf(t, doSearch(t, fw.h, c.query))
+			if got := len(d.Data) == 1; got != c.kept {
+				t.Fatalf("results %v, want kept %v", namesOf(d), c.kept)
+			}
+			if want := map[bool]int{true: 1, false: 0}[c.kept]; d.TotalHits != want {
+				t.Errorf("totalHits %d, want %d", d.TotalHits, want)
+			}
+		})
 	}
 }

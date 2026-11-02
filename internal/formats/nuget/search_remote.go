@@ -303,7 +303,7 @@ func (f *Format) keepForCaller(ctx context.Context, s searchSource, scope format
 	hits := make([]rows.SearchHit, 0, len(data))
 	removed := 0
 	for _, raw := range data {
-		h, ok, err := f.forwardedHit(ctx, s, scope, raw)
+		h, ok, err := f.forwardedHit(ctx, s, scope, p.Terms, raw)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -320,8 +320,9 @@ func (f *Format) keepForCaller(ctx context.Context, s searchSource, scope format
 // forwardedHit is one upstream result as this caller may see it; ok is false for a result that
 // is removed: one that is no NuGet package, one the remote's include and exclude patterns do not
 // admit, one a claim or a pin rule keeps away from the remote (addressed directly; a virtual
-// repository decides that in its merge), and one of which the caller may read no version.
-func (f *Format) forwardedHit(ctx context.Context, s searchSource, scope formats.ReadScope, raw json.RawMessage) (rows.SearchHit, bool, error) {
+// repository decides that in its merge), one of which the caller may read no version, and one
+// the upstream may have matched on a version the caller may not read (matchedOnReadable).
+func (f *Format) forwardedHit(ctx context.Context, s searchSource, scope formats.ReadScope, terms []rows.SearchTerm, raw json.RawMessage) (rows.SearchHit, bool, error) {
 	h, ok := resultHit(raw)
 	if !ok || !s.call.Repo.Admits(h.LowerID, false) {
 		return rows.SearchHit{}, false, nil
@@ -336,10 +337,32 @@ func (f *Format) forwardedHit(ctx context.Context, s searchSource, scope formats
 	case formats.ReadAll:
 		return h, true, nil
 	case formats.ReadRows:
-		h, ok = readableOnly(h, func(v string) bool { return scope.MayRead(s.ref.Key, h.LowerID, v) })
-		return h, ok, nil
+		kept, ok := readableOnly(h, func(v string) bool { return scope.MayRead(s.ref.Key, h.LowerID, v) })
+		if !ok || !matchedOnReadable(h, kept, terms) {
+			return rows.SearchHit{}, false, nil
+		}
+		return kept, true, nil
 	}
 	return rows.SearchHit{}, false, nil
+}
+
+// matchedOnReadable reports whether the upstream's match of a result rests on versions the caller
+// may read (R-NUGET-034, Q-NUGET-74 for the local search): every version: term must name a version
+// left in kept, and when the upstream's latest version was removed, whose metadata the upstream
+// matched the text terms against, the query may hold no other term. Otherwise the presence of the
+// result, and totalHits, would tell what a hidden version is or says.
+func matchedOnReadable(upstream, kept rows.SearchHit, terms []rows.SearchTerm) bool {
+	readable := make([]string, len(kept.Listed))
+	for i, v := range kept.Listed {
+		readable[i] = v.LowerVersion
+	}
+	if !namesReadable(versionTermsOf(terms), readable) {
+		return false
+	}
+	if kept.Latest.LowerVersion == upstream.Latest.LowerVersion {
+		return true
+	}
+	return !slices.ContainsFunc(terms, func(t rows.SearchTerm) bool { return t.Field != search.FieldVersion })
 }
 
 // resultHit reads one result of an upstream's answer; ok is false for one that is no result.

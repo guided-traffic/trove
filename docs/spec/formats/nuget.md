@@ -1429,7 +1429,10 @@ Priority: **MVP** · Covers: PKG-NUGET-024, PKG-NUGET-028
   version that is no NuGet version and a result without a version are dropped, a caller whose read is
   decided per version sees only the versions it may read (R-NUGET-034), with `totalDownloads` their
   sum, and when the upstream's latest version is among the hidden ones the result shows none of the
-  metadata, `deprecation` and `vulnerabilities` that describe it; members of a result that neither
+  metadata, `deprecation` and `vulnerabilities` that describe it. For such a caller a result is also
+  removed when a `version:` term names no version it may read, and when the upstream's latest
+  version is hidden and the query has another term, because the upstream matched the terms against
+  versions the caller may not read (as Q-NUGET-74 rules out for the local search); members of a result that neither
   R-NUGET-010's result table nor this bullet names are not passed on (Q-NUGET-78).
 - **Withheld queries** (Q-NUGET-4). A query is not forwarded when one of its terms is protected;
   the remote then answers that request with its cache-only search. The plug-in splits `q` into
@@ -4469,7 +4472,9 @@ Context: R-NUGET-016 rewrites the addresses of a forwarded result as R-NUGET-015
 
 **Rationale:** the search, the cache-only search and the merge already speak one row shape, and carrying the forwarded members on the latest version is exactly where R-NUGET-018 wants the package-level fields to come from; a second renderer for the upstream's JSON would have to repeat every rule of R-NUGET-010 and R-NUGET-034 a second time. Dropping the metadata of a hidden latest version is the fail-closed reading of R-NUGET-034 ("only exposed IDs and versions"); fetching the readable version's metadata (c) would turn a search into a registration fill. The development agent revisits this when a client is seen to rely on a member that is dropped, or when the decision on upstream addresses in `deprecation` and `vulnerabilities` (Q-NUGET-85, which the search follows) changes what a remote's registration passes on.
 
-**Applied in the spec:** R-NUGET-016 (the first bullet). Code: [search_remote.go](../../../internal/formats/nuget/search_remote.go) `hit`, `readableOnly`, [forwarded.go](../../../internal/formats/nuget/rows/forwarded.go), [document.go](../../../internal/formats/nuget/search/document.go) `Render`. Tests: `TestR_NUGET_016_AForwardedSearchIsRewrittenIntoTheRemoteAndKeepsTheUpstreamMembers`, `TestR_NUGET_034_AForwardedResultShowsOnlyTheVersionsTheCallerMayRead`, `TestR_NUGET_016_ARemoteForwardsItsSearchAndFallsBackToItsCache` (`test/integration/nuget`).
+**Revisited** after the security audit of the fix wave: the upstream matches a query against every version, so a result kept for a caller who reads row by row could still answer whether a hidden version exists or what it says. Such a result is removed, with `totalHits` reduced, when a `version:` term names no readable version, and when the upstream's latest version is hidden and the query has another term (`matchedOnReadable`); a query without terms keeps it as above.
+
+**Applied in the spec:** R-NUGET-016 (the first bullet). Code: [search_remote.go](../../../internal/formats/nuget/search_remote.go) `hit`, `readableOnly`, `matchedOnReadable`, [forwarded.go](../../../internal/formats/nuget/rows/forwarded.go), [document.go](../../../internal/formats/nuget/search/document.go) `Render`. Tests: `TestR_NUGET_016_AForwardedSearchIsRewrittenIntoTheRemoteAndKeepsTheUpstreamMembers`, `TestR_NUGET_034_AForwardedResultShowsOnlyTheVersionsTheCallerMayRead`, `TestR_NUGET_034_AForwardedResultMatchedOnAHiddenVersionIsRemoved`, `TestR_NUGET_016_ARemoteForwardsItsSearchAndFallsBackToItsCache` (`test/integration/nuget`).
 
 ### Q-NUGET-79 · When a remote forwards: the engine's populate check decides a contact, the cache view and an endpoint that fills no caches search the cache
 
