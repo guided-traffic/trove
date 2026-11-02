@@ -288,6 +288,10 @@ to denial-of-service attempts.
 - ⚪ The cache (owner, 2026-11-02): a small part of the artifacts, never the main installation's object store, which the
   Bastion cannot read; its backend is chosen in the chart, a bucket of the Bastion's own shared by its replicas or a local
   volume per replica, with size limit, eviction by last access and the metadata revalidation period configurable
+- ⚪ Shared state (owner, 2026-11-02): Valkey is optional. With it, the replicas share blocked addresses, rate-limit and
+  failed-sign-in counters, the coordination of fetches and the main installation's answers; without it, each replica works
+  alone with the budgets divided by the number of replicas; losing Valkey costs performance, never correctness (INV-3).
+  With a local volume per replica, the chart can route by path so that each artifact lives on one replica
 - ⚪ The main installation counts the real client: the Bastion stops abuse before a request reaches the main installation,
   and the main installation lists the Bastion's addresses in `server.trusted_proxies`, so its per-address limits apply to
   the client and not to the Bastion
