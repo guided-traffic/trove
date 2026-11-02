@@ -253,9 +253,9 @@ to denial-of-service attempts.
   credential is valid and what it may read, and keeps the answers for a short, bounded time; it holds no copy of
   users, tokens or policies. Decided by the owner on 2026-11-02: the Bastion's own credential towards the main
   installation is a token that a trove administrator of the main installation issues for the Bastion (read only, nothing
-  else), bound to an endpoint of the main installation that serves the Bastion; a client certificate is not its
-  identity, because a TLS-terminating reverse proxy in front of the main installation would not pass it on (a certificate
-  on that endpoint's listener stays possible as a second factor where the proxy passes TLS through). Open for the page:
+  else); a client certificate is not its identity, because a TLS-terminating reverse proxy in front of the main
+  installation would not pass it on. The Bastion connects to the main endpoint of the main installation (owner,
+  2026-11-02): the Bastion replaces the customer endpoint of the earlier plans. Open for the page:
   the bound, the interface on the main installation, the rotation of the Bastion's token, and the state it keeps beyond
   its cache. Catalog entries it pulls forward: the chained
   remote repository RMT-040 to RMT-046 (P2) and the edge deployment profile and its trust pairing DIST-024 and DIST-025
@@ -274,12 +274,14 @@ to denial-of-service attempts.
 - ⚪ Integration and e2e tests: npm and NuGet clients against a Bastion on kind in front of a main installation, cold and
   warm cache, main installation unreachable, token revoked at the main installation, drain of a Bastion replica
 - ⚪ What a caller reads (owner, 2026-11-02): there is no release step of its own. The right is the token's: a caller reads
-  through the Bastion exactly what its token may read on the main installation, and read access behaves the same on both,
-  including the exposure ceiling of the endpoint a token is bound to
+  through the Bastion exactly what its token may read on the main installation, and read access behaves the same on both
 - ⚪ How the Bastion fetches (owner, 2026-11-02): with the caller's token. On a cache miss it forwards the caller's token,
   the main installation decides and serves, and the Bastion caches the bytes; a cached artifact is served to another
   caller only after the main installation said that this caller may read it (an answer kept for the bound). The
   Bastion's own token identifies the Bastion and may only have tokens checked; it reads no package
+- ⚪ How fast a revocation reaches the Bastion (owner, 2026-11-02): the Bastion keeps the main installation's answers for a
+  configurable period (some minutes) and follows a revocation feed of the main installation every few seconds, so a
+  revoked token or a narrowed right is dropped within seconds; widening a right may take the period
 - ⚪ Internet exposure (owner, 2026-11-02): rate limits per client address, automatic blocking of addresses that flood it,
   a timeout for an address after too many failed authentication attempts, and a configurable cache (size, retention,
   metadata revalidation)
