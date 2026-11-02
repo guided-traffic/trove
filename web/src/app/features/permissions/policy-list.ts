@@ -1,7 +1,8 @@
-import { Component, effect, inject, input, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { RouterLink } from '@angular/router';
 import { PermissionPolicy, PolicyApi, PolicyFilters } from '../../api/authz-api';
+import { ProjectFilter } from '../../core/project-filter';
 import { SessionStore } from '../../core/session-store';
 import { TextField } from '../../shared/access/fields';
 import { Needs } from '../../shared/access/needs';
@@ -48,10 +49,15 @@ export class PolicyList {
   /** Query parameters, bound by the router's component input binding. */
   readonly principal = input<string | undefined>();
   readonly repository = input<string | undefined>();
+  /** A project key (the project screen links here); without it the project filter of the top bar applies (R-UI-041). */
+  readonly project = input<string | undefined>();
 
   private readonly api = inject(PolicyApi);
   protected readonly session = inject(SessionStore);
+  private readonly projectFilter = inject(ProjectFilter);
 
+  /** The project the list is limited to: the query parameter, else the filter of the top bar. */
+  protected readonly projectKey = computed(() => this.project() || this.projectFilter.active());
   protected readonly list = new PagedResource<PermissionPolicy>();
   protected readonly principalFilter = signal('');
   protected readonly repositoryFilter = signal('');
@@ -81,6 +87,7 @@ export class PolicyList {
     effect(() => {
       this.principalFilter.set(this.principal() ?? '');
       this.repositoryFilter.set(this.repository() ?? '');
+      this.projectKey();
       // A link with a filter (the authentication settings point at `principal=anonymous`) shows it.
       if (this.principal() || this.repository()) this.panelOpen.set(true);
       untracked(() => void this.apply());
@@ -96,7 +103,11 @@ export class PolicyList {
     };
     this.activeCount.set(Object.values(filters).filter((v) => v !== undefined).length);
     const sort = this.sort();
-    await this.list.start(this.api.list({ ...filters, sort: sort.direction === 'desc' ? '-name' : 'name' }));
+    // The project is not a panel field: a line above the table says it applies (R-UI-041).
+    const project = this.projectKey() ?? undefined;
+    await this.list.start(
+      this.api.list({ ...filters, project, sort: sort.direction === 'desc' ? '-name' : 'name' }),
+    );
   }
 
   protected sortBy(sort: TableSort): void {

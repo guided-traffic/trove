@@ -4,12 +4,24 @@
   } @else {
     <h1 tabindex="-1" i18n="@@policy.heading">Permission policy</h1>
   }
-  <a mat-button routerLink="/admin/permissions" i18n="@@policy.back">All policies</a>
+  @if (policyProject(); as key) {
+    <a mat-button [routerLink]="backLink()" i18n="@@policy.back-project">Back to the project</a>
+  } @else {
+    <a mat-button routerLink="/admin/permissions" i18n="@@policy.back">All policies</a>
+  }
 </header>
 @if (!isNew()) {
   <p class="subject" translate="no">{{ name() }}</p>
 }
-<trove-needs capability="policies:write" />
+@if (policyProject(); as key) {
+  <p class="subject">
+    <ng-container i18n="@@policy.project">Project policy of</ng-container>&ngsp;
+    <a [routerLink]="['/admin/projects', key]" translate="no">{{ key }}</a>
+  </p>
+  <trove-project-needs [state]="projectState()" capability="policies:write" right="managePolicies" />
+} @else {
+  <trove-needs capability="policies:write" />
+}
 
 @if (loadError(); as e) {
   <trove-error-notice [error]="e" (retry)="reload()" />
@@ -40,8 +52,7 @@
             [(value)]="policyName"
             [required]="true"
             [error]="problems('/name')[0] ?? null"
-            i18n-hint="@@policy.name-hint"
-            hint="Cannot be changed later."
+            [hint]="nameHint()"
           />
         }
         <trove-text-field
@@ -112,6 +123,18 @@
         }
         @if (canWrite()) {
           <button mat-stroked-button type="button" (click)="addEntry()" i18n="@@policy.add-entry">Add principal</button>
+          @if (policyProject()) {
+            <trove-principal-picker
+              i18n-label="@@policy.find-principal"
+              label="Find a user or group"
+              name="find-principal"
+              i18n-hint="@@policy.find-principal-hint"
+              hint="Type at least two characters of the name. The match becomes a new entry."
+              [search]="lookupPrincipals"
+              [exclude]="entryPrincipals()"
+              (picked)="addFound($event)"
+            />
+          }
         }
       </section>
 
@@ -136,6 +159,22 @@
             <ng-container i18n="@@policy.covers">Repositories covered now: {{ covers().length }}</ng-container>
           }
         </p>
+
+        @if (policyProject() && canWrite() && projectRepositories().length > 0) {
+          <div role="group" class="selector-buttons" [attr.aria-label]="projectReposLabel">
+            <span class="muted" i18n="@@policy.project-repos">Repositories of the project:</span>
+            @for (r of projectRepositories(); track r) {
+              <button mat-stroked-button type="button" (click)="addSelector(r)">
+                <span class="visually-hidden" i18n="@@policy.add-selector">Add selector</span> <span translate="no">{{ r }}</span>
+              </button>
+            }
+          </div>
+        }
+        @if (policyProject()) {
+          <p class="muted" i18n="@@policy.project-selectors">
+            A project policy covers the repositories of its project only, whatever the selectors name.
+          </p>
+        }
 
         <h3 i18n="@@policy.packages">Package names</h3>
         <p class="muted" i18n="@@policy.patterns-help">

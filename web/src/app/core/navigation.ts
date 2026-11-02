@@ -8,6 +8,8 @@ export interface NavItem {
   readonly icon: string;
   /** Capability from `authz/me` that shows the entry (R-UI-002); none means always shown. */
   readonly capability?: string;
+  /** Also shown to a caller that administers a project, whatever its capabilities (R-UI-041, Q-AUTHZ-181). */
+  readonly projectAdmin?: boolean;
 }
 
 /** A section of the sidebar with nested entries that can be folded. */
@@ -31,7 +33,8 @@ export interface NavArea {
  * **Administration**; in the second, single entries (repositories, endpoints) and folding groups
  * (identity, access, system). Only the screens that exist in the current milestone are listed;
  * the capabilities are those of R-AUTHZ-010. The router and the API decide access, this only
- * hides entries (R-UI-005). Packages, search and the other later screens are added by their
+ * hides entries (R-UI-005). A project administrator without any capability sees the Administration
+ * area with the Projects entry only (R-UI-041). Packages, search and the other later screens are added by their
  * work packages.
  */
 export const NAV_AREAS: readonly NavArea[] = [
@@ -50,6 +53,7 @@ export const NAV_AREAS: readonly NavArea[] = [
     id: 'admin',
     label: $localize`:@@nav.group.admin:Administration`,
     entries: [
+      { kind: 'item', route: '/admin/projects', icon: 'folder_shared', label: $localize`:@@nav.projects:Projects`, capability: 'projects:read', projectAdmin: true },
       { kind: 'item', route: '/admin/repositories', icon: 'inventory_2', label: $localize`:@@nav.repositories:Repositories`, capability: 'repositories:read-config' },
       { kind: 'item', route: '/admin/endpoints', icon: 'router', label: $localize`:@@nav.endpoints:Endpoints`, capability: 'endpoints:read' },
       {
@@ -96,8 +100,10 @@ export class Navigation {
 
   readonly areas = computed<readonly NavArea[]>(() => {
     const capabilities = this.session.capabilities();
-    const administrator = this.session.isAdministrator();
-    const allowed = (i: Pick<NavItem, 'capability'>) => !i.capability || capabilities.includes(i.capability);
+    const administrator = this.session.hasAdminArea();
+    const projectAdmin = this.session.isProjectAdministrator();
+    const allowed = (i: Pick<NavItem, 'capability' | 'projectAdmin'>) =>
+      !i.capability || capabilities.includes(i.capability) || (!!i.projectAdmin && projectAdmin);
     return NAV_AREAS.filter((a) => a.id === 'content' || administrator)
       .map((a): NavArea => ({
         ...a,

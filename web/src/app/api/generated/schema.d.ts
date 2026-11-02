@@ -7377,6 +7377,7 @@ export interface operations {
                      *           "name": "team-web-publish",
                      *           "description": "Team web publishes and tags its own npm scope",
                      *           "resourceType": "repository",
+                     *           "project": null,
                      *           "resources": {
                      *             "repositories": [
                      *               "npm-internal"

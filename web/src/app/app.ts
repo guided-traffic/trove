@@ -27,6 +27,7 @@ import { Layout } from './core/layout';
 import { NavGroup, Navigation } from './core/navigation';
 import { NavState } from './core/nav-state';
 import { PreferencesStore, UiTheme } from './core/preferences-store';
+import { ProjectFilter } from './core/project-filter';
 import { SessionStore } from './core/session-store';
 import { Banner } from './shared/banner';
 import { ErrorNotice } from './shared/error-notice';
@@ -62,6 +63,7 @@ export class App {
   protected readonly navigation = inject(Navigation);
   protected readonly preferences = inject(PreferencesStore);
   protected readonly navState = inject(NavState);
+  protected readonly projectFilter = inject(ProjectFilter);
   protected readonly breadcrumbs = inject(Breadcrumbs);
   private readonly router = inject(Router);
   private readonly dialog = inject(MatDialog);
@@ -158,6 +160,10 @@ export class App {
 
   protected setTheme(theme: UiTheme | null): void {
     void this.preferences.setTheme(theme);
+  }
+
+  protected setProject(key: string | null): void {
+    void this.projectFilter.select(key);
   }
 
   protected setLocale(locale: 'en' | 'de'): void {

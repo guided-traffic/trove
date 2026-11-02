@@ -24,6 +24,7 @@ import { provideGuideFakes } from './fakes-guides';
 // >>> M2 manual
 import { provideManualFakes } from './fakes-manual';
 // <<< M2 manual
+import { provideProjectFakes } from './fakes-projects';
 
 /*
  * In-memory fakes of the typed service interfaces (R-UI-047 component tier). Screens of the later
@@ -37,6 +38,8 @@ export const ADMIN_CAPABILITIES: readonly string[] = [
   'identities:write',
   'policies:read',
   'policies:write',
+  'projects:read',
+  'projects:write',
   'roles:read',
   'roles:write',
   'tokens:read',
@@ -274,5 +277,6 @@ export function provideFakeApis(): Provider[] {
     // >>> M2 manual
     ...provideManualFakes(),
     // <<< M2 manual
+    ...provideProjectFakes(),
   ];
 }

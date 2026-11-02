@@ -19,6 +19,8 @@ Viewing configurations needs the capability `repositories:read-config`; creating
 
 Each row offers **Edit**, **Browse** and, with `repositories:write-config`, **Delete**. **Create repository** opens the wizard.
 
+A repository can belong to a [project](projects.md). The page of such a repository shows its **Project**, and the **Project filter** in the top bar, or the link **Open in the repository list** on a project's page, limits the list to the repositories of one project. Administrators of trove assign repositories in the project's dialog. The administrators of a project create, change and delete the project's repositories without a system role while the project's switch **Manage repositories** is on: the wizard they open from the project page fills in the project and starts the key with the project key and a hyphen, for example `web-libs` in project `web`, and the key is fixed from then on.
+
 ## Create a repository
 
 1. Select **Create repository**.

@@ -104,6 +104,18 @@ trove-root {
     --mat-icon-button-icon-color: var(--trove-nav-fg);
   }
 
+  // The project filter: an icon, then the key or "All projects".
+  .project-button .material-icons {
+    margin-inline-end: var(--trove-space-2);
+  }
+
+  .project-name {
+    max-inline-size: 12rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   // The badge and the name sit in Material's label span, so the space is the badge's own margin.
   .user-button .avatar {
     margin-inline-end: var(--trove-space-2);

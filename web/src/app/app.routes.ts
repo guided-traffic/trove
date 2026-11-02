@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { authGuard } from './core/auth-guard';
+import { adminHomeGuard, authGuard } from './core/auth-guard';
 import { CrumbSpec } from './core/breadcrumbs';
 
 /** The breadcrumb step of a screen area whose routes are loaded lazily and have no title of their own. */
@@ -82,7 +82,13 @@ export const routes: Routes = [
         path: 'admin',
         data: { crumbs: [area.admin] satisfies CrumbSpec[] },
         children: [
-          { path: '', pathMatch: 'full', redirectTo: 'repositories' },
+          // A project administrator without the repository capability starts at the projects (R-UI-041).
+          { path: '', pathMatch: 'full', canActivate: [adminHomeGuard], children: [] },
+          {
+            path: 'projects',
+            data: wrapper($localize`:@@route.projects.title:Projects`),
+            loadChildren: () => import('./features/projects/projects.routes').then((m) => m.PROJECTS_ROUTES),
+          },
           {
             path: 'repositories',
             data: wrapper($localize`:@@route.repositories.title:Repositories`),

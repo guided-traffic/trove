@@ -28,6 +28,8 @@ export interface RepositoryFilters {
   readonly format?: string;
   /** `inactive` keeps the disabled repositories. */
   readonly state?: string;
+  /** A project key: the repositories assigned to that project (R-AUTHZ-026). */
+  readonly project?: string;
 }
 
 /** True when the answer is the narrower consumer view (the caller cannot read the configuration). */
@@ -85,6 +87,7 @@ export class HttpRepositoriesApi extends RepositoriesApi {
       class: filters.class || undefined,
       format: filters.format || undefined,
       state: filters.state || undefined,
+      project: filters.project || undefined,
     };
     return this.client.page<RepositorySummary>('/api/v1/repositories', params as QueryParams);
   }

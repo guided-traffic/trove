@@ -6,6 +6,7 @@ before using a new term in a German text.
 | English | German |
 |---|---|
 | permission policy | Berechtigungsrichtlinie |
+| project (administrators, switches; project policy, project service account) | Projekt (Administratoren, Schalter; Projekt-Richtlinie, Servicekonto des Projekts) |
 | repository | Repository |
 | status | Status |
 | management API | Management-API |

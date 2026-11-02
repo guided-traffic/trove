@@ -248,6 +248,7 @@ export class FakeRepositoriesApi extends RepositoriesApi {
       .filter((r) => !filters.class || r.class === filters.class)
       .filter((r) => !filters.format || r.format === filters.format)
       .filter((r) => filters.state !== 'inactive' || r.disabled === true)
+      .filter((r) => !filters.project || r.project === filters.project)
       .filter(
         (r) =>
           !filters.q ||
@@ -264,7 +265,7 @@ export class FakeRepositoriesApi extends RepositoriesApi {
         disabled: r.disabled ?? false,
         lifecycle: 'active' as const,
         lastActivityAt: r.lastActivityAt ?? null,
-        project: null,
+        project: r.project ?? null,
       }));
   }
 
@@ -305,6 +306,17 @@ export class FakeRepositoriesApi extends RepositoriesApi {
           code: 'invalid_key',
           detail: 'invalid key',
           errors: [{ pointer: '/key', code: 'invalid_key', detail: 'must match the key pattern' }],
+        },
+        null,
+      );
+    }
+    if (doc.project && !doc.key.startsWith(`${doc.project}-`)) {
+      throw new ApiError(
+        422,
+        {
+          code: 'project_prefix_required',
+          detail: 'the key starts with the project key and a hyphen',
+          errors: [{ pointer: '/key', code: 'project_prefix_required', detail: 'prefix' }],
         },
         null,
       );

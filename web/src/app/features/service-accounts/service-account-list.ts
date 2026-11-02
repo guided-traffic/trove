@@ -1,6 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
-import { MatDialog, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
+import { MAT_DIALOG_DATA, MatDialog, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { newIdempotencyKey } from '../../api/client';
@@ -16,7 +16,16 @@ import { ErrorNotice } from '../../shared/error-notice';
 import { DataTable, TableColumn, TableSort } from '../../shared/ui/data-table';
 import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
 
-/** "New service account" (R-UI-026). The idempotency key lives as long as the dialog (R-UI-042). */
+/** What the dialog is opened with: the project key to create a project service account (R-AUTHZ-026). */
+export interface ServiceAccountCreateData {
+  readonly project?: string;
+}
+
+/**
+ * "New service account" (R-UI-026). The idempotency key lives as long as the dialog (R-UI-042). Opened
+ * with a project it creates a project service account: the name starts with the key and a hyphen
+ * (`project_prefix_required` otherwise) and the account belongs to the project for good (R-UI-041).
+ */
 @Component({
   selector: 'trove-service-account-create-dialog',
   imports: [MatButtonModule, MatDialogModule, ErrorNotice, TextField],
@@ -34,8 +43,7 @@ import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filte
           [(value)]="name"
           [required]="true"
           [error]="fieldError('/name')"
-          i18n-hint="@@sa-create.name-hint"
-          hint="Lower-case letters, digits and -, two to 63 characters"
+          [hint]="nameHint"
         />
         <trove-text-field i18n-label="@@sa-create.description" label="Description" name="description" [(value)]="description" [error]="fieldError('/description')" />
       </mat-dialog-content>
@@ -51,9 +59,14 @@ export class ServiceAccountCreateDialog {
   private readonly api = inject(IdentityApi);
   private readonly ref = inject<MatDialogRef<ServiceAccountCreateDialog, ServiceAccount>>(MatDialogRef);
   private readonly notifier = inject(Notifier);
+  private readonly data = inject<ServiceAccountCreateData | null>(MAT_DIALOG_DATA, { optional: true });
   private readonly key = newIdempotencyKey();
 
-  protected readonly name = signal('');
+  protected readonly project = this.data?.project;
+  protected readonly nameHint = this.project
+    ? $localize`:@@sa-create.name-hint-project:Starts with ${this.project}:project:- and cannot be changed later. Lower-case letters, digits and -.`
+    : $localize`:@@sa-create.name-hint:Lower-case letters, digits and -, two to 63 characters`;
+  protected readonly name = signal(this.project ? `${this.project}-` : '');
   protected readonly description = signal('');
   protected readonly busy = signal(false);
   protected readonly error = signal<ApiError | null>(null);
@@ -68,7 +81,11 @@ export class ServiceAccountCreateDialog {
     this.error.set(null);
     try {
       const created = await this.api.createServiceAccount(
-        { name: this.name().trim(), description: this.description().trim() },
+        {
+          name: this.name().trim(),
+          description: this.description().trim(),
+          ...(this.project ? { project: this.project } : {}),
+        },
         this.key,
       );
       this.notifier.status($localize`:@@sa-create.created:Service account created.`);
@@ -124,6 +141,13 @@ export class ServiceAccountCreateDialog {
               <th scope="row"><a [routerLink]="['/admin/service-accounts', a.name]" translate="no">{{ a.name }}</a></th>
               <td>{{ a.description }}</td>
               <td>
+                @if (a.project) {
+                  <a [routerLink]="['/admin/projects', a.project]" translate="no">{{ a.project }}</a>
+                } @else {
+                  –
+                }
+              </td>
+              <td>
                 @if (a.status === 'active') {
                   <span class="ok"><span class="material-icons inline" aria-hidden="true">check_circle</span><ng-container i18n="@@sas.active">Active</ng-container></span>
                 } @else {
@@ -168,6 +192,7 @@ export class ServiceAccountList {
   protected readonly columns: readonly TableColumn[] = [
     { id: 'name', label: $localize`:@@sas.col.name:Name`, sortable: true },
     { id: 'description', label: $localize`:@@sas.col.description:Description` },
+    { id: 'project', label: $localize`:@@sas.col.project:Project` },
     { id: 'status', label: $localize`:@@sas.col.status:Status` },
   ];
 

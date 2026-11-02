@@ -86,13 +86,20 @@ export function settingsOf(form: RepositoryForm, format?: FormatMemberOf): Recor
   };
 }
 
-/** The document a create sends. */
+/** The document a create sends; `project` assigns the repository to a project in the same transaction (R-AUTHZ-026). */
 export function documentOf(
   cls: Repository['class'],
   format: FormatMemberOf,
   form: RepositoryForm,
+  project?: string | null,
 ): Repository {
-  return { key: form.key, class: cls, format: format.name, ...settingsOf(form, format) };
+  return {
+    key: form.key,
+    class: cls,
+    format: format.name,
+    ...(project ? { project } : {}),
+    ...settingsOf(form, format),
+  };
 }
 
 /**

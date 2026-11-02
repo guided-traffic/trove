@@ -1,6 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { ApiError } from '../api/problem';
+import { AdministeredProject } from '../api/projects-api';
 import {
   AuthzMe,
   PermissionCheck,
@@ -54,6 +55,12 @@ export class SessionStore {
   readonly capabilities = computed(() => this._me()?.capabilities ?? []);
   /** Any capability at all: the Administration area is shown (R-UI-002). */
   readonly isAdministrator = computed(() => this.capabilities().length > 0);
+  /** The projects the caller administers through this credential (`authz/me` `projects`, Q-AUTHZ-181). */
+  readonly projects = computed<readonly AdministeredProject[]>(() => this._me()?.projects ?? []);
+  /** Administers at least one project: without any capability this still shows the project screens (R-UI-041). */
+  readonly isProjectAdministrator = computed(() => this.projects().length > 0);
+  /** The Administration area is shown: any capability, or administration of a project (Q-AUTHZ-181). */
+  readonly hasAdminArea = computed(() => this.isAdministrator() || this.isProjectAdministrator());
 
   constructor() {
     this.channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(CHANNEL);
@@ -67,6 +74,24 @@ export class SessionStore {
 
   has(capability: string): boolean {
     return this.capabilities().includes(capability);
+  }
+
+  /** The switches of a project the caller administers, or null for any other project. */
+  projectRights(key: string | null | undefined): AdministeredProject | null {
+    return key ? (this.projects().find((p) => p.key === key) ?? null) : null;
+  }
+
+  /**
+   * Whether the caller may change the policies of `project` (`null`: the global ones): the capability,
+   * or administration of the project while `managePolicies` is on (R-AUTHZ-026).
+   */
+  canWritePolicies(project: string | null | undefined): boolean {
+    return this.has('policies:write') || (this.projectRights(project)?.managePolicies ?? false);
+  }
+
+  /** The same for the repositories of `project`: `repositories:write-config`, or `manageRepositories` on. */
+  canWriteRepositories(project: string | null | undefined): boolean {
+    return this.has('repositories:write-config') || (this.projectRights(project)?.manageRepositories ?? false);
   }
 
   /** Whether the caller holds the system role (`authz/me` `roles`), for what the server checks as a role. */

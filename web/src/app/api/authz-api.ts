@@ -27,6 +27,8 @@ export interface PolicyFilters {
   readonly expandGroups?: boolean;
   /** A repository key. */
   readonly repository?: string;
+  /** A project key: the policies of that project (R-AUTHZ-026). */
+  readonly project?: string;
   readonly sort?: 'name' | '-name';
 }
 

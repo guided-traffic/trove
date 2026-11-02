@@ -4,8 +4,29 @@
     <a mat-flat-button routerLink="/admin/repositories/new" i18n="@@repo.list.create"
       >Create repository</a
     >
+  } @else if (canCreateHere()) {
+    <a
+      mat-flat-button
+      routerLink="/admin/repositories/new"
+      [queryParams]="{ project: projectKey() }"
+      i18n="@@repo.list.create"
+      >Create repository</a
+    >
   }
 </header>
+
+@if (projectKey(); as key) {
+  <p class="project-note" role="status">
+    <span class="material-icons inline" aria-hidden="true">folder_shared</span>
+    <ng-container i18n="@@repo.list.project-note">Showing the repositories of project</ng-container>&ngsp;
+    <strong translate="no">{{ key }}</strong>.
+    @if (project()) {
+      <a routerLink="/admin/repositories" i18n="@@repo.list.project-clear">Show all repositories</a>
+    } @else {
+      <ng-container i18n="@@repo.list.project-hint">Change it with the project filter in the top bar.</ng-container>
+    }
+  </p>
+}
 
 @if (recent.keys().length > 0 && !filtered()) {
   <section aria-labelledby="recent-heading" class="recent">
@@ -36,7 +57,7 @@
       [loading]="list.loading()"
       [error]="list.error()"
       [empty]="list.items().length === 0"
-      [emptyText]="filtered() ? emptyFilteredText : emptyText"
+      [emptyText]="filtered() || projectKey() ? emptyFilteredText : emptyText"
       [hasMore]="list.hasMore()"
       (more)="list.more()"
       (retry)="list.more()"
@@ -88,7 +109,7 @@
               <a mat-button [routerLink]="['/browse', row.key]" i18n="@@repo.action.browse"
                 >Browse</a
               >
-              @if (canDelete() && row.lifecycle !== 'deleting' && !deleting().has(row.key)) {
+              @if (canDeleteRow(row) && row.lifecycle !== 'deleting' && !deleting().has(row.key)) {
                 <button
                   mat-button
                   type="button"

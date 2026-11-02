@@ -8,6 +8,19 @@
 </header>
 <trove-needs id="needs-policies" capability="policies:write" />
 
+@if (projectKey(); as key) {
+  <p class="muted" role="status">
+    <span class="material-icons" aria-hidden="true">folder_shared</span>
+    <ng-container i18n="@@policies.project-note">Showing the policies of project</ng-container>&ngsp;
+    <strong translate="no">{{ key }}</strong>.
+    @if (project()) {
+      <a routerLink="/admin/permissions" i18n="@@policies.project-clear">Show all policies</a>
+    } @else {
+      <ng-container i18n="@@policies.project-hint">Change it with the project filter in the top bar.</ng-container>
+    }
+  </p>
+}
+
 <div class="list-layout" [class.panel-open]="panelOpen()">
   <div class="list-main">
     <div class="list-toolbar">

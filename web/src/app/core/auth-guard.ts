@@ -4,6 +4,20 @@ import { LoginApi } from '../api/login-api';
 import { SessionStore } from './session-store';
 
 /**
+ * `/admin` itself starts at the first screen the caller may use: the repositories, or the projects for
+ * a project administrator without the repository capability (R-UI-041). It runs after `authGuard`, so
+ * the session is known; a redirect function of the route would run before it.
+ */
+export const adminHomeGuard: CanActivateFn = async () => {
+  const session = inject(SessionStore);
+  const router = inject(Router);
+  await session.load();
+  const projectsOnly =
+    !session.has('repositories:read-config') && (session.has('projects:read') || session.isProjectAdministrator());
+  return router.createUrlTree(['/admin', projectsOnly ? 'projects' : 'repositories']);
+};
+
+/**
  * Shapes navigation only; the API decides (R-UI-005). A signed-in session passes. Without a
  * session the guard asks `login-options`: with anonymous access the application runs anonymously
  * (R-UI-004), otherwise it goes to `/login?returnTo=<route>`. If the session could not be

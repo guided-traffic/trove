@@ -15,6 +15,7 @@ import { newIdempotencyKey } from '../../api/client';
 import { JobReference, RepositoriesApi, RepositorySummary } from '../../api/repositories-api';
 import { ApiError } from '../../api/problem';
 import { Notifier } from '../../core/notifier';
+import { ProjectFilter } from '../../core/project-filter';
 import { SessionStore } from '../../core/session-store';
 import { Confirm } from '../../shared/confirm-dialog';
 import { CopyButton } from '../../shared/copy-button';
@@ -55,6 +56,7 @@ export class RepositoryList {
   private readonly session = inject(SessionStore);
   private readonly notifier = inject(Notifier);
   private readonly confirm = inject(Confirm);
+  private readonly projectFilter = inject(ProjectFilter);
   protected readonly recent = inject(RecentRepositories);
 
   /** Query parameters, bound by the router's component input binding. */
@@ -62,6 +64,8 @@ export class RepositoryList {
   readonly class = input<string | undefined>();
   readonly format = input<string | undefined>();
   readonly state = input<string | undefined>();
+  /** A project key (the project screen links here); without it the project filter of the top bar applies (R-UI-041). */
+  readonly project = input<string | undefined>();
 
   protected readonly formats = resource({ loader: () => this.api.formats() });
   protected readonly list = new PagedResource<RepositorySummary>();
@@ -75,7 +79,14 @@ export class RepositoryList {
   protected readonly panelOpen = signal(false);
 
   protected readonly canCreate = computed(() => this.session.has('repositories:write-config'));
-  protected readonly canDelete = this.canCreate;
+  /** The project the list is limited to: the query parameter, else the filter of the top bar. */
+  protected readonly projectKey = computed(() => this.project() || this.projectFilter.active());
+  /** Create goes to the wizard of the project when the list is limited to one the caller manages. */
+  protected readonly canCreateHere = computed(() => this.canCreate() || this.session.canWriteRepositories(this.projectKey()));
+  /** A repository may be deleted by the capability and, in a project with the switch on, by its administrators. */
+  protected canDeleteRow(row: RepositorySummary): boolean {
+    return this.session.canWriteRepositories(row.project);
+  }
   protected readonly formatOptions = computed(() =>
     (valueOf(this.formats) ?? []).map((f) => f.name),
   );
@@ -93,6 +104,7 @@ export class RepositoryList {
         class: this.class(),
         format: this.format(),
         state: this.state(),
+        project: this.projectKey() ?? undefined,
       };
       untracked(() => {
         this.search.set(filters.q ?? '');
@@ -223,6 +235,7 @@ export class RepositoryList {
         class: this.class(),
         format: this.format(),
         state: this.state(),
+        project: this.projectKey() ?? undefined,
       }),
     );
   }

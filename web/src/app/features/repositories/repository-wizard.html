@@ -78,6 +78,14 @@
       </fieldset>
     }
     @case (2) {
+      @if (project(); as projectKey) {
+        <p class="hint" role="note">
+          <span class="material-icons inline" aria-hidden="true">folder_shared</span>
+          <ng-container i18n="@@repo.wizard.project">This repository is created in project</ng-container>&ngsp;
+          <strong translate="no">{{ projectKey }}</strong>.
+          <ng-container i18n="@@repo.wizard.project-hint">Its key starts with the project key and a hyphen.</ng-container>
+        </p>
+      }
       <div class="form-grid">
         <div class="field">
           <label class="field-label" for="f-key" i18n="@@repo.field.key">Key</label>

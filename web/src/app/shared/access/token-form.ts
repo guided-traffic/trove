@@ -65,6 +65,11 @@ export interface TokenDraft {
         [(value)]="lifetime"
         [error]="fieldError('/ttlSeconds', 'lifetime')"
       />
+      @if (lifetimeCapped()) {
+        <p class="hint" i18n="@@token-form.life.capped">
+          The installation caps the lifetime of service-account tokens. A longer lifetime is refused.
+        </p>
+      }
       @if (lifetime() === 'custom') {
         <trove-text-field
           i18n-label="@@token-form.expires"
@@ -190,6 +195,11 @@ export interface TokenDraft {
 export class TokenForm {
   /** Offers "Never expires" (service-account tokens may be non-expiring, R-AUTH-026). */
   readonly allowNonExpiring = input(false);
+  /**
+   * The lifetime is capped by the installation's maximum for service-account tokens, as for the tokens a
+   * project administrator issues (R-AUTHZ-026): the form says so and the server refuses a longer one.
+   */
+  readonly lifetimeCapped = input(false);
   /** The type of the token this form creates; it decides which endpoints can be offered. */
   readonly tokenType = input<'pat' | 'sat'>('pat');
   readonly submitLabel = input.required<string>();

@@ -414,7 +414,15 @@ export class FakeIdentityApi extends IdentityApi {
 
   override serviceAccounts(filters: ServiceAccountFilters): PageFetcher<ServiceAccount> {
     return (cursor, limit) =>
-      arrayPages(() => sorted(this.accounts.filter((a) => !filters.q || a.name.includes(filters.q)), (a) => a.name, filters.sort))(
+      arrayPages(() =>
+        sorted(
+          this.accounts.filter(
+            (a) => (!filters.q || a.name.includes(filters.q)) && (!filters.project || a.project === filters.project),
+          ),
+          (a) => a.name,
+          filters.sort,
+        ),
+      )(
         cursor,
         Math.min(limit, this.pageSize),
       );
@@ -433,6 +441,11 @@ export class FakeIdentityApi extends IdentityApi {
     this.fail();
     this.keys.push(idempotencyKey);
     this.calls.push(`createServiceAccount ${body.name}`);
+    if (body.project && !body.name.startsWith(`${body.project}-`)) {
+      throw problem(422, 'project_prefix_required', {
+        errors: [{ pointer: '/name', code: 'project_prefix_required', detail: 'prefix' }],
+      });
+    }
     const created: ServiceAccount = {
       id: `sa-${body.name}`,
       name: body.name,
@@ -760,7 +773,8 @@ export class FakePolicyApi extends PolicyApi {
         this.policies.filter(
           (p) =>
             (!filters.principal || p.entries.some((e) => e.principal === filters.principal)) &&
-            (!filters.repository || (p.resources.repositories ?? []).includes(filters.repository)),
+            (!filters.repository || (p.resources.repositories ?? []).includes(filters.repository)) &&
+            (!filters.project || p.project === filters.project),
         ),
         (p) => p.name,
         filters.sort,
@@ -778,8 +792,14 @@ export class FakePolicyApi extends PolicyApi {
     this.fail();
     this.keys.push(idempotencyKey);
     this.calls.push(`create ${input.name}`);
+    if (input.project && !(input.name ?? '').startsWith(`${input.project}-`)) {
+      throw problem(422, 'project_prefix_required', {
+        errors: [{ pointer: '/name', code: 'project_prefix_required', detail: 'prefix' }],
+      });
+    }
     const policy = samplePolicy({
       name: input.name ?? '',
+      project: input.project ?? null,
       description: input.description ?? '',
       resources: input.resources ?? {},
       entries: input.entries ?? [],

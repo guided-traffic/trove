@@ -4,6 +4,7 @@ import {
   computed,
   effect,
   inject,
+  input,
   resource,
   signal,
   untracked,
@@ -108,6 +109,9 @@ export class RepositoryWizard implements HasUnsavedChanges {
   private readonly serverAddress = inject(ServerAddress);
   private readonly destroyed = inject(DestroyRef);
 
+  /** Query parameter `project`: the project the new repository is assigned to; its key starts the repository key (R-AUTHZ-026). */
+  readonly project = input<string | undefined>();
+
   /** Generated when the wizard opens and kept until it closes (R-UI-042). */
   private readonly idempotencyKey = newIdempotencyKey();
 
@@ -122,6 +126,8 @@ export class RepositoryWizard implements HasUnsavedChanges {
   protected readonly keyCheck = signal<KeyCheck>('idle');
   protected readonly showErrors = signal(false);
   private created = false;
+  /** The form as the wizard opened it: empty, or with the key prefix of the project. */
+  private initialForm: RepositoryForm = EMPTY_FORM;
   private keyTimer: ReturnType<typeof setTimeout> | undefined;
 
   protected readonly steps = computed(() => [
@@ -195,7 +201,7 @@ export class RepositoryWizard implements HasUnsavedChanges {
   protected readonly body = computed<Repository | null>(() => {
     const cls = this.cls();
     const member = this.member();
-    return cls && member ? documentOf(cls, member, this.form()) : null;
+    return cls && member ? documentOf(cls, member, this.form(), this.project()) : null;
   });
   protected readonly requestJson = computed(() => JSON.stringify(this.body(), null, 2));
   protected readonly curl = computed(() => {
@@ -238,6 +244,16 @@ export class RepositoryWizard implements HasUnsavedChanges {
         }),
       );
     });
+    // A repository of a project starts with the key prefix the server requires (R-AUTHZ-026).
+    effect(() => {
+      const project = this.project();
+      untracked(() => {
+        if (project && this.form() === EMPTY_FORM) {
+          this.initialForm = { ...EMPTY_FORM, key: `${project}-` };
+          this.form.set(this.initialForm);
+        }
+      });
+    });
     // Live check of the key (R-UI-021): the shape at once, availability after a pause.
     effect(() => {
       const key = this.form().key;
@@ -247,7 +263,7 @@ export class RepositoryWizard implements HasUnsavedChanges {
   }
 
   hasUnsavedChanges(): boolean {
-    return !this.created && (this.cls() !== null || this.form() !== EMPTY_FORM);
+    return !this.created && (this.cls() !== null || this.form() !== this.initialForm);
   }
 
   protected chooseClass(cls: RepositoryClass): void {

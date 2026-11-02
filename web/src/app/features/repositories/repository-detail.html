@@ -57,6 +57,10 @@
     <dl class="facts">
       <dt i18n="@@repo.col.class">Class</dt>
       <dd>{{ classText(repo.class) }}</dd>
+      @if (repo.project; as projectKey) {
+        <dt i18n="@@repo.detail.project">Project</dt>
+        <dd><a [routerLink]="['/admin/projects', projectKey]" translate="no">{{ projectKey }}</a></dd>
+      }
       <dt i18n="@@repo.col.format">Format</dt>
       <dd translate="no">{{ repo.format }}</dd>
       <dt i18n="@@repo.detail.layout">Layout</dt>

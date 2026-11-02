@@ -45,6 +45,8 @@ export interface GroupFilters {
 
 export interface ServiceAccountFilters {
   readonly q?: string;
+  /** A project key: the service accounts of that project (R-AUTHZ-026). */
+  readonly project?: string;
   /** `name` (default) or `-name`. */
   readonly sort?: 'name' | '-name';
 }

@@ -174,3 +174,12 @@
     order: 2;
   }
 }
+
+// The repositories of a project policy's project, as buttons that append a selector.
+.selector-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--trove-space-2);
+  margin-block-end: var(--trove-space-2);
+}

@@ -100,15 +100,16 @@ Roles are fixed; there are no custom roles. A role is bound to a user, a group o
 | `policies:read`, `policies:write` | **Permission policies**: read and the preview; create, change, delete |
 | `roles:read`, `roles:write` | **System roles**: read; bind and unbind. Changing a user or group that holds a role needs `roles:write` too |
 | `tokens:read`, `tokens:revoke` | All tokens; revoke the tokens of any user or service account |
-| `repositories:read-config`, `repositories:write-config` | **Repositories**: read every configuration; create, change, delete |
+| `repositories:read-config`, `repositories:write-config` | **Repositories**: read every configuration; create, change, delete, and assign repositories to projects |
 | `endpoints:read`, `endpoints:write` | **Endpoints**: read; change exposure rules |
 | `settings:read`, `settings:write` | **System status** and **Settings**: read; change the authentication settings and run maintenance tasks |
 | `audit:read` | **Audit log** |
-| `ci:read`, `ci:write`, `projects:read`, `projects:write`, `webhooks:read`, `webhooks:write`, `security-settings:write` | Reserved; no screen or operation of this version uses them |
+| `projects:read`, `projects:write` | **Projects**: read every project with its administrators and counts; create, change and delete projects, and set their switches and administrators. Only the `admin` role holds `projects:write`. See [Projects and delegated administration](projects.md) |
+| `ci:read`, `ci:write`, `webhooks:read`, `webhooks:write`, `security-settings:write` | Reserved; no screen or operation of this version uses them |
 
 </details>
 
-The **Administration** area of the UI appears for anyone who holds at least one capability, and each entry only with its capability. Only the `admin` role unlocks the break-glass account.
+The **Administration** area of the UI appears for anyone who holds at least one capability, and each entry only with its capability. It also appears for an administrator of a project who holds no capability, with the **Projects** screen only: a project administrator is not a role but a right on one project, described in [Projects and delegated administration](projects.md). Only the `admin` role unlocks the break-glass account.
 
 The `auditor` reads everything that is not secret and changes nothing: the configuration, users, groups, service accounts, policies, role bindings, token metadata, settings, the audit log, and the metadata of every repository. It downloads no file, publishes, tags and deletes nothing, and the exposure rules of an endpoint apply to it as to everyone. A token of an auditor carries the metadata read only when its scope lists the system item `content:metadata-read`, for example `{"inherit": true, "system": ["content:metadata-read", "repositories:read-config"]}`. To make an identity provider group the auditor from your Helm values, see [Administrators from the Helm values](sign-in-and-identity.md#administrators-from-the-helm-values).
 
@@ -124,7 +125,7 @@ To create a policy, select **New policy**:
 4. Check the **Preview**. It lists errors with **The policy has problems:**, **Warnings**, and **Covered repositories**.
 5. Select **Create policy**.
 
-Editing an existing policy ends with **Review and save**, which shows the differences in **Save these changes?** before **Save policy**. If someone changed the policy meanwhile, a conflict dialog lets you compare and decide. **Delete policy** removes it. Saving and deleting need `policies:write` and a recent sign-in.
+A policy that belongs to a project shows **Project policy of** and the project's key, and is named `<key>-…`; administrators of the project create and change it, within the limits of [Projects and delegated administration](projects.md), with the permission `policies:write` or with the project's switch **Manage policies and service accounts**. The **Project filter** in the top bar limits the list to one project. Editing an existing policy ends with **Review and save**, which shows the differences in **Save these changes?** before **Save policy**. If someone changed the policy meanwhile, a conflict dialog lets you compare and decide. **Delete policy** removes it. Saving and deleting need `policies:write` and a recent sign-in.
 
 The editor refuses an entry for `anonymous` or `authenticated` with any action other than `read`, a policy with an `anonymous` entry that selects repositories by anything but key, and actions other than `read` and `manage` on a virtual repository named by key. It warns, without refusing, when a selector matches no repository yet, when path patterns are used on a package format, and when `anonymous` may read a remote repository, because anyone could then fill its cache from the upstream.
 

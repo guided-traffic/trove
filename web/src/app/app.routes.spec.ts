@@ -21,6 +21,8 @@ const SCREENS: readonly (readonly [url: string, heading: string])[] = [
   ['/profile', 'Profile'],
   ['/profile/tokens', 'Personal tokens'],
   ['/profile/sessions', 'Sessions'],
+  ['/admin/projects', 'Projects'],
+  ['/admin/projects/web', 'Project'],
   ['/admin/repositories', 'Repositories'],
   ['/admin/repositories/new', 'New repository'],
   ['/admin/repositories/npm-local', 'Repository'],

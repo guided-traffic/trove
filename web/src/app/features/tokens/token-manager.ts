@@ -21,7 +21,12 @@ import { ErrorNotice } from '../../shared/error-notice';
 export type TokenOwnerScope =
   | { readonly kind: 'own' }
   | { readonly kind: 'user'; readonly name: string }
-  | { readonly kind: 'service-account'; readonly name: string };
+  | {
+      readonly kind: 'service-account';
+      readonly name: string;
+      /** The key of the account's project (R-AUTHZ-026): its administrators issue and revoke the tokens. */
+      readonly project?: string | null;
+    };
 
 interface RotateChoice {
   readonly overlapSeconds: number;
@@ -102,7 +107,8 @@ export class RotateDialog {
         }
         <trove-token-form
           [submitLabel]="createLabel"
-          [allowNonExpiring]="scope().kind === 'service-account'"
+          [allowNonExpiring]="allowNonExpiring()"
+          [lifetimeCapped]="projectIssues() && !allowNonExpiring()"
           [tokenType]="scope().kind === 'service-account' ? 'sat' : 'pat'"
           [busy]="busy()"
           [failure]="formError()"
@@ -172,13 +178,33 @@ export class TokenManager {
    */
   protected readonly canCreate = computed(() => {
     const s = this.scope();
-    return s.kind === 'own' || (s.kind === 'service-account' && this.session.hasRole('admin'));
+    return s.kind === 'own' || (s.kind === 'service-account' && (this.session.hasRole('admin') || this.projectIssues()));
   });
+  /**
+   * An administrator of the account's project issues its tokens while `managePolicies` is on (R-AUTHZ-026,
+   * Q-AUTHZ-177); the server caps the lifetime, forbids "never expires" and any `system` scope for them.
+   */
+  protected readonly projectIssues = computed(() => {
+    const s = this.scope();
+    return s.kind === 'service-account' && (this.session.projectRights(s.project)?.managePolicies ?? false);
+  });
+  /** A non-expiring token is for the administrator role only; a project administrator's tokens always expire. */
+  protected readonly allowNonExpiring = computed(
+    () => this.scope().kind === 'service-account' && this.session.hasRole('admin'),
+  );
   protected readonly canRotate = computed(() => {
     const s = this.scope();
     return s.kind === 'own' || (s.kind === 'service-account' && this.session.hasRole('admin'));
   });
-  protected readonly canRevoke = computed(() => this.scope().kind === 'own' || this.session.has('tokens:revoke'));
+  /** `tokens:revoke`, or administration of the account's project, whatever its switches say (Q-AUTHZ-177). */
+  protected readonly canRevoke = computed(() => {
+    const s = this.scope();
+    return (
+      s.kind === 'own' ||
+      this.session.has('tokens:revoke') ||
+      (s.kind === 'service-account' && this.session.projectRights(s.project) !== null)
+    );
+  });
   protected readonly canRevokeAll = computed(() => this.canRevoke());
 
   constructor() {

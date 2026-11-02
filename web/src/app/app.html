@@ -44,6 +44,23 @@
   }
 
   <div class="topbar-actions">
+    @if (projectFilter.visible()) {
+      <!-- The project filter of R-UI-041: the selection filters the repository and policy lists. -->
+      <button
+        mat-button
+        type="button"
+        class="project-button"
+        [matMenuTriggerFor]="projectMenu"
+      >
+        <span class="material-icons" aria-hidden="true">folder_shared</span>
+        @if (projectFilter.active(); as key) {
+          <span class="project-name" translate="no">{{ key }}</span>
+        } @else {
+          <span i18n="@@shell.project.all">All projects</span>
+        }
+        <span class="visually-hidden">&ngsp;<ng-container i18n="@@shell.project.menu">Project filter</ng-container></span>
+      </button>
+    }
     @if (showNav()) {
       <!-- The manual page of the current screen, or the overview of the help area (R-UI-050). -->
       <a
@@ -91,6 +108,32 @@
     }
   </div>
 </mat-toolbar>
+
+<!-- The selection is the `projectFilter` preference; "All projects" clears it. -->
+<mat-menu #projectMenu="matMenu" class="project-menu">
+  <button
+    mat-menu-item
+    type="button"
+    role="menuitemradio"
+    [attr.aria-checked]="projectFilter.active() === null"
+    (click)="setProject(null)"
+  >
+    <span class="material-icons" aria-hidden="true">{{ projectFilter.active() === null ? 'check' : 'folder_open' }}</span>
+    <span i18n="@@shell.project.all">All projects</span>
+  </button>
+  @for (p of projectFilter.projects(); track p.key) {
+    <button
+      mat-menu-item
+      type="button"
+      role="menuitemradio"
+      [attr.aria-checked]="projectFilter.active() === p.key"
+      (click)="setProject(p.key)"
+    >
+      <span class="material-icons" aria-hidden="true">{{ projectFilter.active() === p.key ? 'check' : 'folder_open' }}</span>
+      <span translate="no">{{ p.displayName }} ({{ p.key }})</span>
+    </button>
+  }
+</mat-menu>
 
 <mat-menu #userMenu="matMenu">
   <a mat-menu-item routerLink="/profile/tokens" i18n="@@shell.menu.profile">Profile and tokens</a>

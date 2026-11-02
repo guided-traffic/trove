@@ -28,11 +28,12 @@ Readers on GitHub can browse the same files here.
 5. [Endpoints and exposure rules](admin/endpoints.md)
 6. [Sign-in and identities](admin/sign-in-and-identity.md)
 7. [Permissions](admin/permissions.md)
-8. [Managing tokens](admin/tokens.md)
-9. [Managing repositories](admin/repositories.md)
-10. [Monitoring and operations](admin/operations.md)
-11. [Upgrades](admin/upgrades.md)
-12. [Known limitations](admin/limitations.md)
+8. [Projects and delegated administration](admin/projects.md)
+9. [Managing tokens](admin/tokens.md)
+10. [Managing repositories](admin/repositories.md)
+11. [Monitoring and operations](admin/operations.md)
+12. [Upgrades](admin/upgrades.md)
+13. [Known limitations](admin/limitations.md)
 
 The order of these two lists is the order of the manual in the UI; a test in
 [internal/manual](../../internal/manual/) fails when this page and the embedded contents disagree.

@@ -16,6 +16,7 @@ export const HELP_TOPICS: readonly (readonly [route: string, topic: HelpTopic])[
   ['/guides', { section: 'user', page: 'client-setup' }],
   ['/setup', { section: 'user', page: 'client-setup' }],
   ['/profile/tokens', { section: 'user', page: 'access-tokens' }],
+  ['/admin/projects', { section: 'admin', page: 'projects' }],
   ['/admin/repositories', { section: 'admin', page: 'repositories' }],
   ['/admin/endpoints', { section: 'admin', page: 'endpoints' }],
   ['/admin/users', { section: 'admin', page: 'sign-in-and-identity' }],

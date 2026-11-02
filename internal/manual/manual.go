@@ -46,7 +46,7 @@ func contents() toc {
 		}},
 		{"admin", "Administrator guide", []string{
 			"overview", "installation", "configuration", "tls-and-certificates", "endpoints", "sign-in-and-identity",
-			"permissions", "tokens", "repositories", "operations", "upgrades", "limitations",
+			"permissions", "projects", "tokens", "repositories", "operations", "upgrades", "limitations",
 		}},
 	}
 }

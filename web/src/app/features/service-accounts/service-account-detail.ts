@@ -28,10 +28,22 @@ import { TokenManager, TokenOwnerScope } from '../tokens/token-manager';
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@sa.heading">Service account</h1>
-      <a mat-button routerLink="/admin/service-accounts" i18n="@@sa.back">All service accounts</a>
+      @if (project(); as projectKey) {
+        <a mat-button [routerLink]="['/admin/projects', projectKey]" i18n="@@sa.back-project">Back to the project</a>
+      } @else {
+        <a mat-button routerLink="/admin/service-accounts" i18n="@@sa.back">All service accounts</a>
+      }
     </header>
     <p class="subject" translate="no">{{ name() }}</p>
-    <trove-needs capability="identities:write" />
+    @if (project(); as projectKey) {
+      <p class="subject">
+        <ng-container i18n="@@sa.project">Service account of project</ng-container>&ngsp;
+        <a [routerLink]="['/admin/projects', projectKey]" translate="no">{{ projectKey }}</a>
+      </p>
+    }
+    @if (!canWrite()) {
+      <trove-needs capability="identities:write" />
+    }
 
     @if (loadError(); as e) {
       <trove-error-notice [error]="e" (retry)="load()" />
@@ -65,21 +77,27 @@ import { TokenManager, TokenOwnerScope } from '../tokens/token-manager';
               @if (a.status === 'active') {
                 <button mat-button type="button" [disabled]="busy()" (click)="disable()" i18n="@@sa.disable">Disable</button>
               } @else {
-                <button mat-button type="button" [disabled]="busy()" (click)="enable()" i18n="@@sa.enable">Enable</button>
+                <button mat-button type="button" [disabled]="busy() || !canEnable()" aria-describedby="sa-enable-note" (click)="enable()" i18n="@@sa.enable">Enable</button>
               }
               <button mat-button type="button" [disabled]="busy()" (click)="remove()" i18n="@@sa.delete">Delete</button>
             </div>
           }
         </form>
+        @if (a.status !== 'active' && canWrite() && !canEnable()) {
+          <p id="sa-enable-note" class="muted" role="note">
+            <span class="material-icons" aria-hidden="true">lock</span>
+            <ng-container i18n="@@sa.enable-note">Enabling needs the project's switch for policies and service accounts, which is off. An administrator of trove can switch it on.</ng-container>
+          </p>
+        }
       </section>
 
-      @if (session.has('roles:read')) {
+      @if (session.has('roles:read') && !a.project) {
         <trove-principal-roles [principal]="'sa:' + a.name" />
       }
 
       <section class="card" aria-labelledby="sa-tokens">
         <h2 id="sa-tokens" i18n="@@sa.tokens">Tokens</h2>
-        @if (session.has('tokens:read')) {
+        @if (canReadTokens()) {
           <trove-token-manager [scope]="scope()" />
         } @else {
           <p i18n="@@sa.tokens-denied">You need the permission to read tokens to manage the tokens of this account.</p>
@@ -108,8 +126,24 @@ export class ServiceAccountDetail {
   protected readonly description = signal('');
   protected readonly busy = signal(false);
 
-  protected readonly canWrite = computed(() => this.session.has('identities:write'));
-  protected readonly scope = computed<TokenOwnerScope>(() => ({ kind: 'service-account', name: this.name() }));
+  /** The project of the account, or null for a global account (R-AUTHZ-026). */
+  protected readonly project = computed(() => this.account()?.project ?? null);
+  /** `identities:write`, or administration of the account's project (update, disable, delete: never blocked by a switch). */
+  protected readonly canWrite = computed(
+    () => this.session.has('identities:write') || this.session.projectRights(this.project()) !== null,
+  );
+  /** Enabling needs `managePolicies` in a project (Q-AUTHZ-177); a disabled account of a project with it off waits for the switch. */
+  protected readonly canEnable = computed(
+    () => this.session.has('identities:write') || (this.session.projectRights(this.project())?.managePolicies ?? false),
+  );
+  protected readonly canReadTokens = computed(
+    () => this.session.has('tokens:read') || this.session.projectRights(this.project()) !== null,
+  );
+  protected readonly scope = computed<TokenOwnerScope>(() => ({
+    kind: 'service-account',
+    name: this.name(),
+    project: this.project(),
+  }));
 
   constructor() {
     effect(() => {
@@ -194,7 +228,8 @@ export class ServiceAccountDetail {
     try {
       await this.api.deleteServiceAccount(this.name());
       this.notifier.status($localize`:@@sa.deleted:Service account deleted.`);
-      await this.router.navigate(['/admin/service-accounts']);
+      const projectKey = this.project();
+      await this.router.navigate(projectKey ? ['/admin/projects', projectKey] : ['/admin/service-accounts']);
     } catch (e) {
       this.actionError.set(asApiError(e));
     }

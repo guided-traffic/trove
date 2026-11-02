@@ -109,7 +109,8 @@ export class RepositoryDetail implements HasUnsavedChanges {
   protected readonly warnings = signal<readonly string[]>([]);
   protected readonly deletion = signal<JobReference | null>(null);
 
-  protected readonly canWrite = computed(() => this.session.has('repositories:write-config'));
+  /** The capability, or `manageRepositories` of the repository's project while it is on (R-AUTHZ-026). */
+  protected readonly canWrite = computed(() => this.session.canWriteRepositories(this.stored()?.project));
   protected readonly loadFailure = computed(() => {
     const e = this.loaded.error();
     return e ? asApiError(e) : null;

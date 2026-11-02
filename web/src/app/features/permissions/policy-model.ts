@@ -84,10 +84,14 @@ export function formFromPolicy(p: PermissionPolicy): PolicyForm {
   };
 }
 
-/** The body of create, replace and validate. `name` is part of it on create only. */
-export function inputFromForm(f: PolicyForm, withName: boolean): PermissionPolicyInput {
+/**
+ * The body of create, replace and validate. `name` is part of it on create only; `project` is the key
+ * of a project policy (R-AUTHZ-026) and absent for a global one.
+ */
+export function inputFromForm(f: PolicyForm, withName: boolean, project?: string | null): PermissionPolicyInput {
   return {
     ...(withName ? { name: f.name.trim() } : {}),
+    ...(project ? { project } : {}),
     description: f.description.trim(),
     resourceType: 'repository',
     resources: {
@@ -206,6 +210,8 @@ export function warningText(code: string): string {
       return $localize`:@@policy.warning.matches-nothing:A repository selector matches no repository yet.`;
     case 'anonymous_populates_remote':
       return $localize`:@@policy.warning.anonymous-remote:Anonymous read on a remote repository lets anyone fill its cache from upstream.`;
+    case 'selector_outside_project':
+      return $localize`:@@policy.warning.outside-project:A repository selector names a repository that left the project, so it covers nothing.`;
     default:
       return code;
   }

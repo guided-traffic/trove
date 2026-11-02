@@ -23,3 +23,9 @@
   gap: var(--trove-space-2);
   margin-block-start: var(--trove-space-1);
 }
+
+// The line that says the list is limited to a project (R-UI-041).
+.project-note {
+  margin-block: 0 var(--trove-space-3);
+  color: var(--mat-sys-on-surface-variant);
+}
