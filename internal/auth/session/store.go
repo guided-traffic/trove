@@ -376,12 +376,14 @@ func (s *Store) sharedFill(ctx context.Context, key string, fill func(context.Co
 					s.log.Error("a shared session lookup panicked", "panic", p)
 					f.e, f.err = nil, errs.E(errs.Internal, errs.CodeInternal, "The session cannot be checked right now.")
 				}
-				close(f.done)
+				// Leave the map before the answer is out: a request that comes after the
+				// answer starts its own query instead of joining one that has ended.
 				s.fmu.Lock()
 				if s.flights[key] == f {
 					delete(s.flights, key)
 				}
 				s.fmu.Unlock()
+				close(f.done)
 			}()
 			fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), flightFillTimeout)
 			defer cancel()
