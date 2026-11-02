@@ -295,7 +295,9 @@ Package IDs:
   path a client sends; such a path is no resource (404) and asks nothing of the upstream, and a
   forwarded search result with such an ID is removed, because an upstream would lowercase it into
   another ID's while patterns, claims and pin rules compare the name character by character
-  (`id.ClientForm`; security audit of the fix wave). The declared ID MUST equal it once both
+  (`id.ClientForm`; security audit of the fix wave). A client whose case table leaves such a
+  character unchanged cannot restore that legacy ID through trove: the failure is closed, the
+  direction Q-NUGET-3 accepts for a case-table difference. The declared ID MUST equal it once both
   are lowercased character by character with Unicode's simple lowercase mapping, as .NET's
   `ToLowerInvariant` lowercases an ID into its path, and the rows of the cached package take the path's
   ID (R-NUGET-015, Q-NUGET-84). trove never lowercases a non-ASCII ID to build a name or a URL, so no ID

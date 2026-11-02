@@ -691,6 +691,10 @@ func TestR_NUGET_015_APackageTheFlatContainerDoesNotHaveIsFetchedFromThePackageC
 	}
 }
 
+// TestR_NUGET_003_ANonASCIIIDOnARemoteIsServedAndCached: a legacy ID outside ASCII is served and cached under the path a
+// client builds, which lowercases every character (.NET ToLowerInvariant); trove lowercases nothing of it but its ASCII
+// letters. The same ID with its capital letter left in the path comes from no client and is the 404 of a missing
+// resource (id.ClientForm, R-NUGET-003).
 func TestR_NUGET_003_ANonASCIIIDOnARemoteIsServedAndCached(t *testing.T) {
 	e := newRemoteEnv(t, remoteOptions{})
 	rep := e.start(1)[0]
@@ -698,7 +702,10 @@ func TestR_NUGET_003_ANonASCIIIDOnARemoteIsServedAndCached(t *testing.T) {
 	if err := e.stub.Publish(declared, "1.0.0", nil); err != nil {
 		t.Fatal(err)
 	}
-	escaped := url.PathEscape("Ünïcode.pkg") // only ASCII letters are lowercased by trove
+	if l := e.get(rep, rRemote, "v3/flatcontainer/"+url.PathEscape("Ünïcode.pkg")+"/index.json"); l.Status != 404 {
+		t.Errorf("a path with the capital Ü no client sends: %d %s, want 404", l.Status, l.Body)
+	}
+	escaped := url.PathEscape("ünïcode.pkg") // the client's lowercase form; trove lowercases only ASCII letters itself
 	l := e.get(rep, rRemote, "v3/flatcontainer/"+escaped+"/index.json")
 	if l.Status != 200 || strings.Join(versionsOf(t, l), ",") != "1.0.0" {
 		t.Fatalf("version list: %d %s", l.Status, l.Body)
@@ -714,10 +721,10 @@ func TestR_NUGET_003_ANonASCIIIDOnARemoteIsServedAndCached(t *testing.T) {
 	if n.Status != 200 {
 		t.Fatalf("package: %d %s", n.Status, n.Body)
 	}
-	if got := e.cacheRows(rRemote, "Ünïcode.pkg"); got != 1 {
+	if got := e.cacheRows(rRemote, "ünïcode.pkg"); got != 1 {
 		t.Errorf("%d rows for the ID, want 1", got)
 	}
-	if got := e.st.Text(`SELECT p.display_name FROM packages p JOIN repositories r ON r.id = p.repo_id WHERE r.key = $1 AND p.name = $2`, rRemote, "Ünïcode.pkg"); got != declared {
+	if got := e.st.Text(`SELECT p.display_name FROM packages p JOIN repositories r ON r.id = p.repo_id WHERE r.key = $1 AND p.name = $2`, rRemote, "ünïcode.pkg"); got != declared {
 		t.Errorf("display name = %q", got)
 	}
 }
