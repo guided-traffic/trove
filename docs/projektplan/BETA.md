@@ -300,6 +300,8 @@ to denial-of-service attempts.
   installation in batches (who, what, when, address; origin Bastion), under the same `audit.record_downloads` switch; it
   buffers them, bounded, while the main installation is unreachable and sends them later; events lost to a full buffer are
   counted and reported
+- ⚪ No web interface (owner, 2026-11-02): the Bastion serves the package clients and raw downloads with tokens only; no
+  login, no session, no UI
 - ⚪ The main installation counts the real client: the Bastion stops abuse before a request reaches the main installation,
   and the main installation lists the Bastion's addresses in `server.trusted_proxies`, so its per-address limits apply to
   the client and not to the Bastion
