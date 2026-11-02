@@ -309,6 +309,15 @@ to denial-of-service attempts.
   authentication, misses, block duration, a block list shared through Valkey); its chart can put a coarser per-address
   limit in front at HAProxy Ingress, which can be switched off and is set wider than the Bastion's own. Volumetric attacks
   on bandwidth are the network provider's, not the Bastion's
+- ⚪ The URL space of the main installation (2026-11-02): the Bastion holds no repository list; every repository of the main
+  installation is reachable under the same paths, and the main installation renders documents for the Bastion's host
+  (the Bastion sends its base URL as the forwarded host; the main installation lists the Bastion in `trusted_proxies` and
+  `additional_base_urls`), so the Bastion carries no format knowledge
+- ⚪ Metadata (owner, 2026-11-02): the main installation marks a document that is the same for every caller who reads the
+  whole repository; the Bastion serves that copy for the metadata period to each caller for whom the main installation
+  confirmed a full read of the repository (an answer kept like the others, under the revocation feed). A filtered
+  document is never shared: it goes to the main installation per caller with a conditional request. Artifacts are shared
+  after the main installation said the caller may read them
 - ⚪ The main installation counts the real client: the Bastion stops abuse before a request reaches the main installation,
   and the main installation lists the Bastion's addresses in `server.trusted_proxies`, so its per-address limits apply to
   the client and not to the Bastion
