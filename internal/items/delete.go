@@ -238,8 +238,12 @@ func (s *Store) removeRows(ctx context.Context, tx meta.Tx, qs *q.Queries, w who
 		}
 	}
 	sort.Slice(folders, func(i, j int) bool { return folders[i].Path > folders[j].Path })
+	removing := make(map[string]bool, len(folders))
 	for _, f := range folders {
-		if _, err := s.removeEmptied(ctx, tx, qs, repo.ID, f.Path, true); err != nil {
+		removing[f.Path] = true
+	}
+	for _, f := range folders {
+		if _, err := s.removeEmptied(ctx, tx, qs, repo.ID, f.Path, true, removing); err != nil {
 			return err
 		}
 	}

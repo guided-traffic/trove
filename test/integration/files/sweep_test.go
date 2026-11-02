@@ -70,3 +70,64 @@ func TestR_STOR_018_ARemovalDoesNotWaitForAFolderAnotherTransactionHolds(t *test
 		t.Errorf("%d emptied folders stayed after the holder ended", n)
 	}
 }
+
+// TestR_STOR_018_TheSweepOfADeletedSubtreeTakesItsExplicitFoldersWhenAHeldOneIsGone: DELETE a/ with
+// the explicit folders a/, a/b/ and a/b/c/ while another transaction is deleting the empty a/b/c/
+// and holds it. The removal skips the held a/b/c/, so a/b/ and a/ still have a child and stay; the
+// sweep after the commit waits for the holder, finds a/b/c/ gone and walks up the deleted subtree
+// as the removal would have, explicit folders included, so the 204 leaves nothing of a/ (Q-NUGET-88).
+// Before, the sweep stopped at a folder it found gone and left the explicit a/ and a/b/.
+func TestR_STOR_018_TheSweepOfADeletedSubtreeTakesItsExplicitFoldersWhenAHeldOneIsGone(t *testing.T) {
+	e := newEnv(t)
+	e.breakGlass()
+	r := e.newReplica("a", replicaOpts{})
+	r.createRepository("generic-subtree", nil)
+	for _, p := range []string{"a/", "a/b/", "a/b/c/"} {
+		if res := r.put("admin", "/files/generic-subtree/"+p, ""); res.status != 201 {
+			t.Fatalf("PUT %s: %d %s", p, res.status, res.body)
+		}
+	}
+	if n := e.number("SELECT count(*) FROM items WHERE path IN ('a', 'a/b', 'a/b/c') AND kind = 'folder' AND explicit_folder"); n != 3 {
+		t.Fatalf("%d explicit folders, want 3", n)
+	}
+
+	ctx := context.Background()
+	cfg, err := pgx.ParseConfig(testenv.PgDSN(t, e.db))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := pgx.ConnectConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close(context.Background()) })
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	// The concurrent delete of the empty a/b/c/, holding its row until it commits.
+	if tag, err := tx.Exec(ctx, "DELETE FROM items WHERE path = 'a/b/c' AND kind = 'folder'"); err != nil || tag.RowsAffected() != 1 {
+		t.Fatalf("hold and delete a/b/c: %v %v", tag, err)
+	}
+
+	done := make(chan response, 1)
+	go func() { done <- r.do("admin", "DELETE", "/files/generic-subtree/a/", nil) }()
+	waitFor(t, "the sweep of the removal waits for the held folder", 8*time.Second, func() bool {
+		select {
+		case res := <-done:
+			t.Fatalf("the delete answered before the holder ended: %d %s", res.status, res.body)
+		default:
+		}
+		return e.number("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'") > 0
+	})
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if res := <-done; res.status != 204 {
+		t.Fatalf("delete: %d %s", res.status, res.body)
+	}
+	if n := e.number("SELECT count(*) FROM items WHERE path = 'a' OR path LIKE 'a/%'"); n != 0 {
+		t.Errorf("%d items of the deleted a/ stayed after its 204", n)
+	}
+}

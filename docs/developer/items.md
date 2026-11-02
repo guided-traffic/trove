@@ -152,7 +152,9 @@ A removing transaction (`Delete` at once, `RemoveIn`) never waits for the lock o
 may hold a package row that a deploy waits for while that deploy holds the folder `FOR SHARE` (a format's route locks the row before `RemoveIn`, the generic layer
 in `DeleteSpec.Extra`), so `removeEmptied` takes the folder with `LockFolderExclusiveFree` (`FOR UPDATE SKIP LOCKED`); a folder another transaction holds stays
 for now, and the sweep registered with `meta.Tx.After` removes it after the commit in a transaction of its own, which holds no other lock and waits for the holder,
-when it is still empty then, and walks up. The folder transactions of the job `items-delete` hold nothing else and use the waiting `removeFolderIfEmpty`. A new
+when it is still empty then, and walks up: through the folders of the deleted subtree (`heldFolder.removing`) as the removal would have, explicit ones
+included, and above it through the implicit folders. A held folder the holder removed itself is gone, and the walk goes on from it, because the removal
+kept its ancestors only for it (`removedOrGone`). The folder transactions of the job `items-delete` hold nothing else and use the waiting `removeFolderIfEmpty`. A new
 removal inside a caller's transaction uses `removeEmptied` and `sweepAncestors`, never the waiting pair.
 
 ## Tests

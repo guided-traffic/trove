@@ -34,13 +34,17 @@ type heldFolder struct {
 	repo  int64
 	path  string
 	force bool
+	// removing are the folders of the subtree the removal deletes (nil for the implicit
+	// folders above a removed item): the sweep removes an ancestor of path that is one of them
+	// as the removal would have, explicit or not, once nothing is left below it.
+	removing map[string]bool
 }
 
 // removeEmptied is removeFolderIfEmpty in a removing transaction: it never waits for the
 // folder's lock. A folder another transaction holds stays for now and is removed after the
 // commit if it is still empty then; it is reported as not removed, so a caller that walks up
 // stops below it.
-func (s *Store) removeEmptied(ctx context.Context, tx meta.Tx, qs *q.Queries, rid int64, path string, force bool) (bool, error) {
+func (s *Store) removeEmptied(ctx context.Context, tx meta.Tx, qs *q.Queries, rid int64, path string, force bool, removing map[string]bool) (bool, error) {
 	rows, err := qs.LockFolderExclusiveFree(ctx, q.LockFolderExclusiveFreeParams{RepoID: rid, Path: path})
 	if err != nil {
 		return false, err
@@ -50,7 +54,7 @@ func (s *Store) removeEmptied(ctx context.Context, tx meta.Tx, qs *q.Queries, ri
 		if err != nil || !live {
 			return false, err
 		}
-		s.afterCommit(ctx, tx, heldFolder{repo: rid, path: path, force: force})
+		s.afterCommit(ctx, tx, heldFolder{repo: rid, path: path, force: force, removing: removing})
 		return false, nil
 	}
 	return removeLockedFolder(ctx, qs, rid, path, rows[0].ID, rows[0].ExplicitFolder, force)
@@ -60,13 +64,23 @@ func (s *Store) removeEmptied(ctx context.Context, tx meta.Tx, qs *q.Queries, ri
 // removed item that have no other child go, bottom up, without waiting for a lock.
 func (s *Store) sweepAncestors(ctx context.Context, tx meta.Tx, qs *q.Queries, rid int64, parent string) error {
 	for parent != "" {
-		gone, err := s.removeEmptied(ctx, tx, qs, rid, parent, false)
+		gone, err := s.removeEmptied(ctx, tx, qs, rid, parent, false, nil)
 		if err != nil || !gone {
 			return err
 		}
 		parent = ParentOf(parent)
 	}
 	return nil
+}
+
+// removedOrGone removes a folder that is empty and reports left when it is still there (a child
+// keeps it, or it is explicit and force is not set); a folder that is gone is not left.
+func removedOrGone(ctx context.Context, qs *q.Queries, rid int64, path string, force bool) (left bool, err error) {
+	gone, err := removeFolderIfEmpty(ctx, qs, rid, path, force)
+	if err != nil || gone {
+		return false, err
+	}
+	return qs.FolderLive(ctx, q.FolderLiveParams{RepoID: rid, Path: path})
 }
 
 // afterCommit notes a held folder in the transaction's slot and, for the first one, registers
@@ -85,9 +99,12 @@ func (s *Store) afterCommit(ctx context.Context, tx meta.Tx, f heldFolder) {
 }
 
 // sweepHeld removes the folders a committed removal found held, each in a transaction of its
-// own that waits for the holder, and the implicit folders above one that went. A failure (a
-// lock_timeout behind a long deploy) is logged: the folder stays until a later removal below it
-// or a delete of it takes it.
+// own that waits for the holder, then walks up as the removal would have: the folders of the
+// deleted subtree go when nothing is left below them, explicit ones included, and above it the
+// implicit folders without another child. A held folder the holder removed itself (a
+// concurrent delete) is gone already; the walk goes on from it, because the removal found its
+// ancestors kept only by it. A failure (a lock_timeout behind a long deploy) is logged: the
+// folder stays until a later removal below it or a delete of it takes it.
 func (s *Store) sweepHeld(ctx context.Context, folders []heldFolder) {
 	for _, f := range folders {
 		err := s.run.InTx(ctx, func(tx meta.Tx) error {
@@ -95,11 +112,16 @@ func (s *Store) sweepHeld(ctx context.Context, folders []heldFolder) {
 			if err != nil {
 				return err
 			}
-			gone, err := removeFolderIfEmpty(ctx, qs, f.repo, f.path, f.force)
-			if err != nil || !gone {
+			if left, err := removedOrGone(ctx, qs, f.repo, f.path, f.force); err != nil || left {
 				return err
 			}
-			return cleanAncestors(ctx, qs, f.repo, ParentOf(f.path))
+			parent := ParentOf(f.path)
+			for ; parent != "" && f.removing[parent]; parent = ParentOf(parent) {
+				if left, err := removedOrGone(ctx, qs, f.repo, parent, true); err != nil || left {
+					return err
+				}
+			}
+			return cleanAncestors(ctx, qs, f.repo, parent)
 		})
 		if err != nil {
 			s.log.Warn("a folder that a removal emptied was not removed after its commit; it stays until a later removal takes it",
