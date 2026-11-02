@@ -1,0 +1,61 @@
+{
+  "gitlab_version": "19.0.1-ee",
+  "recorded": "2026-11-02",
+  "case": "push-protected-branch-aud-array",
+  "description": "The same job's second ID token, aud an array of two.",
+  "job": {
+    "name": "claims",
+    "pipeline": "main",
+    "variable": "ARRAY_ID_TOKEN",
+    "audience": [
+      "https://packages.example.com",
+      "https://vault.example.com"
+    ],
+    "timeout_seconds": 3600,
+    "script_started_at": 1793650394,
+    "parts": 3
+  },
+  "header": {
+    "alg": "RS256",
+    "kid": "1H_duFYz_6cbCyL0A7ZsWLVAEy--JVCOVs98RFcGiGM",
+    "typ": "JWT"
+  },
+  "claims": {
+    "aud": [
+      "https://packages.example.com",
+      "https://vault.example.com"
+    ],
+    "ci_config_ref_uri": "gitlab.example.com/trove-oidc-validation/billing/invoice-api//.gitlab-ci.yml@refs/heads/main",
+    "ci_config_sha": "e3911b2166e3ccbfad6a8d0b3cdb8e1ee65a4e95",
+    "exp": 1793653994,
+    "iat": 1793650394,
+    "iss": "https://gitlab.example.com",
+    "job_id": "34",
+    "job_namespace_id": "3",
+    "job_namespace_path": "trove-oidc-validation/billing",
+    "job_project_id": "1",
+    "job_project_path": "trove-oidc-validation/billing/invoice-api",
+    "job_source": "push",
+    "jti": "595da543-b9ea-4568-a423-6a2c74a78893",
+    "namespace_id": "3",
+    "namespace_path": "trove-oidc-validation/billing",
+    "nbf": 1793650389,
+    "pipeline_id": "20",
+    "pipeline_source": "push",
+    "project_id": "1",
+    "project_path": "trove-oidc-validation/billing/invoice-api",
+    "project_visibility": "private",
+    "ref": "main",
+    "ref_path": "refs/heads/main",
+    "ref_protected": "true",
+    "ref_type": "branch",
+    "runner_environment": "self-hosted",
+    "runner_id": 1,
+    "sha": "e3911b2166e3ccbfad6a8d0b3cdb8e1ee65a4e95",
+    "sub": "project_path:trove-oidc-validation/billing/invoice-api:ref_type:branch:ref:main",
+    "user_access_level": "owner",
+    "user_email": "jdoe@example.com",
+    "user_id": "1",
+    "user_login": "jdoe"
+  }
+}

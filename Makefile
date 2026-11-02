@@ -445,6 +445,15 @@ oidc-stub-image: ## Build the GitLab-shaped OIDC issuer double image (OIDC_STUB_
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(IMAGE_ARCH) go build -trimpath -ldflags '-s -w' -o .out/oidcstub/oidcstub-linux-$(IMAGE_ARCH) ./test/oidcstub/cmd/oidcstub
 	docker buildx build --load --platform linux/$(IMAGE_ARCH) --build-arg RUNTIME_BASE_IMAGE=$(RUNTIME_BASE_IMAGE) \
 	  -f test/oidcstub/Containerfile -t $(OIDC_STUB_IMAGE) .out/oidcstub
+
+# Re-records test/oidcstub/testdata from a real GitLab (Q-CI-25, docs/developer/e2e.md "Validating the double against a
+# real GitLab"). Never part of CI. TROVE_GITLAB_URL and TROVE_GITLAB_TOKEN (an administrator's token, scope api) come
+# from the environment; TROVE_GITLAB_CA_FILE names a PEM bundle for an instance behind an internal CA.
+.PHONY: oidc-fixtures
+oidc-fixtures: ## Re-record the GitLab fixtures of the OIDC issuer double from a real instance (TROVE_GITLAB_URL, TROVE_GITLAB_TOKEN, optional TROVE_GITLAB_CA_FILE), then test the double against them
+	@test -n "$$TROVE_GITLAB_URL" && test -n "$$TROVE_GITLAB_TOKEN" || { echo "set TROVE_GITLAB_URL and TROVE_GITLAB_TOKEN"; exit 2; }
+	go run ./test/oidcstub/cmd/record-gitlab -job-image $(INTEGRATION_TOOLS_IMAGE) $${TROVE_GITLAB_CA_FILE:+-ca-file "$$TROVE_GITLAB_CA_FILE"}
+	go test -count=1 -run 'Recorded' ./test/oidcstub/
 # <<< M4 oidc-stub
 
 # >>> M3 nuget

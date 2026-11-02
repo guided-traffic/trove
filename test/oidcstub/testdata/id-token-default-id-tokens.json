@@ -1,0 +1,66 @@
+{
+  "gitlab_version": "19.0.1-ee",
+  "recorded": "2026-11-02",
+  "case": "default-id-tokens",
+  "description": "A job without id_tokens of its own gets the id_tokens of default:; a job with its own does not (see variables).",
+  "job": {
+    "name": "claims-default",
+    "pipeline": "main",
+    "variable": "DEFAULT_ID_TOKEN",
+    "audience": "https://default.example.com",
+    "timeout_seconds": 3600,
+    "script_started_at": 1793650395,
+    "parts": 3
+  },
+  "header": {
+    "alg": "RS256",
+    "kid": "1H_duFYz_6cbCyL0A7ZsWLVAEy--JVCOVs98RFcGiGM",
+    "typ": "JWT"
+  },
+  "claims": {
+    "aud": "https://default.example.com",
+    "ci_config_ref_uri": "gitlab.example.com/trove-oidc-validation/billing/invoice-api//.gitlab-ci.yml@refs/heads/main",
+    "ci_config_sha": "e3911b2166e3ccbfad6a8d0b3cdb8e1ee65a4e95",
+    "exp": 1793653994,
+    "iat": 1793650394,
+    "iss": "https://gitlab.example.com",
+    "job_id": "35",
+    "job_namespace_id": "3",
+    "job_namespace_path": "trove-oidc-validation/billing",
+    "job_project_id": "1",
+    "job_project_path": "trove-oidc-validation/billing/invoice-api",
+    "job_source": "push",
+    "jti": "e8678aac-fc0b-48fb-85c4-8d62a641771d",
+    "namespace_id": "3",
+    "namespace_path": "trove-oidc-validation/billing",
+    "nbf": 1793650389,
+    "pipeline_id": "20",
+    "pipeline_source": "push",
+    "project_id": "1",
+    "project_path": "trove-oidc-validation/billing/invoice-api",
+    "project_visibility": "private",
+    "ref": "main",
+    "ref_path": "refs/heads/main",
+    "ref_protected": "true",
+    "ref_type": "branch",
+    "runner_environment": "self-hosted",
+    "runner_id": 1,
+    "sha": "e3911b2166e3ccbfad6a8d0b3cdb8e1ee65a4e95",
+    "sub": "project_path:trove-oidc-validation/billing/invoice-api:ref_type:branch:ref:main",
+    "user_access_level": "owner",
+    "user_email": "jdoe@example.com",
+    "user_id": "1",
+    "user_login": "jdoe"
+  },
+  "variables": {
+    "claims": {
+      "ARRAY_ID_TOKEN": "present",
+      "DEFAULT_ID_TOKEN": "absent",
+      "TROVE_ID_TOKEN": "present"
+    },
+    "claims-default": {
+      "DEFAULT_ID_TOKEN": "present",
+      "TROVE_ID_TOKEN": "absent"
+    }
+  }
+}

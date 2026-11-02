@@ -1,0 +1,70 @@
+{
+  "gitlab_version": "19.0.1-ee",
+  "recorded": "2026-11-02",
+  "description": "CI_JOB_TOKEN of the job claims in each pipeline: its length, the prefix up to the first \"-\" or \".\", and the number of dots. Nothing else of the token is recorded.",
+  "jobs": [
+    {
+      "pipeline": "api",
+      "length": 758,
+      "prefix": "glcbt",
+      "dots": 2,
+      "three_parts": true
+    },
+    {
+      "pipeline": "branch",
+      "length": 758,
+      "prefix": "glcbt",
+      "dots": 2,
+      "three_parts": true
+    },
+    {
+      "pipeline": "fork-by-member",
+      "length": 758,
+      "prefix": "glcbt",
+      "dots": 2,
+      "three_parts": true
+    },
+    {
+      "pipeline": "fork-in-fork",
+      "length": 758,
+      "prefix": "glcbt",
+      "dots": 2,
+      "three_parts": true
+    },
+    {
+      "pipeline": "fork-in-parent",
+      "length": 758,
+      "prefix": "glcbt",
+      "dots": 2,
+      "three_parts": true
+    },
+    {
+      "pipeline": "main",
+      "length": 758,
+      "prefix": "glcbt",
+      "dots": 2,
+      "three_parts": true
+    },
+    {
+      "pipeline": "mr",
+      "length": 758,
+      "prefix": "glcbt",
+      "dots": 2,
+      "three_parts": true
+    },
+    {
+      "pipeline": "schedule",
+      "length": 758,
+      "prefix": "glcbt",
+      "dots": 2,
+      "three_parts": true
+    },
+    {
+      "pipeline": "tag",
+      "length": 758,
+      "prefix": "glcbt",
+      "dots": 2,
+      "three_parts": true
+    }
+  ]
+}

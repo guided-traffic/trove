@@ -871,11 +871,16 @@ they produce.
 
 **Exit criteria.**
 
-- **E4.1** R-CI-028 passes against a GitLab test instance:
+- **E4.1** R-CI-028 passes in the end-to-end suite against the issuer double, with the pipeline's
+  exchange and client steps and the claim sets recorded from GitLab
+  ([Q-CI-25](../spec/gitlab-ci-oidc.md#q-ci-25--gitlabs-behaviour-is-validated-against-a-real-instance-the-tests-run-against-the-double)):
   - on a protected tag, both packages are published;
   - on an unprotected branch, both publishes get `403`;
   - the issuance list shows the right `project_id`, `ref` and `sha`;
-  - no job log contains a `trv_cit_` value or the ID token.
+  - no output of a job's steps contains a `trv_cit_` value or the ID token.
+
+  The recorded GitLab behaviour is current: the double's tests reproduce every fixture of the
+  last recording on a real instance (`make oidc-fixtures`, a manual procedure, never part of CI).
 - **E4.2** The negative cases of R-CI-004 pass, including the HS256-with-the-public-key case and
   the rejection of an ID token whose `aud` names a recipient other than trove (Q-CI-3).
   R-CI-003's key-rotation test passes against an issuer double.
@@ -905,13 +910,20 @@ they produce.
 - WP4.4: token lifetime, identity, revocation, issuance records, with the CI events registered for
   the revocation journal (R-CI-020).
 
-WP4.5 (mapping API, dry run and UI) follows WP4.3. WP4.6 sets up the two test environments:
+WP4.5 (mapping API, dry run and UI) follows WP4.3. WP4.6 sets up the test environment and its
+validation ([Q-CI-25](../spec/gitlab-ci-oidc.md#q-ci-25--gitlabs-behaviour-is-validated-against-a-real-instance-the-tests-run-against-the-double), owner 2026-11-02):
 
-- per-change CI uses an issuer double that signs GitLab-shaped tokens with rotating keys;
-- the reference pipeline runs against a real GitLab instance in the full run of Test and Release on the commit that closes the phase, and as the M4 exit.
+- integration and end-to-end tests, per change and in the full run, use the issuer double
+  (`test/oidcstub`), which signs GitLab-shaped tokens with rotating keys; the reference pipeline
+  (R-CI-028) runs in the end-to-end suite against it, with the pipeline's exchange and client steps;
+- whether the double is GitLab-shaped is validated by hand against a real GitLab instance:
+  `make oidc-fixtures` records its ID tokens, key set and job token as fixtures, and the double's
+  own tests reproduce every fixture. No test runs against a real GitLab or gitlab.com.
 
-Not verified: how long a GitLab container takes to become ready on the CI runners. If it exceeds a
-job's time budget, that run moves to a standing test instance.
+Not verified: the first recording (GitLab 19.0.1, 2026-11-02) came from an installation without a
+licence. `environment_protected` is therefore `"false"` in every fixture, and a licensed instance's
+`"true"` is not recorded. A GitLab release after 19.0.1 is noticed only when someone re-records; by
+GitLab's documentation, 19.5 adds `source_project_*`.
 
 **Not in M4:** delegated mapping management, and GitHub Actions and generic issuers (M10). The
 `CI_JOB_TOKEN` fallback (R-CI-022) is P2 and is built only when a concrete population of pipelines

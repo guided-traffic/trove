@@ -96,15 +96,26 @@ func (f Fault) validate() error {
 // applies reports whether the response faults hit the endpoint.
 func (f Fault) applies(target string) bool { return f.Target == "" || f.Target == target }
 
-// Cache is the caching the JWKS answer announces.
+// Cache is the caching the JWKS answer announces. Without the switches it is GitLab's (19.0.1,
+// testdata/issuer.json): "Cache-Control: max-age=<MaxAge>, public, must-revalidate,
+// no-transform=true" and a weak ETag over the key set, with 304 for a request that sends it back
+// in If-None-Match. DefaultCache is what a new double announces.
 type Cache struct {
 	// NoHeader leaves Cache-Control out (trove then uses its default refresh interval).
 	NoHeader bool `json:"no_header,omitempty"`
 	// MaxAge is the max-age of Cache-Control.
 	MaxAge Duration `json:"max_age"`
-	// ETag adds an ETag over the key set and answers If-None-Match with 304.
-	ETag bool `json:"etag,omitempty"`
+	// OnlyMaxAge writes "max-age=<n>" without GitLab's other directives.
+	OnlyMaxAge bool `json:"only_max_age,omitempty"`
+	// NoETag leaves the ETag out, and with it the 304 answer.
+	NoETag bool `json:"no_etag,omitempty"`
 }
+
+// DefaultCache is GitLab's caching of its key set: 24 hours.
+var DefaultCache = Cache{MaxAge: Duration(24 * time.Hour)}
+
+// gitLabDirectives follow max-age in GitLab's Cache-Control of the key set.
+const gitLabDirectives = ", public, must-revalidate, no-transform=true"
 
 // Counts are the requests the issuer endpoints received since the last Reset.
 type Counts struct {
@@ -114,7 +125,7 @@ type Counts struct {
 	// Hops counts the requests that arrived through a redirect (Fault.Redirect); they are not
 	// counted again as Discovery or JWKS, so one fetch is one count however long the chain is.
 	Hops int `json:"hops"`
-	// NotModified counts the JWKS requests answered 304.
+	// NotModified counts the requests answered 304 (they are counted as Discovery or JWKS too).
 	NotModified int `json:"not_modified"`
 	// Plain counts requests on the plain-HTTP listener: a client that got there followed a
 	// redirect out of TLS.

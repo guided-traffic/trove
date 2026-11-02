@@ -59,6 +59,7 @@ type Server struct {
 	mu      sync.Mutex
 	keys    []*Key // published and unpublished, oldest first
 	retired []*Key // removed from the JWKS, still able to sign
+	jobKey  *Key   // signs MintOptions.JobToken values; never published
 	fault   Fault
 	cache   Cache
 	counts  Counts
@@ -66,19 +67,40 @@ type Server struct {
 	plain   string
 }
 
-// New returns a Server with one RSA-2048 key (unless NoDefaultKey), no faults and
-// "Cache-Control: max-age=600".
+// New returns a Server with GitLab's default key set (unless NoDefaultKey), no faults and
+// GitLab's caching (DefaultCache).
+//
+// The default key set has the layout of GitLab's (testdata/issuer.json): two RSA-2048 keys, the
+// instance's OpenID Connect signing key first, which never signs an ID token of a CI job, and
+// the CI signing key (ci_jwt_signing_key) second, which signs them; Mint signs with the newest,
+// so with the second. A fresh GitLab EE installation also lists its Cloud Connector keys after
+// the two, and its OpenID Connect key has 4096 bits (AddKey with RSA4096 for that shape).
 func New(cfg Config) (*Server, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	s := &Server{cfg: cfg, cache: Cache{MaxAge: Duration(10 * time.Minute)}}
+	s := &Server{cfg: cfg, cache: DefaultCache}
 	if !cfg.NoDefaultKey {
-		if _, err := s.AddKey(KeyOptions{}); err != nil {
+		keys, err := defaultKeys()
+		if err != nil {
 			return nil, err
 		}
+		s.keys = keys
 	}
 	return s, nil
+}
+
+// defaultKeys is GitLab's default key set: the OpenID Connect key, then the CI signing key.
+func defaultKeys() ([]*Key, error) {
+	var keys []*Key
+	for range 2 {
+		k, err := newKey(KeyOptions{})
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+	return keys, nil
 }
 
 func (s *Server) now() time.Time {
@@ -118,7 +140,10 @@ func (s *Server) AddKey(o KeyOptions) (*Key, error) {
 	return k, nil
 }
 
-// Rotate adds a new RSA-2048 key and keeps the old ones.
+// Rotate adds a new RSA-2048 key and keeps the old ones. GitLab itself publishes exactly its
+// current CI signing key: when an administrator replaces it, the old key leaves the key set at
+// once (GitLab 19.0.1's key-set controller). That rotation is RemoveKey of the old key, then
+// AddKey.
 func (s *Server) Rotate() (*Key, error) { return s.AddKey(KeyOptions{}) }
 
 // RemoveKey takes the keys with this kid out of the JWKS (the way an issuer revokes a key) and
@@ -190,24 +215,21 @@ func (s *Server) Reset() {
 }
 
 // ResetAll zeroes the counters, heals every fault, restores the default caching and replaces the
-// keys by one fresh default key (unless NoDefaultKey).
+// keys by a fresh default key set (unless NoDefaultKey).
 func (s *Server) ResetAll() error {
-	var fresh *Key
+	var fresh []*Key
 	if !s.cfg.NoDefaultKey {
 		var err error
-		if fresh, err = newKey(KeyOptions{}); err != nil {
+		if fresh, err = defaultKeys(); err != nil {
 			return err
 		}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.counts, s.fault = Counts{}, Fault{}
-	s.cache = Cache{MaxAge: Duration(10 * time.Minute)}
+	s.cache = DefaultCache
 	s.retired = append(s.retired, s.keys...)
-	s.keys = nil
-	if fresh != nil {
-		s.keys = []*Key{fresh}
-	}
+	s.keys = fresh
 	return nil
 }
 
@@ -271,8 +293,13 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, plain bool) {
 	}
 	body, _ := json.Marshal(doc)
 	h := w.Header()
-	h.Set("Content-Type", "application/json")
-	if target == TargetJWKS && s.cacheHeaders(w, r, body, cache) {
+	h.Set("Content-Type", "application/json; charset=utf-8")
+	if target == TargetDiscovery {
+		// GitLab's discovery answer: revalidated on every use, with a weak ETag.
+		cache = Cache{OnlyMaxAge: true}
+		h.Set("Cache-Control", "max-age=0, private, must-revalidate")
+	}
+	if s.cacheHeaders(w, r, body, cache, target == TargetJWKS) {
 		return
 	}
 	h.Set("Content-Length", strconv.Itoa(len(body)))
@@ -328,19 +355,24 @@ func (s *Server) faultAnswer(w http.ResponseWriter, r *http.Request, f Fault, pl
 	return false
 }
 
-// cacheHeaders sets the caching of a key set answer and reports whether it answered 304.
-func (s *Server) cacheHeaders(w http.ResponseWriter, r *http.Request, body []byte, cache Cache) bool {
+// cacheHeaders sets the caching of an answer (Cache-Control only for the key set, whose caching is
+// configurable) and reports whether it answered 304.
+func (s *Server) cacheHeaders(w http.ResponseWriter, r *http.Request, body []byte, cache Cache, cacheControl bool) bool {
 	h := w.Header()
-	if !cache.NoHeader {
-		h.Set("Cache-Control", "max-age="+strconv.Itoa(int(time.Duration(cache.MaxAge).Seconds())))
+	if cacheControl && !cache.NoHeader {
+		cc := "max-age=" + strconv.Itoa(int(time.Duration(cache.MaxAge).Seconds()))
+		if !cache.OnlyMaxAge {
+			cc += gitLabDirectives
+		}
+		h.Set("Cache-Control", cc)
 	}
-	if !cache.ETag {
+	if cache.NoETag {
 		return false
 	}
 	sum := sha256.Sum256(body)
-	etag := `"` + hex.EncodeToString(sum[:8]) + `"`
+	etag := `W/"` + hex.EncodeToString(sum[:16]) + `"`
 	h.Set("ETag", etag)
-	if r.Header.Get("If-None-Match") != etag {
+	if !etagMatches(r.Header.Get("If-None-Match"), etag) {
 		return false
 	}
 	s.mu.Lock()
@@ -348,6 +380,21 @@ func (s *Server) cacheHeaders(w http.ResponseWriter, r *http.Request, body []byt
 	s.mu.Unlock()
 	w.WriteHeader(http.StatusNotModified)
 	return true
+}
+
+// etagMatches is the weak comparison of If-None-Match (RFC 9110 §13.1.2): a list of tags or "*".
+func etagMatches(header, etag string) bool {
+	if header == "" {
+		return false
+	}
+	want := strings.TrimPrefix(etag, "W/")
+	for _, t := range strings.Split(header, ",") {
+		t = strings.TrimSpace(t)
+		if t == "*" || strings.TrimPrefix(t, "W/") == want {
+			return true
+		}
+	}
+	return false
 }
 
 // redirect answers one hop of the chain and reports whether it did.
@@ -401,16 +448,48 @@ func (s *Server) discovery(f Fault, base string) map[string]any {
 		}
 		slices.Sort(algs)
 	}
+	// The members and the fixed lists of GitLab 19.0.1's document (testdata/issuer.json); the
+	// endpoints are below the base, as GitLab's are. trove reads issuer, jwks_uri and the
+	// algorithms; the rest is there so that the document has GitLab's shape.
 	return map[string]any{
 		"issuer":                                issuer,
+		"authorization_endpoint":                base + "/oauth/authorize",
+		"token_endpoint":                        base + "/oauth/token",
+		"revocation_endpoint":                   base + "/oauth/revoke",
+		"introspection_endpoint":                base + "/oauth/introspect",
+		"userinfo_endpoint":                     base + "/oauth/userinfo",
 		"jwks_uri":                              jwksURI,
+		"scopes_supported":                      gitLabScopes,
 		"response_types_supported":              []string{"code"},
+		"response_modes_supported":              []string{"query", "fragment", "form_post"},
+		"grant_types_supported":                 []string{"authorization_code", "client_credentials", "device_code", "refresh_token"},
+		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post"},
 		"subject_types_supported":               []string{"public"},
 		"id_token_signing_alg_values_supported": algs,
-		"scopes_supported":                      []string{"openid"},
-		"claims_supported":                      []string{"iss", "sub", "aud", "exp", "iat", "nbf", "jti"},
+		"claim_types_supported":                 []string{"normal"},
+		"claims_supported":                      gitLabClaimsSupported,
+		"code_challenge_methods_supported":      []string{"plain", "S256"},
 	}
 }
+
+// gitLabScopes and gitLabClaimsSupported are GitLab 19.0.1's lists. claims_supported describes the
+// instance's own OpenID Connect provider (user sign-in): it names only a few of a CI job's claims and
+// not nbf, which every ID token carries.
+var (
+	gitLabScopes = []string{
+		"api", "read_api", "read_user", "create_runner", "manage_runner", "k8s_proxy", "self_rotate", "mcp", "mcp_orbit",
+		"read_repository", "write_repository", "read_virtual_registry", "write_virtual_registry", "read_observability",
+		"write_observability", "ai_features", "sudo", "admin_mode", "read_service_ping", "openid", "profile", "email",
+		"ai_workflows", "user:*",
+	}
+	gitLabClaimsSupported = []string{
+		"iss", "sub", "aud", "exp", "iat", "sub_legacy", "name", "nickname", "preferred_username", "email",
+		"email_verified", "website", "profile", "picture", "groups", "groups_direct",
+		"https://gitlab.org/claims/groups/owner", "https://gitlab.org/claims/groups/maintainer",
+		"https://gitlab.org/claims/groups/developer", "project_path", "ci_config_ref_uri", "ref_path", "sha",
+		"environment", "jti",
+	}
+)
 
 func (s *Server) jwks() map[string]any {
 	s.mu.Lock()

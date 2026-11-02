@@ -1482,27 +1482,39 @@ standard library only (it must not import `internal/ci`: a test of the validatio
 | [tls.go](../../test/oidcstub/tls.go) | a throwaway CA and certificate (`NewSelfSigned`, `CAPEM`), a certificate reloaded when its files change |
 | [cmd/oidcstub](../../test/oidcstub/cmd/oidcstub) | `serve`: both listeners and the control API in one process |
 | [Containerfile](../../test/oidcstub/Containerfile) | the image: a static binary on the release base image (`make oidc-stub-image`) |
+| [testdata](../../test/oidcstub/testdata) | what a real GitLab issued, anonymized: one `id-token-<case>.json` per case, `issuer.json` (discovery, key set, caching, the verified signature), `job-token.json` |
+| [fixture_test.go](../../test/oidcstub/fixture_test.go) | the double against the fixtures (see [Validating the double against a real GitLab](#validating-the-double-against-a-real-gitlab)) |
+| [cmd/record-gitlab](../../test/oidcstub/cmd/record-gitlab) | the recorder of the fixtures (`make oidc-fixtures`): setup, pipelines, job logs, signature check, anonymization |
 
 ### What it serves
 
-- `GET /.well-known/openid-configuration`: `issuer` (its base URL: `Config.PublicURL`, else the address it was started on), `jwks_uri`
-  (`<base>/oauth/discovery/keys`, the path GitLab uses), `id_token_signing_alg_values_supported` (the algorithms of the published keys, RS256
-  with the default key), and the usual `response_types_supported`, `subject_types_supported`.
-- `GET /oauth/discovery/keys`: the key set, with `Cache-Control: max-age=<n>` (default 600 s; `Cache.NoHeader` leaves it out) and, when
-  `Cache.ETag` is set, an `ETag` over the key set and 304 on `If-None-Match`.
-- Anything else is 404; other methods than GET and HEAD are 405. TLS 1.2 or later, HTTP/1.1 only (so a connection can be cut), and
-  a second listener on plain HTTP that exists to be the target of the redirect-out-of-TLS fault.
+What GitLab 19.0.1 serves, as recorded in [testdata/issuer.json](../../test/oidcstub/testdata/issuer.json):
+
+- `GET /.well-known/openid-configuration`: GitLab's members and fixed lists. `issuer` is its base URL (`Config.PublicURL`, else the
+  address it was started on), `jwks_uri` is `<base>/oauth/discovery/keys` (the path GitLab uses), the `*_endpoint` members are below the
+  base, and `id_token_signing_alg_values_supported` lists the algorithms of the published keys (RS256 with the default keys).
+  `Cache-Control: max-age=0, private, must-revalidate`, a weak `ETag` and 304 on `If-None-Match`, as GitLab.
+- `GET /oauth/discovery/keys`: the key set. `DefaultCache` is GitLab's: `Cache-Control: max-age=86400, public, must-revalidate,
+  no-transform=true`, a weak `ETag` over the key set and 304 on `If-None-Match`. `SetCache` changes `MaxAge`; `OnlyMaxAge` drops GitLab's
+  other directives, `NoETag` the ETag, and `NoHeader` the `Cache-Control` header.
+- Both answer `Content-Type: application/json; charset=utf-8`. Anything else is 404; other methods than GET and HEAD are 405. TLS 1.2 or
+  later, HTTP/1.1 only (so a connection can be cut), and a second listener on plain HTTP that exists to be the target of the
+  redirect-out-of-TLS fault.
 
 ### Keys
 
-`AddKey(KeyOptions)` adds a key and keeps the old ones (`Rotate()` is `AddKey` with the defaults); `RemoveKey(kid)` takes keys out of the
-JWKS (an empty `kid` removes the keys published without one) but keeps them able to sign, so a test can still mint a token of a revoked key.
-`Mint` signs with the newest published key of the algorithm's family; only `KID` or `SignWith` chooses the RSA-1024 key, an unpublished key or an
-older one.
+The default key set has GitLab's layout: two RSA-2048 keys. The first is the instance's OpenID Connect key, which never signs a CI job's
+token; the second is the CI signing key (`ci_jwt_signing_key`), which does. `Mint` signs with the newest, so with the second. A fresh GitLab EE
+installation also lists its Cloud Connector keys after the two, and its OpenID Connect key has 4096 bits (`AddKey` with `rsa-4096` for that
+shape). `AddKey(KeyOptions)` adds a key and keeps the old ones (`Rotate()` is `AddKey` with the defaults). GitLab itself publishes only its
+current CI key: when an administrator replaces it, the old key leaves the set at once, which is `RemoveKey` of the old key followed by
+`AddKey`. `RemoveKey(kid)` takes keys out of the JWKS (an empty `kid` removes the keys published without one) but keeps them able to sign, so
+a test can still mint a token of a revoked key. `Mint` signs with the newest published key of the algorithm's family; only `KID` or `SignWith`
+chooses the RSA-1024 or RSA-4096 key, an unpublished key or an older one.
 
 | `KeyOptions` | Publishes |
 |---|---|
-| `Type` `rsa-2048` (default), `rsa-1024`, `es256`, `eddsa` | the key family; the RSA-1024 key is for the "at least 2048 bits" rule |
+| `Type` `rsa-2048` (default), `rsa-4096`, `rsa-1024`, `es256`, `eddsa` | the key family; the RSA-1024 key is for the "at least 2048 bits" rule; an RSA-4096 key takes a second or more to generate |
 | `KID`, `NoKID` | the `kid` (default: the key's thumbprint), or none |
 | `Use` (default `sig`), `OmitUse` | `use`; `enc` makes a key that must be ignored |
 | `KeyOps` | `key_ops`, for example `["sign"]` without `verify`; an empty list publishes `[]` |
@@ -1511,10 +1523,25 @@ older one.
 
 ### Tokens
 
-`DefaultClaims` is the example job of R-CI-006: issuer = the double's base URL, `aud` = `https://packages.example.com` (`Config.Audience`),
-project `acme/billing/invoice-api` (`project_id` `"1234"`), namespace `acme/billing` (`"4711"`), `ref_type` `tag`, `ref` `v1.4.0`,
-`ref_protected` `"true"`, `pipeline_source` `push`, the `job_*`, `source_*`, environment and user claims, `jti` random per token,
-`iat` = now, `nbf` = `iat - 5`, `exp` = `iat + 300`. IDs and booleans are JSON strings, as GitLab writes them; `runner_id` and the NumericDates are numbers.
+`DefaultClaims` holds exactly the claims GitLab 19.0.1 issued to a job with environment `production` (action `start`) on a protected tag
+([id-token-push-protected-tag-environment.json](../../test/oidcstub/testdata/id-token-push-protected-tag-environment.json)), filled with the
+example job of R-CI-006:
+
+- issuer = the double's base URL, `aud` = `https://packages.example.com` (`Config.Audience`);
+- project `acme/billing/invoice-api` (`project_id` `"1234"`), namespace `acme/billing` (`"4711"`), the same in `job_project_*` and
+  `job_namespace_*`;
+- `ref_type` `tag`, `ref` `v1.4.0`, `ref_path` `refs/tags/v1.4.0`, `ref_protected` `"true"`;
+- `pipeline_source` and `job_source` `push`, the environment claims;
+- `user_id`, `user_login` `jdoe`, `user_email`, `user_access_level` `maintainer`;
+- `sha`, `ci_config_ref_uri` (`<host>/acme/billing/invoice-api//.gitlab-ci.yml@refs/tags/v1.4.0`), `ci_config_sha`, `runner_id`,
+  `runner_environment`, `project_visibility`;
+- `jti` a random UUID per token, `iat` = now, `nbf` = `iat - 5`, `exp` = `iat + 3600` (`DefaultLifetime`: GitLab's `exp` is `iat` plus the job
+  timeout, 60 minutes by default).
+
+IDs and booleans are JSON strings, as GitLab writes them; `runner_id` and the NumericDates are numbers. GitLab 19.0.1 sends no
+`source_project_*` (GitLab documents them from 19.5); a test of the cross-project guard adds them with `Claims`. `MintOptions{JobToken: true}`
+returns a value in the shape of GitLab's `CI_JOB_TOKEN` (`JobTokenPrefix` `glcbt-` and a JWT signed by a key the JWKS does not list), for
+R-CI-004 step 2.
 
 `MintOptions` changes it: `Claims` overrides by name (a `nil` value is a JSON `null`; `aud` may be a string or a list; a fractional `exp` is a
 non-integer NumericDate), `Remove` drops claims. For the negative cases of R-CI-004:
@@ -1552,7 +1579,7 @@ both) limits the response faults.
 | `Algorithms`, `NoCommonAlgorithm` | the offered algorithm list, or only `HS256` (`algorithms_not_offered`) |
 
 `Counts()` (reset with `Reset()`) counts `Discovery` and `JWKS` requests, one per fetch whatever the length of a redirect chain (`Hops` counts the
-requests that arrived through a redirect), `NotModified`, `Plain` (a client that arrived on the plain listener followed a redirect out of TLS),
+requests that arrived through a redirect), `NotModified` (304 answers of either endpoint, counted there too), `Plain` (a client that arrived on the plain listener followed a redirect out of TLS),
 `Other` and `Refused` (connections cut by `Unreachable`). Minting and the control API are not counted. "Exactly one on-demand fetch" is
 `Counts().JWKS == 1`; "no request" is the zero value of `Counts`.
 
@@ -1585,12 +1612,12 @@ the requests are never counted and no fault touches them.
 
 | Request | Effect |
 |---|---|
-| `GET /counts`, `POST /reset[?all=true]` | the counters; reset (with `all`: also heal faults, restore the caching, replace the keys by one fresh key) |
+| `GET /counts`, `POST /reset[?all=true]` | the counters; reset (with `all`: also heal faults, restore the caching, replace the keys by a fresh default key set) |
 | `GET /info` | `issuer`, `discovery_url`, `jwks_url`, `keys` |
 | `GET /keys`, `POST /keys` | list; add a key (`KeyOptions` as JSON, `{}` is a default RSA-2048 key: the rotation) |
 | `POST /keys/remove` | `{"kid": "..."}`: out of the JWKS; 404 when there is none |
-| `POST /mint` | `MintOptions` as JSON in, `{"token": "..."}` out; for example `{"claims":{"jti":null},"remove":["nbf"],"alg":"ES256"}` |
-| `GET/POST /fault`, `GET/POST /cache` | the fault set (durations as `"4s"`); `{"max_age":"30s","etag":true}` |
+| `POST /mint` | `MintOptions` as JSON in, `{"token": "..."}` out; for example `{"claims":{"jti":null},"remove":["nbf"],"alg":"ES256"}`, or `{"job_token":true}` |
+| `GET/POST /fault`, `GET/POST /cache` | the fault set (durations as `"4s"`); `{"max_age":"30s"}` (GitLab's directives and ETag), `{"max_age":"30s","only_max_age":true,"no_etag":true}` |
 
 ### In the cluster
 
@@ -1606,6 +1633,105 @@ exports the switch yet: a set that needs the double opts in by setting it. trove
 Verified: the image builds, starts with a throwaway certificate, serves the discovery document and mints through the control API (run with
 `docker run`). Not verified: the manifest and the `e2e.sh` block on kind (the cluster was in use by another agent), and that the default egress
 policy admits the pod address of the double.
+
+### Validating the double against a real GitLab
+
+The CI tests run against the double only, never against a real GitLab or gitlab.com
+([Q-CI-25](../spec/gitlab-ci-oidc.md#q-ci-25--gitlabs-behaviour-is-validated-against-a-real-instance-the-tests-run-against-the-double), owner
+2026-11-02). What keeps the double honest is a recording of what a real instance issues. `make oidc-fixtures` makes that recording, and
+[fixture_test.go](../../test/oidcstub/fixture_test.go) checks the double against it in every `go test` run.
+
+**Recorded on GitLab 19.0.1-ee on 2026-11-02.** The recording ran on a throwaway installation without a licence (`gitlab/gitlab-ee:19.0.1-ee.0`
+in Docker, with a `gitlab-runner` 18.11.3 shell runner). The instance offered for the validation, also 19.0.1-ee but licensed, could not
+create a repository at the time (its Gitaly certificate lacks the name the web service dials), so no pipeline could run there. Its discovery
+document and key set were fetched by hand: the same members and the same caching headers, but two RSA-2048 keys.
+
+| Case (fixture `id-token-<case>.json`) | Pipeline | What it shows |
+|---|---|---|
+| `push-protected-branch`, `-aud-array` | push on `main` (protected) | the 33 claims of a job without an environment; `aud` a string, or the array the job listed |
+| `push-unprotected-branch` | push on a new branch | `ref_protected` `"false"` |
+| `push-protected-tag`, `-environment` | push of a tag protected by `v*` | `ref_type` `tag`, `ref_path` `refs/tags/...`; with an environment the shape of `DefaultClaims` |
+| `environment-start`, `-prepare`, `-unprotected` | `main` | `environment`, `environment_action`, `deployment_tier`, `environment_protected` (`"false"` without a licence, even for the protected `production`) |
+| `job-timeout` | `main`, `timeout: 15m` | `exp - iat` = 900; everywhere else 3600, the project's default timeout |
+| `default-id-tokens` | `main` | a job without `id_tokens` gets those of `default:`; a job with its own gets only its own |
+| `merge-request-same-project` | merge request from a branch | `ref` is the source branch, `pipeline_source` and `job_source` `merge_request_event` |
+| `merge-request-fork-in-fork` | merge request from the fork, opened by a Reporter of the parent | runs in the fork; every project claim, `job_*` included, names the fork |
+| `merge-request-fork-in-parent` | the same merge request, run in the parent by its owner | `project_*`/`namespace_*` name the fork, `job_project_*`/`job_namespace_*` the parent; no `source_project_*` |
+| `merge-request-fork-by-parent-member` | merge request from the fork, opened by the parent's owner | GitLab runs it in the parent by itself, with the claims of the previous row |
+| `schedule`, `api` | a played schedule, `POST /projects/:id/pipeline` | `pipeline_source` `schedule`, `api` |
+
+In every case: all claims are strings except `aud`, `exp`, `iat`, `nbf` and `runner_id`; `jti` is a UUID; `nbf = iat - 5`; the header is
+`{"kid","typ":"JWT","alg":"RS256"}`. No claim names an ancestor group by ID
+([H-27](../spec/gitlab-ci-oidc.md#h-27--group-hierarchies-cannot-be-pinned-by-immutable-id)). The other two files hold the instance-wide facts:
+
+- `issuer.json`: the discovery document, GitLab's caching headers, and three keys. Those are the OpenID Connect key (4096 bits), the CI key
+  (2048 bits), which signed the token that was checked (RS256, RSASSA-PKCS1-v1_5), and a Cloud Connector key. Every `kid` is the key's RFC 7638
+  thumbprint.
+- `job-token.json`: `CI_JOB_TOKEN` is `glcbt-` and three dot-separated parts, 758 characters, in every pipeline.
+
+**Re-run it** against an instance on which you are an administrator (with Admin Mode on, the token also needs the scope `admin_mode`) and whose
+instance runners take untagged jobs:
+
+```sh
+export TROVE_GITLAB_URL=https://gitlab.example.com        # example: the instance's external URL, which is its issuer
+export TROVE_GITLAB_TOKEN=...                             # example: a personal access token of an administrator, scope api
+export TROVE_GITLAB_CA_FILE=/path/to/internal-ca.pem      # example, only for an instance behind an internal CA
+make oidc-fixtures                                        # about 5 minutes; then the double's fixture tests run
+git diff test/oidcstub/testdata                           # IDs, times and SHAs change on every run; a changed claim name or type is the finding
+```
+
+The recorder ([cmd/record-gitlab](../../test/oidcstub/cmd/record-gitlab)) creates the group `trove-oidc-validation` on the first run and reuses
+it afterwards. The group holds the subgroups `billing` and `partner`, the project `billing/invoice-api` with the protected tag rule `v*`, the
+environments `production` (protected) and `staging`, an inactive pipeline schedule, and the fork `partner/invoice-api`. It also creates the
+user `trove-oidcv-partner`, a Reporter of the parent and a Maintainer of `partner`, whose merge request GitLab cannot move into the parent. It
+commits `.gitlab-ci.yml` to `main`, starts one pipeline per case, closes its merge requests and writes the fixtures. The jobs print only the
+base64url-decoded header and payload of their ID tokens and the length, prefix and dot count of `CI_JOB_TOKEN`, never a raw token or a
+signature. One job, `signature-check`, leaves one ID token as an artifact: its audience is `https://signature-check.invalid` and its job
+timeout 10 minutes. The recorder verifies that token in memory against the key set and deletes the artifact. It acts as the partner user
+through an impersonation token that it revokes right after. It deletes nothing else.
+
+The fixtures are anonymized before they are written:
+
+- the instance's host becomes `gitlab.example.com`;
+- the users' logins, names and e-mail addresses become `jdoe`/`jroe`;
+- the `kid` values become placeholders of the same length;
+- claim names, JSON types and time relations stay.
+
+The recorder refuses to write a file that still contains the host, its domain or a user's e-mail address.
+
+**What the double is checked against** ([fixture_test.go](../../test/oidcstub/fixture_test.go); the tests carry no requirement ID in their
+names, they are no evidence for trove's requirements):
+
+| Test | Checks |
+|---|---|
+| `TestDoubleReproducesTheRecordedIDTokens` | for every fixture, `Mint` with the claims the fixture lacks removed gives the same claim names, JSON types and value shapes (decimal and boolean strings, UUID, SHA-1, https URL), the same header members, `alg` and `typ`, the `sub` components, `ref_path` and `ci_config_ref_uri` shapes, `nbf - iat`, and `exp - iat` under the default timeout; `DefaultClaims` has exactly the claims of the release job |
+| `TestDoubleServesTheRecordedIssuer` | discovery members, types and fixed lists; `Content-Type`, `Cache-Control`, ETag kind and 304 of both endpoints; the members of the first two keys; the signing key at GitLab's index, with GitLab's size and RS256 |
+| `TestDoubleJobTokenHasTheRecordedShape` | the job token's prefix and three parts |
+| `TestRecordedIDTokensOfDefaultAreReplaced` | the `default:` replacement stays as recorded |
+
+Known differences, not mirrored: a fresh EE installation's OpenID Connect key has 4096 bits and its Cloud Connector keys follow the CI key
+(the double's two default keys are 2048 bits; add an `rsa-4096` key for that shape); the double's `Rotate` keeps the old key, where GitLab
+replaces its CI key; the payload of the double's job token is not GitLab's (it is not recorded); the double's `scopes_supported` is the
+recorded instance's list, which depends on the instance's features. Not recorded: `environment_protected` `"true"` (needs a licensed instance),
+`user_identities` (only when a project turns it on), and GitLab releases after 19.0.1.
+
+<details>
+<summary>A throwaway instance on the development machine, as used for the first recording</summary>
+
+```sh
+# A CA and a certificate for localhost, 127.0.0.1 and the container name (any tool; openssl shown), in $PWD/ssl.
+docker network create trove-oidcv
+docker run -d --name trove-oidcv-gl --hostname trove-oidcv-gl --network trove-oidcv -p 127.0.0.1:8929:8929 --shm-size 256m \
+  --env-file gitlab.env -v "$PWD/ssl:/etc/gitlab/ssl-local:ro" gitlab/gitlab-ee:19.0.1-ee.0
+# gitlab.env: GITLAB_ROOT_PASSWORD=<generated> and GITLAB_OMNIBUS_CONFIG=external_url 'https://localhost:8929';
+#   nginx['ssl_certificate'] = '/etc/gitlab/ssl-local/tls.crt'; nginx['ssl_certificate_key'] = '/etc/gitlab/ssl-local/tls.key';
+#   letsencrypt['enable'] = false   (about 4 minutes to the sign-in page)
+# Create an instance runner (POST /api/v4/user/runners, runner_type instance_type, run_untagged true) and start
+# gitlab/gitlab-runner:v18.11.3 on the same network with executor "shell", url https://trove-oidcv-gl:8929 and the CA as tls-ca-file.
+TROVE_GITLAB_URL=https://localhost:8929 TROVE_GITLAB_CA_FILE=ssl/ca.crt TROVE_GITLAB_TOKEN=... make oidc-fixtures
+```
+
+</details>
 
 ## The project tests
 

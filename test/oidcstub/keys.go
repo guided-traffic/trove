@@ -20,16 +20,19 @@ import (
 type KeyType string
 
 // The key types the double can publish. RSA1024 exists only for the "at least 2048 bits" rule of
-// R-CI-003.
+// R-CI-003. RSA4096 is the size of a fresh GitLab installation's OpenID Connect key
+// (testdata/issuer.json); it takes a second or more to generate, so no default uses it.
 const (
 	RSA2048 KeyType = "rsa-2048"
+	RSA4096 KeyType = "rsa-4096"
 	RSA1024 KeyType = "rsa-1024"
 	ES256   KeyType = "es256"
 	EdDSA   KeyType = "eddsa"
 )
 
 // KeyOptions describes a key to add. The zero value is an RSA-2048 key published as
-// {"use": "sig", "alg": "RS256", "kid": <RFC 7638 thumbprint>}, the shape GitLab publishes.
+// {"kty", "kid": <RFC 7638 thumbprint>, "e", "n", "use": "sig", "alg": "RS256"}: the members, the kid
+// and the size of the CI signing key of GitLab 19.0.1 (testdata/issuer.json, fixture_test.go).
 type KeyOptions struct {
 	// Type defaults to RSA2048.
 	Type KeyType `json:"type,omitempty"`
@@ -79,6 +82,8 @@ func newKey(o KeyOptions) (*Key, error) {
 	switch o.Type {
 	case RSA2048:
 		signer, err = rsa.GenerateKey(rand.Reader, 2048)
+	case RSA4096:
+		signer, err = rsa.GenerateKey(rand.Reader, 4096)
 	case RSA1024:
 		signer, err = rsa.GenerateKey(rand.Reader, 1024) //nolint:gosec // the weak key is the point: R-CI-003 refuses RSA keys below 2048 bits
 	case ES256:

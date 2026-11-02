@@ -111,14 +111,14 @@ func TestControlAPIMintRotateRemoveFaultsAndCounters(t *testing.T) {
 	}
 	var keys []Info
 	c.ok("GET", "/keys", "", &keys)
-	if len(keys) != 2 {
+	if len(keys) != 3 {
 		t.Fatalf("keys %+v", keys)
 	}
 	c.ok("POST", "/keys/remove", `{"kid":"`+added.KID+`"}`, nil)
 	if st, _ := c.do("POST", "/keys/remove", testToken, `{"kid":"`+added.KID+`"}`); st != http.StatusNotFound {
 		t.Fatalf("removing twice: %d", st)
 	}
-	if len(c.jwks().Keys) != 1 {
+	if len(c.jwks().Keys) != 2 {
 		t.Fatal("key still published")
 	}
 
@@ -155,10 +155,19 @@ func TestControlAPIMintRotateRemoveFaultsAndCounters(t *testing.T) {
 	if !fault.Unreachable {
 		t.Fatalf("fault %+v", fault)
 	}
-	c.ok("POST", "/cache", `{"max_age":"30s","etag":true}`, nil)
+	c.ok("POST", "/cache", `{"max_age":"30s","only_max_age":true}`, nil)
 	c.ok("POST", "/fault", `{}`, nil)
 	if resp, _, err := c.get(c.s.JWKSURL()); err != nil || resp.Header.Get("Cache-Control") != "max-age=30" || resp.Header.Get("ETag") == "" {
 		t.Fatalf("cache: %v %v", resp, err)
+	}
+	c.ok("POST", "/cache", `{"max_age":"30s","no_etag":true}`, nil)
+	if resp, _, err := c.get(c.s.JWKSURL()); err != nil || resp.Header.Get("Cache-Control") != "max-age=30, public, must-revalidate, no-transform=true" || resp.Header.Get("ETag") != "" {
+		t.Fatalf("cache: %v %v", resp, err)
+	}
+	// A job token through the control API.
+	c.ok("POST", "/mint", `{"job_token":true}`, &tok)
+	if !strings.HasPrefix(tok.Token, JobTokenPrefix) {
+		t.Fatalf("job token %.10q...", tok.Token)
 	}
 	if st, _ := c.do("POST", "/fault", testToken, `{"status":42}`); st != http.StatusBadRequest {
 		t.Fatalf("invalid fault: %d", st)
@@ -174,7 +183,7 @@ func TestControlAPIMintRotateRemoveFaultsAndCounters(t *testing.T) {
 		Keys         []Info `json:"keys"`
 	}
 	c.ok("GET", "/info", "", &info)
-	if info.Issuer != c.run.URL || info.JWKSURL != c.run.URL+JWKSPath || info.DiscoveryURL != c.run.URL+DiscoveryPath || len(info.Keys) != 1 {
+	if info.Issuer != c.run.URL || info.JWKSURL != c.run.URL+JWKSPath || info.DiscoveryURL != c.run.URL+DiscoveryPath || len(info.Keys) != 2 {
 		t.Fatalf("info %+v", info)
 	}
 	if resp, _, err := c.get(c.s.JWKSURL()); err != nil || resp.StatusCode != 200 {

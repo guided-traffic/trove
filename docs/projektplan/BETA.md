@@ -444,8 +444,11 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - 🟡 GitLab's behaviour validated against the owner's unused GitLab instance and recorded as fixtures of the issuer
   double; no integration or e2e test runs against a real GitLab or gitlab.com (owner, 2026-11-02; Q-CI-25)
 - ⚪ Integration tests: invalid signatures, wrong audience, expired tokens, fork merge requests
-- ⚪ E2E tests for npm and NuGet against the issuer double (the reference pipeline's exchange and client steps), with a
-  `web` node drained during the run and again with Valkey stopped
+- ⚪ E2E tests against the issuer double for npm and NuGet (the reference pipeline's exchange and client steps), with a `web` node
+  drained during the run and again with Valkey stopped; no test runs against a real GitLab ([Q-CI-25](../spec/gitlab-ci-oidc.md#q-ci-25--gitlabs-behaviour-is-validated-against-a-real-instance-the-tests-run-against-the-double), owner 2026-11-02)
+- 🟢 GitLab's behaviour validated by hand on GitLab 19.0.1 and recorded as fixtures that the issuer double reproduces: ID tokens of 16
+  cases, the key set and its caching, `CI_JOB_TOKEN`'s shape (`make oidc-fixtures`, `test/oidcstub/testdata`); a fork merge request
+  opened by a parent member runs in the parent, no claim pins an ancestor group (H-27)
 
 ## Phase 5b · trove Bastion (M13)
 

@@ -38,7 +38,7 @@ the subject of the OIDC path:
 | What it is | An OIDC ID token: a JWT that GitLab signs with RS256 using the instance's dedicated signing key | A GitLab credential for calling GitLab itself (API, registries, Git) with the triggering user's access level, restricted to a fixed set of GitLab endpoints |
 | Audience | Set by the job (`aud`); trove accepts only its own audience | None. Nothing ties it to a relying party. |
 | How a third party verifies it | Offline: signature against the issuer's published JWKS, plus `iss`, `aud`, `exp`, `nbf`, `iat` ([RFC 7519](https://www.rfc-editor.org/rfc/rfc7519)) | Only by calling GitLab (`GET /api/v4/job` with the token), while the job is running |
-| Format | JWT (compact JWS) | GitLab-internal. Since GitLab 19.0 job tokens use a JWT format by default (a group can switch back until 20.0), but GitLab documents neither claims nor verification keys for third parties. trove treats it as an opaque string. |
+| Format | JWT (compact JWS) | GitLab-internal. Since GitLab 19.0 job tokens use a JWT format by default (a group can switch back until 20.0), but GitLab documents neither claims nor verification keys for third parties. Observed on GitLab 19.0.1 on 2026-11-02: `glcbt-` followed by three dot-separated parts, 756 to 758 characters, in every recorded pipeline; the instance's key set does not list `ci_job_token_signing_key`, the key setting of job tokens. trove treats it as an opaque string and recognizes it by the prefix (R-CI-004 step 2). |
 | Lifetime | Expires at the job's timeout, or after 5 minutes if no timeout is set | Valid while the job runs; revoked when the job finishes |
 | trove use | The normal path, MVP (R-CI-001 to R-CI-021) | Optional fallback, P2, off by default (R-CI-022, Q-CI-5) |
 
@@ -573,8 +573,9 @@ caller selects the issuer (step 5), and `Unverified.Verify` does the algorithm a
 unknown issuer therefore answers `unknown_issuer` even when its algorithm would be refused by every issuer, both 400
 (Q-CI-19).
 
-GitLab sets `nbf` a few seconds before `iat` in its documented example. The default 60-second
-skew absorbs this and normal clock drift between runners, GitLab and trove.
+GitLab sets `nbf` to `iat - 5` (observed on GitLab 19.0.1 on 2026-11-02, in every recorded case),
+so a token is valid from the moment GitLab issues it. The default 60-second skew absorbs normal
+clock drift between runners, GitLab and trove.
 
 The audience is always checked at the CI issuer (catalog CIOIDC-019 leaves open whether an
 unconfigured audience means "no check" or whether only mapping conditions check `aud`). trove has
@@ -652,7 +653,8 @@ publish:
   issuer and its mappings serve both paths.
 - `id_tokens` may be set under `default:`. A job that declares its own `id_tokens` replaces the
   default entirely; GitLab does not merge them
-  ([CI/CD YAML reference, `id_tokens`](https://docs.gitlab.com/ci/yaml/#id_tokens)).
+  ([CI/CD YAML reference, `id_tokens`](https://docs.gitlab.com/ci/yaml/#id_tokens); observed on
+  GitLab 19.0.1 on 2026-11-02).
 - The predecessors `CI_JOB_JWT` and `CI_JOB_JWT_V2` were removed in GitLab 17.0 (catalog
   CIOIDC-030) and are not supported.
 - trove never parses `sub`. Conditions SHOULD use the separate claims (`project_id`,
@@ -662,34 +664,55 @@ publish:
   format is unambiguous. It still adds nothing over the separate claims.
 
 Claims trove relies on (GitLab serializes IDs and booleans as JSON strings; R-CI-010 normalizes
-them):
+them). Observed on GitLab 19.0.1 on 2026-11-02 in every recorded case (push on a protected and an
+unprotected branch and on a protected tag, environments with `action: start` and `prepare`, a
+job timeout, schedule, API, same-project and fork merge requests;
+[test/oidcstub/testdata](../../test/oidcstub/testdata), [Q-CI-25](#q-ci-25--gitlabs-behaviour-is-validated-against-a-real-instance-the-tests-run-against-the-double)):
+
+- Every claim is a JSON string except `aud` (a string, or an array when the job lists several),
+  `exp`, `iat`, `nbf` and `runner_id`, which are numbers.
+- `sub` is `project_path:<path>:ref_type:<branch|tag>:ref:<ref>`, and `jti` is a random UUID.
+- `exp` is `iat` plus the job's timeout: 3600 s under a project's default timeout of 60 minutes,
+  900 s with `timeout: 15m`. `nbf` is `iat - 5`.
+- The header is `{"kid", "typ": "JWT", "alg": "RS256"}`. `kid` is the RFC 7638 thumbprint of the
+  instance's CI signing key (`ci_jwt_signing_key`), the second key of its key set.
+- A merge request pipeline carries the source branch in `ref` and `refs/heads/<branch>` in `ref_path`.
+- A job without an environment carries no `environment*` and no `deployment_tier` claim.
+- On an instance without a licence, `environment_protected` is `"false"`, even for an environment
+  that the protected environments API accepted.
 
 | Claim | Required in the `gitlab` preset | Used for |
 |---|---|---|
 | `iss`, `aud`, `exp`, `iat` | yes | R-CI-004 |
-| `nbf` | no (checked when present) | R-CI-004 |
+| `nbf` | no (checked when present; GitLab always sends it) | R-CI-004 |
 | `jti` | yes | Replay tracking (R-CI-018) |
 | `sub` | yes | Audit only |
 | `project_id`, `namespace_id` | yes | Pinning, ownership key (R-CI-015) |
 | `project_path`, `namespace_path` | yes | Conditions, templating, display |
-| `job_project_id`, `job_project_path`, `job_namespace_id`, `job_namespace_path` | no (GitLab 18.4+) | Cross-project guard (R-CI-012) |
-| `source_project_id`, `source_project_path` | no (GitLab 19.5+) | Cross-project guard (R-CI-012) |
+| `job_project_id`, `job_project_path`, `job_namespace_id`, `job_namespace_path` | no (GitLab 18.4+; present on 19.0.1) | Cross-project guard (R-CI-012) |
+| `source_project_id`, `source_project_path` | no (documented for GitLab 19.5+; absent on 19.0.1) | Cross-project guard (R-CI-012) |
 | `ref`, `ref_type`, `ref_path`, `ref_protected` | yes (`ref_path` no) | Conditions (R-CI-011) |
 | `pipeline_source`, `pipeline_id`, `job_id` | yes | Conditions, audit |
+| `job_source` | no | Audit. Equal to `pipeline_source` in every recorded case; which other values it takes is not recorded |
 | `environment`, `environment_protected`, `deployment_tier`, `environment_action` | no (only for jobs with an environment) | Conditions (R-CI-011) |
 | `user_id`, `user_login` | yes | Audit, user-bound grants (R-CI-024) |
+| `user_email`, `user_access_level` | no | Audit. `user_access_level` is the user's role in the project the job runs in (`owner`, `maintainer`, ...) |
 | `sha`, `runner_id`, `runner_environment`, `project_visibility` | no | Conditions, audit |
+| `ci_config_ref_uri`, `ci_config_sha` | no | Audit. `ci_config_ref_uri` is `<host>/<project path>//.gitlab-ci.yml@<ref_path>`, without a scheme |
 
 **Acceptance criteria**
 
-- A job with the YAML above, run against the reference GitLab test instance, exchanges
-  successfully. The same job with `aud: https://other.example.com` fails with
+- An ID token that the issuer double mints with the claim set GitLab issued to a job with the
+  YAML above (recorded,
+  [Q-CI-25](#q-ci-25--gitlabs-behaviour-is-validated-against-a-real-instance-the-tests-run-against-the-double))
+  exchanges successfully. The same token with `aud: https://other.example.com` fails with
   `audience_invalid`.
-- A job that sends `$CI_JOB_TOKEN` as `subject_token` with the ID-token type gets a 400. The
-  reason is `wrong_subject_token_type` or `subject_token_malformed` for the legacy format, and
-  `unknown_issuer`, `unknown_signing_key`, `signature_invalid` or `audience_invalid` for the
-  JWT format, depending on what that undocumented format contains. It never gets a 5xx and
-  never gets a token.
+- A subject token in the shape of GitLab's `CI_JOB_TOKEN` (`glcbt-` followed by a JWT, as recorded
+  from GitLab 19.0.1; the double's job token), sent with the ID-token type, gets 400
+  `wrong_subject_token_type` (R-CI-004 step 2). The legacy format, which a group can switch back to
+  until GitLab 20.0, is not recorded. Without the prefix, the same value gets
+  `subject_token_malformed`, `unknown_issuer`, `unknown_signing_key`, `signature_invalid` or
+  `audience_invalid`. It never gets a 5xx and never gets a token.
 
 ### R-CI-007 · Token exchange endpoint
 Priority: **MVP** · Covers: CIOIDC-018, ADMAPI-031
@@ -1198,12 +1221,23 @@ GitLab facts
 ([merge request pipelines with forks](https://docs.gitlab.com/ci/pipelines/merge_request_pipelines/#use-with-forked-projects),
 [cloud services](https://docs.gitlab.com/ci/cloud_services/)):
 
-- A merge request pipeline from a fork normally runs in the fork, and all project claims name the
-  fork. Mappings pinned to the parent's `project_id` or `namespace_id` do not match it.
-- A parent-project member can run it in the parent project. The CI configuration then comes from
-  the fork's branch, while the parent's runners and settings apply. `project_path` and
-  `project_id` (and `source_project_*` since 19.5) name the fork, `job_project_*` (since 18.4)
-  name the parent, and `ref_protected` is `"false"`.
+- Where a merge request pipeline from a fork runs depends on the merge request's author. Observed
+  on GitLab 19.0.1 on 2026-11-02: one opened by a user who is only a Reporter of the parent ran in
+  the fork; one opened by an owner of the parent ran in the parent at once, without anyone asking.
+  Other roles were not recorded.
+- In the fork, every project and namespace claim names the fork, `job_project_*` and
+  `job_namespace_*` included. Mappings pinned to the parent's `project_id` or `namespace_id` do not
+  match it.
+- A parent-project member can run it in the parent project (the merge request's pipeline API, or
+  "Run pipeline"). The CI configuration then comes from the fork's branch, while the parent's
+  runners and settings apply. Observed on GitLab 19.0.1 on 2026-11-02, both in this case and when
+  GitLab moved the pipeline into the parent by itself:
+  - `project_id`, `project_path` and `namespace_*` name the fork; `job_project_*` and
+    `job_namespace_*` name the parent;
+  - `ref` is the fork's branch and `ref_protected` is `"false"`;
+  - `ci_config_ref_uri` names the parent's path with the fork's branch;
+  - `user_*` name the user who ran or opened it;
+  - there is no `source_project_*` claim, which GitLab documents from 19.5.
 
 Cross-project guard: before mapping evaluation, a subject token is classified as
 *cross-project* when two of `project_id`, `job_project_id` and `source_project_id` are both
@@ -1243,8 +1277,10 @@ branch in `ref`. `ref_protected` describes the source branch, so R-CI-011 govern
 - From P1 (two tiers): a cross-project token that matches a system mapping without the opt-in
   and a delegated mapping with `read_only` receives only the delegated mapping's grants, capped
   to `read`. A policy that names the system mapping grants that token nothing.
-- On a GitLab test instance, a fork merge request pipeline run in the parent project cannot
-  publish to `npm-internal`.
+- A token that the issuer double mints with the claim set recorded from a fork merge request
+  pipeline run in the parent project
+  ([id-token-merge-request-fork-in-parent.json](../../test/oidcstub/testdata/id-token-merge-request-fork-in-parent.json))
+  cannot publish to `npm-internal`.
 
 ### R-CI-013 · Grant specification
 Priority: **MVP** · Covers: CIOIDC-010, CIOIDC-013, CIOIDC-014
@@ -2430,27 +2466,33 @@ owns the mapping. The UI shows it on the CI identity screen
 Priority: **MVP** · Covers: CIOIDC-030
 
 The examples in [Examples](#examples) are part of the specification. trove's end-to-end test
-suite runs them against a GitLab test instance and a trove deployment from the Helm chart
-(INV-13), with the repositories `npm-internal` (local), `npm-all` (virtual), `nuget-internal`
-(local), `nuget-all` (virtual), the policy `ci-read-internal` and the CI issuer and mapping shown
-there. The deployment has at least two `web` and two `worker` replicas on different nodes, and the
-edge balances every request across the `web` replicas (the `scatter` profile of
-[architecture.md](architecture.md) R-ARCH-032), so a job's exchange, installs, publish and
-self-revocation reach different replicas.
+suite runs them against the issuer double ([test/oidcstub](../../test/oidcstub)) and a trove
+deployment from the Helm chart (INV-13), never against a real GitLab or gitlab.com
+([Q-CI-25](#q-ci-25--gitlabs-behaviour-is-validated-against-a-real-instance-the-tests-run-against-the-double)).
+The double mints each job's ID token with the claim set GitLab issues to that job, as recorded from
+a real instance. The test runs the pipeline's steps as its client steps: the exchange of
+`before_script`, the `npm` and `dotnet` steps and the closing revocation, with the job's variables.
+How GitLab itself issues those tokens is validated by hand against a real instance and recorded
+([e2e.md](../developer/e2e.md), "Validating the double against a real GitLab"). The deployment has
+the repositories `npm-internal` (local), `npm-all` (virtual), `nuget-internal` (local),
+`nuget-all` (virtual), the policy `ci-read-internal` and the CI issuer and mapping shown there. It
+has at least two `web` and two `worker` replicas on different nodes, and the edge balances every
+request across the `web` replicas (the `scatter` profile of [architecture.md](architecture.md)
+R-ARCH-032), so a job's exchange, installs, publish and self-revocation reach different replicas.
 
 **Acceptance criteria**
 
-- On a protected tag `v1.4.0` of `acme/billing/invoice-api`, both jobs pass:
-  `@acme-billing/invoice-client@1.4.0` is in `npm-internal`, and
+- With the tokens of the two jobs on a protected tag `v1.4.0` of `acme/billing/invoice-api`, both
+  jobs' steps pass: `@acme-billing/invoice-client@1.4.0` is in `npm-internal`, and
   `Acme.Billing.InvoiceApi 1.4.0` is in `nuget-internal`.
-- The same pipeline on an unprotected branch (with the `rules:` removed) fails at `npm publish`
-  and `dotnet nuget push` with 403. The exchange itself succeeds through a read-only mapping,
-  or fails with `no_matching_mapping` if none exists.
+- With the tokens of the same jobs on an unprotected branch (the `rules:` removed), the steps fail
+  at `npm publish` and `dotnet nuget push` with 403. The exchange itself succeeds through a
+  read-only mapping, or fails with `no_matching_mapping` if none exists.
 - `GET /api/v1/ci/issuances?job_id=$CI_JOB_ID` lists both jobs' tokens with the right
   `project_id`, `ref` and `sha`.
 - After both jobs pass, their CI tokens are revoked (`token.revoked`, reason `owner`) and get 401
   on `npm view`, although their `expires_in` has not passed.
-- No job log contains a `trv_cit_` value or the ID token.
+- No output of a job's steps contains a `trv_cit_` value or the ID token.
 - The pipeline passes while the node of one `web` replica is drained with `kubectl drain` during
   its run, and again with Valkey stopped for the whole run.
 
@@ -3653,6 +3695,45 @@ validation ever tries an HMAC verification with a key it holds.
 
 **Applied in the spec:** R-CI-004 (the first acceptance criterion names the secret).
 
+### Q-CI-25 · GitLab's behaviour is validated against a real instance; the tests run against the double
+
+Status: **Decided by the owner on 2026-11-02** — option (d).
+
+Context: the tests of this page need GitLab ID tokens. WP4.6 had planned a real GitLab instance in
+the full run of Test and Release, on the commit that closes the phase and as the M4 exit. R-CI-028
+had its end-to-end suite run the reference pipeline against a GitLab test instance. The issuer
+double ([test/oidcstub](../../test/oidcstub)) signs GitLab-shaped tokens and is the only way to get
+the faults of R-CI-003 and the malformed tokens of R-CI-004. What keeps it GitLab-shaped is a
+comparison with what a real GitLab issues.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A real GitLab instance in CI | The release workflow starts a GitLab container and a runner and runs the reference pipeline in it | The real thing on every full run | Start-up time and memory on the CI runners (the open "Not verified" of the roadmap); a root password, a runner token and an administrator's token as CI secrets; a run as flaky as the instance's start |
+| (b) gitlab.com | A project on gitlab.com runs the pipeline against a trove it can reach | No instance to operate | A public issuer (R-CI-005), not the self-managed kind trove is built for; an account and its secrets in CI; rate limits; trove reachable from the internet |
+| (c) A standing test instance | An instance the CI reaches, kept running | Fast; real | A server to operate, patch and secure; a long-lived credential in CI; state that drifts between runs |
+| (d) The double, validated against a real instance (chosen) | Integration and end-to-end tests run against the double only. GitLab's behaviour is recorded by hand on a real instance (`make oidc-fixtures`) as fixtures, and the double's own tests check that it reproduces every fixture | Fast and deterministic; no GitLab credential in CI; the recording names the GitLab version it saw | The double is only as current as the last recording: a GitLab release that changes a claim is noticed when someone re-records |
+
+**Choice:** (d), the owner's decision. Integration and end-to-end tests run against the issuer
+double, never against a real GitLab or gitlab.com. The GitLab behaviour is validated by hand
+against a real instance and recorded as fixtures
+([test/oidcstub/testdata](../../test/oidcstub/testdata), first recorded on GitLab 19.0.1 on
+2026-11-02). The procedure is in [e2e.md](../developer/e2e.md), "Validating the double against a
+real GitLab".
+
+**Rationale:** the owner's decision. The double was needed anyway. With the fixtures, its claim to
+be "GitLab-shaped" is a test: it must reproduce every recorded claim set, header, key set and
+caching header, or the double's tests fail. Option (d) costs the CI nothing.
+
+**Revisit:** re-record when GitLab releases a version that the fixtures do not describe, among them
+19.5 with the documented `source_project_*` claims, and before a phase that relies on a claim the
+fixtures lack. The decision itself is revisited if a defect reaches a user that a real instance in
+CI would have caught and a re-recording would not.
+
+**Applied in the spec:** the format row of the comparison table (`CI_JOB_TOKEN`), R-CI-004 (`nbf`),
+R-CI-006 (the observed claim set, the claim table, `default:` and both acceptance criteria),
+R-CI-012 (the fork facts, the last acceptance criterion), R-CI-028 (runs against the double), H-27
+(observed); [roadmap.md](../coverage/roadmap.md) E4.1 and WP4.6.
+
 ### Q-CI-26 · Project administrators manage the CI mappings of their project
 
 Status: **Decided by the owner on 2026-11-02** for the direction: project administrators manage the CI mappings of their
@@ -3721,7 +3802,12 @@ failed or cancelled run.
 ### H-27 · Group hierarchies cannot be pinned by immutable ID
 
 GitLab ID tokens carry the immediate `namespace_id` but no ID of the root group or of ancestor
-groups. A mapping meant for "every project below group `acme`" on a public issuer must either
+groups. Observed on GitLab 19.0.1 on 2026-11-02 for a project two levels below a top-level group,
+in every recorded case: the only namespace IDs among the 33 to 37 claims are `namespace_id` and
+`job_namespace_id`, and both name a direct namespace (the project's, and the one of the project the
+job runs in). The ancestors appear only in paths: `namespace_path`, `project_path`, their `job_`
+forms, `ci_config_ref_uri` and `sub`. No claim of that version closes this gap.
+A mapping meant for "every project below group `acme`" on a public issuer must either
 list every subgroup's `namespace_id` or project ID, or fall back on `namespace_path` globs. Path
 globs can be satisfied by a group created later under a released path. The pinning rule forces at
 least one ID, so the exposure is limited to subgroups added later and not yet listed. Keeping

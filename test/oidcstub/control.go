@@ -14,7 +14,7 @@ const maxControlBody = 1 << 20
 //
 //	GET  /counts                  the counters (Counts)
 //	POST /reset[?all=true]        zero the counters; with all, also heal faults, restore the caching
-//	                              and replace the keys by one fresh default key
+//	                              and replace the keys by a fresh default key set
 //	GET  /info                    {"issuer", "discovery_url", "jwks_url", "keys": [Info]}
 //	GET  /keys                    [Info]
 //	POST /keys                    add a key (KeyOptions; {} is a default RSA-2048 key): the rotation

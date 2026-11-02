@@ -214,29 +214,17 @@ func TestDoubleDiscoveryDocument(t *testing.T) {
 // The double serves the cases of R-CI-003.
 func TestDoubleJWKSCaching(t *testing.T) {
 	f := newFixture(t, Config{})
-	f.s.SetCache(Cache{MaxAge: Duration(90 * time.Second)})
+	// The default is GitLab's (testdata/issuer.json): 24 hours, GitLab's directives, a weak ETag.
 	resp, _, err := f.get(f.s.JWKSURL())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := resp.Header.Get("Cache-Control"); got != "max-age=90" {
-		t.Fatalf("Cache-Control %q", got)
+	if got := resp.Header.Get("Cache-Control"); got != "max-age=86400, public, must-revalidate, no-transform=true" {
+		t.Fatalf("default Cache-Control %q", got)
 	}
-	if resp.Header.Get("ETag") != "" {
-		t.Fatal("an ETag without being asked for")
-	}
-
-	f.s.SetCache(Cache{NoHeader: true})
-	resp, _, _ = f.get(f.s.JWKSURL())
-	if resp.Header.Get("Cache-Control") != "" {
-		t.Fatalf("Cache-Control %q, want none", resp.Header.Get("Cache-Control"))
-	}
-
-	f.s.SetCache(Cache{MaxAge: 0, ETag: true})
-	resp, _, _ = f.get(f.s.JWKSURL())
 	etag := resp.Header.Get("ETag")
-	if etag == "" || resp.Header.Get("Cache-Control") != "max-age=0" {
-		t.Fatalf("ETag %q, Cache-Control %q", etag, resp.Header.Get("Cache-Control"))
+	if !strings.HasPrefix(etag, `W/"`) {
+		t.Fatalf("default ETag %q, want a weak one", etag)
 	}
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, f.s.JWKSURL(), http.NoBody)
 	req.Header.Set("If-None-Match", etag)
@@ -248,6 +236,25 @@ func TestDoubleJWKSCaching(t *testing.T) {
 	if r2.StatusCode != http.StatusNotModified {
 		t.Fatalf("conditional request: %s", r2.Status)
 	}
+
+	f.s.SetCache(Cache{MaxAge: Duration(90 * time.Second)})
+	resp, _, _ = f.get(f.s.JWKSURL())
+	if got := resp.Header.Get("Cache-Control"); got != "max-age=90, public, must-revalidate, no-transform=true" {
+		t.Fatalf("Cache-Control %q", got)
+	}
+
+	f.s.SetCache(Cache{MaxAge: Duration(90 * time.Second), OnlyMaxAge: true, NoETag: true})
+	resp, _, _ = f.get(f.s.JWKSURL())
+	if got := resp.Header.Get("Cache-Control"); got != "max-age=90" || resp.Header.Get("ETag") != "" {
+		t.Fatalf("Cache-Control %q, ETag %q", got, resp.Header.Get("ETag"))
+	}
+
+	f.s.SetCache(Cache{NoHeader: true})
+	resp, _, _ = f.get(f.s.JWKSURL())
+	if resp.Header.Get("Cache-Control") != "" || resp.Header.Get("ETag") != etag {
+		t.Fatalf("Cache-Control %q, want none; ETag %q, want %q", resp.Header.Get("Cache-Control"), resp.Header.Get("ETag"), etag)
+	}
+
 	if _, err := f.s.Rotate(); err != nil { // a changed key set has another ETag
 		t.Fatal(err)
 	}
@@ -255,7 +262,7 @@ func TestDoubleJWKSCaching(t *testing.T) {
 	if resp.Header.Get("ETag") == etag {
 		t.Fatal("the ETag did not change with the key set")
 	}
-	if c := f.s.Counts(); c.NotModified != 1 || c.JWKS != 5 {
+	if c := f.s.Counts(); c.NotModified != 1 || c.JWKS != 6 {
 		t.Fatalf("counts %+v", c)
 	}
 }
@@ -290,16 +297,25 @@ func TestDoubleMintedTokensVerifyAgainstTheJWKS(t *testing.T) {
 // The double serves the cases of R-CI-003.
 func TestDoubleRotationAndRemovalShowInTheJWKS(t *testing.T) {
 	f := newFixture(t, Config{})
+	// GitLab's layout: the OpenID Connect key, then the CI signing key, which signs.
 	first := f.jwks().Keys
-	if len(first) != 1 || first[0].KTY != "RSA" || first[0].Use != "sig" || first[0].Alg != "RS256" || first[0].KID == "" {
+	if len(first) != 2 || first[0].KID == first[1].KID {
 		t.Fatalf("default key set %+v", first)
 	}
-	if n := len(dec(t, first[0].N)); n != 256 {
-		t.Fatalf("default RSA modulus is %d bytes, want 256 (2048 bits)", n)
+	for _, k := range first {
+		if k.KTY != "RSA" || k.Use != "sig" || k.Alg != "RS256" || k.KID == "" {
+			t.Fatalf("default key %+v", k)
+		}
+		if n := len(dec(t, k.N)); n != 256 {
+			t.Fatalf("default RSA modulus is %d bytes, want 256 (2048 bits)", n)
+		}
 	}
 	oldTok, err := f.s.Mint(MintOptions{})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if h, _ := verifyJWS(t, oldTok, f.jwks()); h["kid"] != first[1].KID {
+		t.Fatalf("the second key (the CI signing key) signs by default: kid %v", h["kid"])
 	}
 
 	nk, err := f.s.Rotate()
@@ -307,8 +323,8 @@ func TestDoubleRotationAndRemovalShowInTheJWKS(t *testing.T) {
 		t.Fatal(err)
 	}
 	after := f.jwks().Keys
-	if len(after) != 2 || after[0].KID != first[0].KID || after[1].KID != nk.KID {
-		t.Fatalf("rotation keeps the old key and adds the new one: %+v", after)
+	if len(after) != 3 || after[0].KID != first[0].KID || after[1].KID != first[1].KID || after[2].KID != nk.KID {
+		t.Fatalf("rotation keeps the old keys and adds the new one: %+v", after)
 	}
 	newTok, _ := f.s.Mint(MintOptions{})
 	if h, _ := verifyJWS(t, newTok, f.jwks()); h["kid"] != nk.KID {
@@ -316,18 +332,19 @@ func TestDoubleRotationAndRemovalShowInTheJWKS(t *testing.T) {
 	}
 	verifyJWS(t, oldTok, f.jwks()) // the old token still verifies while its key is published
 
-	if !f.s.RemoveKey(first[0].KID) || f.s.RemoveKey("nope") {
+	// GitLab's own rotation replaces the CI key: the old one leaves the set.
+	if !f.s.RemoveKey(first[1].KID) || f.s.RemoveKey("nope") {
 		t.Fatal("RemoveKey must report whether it removed something")
 	}
-	if left := f.jwks().Keys; len(left) != 1 || left[0].KID != nk.KID {
+	if left := f.jwks().Keys; len(left) != 2 || left[0].KID != first[0].KID || left[1].KID != nk.KID {
 		t.Fatalf("after removal %+v", left)
 	}
 	// A removed key still signs, for a test of "unknown_signing_key".
-	gone, err := f.s.Mint(MintOptions{KID: first[0].KID})
+	gone, err := f.s.Mint(MintOptions{KID: first[1].KID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if h := strings.Split(gone, "."); !strings.Contains(string(dec(t, h[0])), first[0].KID) {
+	if h := strings.Split(gone, "."); !strings.Contains(string(dec(t, h[0])), first[1].KID) {
 		t.Fatal("the token of a removed key carries its kid")
 	}
 }
@@ -449,7 +466,6 @@ func TestDoubleDefaultClaims(t *testing.T) {
 	str("namespace_path", "acme/billing")
 	str("job_project_path", "acme/billing/invoice-api")
 	str("job_namespace_id", "4711")
-	str("source_project_id", "1234")
 	str("ref", "v1.4.0")
 	str("ref_type", "tag")
 	str("ref_path", "refs/tags/v1.4.0")
@@ -463,12 +479,16 @@ func TestDoubleDefaultClaims(t *testing.T) {
 	str("environment_action", "start")
 	str("user_id", "42")
 	str("user_login", "jdoe")
+	str("user_email", "jdoe@example.com")
+	str("user_access_level", "maintainer")
+	str("job_source", "push")
 	str("project_visibility", "private")
+	str("ci_config_ref_uri", strings.TrimPrefix(f.run.URL, "https://")+"/acme/billing/invoice-api//.gitlab-ci.yml@refs/tags/v1.4.0")
 	if s, _ := p["sub"].(string); !strings.HasPrefix(s, "project_path:acme/billing/invoice-api:ref_type:tag:ref:") {
 		t.Errorf("sub %q", s)
 	}
-	if s, _ := p["sha"].(string); len(s) != 40 {
-		t.Errorf("sha %q", s)
+	if s, _ := p["sha"].(string); len(s) != 40 || p["ci_config_sha"] != s {
+		t.Errorf("sha %q, ci_config_sha %v", s, p["ci_config_sha"])
 	}
 	if _, ok := p["runner_id"].(float64); !ok {
 		t.Errorf("runner_id %#v is a number in GitLab's tokens", p["runner_id"])
@@ -476,14 +496,42 @@ func TestDoubleDefaultClaims(t *testing.T) {
 	if p["runner_environment"] == nil {
 		t.Error("runner_environment missing")
 	}
+	for _, c := range []string{"source_project_id", "source_project_path"} {
+		if _, ok := p[c]; ok {
+			t.Errorf("%s: GitLab 19.0.1 does not send it", c)
+		}
+	}
 	iat, nbf, exp := int64(p["iat"].(float64)), int64(p["nbf"].(float64)), int64(p["exp"].(float64))
-	if iat < before || iat > time.Now().Unix() || nbf != iat-5 || exp != iat+300 {
+	if iat < before || iat > time.Now().Unix() || nbf != iat-5 || exp != iat+3600 {
 		t.Errorf("iat %d nbf %d exp %d", iat, nbf, exp)
 	}
-	// R-CI-018: every token has its own jti.
+	// R-CI-018: every token has its own jti, a UUID as GitLab's.
 	a, b := p["jti"], parsePayload(t, mustMint(t, f.s, MintOptions{}))["jti"]
-	if a == nil || a == b {
+	if a == nil || a == b || !uuidRE.MatchString(a.(string)) {
 		t.Errorf("jti %v and %v", a, b)
+	}
+}
+
+// The double serves the cases of R-CI-004 and R-CI-006.
+func TestDoubleJobToken(t *testing.T) {
+	f := newFixture(t, Config{})
+	tok := mustMint(t, f.s, MintOptions{JobToken: true})
+	if !strings.HasPrefix(tok, JobTokenPrefix) {
+		t.Fatalf("job token %.12q... lacks the prefix", tok)
+	}
+	jwt := strings.TrimPrefix(tok, JobTokenPrefix)
+	if parts := strings.Split(jwt, "."); len(parts) != 3 {
+		t.Fatalf("%d parts after the prefix", len(parts))
+	}
+	h := parseHeader(t, jwt)
+	for _, k := range f.jwks().Keys {
+		if k.KID == h["kid"] {
+			t.Fatal("the job token's key is published; GitLab does not publish ci_job_token_signing_key")
+		}
+	}
+	// One key per double: two job tokens name the same key.
+	if parseHeader(t, strings.TrimPrefix(mustMint(t, f.s, MintOptions{JobToken: true}), JobTokenPrefix))["kid"] != h["kid"] {
+		t.Fatal("job tokens are signed by one key")
 	}
 }
 
@@ -556,8 +604,9 @@ func TestDoubleAlgorithmConfusionHS256(t *testing.T) {
 	if h := parseHeader(t, tok); h["alg"] != "HS256" {
 		t.Fatalf("header %v", h)
 	}
-	// The secret is the PEM of the RSA public key, which anyone can fetch from the JWKS.
-	m := hmac.New(sha256.New, f.s.keys[0].PublicKeyPEM())
+	// The secret is the PEM of the newest RSA public key (the CI signing key), which anyone can fetch
+	// from the JWKS.
+	m := hmac.New(sha256.New, f.s.keys[len(f.s.keys)-1].PublicKeyPEM())
 	m.Write([]byte(parts[0] + "." + parts[1]))
 	if !hmac.Equal(m.Sum(nil), dec(t, parts[2])) {
 		t.Fatal("the HMAC is not keyed with the public key")
@@ -615,11 +664,12 @@ func TestDoubleMalformedShapes(t *testing.T) {
 func TestDoubleForeignSignature(t *testing.T) {
 	f := newFixture(t, Config{})
 	tok := mustMint(t, f.s, MintOptions{ForeignSignature: true})
-	if h := parseHeader(t, tok); h["kid"] != f.s.keys[0].KID {
+	signing := f.s.keys[len(f.s.keys)-1]
+	if h := parseHeader(t, tok); h["kid"] != signing.KID {
 		t.Fatalf("the header must name the published key: %v", h)
 	}
 	parts := strings.Split(tok, ".")
-	pub := f.s.keys[0].Public().(*rsa.PublicKey)
+	pub := signing.Public().(*rsa.PublicKey)
 	sum := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
 	if rsa.VerifyPKCS1v15(pub, crypto.SHA256, sum[:], dec(t, parts[2])) == nil {
 		t.Fatal("the signature verifies with the published key")
@@ -752,7 +802,7 @@ func TestDoubleFaultRedirects(t *testing.T) {
 	// Followed to the end, the chain ends in the key set: three redirects, one fetch.
 	var d jwksDoc
 	f.mustJSON(f.s.JWKSURL(), &d)
-	if len(d.Keys) != 1 {
+	if len(d.Keys) != 2 {
 		t.Fatalf("key set %+v", d)
 	}
 	if c := f.s.Counts(); c.JWKS != 2 || c.Hops != 3 {

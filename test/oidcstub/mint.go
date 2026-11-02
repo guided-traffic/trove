@@ -70,28 +70,42 @@ type MintOptions struct {
 	// ForeignSignature signs with a fresh key of the same type that no JWKS lists, under the
 	// selected key's kid: the header names a published key, the signature is not its.
 	ForeignSignature bool `json:"foreign_signature,omitempty"`
+	// JobToken returns a value in the shape of GitLab 19.0.1's CI_JOB_TOKEN (testdata/job-token.json):
+	// JobTokenPrefix followed by a JWT, signed RS256 by a key of the double that its key set does
+	// not list (GitLab signs job tokens with ci_job_token_signing_key, which it does not publish).
+	// The payload is the ID token's; GitLab's own payload of a job token is not recorded.
+	JobToken bool `json:"job_token,omitempty"`
 
 	// SignWith signs with this key instead of selecting one (in-process only).
 	SignWith *Key `json:"-"`
 }
 
-// DefaultClaims is a GitLab ID token's payload for the example project, as R-CI-006 lists it.
-// GitLab writes IDs and booleans as JSON strings; runner_id and the NumericDates are numbers.
+// DefaultLifetime is exp - iat of a default token: GitLab sets exp to iat plus the job's timeout,
+// and a project's default job timeout is 60 minutes (observed on GitLab 19.0.1, R-CI-006).
+const DefaultLifetime = time.Hour
+
+// DefaultClaims is the payload GitLab issues to a job with environment production (action start)
+// on the protected tag v1.4.0 of the example project, pushed by a maintainer: exactly the claims of
+// testdata/id-token-push-protected-tag-environment.json, recorded from GitLab 19.0.1 (R-CI-006;
+// fixture_test.go checks it), with the example project's values. GitLab writes IDs and booleans as
+// JSON strings; runner_id and the NumericDates are numbers; jti is a UUID; nbf is iat - 5.
+//
+// GitLab 19.0.1 sends no source_project_id or source_project_path (GitLab documents them from
+// 19.5): a test of the cross-project guard adds them through MintOptions.Claims.
 func DefaultClaims(issuer string, audience any, now time.Time) map[string]any {
 	if audience == nil {
 		audience = DefaultAudience
 	}
-	jti := make([]byte, 16)
-	_, _ = rand.Read(jti)
 	iat := now.Unix()
+	const sha = "0123456789abcdef0123456789abcdef01234567"
 	return map[string]any{
 		"iss": issuer,
 		"aud": audience,
 		"sub": "project_path:acme/billing/invoice-api:ref_type:tag:ref:v1.4.0",
-		"jti": hex.EncodeToString(jti),
+		"jti": newUUID(),
 		"iat": iat,
 		"nbf": iat - 5,
-		"exp": iat + 300,
+		"exp": iat + int64(DefaultLifetime/time.Second),
 
 		"project_id":     "1234",
 		"project_path":   "acme/billing/invoice-api",
@@ -103,9 +117,6 @@ func DefaultClaims(issuer string, audience any, now time.Time) map[string]any {
 		"job_namespace_id":   "4711",
 		"job_namespace_path": "acme/billing",
 
-		"source_project_id":   "1234",
-		"source_project_path": "acme/billing/invoice-api",
-
 		"ref":           "v1.4.0",
 		"ref_type":      "tag",
 		"ref_path":      "refs/tags/v1.4.0",
@@ -114,21 +125,47 @@ func DefaultClaims(issuer string, audience any, now time.Time) map[string]any {
 		"pipeline_source": "push",
 		"pipeline_id":     "98765",
 		"job_id":          "123456",
+		"job_source":      "push",
 
 		"environment":           "production",
 		"environment_protected": "true",
 		"deployment_tier":       "production",
 		"environment_action":    "start",
 
-		"user_id":    "42",
-		"user_login": "jdoe",
+		"user_id":           "42",
+		"user_login":        "jdoe",
+		"user_email":        "jdoe@example.com",
+		"user_access_level": "maintainer",
 
-		"sha":                "0123456789abcdef0123456789abcdef01234567",
+		"sha":                sha,
+		"ci_config_ref_uri":  hostOf(issuer) + "/acme/billing/invoice-api//.gitlab-ci.yml@refs/tags/v1.4.0",
+		"ci_config_sha":      sha,
 		"runner_id":          17,
 		"runner_environment": "self-hosted",
 		"project_visibility": "private",
 	}
 }
+
+// hostOf is the issuer without its scheme: GitLab writes ci_config_ref_uri as host[:port]/path.
+func hostOf(issuer string) string {
+	if i := strings.Index(issuer, "://"); i >= 0 {
+		return issuer[i+3:]
+	}
+	return issuer
+}
+
+// newUUID is a random (version 4) UUID, the shape of GitLab's jti.
+func newUUID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	b[6] = b[6]&0x0f | 0x40
+	b[8] = b[8]&0x3f | 0x80
+	h := hex.EncodeToString(b)
+	return h[:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
+}
+
+// JobTokenPrefix starts every CI_JOB_TOKEN of GitLab 19.0.1, in the JWT format too (R-CI-004 step 2).
+const JobTokenPrefix = "glcbt-"
 
 // Mint returns a token as described by o.
 func (s *Server) Mint(o MintOptions) (string, error) {
@@ -147,15 +184,47 @@ func (s *Server) mint(o MintOptions, issuer string) (string, error) {
 	for _, k := range o.Remove {
 		delete(claims, k)
 	}
+	if o.JobToken && o.SignWith == nil {
+		k, err := s.jobTokenKey()
+		if err != nil {
+			return "", err
+		}
+		o.SignWith = k
+	}
 	tok, err := s.build(o, claims)
 	if err != nil {
 		return "", err
 	}
 	if o.PadTo > len(tok) {
 		claims["pad"] = strings.Repeat("a", (o.PadTo-len(tok))*3/4+16)
-		return s.build(o, claims)
+		if tok, err = s.build(o, claims); err != nil {
+			return "", err
+		}
+	}
+	if o.JobToken {
+		tok = JobTokenPrefix + tok
 	}
 	return tok, nil
+}
+
+// jobTokenKey is the unpublished key that signs job tokens, made on first use.
+func (s *Server) jobTokenKey() (*Key, error) {
+	s.mu.Lock()
+	k := s.jobKey
+	s.mu.Unlock()
+	if k != nil {
+		return k, nil
+	}
+	k, err := newKey(KeyOptions{Unpublished: true})
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.jobKey == nil {
+		s.jobKey = k
+	}
+	return s.jobKey, nil
 }
 
 func (s *Server) build(o MintOptions, claims map[string]any) (string, error) {
@@ -318,7 +387,8 @@ func (s *Server) pickKey(alg, kid string) (*Key, error) {
 	}
 	for i := len(s.keys) - 1; i >= 0; i-- {
 		k := s.keys[i]
-		// The newest published key of the family; the 1024-bit and unpublished keys are only chosen by kid.
+		// The newest published key of the family; the 1024-bit, the 4096-bit and the unpublished keys
+		// are only chosen by kid.
 		if k.Type == want && k.Published() {
 			return k, nil
 		}
