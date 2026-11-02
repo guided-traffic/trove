@@ -97,7 +97,10 @@ type projectInfo struct {
 // principal holds on the repositories the policy's selectors cover, narrowed to
 // the policy's package and path patterns (R-AUTHZ-015).
 type grant struct {
-	policy  string
+	policy string
+	// project is the ID of the policy's project, "" for a global policy: a CI mapping of a project tier is
+	// granted by its project's policies only (Q-CI-26).
+	project string
 	actions ActionSet
 	res     resourceSet
 }
@@ -116,6 +119,10 @@ type Index struct {
 	bindings map[string]roleSet
 	// ci maps the name of a CI identity mapping principal to its ID.
 	ci map[string]string
+	// groups maps the name of a group that a policy entry names to its ID: a CI token's mappings list
+	// groups by name, and the stage resolves no membership for a mapping principal (R-AUTHZ-014). A
+	// group no entry names holds no grant, so it needs no entry here.
+	groups map[string]string
 	// exposure maps an endpoint name to its compiled exposure rules (R-EP-013).
 	exposure map[string]*endpointExposure
 	// projects maps a project key to the project (R-AUTHZ-026).
@@ -187,6 +194,7 @@ func BuildIndex(s *Snapshot, reg *catalog.Registry, log *slog.Logger) *Index {
 			grants:   map[int64]map[string][]grant{},
 			bindings: map[string]roleSet{},
 			ci:       map[string]string{},
+			groups:   map[string]string{},
 			projects: map[string]*projectInfo{},
 		},
 		log: log, reg: catalog.Or(reg), byID: make(map[int64]*repoInfo, len(s.Repositories)),
@@ -221,8 +229,11 @@ func BuildIndex(s *Snapshot, reg *catalog.Registry, log *slog.Logger) *Index {
 	}
 	for _, r := range s.Entries {
 		b.entries[r.PolicyID] = append(b.entries[r.PolicyID], r)
-		if r.PrincipalKind == dbCIMapping {
+		switch r.PrincipalKind {
+		case dbCIMapping:
 			b.x.ci[r.PrincipalName] = r.PrincipalID
+		case dbGroup:
+			b.x.groups[r.PrincipalName] = r.PrincipalID
 		}
 	}
 	for _, p := range s.Policies {
@@ -407,7 +418,7 @@ func (b *builder) addPolicy(p q.AuthzBuildPoliciesRow) {
 				m = map[string][]grant{}
 				b.x.grants[r.ID] = m
 			}
-			m[e.PrincipalID] = append(m[e.PrincipalID], grant{policy: p.Name, actions: acts, res: *byRule[key]})
+			m[e.PrincipalID] = append(m[e.PrincipalID], grant{policy: p.Name, project: p.ProjectID, actions: acts, res: *byRule[key]})
 		}
 	}
 	b.x.policies++

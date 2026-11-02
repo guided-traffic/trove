@@ -24,15 +24,7 @@ import (
 //     the project's policies and repositories) are the service's; a mapping of another tier is 404 (W3).
 //   - evaluateProjectCiMappings: Mappings.EvaluateIn, the project's tier only (W3).
 //   - getProjectCiSnippet: the snippet of a mapping of the project's tier, GetIn first (W3).
-//   - listProjectCiIssuances: Issuances.ListForProject.
-
-func (s *Server) ciProject(w http.ResponseWriter, r *http.Request, capability, project string, available bool, what, workPackage string) {
-	if err := s.requireProject(r.Context(), capability, project, authz.ProjectManagePolicies); err != nil {
-		httpserver.Problem(w, r, err)
-		return
-	}
-	ciPending(w, r, available, what, workPackage)
-}
+//   - listProjectCiIssuances: Issuances.ListForProject (W5).
 
 // projectMappings narrows the caller to the project and returns the mapping service.
 func (s *Server) projectMappings(r *http.Request, capability, project string) (ci.Mappings, error) {
@@ -207,7 +199,27 @@ func (s *Server) GetProjectCiSnippet(w http.ResponseWriter, r *http.Request, key
 	writeSnippet(w, text)
 }
 
-// ListProjectCiIssuances implements GET /api/v1/projects/{key}/ci/issuances.
+// ListProjectCiIssuances implements GET /api/v1/projects/{key}/ci/issuances (Q-CI-26, built by W5): the records of
+// tokens whose contributing mappings include a mapping of the project's tier, newest first, each showing the
+// project's mappings only. A project the caller does not administer is 404 before anything is read.
 func (s *Server) ListProjectCiIssuances(w http.ResponseWriter, r *http.Request, key string, _ gen.ListProjectCiIssuancesParams) {
-	s.ciProject(w, r, "tokens:read", key, s.o.CI.Issuances != nil, "The CI issuance service", "W5")
+	if err := s.requireProject(r.Context(), "tokens:read", key, authz.ProjectManagePolicies); err != nil {
+		httpserver.Problem(w, r, err)
+		return
+	}
+	svc, err := s.ciIssuanceService()
+	var lq ListQuery
+	var f ci.IssuanceFilter
+	if err == nil {
+		lq, f, err = s.issuanceQuery(r, ListSpec{Filters: []string{"issuer", "jobId", "active"}})
+	}
+	var page ci.IssuancePage
+	if err == nil {
+		page, err = svc.ListForProject(r.Context(), key, f)
+	}
+	if err != nil {
+		httpserver.Problem(w, r, err)
+		return
+	}
+	WritePage(w, r, MapPage(NewPage(lq, page.Items, ci.IssuanceSortKey), issuanceBody))
 }

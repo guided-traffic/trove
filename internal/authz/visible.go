@@ -166,7 +166,13 @@ func (e *Engine) readShape(st *evalState, sub Subject, r *repoInfo, allEndpoint 
 		return rowsUnless(allEndpoint && !scoped)
 	}
 	unrestricted, any := false, false
+	if st.isCI {
+		any, unrestricted = e.ciReadShape(st.ci, st.idx, r)
+	}
 	for _, p := range st.pset {
+		if st.isCI {
+			break // a CI subject's grants are its contributions (R-AUTHZ-014)
+		}
 		for _, g := range st.idx.grantsFor(r.ID, p) {
 			if !g.actions.Has(Read) {
 				continue

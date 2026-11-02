@@ -7,6 +7,8 @@ package q
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const ciIssuanceDeleteExpired = `-- name: CiIssuanceDeleteExpired :execrows
@@ -30,6 +32,152 @@ func (q *Queries) CiIssuanceDeleteExpired(ctx context.Context, arg CiIssuanceDel
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const ciIssuanceDeployed = `-- name: CiIssuanceDeployed :many
+SELECT DISTINCT COALESCE(repository, '')::text AS repository, COALESCE(details->>'package', '')::text AS package,
+       COALESCE(details->>'version', '')::text AS version
+  FROM audit_event
+ WHERE token_id = $1::text::uuid AND action IN ('npm.publish', 'package.published') AND outcome = 'success'
+   AND occurred_at >= to_timestamp($2::bigint / 1000000.0)
+   AND occurred_at < to_timestamp($3::bigint / 1000000.0)
+ ORDER BY 1, 2, 3
+ LIMIT 1000
+`
+
+type CiIssuanceDeployedParams struct {
+	TokenID string
+	FromUs  int64
+	ToUs    int64
+}
+
+type CiIssuanceDeployedRow struct {
+	Repository string
+	Package    string
+	Version    string
+}
+
+// The package versions the token published, from the publish events of the formats (npm.publish, package.published).
+func (q *Queries) CiIssuanceDeployed(ctx context.Context, arg CiIssuanceDeployedParams) ([]CiIssuanceDeployedRow, error) {
+	rows, err := q.db.Query(ctx, ciIssuanceDeployed, arg.TokenID, arg.FromUs, arg.ToUs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CiIssuanceDeployedRow{}
+	for rows.Next() {
+		var i CiIssuanceDeployedRow
+		if err := rows.Scan(&i.Repository, &i.Package, &i.Version); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ciIssuanceGet = `-- name: CiIssuanceGet :many
+SELECT s.token_id::text AS token_id, i.name AS issuer, s.issuer_id::text AS issuer_id, s.mapping_ids::text[] AS mapping_ids,
+       s.mapping_names, s.subject_kind, COALESCE(s.jti, '')::text AS jti, s.project_id, COALESCE(s.project_path, '')::text AS project_path,
+       COALESCE(s.namespace_id, '')::text AS namespace_id, COALESCE(s.pipeline_id, '')::text AS pipeline_id, s.job_id,
+       COALESCE(s.ref, '')::text AS ref, COALESCE(s.ref_type, '')::text AS ref_type, COALESCE(s.ref_protected::text, '')::text AS ref_protected,
+       COALESCE(s.pipeline_source, '')::text AS pipeline_source, COALESCE(s.environment, '')::text AS environment,
+       COALESCE(s.sha, '')::text AS sha, COALESCE(s.user_id, '')::text AS user_id, COALESCE(s.user_login, '')::text AS user_login,
+       s.claims, s.grants, COALESCE(s.requested_scope, '')::text AS requested_scope, s.granted_scope, s.cross_project,
+       (extract(epoch FROM s.issued_at) * 1000000)::bigint AS issued_us, (extract(epoch FROM s.expires_at) * 1000000)::bigint AS expires_us,
+       COALESCE(host(s.client_ip), '')::text AS client_ip, COALESCE(s.user_agent, '')::text AS user_agent,
+       COALESCE(extract(epoch FROM t.revoked_at) * 1000000, 0)::bigint AS revoked_us
+  FROM ci_token_issuances s
+  JOIN ci_issuers i ON i.id = s.issuer_id
+  LEFT JOIN api_token t ON t.id = s.token_id
+ WHERE s.token_id = $1::text::uuid
+`
+
+type CiIssuanceGetRow struct {
+	TokenID        string
+	Issuer         string
+	IssuerID       string
+	MappingIds     []string
+	MappingNames   []string
+	SubjectKind    string
+	Jti            string
+	ProjectID      string
+	ProjectPath    string
+	NamespaceID    string
+	PipelineID     string
+	JobID          string
+	Ref            string
+	RefType        string
+	RefProtected   string
+	PipelineSource string
+	Environment    string
+	Sha            string
+	UserID         string
+	UserLogin      string
+	Claims         []byte
+	Grants         []byte
+	RequestedScope string
+	GrantedScope   string
+	CrossProject   bool
+	IssuedUs       int64
+	ExpiresUs      int64
+	ClientIp       string
+	UserAgent      string
+	RevokedUs      int64
+}
+
+// One record by its token ID, with the token state joined (GET /api/v1/ci/issuances/{tokenId}).
+func (q *Queries) CiIssuanceGet(ctx context.Context, tokenID string) ([]CiIssuanceGetRow, error) {
+	rows, err := q.db.Query(ctx, ciIssuanceGet, tokenID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CiIssuanceGetRow{}
+	for rows.Next() {
+		var i CiIssuanceGetRow
+		if err := rows.Scan(
+			&i.TokenID,
+			&i.Issuer,
+			&i.IssuerID,
+			&i.MappingIds,
+			&i.MappingNames,
+			&i.SubjectKind,
+			&i.Jti,
+			&i.ProjectID,
+			&i.ProjectPath,
+			&i.NamespaceID,
+			&i.PipelineID,
+			&i.JobID,
+			&i.Ref,
+			&i.RefType,
+			&i.RefProtected,
+			&i.PipelineSource,
+			&i.Environment,
+			&i.Sha,
+			&i.UserID,
+			&i.UserLogin,
+			&i.Claims,
+			&i.Grants,
+			&i.RequestedScope,
+			&i.GrantedScope,
+			&i.CrossProject,
+			&i.IssuedUs,
+			&i.ExpiresUs,
+			&i.ClientIp,
+			&i.UserAgent,
+			&i.RevokedUs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const ciIssuanceList = `-- name: CiIssuanceList :many
@@ -111,11 +259,12 @@ type CiIssuanceListRow struct {
 	RevokedUs      int64
 }
 
-// Queries of the issuance records, the revocation of CI tokens and the two retention tasks (R-CI-017,
-// R-CI-018, R-CI-020, R-CI-030), the statements of work package W5 (docs/developer/ci-oidc.md). The
-// record is written by the exchange (ci_exchange.sql); this file reads it and ends the tokens. Every
-// statement of a revocation runs on the caller's meta.Tx and is followed by the cache invalidation of
-// the area auth with the token hashes (R-AUTH-023). W5 adds its further statements here.
+// Queries of the issuance records, the CI tokens, their revocation, the ownership of CI projects and the two
+// retention tasks (R-CI-015, R-CI-017, R-CI-018, R-CI-020, R-CI-030), the statements of work package W5
+// (docs/developer/ci-oidc.md). The record is written by the exchange (ci_exchange.sql); this file inserts the
+// token row (internal/auth/token.IssueCITx), reads the record and ends the tokens. Every statement of a
+// revocation runs on the caller's meta.Tx and is followed by the cache invalidation of the area auth with the
+// token hashes (R-AUTH-023).
 // Newest first with the token state joined; the filters of R-CI-020 are optional, active is
 // 'true' (unexpired and unrevoked), 'false' (the others) or ” (both); 0 for a time or the cursor is none. A token row deleted by its retention
 // task reads as expired. The cursor is (issued_at, token_id) of the last row of the previous page.
@@ -183,11 +332,142 @@ func (q *Queries) CiIssuanceList(ctx context.Context, arg CiIssuanceListParams) 
 	return items, nil
 }
 
+const ciIssuanceListForProject = `-- name: CiIssuanceListForProject :many
+SELECT s.token_id::text AS token_id, i.name AS issuer, s.issuer_id::text AS issuer_id, s.mapping_ids::text[] AS mapping_ids,
+       s.mapping_names, s.subject_kind, COALESCE(s.jti, '')::text AS jti, s.project_id, COALESCE(s.project_path, '')::text AS project_path,
+       COALESCE(s.namespace_id, '')::text AS namespace_id, COALESCE(s.pipeline_id, '')::text AS pipeline_id, s.job_id,
+       COALESCE(s.ref, '')::text AS ref, COALESCE(s.ref_type, '')::text AS ref_type, COALESCE(s.ref_protected::text, '')::text AS ref_protected,
+       COALESCE(s.pipeline_source, '')::text AS pipeline_source, COALESCE(s.environment, '')::text AS environment,
+       COALESCE(s.sha, '')::text AS sha, COALESCE(s.user_id, '')::text AS user_id, COALESCE(s.user_login, '')::text AS user_login,
+       s.claims, s.grants, COALESCE(s.requested_scope, '')::text AS requested_scope, s.granted_scope, s.cross_project,
+       (extract(epoch FROM s.issued_at) * 1000000)::bigint AS issued_us, (extract(epoch FROM s.expires_at) * 1000000)::bigint AS expires_us,
+       COALESCE(host(s.client_ip), '')::text AS client_ip, COALESCE(s.user_agent, '')::text AS user_agent,
+       COALESCE(extract(epoch FROM t.revoked_at) * 1000000, 0)::bigint AS revoked_us
+  FROM ci_token_issuances s
+  JOIN ci_issuers i ON i.id = s.issuer_id
+  LEFT JOIN api_token t ON t.id = s.token_id
+ WHERE s.grants->'contributions' @> jsonb_build_array(jsonb_build_object('project', jsonb_build_object('id', $1::text)))
+   AND ($2::text = '' OR i.name = $2::text)
+   AND ($3::text = '' OR s.job_id = $3::text)
+   AND ($4::text = ''
+        OR ($4::text = 'true') = (t.id IS NOT NULL AND t.revoked_at IS NULL AND s.expires_at > now()))
+   AND ($5::bigint = 0
+        OR (s.issued_at, s.token_id) < (to_timestamp($5::bigint / 1000000.0), $6::text::uuid))
+ ORDER BY s.issued_at DESC, s.token_id DESC
+ LIMIT $7::int
+`
+
+type CiIssuanceListForProjectParams struct {
+	ProjectID string
+	Issuer    string
+	JobID     string
+	Active    string
+	AfterUs   int64
+	AfterID   string
+	MaxRows   int32
+}
+
+type CiIssuanceListForProjectRow struct {
+	TokenID        string
+	Issuer         string
+	IssuerID       string
+	MappingIds     []string
+	MappingNames   []string
+	SubjectKind    string
+	Jti            string
+	ProjectID      string
+	ProjectPath    string
+	NamespaceID    string
+	PipelineID     string
+	JobID          string
+	Ref            string
+	RefType        string
+	RefProtected   string
+	PipelineSource string
+	Environment    string
+	Sha            string
+	UserID         string
+	UserLogin      string
+	Claims         []byte
+	Grants         []byte
+	RequestedScope string
+	GrantedScope   string
+	CrossProject   bool
+	IssuedUs       int64
+	ExpiresUs      int64
+	ClientIp       string
+	UserAgent      string
+	RevokedUs      int64
+}
+
+// The records of tokens one of whose contributing mappings is of the project's tier (Q-CI-26), found through the
+// frozen bundle, so a record stays listed after its mapping was deleted; newest first, the cursor of
+// CiIssuanceList. The caller shows the project's mappings only.
+func (q *Queries) CiIssuanceListForProject(ctx context.Context, arg CiIssuanceListForProjectParams) ([]CiIssuanceListForProjectRow, error) {
+	rows, err := q.db.Query(ctx, ciIssuanceListForProject,
+		arg.ProjectID,
+		arg.Issuer,
+		arg.JobID,
+		arg.Active,
+		arg.AfterUs,
+		arg.AfterID,
+		arg.MaxRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CiIssuanceListForProjectRow{}
+	for rows.Next() {
+		var i CiIssuanceListForProjectRow
+		if err := rows.Scan(
+			&i.TokenID,
+			&i.Issuer,
+			&i.IssuerID,
+			&i.MappingIds,
+			&i.MappingNames,
+			&i.SubjectKind,
+			&i.Jti,
+			&i.ProjectID,
+			&i.ProjectPath,
+			&i.NamespaceID,
+			&i.PipelineID,
+			&i.JobID,
+			&i.Ref,
+			&i.RefType,
+			&i.RefProtected,
+			&i.PipelineSource,
+			&i.Environment,
+			&i.Sha,
+			&i.UserID,
+			&i.UserLogin,
+			&i.Claims,
+			&i.Grants,
+			&i.RequestedScope,
+			&i.GrantedScope,
+			&i.CrossProject,
+			&i.IssuedUs,
+			&i.ExpiresUs,
+			&i.ClientIp,
+			&i.UserAgent,
+			&i.RevokedUs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ciIssuanceTokensOfIssuer = `-- name: CiIssuanceTokensOfIssuer :many
 SELECT t.id::text AS id, t.secret_sha256
   FROM ci_token_issuances s
   JOIN api_token t ON t.id = s.token_id
  WHERE s.issuer_id = $1::text::uuid AND t.revoked_at IS NULL AND t.expires_at > now()
+ ORDER BY t.id
  FOR UPDATE OF t
 `
 
@@ -220,19 +500,30 @@ func (q *Queries) CiIssuanceTokensOfIssuer(ctx context.Context, issuerID string)
 const ciIssuanceTokensOfMapping = `-- name: CiIssuanceTokensOfMapping :many
 SELECT t.id::text AS id, t.secret_sha256
   FROM api_token t
- WHERE t.principal_id = $1::text::uuid AND t.type = 'cit' AND t.revoked_at IS NULL AND t.expires_at > now()
- FOR UPDATE
+ WHERE t.type = 'cit' AND t.revoked_at IS NULL AND t.expires_at > now()
+   AND (t.principal_id = $1::text::uuid
+        OR t.id IN (SELECT s.token_id FROM ci_token_issuances s
+                     WHERE s.issuer_id = $2::text::uuid AND $3::text::uuid = ANY(s.mapping_ids)))
+ ORDER BY t.id
+ FOR UPDATE OF t
 `
+
+type CiIssuanceTokensOfMappingParams struct {
+	PrincipalID string
+	IssuerID    string
+	MappingID   string
+}
 
 type CiIssuanceTokensOfMappingRow struct {
 	ID           string
 	SecretSha256 []byte
 }
 
-// The unexpired tokens issued through a mapping, by its principal: disabling or deleting the mapping
-// ends them in the same transaction (R-CI-017).
-func (q *Queries) CiIssuanceTokensOfMapping(ctx context.Context, principalID string) ([]CiIssuanceTokensOfMappingRow, error) {
-	rows, err := q.db.Query(ctx, ciIssuanceTokensOfMapping, principalID)
+// The unexpired tokens issued through a mapping: those it owns (its principal) and those whose issuance record
+// lists it among the contributing mappings of another tier (R-CI-009), so that disabling or deleting the mapping
+// ends every token that carries its frozen grants, in the same transaction (R-CI-017).
+func (q *Queries) CiIssuanceTokensOfMapping(ctx context.Context, arg CiIssuanceTokensOfMappingParams) ([]CiIssuanceTokensOfMappingRow, error) {
+	rows, err := q.db.Query(ctx, ciIssuanceTokensOfMapping, arg.PrincipalID, arg.IssuerID, arg.MappingID)
 	if err != nil {
 		return nil, err
 	}
@@ -262,6 +553,7 @@ SELECT s.token_id::text AS token_id, t.secret_sha256
    AND ($3::text = '' OR s.pipeline_id = $3::text)
    AND ($4::text = '' OR s.job_id = $4::text)
    AND ($5::text = '' OR $5::text = ANY(s.mapping_names))
+ ORDER BY t.id
  FOR UPDATE OF t
 `
 
@@ -306,12 +598,278 @@ func (q *Queries) CiIssuanceTokensToRevoke(ctx context.Context, arg CiIssuanceTo
 	return items, nil
 }
 
+const ciIssuanceUsage = `-- name: CiIssuanceUsage :one
+SELECT count(*)::bigint AS requests, COALESCE((extract(epoch FROM max(occurred_at)) * 1000000)::bigint, 0)::bigint AS last_us
+  FROM audit_event
+ WHERE token_id = $1::text::uuid
+   AND occurred_at >= to_timestamp($2::bigint / 1000000.0)
+   AND occurred_at < to_timestamp($3::bigint / 1000000.0)
+`
+
+type CiIssuanceUsageParams struct {
+	TokenID string
+	FromUs  int64
+	ToUs    int64
+}
+
+type CiIssuanceUsageRow struct {
+	Requests int64
+	LastUs   int64
+}
+
+// The usage summary of a record from the audit store (R-CI-020): the events the token is the credential of, within
+// its lifetime (audit_event is partitioned by occurred_at, so the window bounds the scan).
+func (q *Queries) CiIssuanceUsage(ctx context.Context, arg CiIssuanceUsageParams) (CiIssuanceUsageRow, error) {
+	row := q.db.QueryRow(ctx, ciIssuanceUsage, arg.TokenID, arg.FromUs, arg.ToUs)
+	var i CiIssuanceUsageRow
+	err := row.Scan(&i.Requests, &i.LastUs)
+	return i, err
+}
+
+const ciIssuerIDByName = `-- name: CiIssuerIDByName :many
+SELECT id::text AS id FROM ci_issuers WHERE name = $1::text
+`
+
+// The ID of a CI issuer by name: the owner reference ci:<issuer>:project:<id> names the issuer, the store keeps
+// its ID (R-CI-015).
+func (q *Queries) CiIssuerIDByName(ctx context.Context, name string) ([]string, error) {
+	rows, err := q.db.Query(ctx, ciIssuerIDByName, name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ciMappingPrincipalsByName = `-- name: CiMappingPrincipalsByName :many
+SELECT id::text AS id, name FROM principal WHERE kind = 'ci_mapping' AND name = ANY($1::text[]) ORDER BY name
+`
+
+type CiMappingPrincipalsByNameRow struct {
+	ID   string
+	Name string
+}
+
+// The principals of CI mappings by name (<issuer>/<mapping>): the owners a claim records for an inline grant with
+// ownership none (R-AUTHZ-018 rule 2).
+func (q *Queries) CiMappingPrincipalsByName(ctx context.Context, names []string) ([]CiMappingPrincipalsByNameRow, error) {
+	rows, err := q.db.Query(ctx, ciMappingPrincipalsByName, names)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CiMappingPrincipalsByNameRow{}
+	for rows.Next() {
+		var i CiMappingPrincipalsByNameRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ciOwnershipInsertProjectOwner = `-- name: CiOwnershipInsertProjectOwner :many
+INSERT INTO package_owner (id, domain, format, package_name, owner_kind, ci_issuer_id, ci_project_id, display, reason, added_by)
+VALUES ($1::text::uuid, $2::text, $3::text, $4::text,
+        'ci_project', $5::text::uuid, $6::text, $7::text,
+        $8::text, NULLIF($9::text, '')::uuid)
+ON CONFLICT DO NOTHING
+RETURNING (extract(epoch FROM added_at) * 1000000)::bigint AS added_us
+`
+
+type CiOwnershipInsertProjectOwnerParams struct {
+	ID          string
+	Domain      string
+	Format      string
+	PackageName string
+	CiIssuerID  string
+	CiProjectID string
+	Display     string
+	Reason      string
+	AddedBy     string
+}
+
+// A CI project owner (R-CI-015): by issuer ID and GitLab project ID, project_path as the display value. No row back
+// means the project owns the name already (package_owner_unique).
+func (q *Queries) CiOwnershipInsertProjectOwner(ctx context.Context, arg CiOwnershipInsertProjectOwnerParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, ciOwnershipInsertProjectOwner,
+		arg.ID,
+		arg.Domain,
+		arg.Format,
+		arg.PackageName,
+		arg.CiIssuerID,
+		arg.CiProjectID,
+		arg.Display,
+		arg.Reason,
+		arg.AddedBy,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var added_us int64
+		if err := rows.Scan(&added_us); err != nil {
+			return nil, err
+		}
+		items = append(items, added_us)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ciOwnershipOwnedByProject = `-- name: CiOwnershipOwnedByProject :many
+SELECT o.domain, o.format, o.package_name, COALESCE(r.key, '')::text AS repository_key, s.state, o.reason,
+       (extract(epoch FROM o.added_at) * 1000000)::bigint AS added_us
+  FROM package_owner o
+  JOIN package_ownership s ON s.domain = o.domain AND s.format = o.format AND s.package_name = o.package_name
+  LEFT JOIN repositories r ON r.id = (CASE WHEN o.domain ~ '^repo:[0-9]+$' THEN substr(o.domain, 6)::bigint END)
+ WHERE o.owner_kind = 'ci_project' AND o.ci_issuer_id = $1::text::uuid AND o.ci_project_id = $2::text
+   AND ($3::text = '' OR o.domain = $3::text)
+   AND (o.domain, o.format, o.package_name) > ($4::text, $5::text, $6::text)
+ ORDER BY o.domain, o.format, o.package_name
+ LIMIT $7::int
+`
+
+type CiOwnershipOwnedByProjectParams struct {
+	CiIssuerID  string
+	CiProjectID string
+	Domain      string
+	AfterDomain string
+	AfterFormat string
+	AfterName   string
+	MaxRows     int32
+}
+
+type CiOwnershipOwnedByProjectRow struct {
+	Domain        string
+	Format        string
+	PackageName   string
+	RepositoryKey string
+	State         string
+	Reason        string
+	AddedUs       int64
+}
+
+// The names a CI project owns, in key order after the cursor (R-AUTHZ-019 GET /package-owners?owner=ci:…:project:…).
+func (q *Queries) CiOwnershipOwnedByProject(ctx context.Context, arg CiOwnershipOwnedByProjectParams) ([]CiOwnershipOwnedByProjectRow, error) {
+	rows, err := q.db.Query(ctx, ciOwnershipOwnedByProject,
+		arg.CiIssuerID,
+		arg.CiProjectID,
+		arg.Domain,
+		arg.AfterDomain,
+		arg.AfterFormat,
+		arg.AfterName,
+		arg.MaxRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CiOwnershipOwnedByProjectRow{}
+	for rows.Next() {
+		var i CiOwnershipOwnedByProjectRow
+		if err := rows.Scan(
+			&i.Domain,
+			&i.Format,
+			&i.PackageName,
+			&i.RepositoryKey,
+			&i.State,
+			&i.Reason,
+			&i.AddedUs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ciOwnershipUpdateDisplay = `-- name: CiOwnershipUpdateDisplay :execrows
+UPDATE package_owner SET display = $1::text
+ WHERE domain = $2::text AND format = $3::text AND package_name = $4::text
+   AND owner_kind = 'ci_project' AND ci_issuer_id = $5::text::uuid AND ci_project_id = $6::text
+   AND display <> $1::text
+`
+
+type CiOwnershipUpdateDisplayParams struct {
+	Display     string
+	Domain      string
+	Format      string
+	PackageName string
+	CiIssuerID  string
+	CiProjectID string
+}
+
+// project_path is the display value of a CI project owner, updated on every publish (R-CI-015, R-AUTHZ-018 rule 7).
+func (q *Queries) CiOwnershipUpdateDisplay(ctx context.Context, arg CiOwnershipUpdateDisplayParams) (int64, error) {
+	result, err := q.db.Exec(ctx, ciOwnershipUpdateDisplay,
+		arg.Display,
+		arg.Domain,
+		arg.Format,
+		arg.PackageName,
+		arg.CiIssuerID,
+		arg.CiProjectID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const ciProjectIDByKey = `-- name: CiProjectIDByKey :many
+SELECT id::text AS id FROM project WHERE key = $1::text
+`
+
+// The ID of a trove project by its key, for the project's issuance list.
+func (q *Queries) CiProjectIDByKey(ctx context.Context, key string) ([]string, error) {
+	rows, err := q.db.Query(ctx, ciProjectIDByKey, key)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ciReplayDeleteExpired = `-- name: CiReplayDeleteExpired :execrows
 DELETE FROM ci_subject_token_uses u
  WHERE (u.issuer_id, u.jti) IN (
         SELECT d.issuer_id, d.jti
           FROM ci_subject_token_uses d JOIN ci_issuers i ON i.id = d.issuer_id
-         WHERE d.subject_expires_at + i.clock_skew + make_interval(secs => $1::bigint::float8) < now()
+         WHERE d.subject_expires_at < now() - make_interval(secs => $1::bigint::float8)
+           AND d.subject_expires_at + i.clock_skew + make_interval(secs => $1::bigint::float8) < now()
          ORDER BY d.subject_expires_at
          LIMIT $2::int)
 `
@@ -348,8 +906,8 @@ type CiRevokeTokensRow struct {
 	SecretSha256 []byte
 }
 
-// Ends the tokens of the given IDs (R-CI-017): reason is mapping_deleted, admin or owner as the
-// token table names them. Returns the IDs and the hashes for the cache invalidation.
+// Ends the tokens of the given IDs (R-CI-017): reason is mapping_deleted or admin, the reasons of the token table
+// (Q-CI-38). Returns the IDs and the hashes for the cache invalidation.
 func (q *Queries) CiRevokeTokens(ctx context.Context, arg CiRevokeTokensParams) ([]CiRevokeTokensRow, error) {
 	rows, err := q.db.Query(ctx, ciRevokeTokens, arg.RevokedBy, arg.Reason, arg.Ids)
 	if err != nil {
@@ -360,6 +918,148 @@ func (q *Queries) CiRevokeTokens(ctx context.Context, arg CiRevokeTokensParams) 
 	for rows.Next() {
 		var i CiRevokeTokensRow
 		if err := rows.Scan(&i.ID, &i.SecretSha256); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ciTokenInsert = `-- name: CiTokenInsert :one
+INSERT INTO api_token (id, type, secret_sha256, hint, principal_id, description, scope, created_via, expires_at, ci_context)
+VALUES ($1::text::uuid, 'cit', $2::bytea, $3::text, $4::text::uuid,
+        $5::text, $6::text::jsonb, 'ci-exchange',
+        now() + make_interval(secs => $7::float8), $8::text::jsonb)
+RETURNING created_at, expires_at
+`
+
+type CiTokenInsertParams struct {
+	ID           string
+	SecretSha256 []byte
+	Hint         string
+	PrincipalID  string
+	Description  string
+	Scope        string
+	TtlSecs      float64
+	CiContext    string
+}
+
+type CiTokenInsertRow struct {
+	CreatedAt pgtype.Timestamptz
+	ExpiresAt pgtype.Timestamptz
+}
+
+// A CI token (R-CI-017, R-CI-016): type cit, created_via ci-exchange, the frozen bundle in ci_context, the expiry
+// the database clock plus the computed lifetime, so the stored expiry is issued_at + ttl on every replica.
+func (q *Queries) CiTokenInsert(ctx context.Context, arg CiTokenInsertParams) (CiTokenInsertRow, error) {
+	row := q.db.QueryRow(ctx, ciTokenInsert,
+		arg.ID,
+		arg.SecretSha256,
+		arg.Hint,
+		arg.PrincipalID,
+		arg.Description,
+		arg.Scope,
+		arg.TtlSecs,
+		arg.CiContext,
+	)
+	var i CiTokenInsertRow
+	err := row.Scan(&i.CreatedAt, &i.ExpiresAt)
+	return i, err
+}
+
+const ciTokenIssuers = `-- name: CiTokenIssuers :many
+SELECT id::text AS id, COALESCE(ci_context->>'issuer', '')::text AS issuer
+  FROM api_token WHERE id = ANY($1::text[]::uuid[]) AND type = 'cit'
+ ORDER BY id
+`
+
+type CiTokenIssuersRow struct {
+	ID     string
+	Issuer string
+}
+
+// The issuer names of revoked CI tokens, for the ci.token.revoked events of the token service's revocations.
+func (q *Queries) CiTokenIssuers(ctx context.Context, ids []string) ([]CiTokenIssuersRow, error) {
+	rows, err := q.db.Query(ctx, ciTokenIssuers, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CiTokenIssuersRow{}
+	for rows.Next() {
+		var i CiTokenIssuersRow
+		if err := rows.Scan(&i.ID, &i.Issuer); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ciTokenOwner = `-- name: CiTokenOwner :many
+SELECT kind, name, status FROM principal WHERE id = $1::text::uuid FOR SHARE
+`
+
+type CiTokenOwnerRow struct {
+	Kind   string
+	Name   string
+	Status string
+}
+
+// The owner of a CI token being issued: a mapping principal, read FOR SHARE, so a concurrent disable of the
+// principal waits for the issuance or the issuance sees it (R-CI-017).
+func (q *Queries) CiTokenOwner(ctx context.Context, id string) ([]CiTokenOwnerRow, error) {
+	rows, err := q.db.Query(ctx, ciTokenOwner, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CiTokenOwnerRow{}
+	for rows.Next() {
+		var i CiTokenOwnerRow
+		if err := rows.Scan(&i.Kind, &i.Name, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ciTokensActive = `-- name: CiTokensActive :many
+SELECT i.name, count(t.id)::bigint AS active
+  FROM ci_issuers i
+  LEFT JOIN ci_token_issuances s ON s.issuer_id = i.id AND s.expires_at > now()
+  LEFT JOIN api_token t ON t.id = s.token_id AND t.revoked_at IS NULL AND t.expires_at > now()
+ GROUP BY i.name
+ ORDER BY i.name
+`
+
+type CiTokensActiveRow struct {
+	Name   string
+	Active int64
+}
+
+// trove_ci_tokens_active (R-CI-020): unexpired, unrevoked CI tokens per issuer, 0 for an issuer without one, read
+// by the database gauge source (R-OPS-007).
+func (q *Queries) CiTokensActive(ctx context.Context) ([]CiTokensActiveRow, error) {
+	rows, err := q.db.Query(ctx, ciTokensActive)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CiTokensActiveRow{}
+	for rows.Next() {
+		var i CiTokensActiveRow
+		if err := rows.Scan(&i.Name, &i.Active); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

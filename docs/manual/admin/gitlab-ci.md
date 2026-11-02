@@ -295,12 +295,13 @@ To publish from tags only, add `{"claim": "ref_type", "equals": "tag"}`. `option
 
 ### What ownership bind_project means
 
-`ownership: bind_project` is the default of every inline grant that holds `deploy`, `overwrite` or `delete`; the stored mapping always shows it. On a local repository that enforces package ownership, it binds each package name to the GitLab project that first publishes it:
+`ownership: bind_project` is the default of every inline grant that holds `deploy`, `overwrite` or `delete`; the stored mapping always shows it. On every local repository, also one whose package ownership is switched off, it binds each package name to the GitLab project that first publishes it:
 
 - **First publish of a new name.** The publish claims the name for the owner `ci:gitlab-main:project:4242`, the issuer and the immutable project ID, in the same transaction as the upload. Of two first publishes of one name from two projects at the same moment, exactly one wins; the other gets `403`.
 - **Later publishes.** The owning project publishes new versions. Every other GitLab project gets `403` `package_owned_by_other_owner`, even when its own grant pattern matches the name, so two mappings whose patterns overlap cannot take over each other's packages.
-- **Rename and transfer in GitLab.** Ownership stays, because the project ID does not change. A new project that reuses the old path is refused.
-- **A name with versions but no owner** (imported, published before ownership was enforced, or released) is refused with `package_owned_by_other_owner`: a pattern match never takes over an existing package. A holder of `manage` on the repository, which every administrator of the project is, adds the owner `ci:gitlab-main:project:4242` with `POST /api/v1/repositories/<key>/packages/<name>/owners` ([Managing repositories](repositories.md#npm-local-package-ownership)), and the next publish succeeds.
+- **Rename and transfer in GitLab.** Ownership stays, because the project ID does not change; the owner's `display` shows the new path after the project's next publish. A new project that reuses the old path is refused.
+- **A policy that also grants the publish.** When the mapping's policy and its `bind_project` grant both allow a first publish, the project alone owns the name.
+- **A name with versions but no owner** (imported, published before ownership was enforced, or released) is refused with `package_owned_by_other_owner`: a pattern match never takes over an existing package. A holder of `manage` on the repository, which every administrator of the project is, adds the owner `ci:gitlab-main:project:4242` with `POST /api/v1/repositories/<key>/packages/<name>/owners` ([Managing repositories](repositories.md#npm-local-package-ownership)), and the next publish succeeds. The added owner shows the project ID as its `display` until that publish writes the path. `GET /api/v1/package-owners?owner=ci:gitlab-main:project:4242` lists every name the project owns.
 
 `ownership: none` on a writing grant makes the mapping itself the owner of the names it publishes, so every GitLab project the mapping matches can publish versions of them; the save warns `shared_ownership`. Use it only for a mapping that is meant to be shared by several projects.
 
@@ -406,7 +407,7 @@ Every successful exchange writes an issuance record in the same transaction that
 | Call | Returns | Needs |
 |---|---|---|
 | `GET /api/v1/ci/issuances` | Records, newest first; filters `issuer`, `projectId`, `projectPath`, `pipelineId`, `jobId`, `mapping`, `active` (unexpired and unrevoked), `from`, `to`; pages with `limit` and `cursor` (`nextCursor`) | `tokens:read` |
-| `GET /api/v1/ci/issuances/{tokenId}` | One record and its use: the number of requests, the last use and the packages it deployed | `tokens:read` |
+| `GET /api/v1/ci/issuances/{tokenId}` | One record and its use from the audit log: the number of events the token is the credential of (an allowed read counts only while `authz.audit.reads` records reads), the last of them, and the npm and NuGet versions it published | `tokens:read` |
 | `GET /api/v1/projects/{key}/ci/issuances` | The records of tokens one of the project's mappings contributed to, naming the project's mappings only; filters `issuer`, `jobId`, `active` | Administration of the project with **Manage policies and service accounts**, or `tokens:read` |
 
 ```shell
@@ -427,7 +428,7 @@ The exchange and its consequences are also audit events under **Administration â
 | `ci.keys.refreshed`, `ci.keys.refresh_failed` | `auth` | A key fetch succeeded or failed |
 | `ci.package_ownership.claimed`, `ci.package_ownership.conflict` | `authz` | A CI publish claimed a package name, or was refused because another owner holds it |
 
-The metrics `trove_ci_exchanges_total{issuer,outcome,reason}`, `trove_ci_exchange_duration_seconds`, `trove_ci_tokens_active`, `trove_ci_signing_keys_age_seconds`, `trove_ci_signing_keys_refresh_total` and `trove_ci_mapping_set_stale_total` describe the federation; their labels carry no project or user names. See [Monitoring and operations](operations.md).
+The metrics `trove_ci_exchanges_total{issuer,outcome,reason}`, `trove_ci_exchange_duration_seconds`, `trove_ci_tokens_active` (0 for an issuer without a live token), `trove_ci_signing_keys_age_seconds`, `trove_ci_signing_keys_refresh_total` and `trove_ci_mapping_set_stale_total` describe the federation; their labels carry no project or user names. See [Monitoring and operations](operations.md).
 
 ## Revoke CI tokens
 
@@ -513,13 +514,14 @@ To work through a refusal: find the event by request ID, time or project; for a 
 
 </details>
 
-Until the federation is released, the exchange answers `501` `ci_not_implemented` as problem details, and so does every CI operation of this page. With `ci.exchange.enabled: false` the exchange answers `404`.
+Until the federation is released, the exchange answers `501` `ci_not_implemented` as problem details, and so do the operations of this page whose part is not built yet; the issuance records, the bulk revoke and the revocation of an issuer's tokens answer already. With `ci.exchange.enabled: false` the exchange answers `404`.
 
 ### Refusals after the exchange
 
 | What the job sees | Cause |
 |---|---|
 | `403` on `npm publish` or `dotnet nuget push` | The token holds no `deploy` there: an unprotected ref matched a read-only mapping, the `scope` left it out, or the package name is outside the grant's patterns |
+| `404` on `npm install` or a NuGet restore | The token holds no `read` there, for example because the mapping was removed from the policy that granted it; a refused read answers `404` as for every credential while `authz.hide_existence` is on, the default |
 | `403` `package_owned_by_other_owner` | Another GitLab project or principal owns the name, or the name has versions and no owner ([What ownership bind_project means](#what-ownership-bind_project-means)) |
 | `401` `invalid_token` | The token expired or was revoked; a step after the closing revocation still used it |
 | `401` `principal_disabled` | The mapping that issued the token is disabled |

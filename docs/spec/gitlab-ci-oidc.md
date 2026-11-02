@@ -1388,7 +1388,9 @@ ownership check of R-CI-015 on writes.
   through `ci-read-internal` and can `npm publish` `@acme-billing/invoice-client` to
   `npm-internal`. Publishing `@acme-shipping/x` gets 403.
 - Removing the mapping from policy `ci-read-internal` makes the next `npm install` with an
-  already issued token fail with 403, without a new exchange.
+  already issued token fail without a new exchange, as every refused read does: 404 under
+  `authz.hide_existence`, the default, 403 with it off ([authorization.md](authorization.md) R-AUTHZ-016,
+  [Q-CI-39](#q-ci-39--a-refused-install-of-a-ci-token-answers-as-every-refused-read)).
 - Saving a mapping with `actions: ["manage"]` returns 422 `action_not_allowed`.
 - An inline grant saved with `actions: ["read", "deploy"]` and no `ownership` reads back with
   `"ownership": "bind_project"`. The same grant with an explicit `"ownership": "none"` is saved
@@ -1512,6 +1514,12 @@ publishes it:
     an existing package.
 - A rename of the GitLab project keeps ownership, because `project_id` does not change. A new
   project that reuses the old path gets 403, which is the intended outcome.
+- When a `bind_project` grant and another grant of the token (a policy of its mapping) both allow the
+  first publish, the project alone claims the name; ownership is checked for such a write also in a
+  repository whose `packageOwnership` is `off`, and a grant with `ownership: none` does not make such a
+  repository checked. An owner `ci:<issuer>:project:<id>` that an administrator adds shows the project ID
+  as its display value until the project's first allowed publish writes its path
+  ([Q-CI-40](#q-ci-40--what-a-ci-publish-claims-when-several-grants-allow-it-and-what-an-added-ci-project-owner-shows)).
 - Ownership records live in the package-ownership store of [authorization.md](authorization.md).
   That page also owns the administrator operations to pre-assign, transfer and release an owner.
   This page defines only the CI owner identity and when a CI publish claims or checks ownership.
@@ -1606,7 +1614,12 @@ Priority: **MVP** · Covers: CIOIDC-010, CIOIDC-014, CIOIDC-018
 
   Every revocation writes `ci.token.revoked` (R-CI-020). The revocation journal keeps it across a
   point-in-time restore and across the restore of a trove backup, so a CI token revoked after the
-  restore point stays revoked.
+  restore point stays revoked. The token row carries a reason of the token table: `mapping_deleted` for a
+  mapping disabled or deleted, `admin` for an issuer and the bulk revoke, the token API's reasons for one
+  token by ID and for `DELETE /api/v1/tokens/current` (`owner`); the event's cause names which of the five it
+  was ([Q-CI-38](#q-ci-38--the-revocation-reason-of-a-ci-tokens-row-and-the-events-of-a-revocation)). A
+  mapping's revocation ends the tokens it owns and those whose issuance record lists it as a contributing
+  mapping of another tier, because each of them carries its frozen grants.
 - A revocation is a change of the area `auth` ([architecture.md](architecture.md) R-ARCH-018) and
   takes effect on every `web` replica within the bound of
   [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023, whether Valkey is
@@ -1927,8 +1940,8 @@ CREATE INDEX ci_issuances_job     ON ci_token_issuances (issuer_id, job_id);
 CREATE INDEX ci_issuances_expiry  ON ci_token_issuances (expires_at);
 ```
 
-**API** (system administrator; read access for the auditor role once
-[authorization.md](authorization.md) defines it)
+**API** (system administrator; read access for the auditor role, which holds `tokens:read`,
+[authorization.md](authorization.md) R-AUTHZ-011)
 
 | Method and path | Purpose |
 |---|---|
@@ -1947,7 +1960,7 @@ ownership conflict through the buffer (Q-CI-22):
 | `ci.exchange.succeeded` | Token issued | `token_id`, CI issuer, mappings, claim snapshot, granted scope, TTL |
 | `ci.exchange.denied` | Any 400/429 | `reason`, and the CI issuer if one was resolved. Before the signature is verified, only the unverified `iss` and `kid` are logged and no other claims, so forged tokens cannot inject log content. After verification, the claim snapshot is logged. |
 | `ci.exchange.replayed`, `ci.exchange.repeated` | R-CI-018 | `jti`, count |
-| `ci.token.revoked` | Any revocation of a CI token | the revoked token IDs, at most 1,000 per event (R-OPS-014; a larger revocation writes several events), and the cause (mapping, issuer, bulk, single, self through `DELETE /api/v1/tokens/current`) |
+| `ci.token.revoked` | Any revocation of a CI token | the revoked token IDs, at most 1,000 per event (R-OPS-014; a larger revocation writes several events), and the cause (mapping, issuer, bulk, single, self through `DELETE /api/v1/tokens/current`); the revocations of the token API (single, self) write `token.revoked` per token as well (Q-CI-38) |
 | `ci.issuer.created`, `ci.issuer.updated`, `ci.issuer.disabled`, `ci.issuer.enabled`, `ci.issuer.deleted` | Create; `PUT` (below); delete | before and after record |
 | `ci.mapping.created`, `ci.mapping.updated`, `ci.mapping.disabled`, `ci.mapping.enabled`, `ci.mapping.deleted` | Create; `PUT` (below); delete, including the cascades of an issuer or delegation deletion | before and after record |
 | `ci.keys.refreshed`, `ci.keys.refresh_failed` | R-CI-003 | `kid` list, error |
@@ -4096,6 +4109,82 @@ revisit (b) if administrators of projects complain about the message, which a de
 table row name the CI mappings), R-API-035. Gap: [H-413](../security/ci-federation.md#h-413--a-project-administrator-can-probe-the-mapping-names-of-the-system-tier-below-its-prefix).
 Code: `internal/ci/mappings_bind.go`, `internal/ci/mappings_write.go` (`create`, `lockMapping`), `internal/project` (`Project.CIMappings`),
 `internal/api/v1/ci_project_api.go`, `api/openapi.yaml` (`getProjectCiSnippet`).
+
+### Q-CI-38 · The revocation reason of a CI token's row and the events of a revocation
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-CI-017 names five causes of a CI token's revocation (mapping, issuer, bulk, single, self) and R-CI-020 records each as
+`ci.token.revoked` with at most 1,000 token IDs per event. The token row's `revocation_reason` has a closed list in
+[identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023 (`owner`, `admin`, `mapping_deleted`, …) without an
+issuer or a bulk reason, and R-AUTH-029 says every revocation writes `token.revoked`. A revocation of an issuer with 10,000 live tokens
+would write 10,000 events in one transaction if both rules applied to it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) New reasons in the token table | A migration widens the `CHECK` with `issuer_disabled`, `ci_bulk`, `mapping_disabled` | The row names the cause | A schema change for what the event already records; the reasons of the token API grow by CI-only values |
+| (b) The reasons of the token table, the cause in the event (chosen) | `mapping_deleted` for a mapping disabled or deleted, `admin` for an issuer and the bulk revoke, `admin` or `owner` for one token by ID as the token API decides it, `owner` for `DELETE /tokens/current`, `leaked` by value; `ci.token.revoked` carries the cause and the journal entry for every cause; `token.revoked` per token only for the revocations of the token API (single, self, by value), as R-AUTH-029 writes it for every type | No migration; one event per 1,000 tokens for the causes that end many; the token API keeps one rule for all types | A row revoked by an issuer's disable reads `admin`; the cause is in the event, not the row |
+| (c) `token.revoked` per token for every cause as well | Both events always | One trail for every token | An issuer's disable writes one event per token, which R-CI-020's limit of 1,000 IDs per event exists to avoid |
+
+**Choice:** (b). The revoker ([internal/ci/revoke.go](../../internal/ci/revoke.go)) writes `ci.token.revoked` for the mapping, the issuer
+and the bulk causes; the token service ([internal/auth/token/cit.go](../../internal/auth/token/cit.go), `recordCIRevoked`) adds it with
+the cause `self` (reason `owner`) or `single` to the `token.revoked` events of its own revocations.
+
+**Rationale:** the event is what a reviewer and the journal read (R-HA-054 revokes each ID again on replay, whatever the reason), and
+the cause it carries is more precise than any row reason could be. The development agent would revisit this if an operator needs to
+filter the token list by the CI cause (then the reasons of (a) in a migration of their own).
+
+**Applied in the spec:** R-CI-017 (the reason of the row), R-CI-020 (the event row), [identity-and-authentication.md](identity-and-authentication.md)
+R-AUTH-029 (the common rule names the exception). Code: `internal/ci/revoke.go`, `internal/auth/token/cit.go`, `queries/ci_issuances.sql`
+(`CiRevokeTokens`).
+
+### Q-CI-39 · A refused install of a CI token answers as every refused read
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-CI-013's criterion says that removing the mapping from policy `ci-read-internal` makes the next `npm install` fail "with 403".
+R-AUTHZ-016 answers a refused read with `404` while `authz.hide_existence` is on, the default, and with `403` only where it is off; a
+CI token has no rule of its own there.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `403` for a CI token | A refused read of a CI token answers `403` whatever `hide_existence` says | Matches the criterion's words | A pipeline could probe which repositories and packages exist, which the default hides from every other credential |
+| (b) As R-AUTHZ-016 says (chosen) | `404` under the default, `403` with `hide_existence` off; the criterion reads "fails" | One rule for every subject; the hidden existence holds for CI tokens too | The criterion's text changes |
+
+**Choice:** (b).
+
+**Rationale:** a pipeline runs third-party install scripts, so it is the last credential that should learn more than a person does. The
+development agent would revisit this if a CI client turns out to need the `403` to tell a lost right from a missing package (then
+`hide_existence: false` on the repository is the answer).
+
+**Applied in the spec:** R-CI-013 (the criterion). Code: none; the evaluator and R-AUTHZ-016's mapping decide it
+(`TestR_AUTHZ_014_RemovingAMappingFromAPolicyFailsTheNextInstall`).
+
+### Q-CI-40 · What a CI publish claims when several grants allow it, and what an added CI project owner shows
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTHZ-018 rule 2 says the project alone claims a name "if a CI inline grant with `ownership: bind_project` allowed the write", and
+the principals of the grants otherwise. A token can hold both: a `bind_project` inline grant and a policy of its mapping that allow
+`deploy` on the same name. And an administrator who adds `ci:<issuer>:project:<id>` as an owner (R-AUTHZ-019) knows the ID, not the
+project path that R-CI-015 makes the display value.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `bind_project` decides (chosen) | When a `bind_project` grant of any contribution allows `deploy`, the project alone claims; an added CI project owner shows its project ID until the project's first allowed publish writes its path | The narrowest claim: the name follows the GitLab project, as R-CI-015 promises for templated patterns; the display is never a guess | A policy grant that also allowed the write gives its principal no co-ownership |
+| (b) The union | The project and the policy's principals claim together | Nobody loses a claim | A mapping's policy would co-own every name the project claims, which reopens the takeover R-CI-015 closes |
+| (c) The policy decides | A policy grant wins over the inline grant | Policies are the administrators' | The inline grant's `bind_project` has no effect whenever a policy also matches |
+
+**Choice:** (a). The check also applies in a repository whose `packageOwnership` is `off` whenever a `bind_project` grant allows the
+write (R-AUTHZ-018 "When ownership is checked"); a grant with `ownership: none` does not make such a repository checked.
+
+**Rationale:** R-CI-015 exists because templated name patterns overlap; a claim that also names the policy's principals would let every
+project of the mapping publish the names, which is what `ownership: none` asks for explicitly. The development agent would revisit
+this if a mapping needs both a project-bound and a shared namespace in one grant (then two inline grants, one with each value, are the
+answer, and no rule change).
+
+**Applied in the spec:** R-CI-015 (the claim and the display). Code: `internal/authz/ci.go` (`ciWriteOf`), `internal/authz/ownership_ci.go`
+(`ciFacts`, `ciAddProjectOwner`, `ciTouchDisplay`).
 
 ## What this does not cover
 

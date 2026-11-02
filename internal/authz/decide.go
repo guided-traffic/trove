@@ -197,10 +197,17 @@ type evalState struct {
 	// metadata is content:metadata-read: read on the metadata of every
 	// repository, never on an artifact (Q-AUTHZ-172).
 	metadata bool
+	// isCI says the subject is a CI token, whose grants are ci (R-AUTHZ-014): its
+	// contributions with their caps and bounds, never the plain principal set.
+	isCI bool
+	ci   CIGrantSet
 }
 
 func (e *Engine) newEvalState(idx *Index, sub Subject) *evalState {
 	st := &evalState{idx: idx, sub: sub, pset: idx.principalIDs(sub)}
+	if kindOf(sub) == kindCI {
+		st.isCI, st.ci = true, idx.CIGrants(sub)
+	}
 	st.caps = e.capabilities(idx, sub)
 	st.bypass = st.caps.has(ContentBypass)
 	st.metadata = st.caps.has(ContentMetadataRead)
@@ -336,7 +343,12 @@ func (e *Engine) allowedAction(st *evalState, a Action, r *repoInfo, c Coordinat
 		// fall through to the grants.
 		return true, ReasonAllowRole, []string{"capability:" + string(ContentMetadataRead)}
 	}
-	by := st.grantedBy(a, r, repoLevel, c.Package, c.Path)
+	var by []string
+	if st.isCI {
+		by = e.ciGrantedBy(st.ci, st.idx, a, r, repoLevel, c.Package, c.Path)
+	} else {
+		by = st.grantedBy(a, r, repoLevel, c.Package, c.Path)
+	}
 	if len(by) == 0 {
 		return false, ReasonNoGrant, nil
 	}

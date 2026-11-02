@@ -101,7 +101,8 @@ func TestR_AUTHZ_018_ClaimOwners(t *testing.T) {
 		}
 		return out
 	}
-	ciSub := Subject{Kind: ciSub.Kind, Name: "ci", Mappings: []string{"ci:gitlab-internal/acme"}}
+	// A CI token carries its bundle (Q-CI-17); the mapping's policy entry grants it deploy.
+	ciSub := ciSubject(frozenOf("101", systemTier("gitlab-internal/acme", nil)))
 	for _, tc := range []struct {
 		name string
 		sub  Subject

@@ -81,9 +81,10 @@ func init() {
 	Register(EventType{Name: EventCIKeysRefreshed, Category: CategoryAuth, Mode: Transactional, Schema: keys})
 	Register(EventType{Name: EventCIKeysRefreshFailed, Category: CategoryAuth, Mode: Transactional, Schema: keys})
 
-	// Package ownership by CI project (R-CI-015): written with the publish.
+	// Package ownership by CI project (R-CI-015): the claim is written with the publish, the conflict through the buffer;
+	// owner is the token's project, owners the names' owners a conflict met.
 	ownership := `{"type":"object","properties":{"repository":{"type":"string"},"package":{"type":"string"},"owner":{"type":"string"},` +
-		`"tokenId":{"type":"string"},"epoch":{"type":"integer"}}}`
+		`"owners":{"type":"array","maxItems":1000,"items":{"type":"string"}},"tokenId":{"type":"string"},"epoch":{"type":"integer"}}}`
 	Register(EventType{Name: EventCIOwnershipClaimed, Category: CategoryAuthz, Mode: Transactional, Schema: ownership})
 	Register(EventType{Name: EventCIOwnershipConflict, Category: CategoryAuthz, Mode: Async, Schema: ownership})
 

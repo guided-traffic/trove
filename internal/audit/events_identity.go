@@ -55,7 +55,7 @@ func init() {
 	token(EventTokenCreated, Transactional, NoJournal, `{"type":"object","properties":{`+
 		`"type":{"type":"string","enum":["pat","sat","cit"]},"owner":{"type":"string"},"scope":`+eventSchemaScope+`,`+
 		`"expiresAt":{"type":["string","null"]},"createdVia":{"type":"string"},"description":{"type":"string"},"derivedFrom":{"type":"string"},`+
-		`"project":{"type":"string"}}}`)
+		`"project":{"type":"string"},"ciIssuer":{"type":"string"},"ciMappings":`+eventSchemaNames+`,"ciClaims":{"type":"object"}}}`)
 	token(EventTokenRotated, Transactional, JournalRevocation, `{"type":"object","properties":{`+
 		`"predecessor":{"type":"string"},"overlapSeconds":{"type":"integer"},"predecessorExpiresAt":{"type":["string","null"]}}}`)
 	token(EventTokenRevoked, Transactional, JournalRevocation, `{"type":"object","properties":{`+

@@ -1,9 +1,9 @@
 # CI federation: issuers, signing keys and mappings
 
 Status: the issuer record, its read-only configuration form and the signing-key store (work package W1 of
-[ci-oidc.md](../developer/ci-oidc.md)) and the identity mappings with their save-time rules (work package W3) are built; the
-exchange and the use-time evaluation are specified in [gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md) and described here when they
-exist. This page answers two questions: what does trove trust when it trusts a CI issuer, and what can reach or change that trust;
+[ci-oidc.md](../developer/ci-oidc.md)), the identity mappings with their save-time rules (work package W3) and the use time of a CI
+token (work package W5) are built; the exchange is specified in [gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md) and described here when
+it exists. This page answers two questions: what does trove trust when it trusts a CI issuer, and what can reach or change that trust;
 and what decides what a verified job receives.
 
 ## What trust in an issuer means
@@ -135,6 +135,58 @@ administrator's trace shows its tier only. It reads no policy, which the answer 
 record before ([R-CI-020](../spec/gitlab-ci-oidc.md)). A PUT writes exactly one event, so a change that disables is not hidden behind
 an `.updated`.
 
+## What a CI token can do
+
+A CI token (`trv_cit_`) carries the frozen bundle of its exchange in `api_token.ci_context` ([Q-CI-17](../spec/gitlab-ci-oidc.md)):
+its issuer, its GitLab project and, per contributing mapping, the tier, the project of a project tier, the groups, the rendered inline
+grants and the caps. The token validator decodes it with `claims.DecodeFrozen` into the token cache entry; a bundle of another version
+or an inconsistent one is a storage fault and the request fails, never an acceptance without it. The evaluator
+([internal/authz/ci.go](../../internal/authz/ci.go)) reads the bundle and the grant index and queries nothing
+([R-AUTHZ-015](../spec/authorization.md)). Per contribution, and for that contribution only:
+
+| Source | What it gives | The bound |
+|---|---|---|
+| policies naming the mapping `ci:<issuer>/<mapping>` | their grants, live: removing the mapping from a policy ends the right on every replica within the bound of R-AUTHZ-028 | a project tier is granted by its project's own policies only |
+| groups the mapping lists | the grants of those groups, resolved by name through the index, live | the system tier only; a project tier's groups are ignored ([Q-CI-26](../spec/gitlab-ci-oidc.md)) |
+| inline grants | the grants rendered at the exchange, matched like a token scope's elements | a project tier's grants cover its project's repositories only, so `@any` is the project and a repository that leaves it is inert |
+| the cap `read` | removes every other action of this contribution's three sources, and of no other contribution | [R-CI-012](../spec/gitlab-ci-oidc.md) |
+
+The token's scope is the ceiling of the union, as for every token. A CI token never holds `manage` (not even through a policy or a
+group that grants it), never a system role, no capability, no project administration, no user identity, no `authenticated` and no
+auto-join group ([R-AUTHZ-002](../spec/authorization.md)). The management API refuses it except for `GET` and
+`DELETE /api/v1/tokens/current` and the repository-content operations (the gate `ciGate`, [Q-CI-18](../spec/gitlab-ci-oidc.md)), so it
+can neither change an owner nor create a token nor read the issuance records.
+
+## Package ownership of a GitLab project
+
+An inline grant that writes carries `ownership: bind_project` unless it says `none`. A write such a grant allows is checked for
+ownership in every local repository, also one whose `packageOwnership` is `off`, and its first publish claims the name for the owner
+`ci:<issuer>:project:<project_id>`, stored by issuer ID and project ID ([R-CI-015](../spec/gitlab-ci-oidc.md),
+[Q-CI-40](../spec/gitlab-ci-oidc.md)); the check and the claim run in the publish's transaction under the claim row's lock
+([ownership_ci.go](../../internal/authz/ownership_ci.go)). The token's owner identities are its project, its mappings and the groups they
+list; a mapping or a group is matched by its principal name when the index does not know its ID. Another GitLab project whose pattern
+renders the same name gets `403 package_owned_by_other_owner` and an asynchronous `ci.package_ownership.conflict`; a name with versions
+and no owner needs a person with `manage` to add the project as an owner. `ownership: none` makes the mapping the owner, so every
+project it matches shares the name. The project path is a display value only, written by each allowed publish of the owning project, so a
+project that later takes over a released path gains nothing.
+
+## Revocation
+
+| Cause | Who | Row reason | Events |
+|---|---|---|---|
+| a mapping disabled or deleted (W3 calls the revoker) | `ci:write`, the project's administrators | `mapping_deleted` | `ci.token.revoked` cause `mapping` |
+| an issuer disabled, deleted, or removed from `ci.issuers` | `ci:write`, `trove migrate` | `admin` | `ci.token.revoked` cause `issuer` |
+| `POST /api/v1/ci/issuances/revoke` | `tokens:revoke` | `admin` | `ci.token.revoked` cause `bulk`, with the filter |
+| `DELETE /api/v1/tokens/{id}` | `tokens:revoke` | `admin` | `token.revoked`, `ci.token.revoked` cause `single` |
+| `DELETE /api/v1/tokens/current` | the token itself | `owner` | `token.revoked`, `ci.token.revoked` cause `self` |
+
+Every cause ends its tokens in the transaction that decides it ([revoke.go](../../internal/ci/revoke.go)), records the change of the area
+`auth` with the token IDs and hashes, and writes `ci.token.revoked` with at most 1,000 IDs per event and its journal entry
+([Q-CI-38](../spec/gitlab-ci-oidc.md)). The change-log poll applies it on every replica within `auth.revocation_bound` (2 s) whatever
+Valkey does; the integration tests measure it on three replicas with Valkey running and stopped. A mapping's revocation also ends the
+tokens it contributed to as a mapping of another tier, found through their issuance records. An issuance record outlives its token
+(Q-CI-20) and reads as expired once the token row is gone.
+
 ## What this does not cover
 
 ### H-408 · A writer on `ci_issuer_keys` can plant a signing key
@@ -195,3 +247,29 @@ policies in its before and after record, and its journal entry has the record be
 a mapping removes an entry. After a point-in-time restore the policy's removed entry is restored with its rows and only the mapping's
 journal entry (a disable, never a delete, [R-CI-020](../spec/gitlab-ci-oidc.md)) is replayed; a reader of the policy audit trail does not
 see the removal.
+
+### H-415 · The inline grants of an issued token survive a narrowing of its mapping
+
+Component: the frozen bundle (R-CI-013, R-CI-017). Subject: a CI token issued before an administrator narrows the mapping's inline
+grants, for example after noticing that a template renders a pattern that is too wide. Live once the exchange is built (W4): the
+token keeps the wide grant until it expires, at most `ci.token.max_ttl` (1 h by default), because editing a mapping revokes nothing.
+What makes it real: a mistaken grant that a job exploits within that hour. The bulk revoke by `mapping` ends those tokens at once, and
+the manual says so; nothing does it automatically.
+
+### H-416 · The usage summary of an issuance record shows what the audit store holds, not every use
+
+Component: `GET /api/v1/ci/issuances/{tokenId}` (R-CI-020). Subject: the request count, the last use and the packages deployed of a
+token. The count is the audit events whose credential is the token within its lifetime: writes, denials and decisions, but an allowed
+read only while `authz.audit.reads` records it, which the default does not. The packages are those of `npm.publish` and
+`package.published`; a file deployed through `/files/` is in the audit store as `artifact.deployed` but not in the list. Live today. What
+makes it real: an incident review that reads the summary as complete; the audit log filtered by `tokenId` is the complete source.
+
+### H-417 · A group created again under a listed name grants its rights to the tokens of the mappings that listed the old one
+
+Component: the group grants of a CI token (R-AUTHZ-014, R-CI-013). Subject: a mapping that lists a group by name, and a group that is
+deleted and created again under that name. A mapping names its groups by name in its grant specification, and the evaluator resolves
+the name through the grant index at use time, so the new group's policies apply to the tokens of the mapping, issued before or after
+the re-creation; [R-AUTHZ-002](../spec/authorization.md) promises that a principal created later under a reused name inherits nothing,
+which holds for policies, role bindings and owners but not for a mapping's group list. Dormant until the mapping store (W3) saves
+mappings with groups; live then for every system-tier mapping that lists one. What makes it real: an administrator who re-creates a
+deleted group for another team.

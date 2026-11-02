@@ -436,10 +436,10 @@ func TestQ_CI_26_AProjectAdministratorListsTheIssuersReadOnly(t *testing.T) {
 }
 
 func TestR_CI_002_AnIssuerThatIssuedTokensIsRevokedThroughTheRevoker(t *testing.T) {
-	// The revoker is work package W5's. Until it exists the service fails closed: an issuer with an
-	// issuance record is neither disabled nor deleted, because no window may exist in which a token of a
-	// disabled issuer is usable. An issuer without one (nothing was ever issued) is written as usual
-	// (TestR_CI_002_TheIssuerLifecycle). The criteria that need the real revoker are in pending_test.go.
+	// An issuer with an issuance record is disabled and deleted through the revoker (W5), in the transaction of
+	// the write: the revocation finds the tokens through the records. The record seeded here has no token row (a
+	// token removed by its retention task), so nothing is left to revoke and both writes succeed; the tokens'
+	// side is revoke_test.go's (TestR_CI_002_DisablingAnIssuerRevokesItsTokens and …DeletingAnIssuer…).
 	d := startDouble(t, oidcstub.Config{})
 	e := newEnv(t, options{valkey: true})
 	a := e.web("web-a")
@@ -447,11 +447,12 @@ func TestR_CI_002_AnIssuerThatIssuedTokensIsRevokedThroughTheRevoker(t *testing.
 	e.seedIssuance("gitlab-main")
 	body := e.do(a, "GET", issuersPath+"/gitlab-main", nil).JSON(t)
 	body["enabled"] = false
-	wantStatus(t, e.do(a, "PUT", issuersPath+"/gitlab-main", body, "If-Match", "*"), 501, "ci_not_implemented")
-	wantStatus(t, e.do(a, "DELETE", issuersPath+"/gitlab-main", nil), 501, "ci_not_implemented")
-	if e.number("SELECT version FROM ci_issuers WHERE name = 'gitlab-main'") != 1 || e.number("SELECT count(*) FROM ci_issuers WHERE enabled") != 1 {
-		t.Error("a refused write changed the issuer")
-	}
-	body["description"], body["enabled"] = "still writable", true
 	wantStatus(t, e.do(a, "PUT", issuersPath+"/gitlab-main", body, "If-Match", "*"), 200, "")
+	if e.number("SELECT count(*) FROM ci_issuers WHERE NOT enabled") != 1 || e.events("ci.token.revoked") != 0 {
+		t.Error("the issuer is not disabled, or a revocation without tokens wrote an event")
+	}
+	wantStatus(t, e.do(a, "DELETE", issuersPath+"/gitlab-main", nil), 204, "")
+	if e.number("SELECT count(*) FROM ci_token_issuances") != 0 {
+		t.Error("the records of a deleted issuer remain (Q-CI-20: they cascade)")
+	}
 }

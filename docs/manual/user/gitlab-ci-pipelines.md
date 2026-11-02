@@ -307,6 +307,7 @@ For anything you cannot fix yourself, give your administrator the time, the GitL
 | What you see | What it means |
 |---|---|
 | `E403` from `npm publish`, `403` from `dotnet nuget push` | The token may not publish there: the pipeline ran on an unprotected ref and matched a read-only mapping, `scope` left `deploy` out, or the package name is outside the names the mapping allows |
+| `E404` from `npm install`, `404` from a NuGet restore | The token may not read the package or the repository, for example because the mapping no longer is in the policy that gave it the read; trove answers a refused read like a missing package unless the repository shows existence |
 | `403` `package_owned_by_other_owner` | Another GitLab project, or someone else, owns the package name. A name that already has versions is not taken over by a pipeline; an administrator of the repository adds your GitLab project as an owner |
 | `E401`, `401` `invalid_token` | The token has expired or was revoked, for example a step after the closing revocation still used it |
 | `403` `ci_token_restricted` | The step called a management operation, which a CI token never may |

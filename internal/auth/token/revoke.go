@@ -92,6 +92,11 @@ func (s *Service) revokeTree(ctx context.Context, tx meta.Tx, qs *q.Queries, c p
 			return nil, err
 		}
 	}
+	// A CI token's revocation also writes ci.token.revoked with its cause (R-CI-017, R-CI-020): self for the
+	// presenting token (reason owner, DELETE /api/v1/tokens/current), single for one by ID or by value.
+	if err := s.recordCIRevoked(ctx, tx, qs, c, out, reason == ReasonOwner); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 

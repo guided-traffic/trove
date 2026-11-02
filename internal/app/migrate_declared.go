@@ -63,15 +63,19 @@ func DeclaredState(cfg *config.Config, instance string, log *slog.Logger) func(c
 // must be written.
 func applyDeclaredCIIssuers(ctx context.Context, s *postgres.MigrationSession, changes *cluster.Changes, recorder audit.Recorder, cfg *config.Config, log *slog.Logger) error {
 	declared := ci.DeclaredFromConfigList(cfg.CI.Issuers)
+	// The revoker of the replicas, over the runner's one connection: an issuer the configuration no longer
+	// declares is disabled and its unexpired tokens are revoked in the same transaction, the change of the area
+	// auth with them, so every running replica refuses them within auth.revocation_bound (R-CI-017).
+	revoker, err := ci.NewRevoker(ci.RevokerOptions{DB: s, Changes: changes, Recorder: recorder})
+	if err != nil {
+		return fmt.Errorf("ci.issuers: %w", err)
+	}
 	issuers, err := ci.New(ci.Options{
 		DB: s, Changes: changes, Recorder: recorder, Config: cfg.CI, OutboundConfig: cfg.Proxy.Outbound,
 		EpochPollInterval: cfg.Cluster.EpochPollInterval, BaseURL: cfg.Server.BaseURL,
-		// The revoker of the replicas is built with them and the mapping store is never asked (the migration
-		// disables an issuer and deletes none); the migration disables an
-		// issuer only when the configuration no longer declares it, and revokes through the stub until
-		// work package W5 builds the revoker (an issuer with an issuance record then stops the migration
-		// loudly).
-		Revoker: ci.StubRevoker{}, Log: log,
+		// The mapping store is never asked: the migration disables an issuer only when the configuration no
+		// longer declares it, which deletes no mapping; the revoker above revokes its tokens in that transaction.
+		Revoker: revoker, Log: log,
 	})
 	if err != nil {
 		return fmt.Errorf("ci.issuers: %w", err)

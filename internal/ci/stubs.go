@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/guided-traffic/trove/internal/errs"
-	"github.com/guided-traffic/trove/internal/meta"
 )
 
 // NotImplemented is the answer of a stub: 501 ci_not_implemented, naming the work package of
@@ -16,58 +15,15 @@ func NotImplemented(workPackage string) error {
 		"This operation of the CI federation is not built in this release yet ("+workPackage+").")
 }
 
-// The stubs: one type per service, every method answering [NotImplemented]. A work package replaces
-// its stub in internal/app/wire_ci.go and deletes its type from this file.
-type (
-	// StubExchanger is the stub of [Exchanger] (W4).
-	StubExchanger struct{}
-	// StubRevoker is the stub of [Revoker] (W5).
-	StubRevoker struct{}
-	// StubIssuances is the stub of [Issuances] (W5).
-	StubIssuances struct{}
-)
+// StubExchanger is the stub of [Exchanger], every method answering [NotImplemented], until work package W4
+// replaces it in internal/app/wire_ci.go and deletes this file's type.
+type StubExchanger struct{}
 
-var (
-	_ Exchanger = StubExchanger{}
-	_ Revoker   = StubRevoker{}
-	_ Issuances = StubIssuances{}
-)
+var _ Exchanger = StubExchanger{}
 
 // CheckAddress answers like Exchange: the stub refuses nothing and the exchange says it is not built.
 func (StubExchanger) CheckAddress(context.Context, string) error { return nil }
 
 func (StubExchanger) Exchange(context.Context, ExchangeRequest) (ExchangeResult, error) {
 	return ExchangeResult{}, NotImplemented("W4")
-}
-
-func (StubRevoker) RevokeMappingTx(context.Context, meta.Tx, Actor, Mapping, RevokeCause) (Revoked, error) {
-	return Revoked{}, NotImplemented("W5")
-}
-
-func (StubRevoker) RevokeIssuerTx(context.Context, meta.Tx, Actor, string, string, RevokeCause) (Revoked, error) {
-	return Revoked{}, NotImplemented("W5")
-}
-
-func (StubRevoker) RevokeMatching(context.Context, Actor, RevokeFilter) (Revoked, error) {
-	return Revoked{}, NotImplemented("W5")
-}
-
-func (StubIssuances) List(context.Context, IssuanceFilter) (IssuancePage, error) {
-	return IssuancePage{}, NotImplemented("W5")
-}
-
-func (StubIssuances) Get(context.Context, string) (Issuance, Usage, error) {
-	return Issuance{}, Usage{}, NotImplemented("W5")
-}
-
-func (StubIssuances) CleanupReplay(context.Context) (int64, error) {
-	return 0, NotImplemented("W5")
-}
-
-func (StubIssuances) RetainIssuances(context.Context) (int64, error) {
-	return 0, NotImplemented("W5")
-}
-
-func (StubIssuances) ListForProject(context.Context, string, IssuanceFilter) (IssuancePage, error) {
-	return IssuancePage{}, NotImplemented("W5")
 }

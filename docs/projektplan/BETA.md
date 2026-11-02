@@ -432,6 +432,12 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   1 s now, which a transaction held over the 4 s fetch still is (8 of 8 runs pass)
 - 🟢 W3 declared two package-level slices in `internal/ci` against R-ARCH-032 (the architecture test caught it at the merge);
   both are functions now
+- 🟢 Deleting an issuer with `?cascade=true` deleted its mappings' principals before it revoked the issuer's tokens; a token
+  row belongs to its mapping's principal (`ON DELETE CASCADE`), so the rows went without `ci.token.revoked` and its journal
+  entry. The tokens are revoked first now (`TestR_CI_002_ACascadeDeleteRevokesTheTokensBeforeTheMappingsGo` found 0 events
+  before the fix)
+- 🟡 A second GitLab project that publishes byte-identical content for an existing npm version gets 201, the registry's
+  answer to a retried publish, without the ownership check; nothing is written (observed by W5, not checked further)
 - 🟡 `TestR_CI_003_StaleAndUnreachable` failed once in W3's full run of `test/integration/ci` while three agents shared
   the stack, and passed alone and in the next full run; watched, not yet reproduced
 - 🟢 Test and Release run 41518863868 failed in `e2e on kind (access-long)`: the journey `06` clicked "Refresh now" by a
@@ -473,8 +479,15 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   tier's rules; Q-CI-27 to Q-CI-29); the subject-token validation of R-CI-004 and the shared JWS leaf `internal/auth/jws`
   the login uses too. The mapping store and API are built (W3: the principals, `mappings_version`, the policy binding, the
   per-replica copy, `Select`, the dry run, the snippet; Q-CI-35 to Q-CI-37, `TestR_CI_009_*` in `test/integration/ci`); open:
-  the criteria that need the exchange, the revoker and the use-time evaluator (W4, W5), listed as pending on the contract page
-- ⚪ Package ownership: a CI project writes only the packages it owns, reads what it is granted
+  the criteria that need the exchange (W4), listed as pending on the contract page
+- 🟡 Package ownership: a CI project writes only the packages it owns, reads what it is granted. Built (W5): a CI token's rights per
+  contributing mapping (policies, listed groups, frozen inline grants; the cap `read` of one mapping caps only its own; a project tier
+  bound to its project's repositories and policies; never `manage`; the scope as ceiling), the claim of a name for the GitLab project
+  on its first publish also where ownership is off, `403 package_owned_by_other_owner` for every other project, an administrator adding
+  `ci:<issuer>:project:<id>`, the revocation of CI tokens by mapping, issuer, bulk, one token and the token itself within 2 s on every
+  replica with and without Valkey, the issuance API with a project's view, the two retention tasks (Q-CI-38 to Q-CI-40; H-415 to H-417).
+  Verified by the integration tests of `test/integration/ci` with tokens issued through `IssueCITx`; open: the same through the exchange
+  (W4) and the mapping store (W3), and the e2e journey (W7)
 - 🟡 Admin UI: CI issuers, mappings, dry run and claim tester; built against the API fakes with the issuances, bulk revoke
   and the project's CI screens (`/admin/ci…`, `/admin/projects/:key/ci…`, Q-UI-99, Q-UI-100; 713 web tests); open: against
   the backend of W1 to W5, and a browser journey (W7)

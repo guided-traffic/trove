@@ -383,10 +383,10 @@ func TestR_CI_002_CascadeDeletesTheMappingsAndTheirPrincipals(t *testing.T) {
 	}
 }
 
-func TestAMappingWithIssuanceRecordsIsNeitherDisabledNorDeletedWithoutTheRevoker(t *testing.T) {
-	// The revoker is work package W5's: until it exists a mapping with an issuance record answers 501 and
-	// nothing changes, because no window may exist in which a token of a disabled mapping is usable. The
-	// criteria that need the real revoker are in pending_test.go.
+// R-CI-017: a mapping through which tokens were issued is disabled and deleted through the revoker in the write's
+// transaction, and its principal mirrors enabled; an edit that leaves enabled alone revokes nothing. The revocation of
+// live tokens on every replica is TestR_CI_017_* of revoke_test.go.
+func TestAMappingWithIssuanceRecordsIsDisabledAndDeletedThroughTheRevoker(t *testing.T) {
 	e := newEnv(t, options{valkey: true})
 	a := e.web("web-a")
 	e.issuer(t, a, "gitlab-main", false)
@@ -396,13 +396,19 @@ func TestAMappingWithIssuanceRecordsIsNeitherDisabledNorDeletedWithoutTheRevoker
 	e.seedMappingIssuance("gitlab-main", "publish")
 	body := e.do(a, "GET", path+"/publish", nil).JSON(t)
 	body["enabled"] = false
-	wantStatus(t, e.do(a, "PUT", path+"/publish", body, "If-Match", "*"), 501, "ci_not_implemented")
-	wantStatus(t, e.do(a, "DELETE", path+"/publish", nil), 501, "ci_not_implemented")
-	if e.text("SELECT status FROM principal WHERE name = 'gitlab-main/publish'") != "active" || e.number("SELECT version FROM ci_mappings") != 1 {
-		t.Error("a refused write changed the mapping")
+	wantStatus(t, e.do(a, "PUT", path+"/publish", body, "If-Match", "*"), 200, "")
+	if got := e.text("SELECT status FROM principal WHERE name = 'gitlab-main/publish'"); got != "disabled" {
+		t.Errorf("the principal of a disabled mapping is %q", got)
 	}
 	body["enabled"], body["description"] = true, "an edit does not revoke"
 	wantStatus(t, e.do(a, "PUT", path+"/publish", body, "If-Match", "*"), 200, "")
+	if got := e.text("SELECT status FROM principal WHERE name = 'gitlab-main/publish'"); got != "active" {
+		t.Errorf("the principal of an enabled mapping is %q", got)
+	}
+	wantStatus(t, e.do(a, "DELETE", path+"/publish", nil), 204, "")
+	if e.number("SELECT count(*) FROM ci_mappings") != 0 || e.number("SELECT count(*) FROM principal WHERE name = 'gitlab-main/publish'") != 0 {
+		t.Error("the deleted mapping or its principal remains")
+	}
 }
 
 func TestR_CI_009_ACachedMappingSetFollowsTheChangeAreaOnEveryReplica(t *testing.T) {

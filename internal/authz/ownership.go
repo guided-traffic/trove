@@ -92,6 +92,8 @@ type Owner struct {
 
 	id          string
 	principalID string
+	// ciIssuerID and ciProjectID are set for a CI project owner (R-CI-015).
+	ciIssuerID, ciProjectID string
 }
 
 // PackageOwners is the ownership of one name in one repository (R-AUTHZ-019
@@ -148,6 +150,12 @@ func (k ownKey) lockParams() q.OwnershipLockStateParams {
 type claimOwner struct {
 	principalID string
 	ref         Ref
+	// project is set for the CI project identity a bind_project grant claims for (R-CI-015); principalID and
+	// ref are then empty.
+	project *CIProject
+	// mapping is the name of a CI mapping whose principal the index does not know; the check resolves it in
+	// its transaction (ciResolveClaimers).
+	mapping string
 }
 
 // ownFacts is what the check derives from the subject on the request's index.
@@ -159,6 +167,9 @@ type ownFacts struct {
 	identities map[string]bool
 	// claimers are the owners a claim by this subject records (rule 2).
 	claimers []claimOwner
+	// ci holds the owner identities of a CI subject that are not principal IDs of the
+	// index (R-CI-015): its project and its references by name.
+	ci *ciOwnFacts
 }
 
 // OwnershipOptions configure [NewOwnership].
@@ -221,15 +232,25 @@ func (o *Ownership) keyOf(idx *Index, c Coordinate) (ownKey, bool, error) {
 		return ownKey{}, false, nil
 	}
 	if r.ownership != OwnershipEnforce {
-		return ownKey{}, false, nil
+		return ownKey{repo: r, domain: domainOf(r), format: r.Format, name: c.Package}, false, nil
 	}
 	return ownKey{repo: r, domain: domainOf(r), format: r.Format, name: c.Package}, true, nil
+}
+
+// keyFor is keyOf for the subject of the write: independently of packageOwnership, ownership is checked for
+// every write that a CI inline grant with ownership bind_project allows (R-AUTHZ-018, R-CI-015).
+func (o *Ownership) keyFor(idx *Index, sub Subject, c Coordinate) (ownKey, bool, error) {
+	k, applies, err := o.keyOf(idx, c)
+	if err != nil || applies || k.repo == nil || kindOf(sub) != kindCI {
+		return k, applies, err
+	}
+	return k, o.e.ciWriteOf(idx.CIGrants(sub), idx, k.repo, c).binds, nil
 }
 
 // factsOf derives what the check needs from the subject on the request's index:
 // content:bypass, manage on the coordinate, the owner identities (the principal
 // set without the built-in principals, which own nothing) and the owners a claim
-// would record (rule 2). A CI token's project identity joins with M4 (R-CI-015).
+// would record (rule 2). A CI token's facts are ciFacts (R-CI-015).
 func (o *Ownership) factsOf(idx *Index, sub Subject, k ownKey, c Coordinate) ownFacts {
 	e := o.e
 	st := e.newEvalState(idx, sub)
@@ -242,6 +263,9 @@ func (o *Ownership) factsOf(idx *Index, sub Subject, k ownKey, c Coordinate) own
 		if id != AnonymousID && id != AuthenticatedID {
 			f.identities[id] = true
 		}
+	}
+	if st.isCI {
+		return o.ciFacts(idx, st, f, k, c)
 	}
 	refs := identityRefs(idx, sub)
 	if st.bypass {
@@ -297,7 +321,7 @@ func judge(state string, owners []Owner, w OwnershipWrite, f ownFacts) (allowed,
 		return true, w.Publish && !hasOwners, []string{"role:admin"}
 	case hasOwners:
 		for _, ow := range owners {
-			if ow.principalID != "" && f.identities[ow.principalID] {
+			if (ow.principalID != "" && f.identities[ow.principalID]) || f.ci.owns(ow) {
 				return true, false, []string{SourceOwnership}
 			}
 		}
@@ -373,8 +397,9 @@ func ownerOfRow(r q.OwnershipOwnersRow) Owner {
 	}
 	switch r.OwnerKind {
 	case "ci_project":
-		// The issuer is named by ID until the issuers of M4 give it a name (R-CI-015).
-		ow.Owner = "ci:" + r.CiIssuerID + ":project:" + r.CiProjectID
+		// The store keeps the issuer by ID, the API names it (R-CI-015).
+		ow.Owner = CIProject{Issuer: firstNonEmpty(r.CiIssuerName, r.CiIssuerID), ProjectID: r.CiProjectID}.Ref()
+		ow.ciIssuerID, ow.ciProjectID = r.CiIssuerID, r.CiProjectID
 	default:
 		ow.Owner = refOfRow(r.PrincipalKind, r.PrincipalName)
 	}
@@ -390,7 +415,7 @@ func ownerOfRow(r q.OwnershipOwnersRow) Owner {
 // with deny.ownership; the check then also holds the decision. The claim row,
 // when there is one, stays locked until the transaction ends.
 func (o *Ownership) CheckTx(ctx context.Context, tx meta.Tx, idx *Index, sub Subject, c Coordinate, w OwnershipWrite) (OwnershipCheck, error) {
-	k, applies, err := o.keyOf(idx, c)
+	k, applies, err := o.keyFor(idx, sub, c)
 	if err != nil || !applies {
 		return OwnershipCheck{}, err
 	}
@@ -402,9 +427,13 @@ func (o *Ownership) CheckTx(ctx context.Context, tx meta.Tx, idx *Index, sub Sub
 	if err != nil {
 		return OwnershipCheck{}, err
 	}
+	facts, err := ciResolveClaimers(ctx, qs, o.factsOf(idx, sub, k, c))
+	if err != nil {
+		return OwnershipCheck{}, err
+	}
 	chk := o.decide(OwnershipCheck{
 		Applies: true, State: state, Owners: owners,
-		key: k, write: w, facts: o.factsOf(idx, sub, k, c), sub: sub, c: c, epoch: idx.Epoch(),
+		key: k, write: w, facts: facts, sub: sub, c: c, epoch: idx.Epoch(),
 	})
 	if chk.Decision.Outcome != Allow {
 		o.refused(ctx, chk)
@@ -419,7 +448,7 @@ func (o *Ownership) CheckTx(ctx context.Context, tx meta.Tx, idx *Index, sub Sub
 // under the claim row lock and stays the decision that counts; a refusal is returned, counted and
 // audited like the commit's. A write that ownership does not apply to passes.
 func (o *Ownership) PrecheckWrite(ctx context.Context, idx *Index, sub Subject, c Coordinate, w OwnershipWrite) error {
-	k, applies, err := o.keyOf(idx, c)
+	k, applies, err := o.keyFor(idx, sub, c)
 	if err != nil || !applies {
 		return err
 	}
@@ -436,9 +465,13 @@ func (o *Ownership) PrecheckWrite(ctx context.Context, idx *Index, sub Subject, 
 		if err != nil {
 			return err
 		}
+		facts, err := ciResolveClaimers(ctx, qs, o.factsOf(idx, sub, k, c))
+		if err != nil {
+			return err
+		}
 		chk = o.decide(OwnershipCheck{
 			Applies: true, State: state, Owners: owners,
-			key: k, write: w, facts: o.factsOf(idx, sub, k, c), sub: sub, c: c, epoch: idx.Epoch(),
+			key: k, write: w, facts: facts, sub: sub, c: c, epoch: idx.Epoch(),
 		})
 		return nil
 	})
@@ -458,6 +491,7 @@ func (o *Ownership) refused(ctx context.Context, chk OwnershipCheck) {
 	c.Kind = KindWrite
 	o.e.count(chk.Decision, chk.sub, c)
 	o.e.audit(ctx, chk.sub, c, chk.Decision)
+	o.ciConflict(ctx, chk)
 }
 
 // maxClaimAttempts bounds the re-reads of a claim that lost the race of its
@@ -475,12 +509,15 @@ const maxClaimAttempts = 3
 // no-op; it records the claim the check's subject decided, on the facts of the
 // check.
 func (o *Ownership) ClaimTx(ctx context.Context, tx meta.Tx, chk OwnershipCheck) error {
-	if !chk.Applies || !chk.Claim {
+	if !chk.Applies || (!chk.Claim && !chk.write.Publish) {
 		return nil
 	}
 	qs, err := queriesOf(tx)
 	if err != nil {
 		return err
+	}
+	if !chk.Claim {
+		return ciTouchDisplay(ctx, qs, chk)
 	}
 	k := chk.key
 	for range maxClaimAttempts {
@@ -517,6 +554,14 @@ func (o *Ownership) recordClaim(ctx context.Context, tx meta.Tx, qs *q.Queries, 
 	k := chk.key
 	refs := make([]string, 0, len(chk.facts.claimers))
 	for _, c := range chk.facts.claimers {
+		if c.project != nil {
+			ref, err := o.ciRecordProjectClaim(ctx, tx, qs, chk, *c.project)
+			if err != nil {
+				return err
+			}
+			refs = append(refs, ref)
+			continue
+		}
 		if _, err := qs.OwnershipInsertOwner(ctx, q.OwnershipInsertOwnerParams{
 			ID: newID(), Domain: k.domain, Format: k.format, PackageName: k.name, PrincipalID: c.principalID,
 			Display: firstNonEmpty(c.ref.Name, c.principalID), Reason: OwnerFirstPublish,
@@ -687,14 +732,15 @@ func (o *Ownership) Owners(ctx context.Context, idx *Index, sub Subject, repoKey
 
 // ownerRef resolves the reference of an owner to a principal row. The owner
 // identities are the principals of R-AUTHZ-018's table; anonymous and
-// authenticated own nothing, and a CI project identity needs the CI issuers of
-// M4. Each is 422 unknown_principal.
+// authenticated own nothing. A CI project identity has no principal row: the
+// owner operations resolve it with ciIssuerID, and ownerRef answers it as
+// unknown. Each is 422 unknown_principal.
 func ownerRef(ctx context.Context, qs *q.Queries, ref string) (Ref, string, error) {
 	unknown := func(detail string) (Ref, string, error) {
 		return Ref{}, "", problemError([]ProblemField{field("/owner", errs.CodeUnknownPrincipal, detail)})
 	}
-	if strings.HasPrefix(ref, "ci:") && strings.Contains(ref, ":project:") {
-		return unknown("CI project owners arrive with the CI issuers (R-CI-015).")
+	if _, ok := parseCIProjectRef(ref); ok {
+		return unknown("A CI project has no principal row.")
 	}
 	r, err := ParseRef(ref)
 	if err != nil {
@@ -788,6 +834,9 @@ func (o *Ownership) AddOwnerTx(ctx context.Context, tx meta.Tx, idx *Index, sub 
 	if err := o.changeAllowed(ctx, idx, sub, k, owners, len(owners) == 0); err != nil {
 		return Owner{}, err
 	}
+	if p, ok := parseCIProjectRef(ref); ok {
+		return o.ciAddProjectOwner(ctx, tx, qs, sub, k, state, p)
+	}
 	r, pid, err := ownerRef(ctx, qs, ref)
 	if err != nil {
 		return Owner{}, err
@@ -795,18 +844,9 @@ func (o *Ownership) AddOwnerTx(ctx context.Context, tx meta.Tx, idx *Index, sub 
 	if err := refuseForeignAccount(ctx, qs, r, pid, k.repo.project); err != nil {
 		return Owner{}, err
 	}
-	reason := OwnerAdded
-	if state != StateClaimed {
-		versions, err := qs.OwnershipHasVersions(ctx, q.OwnershipHasVersionsParams{RepoID: k.repo.ID, PackageName: k.name})
-		if err != nil {
-			return Owner{}, err
-		}
-		if !versions {
-			reason = OwnerPreAssigned
-		}
-		if err := o.claimRow(ctx, qs, k, state); err != nil {
-			return Owner{}, err
-		}
+	reason, err := o.claimForAdd(ctx, qs, k, state)
+	if err != nil {
+		return Owner{}, err
 	}
 	added, err := qs.OwnershipInsertOwner(ctx, q.OwnershipInsertOwnerParams{
 		ID: newID(), Domain: k.domain, Format: k.format, PackageName: k.name, PrincipalID: pid,
@@ -822,6 +862,24 @@ func (o *Ownership) AddOwnerTx(ctx context.Context, tx meta.Tx, idx *Index, sub 
 	return out, o.rec.RecordTx(ctx, tx, ownershipEvent(EventOwnershipAdded, sub, k, map[string]any{
 		"owner": r.String(), "ownerId": pid, "reason": reason,
 	}, nil))
+}
+
+// claimForAdd claims a name that is not claimed for an owner the API adds and
+// returns the reason of the owner entry: added, or pre-assigned for a name
+// without a stored version (R-AUTHZ-019).
+func (o *Ownership) claimForAdd(ctx context.Context, qs *q.Queries, k ownKey, state string) (string, error) {
+	if state == StateClaimed {
+		return OwnerAdded, nil
+	}
+	reason := OwnerAdded
+	versions, err := qs.OwnershipHasVersions(ctx, q.OwnershipHasVersionsParams{RepoID: k.repo.ID, PackageName: k.name})
+	if err != nil {
+		return "", err
+	}
+	if !versions {
+		reason = OwnerPreAssigned
+	}
+	return reason, o.claimRow(ctx, qs, k, state)
 }
 
 // PackageName is the normalized name the owner operations address, for the
@@ -912,6 +970,10 @@ func (o *Ownership) RemoveOwnerTx(ctx context.Context, tx meta.Tx, idx *Index, s
 		}
 	}
 	journal := map[string]any{"domain": k.domain, "format": k.format, "package": k.name, "principalId": gone.principalID, "owner": gone.Owner}
+	if gone.ciIssuerID != "" {
+		// A CI project owner has no principal; the store names it by issuer ID and project ID (R-CI-015).
+		journal["ciIssuerId"], journal["ciProjectId"] = gone.ciIssuerID, gone.ciProjectID
+	}
 	return o.rec.RecordTx(ctx, tx, ownershipEvent(event, sub, k, map[string]any{"owner": gone.Owner, "ownerId": gone.principalID}, journal))
 }
 
@@ -961,14 +1023,7 @@ func (o *Ownership) OwnedBy(ctx context.Context, idx *Index, sub Subject, ref, r
 		if err != nil {
 			return err
 		}
-		_, pid, err := ownerRef(ctx, qs, ref)
-		if err != nil {
-			return err
-		}
-		rows, err := qs.OwnershipOwnedBy(ctx, q.OwnershipOwnedByParams{
-			PrincipalID: pid, Domain: domain, AfterDomain: after.Domain, AfterFormat: after.Format, AfterName: after.Package,
-			MaxRows: int32(limit + 1), //nolint:gosec // at most 1001
-		})
+		rows, err := ownedRows(ctx, qs, ref, domain, after, limit+1)
 		if err != nil {
 			return err
 		}
@@ -1006,6 +1061,34 @@ func (o *Ownership) OwnedBy(ctx context.Context, idx *Index, sub Subject, ref, r
 		}
 	}
 	return shown, next, nil
+}
+
+// ownedRows reads the names an owner reference owns: a principal's
+// (OwnershipOwnedBy) or a CI project's (CiOwnershipOwnedByProject, R-CI-015).
+func ownedRows(ctx context.Context, qs *q.Queries, ref, domain string, after OwnedCursor, maxRows int) ([]q.OwnershipOwnedByRow, error) {
+	if p, ok := parseCIProjectRef(ref); ok {
+		issuerID, err := ciIssuerID(ctx, qs, p)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := qs.CiOwnershipOwnedByProject(ctx, q.CiOwnershipOwnedByProjectParams{
+			CiIssuerID: issuerID, CiProjectID: p.ProjectID, Domain: domain, AfterDomain: after.Domain, AfterFormat: after.Format,
+			AfterName: after.Package, MaxRows: int32(maxRows), //nolint:gosec // at most 1001
+		})
+		out := make([]q.OwnershipOwnedByRow, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, q.OwnershipOwnedByRow(r))
+		}
+		return out, err
+	}
+	_, pid, err := ownerRef(ctx, qs, ref)
+	if err != nil {
+		return nil, err
+	}
+	return qs.OwnershipOwnedBy(ctx, q.OwnershipOwnedByParams{
+		PrincipalID: pid, Domain: domain, AfterDomain: after.Domain, AfterFormat: after.Format, AfterName: after.Package,
+		MaxRows: int32(maxRows), //nolint:gosec // at most 1001
+	})
 }
 
 // ownIdentity reports whether the reference names the subject itself or one of

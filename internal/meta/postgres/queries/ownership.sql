@@ -23,10 +23,12 @@ SELECT state FROM package_ownership
 SELECT o.id::text AS id, o.owner_kind, COALESCE(o.principal_id::text, '')::text AS principal_id,
        COALESCE(p.kind, '')::text AS principal_kind, COALESCE(p.name, '')::text AS principal_name,
        COALESCE(o.ci_issuer_id::text, '')::text AS ci_issuer_id, COALESCE(o.ci_project_id, '')::text AS ci_project_id,
+       COALESCE(ci.name, '')::text AS ci_issuer_name,
        o.display, o.reason, (extract(epoch FROM o.added_at) * 1000000)::bigint AS added_us,
        COALESCE(ab.kind, '')::text AS added_by_kind, COALESCE(ab.name, '')::text AS added_by_name
   FROM package_owner o
   LEFT JOIN principal p ON p.id = o.principal_id
+  LEFT JOIN ci_issuers ci ON ci.id = o.ci_issuer_id
   LEFT JOIN principal ab ON ab.id = o.added_by
  WHERE o.domain = sqlc.arg(domain)::text AND o.format = sqlc.arg(format)::text
    AND o.package_name = sqlc.arg(package_name)::text

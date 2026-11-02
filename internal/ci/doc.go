@@ -5,7 +5,9 @@
 // This file set is the contract of the work packages of docs/developer/ci-oidc.md. It holds the
 // domain types (types.go, issuance.go, exchange.go), the service interfaces that the work packages
 // implement (services.go) and the typed not-implemented answer of the stubs the composition root
-// wires until they are built (stubs.go). The pure parts live in two leaves below it:
+// wires until they are built (stubs.go). The built services: the issuers and keys of W1 (issuers*.go,
+// keys*.go), the revoker (revoke.go) and the issuance records with the retention tasks (issuances.go) of
+// W5. The pure parts live in two leaves below it:
 //
 //   - internal/ci/claims: the condition tree, glob, templates, the grant specification and its
 //     rendering, the scope grammar of the exchange and the save-time rules of a mapping (W2).

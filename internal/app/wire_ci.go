@@ -8,10 +8,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
+	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/ci"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/jobs"
+	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/observability"
 )
 
@@ -65,9 +67,17 @@ func (a *App) wireCI(_ context.Context, in infra) (ciArea, error) {
 	if err != nil {
 		return ciArea{}, fmt.Errorf("ci metrics: %w", err)
 	}
-	out := ciArea{revoker: ci.StubRevoker{}, issuances: ci.StubIssuances{}, exchanger: ci.StubExchanger{}, metrics: metrics}
-	// The mapping store of work package W3: it takes the revoker of the area (work package W5 replaces the
-	// stub above) and is the issuer service's collaborator for the cascade of a deletion.
+	revoker, err := ci.NewRevoker(ci.RevokerOptions{DB: in.db, Changes: in.changes, Recorder: in.rec})
+	if err != nil {
+		return ciArea{}, err
+	}
+	issuances, err := ci.NewIssuances(ci.IssuanceOptions{DB: in.db, Config: a.cfg.CI})
+	if err != nil {
+		return ciArea{}, err
+	}
+	out := ciArea{revoker: revoker, issuances: issuances, exchanger: ci.StubExchanger{}, metrics: metrics}
+	// The mapping store of work package W3: it takes the revoker of the area and is the issuer service's
+	// collaborator for the cascade of a deletion.
 	mappings, err := ci.NewMappings(ci.MappingsOptions{
 		DB: in.db, Changes: in.changes, Recorder: in.rec, Caches: in.caches, Revoker: out.revoker,
 		Config: a.cfg.CI, BaseURL: a.cfg.Server.BaseURL, Log: a.log.With("component", "ci"),
@@ -96,6 +106,17 @@ func (a *App) CIIssuers() ci.Issuers { return part[ciArea](a.parts).issuers }
 // CIMappings returns the mapping service; nil in the shell profile. The integration tests of the mapping
 // cache call it the way the exchange does.
 func (a *App) CIMappings() ci.Mappings { return part[ciArea](a.parts).mappings }
+
+// CIRevoker returns the revoker of CI tokens (R-CI-017); the issuer service and the mapping store call it in their
+// transactions, and the integration tests of W5 call RevokeMappingTx the way the mapping store (W3) does.
+func (a *App) CIRevoker() ci.Revoker { return part[ciArea](a.parts).revoker }
+
+// CITokenIssuer returns what the exchange issues a CI token with: the token service, whose IssueCITx writes the
+// token row in the caller's transaction (R-CI-017), and the replica's transaction runner. The integration tests
+// of the use time (work package W5) issue tokens with frozen bundles through it the way the exchange does.
+func (a *App) CITokenIssuer() (*token.Service, meta.Runner) {
+	return part[identityArea](a.parts).tokens, a.database()
+}
 
 // ciAPI hands the services to the management API.
 func (a *App) ciAPI() v1.CIServices {
@@ -209,23 +230,16 @@ func (a *App) registerCIMetrics() error {
 			if err := rows.Err(); err != nil {
 				return nil, err
 			}
-			rows, err = a.database().Main().Query(ctx,
-				`SELECT i.name, count(*) FROM ci_token_issuances s JOIN ci_issuers i ON i.id = s.issuer_id
-				   JOIN api_token t ON t.id = s.token_id
-				  WHERE t.revoked_at IS NULL AND t.expires_at > now() GROUP BY i.name`)
+			// trove_ci_tokens_active: the issuance service's count, 0 for an issuer without a live token, so a
+			// dashboard sees the series drop to zero after a revocation instead of vanishing.
+			counts, err := ci.ActiveTokens(ctx, a.database())
 			if err != nil {
 				return nil, err
 			}
-			defer rows.Close()
-			for rows.Next() {
-				var name string
-				var n int64
-				if err := rows.Scan(&name, &n); err != nil {
-					return nil, err
-				}
+			for name, n := range counts {
 				out = append(out, prometheus.MustNewConstMetric(active, prometheus.GaugeValue, float64(n), name))
 			}
-			return out, rows.Err()
+			return out, nil
 		},
 	})
 	return nil

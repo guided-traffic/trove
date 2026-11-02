@@ -314,20 +314,23 @@ func (s *Service) Delete(ctx context.Context, caller Actor, name string, cascade
 		if len(count) > 0 {
 			mappings = int(count[0])
 		}
+		if mappings > 0 && !cascade {
+			return errs.E(errs.Conflict, errs.CodeConflict,
+				fmt.Sprintf("The CI issuer %q has %d mappings; delete them first or send cascade=true.", name, mappings))
+		}
+		// The tokens are revoked before the mappings go: a token row belongs to its mapping's principal (ON DELETE
+		// CASCADE), so deleting the principals first would take the rows with them without ci.token.revoked and its
+		// journal entry (R-CI-017, R-CI-020).
+		if err := s.revokeTokens(ctx, tx, qs, caller, before); err != nil {
+			return err
+		}
 		if mappings > 0 {
-			if !cascade {
-				return errs.E(errs.Conflict, errs.CodeConflict,
-					fmt.Sprintf("The CI issuer %q has %d mappings; delete them first or send cascade=true.", name, mappings))
-			}
 			if s.o.Mappings == nil {
 				return NotImplemented("W3")
 			}
 			if mappings, err = s.o.Mappings.DeleteForIssuerTx(ctx, tx, caller, before.ID, before.Name); err != nil {
 				return err
 			}
-		}
-		if err := s.revokeTokens(ctx, tx, qs, caller, before); err != nil {
-			return err
 		}
 		if err := qs.CiIssuerDelete(ctx, before.ID); err != nil {
 			return err

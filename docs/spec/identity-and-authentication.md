@@ -2285,7 +2285,10 @@ already rotated value revoke the live successor; that is deliberate. Its rules:
   thief's, so a leaked predecessor always ends the chain; the legitimate holder creates a new
   token.
 - Revoking an already revoked or expired token answers 204, so the operation is idempotent.
-- Every revocation writes `token.revoked` with reason and actor.
+- Every revocation writes `token.revoked` with reason and actor. The revocations of CI tokens by a
+  mapping, an issuer or the bulk revoke of [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-020 write
+  `ci.token.revoked` instead, at most 1,000 token IDs per event, with the cause; one CI token revoked
+  through the endpoints above writes both ([Q-CI-38](gitlab-ci-oidc.md#q-ci-38--the-revocation-reason-of-a-ci-tokens-row-and-the-events-of-a-revocation)).
 - **Self-revocation.** `DELETE /api/v1/tokens/current` revokes the presenting token of every
   type, CI tokens included, with revocation reason `owner`; `revoked_by` is the token's owner
   principal. [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-028 asserts this reason for the

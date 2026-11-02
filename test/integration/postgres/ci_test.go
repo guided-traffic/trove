@@ -199,8 +199,66 @@ func TestCIMigration(t *testing.T) {
 		if err != nil || len(victims) != 1 {
 			t.Fatalf("CiIssuanceTokensToRevoke: %v %v", victims, err)
 		}
-		if of, err := qs.CiIssuanceTokensOfMapping(ctx, ciPrinc); err != nil || len(of) != 1 {
+		if of, err := qs.CiIssuanceTokensOfMapping(ctx, q.CiIssuanceTokensOfMappingParams{PrincipalID: ciPrinc, IssuerID: ciIssuerA, MappingID: ciMapping}); err != nil || len(of) != 1 {
 			t.Fatalf("CiIssuanceTokensOfMapping: %v %v", of, err)
+		}
+		// The statements of W5 beyond the revocation: the record and its usage, the project's list, the gauge,
+		// the token's owner and issuer, the names of a CI owner reference, and the CI project owners.
+		if rows, err := qs.CiIssuanceGet(ctx, ciToken); err != nil || len(rows) != 1 || rows[0].Issuer != "gitlab-a" {
+			t.Fatalf("CiIssuanceGet: %v %v", rows, err)
+		}
+		if rows, err := qs.CiIssuanceListForProject(ctx, q.CiIssuanceListForProjectParams{ProjectID: ciMapping, MaxRows: 50}); err != nil || len(rows) != 0 {
+			t.Fatalf("CiIssuanceListForProject: %v %v", rows, err)
+		}
+		if ids, err := qs.CiProjectIDByKey(ctx, "no-such-project"); err != nil || len(ids) != 0 {
+			t.Fatalf("CiProjectIDByKey: %v %v", ids, err)
+		}
+		window := q.CiIssuanceUsageParams{TokenID: ciToken, FromUs: time.Now().Add(-time.Hour).UnixMicro(), ToUs: time.Now().Add(time.Hour).UnixMicro()}
+		if u, err := qs.CiIssuanceUsage(ctx, window); err != nil || u.Requests != 0 || u.LastUs != 0 {
+			t.Fatalf("CiIssuanceUsage: %+v %v", u, err)
+		}
+		if d, err := qs.CiIssuanceDeployed(ctx, q.CiIssuanceDeployedParams(window)); err != nil || len(d) != 0 {
+			t.Fatalf("CiIssuanceDeployed: %v %v", d, err)
+		}
+		if g, err := qs.CiTokensActive(ctx); err != nil || len(g) != 1 || g[0].Active != 1 {
+			t.Fatalf("CiTokensActive: %v %v", g, err)
+		}
+		if o, err := qs.CiTokenOwner(ctx, ciPrinc); err != nil || len(o) != 1 || o[0].Kind != "ci_mapping" {
+			t.Fatalf("CiTokenOwner: %v %v", o, err)
+		}
+		if is, err := qs.CiTokenIssuers(ctx, []string{ciToken}); err != nil || len(is) != 1 {
+			t.Fatalf("CiTokenIssuers: %v %v", is, err)
+		}
+		if ids, err := qs.CiIssuerIDByName(ctx, "gitlab-a"); err != nil || len(ids) != 1 || ids[0] != ciIssuerA {
+			t.Fatalf("CiIssuerIDByName: %v %v", ids, err)
+		}
+		if ps, err := qs.CiMappingPrincipalsByName(ctx, []string{"gitlab-a/release"}); err != nil {
+			t.Fatalf("CiMappingPrincipalsByName: %v %v", ps, err)
+		}
+		if _, err := qs.CiTokenInsert(ctx, q.CiTokenInsertParams{
+			ID: "cc000000-0000-0000-0000-0000000000e2", SecretSha256: make([]byte, 32), Hint: "trv_cit_0000", PrincipalID: ciPrinc,
+			Description: "CI exchange gitlab-a job 9002", Scope: `{"inherit":true}`, TtlSecs: 60, CiContext: `{"version":1}`,
+		}); err != nil {
+			t.Fatalf("CiTokenInsert: %v", err)
+		}
+		if _, err := qs.OwnershipInsertClaim(ctx, q.OwnershipInsertClaimParams{Domain: "repo:1", Format: "npm", PackageName: "@acme/x", ClaimEvent: ciMapping}); err != nil {
+			t.Fatalf("OwnershipInsertClaim: %v", err)
+		}
+		own := q.CiOwnershipInsertProjectOwnerParams{
+			ID: "cc000000-0000-0000-0000-0000000000f1", Domain: "repo:1", Format: "npm", PackageName: "@acme/x", CiIssuerID: ciIssuerA,
+			CiProjectID: "4242", Display: "acme/x", Reason: "first-publish",
+		}
+		if added, err := qs.CiOwnershipInsertProjectOwner(ctx, own); err != nil || len(added) != 1 {
+			t.Fatalf("CiOwnershipInsertProjectOwner: %v %v", added, err)
+		}
+		if n, err := qs.CiOwnershipUpdateDisplay(ctx, q.CiOwnershipUpdateDisplayParams{Display: "acme/y", Domain: "repo:1", Format: "npm", PackageName: "@acme/x", CiIssuerID: ciIssuerA, CiProjectID: "4242"}); err != nil || n != 1 {
+			t.Fatalf("CiOwnershipUpdateDisplay: %d %v", n, err)
+		}
+		if owned, err := qs.CiOwnershipOwnedByProject(ctx, q.CiOwnershipOwnedByProjectParams{CiIssuerID: ciIssuerA, CiProjectID: "4242", MaxRows: 10}); err != nil || len(owned) != 1 {
+			t.Fatalf("CiOwnershipOwnedByProject: %v %v", owned, err)
+		}
+		if ows, err := qs.OwnershipOwners(ctx, q.OwnershipOwnersParams{Domain: "repo:1", Format: "npm", PackageName: "@acme/x"}); err != nil || len(ows) != 1 || ows[0].CiIssuerName != "gitlab-a" {
+			t.Fatalf("OwnershipOwners of a CI project: %v %v", ows, err)
 		}
 		if of, err := qs.CiIssuanceTokensOfIssuer(ctx, ciIssuerA); err != nil || len(of) != 1 {
 			t.Fatalf("CiIssuanceTokensOfIssuer: %v %v", of, err)

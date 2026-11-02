@@ -227,6 +227,22 @@ list is the account's alone, and another account's token answers 404 to the proj
 A project service account has no group, no role and only its project's policies, so what its token can reach is what the project's policies grant it
 ([Q-AUTHZ-175](../spec/authorization.md#q-authz-175--a-project-service-account-is-granted-by-its-projects-policies-only)).
 
+## CI tokens
+
+A CI token (`trv_cit_`) has the format, the hashing, the validation and the cache of every token; what differs is where it comes from and
+what it carries ([R-CI-017](../spec/gitlab-ci-oidc.md#r-ci-017--ci-token-identity-presentation-and-revocation)):
+
+| Property | Rule | Where |
+|---|---|---|
+| issuance | only `IssueCITx`, in the exchange's transaction: the row with `created_via` `ci-exchange`, the owner a mapping principal (kind `ci_mapping`, active, read `FOR SHARE`), the expiry the database clock plus the computed lifetime (at least 1 s, at most `auth.tokens.cit.max_ttl`), `token.created` with `ciIssuer`, `ciMappings` and the claim snapshot | [cit.go](../../internal/auth/token/cit.go) |
+| lists | in no user's token list, because no user owns it, and with no per-principal limit; `GET /api/v1/tokens?type=cit` shows them to holders of `tokens:read`, the issuance records to the same holders | `IssueCITx`; [ci_issuances_api.go](../../internal/api/v1/ci_issuances_api.go) |
+| the bundle | `ci_context` holds the frozen grants; the validator decodes it with `claims.DecodeFrozen` into the cache entry, and a missing, unknown-version or inconsistent bundle fails the request as a storage fault ([Q-CI-17](../spec/gitlab-ci-oidc.md#q-ci-17--how-a-ci-token-reaches-the-authorization-evaluator-at-use-time)) | `decodeCIContext` |
+| presentation | `Authorization: Bearer`, HTTP Basic with any user name, `X-NuGet-ApiKey` on a push, as every token | the authentication stage |
+| management API | refused with `403 ci_token_restricted` except `GET` and `DELETE /api/v1/tokens/current` and the repository-content operations; it cannot create a token (`derivation` refuses a CI parent too) | `ciGate`, `checkDerivation` |
+| revocation | five causes, each in its transaction with the change of the area `auth`, so within `auth.revocation_bound` on every replica; `ci.token.revoked` with the cause for each, `token.revoked` as well for one by ID and for the token itself | [ci-federation.md](ci-federation.md#revocation) |
+
+What a CI token may do with its grants, and how it owns package names, is [ci-federation.md](ci-federation.md#what-a-ci-token-can-do).
+
 ## What this does not cover
 
 ### H-82 · Rejected credentials of one address are counted together

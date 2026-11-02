@@ -189,9 +189,10 @@ type Mappings interface {
 	SetTx(ctx context.Context, tx meta.Tx, issuerID string) (MappingSet, error)
 }
 
-// Revoker ends CI tokens (R-CI-017, R-CI-020), built by work package W5. A revocation sets
-// revoked_at and the reason on the api_token rows (the reasons of the token table: mapping_deleted,
-// admin, owner), notifies the change area auth with the token hashes so the token cache on every
+// Revoker ends CI tokens (R-CI-017, R-CI-020), built by work package W5 (TokenRevoker in revoke.go). A
+// revocation sets revoked_at and the reason on the api_token rows (the reasons of the token table,
+// Q-CI-38: mapping_deleted for a mapping, admin for an issuer and the bulk revoke), notifies the change
+// area auth with the token hashes so the token cache on every
 // replica evicts them within R-AUTH-023's bound, and records ci.token.revoked, at most 1000 token
 // IDs per event, with the cause and the journal entry (R-OPS-014). The Tx forms run inside the
 // caller's transaction: the writes of W1 and W3 must not leave a window in which a token of a
