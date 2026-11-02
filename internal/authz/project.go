@@ -1,13 +1,14 @@
 package authz
 
+import "sort"
+
 // Projects as the engine sees them (R-AUTHZ-026, Q-AUTHZ-174 to Q-AUTHZ-183). The
 // project service (internal/project) owns the rows; this file is the contract of
 // what the grant index answers about them. Every method answers on the index the
 // request holds, so a decision and the question "may this caller write here" are
 // one moment.
 //
-// The bodies of the questions are stubs that answer "no project, no right" until
-// WP-A fills them: a caller is never an administrator of anything, so every
+// A caller that the index does not know as an administrator is never one: every
 // delegated operation refuses (fail closed).
 
 // ProjectRight names what a project administrator needs for an operation: one of the
@@ -64,16 +65,54 @@ func (p AdministeredProject) Holds(r ProjectRight) bool {
 // source of Me.Projects and of the coarse pre-check of a declaration that names
 // projectAdmin (Q-AUTHZ-180).
 func (e *Engine) ProjectsOn(idx *Index, sub Subject) []AdministeredProject {
-	_, _ = idx, sub
-	return nil // WP-A
+	if idx == nil || len(idx.projects) == 0 || !mayAdminister(sub) {
+		return nil
+	}
+	ids := make([]string, 0, len(sub.Groups)+1)
+	if sub.ID != "" {
+		ids = append(ids, sub.ID)
+	}
+	for _, g := range sub.Groups {
+		ids = append(ids, g.ID)
+	}
+	var out []AdministeredProject
+	for _, p := range idx.projects {
+		for _, id := range ids {
+			if p.admins[id] {
+				out = append(out, AdministeredProject{Key: p.key, ManagePolicies: p.managePolicies, ManageRepositories: p.manageRepositories})
+				break
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	return out
+}
+
+// mayAdminister reports whether the credential can exercise a project right at
+// all: a user (the break-glass administrator included) through a session or a
+// token with admin: true. A service account, a CI identity and anonymous never
+// administer a project, and a token that is not admin: true stays narrow
+// (Q-AUTHZ-183).
+func mayAdminister(sub Subject) bool {
+	if sub.Anonymous || kindOf(sub) != kindUser {
+		return false
+	}
+	return sub.Scope == nil || sub.Scope.Admin
 }
 
 // AdministersOn reports whether the subject administers the project with the right
 // (a question: nothing is audited). An unknown project key is false, as is a key the
 // subject does not administer, so the answer does not tell them apart.
 func (e *Engine) AdministersOn(idx *Index, sub Subject, project string, right ProjectRight) bool {
-	_, _, _, _ = idx, sub, project, right
-	return false // WP-A
+	if !right.Valid() {
+		return false
+	}
+	for _, p := range e.ProjectsOn(idx, sub) {
+		if p.Key == project {
+			return p.Holds(right)
+		}
+	}
+	return false
 }
 
 // AdministersRepositoryOn reports whether the subject administers the project the
@@ -81,13 +120,21 @@ func (e *Engine) AdministersOn(idx *Index, sub Subject, project string, right Pr
 // repository that belongs to no project, an unknown one and a project the subject
 // does not administer all answer ("", false).
 func (e *Engine) AdministersRepositoryOn(idx *Index, sub Subject, repository string, right ProjectRight) (string, bool) {
-	_, _, _, _ = idx, sub, repository, right
-	return "", false // WP-A
+	if idx == nil {
+		return "", false
+	}
+	project := idx.ProjectOf(repository)
+	if project == "" || !e.AdministersOn(idx, sub, project, right) {
+		return "", false
+	}
+	return project, true
 }
 
 // ProjectOf returns the key of the project the repository is assigned to on this
 // index, "" for a repository without a project or an unknown one.
 func (x *Index) ProjectOf(repository string) string {
-	_ = repository
-	return "" // WP-A
+	if r := x.repos[repository]; r != nil {
+		return r.project
+	}
+	return ""
 }

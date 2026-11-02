@@ -311,7 +311,7 @@ type repositories struct{ e *Env }
 func (s repositories) list(ctx context.Context, where string, args ...any) ([]repository.Repository, error) {
 	s.e.mu.Lock()
 	defer s.e.mu.Unlock()
-	rows, err := s.e.admin.Query(ctx, "SELECT id, key, class, format, config FROM repositories "+where+" ORDER BY key", args...)
+	rows, err := s.e.admin.Query(ctx, "SELECT id, key, class, format, config, COALESCE(project_id::text, '') FROM repositories "+where+" ORDER BY key", args...)
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +321,7 @@ func (s repositories) list(ctx context.Context, where string, args ...any) ([]re
 		var r repository.Repository
 		var id int64
 		var class string
-		if err := rows.Scan(&id, &r.Key, &class, &r.Format, &r.Config); err != nil {
+		if err := rows.Scan(&id, &r.Key, &class, &r.Format, &r.Config, &r.ProjectID); err != nil {
 			return nil, err
 		}
 		r.ID, r.Class = strconv.FormatInt(id, 10), repository.Class(class)

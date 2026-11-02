@@ -1554,7 +1554,7 @@ Representation:
 
 - `name` matches `^[a-z0-9][a-z0-9._-]{0,127}$`; `description` has at most 1024 characters;
   `resourceType` is `repository` (MVP) or `build` (P1, R-AUTHZ-027); `project` is `null` for a global
-  policy and the key of a project for a project policy (R-AUTHZ-026): it is fixed at creation, the name starts with
+  policy and the key of a project for a project policy (R-AUTHZ-026): it is fixed at creation (a change is 422 `immutable`, [Q-AUTHZ-186](#q-authz-186--the-project-of-a-policy-is-fixed-at-creation)), the name starts with
   `<project>-`, and the selectors stay inside the project. `entries` may be empty (a policy can be prepared before principals are added) and
   holds at most one entry per principal. `inert`, `warnings`, `version` and the timestamps are
   read-only.
@@ -1588,7 +1588,7 @@ Representation:
 
 | Method and path | Purpose | Status | Required |
 |---|---|---|---|
-| `GET /api/v1/permission-policies` | List. Filters: `principal=<ref>` (with `expandGroups=true`, the default, also policies granting to the principal's groups), `repository=<key>` (policies whose selectors cover it), `project=<key>`; cursor paging per [api-and-ui.md](api-and-ui.md) | 200; 422 unknown filter value | `policies:read`; project administrators see their project's policies (`project=<key>` required, R-AUTHZ-026); P1: delegated managers the policies they manage |
+| `GET /api/v1/permission-policies` | List. Filters: `principal=<ref>` (with `expandGroups=true`, the default, also policies granting to the principal's groups), `repository=<key>` (policies whose selectors cover it), `project=<key>`; cursor paging per [api-and-ui.md](api-and-ui.md) | 200; 422 unknown filter value | `policies:read`; project administrators see their project's policies (`project=<key>` required, 403 without it and for a project they do not administer, R-AUTHZ-026, [Q-AUTHZ-187](#q-authz-187--what-a-project-administrator-sees-and-is-refused-on-the-policy-operations)); P1: delegated managers the policies they manage |
 | `POST /api/v1/permission-policies` | Create | 201 with `Location`; 400; 409 name exists; 422 | `policies:write`; project administrators with `managePolicies` for policies of their project (R-AUTHZ-026) |
 | `GET /api/v1/permission-policies/{name}` | Read | 200 with `ETag`; 404 | as for list |
 | `PUT /api/v1/permission-policies/{name}` | Replace (the name is immutable) | 200; 400; 404; 412; 422; 428 | as for create; P1: delegated managers per R-AUTHZ-025 |
@@ -4403,6 +4403,78 @@ revocation (R-AUTHZ-031). The replay rules are in R-HA-054 and R-AUTHZ-031. The 
 condition.
 
 **Applied in the spec:** R-AUTHZ-026, R-AUTHZ-029, R-AUTHZ-031, R-HA-054 (table rows).
+
+### Q-AUTHZ-186 · The project of a policy is fixed at creation
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-AUTHZ-021 says the project of a policy is fixed at creation and gives no answer for a `PUT` or a merge patch
+that carries another `project` (or none) for an existing policy. A project policy's entries are in
+`authz_project_policy_entry`, a global policy's in `authz_policy_entry` (Q-AUTHZ-174), so a change of project is a move
+between tables.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Immutable; a change is 422 `immutable` at `/project` (chosen) | The service compares the requested project with the stored one before it applies the rules of the new project, in the write transaction again under the row lock; the merge patch is refused by the handler's immutability check, as a changed `name` is | The same answer as for `name`; no window in which the entries sit in the wrong table; a delegate cannot widen a project policy into a global one | A team that wants to hand a policy to another project writes a new one and deletes the old |
+| (b) A `PUT` may move the policy | The entries move between the tables | One call | The move is a revocation and a grant in one write, journaled as an update with two projects; a project administrator would write into a project it was not administering when the policy was read |
+| (c) Immutable, refused with 409 | A conflict, not a validation error | None | The state is not in conflict, the input is invalid |
+
+**Choice:** (a).
+
+**Rationale:** the project decides which table holds the grants, which repositories the policy covers and who may write it;
+none of these may change under a delegate. The development agent revisits it when a hand-over of a policy between
+projects is asked for; the remedy is then an explicit operation, not a change of the member.
+
+**Applied in the spec:** R-AUTHZ-021 (the members), R-AUTHZ-026 (project policies). Code: `Service.Update`,
+`PatchPermissionPolicy` (`internal/authz/store.go`, `internal/api/v1/authz_api.go`).
+
+### Q-AUTHZ-187 · What a project administrator sees and is refused on the policy operations
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the policy operations declare `policies:read` or `policies:write` and `projectAdmin` (Q-AUTHZ-180); the shared
+step admits a caller that administers any project with the right, and the handler must narrow to the project the request
+names. The document gives no `404` for the list, and the contract page names a few cases only.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Narrow in the handler; the answer never tells a foreign project from an unknown one (chosen) | List without `project=<key>`: 403 `forbidden`; with a project the caller does not administer or that does not exist: 403 `forbidden`. Get of a global policy or of another project's policy: 404. Replace, patch, delete of another project's policy: 404; of a global policy: 403. Create and validate with a project the caller does not administer or that does not exist: 422 `unknown_project` at `/project`; without a project: 403. A switch that is off: 403 `project_switch_off` | Every refusal is in the document today; no answer tells whether a project or a policy outside the caller's reach exists, except that a write of a global policy is 403 (the declaration already told the caller that policies exist) | A project administrator sees 403, not 404, on the list of a project it does not administer |
+| (b) 404 for the list of a foreign project | As for a single policy | One rule for "not yours" | The list operation documents no 404; adding one regenerates the TypeScript types another package owns |
+| (c) The policy service decides on the caller | `Service` takes the caller's projects | One place | The service becomes caller-aware for one kind of caller; the validation (`Validate`) is also a read for others |
+
+**Choice:** (a).
+
+**Rationale:** the handler already holds the request's index through `delegatedScope`, and the service stays a function of
+its input. A caller that administers no project with the switch is refused at the declaration with `forbidden`; the
+handler's `project_switch_off` is therefore reachable only for a caller that administers another project with the switch
+on, which is the case that needs the explanation. The development agent revisits (b) when the list gains a `404` for
+another reason.
+
+**Applied in the spec:** R-AUTHZ-021 (operations table), R-AUTHZ-026. Code: `narrowPolicyList`, `narrowPolicyRead`,
+`narrowPolicyWrite`, `narrowPolicyWriteOf`, `narrowPolicyValidate` in `internal/api/v1/authz_api.go`.
+
+### Q-AUTHZ-188 · A project policy that names anonymous or authenticated is a principal outside the project
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-AUTHZ-026 says a project policy never grants to `anonymous` or `authenticated` and names no code. The existing
+codes of the entry rules are `anonymous_write_action` and `authenticated_write_action`, which refuse an action beyond `read`,
+not the principal.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `principal_outside_project` at `/entries/<i>/principal` (chosen) | The same code as a service account of another project: the principal is not one the project may name | No new code; one rule for "who a project may name"; the entry is refused before its actions are looked at | The name suggests a project, not a built-in principal |
+| (b) The existing write-action codes | `read` only entries would pass | None | The refusal is the principal, whatever the action |
+| (c) A new code | `principal_not_allowed` | Exact | A new code in the registry and the document for one rule |
+
+**Choice:** (a).
+
+**Rationale:** the rule is "a project policy grants to users, groups, service accounts of its project or global ones, and CI
+mappings"; every entry outside that set is a principal outside the project. The development agent revisits it with the
+projects' anonymous access (IAM-062, P2), which would lift the rule.
+
+**Applied in the spec:** R-AUTHZ-026 (project policies), R-AUTHZ-030. Code: `Service.projectRule`
+(`internal/authz/validate.go`).
 
 ## What this does not cover
 

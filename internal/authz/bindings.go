@@ -44,6 +44,18 @@ func (s *Service) bindable(ctx context.Context, role Role, ref string) (Ref, str
 		}
 		return Ref{}, "", err
 	}
+	if r.Kind == principal.KindServiceAccount {
+		// A project service account is granted by its project's policies only; no
+		// system role ever reaches it (Q-AUTHZ-175).
+		project, perr := s.accountProject(ctx, id)
+		if perr != nil {
+			return Ref{}, "", perr
+		}
+		if project != "" {
+			return Ref{}, "", roleProblem("/principal", errs.CodeRoleNotAllowed,
+				"The service account belongs to a project and takes no system role.")
+		}
+	}
 	return r, id, nil
 }
 

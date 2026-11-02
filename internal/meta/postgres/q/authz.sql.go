@@ -1096,6 +1096,60 @@ func (q *Queries) AuthzPrincipalHasBinding(ctx context.Context, principalID stri
 	return exists, err
 }
 
+const authzProjectByKey = `-- name: AuthzProjectByKey :many
+SELECT id::text AS id FROM project WHERE key = $1::text
+`
+
+// The ID of a project by its key; no row when it does not exist (R-AUTHZ-026).
+func (q *Queries) AuthzProjectByKey(ctx context.Context, key string) ([]string, error) {
+	rows, err := q.db.Query(ctx, authzProjectByKey, key)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const authzServiceAccountProject = `-- name: AuthzServiceAccountProject :many
+SELECT COALESCE(pr.key, '')::text AS project
+  FROM service_account s
+  LEFT JOIN project pr ON pr.id = s.project_id
+ WHERE s.principal_id = $1::text::uuid
+`
+
+// The key of the project a service account belongs to, empty for a global account;
+// no row for a principal that is no service account (Q-AUTHZ-175).
+func (q *Queries) AuthzServiceAccountProject(ctx context.Context, principalID string) ([]string, error) {
+	rows, err := q.db.Query(ctx, authzServiceAccountProject, principalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var project string
+		if err := rows.Scan(&project); err != nil {
+			return nil, err
+		}
+		items = append(items, project)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const authzTouchPoliciesOfPrincipal = `-- name: AuthzTouchPoliciesOfPrincipal :many
 UPDATE authz_policy SET version = version + 1
  WHERE id IN (SELECT policy_id FROM authz_policy_entry WHERE principal_id = $1::text::uuid

@@ -65,6 +65,9 @@ const (
 	WarnPathPatternsOnPackageFormat = "path_patterns_on_package_format"
 	WarnSelectorMatchesNothing      = "selector_matches_nothing"
 	WarnAnonymousPopulatesRemote    = "anonymous_populates_remote"
+	// WarnSelectorOutsideProject: a key selector of a project policy names a
+	// repository that is no longer in the project; it covers nothing (Q-AUTHZ-179).
+	WarnSelectorOutsideProject = "selector_outside_project"
 )
 
 // Report is the answer of the validate-policy operation (R-AUTHZ-021): the

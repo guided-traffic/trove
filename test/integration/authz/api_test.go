@@ -607,12 +607,23 @@ func TestR_AUTHZ_032_MinEpochOverHTTP(t *testing.T) {
 func TestR_API_002_EveryPermissionOperationAnswersAsDocumented(t *testing.T) {
 	f := newAPI(t, stack.Options{})
 	me := f.admin.Name
+	// A project for the policy operations of R-AUTHZ-026; the project service is another
+	// package's, so the row is written here.
+	f.e.Exec("INSERT INTO project (id, key, display_name) VALUES (gen_random_uuid(), 'web', 'Web platform')")
+	f.e.Exec("UPDATE repositories SET project_id = (SELECT id FROM project WHERE key = 'web') WHERE key = 'npm-team-a'")
 	for _, step := range []struct {
 		method, path string
 		body         any
 		want         int
 		hdr          []string
 	}{
+		{"POST", policies, projectPolicyBody("web-p", "web", []string{"npm-team-a"}, entry("group:team-web", "read")), 201, nil},
+		{"GET", policies + "?project=web", nil, 200, nil},
+		{"GET", policies + "/web-p", nil, 200, nil},
+		{"PUT", policies + "/web-p", projectPolicyBody("web-p", "web", []string{"npm-team-a"}, entry("group:team-web", "read", "deploy")), 200, []string{"If-Match", `"1"`}},
+		{"PATCH", policies + "/web-p", map[string]any{"description": "x"}, 200, []string{"If-Match", `"2"`, "Content-Type", "application/merge-patch+json"}},
+		{"POST", "/api/v1/authz/validate-policy", projectPolicyBody("web-p", "web", []string{"npm-team-a"}), 200, nil},
+		{"DELETE", policies + "/web-p", nil, 204, nil},
 		{"POST", policies, policyBody("p", entry("group:team-web", "read")), 201, nil},
 		{"GET", policies, nil, 200, nil},
 		{"GET", policies + "/p", nil, 200, nil},
@@ -632,6 +643,27 @@ func TestR_API_002_EveryPermissionOperationAnswersAsDocumented(t *testing.T) {
 			t.Fatalf("%s %s: %d, want %d\n%s", step.method, step.path, r.Status, step.want, r.Body)
 		}
 	}
+	// The project operations (docs/developer/projects.md): the shared step decides on the
+	// declaration before any handler runs, so a caller that holds no capability and
+	// administers no project is refused on each, with the documented answer.
+	for _, step := range []struct{ method, path string }{
+		{"GET", "/api/v1/projects"},
+		{"POST", "/api/v1/projects"},
+		{"GET", "/api/v1/projects/web"},
+		{"PUT", "/api/v1/projects/web"},
+		{"DELETE", "/api/v1/projects/web"},
+		{"PUT", "/api/v1/projects/web/admins/user:carol"},
+		{"DELETE", "/api/v1/projects/web/admins/user:carol"},
+		{"PUT", "/api/v1/projects/web/repositories/npm-team-a"},
+		{"DELETE", "/api/v1/projects/web/repositories/npm-team-a"},
+		{"GET", "/api/v1/projects/web/principals?q=ca"},
+	} {
+		var body any
+		if step.method == "POST" || step.method == "PUT" && step.path == "/api/v1/projects/web" {
+			body = map[string]any{"key": "web", "displayName": "Web"}
+		}
+		wantStatus(t, f.cl.Do(f.bob.Name, step.method, step.path, body, "If-Match", `"1"`), 403, "forbidden")
+	}
 	// The audit operations: a page, one event and the export in both formats.
 	list := f.cl.Do(me, "GET", "/api/v1/audit/events?limit=2", nil)
 	wantStatus(t, list, 200, "")
@@ -648,6 +680,8 @@ func TestR_API_002_EveryPermissionOperationAnswersAsDocumented(t *testing.T) {
 		"listPermissionPolicies", "createPermissionPolicy", "getPermissionPolicy", "replacePermissionPolicy", "patchPermissionPolicy",
 		"deletePermissionPolicy", "validatePermissionPolicy", "listRoles", "listRoleBindings", "bindRole", "unbindRole",
 		"getAuthzMe", "checkPermissions", "listAuditEvents", "getAuditEvent", "exportAuditEvents",
+		"listProjects", "createProject", "getProject", "replaceProject", "deleteProject", "addProjectAdmin", "removeProjectAdmin",
+		"assignProjectRepository", "unassignProjectRepository", "lookupProjectPrincipals",
 	}
 	if missing := f.val.Uncovered(ops...); len(missing) > 0 {
 		t.Fatalf("operations no answer reached: %v", missing)

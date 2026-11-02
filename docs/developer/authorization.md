@@ -7,8 +7,8 @@ adds the populate check and `MemberUsable` ([below](#the-populate-check-and-memb
 and the claim in a writer's commit transaction, the owner operations of R-AUTHZ-019 with their HTTP operations, the
 deletion hook ([below](#package-ownership)). The callers are the remote engine's populate check, through
 [formathost/remote.go](../../internal/formathost/remote.go), the virtual engine's `MemberUsableOn` ([virtual/engine.go](../../internal/virtual/engine.go)),
-and the format writers' ownership check in their commit ([formathost/writer.go](../../internal/formathost/writer.go)). Not built yet:
-CI inline grants and the CI project owner, projects and delegated management, and the effective-permissions and explain operations of R-AUTHZ-024,
+and the format writers' ownership check in their commit ([formathost/writer.go](../../internal/formathost/writer.go)). Phase 5a adds projects ([below](#projects)). Not built yet:
+CI inline grants and the CI project owner, delegated managers of single policies (R-AUTHZ-025), and the effective-permissions and explain operations of R-AUTHZ-024,
 which are P1 (Q-AUTHZ-27).
 
 The specification is [authorization.md](../spec/authorization.md); this page says where each rule lives in the code. The
@@ -61,7 +61,8 @@ security view is [permissions.md](../security/permissions.md).
 | [ceiling.go](../../internal/authz/ceiling.go), [exposure.go](../../internal/authz/exposure.go), [exposure_service.go](../../internal/authz/exposure_service.go) | `Ceiling` (evaluated on the request's index, for the endpoint of the subject); the endpoint exposure of R-EP-013 compiled into the index (`ExposureCeiling`) and its rule service; see [endpoints.md](endpoints.md#exposure-r-ep-012-to-r-ep-014) |
 | [validate.go](../../internal/authz/validate.go), [store.go](../../internal/authz/store.go), [bindings.go](../../internal/authz/bindings.go), [policy.go](../../internal/authz/policy.go) | `Service`: validate, create (`CreateIn` on the caller's transaction), update, delete and read policies; bind and unbind roles |
 | [declared.go](../../internal/authz/declared.go) | `Service.ApplyDeclared`: the role bindings of `authz.role_bindings`, which `trove migrate` applies ([below](#role-bindings-from-the-configuration)); `SourceAPI`, `SourceConfiguration`, `ConfigurationActor`, `ErrDeclared` |
-| [policy_list.go](../../internal/authz/policy_list.go) | The filters of the policy list (`principal`, `expandGroups`, `repository`) and the warnings of a page |
+| [policy_list.go](../../internal/authz/policy_list.go) | The filters of the policy list (`principal`, `expandGroups`, `repository`, `project`) and the warnings of a page |
+| [project.go](../../internal/authz/project.go) | `ProjectRight`, `AdministeredProject`, the three questions of a project administrator and `Index.ProjectOf` ([Projects](#projects)) |
 | [settings.go](../../internal/authz/settings.go) | `SettingsHook`, the `repository.Hooks` that records `authz.settings.changed` in the transaction of a repository update (R-AUTHZ-031) |
 | [populate.go](../../internal/authz/populate.go) | The populate check of R-AUTHZ-008 (`MayPopulateOn`, `PopulateOn`) and `MemberUsableOn` of R-AUTHZ-015 |
 | [ownership.go](../../internal/authz/ownership.go) | Package ownership: `Ownership` with `CheckTx`, `ClaimTx`, `EnforceTx` for writers, `PrecheckWrite` (the same rule read-only, in a transaction of its own, for a writer that decides before it reads a body; Q-ARCH-226), the owner operations `Owners`, `AddOwner`, `RemoveOwner`, `OwnedBy`, and `OwnershipHook` for the repository deletion |
@@ -291,9 +292,28 @@ The existing operations of M0 declare `settings:read` (formerly `system.read`).
 
 ## Projects
 
-The engine's three questions about projects (`ProjectsOn`, `AdministersOn`, `AdministersRepositoryOn`), the project-scoped compile of
-project policies, the `manage` grants of project administrators and the second entry table are described with their contracts in
-[projects.md](projects.md); they are built by the projects work package of phase 5a.
+The contracts of the project family are in [projects.md](projects.md); this section says where the engine and the policy store
+do their part (R-AUTHZ-026, Q-AUTHZ-174 to Q-AUTHZ-188). The security view is [permissions.md](../security/permissions.md#projects-and-project-policies).
+
+| What | Where |
+|---|---|
+| The inputs | `pgSource.Snapshot` reads `AuthzBuildProjects`, `AuthzBuildProjectAdmins` and, in `AuthzBuildEntries`, the entries of both entry tables in the one `REPEATABLE READ READ ONLY` transaction of the build, so the label covers them |
+| The scoped compile | `BuildIndex` skips a project policy whose project the snapshot does not hold. `builder.covered(sel, project)` lists only the repositories of the policy's project, for a key selector too (a key whose repository left the project covers nothing, Q-AUTHZ-179). The `matchCache` key is `project NUL selector`, so a global `npm-*` and the same text in a project policy never share a result (`TestR_AUTHZ_026_MatchCacheKeyIncludesTheProject` fails without the project in the key) |
+| The administrators' grants | `addProjectAdminGrants`, after the policy loop: one `grant{policy: "project:<key>", manage}` per project repository and administrator principal (a user or a group), unrestricted in packages and paths. A group expands through the principal set of the request, as a group entry of a policy does |
+| The three questions | `Engine.ProjectsOn`, `AdministersOn`, `AdministersRepositoryOn` and `Index.ProjectOf` ([project.go](../../internal/authz/project.go)); `edge.Access.Projects`, `Administers` and `AdministersRepository` call them on the request's index. A subject administers a project when its user ID or one of its group IDs is a row of `project_admin` and the credential may exercise it: a user (the break-glass user included) through a session or a token with `admin: true`; never a service account, a CI identity or anonymous (Q-AUTHZ-183). `Effective` fills `Me.Projects` from `ProjectsOn` |
+| Policy writes | `Service.resolve` applies the project rules: the project exists (`unknown_project`), the name starts with `<key>-` (`project_prefix_required`), a key selector names a repository of the project (`repository_outside_project`, an unknown key answers the same), no `anonymous`/`authenticated` entry (`principal_outside_project`, Q-AUTHZ-188), no service account of another project and, for a global policy, none of a project (`principal_outside_project`). The project and service-account lookups go through `ServiceOptions.Projects` (`ProjectLookup`; nil reads PostgreSQL) |
+| Stored form | `writeChildren` writes the entries of a project policy with `AuthzInsertProjectEntry` into `authz_project_policy_entry`, never into `authz_policy_entry` (Q-AUTHZ-174; the trigger `AI004` refuses it there). `AuthzPolicyEntries` and `AuthzClearPolicyChildren` handle both tables. `Update` refuses another project with 422 `immutable` (Q-AUTHZ-186) |
+| Reads of a stored policy | `resolve(…, stored=true)` (`Get`, `Annotate`) keeps a key selector whose repository left the project and reports `selector_outside_project`; `warningsFor` and the covers of `validate-policy` and the `repository` filter see only the project's repositories |
+| Journal and audit | `journalState` and the details of the policy events carry `project` (R-AUTHZ-031 compares resource type and project) |
+| The handlers | [authz_api.go](../../internal/api/v1/authz_api.go): `narrowPolicyList`, `narrowPolicyRead`, `narrowPolicyWrite`, `narrowPolicyWriteOf` (asks `Service.ProjectOf`), `narrowPolicyValidate` on `delegatedScope`; the refusals are Q-AUTHZ-187. The `project` filter is `ListFilter.Project` (422 `unknown_project` for a caller that holds `policies:read`) |
+| Roles and owners | `bindable` refuses a project service account with `role_not_allowed`; `refuseForeignAccount` in `AddOwnerTx` refuses one as the owner of a name outside its project (`principal_outside_project`) |
+
+Every policy write notifies `authz` as before and answers the epoch; the project service's own writes (administrators,
+switches, assignments) notify `authz` and, for an assignment, `repo_config`, so the index follows them within the bound of R-AUTHZ-028.
+
+How to test it: the unit tests are [project_test.go](../../internal/authz/project_test.go) (a snapshot per case); the
+integration tests write project rows with SQL (the project service is not needed) and notify the area as the service does:
+[projects_test.go](../../test/integration/authz/projects_test.go) over HTTP on three replicas and on two engine replicas.
 
 ## The populate check and `MemberUsable`
 

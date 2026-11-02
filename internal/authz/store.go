@@ -101,7 +101,7 @@ func (s *Service) Create(ctx context.Context, actor Subject, in PolicyInput) (Po
 // hooks in registration order). The returned policy is complete, with the
 // warnings of the validation.
 func (s *Service) CreateIn(ctx context.Context, tx meta.Tx, actor Subject, in PolicyInput, epoch *int64) (Policy, error) {
-	rp, problems, err := s.resolve(ctx, in)
+	rp, problems, err := s.resolve(ctx, in, false)
 	if err != nil {
 		return Policy{}, err
 	}
@@ -114,7 +114,7 @@ func (s *Service) CreateIn(ctx context.Context, tx meta.Tx, actor Subject, in Po
 	}
 	id := newID()
 	rows, err := qs.AuthzInsertPolicy(ctx, q.AuthzInsertPolicyParams{
-		ID: id, Name: in.Name, Description: in.Description, ResourceType: rp.in.ResourceType, Actor: actorID(actor),
+		ID: id, Name: in.Name, Description: in.Description, ResourceType: rp.in.ResourceType, ProjectID: rp.project, Actor: actorID(actor),
 	})
 	if err != nil {
 		return Policy{}, err
@@ -144,7 +144,12 @@ func (s *Service) CreateIn(ctx context.Context, tx meta.Tx, actor Subject, in Po
 // write. A different version answers 412, a missing policy 404.
 func (s *Service) Update(ctx context.Context, actor Subject, name string, expected int64, in PolicyInput) (Policy, int64, error) {
 	in.Name = name // the name is immutable
-	rp, problems, err := s.resolve(ctx, in)
+	if cur, perr := s.ProjectOf(ctx, name); perr == nil && !sameProject(cur, in.Project) {
+		// Before the rules of the new project: the project is fixed, so a change is
+		// the error, not whatever the other project would say (Q-AUTHZ-186).
+		return Policy{}, 0, problemError([]ProblemField{field("/project", "immutable", "The project of a policy is fixed when it is created.")})
+	}
+	rp, problems, err := s.resolve(ctx, in, false)
 	if err != nil {
 		return Policy{}, 0, err
 	}
@@ -164,6 +169,9 @@ func (s *Service) Update(ctx context.Context, actor Subject, name string, expect
 		current, err := s.load(ctx, qs, name)
 		if err != nil {
 			return err
+		}
+		if !sameProject(current.Project, in.Project) {
+			return problemError([]ProblemField{field("/project", "immutable", "The project of a policy is fixed when it is created.")})
 		}
 		before, err := s.snapshotState(ctx, qs, current)
 		if err != nil {
@@ -272,10 +280,46 @@ func (s *Service) Get(ctx context.Context, name string) (Policy, error) {
 	if err != nil {
 		return Policy{}, err
 	}
-	if rp, problems, rerr := s.resolve(ctx, p.PolicyInput); rerr == nil && len(problems) == 0 {
+	if rp, problems, rerr := s.resolve(ctx, p.PolicyInput, true); rerr == nil && len(problems) == 0 {
 		p.Warnings = nonNilStrings(rp.warnings)
 	}
 	return p, nil
+}
+
+// sameProject compares two project references of a policy: both global, or the
+// same key.
+func sameProject(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+// ProjectOf returns the key of the project of the named policy, nil for a global
+// policy, and 404 for a policy that does not exist. A handler that lets a project
+// administrator write a policy asks it before the write, to narrow the caller to
+// the policy's project (R-AUTHZ-026).
+func (s *Service) ProjectOf(ctx context.Context, name string) (*string, error) {
+	var out *string
+	err := s.o.DB.InTx(ctx, func(tx meta.Tx) error {
+		qs, err := queriesOf(tx)
+		if err != nil {
+			return err
+		}
+		rows, err := qs.AuthzGetPolicy(ctx, name)
+		if err != nil {
+			return err
+		}
+		if len(rows) == 0 {
+			return notFoundPolicy(name)
+		}
+		if rows[0].ProjectKey != "" {
+			k := rows[0].ProjectKey
+			out = &k
+		}
+		return nil
+	})
+	return out, err
 }
 
 // List returns every policy sorted by name, without warnings. The cursor paging
@@ -293,7 +337,7 @@ func (s *Service) List(ctx context.Context) ([]Policy, error) {
 		}
 		for _, r := range rows {
 			p, err := s.assemble(ctx, qs, policyHead{
-				ID: r.ID, Name: r.Name, Description: r.Description, ResourceType: r.ResourceType, Version: r.Version,
+				ID: r.ID, Name: r.Name, Description: r.Description, ResourceType: r.ResourceType, Version: r.Version, Project: r.ProjectKey,
 				CreatedUS: r.CreatedUs, UpdatedUS: r.UpdatedUs,
 				CreatedBy: refOfRow(r.CreatedByKind, r.CreatedByName), UpdatedBy: refOfRow(r.UpdatedByKind, r.UpdatedByName),
 			})
@@ -309,9 +353,11 @@ func (s *Service) List(ctx context.Context) ([]Policy, error) {
 
 type policyHead struct {
 	ID, Name, Description, ResourceType string
-	Version                             int64
-	CreatedUS, UpdatedUS                int64
-	CreatedBy, UpdatedBy                string
+	// Project is the key of the policy's project, "" for a global policy.
+	Project              string
+	Version              int64
+	CreatedUS, UpdatedUS int64
+	CreatedBy, UpdatedBy string
 }
 
 func (s *Service) load(ctx context.Context, qs *q.Queries, name string) (Policy, error) {
@@ -324,7 +370,7 @@ func (s *Service) load(ctx context.Context, qs *q.Queries, name string) (Policy,
 	}
 	r := rows[0]
 	return s.assemble(ctx, qs, policyHead{
-		ID: r.ID, Name: r.Name, Description: r.Description, ResourceType: r.ResourceType, Version: r.Version,
+		ID: r.ID, Name: r.Name, Description: r.Description, ResourceType: r.ResourceType, Version: r.Version, Project: r.ProjectKey,
 		CreatedUS: r.CreatedUs, UpdatedUS: r.UpdatedUs,
 		CreatedBy: refOfRow(r.CreatedByKind, r.CreatedByName), UpdatedBy: refOfRow(r.UpdatedByKind, r.UpdatedByName),
 	})
@@ -333,6 +379,10 @@ func (s *Service) load(ctx context.Context, qs *q.Queries, name string) (Policy,
 func (s *Service) assemble(ctx context.Context, qs *q.Queries, h policyHead) (Policy, error) {
 	p := Policy{ID: h.ID, Version: h.Version, Warnings: []string{}}
 	p.Name, p.Description, p.ResourceType = h.Name, h.Description, h.ResourceType
+	if h.Project != "" {
+		key := h.Project
+		p.Project = &key
+	}
 	p.CreatedAt, p.UpdatedAt = time.UnixMicro(h.CreatedUS).UTC(), time.UnixMicro(h.UpdatedUS).UTC()
 	p.CreatedBy, p.UpdatedBy = h.CreatedBy, h.UpdatedBy
 	p.Resources = Resources{Repositories: []string{}, Packages: PatternLists{Include: []string{}, Exclude: []string{}}, Paths: PatternLists{Include: []string{}, Exclude: []string{}}}
@@ -392,6 +442,9 @@ func (s *Service) snapshotState(ctx context.Context, qs *q.Queries, p Policy) (*
 	st := &journalState{
 		ResourceType: p.ResourceType, Packages: normLists(p.Resources.Packages), Paths: normLists(p.Resources.Paths),
 		Selectors: []journalSelector{}, Entries: []journalEntry{},
+	}
+	if p.Project != nil {
+		st.Project = *p.Project
 	}
 	sels, err := qs.AuthzPolicySelectors(ctx, p.ID)
 	if err != nil {
@@ -453,6 +506,17 @@ func writeChildren(ctx context.Context, qs *q.Queries, id string, rp *resolvedPo
 		}
 	}
 	for _, e := range rp.entries {
+		if rp.project != "" {
+			// The grants of a project policy never go into authz_policy_entry, which
+			// the previous release reads (Q-AUTHZ-174).
+			err := qs.AuthzInsertProjectEntry(ctx, q.AuthzInsertProjectEntryParams{
+				PolicyID: id, ProjectID: rp.project, PrincipalID: e.id, Actions: e.actions.Strings(),
+			})
+			if err != nil {
+				return err
+			}
+			continue
+		}
 		if err := qs.AuthzInsertEntry(ctx, q.AuthzInsertEntryParams{PolicyID: id, PrincipalID: e.id, Actions: e.actions.Strings()}); err != nil {
 			return err
 		}
@@ -465,13 +529,20 @@ func writeChildren(ctx context.Context, qs *q.Queries, id string, rp *resolvedPo
 // access-bearing state before and after.
 func policyEvent(name string, actor Subject, p Policy, before, after *journalState, epoch int64, journal bool) audit.Event {
 	details := map[string]any{"epoch": epoch, "before": before, "after": after, "version": p.Version}
+	if p.Project != nil {
+		details["project"] = *p.Project
+	}
 	ev := audit.Event{
 		Type: name, Actor: actorOf(actor), Outcome: audit.Success,
 		Subject: audit.Subject{Kind: "permission_policy", ID: p.ID, Name: p.Name},
 		Details: mustJSON(details),
 	}
 	if journal {
-		ev.Journal = mustJSON(map[string]any{"policyId": p.ID, "name": p.Name, "before": before, "after": after})
+		j := map[string]any{"policyId": p.ID, "name": p.Name, "before": before, "after": after}
+		if p.Project != nil {
+			j["project"] = *p.Project
+		}
+		ev.Journal = mustJSON(j)
 	}
 	return ev
 }

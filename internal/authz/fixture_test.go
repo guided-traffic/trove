@@ -83,11 +83,13 @@ type policyDef struct {
 	pathExc   []string
 	// entries maps a principal ID to its actions (presets allowed).
 	entries map[string][]string
+	// project is the ID of the policy's project, "" for a global policy.
+	project string
 }
 
 func (f *fixture) policy(d policyDef) *fixture {
 	id := "policy-" + d.name
-	f.s.Policies = append(f.s.Policies, q.AuthzBuildPoliciesRow{ID: id, Name: d.name, ResourceType: "repository"})
+	f.s.Policies = append(f.s.Policies, q.AuthzBuildPoliciesRow{ID: id, Name: d.name, ResourceType: "repository", ProjectID: d.project})
 	for i, text := range d.selectors {
 		sel, err := parseSelector(text)
 		if err != nil {

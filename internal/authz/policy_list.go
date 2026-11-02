@@ -18,6 +18,9 @@ type ListFilter struct {
 	ExpandGroups bool
 	// Repository is a repository key: the policies whose selectors cover it.
 	Repository string
+	// Project is a project key: the policies of that project (R-AUTHZ-026). An
+	// unknown project is 422, like an unknown repository.
+	Project string
 }
 
 // unprocessable is the 422 of a filter value that names nothing: validation_failed
@@ -57,6 +60,7 @@ func (s *Service) Select(ctx context.Context, all []Policy, f ListFilter) ([]Pol
 		}
 	}
 	var repo *repoView
+	repoProject := ""
 	if f.Repository != "" {
 		r, err := s.o.Repositories.ByKey(ctx, f.Repository)
 		if err != nil {
@@ -68,14 +72,43 @@ func (s *Service) Select(ctx context.Context, all []Policy, f ListFilter) ([]Pol
 		}
 		id, _ := strconv.ParseInt(r.ID, 10, 64)
 		repo = &repoView{ID: id, Key: r.Key, Class: r.Class, Format: r.Format}
+		repoProject = r.ProjectID
+	}
+	projectIDs := map[string]string{} // project key -> ID, for the policies of a project
+	if f.Project != "" {
+		id, err := s.projectID(ctx, f.Project)
+		if err != nil {
+			return nil, err
+		}
+		if id == "" {
+			return nil, unprocessable("project", errs.CodeUnknownProject, fmt.Sprintf("No project %q exists.", f.Project))
+		}
 	}
 	out := make([]Policy, 0, len(all))
 	for _, p := range all {
+		if f.Project != "" && (p.Project == nil || *p.Project != f.Project) {
+			continue
+		}
 		if refs != nil && !grantsTo(p, refs) {
 			continue
 		}
-		if repo != nil && !covers(p, *repo) {
-			continue
+		if repo != nil {
+			if p.Project != nil {
+				pid, ok := projectIDs[*p.Project]
+				if !ok {
+					var err error
+					if pid, err = s.projectID(ctx, *p.Project); err != nil {
+						return nil, err
+					}
+					projectIDs[*p.Project] = pid
+				}
+				if pid == "" || pid != repoProject {
+					continue // a project policy covers only its project's repositories
+				}
+			}
+			if !covers(p, *repo) {
+				continue
+			}
 		}
 		out = append(out, p)
 	}
@@ -110,7 +143,7 @@ func covers(p Policy, r repoView) bool {
 // not validate any more, because a principal was deleted, keeps an empty list.
 func (s *Service) Annotate(ctx context.Context, ps []Policy) error {
 	for i := range ps {
-		rp, problems, err := s.resolve(ctx, ps[i].PolicyInput)
+		rp, problems, err := s.resolve(ctx, ps[i].PolicyInput, true)
 		if err != nil {
 			return err
 		}

@@ -67,7 +67,7 @@ func testService() *Service {
 		r.ID = strconv.Itoa(i + 1)
 		repos.list = append(repos.list, r)
 	}
-	return NewService(ServiceOptions{Principals: p, Repositories: repos, Formats: testRegistry()})
+	return NewService(ServiceOptions{Principals: p, Repositories: repos, Formats: testRegistry(), Projects: fakeProjects{}})
 }
 
 func input(sel string, entries ...Entry) PolicyInput {
@@ -142,7 +142,7 @@ func TestR_AUTHZ_021_PolicyValidation(t *testing.T) {
 	})
 
 	t.Run("R-AUTHZ-001 a preset is expanded when the policy is written", func(t *testing.T) {
-		rp, problems, err := s.resolve(t.Context(), input("npm-internal", Entry{"group:team-web", []string{"write"}}))
+		rp, problems, err := s.resolve(t.Context(), input("npm-internal", Entry{"group:team-web", []string{"write"}}), false)
 		if err != nil || len(problems) != 0 {
 			t.Fatal(err, problems)
 		}

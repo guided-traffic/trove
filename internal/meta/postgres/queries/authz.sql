@@ -45,6 +45,18 @@ SELECT a.project_id::text AS project_id, a.principal_id::text AS principal_id, p
   JOIN principal p ON p.id = a.principal_id
  ORDER BY a.project_id, a.principal_id;
 
+-- name: AuthzProjectByKey :many
+-- The ID of a project by its key; no row when it does not exist (R-AUTHZ-026).
+SELECT id::text AS id FROM project WHERE key = sqlc.arg(key)::text;
+
+-- name: AuthzServiceAccountProject :many
+-- The key of the project a service account belongs to, empty for a global account;
+-- no row for a principal that is no service account (Q-AUTHZ-175).
+SELECT COALESCE(pr.key, '')::text AS project
+  FROM service_account s
+  LEFT JOIN project pr ON pr.id = s.project_id
+ WHERE s.principal_id = sqlc.arg(principal_id)::text::uuid;
+
 -- name: AuthzBuildBindings :many
 SELECT role, principal_id::text AS principal_id FROM authz_role_binding ORDER BY role, principal_id;
 

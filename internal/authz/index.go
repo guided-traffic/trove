@@ -44,7 +44,7 @@ type Snapshot struct {
 	Bindings     []q.AuthzBuildBindingsRow
 	Repositories []q.AuthzBuildRepositoriesRow
 	// Projects and ProjectAdmins are the rows of project and project_admin in the
-	// same snapshot (R-AUTHZ-026). WP-A reads them in pgSource.Snapshot.
+	// same snapshot (R-AUTHZ-026); the entries of project policies are in Entries.
 	Projects      []q.AuthzBuildProjectsRow
 	ProjectAdmins []q.AuthzBuildProjectAdminsRow
 	// Exposure are the endpoint exposure rules of the active repositories
@@ -79,6 +79,18 @@ type repoInfo struct {
 	// ownership is the packageOwnership of a local repository, "" when the
 	// document has none (R-AUTHZ-018).
 	ownership string
+	// projectID and project are the ID and the key of the project the repository
+	// is assigned to, empty for none (R-AUTHZ-026).
+	projectID string
+	project   string
+}
+
+// projectInfo is a project as the index knows it: its switches and the IDs of
+// its administrators, users and groups (Q-AUTHZ-183).
+type projectInfo struct {
+	id, key                            string
+	managePolicies, manageRepositories bool
+	admins                             map[string]bool
 }
 
 // grant is one entry of a policy seen from the evaluator: the actions the
@@ -106,6 +118,8 @@ type Index struct {
 	ci map[string]string
 	// exposure maps an endpoint name to its compiled exposure rules (R-EP-013).
 	exposure map[string]*endpointExposure
+	// projects maps a project key to the project (R-AUTHZ-026).
+	projects map[string]*projectInfo
 	// policies and entries count what went in, for metrics and diagnostics.
 	policies int
 }
@@ -150,8 +164,12 @@ type builder struct {
 	patterns  map[string]map[patternKey][]string
 	entries   map[string][]q.AuthzBuildEntriesRow
 	// matchCache remembers which repositories a pattern or class selector covers,
-	// so policies that repeat a selector pay for it once.
+	// so policies that repeat a selector pay for it once. The key names the project
+	// the match is restricted to, so a global selector and the same selector of a
+	// project policy never share a result (R-AUTHZ-026).
 	matchCache map[string][]*repoInfo
+	// projectByID maps a project ID to its entry, for the policies that name it.
+	projectByID map[string]*projectInfo
 }
 
 // BuildIndex compiles a snapshot. It is a pure function: the same snapshot gives
@@ -169,13 +187,15 @@ func BuildIndex(s *Snapshot, reg *catalog.Registry, log *slog.Logger) *Index {
 			grants:   map[int64]map[string][]grant{},
 			bindings: map[string]roleSet{},
 			ci:       map[string]string{},
+			projects: map[string]*projectInfo{},
 		},
 		log: log, reg: catalog.Or(reg), byID: make(map[int64]*repoInfo, len(s.Repositories)),
 		selectors:  map[string][]q.AuthzBuildSelectorsRow{},
 		patterns:   map[string]map[patternKey][]string{},
 		entries:    map[string][]q.AuthzBuildEntriesRow{},
-		matchCache: map[string][]*repoInfo{},
+		matchCache: map[string][]*repoInfo{}, projectByID: map[string]*projectInfo{},
 	}
+	b.addProjects(s.Projects, s.ProjectAdmins)
 	b.addRepositories(s.Repositories, s.VirtualMembers, s.DeployTargets)
 	b.x.exposure = buildExposure(s.Exposure, b.byID, b.reg, log)
 	for _, r := range s.Bindings {
@@ -203,15 +223,62 @@ func BuildIndex(s *Snapshot, reg *catalog.Registry, log *slog.Logger) *Index {
 		if p.ResourceType != "repository" {
 			continue // build policies are P1 (R-AUTHZ-027)
 		}
-		if p.ProjectID != "" {
-			// A project policy covers only the repositories of its project. Until the
-			// scoped compile exists (WP-A) it covers nothing: skipping only removes
-			// rights, it never adds any.
-			continue
+		if p.ProjectID != "" && b.projectByID[p.ProjectID] == nil {
+			continue // a project the snapshot does not hold covers nothing
 		}
 		b.addPolicy(p)
 	}
+	b.addProjectAdminGrants()
 	return b.x
+}
+
+// addProjects reads the projects and their administrators. An administrator is
+// kept by principal ID whatever its kind; the table admits users and groups only
+// (Q-AUTHZ-183), and the questions of project.go refuse a subject that is neither.
+func (b *builder) addProjects(rows []q.AuthzBuildProjectsRow, admins []q.AuthzBuildProjectAdminsRow) {
+	for _, r := range rows {
+		pi := &projectInfo{id: r.ID, key: r.Key, managePolicies: r.ManagePolicies, manageRepositories: r.ManageRepositories, admins: map[string]bool{}}
+		b.x.projects[r.Key] = pi
+		b.projectByID[r.ID] = pi
+	}
+	for _, a := range admins {
+		if pi := b.projectByID[a.ProjectID]; pi != nil {
+			pi.admins[a.PrincipalID] = true
+		}
+	}
+}
+
+// addProjectAdminGrants gives every administrator of a project manage on every
+// repository of the project, as one grant named project:<key>, unrestricted in
+// packages and paths (R-AUTHZ-026). A group administrator expands through the
+// group's members like a group entry of a policy does: the grant is keyed by the
+// group's principal ID and the principal set of a request holds its groups.
+func (b *builder) addProjectAdminGrants() {
+	keys := make([]string, 0, len(b.x.projects))
+	for k := range b.x.projects {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var unrestricted resourceSet // no pattern: every package and path
+	for _, key := range keys {
+		pi := b.x.projects[key]
+		if len(pi.admins) == 0 {
+			continue
+		}
+		for _, r := range b.list {
+			if r.projectID != pi.id {
+				continue
+			}
+			m := b.x.grants[r.ID]
+			if m == nil {
+				m = map[string][]grant{}
+				b.x.grants[r.ID] = m
+			}
+			for id := range pi.admins {
+				m[id] = append(m[id], grant{policy: "project:" + key, actions: bitManage, res: unrestricted})
+			}
+		}
+	}
 }
 
 func (b *builder) addRepositories(rows []q.AuthzBuildRepositoriesRow, members []q.AuthzBuildVirtualMembersRow, targets []q.AuthzBuildDeployTargetsRow) {
@@ -231,6 +298,9 @@ func (b *builder) addRepositories(rows []q.AuthzBuildRepositoriesRow, members []
 			hide:        cfg.HideExistence, members: memberKeys[r.ID], deployTarget: targetKey[r.ID],
 			cacheFill: cfg.Remote.CacheFillAction, ownership: cfg.Local.PackageOwnership,
 		}
+		if pi := b.projectByID[r.ProjectID]; pi != nil {
+			info.projectID, info.project = pi.id, pi.key
+		}
 		if info.hide == "" {
 			info.hide = "inherit"
 		}
@@ -243,20 +313,27 @@ func (b *builder) addRepositories(rows []q.AuthzBuildRepositoriesRow, members []
 	}
 }
 
-// covered lists the repositories a selector covers.
-func (b *builder) covered(sel selector) []*repoInfo {
+// covered lists the repositories a selector covers. A project policy's selector
+// covers only repositories of that project (project is its ID, "" for a global
+// policy): a key selector whose repository is not in the project covers nothing
+// (Q-AUTHZ-179), a pattern or class selector is matched against the project's
+// repositories only.
+func (b *builder) covered(sel selector, project string) []*repoInfo {
 	if sel.kind == selKey {
-		if r := b.byID[sel.repoID]; r != nil {
+		if r := b.byID[sel.repoID]; r != nil && (project == "" || r.projectID == project) {
 			return []*repoInfo{r}
 		}
 		return nil
 	}
-	k := sel.text(nil)
+	k := project + "\x00" + sel.text(nil)
 	if got, ok := b.matchCache[k]; ok {
 		return got
 	}
 	var out []*repoInfo
 	for _, r := range b.list {
+		if project != "" && r.projectID != project {
+			continue
+		}
 		if sel.matches(r.repoView) {
 			out = append(out, r)
 		}
@@ -281,7 +358,7 @@ func (b *builder) policyRepos(p q.AuthzBuildPoliciesRow) []*repoInfo {
 	seen := map[int64]bool{}
 	var repos []*repoInfo
 	for _, sel := range sels {
-		for _, r := range b.covered(sel) {
+		for _, r := range b.covered(sel, p.ProjectID) {
 			if !seen[r.ID] {
 				seen[r.ID] = true
 				repos = append(repos, r)

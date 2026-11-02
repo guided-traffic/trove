@@ -723,6 +723,24 @@ func ownerRef(ctx context.Context, qs *q.Queries, ref string) (Ref, string, erro
 	return r, rows[0].ID, nil
 }
 
+// refuseForeignAccount refuses a project service account as the owner of a name in
+// a repository outside its project (Q-AUTHZ-175): 422 principal_outside_project.
+// repoProject is the key of the repository's project, "" for none.
+func refuseForeignAccount(ctx context.Context, qs *q.Queries, r Ref, id, repoProject string) error {
+	if r.Kind != principal.KindServiceAccount {
+		return nil
+	}
+	rows, err := qs.AuthzServiceAccountProject(ctx, id)
+	if err != nil {
+		return err
+	}
+	if len(rows) == 0 || rows[0] == "" || rows[0] == repoProject {
+		return nil
+	}
+	return problemError([]ProblemField{field("/owner", errs.CodePrincipalOutsideProject,
+		fmt.Sprintf("%s belongs to the project %q and owns packages in its repositories only.", r, rows[0]))})
+}
+
 // changeAllowed decides an owner change (R-AUTHZ-019) on the owners the
 // transaction read under the row lock: an owner, manage on the coordinate or
 // content:bypass; with no owner left to ask (unclaimed, released, or claimed
@@ -772,6 +790,9 @@ func (o *Ownership) AddOwnerTx(ctx context.Context, tx meta.Tx, idx *Index, sub 
 	}
 	r, pid, err := ownerRef(ctx, qs, ref)
 	if err != nil {
+		return Owner{}, err
+	}
+	if err := refuseForeignAccount(ctx, qs, r, pid, k.repo.project); err != nil {
 		return Owner{}, err
 	}
 	reason := OwnerAdded

@@ -8,7 +8,7 @@ items API (Q-AUTHZ-161), the remote engine asks the populate check before a fill
 member and the shadowing check before a first version, and the host decides a format's write again when it commits
 (Q-ARCH-225). The role bindings of the system configuration (`authz.role_bindings`, applied by `trove migrate`) and the
 auditor's metadata read (`content:metadata-read`) are built. CI inline grants do not exist yet. Projects and the rights of their administrators are on
-[delegated-administration.md](delegated-administration.md).
+[delegated-administration.md](delegated-administration.md); [what the engine does with them](#projects-and-project-policies) is below.
 
 This page says what keeps a request from doing more than it was granted, how long a removed grant can still work, and what
 an attacker who controls one of the inputs gains. The mechanics are in
@@ -257,10 +257,28 @@ owner may publish the name. `GET /api/v1/package-owners` shows a caller without 
 may read. The package name and an owner reference are single path segments with an encoded `/`; the router matches escaped
 segments, so `@acme%2F..%2Fx` is one name and never a path (`TestR_AUTHZ_019_OwnershipOperationsOverHTTP`).
 
+## Projects and project policies
+
+R-AUTHZ-026 lets a team's administrators write policies for the team's repositories. What keeps that from widening anything
+is a property of the grant index and of the write, not of the caller's good behaviour.
+
+| Mechanism | Effect | Where |
+|---|---|---|
+| Scoped compile | A project policy covers only repositories of its project, whatever its stored selectors say: a pattern or class selector is matched against the project's repositories, a key selector outside the project covers nothing (and the policy reports `selector_outside_project`). The match cache is keyed by project, so a global pattern and the same text in a project policy cannot share a result | `builder.covered`, `TestR_AUTHZ_026_MatchCacheKeyIncludesTheProject` |
+| Write rules | A project policy names repositories of its project (an unknown key is refused alike), is named `<key>-…`, grants to no `anonymous` or `authenticated`, to no CI mapping `manage`, to no service account of another project; a global policy names no project service account; the project of a policy never changes | `Service.resolve`, `Service.projectRule`, `Service.Update` |
+| Second entry table | The grants of a project policy are in `authz_project_policy_entry`; a replica of the previous release reads only `authz_policy_entry` and sees a project policy without entries, so it grants nothing for it. The database refuses a row of `authz_policy_entry` for a project policy (`AI004`) | `writeChildren`, `TestR_AUTHZ_026_ProjectPolicyIsInvisibleToTheOldBuild` |
+| Administrators hold `manage` only | A project administrator holds one grant `project:<key>` with `manage` on each repository of the project, nothing else; it is a user or a group, through a session or a token with `admin: true`, never a service account, a CI identity or anonymous | `addProjectAdminGrants`, `mayAdminister` |
+| Narrowing in the handler | The declaration admits a caller that administers some project with the right; the handler restricts it to the project the request names. A foreign and an unknown project answer alike | `narrowPolicy*` ([Q-AUTHZ-187](../spec/authorization.md#q-authz-187--what-a-project-administrator-sees-and-is-refused-on-the-policy-operations)) |
+| Roles and owners | A project service account takes no system role (`role_not_allowed`) and owns no package outside its project | `Service.bindable`, `refuseForeignAccount` |
+
+Removing an administrator, turning a switch off or moving a repository out of a project takes effect on every replica within
+the bound of R-AUTHZ-028 (`TestR_AUTHZ_028_ProjectAdministratorRemovalIsRefusedOnAnotherReplica`).
+
 ## Database footprint
 
-The engine's statements read `authz_policy*`, `authz_role_binding`, `repositories`, `principal` and `cluster_epoch`; the
-service writes the five `authz_*` tables and, through `cluster.Changes`, `cluster_epoch` and `cluster_change`. Ownership reads
+The engine's statements read `authz_policy*`, `authz_project_policy_entry`, `authz_role_binding`, `project`, `project_admin`,
+`repositories`, `principal` and `cluster_epoch`; the policy service also reads `service_account` for the project of an account
+and writes the five `authz_*` tables and `authz_project_policy_entry` and, through `cluster.Changes`, `cluster_epoch` and `cluster_change`. Ownership reads
 and writes `package_ownership` and `package_owner` and reads `packages` and `package_versions` (whether an unclaimed name holds
 a version); it locks the claim row of a name `FOR UPDATE` in the writer's transaction and takes no advisory lock. The build runs
 as a read-only transaction on the request pool, never on the control connection, so a slow build cannot delay the poll or the
@@ -292,6 +310,30 @@ same holds for a format's write: the host decides every write the request was al
 the transaction opens, and the ownership check in it decides on that index (Q-ARCH-225,
 `TestR_AUTHZ_015_APublishIsDecidedAgainWhenItCommits` removes the grant of an npm publish while its body is arriving); a grant
 removed between that decision and the commit does not stop it, and the credential is not authenticated again either.
+
+### H-396 · A project administrator's policy write is decided on the replica's index
+
+The handler narrows a project administrator to its project with the index of the request, which may be up to
+`authz.cache.max_staleness` behind (R-AUTHZ-028), and the policy write does not decide again on the state its own
+transaction reads. A project administrator that was removed, a group it belonged to that lost the project, or a switch
+`managePolicies` that was turned off can therefore still create, replace or delete a project policy for as long as the
+replica it reaches holds the older index: typically 100 ms plus one build, at most `cluster.epoch_poll_interval` plus 1 s on a
+replica whose change-log poll works, never longer than `authz.cache.max_staleness`. Live for every project write; what
+makes it real is a delegate whose rights are being removed and who acts in that window. The write itself stays inside the
+project (the rules of the service read the database, not the index), so the window widens who may write, not what a project
+policy can grant.
+
+### H-397 · The rule that keeps a project service account out of foreign policies is enforced at write time only
+
+A project service account is granted by its project's policies only (Q-AUTHZ-175). The service refuses it in a global policy
+and in another project's policy (`principal_outside_project`), in a role binding and as a package owner outside its project;
+the database refuses it as a group member (`AI002`) and keeps its project fixed (`AI003`). No trigger covers its presence in
+the entry tables, and the index does not look at an account's project when it builds. A row inserted by someone with write
+access to the database, or by a replica of the previous release, would grant the account through a global policy. Live during
+a rollout from 0.9.x: such a replica validates a global policy without knowing project accounts, so it accepts one that names
+a project service account which a new replica created (the second entry table of Q-AUTHZ-174 closes the window for project
+policies, not for this case). Outside a rollout it is dormant: no released API path inserts such a row. The remedy would be a
+trigger on both entry tables, which is not built.
 
 ### H-105 · The revocation journal is written and not replayed
 
