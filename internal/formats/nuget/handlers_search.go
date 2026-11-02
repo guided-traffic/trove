@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"sync/atomic"
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
@@ -20,10 +21,11 @@ const (
 	// searchScanBatch is the page a scan of a repository the caller reads row by row asks
 	// the store for: keys only, no metadata.
 	searchScanBatch = 500
-	// maxSearchScan bounds the packages one such scan looks at. A request that matches
-	// more answers 400 and never a partial count: the scan is linear in the matches, and
-	// a caller with a narrow grant on a large repository narrows the query (Q-NUGET-45).
-	// The bound is the one the package listings use for the same decision (R-API-029).
+	// maxSearchScan bounds the packages the scans of one request look at, all members of a
+	// virtual repository together (Q-NUGET-76). A request that matches more answers 400 and
+	// never a partial count: the scan is linear in the matches, and a caller with a narrow
+	// grant on a large repository narrows the query (Q-NUGET-45). The bound is the one the
+	// package listings use for the same decision (R-API-029).
 	maxSearchScan = 200_000
 )
 
@@ -81,31 +83,82 @@ func (f *Format) handleSearch(ctx context.Context, rq *formats.Request, w http.R
 }
 
 // runSearch returns the page of hits and the number of packages the caller may read that
-// match. The shape of the caller's read decides the way: a repository read whole is counted
-// and paged by the store; one decided row by row is scanned in rank order (Q-NUGET-45).
+// match. The shape of the caller's read decides the way: a repository read whole and without
+// include or exclude patterns is counted and paged by the store; any other is scanned in rank
+// order (Q-NUGET-45, Q-NUGET-77).
 func (f *Format) runSearch(ctx context.Context, rq *formats.Request, st Store, p search.Params) (hits []rows.SearchHit, total int, err error) {
 	key := rq.Repo.Key
 	scope, err := rq.Host.Resolver().ReadScope(ctx, rq, []string{key})
 	if err != nil {
 		return nil, 0, err
 	}
-	return searchRepo(ctx, st, scope, key, rq.RepoRef().ID, p)
+	return searchRepo(ctx, st, scope, searchTarget{key: key, id: rq.RepoRef().ID, admits: patternsOf(rq.Repo)}, p, newScanBudget())
 }
 
-// searchRepo is the search of one local repository for the caller whose read scope is
-// given: the hits of the page p names and the number of packages the caller may read that
-// match. A virtual repository runs it for each of its local members (R-NUGET-018).
-func searchRepo(ctx context.Context, st Store, scope formats.ReadScope, key string, repoID int64, p search.Params) (hits []rows.SearchHit, total int, err error) {
+// searchTarget is one repository a search reads the rows of: the repository the client
+// addressed, or a local member of the virtual repository the client addressed.
+type searchTarget struct {
+	key string
+	id  int64
+	// admits is the test of the include and exclude patterns that apply to the IDs of the
+	// search (R-REPO-005, Q-NUGET-77): the repository's own and, for a member, the virtual
+	// repository's. nil when no pattern restricts.
+	admits func(lowerID string) bool
+}
+
+// patterned is the part of a repository the pattern test reads; *repository.Repository has it.
+type patterned interface {
+	Restricts() bool
+	Admits(path string, folder bool) bool
+}
+
+// patternsOf returns the test of the include and exclude patterns of the repositories: an ID
+// is admitted when every one of them admits it. NuGet's patterns match the lower-case ID (the
+// pattern subject is the name), as Authorize applies them to a document or a file. nil when
+// no repository restricts.
+func patternsOf(repos ...patterned) func(lowerID string) bool {
+	var restricting []patterned
+	for _, r := range repos {
+		if r.Restricts() {
+			restricting = append(restricting, r)
+		}
+	}
+	if len(restricting) == 0 {
+		return nil
+	}
+	return func(lowerID string) bool {
+		for _, r := range restricting {
+			if !r.Admits(lowerID, false) {
+				return false
+			}
+		}
+		return true
+	}
+}
+
+// searchRepo is the search of one repository's rows for the caller whose read scope is given:
+// the hits of the page p names and the number of packages the caller may read that match. A
+// virtual repository runs it for each of its local members (R-NUGET-018), all of them on one
+// budget. The store counts and pages only for a caller who reads the repository whole when no
+// pattern applies; otherwise the patterns and the scope decide each version in the scan.
+func searchRepo(ctx context.Context, st Store, scope formats.ReadScope, t searchTarget, p search.Params, budget *scanBudget) (hits []rows.SearchHit, total int, err error) {
 	q := rows.SearchQuery{
-		RepoID: repoID, Terms: p.Terms, Prerelease: p.Prerelease, SemVer2: p.SemVer2, PackageType: p.PackageType,
+		RepoID: t.id, Terms: p.Terms, Prerelease: p.Prerelease, SemVer2: p.SemVer2, PackageType: p.PackageType,
 	}
-	switch scope.Shape(key) {
-	case formats.ReadAll:
+	shape := scope.Shape(t.key)
+	switch {
+	case shape == formats.ReadNone:
+		return nil, 0, nil
+	case shape == formats.ReadAll && t.admits == nil:
 		return searchWhole(ctx, st, q, p)
-	case formats.ReadRows:
-		return searchRows(ctx, st, q, p, func(lowerID, lowerVersion string) bool { return scope.MayRead(key, lowerID, lowerVersion) })
 	}
-	return nil, 0, nil
+	mayRead := func(lowerID, lowerVersion string) bool {
+		if t.admits != nil && !t.admits(lowerID) {
+			return false
+		}
+		return shape == formats.ReadAll || scope.MayRead(t.key, lowerID, lowerVersion)
+	}
+	return searchRows(ctx, st, q, p, mayRead, budget)
 }
 
 // searchWhole is the search of a caller who reads every package: the store counts and cuts
@@ -120,6 +173,27 @@ func searchWhole(ctx context.Context, st Store, q rows.SearchQuery, p search.Par
 	return hits, total, err
 }
 
+// scanBudget is the number of packages the scans of one request may still look at. Every batch
+// a scan reads is taken from it, and a scan that goes beyond it answers 400 instead of a count
+// that is partial. The scans of the local members of a virtual repository share one, so a
+// request looks at no more than maxSearchScan packages whatever the number of its members
+// (Q-NUGET-76).
+type scanBudget struct{ left atomic.Int64 }
+
+func newScanBudget() *scanBudget {
+	b := &scanBudget{}
+	b.left.Store(maxSearchScan)
+	return b
+}
+
+// spend takes n packages from the budget and reports whether the budget still holds.
+func (b *scanBudget) spend(n int) bool { return b.left.Add(-int64(n)) >= 0 }
+
+// errScanTooLarge is the answer to a query that matches more packages than the budget.
+func errScanTooLarge() error {
+	return errs.E(errs.Invalid, errs.CodeInvalid, "The query matches too many packages to count the ones you may read. Narrow the query.")
+}
+
 // windowEntry is a package of the requested page found by the scan: the listed versions the
 // caller may read.
 type windowEntry struct {
@@ -128,30 +202,35 @@ type windowEntry struct {
 }
 
 // searchRows is the search of a caller whose read depends on the package and the version.
-// It walks the matches in rank order a batch at a time, with the keys of every listed
-// visible version, and keeps those with a readable version; the latest of the readable ones
-// is the version the package type filter and the result show. Only the entries of the
-// requested page are kept, so the memory is bounded by take; the count is exact because the
-// walk reaches the last match. The page is then read with the readable versions alone, so
-// nothing of an unreadable version reaches the result.
-func searchRows(ctx context.Context, st Store, q rows.SearchQuery, p search.Params, mayRead func(lowerID, lowerVersion string) bool) ([]rows.SearchHit, int, error) {
+// It walks the candidates in rank order a batch at a time, with the keys of every listed
+// visible version and whether each satisfies the terms (PerVersion), and keeps a package when
+// the caller's reads leave it a version, the latest of those satisfies the terms, and every
+// version: term names one of those (Q-NUGET-74): the terms are applied to what the caller may
+// read and never to a version the caller may not. The latest readable version is the one the
+// package type filter and the result show. Only the entries of the requested page are kept, so
+// the memory is bounded by take; the count is exact because the walk reaches the last
+// candidate. The page is then read with the readable versions alone, so nothing of an
+// unreadable version reaches the result.
+func searchRows(ctx context.Context, st Store, q rows.SearchQuery, p search.Params, mayRead func(lowerID, lowerVersion string) bool, budget *scanBudget) ([]rows.SearchHit, int, error) {
 	scan := q
-	scan.PackageType, scan.KeysOnly, scan.Limit = "", true, searchScanBatch
+	scan.PackageType, scan.KeysOnly, scan.PerVersion, scan.Limit = "", true, true, searchScanBatch
+	versionTerms := versionTermsOf(q.Terms)
 	var (
-		total, scanned int
-		window         []windowEntry
+		total  int
+		window []windowEntry
 	)
 	for scan.Offset = 0; ; scan.Offset += searchScanBatch {
 		batch, err := st.Search(ctx, scan)
 		if err != nil {
 			return nil, 0, err
 		}
-		if scanned += len(batch); scanned > maxSearchScan {
-			return nil, 0, errs.E(errs.Invalid, errs.CodeInvalid, "The query matches too many packages to count the ones you may read. Narrow the query.")
+		if !budget.spend(len(batch)) {
+			return nil, 0, errScanTooLarge()
 		}
 		for _, h := range batch {
 			readable, latest := readableVersions(h, mayRead)
-			if latest < 0 || (q.PackageType != "" && !slices.Contains(h.ListedTypes[latest], q.PackageType)) {
+			if latest < 0 || !matchedAt(h, latest) || !namesReadable(versionTerms, readable) ||
+				(q.PackageType != "" && !slices.Contains(h.ListedTypes[latest], q.PackageType)) {
 				continue
 			}
 			if total >= p.Skip && total < p.Skip+p.Take {
@@ -203,4 +282,32 @@ func readableVersions(h rows.SearchHit, mayRead func(lowerID, lowerVersion strin
 		}
 	}
 	return versions, latest
+}
+
+// matchedAt reports whether the version at index i of a scan hit satisfies the terms but the
+// version: terms. A hit without the flag matches nothing, so a store that does not answer the
+// question lists nothing rather than everything.
+func matchedAt(h rows.SearchHit, i int) bool { return i < len(h.ListedMatch) && h.ListedMatch[i] }
+
+// versionTermsOf returns the values of the version: terms of a query: the URL forms of the
+// versions they name, "" for a text that is no version.
+func versionTermsOf(terms []rows.SearchTerm) []string {
+	var out []string
+	for _, t := range terms {
+		if t.Field == search.FieldVersion {
+			out = append(out, t.Value)
+		}
+	}
+	return out
+}
+
+// namesReadable reports whether every version: term names one of the readable versions; a
+// term that is no version names none (R-NUGET-010).
+func namesReadable(versionTerms, readable []string) bool {
+	for _, v := range versionTerms {
+		if v == "" || !slices.Contains(readable, v) {
+			return false
+		}
+	}
+	return true
 }

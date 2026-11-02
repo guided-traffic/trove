@@ -287,7 +287,7 @@ A format whose request is not a document of one package (NuGet's search, R-NUGET
 |---|---|---|
 | `Plan(rq, path, info)` | the members that take part for this caller, in resolution order, each with tier, position and `MayFill`; `Admitted` false when the virtual repository's patterns refuse the request | `Resolver.Plan`: the route, then the per-member read and populate check |
 | `KeepsAway(rq, member, term)` | whether a claim, pin rule or exclude pattern keeps the term, or the stem of a prefix pattern, away from the member (R-NUGET-016, Q-NUGET-17) | `Router.KeepsAway`, [withheld.go](../../internal/repository/withheld.go): the claim index and the compiled patterns, no query |
-| `ReadScope(rq, repos)` | the unaudited read scope of the caller for a listing: `ReadAll`, `ReadRows` (ask `MayRead` per package) or `ReadNone` | `authz.ReadScoper` (`NewResolver` takes it) |
+| `ReadScope(rq, repos)` | the unaudited read scope of the caller for a listing: `ReadAll`, `ReadRows` (ask `MayRead` per package) or `ReadNone`, each row decided as a read through `rq.Addressed()`, so the virtual repository's exposure and the lift of a scope that names it apply; a key it does not reach is `ReadNone` (Q-AUTHZ-168) | `authz.ReadScoper` (`NewResolver` takes it) |
 
 `KeepsAway` refuses a member that is neither of the request's virtual repository nor the request's own repository. A term that is no name of the format
 keeps nothing away, include patterns do not protect, and a global claim keeps a name from a remote addressed directly only while `proxy.claims.remote_refusal` is on.

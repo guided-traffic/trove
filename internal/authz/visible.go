@@ -46,9 +46,14 @@ func (s ReadShape) String() string {
 // decider that cannot answer it (a test double) need not.
 type ReadScoper interface {
 	// ReadScopeOn classifies repository keys for a subject on the request's index
-	// and returns the scope that decides single rows. An error is a refusal to
-	// decide (503, 412).
-	ReadScopeOn(ctx context.Context, idx *Index, sub Subject, keys []string) (ReadScope, error)
+	// and returns the scope that decides single rows. addressed is the repository the
+	// client named when the keys are members a virtual repository resolves through: every
+	// row is then decided as a read through it (Coordinate.Addressed), so the exposure of
+	// the addressed repository and the lift of a token scope that names it apply
+	// (R-AUTHZ-009 rule 2, Q-EP-11, Q-AUTHZ-163, Q-AUTHZ-168), and a key the addressed
+	// repository does not reach is ReadNone. "" decides each repository on its own, as a
+	// listing across repositories does. An error is a refusal to decide (503, 412).
+	ReadScopeOn(ctx context.Context, idx *Index, sub Subject, addressed string, keys []string) (ReadScope, error)
 }
 
 // ReadScope answers the two questions of a listing for one subject and one index.
@@ -67,10 +72,13 @@ type ReadScope interface {
 var _ ReadScoper = (*Engine)(nil)
 
 type readScope struct {
-	e      *Engine
-	idx    *Index
-	sub    Subject
-	shapes map[string]ReadShape
+	e   *Engine
+	idx *Index
+	sub Subject
+	// addressed is the repository the client named, "" for a listing that decides
+	// each repository on its own.
+	addressed string
+	shapes    map[string]ReadShape
 }
 
 func (s *readScope) Shape(key string) ReadShape { return s.shapes[key] }
@@ -79,29 +87,49 @@ func (s *readScope) MayRead(repo, pkg, version string) bool {
 	if s.sub.Anonymous && s.sub.anon != anonOn {
 		return false
 	}
+	if !s.idx.addressedReaches(s.addressed, repo) {
+		return false
+	}
 	d := s.e.evaluate(s.idx, s.sub, Coordinate{
 		Repository: repo, Package: pkg, Version: version,
-		Kind: KindMetadata, Actions: []Action{Read},
+		Kind: KindMetadata, Actions: []Action{Read}, Addressed: s.addressed,
 	})
 	return d.Outcome == Allow
 }
 
 // ReadScopeOn implements [ReadScoper].
-func (e *Engine) ReadScopeOn(ctx context.Context, idx *Index, sub Subject, keys []string) (ReadScope, error) {
+func (e *Engine) ReadScopeOn(ctx context.Context, idx *Index, sub Subject, addressed string, keys []string) (ReadScope, error) {
 	sub, refused := e.withAnonymous(ctx, sub)
 	if refused != nil {
 		return nil, refused.Err()
 	}
-	rs := &readScope{e: e, idx: idx, sub: sub, shapes: make(map[string]ReadShape, len(keys))}
+	rs := &readScope{e: e, idx: idx, sub: sub, addressed: addressed, shapes: make(map[string]ReadShape, len(keys))}
 	if sub.Anonymous && sub.anon != anonOn {
 		return rs, nil
 	}
 	st := e.newEvalState(idx, sub)
 	allEndpoint := e.exposesEverything(sub.Endpoint)
 	for _, k := range keys {
+		if !idx.addressedReaches(addressed, k) {
+			rs.shapes[k] = ReadNone
+			continue
+		}
 		rs.shapes[k] = e.readShape(st, sub, idx.repo(k), allEndpoint)
 	}
 	return rs, nil
+}
+
+// addressedReaches reports whether a read of the repository key may be decided as a
+// read through the addressed repository: no addressed repository, the repository
+// itself, or a virtual repository that resolves through the key (Index.reaches). Any
+// other pair is no read the client asked for, so a listing gets nothing of it
+// (Q-AUTHZ-168).
+func (idx *Index) addressedReaches(addressed, key string) bool {
+	if addressed == "" || addressed == key {
+		return true
+	}
+	v := idx.repo(addressed)
+	return v != nil && v.Class == repository.Virtual && idx.reaches(v, key, 0)
 }
 
 // exposesEverything reports whether the ceiling of the endpoint admits every

@@ -561,11 +561,44 @@ func TestR_API_029_BridgeReadScope(t *testing.T) {
 			t.Fatal("a listing was scoped by nothing")
 		}
 	})
+	t.Run("Q-AUTHZ-168 the rows are decided through the repository the client addressed", func(t *testing.T) {
+		b := newBridge(t)
+		rec := &recordingScoper{}
+		r, err := NewResolver(b.eng, rec, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := r.ReadScope(t.Context(), b.rq, []string{"member-local"}); err != nil {
+			t.Fatal(err)
+		}
+		if rec.addressed != "all" {
+			t.Fatalf("the search of the virtual repository was scoped through %q, want all", rec.addressed)
+		}
+		members := b.rq.Repo.Members()
+		mrq, err := b.rq.Member(&members[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := r.ReadScope(t.Context(), mrq, []string{"member-local"}); err != nil {
+			t.Fatal(err)
+		}
+		if rec.addressed != "all" {
+			t.Fatalf("a request derived for a member was scoped through %q, want the outermost repository all", rec.addressed)
+		}
+	})
+}
+
+// recordingScoper records the addressed repository of the last call.
+type recordingScoper struct{ addressed string }
+
+func (s *recordingScoper) ReadScopeOn(_ context.Context, _ *authz.Index, _ authz.Subject, addressed string, _ []string) (authz.ReadScope, error) {
+	s.addressed = addressed
+	return fixedScope{}, nil
 }
 
 type fixedScoper struct{ s fixedScope }
 
-func (f fixedScoper) ReadScopeOn(context.Context, *authz.Index, authz.Subject, []string) (authz.ReadScope, error) {
+func (f fixedScoper) ReadScopeOn(context.Context, *authz.Index, authz.Subject, string, []string) (authz.ReadScope, error) {
 	return f.s, nil
 }
 

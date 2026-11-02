@@ -72,12 +72,15 @@ same rules (R-EP-018, [developer/endpoints.md](../developer/endpoints.md#package
   endpoint_read_only`. A merged or rewritten document is read the way `JSON.parse` reads it, so a member repeated in an upstream
   document cannot carry an unfiltered copy past the filter (Q-NPM-40). What stays visible: `time.created`, `time.modified` and
   `Last-Modified` (H-60).
-- **NuGet** (R-NUGET-034): the version list and the registrations of a local or virtual repository list the exposed versions
-  only, and their weak `ETag` is derived from the filtered rendering instead of the package's revision or the merge fingerprint,
-  so a push, unlist, relist or delete of a hidden version leaves a polling consumer with a `304` and the value it had
-  ([documents.go](../../internal/formats/nuget/documents.go) `serveFiltered`, [handlers_virtual.go](../../internal/formats/nuget/handlers_virtual.go)
+- **NuGet** (R-NUGET-034): the version list and the registrations are narrowed row by row before they are rendered and paged
+  (Q-NUGET-63). On a local or virtual repository their weak `ETag` is derived from the filtered rendering instead of the package's
+  revision or the merge fingerprint, so a push, unlist, relist or delete of a hidden version leaves a polling consumer with a `304`
+  and the value it had ([documents.go](../../internal/formats/nuget/documents.go) `serveFiltered`, [handlers_virtual.go](../../internal/formats/nuget/handlers_virtual.go)
   `serveVirtualFiltered`, Q-NUGET-87; `TestR_NUGET_034_TheValidatorOnAnEndpointWithRulesFollowsOnlyWhatTheEndpointShows`).
-  The documents of a remote repository keep the digest of the stored upstream document (H-350).
+  The documents of a remote repository keep the digest of the stored upstream document (H-350). The search decides every version
+  by the read scope that holds the same rules, and a term meets only the versions the caller may read, so `totalHits` tells
+  nothing of a hidden version (Q-NUGET-74, H-345 for the order). Through a virtual repository the virtual repository's rules
+  decide, for the search as for the documents ([nuget-virtual.md](nuget-virtual.md), Q-NUGET-75).
 - **Member names.** On an endpoint with rules no answer carries `Trove-Resolved-From`, and a member's failure is reported as the
   addressed repository's, with its code and `Retry-After` (Q-EP-56; H-294).
 - **Cache state.** On an endpoint with rules no answer of a format route carries `Cache-Status`: `formats.ServeRoute` removes it
@@ -187,37 +190,20 @@ Stage: the `versions` include and exclude lists of an exposure rule on a reposit
 
 Live today for NuGet; npm has fewer spellings (a leading `v` or `=` is not a version in a document). The range of a rule is compared by the format's own parser and does not have the gap. The lists are compared letter by letter with the form the format asks about, the normalized lower-case form without build metadata. An exclude written as `2.1`, `2.1.0.0` or `2.1.0-Beta.1` therefore matches no request, and the version it was meant to hide is exposed, to the version list, the registrations, the search and the files. An include in another spelling fails closed: it exposes nothing. Measured on the NuGet fixture: an exclude list of those three spellings left 2.0.0, 2.1.0 and 2.1.0-beta.1 visible; the canonical spellings hid them. Subject: the versions an administrator meant to withdraw from a customer endpoint. What makes it real: an exclude entry typed in a non-canonical spelling; the manual names the canonical form and the range as the way to cover every spelling, and the rule's response gives no warning.
 
-### H-341 · A NuGet search term matches versions the caller cannot read
+### H-345 · The rank of a NuGet search result can follow the ID casing of a hidden version
 
-Stage: the NuGet search of a local repository, and of each local member of a virtual one, for a caller whose read is narrowed by version (an endpoint with
-exposure rules, a grant or token scope with a version pattern) ([nuget_search.sql](../../internal/meta/postgres/queries/nuget_search.sql),
-[handlers_search.go](../../internal/formats/nuget/handlers_search.go) `searchRows`).
+Stage: the scan of the NuGet search for a caller whose read is decided per version
+([nuget_search.sql](../../internal/meta/postgres/queries/nuget_search.sql) `NuGetSearchScan`, Q-NUGET-74).
 
-Subject: the existence and the metadata of a hidden version.
+Subject: the order of the results of a query whose term is a quoted phrase or holds punctuation.
 
-Live today (confirmed by reading the code; found by the code review and the security audit of 2026-11-02). The statement matches the text terms against the
-latest listed version of each package and a `version:` term against any listed version, whether or not the caller may read it; the read scope is applied
-afterwards, to the versions the answer shows. A customer of an endpoint whose rule exposes `Acme.Sdk` from 2.0.0 sends
-`q=packageid:acme.sdk version:3.0.0-rc.1&prerelease=true` and learns from `totalHits` (1 or 0) whether the hidden 3.0.0-rc.1 exists, and probes the words of a
-hidden latest version's description the same way. The versions listed stay the exposed ones, and the documents and files of a hidden version stay refused.
-What makes it real: a consumer who must not learn of unreleased versions. The fix matches `version:` against readable versions and the text terms against the
-latest readable version (open finding F-21 of [promt.md](../projektplan/promt.md#8--open-findings)).
-
-### H-342 · A NuGet search through a virtual repository decides exposure on its members
-
-Stage: the merged search of a NuGet virtual repository ([search_virtual.go](../../internal/formats/nuget/search_virtual.go) →
-[virtual.go](../../internal/formathost/virtual.go) `ReadScope` → [visible.go](../../internal/authz/visible.go) `readScope.MayRead`).
-
-Subject: the search answer of a virtual repository addressed through an endpoint with rules, and of a token scoped to a virtual repository by its key.
-
-Live today (confirmed by reading the code: the coordinate `MayRead` builds has no `Addressed`). The exposure ceiling then looks up the rules of the member,
-not those of the virtual repository the client addressed (Q-EP-11), and the scope lift of Q-AUTHZ-163 does not apply. With the rule on the virtual repository
-the search fails closed: it lists nothing (`totalHits: 0`), while the version lists and registrations of the same repository list the exposed versions, and a
-token scoped to the virtual key finds nothing either. It leaks where an operator also exposes the members on the endpoint: the search through the virtual
-repository then follows the members' rules while its documents follow the virtual repository's, so search can list versions the documents hide. The
-integration test of R-NUGET-034 builds `nuget-customers` as a local repository and does not see it. What makes it real: a customer endpoint that serves a
-NuGet virtual repository, as [endpoints.md](../spec/endpoints.md) describes it. The fix sets the addressed repository on the read scope of the merged search
-(open finding F-21).
+Live today, narrowly. Whether a package matches and what `totalHits` counts are decided on the versions the caller may read, and nothing of a hidden
+version is shown. The rank tier is taken from the latest visible version, as for a caller who reads the repository whole, so both callers see one order.
+The tier of a term that is no substring of the ID but meets its ID tokens (the phrase `"acme widgets"` against `AcmeWidgets`) depends on how that version's
+declared ID splits into tokens (`IDTokens`, R-NUGET-010), and the split follows the casing the version's `.nuspec` declares: a newer hidden version declared
+as `Acmewidgets` moves the package from the token tier to the tier of the other fields. A consumer who compares the order of results can learn that a newer
+hidden version exists and declares the ID in another casing, and nothing more of it. What makes it real: a package whose versions declare the ID in
+different casings, and a consumer who must not learn that a hidden version exists.
 
 ### H-350 · On an endpoint with rules the ETag of a NuGet remote document follows the whole upstream document
 

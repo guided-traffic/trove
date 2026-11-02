@@ -617,7 +617,7 @@ func (s *Server) checkReadFilter(ctx context.Context, acc *edge.Access, repo str
 	if s.o.Endpoints.Scoper == nil {
 		return nil, nil
 	}
-	rs, err := s.o.Endpoints.Scoper.ReadScopeOn(ctx, acc.Index(), acc.Subject, []string{repo})
+	rs, err := s.o.Endpoints.Scoper.ReadScopeOn(ctx, acc.Index(), acc.Subject, "", []string{repo})
 	if err != nil {
 		return nil, err
 	}

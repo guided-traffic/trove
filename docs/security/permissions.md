@@ -73,6 +73,9 @@ the same key is not covered by the old key selector (the policy reports `inert`)
   none and one that names nothing all answer the same `404` (`TestR_API_029_ListCountsOnlyWhatTheCallerMayRead`). The classification is
   checked against `DecideOn` for every subject, endpoint, repository, package and version of a fixture
   (`TestR_API_029_ReadScopeAgreesWithTheDecisionPoint`). On an endpoint with exposure rules a repository is never classified as read whole.
+  A listing that belongs to a request through a virtual repository (NuGet's merged search) names the addressed repository, and every row
+  is decided as a read through it: the exposure of the virtual repository and the lift of a token scope that names it apply, and a
+  repository it does not reach reads as nothing (Q-AUTHZ-168, `TestQ_AUTHZ_168_AReadScopeThroughAVirtualRepositoryAgreesWithTheDecisionPoint`).
 - `authz.hide_existence: false` (R-AUTHZ-017) turns the refusal of a read of an existing repository into 403. It is a
   troubleshooting switch; the endpoint-exposure 404 and the anonymous 401 do not change.
 
@@ -344,13 +347,16 @@ All of this stays inside the owner's own rights; the bound is the owner, the lif
 ### H-335 · A NuGet search by a caller with row-level grants scans up to 200,000 matches per request
 
 Live today for a caller whose read of a NuGet repository is narrowed row by row (`authz.ReadRows`: a package pattern in a grant, a token
-scope with elements, or an endpoint with exposure rules) and who calls `GET …/v3/search` (R-NUGET-010, Q-NUGET-45). SQL cannot ask the
-decision point which versions the caller may read, so `totalHits` stays exact by scanning the matches in rank order in batches of 500 and
-asking `MayRead` per listed version; the scan stops with `400` above 200,000 matching packages and never returns a partial count. The cost
-is CPU on the replica that answers, proportional to the matches (not to the page): a query that matches a large repository, repeated, can
-hold a replica busy, and each request pays the scan again because nothing caches it. A caller with an unrestricted read (`ReadAll`) is
-counted and paged by SQL and pays no scan. What bounds it today is the 1,024-byte and 16-term limit of `q` and the 200,000 cap; nothing caches or rate-limits the scan itself. Closing it needs the readable package names handed to the statement (the condition is in
-Q-NUGET-45); H-299 is the same cost for the package list. Through a virtual repository the scan runs once per local member, each member in a goroutine of
-its own with no bound on how many run at once and a budget of 200,000 matches each ([search_virtual.go](../../internal/formats/nuget/search_virtual.go)); with
-`max_virtual_members` at its default of 100, one request can hold a database connection per member and multiply the cost by the members (read in the code,
-open finding F-21 of [promt.md](../projektplan/promt.md#8--open-findings)).
+scope with elements, or an endpoint with exposure rules), and for every caller of a repository with include or exclude patterns (Q-NUGET-77),
+who calls `GET …/v3/search` (R-NUGET-010, Q-NUGET-45). SQL cannot ask the decision point which versions the caller may read, so `totalHits`
+stays exact by scanning the candidates in rank order in batches of 500 and asking `MayRead` per listed version; the scan stops with `400`
+above 200,000 packages and never returns a partial count. Each batch is one statement that tests the terms on every listed visible version
+of the repository, so that a term meets only the versions the caller may read (`NuGetSearchScan`, Q-NUGET-74), and pages with an offset: the
+database work of one request grows with the batches times the versions of the repository. The CPU on the replica is proportional to the
+candidates (not to the page): a query that matches a large repository, repeated, can hold a replica and the database busy, and each request
+pays the scan again because nothing caches it. A caller with an unrestricted read (`ReadAll`) of a repository without patterns is counted and
+paged by SQL and pays no scan. What bounds it today is the 1,024-byte and 16-term limit of `q` and the 200,000 cap; nothing caches or
+rate-limits the scan itself. Closing it needs the readable package names handed to the statement (the condition is in Q-NUGET-45 and
+Q-NUGET-74); H-299 is the same cost for the package list. Through a virtual repository the scans of the local members share the one budget of
+200,000 packages, and at most four members are asked at once ([search_virtual.go](../../internal/formats/nuget/search_virtual.go), Q-NUGET-76),
+so a request holds at most four database connections and looks at no more packages than one repository may, whatever the number of members.

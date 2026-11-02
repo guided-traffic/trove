@@ -62,7 +62,16 @@ func (s *searchFake) Search(_ context.Context, q rows.SearchQuery) ([]rows.Searc
 		return out, nil
 	}
 	for i := q.Offset; i < min(q.Offset+q.Limit, s.n); i++ {
-		out = append(out, s.at(i))
+		h := s.at(i)
+		if q.PerVersion && h.ListedMatch == nil {
+			// The fake evaluates no term: every version satisfies them, unless the hit says
+			// which do.
+			h.ListedMatch = make([]bool, len(h.Listed))
+			for j := range h.ListedMatch {
+				h.ListedMatch[j] = true
+			}
+		}
+		out = append(out, h)
 	}
 	return out, nil
 }

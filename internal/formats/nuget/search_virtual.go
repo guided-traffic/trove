@@ -2,9 +2,11 @@ package nuget
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"sync"
 
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/nuget/rows"
 	"github.com/guided-traffic/trove/internal/formats/nuget/search"
@@ -21,6 +23,12 @@ import (
 // bound with the configuration.
 const defaultVirtualMergeWindow = 1000
 
+// maxMemberSearches bounds the members one search through a virtual repository asks at the
+// same time (Q-NUGET-76): a local member holds a database connection for each batch of its
+// scan, a remote member an upstream query. Four of the pool's default twenty connections
+// leave the other requests of the replica theirs, whatever the number of members.
+const maxMemberSearches = 4
+
 // memberResult is the answer of one member: its first hits in its own order and the number
 // of packages it counts.
 type memberResult struct {
@@ -32,8 +40,14 @@ type memberResult struct {
 
 // runVirtualSearch is runSearch for a virtual repository. The members are those of
 // Resolver.Plan, which leaves out every member the caller cannot read; the rows of a local
-// member are kept by the caller's read scope (R-AUTHZ-016, R-NUGET-013). Remote members
-// are asked by the forwarded search of R-NUGET-016, which joins at [Format.searchRemote].
+// member are kept by the caller's read scope (R-AUTHZ-016, R-NUGET-013), which decides each
+// row as a read through the virtual repository: its exposure rules and the lift of a token
+// scope that names it apply, as they do to its documents (Q-EP-11, Q-AUTHZ-163, Q-NUGET-75).
+// The include and exclude patterns of the virtual repository and of each member apply to the
+// IDs that member contributes (R-REPO-005, Q-NUGET-77). At most maxMemberSearches members are
+// asked at once, and the scans of the local members share one budget (Q-NUGET-76). Remote
+// members are asked by the forwarded search of R-NUGET-016, which joins at
+// [Format.searchRemote].
 func (f *Format) runVirtualSearch(ctx context.Context, rq *formats.Request, st Store, p search.Params) ([]rows.SearchHit, int, error) {
 	plan, err := rq.Host.Resolver().Plan(ctx, rq, formats.Path{}, formats.PathInfo{Kind: formats.PathVolatile})
 	if err != nil {
@@ -45,6 +59,10 @@ func (f *Format) runVirtualSearch(ctx context.Context, rq *formats.Request, st S
 	window := f.replicaOf(rq.Host).cfg.Search.VirtualMergeWindow
 	if window <= 0 {
 		window = defaultVirtualMergeWindow
+	}
+	admits, err := memberPatterns(rq, plan)
+	if err != nil {
+		return nil, 0, err
 	}
 	var keys []string
 	for _, m := range plan.Members {
@@ -67,14 +85,28 @@ func (f *Format) runVirtualSearch(ctx context.Context, rq *formats.Request, st S
 	}
 
 	results := make([]memberResult, len(plan.Members))
+	budget := newScanBudget()
+	sem := make(chan struct{}, maxMemberSearches)
 	var wg sync.WaitGroup
 	for i, m := range plan.Members {
 		results[i].member = m
+		if err := ctx.Err(); err != nil { // a request that ended asks no further member
+			results[i].err = err
+			continue
+		}
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			results[i].err = ctx.Err()
+			continue
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer func() { <-sem }()
 			if m.Tier == formats.TierLocal {
-				results[i].hits, results[i].total, results[i].err = searchRepo(ctx, st, scope, m.Member.Key, m.Member.ID, mp)
+				t := searchTarget{key: m.Member.Key, id: m.Member.ID, admits: admits[m.Member.Key]}
+				results[i].hits, results[i].total, results[i].err = searchRepo(ctx, st, scope, t, mp, budget)
 				return
 			}
 			results[i].hits, results[i].total, results[i].err = f.searchRemote(ctx, rq, m, mp)
@@ -82,6 +114,7 @@ func (f *Format) runVirtualSearch(ctx context.Context, rq *formats.Request, st S
 	}
 	wg.Wait()
 
+	view := viewOf(rq)
 	removed := 0
 	for i := range results {
 		r := &results[i]
@@ -89,7 +122,18 @@ func (f *Format) runVirtualSearch(ctx context.Context, rq *formats.Request, st S
 			return nil, 0, r.err
 		}
 		kept := r.hits[:0:0]
-		for _, h := range r.hits {
+		for _, hit := range r.hits {
+			// A local member's hits passed both filters in its scan; these are the filters of
+			// what a remote member contributes, which no read scope decided.
+			if a := admits[r.member.Member.Key]; a != nil && !a(hit.LowerID) {
+				removed++
+				continue
+			}
+			h, exposed := exposedHit(view, hit)
+			if !exposed {
+				removed++
+				continue
+			}
 			away, err := rq.Host.Resolver().KeepsAway(ctx, rq, r.member.Member, h.LowerID)
 			if err != nil {
 				return nil, 0, err
@@ -114,6 +158,58 @@ func (f *Format) runVirtualSearch(ctx context.Context, rq *formats.Request, st S
 		return nil, total, nil
 	}
 	return merged[p.Skip:min(p.Skip+p.Take, len(merged), window)], total, nil
+}
+
+// memberPatterns returns, for each planned member, the test of the include and exclude
+// patterns that apply to the IDs it contributes: the member's own and the virtual
+// repository's, nil when neither restricts (R-REPO-005, Q-NUGET-77). A search has no name, so
+// the plan did not apply them. The patterns are read from the virtual repository's own member
+// list; a planned member that is not on it is a fault of the plan.
+func memberPatterns(rq *formats.Request, plan *formats.VirtualPlan) (map[string]func(lowerID string) bool, error) {
+	all := rq.Repo.Members()
+	out := make(map[string]func(string) bool, len(plan.Members))
+	for _, m := range plan.Members {
+		found := false
+		for j := range all {
+			if all[j].Key == m.Member.Key {
+				out[m.Member.Key], found = patternsOf(&all[j], rq.Repo), true
+				break
+			}
+		}
+		if !found {
+			return nil, errs.E(errs.Internal, errs.CodeInternal, "A planned member is not a member of the virtual repository.",
+				errs.WithCause(fmt.Errorf("%q is not a member of %q", m.Member.Key, rq.Repo.Key)))
+		}
+	}
+	return out, nil
+}
+
+// exposedHit narrows a member's hit to what the endpoint exposes of the virtual repository the
+// client addressed (R-NUGET-034, Q-NUGET-75). A local member's hit holds only versions its read
+// scope admitted, which decided them under the same rules, so nothing changes there; this is
+// the filter of what a remote member contributes. The versions outside the view are dropped,
+// and a hit whose latest version is outside it is dropped whole, because the package-level
+// fields of the result are that version's.
+func exposedHit(view formats.ExposureView, h rows.SearchHit) (rows.SearchHit, bool) {
+	if view == nil {
+		return h, true
+	}
+	if !view.Package(h.LowerID) || !view.Version(h.LowerID, h.Latest.LowerVersion) {
+		return h, false
+	}
+	out := h
+	out.Listed, out.ListedTypes, out.ListedMatch = nil, nil, nil
+	for i, v := range h.Listed {
+		if !view.Version(h.LowerID, v.LowerVersion) {
+			continue
+		}
+		var types []string
+		if i < len(h.ListedTypes) {
+			types = h.ListedTypes[i]
+		}
+		out.Listed, out.ListedTypes = append(out.Listed, v), append(out.ListedTypes, types)
+	}
+	return out, true
 }
 
 // searchRemote is the search of a remote member. The forwarded search of R-NUGET-016 is the

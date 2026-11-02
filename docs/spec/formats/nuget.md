@@ -994,7 +994,7 @@ Supported fields, matched case-insensitively:
 |---|---|
 | `id` | the lower-case ID contains the value |
 | `packageid` | the lower-case ID equals the value |
-| `version` | the package has a listed version visible under the request's filters that equals the value after the normalization of R-NUGET-003; a value that is no version matches nothing |
+| `version` | the package has a listed version visible under the request's filters that equals the value after the normalization of R-NUGET-003 and that the caller may read (Q-NUGET-74); a value that is no version matches nothing |
 | `title`, `tags`, `author`, `description`, `summary` | the words of that field of the latest visible version start with the words of the value |
 | `owner` | never: a local package has no owners to match (Q-NUGET-46) |
 
@@ -1005,7 +1005,11 @@ token (tokens split at `.`, `-`, `_` and at lower-to-upper case changes of the d
 `Newtonsoft.Json` and `NewtonsoftJson` are found by `json`), title, tags, authors, summary or
 description. A package matches by its **latest visible version** (the highest listed, untrashed
 version under `prerelease` and `semVerLevel`): terms and `packageType` are tested against that
-version's row, so what matches is what the result shows (Q-NUGET-46).
+version's row, so what matches is what the result shows (Q-NUGET-46). For a caller who may read
+only some versions, that is the latest version the caller may read: a version the caller may not
+read decides neither whether a package matches nor what `totalHits` counts (Q-NUGET-74). A package
+the repository's include and exclude patterns do not admit (R-REPO-005) is neither listed nor
+counted, as its documents answer 404 (Q-NUGET-77).
 
 Ranking: a package takes the best tier over its free-text terms, in this order: the lower-case ID
 equals the term; the ID starts with it; the ID contains it or an ID token starts with it; any other
@@ -1042,15 +1046,21 @@ package whose latest version under the filters is visible:
   word of a description matches nothing, a substring of the ID does (Q-NUGET-46).
 - **What the caller may read** is decided before anything is counted (R-AUTHZ-016), by the shape of
   the read the decision point reports for the repository (`Resolver.ReadScope`). A caller who reads
-  the repository whole is counted and paged by SQL. A caller whose read depends on the package or
-  the version (a grant with package patterns, a token scope, an endpoint with exposure rules) is
-  served by a scan: the format reads the matches in rank order in batches of 500 with the keys of
-  every listed visible version, asks the decision point about each version, keeps the packages with
-  a readable version, counts them, and keeps only the entries of the requested page. The page is
-  then read once with the readable versions alone, so `version`, `versions`, `packageTypes` and
-  `totalDownloads` never come from a version the caller may not read, and `packageType` is
-  decided on the latest readable version. The scan reaches the last match, so `totalHits` is exact;
-  it stops with 400 when the query matches more than 200,000 packages (Q-NUGET-45).
+  the repository whole, of a repository without include and exclude patterns, is counted and paged
+  by SQL. A caller whose read depends on the package or the version (a grant with package patterns,
+  a token scope, an endpoint with exposure rules), and every caller of a repository with patterns,
+  is served by a scan: the format reads the candidates in rank order in batches of 500 with the keys
+  of every listed visible version and, per version, whether that version satisfies the terms other
+  than `version:` (a candidate is a package with such a version whose `version:` terms each name a
+  listed visible version). It asks the patterns and the decision point about each version, and keeps
+  a package when a version is left, the latest of those satisfies the terms and every `version:`
+  term names one of those (Q-NUGET-74); it counts them and keeps only the entries of the requested
+  page. The page is then read once with the readable versions alone, so `version`, `versions`,
+  `packageTypes` and `totalDownloads` never come from a version the caller may not read, and
+  `packageType` is decided on the latest readable version. The scan reaches the last candidate, so
+  `totalHits` is exact; it stops with 400 when the query matches more than 200,000 packages, all
+  members of a virtual repository together (Q-NUGET-45, Q-NUGET-76). The rank of the scan is the
+  rank of the SQL page, so both callers see the packages in one order.
 
 Configuration (system file):
 
@@ -1075,6 +1085,9 @@ Acceptance criteria:
 - A user whose grant covers only `acme.core` sees `totalHits: 1` for `q=acme`.
 - A user whose grant excludes `acme.widgets` sees `totalHits` without it and pages over the
   rest; `skip` and `take` count the packages that user may read.
+- A repository whose `excludePatterns` hold `Acme.Secret*` neither lists nor counts
+  `Acme.Secret.Thing` for any caller, while another repository without the pattern lists it
+  (Q-NUGET-77).
 - `curl "<feed>/search?q=title:%22widget+toolkit%22"` finds `Acme.Widgets` by a phrase in its title,
   `q=version:1.1.0` finds the packages that have that version, `q=owner:acme` returns nothing.
 - `curl "<feed>/search?q=json"` finds `Newtonsoft.Json` and `NewtonsoftJsonSchema`; `q=tonsoft`
@@ -1554,11 +1567,19 @@ Search through a virtual repository merges the result lists of the members that 
 R-REPO-019's filtering:
 
 1. Each member is queried in parallel with the request's filters, `skip=0` and
-   `take = min(skip + take, virtualMergeWindow)`. The members are those of `Resolver.Plan`, which
-   leaves out every member the caller cannot read and says which remote members the caller may
-   fill; rows are kept by the caller's `Resolver.ReadScope` (architecture.md Q-ARCH-271). Local
-   members use R-NUGET-010, remote members R-NUGET-016, including its withheld-query rule evaluated
-   with this virtual repository's claims and pin rules.
+   `take = min(skip + take, virtualMergeWindow)`, at most four members at a time, and the scans of
+   the local members share the one bound of 200,000 packages of R-NUGET-010 (Q-NUGET-76). The
+   members are those of `Resolver.Plan`, which leaves out every member the caller cannot read and
+   says which remote members the caller may fill; rows are kept by the caller's
+   `Resolver.ReadScope` (architecture.md Q-ARCH-271), which decides each row as a read through this
+   virtual repository: its exposure rules and the lift of a token scope that names it apply, as they
+   do to its documents (Q-EP-11, Q-AUTHZ-163, Q-AUTHZ-168, Q-NUGET-75). Local members use
+   R-NUGET-010, remote members R-NUGET-016, including its withheld-query rule evaluated with this
+   virtual repository's claims and pin rules. A member contributes only the IDs that its own include
+   and exclude patterns and this virtual repository's admit (R-REPO-005, Q-NUGET-77), and on an
+   endpoint with exposure rules only what the endpoint exposes of this virtual repository: versions
+   outside its view are dropped, and a result whose latest version is outside it is dropped whole
+   (R-NUGET-034, Q-NUGET-75).
 2. Results of a member are removed for every ID that this virtual repository's pin rules or claims
    keep away from that member (R-REPO-023, as in R-NUGET-017), through `Resolver.KeepsAway`: an ID
    whose selected pin rule does not name the member, or, without a pin rule, an ID that a claim in
@@ -1601,6 +1622,9 @@ Acceptance criteria:
   its versions; when a pin rule names only `nuget-local` for it, or a claim of `nuget-local` covers
   it, only with the local versions.
 - `curl "<feed>/search?q=&skip=1000&take=20"` on `nuget-all` answers 200 with empty `data`.
+- With the rule of R-NUGET-034 on the virtual `nuget-customers` and `Acme.Sdk` in its member
+  `nuget-internal`, `search?q=acme&prerelease=true` on `customers` lists exactly 2.0.0 and 2.1.0,
+  with the bound service account and with a token scoped to read on `nuget-customers` by its key.
 - Visual Studio 2022's browse tab on `nuget-all` loads more results while scrolling (manual check,
   recorded per release).
 
@@ -2393,7 +2417,10 @@ document:
   NuGet's "unable to find package", which the rule's author checks with `check-exposure`.
 - **Search and autocomplete** (R-NUGET-010, R-NUGET-011, R-NUGET-016, R-NUGET-018): only exposed IDs
   and versions; `version` is the latest exposed version visible under the request's filters,
-  `totalDownloads` sums the exposed versions, and `totalHits` counts exposed packages only. On an
+  `totalDownloads` sums the exposed versions, and `totalHits` counts exposed packages only. A term
+  matches only exposed versions: a `version:` term names an exposed version, and the other terms are
+  tested on the latest exposed version (Q-NUGET-74). Through a virtual repository the rules of the
+  virtual repository decide, as they do for its documents (Q-NUGET-75). On an
   endpoint with `cache_fill: false` a remote answers with its cache-only search (R-EP-019); with
   `cache_fill: true`, forwarded results are filtered per item and `totalHits` is reduced as
   R-NUGET-016 reduces it for removed results.
@@ -2427,6 +2454,9 @@ pre-releases):
   `{"versions":["2.0.0","2.1.0"]}`; the `registration-semver2/` index lists the same two leaves;
   `search?q=acme&prerelease=true` returns `"version": "2.1.0"` with two `versions`. Through `default`
   all four versions are listed.
+- On `customers`, `search?q=packageid:acme.sdk version:1.9.0` and a `description:` term that only a
+  hidden version's description holds return `totalHits: 0`; a word of the 2.1.0 description finds
+  `Acme.Sdk` while a hidden pre-release is newer.
 - `dotnet add package Acme.Sdk --version 1.9.0` against `customers` fails with `NU1102`; a restore of
   2.1.0 with the bound token as password succeeds.
 - `curl -X PUT <customers feed>/package` with the bound token as API key (`X-NuGet-ApiKey`) answers 403
@@ -4091,7 +4121,7 @@ Context: R-NUGET-034 has the filter run "after the merge of a virtual repository
 
 **Rationale:** the paging of R-NUGET-009 is a function of the list, so the filter belongs before it. The development agent revisits this if a remote or virtual class can only produce bytes; it then rebuilds rows from them before the predicate.
 
-**Applied in the spec:** R-NUGET-034. Code: [handlers_flat.go](../../../internal/formats/nuget/handlers_flat.go), [handlers_registration.go](../../../internal/formats/nuget/handlers_registration.go), [handlers_search.go](../../../internal/formats/nuget/handlers_search.go) (unchanged: the scope holds the rules), [exposure.go](../../../internal/formats/nuget/exposure.go). Tests: `TestR_NUGET_034_AcceptanceDocumentsOfTheExampleRule`, `TestR_NUGET_034_PagingRunsOverTheExposedVersions`, `TestR_NUGET_034_SearchOnAnEndpointWithRules`, `TestR_NUGET_034_DocumentsOnAnEndpointWithRules` (integration).
+**Applied in the spec:** R-NUGET-034. Code: [handlers_flat.go](../../../internal/formats/nuget/handlers_flat.go), [handlers_registration.go](../../../internal/formats/nuget/handlers_registration.go), [handlers_search.go](../../../internal/formats/nuget/handlers_search.go) (unchanged: the scope holds the rules), [exposure.go](../../../internal/formats/nuget/exposure.go). Narrowed by Q-NUGET-75: the merged search of a virtual repository also filters every member's results with the view, because a remote member's results are decided by no read scope. Tests: `TestR_NUGET_034_AcceptanceDocumentsOfTheExampleRule`, `TestR_NUGET_034_PagingRunsOverTheExposedVersions`, `TestR_NUGET_034_SearchOnAnEndpointWithRules`, `TestR_NUGET_034_DocumentsOnAnEndpointWithRules` (integration).
 
 ### Q-NUGET-64 · Where the fixture packages of the e2e tests come from
 
@@ -4296,6 +4326,80 @@ Context: E3.6 asks that variant A of the drain test gains the NuGet part of its 
 **Rationale:** the owner's rule of 2026-11-01 says long legs run nightly and their reliability is phase 7's; building the NuGet load where its capacity question is answered avoids a second leg that is red for the same reason. The development agent revisits this when phase 7 starts.
 
 **Applied in the spec:** none. Plan: [BETA.md](../../projektplan/BETA.md) phases 4 and 7; [roadmap](../../coverage/roadmap.md) E3.6.
+
+### Q-NUGET-74 · A search term meets only the versions the caller may read
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-010 matches a package by the row of its latest visible version (Q-NUGET-46) and a `version:` term by any listed visible version. The scan of Q-NUGET-45 applied the caller's read only to the versions the answer shows, after the statement had matched. For a caller who may read only some versions (an endpoint with exposure rules, a grant or a token scope narrowed by package), a term therefore met versions that caller cannot read: on the E3.7 rule, `q=packageid:acme.sdk version:3.0.0-rc.1` answered `totalHits: 1` exactly when the hidden 3.0.0-rc.1 existed, a word of a hidden latest version's description found the package, and a word of the latest exposed version did not (the code review and the security audit of 2026-11-02, finding F-21). SQL cannot ask the decision point which versions are readable.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The scan tests the terms per version, the format applies them to what the caller may read (chosen) | A scan statement (`NuGetSearchScan`) returns every listed visible version of a candidate with a flag: the version satisfies every term but `version:`. A candidate has such a version, and each of its `version:` terms names one of its listed visible versions. The format keeps a package when the latest version the caller may read carries the flag and every `version:` term names a version the caller may read | Exact for every caller; the decision point stays the only judge of a row; a caller who reads the repository whole keeps the SQL count and page | The scan tests the terms on every visible version instead of the latest one, so its cost grows with the versions per package (H-335) |
+| (b) Hand the readable (ID, version) pairs to SQL | A first pass lists every visible version, the decision point keeps the readable ones, a second statement matches over them | One predicate in SQL | The first pass reads every visible version of the repository whatever the terms, and the list crosses the port on each request |
+| (c) Test the terms again in Go on the latest readable version | Fetch that version's metadata and match in Go | No new statement | A second matcher (prefix words, phrases, ID tokens, folding) that must agree with PostgreSQL's forever; the count needs the metadata of every candidate |
+| (d) Record the leak as a gap | Keep the code | Nothing to build | Breaks R-NUGET-034 ("only exposed IDs and versions") and E3.7 on every customer endpoint |
+
+**Choice:** (a). The flag covers every term but `version:`, whose test is an equality on the URL form that the format applies to the readable list. A version the store gave no flag matches nothing, so a store that does not answer the question lists nothing rather than everything. The rank of the scan is the rank of `NuGetSearchPage`, the tier of the latest visible version, so a caller who reads row by row sees the packages in the order of one who reads whole; for a term of several words that meets ID tokens, the tier can follow the ID casing of a newer hidden version ([H-345](../../security/endpoints-and-exposure.md#h-345--the-rank-of-a-nuget-search-result-can-follow-the-id-casing-of-a-hidden-version)).
+
+**Rationale:** the terms must be applied where the caller's reads are, and only the decision point knows those. Flags per version keep the matcher in one place, PostgreSQL, and the decision in another, the decision point. The development agent revisits this when profiling shows that the per-version scan dominates a replica (the scan would then become option (b) with keyset paging), or when autocomplete (R-NUGET-011) is built and needs the same scan.
+
+**Applied in the spec:** R-NUGET-010 (the field table, the matching paragraph, the implementation bullet), R-NUGET-034 (the search bullet and an acceptance criterion). Code: [nuget_search.sql](../../../internal/meta/postgres/queries/nuget_search.sql) `NuGetSearchScan`, [search.go](../../../internal/formatdata/nuget/search.go) `searchScan`, [read.go](../../../internal/formats/nuget/rows/read.go) `SearchQuery.PerVersion`, `SearchHit.ListedMatch`, [handlers_search.go](../../../internal/formats/nuget/handlers_search.go) `searchRows`, the twin in [nugettest](../../../internal/formats/nuget/nugettest/store.go). Tests: `TestR_NUGET_034_SearchTermsMeetOnlyTheVersionsTheCallerMayRead`, `TestR_NUGET_034_TheScanDecidesOnTheFlagsOfTheReadableVersions`, and the integration test `TestR_NUGET_034_SearchTermsMeetOnlyExposedVersions`.
+
+### Q-NUGET-75 · The merged search decides on the virtual repository the client addressed
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the merged search of R-NUGET-018 asked `Resolver.ReadScope` for the rows of its local members, and the decision point built each row's coordinate without the addressed repository. The exposure ceiling therefore looked up the members' rules, while Q-EP-11 decides exposure on the repository the client addressed, and the scope lift of Q-AUTHZ-163 never applied. With the rule on the virtual `nuget-customers` of the worked example ([endpoints.md](../endpoints.md)), the search listed nothing while the documents listed the exposed versions; a token scoped to the virtual key found nothing; and an operator who also exposed the members would have had the search follow the members' rules while the documents follow the virtual repository's (F-21). The results of a remote member (R-NUGET-016) are decided by no read scope at all.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The read scope decides through `rq.Addressed()`, and the merge filters every member's results with the view of the addressed repository (chosen) | `authz.ReadScoper.ReadScopeOn` takes the addressed repository and sets `Coordinate.Addressed` (Q-AUTHZ-168); `Resolver.ReadScope` passes `rq.Addressed()`; `runVirtualSearch` drops the versions outside `viewOf(rq)` and a result whose latest version is outside it | One rule for documents and search; the lift applies; the frozen signature of `Resolver.ReadScope` stays; a remote member's results meet the same view | For a local member the view filter repeats what the scope decided |
+| (b) A new `Resolver` method for the merged search | `ReadScopeThrough(rq, virtual, keys)` | Explicit | Changes the frozen contract (an ADR); the addressed repository is already a fact of the request |
+| (c) Filter by the view alone and keep the members' read scopes | Narrow the members' rows with the virtual repository's view | No change in the decision point | The lift still never applies, and the members' rules still remove rows the virtual repository exposes |
+
+**Choice:** (a). A result whose latest version is outside the view is dropped whole and counted as removed (step 6 of R-NUGET-018), because its package-level fields (title, description, `version`) are that version's and the merge holds no other version's metadata; the forwarded search therefore hands over results whose latest version is the latest exposed one where it can.
+
+**Rationale:** exposure and the lift are properties of what the client named (Q-EP-11, Q-AUTHZ-163), and `rq.Addressed()` already carries it to every other decision of the request. The development agent revisits this if a format needs a listing through a repository other than the one the request addressed.
+
+**Applied in the spec:** R-NUGET-018 (step 1 and an acceptance criterion), R-NUGET-034 (the search bullet), [authorization.md](../authorization.md) R-AUTHZ-009 rule 4. Code: [visible.go](../../../internal/authz/visible.go), [virtual.go](../../../internal/formathost/virtual.go) `ReadScope`, [search_virtual.go](../../../internal/formats/nuget/search_virtual.go) `exposedHit`. Security: [nuget-virtual.md](../../security/nuget-virtual.md). Tests: `TestQ_AUTHZ_168_AListingThroughAVirtualRepositoryAppliesItsExposure`, `TestQ_AUTHZ_168_AListingThroughAVirtualRepositoryLiftsATokenScopeThatNamesIt`, `TestR_API_029_BridgeReadScope`, `TestR_NUGET_034_TheMergedSearchFiltersEveryMemberByTheViewOfTheAddressedRepository`, and the integration test `TestR_NUGET_034_SearchThroughAVirtualRepositoryOnAnEndpointWithRules`.
+
+### Q-NUGET-76 · The fan-out of the merged search: four members at a time and one scan budget
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the merged search started one goroutine per member without a bound, and each local member's scan had its own budget of 200,000 packages (Q-NUGET-45). With `max_virtual_members` at its default of 100, one request could hold a database connection per member and pay up to 100 times the budget in permission checks (H-335, the security audit of 2026-11-02).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) At most four members at once, and one budget of 200,000 packages for the scans of a request (chosen) | A semaphore around the member searches; every batch of every scan is taken from one budget | A request holds at most four of the pool's default twenty connections and looks at no more packages than one repository may; the usual one to three members still run in parallel | A virtual repository of several large members answers 400 where each member alone would not; members beyond four wait for a slot |
+| (b) A setting `nuget.search.virtual_concurrency` | Configurable bound | Tunable | A value nobody can choose without measurements; more configuration surface |
+| (c) One member after the other | No parallelism | Least load | The latency of every member adds up, and a slow upstream holds the local members back |
+| (d) Bound the concurrency, keep a budget per member | | Fewer refusals | Up to a hundred times the budget per request remains |
+
+**Choice:** (a). The bound covers remote members as well, because each is an upstream query (R-NUGET-016). A request whose context ends while it waits for a slot asks no further member and answers with that error, never with a partial merge.
+
+**Rationale:** four keeps the common virtual repository fully parallel and bounds the worst case by a constant; the budget is the one the package listings use for the same decision (R-API-029). The development agent revisits this when a deployment reports 400 on a virtual repository whose members are each within the bound, or when profiling shows requests waiting for member slots (then option (b)).
+
+**Applied in the spec:** R-NUGET-018 step 1, R-NUGET-010 (the implementation bullet). Code: [search_virtual.go](../../../internal/formats/nuget/search_virtual.go) `maxMemberSearches`, [handlers_search.go](../../../internal/formats/nuget/handlers_search.go) `scanBudget`. Security: [permissions.md](../../security/permissions.md) H-335. Tests: `TestR_NUGET_018_AVirtualSearchAsksAFewMembersAtATime`, `TestR_NUGET_018_TheMembersOfAVirtualSearchShareOneScanBudget`, `TestR_NUGET_018_ACanceledSearchStopsAskingMembers`.
+
+### Q-NUGET-77 · The search applies the include and exclude patterns: the repository's, and through a virtual repository its own and each member's
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the include and exclude patterns of R-REPO-005 are routing rules; `Authorize` applies them to every document and file, and the package list applies them too. The search applied none (the security audit of 2026-11-02), so `excludePatterns: ["Secret.*"]` left `Secret.Thing` listed with its description and versions while its documents answered 404. A search through a virtual repository has no name, so `Resolver.Plan`, which drops a member whose patterns refuse a name, applied no pattern either.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The patterns decide each ID in the scan; a caller who reads a repository with patterns whole is scanned too; through a virtual repository a member contributes the IDs its patterns and the virtual repository's admit (chosen) | The pattern test joins the read decision of the scan (`patternsOf`, `searchRepo`); the members' patterns come from the virtual repository's member list; a remote member's results are filtered after it answered | `totalHits` stays exact; the test is the one `Authorize` makes (`Repository.Admits` on the lower-case ID); no second pattern grammar | A caller who reads a repository with patterns whole pays the scan, and above 200,000 matching packages gets 400 instead of an answer |
+| (b) Filter the page only | Count with SQL, drop excluded results from the page | Cheap | `totalHits` counts withdrawn packages, and pages come out short |
+| (c) Compile the patterns into the statement | Globs as `LIKE` or regular expressions | Exact and paged by SQL | A second implementation of the pattern grammar and its folding that must agree with R-REPO-005 forever, which Q-NUGET-45 rejected for grants |
+
+**Choice:** (a). The patterns of a member are read from the virtual repository's member list (`rq.Repo.Members()`), from which the plan was made; a planned member that is not on it is a fault of the plan and answers 500. No store is read through that list (H-329).
+
+**Rationale:** a pattern withdraws a package from what a repository serves, and search is part of what it serves. The development agent revisits this when a repository with patterns holds so many packages that common queries reach the scan's bound; the patterns would then move into the statement as a compiled set, as R-API-029 plans for grants.
+
+**Applied in the spec:** R-NUGET-010 (the matching paragraph, the implementation bullet and an acceptance criterion), R-NUGET-018 step 1. Code: [handlers_search.go](../../../internal/formats/nuget/handlers_search.go) `patternsOf`, `searchRepo`; [search_virtual.go](../../../internal/formats/nuget/search_virtual.go) `memberPatterns`. Security: [repository-model.md](../../security/repository-model.md), [nuget-virtual.md](../../security/nuget-virtual.md). Tests: the integration tests `TestR_REPO_005_TheNuGetSearchOfALocalRepositoryAppliesItsPatterns` and `TestR_REPO_005_TheNuGetSearchOfAVirtualRepositoryAppliesItsAndItsMembersPatterns`.
 
 ### Q-NUGET-87 · On an endpoint with rules the validator of a local or virtual document follows its filtered bytes, and a virtual validator names the ID
 

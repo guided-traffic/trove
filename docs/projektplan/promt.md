@@ -215,15 +215,6 @@ started and stopped before it changed the tree; phase 4 stays open until these a
   package of nuget.org. Also: `Classify("v3/search")` names the package `v3`, so a populate check on a forwarded search would
   be decided for that package. Done when R-NUGET-016's and R-NUGET-018's criteria pass, the two-replica and Valkey-stopped
   timing case in e2e.
-- **F-21 · NuGet search: hidden versions, the addressed repository, the fan-out and the patterns** (confirmed in the code).
-  Search terms match versions the caller cannot read ([H-341](../security/endpoints-and-exposure.md#h-341--a-nuget-search-term-matches-versions-the-caller-cannot-read));
-  the merged search decides exposure and the scope lift on the members instead of the addressed virtual repository
-  ([H-342](../security/endpoints-and-exposure.md#h-342--a-nuget-search-through-a-virtual-repository-decides-exposure-on-its-members)),
-  which breaks E3.7 when `nuget-customers` is virtual; the fan-out over members has no concurrency bound and a scan budget per
-  member ([H-335](../security/permissions.md#h-335--a-nuget-search-by-a-caller-with-row-level-grants-scans-up-to-200000-matches-per-request));
-  the search of a local repository ignores its patterns ([H-344](../security/repository-model.md#h-344--the-nuget-search-of-a-local-repository-ignores-its-include-and-exclude-patterns)).
-  Tests to add: E3.7 with a virtual `nuget-customers`, a token scoped to the virtual key, PostgreSQL cases where a `version:`
-  and a `description:` term match only a hidden version.
 - **F-22 · A virtual repository with a nuget.org member answers 502 on registration documents** (confirmed by a probe test of
   the code review). `merge.DecodeUpstream` and `decodeFlat` ([merge/](../../internal/formats/nuget/merge)) do not inflate the
   gzip bytes a remote stores unchanged, and refuse an index whose pages are listed by URL (more than 128 versions), although

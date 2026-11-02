@@ -602,7 +602,9 @@ Priority: **MVP** · Covers: IAM-024, PKG-NPM-042, PKG-NPM-045, PKG-NUGET-027
    NOT be served to a subject whose set of readable members for that package differs from the set
    it was built for. Pin rules and namespace claims (R-REPO-023) are applied independently of the
    caller's permissions, so a caller who cannot read an internal package gets 404 rather than a
-   public package of the same name.
+   public package of the same name. A listing of the members' rows for the virtual repository (a
+   merged search) decides each row as a read through it, so its exposure (Q-EP-11) and the lift of
+   rule 2 apply as they do to its documents (Q-AUTHZ-168).
 5. **Writes through a virtual repository** go to its deploy target (R-REPO-021 in
    [repositories-and-proxy.md](repositories-and-proxy.md)). Actions and ownership are checked on
    that target with the same coordinate, and the gate of rule 1 applies as well. Grants of
@@ -3849,6 +3851,24 @@ Context: R-AUTHZ-007 and R-NPM-019 gave `npm whoami` (and `npm ping`) the requir
 **Rationale:** the only subjects that use the endpoint are npm clients configured for a repository they use, and those hold `read` at least (`npm publish` and `npm install` need it). The development agent revisits this if a client is found that calls `whoami` before it holds any grant.
 
 **Applied in the spec:** R-AUTHZ-007 (npm table), [formats/npm.md](formats/npm.md) R-NPM-019. Tests: `TestR_AUTHZ_007_NPMActionMap` (the `whoami` and `ping` cases).
+
+### Q-AUTHZ-168 · A listing through a virtual repository decides its rows as reads through it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the read scope of a listing (`authz.ReadScoper.ReadScopeOn`, [api-and-ui.md](api-and-ui.md) R-API-029) classifies repositories and decides single rows with `MayRead`. It built each row's coordinate without `Addressed`. The package screens list across repositories, and there each repository is decided on its own. NuGet's merged search (R-NUGET-018) lists the rows of a virtual repository's members for the virtual repository: decided on the members, the exposure of the members applied instead of the virtual repository's (Q-EP-11), and a token scoped to the virtual key (Q-AUTHZ-163) found nothing, while the documents of the same repository were decided through it (the code review and the security audit of 2026-11-02).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `ReadScopeOn` takes the addressed repository; `""` decides each key on its own; a key the addressed repository is not and does not reach is `ReadNone` (chosen) | `MayRead` sets `Coordinate.Addressed`; the formats' `Resolver.ReadScope` passes `rq.Addressed()`; the package screens and the endpoint check pass `""` | `MayRead` is `DecideOn` for the coordinate a request through the virtual repository has, so the exposure of the addressed repository and the lift apply as they do to a document; the frozen `Resolver` signature stays | Every caller of `ReadScopeOn` chooses the addressed repository |
+| (b) A second method for a listing through a virtual repository | `ReadScopeThrough(idx, sub, virtual, keys)` | The existing callers stay untouched | Two near-equal methods that must agree with `DecideOn` |
+| (c) Leave the decision point as it is and let the format filter | The format applies the virtual repository's view | No change here | The lift can only be applied by the decision point; every format would repeat Q-EP-11 |
+
+**Choice:** (a). The shape of a key the addressed repository reaches is classified as before: an endpoint with rules or a scope with elements makes it `ReadRows`, so no row is admitted without `MayRead`. A key that is neither the addressed repository nor reached by it (`Index.reaches`) is `ReadNone`, and `MayRead` answers false for it: the listing asked about a read no client made through that repository.
+
+**Rationale:** the addressed repository is a fact of the request (Q-AUTHZ-165), and a listing that belongs to a request must be decided the way the request's documents are. The development agent revisits this when nested virtual repositories arrive: the reach walk then needs the visited set of H-327, and `Addressed` stays the outermost repository.
+
+**Applied in the spec:** R-AUTHZ-009 rule 4; [formats/nuget.md](formats/nuget.md) R-NUGET-018 step 1 (Q-NUGET-75). Code: `internal/authz/visible.go` (`ReadScopeOn`, `readScope.MayRead`, `Index.addressedReaches`), `internal/formathost/virtual.go` (`ReadScope`), `internal/api/v1/packages_api.go` and `endpoints_api.go` (pass `""`). Tests: `TestQ_AUTHZ_168_AListingThroughAVirtualRepositoryAppliesItsExposure`, `TestQ_AUTHZ_168_AListingThroughAVirtualRepositoryLiftsATokenScopeThatNamesIt`, `TestQ_AUTHZ_168_ARepositoryTheAddressedOneDoesNotReachIsNotListed`, `TestQ_AUTHZ_168_AReadScopeThroughAVirtualRepositoryAgreesWithTheDecisionPoint`, `TestR_API_029_BridgeReadScope`.
 
 ### Q-AUTHZ-169 · A technical account for a project belongs to the project
 

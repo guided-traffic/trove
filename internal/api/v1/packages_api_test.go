@@ -86,7 +86,7 @@ func (packagesDecider) ReadableOn(context.Context, *authz.Index, authz.Subject, 
 
 type packagesScoper struct{}
 
-func (packagesScoper) ReadScopeOn(context.Context, *authz.Index, authz.Subject, []string) (authz.ReadScope, error) {
+func (packagesScoper) ReadScopeOn(context.Context, *authz.Index, authz.Subject, string, []string) (authz.ReadScope, error) {
 	return nil, nil
 }
 

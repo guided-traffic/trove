@@ -29,7 +29,7 @@ type checkScoper struct {
 	keys  []string
 }
 
-func (s *checkScoper) ReadScopeOn(_ context.Context, _ *authz.Index, _ authz.Subject, keys []string) (authz.ReadScope, error) {
+func (s *checkScoper) ReadScopeOn(_ context.Context, _ *authz.Index, _ authz.Subject, _ string, keys []string) (authz.ReadScope, error) {
 	s.keys = keys
 	if s.err != nil {
 		return nil, s.err

@@ -99,6 +99,9 @@ func (s *Store) Search(ctx context.Context, query rows.SearchQuery) ([]rows.Sear
 	if query.Limit <= 0 {
 		return nil, nil
 	}
+	if query.PerVersion {
+		return s.searchScan(ctx, query)
+	}
 	terms, err := termsJSON(query.Terms)
 	if err != nil {
 		return nil, err
@@ -166,6 +169,66 @@ func (s *Store) searchVersions(ctx context.Context, query rows.SearchQuery) ([]r
 	return out, err
 }
 
+// searchScan runs the scan of a caller who may read only some versions (Q-NUGET-74): every
+// listed visible version of a candidate with whether it satisfies the terms, keys only.
+func (s *Store) searchScan(ctx context.Context, query rows.SearchQuery) ([]rows.SearchHit, error) {
+	terms, err := termsJSON(query.Terms)
+	if err != nil {
+		return nil, err
+	}
+	var out []rows.SearchHit
+	err = s.o.DB.InTx(ctx, func(tx meta.Tx) error {
+		out = nil
+		qs, err := searchQueries(tx)
+		if err != nil {
+			return err
+		}
+		rs, err := qs.NuGetSearchScan(ctx, q.NuGetSearchScanParams{
+			RepositoryID: query.RepoID, Prerelease: query.Prerelease, Semver2: query.SemVer2, Terms: terms,
+			RowOffset: int64(max(query.Offset, 0)), RowLimit: int64(query.Limit),
+		})
+		if err != nil {
+			return err
+		}
+		for _, r := range rs {
+			h, err := scanHitOf(r.LowerID, r.Versions)
+			if err != nil {
+				return err
+			}
+			out = append(out, h)
+		}
+		return nil
+	})
+	return out, err
+}
+
+// scanHitOf builds the hit of a scan row: the listed visible versions with their match flags,
+// Latest the highest of them without metadata.
+func scanHitOf(lowerID, versions string) (rows.SearchHit, error) {
+	var vs []versionDoc
+	if err := json.Unmarshal([]byte(versions), &vs); err != nil {
+		return rows.SearchHit{}, errs.E(errs.Internal, errs.CodeInternal, "", errs.WithCause(err))
+	}
+	h := rows.SearchHit{LowerID: lowerID}
+	for _, v := range vs {
+		at, err := parseTime(v.At)
+		if err != nil {
+			return rows.SearchHit{}, err
+		}
+		h.Listed = append(h.Listed, rows.VersionEntry{
+			VersionID: v.ID, LowerVersion: v.Lower, FullVersion: v.Full, DeclaredID: v.Declared,
+			Listed: true, IsPrerelease: v.Pre, IsSemver2: v.SV2, PublishedAt: at,
+		})
+		h.ListedTypes = append(h.ListedTypes, v.Types)
+		h.ListedMatch = append(h.ListedMatch, v.Matched)
+	}
+	if n := len(h.Listed); n > 0 {
+		h.DisplayName = h.Listed[n-1].DeclaredID
+		h.Latest = rows.RegistrationVersion{VersionEntry: h.Listed[n-1], PackageTypes: h.ListedTypes[n-1]}
+	}
+	return h, nil
+}
+
 // hitRow is the shape both search statements return a package in.
 type hitRow struct {
 	LowerID, DisplayName, DeclaredID string
@@ -188,6 +251,8 @@ type versionDoc struct {
 	SV2      bool     `json:"sv2"`
 	At       string   `json:"at"`
 	Types    []string `json:"types"`
+	// Matched is m of the scan statement; the other statements do not set it.
+	Matched bool `json:"m"`
 }
 
 func parseTime(s string) (time.Time, error) {

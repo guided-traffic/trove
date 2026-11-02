@@ -36,6 +36,12 @@ The items API is the one road that deletes outside the patterns, and in a disabl
 `content:bypass`, the administrator's cleanup of items stored before a pattern change; every other caller deletes there as
 through `/files/` (Q-AUTHZ-162).
 
+A listing applies the patterns as a read does. NuGet's search neither lists nor counts an ID its repository's patterns keep out,
+and through a virtual repository a member contributes only the IDs that its own patterns and the virtual repository's admit; a
+search has no name, so the routing of the plan applies none and the search decides each ID in its scan
+([handlers_search.go](../../internal/formats/nuget/handlers_search.go) `patternsOf`, Q-NUGET-77;
+`TestR_REPO_005_TheNuGetSearchOfALocalRepositoryAppliesItsPatterns`).
+
 ## The snapshot and the configuration document
 
 The snapshot ([reader.go](../../internal/repository/reader.go)) holds, per repository, the settings that request paths
@@ -152,7 +158,9 @@ the engines hand members to a format themselves (`ServeCheck`, `LocalDocument`, 
 and reads each through the stores therefore reads members the caller has no grant on: the stores answer, and R-AUTHZ-009 rule 2 (a caller lists only what they may
 read) is skipped. Dormant: npm's one loop over `rq.Repo.Members()` (the audit forwarder, [handlers_audit.go](../../internal/formats/npm/handlers_audit.go)) derives each member with `rq.Member` and authorizes it before it reads; NuGet's merged search (R-NUGET-018) fans out over the members of `Resolver.Plan`,
 which leaves out every member the caller cannot read, and `TestR_NUGET_018_SearchMergesTheLocalMembers` ("a caller sees what the members it may read hold")
-pins a caller without a grant on one member, so the gap stays dormant. What makes it real: a handler that iterates `rq.Repo.Members()`.
+pins a caller without a grant on one member, so the gap stays dormant. The same search reads `rq.Repo.Members()` for one thing, the include and exclude
+patterns of the members of the plan (`memberPatterns` in [search_virtual.go](../../internal/formats/nuget/search_virtual.go), Q-NUGET-77), and reads no
+store through that list. What makes it real: a handler that iterates `rq.Repo.Members()` and reads the stores of what it finds.
 
 ### H-274 · A stored claim that does not parse protects nothing
 
@@ -185,15 +193,3 @@ for another. The rule is deliberate: trove never rewrites what a client sent, an
 therefore matches exactly the bytes it is written with. What makes it real: a repository whose uploaders are not
 trusted and whose consumers pick files by reading names; the remedy is to grant `deploy` only to accounts that
 publish.
-
-### H-344 · The NuGet search of a local repository ignores its include and exclude patterns
-
-Stage: `GET …/v3/search` on a local NuGet repository ([handlers_search.go](../../internal/formats/nuget/handlers_search.go)).
-
-Subject: the IDs, descriptions and versions of packages the repository's patterns keep out of what it serves.
-
-Live today (confirmed by reading the code; found by the security audit of 2026-11-02). The repository's include and exclude patterns are applied to its
-documents and files and to the package list, but the search handler checks no pattern. An administrator who adds `excludePatterns: ["Secret.*"]` to stop a
-local repository serving those packages still has them listed by `q=secret`, with description and versions, while their documents answer 404. What makes
-it real: patterns used to withdraw packages that stay stored. The fix applies `rq.Repo.Admits` to each hit (open finding F-21 of
-[promt.md](../projektplan/promt.md#8--open-findings)).

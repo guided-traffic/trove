@@ -233,6 +233,115 @@ func (q *Queries) NuGetSearchPage(ctx context.Context, arg NuGetSearchPageParams
 	return items, nil
 }
 
+const nuGetSearchScan = `-- name: NuGetSearchScan :many
+WITH terms AS MATERIALIZED (
+    SELECT e ->> 'field' AS field, e ->> 'value' AS value, NULLIF(e ->> 'tsq', '')::tsquery AS tsq,
+           NULLIF(e ->> 'tsq_id', '')::tsquery AS tsq_id
+      FROM jsonb_array_elements($3::text::jsonb) AS e
+), visible AS (
+    SELECT nv.version_id, nv.lower_id, nv.declared_id, nv.sort_key, nv.package_types, nv.search_doc,
+           nv.is_prerelease, nv.is_semver2, nv.published_at, pv.version AS lower_version, pv.display_version,
+           NOT EXISTS (
+               SELECT 1 FROM terms t
+                WHERE t.field <> 'version' AND NOT COALESCE(CASE t.field
+                      WHEN '' THEN strpos(nv.lower_id, t.value) > 0 OR nv.search_doc @@ t.tsq
+                      WHEN 'id' THEN strpos(nv.lower_id, t.value) > 0
+                      WHEN 'packageid' THEN nv.lower_id = t.value
+                      WHEN 'title' THEN to_tsvector('simple', COALESCE(nv.metadata ->> 'title', '')) @@ t.tsq
+                      WHEN 'tags' THEN to_tsvector('simple', COALESCE(nv.metadata ->> 'tags', '')) @@ t.tsq
+                      WHEN 'author' THEN to_tsvector('simple', COALESCE(nv.metadata ->> 'authors', '')) @@ t.tsq
+                      WHEN 'description' THEN to_tsvector('simple', COALESCE(nv.metadata ->> 'description', '')) @@ t.tsq
+                      WHEN 'summary' THEN to_tsvector('simple', COALESCE(nv.metadata ->> 'summary', '')) @@ t.tsq
+                      ELSE false
+                      END, false)) AS matched
+      FROM nuget_version nv
+      JOIN package_versions pv ON pv.id = nv.version_id
+     WHERE nv.repository_id = $4::bigint
+       AND nv.listed AND pv.trashed_at IS NULL
+       AND ($5::boolean OR NOT nv.is_prerelease)
+       AND ($6::boolean OR NOT nv.is_semver2)
+), candidates AS (
+    SELECT v.lower_id,
+           (array_agg(v.search_doc ORDER BY v.sort_key DESC))[1] AS latest_doc,
+           array_agg(v.lower_version) AS lower_versions,
+           jsonb_agg(jsonb_build_object(
+               'id', v.version_id, 'lower', v.lower_version, 'full', v.display_version, 'declared', v.declared_id,
+               'pre', v.is_prerelease, 'sv2', v.is_semver2, 'at', v.published_at, 'types', v.package_types, 'm', v.matched)
+             ORDER BY v.sort_key) AS versions
+      FROM visible v
+     GROUP BY v.lower_id
+    HAVING bool_or(v.matched)
+), ranked AS (
+    SELECT c.lower_id, c.versions,
+           COALESCE((SELECT min(CASE
+                          WHEN c.lower_id = t.value THEN 0
+                          WHEN starts_with(c.lower_id, t.value) THEN 1
+                          WHEN strpos(c.lower_id, t.value) > 0 OR COALESCE(c.latest_doc @@ t.tsq_id, false) THEN 2
+                          ELSE 3 END)
+                       FROM terms t WHERE t.field = ''), 3) AS tier
+      FROM candidates c
+     WHERE NOT EXISTS (
+           SELECT 1 FROM terms t
+            WHERE t.field = 'version' AND (t.value = '' OR NOT (t.value = ANY (c.lower_versions))))
+)
+SELECT r.lower_id, r.versions::text AS versions
+  FROM ranked r
+ ORDER BY r.tier, r.lower_id COLLATE "C"
+OFFSET $1::bigint LIMIT $2::bigint
+`
+
+type NuGetSearchScanParams struct {
+	RowOffset    int64
+	RowLimit     int64
+	Terms        string
+	RepositoryID int64
+	Prerelease   bool
+	Semver2      bool
+}
+
+type NuGetSearchScanRow struct {
+	LowerID  string
+	Versions string
+}
+
+// The scan of a caller whose read is decided per version (Q-NUGET-45, Q-NUGET-74): the terms
+// are tested on the row of every listed visible version, not on the latest alone, because the
+// latest version may be one the caller cannot read. A package is a candidate when some version
+// satisfies every term but the version: terms, and every version: term names one of its listed
+// visible versions. Each element of versions carries m, whether that version satisfies every
+// term but the version: terms; the format then applies the text terms to the latest version
+// the caller may read and the version: terms to the versions the caller may read, so a hidden
+// version decides neither whether a package matches nor what is counted. The rank is the one
+// of NuGetSearchPage, the tier of the latest visible version, so a caller who reads the
+// repository whole and one who reads it row by row see the packages in one order. Keys only:
+// the page is read afterwards with NuGetSearchVersions.
+func (q *Queries) NuGetSearchScan(ctx context.Context, arg NuGetSearchScanParams) ([]NuGetSearchScanRow, error) {
+	rows, err := q.db.Query(ctx, nuGetSearchScan,
+		arg.RowOffset,
+		arg.RowLimit,
+		arg.Terms,
+		arg.RepositoryID,
+		arg.Prerelease,
+		arg.Semver2,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NuGetSearchScanRow{}
+	for rows.Next() {
+		var i NuGetSearchScanRow
+		if err := rows.Scan(&i.LowerID, &i.Versions); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const nuGetSearchVersions = `-- name: NuGetSearchVersions :many
 WITH want AS (
     SELECT e ->> 'lower_id' AS lower_id, e ->> 'lower_version' AS lower_version

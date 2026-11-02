@@ -426,8 +426,8 @@ func (s *Store) Registration(_ context.Context, repo int64, lowerID string) (row
 // Search matches the terms against the text parts of the packages' visible versions with
 // a case-insensitive substring match: the twin has no text search configuration, so it
 // answers what a test of the format needs (which packages, in which order) and not the
-// ranking of PostgreSQL. It honours the page (Offset, Limit), KeysOnly and Only as the
-// database does.
+// ranking of PostgreSQL. It honours the page (Offset, Limit), KeysOnly, PerVersion and Only
+// as the database does.
 func (s *Store) Search(_ context.Context, q rows.SearchQuery) ([]rows.SearchHit, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -477,11 +477,18 @@ func (s *Store) matching(q rows.SearchQuery) []rows.SearchHit {
 		if len(visible) == 0 {
 			continue
 		}
+		if q.PerVersion {
+			if h, ok := perVersionHit(id, visible, q.Terms); ok {
+				hits = append(hits, h)
+			}
+			continue
+		}
 		latest := visible[len(visible)-1]
 		if q.PackageType != "" && !slices.Contains(latest.in.PackageTypes, q.PackageType) {
 			continue
 		}
-		if !matches(latest.in, id, q.Terms) {
+		text, ok := namesVisible(visible, q.Terms)
+		if !ok || !matches(latest.in, id, text) {
 			continue
 		}
 		hits = append(hits, hit(id, visible, q.KeysOnly))
@@ -524,6 +531,41 @@ func hit(id string, visible []*verRec, keysOnly bool) rows.SearchHit {
 		h.ListedTypes = append(h.ListedTypes, slices.Clone(r.in.PackageTypes))
 	}
 	return h
+}
+
+// perVersionHit is the hit of a PerVersion scan as the database builds it: every visible
+// version with whether it satisfies the terms but the version: terms, and no hit unless some
+// version does and every version: term names a visible version. A version: term compares the
+// URL form whole, as the statement does.
+func perVersionHit(id string, visible []*verRec, terms []rows.SearchTerm) (rows.SearchHit, bool) {
+	text, ok := namesVisible(visible, terms)
+	if !ok {
+		return rows.SearchHit{}, false
+	}
+	h := hit(id, visible, true)
+	some := false
+	for _, r := range visible {
+		m := matches(r.in, id, text)
+		h.ListedMatch = append(h.ListedMatch, m)
+		some = some || m
+	}
+	return h, some
+}
+
+// namesVisible splits the terms: ok is whether every version: term names one of the visible
+// versions (the URL form whole, a term that is no version names none), and text the other
+// terms, which the caller matches against a version's text.
+func namesVisible(visible []*verRec, terms []rows.SearchTerm) (text []rows.SearchTerm, ok bool) {
+	for _, t := range terms {
+		if t.Field != "version" {
+			text = append(text, t)
+			continue
+		}
+		if t.Value == "" || !slices.ContainsFunc(visible, func(r *verRec) bool { return r.in.LowerVersion == t.Value }) {
+			return nil, false
+		}
+	}
+	return text, true
 }
 
 func matches(in rows.VersionInput, id string, terms []rows.SearchTerm) bool {

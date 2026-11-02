@@ -42,7 +42,7 @@ func TestR_API_029_ReadScopeShapes(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		rs, err := e.ReadScopeOn(context.Background(), idx, sub, keys)
+		rs, err := e.ReadScopeOn(context.Background(), idx, sub, "", keys)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -105,7 +105,7 @@ func TestR_API_029_ReadScopeAgreesWithTheDecisionPoint(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			rs, err := e.ReadScopeOn(ctx, idx, sub, keys)
+			rs, err := e.ReadScopeOn(ctx, idx, sub, "", keys)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -154,7 +154,7 @@ func TestR_API_029_ReadScopeExposureDecidesVersions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rs, err := e.ReadScopeOn(context.Background(), idx, sub, []string{"npm-a", "npm-b"})
+	rs, err := e.ReadScopeOn(context.Background(), idx, sub, "", []string{"npm-a", "npm-b"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -77,7 +77,7 @@ func (s *Server) packageScope(r *http.Request, ps PackageServices, req view.Scop
 	if err != nil {
 		return ctx, view.Scope{}, err
 	}
-	rs, err := ps.Scoper.ReadScopeOn(ctx, acc.Index(), acc.Subject, topo.Physical())
+	rs, err := ps.Scoper.ReadScopeOn(ctx, acc.Index(), acc.Subject, "", topo.Physical())
 	if err != nil {
 		return ctx, view.Scope{}, err
 	}

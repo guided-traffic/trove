@@ -38,6 +38,9 @@ type exposureEnv struct {
 	// opsPAT administers through the default endpoint, devPAT deploys, acmeSAT reads and is
 	// bound to customers.
 	opsPAT, devPAT, acmeSAT string
+	// acmeScoped is a token of customer-acme bound to customers and scoped to read on
+	// nuget-customers by its key, as the setup page creates one (set by the virtual fixture).
+	acmeScoped string
 	// epoch is the authz epoch of the last rule write.
 	epoch string
 }
@@ -299,4 +302,168 @@ func TestR_EP_018_NuGetRuleChangeFailsTheEarlierValidatorOnEveryReplica(t *testi
 			t.Fatalf("%s: the file of the version the rule now hides: %d", r.Name, a.Status)
 		}
 	}
+}
+
+// newVirtualExposureEnv is the fixture of E3.7 as the worked example of endpoints.md builds it:
+// nuget-customers is a virtual repository over the internal local repository nuget-internal, the
+// packages are pushed to nuget-internal, and the rule names the virtual repository. customer-acme
+// reads nuget-customers and its member; acmeScoped is its token scoped to the virtual key.
+func newVirtualExposureEnv(t *testing.T) *exposureEnv {
+	t.Helper()
+	st := testenv.NewStack(t, testenv.StackOptions{Name: "nugetexpv"})
+	x := &exposureEnv{t: t, st: st}
+	ops, dev, acme := st.User("ops"), st.User("dev"), st.ServiceAccount("customer-acme")
+	st.Bind("admin", ops)
+	st.Repository("nuget-internal", "local", "nuget", "{}")
+	st.Repository("nuget-customers", "virtual", "nuget", "{}")
+	st.Exec(`INSERT INTO virtual_members (virtual_id, position, member_id)
+		SELECT v.id, 0, m.id FROM repositories v, repositories m WHERE v.key = 'nuget-customers' AND m.key = 'nuget-internal'`)
+	st.Policy("internal-publish", []string{"read", "deploy", "delete"}, []string{"nuget-internal", "nuget-customers"}, dev)
+	st.Policy("customers-read", []string{"read"}, []string{"nuget-customers", "nuget-internal"}, acme)
+	x.opsPAT = st.Token(ops, scope.Scope{Inherit: true, Admin: true})
+	x.devPAT = st.Token(dev, scope.Default())
+	x.acmeSAT = st.Token(acme, scope.Scope{Inherit: true, Endpoints: []string{"customers"}})
+	x.acmeScoped = st.Token(acme, scope.Scope{
+		Repositories: []scope.Grant{{Repositories: []string{"nuget-customers"}, Actions: []string{"read"}}},
+		Endpoints:    []string{"customers"},
+	})
+	x.reps = append(x.reps, st.Start(t, testenv.ReplicaOptions{Name: "web-a", Endpoints: customersEndpoint}))
+	for _, p := range []pkgSpec{
+		{id: "Acme.Sdk", version: "1.9.0"},
+		{id: "Acme.Sdk", version: "2.0.0"},
+		{id: "Acme.Sdk", version: "2.1.0-beta.1"},
+		{id: "Acme.Sdk", version: "2.1.0"},
+		{id: "Acme.Sdk.Internal", version: "1.0.0"},
+		{id: "Acme.Billing", version: "3.0.0"},
+	} {
+		body, ct := form(t, nupkg(t, p))
+		if a := st.Do(x.reps[0], "PUT", "/api/nuget/nuget-internal/v3/package", x.devPAT, body, "Content-Type", ct); a.Status != http.StatusCreated {
+			t.Fatalf("push %s %s: %d %s", p.id, p.version, a.Status, a.Body)
+		}
+	}
+	a := x.api("POST", "/api/v1/endpoints/customers/exposure-rules", []byte(sdkRule))
+	if a.Status != http.StatusCreated {
+		t.Fatalf("create the rule on the virtual repository: %d %s", a.Status, a.Body)
+	}
+	x.epoch = a.Header.Get("Trove-Authz-Epoch")
+	return x
+}
+
+// searchAnswer is the part of a search answer the exposure tests read.
+type searchAnswer struct {
+	TotalHits int `json:"totalHits"`
+	Data      []struct {
+		ID       string `json:"id"`
+		Version  string `json:"version"`
+		Versions []struct {
+			Version string `json:"version"`
+		} `json:"versions"`
+	} `json:"data"`
+}
+
+func (s searchAnswer) versions(i int) []string {
+	var out []string
+	for _, v := range s.Data[i].Versions {
+		out = append(out, v.Version)
+	}
+	return out
+}
+
+// searchOnCustomers searches nuget-customers on the customers listener with a token.
+func (x *exposureEnv) searchOnCustomers(token, query string) (searchAnswer, testenv.Answer) {
+	x.t.Helper()
+	a := x.st.DoAt(x.reps[0].Addr("customers"), customersHost, "GET", "/api/nuget/nuget-customers/v3/search?"+query, token, nil,
+		"Trove-Authz-Min-Epoch", x.epoch)
+	var s searchAnswer
+	jsonOf(x.t, a, &s)
+	return s, a
+}
+
+// TestR_NUGET_034_SearchThroughAVirtualRepositoryOnAnEndpointWithRules: E3.7 with nuget-customers
+// as the virtual repository the spec's worked example makes it. The search decides exposure on the
+// virtual repository the client addressed, as its documents do, so it lists exactly the exposed
+// versions; a token scoped to the virtual repository by its key finds them too (Q-AUTHZ-163,
+// Q-AUTHZ-168, Q-NUGET-75).
+func TestR_NUGET_034_SearchThroughAVirtualRepositoryOnAnEndpointWithRules(t *testing.T) {
+	x := newVirtualExposureEnv(t)
+	r := x.reps[0]
+	if got := listed(t, x.onCustomers(r, "GET", "v3/flatcontainer/acme.sdk/index.json", nil)); !slices.Equal(got, []string{"2.0.0", "2.1.0"}) {
+		t.Fatalf("the version list of the virtual repository on customers: %v", got)
+	}
+	for name, token := range map[string]string{"the bound service account": x.acmeSAT, "a token scoped to the virtual key": x.acmeScoped} {
+		t.Run("R-NUGET-034 E3.7 "+name, func(t *testing.T) {
+			for _, query := range []string{"q=acme&prerelease=true", "q=acme", "q=packageid:acme.sdk&prerelease=true&semVerLevel=2.0.0", ""} {
+				s, a := x.searchOnCustomers(token, query)
+				if s.TotalHits != 1 || len(s.Data) != 1 || s.Data[0].ID != "Acme.Sdk" || s.Data[0].Version != "2.1.0" ||
+					!slices.Equal(s.versions(0), []string{"2.0.0", "2.1.0"}) {
+					t.Fatalf("search?%s: %s", query, a.Body)
+				}
+				for _, hidden := range []string{"1.9.0", "beta", "Internal", "Billing", testenv.DefaultHost} {
+					if strings.Contains(string(a.Body), hidden) {
+						t.Fatalf("search?%s names %q: %s", query, hidden, a.Body)
+					}
+				}
+			}
+		})
+	}
+	t.Run("R-NUGET-034 Q-AUTHZ-163 the token scoped to the virtual key does not open the member on its own", func(t *testing.T) {
+		a := x.st.DoAt(r.Addr("customers"), customersHost, "GET", "/api/nuget/nuget-internal/v3/search?q=acme", x.acmeScoped, nil, "Trove-Authz-Min-Epoch", x.epoch)
+		if a.Status != http.StatusNotFound {
+			t.Fatalf("the member addressed on its own: %d %s", a.Status, a.Body)
+		}
+	})
+}
+
+// TestR_NUGET_034_SearchTermsMeetOnlyExposedVersions: on PostgreSQL, a version: term and a
+// description: term that match only a hidden version list nothing and are not counted, and a
+// word of the latest exposed version finds the package although a hidden pre-release is newer
+// (Q-NUGET-74). The default endpoint, which reads every version, still matches the latest visible
+// version.
+func TestR_NUGET_034_SearchTermsMeetOnlyExposedVersions(t *testing.T) {
+	x := newExposureEnv(t, 1)
+	r := x.reps[0]
+	body, ct := form(t, nupkg(t, pkgSpec{id: "Acme.Sdk", version: "3.0.0-rc.1", description: "Zebra preview"}))
+	if a := x.st.Do(r, "PUT", "/api/nuget/nuget-customers/v3/package", x.devPAT, body, "Content-Type", ct); a.Status != http.StatusCreated {
+		t.Fatalf("push 3.0.0-rc.1: %d %s", a.Status, a.Body)
+	}
+	const all = "&prerelease=true&semVerLevel=2.0.0"
+	for _, c := range []struct {
+		name, query string
+		total       int
+	}{
+		{"a version: term of a hidden older version", "q=packageid:acme.sdk+version:1.9.0" + all, 0},
+		{"a version: term of a hidden pre-release", "q=packageid:acme.sdk+version:3.0.0-rc.1" + all, 0},
+		{"a version: term of a hidden pre-release of an exposed release line", "q=packageid:acme.sdk+version:2.1.0-beta.1" + all, 0},
+		{"a version: term of a version that does not exist", "q=packageid:acme.sdk+version:9.9.9" + all, 0},
+		{"a description: term of the hidden pre-release", "q=description:zebra" + all, 0},
+		{"a free-text term of the hidden pre-release", "q=zebra" + all, 0},
+		{"a version: term of an exposed version", "q=packageid:acme.sdk+version:2.0.0" + all, 1},
+		{"a description: term of the latest exposed version under a newer hidden one", "q=description:widgets" + all, 1},
+	} {
+		t.Run("R-NUGET-034 "+c.name, func(t *testing.T) {
+			s, a := x.searchOnCustomers(x.acmeSAT, c.query)
+			if s.TotalHits != c.total || len(s.Data) != c.total {
+				t.Fatalf("search?%s: %s", c.query, a.Body)
+			}
+			if c.total == 1 && (s.Data[0].Version != "2.1.0" || !slices.Equal(s.versions(0), []string{"2.0.0", "2.1.0"})) {
+				t.Fatalf("search?%s shows %s", c.query, a.Body)
+			}
+			for _, hidden := range []string{"1.9.0", "beta", "3.0.0-rc.1", "Zebra"} {
+				if strings.Contains(string(a.Body), hidden) {
+					t.Fatalf("search?%s names %q: %s", c.query, hidden, a.Body)
+				}
+			}
+		})
+	}
+	t.Run("R-NUGET-010 the default endpoint matches the latest visible version", func(t *testing.T) {
+		var s searchAnswer
+		jsonOf(t, x.onDefault(r, "GET", "v3/search?q=description:zebra"+all, nil), &s)
+		if s.TotalHits != 1 || s.Data[0].Version != "3.0.0-rc.1" {
+			t.Fatalf("default endpoint: %+v", s)
+		}
+		jsonOf(t, x.onDefault(r, "GET", "v3/search?q=packageid:acme.sdk+version:1.9.0", nil), &s)
+		if s.TotalHits != 1 {
+			t.Fatalf("default endpoint, version:1.9.0: %+v", s)
+		}
+	})
 }

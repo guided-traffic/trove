@@ -72,6 +72,14 @@ type SearchQuery struct {
 	// KeysOnly leaves the metadata of the latest version out of the hits: a scan that
 	// only decides which packages and versions a caller may read asks for no more.
 	KeysOnly bool
+	// PerVersion is the scan of a caller who may read only some versions (Q-NUGET-74): the
+	// terms are tested on every listed visible version instead of the latest alone. A
+	// package is a hit when some version satisfies every term but the version: terms and
+	// every version: term names one of its listed visible versions; SearchHit.ListedMatch
+	// says which versions satisfy the terms but the version: terms, and PackageType is not
+	// applied. The format then applies the terms to the versions the caller may read. It
+	// implies KeysOnly; the order is the one of the query without it.
+	PerVersion bool
 	// Only, when set, replaces the terms, the type and the page: the hits are the packages
 	// holding one of these listed versions, each with those versions alone, and Latest is
 	// the highest of them. The scan that found the versions has applied the terms and the
@@ -104,4 +112,8 @@ type SearchHit struct {
 	// their lowercased package type names, index for index.
 	Listed      []VersionEntry
 	ListedTypes [][]string
+	// ListedMatch is set by a PerVersion query, index for index with Listed: whether the
+	// version satisfies every term of the query but the version: terms. A version without
+	// an entry matches nothing.
+	ListedMatch []bool
 }

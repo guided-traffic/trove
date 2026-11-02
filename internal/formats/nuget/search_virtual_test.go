@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/guided-traffic/trove/internal/config"
@@ -11,6 +12,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/formattest"
 	"github.com/guided-traffic/trove/internal/formats/nuget/nugettest"
 	"github.com/guided-traffic/trove/internal/formats/nuget/rows"
+	"github.com/guided-traffic/trove/internal/repository"
 )
 
 // perRepoSearch is the search port of several local repositories: a fixed list of hits per
@@ -49,10 +51,21 @@ func virtualSearchHost(t *testing.T, window int, members []formats.PlannedMember
 		res.scope = allScope()
 	}
 	h := virtualHost(t, res, st)
+	withMembers(h, members)
 	if window > 0 {
 		res.f.Bind(h, &config.Config{NuGet: config.NuGet{Search: config.NuGetSearch{DefaultTake: 20, MaxTake: 1000, MaxSkip: 3000, VirtualMergeWindow: window}}}, nil)
 	}
 	return h, st
+}
+
+// withMembers makes the virtual repository of the host hold the planned members, as the
+// snapshot links them: the search reads their patterns there.
+func withMembers(h *formattest.Host, members []formats.PlannedMember) {
+	var repos []repository.Repository
+	for _, m := range members {
+		repos = append(repos, repository.Repository{ID: strconv.FormatInt(m.Member.ID, 10), Key: m.Member.Key, Class: m.Member.Class, Format: string(ID)})
+	}
+	*h.Repo() = repository.Assemble(*h.Repo(), repos, nil, 60)
 }
 
 func idsOf(d searchDoc) []string {

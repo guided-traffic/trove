@@ -148,12 +148,15 @@ func (r *resolver) KeepsAway(ctx context.Context, rq *formats.Request, member fo
 	return r.e.KeepsAway(ctx, via, target, term)
 }
 
-// ReadScope implements [formats.Resolver]: the decision point's unaudited read scope.
+// ReadScope implements [formats.Resolver]: the decision point's unaudited read scope, with every
+// row decided as a read through the repository the client addressed (rq.Addressed()). A virtual
+// repository's search reads its members' rows under the virtual repository's exposure and the
+// lift of a token scope that names it, as its documents do (Q-EP-11, Q-AUTHZ-163, Q-AUTHZ-168).
 func (r *resolver) ReadScope(ctx context.Context, rq *formats.Request, repos []string) (formats.ReadScope, error) {
 	if r.scoper == nil {
 		return nil, errNoResolver()
 	}
-	rs, err := r.scoper.ReadScopeOn(ctx, rq.Index, rq.Subject, repos)
+	rs, err := r.scoper.ReadScopeOn(ctx, rq.Index, rq.Subject, rq.Addressed(), repos)
 	if err != nil {
 		return nil, err
 	}

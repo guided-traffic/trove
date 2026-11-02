@@ -2,7 +2,8 @@
 
 Status: built (M3, phase 4): the push, the unlist, the relist and the delete of a NuGet package, the immutability of a version number
 with its tombstones, and the journal entries of R-NUGET-033. The reads of package content and documents, search, symbols and the
-remote and virtual classes of NuGet are built; the remote class has its own page, [nuget-remote.md](nuget-remote.md), and the
+remote and virtual classes of NuGet are built; the remote class has its own page, [nuget-remote.md](nuget-remote.md), the virtual
+class [nuget-virtual.md](nuget-virtual.md), and the
 exposure of documents and search on endpoints with rules is on [endpoints-and-exposure.md](endpoints-and-exposure.md). The symbol push is below.
 
 This page describes what a caller can do to a local NuGet repository through the protocol and what stops a caller from doing more.
