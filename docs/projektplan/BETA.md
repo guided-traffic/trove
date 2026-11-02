@@ -282,6 +282,12 @@ to denial-of-service attempts.
 - ⚪ How fast a revocation reaches the Bastion (owner, 2026-11-02): the Bastion keeps the main installation's answers for a
   configurable period (some minutes) and follows a revocation feed of the main installation every few seconds, so a
   revoked token or a narrowed right is dropped within seconds; widening a right may take the period
+- ⚪ The main installation unreachable (owner, 2026-11-02): answers the Bastion already holds stay valid for a configurable
+  grace period (proposed 15 minutes) beyond their normal period; callers with a valid answer get cached artifacts and
+  possibly stale metadata, a token the Bastion has not seen gets `503`, and after the grace period it serves nothing
+- ⚪ The main installation counts the real client: the Bastion stops abuse before a request reaches the main installation,
+  and the main installation lists the Bastion's addresses in `server.trusted_proxies`, so its per-address limits apply to
+  the client and not to the Bastion
 - ⚪ Internet exposure (owner, 2026-11-02): rate limits per client address, automatic blocking of addresses that flood it,
   a timeout for an address after too many failed authentication attempts, and a configurable cache (size, retention,
   metadata revalidation)
