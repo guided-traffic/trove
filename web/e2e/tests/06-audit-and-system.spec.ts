@@ -59,7 +59,7 @@ test('R-UI-037 R-UI-038 the system status shows every replica and which one answ
   const answered = (await page.locator('dt', { hasText: 'Answered by' }).locator('xpath=following-sibling::dd[1]').innerText()).trim();
   expect(answered).toMatch(/^trove-web-/);
   await expect(page.getByRole('region', { name: /^web\s*live 3/ }).first()).toContainText(answered);
-  await page.getByRole('button', { name: 'Refresh now' }).click();
+  await page.getByRole('button', { name: 'Refresh now', exact: true }).click();
   await page.reload();
   await expect(page.getByRole('heading', { name: 'System status', level: 1 })).toBeVisible();
 
