@@ -45,7 +45,7 @@ type memberResult struct {
 // scope that names it apply, as they do to its documents (Q-EP-11, Q-AUTHZ-163, Q-NUGET-75).
 // The include and exclude patterns of the virtual repository and of each member apply to the
 // IDs that member contributes (R-REPO-005, Q-NUGET-77). At most maxMemberSearches members are
-// asked at once, and the scans of the local members share one budget (Q-NUGET-76). Remote
+// asked at once, and the scans of the members share one budget (Q-NUGET-76). Remote
 // members are asked by the forwarded search of R-NUGET-016, which joins at
 // [Format.searchRemote].
 func (f *Format) runVirtualSearch(ctx context.Context, rq *formats.Request, st Store, p search.Params) ([]rows.SearchHit, int, error) {
@@ -109,7 +109,7 @@ func (f *Format) runVirtualSearch(ctx context.Context, rq *formats.Request, st S
 				results[i].hits, results[i].total, results[i].err = searchRepo(ctx, st, scope, t, mp, budget)
 				return
 			}
-			results[i].hits, results[i].total, results[i].err = f.searchRemote(ctx, rq, m, mp)
+			results[i].hits, results[i].total, results[i].err = f.searchRemote(ctx, rq, st, m, mp, admits[m.Member.Key], budget)
 		}()
 	}
 	wg.Wait()
@@ -209,13 +209,26 @@ func exposedHit(view formats.ExposureView, h rows.SearchHit) (rows.SearchHit, bo
 		}
 		out.Listed, out.ListedTypes = append(out.Listed, v), append(out.ListedTypes, types)
 	}
+	// A forwarded hit counts the downloads of the versions it shows, as readableOnly does for
+	// the versions a caller may read (Q-NUGET-78).
+	if fw := h.Latest.Forwarded; fw != nil && len(out.Listed) < len(h.Listed) {
+		shown := *fw
+		shown.TotalDownloads = 0
+		for _, v := range out.Listed {
+			shown.TotalDownloads += v.Downloads
+		}
+		out.Latest.Forwarded = &shown
+	}
 	return out, true
 }
 
 // searchRemote is the search of a remote member: its forwarded search of R-NUGET-016 with the
 // withheld-query rule of this virtual repository, or its cache-only search (search_remote.go).
-func (f *Format) searchRemote(ctx context.Context, rq *formats.Request, m formats.PlannedMember, p search.Params) ([]rows.SearchHit, int, error) {
-	return f.searchRemoteMember(ctx, rq, m, p)
+// The cache-only search scans with the member's and the virtual repository's patterns (admits)
+// on the request's budget, as a local member does, so its count is exact; a forwarded count is
+// the upstream's less what the page removed (H-346, H-347).
+func (f *Format) searchRemote(ctx context.Context, rq *formats.Request, st Store, m formats.PlannedMember, p search.Params, admits func(string) bool, budget *scanBudget) ([]rows.SearchHit, int, error) {
+	return f.searchRemoteMember(ctx, rq, st, m, p, admits, budget)
 }
 
 // exactIDs are the values of the terms that name an ID whole: a free-text word or an id: /

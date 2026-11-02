@@ -357,6 +357,7 @@ candidates (not to the page): a query that matches a large repository, repeated,
 pays the scan again because nothing caches it. A caller with an unrestricted read (`ReadAll`) of a repository without patterns is counted and
 paged by SQL and pays no scan. What bounds it today is the 1,024-byte and 16-term limit of `q` and the 200,000 cap; nothing caches or
 rate-limits the scan itself. Closing it needs the readable package names handed to the statement (the condition is in Q-NUGET-45 and
-Q-NUGET-74); H-299 is the same cost for the package list. Through a virtual repository the scans of the local members share the one budget of
+Q-NUGET-74); H-299 is the same cost for the package list. Through a virtual repository the scans of the members, a remote member's
+cache-only search included, share the one budget of
 200,000 packages, and at most four members are asked at once ([search_virtual.go](../../internal/formats/nuget/search_virtual.go), Q-NUGET-76),
 so a request holds at most four database connections and looks at no more packages than one repository may, whatever the number of members.

@@ -51,26 +51,32 @@ type searchSource struct {
 	// merged says that a virtual repository merges the results: it removes what its claims and
 	// pin rules keep away itself (R-NUGET-018 step 2), so the results are not asked about twice.
 	merged bool
+	// admits is the test of the include and exclude patterns the cache-only search applies in its
+	// scan: the remote's own and, for a member, the virtual repository's as well (Q-NUGET-77), so
+	// that the count it reports holds no ID the merge would remove. nil when none restricts.
+	admits func(lowerID string) bool
+	// budget is the scan budget of the request; the members of a virtual repository share one
+	// (Q-NUGET-76).
+	budget *scanBudget
 }
 
 // runRemoteSearch is runSearch for a remote repository addressed directly.
 func (f *Format) runRemoteSearch(ctx context.Context, rq *formats.Request, st Store, p search.Params) ([]rows.SearchHit, int, error) {
-	return f.remoteSearch(ctx, searchSource{rq: rq, call: rq, ref: rq.RepoRef()}, st, p)
+	s := searchSource{rq: rq, call: rq, ref: rq.RepoRef(), admits: patternsOf(rq.Repo), budget: newScanBudget()}
+	return f.remoteSearch(ctx, s, st, p)
 }
 
 // searchRemoteMember is the search of a remote member of a virtual repository: the forwarded
 // search of the member with the virtual repository's claims and pin rules, or its cache-only
-// search (R-NUGET-018 step 1).
-func (f *Format) searchRemoteMember(ctx context.Context, rq *formats.Request, m formats.PlannedMember, p search.Params) ([]rows.SearchHit, int, error) {
+// search (R-NUGET-018 step 1) with the patterns the merge applies to the member (admits) and the
+// request's scan budget.
+func (f *Format) searchRemoteMember(ctx context.Context, rq *formats.Request, st Store, m formats.PlannedMember, p search.Params, admits func(string) bool, budget *scanBudget) ([]rows.SearchHit, int, error) {
 	call, err := memberRequest(rq, m.Member.Key)
 	if err != nil {
 		return nil, 0, err
 	}
-	st, err := searchStoreOf(rq.Host)
-	if err != nil {
-		return nil, 0, err
-	}
-	return f.remoteSearch(ctx, searchSource{rq: rq, call: call, ref: m.Member, merged: true}, st, p)
+	s := searchSource{rq: rq, call: call, ref: m.Member, merged: true, admits: admits, budget: budget}
+	return f.remoteSearch(ctx, s, st, p)
 }
 
 // remoteSearch answers a search of one remote: forwarded when it may be, else, and when the
@@ -90,7 +96,7 @@ func (f *Format) remoteSearch(ctx context.Context, s searchSource, st Store, p s
 			return hits, total, err
 		}
 	}
-	return searchRepo(ctx, st, scope, searchTarget{key: s.ref.Key, id: s.ref.ID, admits: patternsOf(s.call.Repo)}, p, newScanBudget())
+	return searchRepo(ctx, st, scope, searchTarget{key: s.ref.Key, id: s.ref.ID, admits: s.admits}, p, s.budget)
 }
 
 // mayForward decides whether a query goes to the upstream (R-NUGET-016, Q-NUGET-79): not when the

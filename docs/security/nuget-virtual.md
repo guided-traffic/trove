@@ -53,15 +53,16 @@ pattern, claim or pin rule to a search) and merges their answers.
 - **Rows.** A local member's rows are decided by the caller's read scope for that member, through the virtual repository (Q-AUTHZ-168); a key the
   virtual repository does not reach is read as nothing. The terms are matched per version and applied to the readable versions (Q-NUGET-74).
 - **Patterns.** A member contributes only the IDs its own include and exclude patterns and the virtual repository's admit (Q-NUGET-77); the scan of a
-  local member decides them per ID, a remote member's results are filtered after it answered. The patterns are read from the virtual repository's own
+  local member and the cache-only search of a remote member decide them per ID, a remote member's forwarded results are filtered after it answered. The patterns are read from the virtual repository's own
   member list; no store is read through it (H-329).
 - **Claims and pin rules.** A result of a member is removed when the virtual repository's claims or pin rules keep its ID away from that member
   (`Resolver.KeepsAway`, Q-NUGET-57), so the search never lists what the documents of the same virtual repository deny.
-- **Bounds.** At most four members are asked at once, each local member's scan holds one database connection per batch, and the scans of one request
-  share one budget of 200,000 packages; above it the request answers 400 and never a partial count (Q-NUGET-76). A request whose context ends while it
+- **Bounds.** At most four members are asked at once, remote members included, each scan holds one database connection per batch, and the scans of
+  one request, a remote member's cache-only search included, share one budget of 200,000 packages; above it the request answers 400 and never a partial count (Q-NUGET-76). A request whose context ends while it
   waits for a slot asks no further member.
 - **Count.** `totalHits` is the sum of the members' counts minus the duplicates and removals seen in the merge window (R-NUGET-018 step 6). A local
-  member's count is exact for the caller: its scan applied the read scope and the patterns before it counted.
+  member's count, and the count of a remote member that answers from its cache, is exact for the caller: its scan applied the read scope and the
+  patterns before it counted. A remote member's forwarded count is the upstream's less what the page removed (H-346).
 
 ## Writes: the deployment target
 
@@ -84,24 +85,24 @@ Gaps recorded on the pages of their mechanisms that apply here: the reach of a t
 search scan for a caller whose reads are decided row by row
 ([H-335](permissions.md#h-335--a-nuget-search-by-a-caller-with-row-level-grants-scans-up-to-200000-matches-per-request)); a merged document is filtered
 only where its handler calls the filter
-([H-295](endpoints-and-exposure.md#h-295--a-merged-or-rewritten-document-is-filtered-only-where-its-handler-calls-the-filter)); the validator of a document
-on an endpoint with rules
-([H-343](endpoints-and-exposure.md#h-343--on-an-endpoint-with-rules-a-nuget-documents-etag-changes-with-hidden-versions)); the rank of a search result
+([H-295](endpoints-and-exposure.md#h-295--a-merged-or-rewritten-document-is-filtered-only-where-its-handler-calls-the-filter)); the rank of a search result
 ([H-345](endpoints-and-exposure.md#h-345--the-rank-of-a-nuget-search-result-can-follow-the-id-casing-of-a-hidden-version)); a format that reads a member
 without `rq.Member` ([H-329](repository-model.md#h-329--a-format-that-reads-a-member-without-rqmember-skips-the-per-member-read-check)); a merge that
 ignores `Restricted` ([H-283](repository-model.md#h-283--honouring-restricted-is-up-to-the-formats-merge)).
 
-### H-346 · The merged count takes a remote member's count before the view and the patterns narrow it
+### H-346 · The merged count takes a remote member's forwarded count before the view and the patterns narrow it
 
 Stage: the `totalHits` of the search through a NuGet virtual repository ([search_virtual.go](../../internal/formats/nuget/search_virtual.go)
-`runVirtualSearch`), for a remote member.
+`runVirtualSearch`), for a remote member that forwards the search to its upstream ([search_remote.go](../../internal/formats/nuget/search_remote.go)).
 
 Subject: how many packages of a remote member's upstream match a query, among them packages the endpoint does not expose or the patterns of the virtual
 repository or the member keep out.
 
-Dormant: in this build a remote member contributes nothing to the search (the forwarded search of R-NUGET-016 is not built), so the count is the local
-members' and exact. The merge narrows every result it holds by the view and the patterns, and subtracts what it removed, but only within the merge window
-(`nuget.search.virtual_merge_window`); beyond it, the count a member reports is added as it is. A local member's count is exact because its scan applies
-the scope and the patterns first; a remote member's count is the upstream's. Live once the forwarded search contributes, unless it reduces the count it
-reports to what the view and the patterns admit. What makes it real: a remote member whose upstream is a private feed, served through a virtual repository
-on a customer endpoint; for a public upstream the count is what anyone learns from the upstream itself.
+Live today, narrowly. A remote member that answers from its cache scans with the read scope and with its own and the virtual repository's patterns, as a
+local member does, so its count is exact (`TestR_REPO_005_TheCacheSearchOfARemoteMemberAppliesTheVirtualRepositorysPatterns`). A forwarded count is the
+upstream's less what the remote removed from the page it was asked for (H-347 on [nuget-remote.md](nuget-remote.md)); the merge then narrows every
+result it holds by the view, the patterns and the claims and subtracts what it removed, but only within the merge window
+(`nuget.search.virtual_merge_window`). The upstream's matches beyond that page are counted whatever the view or the virtual repository's patterns say, so
+`take=0` through the virtual repository returns the upstream's count. What makes it real: a remote member whose upstream is a private feed, served
+through a virtual repository on a customer endpoint; for a public upstream the count is what anyone learns from the upstream itself. Closing it is the
+decision H-347 names: a count of what the pages seen support changes the count R-NUGET-034 promises.

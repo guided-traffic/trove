@@ -178,9 +178,9 @@ func searchWhole(ctx context.Context, st Store, q rows.SearchQuery, p search.Par
 
 // scanBudget is the number of packages the scans of one request may still look at. Every batch
 // a scan reads is taken from it, and a scan that goes beyond it answers 400 instead of a count
-// that is partial. The scans of the local members of a virtual repository share one, so a
-// request looks at no more than maxSearchScan packages whatever the number of its members
-// (Q-NUGET-76).
+// that is partial. The scans of the members of a virtual repository share one, the cache-only
+// search of a remote member included, so a request looks at no more than maxSearchScan packages
+// whatever the number of its members (Q-NUGET-76).
 type scanBudget struct{ left atomic.Int64 }
 
 func newScanBudget() *scanBudget {
