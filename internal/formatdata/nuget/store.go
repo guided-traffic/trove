@@ -14,6 +14,12 @@
 // enforces what the database can and writes the audit events of the changes in the
 // transaction of the change (R-OPS-015): package.published, package.deleted and
 // package.metadata_changed, the first two with the journal entry of R-NUGET-033.
+//
+// The jobs over these tables live here too: the indexing of a symbol package (symbols.go)
+// and the background data migration that recomputes is_semver2 of the rows stored before the
+// classification counted dependency ranges (semver2.go, Q-NUGET-93). That job parses the stored
+// version and ranges, but decides with the function of the version leaf the push runs
+// (version.PackageIsSemver2), not with a rule of its own.
 package nuget
 
 import (

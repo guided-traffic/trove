@@ -1,0 +1,11 @@
+{
+"about": "Dependency ranges of a version whose own number is SemVer 1, and whether they make the package SemVer 2.0.0-specific (R-NUGET-004). One table for the push, a remote's fill and the recomputation of stored rows (Q-NUGET-93): internal/formats/nuget/version, internal/formats/nuget and internal/formatdata/nuget read it.",
+"cases": [
+{"name": "a SemVer 1 minimum", "range": "[1.0.0, )", "semver2": false},
+{"name": "a SemVer 1 pre-release maximum", "range": "(, 2.0.0-beta1]", "semver2": false},
+{"name": "a dotted pre-release minimum", "range": "[1.0.0-beta.1, )", "semver2": true},
+{"name": "a dotted pre-release maximum", "range": "(, 2.0.0-rc.1)", "semver2": true},
+{"name": "a bare version with build metadata", "range": "1.0.0+build.5", "semver2": true},
+{"name": "an exact dotted pre-release", "range": "[3.0.0-ci.7]", "semver2": true}
+]
+}

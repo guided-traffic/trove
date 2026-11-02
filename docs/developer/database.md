@@ -107,7 +107,8 @@ with header comments:
    `TestTableRegistry` and `TestRevisionColumns` fail otherwise.
 3. A table with a blob reference: column `blob_sha256`, FK to `blobs`, index, both triggers
    (`TestBlobReferenceRules`).
-4. Never edit an applied file (checksum). Backfills are background data migrations, not migration steps.
+4. Never edit an applied file (checksum). Backfills are background data migrations (R-HA-022), not migration steps; the first is
+   `data_migration_nuget_semver2` ([nuget.md](nuget.md#the-recomputation-of-is_semver2-q-nuget-93)).
 5. Contract steps ship one minor after the release that stopped using the object, with `requires-app`.
 6. Static queries for the new tables go to `queries/*.sql`, then `make generate`.
    A test that injects a migration of its own names it with `nextStep(n, name)`

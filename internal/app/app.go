@@ -22,6 +22,7 @@ import (
 	"github.com/guided-traffic/trove/internal/cache"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/config"
+	nugetdata "github.com/guided-traffic/trove/internal/formatdata/nuget"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/items"
@@ -131,6 +132,7 @@ type App struct {
 	folder     late[*invalidation.Folder]
 	reseal     late[resealDeps]
 	host       late[formats.Host]
+	semver2    late[*nugetdata.Semver2]
 }
 
 // Run runs one replica of a role until ctx ends, then shuts down in the order of

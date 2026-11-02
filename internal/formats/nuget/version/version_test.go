@@ -2,7 +2,9 @@ package version
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -184,6 +186,51 @@ func TestR_NUGET_004_RangeSemver2(t *testing.T) {
 		if got := r.IsSemver2(); got != want {
 			t.Errorf("Range(%q).IsSemver2() = %v, want %v", in, got, want)
 		}
+	}
+}
+
+// dependencyCase is one row of testdata/dependency-semver2.json, the table the push and the
+// recomputation of stored rows decide alike (Q-NUGET-93).
+type dependencyCase struct {
+	Name    string `json:"name"`
+	Range   string `json:"range"`
+	Semver2 bool   `json:"semver2"`
+}
+
+func loadDependencyCases(t *testing.T) []dependencyCase {
+	t.Helper()
+	raw, err := os.ReadFile("testdata/dependency-semver2.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Cases []dependencyCase `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Cases) < 6 {
+		t.Fatalf("%d cases in the table", len(f.Cases))
+	}
+	return f.Cases
+}
+
+// TestR_NUGET_004_PackageSemver2 covers the classification of a package: its version, or a bound
+// of one of its dependency ranges. A range that is empty or does not parse does not count.
+func TestR_NUGET_004_PackageSemver2(t *testing.T) {
+	sv1, sv2 := MustParse("1.0.0"), MustParse("1.0.0-ci.5")
+	for _, c := range loadDependencyCases(t) {
+		t.Run(c.Name, func(t *testing.T) {
+			if got := PackageIsSemver2(sv1, "[13.0.1,)", c.Range); got != c.Semver2 {
+				t.Errorf("PackageIsSemver2(1.0.0, %q) = %v, want %v", c.Range, got, c.Semver2)
+			}
+			if !PackageIsSemver2(sv2, c.Range) {
+				t.Errorf("PackageIsSemver2(1.0.0-ci.5, %q) = false: the version alone decides", c.Range)
+			}
+		})
+	}
+	if PackageIsSemver2(sv1) || PackageIsSemver2(sv1, "") || PackageIsSemver2(sv1, "[1.0.0-ci.5") {
+		t.Error("no range, an empty one or one that does not parse made a SemVer 1 version SemVer 2")
 	}
 }
 

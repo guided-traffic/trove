@@ -251,7 +251,8 @@ The canonical paths under which a NuGet remote repository stores what it fetched
 |---|---|---|
 | Schema | `trove` (`database.schema`) | yes |
 | Migration records | `schema_migration`, `schema_state` (the runtime login may only read them) | yes (`internal/meta/postgres/migrations/`) |
-| Job kinds | `gc`, `gc-full`, `repository-delete`, `items-delete` (one job per deletion), `token-cleanup`, `token-expiry-notice`, `session-cleanup`, `audit-retention`, `idempotency-cleanup`, `secrets-reencrypt` (manual only), `nuget-symbol-index` (one job per symbol package), `cluster-change-prune`, `replica-registry-prune`, `system.probe`. The list of the registrations is in the [job kinds](#job-kinds-and-tasks) reference | yes (`internal/app/wire_*.go`, `internal/jobs`) |
+| Job kinds | `gc`, `gc-full`, `repository-delete`, `items-delete` (one job per deletion), `token-cleanup`, `token-expiry-notice`, `session-cleanup`, `audit-retention`, `idempotency-cleanup`, `secrets-reencrypt` (manual only), `nuget-symbol-index` (one job per symbol package), `data_migration_nuget_semver2` (a background data migration, once per installation), `cluster-change-prune`, `replica-registry-prune`, `system.probe`. The list of the registrations is in the [job kinds](#job-kinds-and-tasks) reference | yes (`internal/app/wire_*.go`, `internal/jobs`) |
+| `system_state` keys | `installation_id`, `keyspace_id`, `incarnation` (the first migration writes them); `nuget_semver2_recomputed`, the completion of `data_migration_nuget_semver2`. `restore_in_progress`, `restored_at` and `deletions_paused_at` are read; nothing in this build writes them | yes (`internal/meta/postgres/migrations/00001_foundation.sql`, `internal/formatdata/nuget/semver2.go`) |
 | Advisory-lock categories | two-`int4` form: `1` lease, `2` fetch (retired, never reused), `3` migration, `4` configuration | yes (`internal/cluster/locks.go`) |
 | Roles and `application_name` | `trove_owner`, `trove_app`, `trove:<replica>:<class>` | planned ([R-HA-014](docs/spec/ha-and-helm.md)) for the role names; the `application_name` is built |
 
@@ -378,6 +379,7 @@ Registrations at start-up, in `internal/app/wire_*.go` and in the packages that 
 | `repository-delete` | `internal/repository/delete.go` | one job per repository deletion, exclusive |
 | `items-delete` | `internal/files/delete.go` | one job per delete of a large subtree, exclusive |
 | `nuget-symbol-index` | `internal/formatdata/nuget/symbols.go` | one job per symbol package, enqueued by the symbol push in its transaction, queue `index`, exclusive per symbol package |
+| `data_migration_nuget_semver2` | `internal/app/wire_formats.go`, `internal/formatdata/nuget/semver2.go` | queued by a `worker` or `all` replica at start-up until its completion is recorded, queue `maintenance`, coalesce; recomputes `is_semver2` of the NuGet versions stored by 0.9.0 and older ([Q-NUGET-93](docs/spec/formats/nuget.md#q-nuget-93--the-versions-stored-before-the-semver-2-classification-counted-dependency-ranges-are-recomputed-once-by-a-background-job-in-go)) |
 | `token-cleanup`, `token-expiry-notice` | `internal/app/wire_identity.go`, `internal/auth/token/tasks.go` | tasks (`maintenance` queue, 3 attempts) |
 | `session-cleanup` | `internal/auth/session/cleanup.go` | task |
 | `audit-retention` | `internal/app/wire_audit.go` | task |

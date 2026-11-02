@@ -162,22 +162,16 @@ func (in *incoming) versionInput(repo formats.RepoRef, versionID int64, c *pushC
 	}, nil
 }
 
-// isSemver2 is the SemVer 2.0.0 classification of the package (R-NUGET-004): its version is
-// SemVer 2.0.0-specific, or a bound of one of its dependency ranges is. readIncoming has parsed
-// every range already; a range that does not parse here cannot occur and does not count.
+// isSemver2 is the SemVer 2.0.0 classification of the package (R-NUGET-004):
+// version.PackageIsSemver2 over its version and its dependency ranges, the rule the
+// recomputation of the rows stored before it applies too (Q-NUGET-93). readIncoming has parsed
+// every range already.
 func (in *incoming) isSemver2() bool {
-	if in.version.IsSemver2() {
-		return true
-	}
+	var ranges []string
 	for _, g := range in.meta.DependencyGroups {
 		for _, d := range g.Dependencies {
-			if d.Range == "" {
-				continue
-			}
-			if r, err := version.ParseRange(d.Range); err == nil && r.IsSemver2() {
-				return true
-			}
+			ranges = append(ranges, d.Range)
 		}
 	}
-	return false
+	return version.PackageIsSemver2(in.version, ranges...)
 }

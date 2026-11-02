@@ -1,6 +1,6 @@
 # Upgrades
 
-This page explains how trove versions its releases, how to upgrade an installation with Helm, how the database migrations run during an upgrade, what to check afterwards, and which parts of the upgrade path are not verified yet.
+This page explains how trove versions its releases, how to upgrade an installation with Helm, how the database migrations run during an upgrade, which corrections of stored data run afterwards, what to check afterwards, and which parts of the upgrade path are not verified yet.
 
 ## Versions and release notes
 
@@ -72,6 +72,14 @@ A new replica that starts before the migration has run stays unready and waits u
 kubectl -n trove exec deploy/trove-web -- /usr/local/bin/trove migrate status
 ```
 
+## Background data migrations
+
+A correction of stored data runs after the upgrade as a job on a worker, not in the migration Job, so the Job does not take longer with more data. This version has one, `data_migration_nuget_semver2`. It finds the NuGet versions stored by 0.9.0 or older that have a dependency range with a SemVer 2.0.0 bound, such as `[2.0.0-rc.1, )`, and marks them SemVer 2.0.0. NuGet clients older than 4.3 then no longer get these versions in the SemVer 1 registrations or in a search without `semVerLevel=2.0.0`.
+
+- The first worker that starts after the upgrade queues it. While a pod of 0.9.0 or older is still live, it waits: the result says `state: waiting` and names those pods, and it tries again a minute later. Once the rollout has finished, it runs.
+- Follow it under **Administration › System › Jobs** with the kind `data_migration_nuget_semver2`. A run that reached the end shows `state: recomputed` with the number of versions it `examined` and `changed` and the `packages` they belong to. A version it could not read is counted as `unreadable` and named in the worker's log.
+- It runs once per installation: trove records the completion in the database, and a worker that starts later queues nothing. A package it changed gets a new revision, so clients and caches see the change.
+
 ## After the upgrade
 
 1. `helm status trove -n trove` shows `deployed`, and `helm history trove -n trove` lists the new revision.
@@ -85,6 +93,13 @@ kubectl -n trove exec deploy/trove-web -- /usr/local/bin/trove migrate status
 ## Rolling back
 
 `helm rollback` runs no migration job: the migration hook runs on install and upgrade only. The schema therefore stays at the newer version, and the older pods start only if the compatibility check admits them, which it does after additive migrations. Rolling back is not tested in this version. If the older version must also run on the older schema, restore the database backup you took before the upgrade along with the rollback; everything written to trove since that backup is lost.
+
+After a rollback to 0.9.0 or older, NuGet versions pushed during the rollback are classified the old way again, and `data_migration_nuget_semver2` does not run again by itself when you upgrade once more. Remove its record, then restart a worker pod, which queues it:
+
+```shell
+psql "$DATABASE_URL" -c "DELETE FROM trove.system_state WHERE key = 'nuget_semver2_recomputed'"   # example connection and schema
+kubectl -n trove rollout restart deploy/trove-worker
+```
 
 ## What is not verified yet
 

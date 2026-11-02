@@ -184,9 +184,8 @@ Details: [roadmap M3](../coverage/roadmap.md#m3--nuget) · spec: [formats/nuget.
 - 🟢 CI checks against the latest release: `api/openapi.yaml` with a breaking-change checker (R-ARCH-025) and the embedded migration files (R-ARCH-026), job `compat` and `make compat-check`
 
 **NuGet v3**
-- 🟡 Local: service index, package content, registrations, search, push, unlist, relist, delete; search terms meet only the
-  versions the caller may read and the repository's patterns apply (Q-NUGET-74, Q-NUGET-77). Open: rows stored before the
-  SemVer 2 classification of dependency ranges keep `is_semver2 = false` (F-30 of [promt.md section 8](promt.md#8--open-findings))
+- 🟢 Local: service index, package content, registrations, search, push, unlist, relist, delete; search terms meet only the
+  versions the caller may read and the repository's patterns apply (Q-NUGET-74, Q-NUGET-77)
 - 🟢 Symbol package push (`.snupkg`): validated and stored, one indexing job per symbol package (Q-NUGET-11)
 - 🟢 Remote: proxy of nuget.org with resource URL rewriting, discovery, re-paging, the identity check of a cached package
   (only content that is no package passes without it, Q-NUGET-84), pages and leaves bounded at the fill and the rendering
@@ -244,7 +243,9 @@ Details: [roadmap M3](../coverage/roadmap.md#m3--nuget) · spec: [formats/nuget.
   claimed package 100 ms after the claim with Valkey and 860 ms after it with Valkey stopped (kind)
 - 🟢 F-27: the run against nuget.org is green on kind, all seven cases (the forwarded search, nuget.exe, the restore and the
   registrations through the remote and the virtual repository)
-- 🟡 Open: F-30 (`is_semver2` of rows stored before the fix)
+- 🟢 F-30: the rows stored before the SemVer 2 classification counted dependency ranges are recomputed once per
+  installation by the background job `data_migration_nuget_semver2` on a worker, after the replicas of 0.9.0 are gone
+  ([Q-NUGET-93](../spec/formats/nuget.md#q-nuget-93--the-versions-stored-before-the-semver-2-classification-counted-dependency-ranges-are-recomputed-once-by-a-background-job-in-go))
 
 ## Phase 5a · Projects and delegated administration
 

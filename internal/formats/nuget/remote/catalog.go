@@ -102,8 +102,9 @@ func Convert(l Leaf, lowerID string) (v Version, ok bool) {
 			m.RequireLicenseAcceptance = &b
 		}
 	}
-	semver2 := ver.IsSemver2()
-	m.DependencyGroups, semver2 = dependencies(e["dependencyGroups"], semver2)
+	var ranges []string
+	m.DependencyGroups, ranges = dependencies(e["dependencyGroups"])
+	semver2 := version.PackageIsSemver2(ver, ranges...)
 	meta, err := json.Marshal(m)
 	if err != nil { // strings and lists of strings only
 		return Version{}, false
@@ -143,9 +144,9 @@ func tags(raw json.RawMessage) []string {
 	return strings.Fields(stringOf(raw))
 }
 
-// dependencies reads the dependency groups; semver2 is the flag so far, raised by a range that
-// has a SemVer 2.0.0-specific bound.
-func dependencies(raw json.RawMessage, semver2 bool) ([]depGroup, bool) {
+// dependencies reads the dependency groups and returns them with the range of every dependency,
+// which the SemVer 2.0.0 classification of the version reads (version.PackageIsSemver2).
+func dependencies(raw json.RawMessage) ([]depGroup, []string) {
 	var groups []struct {
 		TargetFramework string `json:"targetFramework"`
 		Dependencies    []struct {
@@ -154,9 +155,10 @@ func dependencies(raw json.RawMessage, semver2 bool) ([]depGroup, bool) {
 		} `json:"dependencies"`
 	}
 	if json.Unmarshal(raw, &groups) != nil {
-		return nil, semver2
+		return nil, nil
 	}
 	out := make([]depGroup, 0, len(groups))
+	var ranges []string
 	for _, g := range groups {
 		dg := depGroup{TargetFramework: g.TargetFramework}
 		for _, d := range g.Dependencies {
@@ -164,15 +166,11 @@ func dependencies(raw json.RawMessage, semver2 bool) ([]depGroup, bool) {
 				continue
 			}
 			dg.Dependencies = append(dg.Dependencies, dep{ID: d.ID, Version: d.Range})
-			if d.Range != "" {
-				if r, err := version.ParseRange(d.Range); err == nil && r.IsSemver2() {
-					semver2 = true
-				}
-			}
+			ranges = append(ranges, d.Range)
 		}
 		out = append(out, dg)
 	}
-	return out, semver2
+	return out, ranges
 }
 
 // published reads the instant of a leaf; the zero time for a missing or unreadable one.

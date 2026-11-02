@@ -137,6 +137,27 @@ func (r Range) IsSemver2() bool {
 	return (r.Min != nil && r.Min.IsSemver2()) || (r.Max != nil && r.Max.IsSemver2())
 }
 
+// PackageIsSemver2 is the SemVer 2.0.0 classification of a package (R-NUGET-004): its version
+// is SemVer 2.0.0-specific, or a bound of one of its dependency ranges is. ranges are the range
+// strings as the .nuspec spells them. An empty one (a dependency on any version) does not count,
+// and neither does one that does not parse: a push refuses such a range before it classifies, so
+// a stored version never holds one. The push, a remote's fill, the reading of an upstream's
+// registration and the recomputation of stored rows (Q-NUGET-93) all decide with this function.
+func PackageIsSemver2(v Version, ranges ...string) bool {
+	if v.IsSemver2() {
+		return true
+	}
+	for _, s := range ranges {
+		if s == "" {
+			continue
+		}
+		if r, err := ParseRange(s); err == nil && r.IsSemver2() {
+			return true
+		}
+	}
+	return false
+}
+
 // String returns the normalized interval, as NuGet writes it: "[1.0.0, 2.0.0)", "(, 1.0.0]",
 // "[1.0.0, )". Bounds are written in their normalized form without build metadata.
 func (r Range) String() string {

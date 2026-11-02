@@ -119,7 +119,7 @@ All four import only [internal/errs](../../internal/errs), the standard library 
 | Package | Responsibility |
 |---|---|
 | [internal/formats/nuget/id](../../internal/formats/nuget/id) | `ValidateLocal` (ASCII IDs of a local repository), `ValidateUpstream` (the .NET `\w` rule for cached IDs, by Unicode category), `Lower`, `SameID`; code `nuget_invalid_id` |
-| [internal/formats/nuget/version](../../internal/formats/nuget/version) | `Parse`, the normalized, full-normalized and URL forms, `Compare` and `SortKey`, `ParseRange` and `Satisfies`; codes `nuget_invalid_version` and `nuget_invalid_version_range` (R-NUGET-003, Q-NUGET-20 to Q-NUGET-22) |
+| [internal/formats/nuget/version](../../internal/formats/nuget/version) | `Parse`, the normalized, full-normalized and URL forms, `Compare` and `SortKey`, `ParseRange` and `Satisfies`; `PackageIsSemver2`, the SemVer 2.0.0 classification of a package from its version and its dependency ranges (R-NUGET-004); codes `nuget_invalid_version` and `nuget_invalid_version_range` (R-NUGET-003, Q-NUGET-20 to Q-NUGET-22) |
 | [internal/formats/nuget/nupkg](../../internal/formats/nuget/nupkg) | `Open` and `Inspect` over an `io.ReaderAt`: the central directory scanned by hand (ZIP64 included; no end-record signature may follow the record the scan reads), every local header name compared, the name rules, the one `.nuspec` at the root; `directory.readBy` holds `archive/zip` to the scan, entry by entry, data offsets included; only the central directory, the local headers and the `.nuspec` are read (R-NUGET-005, Q-NUGET-23, Q-NUGET-24, Q-NUGET-89) |
 | [internal/formats/nuget/nuspec](../../internal/formats/nuget/nuspec) | `Parse` of the `.nuspec`: UTF-8 and UTF-16 with BOM, no DOCTYPE, no entity expansion, namespace and repeated-element rules (Q-NUGET-25) |
 | [internal/formats/nuget/rows](../../internal/formats/nuget/rows) | the plain values of the data port, a leaf by the rule "`formats/<id>/rows`" |
@@ -188,7 +188,7 @@ The order of the checks and what each refusal answers is on [the security page](
 
 | File | Responsibility |
 |---|---|
-| [publish.go](../../internal/formats/nuget/publish.go) | `readIncoming`: steps 1 to 4 of R-NUGET-005 over a spooled package (`nupkg.Inspect` with the `nuget.archive` limits, the local ID rule, the version, the dependencies, the refusal of a symbol package); `incoming` is the payload to the commit; `isSemver2` (the version or a bound of a dependency range is SemVer 2.0.0-specific, R-NUGET-004; the push and a remote's fill share it); the metadata JSON (typed by [rows/metadata.go](../../internal/formats/nuget/rows/metadata.go)), the lowercased package types, the ID tokens of the search document |
+| [publish.go](../../internal/formats/nuget/publish.go) | `readIncoming`: steps 1 to 4 of R-NUGET-005 over a spooled package (`nupkg.Inspect` with the `nuget.archive` limits, the local ID rule, the version, the dependencies, the refusal of a symbol package); `incoming` is the payload to the commit; `isSemver2` (`version.PackageIsSemver2`: the version or a bound of a dependency range is SemVer 2.0.0-specific, R-NUGET-004; the push and a remote's fill share it, and the recomputation of the rows stored before applies the same function); the metadata JSON (typed by [rows/metadata.go](../../internal/formats/nuget/rows/metadata.go)), the lowercased package types, the ID tokens of the search document |
 | [handlers_publish.go](../../internal/formats/nuget/handlers_publish.go) | `handlePush`: the multipart reader (first part is the package, 64 KiB of preamble at most, a bare body is the package), the spool with its own length, the permission on the declared ID, the number (`numberTaken`: replay 201, 409), the shadowing check, the commit with the generated `.nuspec` as a companion, `commitError` |
 | [hooks.go](../../internal/formats/nuget/hooks.go) | `OnCommit`: the package row lock first, then the versions and the tombstone, the claim, the version row, the revision, the NuGet row and the published event; the companion's hook links the `.nuspec`; a commit that is not a push is refused (501) |
 | [hooks_remove.go](../../internal/formats/nuget/hooks_remove.go) | `OnItemsRemoved`: the removal of a `.nupkg` is the removal of the version (tombstone, version row, revision, `package.deleted`); a generated file alone is refused with 409. `OnItemsRestored`: the tombstone goes with a restored package (P1) |
@@ -196,7 +196,7 @@ The order of the checks and what each refusal answers is on [the security page](
 | [servecheck.go](../../internal/formats/nuget/servecheck.go) | `ServeCheck`: a stored version is served, listed or not; a tombstoned one and a file without a NuGet row are 404 |
 | [metrics.go](../../internal/formats/nuget/metrics.go) | `trove_nuget_push_replayed_total{repo}` |
 | [rows/write.go](../../internal/formats/nuget/rows/write.go) | the values of a removal, a listing change, a lookup and the serve state |
-| [internal/formatdata/nuget](../../internal/formatdata/nuget) | `store.go` (every write and the audit events in the change's transaction, the journal entries), `read.go` (`Versions`, `FlatIndex` with the package's revision in the statement of the versions, `Registration`), `search.go` (the search read, replaced by the search package) |
+| [internal/formatdata/nuget](../../internal/formatdata/nuget) | `store.go` (every write and the audit events in the change's transaction, the journal entries), `read.go` (`Versions`, `FlatIndex` with the package's revision in the statement of the versions, `Registration`), `search.go` (the search read, replaced by the search package), `semver2.go` (the recomputation of `is_semver2` below) |
 | [nugettest](../../internal/formats/nuget/nugettest/store.go) | the twin with real state: the rows of versions, tombstones and listing, the blob digests a removal reads, a rollback that leaves no trace, the logs `Published`, `Tombstones`, `Listings` and `Journal`; `Revisions` binds the revision and the display name to the host of a test |
 
 How a push goes, in the order of the code:
@@ -224,6 +224,39 @@ Not built here: the upload of the management API, copy and move (they reach `OnC
 Tests: `go test ./internal/formats/nuget/ ./internal/formats/nuget/nugettest/ ./internal/formatdata/nuget/` (push, unlist, delete, hooks and the kit's checks 6 and 9 with the twin),
 and [test/integration/nuget](../../test/integration/nuget) `push_test.go` against PostgreSQL and the object store (the rows, the events, the outbox, the replica counter, two replicas,
 concurrent pushes, a push racing a delete), and `lockorder_test.go` (a push and a hard delete of another version, arranged and raced, without a deadlock).
+
+### The recomputation of `is_semver2` (Q-NUGET-93)
+
+Release 0.9.0 and older classified a version by its own number alone; since then a bound of a dependency range counts as well
+(R-NUGET-004). The rows they stored are recomputed once per installation by the background data migration
+`data_migration_nuget_semver2` (R-HA-022), from the version and the ranges the row holds: every row carries its dependency groups in
+`nuget_version.metadata`, so no `.nuspec` is read.
+
+| File | Responsibility |
+|---|---|
+| [internal/formatdata/nuget/semver2.go](../../internal/formatdata/nuget/semver2.go) | `Semver2` with `Enqueue` (queue the run unless `system_state` holds `nuget_semver2_recomputed`, in the transaction that reads it) and `Run`, the handler; `Semver2JobSpec` (queue `maintenance`, `coalesce`); `semver2Of`, the classification of a stored row with `version.PackageIsSemver2` |
+| [nuget_semver2.sql](../../internal/meta/postgres/queries/nuget_semver2.sql) | the keyset batch of rows that say SemVer 1, the package row lock, the flag under it, the completion key |
+| [gate.go](../../internal/meta/postgres/gate.go) | `ReplicasUpTo`: the live replicas of a release or an older one, which the run waits for |
+| [wire_formats.go](../../internal/app/wire_formats.go) | `startFormatMigrations` builds it and queues it on a `worker` and `all` replica at start-up; `registerFormatJobs` registers the kind |
+
+How a run goes, in the order of the code:
+
+1. The completion key exists: the result is `done`, nothing else happens.
+2. A live replica runs 0.9.0 or older (`Semver2LastOldRelease`): the run queues the next one a minute later and records `waiting`
+   with the replicas' names and versions.
+3. Batches of `jobs.background_migrations.batch_size` rows after the cursor, `pause_between_batches` apart. Each row that the rule now
+   classifies SemVer 2 is set in one transaction per package: the package row lock, the flag where it is still `false`, then
+   `packages.Writer.BumpRevision` with the `metadata_changed` signal. The cursor and the counts are the checkpoint after each batch.
+4. The replica check again, then the key with the counts (`examined`, `changed`, `packages`, `unreadable`), which are also the job's result.
+
+The completion is removed by hand (`DELETE FROM system_state WHERE key = 'nuget_semver2_recomputed'`) to run it once more; the next worker
+that starts queues it, and a run over rows that are right changes nothing.
+
+Tests: `go test ./internal/formatdata/nuget/ ./internal/formats/nuget/ ./internal/formats/nuget/version/` (`semver2Of`, the push and
+`PackageIsSemver2` over one table of cases, [dependency-semver2.json](../../internal/formats/nuget/version/testdata/dependency-semver2.json)),
+`go test ./internal/meta/postgres/` (`TestR_HA_022_ReplicasUpToARelease`), and [semver2_test.go](../../test/integration/nuget/semver2_test.go)
+against PostgreSQL: the rows set back to the state 0.9.0 left, a worker's run, the revision, the SemVer 1 hive and its validator, the
+search, a second worker, a second run and a run resumed from a saved cursor, and the wait for a replica of 0.9.0.
 
 ## Symbol packages
 

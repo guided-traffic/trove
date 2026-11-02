@@ -401,7 +401,9 @@ Priority: **MVP** · Covers: PKG-NUGET-014, PKG-NUGET-042
   dot, when it carries build metadata, or when any dependency range of the package has a bound
   that is itself SemVer 2.0.0-specific (the rule nuget.org applies,
   [package versioning](https://learn.microsoft.com/en-us/nuget/concepts/package-versioning)). The
-  flag is computed at ingestion and stored.
+  flag is computed at ingestion and stored. Release 0.9.0 and older classified a version by its own
+  number alone; the background data migration `data_migration_nuget_semver2` recomputes the rows
+  they stored, once per installation, with the same rule (Q-NUGET-93).
 - Visibility:
 
 | Resource | SemVer 2.0.0-specific versions |
@@ -4786,6 +4788,75 @@ would revisit this if a NuGet client starts to resolve JSON-LD IRIs, or if Q-NUG
 
 **Applied in the spec:** none (R-NUGET-015's criterion is unchanged; the check reads it). Code: `foreignAddresses` in
 [nuget_public_test.go](../../../test/e2e/nuget_public_test.go).
+
+### Q-NUGET-93 · The versions stored before the SemVer 2 classification counted dependency ranges are recomputed once, by a background job in Go
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: up to release 0.9.0 a push and a remote's fill classified a version as SemVer 2.0.0-specific by its own number
+alone. Since the fix wave of 2026-11-02 a bound of one of its dependency ranges counts as well (R-NUGET-004). The flag is
+stored and the rule applies only when a row is written, so a version stored before with a dependency on, say,
+`[2.0.0-rc.1, )` keeps `is_semver2 = false`. It still shows to clients older than NuGet 4.3 in the `registration/` and
+`registration-gz/` hives and in a search without `semVerLevel=2.0.0` (finding F-30 of the code review of the fix wave).
+
+What constrains the answer:
+- Migrations 00017 and 00018 are released and frozen (R-ARCH-026).
+- Every row ever written carries its dependency groups, with the range strings of the `.nuspec` verbatim, in
+  `nuget_version.metadata` (`rows.Dependency.Version`, since 0.8.0, the release of the push), so no stored `.nuspec`
+  needs to be read.
+- During a rolling upgrade from 0.9.0 its replicas still write rows the old way.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A background data migration in Go, `data_migration_nuget_semver2` (chosen) | A worker queues the job when it starts while `system_state` has no key `nuget_semver2_recomputed`. The job reads the rows that say SemVer 1 in keyset batches, classifies each with `version.PackageIsSemver2` from `original_version` and the ranges in `metadata`, sets the flag under the package row lock, raises the package's revision, and records the key at the end | The rule exists once, in the leaf the push runs and the golden vectors test (R-NUGET-003); the revision raise is the core writer's, so rendered documents, validators and caches follow (R-NUGET-030); resumable and visible in the job API, as R-HA-022 wants a backfill; it can wait for the replicas of 0.9.0 | A kind, an enqueue at the start of a worker and a `system_state` key for one correction |
+| (b) Migration 00019 in SQL | An `UPDATE nuget_version` over the rows whose `metadata` holds a range with a bound that has a dotted pre-release label or build metadata | One statement; nothing runs later | SQL would re-implement the version and range grammar of R-NUGET-003 outside the tested leaf (bare versions, intervals, white space, four-part numbers), and a pattern that drifts from it decides silently; the revision would have to be raised in SQL too; R-HA-018 sends backfills to background migrations, never into the migration Job; it runs while replicas of 0.9.0 still write |
+| (c) Leave the old rows | Only rows written from now on are right | Nothing to build | F-30 stays: legacy clients keep getting versions they cannot parse |
+
+**Choice:** (a).
+- **Trigger.** Every `worker` and `all` replica queues the job when it starts, in the transaction that finds the key
+  absent; the dedup mode is `coalesce`, so at most one run waits and two never run together. A run that finds the key
+  ends at once with the state `done`.
+- **Gate.** While a live replica runs 0.9.0 or older (`postgres.ReplicasUpTo`), a run changes nothing, records the
+  state `waiting` with the replicas it waits for, and queues the next run a minute later. This is R-HA-022's rule that a
+  background migration starts only when the cluster runs the release that introduced it. The check repeats before the
+  completion is recorded, for a replica of the old release that came up meanwhile.
+- **Batches.** `jobs.background_migrations.batch_size` rows with `pause_between_batches` between them; the cursor
+  (the last version id) and the counts are the job's checkpoint, so a run released at shutdown resumes.
+- **Rows.** Only rows that say `false` are read, trashed versions included: the rule only gained a reason to say true.
+  A row whose version or metadata does not parse keeps its flag, is counted as `unreadable` and is named in the log.
+- **Write.** One transaction per package: the package row lock first (the order of every writer of the ID), the flag
+  only where it is still `false`, then `packages.Writer.BumpRevision` with the `metadata_changed` signal the host's
+  writer attaches (Q-ARCH-259).
+- **No audit event.** It corrects a derived flag; no principal changed the package, and `package.metadata_changed`
+  names an unlist or a relist. The job's result and the value of the key carry the counts (`examined`, `changed`,
+  `packages`, `unreadable`).
+- **Completion.** The key in `system_state`, the table of the installation's facts (R-OPS-024), as
+  [Q-HA-29](../ha-and-helm.md#q-ha-29--where-the-garbage-collection-pause-is-stored) keeps the deletion pause there. No
+  migration 00019, and not R-HA-022's `background_migration` table, which is not built. `system_state` has the export
+  class `data` ([backup-and-restore.md](../backup-and-restore.md) R-BAK-004), so a restore brings back the
+  key with the rows it belongs to.
+
+**Rationale:** what must not drift is the rule that decides. (a) runs the function the push and the remote's fill run,
+so a stored row and a new row cannot disagree. The revision goes up through the core writer, so every cache and
+validator keyed by it follows without the migration knowing any of them. The development agent revisits this in two
+cases:
+- R-HA-022's framework is built: the state moves to `background_migration`, with pause and resume.
+- An installation rolls back to 0.9.0 after the run and pushes on it: the key then has to be removed by hand and a
+  worker restarted, as the admin manual describes.
+
+**Applied in the spec:** R-NUGET-004 (the recomputation of the stored rows); [architecture.md](../architecture.md)
+R-ARCH-016 (the kind). Code: [semver2.go](../../../internal/formatdata/nuget/semver2.go),
+[nuget_semver2.sql](../../../internal/meta/postgres/queries/nuget_semver2.sql), `version.PackageIsSemver2` in
+[range.go](../../../internal/formats/nuget/version/range.go), `postgres.ReplicasUpTo` in
+[gate.go](../../../internal/meta/postgres/gate.go), `startFormatMigrations` in
+[wire_formats.go](../../../internal/app/wire_formats.go). Tests: `TestR_NUGET_004_PackageSemver2`,
+`TestR_NUGET_004_ADependencyRangeWithASemVer2BoundMakesAPushedVersionSemVer2Specific` and
+`TestR_NUGET_004_TheRecomputationDecidesLikeAPush` over one table of cases
+([dependency-semver2.json](../../../internal/formats/nuget/version/testdata/dependency-semver2.json)),
+`TestR_HA_022_ReplicasUpToARelease`, and against PostgreSQL
+`TestR_NUGET_004_AWorkerRecomputesTheSemVer2FlagOfVersionsStoredBeforeTheRule` and
+`TestR_HA_022_TheSemVer2RecomputationWaitsForAReplicaOfTheOldRelease`
+([semver2_test.go](../../../test/integration/nuget/semver2_test.go)).
 
 ## What this does not cover
 

@@ -45,7 +45,7 @@ const (
 // wireFormatPorts binds the data ports of the formats and builds the view adapters over them. It
 // comes before the exposure area: the rule service takes the adapters as its source of stored
 // versions (R-EP-016, Q-EP-67, Q-ARCH-253), so it needs no setter afterwards.
-func (a *App) wireFormatPorts(_ context.Context, in infra) (formatPortsArea, error) {
+func (a *App) wireFormatPorts(ctx context.Context, in infra) (formatPortsArea, error) {
 	if err := requireInputs(AreaFormatPorts, given("database", in.db), given("audit recorder", in.rec)); err != nil {
 		return formatPortsArea{}, err
 	}
@@ -57,7 +57,47 @@ func (a *App) wireFormatPorts(_ context.Context, in infra) (formatPortsArea, err
 	if err != nil {
 		return formatPortsArea{}, err
 	}
+	if a.sub.JobLoops {
+		if err := a.startFormatMigrations(ctx, in); err != nil {
+			return formatPortsArea{}, err
+		}
+	}
 	return formatPortsArea{bindings: b, views: formathost.NewViewAdapters(formats.List(), b)}, nil
+}
+
+// startFormatMigrations builds the background data migrations of the format data ports on a
+// replica that claims jobs and queues those whose completion is not recorded (R-HA-022): the
+// recomputation of NuGet's SemVer 2 flag (data_migration_nuget_semver2, Q-NUGET-93). A queue
+// that fails stops the start-up, so the worker does not run without it.
+func (a *App) startFormatMigrations(ctx context.Context, in infra) error {
+	bm := a.cfg.Jobs.BackgroundMigrations
+	sv2, err := nugetdata.NewSemver2(nugetdata.Semver2Options{
+		DB: in.db, Jobs: in.queue, Signals: in.signals,
+		BatchSize: bm.BatchSize, Pause: bm.PauseBetweenBatches, StaleAfter: a.cfg.System.HeartbeatStaleAfter,
+		Log: a.log.With("component", "nuget-semver2"),
+	})
+	if err != nil {
+		return err
+	}
+	a.semver2.set(sv2)
+	queued, err := sv2.Enqueue(ctx)
+	if err != nil {
+		return fmt.Errorf("formats: queueing %s: %w", nugetdata.Semver2JobKind, err)
+	}
+	if queued {
+		a.log.Info("queued a background data migration", "kind", nugetdata.Semver2JobKind)
+	}
+	return nil
+}
+
+// registerFormatJobs registers the kinds of the format data ports that the composition root
+// binds: data_migration_nuget_semver2 (Q-NUGET-93). Its handler finds the replica's
+// recomputation at run time; startFormatMigrations builds it on a replica that claims jobs.
+func (a *App) registerFormatJobs(r *jobs.Registry) {
+	r.RegisterKind(nugetdata.Semver2JobKind, nugetdata.Semver2JobSpec(
+		a.semver2.handler("NuGet SemVer 2 recomputation", func(ctx context.Context, m *nugetdata.Semver2, run *jobs.Run) error {
+			return m.Run(ctx, run)
+		})))
 }
 
 // formatsArea is what the hooks and the seam are made of. The seam reads the Host

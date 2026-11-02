@@ -3,10 +3,13 @@ package postgres
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
 
 func TestGate(t *testing.T) {
@@ -53,6 +56,38 @@ func TestGate(t *testing.T) {
 			t.Fatalf("err = %v", err)
 		}
 	})
+}
+
+// TestR_HA_022_ReplicasUpToARelease: a background migration that the release after 0.9.0
+// introduced waits for the replicas of 0.9.0 and older, and for a version that is no release
+// number; the next patch, the next minor and a development build do not hold it.
+func TestR_HA_022_ReplicasUpToARelease(t *testing.T) {
+	reps := []q.LiveReplicasRow{
+		{Name: "web-old", Version: "v0.9.0"},
+		{Name: "web-older", Version: "0.8.2"},
+		{Name: "web-hash", Version: "8519f60"},
+		{Name: "web-patch", Version: "0.9.1"},
+		{Name: "worker-minor", Version: "v0.10.0"},
+		{Name: "all-dev", Version: "dev"},
+		{Name: "web-rc", Version: "0.9.0-rc1"},
+	}
+	got, err := replicasUpTo(reps, "0.9.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, r := range got {
+		names = append(names, r.Name)
+	}
+	if want := []string{"web-old", "web-older", "web-hash", "web-rc"}; !slices.Equal(names, want) {
+		t.Errorf("replicas up to 0.9.0 = %v, want %v", names, want)
+	}
+	if got, err := replicasUpTo(nil, "0.9.0"); err != nil || got == nil || len(got) != 0 {
+		t.Errorf("no replicas: %v, %v; want an empty list", got, err)
+	}
+	if _, err := replicasUpTo(reps, "nine"); err == nil {
+		t.Error("a release that is no version was accepted")
+	}
 }
 
 type fakeDB struct{ pids []int32 }

@@ -59,6 +59,9 @@ type pkgSpec struct {
 	// title, tags and deps put the members the documents and the search read into the .nuspec.
 	title, tags string
 	deps        bool
+	// depRange, when set, is the range of the one dependency of the package instead of the
+	// one deps writes.
+	depRange string
 }
 
 // nupkg builds a package archive. The description makes two builds of one version differ.
@@ -78,7 +81,10 @@ func nupkg(t testing.TB, s pkgSpec) []byte {
 	if s.tags != "" {
 		extra += "<tags>" + s.tags + "</tags>"
 	}
-	if s.deps {
+	switch {
+	case s.depRange != "":
+		extra += `<dependencies><group targetFramework="net8.0"><dependency id="Contoso.Util" version="` + s.depRange + `"/></group></dependencies>`
+	case s.deps:
 		extra += `<dependencies><group targetFramework="net8.0"><dependency id="Contoso.Util" version="[1.0.0, 2.0.0)"/></group></dependencies>`
 	}
 	nuspec := fmt.Sprintf(`<?xml version="1.0" encoding="utf-8"?>

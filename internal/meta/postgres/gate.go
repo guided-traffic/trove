@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -92,4 +93,33 @@ func (db *DB) CheckSchema(ctx context.Context, version string) error {
 		return err
 	}
 	return Gate(st, RequiredSchema(), version)
+}
+
+// ReplicasUpTo lists the live replicas that run release or an older one, and those whose
+// version is no release number: the replicas that may still run the code of release. A
+// replica is live while its heartbeat is newer than staleAfter on PostgreSQL's clock
+// (R-HA-003); "dev" is newer than every release. A background data migration that a later
+// release introduced waits while one is listed, because such a replica can still write rows
+// the old way behind it (R-HA-022).
+func ReplicasUpTo(ctx context.Context, db q.DBTX, release string, staleAfter time.Duration) ([]ReplicaRef, error) {
+	reps, err := q.New(db).LiveReplicas(ctx, staleAfter.Seconds())
+	if err != nil {
+		return nil, fmt.Errorf("reading the live replicas: %w", err)
+	}
+	return replicasUpTo(reps, release)
+}
+
+// replicasUpTo is the selection of [ReplicasUpTo] over rows already read.
+func replicasUpTo(reps []q.LiveReplicasRow, release string) ([]ReplicaRef, error) {
+	limit, err := parseVersion(release)
+	if err != nil {
+		return nil, fmt.Errorf("release %q: %w", release, err)
+	}
+	out := []ReplicaRef{}
+	for _, r := range reps {
+		if v, err := parseVersion(r.Version); err != nil || v.compare(limit) <= 0 {
+			out = append(out, ReplicaRef{Name: r.Name, Version: r.Version})
+		}
+	}
+	return out, nil
 }

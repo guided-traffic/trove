@@ -204,17 +204,6 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
-Found on 2026-11-02 by the code review of the fix wave of phase 4 (NuGet); phase 4 stays open until it is fixed (BETA.md):
-
-### NuGet
-
-- **F-30 · `is_semver2` of NuGet rows stored before the SemVer 2 fix** (confirmed by the code review of the fix wave). A version
-  whose dependency range has a SemVer-2-specific bound is classified SemVer 2 since the fix (`incoming.isSemver2` in
-  [publish.go](../../internal/formats/nuget/publish.go), used by pushes and cache fills), but only when it is written: rows stored
-  before keep `is_semver2 = false`, so such a version still shows to clients older than NuGet 4.3 in the SemVer 1 hives and in a
-  search without `semVerLevel=2.0.0`. Migration 00017 is released and stays as it is. Decide between a recomputation job over the
-  stored `.nuspec` files and migration 00018; done when no stored row of such a version says `false`.
-
 Found on 2026-11-01 while writing the manual (`docs/manual`) and the design change of Q-UI-88:
 
 ### Tests and tools
