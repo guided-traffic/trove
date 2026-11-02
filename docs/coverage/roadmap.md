@@ -725,7 +725,10 @@ and then freezes it.
   Mono through local, remote and virtual repositories of the counting test upstream). The Windows row and the Visual Studio
   checklist run by hand in the owner walkthrough of phase 8
   ([Q-NUGET-72](../spec/formats/nuget.md#q-nuget-72--the-windows-row-of-e31-and-the-visual-studio-checklist-run-in-the-owner-walkthrough-not-on-a-ci-runner)).
-  The run against nuget.org has no test yet (F-27 of [promt.md](../projektplan/promt.md#8--open-findings)).
+  The run against nuget.org is `TestNuGetClosingPublic` in the closing set
+  ([Q-NUGET-91](../spec/formats/nuget.md#q-nuget-91--the-run-against-nugetorg-is-a-read-only-subset-of-the-closing-set-with-the-search-first-and-an-id-of-more-than-128-versions));
+  on kind its search and its registrations through the virtual repository stay red until F-20 and F-22 are fixed (F-27 of
+  [promt.md](../projektplan/promt.md#8--open-findings)).
 - **E3.2** Cold cache, concurrent clients: three clients run `dotnet restore --no-cache` at once
   against three replicas. They restore the reference solution in `perf/` (at least 100 packages in
   its restore graph) through `nuget-all`. All three succeed, and the counting upstream records one

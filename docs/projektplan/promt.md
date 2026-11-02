@@ -209,15 +209,13 @@ started and stopped before it changed the tree; phase 4 stays open until these a
 
 ### NuGet
 
-- **F-27 · The run against nuget.org of E3.1 has no test** (confirmed). npm has a read-only subset against the public
-  registry in `TestNPMClosing`; NuGet's closing set has none. Planned: a remote of `https://api.nuget.org/v3/index.json` and a
-  virtual repository with it, `dotnet restore` of `Newtonsoft.Json` and of an ID with more than 128 versions, nuget.exe through the
-  remote, the URLs of the registration, `dotnet package search` (needs F-22 for the virtual registration).
-- **F-28 · `TestE1_11Scatter` of `access-long` meets the write budget** (confirmed, 2 of 5 runs of R-API-014 and R-API-052 alone on
-  kind at 42f7a1d). The class `api_write` of R-API-016 is a sliding window of 50 writes per 5 s per token; one token carries both
-  subtests, 18 and 41 writes in about 5 s, and the pacing comment at `e1_11_scatter_test.go:253` still describes the token bucket
-  that Q-API-3 replaced. CI has not hit it (R-API-052 takes 4.8 to 6.7 s there). Fix in the test: a token per subtest, and a guard
-  that reads the class's `RateLimit-Policy` and fails a write that would exceed it.
+- **F-27 · The run against nuget.org of E3.1 is red where it needs F-20 and F-22** (confirmed on kind at e0c2cfa, twice).
+  `TestNuGetClosingPublic` ([nuget_public_test.go](../../test/e2e/nuget_public_test.go), set `nuget-closing`,
+  [Q-NUGET-91](../spec/formats/nuget.md#q-nuget-91--the-run-against-nugetorg-is-a-read-only-subset-of-the-closing-set-with-the-search-first-and-an-id-of-more-than-128-versions))
+  reads nuget.org through a remote and a virtual repository. Four of its seven cases pass: nuget.exe through the remote, the
+  restore of Newtonsoft.Json and Serilog through the virtual repository, and the remote's registrations of both. The search
+  through the remote lists nothing (F-20), and both registrations through the virtual repository answer 502 (F-22). Done when
+  the set is green after those fixes, in the full run of Test and Release on the commit that closes the phase.
 
 Found on 2026-11-01 while writing the manual (`docs/manual`) and the design change of Q-UI-88:
 

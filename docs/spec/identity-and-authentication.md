@@ -5131,6 +5131,43 @@ showed the extra match in a profile, then with (c) instead.
 **Applied in the spec:** R-AUTH-001 item 3, R-AUTH-033, R-NUGET-012 (session cookie). Code: `Stage.Authenticate` in `internal/auth/stage.go`. Tests:
 `TestR_NUGET_012_NoSessionCookieOnAnAPIKeyRoute`, `TestR_NUGET_012_ASessionCookieIsNoCredentialOnAnAPIKeyRoute` (`test/integration/apikey`).
 
+### Q-AUTH-188 · The write cases of E1.11 each get a token of their own, and a guard holds them to the write budget
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the cases R-API-014 and R-API-052 of `TestE1_11Scatter` (E1.11, set `access-long`) sent their writes with one
+administrator token. The write class of [api-and-ui.md](api-and-ui.md) R-API-016 admits 50 requests per token in a sliding
+window of 5 s, and a refused request counts as well. R-API-014 sends 18 writes: the create, 15 replays, the reused key and the
+cleanup. R-API-052 sends 41: the create, 24 patches, three blocks of a repository with three uploads and its delete, and the
+cleanup. That is 59 writes in about 5 s. A sleep of 150 ms per patch was meant to pace them; its comment still described the
+token bucket that [Q-API-3](api-and-ui.md#q-api-3--cluster-wide-rate-limiting) replaced. On kind (commit 42f7a1d), two of five
+runs of the two cases alone ended in a 429, on `patch v22` and on `create repository`. In the full set, the refused writes also
+left the token without budget for the `unlock` of R-AUTH-042. CI had not hit it, because R-API-052 took 4.8 to 6.7 s there.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Pace the writes below the window | A sleep after every write of both cases, at least 100 ms, so that no 5 s holds more than 50 | One token | The pace has to be sized to every write of the case and to the window: the 150 ms covered only the patches, so the 59 writes fit into one window on a fast cluster. A later change of the class or of the case breaks it silently, and only in some runs. It also slows a case whose point is "at once" |
+| (b) A token per case, and a guard of the token's write budget (chosen) | Each case mints its own administrator token (`freshAdmin`). `withWriteBudget` reads `q` and `w` of the member `"write"` of `RateLimit-Policy` from the answers and fails the write that would be the token's 51st before it is sent | 18 and 41 are both under 50, so no window can refuse a write of either case at any pace. A case that grows past the budget fails on every run, with a message that names the budget, instead of failing some runs with a 429 | Two more token creations and deletions. The guard counts every write of the token, not those of one window, so it is stricter than the limiter |
+| (c) Wait out a 429 with `Retry-After` and repeat the write, as `walkRetry` does for reads | A retry in the cases | Robust | It hides that a case overruns the budget, and a repeated write muddles the replay case of R-API-014, which counts its replays |
+| (d) Raise the write class in the dev profile | A higher `api.rate_limits.write` | No test change | E1.8 tests the product's defaults on the same profile, and the access-long set runs on CI with the values a customer gets |
+
+**Choice:** (b). The 150 ms sleep and its comment go. The guard takes the smallest `q` it reads, because with Valkey stopped a
+replica names its own share of the budget (R-ARCH-034).
+
+**Rationale:** the budget is a fact that the product publishes on every answer, so the test can read it instead of guessing a
+pace. A case that stays within one window's budget does not depend on the runner. The development agent would revisit this if a
+case needs more writes than one window admits. The case would then be split over tokens; a guard that counts per window would
+depend on the pace again.
+
+**Applied in the spec:** none (R-API-016 is unchanged). Code: `writeBudget` and `withWriteBudget` in
+[m1_env_test.go](../../test/e2e/m1_env_test.go), `TestE1_11Scatter` in [e1_11_scatter_test.go](../../test/e2e/e1_11_scatter_test.go).
+Evidence (kind, 2026-11-02, e0c2cfa plus this change):
+- With the guard on the old structure (one token for both cases), R-API-052 failed before the 51st write on the token, at
+  `patch v22`. This was run once; the count does not depend on the pace, so every run fails there.
+- With a token per case, `make e2e SET=access-long` was green three times in a row: 56 tests and subtests, 822 to 961 s.
+- Without the sleep, R-API-052 took 0.8 to 1.4 s and R-API-014 0.2 to 0.3 s. On one token, those writes would all have fallen
+  into one window.
+
 ### Q-AUTH-79 · How the end-to-end tests drive the browser login of E1.1 and disable the break-glass account
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.

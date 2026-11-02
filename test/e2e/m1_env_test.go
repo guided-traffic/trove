@@ -192,6 +192,58 @@ type api struct {
 	base  string // https://localhost:<edge port>, the default endpoint
 	token string
 	csrf  string
+	// writes guards the write class of the token (withWriteBudget); nil guards nothing
+	writes *writeBudget
+}
+
+// writeBudget is the guard of a test that spends the write class of its token (R-API-016, Q-AUTH-188). It counts the
+// writes the client sends and fails the one that would exceed the class's budget q, which it reads from the member
+// "write" of the RateLimit-Policy field of the answers (the smallest q seen: with Valkey stopped a replica names its
+// share). It counts every write of the token, not those of one window of w seconds: a test that stays within one
+// window's budget meets no 429 of the class at any pace, while one that spreads more writes over several windows
+// depends on a pace sized right for every one of them.
+type writeBudget struct {
+	mu     sync.Mutex
+	sent   int
+	limit  int    // q of the class; 0 until an answer named it
+	window string // w of the class, for the message
+}
+
+// take counts one write and refuses it when it is more than the budget admits.
+func (b *writeBudget) take(method, path string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.sent++
+	if b.limit > 0 && b.sent > b.limit {
+		return fmt.Errorf("write %d of this token (%s %s) exceeds the budget of the write class, %d per %s s (RateLimit-Policy, R-API-016): "+
+			"whether a window refuses it depends on the runner's pace; give the case a token of its own (Q-AUTH-188)", b.sent, method, path, b.limit, b.window)
+	}
+	return nil
+}
+
+// learn reads q and w of the write class from an answer's RateLimit-Policy members (`"write";q=50;w=5`).
+func (b *writeBudget) learn(h http.Header) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, v := range h.Values("RateLimit-Policy") {
+		for member := range strings.SplitSeq(v, ",") {
+			params := strings.Split(strings.TrimSpace(member), ";")
+			if params[0] != `"write"` {
+				continue
+			}
+			for _, p := range params[1:] {
+				name, val, _ := strings.Cut(strings.TrimSpace(p), "=")
+				switch name {
+				case "q":
+					if q, err := strconv.Atoi(val); err == nil && q > 0 && (b.limit == 0 || q < b.limit) {
+						b.limit = q
+					}
+				case "w":
+					b.window = val
+				}
+			}
+		}
+	}
 }
 
 type apiOption func(*api)
@@ -233,12 +285,23 @@ func newAPI(t testing.TB, opts ...apiOption) *api {
 	return a
 }
 
-// withToken returns a copy of the client that presents the token (no cookies).
+// withToken returns a copy of the client that presents the token (no cookies). Another token is another bucket of
+// the rate limits, so the copy has no write guard.
 func (a *api) withToken(tok string) *api {
 	b := *a
 	b.token = tok
 	b.csrf = ""
+	b.writes = nil
 	b.c = &http.Client{Timeout: a.c.Timeout, CheckRedirect: a.c.CheckRedirect, Transport: a.c.Transport}
+	return &b
+}
+
+// withWriteBudget returns a copy of the client whose writes the guard of writeBudget counts; the guard fails t. Give
+// it a client whose token no other client uses, or the count misses the other's writes.
+func (a *api) withWriteBudget(t testing.TB) *api {
+	b := *a
+	b.t = t
+	b.writes = &writeBudget{}
 	return &b
 }
 
@@ -354,12 +417,20 @@ func (a *api) send(method, path string, body any, h ...string) (reply, error) {
 		}
 		req.Header.Set(h[i], h[i+1])
 	}
+	if a.writes != nil && unsafeMethod(method) {
+		if err := a.writes.take(method, path); err != nil {
+			return reply{}, err
+		}
+	}
 	start := time.Now()
 	resp, err := a.c.Do(req)
 	if err != nil {
 		return reply{}, err
 	}
 	defer resp.Body.Close()
+	if a.writes != nil {
+		a.writes.learn(resp.Header)
+	}
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return reply{}, err

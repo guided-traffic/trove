@@ -107,12 +107,15 @@ func seedLists(t testing.TB, adm *api) {
 }
 
 // freshAdmin is a new token of the bootstrap administrator: the shared one has spent its read budget (R-API-016) on the
-// walks of hundreds of pages.
+// walks of hundreds of pages, and a case that spends the write class needs a bucket of its own (Q-AUTH-188). adm mints
+// it, so adm has to outlive it by the hour (the derivation rule of R-AUTH-027); the client and the cleanup fail t.
 func freshAdmin(t testing.TB, adm *api) *api {
 	t.Helper()
-	c := newSAToken(t, adm, "e2e-admin", 3600, map[string]any{"inherit": true, "admin": true})
-	t.Cleanup(func() { adm.do(http.MethodDelete, "/api/v1/tokens/"+c.ID, nil) })
-	return adm.withToken(c.Token)
+	own := *adm
+	own.t = t
+	c := newSAToken(t, &own, "e2e-admin", 3600, map[string]any{"inherit": true, "admin": true})
+	t.Cleanup(func() { own.do(http.MethodDelete, "/api/v1/tokens/"+c.ID, nil) })
+	return own.withToken(c.Token)
 }
 
 func TestE1_11Scatter(t *testing.T) {
@@ -188,9 +191,14 @@ func TestE1_11Scatter(t *testing.T) {
 		}
 	})
 
-	adm = freshAdmin(t, adm)
+	root := adm // the bootstrap token (24 h): it mints the fresh ones
+	adm = freshAdmin(t, root)
 
+	// R-API-014 and R-API-052 spend the write class of R-API-016 (50 per 5 s per token, refusals included): 18 and 41
+	// writes. Each has a token of its own under the guard of its write budget, so no window can refuse one of them, at
+	// whatever pace the runner sends them (Q-AUTH-188).
 	t.Run("R-API-014 R-API-051 E1.11 an Idempotency-Key replayed through another replica returns the stored outcome", func(t *testing.T) {
+		adm := freshAdmin(t, root).withWriteBudget(t)
 		name := fmt.Sprintf("e2e-idem-%d", time.Now().Unix())
 		t.Cleanup(func() { adm.do(http.MethodDelete, "/api/v1/groups/"+name, nil) })
 		key := fmt.Sprintf("e2e-%d-%d", os.Getpid(), time.Now().UnixNano())
@@ -228,6 +236,7 @@ func TestE1_11Scatter(t *testing.T) {
 	})
 
 	t.Run("R-API-052 R-API-051 E1.11 a management read on another replica shows a write at once", func(t *testing.T) {
+		adm := freshAdmin(t, root).withWriteBudget(t)
 		replicas := map[string]bool{}
 		name := fmt.Sprintf("e2e-vis-%d", time.Now().Unix())
 		t.Cleanup(func() { adm.do(http.MethodDelete, "/api/v1/groups/"+name, nil) })
@@ -250,7 +259,6 @@ func TestE1_11Scatter(t *testing.T) {
 				}
 				replicas[r.Replica()] = true
 			}
-			time.Sleep(150 * time.Millisecond) // the write class admits 10 per second after its burst of 50 (R-API-016)
 			// a repository created through one replica is usable at once through the others
 			if i%8 == 0 {
 				key := fmt.Sprintf("e2e-vis-%d-%d", time.Now().Unix(), i)

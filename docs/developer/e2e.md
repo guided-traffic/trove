@@ -113,7 +113,7 @@ make npm-clients-image       # only build the image into the local Docker
 make e2e SET=nuget-clients   # build the NuGet clients image, start the client pods, run the smoke test (the pods stay up)
 make e2e SET=nuget-clients-down  # remove the NuGet client pods
 make e2e SET=nuget           # every TestNuGet... but TestNuGetClosing... and TestNuGetHA...: local, remote and virtual repositories, E3.2, E3.6 and E3.7 with the real clients; the test upstream and three client pods (Q-NUGET-34, Q-NUGET-70); CI job e2e-nuget on every change
-make e2e SET=nuget-closing   # the additions of the closing run (TestNuGetClosing: R-NUGET-030 and R-NUGET-031 with Valkey stopped; exports TROVE_E2E_NUGET_CLOSING=1); CI leg of a closing dispatch
+make e2e SET=nuget-closing   # the additions of the closing run (TestNuGetClosing: R-NUGET-030 and R-NUGET-031 with Valkey stopped; TestNuGetClosingPublic: the read-only subset against nuget.org; exports TROVE_E2E_NUGET_CLOSING=1); CI leg of a closing dispatch
 make e2e SET=nuget-ha        # TestNuGetHA...: drain and failover under the NuGet load; CI job e2e-nuget in the nightly workflow; no such test yet: a notice and exit 0 (Q-ARCH-276)
 make nuget-clients-image     # only build the NuGet clients image into the local Docker
 make nuget-clients-smoke     # the image like a pod against the counting NuGet test upstream, without a cluster
@@ -316,18 +316,25 @@ Subtest names carry the requirement IDs and the criterion, as the M0 tests do.
 | `podForwards` | a `kubectl port-forward` to every ready web pod; a client that sends its requests to them in turn reaches the three replicas without the edge, from the address 127.0.0.1, a bucket of its own for the per-address limits of R-AUTH-038. Every test that exceeds such a limit uses it, so the edge address (the host, which every other test shares) keeps its budget. A forward is supervised: `kubectl port-forward` ends for good on the first connection through it that fails upstream (`lost connection to pod`) or when its stream to the kubelet breaks, (measured: a client that resets a connection through the forward, or a refused connection inside the pod, makes `kubectl` print `error: lost connection to pod` and exit; the listener is then gone for the next client), so the harness starts it again on the same local port, writes the end and its stderr to `.out/e2e/portforward-*.log`, and a client that finds the port closed in between (connection refused, nothing of its request sent) waits up to 30 s for the new process, then fails with that stderr |
 | `withValkeyStopped` | `valkey-stop.sh`, the criterion, `valkey-start.sh` (also after a failure) |
 | `walkRetry` | a list read page by page; a 429 is waited out, because a walk with `limit=1` is more requests than the read class admits in a burst |
+| `withWriteBudget` | a copy of a client whose writes are counted against the write class of its token: it reads `q` and `w` of the member `"write"` of `RateLimit-Policy` from the answers and fails the write that would exceed `q` before it is sent, with a message that names the budget ([Q-AUTH-188](../spec/identity-and-authentication.md#q-auth-188--the-write-cases-of-e111-each-get-a-token-of-their-own-and-a-guard-holds-them-to-the-write-budget)). It counts every write of the token, not those of one window, so it needs a token that no other client uses (`freshAdmin`) |
 
 **Pacing.** The limits are the product's defaults (`api.rate_limits` read 50/s burst 200 and write 10/s burst 50,
-`auth.rate_limit` 300 failures and 30 flow starts per minute and address). The dev profile raises only the anonymous class,
+`auth.rate_limit` 300 failures and 30 flow starts per minute and address). The classes of the API are sliding windows per
+token (R-API-016: the read class admits 200 requests per 4 s, the write class 50 per 5 s, and a refused request counts too);
+the answers name them in `RateLimit-Policy`. The dev profile raises only the anonymous class,
 which no M1 test uses: the read and write classes are tested with tokens, the anonymous class has its bound in
-`test/integration/api`. A test that spends a budget mints its own tokens; the 50 browser logins of R-AUTH-042 are paced at
-2.2 s so they stay under the flow-start limit of the host's address.
+`test/integration/api`. A test that spends a budget mints its own tokens and keeps each token within one window's budget. A
+sleep between requests is a poor substitute: the 150 ms that R-API-052 slept covered only its patches, so on a fast cluster its
+writes and those of R-API-014 (59 on one token) fit into one window, and two of five runs got a 429. The write cases of E1.11
+(R-API-014 with 18 writes, R-API-052 with 41) therefore each have a token of their own under `withWriteBudget`. The 50 browser
+logins of R-AUTH-042 are paced at 2.2 s so they stay under the flow-start limit of the host's address, which counts per address
+and minute, not per token.
 
 | Criterion | Test | What it checks |
 |---|---|---|
 | E1.1 | `TestE1_01Login` | alice signs in through the Ingress with the code flow and PKCE (the authorization request carries `code_challenge_method=S256`, `state`, `nonce` and the redirect URI of the edge; the realm enforces S256, so a completed exchange proves the verifier); created just in time (`origin: jit`, deleted before the test so the creation is observable); groups `team-web` and `platform-admins` from the claim `groups` through the rule `trove-(.+)`, bob only `team-web`. Logout: the answer names the IdP's end-session endpoint with `id_token_hint`, `client_id` and the post-logout URI; the browser follows it; the cookie of the ended session is refused on every replica within `auth.revocation_bound`; a second sign-in in the same browser needs no password before the logout (the control) and asks for it again after (R-AUTH-013: the IdP session ended). Break-glass: wrong password `401`, the generated password `204`, `isAdmin` via `break-glass`; `TROVE_AUTH_BREAK_GLASS_ENABLED=false` on the web Deployment (R-AUTH-014: disabled): nine attempts over the three replicas get `403 local_login_disabled`, the earlier session `401 session_expired`; enabled again, the login works |
 | E1.8 | `TestE1_08RateLimits` | R-API-016: 400 reads with one token get `429` with `Retry-After`, `rate_limited` and the `RateLimit` fields of class `read` after the burst of 200, a second token is not slowed; the write class likewise at 50, and a token whose write budget is gone still reads. R-ARCH-034: 1000 requests with one token round robin over three replicas are admitted 200 times, not three bursts, and the same on one replica; with Valkey stopped the same bound holds (each replica's share, `trove_ratelimit_fallback{limiter="api_read"}` is 1 on all three), and sequential reads add no delay with the circuit open. The latency injection: `CLIENT PAUSE 4000 ALL` on the primary holds every check for `valkey.command_timeout`; exactly the 15 checks of `failure_threshold` 5 times three replicas are held, then thousands of fast requests. R-AUTH-038: 400 random well-formed tokens, Bearer and Basic alternating, are validated (401) 300 times and answer 429 after that, both kinds; a PAT used once before still works on all three replicas during the burst; 40 starts of the login flow get 429 from the 31st on; with Valkey stopped at most 300 validations and the 40 starts admit about 30 (each replica's share of 10), and `trove_ratelimit_fallback{limiter="auth.credential_failures"}` is 1 on each replica |
-| E1.11 | `TestE1_11Scatter` | every list operation (repositories, users, groups, service accounts, tokens, policies, role bindings, audit events, exposure rules, jobs) walked with `limit=1` returns what one page of 500 returns (read before and after, no duplicate, served by at least two replicas); an `Idempotency-Key` replayed 15 times is `201` with `Idempotency-Replayed: true`, the stored body and `Location`, from all three replicas, the same key with another body is `422 idempotency_key_reused` (R-API-051); a write on one replica is read back at once on the others, 24 times, and a new repository takes uploads on all three replicas at once (R-API-052). R-AUTH-042, in three modes (Valkey up with 50 browser logins, Valkey stopped for its whole duration with 25 and every pod `degraded: valkey`, and `FLUSHALL` at the lockout, after the revocation and in the middle of 25 logins): break-glass lockout (five wrong passwords one after another over the three replicas, the correct one `429 break_glass_locked` with `Retry-After` on each, still locked after `FLUSHALL`, unlock through the API; five at once lock it as well), PAT revocation (the token worked on all three replicas, then 401 on all three within the 2 s of `auth.revocation_bound`, and after `FLUSHALL` too), re-authentication (the session's `authenticated_at` set back two hours: `401 reauthentication_required` on any replica, the silent round trip `purpose=reauth` needs no password and rotates the session, the old cookie is dead), logout, and the browser logins on varying replicas |
+| E1.11 | `TestE1_11Scatter` | every list operation (repositories, users, groups, service accounts, tokens, policies, role bindings, audit events, exposure rules, jobs) walked with `limit=1` returns what one page of 500 returns (read before and after, no duplicate, served by at least two replicas); an `Idempotency-Key` replayed 15 times is `201` with `Idempotency-Replayed: true`, the stored body and `Location`, from all three replicas, the same key with another body is `422 idempotency_key_reused` (R-API-051); a write on one replica is read back at once on the others, 24 times, and a new repository takes uploads on all three replicas at once (R-API-052); each of these two cases writes with a token of its own under `withWriteBudget` (18 and 41 writes, [Q-AUTH-188](../spec/identity-and-authentication.md#q-auth-188--the-write-cases-of-e111-each-get-a-token-of-their-own-and-a-guard-holds-them-to-the-write-budget)). R-AUTH-042, in three modes (Valkey up with 50 browser logins, Valkey stopped for its whole duration with 25 and every pod `degraded: valkey`, and `FLUSHALL` at the lockout, after the revocation and in the middle of 25 logins): break-glass lockout (five wrong passwords one after another over the three replicas, the correct one `429 break_glass_locked` with `Retry-After` on each, still locked after `FLUSHALL`, unlock through the API; five at once lock it as well), PAT revocation (the token worked on all three replicas, then 401 on all three within the 2 s of `auth.revocation_bound`, and after `FLUSHALL` too), re-authentication (the session's `authenticated_at` set back two hours: `401 reauthentication_required` on any replica, the silent round trip `purpose=reauth` needs no password and rotates the session, the old cookie is dead), logout, and the browser logins on varying replicas |
 | E1.11 journeys | `TestE1_11Journeys` | runs `npx playwright test` in `web/e2e` against the scatter profile and fails on any failure of any journey, including an axe violation of impact serious or critical on a visited screen; one subtest per journey, named by its title. A missing `npm ci` or browser is a failure that names the command to run, not a skip. See [Browser journeys](#browser-journeys) |
 | E1.13 | `TestE1_13Transfers` | R-HA-011: two loops of `curl -T` of 500 MB at 50 MB/s during `kubectl rollout restart deploy/trove-web`: none fails, uploads overlapped the rollout, and what arrived has the SHA-256 that was sent. R-ARCH-024, download 1: a 400 MiB file of `generic-local` is downloaded during a rollout restart and matches ([Q-ARCH-76](../spec/architecture.md#q-arch-76--the-pace-of-the-download-that-a-rollout-restart-must-not-break): at 6 MB/s, so that the serving pod is drained while it transfers, which the test asserts). Download 2: at 2 MB/s (200 s, longer than the grace period) with the serving pod deleted after 3 s: the bytes stop arriving about 110 s later (the shutdown timeout; the pod's log says `requests cut at the shutdown deadline`), curl ends with an error, `curl -C -` resumes with `206` from another replica and the SHA-256 matches. Download 1 was red in about half of the runs until [finding 5](#findings-of-the-suite) was fixed; the cut download must end for curl within 15 s of its last bytes. R-HA-002: `POST /api/v1/system/tasks/gc/run` through a web pod is executed by a worker (the job's `replica`, and `job.ran_by` resolved through the replica table), and no job was ever run by a web replica. E0.14: `TestE14Drain` runs `k6/transfer.js` next to the ping load (4 iterations/s: PUT, GET, SHA-256 compared) and fails on any transfer that is not 200/201, a wrong checksum or a dropped iteration |
 | E1.14 | `TestE1_14Exposure` | on `customers` (through its own Ingress): without a rule nothing is exposed (`404`) and a write is `403 endpoint_read_only`, a rule with `packages` on a generic repository is `422 dimension_not_supported`; a rule `paths.include: ["releases/**"]` makes `releases/1.0/app.zip` downloadable with a service-account token bound to `customers` while `internal/x.bin` and several missing paths answer the same 404 (problem body without `instance` and `requestId`, same content type and cache control); the same token is `401 invalid_token` on the default endpoint; a PAT is `401 invalid_token` on `customers` with no query of the token table (`api_token` is locked `ACCESS EXCLUSIVE` for 14 s: 41 PATs are answered in milliseconds, while an unknown PAT on the default endpoint, the control, waits for the lock and ends `503` after the statement timeout; the statistics views are no evidence, an idle backend flushes its counters up to a minute late) and `trove_endpoint_credentials_refused_total{reason="token_type"}` +41; an unbound SAT is refused with `reason="token_binding"`; no credential and a valid session cookie are `401 credentials_required`; an administrator token bound to `customers` reads the exposed file, gets the 404 for the internal one, lists only `generic-local` among the repositories and no `internal` folder. The rule lifecycle (created, narrowed with a merge patch, deleted) is read on every replica through a port-forward to its endpoint listener within the bound of R-AUTHZ-028 (Valkey up and stopped), and each change is one audit event (`endpoint.exposure.created`, `.updated`, `.deleted`). R-EP-015: 400 reads with one token get `429` after the burst with `Retry-After` and the policy `endpoint:external`, a second bound token is not slowed, the same token is not held on the default endpoint; 1000 requests with one token over the three replicas are admitted at most burst plus decay, with Valkey stopped too, where `trove_ratelimit_fallback{limiter="endpoint_external"}` is 1 on every replica |
@@ -1271,6 +1278,7 @@ different web replicas. Verified on the dev cluster (linux/arm64, .NET SDK of `E
 | [nuget_collapse_test.go](../../test/e2e/nuget_collapse_test.go) | `TestNuGetCollapse` (E3.2), `coldRestoreOfReference` (shared with the closing run) |
 | [nuget_endpoint_test.go](../../test/e2e/nuget_endpoint_test.go) | `TestNuGetEndpoint` (E3.7) |
 | [nuget_closing_test.go](../../test/e2e/nuget_closing_test.go) | `TestNuGetClosing`: the closing run's additions |
+| [nuget_public_test.go](../../test/e2e/nuget_public_test.go) | `TestNuGetClosingPublic`: the closing run's read-only subset against nuget.org; `foreignAddresses` (the address check of R-NUGET-015), `registrationLeaves` (a registration with every page followed) |
 
 - **Repositories** (created idempotently): `nuget-e2e` (`requireAuthentication`), `nuget-e2e-open` (the `anonymous` principal may
   `read`; `requireAuthentication` off), `nuget-e2e-hard` (`nuget.deleteMode: delete`), `nuget-customers` (the repository the endpoint
@@ -1360,9 +1368,46 @@ stopped (`withValkeyStopped`, every web pod ready with `valkey` degraded): the d
 of one uncached package on two replicas cost one or two upstream requests. The drain part of E3.6 moved to phase 7 (owner, 2026-11-01); `FLUSHALL` and the Sentinel
 failover under the NuGet load of R-NUGET-031 go with it. Verified on the dev cluster (2026-11-02): green, 14 tests and subtests, 322 s.
 
-**Not covered here:** the forwarded search of a remote and its per-replica cache (R-NUGET-016, Q-NUGET-8; not built), the digest check of a
-cached package against the upstream (R-NUGET-029, P1; not built, so a `packageHash` mismatch is not tested), the symbol packages beyond the push
-(the symbol server is P1), the Windows row and Visual Studio, and the drain and failover part of E3.6 (phase 7).
+**The subset against nuget.org** (`TestNuGetClosingPublic` in [nuget_public_test.go](../../test/e2e/nuget_public_test.go),
+[Q-NUGET-91](../spec/formats/nuget.md#q-nuget-91--the-run-against-nugetorg-is-a-read-only-subset-of-the-closing-set-with-the-search-first-and-an-id-of-more-than-128-versions)).
+It runs in the same set and is read-only. It needs the cluster to reach `api.nuget.org` and the hosts its service index names. The
+run creates two repositories and removes them at its end:
+- `nuget-public-<run>-remote`, a remote of `https://api.nuget.org/v3/index.json` with no `extraHosts`: the default `*.nuget.org`
+  admits the hosts of nuget.org's search and package content;
+- `nuget-public-<run>-all`, a virtual repository with `nuget-e2e` and that remote.
+
+The cases run in this order:
+1. `dotnet package search Newtonsoft --format json` through the remote, before it has cached anything, lists `Newtonsoft.Json`
+   with nuget.org's download count (at least 1,000,000). A search of the remote's cache would list nothing there. Every address
+   in the answer of `GET v3/search` is the remote's.
+2. nuget.exe installs Newtonsoft.Json 13.0.3 through the remote.
+3. `dotnet restore` of Newtonsoft.Json 13.0.3 and Serilog 4.3.0 (602 versions upstream, in pages nuget.org does not inline)
+   through the virtual repository.
+4. The SemVer 2.0.0 registration of `newtonsoft.json` and of `serilog`, through the remote and through the virtual repository,
+   found the way a client finds it (`RegistrationsBaseUrl/3.6.0`), answers 200, and every page listed by address is followed.
+   Every address in every document starts with `<base>/api/nuget/<key>/v3/`, except `projectUrl`, `licenseUrl`, `iconUrl`,
+   `advisoryUrl` and the JSON-LD `@context` (`foreignAddresses`,
+   [Q-NUGET-92](../spec/formats/nuget.md#q-nuget-92--what-the-address-check-of-the-run-against-nugetorg-counts-as-an-address)).
+   Serilog lists more than 128 versions. The test logs how many addresses each document had and how many web links were left
+   out.
+
+Run on the dev cluster on 2026-11-02 at e0c2cfa (`TROVE_E2E_RUN='^TestNuGetClosingPublic$' make e2e SET=nuget-closing`, twice,
+the same result). Four of the seven cases pass:
+- nuget.exe through the remote;
+- the restore through the virtual repository;
+- the remote's registration of `newtonsoft.json`: 86 versions in 2 inlined pages, 978 addresses, 287 web links left out;
+- the remote's registration of `serilog`: 602 versions in 10 pages of trove's own, all listed by address.
+
+Three cases fail on defects that are being fixed:
+- The search lists nothing, because the forwarded search is not built (F-20 of [promt.md](../projektplan/promt.md#8--open-findings)).
+- Both registrations through the virtual repository answer `502 upstream_failed` ("A registration index of a member is no
+  registration index", `merge.DecodeUpstream`). The merge parses the remote's stored index without inflating the gzip bytes
+  nuget.org sent. For Serilog, the next refusal would be the pages listed by address (F-22).
+
+**Not covered here:** the forwarded search of a remote and its per-replica cache against the counting upstream (R-NUGET-016, Q-NUGET-8; not
+built; the subset above asks nuget.org for it), the digest check of a cached package against the upstream (R-NUGET-029, P1; not built, so a
+`packageHash` mismatch is not tested), the symbol packages beyond the push (the symbol server is P1, against nuget.org too), the Windows row
+and Visual Studio, and the drain and failover part of E3.6 (phase 7).
 
 ## Extension checklist
 
@@ -1372,7 +1417,8 @@ cached package against the upstream (R-NUGET-029, P1; not built, so a `packageHa
   [stub_test.go](../../test/npmstub/stub_test.go), and a row in the table above. Never a new listener.
 
 - **A new M1 check.** Use `adminAPI` for the seed and `newSAToken` for a token of your own: the shared administrator
-  token has a read budget (R-API-016) that a list walk spends. A test that exceeds a per-address limit goes through
+  token has a read budget (R-API-016) that a list walk spends. A case that writes more than a handful of times takes a
+  token of its own (`freshAdmin`) under `withWriteBudget`, never a sleep. A test that exceeds a per-address limit goes through
   `podForwards`; one that needs Valkey down goes through `withValkeyStopped`.
 
 - **A new browser journey.** A file `web/e2e/tests/NN-<topic>.spec.ts`, importing `test` and `expect` from `../support`

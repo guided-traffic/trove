@@ -2102,7 +2102,7 @@ the Helm chart.
 | Linux, Valkey stopped | .NET 10 SDK | R-NUGET-031, full run of Test and Release on the commit that closes the phase |
 | Linux, pooler overlay (`POOLER=1`, R-HA-051: transaction-mode pooler) | .NET 10 SDK | every MVP criterion, in the same full run, so no NuGet path depends on session state ([architecture.md](../architecture.md) R-ARCH-019) |
 | Windows | nuget.exe, version pinned in the harness, and .NET 10 SDK | push, install, delete, search, `nuget.config` with credentials |
-| Linux, full run of Test and Release on the commit that closes the phase | .NET 10 SDK | remote and symbol criteria against nuget.org and its symbol server |
+| Linux, full run of Test and Release on the commit that closes the phase | .NET 10 SDK, nuget.exe on Mono | remote, search and virtual criteria against nuget.org, read-only (`TestNuGetClosingPublic`, Q-NUGET-91); the symbol criteria against its symbol server join with R-NUGET-022 (P1) |
 | Manual, per release | Visual Studio 2022 | criteria marked manual |
 
 - The NuGet loads of the node-drain test ([ha-and-helm.md](../ha-and-helm.md) R-HA-059) and the
@@ -4672,6 +4672,80 @@ Context: the bounded scan of R-NUGET-005 step 1 (Q-NUGET-23) takes the end-of-ce
 **Rationale:** the reader's promise is that what was checked is what is served; refusing the ambiguous archive keeps that without following any reader's guess. The price is the refusal of a package whose comment holds the signature where a record fits. The development agent revisits this if a package from a real client is refused for a signature in its comment.
 
 **Applied in the spec:** R-NUGET-005 step 1. Tests: `TestR_NUGET_005_AnEndRecordAfterTheOneTheScanChoseIsRefused`, `TestR_NUGET_005_EveryEntryIsReadFromTheOffsetTheScanChecked`; the seed and the corpus entry `second-end-record` of `FuzzR_ARCH_028_Inspect`.
+
+### Q-NUGET-91 · The run against nuget.org is a read-only subset of the closing set, with the search first and an ID of more than 128 versions
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: E3.1 asks for "the run against nuget.org, in the full run of Test and Release on the commit that closes the phase".
+R-NUGET-027's row asks for the remote and symbol criteria against nuget.org and its symbol server, and R-NUGET-015 and
+R-NUGET-016 state their criteria against the stub in CI and against nuget.org in that run. The counting stub covers every
+criterion that needs a switch: a stopped upstream, a delay, a mismatch, a gone ID and request counts. What only nuget.org shows
+is its real shape:
+- registrations stored gzip-encoded, whatever the request asked for;
+- the pages of a large ID listed by address, not inlined;
+- a search with download counts;
+- vulnerabilities on old versions.
+
+npm runs its public subset in `TestNPMClosing` (Q-NPM-46).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A read-only subset in the set `nuget-closing`: `TestNuGetClosingPublic` (chosen) | A remote of `https://api.nuget.org/v3/index.json` (no `extraHosts`, so the default `*.nuget.org`) and a virtual repository with `nuget-e2e` and that remote, both new for the run. The cases run in this order: (1) `dotnet package search Newtonsoft` through the remote while it has cached nothing, and the addresses of the API search; (2) nuget.exe installs Newtonsoft.Json 13.0.3 through the remote; (3) `dotnet restore` of Newtonsoft.Json 13.0.3 and Serilog 4.3.0 through the virtual repository; (4) the registration of `newtonsoft.json` and of `serilog` through both repositories, with every page followed and every address checked (Q-NUGET-92), and Serilog's versions counted | Every criterion of R-NUGET-015 and R-NUGET-016 that needs no switch runs against the real upstream once per phase, and nothing is written upstream. The cases that need a fix still in progress stay in the test and fail until the fix lands, so they cannot be forgotten | The run depends on nuget.org being reachable from the runner, and on the pinned versions staying published: unlisting keeps a version in the registration; deletion is rare |
+| (b) The same cases in the set `nuget`, on every change | — | An earlier signal | CI on every change would depend on the public internet, which R-NUGET-027 rules out for the per-change run |
+| (c) Recorded nuget.org answers in the stub | — | No network | Q-NUGET-26 chose a generated corpus; a recording ages and proves nothing about the upstream as it is on the day the phase closes |
+
+**Choice:** (a). The search runs first because a remote searches its own cache until the forwarded search exists. After a
+restore, a cache-only search would list Newtonsoft.Json too. On a remote that has cached nothing, a hit with nuget.org's
+download count (at least 1,000,000) can only come from forwarding.
+
+The packages are chosen as follows:
+- Newtonsoft.Json 13.0.3 is the version R-NUGET-015 names. It has 86 versions in inlined pages.
+- Serilog 4.3.0 has 602 versions in ten pages of 64 that nuget.org does not inline (2026-11-02), so the merge of a remote
+  member must read the upstream's pages (R-NUGET-017).
+
+Neither package has a dependency for `net10.0`, so a restore reads exactly these IDs. The count is asserted as "more than 128",
+not as an exact number, because nuget.org adds versions.
+
+Not in the subset:
+- The symbol server: R-NUGET-022 is P1 and not built.
+- The criteria that switch the upstream off: nuget.org cannot be switched off, and the stub covers them on every change.
+
+**Rationale:** the closing run should prove the protocol against the upstream customers use, not only against the stub built
+from its description, and it must not change that upstream. The development agent would revisit this in two cases:
+- the CI runners cannot reach nuget.org;
+- Serilog's registration changes shape (its pages inlined), in which case another ID with more than 128 versions in non-inlined
+  pages takes its place.
+
+**Applied in the spec:** R-NUGET-027 (the row of the closing run against nuget.org: the symbol criteria join with R-NUGET-022).
+Code: [nuget_public_test.go](../../../test/e2e/nuget_public_test.go). Test: `TestNuGetClosingPublic`.
+
+### Q-NUGET-92 · What the address check of the run against nuget.org counts as an address
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-015's criterion says that every URL of the registration index except `projectUrl`, `licenseUrl` and `iconUrl`
+starts with `<base>/api/nuget/<key>/v3/`. nuget.org's documents carry three more kinds of URL:
+- the IRIs of the JSON-LD `@context`, such as `http://schema.nuget.org/schema#`, and in a search answer an `@base` of the
+  upstream's registration hive;
+- the GitHub advisory page in `vulnerabilities[].advisoryUrl`, on `newtonsoft.json` below 13.0.1;
+- the `@id` of a vulnerability or a deprecation.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every string member that is an absolute `http` or `https` URL, except `projectUrl`, `licenseUrl`, `iconUrl`, `advisoryUrl` and the whole `@context` (chosen) | `foreignAddresses` walks the document | It catches any upstream address a client could follow (a page, a `packageContent`, an `@id` in a vulnerability), including members that no table names | `advisoryUrl` is left out while F-24 of [promt.md](../../projektplan/promt.md#8--open-findings) decides it |
+| (b) Only the members of R-NUGET-015's rewriting table | — | The letter of the table | It misses members nobody listed, such as the `@id` in `vulnerabilities`, which is what F-24 found |
+| (c) Every URL, without exceptions | — | Simple | The web links and the vocabulary IRIs are not trove's by design, so the check could never pass |
+
+**Choice:** (a). `advisoryUrl` is a page for people, like `projectUrl`. The check treats it that way until F-24's decision is
+written back; if that decision rewrites the member, the exception goes. A NuGet client never requests an IRI of `@context`.
+
+**Rationale:** the criterion is about where a client goes next, and every member that holds an address can send it somewhere.
+Listing the exceptions instead of the rules keeps a new upstream member from slipping past the check. The development agent
+would revisit this if a NuGet client starts to resolve JSON-LD IRIs, or when F-24 is decided.
+
+**Applied in the spec:** none (R-NUGET-015's criterion is unchanged; the check reads it). Code: `foreignAddresses` in
+[nuget_public_test.go](../../../test/e2e/nuget_public_test.go).
 
 ## What this does not cover
 
