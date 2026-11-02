@@ -292,6 +292,10 @@ to denial-of-service attempts.
   failed-sign-in counters, the coordination of fetches and the main installation's answers; without it, each replica works
   alone with the budgets divided by the number of replicas; losing Valkey costs performance, never correctness (INV-3).
   With a local volume per replica, the chart can route by path so that each artifact lives on one replica
+- ⚪ Anonymous reads (owner, 2026-11-02): as on the main installation; the Bastion admits anonymous requests exactly when
+  the main installation does. Because an anonymous request costs an attacker nothing, the Bastion absorbs misses itself:
+  a negative cache for names the main installation does not have, a budget of concurrent requests to the main
+  installation that misses cannot exceed, and stricter per-address limits for requests without a credential
 - ⚪ The main installation counts the real client: the Bastion stops abuse before a request reaches the main installation,
   and the main installation lists the Bastion's addresses in `server.trusted_proxies`, so its per-address limits apply to
   the client and not to the Bastion
