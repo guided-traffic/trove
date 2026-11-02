@@ -254,8 +254,9 @@ The owner moved projects into the beta on 2026-11-02, before GitLab CI OIDC: pro
 accounts for external parties and give them fine or coarse access to chosen repositories of their project, and the
 Bastion serves those parties. Phase 5 then maps GitLab pipelines into projects.
 
-- ⚪ Spec first: R-AUTHZ-026 completed with project service accounts (Q-AUTHZ-169), the project screens and the open
-  decision whether a project administrator may create remote repositories (a new egress path)
+- ⚪ Spec first: R-AUTHZ-026 completed with project service accounts (Q-AUTHZ-169) and the project screens; a project
+  administrator creates remote repositories too, bounded by the outbound address rules
+  ([Q-AUTHZ-173](../spec/authorization.md#q-authz-173--a-project-administrator-creates-remote-repositories), owner 2026-11-02)
 - ⚪ Projects: an immutable key, display name and description, the switches `managePolicies` and `manageRepositories`
   set by an administrator; a repository belongs to at most one project, repositories a project administrator creates
   carry the project key as prefix

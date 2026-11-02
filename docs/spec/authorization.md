@@ -1788,7 +1788,9 @@ remain P2.
   - with `managePolicies`: create, change and delete project policies (`"project": "<key>"`),
     granting any action (`manage` included, except to CI mappings) to users, groups, service
     accounts and CI mappings, never to `anonymous` or `authenticated`;
-  - with `manageRepositories`: create, change and delete the project's repositories.
+  - with `manageRepositories`: create, change and delete the project's repositories, of every class: local, remote and
+    virtual (owner, [Q-AUTHZ-173](#q-authz-173--a-project-administrator-creates-remote-repositories)). A remote's upstream
+    stays subject to the outbound address rules of the installation ([security/egress.md](../security/egress.md)).
 
   They cannot bind system roles, cannot see global policies (unless they hold `policies:read`) and
   cannot assign repositories outside their project. CI mapping delegation stays with R-CI-023 and
@@ -3960,6 +3962,26 @@ neither download, upload nor change artifacts; the role is bound to a group thro
 
 **Applied in the spec:** R-AUTHZ-010 (the capability `content:metadata-read`, the triage row), R-AUTHZ-011 (the auditor
 paragraph, its priority).
+
+### Q-AUTHZ-173 · A project administrator creates remote repositories
+
+Status: **Decided by the owner on 2026-11-02**.
+
+Context: `manageRepositories` lets a project administrator create the project's repositories. A remote repository opens
+an outbound path to an upstream of the creator's choice, so the question was whether the switch covers remote
+repositories or whether they stay with system administrators.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `manageRepositories` covers every class, remote included (chosen) | A project administrator creates local, remote and virtual repositories of the project | Teams set up their own proxies of public registries without a system administrator | A new outbound path per remote; bounded by the installation's outbound address rules |
+| (b) Remote repositories stay with system administrators | A separate switch or `repositories:write-config` | Every new upstream is seen by an administrator | Every team needs an administrator for each proxy |
+
+**Choice:** (a), the owner's decision ("ja klar").
+
+**Rationale:** the owner's decision. The outbound address rules of the installation (allow and deny lists, private-address
+refusal) apply to every remote, whoever created it. The development agent records no revisit condition.
+
+**Applied in the spec:** R-AUTHZ-026 (`manageRepositories` covers every class).
 
 ## What this does not cover
 
