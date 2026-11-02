@@ -31,6 +31,7 @@ numbers (owner, 2026-11-02).
 | [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | ⚪ |
 | [5b · trove Bastion](#phase-5b--trove-bastion-m13) | An exposed, read-only cache instance in front of the main installation that serves released content to external parties and takes load off it | ⚪ |
 | [6 · Vulnerability scanning](#phase-6--vulnerability-scanning-m4b) | Own advisory mirror, findings and vulnerability report, malicious versions blocked, npm and NuGet audits from trove's data | ⚪ |
+| [6b · Remote full mirror](#phase-6b--remote-full-mirror) | A remote repository can mirror every discoverable package of its upstream in the background, besides the default pull-through | ⚪ |
 | [7 · HA, backup, Helm](#phase-7--ha-hardening-backup-and-helm-m5) | Drains and failovers without errors, backup and restore; beta candidate | ⚪ |
 | [8 · Walkthrough and beta](#phase-8--walkthrough-and-beta-release) | Owner review, objections fixed; **beta release** | ⚪ |
 
@@ -424,6 +425,30 @@ applies to the npm and NuGet parts of this phase.
 - ⚪ E2E: a full sync drained mid-run finishes on another `worker`; the set once with Valkey stopped
 - ⚪ Performance bounds V-1 to V-9 with 100,000 stored versions
 
+## Phase 6b · Remote full mirror
+
+Spec: a mirror mode for remote repositories on [repositories-and-proxy.md](../spec/repositories-and-proxy.md) (to be
+written first)
+
+The owner's request of 2026-11-02: pull-through stays the default of a remote repository; a remote can also be set to full
+mirror, in which trove downloads and keeps everything it can discover at the upstream on its own. The phase comes before
+phase 7, so that the failure suite covers the background sync too.
+
+- ⚪ Spec first: the mode per remote repository (`pullThrough`, the default, or `mirror`); what "discoverable" means per
+  format (NuGet: the upstream's catalog or its package listing; npm: the upstream's package list or change feed, where it
+  has one); what the include and exclude patterns of the remote bound; storage and quota bounds, because a mirror of a
+  public registry is terabytes; the catalog's pull-replication entries (API-082 to API-090) it pulls forward or leaves
+- ⚪ Background synchronisation on `worker`: a job per mirrored remote, resumable from a checkpoint, continued after a
+  drain, a restart or a failover, and started again on its own after an error
+- ⚪ Upstream throttling: `429`, `503` with `SlowDown` and every other rate-limit answer are honoured (`Retry-After`, back-off
+  with jitter, fewer concurrent fetches), and the sync resumes by itself when the upstream allows it again
+- ⚪ Client requests first: a request from a client is served before the background sync; the sync uses a lower-priority
+  share of the remote's fetch budget that client fills pre-empt
+- ⚪ Status: progress, last complete pass, errors and rate-limit waits per mirrored remote in the API and the admin UI, and
+  as metrics; the mirror's fills audited like cache fills
+- ⚪ Integration tests against the counting test upstreams answering `429` and `SlowDown`; e2e: a mirror pass while clients
+  install, with the clients' requests served first
+
 ## Phase 7 · HA hardening, backup and Helm (M5)
 
 Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · spec: [ha-and-helm.md](../spec/ha-and-helm.md), [backup-and-restore.md](../spec/backup-and-restore.md)
@@ -445,6 +470,7 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
 - ⚪ The drain criterion of the security audit (R-NPM-038, moved from phase 3): the `web` pod that forwards an `npm audit`
   to a provider answering after 20 s is deleted 1 s in; `npm audit` succeeds and no pod gets `SIGKILL`
 - ⚪ The default of `health.shutdown_drain_delay` (5 s, proposed) set from the endpoint-removal time of the target Ingress measured under load; the dev profile needs 15 s on the CI runners (Actions run 41241903588)
+- ⚪ The mirror sync of phase 6b under the failure suite: a `worker` drained and lost mid-pass, the upstream throttling
 - ⚪ The Bastion under the failure suite: a Bastion replica drained and lost, the main installation unreachable and
   failing over, a rolling upgrade of either side
 - ⚪ Vulnerability scanning under the failure suite: sync and evaluation jobs across drains and failovers, blocks and triage after a restore (E5.13)
