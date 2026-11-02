@@ -611,8 +611,8 @@ profile after the fixes (`SET=push` and `SET=failover`, above): the measurements
    (every copy on a deletion or a payload without a version), and a fetched answer is stored with `Cache.Set`, because the key
    holds the version. Regression: `TestR_ARCH_013_ACopyOfTheCurrentConfigurationOutlivesTheChange` in
    [test/integration/proxy/query_test.go](../../test/integration/proxy/query_test.go) (the creation, an update, another
-   repository's change during a fill: all three fail on 17f0e54), `TestQueryEviction` in
-   [internal/proxy/query_test.go](../../internal/proxy/query_test.go) and the payload's version in `TestCreateReadUpdate`.
+   repository's change during a fill: all three fail on 17f0e54), `TestQueryEviction` (since F-31
+   `TestChangeEviction` in [internal/repository/change_test.go](../../internal/repository/change_test.go)) and the payload's version in `TestCreateReadUpdate`.
    After the fix, on the dev cluster: `TestNuGetSearchClaimTiming` alone 5 of 5 green, with the warm-ups still 0.76 to 0.90 s
    after the creation and no upstream search after the claim, then `make e2e SET=nuget` twice in a row green (79 tests and
    subtests, 274 s and 275 s).
