@@ -5,6 +5,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/auth/scope"
+	"github.com/guided-traffic/trove/internal/ci/claims"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/repository"
@@ -91,8 +92,13 @@ type Subject struct {
 	Name string
 	// Groups were resolved at request time by the authentication stage.
 	Groups []principal.GroupRef
-	// Mappings are CI identity mapping references (M4).
+	// Mappings are the CI identity mapping references ("ci:<issuer>/<mapping>") recorded on a CI
+	// token at exchange (R-AUTHZ-002); the principal set of a CI subject.
 	Mappings []string
+	// CI is the frozen use-time bundle of a CI token (R-AUTHZ-014, Q-CI-17): its inline grants, caps,
+	// groups and project identity. Nil for every other subject. It travels with the token cache
+	// entry, so reading it costs no query (R-AUTHZ-015).
+	CI *claims.Frozen
 	// Scope is the credential's ceiling; nil means none (sessions).
 	Scope *scope.Scope
 	// Endpoint is the name of the endpoint whose listener accepted the request

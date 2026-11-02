@@ -44,6 +44,9 @@ type Config struct {
 	// The M3 sections.
 	NuGet NuGet `yaml:"nuget"`
 
+	// The M4 section: the GitLab CI OIDC federation (ci.go).
+	CI CI `yaml:"ci"`
+
 	// ConfigAsCode holds secrets_dir, which the secret references of M2 use.
 	ConfigAsCode AsCode `yaml:"config_as_code"`
 }

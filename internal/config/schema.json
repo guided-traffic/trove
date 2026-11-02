@@ -733,6 +733,345 @@
       },
       "type": "object"
     },
+    "ci": {
+      "additionalProperties": false,
+      "properties": {
+        "exchange": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "false answers every exchange with 404 and registers no limiter state.",
+              "type": "boolean",
+              "x-trove-env": "TROVE_CI_EXCHANGE_ENABLED"
+            },
+            "expose_reason": {
+              "default": true,
+              "description": "false leaves the reason member out of the 400 answers; logs and audit keep it (R-CI-008).",
+              "type": "boolean",
+              "x-trove-env": "TROVE_CI_EXCHANGE_EXPOSE_REASON"
+            },
+            "max_body_bytes": {
+              "default": 65536,
+              "description": "Largest request body of the exchange.",
+              "maximum": 1048576,
+              "minimum": 1024,
+              "type": "integer",
+              "x-trove-env": "TROVE_CI_EXCHANGE_MAX_BODY_BYTES"
+            },
+            "max_subject_token_bytes": {
+              "default": 16384,
+              "description": "Largest subject token (R-CI-004 step 1).",
+              "maximum": 65536,
+              "minimum": 512,
+              "type": "integer",
+              "x-trove-env": "TROVE_CI_EXCHANGE_MAX_SUBJECT_TOKEN_BYTES"
+            },
+            "rate_limit": {
+              "additionalProperties": false,
+              "properties": {
+                "exempt_cidrs": {
+                  "default": [],
+                  "description": "Client addresses or CIDRs that skip the per-address limiter, for example a runner network behind NAT. They stay bounded by server.max_in_flight and the per-subject limiter.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "x-trove-env": "TROVE_CI_EXCHANGE_RATE_LIMIT_EXEMPT_CIDRS"
+                },
+                "per_client_ip_burst": {
+                  "default": 100,
+                  "description": "Burst of the per-address limiter.",
+                  "minimum": 1,
+                  "type": "integer",
+                  "x-trove-env": "TROVE_CI_EXCHANGE_RATE_LIMIT_PER_CLIENT_IP_BURST"
+                },
+                "per_client_ip_per_minute": {
+                  "default": 600,
+                  "description": "Limiter ci_exchange_address: requests per client address and minute, cluster-wide.",
+                  "minimum": 1,
+                  "type": "integer",
+                  "x-trove-env": "TROVE_CI_EXCHANGE_RATE_LIMIT_PER_CLIENT_IP_PER_MINUTE"
+                },
+                "per_subject_burst": {
+                  "default": 100,
+                  "description": "Burst of the per-subject limiter.",
+                  "minimum": 1,
+                  "type": "integer",
+                  "x-trove-env": "TROVE_CI_EXCHANGE_RATE_LIMIT_PER_SUBJECT_BURST"
+                },
+                "per_subject_per_minute": {
+                  "default": 300,
+                  "description": "Limiter ci_exchange_subject: exchanges per CI issuer and subject (the first pin claim, usually project_id) and minute, cluster-wide.",
+                  "minimum": 1,
+                  "type": "integer",
+                  "x-trove-env": "TROVE_CI_EXCHANGE_RATE_LIMIT_PER_SUBJECT_PER_MINUTE"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "issuances": {
+          "additionalProperties": false,
+          "properties": {
+            "retention": {
+              "default": "8760h",
+              "description": "Issuance records whose token expired longer ago than this are deleted by the task ci-issuance-retention. Go durations have no day unit.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_CI_ISSUANCES_RETENTION",
+              "x-trove-type": "duration"
+            }
+          },
+          "type": "object"
+        },
+        "issuers": {
+          "default": [],
+          "description": "CI issuers declared here (R-CI-001, Q-CI-16): trove migrate applies them by name with source configuration, in one transaction, and disables the configuration issuers no longer listed; the API and the UI show them read-only. Each entry carries the fields of the issuer API in snake_case with the same validation and defaults; name, kind and issuer are required.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "allow_missing_typ": {
+                "type": "boolean"
+              },
+              "allowed_algorithms": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "allowed_audiences": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "allowed_typ": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "ca_bundle_ref": {
+                "type": "string"
+              },
+              "clock_skew_seconds": {
+                "type": "integer"
+              },
+              "description": {
+                "type": "string"
+              },
+              "discovery_url": {
+                "type": "string"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "exclusive_audience": {
+                "type": "boolean"
+              },
+              "issuer": {
+                "type": "string"
+              },
+              "jwks_uri": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "max_ttl_seconds": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "pin_claims": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "public_issuer": {
+                "type": "boolean"
+              },
+              "required_claims": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "single_use_subject_tokens": {
+                "type": "boolean"
+              },
+              "use_outbound_proxy": {
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array",
+          "x-trove-env": "TROVE_CI_ISSUERS"
+        },
+        "job_token_fallback": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "The CI_JOB_TOKEN fallback is not built (R-CI-022, Q-CI-5); true stops the start.",
+              "type": "boolean",
+              "x-trove-env": "TROVE_CI_JOB_TOKEN_FALLBACK_ENABLED"
+            }
+          },
+          "type": "object"
+        },
+        "mappings": {
+          "additionalProperties": false,
+          "properties": {
+            "cache_safety_ttl": {
+              "default": "10m",
+              "description": "SafetyTTL of the in-process copy of the issuers and their mappings (R-ARCH-018).",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_CI_MAPPINGS_CACHE_SAFETY_TTL",
+              "x-trove-type": "duration"
+            },
+            "max_per_issuer": {
+              "default": 1000,
+              "description": "Most mappings of one CI issuer.",
+              "maximum": 100000,
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_CI_MAPPINGS_MAX_PER_ISSUER"
+            }
+          },
+          "type": "object"
+        },
+        "replay": {
+          "additionalProperties": false,
+          "properties": {
+            "retention_after_expiry": {
+              "default": "15m",
+              "description": "How long a recorded jti is kept after the subject token's exp plus the issuer's clock skew.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_CI_REPLAY_RETENTION_AFTER_EXPIRY",
+              "x-trove-type": "duration"
+            },
+            "warn_after_exchanges": {
+              "default": 10,
+              "description": "From this exchange count of one subject token on, every further exchange of an issuer without single use records ci.exchange.repeated.",
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_CI_REPLAY_WARN_AFTER_EXCHANGES"
+            }
+          },
+          "type": "object"
+        },
+        "signing_keys": {
+          "additionalProperties": false,
+          "properties": {
+            "cache_safety_ttl": {
+              "default": "10m",
+              "description": "SafetyTTL of the in-process copy of the key sets (R-ARCH-018).",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_CI_SIGNING_KEYS_CACHE_SAFETY_TTL",
+              "x-trove-type": "duration"
+            },
+            "default_refresh_interval": {
+              "default": "1h",
+              "description": "Next refresh of a key set whose response carries no Cache-Control max-age.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_CI_SIGNING_KEYS_DEFAULT_REFRESH_INTERVAL",
+              "x-trove-type": "duration"
+            },
+            "fetch_timeout": {
+              "default": "5s",
+              "description": "Timeout of one discovery or key request.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_CI_SIGNING_KEYS_FETCH_TIMEOUT",
+              "x-trove-type": "duration"
+            },
+            "max_refresh_interval": {
+              "default": "24h",
+              "description": "Upper clamp of the refresh interval.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_CI_SIGNING_KEYS_MAX_REFRESH_INTERVAL",
+              "x-trove-type": "duration"
+            },
+            "max_response_bytes": {
+              "default": 1048576,
+              "description": "Largest discovery or key response read.",
+              "maximum": 16777216,
+              "minimum": 4096,
+              "type": "integer",
+              "x-trove-env": "TROVE_CI_SIGNING_KEYS_MAX_RESPONSE_BYTES"
+            },
+            "max_stale": {
+              "default": "24h",
+              "description": "Age of the stored key set after which exchanges answer 503 signing_keys_unavailable.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_CI_SIGNING_KEYS_MAX_STALE",
+              "x-trove-type": "duration"
+            },
+            "min_refresh_interval": {
+              "default": "5m",
+              "description": "Lower clamp of the refresh interval; also the retry delay after a failed fetch.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_CI_SIGNING_KEYS_MIN_REFRESH_INTERVAL",
+              "x-trove-type": "duration"
+            },
+            "unknown_kid_refresh_interval": {
+              "default": "1m",
+              "description": "At most one on-demand fetch per issuer and replica for a token whose kid is unknown (R-CI-003).",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_CI_SIGNING_KEYS_UNKNOWN_KID_REFRESH_INTERVAL",
+              "x-trove-type": "duration"
+            }
+          },
+          "type": "object"
+        },
+        "token": {
+          "additionalProperties": false,
+          "properties": {
+            "default_ttl": {
+              "default": "15m",
+              "description": "Lifetime of a CI token when the request names none.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_CI_TOKEN_DEFAULT_TTL",
+              "x-trove-type": "duration"
+            },
+            "max_ttl": {
+              "default": "1h",
+              "description": "Upper bound of every CI token; at most auth.tokens.cit.max_ttl (R-CI-016).",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_CI_TOKEN_MAX_TTL",
+              "x-trove-type": "duration"
+            },
+            "min_ttl": {
+              "default": "30s",
+              "description": "Shortest lifetime worth issuing; a subject token with less left answers subject_token_expires_too_soon.",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_CI_TOKEN_MIN_TTL",
+              "x-trove-type": "duration"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
     "cluster": {
       "additionalProperties": false,
       "properties": {

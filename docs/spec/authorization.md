@@ -937,7 +937,9 @@ R-CI-020). This requirement fixes how the evaluator treats a CI token:
   `manage` is rejected with 422 `action_not_allowed`.
 - **Project identity.** The issuance record's issuer and `project_id` give the token the owner
   identity `ci:<issuer>:project:<project_id>` (R-CI-015), which package ownership uses
-  (R-AUTHZ-018).
+  (R-AUTHZ-018). The token carries them, the frozen inline grants, the caps and the mappings in its cache entry
+  (`api_token.ci_context`, read with the token for authentication), so the evaluator queries nothing for them
+  (R-AUTHZ-015, [gitlab-ci-oidc.md](gitlab-ci-oidc.md) Q-CI-17).
 - **Lifecycle.** Disabling or deleting a mapping or CI issuer revokes its tokens (R-CI-017).
   Editing a mapping leaves the frozen inline grants of issued tokens unchanged until they expire;
   policy and group grants follow live changes.
@@ -1808,13 +1810,14 @@ What they may do, per right:
 |---|---|
 | Administration (always) | `manage` on every project repository (package ownership, cache invalidation, claims of scope `members`); it is decided from the administration of the project, never from a stored grant ([Q-AUTHZ-196](#q-authz-196--the-manage-of-a-project-administrator-is-decided-from-the-administration-not-from-a-grant-per-repository)). Read the project, its administrators and counts, its policies, the full configuration of its repositories (as `repositories:read-config` does, never a secret value), its service accounts and their tokens' metadata. Change the description of the project's service accounts, disable and delete them, revoke their tokens ([Q-AUTHZ-177](#q-authz-177--what-a-project-administrator-may-do-with-service-accounts-and-their-tokens)). |
 | `managePolicies` | Create, change and delete project policies (`"project": "<key>"`), granting any action (`manage` included, except to CI mappings) to users, groups, service accounts and CI mappings, never to `anonymous` or `authenticated`; validate a policy. Create and enable project service accounts, issue their tokens. Look up the users and groups to name in policies ([Q-AUTHZ-182](#q-authz-182--how-a-project-administrator-finds-the-users-and-groups-it-names)). |
+| `managePolicies` also | Manage the project's CI mappings: list the issuers read-only, create, change and delete mappings of the tier `project:<key>` and dry-run them, and read the issuances of tokens through them ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-019, Q-CI-26). The bounds are those of a project policy: the project's repositories only, its policies only, no groups, never `manage` |
 | `manageRepositories` | Create, change and delete the project's repositories, of every class: local, remote and virtual (owner, [Q-AUTHZ-173](#q-authz-173--a-project-administrator-creates-remote-repositories)). Test the saved and the unsaved upstream of a remote. A remote's upstream stays subject to the outbound address rules of the installation ([security/egress.md](../security/egress.md)); a virtual repository's members and deploy target are repositories of the project ([Q-AUTHZ-178](#q-authz-178--a-virtual-repository-of-a-project-administrator-stays-inside-the-project)); an upstream secret is given as a value, never as a reference of the installation, and a stored one does not follow a new address ([Q-REPO-127](repositories-and-proxy.md#q-repo-127--a-project-administrator-gives-an-upstream-secret-as-a-value-and-a-stored-one-stays-with-its-hosts), 422 `secret_value_required`); the outbound path is the installation's ([Q-REPO-128](repositories-and-proxy.md#q-repo-128--a-project-administrators-remote-repository-takes-the-installations-outbound-path), 422 `outbound_path_restricted`). |
 
 They cannot bind system roles, cannot see global policies (unless they hold `policies:read`), cannot see or change
 repositories outside their project, cannot assign or unassign repositories, cannot change the switches or the
 administrators of any project, cannot create users, groups or global service accounts, and cannot add or change an entry
-for `anonymous` or `authenticated` (R-AUTHZ-030). CI mapping delegation stays with R-CI-023 and is independent of
-projects in P1; an administrator can name a project's administrator group as the delegate there (Q-AUTHZ-7).
+for `anonymous` or `authenticated` (R-AUTHZ-030). The CI mappings of a project are managed by its administrators under `managePolicies` (see the table, [gitlab-ci-oidc.md](gitlab-ci-oidc.md) Q-CI-26);
+delegation of CI mappings to a group outside projects stays with R-CI-023 (P1).
 
 **Project policies.**
 

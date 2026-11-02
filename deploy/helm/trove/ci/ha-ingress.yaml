@@ -35,6 +35,19 @@ config:
         group: gh-wds18-k8s-main-admins            # example
       - role: auditor                              # example
         group: gh-wds18-k8s-main-auditors          # example
+  ci:                                              # R-CI-001, Q-CI-16: the GitLab CI OIDC federation
+    token:
+      max_ttl: 30m                                 # example; at most auth.tokens.cit.max_ttl (R-CI-016)
+    exchange:
+      rate_limit:
+        exempt_cidrs: ["10.20.0.0/16"]             # example: a runner network behind NAT (R-CI-021)
+    issuers:                                       # applied by the migration Job, read-only in the API and the UI
+      - name: gitlab-main                          # example
+        kind: gitlab
+        issuer: https://gitlab.example.com         # example
+        public_issuer: false                       # example: an instance without open sign-up
+        allowed_audiences: ["https://packages.example.com"]   # example
+        ca_bundle_ref: file:/var/run/secrets/gitlab-ca/ca.crt # example: an instance behind a private CA
 secrets:
   database:
     existingSecret: trove-db-app                   # example

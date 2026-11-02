@@ -65,6 +65,13 @@ tags:
     description: Projects, the unit of delegated administration (R-AUTHZ-026).
   # <<< M5a projects
   #
+  # >>> M4 ci
+  - name: ci
+    description: |
+      GitLab CI OIDC federation (R-CI-001 to R-CI-030): trusted CI issuers and their signing keys, identity mappings, the
+      dry run, the issued CI tokens, and the token exchange at `POST /api/v1/auth/oidc/token`.
+  # <<< M4 ci
+  #
   # >>> M1 repository
   - name: repositories
     description: Repository configuration (create, read, update, list, delete) and the format catalog.
@@ -2119,6 +2126,7 @@ paths:
         The token's expiry and scope (R-AUTH-028). A session answers `404 not_a_token`.
       x-trove-permission:
         authenticated: true
+      x-trove-ci: admitted
       responses:
         "200":
           description: The token.
@@ -2145,6 +2153,7 @@ paths:
         from it are revoked with it. A session answers `404 not_a_token`.
       x-trove-permission:
         authenticated: true
+      x-trove-ci: admitted
       responses:
         "204":
           description: The token is revoked.
@@ -4682,6 +4691,1249 @@ paths:
           $ref: "#/components/responses/Unavailable"
   # <<< M1 repository
   #
+  # >>> M4 ci
+  /api/v1/ci/issuers:
+    get:
+      operationId: listCiIssuers
+      tags: [ci]
+      summary: List CI issuers
+      description: |
+        The trusted CI issuers with their mapping count and key status, ordered by name (R-CI-002). An issuer with
+        `source: configuration` is declared in `ci.issuers` of the system configuration and read-only here (Q-CI-16).
+      x-trove-permission:
+        permission: ci:read
+      responses:
+        "200":
+          description: The issuers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiIssuerList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+    post:
+      operationId: createCiIssuer
+      tags: [ci]
+      summary: Create a CI issuer
+      description: |
+        Creates an issuer with the defaults of R-CI-001 filled in. With `validate: true` (the default) it fetches the discovery
+        document and the key set first and answers `422` with a `code` (`discovery_unreachable`, `issuer_mismatch`,
+        `no_usable_keys`, `algorithms_not_offered`) when the issuer would not be usable. `pin_claim_not_immutable`,
+        `public_issuer_required` and `kind_not_available` are the other 422 codes. A name or issuer URL that exists answers
+        `409`. Records `ci.issuer.created` and notifies the change area `ci_mappings`.
+      x-trove-recent-auth: true
+      x-trove-permission:
+        permission: ci:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CiIssuerCreate"
+      responses:
+        "201":
+          description: The issuer was created.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiIssuer"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+  /api/v1/ci/issuers/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        description: The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable.
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+    get:
+      operationId: getCiIssuer
+      tags: [ci]
+      summary: Read a CI issuer
+      description: |
+        The issuer with its mapping count and key summary. The `ETag` is the issuer's `version` (R-CI-002).
+      x-trove-permission:
+        permission: ci:read
+      responses:
+        "200":
+          description: The issuer.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiIssuer"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+    put:
+      operationId: replaceCiIssuer
+      tags: [ci]
+      summary: Replace a CI issuer
+      description: |
+        Replaces the full representation; an omitted optional member takes its default. `name`, `issuer` and `kind` are
+        immutable. `If-Match` is required (`428` without it, `412` with `currentEtag` for a stale tag). An issuer with
+        `source: configuration` answers `409 issuer_managed_by_configuration`. One event is recorded, chosen by `enabled`:
+        `ci.issuer.disabled`, `ci.issuer.enabled` or `ci.issuer.updated`; disabling revokes the unexpired tokens issued through
+        the issuer in the same transaction (R-CI-017).
+      x-trove-recent-auth: true
+      x-trove-permission:
+        permission: ci:write
+      x-trove-if-match: required
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CiIssuerInput"
+      responses:
+        "200":
+          description: The issuer after the change.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiIssuer"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "428":
+          $ref: "#/components/responses/PreconditionRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+    delete:
+      operationId: deleteCiIssuer
+      tags: [ci]
+      summary: Delete a CI issuer
+      description: |
+        Refuses with `409` while the issuer has mappings unless `cascade=true`, which deletes the mappings and their
+        principals in the same transaction. Revokes the unexpired tokens issued through the issuer. A configuration issuer is
+        deletable only once it is `removedFromConfiguration`. `If-Match` is optional.
+      x-trove-recent-auth: true
+      x-trove-permission:
+        permission: ci:write
+      parameters:
+        - name: cascade
+          in: query
+          description: Delete the issuer's mappings with it.
+          schema:
+            type: boolean
+            default: false
+        - $ref: "#/components/parameters/IfMatchOptional"
+      responses:
+        "204":
+          description: The issuer is deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+  /api/v1/ci/issuers/{name}/keys:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        description: The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable.
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+    get:
+      operationId: getCiIssuerKeys
+      tags: [ci]
+      summary: Read the cached key set of a CI issuer
+      description: |
+        The key IDs, types and algorithms of the stored key set, the fetch time, the next refresh and the last error
+        (R-CI-002, R-CI-003). It makes no request to the issuer. The error names the failure class, the HTTP status and the
+        host, never bytes of a response body.
+      x-trove-permission:
+        permission: ci:read
+      responses:
+        "200":
+          description: The key status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiKeyStatus"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+  /api/v1/ci/issuers/{name}/keys/refresh:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        description: The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable.
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+    post:
+      operationId: refreshCiIssuerKeys
+      tags: [ci]
+      summary: Fetch the discovery document and keys of a CI issuer now
+      description: |
+        Fetches on the replica that serves the request, outside any database transaction, and stores the key set under the
+        write rule of R-CI-003. Answers `502` when the issuer is unreachable. Records `ci.keys.refreshed` or
+        `ci.keys.refresh_failed`.
+      x-trove-permission:
+        permission: ci:write
+      responses:
+        "200":
+          description: The key status after the fetch.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiKeyStatus"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+  /api/v1/ci/issuers/{issuer}/mappings:
+    parameters:
+      - name: issuer
+        in: path
+        required: true
+        description: The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable.
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+    get:
+      operationId: listCiMappings
+      tags: [ci]
+      summary: List the mappings of a CI issuer
+      description: |
+        In evaluation order: tier, then ascending priority (R-CI-009, R-CI-019).
+      x-trove-permission:
+        permission: ci:read
+      responses:
+        "200":
+          description: The mappings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiMappingList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+    post:
+      operationId: createCiMapping
+      tags: [ci]
+      summary: Create a mapping
+      description: |
+        Creates a system-tier mapping and its principal `ci:<issuer>/<mapping>` in one transaction (R-CI-009). The save-time
+        rules answer `422` with a `code` and the pointer of the member (`pin_required`, `catch_all_condition`,
+        `unprotected_write`, `unpinned_write`, `action_not_allowed`, `empty_grant`, `template_invalid`, `template_unanchored`,
+        `condition_invalid`); a priority that is taken in the tier answers `409 priority_taken`. The answer carries the
+        `warnings` of the save (R-CI-010, R-CI-011).
+      x-trove-recent-auth: true
+      x-trove-permission:
+        permission: ci:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CiMappingInput"
+      responses:
+        "201":
+          description: The mapping was created.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiMapping"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+  /api/v1/ci/issuers/{issuer}/mappings/{name}:
+    parameters:
+      - name: issuer
+        in: path
+        required: true
+        description: The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable.
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+      - name: name
+        in: path
+        required: true
+        description: The mapping name (`^[a-z0-9][a-z0-9._-]{1,63}$`), unique within the issuer, immutable.
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+    get:
+      operationId: getCiMapping
+      tags: [ci]
+      summary: Read a mapping
+      description: |
+        The mapping with its resolved defaults. The `ETag` is the mapping's `version`.
+      x-trove-permission:
+        permission: ci:read
+      responses:
+        "200":
+          description: The mapping.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiMapping"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+    put:
+      operationId: replaceCiMapping
+      tags: [ci]
+      summary: Replace a mapping
+      description: |
+        Replaces the full representation; `name` is immutable. `If-Match` is required: a stale `PUT` must not restore
+        conditions or grants another administrator narrowed (R-CI-002). One event is recorded, chosen by `enabled`. Disabling
+        revokes the mapping's unexpired tokens and sets its principal `disabled`; editing does not revoke (R-CI-017).
+      x-trove-recent-auth: true
+      x-trove-permission:
+        permission: ci:write
+      x-trove-if-match: required
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CiMappingInput"
+      responses:
+        "200":
+          description: The mapping after the change.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiMapping"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "428":
+          $ref: "#/components/responses/PreconditionRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+    delete:
+      operationId: deleteCiMapping
+      tags: [ci]
+      summary: Delete a mapping
+      description: |
+        Deletes the mapping and its principal and revokes its unexpired tokens (R-CI-009, R-CI-017). `If-Match` is optional.
+      x-trove-recent-auth: true
+      x-trove-permission:
+        permission: ci:write
+      parameters:
+        - $ref: "#/components/parameters/IfMatchOptional"
+      responses:
+        "204":
+          description: The mapping is deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+  /api/v1/ci/issuers/{issuer}/evaluate:
+    parameters:
+      - name: issuer
+        in: path
+        required: true
+        description: The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable.
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+    post:
+      operationId: evaluateCiMappings
+      tags: [ci]
+      summary: Dry-run the mappings of a CI issuer against a claim set
+      description: |
+        The request carries a claim set, never a token, so nobody has to paste a live credential (R-CI-019, R-UI-036). The
+        answer is the decision trace: every mapping looked at with its first failed leaf and every leaf's expected and actual
+        value, the selected mappings, the rendered grants and the lifetime. It issues nothing and records no `jti`.
+      x-trove-permission:
+        permission: ci:read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CiEvaluateRequest"
+      responses:
+        "200":
+          description: The decision trace.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiEvaluateResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+  /api/v1/ci/issuers/{issuer}/snippets/{kind}:
+    parameters:
+      - name: issuer
+        in: path
+        required: true
+        description: The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable.
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+      - name: kind
+        in: path
+        required: true
+        description: The CI system of the snippet; `gitlab-ci` in this release.
+        schema:
+          type: string
+          enum: [gitlab-ci]
+    get:
+      operationId: getCiSnippet
+      tags: [ci]
+      summary: Read a ready-to-paste CI snippet
+      description: |
+        A `.gitlab-ci.yml` fragment for a mapping of the issuer: the `id_tokens:` block with the issuer's audience, the
+        exchange call and the client configuration for npm or NuGet, ending in the self-revocation of the token (R-API-035,
+        R-UI-035, R-CI-027). It holds no secret.
+      x-trove-permission:
+        permission: ci:read
+      parameters:
+        - name: mapping
+          in: query
+          required: true
+          description: The mapping the snippet is for.
+          schema:
+            type: string
+        - name: format
+          in: query
+          description: The package client the snippet configures.
+          schema:
+            type: string
+            enum: [npm, nuget]
+            default: npm
+      responses:
+        "200":
+          description: The snippet.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+  /api/v1/ci/issuances:
+    get:
+      operationId: listCiIssuances
+      tags: [ci]
+      summary: List the issued CI tokens
+      description: |
+        The issuance records, newest first, with cursor pagination (R-CI-020). A record links a CI token to the verified job
+        identity it was issued to and holds an allowlisted claim snapshot, never a token or a hash.
+      x-trove-permission:
+        permission: tokens:read
+      parameters:
+        - {name: issuer, in: query, description: The CI issuer name., schema: {type: string}}
+        - {name: projectId, in: query, description: The GitLab project ID., schema: {type: string}}
+        - {name: projectPath, in: query, description: The project path at the time of the exchange., schema: {type: string}}
+        - {name: pipelineId, in: query, description: The GitLab pipeline ID., schema: {type: string}}
+        - {name: jobId, in: query, description: The GitLab job ID., schema: {type: string}}
+        - {name: mapping, in: query, description: A mapping name that contributed., schema: {type: string}}
+        - {name: active, in: query, description: "true: unexpired and unrevoked; false: the others.", schema: {type: boolean}}
+        - {name: from, in: query, description: Issued at or after., schema: {type: string, format: date-time}}
+        - {name: to, in: query, description: Issued before., schema: {type: string, format: date-time}}
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of records.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiIssuanceList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+  /api/v1/ci/issuances/{tokenId}:
+    parameters:
+      - name: tokenId
+        in: path
+        required: true
+        description: The ID of the CI token (the `token_id` of the audit events).
+        schema:
+          type: string
+          format: uuid
+          x-trove-reserved-names: [revoke]
+    get:
+      operationId: getCiIssuance
+      tags: [ci]
+      summary: Read one issuance record with its usage
+      description: |
+        The record plus a usage summary from the audit store: the request count, the last use and the packages deployed (R-CI-020).
+      x-trove-permission:
+        permission: tokens:read
+      responses:
+        "200":
+          description: The record.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiIssuanceDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+  /api/v1/ci/issuances/revoke:
+    post:
+      operationId: revokeCiIssuances
+      tags: [ci]
+      summary: Revoke the unexpired CI tokens that match a filter
+      description: |
+        `issuer` is required and at least one of `projectId`, `pipelineId`, `jobId`, `mapping`. One transaction; records
+        `ci.token.revoked` (R-CI-020).
+      x-trove-permission:
+        permission: tokens:revoke
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CiRevokeRequest"
+      responses:
+        "200":
+          description: The number of tokens revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiRevokeResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+  /api/v1/auth/oidc/token:
+    post:
+      operationId: exchangeCiToken
+      tags: [ci]
+      summary: Exchange a CI ID token for a short-lived CI token
+      description: |
+        OAuth 2.0 Token Exchange (RFC 8693, R-CI-007): the subject token, the ID token a GitLab job requested for trove's
+        audience, is the credential. The endpoint requires no trove credential and ignores a session and a CSRF token.
+        The body is `application/x-www-form-urlencoded` (normative) or `application/json` with the same parameter names;
+        a parameter sent twice answers `400`. Answers carry `Cache-Control: no-store`. Errors are the OAuth error
+        response of RFC 6749 section 5.2 with trove's members `reason` and `requestId`, not problem details (R-CI-008);
+        a rejected subject token answers `400 invalid_request` (Q-CI-8). The parameters keep the OAuth names of the RFC.
+        Until the exchange is built the endpoint answers `501` (problem details).
+      security: []
+      x-trove-permission:
+        public: true
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/CiExchangeRequest"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CiExchangeRequest"
+      responses:
+        "200":
+          description: The CI token.
+          headers:
+            Cache-Control:
+              description: '`no-store` (RFC 6749 section 5.1).'
+              schema:
+                type: string
+                enum: [no-store]
+            Pragma:
+              schema:
+                type: string
+                enum: [no-cache]
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiExchangeResponse"
+        "400":
+          description: The OAuth error response (`invalid_request`, `unsupported_grant_type`, `invalid_scope`, `invalid_target`) with `reason` and `requestId`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiExchangeError"
+        "429":
+          description: '`slow_down` with `reason: rate_limited` and `Retry-After` (R-CI-021).'
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiExchangeError"
+        "500":
+          description: '`server_error` with `reason: internal`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiExchangeError"
+        "501":
+          description: The exchange is not built in this release (`ci_not_implemented`, problem details).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "503":
+          description: '`temporarily_unavailable` with `reason` `signing_keys_unavailable`, `database_unavailable` or `configuration_changed`, and `Retry-After`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiExchangeError"
+  /api/v1/projects/{key}/ci/issuers:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        description: The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable.
+        schema:
+          type: string
+          pattern: "^[a-z][a-z0-9-]{1,31}$"
+    get:
+      operationId: listProjectCiIssuers
+      tags: [ci]
+      summary: List the CI issuers a project administrator can choose from
+      description: |
+        Read-only: name, kind, issuer URL and `publicIssuer` of every issuer (Q-CI-26). Issuers are written by system administrators and the Helm values only. A project administrator of this project with `managePolicies` may call it; a project it does not administer answers `404`, a switch that is off `403 project_switch_off`.
+      x-trove-permission:
+        permission: ci:read
+        projectAdmin: managePolicies
+      responses:
+        "200":
+          description: The issuers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiIssuerChoiceList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+  /api/v1/projects/{key}/ci/mappings:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        description: The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable.
+        schema:
+          type: string
+          pattern: "^[a-z][a-z0-9-]{1,31}$"
+    get:
+      operationId: listProjectCiMappings
+      tags: [ci]
+      summary: List the CI mappings of a project
+      description: |
+        The project's mappings of every issuer, tier `project:<key>` (Q-CI-26, R-CI-009). A project administrator sees these and no other tier.
+      x-trove-permission:
+        permission: ci:read
+        projectAdmin: managePolicies
+      responses:
+        "200":
+          description: The mappings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiMappingList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+    post:
+      operationId: createProjectCiMapping
+      tags: [ci]
+      summary: Create a CI mapping of a project
+      description: |
+        The body names the `issuer`. The mapping takes the tier `project:<key>`; its name starts with `<key>-` (`422 project_prefix_required`); it grants through policies of the project and inline grants over the project's repositories (`@any` means every repository of the project), never `groups` (`422 groups_not_allowed_in_project`) and never `manage`. Every save-time rule of R-CI-010 and R-CI-011 applies. Notifies `ci_mappings` and records `ci.mapping.created` with the project.
+      x-trove-recent-auth: true
+      x-trove-permission:
+        permission: ci:write
+        projectAdmin: managePolicies
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CiMappingInput"
+      responses:
+        "201":
+          description: The mapping was created.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiMapping"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+  /api/v1/projects/{key}/ci/mappings/{issuer}/{name}:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        description: The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable.
+        schema:
+          type: string
+          pattern: "^[a-z][a-z0-9-]{1,31}$"
+      - name: issuer
+        in: path
+        required: true
+        description: The CI issuer name.
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+      - name: name
+        in: path
+        required: true
+        description: The mapping name (`<projectKey>-…`), unique within the issuer, immutable.
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+    get:
+      operationId: getProjectCiMapping
+      tags: [ci]
+      summary: Read a CI mapping of a project
+      description: |
+        A mapping of another tier answers `404`.
+      x-trove-permission:
+        permission: ci:read
+        projectAdmin: managePolicies
+      responses:
+        "200":
+          description: The mapping.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiMapping"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+    put:
+      operationId: replaceProjectCiMapping
+      tags: [ci]
+      summary: Replace a CI mapping of a project
+      description: |
+        As `replaceCiMapping`, within the bounds of a project mapping. `If-Match` is required.
+      x-trove-recent-auth: true
+      x-trove-permission:
+        permission: ci:write
+        projectAdmin: managePolicies
+      x-trove-if-match: required
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CiMappingInput"
+      responses:
+        "200":
+          description: The mapping after the change.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiMapping"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "428":
+          $ref: "#/components/responses/PreconditionRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+    delete:
+      operationId: deleteProjectCiMapping
+      tags: [ci]
+      summary: Delete a CI mapping of a project
+      description: |
+        Deletes the mapping and its principal and revokes its unexpired tokens. `If-Match` is optional.
+      x-trove-recent-auth: true
+      x-trove-permission:
+        permission: ci:write
+        projectAdmin: managePolicies
+      parameters:
+        - $ref: "#/components/parameters/IfMatchOptional"
+      responses:
+        "204":
+          description: The mapping is deleted.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+  /api/v1/projects/{key}/ci/issuers/{issuer}/evaluate:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        description: The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable.
+        schema:
+          type: string
+          pattern: "^[a-z][a-z0-9-]{1,31}$"
+      - name: issuer
+        in: path
+        required: true
+        description: The CI issuer name.
+        schema:
+          type: string
+          pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"
+    post:
+      operationId: evaluateProjectCiMappings
+      tags: [ci]
+      summary: Dry-run the project's mappings against a claim set
+      description: |
+        As `evaluateCiMappings`, over the project's tier only: the trace shows nothing of the system tier or of another project (Q-CI-26).
+      x-trove-permission:
+        permission: ci:read
+        projectAdmin: managePolicies
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CiEvaluateRequest"
+      responses:
+        "200":
+          description: The decision trace.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiEvaluateResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+  /api/v1/projects/{key}/ci/issuances:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        description: The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable.
+        schema:
+          type: string
+          pattern: "^[a-z][a-z0-9-]{1,31}$"
+    get:
+      operationId: listProjectCiIssuances
+      tags: [ci]
+      summary: List the CI tokens issued through a project's mappings
+      description: |
+        The issuance records of tokens whose mappings include a mapping of this project, newest first, cursor pagination (Q-CI-26). A record names the project's mappings only.
+      x-trove-permission:
+        permission: tokens:read
+        projectAdmin: managePolicies
+      parameters:
+        - {name: issuer, in: query, description: The CI issuer name., schema: {type: string}}
+        - {name: jobId, in: query, description: The GitLab job ID., schema: {type: string}}
+        - {name: active, in: query, description: "true: unexpired and unrevoked; false: the others.", schema: {type: boolean}}
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of records.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CiIssuanceList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        "501":
+          $ref: "#/components/responses/NotImplementedCI"
+  # <<< M4 ci
   # >>> M1 files
   /api/v1/repositories/{repoKey}/items:
     parameters:
@@ -7485,6 +8737,14 @@ components:
       headers:
         ETag:
           $ref: "#/components/headers/ETag"
+    # >>> M4 ci
+    NotImplementedCI:
+      description: The operation belongs to a work package of the CI federation that is not built in this release (`ci_not_implemented`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    # <<< M4 ci
   schemas:
     Problem:
       type: object
@@ -8685,6 +9945,443 @@ components:
         manageRepositories:
           type: boolean
     # <<< M5a projects
+    #
+    # >>> M4 ci
+    CiIssuerInput:
+      type: object
+      description: |
+        The full representation of an issuer that a client writes (R-CI-002). An omitted optional member takes its default;
+        the read-only members of `CiIssuer` are accepted and ignored, so a body obtained by `GET` can be sent back.
+      additionalProperties: false
+      required: [name, kind, issuer]
+      properties:
+        name: {type: string, pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"}
+        kind: {type: string, enum: [gitlab, github, generic], description: "`github` and `generic` answer `422 kind_not_available` in this release."}
+        issuer: {type: string, pattern: "^https://", description: "The expected `iss`, compared exactly."}
+        description: {type: string}
+        enabled: {type: boolean, default: true}
+        discoveryUrl: {type: [string, "null"], description: "`null`: `<issuer>/.well-known/openid-configuration`."}
+        jwksUri: {type: [string, "null"], description: "`null`: the `jwks_uri` of the discovery document."}
+        allowedAudiences: {type: array, minItems: 1, items: {type: string}, description: "Omitted on create: the base URL and `npm:<host name>`."}
+        exclusiveAudience: {type: boolean, default: true}
+        allowedAlgorithms: {type: array, items: {type: string, enum: [RS256, RS384, RS512, PS256, PS384, PS512, ES256, ES384, EdDSA]}, default: [RS256]}
+        allowedTyp: {type: array, items: {type: string}, default: [JWT]}
+        allowMissingTyp: {type: boolean, default: true}
+        clockSkewSeconds: {type: integer, minimum: 0, maximum: 300, default: 60}
+        requiredClaims: {type: array, items: {type: string}, description: "Omitted: the preset of the kind."}
+        publicIssuer: {type: boolean, default: true}
+        pinClaims: {type: array, items: {type: string}, description: "Omitted: the immutable ID claims of the kind."}
+        singleUseSubjectTokens: {type: boolean, description: "Omitted: `false` for `gitlab`."}
+        maxTtlSeconds: {type: [integer, "null"], format: int64, minimum: 1}
+        caBundleRef: {type: [string, "null"], description: "A reference to a PEM bundle (file or environment variable), never key material."}
+        useOutboundProxy: {type: boolean, default: false}
+        jobTokenFallback:
+          type: object
+          additionalProperties: false
+          properties:
+            enabled: {type: boolean, default: false, description: "`true` answers `422 job_token_fallback_not_available` in this release."}
+        source: {type: string, readOnly: true}
+        removedFromConfiguration: {type: boolean, readOnly: true}
+        mappingCount: {type: integer, readOnly: true}
+        keys: {$ref: "#/components/schemas/CiKeySummary"}
+        version: {type: integer, format: int64, readOnly: true}
+        createdAt: {type: string, format: date-time, readOnly: true}
+        updatedAt: {type: string, format: date-time, readOnly: true}
+    CiIssuerCreate:
+      description: "The create body: `CiIssuerInput` and `validate`."
+      allOf:
+        - $ref: "#/components/schemas/CiIssuerInput"
+        - type: object
+          properties:
+            validate:
+              type: boolean
+              default: true
+              description: Fetch the discovery document and the key set before the issuer is stored (R-CI-002).
+    CiIssuer:
+      type: object
+      description: A CI issuer with all defaults filled in (R-CI-001). `version` is the ETag source.
+      additionalProperties: false
+      required: [name, kind, issuer, description, enabled, discoveryUrl, jwksUri, allowedAudiences, exclusiveAudience, allowedAlgorithms, allowedTyp, allowMissingTyp, clockSkewSeconds, requiredClaims, publicIssuer, pinClaims, singleUseSubjectTokens, maxTtlSeconds, caBundleRef, useOutboundProxy, jobTokenFallback, source, removedFromConfiguration, version, createdAt, updatedAt]
+      properties:
+        name: {type: string, pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"}
+        kind: {type: string, enum: [gitlab, github, generic], description: "`github` and `generic` answer `422 kind_not_available` in this release."}
+        issuer: {type: string, pattern: "^https://", description: "The expected `iss`, compared exactly."}
+        description: {type: string}
+        enabled: {type: boolean, default: true}
+        discoveryUrl: {type: [string, "null"], description: "`null`: `<issuer>/.well-known/openid-configuration`."}
+        jwksUri: {type: [string, "null"], description: "`null`: the `jwks_uri` of the discovery document."}
+        allowedAudiences: {type: array, minItems: 1, items: {type: string}, description: "Omitted on create: the base URL and `npm:<host name>`."}
+        exclusiveAudience: {type: boolean, default: true}
+        allowedAlgorithms: {type: array, items: {type: string, enum: [RS256, RS384, RS512, PS256, PS384, PS512, ES256, ES384, EdDSA]}, default: [RS256]}
+        allowedTyp: {type: array, items: {type: string}, default: [JWT]}
+        allowMissingTyp: {type: boolean, default: true}
+        clockSkewSeconds: {type: integer, minimum: 0, maximum: 300, default: 60}
+        requiredClaims: {type: array, items: {type: string}, description: "Omitted: the preset of the kind."}
+        publicIssuer: {type: boolean, default: true}
+        pinClaims: {type: array, items: {type: string}, description: "Omitted: the immutable ID claims of the kind."}
+        singleUseSubjectTokens: {type: boolean, description: "Omitted: `false` for `gitlab`."}
+        maxTtlSeconds: {type: [integer, "null"], format: int64, minimum: 1}
+        caBundleRef: {type: [string, "null"], description: "A reference to a PEM bundle (file or environment variable), never key material."}
+        useOutboundProxy: {type: boolean, default: false}
+        jobTokenFallback:
+          type: object
+          additionalProperties: false
+          properties:
+            enabled: {type: boolean, default: false, description: "`true` answers `422 job_token_fallback_not_available` in this release."}
+        source:
+          type: string
+          enum: [api, configuration]
+          description: "`configuration`: declared in `ci.issuers` and read-only here (Q-CI-16)."
+        removedFromConfiguration: {type: boolean}
+        mappingCount: {type: integer}
+        keys: {$ref: "#/components/schemas/CiKeySummary"}
+        version: {type: integer, format: int64}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    CiIssuerList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CiIssuer"
+    CiKeySummary:
+      type: object
+      additionalProperties: false
+      required: [usable, ignored]
+      properties:
+        usable: {type: integer}
+        ignored: {type: integer}
+        fetchedAt: {type: [string, "null"], format: date-time}
+        lastError: {type: [string, "null"], description: "The failure class, the HTTP status and the host; never bytes of a response body."}
+        lastErrorAt: {type: [string, "null"], format: date-time}
+    CiKeyStatus:
+      type: object
+      additionalProperties: false
+      required: [issuer, keys]
+      properties:
+        issuer: {type: string}
+        jwksUri: {type: [string, "null"]}
+        keys:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [kid, kty, ignored]
+            properties:
+              kid: {type: string}
+              kty: {type: string}
+              alg: {type: [string, "null"]}
+              ignored: {type: boolean, description: "A key that does not meet the key rules of R-CI-003 is ignored and reported."}
+              ignoredReason: {type: [string, "null"]}
+        fetchedAt: {type: [string, "null"], format: date-time}
+        nextRefreshAt: {type: [string, "null"], format: date-time}
+        lastError: {type: [string, "null"]}
+        lastErrorAt: {type: [string, "null"], format: date-time}
+    CiCondition:
+      type: object
+      description: |
+        A node of a condition tree (R-CI-010): a combinator (exactly one of `all`, `any`, `not`) or a leaf (`claim` or `path`
+        with exactly one operator). At most depth 4, 64 leaves, 256 values in an `in` list.
+      additionalProperties: false
+      properties:
+        all: {type: array, items: {$ref: "#/components/schemas/CiCondition"}}
+        any: {type: array, items: {$ref: "#/components/schemas/CiCondition"}}
+        not: {$ref: "#/components/schemas/CiCondition"}
+        claim: {type: string, description: A top-level claim of the issuer's spelling.}
+        path: {type: array, items: {type: string}, description: Member names of a nested value; dots are never interpreted.}
+        equals: {description: "A string, number or boolean literal."}
+        in: {type: array, items: {}, description: "String, number or boolean literals."}
+        glob: {type: string}
+        regex: {type: string, maxLength: 512}
+        present: {type: boolean}
+        ignoreCase: {type: boolean}
+    CiPatternSet:
+      type: object
+      additionalProperties: false
+      properties:
+        include: {type: array, items: {type: string}}
+        exclude: {type: array, items: {type: string}}
+    CiInlineGrant:
+      type: object
+      description: One inline grant (R-CI-013); patterns may be templates (R-CI-014). Exactly one of `packages` or `paths`.
+      additionalProperties: false
+      required: [repositories, actions]
+      properties:
+        repositories: {type: array, items: {type: string}}
+        packages: {$ref: "#/components/schemas/CiPatternSet"}
+        paths: {$ref: "#/components/schemas/CiPatternSet"}
+        actions: {type: array, items: {type: string, enum: [read, annotate, deploy, overwrite, delete]}}
+        ownership:
+          type: string
+          enum: [bind_project, none]
+          description: "Omitted on write: `bind_project` when `actions` contain `deploy`, `overwrite` or `delete`, else `none`. A read shows the resolved value (Q-CI-6)."
+    CiGrants:
+      type: object
+      description: The grant specification of a mapping (R-CI-013). `manage` is never grantable.
+      additionalProperties: false
+      properties:
+        policies: {type: array, items: {type: string}}
+        groups: {type: array, items: {type: string}}
+        inline: {type: array, items: {$ref: "#/components/schemas/CiInlineGrant"}}
+    CiMappingInput:
+      type: object
+      description: The full representation of a mapping that a client writes (R-CI-019). The read-only members of `CiMapping` are accepted and ignored.
+      additionalProperties: false
+      required: [name, priority, match, grants]
+      properties:
+        name: {type: string, pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"}
+        description: {type: string}
+        priority: {type: integer, minimum: 1, maximum: 1000000, description: Unique within the issuer's tier.}
+        enabled: {type: boolean, default: true}
+        subjectKinds: {type: array, items: {type: string, enum: [id_token]}, default: [id_token], description: "`job_token` is P2 (R-CI-022)."}
+        match: {$ref: "#/components/schemas/CiCondition"}
+        grants: {$ref: "#/components/schemas/CiGrants"}
+        maxTtlSeconds: {type: [integer, "null"], format: int64, minimum: 1}
+        options:
+          type: object
+          additionalProperties: false
+          properties:
+            crossProjectSource: {type: string, enum: [deny, read_only], default: deny}
+            allowUnprotectedRefs: {type: boolean, default: false}
+        tier: {type: string, readOnly: true}
+        project: {type: string, readOnly: true}
+        issuer: {type: string, description: "Required to create a project mapping; the issuer routes take it from the path."}
+        version: {type: integer, format: int64, readOnly: true}
+        createdBy: {type: string, readOnly: true}
+        createdAt: {type: string, format: date-time, readOnly: true}
+        updatedAt: {type: string, format: date-time, readOnly: true}
+        warnings: {type: array, readOnly: true, items: {$ref: "#/components/schemas/CiWarning"}}
+    CiMapping:
+      type: object
+      description: An identity mapping with its resolved defaults (R-CI-009). `warnings` is present on the answer of a save only.
+      additionalProperties: false
+      required: [name, description, priority, enabled, subjectKinds, match, grants, maxTtlSeconds, options, tier, issuer, version, createdBy, createdAt, updatedAt]
+      properties:
+        name: {type: string, pattern: "^[a-z0-9][a-z0-9._-]{1,63}$"}
+        description: {type: string}
+        priority: {type: integer, minimum: 1, maximum: 1000000, description: Unique within the issuer's tier.}
+        enabled: {type: boolean, default: true}
+        subjectKinds: {type: array, items: {type: string, enum: [id_token]}, default: [id_token], description: "`job_token` is P2 (R-CI-022)."}
+        match: {$ref: "#/components/schemas/CiCondition"}
+        grants: {$ref: "#/components/schemas/CiGrants"}
+        maxTtlSeconds: {type: [integer, "null"], format: int64, minimum: 1}
+        options:
+          type: object
+          additionalProperties: false
+          properties:
+            crossProjectSource: {type: string, enum: [deny, read_only], default: deny}
+            allowUnprotectedRefs: {type: boolean, default: false}
+        tier: {type: string, description: "`system` or `project:<key>`; `delegation:<id>` from P1."}
+        project: {type: string, description: The project key of a project mapping.}
+        issuer: {type: string}
+        version: {type: integer, format: int64}
+        createdBy: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        warnings: {type: array, items: {$ref: "#/components/schemas/CiWarning"}}
+    CiMappingList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CiMapping"
+    CiWarning:
+      type: object
+      additionalProperties: false
+      required: [code, detail]
+      properties:
+        code: {type: string, description: "For example `unpinned_condition`, `repository_template_unconstrained`, `shared_ownership`."}
+        pointer: {type: string}
+        detail: {type: string}
+    CiEvaluateRequest:
+      type: object
+      description: A claim set, never a token (R-CI-019).
+      additionalProperties: false
+      required: [claims]
+      properties:
+        subjectKind: {type: string, enum: [id_token], default: id_token}
+        claims: {type: object, additionalProperties: true}
+        scope: {type: string, description: The `scope` request parameter of the exchange to narrow with.}
+        now: {type: integer, format: int64, description: "Unix seconds; when set, `exp`, `nbf` and `iat` are checked against it."}
+    CiLeafResult:
+      type: object
+      additionalProperties: false
+      required: [pointer, claim, operator, expected, actual, absent, passed]
+      properties:
+        pointer: {type: string}
+        claim: {type: string}
+        operator: {type: string}
+        expected: {type: array, items: {type: string}}
+        actual: {type: array, items: {type: string}}
+        absent: {type: boolean}
+        passed: {type: boolean}
+    CiTraceEntry:
+      type: object
+      additionalProperties: false
+      required: [tier, mapping, matched, contributes]
+      properties:
+        tier: {type: string}
+        mapping: {type: string}
+        matched: {type: boolean}
+        contributes: {type: boolean, description: "False for a matched mapping whose `crossProjectSource` is `deny` on a cross-project token."}
+        failedLeaf: {type: string}
+        detail: {type: string}
+        leaves: {type: array, items: {$ref: "#/components/schemas/CiLeafResult"}}
+    CiEvaluateResult:
+      type: object
+      additionalProperties: false
+      required: [crossProject, trace, selected]
+      properties:
+        crossProject: {type: boolean}
+        trace: {type: array, items: {$ref: "#/components/schemas/CiTraceEntry"}}
+        selected: {type: array, items: {type: string}}
+        failure: {type: string, description: The reason the exchange would fail with; absent when it would succeed.}
+        detail: {type: string}
+        grants: {$ref: "#/components/schemas/CiGrants"}
+        scope: {type: string}
+        ttlSeconds: {type: integer, format: int64}
+        warnings: {type: array, items: {$ref: "#/components/schemas/CiWarning"}}
+    CiIssuance:
+      type: object
+      description: The record of one exchange (R-CI-020). It holds no token, no hash and no claim outside the allowlist.
+      additionalProperties: false
+      required: [tokenId, issuer, mappingNames, subjectKind, projectId, jobId, claims, grants, grantedScope, crossProject, issuedAt, expiresAt, active]
+      properties:
+        tokenId: {type: string, format: uuid}
+        issuer: {type: string}
+        mappingNames: {type: array, items: {type: string}}
+        subjectKind: {type: string, enum: [id_token, job_token]}
+        jti: {type: [string, "null"]}
+        projectId: {type: string}
+        projectPath: {type: [string, "null"]}
+        namespaceId: {type: [string, "null"]}
+        pipelineId: {type: [string, "null"]}
+        jobId: {type: string}
+        ref: {type: [string, "null"]}
+        refType: {type: [string, "null"]}
+        refProtected: {type: [boolean, "null"]}
+        pipelineSource: {type: [string, "null"]}
+        environment: {type: [string, "null"]}
+        sha: {type: [string, "null"]}
+        userId: {type: [string, "null"]}
+        userLogin: {type: [string, "null"]}
+        claims: {type: object, additionalProperties: true, description: The allowlisted claim snapshot.}
+        grants: {type: object, additionalProperties: true, description: "The frozen use-time bundle: rendered inline grants, policy and group names, caps."}
+        requestedScope: {type: [string, "null"]}
+        grantedScope: {type: string}
+        crossProject: {type: boolean}
+        issuedAt: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+        revokedAt: {type: [string, "null"], format: date-time}
+        active: {type: boolean}
+        clientIp: {type: [string, "null"]}
+        userAgent: {type: [string, "null"]}
+    CiIssuanceList:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor]
+      properties:
+        items: {type: array, items: {$ref: "#/components/schemas/CiIssuance"}}
+        nextCursor: {type: [string, "null"]}
+    CiIssuanceDetail:
+      type: object
+      description: An issuance record and its usage summary from the audit store.
+      additionalProperties: false
+      required: [issuance, usage]
+      properties:
+        issuance: {$ref: "#/components/schemas/CiIssuance"}
+        usage:
+          type: object
+          additionalProperties: false
+          required: [requests, packagesDeployed]
+          properties:
+            requests: {type: integer, format: int64}
+            lastUsedAt: {type: [string, "null"], format: date-time}
+            packagesDeployed: {type: array, items: {type: string}}
+    CiRevokeRequest:
+      type: object
+      additionalProperties: false
+      required: [issuer]
+      properties:
+        issuer: {type: string}
+        projectId: {type: string}
+        pipelineId: {type: string}
+        jobId: {type: string}
+        mapping: {type: string}
+    CiRevokeResult:
+      type: object
+      additionalProperties: false
+      required: [revoked]
+      properties:
+        revoked: {type: integer}
+    CiExchangeRequest:
+      type: object
+      description: |
+        The exchange parameters with the OAuth names of RFC 8693 (R-CI-007); they are not management-API fields and keep
+        their snake_case spelling. `ci_issuer` and `ttl` are trove's extensions.
+      additionalProperties: false
+      required: [grant_type, subject_token, subject_token_type]
+      properties:
+        grant_type: {type: string, enum: ["urn:ietf:params:oauth:grant-type:token-exchange"]}
+        subject_token: {type: string, description: The GitLab ID token. A credential; never logged.}
+        subject_token_type: {type: string, enum: ["urn:ietf:params:oauth:token-type:id_token", "urn:ietf:params:oauth:token-type:jwt"]}
+        requested_token_type: {type: string, enum: ["urn:ietf:params:oauth:token-type:access_token"]}
+        scope: {type: string, description: "Space-delimited items `<action>` or `<action>:<repository selector>` (Q-CI-2)."}
+        audience: {type: string, description: Must equal the configured base URL.}
+        resource: {type: string, description: Must equal the configured base URL.}
+        actor_token: {type: string, description: Not supported; answers `actor_token_not_supported`.}
+        actor_token_type: {type: string}
+        ci_issuer: {type: string, description: Must match the issuer selected by `iss`.}
+        ttl: {type: integer, format: int64, description: Requested lifetime in seconds; can only shorten (R-CI-016).}
+    CiExchangeResponse:
+      type: object
+      description: The token response (R-CI-007). The token value appears only here.
+      additionalProperties: false
+      required: [access_token, issued_token_type, token_type, expires_in, scope, ci_issuer, mappings]
+      properties:
+        access_token: {type: string, description: "A `trv_cit_` token."}
+        issued_token_type: {type: string, enum: ["urn:ietf:params:oauth:token-type:access_token"]}
+        token_type: {type: string, enum: [Bearer]}
+        expires_in: {type: integer, format: int64}
+        scope: {type: string}
+        ci_issuer: {type: string}
+        mappings: {type: array, items: {type: string}}
+    CiExchangeError:
+      type: object
+      description: The OAuth error response of RFC 6749 section 5.2 with trove's `reason` and `requestId` (R-CI-008).
+      additionalProperties: false
+      required: [error, requestId]
+      properties:
+        error: {type: string, enum: [invalid_request, unsupported_grant_type, invalid_scope, invalid_target, slow_down, temporarily_unavailable, server_error]}
+        error_description: {type: string, description: Holds no claim value and no token material.}
+        reason: {type: string, description: "A stable reason name of R-CI-008; left out under `ci.exchange.expose_reason: false`."}
+        requestId: {type: string, description: Equals the `X-Request-Id` response header.}
+    CiIssuerChoice:
+      type: object
+      description: What a project administrator sees of an issuer (Q-CI-26).
+      additionalProperties: false
+      required: [name, kind, issuer, publicIssuer]
+      properties:
+        name: {type: string}
+        kind: {type: string}
+        issuer: {type: string}
+        publicIssuer: {type: boolean}
+    CiIssuerChoiceList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CiIssuerChoice"
+    # <<< M4 ci
     ServiceAccount:
       type: object
       description: A service account (R-AUTH-020).

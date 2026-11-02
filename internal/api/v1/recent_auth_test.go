@@ -37,16 +37,18 @@ func tokenCaller(*http.Request) (httpserver.Principal, error) {
 }
 
 // recentAuthOperations is the table of R-API-007 as far as the operations exist
-// in this build. The command-line login, CI identity and configuration-as-code
-// rows join when those operations do.
+// in this build. The command-line login and configuration-as-code rows join when
+// those operations do; the CI identity rows are the issuer and mapping writes.
 var recentAuthOperations = []string{
-	"addPackageOwner", "addProjectAdmin", "assignProjectRepository", "bindRole", "createExposureRule", "createPermissionPolicy",
-	"createServiceAccountToken", "createToken", "deleteExposureRule", "deletePermissionPolicy", "deleteProject", "deleteRepository",
-	"patchExposureRule", "patchPermissionPolicy", "removePackageOwner", "removeProjectAdmin", "replaceExposureRule",
+	"addPackageOwner", "addProjectAdmin", "assignProjectRepository", "bindRole", "createCiIssuer", "createCiMapping", "createProjectCiMapping",
+	"createExposureRule", "createPermissionPolicy", "createServiceAccountToken", "createToken", "deleteCiIssuer", "deleteCiMapping", "deleteProjectCiMapping",
+	"deleteExposureRule", "deletePermissionPolicy", "deleteProject", "deleteRepository", "patchExposureRule", "patchPermissionPolicy",
+	"removePackageOwner", "removeProjectAdmin", "replaceCiIssuer", "replaceCiMapping", "replaceProjectCiMapping", "replaceExposureRule",
 	"replacePermissionPolicy", "replaceProject", "rotateToken", "unassignProjectRepository", "unbindRole", "updateAuthSettings",
 }
 
 func TestR_API_007_DocumentDeclaresRecentAuth(t *testing.T) {
+	sort.Strings(recentAuthOperations)
 	doc, err := LoadDocument(EmbeddedYAML())
 	if err != nil {
 		t.Fatal(err)

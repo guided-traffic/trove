@@ -348,7 +348,7 @@ UPDATE service_account SET description = sqlc.arg(description)::text WHERE princ
 SELECT t.id::text AS id, t.type, t.scope, t.principal_id::text AS owner_id,
        p.kind AS owner_kind, p.name AS owner_name, p.status AS owner_status, coalesce(u.is_break_glass, false) AS owner_break_glass,
        t.expires_at, coalesce(t.expires_at IS NOT NULL AND t.expires_at <= now(), false)::boolean AS expired,
-       (t.revoked_at IS NOT NULL)::boolean AS revoked, t.hint,
+       (t.revoked_at IS NOT NULL)::boolean AS revoked, t.hint, t.ci_context,
        coalesce(t.rejection_logged_at IS NULL OR t.rejection_logged_at < now() - interval '1 hour', true)::boolean AS rejection_due
   FROM api_token t JOIN principal p ON p.id = t.principal_id LEFT JOIN app_user u ON u.principal_id = p.id
  WHERE t.secret_sha256 = sqlc.arg(secret_sha256)::bytea;

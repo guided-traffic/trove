@@ -55,6 +55,9 @@ func (c *poolCollector) Collect(ch chan<- prometheus.Metric) {
 // PostgreSQL in the background (Q-OPS-18): trove_jobs_queued{kind}.
 func (a *App) registerGauges() {
 	m := a.tele.metrics
+	if err := a.registerCIMetrics(); err != nil {
+		a.log.Error("the CI metrics are not registered", "error", err)
+	}
 	m.Registry().MustRegister(newPoolCollector(a.database))
 	desc := prometheus.NewDesc("trove_jobs_queued", "Queued jobs by kind, from PostgreSQL (aggregate with max, not sum, across replicas).", []string{"kind"}, nil)
 	m.DBGauges().Add(observability.GaugeSource{

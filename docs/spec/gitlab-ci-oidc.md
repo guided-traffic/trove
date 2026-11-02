@@ -1,6 +1,8 @@
 # GitLab CI OIDC federation
 
-Status: specification — not implemented
+Status: specification — the contracts of beta phase 5 are laid (schema, packages, interfaces, API document, configuration,
+audit events, coordination; [developer/ci-oidc.md](../developer/ci-oidc.md)); work packages W1 to W7 are pending, so the
+behavior below is not implemented yet
 
 This page specifies how a CI job gets trove permissions without a stored secret. A GitLab job
 asks GitLab for an OIDC ID token addressed to trove. It exchanges that token at
@@ -191,6 +193,9 @@ ci:
   delete it.
 - Mappings of a configuration issuer are managed through the API and the UI as for any issuer (R-CI-019); configuration
   documents (P1, below) are the declarative way for mappings.
+- A list element of the configuration holds scalars, pointers to scalars (a key left out is "not set" and takes its
+  default) and lists of strings, so an entry carries every field of the table above except `job_token_fallback`, which
+  is P2 and refused until R-CI-022 is built (Q-CI-22).
 
 **Data model**
 
@@ -254,7 +259,8 @@ taken before a restore could match a different record of the same number afterwa
 ### R-CI-002 · CI issuer management API
 Priority: **MVP** · Covers: CIOIDC-005, ADMAPI-028
 
-All operations require the system administrator role (INV-9). An issuer with `source: "configuration"` (R-CI-001,
+All operations require the system administrator role (INV-9), declared as the capabilities `ci:read` for the reads and the dry
+run and `ci:write` for the writes, which the role `admin` holds (R-AUTHZ-010, Q-CI-22). An issuer with `source: "configuration"` (R-CI-001,
 Q-CI-16) is shown like any other, with its `source`, and is read-only: `PUT`, `DELETE`, enabling and disabling answer 409
 `issuer_managed_by_configuration`, and the UI shows it without edit controls and names the configuration as its source.
 Once it is `removedFromConfiguration`, `DELETE` is allowed. Its mappings stay writable. Pagination and the error envelope
@@ -560,6 +566,12 @@ reason code in brackets appears in the error response and the audit event (R-CI-
    [`issued_in_future`]. NumericDate values may be non-integer.
 9. Required claims: every claim in `required_claims` is present and not `null`
    [`required_claim_missing`, with the claim name in `error_description`].
+
+The implementation runs the steps in two calls, because step 5 selects the issuer by a claim that is not yet verified and the
+algorithm and `typ` lists of step 3 are that issuer's settings: `subject.Parse` does the structural parts of steps 1 to 4, the
+caller selects the issuer (step 5), and `Unverified.Verify` does the algorithm and `typ` checks and steps 6 to 9. A token of an
+unknown issuer therefore answers `unknown_issuer` even when its algorithm would be refused by every issuer, both 400
+(Q-CI-19).
 
 GitLab sets `nbf` a few seconds before `iat` in its documented example. The default 60-second
 skew absorbs this and normal clock drift between runners, GitLab and trove.
@@ -913,11 +925,13 @@ Evaluation per exchange:
 
 1. Consider enabled mappings of the selected CI issuer whose `subject_kinds` include the subject
    token's kind.
-2. Group them into tiers. The MVP has one tier, `system` (administrator mappings). P1 adds one
-   tier per delegation (R-CI-023).
+2. Group them into tiers: `system` (administrator mappings) and one tier `project:<key>` per project whose
+   administrators manage CI mappings (Q-CI-26). P1 adds one tier per delegation to a group (R-CI-023).
 3. Within a tier, evaluate in ascending `priority`. The first mapping whose condition is true is
    that tier's match. Later mappings of the tier are not evaluated.
-4. The token's grants are the union of the tier matches. In the MVP that is exactly one mapping.
+4. The token's grants are the union of the tier matches: at most one mapping per tier, so a job that matches the
+   system tier and a project's tier carries both, and the principal set of its token holds each contributing mapping.
+   A project's mapping can neither shadow a system mapping nor another project's, because tiers combine by union.
 5. No match in any tier → 400 [`no_matching_mapping`].
 6. If rendering the grants of a matched mapping fails (R-CI-014), the exchange fails
    [`grant_render_failed`]. Evaluation does not fall through to the next mapping, because a
@@ -974,6 +988,10 @@ CREATE TABLE ci_mappings (
   UNIQUE (issuer_id, tier, priority)
 );
 ```
+
+`tier` is checked to be `system`, `project:<key>` or `delegation:<uuid>`. A project tier names its project in `project_id`
+(a foreign key `ON DELETE RESTRICT`, so a project with mappings cannot be deleted; the project service answers 409
+`project_not_empty` first), and `delegation_id` has no foreign key until R-CI-023 adds its table.
 
 Mappings are cached in memory per replica, per CI issuer, together with the issuer's
 `mappings_version` they were read at. The cache is invalidated through the change area
@@ -1284,7 +1302,11 @@ three, before caps and `scope` narrowing:
   the repository-content operations of `/api/v1` that need only repository actions, and
   `GET` and `DELETE /api/v1/tokens/current`
   ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-028, R-AUTH-029), so a
-  job can inspect and revoke its own token (R-CI-017).
+  job can inspect and revoke its own token (R-CI-017). The gate is the shared authorization step of the management API: a
+  CI token is refused there with 403 `ci_token_restricted` on every operation except the public ones, the operations of
+  the action form (a repository action on a coordinate) and the two that declare `x-trove-ci: admitted`, so a new
+  operation is closed to CI tokens until its declaration says otherwise (Q-CI-18). The package-protocol endpoints and
+  `/files/…` are not operations of that table and admit CI tokens as they admit any token.
 - No user subject: a CI token's principal is the mapping, with the job identity as attributes. It
   is never a user. trove creates no transient user, and no "join automatically" group
   membership applies to CI tokens. This deliberately departs from the behavior described in
@@ -1494,6 +1516,10 @@ Priority: **MVP** · Covers: CIOIDC-010, CIOIDC-014, CIOIDC-018
   token as password, or `X-NuGet-ApiKey: <token>` on NuGet push.
 - CI tokens do not appear in any user's token list. Administrators find them through the
   issuance API (R-CI-020).
+- The token row carries what its use needs: `api_token.ci_context` holds the frozen bundle (the issuer, the project
+  identity, the contributing mappings and groups, the rendered inline grants, the caps), written in the exchange's
+  transaction. The token cache entry of R-AUTH-023 carries it to the request, so the evaluator reads no row of
+  PostgreSQL for it (R-AUTHZ-015, Q-CI-17). The issuance record holds the same bundle for the administrator.
 - Revocation is immediate (INV-8) and happens:
   - when a mapping is disabled or deleted (its unexpired tokens);
   - when a CI issuer is disabled or deleted (all of its unexpired tokens);
@@ -1663,6 +1689,28 @@ System administrators manage mappings (delegates in P1, R-CI-023):
 Representation rules (closed enums, PUT as full replacement, ETag concurrency with `If-Match`
 required on PUT, lowerCamelCase on the wire) are those of R-CI-002.
 
+**Project administrators (Q-CI-26).** A project administrator with `managePolicies` manages the mappings of its project's
+tier through the project routes, which are these operations with the tier fixed by the path
+(`/api/v1/projects/{key}/ci/…`): `GET …/ci/issuers` (the issuers read-only: name, kind, issuer URL, `publicIssuer`),
+`GET` and `POST …/ci/mappings` (the body names the `issuer`), `GET`, `PUT` and `DELETE …/ci/mappings/{issuer}/{name}`,
+`POST …/ci/issuers/{issuer}/evaluate` and `GET …/ci/issuances`. The step admits the capability holder or any project
+administrator and the handler narrows (404 for a project the caller does not administer, 403 `project_switch_off`,
+ADR-146). The bounds of a project mapping, on top of every rule of R-CI-010 and R-CI-011 (`pin_required`,
+`unprotected_write`, `unpinned_write`, `catch_all_condition`):
+
+- the name starts with `<key>-` (422 `project_prefix_required`), so the principal names `<issuer>/<key>-…` stay unique;
+- inline grants reach the project's repositories only: the evaluator compiles them against those repositories, so `@any`
+  means every repository of the project (Q-AUTHZ-179), and a key selector outside the project is 422
+  `repository_outside_project`;
+- `policies` name policies of the project only (422 `policy_outside_project`), `groups` are refused (422
+  `groups_not_allowed_in_project`), `manage` is never grantable (422 `action_not_allowed`);
+- the dry run evaluates and traces the project's tier only, and a project administrator lists only its project's
+  mappings; the issuances it sees are those of tokens whose mappings include one of the project's, showing the project's
+  mappings only. Audit events carry the project.
+
+Issuers stay with system administrators and the Helm values (Q-CI-16). A project with CI mappings is not empty: its
+delete answers 409 `project_not_empty`.
+
 Mapping record sketch:
 
 ```json
@@ -1761,10 +1809,15 @@ token and what that token did.
 
 **Data model**
 
+`token_id` names the token row without a foreign key, because the retention task of the token table deletes token rows
+long before `ci.issuances.retention` ends and the record must outlive them; a record whose token row is gone reads as
+expired. `issuer_id` cascades: an issuer is deleted only when an administrator decides it, the audit events keep the
+history, and a restriction would make an issuer with a single exchange undeletable (Q-CI-20).
+
 ```sql
 CREATE TABLE ci_token_issuances (
-  token_id           uuid PRIMARY KEY,          -- id of the token row (identity-and-authentication.md)
-  issuer_id          uuid NOT NULL REFERENCES ci_issuers(id),
+  token_id           uuid PRIMARY KEY,          -- id of the token row (identity-and-authentication.md), no foreign key
+  issuer_id          uuid NOT NULL REFERENCES ci_issuers(id) ON DELETE CASCADE,
   mapping_ids        uuid[] NOT NULL,
   mapping_names      text[] NOT NULL,           -- snapshot, survives mapping deletion
   subject_kind       text NOT NULL CHECK (subject_kind IN ('id_token', 'job_token')),
@@ -1807,7 +1860,10 @@ CREATE INDEX ci_issuances_expiry  ON ci_token_issuances (expires_at);
 | `POST /api/v1/ci/issuances/revoke` | Revoke all unexpired CI tokens that match a filter (`issuer` required; at least one of `project_id`, `pipeline_id`, `job_id`, `mapping`). Returns `{"revoked": <n>}`. |
 
 **Audit events** (stored and streamed per INV-16, see
-[operations-and-observability.md](operations-and-observability.md)):
+[operations-and-observability.md](operations-and-observability.md)). The category is `auth` for `ci.exchange.*` and
+`ci.keys.*`, `token` for `ci.token.revoked`, `identity` for the issuer and mapping events and `authz` for the ownership
+events; every transactional event is written in the transaction of its change, the denials, the replay events and the
+ownership conflict through the buffer (Q-CI-22):
 
 | Event | When | Content beyond actor, time and source |
 |---|---|---|
@@ -2156,8 +2212,8 @@ ci:
 ### R-CI-023 · Delegated mapping management
 Priority: **P1** · Covers: CIOIDC-006, CIOIDC-015, ADMAPI-030
 
-trove has no project entity before P2 (IAM-051), so delegation is tied to a CI issuer and to
-explicit bounds:
+Projects exist (R-AUTHZ-026) and their administrators manage the CI mappings of their project in the MVP (R-CI-019, Q-CI-26).
+What stays P1 is delegation to a user or group *outside* a project, tied to a CI issuer and to explicit bounds:
 
 - A system administrator creates a *delegation* on a CI issuer for a user or group. It lists:
   - the GitLab `project_id`s and/or `namespace_id`s the delegate may write mappings for;
@@ -3375,6 +3431,182 @@ remain the later way to declare mappings, and they never declare an issuer that 
 **Applied in the spec:** R-CI-001 (the configuration section, `trove migrate`, removal, the columns `source` and
 `removed_from_configuration`, two acceptance criteria), R-CI-002 (read-only, 409 `issuer_managed_by_configuration`).
 
+### Q-CI-17 · How a CI token reaches the authorization evaluator at use time
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-AUTHZ-014 gives a CI token rights that no policy row holds: the inline grants rendered at the exchange, the cap `read` of a
+cross-project token and the project identity of its owner records. R-AUTHZ-015 forbids a query to PostgreSQL for grant
+evaluation in the steady state, and a revocation must reach every replica within the bound of R-AUTH-023. The exchange
+(W4) writes the data, the evaluator (W5) reads it, and both need one agreed carrier.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The token row carries it, the token cache entry hands it down | The exchange writes the frozen bundle (`claims.Frozen`) to `api_token.ci_context` in the transaction that inserts the token; the validator reads it into its cache entry (`token.Info.CI`); the stage and the chain pass it as `Principal.CI` to `authz.Subject.CI` | No extra read: the entry is read for authentication anyway. It dies with the token: revocation, expiry and the cache's change-area eviction are the token's own. The bundle is frozen with the token, so a mapping edit changes nothing already issued, as R-CI-013 says | The cache entry grows by the bundle (bounded by the grant limits of a mapping) |
+| (b) The grant index loads the issuances | The index builder reads `ci_token_issuances` for the active CI tokens | The evaluator holds the grants in its index | The index would rebuild on every exchange (a write that is not a policy change), and holds a row per live token on every replica |
+| (c) The evaluator queries the issuance record per token | A per-token cache of `ci_token_issuances.grants` | The issuance record is the one copy | A second cache with its own invalidation beside the token cache, and a PostgreSQL read for a token that is already in the cache |
+
+**Choice:** (a). The policy grants and the group grants of the token stay live: its principal set is its mappings
+(`Subject.Mappings`, resolved to principals by the index) and the groups its mappings listed (`Frozen.Groups`, resolved by
+name), so removing a mapping from a policy takes effect at once without a new exchange (R-CI-013 acceptance criterion).
+
+**Rationale:** (a) adds no read to a hot path and no cache to keep consistent: the token cache is the one cache that
+already answers "is this credential valid" within the revocation bound, and the bundle is part of the answer. The
+issuance record keeps the same bundle for administrators and the audit. The development agent would revisit this if the
+bundle of a token grows past a few KiB in practice (a mapping with very many inline grants times 50,000 cached tokens),
+in which case the cache entry would hold a digest and the grants would load through a bounded cache of their own.
+
+**Applied in the spec:** R-CI-017 (the token row carries the bundle). Code: `internal/ci/claims` (`Frozen`),
+`internal/auth/token` (`Info.CI`, `CITRequest`, `IssueCITx`), `internal/auth` (`Result.CI`), `internal/httpserver`
+(`Principal.CI`), `internal/authz` (`Subject.CI`, `CIGrantSet`, `CIProject`).
+
+### Q-CI-18 · Where the gate lives that admits CI tokens on a few operations only
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-CI-013 admits a CI token on the package-protocol endpoints, on `/files/…`, on the repository-content operations of
+`/api/v1` that need only repository actions, and on `GET` and `DELETE /api/v1/tokens/current`; everything else must refuse
+it. Today most management operations refuse it only by accident: a capability or role declaration fails because a CI
+principal holds none, while an `authenticated` operation admits it and relies on its handler to refuse.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Default-deny in the shared authorization step | A CI principal is refused with 403 `ci_token_restricted` on every operation except public ones, those of the action form and those that declare `x-trove-ci: admitted` | One place, fail-closed: a new operation is closed to CI tokens until it says otherwise. The document states which operations admit them | A new declaration member |
+| (b) A route table in the authentication stage | The stage refuses a CI token on every path outside a list | Refuses before any handler | A second list of routes beside the document, which the dispatcher and the document already disagree about now and then |
+| (c) A check in each handler | Each handler that must not serve a CI token refuses it | No framework change | An open default: one forgotten check is a CI token on a management operation |
+
+**Choice:** (a), as `ciGate` in `internal/api/v1/authorize.go` and the member `x-trove-ci: admitted` on `getCurrentToken`
+and `revokeCurrentToken`. The action form is the repository-content operations by definition: its declaration is a
+repository action on a coordinate, so a CI token passes the gate and the decision of that action (R-AUTHZ-015) is its
+ceiling.
+
+**Rationale:** the default decides what a forgotten declaration does, and a closed default is the only one that cannot
+leak. The package-protocol endpoints and `/files/…` are not operations of the document's table and never meet the gate;
+they admit a CI token as they admit any token, and the scope and the grants of the token bound what it may do there. The
+development agent would revisit this if an operation of the action form turns out to be one that a CI token must not call
+(then it gets a declaration form of its own).
+
+**Applied in the spec:** R-CI-013 (the gate). Code: `internal/api/v1/authorize.go` (`ciGate`), `document.go`
+(`Operation.CIAdmitted`), `api/openapi.yaml`; the test `TestR_CI_013_ACITokenIsRefusedOnTheManagementAPIByDefault`.
+
+### Q-CI-19 · The JWS code of the subject-token validation and the order of its steps
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-CI-004 needs a compact-JWS verifier with the RFC 8725 rules, and the login of R-AUTH-006 already has one in
+`internal/auth/oidc/jws.go` (RSA PKCS#1 v1.5, RSA-PSS, ECDSA; no `none`, no HMAC, no `crit`, no JWE). The CI side also
+needs EdDSA, the 2048-bit RSA minimum, the `key_ops` rule and a check for duplicate member names. R-CI-004 puts the
+algorithm check (step 3) before the issuer selection (step 5), but the algorithm list is an issuer setting.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Share: extract the verifier into the leaf `internal/auth/jws` | The login and the CI validation both use it; the CI rules are added there | One verifier, one place where an algorithm is added or a bug fixed | A change to a package that the login depends on |
+| (b) Copy it into `internal/ci/subject` | Two verifiers | No change to the login | Two verifiers that drift; the next RFC 8725 finding is fixed twice, or once |
+| (c) A JOSE library | A new dependency | Maintained elsewhere | A dependency for ~300 lines the repository already has, and a second behavior to audit |
+
+**Choice:** (a). Work package W2 moves `jws.go` (with its tests) to `internal/auth/jws`, exports what the login and the
+key store need (`Parse`, `Verify`, the JWK types, `ParseJWKS`, `SelectKey`) and adds the CI rules; `internal/auth/oidc`
+keeps its behavior and imports it. `internal/ci/subject` stays independent of it by taking its keys as `subject.Key`
+(a `crypto.PublicKey` with its metadata), which the key store builds. The validation is two calls, `Parse` (steps 1, 2, the
+shape of 3, 4) and `Verify` (the rest), because the issuer is selected between them from the unverified `iss`: a token
+of an unknown issuer answers `unknown_issuer` before its algorithm is judged. Both are 400 `invalid_request` (R-CI-008).
+
+**Rationale:** the algorithm list cannot be judged before the issuer is known, and the issuer cannot be trusted before the
+signature is verified, so some order has to give; the one chosen keeps the unverified payload out of everything except the
+issuer selection, which is what R-CI-004 step 5 demands. A shared verifier is the cheapest way to keep RFC 8725 handling
+in one place. The development agent would revisit this if the login's verifier needs a rule that the CI side must not have.
+
+**Applied in the spec:** R-CI-004 (the two calls). Code: `internal/ci/subject` (the contract), `internal/archtest/layers.go`
+(the leaf `internal/auth/jws` is registered; the package arrives with W2).
+
+### Q-CI-20 · Schema points where the specification's data models and the existing schema disagree
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+The data models of R-CI-001, R-CI-003, R-CI-009, R-CI-018 and R-CI-020 were written before the identity, ownership and
+project schema existed. Two points do not fit it: `ci_token_issuances.token_id` is described as the ID of the token row,
+and `ci_token_issuances.issuer_id` references `ci_issuers` without an action.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) As written | `token_id` references `api_token ON DELETE CASCADE` (or no key at all), `issuer_id` references `ci_issuers` with the default `NO ACTION` | The text of the spec | The token retention task (`auth.tokens.retention_after_end`) would delete an issuance record with its token, long before `ci.issuances.retention` (one year). A `NO ACTION` key makes an issuer undeletable after its first exchange, although R-CI-002 lets an administrator delete it |
+| (b) No key on `token_id`, `ON DELETE CASCADE` on `issuer_id` | The record survives its token row; deleting an issuer deletes its records | The record lives as long as `ci.issuances.retention` says; an issuer can be deleted | A record can name a token row that no longer exists, which the read model treats as expired |
+| (c) `ON DELETE RESTRICT` on `issuer_id` | An issuer with records cannot be deleted | The history stays | An issuer could never be deleted after its first exchange, defeating `DELETE` and the cascade of R-CI-002 |
+
+**Choice:** (b), in migration `00026_ci_oidc.sql`. The same migration adds the foreign key that 00015 deferred,
+`package_owner.ci_issuer_id → ci_issuers(id) ON DELETE CASCADE`, `NOT VALID`, with its index built `CONCURRENTLY` in 00027
+and its validation in 00028, the shape of R-HA-018 and of 00019 to 00025. `ci_mappings.principal_id` carries the existing
+`principal_kind_guard` trigger (kind `ci_mapping`, SQLSTATE `AI001`), `tier` is checked, and `delegation_id` has no key until
+R-CI-023.
+
+**Rationale:** the retention of an issuance record is a configured period and must not depend on another table's cleanup;
+deleting an issuer is an explicit administrator decision, and the audit events (`ci.issuer.deleted`, one `ci.mapping.deleted`
+per mapping, `ci.token.revoked`) keep what happened. The development agent would revisit (b) if an auditor needs the
+issuance records of a deleted issuer; the answer would then be an export before delete, not a restriction.
+
+**Applied in the spec:** R-CI-020 (the data model), R-CI-009 (`tier`, `delegation_id`). Code: migrations 00026 to 00028,
+`internal/meta/postgres/tables_ci.go`; the test `TestCIMigration`.
+
+### Q-CI-21 · The package structure of the federation and what runs before the work packages exist
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Seven work packages build the federation in parallel, and two packages that must not import the domain package need its
+types: `internal/authz` (the evaluator reads the frozen bundle) and `internal/auth/token` (it carries the bundle).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One package `internal/ci` | Everything in it | One import | `authz` and `token` would import `ci`, which imports `authz` and `token`: a cycle |
+| (b) A domain package and three leaves | `internal/ci` (types, service interfaces, stubs, metrics), and the leaves `internal/ci/reason` (the reason names), `internal/ci/claims` (condition, glob, template, grant specification, scope grammar, save-time rules, the frozen bundle) and `internal/ci/subject` (the subject-token validation) | The pure code is testable without a database and shared by the exchange, the dry run and the save; `authz` and `token` import a leaf | Four packages to learn |
+| (c) A package per work package | `ci/issuers`, `ci/mappings`, `ci/exchange`, … | Each work package owns a directory | Their shared types need a fifth package anyway |
+
+**Choice:** (b). The interfaces (`Issuers`, `Mappings`, `Exchanger`, `Revoker`, `Issuances`) are in `internal/ci/services.go`
+and `exchange.go`, one file per concern, so each work package builds its implementation in files of its own; the stubs
+(`StubIssuers`, …) answer 501 `ci_not_implemented` and are wired in `internal/app/wire_ci.go` until a work package replaces its
+member and deletes its stub. The three tasks (`ci-keys-refresh`, `ci-replay-cleanup`, `ci-issuance-retention`) are registered
+with their schedules and the exclusive mode, and their handlers treat the not-implemented answer of a stub as "nothing to do
+yet", so they succeed and need no edit when the service arrives. `trove migrate` calls `Issuers.ApplyDeclared` only when
+`ci.issuers` is not empty until W1 exists, so a configuration that declares issuers stops the migration loudly instead of
+being ignored; W1 calls it always, so an empty list disables the issuers removed from the configuration.
+
+**Rationale:** the cycle forces the split, and the pure functions are the part with the most acceptance criteria, which
+unit tests can pin without a stack. The development agent would revisit the three leaves if one of them ends up with fewer
+than a few hundred lines of production code.
+
+**Applied in the spec:** none. Code: `internal/ci/**`, `internal/archtest/layers.go`, `internal/app/wire_ci.go`.
+
+### Q-CI-22 · Capabilities, audit categories and the shape of a declared issuer
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+R-API-035 declares the issuer and mapping operations as `admin`, the issuance operations as `admin` with `tokens:read` and
+`tokens:revoke`. The document's declaration form takes a capability or a role (R-API-008), and R-AUTHZ-010 already defines
+the capabilities `ci:read` and `ci:write`. The audit events of R-CI-020 name no category. R-CI-001 says a configuration issuer
+carries all the fields of the issuer, but a list element of the configuration holds scalars only.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Declare `role: admin` on every operation | The role, as the text says | The text | A role is not a capability: the auditor's read of the issuers (R-AUTHZ-010 table: `ci:read` yes) would need a second declaration form, and a security administrator holding `ci:write` would be refused |
+| (b) The capabilities | `ci:read` and `ci:write` for issuers, mappings, the dry run and the snippet; `tokens:read` and `tokens:revoke` for the issuances | The capability table already says who holds them (admin: both; security-admin: both; auditor: read) | R-API-035's wording says "admin" |
+
+**Choice:** (b). The audit categories: `auth` for `ci.exchange.*`, `ci.keys.*` and `ci.job_token.lookup`, `token` for
+`ci.token.revoked`, `identity` for `ci.issuer.*` and `ci.mapping.*`, `authz` for `ci.package_ownership.*`; the issuer and mapping
+events, the revocation, the exchange's success, the key fetch result and the claim are transactional, the denials, the replay
+events and the ownership conflict are asynchronous. The seven events of R-CI-020 that carry the journal flag are registered
+with it and the default entry rule, so a producer that records one without an entry fails its transaction (R-OPS-014). A
+declared issuer in the configuration carries every field of the issuer except `job_token_fallback`: the configuration's
+list elements gained pointers to scalars and lists of strings (a key left out is "not set"), and `job_token_fallback` is P2.
+
+**Rationale:** (b) keeps one table of who may do what. The spec's `admin` is the role that holds both capabilities. The
+categories follow the object the event is about, so the audit API's `category` filter groups what an operator looks for.
+The development agent would revisit (b) if the owner wants issuers writable by the administrator role alone; that is one
+change of the role table, not of the operations.
+
+**Applied in the spec:** R-CI-002 (the capabilities), R-CI-001 (the declared issuer), R-CI-020 (the categories and modes).
+The rows `auth.ci_exchange_denied` and `identity_mapping.*` of the event table in
+[operations-and-observability.md](operations-and-observability.md) (R-OPS-016) are superseded by R-CI-020's names. Code:
+`internal/audit/events_ci.go`, `internal/config/ci.go`, `api/openapi.yaml`.
+
 ### Q-CI-23 · Where the issuer double's control API listens
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -3420,6 +3652,40 @@ representative secret is enough, and a test that wants another passes it. The de
 validation ever tries an HMAC verification with a key it holds.
 
 **Applied in the spec:** R-CI-004 (the first acceptance criterion names the secret).
+
+### Q-CI-26 · Project administrators manage the CI mappings of their project
+
+Status: **Decided by the owner on 2026-11-02** for the direction: project administrators manage the CI mappings of their
+project in the MVP. The mechanism (the switch, the tier, the bounds, the API shape) is decided by the development agent
+from the options below; the owner reviews it at the walkthrough.
+
+The owner's use cases: a project administrator adds the pipelines of a GitLab project to those that may write to the
+project's repositories; it gives a whole GitLab instance or group read access to the whole project or to one repository of
+it; a pipeline creates its token through the exchange (unchanged). R-CI-023 had delegation only as P1, to a group.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The project administrator under `managePolicies`, a tier `project:<key>`, routes under the project | Mappings grant rights like policies, so the switch that governs policies governs them; the tier of R-CI-009 keeps a project's mappings from shadowing others; the routes are `/api/v1/projects/{key}/ci/…` with the issuer in the path or the body | No new switch; one declaration mechanism (ADR-146); the project in the path makes the narrowing the one of every project operation | A second route family beside the issuer routes |
+| (b) A new switch `manageCi` | A separate right | Separable from policies | A third switch for what is a policy grant by another door; the three rights of R-AUTHZ-026 were chosen to be the whole set |
+| (c) The issuer routes with `?tier=project:<key>` | R-CI-019 already says the tier is a query parameter | One route family | The step cannot narrow to the project from the path; the handler would parse a query to learn which project the caller administers |
+
+**Choice:** (a). `ci_mappings` carries `tier = 'project:<key>'` and `project_id` (foreign key `ON DELETE RESTRICT`); a project
+with mappings answers `409 project_not_empty`. A project administrator sees the issuers read-only, its own tier's mappings
+and dry run, and the issuances of tokens whose mappings include one of the project's (in the MVP, because an administrator
+who writes the mapping must see what it issued); the token carries `Frozen.Project`, so the evaluator compiles the inline
+grants only against the project's repositories. The bounds are in R-CI-019.
+
+**Rationale:** the owner decided the direction. The mechanism follows the project model already built: the switch that
+decides who may grant through policies decides who may grant through mappings, and a mapping's inline grants are scoped like
+a project policy's (Q-AUTHZ-179), so a project administrator cannot reach beyond its repositories by any door. The name
+prefix keeps the principal names `<issuer>/<key>-…` unique without a coordination step. The development agent would revisit
+(a) if administrators want to manage mappings without being able to write policies (then a fourth right), or if the
+issuances of a shared mapping leak more than the project's mappings (the record shows the project's only).
+
+**Applied in the spec:** R-CI-009 (tiers, the project tier, `project_id`), R-CI-019 (the project routes and bounds), R-CI-023
+(what stays P1), R-AUTHZ-026 (the table), R-API-035, R-UI-035. Code: migration 00026 (`project_id`), `internal/ci` (the
+`…In` methods of `Mappings`, `Issuers.Choices`, `Issuances.ListForProject`, `MappingSet.OnlyTier`), `claims.Frozen.Project`,
+`claims.IssuerFacts.Project`, `internal/api/v1/ci_project_api.go`, `api/openapi.yaml`.
 
 ## What this does not cover
 

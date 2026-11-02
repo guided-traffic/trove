@@ -53,5 +53,10 @@ func principalFromResult(r auth.Result) httpserver.Principal {
 	for _, g := range r.Groups {
 		p.Groups = append(p.Groups, httpserver.GroupRef{ID: g.ID, Name: g.Name})
 	}
+	if r.CI != nil {
+		// A CI token's principal set is its mappings (R-AUTHZ-002); the bundle carries the rest.
+		p.CI = r.CI
+		p.Mappings = append([]string(nil), r.CI.Mappings...)
+	}
 	return p
 }

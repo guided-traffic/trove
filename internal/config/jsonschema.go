@@ -140,7 +140,8 @@ func elementSchema(t reflect.Type) map[string]any {
 		f := t.Field(i)
 		name, _, _ := strings.Cut(f.Tag.Get("yaml"), ",")
 		p := map[string]any{}
-		switch f.Type.Kind() {
+		ft := elementFieldType(f.Type)
+		switch ft.Kind() {
 		case reflect.String:
 			p["type"] = "string"
 		case reflect.Bool:
@@ -149,6 +150,9 @@ func elementSchema(t reflect.Type) map[string]any {
 			p["type"] = "integer"
 		case reflect.Float64:
 			p["type"] = "number"
+		case reflect.Slice:
+			p["type"] = "array"
+			p["items"] = map[string]any{"type": "string"}
 		}
 		if d := f.Tag.Get("doc"); d != "" {
 			p["description"] = d

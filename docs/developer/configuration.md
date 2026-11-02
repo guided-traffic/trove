@@ -121,6 +121,15 @@ exactly one of `group`, `user`, `service_account`, in the environment as JSON (`
 checks what can be checked without a database (R-AUTHZ-010): a role of `SystemRoles()`, one principal, a valid name, never
 `anonymous` or `authenticated`, no entry twice. Only `trove migrate` reads the list ([authorization.md](authorization.md#role-bindings-from-the-configuration)).
 
+## CI keys
+
+The `ci` section ([ci.go](../../internal/config/ci.go), [ci-oidc.md](ci-oidc.md)): `ci.signing_keys.*`, `ci.exchange.*` with `rate_limit.*`,
+`ci.mappings.*`, `ci.token.*`, `ci.replay.*`, `ci.issuances.retention` and the list `ci.issuers` (R-CI-001, Q-CI-16), each with the default of the
+specification. `Config.validateCI` refuses `ci.token.max_ttl` above `auth.tokens.cit.max_ttl` and names both keys (R-CI-016), `ci.job_token_fallback.enabled`
+(R-CI-022) and bad declared issuers (name, https URL, algorithms, skew); the retired key `ci.exchange.rate_limit.per_issuer_per_second` is refused in the
+file and in the environment with the names of its replacements (`retiredKeys`, [load.go](../../internal/config/load.go), R-CI-021). A list element may hold
+scalars, pointers to scalars (a key left out is nil and takes the default of R-CI-001) and lists of strings. Only `trove migrate` applies `ci.issuers`.
+
 ## Endpoint keys
 
 `server.endpoints` (a map of endpoint name to entry) and `server.endpoint_rate_limits` are one key each, so their environment

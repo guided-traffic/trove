@@ -121,6 +121,13 @@ func init() {
 	RegisterArea(Area{Name: AreaUpstreamState, Owner: "R-REPO-029", Class: ChangeArea, PayloadVersion: 1})
 	RegisterArea(Area{Name: AreaMetadataChanged, Owner: "R-REPO-020", Class: SignalArea})
 	// <<< M2 schema
+	//
+	// The areas of the CI federation (gitlab-ci-oidc.md, R-CI-002, R-CI-003, R-CI-009). Their
+	// cluster_epoch rows are seeded by 00026_ci_oidc.
+	// >>> M4 ci
+	RegisterArea(Area{Name: AreaCIMappings, Owner: "R-CI-009", Class: ChangeArea, PayloadVersion: 1})
+	RegisterArea(Area{Name: AreaCIIssuerKeys, Owner: "R-CI-003", Class: ChangeArea, PayloadVersion: 1})
+	// <<< M4 ci
 }
 
 // Names of the areas of this package.
@@ -185,3 +192,19 @@ const AreaUpstreamState = "upstream_state"
 const AreaMetadataChanged = catalog.MetadataChangedArea
 
 // <<< M2 schema
+
+// >>> M4 ci
+
+// AreaCIMappings carries every write of a CI issuer, of its mappings and of the mapping principals'
+// state: create, update, enable, disable, delete and the cascade of an issuer's deletion. Every
+// replica reloads its copy of the issuer together with its mappings (R-CI-002, R-CI-009); the
+// exchange does not depend on the timing, it compares versions in its transaction (R-CI-007,
+// Q-CI-15). The payload names the issuer ID.
+const AreaCIMappings = "ci_mappings"
+
+// AreaCIIssuerKeys carries a changed key set of one CI issuer (R-CI-003): written when a fetch stored
+// a set whose content differs from the stored one, never for an unchanged set. The payload names
+// the issuer ID.
+const AreaCIIssuerKeys = "ci_issuer_keys"
+
+// <<< M4 ci

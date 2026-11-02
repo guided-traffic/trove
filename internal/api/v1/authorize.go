@@ -213,6 +213,10 @@ func (s *Server) authorize(pattern string, next http.Handler) http.Handler {
 			httpserver.Problem(w, r, errs.E(errs.Forbidden, errs.CodeForbidden, "The operation has no permission declaration."))
 			return
 		}
+		if err := ciGate(r, op); err != nil {
+			httpserver.Problem(w, r, err)
+			return
+		}
 		r, err := s.begin(r, op.Requirement)
 		if err == nil {
 			err = s.decide(r, op.Requirement)
@@ -231,6 +235,24 @@ func (s *Server) authorize(pattern string, next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// ciGate is the admission of CI tokens on the management API (R-CI-013, R-CI-017, Q-CI-18): a CI
+// token is refused with 403 ci_token_restricted on every operation except the public ones, the
+// operations of the action form (a repository action on a coordinate: the repository-content
+// operations that need only repository actions) and the operations that declare x-trove-ci:
+// admitted (GET and DELETE /tokens/current). The default is the refusal, so a new operation is
+// closed to CI tokens until its declaration says otherwise. The package-protocol endpoints and
+// /files are not operations of this table; they admit CI tokens as they admit any token. The gate
+// runs before the capability check, so the answer does not depend on what the owner principal holds.
+func ciGate(r *http.Request, op Operation) error {
+	if p := httpserver.PrincipalFrom(r.Context()); p.Kind != httpserver.KindCI {
+		return nil
+	}
+	if q := op.Requirement; q.Public || q.Action != "" || op.CIAdmitted {
+		return nil
+	}
+	return errs.E(errs.Forbidden, errs.CodeCITokenRestricted, "A CI token cannot call this operation.")
 }
 
 // ActionAccess is implemented by an [Access] that also decides the action form

@@ -208,6 +208,7 @@ checked every earlier decision against them:
 | [ADR-144](#adr-144--the-bastion-token-is-a-type-of-its-own-and-the-interface-a-version-of-its-own) | The Bastion token is a type of its own, and the interface a version of its own | Decided by the development agent — owner review at the walkthrough |
 | [ADR-145](#adr-145--the-grants-of-a-project-policy-are-stored-where-the-previous-release-does-not-read-them) | The grants of a project policy are stored where the previous release does not read them | Decided by the development agent — owner review at the walkthrough |
 | [ADR-146](#adr-146--an-operation-admits-project-administrators-through-a-declaration-of-its-own) | An operation admits project administrators through a declaration of its own | Decided by the development agent — owner review at the walkthrough |
+| [ADR-147](#adr-147--a-ci-token-carries-its-frozen-grants-in-its-cache-entry-and-the-management-api-refuses-ci-tokens-by-default) | A CI token carries its frozen grants in its cache entry, and the management API refuses CI tokens by default | Decided by the development agent — owner review at the walkthrough |
 
 </details>
 
@@ -5452,6 +5453,40 @@ request; the answer must not depend on other projects. The handler narrows (404 
 
 **Spec:** [spec/authorization.md](spec/authorization.md) R-AUTHZ-026; [spec/api-and-ui.md](spec/api-and-ui.md) R-API-008.
 
+
+### ADR-147 · A CI token carries its frozen grants in its cache entry, and the management API refuses CI tokens by default
+
+**Status:** Decided by the development agent — owner review at the walkthrough
+
+**Context.** A CI token (R-CI-017) has rights no policy row holds: the inline grants rendered at the exchange, the cap `read`
+of a cross-project token and the project identity of its package-ownership records (R-AUTHZ-014). The evaluator must not
+query PostgreSQL for them (R-AUTHZ-015), a revocation must reach every replica within the bound of R-AUTH-023, and a CI token
+must stay off the management API except for its own `GET` and `DELETE /tokens/current` (R-CI-013).
+
+**Decision.** The exchange writes the frozen bundle (`claims.Frozen`: issuer, project, contributing mappings and groups,
+rendered inline grants, caps) to `api_token.ci_context` in the transaction that inserts the token. The token cache entry of
+the validator carries it (`token.Info.CI`) through the stage and the chain to `authz.Subject.CI`; the principal set of the
+subject is its mappings, so policy and group grants stay live. The shared authorization step of the management API refuses a
+CI principal with 403 `ci_token_restricted` on every operation except public ones, those of the action form and those that
+declare `x-trove-ci: admitted`.
+
+**Consequences.** Use of a CI token costs no extra read, and the grants die with the token by its own revocation path. The
+cache entry grows by the bundle. A new management operation is closed to CI tokens until its declaration says otherwise. The
+package-protocol endpoints and `/files/…` are outside the table and admit CI tokens like any token, bounded by scope and
+grants. The bundle is also the issuance record's `grants`, so the administrator reads what the token holds.
+
+**Alternatives considered.** Loading issuances into the grant index (a rebuild on every exchange and a row per live token on
+every replica); a per-token cache of the issuance record (a second cache beside the token cache); a route table in the
+authentication stage or a check in each handler for the gate (an open default). Decided in
+[Q-CI-17](spec/gitlab-ci-oidc.md#q-ci-17--how-a-ci-token-reaches-the-authorization-evaluator-at-use-time) and
+[Q-CI-18](spec/gitlab-ci-oidc.md#q-ci-18--where-the-gate-lives-that-admits-ci-tokens-on-a-few-operations-only).
+
+**Revisit condition:** the bundle of a token grows past a few KiB in practice, or an operation of the action form turns out
+to be one a CI token must not call.
+
+**Spec:** [spec/gitlab-ci-oidc.md](spec/gitlab-ci-oidc.md) R-CI-013, R-CI-017;
+[spec/authorization.md](spec/authorization.md) R-AUTHZ-014.
+
 ## Decisions by the development agent
 
 The development agent selected each of these decisions from the options documented in the
@@ -5861,8 +5896,15 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-CI-14](spec/gitlab-ci-oidc.md#q-ci-14--exchange-rate-limits-across-replicas) | Exchange rate limits across replicas? | (c) cluster-wide per-address (with `exempt_cidrs`) and per-subject limiters, per-issuer bucket removed | [ADR-059](#adr-059--ci-tokens-through-a-standard-token-exchange-endpoint), [ADR-102](#adr-102--cluster-wide-rate-limits-in-valkey-with-a-per-replica-fallback) |
 | [Q-CI-15](spec/gitlab-ci-oidc.md#q-ci-15--exchange-against-a-mapping-cache-that-lags-behind-postgresql) | Exchange against a mapping cache that lags behind PostgreSQL? | (b) `mappings_version` check; an issuer `version` change re-validates the subject token against the re-read row | [ADR-060](#adr-060--ordered-identity-mappings-first-match-per-tier-union-across-tiers) |
 | [Q-CI-16](spec/gitlab-ci-oidc.md#q-ci-16--ci-issuers-provisioned-through-the-helm-values-are-read-only-in-trove) | How are CI issuers provisioned through the Helm values? | (a) `ci.issuers` in the system configuration, applied by `trove migrate`, read-only in the API and the UI (owner) | (b) configuration documents for `ciIssuers` and `ciMappings` |
+| [Q-CI-17](spec/gitlab-ci-oidc.md#q-ci-17--how-a-ci-token-reaches-the-authorization-evaluator-at-use-time) | How does a CI token reach the evaluator at use time? | (a) the exchange writes the frozen bundle to `api_token.ci_context`, the token cache entry carries it to `authz.Subject.CI`; no query at use time | [ADR-147](#adr-147--a-ci-token-carries-its-frozen-grants-in-its-cache-entry-and-the-management-api-refuses-ci-tokens-by-default) |
+| [Q-CI-18](spec/gitlab-ci-oidc.md#q-ci-18--where-the-gate-lives-that-admits-ci-tokens-on-a-few-operations-only) | Where does the gate live that admits CI tokens on few operations? | (a) default-deny in the shared authorization step, `x-trove-ci: admitted` and the action form as the exceptions | [ADR-147](#adr-147--a-ci-token-carries-its-frozen-grants-in-its-cache-entry-and-the-management-api-refuses-ci-tokens-by-default) |
+| [Q-CI-19](spec/gitlab-ci-oidc.md#q-ci-19--the-jws-code-of-the-subject-token-validation-and-the-order-of-its-steps) | JWS code of the subject-token validation, and the step order? | (a) share the login's verifier through the leaf `internal/auth/jws`; `Parse` and `Verify` around the issuer selection | — |
+| [Q-CI-20](spec/gitlab-ci-oidc.md#q-ci-20--schema-points-where-the-specifications-data-models-and-the-existing-schema-disagree) | Where do the data models and the existing schema disagree? | (b) no key on `ci_token_issuances.token_id`, `ON DELETE CASCADE` on its issuer; the owner key of 00015 validated in 00028 | — |
+| [Q-CI-21](spec/gitlab-ci-oidc.md#q-ci-21--the-package-structure-of-the-federation-and-what-runs-before-the-work-packages-exist) | Package structure of the federation and the stubs? | (b) `internal/ci` plus the leaves `reason`, `claims`, `subject`; stubs answer 501, tasks succeed until built | — |
+| [Q-CI-22](spec/gitlab-ci-oidc.md#q-ci-22--capabilities-audit-categories-and-the-shape-of-a-declared-issuer) | Capabilities, audit categories and the declared issuer? | (b) `ci:read`, `ci:write`, `tokens:read`, `tokens:revoke`; categories by object; flat list elements without `job_token_fallback` | — |
 | [Q-CI-23](spec/gitlab-ci-oidc.md#q-ci-23--where-the-issuer-doubles-control-api-listens) | Where does the issuer double's control API listen? | (b) a second TLS listener with its own port, token from the environment | (a) a path prefix on the issuer port; (c) a separate pod |
 | [Q-CI-24](spec/gitlab-ci-oidc.md#q-ci-24--the-secret-of-the-algorithm-confusion-token) | Which bytes are the HMAC secret of the algorithm-confusion token? | (a) the PEM text of the RSA public key, overridable | (b) the DER; (c) every encoding |
+| [Q-CI-26](spec/gitlab-ci-oidc.md#q-ci-26--project-administrators-manage-the-ci-mappings-of-their-project) | Who manages CI mappings below the system administrators? | (a) the administrators of a project, under `managePolicies`, in the tier `project:<key>` (owner, 2026-11-02, direction); mechanism by the development agent | (b) a new switch `manageCi`, (c) `?tier=` on the issuer routes |
 | [Q-NPM-1](spec/formats/npm.md#q-npm-1--host-root-routes-next-to-inv-6) | Add host-root routes next to INV-6? | (d) the exchange at npm's host-root path and below every registry URL; trove owns its host root; attestations later below the registry URL; changes INV-6 | [ADR-017](#adr-017--url-layout-on-two-listeners-inv-6), [ADR-071](#adr-071--npm-trusted-publishing-through-package-bound-ci-tokens-p1) |
 | [Q-NPM-2](spec/formats/npm.md#q-npm-2--serve-versions-the-upstream-removed) | Serve versions the upstream removed? | (a) no: removed versions and their tarballs are hidden by default; a per-remote switch for availability-first repositories. Revisited 2026-10-28, unchanged: marks read per request, the core gone mark only, and Q-NPM-13 | [ADR-069](#adr-069--versions-removed-upstream-are-hidden-by-default) |
 | [Q-NPM-3](spec/formats/npm.md#q-npm-3--audit-forwarding-on-by-default) | Forward `npm audit` to the upstream by default? | (c) forward, but only names the remote already holds a document for, minus internal names; withheld names are reported. Revisited 2026-10-31: from M4b the default is mode `local` while scanning is on (Q-VULN-9); (c) stays the rule of mode `forward` | [ADR-091](#adr-091--forwarded-search-and-audit-requests-withhold-protected-names) |

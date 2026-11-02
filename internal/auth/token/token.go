@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/auth/principal"
+	"github.com/guided-traffic/trove/internal/ci/claims"
 )
 
 // Type is a token type, from the prefix (R-AUTH-022). The values match
@@ -28,6 +29,10 @@ type Info struct {
 	// Owner is the owner principal, checked active by the validator.
 	Owner     principal.Principal
 	ExpiresAt *time.Time
+	// CI is the frozen use-time bundle of a CI token (type cit), read from api_token.ci_context into
+	// the cache entry: the inline grants, caps, groups, mappings and the project identity the
+	// evaluator needs (R-AUTHZ-014, Q-CI-17). Nil for a PAT or SAT.
+	CI *claims.Frozen
 }
 
 // Rejection reasons the validator reports (R-AUTH-023 step 3); the stage maps

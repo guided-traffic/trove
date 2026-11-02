@@ -1758,7 +1758,7 @@ asynchronous. "Hook" marks events that webhooks may select (R-OPS-037).
 | `auth.login.succeeded` | A | — | Browser OIDC login or break-glass login succeeded (INV-7) | `method` (`oidc`, `breakglass`), `issuer`, `session_id` |
 | `auth.login.failed` | A | — | Login failed | `reason` (`oidc_error`, `state_mismatch`, `user_disabled`, `breakglass_disabled`, `bad_credentials`) |
 | `auth.logout` | A | — | Session ended by the user | `session_id` |
-| `auth.ci_exchange_denied` | A | — | A CI OIDC exchange was refused (INV-10) | `issuer`, `reason` (`signature`, `audience`, `expired`, `no_mapping`), selected claims (`project_path`, `ref`, `pipeline_id`) |
+| `ci.exchange.succeeded`, `.denied`, `.replayed`, `.repeated` | T, A, A, A | — | A CI token exchange (INV-10): issued, refused, a used single-use `jti`, a `jti` exchanged more often than `ci.replay.warn_after_exchanges`; the full table is [gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-020 (it replaces the earlier `auth.ci_exchange_denied`) | `issuer`, `reason`, `token_id`, `mappings`, the claim snapshot after verification |
 | `token.rejected` | A | — | A well-formed trove token (valid checksum) was unknown, revoked or expired | `token_id` if known, `token_type`, `reason`, `count`, `repeat_of` (summaries only) |
 | `token.created` | T | — | Any trove token was issued, including CI exchanges | `token_type`, `scope`, `expires_at`, `ci_mapping`, `ci_claims` |
 | `token.revoked` | T | — | A token was revoked | `token_type`, `revoked_by` |
@@ -1773,7 +1773,7 @@ asynchronous. "Hook" marks events that webhooks may select (R-OPS-037).
 | `endpoint.exposure.created`, `endpoint.exposure.updated`, `endpoint.exposure.deleted` | T | — | Exposure rule change of an endpoint ([endpoints.md](endpoints.md) R-EP-016); updates and deletions carry the journal flag (R-EP-020) | `changes`, `endpoint`, `before`, `after` |
 | `authz.denied` | A | — | An authenticated principal was refused an action; with `audit.record_anonymous_denials`, also an anonymous caller, deduplicated per client address (R-OPS-015) | `operation`, `required_action`, `count`, `repeat_of` (summaries only) |
 | `oidc_provider.created`, `oidc_provider.updated`, `oidc_provider.deleted` | T | — | Trusted issuer change | `changes` |
-| `identity_mapping.created`, `identity_mapping.updated`, `identity_mapping.deleted` | T | — | CI identity mapping change | `changes` |
+| `ci.issuer.created`, `.updated`, `.disabled`, `.enabled`, `.deleted`, `ci.mapping.created`, `.updated`, `.disabled`, `.enabled`, `.deleted` | T | — | CI issuer and identity mapping change ([gitlab-ci-oidc.md](gitlab-ci-oidc.md) R-CI-020; they replace the earlier `oidc_provider.*` and `identity_mapping.*` rows for CI); `.updated`, `.disabled` and `.deleted` carry the journal flag | `before`, `after` |
 | `repository.created`, `repository.updated`, `repository.deleted` | T | — | Repository configuration change | `changes` |
 | `repository.cache_invalidated` | T | — | R-OPS-021 | `path`, `scope`, `count` |
 | `repository.remote_package_shadowed` | T | — | Security event: a caller holding `manage` (or `content:bypass`) gave a local repository its first version of a name that a remote member of a containing virtual repository serves ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-048); written in the commit transaction. The local repository is the `repository` column | `package`, `exposure` (the pairs `{virtual, remote}`) |

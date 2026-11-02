@@ -6,6 +6,7 @@ import (
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/auth/scope"
 	"github.com/guided-traffic/trove/internal/auth/token"
+	"github.com/guided-traffic/trove/internal/ci/claims"
 )
 
 // Method is the credential source that proved the principal (R-AUTH-001). The
@@ -49,6 +50,9 @@ type Result struct {
 	Principal  principal.Principal
 	Groups     []principal.GroupRef
 	Credential Credential
+	// CI is the frozen bundle of a CI token (token.Info.CI); nil for every other credential
+	// (R-AUTHZ-014, Q-CI-17).
+	CI *claims.Frozen
 }
 
 // EndpointRules is what the stage needs to know about the endpoint of the

@@ -67,6 +67,7 @@ no vulnerability scanning and no backup exists yet. Everything marked *planned* 
 | [identity.md](identity.md) | Principals, groups, service accounts, tokens, the authentication stage, caches and revocation propagation, the failed-credential throttle |
 | [authorization.md](authorization.md) | Permission policies, roles, the evaluation, the compiled grant index and its invalidation, epochs and `Trove-Authz-Min-Epoch`, how an operation declares its permission, the populate check and `MemberUsable`, package ownership |
 | [projects.md](projects.md) | Projects and delegated administration: the contracts (engine questions, project service, API operations and declarations, error codes, audit events, schema), the decisions behind them, who owns which file, and the tests that pass when |
+| [ci-oidc.md](ci-oidc.md) | GitLab CI OIDC federation: the contracts laid for beta phase 5 (schema, the `internal/ci` packages and interfaces, the token and evaluation seam, the gate, API, configuration, events, tasks), the project tier, the work packages W1 to W7 and their files; status: contracts laid, work packages pending |
 | [files.md](files.md) | Raw transfer under `/files/`: the generic layer over the item store, deploy, download with Range, folders, the items API, deletes, activity and download statistics |
 | [items.md](items.md) | The item store: the one commit and its order, the storage hooks, spool, read, listing rows, subtree delete and the `items-delete` job |
 | [formats.md](formats.md) | The format contract: `formats.Format`, the registry and its start-up checks, the `Host`, the storage hooks, the dispatcher for `/api/<format>/<repoKey>/`, content headers and error shapes, the wiring, how to add a format |
@@ -148,6 +149,7 @@ trove/
 │   ├── blob/                 # store, spool, digests, commit, download, GC; s3/ is the S3 client; blobtest/ fixtures
 │   ├── buildinfo/            # version, commit and build date from -ldflags
 │   ├── cache/                # bounded in-process caches with change-area invalidation
+│   ├── ci/                   # GitLab CI OIDC federation (contracts laid, ci-oidc.md): types, service interfaces, stubs, metrics; reason/, claims/ and subject/ are pure leaves
 │   ├── cluster/              # the only Valkey client and key registry (valkey_keys.go), change log, signals,
 │   │                         # FlightLock, leases, lock categories, replica registry, watchdog loops, the cluster limiter
 │   ├── config/               # struct tree with defaults, loader, validation, schema.json (generated)

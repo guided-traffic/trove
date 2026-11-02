@@ -184,6 +184,33 @@ config:
   #       group: gh-wds18-k8s-main-admins   # example; exactly one of group, user, service_account
   #     - role: auditor                 # example: reads every repository's metadata and the configuration, changes nothing
   #       group: gh-wds18-k8s-main-auditors # example
+  # GitLab CI OIDC federation (docs/spec/gitlab-ci-oidc.md, docs/developer/configuration.md). Every key has a default and is
+  # rendered only when set here. ci.issuers declares GitLab instances as trusted CI issuers: the migration Job applies the list
+  # on every install and upgrade (an issuer taken out of it is disabled, not deleted), the API and the UI show them read-only
+  # with source "configuration", and their mappings are managed through the API (Q-CI-16).
+  # ci:
+  #   token:
+  #     default_ttl: 15m                # default (proposed): lifetime of a CI token that asks for none
+  #     max_ttl: 1h                     # default (proposed): at most auth.tokens.cit.max_ttl (6h), or the pod does not start
+  #     min_ttl: 30s                    # default (proposed)
+  #   exchange:
+  #     enabled: true                   # default (proposed)
+  #     expose_reason: true             # default (proposed): false leaves the reason out of the 400 answers
+  #     rate_limit:
+  #       per_client_ip_per_minute: 600 # default (proposed): cluster-wide
+  #       per_client_ip_burst: 100      # default (proposed)
+  #       per_subject_per_minute: 300   # default (proposed): per issuer and project, cluster-wide
+  #       per_subject_burst: 100        # default (proposed)
+  #       exempt_cidrs: []              # default (proposed); example: ["10.20.0.0/16"], a runner network behind NAT
+  #   signing_keys:
+  #     max_stale: 24h                  # default (proposed): older key sets fail closed with 503
+  #   issuers:
+  #     - name: gitlab-main             # example: ^[a-z0-9][a-z0-9._-]{1,63}$
+  #       kind: gitlab                  # the only kind of this release
+  #       issuer: https://gitlab.example.com   # example: https, exactly the iss of the ID tokens
+  #       public_issuer: false          # example: an instance without open sign-up; default true
+  #       allowed_audiences: ["https://packages.example.com"]   # example; without it the base URL and npm:<host name>
+  #       ca_bundle_ref: file:/var/run/secrets/gitlab-ca/ca.crt  # example: an instance behind a private CA
 
 # ── TLS on trove's own listeners (R-HA-063, R-ARCH-035) ────────────────────
 # The chart never creates the Secret. It holds the keys of a cert-manager TLS Secret (tls.crt,

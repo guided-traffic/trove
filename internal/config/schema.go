@@ -220,6 +220,23 @@ func isStructList(t reflect.Type) bool {
 	return t.Kind() == reflect.Slice && t.Elem().Kind() == reflect.Struct && t.Elem() != durTyp
 }
 
+// elementFieldType is the type of a list element's field without its pointer: a pointer tells a
+// key that was left out from its zero value (ci.issuers needs that for its defaults, R-CI-001).
+func elementFieldType(t reflect.Type) reflect.Type {
+	if t.Kind() == reflect.Pointer {
+		return t.Elem()
+	}
+	return t
+}
+
+func isScalarKind(k reflect.Kind) bool {
+	switch k {
+	case reflect.String, reflect.Bool, reflect.Int, reflect.Int32, reflect.Int64, reflect.Float64:
+		return true
+	}
+	return false
+}
+
 // checkElement holds a list element to the rules of the tree: exported fields
 // with snake_case yaml names and scalar types only, so the element is flat and
 // its JSON Schema is complete.
@@ -233,10 +250,12 @@ func checkElement(t reflect.Type) error {
 		if !isSnakeCase(name) {
 			return fmt.Errorf("field %s has no snake_case yaml name", f.Name)
 		}
-		switch f.Type.Kind() {
-		case reflect.String, reflect.Bool, reflect.Int, reflect.Int32, reflect.Int64, reflect.Float64:
+		ft := elementFieldType(f.Type)
+		switch {
+		case ft.Kind() == reflect.Slice && ft.Elem().Kind() == reflect.String:
+		case isScalarKind(ft.Kind()):
 		default:
-			return fmt.Errorf("field %s has type %s; list elements hold scalars only", f.Name, f.Type)
+			return fmt.Errorf("field %s has type %s; list elements hold scalars, pointers to scalars (a key left out is nil) and lists of strings only", f.Name, f.Type)
 		}
 		if sec := f.Tag.Get("secret"); sec != "" && (sec != "file" || f.Type.Kind() != reflect.String || !strings.HasSuffix(name, "_file")) {
 			return fmt.Errorf("field %s: secret:%q needs a string field whose yaml name ends in _file", f.Name, sec)

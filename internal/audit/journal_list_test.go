@@ -11,11 +11,7 @@ import (
 // exist yet. The test keeps the list honest: an event that is registered must not
 // stay on it, and every event the table names must be either registered with the
 // flag or on it.
-var journalPending = map[string]string{
-	"ci.token.revoked": "CI identity (M4, R-CI-017)",
-	"ci.issuer.*":      "CI identity (M4)",
-	"ci.mapping.*":     "CI identity (M4)",
-}
+var journalPending = map[string]string{}
 
 // r054Events reads the event names of the first column of the table of
 // R-HA-054 ("What is journaled") from the specification page, so that the list in

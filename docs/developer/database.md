@@ -426,6 +426,13 @@ connection uses it. Not covered: client-certificate authentication against the r
 client certificate; the unit tests prove the per-connection reload against a fake server that answers the SSLRequest),
 and a real PostgreSQL switchover (E0.13, e2e harness).
 
+## CI tables (00026 to 00028)
+
+Expand steps of beta phase 5 ([ci-oidc.md](ci-oidc.md)): 00026 creates `ci_issuers`, `ci_issuer_keys` (transient in backups), `ci_mappings` (tier `system`, `project:<key>` with
+`project_id`, or `delegation:<uuid>`; the principal of kind `ci_mapping`), `ci_subject_token_uses` (the replay set) and `ci_token_issuances` (no key on `token_id`, issuer
+`ON DELETE CASCADE`, Q-CI-20), seeds the epoch rows of `ci_mappings` and `ci_issuer_keys`, and adds `package_owner_ci_issuer_id_fkey` `NOT VALID`; 00027 builds its index
+`CONCURRENTLY`; 00028 validates it. Registrations: [tables_ci.go](../../internal/meta/postgres/tables_ci.go).
+
 ## Projects tables (00019 to 00025)
 
 Migrations 00019 to 00025 are expand steps (R-AUTHZ-026) in the shape R-HA-018 asks of a step that touches tables that

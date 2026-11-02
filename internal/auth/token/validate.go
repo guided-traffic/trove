@@ -174,6 +174,15 @@ func (s *Service) load(ctx context.Context, hash [32]byte, typ Type) (cachedToke
 			return fmt.Errorf("token %s: stored scope: %w", r.ID, err)
 		}
 		ct.info = Info{ID: r.ID, Type: typ, Scope: scope, Owner: owner}
+		if typ == TypeCIT {
+			// A CI token without its bundle would hold only the grants of its mappings' policies; a
+			// bundle that does not decode is a storage fault, never an acceptance without it (Q-CI-17).
+			ci, err := decodeCIContext(r.CiContext)
+			if err != nil {
+				return fmt.Errorf("token %s: stored CI context: %w", r.ID, err)
+			}
+			ct.info.CI = ci
+		}
 		if r.ExpiresAt.Valid {
 			t := r.ExpiresAt.Time
 			ct.info.ExpiresAt = &t

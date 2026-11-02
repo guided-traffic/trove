@@ -1653,6 +1653,464 @@ export interface paths {
         patch: operations["updateRepository"];
         trace?: never;
     };
+    "/api/v1/ci/issuers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List CI issuers
+         * @description The trusted CI issuers with their mapping count and key status, ordered by name (R-CI-002). An issuer with
+         *     `source: configuration` is declared in `ci.issuers` of the system configuration and read-only here (Q-CI-16).
+         */
+        get: operations["listCiIssuers"];
+        put?: never;
+        /**
+         * Create a CI issuer
+         * @description Creates an issuer with the defaults of R-CI-001 filled in. With `validate: true` (the default) it fetches the discovery
+         *     document and the key set first and answers `422` with a `code` (`discovery_unreachable`, `issuer_mismatch`,
+         *     `no_usable_keys`, `algorithms_not_offered`) when the issuer would not be usable. `pin_claim_not_immutable`,
+         *     `public_issuer_required` and `kind_not_available` are the other 422 codes. A name or issuer URL that exists answers
+         *     `409`. Records `ci.issuer.created` and notifies the change area `ci_mappings`.
+         */
+        post: operations["createCiIssuer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ci/issuers/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Read a CI issuer
+         * @description The issuer with its mapping count and key summary. The `ETag` is the issuer's `version` (R-CI-002).
+         */
+        get: operations["getCiIssuer"];
+        /**
+         * Replace a CI issuer
+         * @description Replaces the full representation; an omitted optional member takes its default. `name`, `issuer` and `kind` are
+         *     immutable. `If-Match` is required (`428` without it, `412` with `currentEtag` for a stale tag). An issuer with
+         *     `source: configuration` answers `409 issuer_managed_by_configuration`. One event is recorded, chosen by `enabled`:
+         *     `ci.issuer.disabled`, `ci.issuer.enabled` or `ci.issuer.updated`; disabling revokes the unexpired tokens issued through
+         *     the issuer in the same transaction (R-CI-017).
+         */
+        put: operations["replaceCiIssuer"];
+        post?: never;
+        /**
+         * Delete a CI issuer
+         * @description Refuses with `409` while the issuer has mappings unless `cascade=true`, which deletes the mappings and their
+         *     principals in the same transaction. Revokes the unexpired tokens issued through the issuer. A configuration issuer is
+         *     deletable only once it is `removedFromConfiguration`. `If-Match` is optional.
+         */
+        delete: operations["deleteCiIssuer"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ci/issuers/{name}/keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Read the cached key set of a CI issuer
+         * @description The key IDs, types and algorithms of the stored key set, the fetch time, the next refresh and the last error
+         *     (R-CI-002, R-CI-003). It makes no request to the issuer. The error names the failure class, the HTTP status and the
+         *     host, never bytes of a response body.
+         */
+        get: operations["getCiIssuerKeys"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ci/issuers/{name}/keys/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fetch the discovery document and keys of a CI issuer now
+         * @description Fetches on the replica that serves the request, outside any database transaction, and stores the key set under the
+         *     write rule of R-CI-003. Answers `502` when the issuer is unreachable. Records `ci.keys.refreshed` or
+         *     `ci.keys.refresh_failed`.
+         */
+        post: operations["refreshCiIssuerKeys"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ci/issuers/{issuer}/mappings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable. */
+                issuer: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * List the mappings of a CI issuer
+         * @description In evaluation order: tier, then ascending priority (R-CI-009, R-CI-019).
+         */
+        get: operations["listCiMappings"];
+        put?: never;
+        /**
+         * Create a mapping
+         * @description Creates a system-tier mapping and its principal `ci:<issuer>/<mapping>` in one transaction (R-CI-009). The save-time
+         *     rules answer `422` with a `code` and the pointer of the member (`pin_required`, `catch_all_condition`,
+         *     `unprotected_write`, `unpinned_write`, `action_not_allowed`, `empty_grant`, `template_invalid`, `template_unanchored`,
+         *     `condition_invalid`); a priority that is taken in the tier answers `409 priority_taken`. The answer carries the
+         *     `warnings` of the save (R-CI-010, R-CI-011).
+         */
+        post: operations["createCiMapping"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ci/issuers/{issuer}/mappings/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable. */
+                issuer: string;
+                /** @description The mapping name (`^[a-z0-9][a-z0-9._-]{1,63}$`), unique within the issuer, immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Read a mapping
+         * @description The mapping with its resolved defaults. The `ETag` is the mapping's `version`.
+         */
+        get: operations["getCiMapping"];
+        /**
+         * Replace a mapping
+         * @description Replaces the full representation; `name` is immutable. `If-Match` is required: a stale `PUT` must not restore
+         *     conditions or grants another administrator narrowed (R-CI-002). One event is recorded, chosen by `enabled`. Disabling
+         *     revokes the mapping's unexpired tokens and sets its principal `disabled`; editing does not revoke (R-CI-017).
+         */
+        put: operations["replaceCiMapping"];
+        post?: never;
+        /**
+         * Delete a mapping
+         * @description Deletes the mapping and its principal and revokes its unexpired tokens (R-CI-009, R-CI-017). `If-Match` is optional.
+         */
+        delete: operations["deleteCiMapping"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ci/issuers/{issuer}/evaluate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable. */
+                issuer: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dry-run the mappings of a CI issuer against a claim set
+         * @description The request carries a claim set, never a token, so nobody has to paste a live credential (R-CI-019, R-UI-036). The
+         *     answer is the decision trace: every mapping looked at with its first failed leaf and every leaf's expected and actual
+         *     value, the selected mappings, the rendered grants and the lifetime. It issues nothing and records no `jti`.
+         */
+        post: operations["evaluateCiMappings"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ci/issuers/{issuer}/snippets/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable. */
+                issuer: string;
+                /** @description The CI system of the snippet; `gitlab-ci` in this release. */
+                kind: "gitlab-ci";
+            };
+            cookie?: never;
+        };
+        /**
+         * Read a ready-to-paste CI snippet
+         * @description A `.gitlab-ci.yml` fragment for a mapping of the issuer: the `id_tokens:` block with the issuer's audience, the
+         *     exchange call and the client configuration for npm or NuGet, ending in the self-revocation of the token (R-API-035,
+         *     R-UI-035, R-CI-027). It holds no secret.
+         */
+        get: operations["getCiSnippet"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ci/issuances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the issued CI tokens
+         * @description The issuance records, newest first, with cursor pagination (R-CI-020). A record links a CI token to the verified job
+         *     identity it was issued to and holds an allowlisted claim snapshot, never a token or a hash.
+         */
+        get: operations["listCiIssuances"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ci/issuances/{tokenId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ID of the CI token (the `token_id` of the audit events). */
+                tokenId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Read one issuance record with its usage
+         * @description The record plus a usage summary from the audit store: the request count, the last use and the packages deployed (R-CI-020).
+         */
+        get: operations["getCiIssuance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ci/issuances/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke the unexpired CI tokens that match a filter
+         * @description `issuer` is required and at least one of `projectId`, `pipelineId`, `jobId`, `mapping`. One transaction; records
+         *     `ci.token.revoked` (R-CI-020).
+         */
+        post: operations["revokeCiIssuances"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/oidc/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Exchange a CI ID token for a short-lived CI token
+         * @description OAuth 2.0 Token Exchange (RFC 8693, R-CI-007): the subject token, the ID token a GitLab job requested for trove's
+         *     audience, is the credential. The endpoint requires no trove credential and ignores a session and a CSRF token.
+         *     The body is `application/x-www-form-urlencoded` (normative) or `application/json` with the same parameter names;
+         *     a parameter sent twice answers `400`. Answers carry `Cache-Control: no-store`. Errors are the OAuth error
+         *     response of RFC 6749 section 5.2 with trove's members `reason` and `requestId`, not problem details (R-CI-008);
+         *     a rejected subject token answers `400 invalid_request` (Q-CI-8). The parameters keep the OAuth names of the RFC.
+         *     Until the exchange is built the endpoint answers `501` (problem details).
+         */
+        post: operations["exchangeCiToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{key}/ci/issuers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * List the CI issuers a project administrator can choose from
+         * @description Read-only: name, kind, issuer URL and `publicIssuer` of every issuer (Q-CI-26). Issuers are written by system administrators and the Helm values only. A project administrator of this project with `managePolicies` may call it; a project it does not administer answers `404`, a switch that is off `403 project_switch_off`.
+         */
+        get: operations["listProjectCiIssuers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{key}/ci/mappings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * List the CI mappings of a project
+         * @description The project's mappings of every issuer, tier `project:<key>` (Q-CI-26, R-CI-009). A project administrator sees these and no other tier.
+         */
+        get: operations["listProjectCiMappings"];
+        put?: never;
+        /**
+         * Create a CI mapping of a project
+         * @description The body names the `issuer`. The mapping takes the tier `project:<key>`; its name starts with `<key>-` (`422 project_prefix_required`); it grants through policies of the project and inline grants over the project's repositories (`@any` means every repository of the project), never `groups` (`422 groups_not_allowed_in_project`) and never `manage`. Every save-time rule of R-CI-010 and R-CI-011 applies. Notifies `ci_mappings` and records `ci.mapping.created` with the project.
+         */
+        post: operations["createProjectCiMapping"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{key}/ci/mappings/{issuer}/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                key: string;
+                /** @description The CI issuer name. */
+                issuer: string;
+                /** @description The mapping name (`<projectKey>-…`), unique within the issuer, immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Read a CI mapping of a project
+         * @description A mapping of another tier answers `404`.
+         */
+        get: operations["getProjectCiMapping"];
+        /**
+         * Replace a CI mapping of a project
+         * @description As `replaceCiMapping`, within the bounds of a project mapping. `If-Match` is required.
+         */
+        put: operations["replaceProjectCiMapping"];
+        post?: never;
+        /**
+         * Delete a CI mapping of a project
+         * @description Deletes the mapping and its principal and revokes its unexpired tokens. `If-Match` is optional.
+         */
+        delete: operations["deleteProjectCiMapping"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{key}/ci/issuers/{issuer}/evaluate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                key: string;
+                /** @description The CI issuer name. */
+                issuer: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dry-run the project's mappings against a claim set
+         * @description As `evaluateCiMappings`, over the project's tier only: the trace shows nothing of the system tier or of another project (Q-CI-26).
+         */
+        post: operations["evaluateProjectCiMappings"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{key}/ci/issuances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * List the CI tokens issued through a project's mappings
+         * @description The issuance records of tokens whose mappings include a mapping of this project, newest first, cursor pagination (Q-CI-26). A record names the project's mappings only.
+         */
+        get: operations["listProjectCiIssuances"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/repositories/{repoKey}/items": {
         parameters: {
             query?: {
@@ -3273,6 +3731,509 @@ export interface components {
             key: string;
             managePolicies: boolean;
             manageRepositories: boolean;
+        };
+        /**
+         * @description The full representation of an issuer that a client writes (R-CI-002). An omitted optional member takes its default;
+         *     the read-only members of `CiIssuer` are accepted and ignored, so a body obtained by `GET` can be sent back.
+         */
+        CiIssuerInput: {
+            name: string;
+            /**
+             * @description `github` and `generic` answer `422 kind_not_available` in this release.
+             * @enum {string}
+             */
+            kind: "gitlab" | "github" | "generic";
+            /** @description The expected `iss`, compared exactly. */
+            issuer: string;
+            description?: string;
+            /** @default true */
+            enabled: boolean;
+            /** @description `null`: `<issuer>/.well-known/openid-configuration`. */
+            discoveryUrl?: string | null;
+            /** @description `null`: the `jwks_uri` of the discovery document. */
+            jwksUri?: string | null;
+            /** @description Omitted on create: the base URL and `npm:<host name>`. */
+            allowedAudiences?: string[];
+            /** @default true */
+            exclusiveAudience: boolean;
+            /**
+             * @default [
+             *       "RS256"
+             *     ]
+             */
+            allowedAlgorithms: ("RS256" | "RS384" | "RS512" | "PS256" | "PS384" | "PS512" | "ES256" | "ES384" | "EdDSA")[];
+            /**
+             * @default [
+             *       "JWT"
+             *     ]
+             */
+            allowedTyp: string[];
+            /** @default true */
+            allowMissingTyp: boolean;
+            /** @default 60 */
+            clockSkewSeconds: number;
+            /** @description Omitted: the preset of the kind. */
+            requiredClaims?: string[];
+            /** @default true */
+            publicIssuer: boolean;
+            /** @description Omitted: the immutable ID claims of the kind. */
+            pinClaims?: string[];
+            /** @description Omitted: `false` for `gitlab`. */
+            singleUseSubjectTokens?: boolean;
+            /** Format: int64 */
+            maxTtlSeconds?: number | null;
+            /** @description A reference to a PEM bundle (file or environment variable), never key material. */
+            caBundleRef?: string | null;
+            /** @default false */
+            useOutboundProxy: boolean;
+            jobTokenFallback?: {
+                /**
+                 * @description `true` answers `422 job_token_fallback_not_available` in this release.
+                 * @default false
+                 */
+                enabled: boolean;
+            };
+            readonly source?: string;
+            readonly removedFromConfiguration?: boolean;
+            readonly mappingCount?: number;
+            keys?: components["schemas"]["CiKeySummary"];
+            /** Format: int64 */
+            readonly version?: number;
+            /** Format: date-time */
+            readonly createdAt?: string;
+            /** Format: date-time */
+            readonly updatedAt?: string;
+        };
+        /** @description The create body: `CiIssuerInput` and `validate`. */
+        CiIssuerCreate: components["schemas"]["CiIssuerInput"] & {
+            /**
+             * @description Fetch the discovery document and the key set before the issuer is stored (R-CI-002).
+             * @default true
+             */
+            validate: boolean;
+        };
+        /** @description A CI issuer with all defaults filled in (R-CI-001). `version` is the ETag source. */
+        CiIssuer: {
+            name: string;
+            /**
+             * @description `github` and `generic` answer `422 kind_not_available` in this release.
+             * @enum {string}
+             */
+            kind: "gitlab" | "github" | "generic";
+            /** @description The expected `iss`, compared exactly. */
+            issuer: string;
+            description: string;
+            /** @default true */
+            enabled: boolean;
+            /** @description `null`: `<issuer>/.well-known/openid-configuration`. */
+            discoveryUrl: string | null;
+            /** @description `null`: the `jwks_uri` of the discovery document. */
+            jwksUri: string | null;
+            /** @description Omitted on create: the base URL and `npm:<host name>`. */
+            allowedAudiences: string[];
+            /** @default true */
+            exclusiveAudience: boolean;
+            /**
+             * @default [
+             *       "RS256"
+             *     ]
+             */
+            allowedAlgorithms: ("RS256" | "RS384" | "RS512" | "PS256" | "PS384" | "PS512" | "ES256" | "ES384" | "EdDSA")[];
+            /**
+             * @default [
+             *       "JWT"
+             *     ]
+             */
+            allowedTyp: string[];
+            /** @default true */
+            allowMissingTyp: boolean;
+            /** @default 60 */
+            clockSkewSeconds: number;
+            /** @description Omitted: the preset of the kind. */
+            requiredClaims: string[];
+            /** @default true */
+            publicIssuer: boolean;
+            /** @description Omitted: the immutable ID claims of the kind. */
+            pinClaims: string[];
+            /** @description Omitted: `false` for `gitlab`. */
+            singleUseSubjectTokens: boolean;
+            /** Format: int64 */
+            maxTtlSeconds: number | null;
+            /** @description A reference to a PEM bundle (file or environment variable), never key material. */
+            caBundleRef: string | null;
+            /** @default false */
+            useOutboundProxy: boolean;
+            jobTokenFallback: {
+                /**
+                 * @description `true` answers `422 job_token_fallback_not_available` in this release.
+                 * @default false
+                 */
+                enabled: boolean;
+            };
+            /**
+             * @description `configuration`: declared in `ci.issuers` and read-only here (Q-CI-16).
+             * @enum {string}
+             */
+            source: "api" | "configuration";
+            removedFromConfiguration: boolean;
+            mappingCount?: number;
+            keys?: components["schemas"]["CiKeySummary"];
+            /** Format: int64 */
+            version: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        CiIssuerList: {
+            items: components["schemas"]["CiIssuer"][];
+        };
+        CiKeySummary: {
+            usable: number;
+            ignored: number;
+            /** Format: date-time */
+            fetchedAt?: string | null;
+            /** @description The failure class, the HTTP status and the host; never bytes of a response body. */
+            lastError?: string | null;
+            /** Format: date-time */
+            lastErrorAt?: string | null;
+        };
+        CiKeyStatus: {
+            issuer: string;
+            jwksUri?: string | null;
+            keys: {
+                kid: string;
+                kty: string;
+                alg?: string | null;
+                /** @description A key that does not meet the key rules of R-CI-003 is ignored and reported. */
+                ignored: boolean;
+                ignoredReason?: string | null;
+            }[];
+            /** Format: date-time */
+            fetchedAt?: string | null;
+            /** Format: date-time */
+            nextRefreshAt?: string | null;
+            lastError?: string | null;
+            /** Format: date-time */
+            lastErrorAt?: string | null;
+        };
+        /**
+         * @description A node of a condition tree (R-CI-010): a combinator (exactly one of `all`, `any`, `not`) or a leaf (`claim` or `path`
+         *     with exactly one operator). At most depth 4, 64 leaves, 256 values in an `in` list.
+         */
+        CiCondition: {
+            all?: components["schemas"]["CiCondition"][];
+            any?: components["schemas"]["CiCondition"][];
+            not?: components["schemas"]["CiCondition"];
+            /** @description A top-level claim of the issuer's spelling. */
+            claim?: string;
+            /** @description Member names of a nested value; dots are never interpreted. */
+            path?: string[];
+            /** @description A string, number or boolean literal. */
+            equals?: unknown;
+            /** @description String, number or boolean literals. */
+            in?: unknown[];
+            glob?: string;
+            regex?: string;
+            present?: boolean;
+            ignoreCase?: boolean;
+        };
+        CiPatternSet: {
+            include?: string[];
+            exclude?: string[];
+        };
+        /** @description One inline grant (R-CI-013); patterns may be templates (R-CI-014). Exactly one of `packages` or `paths`. */
+        CiInlineGrant: {
+            repositories: string[];
+            packages?: components["schemas"]["CiPatternSet"];
+            paths?: components["schemas"]["CiPatternSet"];
+            actions: ("read" | "annotate" | "deploy" | "overwrite" | "delete")[];
+            /**
+             * @description Omitted on write: `bind_project` when `actions` contain `deploy`, `overwrite` or `delete`, else `none`. A read shows the resolved value (Q-CI-6).
+             * @enum {string}
+             */
+            ownership?: "bind_project" | "none";
+        };
+        /** @description The grant specification of a mapping (R-CI-013). `manage` is never grantable. */
+        CiGrants: {
+            policies?: string[];
+            groups?: string[];
+            inline?: components["schemas"]["CiInlineGrant"][];
+        };
+        /** @description The full representation of a mapping that a client writes (R-CI-019). The read-only members of `CiMapping` are accepted and ignored. */
+        CiMappingInput: {
+            name: string;
+            description?: string;
+            /** @description Unique within the issuer's tier. */
+            priority: number;
+            /** @default true */
+            enabled: boolean;
+            /**
+             * @description `job_token` is P2 (R-CI-022).
+             * @default [
+             *       "id_token"
+             *     ]
+             */
+            subjectKinds: "id_token"[];
+            match: components["schemas"]["CiCondition"];
+            grants: components["schemas"]["CiGrants"];
+            /** Format: int64 */
+            maxTtlSeconds?: number | null;
+            options?: {
+                /**
+                 * @default deny
+                 * @enum {string}
+                 */
+                crossProjectSource: "deny" | "read_only";
+                /** @default false */
+                allowUnprotectedRefs: boolean;
+            };
+            readonly tier?: string;
+            readonly project?: string;
+            /** @description Required to create a project mapping; the issuer routes take it from the path. */
+            issuer?: string;
+            /** Format: int64 */
+            readonly version?: number;
+            readonly createdBy?: string;
+            /** Format: date-time */
+            readonly createdAt?: string;
+            /** Format: date-time */
+            readonly updatedAt?: string;
+            readonly warnings?: components["schemas"]["CiWarning"][];
+        };
+        /** @description An identity mapping with its resolved defaults (R-CI-009). `warnings` is present on the answer of a save only. */
+        CiMapping: {
+            name: string;
+            description: string;
+            /** @description Unique within the issuer's tier. */
+            priority: number;
+            /** @default true */
+            enabled: boolean;
+            /**
+             * @description `job_token` is P2 (R-CI-022).
+             * @default [
+             *       "id_token"
+             *     ]
+             */
+            subjectKinds: "id_token"[];
+            match: components["schemas"]["CiCondition"];
+            grants: components["schemas"]["CiGrants"];
+            /** Format: int64 */
+            maxTtlSeconds: number | null;
+            options: {
+                /**
+                 * @default deny
+                 * @enum {string}
+                 */
+                crossProjectSource: "deny" | "read_only";
+                /** @default false */
+                allowUnprotectedRefs: boolean;
+            };
+            /** @description `system` or `project:<key>`; `delegation:<id>` from P1. */
+            tier: string;
+            /** @description The project key of a project mapping. */
+            project?: string;
+            issuer: string;
+            /** Format: int64 */
+            version: number;
+            createdBy: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            warnings?: components["schemas"]["CiWarning"][];
+        };
+        CiMappingList: {
+            items: components["schemas"]["CiMapping"][];
+        };
+        CiWarning: {
+            /** @description For example `unpinned_condition`, `repository_template_unconstrained`, `shared_ownership`. */
+            code: string;
+            pointer?: string;
+            detail: string;
+        };
+        /** @description A claim set, never a token (R-CI-019). */
+        CiEvaluateRequest: {
+            /**
+             * @default id_token
+             * @enum {string}
+             */
+            subjectKind: "id_token";
+            claims: {
+                [key: string]: unknown;
+            };
+            /** @description The `scope` request parameter of the exchange to narrow with. */
+            scope?: string;
+            /**
+             * Format: int64
+             * @description Unix seconds; when set, `exp`, `nbf` and `iat` are checked against it.
+             */
+            now?: number;
+        };
+        CiLeafResult: {
+            pointer: string;
+            claim: string;
+            operator: string;
+            expected: string[];
+            actual: string[];
+            absent: boolean;
+            passed: boolean;
+        };
+        CiTraceEntry: {
+            tier: string;
+            mapping: string;
+            matched: boolean;
+            /** @description False for a matched mapping whose `crossProjectSource` is `deny` on a cross-project token. */
+            contributes: boolean;
+            failedLeaf?: string;
+            detail?: string;
+            leaves?: components["schemas"]["CiLeafResult"][];
+        };
+        CiEvaluateResult: {
+            crossProject: boolean;
+            trace: components["schemas"]["CiTraceEntry"][];
+            selected: string[];
+            /** @description The reason the exchange would fail with; absent when it would succeed. */
+            failure?: string;
+            detail?: string;
+            grants?: components["schemas"]["CiGrants"];
+            scope?: string;
+            /** Format: int64 */
+            ttlSeconds?: number;
+            warnings?: components["schemas"]["CiWarning"][];
+        };
+        /** @description The record of one exchange (R-CI-020). It holds no token, no hash and no claim outside the allowlist. */
+        CiIssuance: {
+            /** Format: uuid */
+            tokenId: string;
+            issuer: string;
+            mappingNames: string[];
+            /** @enum {string} */
+            subjectKind: "id_token" | "job_token";
+            jti?: string | null;
+            projectId: string;
+            projectPath?: string | null;
+            namespaceId?: string | null;
+            pipelineId?: string | null;
+            jobId: string;
+            ref?: string | null;
+            refType?: string | null;
+            refProtected?: boolean | null;
+            pipelineSource?: string | null;
+            environment?: string | null;
+            sha?: string | null;
+            userId?: string | null;
+            userLogin?: string | null;
+            /** @description The allowlisted claim snapshot. */
+            claims: {
+                [key: string]: unknown;
+            };
+            /** @description The frozen use-time bundle: rendered inline grants, policy and group names, caps. */
+            grants: {
+                [key: string]: unknown;
+            };
+            requestedScope?: string | null;
+            grantedScope: string;
+            crossProject: boolean;
+            /** Format: date-time */
+            issuedAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            revokedAt?: string | null;
+            active: boolean;
+            clientIp?: string | null;
+            userAgent?: string | null;
+        };
+        CiIssuanceList: {
+            items: components["schemas"]["CiIssuance"][];
+            nextCursor: string | null;
+        };
+        /** @description An issuance record and its usage summary from the audit store. */
+        CiIssuanceDetail: {
+            issuance: components["schemas"]["CiIssuance"];
+            usage: {
+                /** Format: int64 */
+                requests: number;
+                /** Format: date-time */
+                lastUsedAt?: string | null;
+                packagesDeployed: string[];
+            };
+        };
+        CiRevokeRequest: {
+            issuer: string;
+            projectId?: string;
+            pipelineId?: string;
+            jobId?: string;
+            mapping?: string;
+        };
+        CiRevokeResult: {
+            revoked: number;
+        };
+        /**
+         * @description The exchange parameters with the OAuth names of RFC 8693 (R-CI-007); they are not management-API fields and keep
+         *     their snake_case spelling. `ci_issuer` and `ttl` are trove's extensions.
+         */
+        CiExchangeRequest: {
+            /** @enum {string} */
+            grant_type: "urn:ietf:params:oauth:grant-type:token-exchange";
+            /** @description The GitLab ID token. A credential; never logged. */
+            subject_token: string;
+            /** @enum {string} */
+            subject_token_type: "urn:ietf:params:oauth:token-type:id_token" | "urn:ietf:params:oauth:token-type:jwt";
+            /** @enum {string} */
+            requested_token_type?: "urn:ietf:params:oauth:token-type:access_token";
+            /** @description Space-delimited items `<action>` or `<action>:<repository selector>` (Q-CI-2). */
+            scope?: string;
+            /** @description Must equal the configured base URL. */
+            audience?: string;
+            /** @description Must equal the configured base URL. */
+            resource?: string;
+            /** @description Not supported; answers `actor_token_not_supported`. */
+            actor_token?: string;
+            actor_token_type?: string;
+            /** @description Must match the issuer selected by `iss`. */
+            ci_issuer?: string;
+            /**
+             * Format: int64
+             * @description Requested lifetime in seconds; can only shorten (R-CI-016).
+             */
+            ttl?: number;
+        };
+        /** @description The token response (R-CI-007). The token value appears only here. */
+        CiExchangeResponse: {
+            /** @description A `trv_cit_` token. */
+            access_token: string;
+            /** @enum {string} */
+            issued_token_type: "urn:ietf:params:oauth:token-type:access_token";
+            /** @enum {string} */
+            token_type: "Bearer";
+            /** Format: int64 */
+            expires_in: number;
+            scope: string;
+            ci_issuer: string;
+            mappings: string[];
+        };
+        /** @description The OAuth error response of RFC 6749 section 5.2 with trove's `reason` and `requestId` (R-CI-008). */
+        CiExchangeError: {
+            /** @enum {string} */
+            error: "invalid_request" | "unsupported_grant_type" | "invalid_scope" | "invalid_target" | "slow_down" | "temporarily_unavailable" | "server_error";
+            /** @description Holds no claim value and no token material. */
+            error_description?: string;
+            /** @description A stable reason name of R-CI-008; left out under `ci.exchange.expose_reason: false`. */
+            reason?: string;
+            /** @description Equals the `X-Request-Id` response header. */
+            requestId: string;
+        };
+        /** @description What a project administrator sees of an issuer (Q-CI-26). */
+        CiIssuerChoice: {
+            name: string;
+            kind: string;
+            issuer: string;
+            publicIssuer: boolean;
+        };
+        CiIssuerChoiceList: {
+            items: components["schemas"]["CiIssuerChoice"][];
         };
         /**
          * @description A service account (R-AUTH-020).
@@ -5125,6 +6086,15 @@ export interface components {
                 [name: string]: unknown;
             };
             content?: never;
+        };
+        /** @description The operation belongs to a work package of the CI federation that is not built in this release (`ci_not_implemented`). */
+        NotImplementedCI: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
         };
     };
     parameters: {
@@ -8787,6 +9757,998 @@ export interface operations {
             428: components["responses"]["PreconditionRequired"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listCiIssuers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The issuers. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiIssuerList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    createCiIssuer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CiIssuerCreate"];
+            };
+        };
+        responses: {
+            /** @description The issuer was created. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiIssuer"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getCiIssuer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The issuer. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiIssuer"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    replaceCiIssuer: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CiIssuerInput"];
+            };
+        };
+        responses: {
+            /** @description The issuer after the change. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiIssuer"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    deleteCiIssuer: {
+        parameters: {
+            query?: {
+                /** @description Delete the issuer's mappings with it. */
+                cascade?: boolean;
+            };
+            header?: {
+                /** @description The ETag loaded with the resource, or `*`. A `DELETE` honours it when sent and answers `412` for a stale one (R-API-012). */
+                "If-Match"?: components["parameters"]["IfMatchOptional"];
+            };
+            path: {
+                /** @description The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The issuer is deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getCiIssuerKeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The key status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiKeyStatus"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    refreshCiIssuerKeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The key status after the fetch. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiKeyStatus"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listCiMappings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable. */
+                issuer: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The mappings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiMappingList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    createCiMapping: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable. */
+                issuer: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CiMappingInput"];
+            };
+        };
+        responses: {
+            /** @description The mapping was created. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiMapping"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getCiMapping: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable. */
+                issuer: string;
+                /** @description The mapping name (`^[a-z0-9][a-z0-9._-]{1,63}$`), unique within the issuer, immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The mapping. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiMapping"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    replaceCiMapping: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable. */
+                issuer: string;
+                /** @description The mapping name (`^[a-z0-9][a-z0-9._-]{1,63}$`), unique within the issuer, immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CiMappingInput"];
+            };
+        };
+        responses: {
+            /** @description The mapping after the change. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiMapping"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    deleteCiMapping: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag loaded with the resource, or `*`. A `DELETE` honours it when sent and answers `412` for a stale one (R-API-012). */
+                "If-Match"?: components["parameters"]["IfMatchOptional"];
+            };
+            path: {
+                /** @description The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable. */
+                issuer: string;
+                /** @description The mapping name (`^[a-z0-9][a-z0-9._-]{1,63}$`), unique within the issuer, immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The mapping is deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    evaluateCiMappings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable. */
+                issuer: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CiEvaluateRequest"];
+            };
+        };
+        responses: {
+            /** @description The decision trace. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiEvaluateResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getCiSnippet: {
+        parameters: {
+            query: {
+                /** @description The mapping the snippet is for. */
+                mapping: string;
+                /** @description The package client the snippet configures. */
+                format?: "npm" | "nuget";
+            };
+            header?: never;
+            path: {
+                /** @description The CI issuer name (`^[a-z0-9][a-z0-9._-]{1,63}$`), immutable. */
+                issuer: string;
+                /** @description The CI system of the snippet; `gitlab-ci` in this release. */
+                kind: "gitlab-ci";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The snippet. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listCiIssuances: {
+        parameters: {
+            query?: {
+                /** @description The CI issuer name. */
+                issuer?: string;
+                /** @description The GitLab project ID. */
+                projectId?: string;
+                /** @description The project path at the time of the exchange. */
+                projectPath?: string;
+                /** @description The GitLab pipeline ID. */
+                pipelineId?: string;
+                /** @description The GitLab job ID. */
+                jobId?: string;
+                /** @description A mapping name that contributed. */
+                mapping?: string;
+                /** @description true: unexpired and unrevoked; false: the others. */
+                active?: boolean;
+                /** @description Issued at or after. */
+                from?: string;
+                /** @description Issued before. */
+                to?: string;
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of records. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiIssuanceList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getCiIssuance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ID of the CI token (the `token_id` of the audit events). */
+                tokenId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiIssuanceDetail"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    revokeCiIssuances: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CiRevokeRequest"];
+            };
+        };
+        responses: {
+            /** @description The number of tokens revoked. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiRevokeResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    exchangeCiToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/x-www-form-urlencoded": components["schemas"]["CiExchangeRequest"];
+                "application/json": components["schemas"]["CiExchangeRequest"];
+            };
+        };
+        responses: {
+            /** @description The CI token. */
+            200: {
+                headers: {
+                    /** @description `no-store` (RFC 6749 section 5.1). */
+                    "Cache-Control"?: "no-store";
+                    Pragma?: "no-cache";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiExchangeResponse"];
+                };
+            };
+            /** @description The OAuth error response (`invalid_request`, `unsupported_grant_type`, `invalid_scope`, `invalid_target`) with `reason` and `requestId`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiExchangeError"];
+                };
+            };
+            /** @description `slow_down` with `reason: rate_limited` and `Retry-After` (R-CI-021). */
+            429: {
+                headers: {
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiExchangeError"];
+                };
+            };
+            /** @description `server_error` with `reason: internal`. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiExchangeError"];
+                };
+            };
+            /** @description The exchange is not built in this release (`ci_not_implemented`, problem details). */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `temporarily_unavailable` with `reason` `signing_keys_unavailable`, `database_unavailable` or `configuration_changed`, and `Retry-After`. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiExchangeError"];
+                };
+            };
+        };
+    };
+    listProjectCiIssuers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The issuers. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiIssuerChoiceList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listProjectCiMappings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The mappings. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiMappingList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    createProjectCiMapping: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CiMappingInput"];
+            };
+        };
+        responses: {
+            /** @description The mapping was created. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiMapping"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getProjectCiMapping: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                key: string;
+                /** @description The CI issuer name. */
+                issuer: string;
+                /** @description The mapping name (`<projectKey>-…`), unique within the issuer, immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The mapping. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiMapping"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    replaceProjectCiMapping: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                key: string;
+                /** @description The CI issuer name. */
+                issuer: string;
+                /** @description The mapping name (`<projectKey>-…`), unique within the issuer, immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CiMappingInput"];
+            };
+        };
+        responses: {
+            /** @description The mapping after the change. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiMapping"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    deleteProjectCiMapping: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag loaded with the resource, or `*`. A `DELETE` honours it when sent and answers `412` for a stale one (R-API-012). */
+                "If-Match"?: components["parameters"]["IfMatchOptional"];
+            };
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                key: string;
+                /** @description The CI issuer name. */
+                issuer: string;
+                /** @description The mapping name (`<projectKey>-…`), unique within the issuer, immutable. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The mapping is deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    evaluateProjectCiMappings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                key: string;
+                /** @description The CI issuer name. */
+                issuer: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CiEvaluateRequest"];
+            };
+        };
+        responses: {
+            /** @description The decision trace. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiEvaluateResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listProjectCiIssuances: {
+        parameters: {
+            query?: {
+                /** @description The CI issuer name. */
+                issuer?: string;
+                /** @description The GitLab job ID. */
+                jobId?: string;
+                /** @description true: unexpired and unrevoked; false: the others. */
+                active?: boolean;
+                /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                /** @description The project key (`^[a-z][a-z0-9-]{1,31}$`), immutable. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of records. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CiIssuanceList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };

@@ -349,6 +349,10 @@ func TestM2Migrations(t *testing.T) {
 		wantState(t, admin, "23505", ownerSQL, domain, "principal", m2Alice, nil, nil)
 		mustExec(t, admin, ownerSQL, domain, "principal", m2Bob, nil, nil)
 		issuer := "cccccccc-0000-0000-0000-000000000001"
+		// The foreign key of 00026 (R-AUTHZ-018, R-CI-015): a project owner names an existing issuer.
+		wantState(t, admin, "23503", ownerSQL, domain, "ci_project", nil, issuer, "4711")
+		mustExec(t, admin, `INSERT INTO trove.ci_issuers (id, name, kind, issuer, allowed_audiences, required_claims, pin_claims, single_use_subject_tokens)
+			VALUES ($1, 'gitlab-owner-test', 'gitlab', 'https://gitlab.owner-test.example', ARRAY['https://t.example'], ARRAY['jti'], ARRAY['project_id'], false)`, issuer)
 		mustExec(t, admin, ownerSQL, domain, "ci_project", nil, issuer, "4711")
 		wantState(t, admin, "23505", ownerSQL, domain, "ci_project", nil, issuer, "4711")
 		mustExec(t, admin, ownerSQL, domain, "ci_project", nil, issuer, "4712")
@@ -371,6 +375,11 @@ func TestM2Migrations(t *testing.T) {
 		// The added_by reference is cleared, not cascaded.
 		mustExec(t, admin, "UPDATE trove.package_owner SET added_by = $1 WHERE principal_id = $1", m2Alice)
 		mustExec(t, admin, "DELETE FROM trove.principal WHERE id = $1", m2Alice)
+		// Deleting the issuer removes its project owners and leaves the name (R-AUTHZ-018).
+		mustExec(t, admin, "DELETE FROM trove.ci_issuers WHERE id = $1", issuer)
+		if f.count("package_owner", "ci_issuer_id = $1", issuer) != 0 || f.count("package_ownership", "domain = $1", domain) != 1 {
+			t.Error("deleting an issuer must remove its project owners and keep the ownership row")
+		}
 		// Removing the ownership row removes its owners.
 		mustExec(t, admin, "DELETE FROM trove.package_ownership WHERE domain = $1", domain)
 		if f.count("package_owner", "domain = $1", domain) != 0 {

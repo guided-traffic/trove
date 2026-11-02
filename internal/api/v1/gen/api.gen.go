@@ -139,6 +139,459 @@ func (e ChildKind) Valid() bool {
 	}
 }
 
+// Defines values for CiEvaluateRequestSubjectKind.
+const (
+	CiEvaluateRequestSubjectKindIdToken CiEvaluateRequestSubjectKind = "id_token"
+)
+
+// Valid indicates whether the value is a known member of the CiEvaluateRequestSubjectKind enum.
+func (e CiEvaluateRequestSubjectKind) Valid() bool {
+	switch e {
+	case CiEvaluateRequestSubjectKindIdToken:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CiExchangeErrorError.
+const (
+	InvalidRequest         CiExchangeErrorError = "invalid_request"
+	InvalidScope           CiExchangeErrorError = "invalid_scope"
+	InvalidTarget          CiExchangeErrorError = "invalid_target"
+	ServerError            CiExchangeErrorError = "server_error"
+	SlowDown               CiExchangeErrorError = "slow_down"
+	TemporarilyUnavailable CiExchangeErrorError = "temporarily_unavailable"
+	UnsupportedGrantType   CiExchangeErrorError = "unsupported_grant_type"
+)
+
+// Valid indicates whether the value is a known member of the CiExchangeErrorError enum.
+func (e CiExchangeErrorError) Valid() bool {
+	switch e {
+	case InvalidRequest:
+		return true
+	case InvalidScope:
+		return true
+	case InvalidTarget:
+		return true
+	case ServerError:
+		return true
+	case SlowDown:
+		return true
+	case TemporarilyUnavailable:
+		return true
+	case UnsupportedGrantType:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CiExchangeRequestGrantType.
+const (
+	UrnIetfParamsOauthGrantTypeTokenExchange CiExchangeRequestGrantType = "urn:ietf:params:oauth:grant-type:token-exchange"
+)
+
+// Valid indicates whether the value is a known member of the CiExchangeRequestGrantType enum.
+func (e CiExchangeRequestGrantType) Valid() bool {
+	switch e {
+	case UrnIetfParamsOauthGrantTypeTokenExchange:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CiExchangeRequestRequestedTokenType.
+const (
+	CiExchangeRequestRequestedTokenTypeUrnIetfParamsOauthTokenTypeAccessToken CiExchangeRequestRequestedTokenType = "urn:ietf:params:oauth:token-type:access_token"
+)
+
+// Valid indicates whether the value is a known member of the CiExchangeRequestRequestedTokenType enum.
+func (e CiExchangeRequestRequestedTokenType) Valid() bool {
+	switch e {
+	case CiExchangeRequestRequestedTokenTypeUrnIetfParamsOauthTokenTypeAccessToken:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CiExchangeRequestSubjectTokenType.
+const (
+	UrnIetfParamsOauthTokenTypeIdToken CiExchangeRequestSubjectTokenType = "urn:ietf:params:oauth:token-type:id_token"
+	UrnIetfParamsOauthTokenTypeJwt     CiExchangeRequestSubjectTokenType = "urn:ietf:params:oauth:token-type:jwt"
+)
+
+// Valid indicates whether the value is a known member of the CiExchangeRequestSubjectTokenType enum.
+func (e CiExchangeRequestSubjectTokenType) Valid() bool {
+	switch e {
+	case UrnIetfParamsOauthTokenTypeIdToken:
+		return true
+	case UrnIetfParamsOauthTokenTypeJwt:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CiExchangeResponseIssuedTokenType.
+const (
+	CiExchangeResponseIssuedTokenTypeUrnIetfParamsOauthTokenTypeAccessToken CiExchangeResponseIssuedTokenType = "urn:ietf:params:oauth:token-type:access_token"
+)
+
+// Valid indicates whether the value is a known member of the CiExchangeResponseIssuedTokenType enum.
+func (e CiExchangeResponseIssuedTokenType) Valid() bool {
+	switch e {
+	case CiExchangeResponseIssuedTokenTypeUrnIetfParamsOauthTokenTypeAccessToken:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CiExchangeResponseTokenType.
+const (
+	CiExchangeResponseTokenTypeBearer CiExchangeResponseTokenType = "Bearer"
+)
+
+// Valid indicates whether the value is a known member of the CiExchangeResponseTokenType enum.
+func (e CiExchangeResponseTokenType) Valid() bool {
+	switch e {
+	case CiExchangeResponseTokenTypeBearer:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CiInlineGrantActions.
+const (
+	CiInlineGrantActionsAnnotate  CiInlineGrantActions = "annotate"
+	CiInlineGrantActionsDelete    CiInlineGrantActions = "delete"
+	CiInlineGrantActionsDeploy    CiInlineGrantActions = "deploy"
+	CiInlineGrantActionsOverwrite CiInlineGrantActions = "overwrite"
+	CiInlineGrantActionsRead      CiInlineGrantActions = "read"
+)
+
+// Valid indicates whether the value is a known member of the CiInlineGrantActions enum.
+func (e CiInlineGrantActions) Valid() bool {
+	switch e {
+	case CiInlineGrantActionsAnnotate:
+		return true
+	case CiInlineGrantActionsDelete:
+		return true
+	case CiInlineGrantActionsDeploy:
+		return true
+	case CiInlineGrantActionsOverwrite:
+		return true
+	case CiInlineGrantActionsRead:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CiInlineGrantOwnership.
+const (
+	CiInlineGrantOwnershipBindProject CiInlineGrantOwnership = "bind_project"
+	CiInlineGrantOwnershipNone        CiInlineGrantOwnership = "none"
+)
+
+// Valid indicates whether the value is a known member of the CiInlineGrantOwnership enum.
+func (e CiInlineGrantOwnership) Valid() bool {
+	switch e {
+	case CiInlineGrantOwnershipBindProject:
+		return true
+	case CiInlineGrantOwnershipNone:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CiIssuanceSubjectKind.
+const (
+	CiIssuanceSubjectKindIdToken  CiIssuanceSubjectKind = "id_token"
+	CiIssuanceSubjectKindJobToken CiIssuanceSubjectKind = "job_token"
+)
+
+// Valid indicates whether the value is a known member of the CiIssuanceSubjectKind enum.
+func (e CiIssuanceSubjectKind) Valid() bool {
+	switch e {
+	case CiIssuanceSubjectKindIdToken:
+		return true
+	case CiIssuanceSubjectKindJobToken:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CiIssuerAllowedAlgorithms.
+const (
+	CiIssuerAllowedAlgorithmsES256 CiIssuerAllowedAlgorithms = "ES256"
+	CiIssuerAllowedAlgorithmsES384 CiIssuerAllowedAlgorithms = "ES384"
+	CiIssuerAllowedAlgorithmsEdDSA CiIssuerAllowedAlgorithms = "EdDSA"
+	CiIssuerAllowedAlgorithmsPS256 CiIssuerAllowedAlgorithms = "PS256"
+	CiIssuerAllowedAlgorithmsPS384 CiIssuerAllowedAlgorithms = "PS384"
+	CiIssuerAllowedAlgorithmsPS512 CiIssuerAllowedAlgorithms = "PS512"
+	CiIssuerAllowedAlgorithmsRS256 CiIssuerAllowedAlgorithms = "RS256"
+	CiIssuerAllowedAlgorithmsRS384 CiIssuerAllowedAlgorithms = "RS384"
+	CiIssuerAllowedAlgorithmsRS512 CiIssuerAllowedAlgorithms = "RS512"
+)
+
+// Valid indicates whether the value is a known member of the CiIssuerAllowedAlgorithms enum.
+func (e CiIssuerAllowedAlgorithms) Valid() bool {
+	switch e {
+	case CiIssuerAllowedAlgorithmsES256:
+		return true
+	case CiIssuerAllowedAlgorithmsES384:
+		return true
+	case CiIssuerAllowedAlgorithmsEdDSA:
+		return true
+	case CiIssuerAllowedAlgorithmsPS256:
+		return true
+	case CiIssuerAllowedAlgorithmsPS384:
+		return true
+	case CiIssuerAllowedAlgorithmsPS512:
+		return true
+	case CiIssuerAllowedAlgorithmsRS256:
+		return true
+	case CiIssuerAllowedAlgorithmsRS384:
+		return true
+	case CiIssuerAllowedAlgorithmsRS512:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CiIssuerKind.
+const (
+	CiIssuerKindGeneric CiIssuerKind = "generic"
+	CiIssuerKindGithub  CiIssuerKind = "github"
+	CiIssuerKindGitlab  CiIssuerKind = "gitlab"
+)
+
+// Valid indicates whether the value is a known member of the CiIssuerKind enum.
+func (e CiIssuerKind) Valid() bool {
+	switch e {
+	case CiIssuerKindGeneric:
+		return true
+	case CiIssuerKindGithub:
+		return true
+	case CiIssuerKindGitlab:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CiIssuerSource.
+const (
+	CiIssuerSourceApi           CiIssuerSource = "api"
+	CiIssuerSourceConfiguration CiIssuerSource = "configuration"
+)
+
+// Valid indicates whether the value is a known member of the CiIssuerSource enum.
+func (e CiIssuerSource) Valid() bool {
+	switch e {
+	case CiIssuerSourceApi:
+		return true
+	case CiIssuerSourceConfiguration:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CiIssuerCreateAllowedAlgorithms.
+const (
+	CiIssuerCreateAllowedAlgorithmsES256 CiIssuerCreateAllowedAlgorithms = "ES256"
+	CiIssuerCreateAllowedAlgorithmsES384 CiIssuerCreateAllowedAlgorithms = "ES384"
+	CiIssuerCreateAllowedAlgorithmsEdDSA CiIssuerCreateAllowedAlgorithms = "EdDSA"
+	CiIssuerCreateAllowedAlgorithmsPS256 CiIssuerCreateAllowedAlgorithms = "PS256"
+	CiIssuerCreateAllowedAlgorithmsPS384 CiIssuerCreateAllowedAlgorithms = "PS384"
+	CiIssuerCreateAllowedAlgorithmsPS512 CiIssuerCreateAllowedAlgorithms = "PS512"
+	CiIssuerCreateAllowedAlgorithmsRS256 CiIssuerCreateAllowedAlgorithms = "RS256"
+	CiIssuerCreateAllowedAlgorithmsRS384 CiIssuerCreateAllowedAlgorithms = "RS384"
+	CiIssuerCreateAllowedAlgorithmsRS512 CiIssuerCreateAllowedAlgorithms = "RS512"
+)
+
+// Valid indicates whether the value is a known member of the CiIssuerCreateAllowedAlgorithms enum.
+func (e CiIssuerCreateAllowedAlgorithms) Valid() bool {
+	switch e {
+	case CiIssuerCreateAllowedAlgorithmsES256:
+		return true
+	case CiIssuerCreateAllowedAlgorithmsES384:
+		return true
+	case CiIssuerCreateAllowedAlgorithmsEdDSA:
+		return true
+	case CiIssuerCreateAllowedAlgorithmsPS256:
+		return true
+	case CiIssuerCreateAllowedAlgorithmsPS384:
+		return true
+	case CiIssuerCreateAllowedAlgorithmsPS512:
+		return true
+	case CiIssuerCreateAllowedAlgorithmsRS256:
+		return true
+	case CiIssuerCreateAllowedAlgorithmsRS384:
+		return true
+	case CiIssuerCreateAllowedAlgorithmsRS512:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CiIssuerCreateKind.
+const (
+	CiIssuerCreateKindGeneric CiIssuerCreateKind = "generic"
+	CiIssuerCreateKindGithub  CiIssuerCreateKind = "github"
+	CiIssuerCreateKindGitlab  CiIssuerCreateKind = "gitlab"
+)
+
+// Valid indicates whether the value is a known member of the CiIssuerCreateKind enum.
+func (e CiIssuerCreateKind) Valid() bool {
+	switch e {
+	case CiIssuerCreateKindGeneric:
+		return true
+	case CiIssuerCreateKindGithub:
+		return true
+	case CiIssuerCreateKindGitlab:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CiIssuerInputAllowedAlgorithms.
+const (
+	CiIssuerInputAllowedAlgorithmsES256 CiIssuerInputAllowedAlgorithms = "ES256"
+	CiIssuerInputAllowedAlgorithmsES384 CiIssuerInputAllowedAlgorithms = "ES384"
+	CiIssuerInputAllowedAlgorithmsEdDSA CiIssuerInputAllowedAlgorithms = "EdDSA"
+	CiIssuerInputAllowedAlgorithmsPS256 CiIssuerInputAllowedAlgorithms = "PS256"
+	CiIssuerInputAllowedAlgorithmsPS384 CiIssuerInputAllowedAlgorithms = "PS384"
+	CiIssuerInputAllowedAlgorithmsPS512 CiIssuerInputAllowedAlgorithms = "PS512"
+	CiIssuerInputAllowedAlgorithmsRS256 CiIssuerInputAllowedAlgorithms = "RS256"
+	CiIssuerInputAllowedAlgorithmsRS384 CiIssuerInputAllowedAlgorithms = "RS384"
+	CiIssuerInputAllowedAlgorithmsRS512 CiIssuerInputAllowedAlgorithms = "RS512"
+)
+
+// Valid indicates whether the value is a known member of the CiIssuerInputAllowedAlgorithms enum.
+func (e CiIssuerInputAllowedAlgorithms) Valid() bool {
+	switch e {
+	case CiIssuerInputAllowedAlgorithmsES256:
+		return true
+	case CiIssuerInputAllowedAlgorithmsES384:
+		return true
+	case CiIssuerInputAllowedAlgorithmsEdDSA:
+		return true
+	case CiIssuerInputAllowedAlgorithmsPS256:
+		return true
+	case CiIssuerInputAllowedAlgorithmsPS384:
+		return true
+	case CiIssuerInputAllowedAlgorithmsPS512:
+		return true
+	case CiIssuerInputAllowedAlgorithmsRS256:
+		return true
+	case CiIssuerInputAllowedAlgorithmsRS384:
+		return true
+	case CiIssuerInputAllowedAlgorithmsRS512:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CiIssuerInputKind.
+const (
+	CiIssuerInputKindGeneric CiIssuerInputKind = "generic"
+	CiIssuerInputKindGithub  CiIssuerInputKind = "github"
+	CiIssuerInputKindGitlab  CiIssuerInputKind = "gitlab"
+)
+
+// Valid indicates whether the value is a known member of the CiIssuerInputKind enum.
+func (e CiIssuerInputKind) Valid() bool {
+	switch e {
+	case CiIssuerInputKindGeneric:
+		return true
+	case CiIssuerInputKindGithub:
+		return true
+	case CiIssuerInputKindGitlab:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CiMappingOptionsCrossProjectSource.
+const (
+	CiMappingOptionsCrossProjectSourceDeny     CiMappingOptionsCrossProjectSource = "deny"
+	CiMappingOptionsCrossProjectSourceReadOnly CiMappingOptionsCrossProjectSource = "read_only"
+)
+
+// Valid indicates whether the value is a known member of the CiMappingOptionsCrossProjectSource enum.
+func (e CiMappingOptionsCrossProjectSource) Valid() bool {
+	switch e {
+	case CiMappingOptionsCrossProjectSourceDeny:
+		return true
+	case CiMappingOptionsCrossProjectSourceReadOnly:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CiMappingSubjectKinds.
+const (
+	CiMappingSubjectKindsIdToken CiMappingSubjectKinds = "id_token"
+)
+
+// Valid indicates whether the value is a known member of the CiMappingSubjectKinds enum.
+func (e CiMappingSubjectKinds) Valid() bool {
+	switch e {
+	case CiMappingSubjectKindsIdToken:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CiMappingInputOptionsCrossProjectSource.
+const (
+	CiMappingInputOptionsCrossProjectSourceDeny     CiMappingInputOptionsCrossProjectSource = "deny"
+	CiMappingInputOptionsCrossProjectSourceReadOnly CiMappingInputOptionsCrossProjectSource = "read_only"
+)
+
+// Valid indicates whether the value is a known member of the CiMappingInputOptionsCrossProjectSource enum.
+func (e CiMappingInputOptionsCrossProjectSource) Valid() bool {
+	switch e {
+	case CiMappingInputOptionsCrossProjectSourceDeny:
+		return true
+	case CiMappingInputOptionsCrossProjectSourceReadOnly:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CiMappingInputSubjectKinds.
+const (
+	CiMappingInputSubjectKindsIdToken CiMappingInputSubjectKinds = "id_token"
+)
+
+// Valid indicates whether the value is a known member of the CiMappingInputSubjectKinds enum.
+func (e CiMappingInputSubjectKinds) Valid() bool {
+	switch e {
+	case CiMappingInputSubjectKindsIdToken:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ClientSetupCredentials.
 const (
 	ClientSetupCredentialsEnv         ClientSetupCredentials = "env"
@@ -1876,6 +2329,24 @@ func (e ExportAuditEventsParamsFormat) Valid() bool {
 	}
 }
 
+// Defines values for GetCiSnippetParamsFormat.
+const (
+	GetCiSnippetParamsFormatNpm   GetCiSnippetParamsFormat = "npm"
+	GetCiSnippetParamsFormatNuget GetCiSnippetParamsFormat = "nuget"
+)
+
+// Valid indicates whether the value is a known member of the GetCiSnippetParamsFormat enum.
+func (e GetCiSnippetParamsFormat) Valid() bool {
+	switch e {
+	case GetCiSnippetParamsFormatNpm:
+		return true
+	case GetCiSnippetParamsFormatNuget:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListExposureRulesParamsEnabled.
 const (
 	ListExposureRulesParamsEnabledFalse ListExposureRulesParamsEnabled = "false"
@@ -2547,6 +3018,593 @@ type ChildKind string
 type ChildrenPage struct {
 	Items      []Child `json:"items"`
 	NextCursor *string `json:"nextCursor"`
+}
+
+// CiCondition A node of a condition tree (R-CI-010): a combinator (exactly one of `all`, `any`, `not`) or a leaf (`claim` or `path`
+// with exactly one operator). At most depth 4, 64 leaves, 256 values in an `in` list.
+type CiCondition struct {
+	All *[]CiCondition `json:"all,omitempty"`
+	Any *[]CiCondition `json:"any,omitempty"`
+
+	// Claim A top-level claim of the issuer's spelling.
+	Claim *string `json:"claim,omitempty"`
+
+	// Equals A string, number or boolean literal.
+	Equals     interface{} `json:"equals,omitempty"`
+	Glob       *string     `json:"glob,omitempty"`
+	IgnoreCase *bool       `json:"ignoreCase,omitempty"`
+
+	// In String, number or boolean literals.
+	In *[]interface{} `json:"in,omitempty"`
+
+	// Not A node of a condition tree (R-CI-010): a combinator (exactly one of `all`, `any`, `not`) or a leaf (`claim` or `path`
+	// with exactly one operator). At most depth 4, 64 leaves, 256 values in an `in` list.
+	Not *CiCondition `json:"not,omitempty"`
+
+	// Path Member names of a nested value; dots are never interpreted.
+	Path    *[]string `json:"path,omitempty"`
+	Present *bool     `json:"present,omitempty"`
+	Regex   *string   `json:"regex,omitempty"`
+}
+
+// CiEvaluateRequest A claim set, never a token (R-CI-019).
+type CiEvaluateRequest struct {
+	Claims map[string]interface{} `json:"claims"`
+
+	// Now Unix seconds; when set, `exp`, `nbf` and `iat` are checked against it.
+	Now *int64 `json:"now,omitempty"`
+
+	// Scope The `scope` request parameter of the exchange to narrow with.
+	Scope       *string                       `json:"scope,omitempty"`
+	SubjectKind *CiEvaluateRequestSubjectKind `json:"subjectKind,omitempty"`
+}
+
+// CiEvaluateRequestSubjectKind defines model for CiEvaluateRequest.SubjectKind.
+type CiEvaluateRequestSubjectKind string
+
+// CiEvaluateResult defines model for CiEvaluateResult.
+type CiEvaluateResult struct {
+	CrossProject bool    `json:"crossProject"`
+	Detail       *string `json:"detail,omitempty"`
+
+	// Failure The reason the exchange would fail with; absent when it would succeed.
+	Failure *string `json:"failure,omitempty"`
+
+	// Grants The grant specification of a mapping (R-CI-013). `manage` is never grantable.
+	Grants     *CiGrants      `json:"grants,omitempty"`
+	Scope      *string        `json:"scope,omitempty"`
+	Selected   []string       `json:"selected"`
+	Trace      []CiTraceEntry `json:"trace"`
+	TtlSeconds *int64         `json:"ttlSeconds,omitempty"`
+	Warnings   *[]CiWarning   `json:"warnings,omitempty"`
+}
+
+// CiExchangeError The OAuth error response of RFC 6749 section 5.2 with trove's `reason` and `requestId` (R-CI-008).
+type CiExchangeError struct {
+	Error CiExchangeErrorError `json:"error"`
+
+	// ErrorDescription Holds no claim value and no token material.
+	ErrorDescription *string `json:"error_description,omitempty"`
+
+	// Reason A stable reason name of R-CI-008; left out under `ci.exchange.expose_reason: false`.
+	Reason *string `json:"reason,omitempty"`
+
+	// RequestId Equals the `X-Request-Id` response header.
+	RequestId string `json:"requestId"`
+}
+
+// CiExchangeErrorError defines model for CiExchangeError.Error.
+type CiExchangeErrorError string
+
+// CiExchangeRequest The exchange parameters with the OAuth names of RFC 8693 (R-CI-007); they are not management-API fields and keep
+// their snake_case spelling. `ci_issuer` and `ttl` are trove's extensions.
+type CiExchangeRequest struct {
+	// ActorToken Not supported; answers `actor_token_not_supported`.
+	ActorToken     *string `json:"actor_token,omitempty"`
+	ActorTokenType *string `json:"actor_token_type,omitempty"`
+
+	// Audience Must equal the configured base URL.
+	Audience *string `json:"audience,omitempty"`
+
+	// CiIssuer Must match the issuer selected by `iss`.
+	CiIssuer           *string                              `json:"ci_issuer,omitempty"`
+	GrantType          CiExchangeRequestGrantType           `json:"grant_type"`
+	RequestedTokenType *CiExchangeRequestRequestedTokenType `json:"requested_token_type,omitempty"`
+
+	// Resource Must equal the configured base URL.
+	Resource *string `json:"resource,omitempty"`
+
+	// Scope Space-delimited items `<action>` or `<action>:<repository selector>` (Q-CI-2).
+	Scope *string `json:"scope,omitempty"`
+
+	// SubjectToken The GitLab ID token. A credential; never logged.
+	SubjectToken     string                            `json:"subject_token"`
+	SubjectTokenType CiExchangeRequestSubjectTokenType `json:"subject_token_type"`
+
+	// Ttl Requested lifetime in seconds; can only shorten (R-CI-016).
+	Ttl *int64 `json:"ttl,omitempty"`
+}
+
+// CiExchangeRequestGrantType defines model for CiExchangeRequest.GrantType.
+type CiExchangeRequestGrantType string
+
+// CiExchangeRequestRequestedTokenType defines model for CiExchangeRequest.RequestedTokenType.
+type CiExchangeRequestRequestedTokenType string
+
+// CiExchangeRequestSubjectTokenType defines model for CiExchangeRequest.SubjectTokenType.
+type CiExchangeRequestSubjectTokenType string
+
+// CiExchangeResponse The token response (R-CI-007). The token value appears only here.
+type CiExchangeResponse struct {
+	// AccessToken A `trv_cit_` token.
+	AccessToken     string                            `json:"access_token"`
+	CiIssuer        string                            `json:"ci_issuer"`
+	ExpiresIn       int64                             `json:"expires_in"`
+	IssuedTokenType CiExchangeResponseIssuedTokenType `json:"issued_token_type"`
+	Mappings        []string                          `json:"mappings"`
+	Scope           string                            `json:"scope"`
+	TokenType       CiExchangeResponseTokenType       `json:"token_type"`
+}
+
+// CiExchangeResponseIssuedTokenType defines model for CiExchangeResponse.IssuedTokenType.
+type CiExchangeResponseIssuedTokenType string
+
+// CiExchangeResponseTokenType defines model for CiExchangeResponse.TokenType.
+type CiExchangeResponseTokenType string
+
+// CiGrants The grant specification of a mapping (R-CI-013). `manage` is never grantable.
+type CiGrants struct {
+	Groups   *[]string        `json:"groups,omitempty"`
+	Inline   *[]CiInlineGrant `json:"inline,omitempty"`
+	Policies *[]string        `json:"policies,omitempty"`
+}
+
+// CiInlineGrant One inline grant (R-CI-013); patterns may be templates (R-CI-014). Exactly one of `packages` or `paths`.
+type CiInlineGrant struct {
+	Actions []CiInlineGrantActions `json:"actions"`
+
+	// Ownership Omitted on write: `bind_project` when `actions` contain `deploy`, `overwrite` or `delete`, else `none`. A read shows the resolved value (Q-CI-6).
+	Ownership    *CiInlineGrantOwnership `json:"ownership,omitempty"`
+	Packages     *CiPatternSet           `json:"packages,omitempty"`
+	Paths        *CiPatternSet           `json:"paths,omitempty"`
+	Repositories []string                `json:"repositories"`
+}
+
+// CiInlineGrantActions defines model for CiInlineGrant.Actions.
+type CiInlineGrantActions string
+
+// CiInlineGrantOwnership Omitted on write: `bind_project` when `actions` contain `deploy`, `overwrite` or `delete`, else `none`. A read shows the resolved value (Q-CI-6).
+type CiInlineGrantOwnership string
+
+// CiIssuance The record of one exchange (R-CI-020). It holds no token, no hash and no claim outside the allowlist.
+type CiIssuance struct {
+	Active bool `json:"active"`
+
+	// Claims The allowlisted claim snapshot.
+	Claims       map[string]interface{} `json:"claims"`
+	ClientIp     *string                `json:"clientIp,omitempty"`
+	CrossProject bool                   `json:"crossProject"`
+	Environment  *string                `json:"environment,omitempty"`
+	ExpiresAt    time.Time              `json:"expiresAt"`
+	GrantedScope string                 `json:"grantedScope"`
+
+	// Grants The frozen use-time bundle: rendered inline grants, policy and group names, caps.
+	Grants         map[string]interface{} `json:"grants"`
+	IssuedAt       time.Time              `json:"issuedAt"`
+	Issuer         string                 `json:"issuer"`
+	JobId          string                 `json:"jobId"`
+	Jti            *string                `json:"jti,omitempty"`
+	MappingNames   []string               `json:"mappingNames"`
+	NamespaceId    *string                `json:"namespaceId,omitempty"`
+	PipelineId     *string                `json:"pipelineId,omitempty"`
+	PipelineSource *string                `json:"pipelineSource,omitempty"`
+	ProjectId      string                 `json:"projectId"`
+	ProjectPath    *string                `json:"projectPath,omitempty"`
+	Ref            *string                `json:"ref,omitempty"`
+	RefProtected   *bool                  `json:"refProtected,omitempty"`
+	RefType        *string                `json:"refType,omitempty"`
+	RequestedScope *string                `json:"requestedScope,omitempty"`
+	RevokedAt      *time.Time             `json:"revokedAt,omitempty"`
+	Sha            *string                `json:"sha,omitempty"`
+	SubjectKind    CiIssuanceSubjectKind  `json:"subjectKind"`
+	TokenId        openapi_types.UUID     `json:"tokenId"`
+	UserAgent      *string                `json:"userAgent,omitempty"`
+	UserId         *string                `json:"userId,omitempty"`
+	UserLogin      *string                `json:"userLogin,omitempty"`
+}
+
+// CiIssuanceSubjectKind defines model for CiIssuance.SubjectKind.
+type CiIssuanceSubjectKind string
+
+// CiIssuanceDetail An issuance record and its usage summary from the audit store.
+type CiIssuanceDetail struct {
+	// Issuance The record of one exchange (R-CI-020). It holds no token, no hash and no claim outside the allowlist.
+	Issuance CiIssuance `json:"issuance"`
+	Usage    struct {
+		LastUsedAt       *time.Time `json:"lastUsedAt,omitempty"`
+		PackagesDeployed []string   `json:"packagesDeployed"`
+		Requests         int64      `json:"requests"`
+	} `json:"usage"`
+}
+
+// CiIssuanceList defines model for CiIssuanceList.
+type CiIssuanceList struct {
+	Items      []CiIssuance `json:"items"`
+	NextCursor *string      `json:"nextCursor"`
+}
+
+// CiIssuer A CI issuer with all defaults filled in (R-CI-001). `version` is the ETag source.
+type CiIssuer struct {
+	AllowMissingTyp   bool                        `json:"allowMissingTyp"`
+	AllowedAlgorithms []CiIssuerAllowedAlgorithms `json:"allowedAlgorithms"`
+
+	// AllowedAudiences Omitted on create: the base URL and `npm:<host name>`.
+	AllowedAudiences []string `json:"allowedAudiences"`
+	AllowedTyp       []string `json:"allowedTyp"`
+
+	// CaBundleRef A reference to a PEM bundle (file or environment variable), never key material.
+	CaBundleRef      *string   `json:"caBundleRef"`
+	ClockSkewSeconds int       `json:"clockSkewSeconds"`
+	CreatedAt        time.Time `json:"createdAt"`
+	Description      string    `json:"description"`
+
+	// DiscoveryUrl `null`: `<issuer>/.well-known/openid-configuration`.
+	DiscoveryUrl      *string `json:"discoveryUrl"`
+	Enabled           bool    `json:"enabled"`
+	ExclusiveAudience bool    `json:"exclusiveAudience"`
+
+	// Issuer The expected `iss`, compared exactly.
+	Issuer           string `json:"issuer"`
+	JobTokenFallback struct {
+		// Enabled `true` answers `422 job_token_fallback_not_available` in this release.
+		Enabled *bool `json:"enabled,omitempty"`
+	} `json:"jobTokenFallback"`
+
+	// JwksUri `null`: the `jwks_uri` of the discovery document.
+	JwksUri *string       `json:"jwksUri"`
+	Keys    *CiKeySummary `json:"keys,omitempty"`
+
+	// Kind `github` and `generic` answer `422 kind_not_available` in this release.
+	Kind          CiIssuerKind `json:"kind"`
+	MappingCount  *int         `json:"mappingCount,omitempty"`
+	MaxTtlSeconds *int64       `json:"maxTtlSeconds"`
+	Name          string       `json:"name"`
+
+	// PinClaims Omitted: the immutable ID claims of the kind.
+	PinClaims                []string `json:"pinClaims"`
+	PublicIssuer             bool     `json:"publicIssuer"`
+	RemovedFromConfiguration bool     `json:"removedFromConfiguration"`
+
+	// RequiredClaims Omitted: the preset of the kind.
+	RequiredClaims []string `json:"requiredClaims"`
+
+	// SingleUseSubjectTokens Omitted: `false` for `gitlab`.
+	SingleUseSubjectTokens bool `json:"singleUseSubjectTokens"`
+
+	// Source `configuration`: declared in `ci.issuers` and read-only here (Q-CI-16).
+	Source           CiIssuerSource `json:"source"`
+	UpdatedAt        time.Time      `json:"updatedAt"`
+	UseOutboundProxy bool           `json:"useOutboundProxy"`
+	Version          int64          `json:"version"`
+}
+
+// CiIssuerAllowedAlgorithms defines model for CiIssuer.AllowedAlgorithms.
+type CiIssuerAllowedAlgorithms string
+
+// CiIssuerKind `github` and `generic` answer `422 kind_not_available` in this release.
+type CiIssuerKind string
+
+// CiIssuerSource `configuration`: declared in `ci.issuers` and read-only here (Q-CI-16).
+type CiIssuerSource string
+
+// CiIssuerChoice What a project administrator sees of an issuer (Q-CI-26).
+type CiIssuerChoice struct {
+	Issuer       string `json:"issuer"`
+	Kind         string `json:"kind"`
+	Name         string `json:"name"`
+	PublicIssuer bool   `json:"publicIssuer"`
+}
+
+// CiIssuerChoiceList defines model for CiIssuerChoiceList.
+type CiIssuerChoiceList struct {
+	Items []CiIssuerChoice `json:"items"`
+}
+
+// CiIssuerCreate The create body: `CiIssuerInput` and `validate`.
+type CiIssuerCreate struct {
+	AllowMissingTyp   *bool                              `json:"allowMissingTyp,omitempty"`
+	AllowedAlgorithms *[]CiIssuerCreateAllowedAlgorithms `json:"allowedAlgorithms,omitempty"`
+
+	// AllowedAudiences Omitted on create: the base URL and `npm:<host name>`.
+	AllowedAudiences *[]string `json:"allowedAudiences,omitempty"`
+	AllowedTyp       *[]string `json:"allowedTyp,omitempty"`
+
+	// CaBundleRef A reference to a PEM bundle (file or environment variable), never key material.
+	CaBundleRef      *string    `json:"caBundleRef,omitempty"`
+	ClockSkewSeconds *int       `json:"clockSkewSeconds,omitempty"`
+	CreatedAt        *time.Time `json:"createdAt,omitempty"`
+	Description      *string    `json:"description,omitempty"`
+
+	// DiscoveryUrl `null`: `<issuer>/.well-known/openid-configuration`.
+	DiscoveryUrl      *string `json:"discoveryUrl,omitempty"`
+	Enabled           *bool   `json:"enabled,omitempty"`
+	ExclusiveAudience *bool   `json:"exclusiveAudience,omitempty"`
+
+	// Issuer The expected `iss`, compared exactly.
+	Issuer           string `json:"issuer"`
+	JobTokenFallback *struct {
+		// Enabled `true` answers `422 job_token_fallback_not_available` in this release.
+		Enabled *bool `json:"enabled,omitempty"`
+	} `json:"jobTokenFallback,omitempty"`
+
+	// JwksUri `null`: the `jwks_uri` of the discovery document.
+	JwksUri *string       `json:"jwksUri,omitempty"`
+	Keys    *CiKeySummary `json:"keys,omitempty"`
+
+	// Kind `github` and `generic` answer `422 kind_not_available` in this release.
+	Kind          CiIssuerCreateKind `json:"kind"`
+	MappingCount  *int               `json:"mappingCount,omitempty"`
+	MaxTtlSeconds *int64             `json:"maxTtlSeconds,omitempty"`
+	Name          string             `json:"name"`
+
+	// PinClaims Omitted: the immutable ID claims of the kind.
+	PinClaims                *[]string `json:"pinClaims,omitempty"`
+	PublicIssuer             *bool     `json:"publicIssuer,omitempty"`
+	RemovedFromConfiguration *bool     `json:"removedFromConfiguration,omitempty"`
+
+	// RequiredClaims Omitted: the preset of the kind.
+	RequiredClaims *[]string `json:"requiredClaims,omitempty"`
+
+	// SingleUseSubjectTokens Omitted: `false` for `gitlab`.
+	SingleUseSubjectTokens *bool      `json:"singleUseSubjectTokens,omitempty"`
+	Source                 *string    `json:"source,omitempty"`
+	UpdatedAt              *time.Time `json:"updatedAt,omitempty"`
+	UseOutboundProxy       *bool      `json:"useOutboundProxy,omitempty"`
+
+	// Validate Fetch the discovery document and the key set before the issuer is stored (R-CI-002).
+	Validate *bool  `json:"validate,omitempty"`
+	Version  *int64 `json:"version,omitempty"`
+}
+
+// CiIssuerCreateAllowedAlgorithms defines model for CiIssuerCreate.AllowedAlgorithms.
+type CiIssuerCreateAllowedAlgorithms string
+
+// CiIssuerCreateKind `github` and `generic` answer `422 kind_not_available` in this release.
+type CiIssuerCreateKind string
+
+// CiIssuerInput The full representation of an issuer that a client writes (R-CI-002). An omitted optional member takes its default;
+// the read-only members of `CiIssuer` are accepted and ignored, so a body obtained by `GET` can be sent back.
+type CiIssuerInput struct {
+	AllowMissingTyp   *bool                             `json:"allowMissingTyp,omitempty"`
+	AllowedAlgorithms *[]CiIssuerInputAllowedAlgorithms `json:"allowedAlgorithms,omitempty"`
+
+	// AllowedAudiences Omitted on create: the base URL and `npm:<host name>`.
+	AllowedAudiences *[]string `json:"allowedAudiences,omitempty"`
+	AllowedTyp       *[]string `json:"allowedTyp,omitempty"`
+
+	// CaBundleRef A reference to a PEM bundle (file or environment variable), never key material.
+	CaBundleRef      *string    `json:"caBundleRef,omitempty"`
+	ClockSkewSeconds *int       `json:"clockSkewSeconds,omitempty"`
+	CreatedAt        *time.Time `json:"createdAt,omitempty"`
+	Description      *string    `json:"description,omitempty"`
+
+	// DiscoveryUrl `null`: `<issuer>/.well-known/openid-configuration`.
+	DiscoveryUrl      *string `json:"discoveryUrl,omitempty"`
+	Enabled           *bool   `json:"enabled,omitempty"`
+	ExclusiveAudience *bool   `json:"exclusiveAudience,omitempty"`
+
+	// Issuer The expected `iss`, compared exactly.
+	Issuer           string `json:"issuer"`
+	JobTokenFallback *struct {
+		// Enabled `true` answers `422 job_token_fallback_not_available` in this release.
+		Enabled *bool `json:"enabled,omitempty"`
+	} `json:"jobTokenFallback,omitempty"`
+
+	// JwksUri `null`: the `jwks_uri` of the discovery document.
+	JwksUri *string       `json:"jwksUri,omitempty"`
+	Keys    *CiKeySummary `json:"keys,omitempty"`
+
+	// Kind `github` and `generic` answer `422 kind_not_available` in this release.
+	Kind          CiIssuerInputKind `json:"kind"`
+	MappingCount  *int              `json:"mappingCount,omitempty"`
+	MaxTtlSeconds *int64            `json:"maxTtlSeconds,omitempty"`
+	Name          string            `json:"name"`
+
+	// PinClaims Omitted: the immutable ID claims of the kind.
+	PinClaims                *[]string `json:"pinClaims,omitempty"`
+	PublicIssuer             *bool     `json:"publicIssuer,omitempty"`
+	RemovedFromConfiguration *bool     `json:"removedFromConfiguration,omitempty"`
+
+	// RequiredClaims Omitted: the preset of the kind.
+	RequiredClaims *[]string `json:"requiredClaims,omitempty"`
+
+	// SingleUseSubjectTokens Omitted: `false` for `gitlab`.
+	SingleUseSubjectTokens *bool      `json:"singleUseSubjectTokens,omitempty"`
+	Source                 *string    `json:"source,omitempty"`
+	UpdatedAt              *time.Time `json:"updatedAt,omitempty"`
+	UseOutboundProxy       *bool      `json:"useOutboundProxy,omitempty"`
+	Version                *int64     `json:"version,omitempty"`
+}
+
+// CiIssuerInputAllowedAlgorithms defines model for CiIssuerInput.AllowedAlgorithms.
+type CiIssuerInputAllowedAlgorithms string
+
+// CiIssuerInputKind `github` and `generic` answer `422 kind_not_available` in this release.
+type CiIssuerInputKind string
+
+// CiIssuerList defines model for CiIssuerList.
+type CiIssuerList struct {
+	Items []CiIssuer `json:"items"`
+}
+
+// CiKeyStatus defines model for CiKeyStatus.
+type CiKeyStatus struct {
+	FetchedAt *time.Time `json:"fetchedAt,omitempty"`
+	Issuer    string     `json:"issuer"`
+	JwksUri   *string    `json:"jwksUri,omitempty"`
+	Keys      []struct {
+		Alg *string `json:"alg,omitempty"`
+
+		// Ignored A key that does not meet the key rules of R-CI-003 is ignored and reported.
+		Ignored       bool    `json:"ignored"`
+		IgnoredReason *string `json:"ignoredReason,omitempty"`
+		Kid           string  `json:"kid"`
+		Kty           string  `json:"kty"`
+	} `json:"keys"`
+	LastError     *string    `json:"lastError,omitempty"`
+	LastErrorAt   *time.Time `json:"lastErrorAt,omitempty"`
+	NextRefreshAt *time.Time `json:"nextRefreshAt,omitempty"`
+}
+
+// CiKeySummary defines model for CiKeySummary.
+type CiKeySummary struct {
+	FetchedAt *time.Time `json:"fetchedAt,omitempty"`
+	Ignored   int        `json:"ignored"`
+
+	// LastError The failure class, the HTTP status and the host; never bytes of a response body.
+	LastError   *string    `json:"lastError,omitempty"`
+	LastErrorAt *time.Time `json:"lastErrorAt,omitempty"`
+	Usable      int        `json:"usable"`
+}
+
+// CiLeafResult defines model for CiLeafResult.
+type CiLeafResult struct {
+	Absent   bool     `json:"absent"`
+	Actual   []string `json:"actual"`
+	Claim    string   `json:"claim"`
+	Expected []string `json:"expected"`
+	Operator string   `json:"operator"`
+	Passed   bool     `json:"passed"`
+	Pointer  string   `json:"pointer"`
+}
+
+// CiMapping An identity mapping with its resolved defaults (R-CI-009). `warnings` is present on the answer of a save only.
+type CiMapping struct {
+	CreatedAt   time.Time `json:"createdAt"`
+	CreatedBy   string    `json:"createdBy"`
+	Description string    `json:"description"`
+	Enabled     bool      `json:"enabled"`
+
+	// Grants The grant specification of a mapping (R-CI-013). `manage` is never grantable.
+	Grants CiGrants `json:"grants"`
+	Issuer string   `json:"issuer"`
+
+	// Match A node of a condition tree (R-CI-010): a combinator (exactly one of `all`, `any`, `not`) or a leaf (`claim` or `path`
+	// with exactly one operator). At most depth 4, 64 leaves, 256 values in an `in` list.
+	Match         CiCondition `json:"match"`
+	MaxTtlSeconds *int64      `json:"maxTtlSeconds"`
+	Name          string      `json:"name"`
+	Options       struct {
+		AllowUnprotectedRefs *bool                               `json:"allowUnprotectedRefs,omitempty"`
+		CrossProjectSource   *CiMappingOptionsCrossProjectSource `json:"crossProjectSource,omitempty"`
+	} `json:"options"`
+
+	// Priority Unique within the issuer's tier.
+	Priority int `json:"priority"`
+
+	// Project The project key of a project mapping.
+	Project *string `json:"project,omitempty"`
+
+	// SubjectKinds `job_token` is P2 (R-CI-022).
+	SubjectKinds []CiMappingSubjectKinds `json:"subjectKinds"`
+
+	// Tier `system` or `project:<key>`; `delegation:<id>` from P1.
+	Tier      string       `json:"tier"`
+	UpdatedAt time.Time    `json:"updatedAt"`
+	Version   int64        `json:"version"`
+	Warnings  *[]CiWarning `json:"warnings,omitempty"`
+}
+
+// CiMappingOptionsCrossProjectSource defines model for CiMapping.Options.CrossProjectSource.
+type CiMappingOptionsCrossProjectSource string
+
+// CiMappingSubjectKinds defines model for CiMapping.SubjectKinds.
+type CiMappingSubjectKinds string
+
+// CiMappingInput The full representation of a mapping that a client writes (R-CI-019). The read-only members of `CiMapping` are accepted and ignored.
+type CiMappingInput struct {
+	CreatedAt   *time.Time `json:"createdAt,omitempty"`
+	CreatedBy   *string    `json:"createdBy,omitempty"`
+	Description *string    `json:"description,omitempty"`
+	Enabled     *bool      `json:"enabled,omitempty"`
+
+	// Grants The grant specification of a mapping (R-CI-013). `manage` is never grantable.
+	Grants CiGrants `json:"grants"`
+
+	// Issuer Required to create a project mapping; the issuer routes take it from the path.
+	Issuer *string `json:"issuer,omitempty"`
+
+	// Match A node of a condition tree (R-CI-010): a combinator (exactly one of `all`, `any`, `not`) or a leaf (`claim` or `path`
+	// with exactly one operator). At most depth 4, 64 leaves, 256 values in an `in` list.
+	Match         CiCondition `json:"match"`
+	MaxTtlSeconds *int64      `json:"maxTtlSeconds,omitempty"`
+	Name          string      `json:"name"`
+	Options       *struct {
+		AllowUnprotectedRefs *bool                                    `json:"allowUnprotectedRefs,omitempty"`
+		CrossProjectSource   *CiMappingInputOptionsCrossProjectSource `json:"crossProjectSource,omitempty"`
+	} `json:"options,omitempty"`
+
+	// Priority Unique within the issuer's tier.
+	Priority int     `json:"priority"`
+	Project  *string `json:"project,omitempty"`
+
+	// SubjectKinds `job_token` is P2 (R-CI-022).
+	SubjectKinds *[]CiMappingInputSubjectKinds `json:"subjectKinds,omitempty"`
+	Tier         *string                       `json:"tier,omitempty"`
+	UpdatedAt    *time.Time                    `json:"updatedAt,omitempty"`
+	Version      *int64                        `json:"version,omitempty"`
+	Warnings     *[]CiWarning                  `json:"warnings,omitempty"`
+}
+
+// CiMappingInputOptionsCrossProjectSource defines model for CiMappingInput.Options.CrossProjectSource.
+type CiMappingInputOptionsCrossProjectSource string
+
+// CiMappingInputSubjectKinds defines model for CiMappingInput.SubjectKinds.
+type CiMappingInputSubjectKinds string
+
+// CiMappingList defines model for CiMappingList.
+type CiMappingList struct {
+	Items []CiMapping `json:"items"`
+}
+
+// CiPatternSet defines model for CiPatternSet.
+type CiPatternSet struct {
+	Exclude *[]string `json:"exclude,omitempty"`
+	Include *[]string `json:"include,omitempty"`
+}
+
+// CiRevokeRequest defines model for CiRevokeRequest.
+type CiRevokeRequest struct {
+	Issuer     string  `json:"issuer"`
+	JobId      *string `json:"jobId,omitempty"`
+	Mapping    *string `json:"mapping,omitempty"`
+	PipelineId *string `json:"pipelineId,omitempty"`
+	ProjectId  *string `json:"projectId,omitempty"`
+}
+
+// CiRevokeResult defines model for CiRevokeResult.
+type CiRevokeResult struct {
+	Revoked int `json:"revoked"`
+}
+
+// CiTraceEntry defines model for CiTraceEntry.
+type CiTraceEntry struct {
+	// Contributes False for a matched mapping whose `crossProjectSource` is `deny` on a cross-project token.
+	Contributes bool            `json:"contributes"`
+	Detail      *string         `json:"detail,omitempty"`
+	FailedLeaf  *string         `json:"failedLeaf,omitempty"`
+	Leaves      *[]CiLeafResult `json:"leaves,omitempty"`
+	Mapping     string          `json:"mapping"`
+	Matched     bool            `json:"matched"`
+	Tier        string          `json:"tier"`
+}
+
+// CiWarning defines model for CiWarning.
+type CiWarning struct {
+	// Code For example `unpinned_condition`, `repository_template_unconstrained`, `shared_ownership`.
+	Code    string  `json:"code"`
+	Detail  string  `json:"detail"`
+	Pointer *string `json:"pointer,omitempty"`
 }
 
 // ClientSetup defines model for ClientSetup.
@@ -4921,6 +5979,9 @@ type Internal = Problem
 // NotFound RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
 type NotFound = Problem
 
+// NotImplementedCI RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+type NotImplementedCI = Problem
+
 // PayloadTooLarge RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
 type PayloadTooLarge = Problem
 
@@ -5010,6 +6071,81 @@ type ExportAuditEventsParams struct {
 
 // ExportAuditEventsParamsFormat defines parameters for ExportAuditEvents.
 type ExportAuditEventsParamsFormat string
+
+// ListCiIssuancesParams defines parameters for ListCiIssuances.
+type ListCiIssuancesParams struct {
+	// Issuer The CI issuer name.
+	Issuer *string `form:"issuer,omitempty" json:"issuer,omitempty"`
+
+	// ProjectId The GitLab project ID.
+	ProjectId *string `form:"projectId,omitempty" json:"projectId,omitempty"`
+
+	// ProjectPath The project path at the time of the exchange.
+	ProjectPath *string `form:"projectPath,omitempty" json:"projectPath,omitempty"`
+
+	// PipelineId The GitLab pipeline ID.
+	PipelineId *string `form:"pipelineId,omitempty" json:"pipelineId,omitempty"`
+
+	// JobId The GitLab job ID.
+	JobId *string `form:"jobId,omitempty" json:"jobId,omitempty"`
+
+	// Mapping A mapping name that contributed.
+	Mapping *string `form:"mapping,omitempty" json:"mapping,omitempty"`
+
+	// Active true: unexpired and unrevoked; false: the others.
+	Active *bool `form:"active,omitempty" json:"active,omitempty"`
+
+	// From Issued at or after.
+	From *time.Time `form:"from,omitempty" json:"from,omitempty"`
+
+	// To Issued before.
+	To *time.Time `form:"to,omitempty" json:"to,omitempty"`
+
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// DeleteCiMappingParams defines parameters for DeleteCiMapping.
+type DeleteCiMappingParams struct {
+	// IfMatch The ETag loaded with the resource, or `*`. A `DELETE` honours it when sent and answers `412` for a stale one (R-API-012).
+	IfMatch *IfMatchOptional `json:"If-Match,omitempty"`
+}
+
+// ReplaceCiMappingParams defines parameters for ReplaceCiMapping.
+type ReplaceCiMappingParams struct {
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+	IfMatch IfMatch `json:"If-Match"`
+}
+
+// GetCiSnippetParams defines parameters for GetCiSnippet.
+type GetCiSnippetParams struct {
+	// Mapping The mapping the snippet is for.
+	Mapping string `form:"mapping" json:"mapping"`
+
+	// Format The package client the snippet configures.
+	Format *GetCiSnippetParamsFormat `form:"format,omitempty" json:"format,omitempty"`
+}
+
+// GetCiSnippetParamsFormat defines parameters for GetCiSnippet.
+type GetCiSnippetParamsFormat string
+
+// DeleteCiIssuerParams defines parameters for DeleteCiIssuer.
+type DeleteCiIssuerParams struct {
+	// Cascade Delete the issuer's mappings with it.
+	Cascade *bool `form:"cascade,omitempty" json:"cascade,omitempty"`
+
+	// IfMatch The ETag loaded with the resource, or `*`. A `DELETE` honours it when sent and answers `412` for a stale one (R-API-012).
+	IfMatch *IfMatchOptional `json:"If-Match,omitempty"`
+}
+
+// ReplaceCiIssuerParams defines parameters for ReplaceCiIssuer.
+type ReplaceCiIssuerParams struct {
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+	IfMatch IfMatch `json:"If-Match"`
+}
 
 // ListEndpointsParams defines parameters for ListEndpoints.
 type ListEndpointsParams struct {
@@ -5315,6 +6451,36 @@ type DeleteProjectParams struct {
 
 // ReplaceProjectParams defines parameters for ReplaceProject.
 type ReplaceProjectParams struct {
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+	IfMatch IfMatch `json:"If-Match"`
+}
+
+// ListProjectCiIssuancesParams defines parameters for ListProjectCiIssuances.
+type ListProjectCiIssuancesParams struct {
+	// Issuer The CI issuer name.
+	Issuer *string `form:"issuer,omitempty" json:"issuer,omitempty"`
+
+	// JobId The GitLab job ID.
+	JobId *string `form:"jobId,omitempty" json:"jobId,omitempty"`
+
+	// Active true: unexpired and unrevoked; false: the others.
+	Active *bool `form:"active,omitempty" json:"active,omitempty"`
+
+	// Limit Page size, 1 to `api.page_size_max` (R-API-010).
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// DeleteProjectCiMappingParams defines parameters for DeleteProjectCiMapping.
+type DeleteProjectCiMappingParams struct {
+	// IfMatch The ETag loaded with the resource, or `*`. A `DELETE` honours it when sent and answers `412` for a stale one (R-API-012).
+	IfMatch *IfMatchOptional `json:"If-Match,omitempty"`
+}
+
+// ReplaceProjectCiMappingParams defines parameters for ReplaceProjectCiMapping.
+type ReplaceProjectCiMappingParams struct {
 	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
 	IfMatch IfMatch `json:"If-Match"`
 }
@@ -5729,11 +6895,35 @@ type UpdateUserParams struct {
 	IfMatch IfMatch `json:"If-Match"`
 }
 
+// ExchangeCiTokenJSONRequestBody defines body for ExchangeCiToken for application/json ContentType.
+type ExchangeCiTokenJSONRequestBody = CiExchangeRequest
+
+// ExchangeCiTokenFormdataRequestBody defines body for ExchangeCiToken for application/x-www-form-urlencoded ContentType.
+type ExchangeCiTokenFormdataRequestBody = CiExchangeRequest
+
 // CheckPermissionsJSONRequestBody defines body for CheckPermissions for application/json ContentType.
 type CheckPermissionsJSONRequestBody = PermissionCheckRequest
 
 // ValidatePermissionPolicyJSONRequestBody defines body for ValidatePermissionPolicy for application/json ContentType.
 type ValidatePermissionPolicyJSONRequestBody = PermissionPolicyInput
+
+// RevokeCiIssuancesJSONRequestBody defines body for RevokeCiIssuances for application/json ContentType.
+type RevokeCiIssuancesJSONRequestBody = CiRevokeRequest
+
+// CreateCiIssuerJSONRequestBody defines body for CreateCiIssuer for application/json ContentType.
+type CreateCiIssuerJSONRequestBody = CiIssuerCreate
+
+// EvaluateCiMappingsJSONRequestBody defines body for EvaluateCiMappings for application/json ContentType.
+type EvaluateCiMappingsJSONRequestBody = CiEvaluateRequest
+
+// CreateCiMappingJSONRequestBody defines body for CreateCiMapping for application/json ContentType.
+type CreateCiMappingJSONRequestBody = CiMappingInput
+
+// ReplaceCiMappingJSONRequestBody defines body for ReplaceCiMapping for application/json ContentType.
+type ReplaceCiMappingJSONRequestBody = CiMappingInput
+
+// ReplaceCiIssuerJSONRequestBody defines body for ReplaceCiIssuer for application/json ContentType.
+type ReplaceCiIssuerJSONRequestBody = CiIssuerInput
 
 // CheckExposureJSONRequestBody defines body for CheckExposure for application/json ContentType.
 type CheckExposureJSONRequestBody = ExposureCheckRequest
@@ -5770,6 +6960,15 @@ type CreateProjectJSONRequestBody = ProjectInput
 
 // ReplaceProjectJSONRequestBody defines body for ReplaceProject for application/json ContentType.
 type ReplaceProjectJSONRequestBody = ProjectInput
+
+// EvaluateProjectCiMappingsJSONRequestBody defines body for EvaluateProjectCiMappings for application/json ContentType.
+type EvaluateProjectCiMappingsJSONRequestBody = CiEvaluateRequest
+
+// CreateProjectCiMappingJSONRequestBody defines body for CreateProjectCiMapping for application/json ContentType.
+type CreateProjectCiMappingJSONRequestBody = CiMappingInput
+
+// ReplaceProjectCiMappingJSONRequestBody defines body for ReplaceProjectCiMapping for application/json ContentType.
+type ReplaceProjectCiMappingJSONRequestBody = CiMappingInput
 
 // CreateRepositoryJSONRequestBody defines body for CreateRepository for application/json ContentType.
 type CreateRepositoryJSONRequestBody = Repository
@@ -5975,6 +7174,9 @@ type ServerInterface interface {
 	// GetLoginOptions Read what the sign-in screen offers
 	// (GET /api/v1/auth/login-options)
 	GetLoginOptions(w http.ResponseWriter, r *http.Request)
+	// ExchangeCiToken Exchange a CI ID token for a short-lived CI token
+	// (POST /api/v1/auth/oidc/token)
+	ExchangeCiToken(w http.ResponseWriter, r *http.Request)
 	// GetWhoami Read the caller's principal and credential
 	// (GET /api/v1/auth/whoami)
 	GetWhoami(w http.ResponseWriter, r *http.Request)
@@ -5987,6 +7189,57 @@ type ServerInterface interface {
 	// ValidatePermissionPolicy Validate a permission policy without storing it
 	// (POST /api/v1/authz/validate-policy)
 	ValidatePermissionPolicy(w http.ResponseWriter, r *http.Request)
+	// ListCiIssuances List the issued CI tokens
+	// (GET /api/v1/ci/issuances)
+	ListCiIssuances(w http.ResponseWriter, r *http.Request, params ListCiIssuancesParams)
+	// RevokeCiIssuances Revoke the unexpired CI tokens that match a filter
+	// (POST /api/v1/ci/issuances/revoke)
+	RevokeCiIssuances(w http.ResponseWriter, r *http.Request)
+	// GetCiIssuance Read one issuance record with its usage
+	// (GET /api/v1/ci/issuances/{tokenId})
+	GetCiIssuance(w http.ResponseWriter, r *http.Request, tokenId openapi_types.UUID)
+	// ListCiIssuers List CI issuers
+	// (GET /api/v1/ci/issuers)
+	ListCiIssuers(w http.ResponseWriter, r *http.Request)
+	// CreateCiIssuer Create a CI issuer
+	// (POST /api/v1/ci/issuers)
+	CreateCiIssuer(w http.ResponseWriter, r *http.Request)
+	// EvaluateCiMappings Dry-run the mappings of a CI issuer against a claim set
+	// (POST /api/v1/ci/issuers/{issuer}/evaluate)
+	EvaluateCiMappings(w http.ResponseWriter, r *http.Request, issuer string)
+	// ListCiMappings List the mappings of a CI issuer
+	// (GET /api/v1/ci/issuers/{issuer}/mappings)
+	ListCiMappings(w http.ResponseWriter, r *http.Request, issuer string)
+	// CreateCiMapping Create a mapping
+	// (POST /api/v1/ci/issuers/{issuer}/mappings)
+	CreateCiMapping(w http.ResponseWriter, r *http.Request, issuer string)
+	// DeleteCiMapping Delete a mapping
+	// (DELETE /api/v1/ci/issuers/{issuer}/mappings/{name})
+	DeleteCiMapping(w http.ResponseWriter, r *http.Request, issuer string, name string, params DeleteCiMappingParams)
+	// GetCiMapping Read a mapping
+	// (GET /api/v1/ci/issuers/{issuer}/mappings/{name})
+	GetCiMapping(w http.ResponseWriter, r *http.Request, issuer string, name string)
+	// ReplaceCiMapping Replace a mapping
+	// (PUT /api/v1/ci/issuers/{issuer}/mappings/{name})
+	ReplaceCiMapping(w http.ResponseWriter, r *http.Request, issuer string, name string, params ReplaceCiMappingParams)
+	// GetCiSnippet Read a ready-to-paste CI snippet
+	// (GET /api/v1/ci/issuers/{issuer}/snippets/{kind})
+	GetCiSnippet(w http.ResponseWriter, r *http.Request, issuer string, kind string, params GetCiSnippetParams)
+	// DeleteCiIssuer Delete a CI issuer
+	// (DELETE /api/v1/ci/issuers/{name})
+	DeleteCiIssuer(w http.ResponseWriter, r *http.Request, name string, params DeleteCiIssuerParams)
+	// GetCiIssuer Read a CI issuer
+	// (GET /api/v1/ci/issuers/{name})
+	GetCiIssuer(w http.ResponseWriter, r *http.Request, name string)
+	// ReplaceCiIssuer Replace a CI issuer
+	// (PUT /api/v1/ci/issuers/{name})
+	ReplaceCiIssuer(w http.ResponseWriter, r *http.Request, name string, params ReplaceCiIssuerParams)
+	// GetCiIssuerKeys Read the cached key set of a CI issuer
+	// (GET /api/v1/ci/issuers/{name}/keys)
+	GetCiIssuerKeys(w http.ResponseWriter, r *http.Request, name string)
+	// RefreshCiIssuerKeys Fetch the discovery document and keys of a CI issuer now
+	// (POST /api/v1/ci/issuers/{name}/keys/refresh)
+	RefreshCiIssuerKeys(w http.ResponseWriter, r *http.Request, name string)
 	// ListEndpoints List the endpoints
 	// (GET /api/v1/endpoints)
 	ListEndpoints(w http.ResponseWriter, r *http.Request, params ListEndpointsParams)
@@ -6116,6 +7369,30 @@ type ServerInterface interface {
 	// AddProjectAdmin Add a project administrator
 	// (PUT /api/v1/projects/{key}/admins/{principalRef})
 	AddProjectAdmin(w http.ResponseWriter, r *http.Request, key string, principalRef string)
+	// ListProjectCiIssuances List the CI tokens issued through a project's mappings
+	// (GET /api/v1/projects/{key}/ci/issuances)
+	ListProjectCiIssuances(w http.ResponseWriter, r *http.Request, key string, params ListProjectCiIssuancesParams)
+	// ListProjectCiIssuers List the CI issuers a project administrator can choose from
+	// (GET /api/v1/projects/{key}/ci/issuers)
+	ListProjectCiIssuers(w http.ResponseWriter, r *http.Request, key string)
+	// EvaluateProjectCiMappings Dry-run the project's mappings against a claim set
+	// (POST /api/v1/projects/{key}/ci/issuers/{issuer}/evaluate)
+	EvaluateProjectCiMappings(w http.ResponseWriter, r *http.Request, key string, issuer string)
+	// ListProjectCiMappings List the CI mappings of a project
+	// (GET /api/v1/projects/{key}/ci/mappings)
+	ListProjectCiMappings(w http.ResponseWriter, r *http.Request, key string)
+	// CreateProjectCiMapping Create a CI mapping of a project
+	// (POST /api/v1/projects/{key}/ci/mappings)
+	CreateProjectCiMapping(w http.ResponseWriter, r *http.Request, key string)
+	// DeleteProjectCiMapping Delete a CI mapping of a project
+	// (DELETE /api/v1/projects/{key}/ci/mappings/{issuer}/{name})
+	DeleteProjectCiMapping(w http.ResponseWriter, r *http.Request, key string, issuer string, name string, params DeleteProjectCiMappingParams)
+	// GetProjectCiMapping Read a CI mapping of a project
+	// (GET /api/v1/projects/{key}/ci/mappings/{issuer}/{name})
+	GetProjectCiMapping(w http.ResponseWriter, r *http.Request, key string, issuer string, name string)
+	// ReplaceProjectCiMapping Replace a CI mapping of a project
+	// (PUT /api/v1/projects/{key}/ci/mappings/{issuer}/{name})
+	ReplaceProjectCiMapping(w http.ResponseWriter, r *http.Request, key string, issuer string, name string, params ReplaceProjectCiMappingParams)
 	// LookupProjectPrincipals Look up users and groups to name in a project's policies
 	// (GET /api/v1/projects/{key}/principals)
 	LookupProjectPrincipals(w http.ResponseWriter, r *http.Request, key string, params LookupProjectPrincipalsParams)
@@ -6740,6 +8017,20 @@ func (siw *ServerInterfaceWrapper) GetLoginOptions(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// ExchangeCiToken operation middleware
+func (siw *ServerInterfaceWrapper) ExchangeCiToken(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ExchangeCiToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetWhoami operation middleware
 func (siw *ServerInterfaceWrapper) GetWhoami(w http.ResponseWriter, r *http.Request) {
 
@@ -6787,6 +8078,731 @@ func (siw *ServerInterfaceWrapper) ValidatePermissionPolicy(w http.ResponseWrite
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ValidatePermissionPolicy(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListCiIssuances operation middleware
+func (siw *ServerInterfaceWrapper) ListCiIssuances(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListCiIssuancesParams
+
+	// ------------- Optional query parameter "issuer" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "issuer", r.URL.Query(), &params.Issuer, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "issuer"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "issuer", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "projectId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "projectId", r.URL.Query(), &params.ProjectId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "projectId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "projectPath" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "projectPath", r.URL.Query(), &params.ProjectPath, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "projectPath"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectPath", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "pipelineId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "pipelineId", r.URL.Query(), &params.PipelineId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "pipelineId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "pipelineId", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "jobId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "jobId", r.URL.Query(), &params.JobId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "jobId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "jobId", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "mapping" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "mapping", r.URL.Query(), &params.Mapping, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "mapping"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "mapping", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "active" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "active", r.URL.Query(), &params.Active, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "active"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "active", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "from", r.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "to", r.URL.Query(), &params.To, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListCiIssuances(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeCiIssuances operation middleware
+func (siw *ServerInterfaceWrapper) RevokeCiIssuances(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeCiIssuances(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetCiIssuance operation middleware
+func (siw *ServerInterfaceWrapper) GetCiIssuance(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tokenId" -------------
+	var tokenId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tokenId", r.PathValue("tokenId"), &tokenId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tokenId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCiIssuance(w, r, tokenId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListCiIssuers operation middleware
+func (siw *ServerInterfaceWrapper) ListCiIssuers(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListCiIssuers(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateCiIssuer operation middleware
+func (siw *ServerInterfaceWrapper) CreateCiIssuer(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateCiIssuer(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// EvaluateCiMappings operation middleware
+func (siw *ServerInterfaceWrapper) EvaluateCiMappings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "issuer" -------------
+	var issuer string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "issuer", r.PathValue("issuer"), &issuer, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "issuer", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EvaluateCiMappings(w, r, issuer)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListCiMappings operation middleware
+func (siw *ServerInterfaceWrapper) ListCiMappings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "issuer" -------------
+	var issuer string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "issuer", r.PathValue("issuer"), &issuer, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "issuer", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListCiMappings(w, r, issuer)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateCiMapping operation middleware
+func (siw *ServerInterfaceWrapper) CreateCiMapping(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "issuer" -------------
+	var issuer string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "issuer", r.PathValue("issuer"), &issuer, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "issuer", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateCiMapping(w, r, issuer)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteCiMapping operation middleware
+func (siw *ServerInterfaceWrapper) DeleteCiMapping(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "issuer" -------------
+	var issuer string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "issuer", r.PathValue("issuer"), &issuer, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "issuer", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteCiMappingParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatchOptional
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteCiMapping(w, r, issuer, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetCiMapping operation middleware
+func (siw *ServerInterfaceWrapper) GetCiMapping(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "issuer" -------------
+	var issuer string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "issuer", r.PathValue("issuer"), &issuer, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "issuer", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCiMapping(w, r, issuer, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReplaceCiMapping operation middleware
+func (siw *ServerInterfaceWrapper) ReplaceCiMapping(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "issuer" -------------
+	var issuer string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "issuer", r.PathValue("issuer"), &issuer, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "issuer", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReplaceCiMappingParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReplaceCiMapping(w, r, issuer, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetCiSnippet operation middleware
+func (siw *ServerInterfaceWrapper) GetCiSnippet(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "issuer" -------------
+	var issuer string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "issuer", r.PathValue("issuer"), &issuer, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "issuer", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "kind" -------------
+	var kind string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "kind", r.PathValue("kind"), &kind, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetCiSnippetParams
+
+	// ------------- Required query parameter "mapping" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "mapping", r.URL.Query(), &params.Mapping, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "mapping"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "mapping", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "format" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "format", r.URL.Query(), &params.Format, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "format"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "format", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCiSnippet(w, r, issuer, kind, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteCiIssuer operation middleware
+func (siw *ServerInterfaceWrapper) DeleteCiIssuer(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteCiIssuerParams
+
+	// ------------- Optional query parameter "cascade" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cascade", r.URL.Query(), &params.Cascade, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cascade"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cascade", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatchOptional
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteCiIssuer(w, r, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetCiIssuer operation middleware
+func (siw *ServerInterfaceWrapper) GetCiIssuer(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCiIssuer(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReplaceCiIssuer operation middleware
+func (siw *ServerInterfaceWrapper) ReplaceCiIssuer(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReplaceCiIssuerParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReplaceCiIssuer(w, r, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetCiIssuerKeys operation middleware
+func (siw *ServerInterfaceWrapper) GetCiIssuerKeys(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCiIssuerKeys(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RefreshCiIssuerKeys operation middleware
+func (siw *ServerInterfaceWrapper) RefreshCiIssuerKeys(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RefreshCiIssuerKeys(w, r, name)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -9008,6 +11024,397 @@ func (siw *ServerInterfaceWrapper) AddProjectAdmin(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AddProjectAdmin(w, r, key, principalRef)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectCiIssuances operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectCiIssuances(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "key" -------------
+	var key string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectCiIssuancesParams
+
+	// ------------- Optional query parameter "issuer" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "issuer", r.URL.Query(), &params.Issuer, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "issuer"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "issuer", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "jobId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "jobId", r.URL.Query(), &params.JobId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "jobId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "jobId", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "active" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "active", r.URL.Query(), &params.Active, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "active"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "active", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectCiIssuances(w, r, key, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectCiIssuers operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectCiIssuers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "key" -------------
+	var key string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectCiIssuers(w, r, key)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// EvaluateProjectCiMappings operation middleware
+func (siw *ServerInterfaceWrapper) EvaluateProjectCiMappings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "key" -------------
+	var key string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "issuer" -------------
+	var issuer string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "issuer", r.PathValue("issuer"), &issuer, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "issuer", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EvaluateProjectCiMappings(w, r, key, issuer)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectCiMappings operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectCiMappings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "key" -------------
+	var key string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectCiMappings(w, r, key)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateProjectCiMapping operation middleware
+func (siw *ServerInterfaceWrapper) CreateProjectCiMapping(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "key" -------------
+	var key string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateProjectCiMapping(w, r, key)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteProjectCiMapping operation middleware
+func (siw *ServerInterfaceWrapper) DeleteProjectCiMapping(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "key" -------------
+	var key string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "issuer" -------------
+	var issuer string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "issuer", r.PathValue("issuer"), &issuer, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "issuer", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteProjectCiMappingParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatchOptional
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteProjectCiMapping(w, r, key, issuer, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProjectCiMapping operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectCiMapping(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "key" -------------
+	var key string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "issuer" -------------
+	var issuer string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "issuer", r.PathValue("issuer"), &issuer, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "issuer", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectCiMapping(w, r, key, issuer, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReplaceProjectCiMapping operation middleware
+func (siw *ServerInterfaceWrapper) ReplaceProjectCiMapping(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "key" -------------
+	var key string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "key", r.PathValue("key"), &key, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "issuer" -------------
+	var issuer string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "issuer", r.PathValue("issuer"), &issuer, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "issuer", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReplaceProjectCiMappingParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReplaceProjectCiMapping(w, r, key, issuer, name, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -12535,6 +14942,32 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{key}", wrapper.GetRepository)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/repositories/{key}", wrapper.UpdateRepository)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/repositories/{key}", wrapper.ReplaceRepository)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/ci/issuers", wrapper.ListCiIssuers)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/ci/issuers", wrapper.CreateCiIssuer)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/ci/issuers/{name}", wrapper.DeleteCiIssuer)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/ci/issuers/{name}", wrapper.GetCiIssuer)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/ci/issuers/{name}", wrapper.ReplaceCiIssuer)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/ci/issuers/{name}/keys", wrapper.GetCiIssuerKeys)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/ci/issuers/{name}/keys/refresh", wrapper.RefreshCiIssuerKeys)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/ci/issuers/{issuer}/mappings", wrapper.ListCiMappings)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/ci/issuers/{issuer}/mappings", wrapper.CreateCiMapping)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/ci/issuers/{issuer}/mappings/{name}", wrapper.DeleteCiMapping)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/ci/issuers/{issuer}/mappings/{name}", wrapper.GetCiMapping)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/ci/issuers/{issuer}/mappings/{name}", wrapper.ReplaceCiMapping)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/ci/issuers/{issuer}/evaluate", wrapper.EvaluateCiMappings)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/ci/issuers/{issuer}/snippets/{kind}", wrapper.GetCiSnippet)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/ci/issuances", wrapper.ListCiIssuances)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/ci/issuances/{tokenId}", wrapper.GetCiIssuance)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/ci/issuances/revoke", wrapper.RevokeCiIssuances)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/oidc/token", wrapper.ExchangeCiToken)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{key}/ci/issuers", wrapper.ListProjectCiIssuers)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{key}/ci/mappings", wrapper.ListProjectCiMappings)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{key}/ci/mappings", wrapper.CreateProjectCiMapping)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/projects/{key}/ci/mappings/{issuer}/{name}", wrapper.DeleteProjectCiMapping)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{key}/ci/mappings/{issuer}/{name}", wrapper.GetProjectCiMapping)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/projects/{key}/ci/mappings/{issuer}/{name}", wrapper.ReplaceProjectCiMapping)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/projects/{key}/ci/issuers/{issuer}/evaluate", wrapper.EvaluateProjectCiMappings)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{key}/ci/issuances", wrapper.ListProjectCiIssuances)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/items", wrapper.DeleteItem)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/items", wrapper.GetItem)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/children", wrapper.ListChildren)

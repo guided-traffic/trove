@@ -187,6 +187,110 @@ type BlobGcQueue struct {
 	EnqueuedAt time.Time
 }
 
+type CiIssuer struct {
+	ID                       pgtype.UUID
+	Name                     string
+	Kind                     string
+	Issuer                   string
+	DiscoveryUrl             pgtype.Text
+	JwksUri                  pgtype.Text
+	AllowedAudiences         []string
+	ExclusiveAudience        bool
+	AllowedAlgorithms        []string
+	AllowedTyp               []string
+	AllowMissingTyp          bool
+	ClockSkew                pgtype.Interval
+	RequiredClaims           []string
+	PublicIssuer             bool
+	PinClaims                []string
+	SingleUseSubjectTokens   bool
+	MaxTtl                   pgtype.Interval
+	CaBundleRef              pgtype.Text
+	UseOutboundProxy         bool
+	JobTokenFallback         []byte
+	Enabled                  bool
+	Description              string
+	Source                   string
+	RemovedFromConfiguration bool
+	Version                  int64
+	MappingsVersion          int64
+	CreatedAt                pgtype.Timestamptz
+	UpdatedAt                pgtype.Timestamptz
+}
+
+type CiIssuerKey struct {
+	IssuerID      pgtype.UUID
+	Jwks          []byte
+	JwksUri       string
+	FetchedAt     pgtype.Timestamptz
+	Etag          pgtype.Text
+	NextRefreshAt pgtype.Timestamptz
+	LastError     pgtype.Text
+	LastErrorAt   pgtype.Timestamptz
+}
+
+type CiMapping struct {
+	ID           pgtype.UUID
+	IssuerID     pgtype.UUID
+	PrincipalID  pgtype.UUID
+	Tier         string
+	ProjectID    pgtype.UUID
+	DelegationID pgtype.UUID
+	Name         string
+	Priority     int32
+	Enabled      bool
+	SubjectKinds []string
+	Match        []byte
+	Grants       []byte
+	MaxTtl       pgtype.Interval
+	Options      []byte
+	Description  string
+	Version      int64
+	CreatedBy    string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+type CiSubjectTokenUse struct {
+	IssuerID         pgtype.UUID
+	Jti              string
+	FirstExchangedAt pgtype.Timestamptz
+	LastExchangedAt  pgtype.Timestamptz
+	ExchangeCount    int32
+	SubjectExpiresAt pgtype.Timestamptz
+}
+
+type CiTokenIssuance struct {
+	TokenID        pgtype.UUID
+	IssuerID       pgtype.UUID
+	MappingIds     []pgtype.UUID
+	MappingNames   []string
+	SubjectKind    string
+	Jti            pgtype.Text
+	ProjectID      string
+	ProjectPath    pgtype.Text
+	NamespaceID    pgtype.Text
+	PipelineID     pgtype.Text
+	JobID          string
+	Ref            pgtype.Text
+	RefType        pgtype.Text
+	RefProtected   pgtype.Bool
+	PipelineSource pgtype.Text
+	Environment    pgtype.Text
+	Sha            pgtype.Text
+	UserID         pgtype.Text
+	UserLogin      pgtype.Text
+	Claims         []byte
+	Grants         []byte
+	RequestedScope pgtype.Text
+	GrantedScope   string
+	CrossProject   bool
+	IssuedAt       pgtype.Timestamptz
+	ExpiresAt      pgtype.Timestamptz
+	ClientIp       *netip.Addr
+	UserAgent      pgtype.Text
+}
+
 type CliLogin struct {
 	ID                 pgtype.UUID
 	PublicIDSha256     []byte

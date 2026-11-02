@@ -1854,10 +1854,19 @@ Owned by [gitlab-ci-oidc.md](gitlab-ci-oidc.md):
 | GET, PUT, DELETE | `/api/v1/ci/issuers/{issuer}/mappings/{name}` | Read, replace, delete | as above |
 | POST | `/api/v1/ci/issuers/{issuer}/evaluate` | Dry run against a claim set (R-UI-036) | as above |
 | GET | `/api/v1/ci/issuers/{issuer}/snippets/{kind}?mapping=&format=` | Ready-to-paste CI snippet, `text/plain` (R-UI-035) | as above |
+| GET | `/api/v1/projects/{key}/ci/issuers`, `…/ci/issuances` | The issuers read-only and the issuances of a project's mappings (Q-CI-26) | `ci:read` or `tokens:read`, or administrator of the project with `managePolicies` |
+| GET, POST | `/api/v1/projects/{key}/ci/mappings` | List and create the mappings of a project (the body names the issuer) | `ci:write` (read: `ci:read`), or administrator of the project with `managePolicies`; recent authentication for writes |
+| GET, PUT, DELETE | `/api/v1/projects/{key}/ci/mappings/{issuer}/{name}` | Read, replace, delete | as above |
+| POST | `/api/v1/projects/{key}/ci/issuers/{issuer}/evaluate` | Dry run over the project's tier only | as above |
 | POST, DELETE | `/api/v1/ci/issuers/{issuer}/delegations…` | Delegate mapping management for a scope to a group (P1; covers project-scoped mappings, ADMAPI-030) | `admin` |
 | GET | `/api/v1/ci/issuances`, `/api/v1/ci/issuances/{tokenId}` | Issued CI tokens with job context | `admin`, `tokens:read` |
 | POST | `/api/v1/ci/issuances/revoke` | Revoke matching CI tokens | `admin`, `tokens:revoke` |
 | POST | `/api/v1/auth/oidc/token` | Exchange a CI ID token for a `trv_cit_` token (INV-10) | anonymous; the ID token is the proof |
+
+The permission column names the role that holds the capabilities of the operations: the issuer, mapping,
+dry-run and snippet operations declare `ci:read` (the reads, the dry run and the snippet) and `ci:write` (the writes,
+the key refresh, with recent authentication on create, replace and delete), the issuance operations `tokens:read` and
+`tokens:revoke` (R-AUTHZ-010, Q-CI-22). A CI token is refused on all of them (`403 ci_token_restricted`, Q-CI-18).
 
 API conventions that apply: the evaluation endpoint takes claims, never a token, and the UI decodes
 pasted tokens in the browser (R-UI-036). The exchange speaks OAuth to OAuth clients: its answers
@@ -3638,6 +3647,9 @@ Priority: **MVP** · Covers: UI-049, CIOIDC-024
   for the chosen format (npm or NuGet) with a copy button. This covers the GitLab counterpart of
   CIOIDC-024 ([GitLab ID tokens](https://docs.gitlab.com/ci/secrets/id_token_authentication/)).
 - Delegations (P1) and issuances (R-UI-030) are tabs of the issuer.
+- A project administrator reaches the project's CI mappings from the project (the project route family of
+  R-API-035): the mapping list and editor, the claim tester over the project's tier and the issuances of its mappings, with
+  the issuers as a read-only choice (Q-CI-26). The editor offers the project's repositories and policies and no groups.
 
 Acceptance criteria:
 

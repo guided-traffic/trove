@@ -267,6 +267,8 @@ Names of the areas of the PostgreSQL change log ([internal/cluster/areas.go](int
 | `authz` | the compiled grant index and its epochs | yes |
 | `repo_config` | the repository snapshot and the repository configuration | yes |
 | `jobs`, `cache` | the job queue and the in-process caches of M0 | yes |
+| `ci_mappings` | the in-process copies of the CI issuers and their mappings ([R-CI-002](docs/spec/gitlab-ci-oidc.md), R-CI-009; the exchange compares versions in its transaction and does not wait for it) | contract: the area and its epoch row exist, no producer yet |
+| `ci_issuer_keys` | the in-process copy of a CI issuer's signing key set ([R-CI-003](docs/spec/gitlab-ci-oidc.md)); notified only when the content changed | contract: the area and its epoch row exist, no producer yet |
 
 ### Metrics
 
@@ -298,6 +300,8 @@ Built families, all with the `trove_` prefix:
 | `trove_api_rate_limited_total`, `trove_ratelimit_decisions_total` | the labels of `internal/api/v1/ratelimit.go` and `internal/cluster/limiter.go` | yes |
 | `trove_jobs_claimed_total`, `trove_jobs_completed_total`, `trove_jobs_running`, `trove_jobs_duration_seconds`, `trove_jobs_claim_errors_total` | the labels of `internal/jobs/metrics.go` | yes |
 | `trove_cache_requests_total`, `trove_cache_entries`, `trove_cache_bytes` | the labels of `internal/cache/metrics.go` | yes |
+| `trove_ci_exchanges_total`, `trove_ci_exchange_duration_seconds`, `trove_ci_signing_keys_refresh_total`, `trove_ci_mapping_set_stale_total`, `trove_ci_job_token_lookups_total`, `trove_ci_job_token_lookup_duration_seconds` | `issuer` and, as the name says, `outcome`, `reason`, `trigger` ([internal/ci/metrics.go](internal/ci/metrics.go), R-CI-020); registered, at zero until the exchange and the key store are built |
+| `trove_ci_signing_keys_age_seconds`, `trove_ci_tokens_active` | `issuer`; gauges read from PostgreSQL once per `metrics.db_gauge_interval`, aggregate with `max` ([internal/app/wire_ci.go](internal/app/wire_ci.go)) |
 | `trove_nuget_push_replayed_total` | `repo`: pushes of the identical package of a stored version, answered `201` without a change | yes |
 | `trove_nuget_remote_unparseable_packages_total` | `repo`: content a NuGet remote cached that is no NuGet package at all (no ZIP archive, no `.nuspec`, a `.nuspec` that is not XML) and served without NuGet rows | yes |
 | `trove_nuget_virtual_member_skipped_total` | `repo`, `reason` (`unavailable`): answers of a virtual NuGet repository that left out a member that could not be asked | yes |
@@ -323,6 +327,19 @@ The label sets of the M1 families are not restated per family in this pass; read
 | Network policies | `<fullname>-web`, `<fullname>-worker`, `<fullname>-migrate` | yes |
 | Backup CronJob, restore Job | `<fullname>-backup`, `<fullname>-restore` | planned (M5) |
 
+### GitLab CI OIDC
+
+| Name | Pattern | Rule |
+|---|---|---|
+| CI issuer name | `^[a-z0-9][a-z0-9._-]{1,63}$` | unique; immutable; the handle in the API, the audit and the metrics |
+| Mapping name | `^[a-z0-9][a-z0-9._-]{1,63}$` | unique within the issuer; immutable |
+| Mapping principal | `<issuer>/<mapping>` (kind `ci_mapping`); API reference `ci:<issuer>/<mapping>` | created and deleted with the mapping; the principal set of a CI token |
+| Package owner identity of a CI project | `ci:<issuer>:project:<project_id>` | the immutable project ID with the issuer; stored by issuer ID ([R-CI-015](docs/spec/gitlab-ci-oidc.md)) |
+| CI token | `trv_cit_…` | issued by `POST /api/v1/auth/oidc/token`; `created_via` `ci-exchange`; owner is the mapping principal; its grants are `api_token.ci_context` |
+| Limiters | `ci_exchange_address`, `ci_exchange_subject` | cluster scope ([R-CI-021](docs/spec/gitlab-ci-oidc.md)) |
+| Tasks | `ci-keys-refresh` (`*/5 * * * *`), `ci-replay-cleanup` (`7 * * * *`), `ci-issuance-retention` (`40 3 * * *`) | exclusive, `maintenance.tasks.<name>` |
+| Tables | `ci_issuers`, `ci_issuer_keys` (transient in backups), `ci_mappings`, `ci_subject_token_uses`, `ci_token_issuances` | migrations 00026 to 00028 |
+
 ### Projects
 
 | Name | Pattern | Rule |
@@ -346,6 +363,7 @@ The names of the event registry ([internal/audit](internal/audit/)). Each event 
 | Login | `auth.login.succeeded`, `auth.login.failed`, `auth.breakglass.login`, `auth.breakglass.locked`, `auth.breakglass.unlocked`, `auth.logout`, `auth.session.ended`, `auth.csrf_failed`, `auth.credential.rejected` |
 | Authorization | `authz.denied`, `authz.read.allowed`, `authz.write.allowed`, `authz.policy.created`, `authz.policy.updated`, `authz.policy.deleted`, `authz.project.created`, `authz.project.updated`, `authz.project.deleted`, `authz.project.admin_added`, `authz.project.admin_removed`, `authz.project.repository_assigned`, `authz.project.repository_unassigned`, `authz.role.bound`, `authz.role.unbound`, `authz.settings.changed`, `authz.ownership.claimed`, `authz.ownership.added`, `authz.ownership.removed`, `authz.ownership.released` |
 | Tokens | `token.created`, `token.rotated`, `token.revoked`, `token.expiring`, `token.rejected` |
+| CI federation | `ci.exchange.succeeded`, `ci.exchange.denied`, `ci.exchange.replayed`, `ci.exchange.repeated`, `ci.token.revoked`, `ci.issuer.created`, `ci.issuer.updated`, `ci.issuer.disabled`, `ci.issuer.enabled`, `ci.issuer.deleted`, `ci.mapping.created`, `ci.mapping.updated`, `ci.mapping.disabled`, `ci.mapping.enabled`, `ci.mapping.deleted`, `ci.keys.refreshed`, `ci.keys.refresh_failed`, `ci.package_ownership.claimed`, `ci.package_ownership.conflict`, `ci.job_token.lookup` ([internal/audit/events_ci.go](internal/audit/events_ci.go)); `ci.token.revoked` and the `.updated`, `.disabled` and `.deleted` events of issuers and mappings carry the journal entry |
 | Users | `user.created`, `user.updated`, `user.renamed`, `user.rename_conflict`, `user.disabled`, `user.enabled`, `user.deleted`, `user.dormancy_warning`, `user.groups.synced`, `user.groups.claim_missing` |
 | Groups and service accounts | `group.created`, `group.updated`, `group.deleted`, `group.members.changed`, `serviceaccount.created`, `serviceaccount.updated`, `serviceaccount.disabled`, `serviceaccount.deleted` |
 | Settings | `settings.auth.changed` |
@@ -361,7 +379,7 @@ The names of the event registry ([internal/audit](internal/audit/)). Each event 
 The code registry is [internal/errs/codes.go](internal/errs/codes.go). Every problem answer carries one of these values as `code`. The HTTP status of each code is in the registry.
 
 <details>
-<summary>Error codes (169 codes in the registry, grouped as the file groups them)</summary>
+<summary>Error codes (191 codes in the registry, grouped as the file groups them)</summary>
 
 - General: `internal`, `malformed_request`, `validation_failed`, `unauthenticated`, `forbidden`, `not_found`, `method_not_allowed`, `conflict`, `precondition_failed`, `payload_too_large`, `unsupported_media_type`, `rate_limited`, `insufficient_storage`, `unavailable`, `upstream_failed`, `upstream_timeout`, `repository_not_found`, `database_unavailable`, `egress_denied`, `key_ring_incompatible`, `object_store_unavailable`, `shutting_down`, `server_busy`, `database_timeout`, `misdirected_request`, `invalid_cursor`, `invalid_header`, `already_exists`, `idempotency_in_progress`, `idempotency_key_reused`, `precondition_required`, `reserved_name`, `managed_by_config`
 - Tokens: `invalid_token`, `credentials_required`, `invalid_credentials`, `principal_disabled`, `invalid_scope`, `invalid_ttl`, `ttl_exceeds_maximum`, `default_above_maximum`, `exceeds_ceiling`, `non_expiring_not_allowed`, `non_expiring_restricted`, `pat_not_allowed`, `ci_token_restricted`, `token_already_issued`, `token_limit_reached`, `derivation_exceeds_parent`, `description_required`, `not_a_token`
@@ -375,6 +393,7 @@ The code registry is [internal/errs/codes.go](internal/errs/codes.go). Every pro
 - NuGet (M3): `nuget_invalid_package`, `nuget_invalid_version`, `nuget_invalid_version_range`, `nuget_invalid_id`, `nuget_version_exists`, `nuget_version_deleted`, `nuget_version_reserved`, `nuget_symbol_package_exists`, `nuget_v2_unsupported`, `nuget_not_implemented`, `upstream_package_mismatch`, `nuget_invalid_upstream_document`
 - Remote repositories (M2): `upstream_secret_unavailable`, `source_network_unavailable`, `foreign_host_denied`
 - Package content (M2): `content_refused`
+- GitLab CI OIDC (M4): `ci_not_implemented`, `pin_required`, `pin_claim_not_immutable`, `public_issuer_required`, `kind_not_available`, `issuer_managed_by_configuration`, `discovery_unreachable`, `issuer_mismatch`, `no_usable_keys`, `algorithms_not_offered`, `condition_invalid`, `catch_all_condition`, `unprotected_write`, `unpinned_write`, `empty_grant`, `template_invalid`, `template_unanchored`, `unknown_policy`, `unknown_group`, `mapping_limit_reached`, `priority_taken`, `job_token_fallback_not_available`; the exchange's own `reason` values are in [internal/ci/reason](internal/ci/reason/reason.go) and answer in the OAuth error shape
 
 </details>
 
@@ -393,6 +412,7 @@ Registrations at start-up, in `internal/app/wire_*.go` and in the packages that 
 | `nuget-symbol-index` | `internal/formatdata/nuget/symbols.go` | one job per symbol package, enqueued by the symbol push in its transaction, queue `index`, exclusive per symbol package |
 | `data_migration_nuget_semver2` | `internal/app/wire_formats.go`, `internal/formatdata/nuget/semver2.go` | queued by a `worker` or `all` replica at start-up until its completion is recorded, queue `maintenance`, coalesce; recomputes `is_semver2` of the NuGet versions stored by 0.9.0 and older ([Q-NUGET-93](docs/spec/formats/nuget.md#q-nuget-93--the-versions-stored-before-the-semver-2-classification-counted-dependency-ranges-are-recomputed-once-by-a-background-job-in-go)) |
 | `token-cleanup`, `token-expiry-notice` | `internal/app/wire_identity.go`, `internal/auth/token/tasks.go` | tasks (`maintenance` queue, 3 attempts) |
+| `ci-keys-refresh`, `ci-replay-cleanup`, `ci-issuance-retention` | `internal/app/wire_ci.go` | tasks (`maintenance` queue, exclusive, 3 attempts): `*/5 * * * *`, `7 * * * *`, `40 3 * * *`; they succeed and do nothing until their services are built ([R-CI-030](docs/spec/gitlab-ci-oidc.md)) |
 | `session-cleanup` | `internal/auth/session/cleanup.go` | task |
 | `audit-retention` | `internal/app/wire_audit.go` | task |
 | `idempotency-cleanup` | `internal/api/v1/cleanup.go` | task, `13 * * * *` |
@@ -408,6 +428,7 @@ Registrations at start-up, in `internal/app/wire_*.go` and in the packages that 
 |---|---|
 | [docs/manual/](docs/manual/README.md) | The user and administrator manual; the binary embeds it and the UI shows it behind the "?" of the top bar |
 | [docs/developer/](docs/developer/README.md) | Contributor entry point; the M1 pages: [login](docs/developer/login.md), [identity](docs/developer/identity.md), [authorization](docs/developer/authorization.md), [files](docs/developer/files.md), [m1-contracts](docs/developer/m1-contracts.md), [audit](docs/developer/audit.md), [repositories](docs/developer/repositories.md); the package screens: [packages](docs/developer/packages.md); projects: [projects](docs/developer/projects.md) |
+| [docs/developer/ci-oidc.md](docs/developer/ci-oidc.md) | GitLab CI OIDC: the contracts laid for beta phase 5 (schema, packages, the token and evaluation seam, API, configuration, events), the work packages and their files |
 | [docs/security/](docs/security/README.md) | Security architecture, one page per perspective, with the open gaps of each page: trust boundaries, transport encryption, data and secret flow, privilege footprint, isolation and coordination, egress, login and sessions, tokens and credentials, permissions, delegated administration, endpoints and exposure, repository model, file transfer, audit |
 | [SECURITY.md](SECURITY.md) | How to report a vulnerability, the supported versions and the pointer to the known gaps |
 | [docs/spec/](docs/spec/README.md) | Target design: owner constraints, invariants `INV-1` to `INV-20`, requirements `R-<AREA>-nnn`, open gaps `H-<n>` |
@@ -1102,6 +1123,50 @@ api:
     package_anonymous: {requests_per_second: 20, burst: 100}  # default (package requests without credentials, per address)
 repositories:
   lookup_wait: 5s                       # default; at least 100ms: wait for the change-log poll on a key the snapshot does not know
+ci:                                     # GitLab CI OIDC (docs/spec/gitlab-ci-oidc.md; the behavior is built by the work packages of docs/developer/ci-oidc.md)
+  signing_keys:
+    default_refresh_interval: 1h        # default; 1m to 168h: next refresh when the response carries no Cache-Control max-age
+    min_refresh_interval: 5m            # default; 10s to 24h: lower clamp, and the retry delay after a failed fetch
+    max_refresh_interval: 24h           # default; 1m to 168h: upper clamp
+    unknown_kid_refresh_interval: 60s   # default; 1s to 1h: at most one on-demand fetch per issuer and replica
+    max_stale: 24h                      # default; 1m to 720h, at least max_refresh_interval: older key sets fail closed (503 signing_keys_unavailable)
+    fetch_timeout: 5s                   # default; 1s to 60s
+    max_response_bytes: 1048576         # default; 4096 to 16777216
+    cache_safety_ttl: 10m               # default; 10s to 24h: SafetyTTL of the in-process key sets
+  exchange:
+    enabled: true                       # default
+    expose_reason: true                 # default: false leaves `reason` out of the 400 answers
+    max_body_bytes: 65536               # default; 1024 to 1048576
+    max_subject_token_bytes: 16384      # default; 512 to 65536, at most max_body_bytes
+    rate_limit:
+      per_client_ip_per_minute: 600     # default; cluster-wide
+      per_client_ip_burst: 100          # default
+      per_subject_per_minute: 300       # default; per issuer and subject (the first pin claim), cluster-wide
+      per_subject_burst: 100            # default
+      exempt_cidrs: []                  # default; example: ["10.20.0.0/16"], a runner network behind NAT; skips the per-address limiter only
+      # per_issuer_per_second:          # retired: refused at start-up with the names of its replacements (R-CI-021)
+  mappings:
+    max_per_issuer: 1000                # default; 1 to 100000
+    cache_safety_ttl: 10m               # default; 10s to 24h: SafetyTTL of the in-process issuers and mappings
+  token:
+    default_ttl: 15m                    # default; 30s to 6h, at most max_ttl
+    max_ttl: 1h                         # default; 30s to 6h, at most auth.tokens.cit.max_ttl (both keys are named when it is larger)
+    min_ttl: 30s                        # default; 1s to 1h: a subject token with less left answers subject_token_expires_too_soon
+  replay:
+    retention_after_expiry: 15m         # default; 0s to 168h: how long a recorded jti outlives the subject token
+    warn_after_exchanges: 10            # default; at least 1: from here every further exchange of one subject token records ci.exchange.repeated
+  issuances:
+    retention: 8760h                    # default; 24h to 87600h: one year; Go durations have no day unit
+  job_token_fallback:
+    enabled: false                      # default; true is refused: the CI_JOB_TOKEN fallback is not built (R-CI-022)
+  issuers: []                           # default: no declaration; trove migrate applies the list (read-only in the API and the UI, Q-CI-16)
+  # issuers:                            # example: the fields of the issuer API in snake_case; a key left out takes the default of R-CI-001
+  #   - name: gitlab-main               # required: ^[a-z0-9][a-z0-9._-]{1,63}$
+  #     kind: gitlab                    # required: gitlab (github and generic are not available)
+  #     issuer: https://gitlab.example.com   # required: https, exactly the iss of the ID tokens
+  #     public_issuer: false            # example: an instance without open sign-up; default true
+  #     allowed_audiences: ["https://packages.example.com"]   # example; default: the base URL and npm:<host name>
+  #     ca_bundle_ref: file:/var/run/secrets/gitlab-ca/ca.crt # example: an instance behind a private CA
 ui:
   readme:
     max_source_bytes: 512KiB            # default; 1KiB to 16MiB: a longer README is cut and flagged `truncated`
@@ -1291,6 +1356,44 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 | `DELETE /api/v1/role-bindings/{role}/{principalRef}` | `unbindRole` | `roles:write` · recent sign-in |
 | `GET /api/v1/authz/me` | `getAuthzMe` | authenticated |
 | `POST /api/v1/authz/check` | `checkPermissions` | authenticated |
+
+**ci**
+
+Answer `501 ci_not_implemented` until their work packages are built ([docs/developer/ci-oidc.md](docs/developer/ci-oidc.md)). A CI token is refused on every operation of this document except the repository-content operations and `GET` and `DELETE /api/v1/tokens/current` (`403 ci_token_restricted`).
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/ci/issuers` | `listCiIssuers` | `ci:read` |
+| `POST /api/v1/ci/issuers` | `createCiIssuer` | `ci:write` · recent sign-in |
+| `GET /api/v1/ci/issuers/{name}` | `getCiIssuer` | `ci:read` |
+| `PUT /api/v1/ci/issuers/{name}` | `replaceCiIssuer` | `ci:write` · recent sign-in |
+| `DELETE /api/v1/ci/issuers/{name}` | `deleteCiIssuer` | `ci:write` · recent sign-in |
+| `GET /api/v1/ci/issuers/{name}/keys` | `getCiIssuerKeys` | `ci:read` |
+| `POST /api/v1/ci/issuers/{name}/keys/refresh` | `refreshCiIssuerKeys` | `ci:write` |
+| `GET /api/v1/ci/issuers/{issuer}/mappings` | `listCiMappings` | `ci:read` |
+| `POST /api/v1/ci/issuers/{issuer}/mappings` | `createCiMapping` | `ci:write` · recent sign-in |
+| `GET /api/v1/ci/issuers/{issuer}/mappings/{name}` | `getCiMapping` | `ci:read` |
+| `PUT /api/v1/ci/issuers/{issuer}/mappings/{name}` | `replaceCiMapping` | `ci:write` · recent sign-in |
+| `DELETE /api/v1/ci/issuers/{issuer}/mappings/{name}` | `deleteCiMapping` | `ci:write` · recent sign-in |
+| `POST /api/v1/ci/issuers/{issuer}/evaluate` | `evaluateCiMappings` | `ci:read` |
+| `GET /api/v1/ci/issuers/{issuer}/snippets/{kind}` | `getCiSnippet` | `ci:read` |
+| `GET /api/v1/ci/issuances` | `listCiIssuances` | `tokens:read` |
+| `GET /api/v1/ci/issuances/{tokenId}` | `getCiIssuance` | `tokens:read` |
+| `POST /api/v1/ci/issuances/revoke` | `revokeCiIssuances` | `tokens:revoke` |
+| `POST /api/v1/auth/oidc/token` | `exchangeCiToken` | public: the subject token is the credential; no trove credential, session or CSRF token is read |
+
+A project's administrators (with `managePolicies`) manage the CI mappings of their project (the owner's decision of 2026-11-02, Q-CI-26):
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/projects/{key}/ci/issuers` | `listProjectCiIssuers` | `ci:read` or project administrator (`managePolicies`) |
+| `GET /api/v1/projects/{key}/ci/mappings` | `listProjectCiMappings` | `ci:read` or project administrator (`managePolicies`) |
+| `POST /api/v1/projects/{key}/ci/mappings` | `createProjectCiMapping` | `ci:write` or project administrator (`managePolicies`) · recent sign-in |
+| `GET /api/v1/projects/{key}/ci/mappings/{issuer}/{name}` | `getProjectCiMapping` | `ci:read` or project administrator (`managePolicies`) |
+| `PUT /api/v1/projects/{key}/ci/mappings/{issuer}/{name}` | `replaceProjectCiMapping` | `ci:write` or project administrator (`managePolicies`) · recent sign-in |
+| `DELETE /api/v1/projects/{key}/ci/mappings/{issuer}/{name}` | `deleteProjectCiMapping` | `ci:write` or project administrator (`managePolicies`) · recent sign-in |
+| `POST /api/v1/projects/{key}/ci/issuers/{issuer}/evaluate` | `evaluateProjectCiMappings` | `ci:read` or project administrator (`managePolicies`) |
+| `GET /api/v1/projects/{key}/ci/issuances` | `listProjectCiIssuances` | `tokens:read` or project administrator (`managePolicies`) |
 
 **projects**
 

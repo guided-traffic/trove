@@ -195,6 +195,25 @@ The tables below list the keys an installation most often sets. Every key with i
 </details>
 
 <details>
+<summary>GitLab CI federation</summary>
+
+The federation is being built; until then these keys are accepted and the CI operations answer `501`. See [the specification](https://github.com/guided-traffic/trove/blob/main/docs/spec/gitlab-ci-oidc.md).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `ci.issuers` | `[]` | GitLab instances declared as trusted CI issuers (`name`, `kind: gitlab`, `issuer`, and the optional fields of the issuer API in snake_case). The migration Job applies them; they are read-only in the UI. With the chart: `config.ci.issuers`. |
+| `ci.token.default_ttl`, `ci.token.max_ttl`, `ci.token.min_ttl` | `15m`, `1h`, `30s` | Lifetime of a CI token; `max_ttl` must not exceed `auth.tokens.cit.max_ttl` (`6h`), or the start fails naming both keys |
+| `ci.exchange.enabled` | `true` | The token exchange endpoint |
+| `ci.exchange.rate_limit.per_client_ip_per_minute`, `.per_subject_per_minute` | `600`, `300` | Cluster-wide limits per client address and per issuer and project |
+| `ci.exchange.rate_limit.exempt_cidrs` | `[]` | Runner networks that skip the per-address limit |
+| `ci.signing_keys.max_stale` | `24h` | A key set older than this fails closed with `503` |
+| `ci.mappings.max_per_issuer` | `1000` | Mappings of one issuer |
+| `ci.replay.retention_after_expiry` | `15m` | How long a used subject token is remembered |
+| `ci.issuances.retention` | `8760h` | How long the record of an issued CI token is kept |
+
+</details>
+
+<details>
 <summary>UI</summary>
 
 | Key | Default | Meaning |

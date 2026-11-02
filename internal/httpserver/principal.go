@@ -1,6 +1,9 @@
 package httpserver
 
-import "github.com/guided-traffic/trove/internal/auth/scope"
+import (
+	"github.com/guided-traffic/trove/internal/auth/scope"
+	"github.com/guided-traffic/trove/internal/ci/claims"
+)
 
 // This file holds the seam between the authentication stage (R-ARCH-005 step 6)
 // and everything behind it: the value the chain stores in the request context.
@@ -23,8 +26,8 @@ const (
 	KindUser PrincipalKind = "user"
 	// KindServiceAccount is a service account (R-AUTH-020).
 	KindServiceAccount PrincipalKind = "service_account"
-	// KindCI is a CI identity, the owner of a CI token (R-AUTH-022). CI tokens
-	// arrive with the CI exchange; the kind is reserved from M1 on.
+	// KindCI is a CI identity, the owner of a CI token (R-AUTH-022): an identity
+	// mapping, issued by the CI exchange (R-CI-007).
 	KindCI PrincipalKind = "ci"
 	// KindBreakGlass is the break-glass administrator (R-AUTH-014). Authorization
 	// grants it the administrator role without a role binding (R-AUTHZ-010).
@@ -116,8 +119,12 @@ type Principal struct {
 	// membership of a user.
 	Groups []GroupRef
 	// Mappings are the CI identity mapping references ("ci:<issuer>/<mapping>")
-	// recorded on a CI token at exchange (R-AUTHZ-002); reserved for M4.
+	// recorded on a CI token at exchange (R-AUTHZ-002).
 	Mappings []string
+	// CI is the frozen use-time bundle of a CI token: inline grants, caps, groups
+	// and the project identity (R-AUTHZ-014, Q-CI-17). Nil for every other
+	// principal; the stage fills it from the token cache entry.
+	CI *claims.Frozen
 	// Credential is what proved the principal.
 	Credential Credential
 	// MinEpoch is the value of the request header Trove-Authz-Min-Epoch of an

@@ -156,13 +156,27 @@ func TestServerTLS(t *testing.T) {
 func TestStructLists(t *testing.T) {
 	t.Run("R-ARCH-020 a list element with a nested type is refused by Describe", func(t *testing.T) {
 		type elem struct {
-			Name  string   `yaml:"name"`
-			Inner []string `yaml:"inner"`
+			Name  string            `yaml:"name"`
+			Inner map[string]string `yaml:"inner"`
 		}
 		type root struct {
 			Items []elem `yaml:"items" default:"[]"`
 		}
-		if _, errs := Describe(reflect.TypeOf(root{})); len(errs) == 0 || !strings.Contains(errs[0].Error(), "scalars only") {
+		if _, errs := Describe(reflect.TypeOf(root{})); len(errs) == 0 || !strings.Contains(errs[0].Error(), "list elements hold") {
+			t.Fatalf("errs = %v", errs)
+		}
+	})
+	t.Run("R-CI-001 a list element may hold pointers to scalars and lists of strings", func(t *testing.T) {
+		type elem struct {
+			Name  string   `yaml:"name"`
+			On    *bool    `yaml:"on"`
+			Skew  *int     `yaml:"skew"`
+			Names []string `yaml:"names"`
+		}
+		type root struct {
+			Items []elem `yaml:"items" default:"[]"`
+		}
+		if _, errs := Describe(reflect.TypeOf(root{})); len(errs) != 0 {
 			t.Fatalf("errs = %v", errs)
 		}
 	})

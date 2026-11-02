@@ -40,6 +40,11 @@ type Operation struct {
 	// request without the header, and bindError answers it with 428
 	// precondition_required (Q-API-43).
 	IfMatchRequired bool
+	// CIAdmitted is x-trove-ci: admitted. A CI token is admitted on the management API only on the
+	// operations of the action form (repository content that needs repository actions only), on public
+	// operations, and on the operations that declare this (GET and DELETE /tokens/current, R-CI-013,
+	// R-CI-017). Every other operation refuses it with 403 ci_token_restricted (Q-CI-18).
+	CIAdmitted bool
 }
 
 // Document is the parsed OpenAPI document.
@@ -106,7 +111,11 @@ func LoadDocument(raw []byte) (*Document, error) {
 			if v, has := op["x-trove-if-match"]; has && v != "required" {
 				problems = append(problems, fmt.Errorf("%s (%s): x-trove-if-match must be required, not %v", pattern, id, v))
 			}
-			o := Operation{ID: id, Pattern: pattern, Permission: perm, Requirement: req, RecentAuth: recent, IfMatchRequired: op["x-trove-if-match"] == "required"}
+			admitted, err := parseCIAdmitted(op)
+			if err != nil {
+				problems = append(problems, fmt.Errorf("%s (%s): x-trove-ci: %w", pattern, id, err))
+			}
+			o := Operation{ID: id, Pattern: pattern, Permission: perm, Requirement: req, RecentAuth: recent, IfMatchRequired: op["x-trove-if-match"] == "required", CIAdmitted: admitted}
 			if isFilesPattern(pattern) {
 				d.files[pattern] = o
 			} else {
@@ -131,6 +140,19 @@ func parseRecentAuth(op map[string]any) (bool, error) {
 		return true, nil
 	}
 	return false, fmt.Errorf("must be true (leave it out instead of %v)", raw)
+}
+
+// parseCIAdmitted reads x-trove-ci of an operation: absent is false, and the only other accepted
+// value is "admitted".
+func parseCIAdmitted(op map[string]any) (bool, error) {
+	raw, has := op["x-trove-ci"]
+	if !has {
+		return false, nil
+	}
+	if v, ok := raw.(string); ok && v == "admitted" {
+		return true, nil
+	}
+	return false, fmt.Errorf("must be admitted (leave the member out to refuse CI tokens), not %v", raw)
 }
 
 // FileOperations returns the operations of the raw file path (/files/...) keyed

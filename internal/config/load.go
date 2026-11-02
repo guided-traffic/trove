@@ -228,6 +228,10 @@ func (l *loader) walkNode(file, prefix string, n *yaml.Node) {
 		}
 		key, ok := l.schema.ByPath(path)
 		if !ok {
+			if why, retired := retiredKeys()[path]; retired {
+				l.fail("%s: %s is retired: %s", at, path, why)
+				continue
+			}
 			msg := fmt.Sprintf("%s: unknown key %q", at, path)
 			if c, near := closest(kn.Value, siblings); near {
 				msg += fmt.Sprintf(" (did you mean %q?)", prefix+c)
@@ -271,6 +275,10 @@ func (l *loader) applyEnv() {
 	for _, name := range names {
 		key, ok := l.schema.ByEnv(name)
 		if !ok {
+			if path, why, retired := retiredEnv(name); retired {
+				l.fail("%s: %s is retired: %s", name, path, why)
+				continue
+			}
 			msg := fmt.Sprintf("unknown environment variable %s", name)
 			if c, near := closest(name, all); near {
 				msg += fmt.Sprintf(" (did you mean %s?)", c)

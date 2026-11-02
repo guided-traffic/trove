@@ -388,9 +388,11 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   verified on kind inside a forced rotation (the first sign-in waited 33 s, 19 journeys green)
 
 **Phase**
-- 🟡 Contracts: schema, packages, OpenAPI operations, configuration, audit events, change areas, limiters, tasks and the
-  seam between the CI token and the evaluator (contract page `docs/developer/ci-oidc.md`, in progress); the GitLab-shaped issuer double
-  `test/oidcstub` (Q-CI-23, Q-CI-24) is built
+- 🟢 Contracts: schema (migrations `00026` to `00028`), packages (`internal/ci`, `claims`, `subject`, `reason`), every
+  operation of R-API-035 and the project routes in OpenAPI (answering 501 until built), configuration `ci.*`, the audit
+  events, change areas, limiters, tasks, metrics, and the seam between the CI token and the evaluator (`claims.Frozen` on
+  the token, the gate for CI tokens) ([ci-oidc.md](../developer/ci-oidc.md), Q-CI-17 to Q-CI-22, ADR-147); the GitLab-shaped
+  issuer double `test/oidcstub` (Q-CI-23, Q-CI-24)
 - ⚪ GitLab as trusted issuer: discovery, signing keys, key rotation; several GitLab instances side by side (R-CI-005)
 - ⚪ GitLab issuers declared in the Helm values (`config.ci.issuers`), applied by `trove migrate`, shown in trove and
   read-only there ([Q-CI-16](../spec/gitlab-ci-oidc.md#q-ci-16--ci-issuers-provisioned-through-the-helm-values-are-read-only-in-trove), owner 2026-11-02)

@@ -133,6 +133,12 @@ type Options struct {
 	// authentication settings and the user preferences (auth_services.go).
 	Auth AuthServices
 	// <<< M1 identity
+	// >>> M4 ci
+	// CI holds the services of the CI federation's operations (ci_services.go);
+	// a nil member answers its operations with 503.
+	CI CIServices
+	// <<< M4 ci
+
 	// >>> M1 endpoints
 	// Endpoints holds the configured endpoints and the exposure-rule service of
 	// the endpoint operations (endpoints_api.go).

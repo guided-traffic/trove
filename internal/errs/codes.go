@@ -197,6 +197,53 @@ const (
 
 // <<< M5a projects
 //
+// >>> M4 ci
+
+// Codes of the GitLab CI OIDC federation (R-CI-002, R-CI-010 to R-CI-014, R-CI-022). The 422 codes
+// also appear as errors[].code of validation_failed with the pointer of the member. The reasons of
+// the exchange itself (R-CI-008) are not codes of this registry: the exchange answers the OAuth error
+// response, whose `reason` lives in internal/ci/reason.
+const (
+	// CodeCINotImplemented answers an operation of the CI federation whose work package is not built
+	// yet; it leaves with the last stub.
+	CodeCINotImplemented = "ci_not_implemented"
+	// CodePinRequired: a mapping of a public issuer has no equals or in leaf on a pin claim.
+	CodePinRequired = "pin_required"
+	// CodePinClaimNotImmutable: pin_claims names a claim that is not an immutable ID.
+	CodePinClaimNotImmutable = "pin_claim_not_immutable"
+	// CodePublicIssuerRequired: public_issuer false on an issuer URL that is public by construction.
+	CodePublicIssuerRequired = "public_issuer_required"
+	// CodeKindNotAvailable: the issuer kind github or generic, which are P1.
+	CodeKindNotAvailable = "kind_not_available"
+	// CodeIssuerManagedByConfiguration: a write of an issuer that ci.issuers declares.
+	CodeIssuerManagedByConfiguration = "issuer_managed_by_configuration"
+	// CodeDiscoveryUnreachable, CodeIssuerMismatch, CodeNoUsableKeys, CodeAlgorithmsNotOffered: the
+	// validation of a created issuer (R-CI-002, R-CI-003).
+	CodeDiscoveryUnreachable = "discovery_unreachable"
+	CodeIssuerMismatch       = "issuer_mismatch"
+	CodeNoUsableKeys         = "no_usable_keys"
+	CodeAlgorithmsNotOffered = "algorithms_not_offered"
+	// The save-time rules of a mapping (R-CI-010, R-CI-011, R-CI-013, R-CI-014).
+	CodeConditionInvalid     = "condition_invalid"
+	CodeCatchAllCondition    = "catch_all_condition"
+	CodeUnprotectedWrite     = "unprotected_write"
+	CodeUnpinnedWrite        = "unpinned_write"
+	CodeEmptyGrant           = "empty_grant"
+	CodeTemplateInvalid      = "template_invalid"
+	CodeTemplateUnanchored   = "template_unanchored"
+	CodeUnknownPolicy        = "unknown_policy"
+	CodeUnknownGroup         = "unknown_group"
+	CodeMappingLimitReached  = "mapping_limit_reached"
+	CodePriorityTaken        = "priority_taken"
+	CodeJobTokenFallbackNone = "job_token_fallback_not_available"
+	// CodeGroupsNotAllowedInProject: a project administrator's mapping lists groups, which are
+	// global grants (Q-CI-26). CodePolicyOutsideProject: it names a policy that is not the project's.
+	CodeGroupsNotAllowedInProject = "groups_not_allowed_in_project"
+	CodePolicyOutsideProject      = "policy_outside_project"
+)
+
+// <<< M4 ci
+//
 // >>> M1 repository
 // Repository model (R-REPO-001 to R-REPO-013, R-ARCH-005). invalid_pattern,
 // reserved_name and out_of_range are registered by the authz and api areas; the
@@ -507,6 +554,33 @@ var registry = []CodeInfo{
 	{CodeSecretValueRequired, Invalid, "Secret value required", "A project administrator gives an upstream secret as a value: a secret reference is the installation's, and a stored credential does not follow a change of url, of an extra host that receives credentials or of forwardAuthOnRedirect."},
 	{CodeOutboundPathRestricted, Invalid, "Outbound path restricted", "A project administrator's remote repository takes the installation's outbound path: outboundProxy.mode direct and a sourceNetwork are an administrator's, and stay only while the url and the extra hosts do."},
 	// <<< M5a projects
+	//
+	// >>> M4 ci
+	{CodeCINotImplemented, NotImplemented, "CI operation not implemented", "The operation is part of the CI federation and is not built in this release yet."},
+	{CodePinRequired, Invalid, "Pin required", "A mapping of a public CI issuer needs an equals or in leaf on an immutable ID claim (project_id, namespace_id) at the top level of its all."},
+	{CodePinClaimNotImmutable, Invalid, "Pin claim not immutable", "pin_claims may name only the immutable ID claims of the issuer kind; a path or name claim changes on rename and transfer."},
+	{CodePublicIssuerRequired, Invalid, "Public issuer required", "An issuer whose URL is public by construction (gitlab.com) is a public issuer."},
+	{CodeKindNotAvailable, Invalid, "Issuer kind not available", "The kinds github and generic are not available in this release."},
+	{CodeIssuerManagedByConfiguration, Conflict, "Issuer managed by the configuration", "The issuer is declared in ci.issuers of the system configuration and applied by trove migrate; change or remove it there. Its mappings stay writable."},
+	{CodeDiscoveryUnreachable, Invalid, "Discovery unreachable", "The discovery document or the key set of the issuer could not be fetched; the detail names the failure class, never a response body."},
+	{CodeIssuerMismatch, Invalid, "Issuer mismatch", "The issuer value of the discovery document is not exactly the configured issuer, or the ci_issuer of an exchange names another issuer than the token's iss."},
+	{CodeNoUsableKeys, Invalid, "No usable keys", "The key set of the issuer holds no key that meets the key rules (use, key_ops, key type, 2048-bit RSA)."},
+	{CodeAlgorithmsNotOffered, Invalid, "Algorithms not offered", "The issuer's id_token_signing_alg_values_supported does not intersect allowed_algorithms."},
+	{CodeConditionInvalid, Invalid, "Condition invalid", "The condition exceeds depth 4, 64 leaves, 256 values in an in list or 512 characters of a regular expression, or a leaf has no or several operators, an invalid glob or a regular expression that does not compile."},
+	{CodeCatchAllCondition, Invalid, "Catch-all condition", "A condition needs at least one leaf; a mapping that matches every token is refused."},
+	{CodeUnprotectedWrite, Invalid, "Unprotected write", "A mapping that grants deploy, overwrite or delete needs ref_protected equals true in its top-level all, or options.allowUnprotectedRefs."},
+	{CodeUnpinnedWrite, Invalid, "Unpinned write", "A write granted through a policy or a group needs a pin on an immutable ID claim; an inline grant with ownership bind_project is the exception on a private issuer."},
+	{CodeEmptyGrant, Invalid, "Empty grant", "A mapping needs at least one policy, group or inline grant."},
+	{CodeTemplateInvalid, Invalid, "Template invalid", "The template has a syntax error, an unknown filter or source, or a bad argument."},
+	{CodeTemplateUnanchored, Invalid, "Template unanchored", "A template in repositories needs literal text next to every substitution, so a claim value alone cannot select a repository."},
+	{CodeUnknownPolicy, Invalid, "Unknown policy", "A mapping names a permission policy that does not exist."},
+	{CodeUnknownGroup, Invalid, "Unknown group", "A mapping names a group that does not exist."},
+	{CodeMappingLimitReached, Invalid, "Mapping limit reached", "The issuer holds ci.mappings.max_per_issuer mappings."},
+	{CodePriorityTaken, Conflict, "Priority taken", "Another mapping of the same tier has this priority; priorities are unique per tier."},
+	{CodeJobTokenFallbackNone, Invalid, "Job-token fallback not available", "The CI_JOB_TOKEN fallback is not built in this release."},
+	{CodeGroupsNotAllowedInProject, Invalid, "Groups not allowed in a project mapping", "A project administrator's mapping grants through the project's own policies and inline grants over its repositories; groups are global grants."},
+	{CodePolicyOutsideProject, Invalid, "Policy outside the project", "A project administrator's mapping may name only policies of its own project."},
+	// <<< M4 ci
 	//
 	// >>> M1 repository
 	{CodeRepositoryDisabled, NotFound, "Repository disabled", "The repository is disabled and takes no part in resolution, download or deploy; the management API still works."},

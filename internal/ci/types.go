@@ -1,0 +1,265 @@
+package ci
+
+import (
+	"time"
+
+	"github.com/guided-traffic/trove/internal/authz"
+	"github.com/guided-traffic/trove/internal/ci/claims"
+	"github.com/guided-traffic/trove/internal/ci/reason"
+	"github.com/guided-traffic/trove/internal/ci/subject"
+)
+
+// Reason is a reason name of the exchange or a management `code` (internal/ci/reason).
+type Reason = reason.Reason
+
+// Kinds of CI issuer (R-CI-001). github and generic are P1 (R-CI-025, R-CI-026): a create with them
+// answers 422 kind_not_available.
+const (
+	KindGitLab  = "gitlab"
+	KindGitHub  = "github"
+	KindGeneric = "generic"
+)
+
+// Sources of a CI issuer (R-CI-001, Q-CI-16).
+const (
+	SourceAPI           = "api"
+	SourceConfiguration = "configuration"
+)
+
+// The tier of administrator mappings; P1 adds "delegation:<uuid>" (R-CI-023).
+const TierSystem = "system"
+
+// ProjectTier is the tier of the mappings of one project (Q-CI-26): "project:<key>". Tiers combine by
+// union and each is first-match inside, so a project's mapping can neither shadow a system mapping nor
+// another project's.
+func ProjectTier(key string) string { return "project:" + key }
+
+// The subject kinds of a mapping (R-CI-009); job_token is P2 (R-CI-022).
+const (
+	SubjectIDToken  = "id_token"
+	SubjectJobToken = "job_token"
+)
+
+// JobTokenFallback is the job_token_fallback setting of an issuer (R-CI-022, P2). The MVP stores it
+// and refuses enabled: true with 422 job_token_fallback_not_available, so the column keeps room for
+// the fallback without a migration.
+type JobTokenFallback struct {
+	Enabled bool `json:"enabled"`
+}
+
+// Issuer is a CI issuer as the API and the services read it (R-CI-001, R-CI-002). Durations are
+// integer seconds on the wire (ClockSkewSeconds, MaxTTLSeconds); the store keeps intervals.
+type Issuer struct {
+	ID          string
+	Name        string
+	Kind        string
+	Issuer      string
+	Description string
+	Enabled     bool
+
+	// DiscoveryURL and JWKSURI are nil for the defaults (<issuer>/.well-known/openid-configuration,
+	// the discovery document's jwks_uri).
+	DiscoveryURL *string
+	JWKSURI      *string
+
+	AllowedAudiences         []string
+	ExclusiveAudience        bool
+	AllowedAlgorithms        []string
+	AllowedTyp               []string
+	AllowMissingTyp          bool
+	ClockSkewSeconds         int
+	RequiredClaims           []string
+	PublicIssuer             bool
+	PinClaims                []string
+	SingleUseSubjectTokens   bool
+	MaxTTLSeconds            *int64
+	CABundleRef              *string
+	UseOutboundProxy         bool
+	JobTokenFallback         JobTokenFallback
+	Source                   string
+	RemovedFromConfiguration bool
+
+	// Version is the ETag (R-CI-002). MappingsVersion is internal and never shown in the API; the
+	// exchange compares it (R-CI-007, Q-CI-15).
+	Version         int64
+	MappingsVersion int64
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+
+	// MappingCount and Keys are filled by List and Get only.
+	MappingCount int
+	Keys         *KeySummary
+}
+
+// Settings is the part of the issuer the subject-token validation reads (R-CI-004).
+func (i Issuer) Settings() subject.Settings {
+	return subject.Settings{
+		Issuer: i.Issuer, AllowedAudiences: i.AllowedAudiences, ExclusiveAudience: i.ExclusiveAudience,
+		AllowedAlgorithms: i.AllowedAlgorithms, AllowedTyp: i.AllowedTyp, AllowMissingTyp: i.AllowMissingTyp,
+		ClockSkew: time.Duration(i.ClockSkewSeconds) * time.Second, RequiredClaims: i.RequiredClaims,
+	}
+}
+
+// IssuerInput is the request body of POST and PUT of an issuer (R-CI-002): the full representation.
+// A nil optional field takes its default, so a PUT is a full replacement; name and issuer of a PUT
+// must equal the stored ones. The read-only members of a GET body are ignored by the decoder.
+type IssuerInput struct {
+	Name        string
+	Kind        string
+	Issuer      string
+	Description string
+	Enabled     *bool
+
+	DiscoveryURL *string
+	JWKSURI      *string
+
+	// AllowedAudiences nil: [<server.base_url>, "npm:<host>"] filled at create time (R-CI-001).
+	AllowedAudiences       []string
+	ExclusiveAudience      *bool
+	AllowedAlgorithms      []string
+	AllowedTyp             []string
+	AllowMissingTyp        *bool
+	ClockSkewSeconds       *int
+	RequiredClaims         []string
+	PublicIssuer           *bool
+	PinClaims              []string
+	SingleUseSubjectTokens *bool
+	MaxTTLSeconds          *int64
+	CABundleRef            *string
+	UseOutboundProxy       *bool
+	JobTokenFallback       *JobTokenFallback
+}
+
+// DeclaredIssuer is an issuer of ci.issuers in the system configuration (R-CI-001, Q-CI-16): the
+// same fields in snake_case, applied by `trove migrate` with source "configuration".
+type DeclaredIssuer = IssuerInput
+
+// KeyInfo is one key of a stored key set as the key status shows it (R-CI-002).
+type KeyInfo struct {
+	KID string
+	KTY string
+	Alg string
+	// Ignored keys do not meet the key rules of R-CI-003 and are reported with the reason.
+	Ignored       bool
+	IgnoredReason string
+}
+
+// KeySummary is the short form on the issuer list: the count and the last fetch or error.
+type KeySummary struct {
+	Usable      int
+	Ignored     int
+	FetchedAt   *time.Time
+	LastError   string
+	LastErrorAt *time.Time
+}
+
+// KeyStatus is the answer of GET …/keys and POST …/keys/refresh (R-CI-002, R-CI-003). It holds the
+// failure class, the HTTP status and the host of a failed fetch, never bytes of a response body.
+type KeyStatus struct {
+	Issuer        string
+	JWKSURI       string
+	Keys          []KeyInfo
+	FetchedAt     *time.Time
+	NextRefreshAt *time.Time
+	LastError     string
+	LastErrorAt   *time.Time
+}
+
+// RefreshTrigger is the trigger label of trove_ci_signing_keys_refresh_total (R-CI-020).
+type RefreshTrigger string
+
+// The triggers.
+const (
+	TriggerScheduled  RefreshTrigger = "scheduled"
+	TriggerUnknownKID RefreshTrigger = "unknown_kid"
+	TriggerAdmin      RefreshTrigger = "admin"
+)
+
+// Mapping is an identity mapping (R-CI-009, R-CI-019). Match, Grants and Options are the stored
+// forms of ci_mappings.match, .grants and .options (lowerCamelCase JSON, the wire form).
+type Mapping struct {
+	ID          string
+	IssuerID    string
+	Issuer      string // the issuer's name
+	PrincipalID string
+	// Ref is "ci:<issuer>/<mapping>" (R-CI-009, Q-CI-10).
+	Ref  string
+	Name string
+	Tier string
+	// Project is the project key of a project-tier mapping, "" otherwise.
+	Project       string
+	Priority      int
+	Enabled       bool
+	SubjectKinds  []string
+	Match         claims.Node
+	Grants        claims.Spec
+	MaxTTLSeconds *int64
+	Options       claims.Options
+	Description   string
+	Version       int64
+	CreatedBy     string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+// MappingOptions are the options of a mapping (R-CI-011, R-CI-012).
+type MappingOptions = claims.Options
+
+// MappingInput is the request body of POST and PUT of a mapping (R-CI-019). A nil optional field
+// takes its default (enabled true, subjectKinds ["id_token"], options deny and false); the name of a
+// PUT must equal the stored one.
+type MappingInput struct {
+	// Issuer names the issuer of a project mapping's create (Q-CI-26); the issuer routes carry it in the
+	// path and leave it empty.
+	Issuer        string
+	Name          string
+	Description   string
+	Priority      int
+	Enabled       *bool
+	SubjectKinds  []string
+	Match         claims.Node
+	Grants        claims.Spec
+	MaxTTLSeconds *int64
+	Options       *MappingOptions
+}
+
+// MappingResult is a saved mapping with the warnings of its save (R-CI-010, R-CI-011).
+type MappingResult struct {
+	Mapping  Mapping
+	Warnings []claims.Warning
+}
+
+// IssuerChoice is what a project administrator sees of an issuer (Q-CI-26): enough to choose one.
+type IssuerChoice struct {
+	Name         string
+	Kind         string
+	Issuer       string
+	PublicIssuer bool
+}
+
+// MappingSet is the mapping set of one issuer as a replica evaluates it: the enabled and the
+// disabled mappings in evaluation order (tier, priority) with the issuer versions they were read at
+// (R-CI-009, Q-CI-15). The exchange compares MappingsVersion with the issuer row it locks.
+type MappingSet struct {
+	IssuerID        string
+	IssuerVersion   int64
+	MappingsVersion int64
+	Mappings        []Mapping
+}
+
+// Actor is who performs a management write: the caller of the request, as the audit event records
+// it, the same value the project service takes (internal/project).
+type Actor = authz.Subject
+
+// OnlyTier returns the set restricted to the mappings of one tier, for the dry run of a project
+// administrator, who must not see the trace of any other tier (Q-CI-26).
+func (s MappingSet) OnlyTier(tier string) MappingSet {
+	out := s
+	out.Mappings = nil
+	for _, m := range s.Mappings {
+		if m.Tier == tier {
+			out.Mappings = append(out.Mappings, m)
+		}
+	}
+	return out
+}

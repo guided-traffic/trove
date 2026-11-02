@@ -48,6 +48,7 @@ func SubjectOf(ctx context.Context) authz.Subject {
 		ID:         p.ID,
 		Name:       p.Name,
 		Mappings:   p.Mappings,
+		CI:         p.CI,
 		Scope:      p.Credential.Scope,
 		TokenID:    p.Credential.TokenID,
 		SessionID:  p.Credential.SessionID,
