@@ -327,6 +327,8 @@ to denial-of-service attempts.
   which after the stable release is rare. Main installation and Bastion talk only when they speak the same interface
   version; on a mismatch the Bastion treats the main installation as unreachable (the grace period, then nothing) and
   raises a Prometheus alert (a metric plus a rule its chart ships)
+- ⚪ Downloads served from the Bastion's cache are not recorded in the audit (owner, 2026-11-02); the main installation's
+  audit sees the fetches of cache misses, made with the caller's token, and the Bastion's metrics count what it serves
 - ⚪ The main installation counts the real client: the Bastion stops abuse before a request reaches the main installation,
   and the main installation lists the Bastion's addresses in `server.trusted_proxies`, so its per-address limits apply to
   the client and not to the Bastion
