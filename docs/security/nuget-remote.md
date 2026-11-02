@@ -64,7 +64,7 @@ package is inspected after the digest check and before the item is committed, ou
   `trove_nuget_remote_unparseable_packages_total{repo}`, and gets no NuGet row: no ZIP end record in the window a ZIP reader searches, a ZIP archive without a
   `.nuspec` at its root, a `.nuspec` that is not well-formed XML. The bytes are never altered. A client cannot read such content as a package either.
 - Every other refusal of the reader - a limit, a name the push road refuses, duplicate or overlapping entries, a central directory the local headers
-  contradict, encryption, several `.nuspec` files, a `.nuspec` of another encoding or shape - and an ID or version that does not parse is 502
+  contradict, a second end record after the one the reader reads or an entry `archive/zip` would read from another offset (Q-NUGET-89), encryption, several `.nuspec` files, a `.nuspec` of another encoding or shape - and an ID or version that does not parse is 502
   `upstream_package_mismatch`, nothing stored: the identity cannot be checked, and another reader may read the archive as a package
   ([remote_fill.go](../../internal/formats/nuget/remote_fill.go) `InspectFill`, `notAPackage`; Q-NUGET-84).
 - The `.nuspec` file of a remote is fetched from the upstream as its own cached artifact and is not checked (Q-NUGET-54).

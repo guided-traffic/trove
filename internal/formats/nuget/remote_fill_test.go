@@ -1,11 +1,30 @@
 package nuget
 
 import (
+	"encoding/binary"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/guided-traffic/trove/internal/errs"
+	"github.com/guided-traffic/trove/internal/formats/nuget/nupkg"
 )
+
+// withSecondEndRecord appends to an archive a copy of its central directory and end record, one
+// byte after it, and makes the appended bytes the comment of the original end record. The
+// package reader reads the record whose comment ends at the end of the file, archive/zip the last
+// record that fits, so the two would read two directories: the reader refuses it with
+// nupkg.ErrLocalMismatch (Q-NUGET-89).
+func withSecondEndRecord(pkg []byte) []byte {
+	const eocdLen = 22
+	end := pkg[len(pkg)-eocdLen:]
+	cdSize, cdOff := int(binary.LittleEndian.Uint32(end[12:])), int(binary.LittleEndian.Uint32(end[16:]))
+	second := append(append([]byte(nil), pkg[cdOff:cdOff+cdSize]...), end...)
+	second = append(second, 'x')
+	out := append([]byte(nil), pkg...)
+	binary.LittleEndian.PutUint16(out[len(out)-2:], uint16(len(second)))
+	return append(out, second...)
+}
 
 // otherNuspec is the .nuspec of the package B an upstream serves under the path of package A.
 func otherNuspec(extra string) []byte {
@@ -32,12 +51,20 @@ func TestR_NUGET_015_APackageWhoseIdentityCannotBeCheckedIs502AndStoresNothing(t
 		"bytes after the end record":                  trailing,
 		"an ID the upstream rule refuses":             buildNupkg(t, "Acme..Widgets", "1.2.3"),
 		"a version that does not parse":               buildNupkg(t, "Acme.Widgets", "one.two"),
+		"a second end record after the one it reads":  withSecondEndRecord(buildNupkg(t, "Other.Pkg", "1.2.3")),
 	} {
 		got, err := inspectFill(t, path, pkg)
 		e, ok := errs.As(err)
 		if got != nil || !ok || e.Kind != errs.UpstreamFailed || e.Code != errs.CodeUpstreamPackageMismatch {
 			t.Errorf("%s: %+v %v, want 502 upstream_package_mismatch and no inspection", name, got, err)
 		}
+	}
+	// The refusal of a second end record is the reader's ErrLocalMismatch (Q-NUGET-89), which is
+	// none of the three refusals that pass as "no package" (Q-NUGET-84), also for the package the
+	// request names.
+	got, err := inspectFill(t, path, withSecondEndRecord(buildNupkg(t, "Acme.Widgets", "1.2.3")))
+	if e, ok := errs.As(err); got != nil || !ok || e.Code != errs.CodeUpstreamPackageMismatch || !errors.Is(err, nupkg.ErrLocalMismatch) {
+		t.Errorf("a second end record: %+v %v, want 502 upstream_package_mismatch caused by %v", got, err, nupkg.ErrLocalMismatch)
 	}
 }
 
