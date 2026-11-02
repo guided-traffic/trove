@@ -119,10 +119,13 @@ func TestR_NUGET_012_TheDispatcherNamesTheRoutesThatTakeTheAPIKey(t *testing.T) 
 		{"HEAD", "/api/keyed/local/package/Acme.Widgets/1.0.0", false},
 		{"GET", "/api/keyed/local/index.json", false},
 		{"PUT", "/api/keyed/local/other/x", false},
-		// Refused by the dispatcher before the match.
+		// Refused by the dispatcher before the match: a key of no valid shape, an empty
+		// segment, a dot segment.
 		{"PUT", "/api/keyed/NOPE/package", false},
 		{"PUT", "/api/keyed/local//package", false},
 		{"PUT", "/api/keyed/local/x/%2e%2e/package", false},
+		// Passed by the dispatcher and refused by the match of the fixture's format: its
+		// routes match a trailing slash strictly, and none takes PATCH (405).
 		{"PUT", "/api/keyed/local/package/", false},
 		{"PATCH", "/api/keyed/local/package", false},
 		// A format without an API-key route, one without routes, and paths outside the prefixes.
