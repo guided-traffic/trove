@@ -230,6 +230,8 @@ Details: [roadmap M3](../coverage/roadmap.md#m3--nuget) · spec: [formats/nuget.
   with `NU1102`, and a push answers 403 (`TestNuGetEndpoint`, Q-NUGET-71)
 
 **Release**
+- 🟢 `v0.8.0` (2026-11-02, Test and Release run 41402625188): the NuGet format as built, with the open findings F-20 to F-29;
+  not the release that closes the phase
 - ⚪ the release that closes the phase (cut by Semantic Release; the version goes into the table)
 
 ## Phase 5 · GitLab CI OIDC (M4)
