@@ -387,6 +387,12 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   `web/e2e/support.ts`, [Q-AUTH-194](../spec/identity-and-authentication.md#q-auth-194--the-e2e-sign-ins-wait-out-the-break-glass-rotation-hold));
   verified on kind inside a forced rotation (the first sign-in waited 33 s, 19 journeys green)
 
+**The owner's requests during the run (2026-11-02)**
+- 🟡 The Browse screen reinvented: a real two-pane browser over the full height with a compact tree toolbar (filter as you
+  type, filter panel with chips, sort), a details pane with the selection's path and actions, folders as the shared data
+  table, clear empty states (R-UI-010, R-UI-011; owner: "the worst design I have ever seen")
+- 🟢 The manual uses the width of the screen (phase 8, beta documentation; Q-UI-97)
+
 **Phase**
 - 🟢 Contracts: schema (migrations `00026` to `00028`), packages (`internal/ci`, `claims`, `subject`, `reason`), every
   operation of R-API-035 and the project routes in OpenAPI (answering 501 until built), configuration `ci.*`, the audit
