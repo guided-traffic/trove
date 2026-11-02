@@ -326,7 +326,9 @@ which no M1 test uses: the read and write classes are tested with tokens, the an
 `test/integration/api`. A test that spends a budget mints its own tokens and keeps each token within one window's budget. A
 sleep between requests is a poor substitute: the 150 ms that R-API-052 slept covered only its patches, so on a fast cluster its
 writes and those of R-API-014 (59 on one token) fit into one window, and two of five runs got a 429. The write cases of E1.11
-(R-API-014 with 18 writes, R-API-052 with 41) therefore each have a token of their own under `withWriteBudget`. The 50 browser
+(R-API-014 with 18 writes, R-API-052 with 41) therefore each have a token of their own under `withWriteBudget`; run on the dev
+cluster on 2026-11-02 after the fix wave of phase 4, `make e2e SET=access-long` is green, 56 tests and subtests in 14 min 27 s
+(E1.1 153 s, E1.11 310 s and its journeys 77 s, E1.13 295 s), with no write refused. The 50 browser
 logins of R-AUTH-042 are paced at 2.2 s so they stay under the flow-start limit of the host's address, which counts per address
 and minute, not per token.
 
