@@ -11,7 +11,8 @@ import (
 	"github.com/guided-traffic/trove/internal/ci/reason"
 )
 
-func TestR_CI_007_TheScopeGrammar(t *testing.T) {
+// R-CI-007: the pure scope grammar; the exchange that applies it is W4's, so the name carries no requirement ID.
+func TestTheScopeGrammar(t *testing.T) {
 	ok := []struct {
 		scope string
 		want  []claims.ScopeItem
@@ -24,7 +25,7 @@ func TestR_CI_007_TheScopeGrammar(t *testing.T) {
 		{"", nil},
 	}
 	for _, c := range ok {
-		t.Run("R-CI-007 "+strconv.Quote(c.scope)+" parses", func(t *testing.T) {
+		t.Run(strconv.Quote(c.scope)+" parses", func(t *testing.T) {
 			got, err := claims.ParseScope(c.scope)
 			if err != nil {
 				t.Fatal(err)
@@ -53,7 +54,7 @@ func TestR_CI_007_TheScopeGrammar(t *testing.T) {
 		`read:"x"`, "read:x\\y", "read:é", strings.Join(fiftyOne, " "),
 	}
 	for _, s := range bad {
-		t.Run("R-CI-007 "+strconv.Quote(s[:min(len(s), 40)])+" is scope_malformed", func(t *testing.T) {
+		t.Run(strconv.Quote(s[:min(len(s), 40)])+" is scope_malformed", func(t *testing.T) {
 			_, err := claims.ParseScope(s)
 			if r, _ := reasonOf(t, err); r != reason.ScopeMalformed {
 				t.Fatalf("%s", r)
@@ -62,7 +63,8 @@ func TestR_CI_007_TheScopeGrammar(t *testing.T) {
 	}
 }
 
-func TestR_CI_007_TheSelectorSyntaxIsTheAuthorizationEngines(t *testing.T) {
+// R-CI-007: the pure scope grammar; the exchange that applies it is W4's, so the name carries no requirement ID.
+func TestTheSelectorSyntaxIsTheAuthorizationEngines(t *testing.T) {
 	for _, sel := range []string{
 		"npm-internal", "ab", "a", "npm-team-*", "n?m", "*", "@any", "@any-local", "@any-remote", "@any-virtual",
 		"@any-local:npm", "npm-*:npm", "npm-internal:npm", "@any:", "@anything", "NPM", "-npm", "npm_x", strings.Repeat("a", 64),
@@ -81,7 +83,8 @@ func inline(repos []string, actions ...claims.Action) claims.InlineGrant {
 	return claims.InlineGrant{Repositories: repos, Packages: &claims.PatternSet{Include: []string{"@acme-billing/*"}}, Actions: actions, Ownership: claims.OwnershipBindProject}
 }
 
-func TestR_CI_007_NarrowingWithTheMatchedGrants(t *testing.T) {
+// R-CI-007: the pure scope grammar; the exchange that applies it is W4's, so the name carries no requirement ID.
+func TestNarrowingWithTheMatchedGrants(t *testing.T) {
 	r := claims.Rendered{
 		Policies: []string{"ci-read-internal"},
 		Inline:   []claims.InlineGrant{inline([]string{"npm-internal"}, claims.Read, claims.Deploy), inline([]string{"nuget-internal", "nuget-team-*"}, claims.Read, claims.Deploy)},
@@ -94,7 +97,7 @@ func TestR_CI_007_NarrowingWithTheMatchedGrants(t *testing.T) {
 		}
 		return it
 	}
-	t.Run("R-CI-007 an item the grants do not hold is scope_not_granted", func(t *testing.T) {
+	t.Run("an item the grants do not hold is scope_not_granted", func(t *testing.T) {
 		npmOnly := claims.Rendered{Inline: r.Inline[:1]}
 		_, err := claims.Narrow(npmOnly, items("deploy:nuget-internal"), noPolicy)
 		if rr, _ := reasonOf(t, err); rr != reason.ScopeNotGranted {
@@ -105,7 +108,7 @@ func TestR_CI_007_NarrowingWithTheMatchedGrants(t *testing.T) {
 			t.Fatalf("no partial token: %s", rr)
 		}
 	})
-	t.Run("R-CI-007 deploy is narrowed away by a read scope", func(t *testing.T) {
+	t.Run("deploy is narrowed away by a read scope", func(t *testing.T) { // R-CI-007
 		got, err := claims.Narrow(r, items("read:npm-internal"), noPolicy)
 		if err != nil {
 			t.Fatal(err)
@@ -114,7 +117,7 @@ func TestR_CI_007_NarrowingWithTheMatchedGrants(t *testing.T) {
 			t.Fatalf("%q %+v", claims.FormatScope(got, nil), got)
 		}
 	})
-	t.Run("R-CI-007 a key pattern grant holds a key item; the narrowed grant keeps only what may overlap", func(t *testing.T) {
+	t.Run("a key pattern grant holds a key item; the narrowed grant keeps only what may overlap", func(t *testing.T) { // R-CI-007
 		got, err := claims.Narrow(r, items("deploy:nuget-team-x"), noPolicy)
 		if err != nil {
 			t.Fatal(err)
@@ -123,7 +126,7 @@ func TestR_CI_007_NarrowingWithTheMatchedGrants(t *testing.T) {
 			t.Fatalf("%q", s)
 		}
 	})
-	t.Run("R-CI-007 a class item the text cannot decide is asked through held", func(t *testing.T) {
+	t.Run("a class item the text cannot decide is asked through held", func(t *testing.T) { // R-CI-007
 		asked := ""
 		held := func(a claims.Action, sel string) bool {
 			asked = string(a) + ":" + sel
@@ -140,13 +143,13 @@ func TestR_CI_007_NarrowingWithTheMatchedGrants(t *testing.T) {
 			t.Fatal("held refused, the inline grants could not decide, and it was granted")
 		}
 	})
-	t.Run("R-CI-007 an item without selector is @any", func(t *testing.T) {
+	t.Run("an item without selector is @any", func(t *testing.T) { // R-CI-007
 		got, err := claims.Narrow(r, items("read"), func(_ claims.Action, sel string) bool { return sel == "@any" })
 		if err != nil || claims.FormatScope(got, nil) != "read:npm-internal read:nuget-internal read:nuget-team-*" {
 			t.Fatalf("%q %v", claims.FormatScope(got, nil), err)
 		}
 	})
-	t.Run("R-CI-007 no scope is no narrowing; the response lists every item in grant order", func(t *testing.T) {
+	t.Run("no scope is no narrowing; the response lists every item in grant order", func(t *testing.T) { // R-CI-007
 		got, err := claims.Narrow(r, nil, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -232,7 +235,7 @@ func TestR_CI_012_ACapBoundsOnlyItsOwnMapping(t *testing.T) {
 			t.Fatalf("%s", r)
 		}
 	})
-	t.Run("R-CI-007 narrowing a bundle narrows every mapping", func(t *testing.T) {
+	t.Run("narrowing a bundle narrows every mapping", func(t *testing.T) { // R-CI-007
 		items, _ := claims.ParseScope("read:web-npm")
 		got, err := claims.NarrowFrozen(f, items, nil)
 		if err != nil {
