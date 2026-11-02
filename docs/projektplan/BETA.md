@@ -14,25 +14,23 @@ The beta release is what the [roadmap](../coverage/roadmap.md) builds in M0 to M
 the owner walkthrough. Details, exit criteria and requirement IDs of every phase are in the roadmap
 section linked under each heading.
 
-**Versions:** trove stays on major version 0 until the owner decides otherwise. Semantic Release
-sets the versions from the conventional commits on `main` (`feat` minor, `fix` patch). A phase closes
-with the release that the pipeline cuts from its commits; the Version column records it when the phase
-completes. The beta release is the release Semantic Release cuts from the commits that close phase 8; no
-version number is expected for it ([ADR-124](../decisions.md#adr-124--releases-stay-on-major-version-0), owner, 2026-10-31).
+**Releases:** Semantic Release cuts the releases from the conventional commits on `main`, on major version 0
+([ADR-124](../decisions.md#adr-124--releases-stay-on-major-version-0)). This plan tracks what is built, not release
+numbers (owner, 2026-11-02).
 
 ## Where we are
 
-| Phase | Result | Version | Status |
-|---|---|---|---|
-| [0 · Specification](#phase-0--specification) | Feature catalog, specification, decisions | — | 🟢 |
-| [1 · Foundation](#phase-1--foundation-m0) | Skeleton, HA-shaped local stack, roles, drain-safe shutdown, TLS everywhere, endpoint foundation | `v0.1.0` | 🟢 |
-| [2 · Access core](#phase-2--access-core-m1) | Login, tokens, permissions, repositories, admin UI | `v0.3.0` | 🟢 |
-| [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | `v0.6.0` | 🟢 |
-| [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual | — | 🟡 |
-| [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | — | ⚪ |
-| [6 · Vulnerability scanning](#phase-6--vulnerability-scanning-m4b) | Own advisory mirror, findings and vulnerability report, malicious versions blocked, npm and NuGet audits from trove's data | — | ⚪ |
-| [7 · HA, backup, Helm](#phase-7--ha-hardening-backup-and-helm-m5) | Drains and failovers without errors, backup and restore; beta candidate | — | ⚪ |
-| [8 · Walkthrough and beta](#phase-8--walkthrough-and-beta-release) | Owner review, objections fixed; **beta release** | — | ⚪ |
+| Phase | Result | Status |
+|---|---|---|
+| [0 · Specification](#phase-0--specification) | Feature catalog, specification, decisions | 🟢 |
+| [1 · Foundation](#phase-1--foundation-m0) | Skeleton, HA-shaped local stack, roles, drain-safe shutdown, TLS everywhere, endpoint foundation | 🟢 |
+| [2 · Access core](#phase-2--access-core-m1) | Login, tokens, permissions, repositories, admin UI | 🟢 |
+| [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | 🟢 |
+| [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual | 🟡 |
+| [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | ⚪ |
+| [6 · Vulnerability scanning](#phase-6--vulnerability-scanning-m4b) | Own advisory mirror, findings and vulnerability report, malicious versions blocked, npm and NuGet audits from trove's data | ⚪ |
+| [7 · HA, backup, Helm](#phase-7--ha-hardening-backup-and-helm-m5) | Drains and failovers without errors, backup and restore; beta candidate | ⚪ |
+| [8 · Walkthrough and beta](#phase-8--walkthrough-and-beta-release) | Owner review, objections fixed; **beta release** | ⚪ |
 
 ## Testing rule for every registry
 
@@ -95,9 +93,6 @@ Details: [roadmap M0](../coverage/roadmap.md#m0--foundation)
 - 🟢 Listener certificate rotated under load without a failed request
 - 🟢 A second endpoint with its own host and certificate answers `421` for a foreign host and serves only its route families
 
-**Release**
-- 🟢 `v0.1.0`
-
 ## Phase 2 · Access core (M1)
 
 Details: [roadmap M1](../coverage/roadmap.md#m1--access-core)
@@ -135,9 +130,6 @@ Details: [roadmap M1](../coverage/roadmap.md#m1--access-core)
 **Tests**
 - 🟢 Integration tests: login, tokens, permission evaluation, raw transfer
 - 🟢 E2E tests: browser journeys across replicas with random distribution (Playwright with axe), and the exit checks E1.1, E1.8, E1.11, E1.13 and E1.14 on the kind cluster
-
-**Release**
-- 🟢 `v0.3.0`
 
 ## Phase 3 · npm registry (M2)
 
@@ -179,9 +171,6 @@ Details: [roadmap M2](../coverage/roadmap.md#m2--npm) · spec: [formats/npm.md](
   repository's token scope, and Test and Release found a light accent below 4.5:1; all fixed before release
 - 🟢 Long tests out of the per-change pipeline (owner, 2026-11-01): `failover` and `npm-ha` run in
   `HA and Performance (nightly)`
-
-**Release**
-- 🟢 `v0.6.0` (2026-11-01, Test and Release run 41349077102)
 
 ## Phase 4 · NuGet (.NET) registry (M3)
 
@@ -229,11 +218,6 @@ Details: [roadmap M3](../coverage/roadmap.md#m3--nuget) · spec: [formats/nuget.
 - 🟢 NuGet e2e: `dotnet restore` through a customer endpoint gets only exposed versions; a hidden version fails to resolve
   with `NU1102`, and a push answers 403 (`TestNuGetEndpoint`, Q-NUGET-71)
 
-**Release**
-- 🟢 `v0.8.0` (2026-11-02, Test and Release run 41402625188): the NuGet format as built, with the open findings F-20 to F-29;
-  not the release that closes the phase
-- ⚪ the release that closes the phase (cut by Semantic Release; the version goes into the table)
-
 ## Phase 5 · GitLab CI OIDC (M4)
 
 Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md)
@@ -246,7 +230,6 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - ⚪ Reference pipeline: `.gitlab-ci.yml` publishing an npm package and pushing a NuGet package
 - ⚪ Integration tests: invalid signatures, wrong audience, expired tokens, fork merge requests
 - ⚪ E2E tests against a GitLab test instance for npm and NuGet, with a `web` node drained during the run
-- ⚪ the release that closes the phase (cut by Semantic Release; the version goes into the table)
 
 ## Phase 6 · Vulnerability scanning (M4b)
 
@@ -279,9 +262,6 @@ applies to the npm and NuGet parts of this phase.
 - ⚪ E2E tests: npm, pnpm and Yarn audits and a blocked install, `dotnet restore` audit warnings and a blocked restore, through local, remote and virtual repositories on several `web` replicas with random distribution; browser journeys of the report, triage, blocking and export
 - ⚪ E2E: a full sync drained mid-run finishes on another `worker`; the set once with Valkey stopped
 - ⚪ Performance bounds V-1 to V-9 with 100,000 stored versions
-
-**Release**
-- ⚪ the release that closes the phase (cut by Semantic Release; the version goes into the table)
 
 ## Phase 7 · HA hardening, backup and Helm (M5)
 
@@ -317,8 +297,8 @@ Details: [roadmap M5](../coverage/roadmap.md#m5--ha-hardening-and-helm-ga) · sp
 **Helm chart and release**
 - ⚪ Chart complete: values reference and schema, autoscaling, network policies, monitoring integration
 - ⚪ Security documentation in [docs/security](../security/README.md) and security review
-- 🟡 Release pipeline: `Release Docker & Helm` publishes the image `guidedtraffic/trove` (Docker Hub) with provenance and SBOM attestations and the chart (GitHub Pages) with each release ([releasing.md](../developer/releasing.md#the-release-pipeline)); it has published every release from `v0.1.1` to `v0.5.0`. `v0.1.0` went to `ghcr.io` through the pipeline before it. Open: E5.8, the beta candidate installed by digest from there passing E2.1's smoke scenarios
-- ⚪ Beta candidate published (the release that closes phase 7)
+- 🟡 Release pipeline: `Release Docker & Helm` publishes the image `guidedtraffic/trove` (Docker Hub) with provenance and SBOM attestations and the chart (GitHub Pages) with each release ([releasing.md](../developer/releasing.md#the-release-pipeline)); it publishes every release since the switch to the organisation's CI standard. Open: E5.8, the beta candidate installed by digest from there passing E2.1's smoke scenarios
+- ⚪ Beta candidate published
 
 ## Phase 8 · Walkthrough and beta release
 
@@ -342,7 +322,7 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
 - 🟡 Design language of the owner's example screens in both colour schemes (Q-UI-88, owner 2026-11-01): palette, shell and
   theme button built and in the component tests; open: the browser tier's colour-contrast check (light and dark) in CI and the
   owner's review at the walkthrough
-- ⚪ **Beta release**: the release that closes phase 8; its version goes into the table
+- ⚪ **Beta release** published
 
 ---
 

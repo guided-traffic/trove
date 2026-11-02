@@ -59,15 +59,14 @@ Hard rules, also for every subagent (put them into every subagent prompt):
    in document order: block A as one phase; in block B each format (F0, F1, …) is one phase; in
    block C each milestone (M6, M7, …) is one phase; in block D one table row is one phase; in block
    E one bullet is one phase; blocks F and G need a spec page first, which is then the phase.
-4. Version of the phase: none is chosen in advance. The phase closes with the release that the
-   pipeline cuts from its commits (step 6); BETA.md's **Version** column records it. Check that the
-   previous phase's release exists (`git tag --list 'v0.*' --sort=-v:refname | head -1`).
+4. Release numbers are not planned and not recorded: the pipeline releases (step 6), and BETA.md and FULL.md
+   track only what is built (owner, 2026-11-02).
 5. If `Test and Release` on `main` is red (`gh run list --workflow "Test and Release" --branch main --limit 5`),
    repairing it is the first task of this run. A red leg of `HA and Performance (nightly)`
    (`gh run list --workflow "HA and Performance (nightly)" --limit 3`) is not: it becomes an open finding in
    [section 8](#8--open-findings), unless the phase's own exit criteria are that leg.
-6. Tell the owner in two or three German sentences which phase, which version and what it
-   delivers, then continue without waiting.
+6. Tell the owner in two or three German sentences which phase and what it delivers, then continue
+   without waiting.
 
 ## 2 · Plan the phase
 
@@ -157,7 +156,7 @@ The phase is done only when all of the following hold:
   spec deviations recorded, coverage numbers regenerated.
 - The white-label scan prints nothing, and `git log <previous tag>..HEAD --format=%B` contains no
   attribution trailer and no mention of an AI.
-- BETA.md or FULL.md shows the phase row at 🟢 with its version, the items at 🟢, and today's date
+- BETA.md or FULL.md shows the phase row at 🟢, the items at 🟢, and today's date
   under **Last updated**; the [roadmap](../coverage/roadmap.md) is consistent with what was built.
 
 ## 5 · Push and get the pipeline green
@@ -176,15 +175,13 @@ cuts the release from the commits on `main` ([release flow](../developer/releasi
 and `Release Docker & Helm` publishes the image `guidedtraffic/trove` and the chart.
 
 1. Commit the phase's work with conventional commit messages: `feat:` for what the phase adds, `fix:`
-   for fixes, `docs:` or `chore:` for the plan and the rest. Commit the final plan update (phase row 🟢,
-   Version column still open) with them.
+   for fixes, `docs:` or `chore:` for the plan and the rest. Commit the final plan update (phase row 🟢)
+   with them.
 2. Push, and wait until `Test and Release` is green on that commit. Semantic Release has then cut the
    release of the push, if the commits held a `feat` or a `fix`, and `Release Docker & Helm` has run for
    it: `gh run list --workflow "Release Docker & Helm" --limit 3`, then `gh run watch <run-id> --exit-status`.
-3. Record the release that closes the phase: `git pull --rebase origin main` (the release commit moves
-   `main` with the coverage badge), then the newest release (`gh release list --limit 3`) into the
-   **Version** column of the phase's row in BETA.md. Commit it as `docs(plan): record vX.Y.Z as the
-   release of phase N` and push. That commit cuts no release.
+3. `git pull --rebase origin main` (the release commit moves `main` with the coverage badge). The release
+   number goes into no plan: BETA.md and FULL.md track features only (owner, 2026-11-02).
 4. Check the published artifacts of the release: `gh release view vX.Y.Z`, the image
    `guidedtraffic/trove:X.Y.Z` on Docker Hub, and the chart index
    `https://guided-traffic.github.io/trove/index.yaml`. The release notes are generated from the commit
@@ -192,7 +189,7 @@ and `Release Docker & Helm` publishes the image `guidedtraffic/trove` and the ch
 
 ## 7 · Report to the owner
 
-In German, short: the phase and its version; what was built; how it was verified (CI run links,
+In German, short: the phase; what was built; how it was verified (CI run links,
 test counts, exit criteria with their evidence); the decisions taken (their IDs); deviations and
 open items; the next phase.
 
