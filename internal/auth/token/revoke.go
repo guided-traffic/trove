@@ -88,15 +88,24 @@ func (s *Service) revokeTree(ctx context.Context, tx meta.Tx, qs *q.Queries, c p
 		if !r.Root {
 			why = ReasonParentRevoked
 		}
-		if err := s.recordRevoked(ctx, tx, c, r.ID, why, nil); err != nil {
+		if err := s.recordRevoked(ctx, tx, c, r.ID, r.OwnerID, why, nil); err != nil {
 			return nil, err
 		}
 	}
 	return out, nil
 }
 
-func (s *Service) recordRevoked(ctx context.Context, tx meta.Tx, c principal.Caller, id, reason string, cascaded []string) error {
+func (s *Service) recordRevoked(ctx context.Context, tx meta.Tx, c principal.Caller, id, ownerID, reason string, cascaded []string) error {
 	d := map[string]any{"reason": reason, "cascaded": orEmpty(cascaded)}
+	// The event of a token of a project service account carries the project
+	// (Q-AUTHZ-169).
+	projects, err := principal.Queries(tx).IdentityIsProjectServiceAccount(ctx, ownerID)
+	if err != nil {
+		return err
+	}
+	if len(projects) > 0 {
+		d["project"] = projects[0]
+	}
 	return s.o.Recorder.RecordTx(ctx, tx, audit.Event{
 		Type: audit.EventTokenRevoked, Outcome: audit.Success, Reason: reason, Actor: c.Actor, Source: c.Source,
 		Subject: audit.Subject{Kind: "token", ID: id}, Details: mustJSON(d),
@@ -185,7 +194,7 @@ func (s *Service) RevokeAll(ctx context.Context, c principal.Caller, principalID
 			return err
 		}
 		for _, id := range ids {
-			if err := s.recordRevoked(ctx, tx, c, id, reason, nil); err != nil {
+			if err := s.recordRevoked(ctx, tx, c, id, principalID, reason, nil); err != nil {
 				return err
 			}
 		}

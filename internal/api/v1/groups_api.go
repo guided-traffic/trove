@@ -8,6 +8,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/api/v1/gen"
 	"github.com/guided-traffic/trove/internal/auth/principal"
+	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/meta"
@@ -239,12 +240,68 @@ func toServiceAccount(a principal.ServiceAccount) gen.ServiceAccount {
 	return gen.ServiceAccount{Id: uuidOf(a.ID), Name: a.Name, Description: a.Description, Status: gen.ServiceAccountStatus(a.Status), CreatedAt: utc(a.CreatedAt), Project: optString(a.Project)}
 }
 
+// The capabilities the service-account operations declare next to projectAdmin.
+const (
+	capabilityIdentitiesRead  = string(authz.IdentitiesRead)
+	capabilityIdentitiesWrite = string(authz.IdentitiesWrite)
+)
+
+// delegatedAccount reads the service account a request addresses and narrows the
+// caller to it (R-AUTHZ-026, Q-AUTHZ-169). A holder of the capability reaches every
+// account; a project administrator reaches the accounts of the projects it
+// administers, with the right the operation needs (a switch that is off answers 403
+// project_switch_off), and every other account answers 404 as an unknown one does.
+func (s *Server) delegatedAccount(ctx context.Context, name, capability string, right authz.ProjectRight) (principal.ServiceAccount, error) {
+	d, err := s.delegatedScope(ctx, capability)
+	if err != nil {
+		return principal.ServiceAccount{}, err
+	}
+	sa, err := s.o.Auth.Manager.GetServiceAccount(ctx, name)
+	if err != nil || d.Global {
+		return sa, err
+	}
+	if sa.Project == "" || !d.Sees(sa.Project) {
+		return principal.ServiceAccount{}, principal.NotFound("The service account")
+	}
+	return sa, refuseProject(d, sa.Project, right)
+}
+
+// narrowAccountList is the rule of the list for a caller without identities:read:
+// it names a project it administers (403 without, 404 for another).
+func (s *Server) narrowAccountList(ctx context.Context, project string) error {
+	d, err := s.delegatedScope(ctx, capabilityIdentitiesRead)
+	if err != nil || d.Global {
+		return err
+	}
+	if project == "" {
+		return errs.E(errs.Forbidden, errs.CodeForbidden, "An administrator of a project lists the service accounts of one project: send project=<key>.")
+	}
+	return refuseProject(d, project, authz.ProjectAny)
+}
+
+// narrowAccountCreate is the rule of the create: a project administrator without
+// identities:write creates an account of a project it administers while managePolicies
+// is on; a holder of the capability may leave the project out.
+func (s *Server) narrowAccountCreate(ctx context.Context, project string) error {
+	d, err := s.delegatedScope(ctx, capabilityIdentitiesWrite)
+	if err != nil {
+		return err
+	}
+	if project == "" {
+		if d.Global {
+			return nil
+		}
+		return errs.E(errs.Forbidden, errs.CodeForbidden, "An administrator of a project creates service accounts of its project: send project=<key>.")
+	}
+	return refuseProject(d, project, authz.ProjectManagePolicies)
+}
+
 // ListServiceAccounts implements GET /api/v1/service-accounts (R-AUTH-020).
 func (s *Server) ListServiceAccounts(w http.ResponseWriter, r *http.Request, _ gen.ListServiceAccountsParams) {
 	if !s.identityReady(w, r) {
 		return
 	}
-	lq, err := ParseList(r, ListSpec{Filters: []string{"q"}, Sorts: []string{"name"}, DefaultSort: "name"}, s.o.API.Config)
+	lq, err := ParseList(r, ListSpec{Filters: []string{"q", "project"}, Sorts: []string{"name"}, DefaultSort: "name"}, s.o.API.Config)
 	if err == nil {
 		err = ascending(lq)
 	}
@@ -252,11 +309,14 @@ func (s *Server) ListServiceAccounts(w http.ResponseWriter, r *http.Request, _ g
 	if err == nil {
 		after, err = afterName(lq)
 	}
+	if err == nil {
+		err = s.narrowAccountList(r.Context(), lq.First("project"))
+	}
 	if err != nil {
 		httpserver.Problem(w, r, err)
 		return
 	}
-	rows, err := s.o.Auth.Manager.ListServiceAccounts(r.Context(), lq.First("q"), after, lq.FetchLimit())
+	rows, err := s.o.Auth.Manager.ListServiceAccounts(r.Context(), lq.First("q"), lq.First("project"), after, lq.FetchLimit())
 	if err != nil {
 		failIdentity(w, r, err)
 		return
@@ -274,6 +334,9 @@ func (s *Server) CreateServiceAccount(w http.ResponseWriter, r *http.Request, _ 
 	var in gen.NewServiceAccount
 	if err == nil {
 		err = StrictUnmarshal(body, &in)
+	}
+	if err == nil {
+		err = s.narrowAccountCreate(r.Context(), derefString(in.Project))
 	}
 	if err != nil {
 		httpserver.Problem(w, r, err)
@@ -297,7 +360,7 @@ func (s *Server) GetServiceAccount(w http.ResponseWriter, r *http.Request, name 
 	if !s.identityReady(w, r) {
 		return
 	}
-	a, err := s.o.Auth.Manager.GetServiceAccount(r.Context(), name)
+	a, err := s.delegatedAccount(r.Context(), name, capabilityIdentitiesRead, authz.ProjectAny)
 	if err != nil {
 		failIdentity(w, r, err)
 		return
@@ -340,8 +403,11 @@ func (s *Server) UpdateServiceAccount(w http.ResponseWriter, r *http.Request, na
 			func() error { return immutableString(in.Name, "/name", name) },
 		)
 	}
+	if err == nil {
+		_, err = s.delegatedAccount(r.Context(), name, capabilityIdentitiesWrite, authz.ProjectAny)
+	}
 	if err != nil {
-		httpserver.Problem(w, r, err)
+		failIdentity(w, r, err)
 		return
 	}
 	if desc == nil {
@@ -372,6 +438,10 @@ func (s *Server) DeleteServiceAccount(w http.ResponseWriter, r *http.Request, na
 	if !s.identityReady(w, r) {
 		return
 	}
+	if _, err := s.delegatedAccount(r.Context(), name, capabilityIdentitiesWrite, authz.ProjectAny); err != nil {
+		failIdentity(w, r, err)
+		return
+	}
 	if err := s.o.Auth.Manager.DeleteServiceAccount(r.Context(), s.caller(r), name); err != nil {
 		failIdentity(w, r, err)
 		return
@@ -390,6 +460,10 @@ func (s *Server) DisableServiceAccount(w http.ResponseWriter, r *http.Request, n
 		httpserver.Problem(w, r, err)
 		return
 	}
+	if _, err := s.delegatedAccount(r.Context(), name, capabilityIdentitiesWrite, authz.ProjectAny); err != nil {
+		failIdentity(w, r, err)
+		return
+	}
 	if err := s.o.Auth.Manager.DisableServiceAccount(r.Context(), s.caller(r), name, in.RevokeTokens != nil && *in.RevokeTokens); err != nil {
 		failIdentity(w, r, err)
 		return
@@ -401,6 +475,10 @@ func (s *Server) DisableServiceAccount(w http.ResponseWriter, r *http.Request, n
 // EnableServiceAccount implements POST /api/v1/service-accounts/{name}/enable.
 func (s *Server) EnableServiceAccount(w http.ResponseWriter, r *http.Request, name string) {
 	if !s.identityReady(w, r) {
+		return
+	}
+	if _, err := s.delegatedAccount(r.Context(), name, capabilityIdentitiesWrite, authz.ProjectManagePolicies); err != nil {
+		failIdentity(w, r, err)
 		return
 	}
 	if err := s.o.Auth.Manager.EnableServiceAccount(r.Context(), s.caller(r), name); err != nil {

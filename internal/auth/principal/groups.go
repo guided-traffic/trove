@@ -8,6 +8,7 @@ import (
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta"
+	"github.com/guided-traffic/trove/internal/meta/postgres"
 	"github.com/guided-traffic/trove/internal/meta/postgres/q"
 )
 
@@ -509,7 +510,13 @@ func (m *Manager) changeMembers(ctx context.Context, tx meta.Tx, qs *q.Queries, 
 	var ids []string
 	for _, ch := range changes {
 		if ch.add {
+			if err := refuseProjectAccount(ctx, qs, ch); err != nil {
+				return err
+			}
 			rows, err := qs.IdentityAddMembership(ctx, q.IdentityAddMembershipParams{GroupID: g.id, MemberID: ch.id, Source: ch.source})
+			if postgres.IsState(err, "AI002") { // the trigger behind refuseProjectAccount
+				return projectAccountNotGroupable(ch.name)
+			}
 			if err != nil {
 				return err
 			}
@@ -554,4 +561,28 @@ func orEmpty[T any](s []T) []T {
 		return []T{}
 	}
 	return s
+}
+
+// refuseProjectAccount refuses a project service account as a group member with
+// 422 project_account_not_groupable (Q-AUTHZ-175): the grants of a global group
+// would reach an account that only its project's policies grant to. The trigger
+// AI002 of the schema is the backstop.
+func refuseProjectAccount(ctx context.Context, qs *q.Queries, ch memberChange) error {
+	if ch.kind != KindServiceAccount {
+		return nil
+	}
+	projects, err := qs.IdentityIsProjectServiceAccount(ctx, ch.id)
+	if err != nil {
+		return err
+	}
+	if len(projects) > 0 {
+		return projectAccountNotGroupable(ch.name)
+	}
+	return nil
+}
+
+func projectAccountNotGroupable(member string) error {
+	return errs.E(errs.Invalid, errs.CodeProjectAccountNotGroupable,
+		"The service account is the account of a project and joins no group; the policies of its project grant to it.",
+		errs.WithFields(errs.FieldError{Pointer: "/members", Code: errs.CodeProjectAccountNotGroupable, Detail: member}))
 }

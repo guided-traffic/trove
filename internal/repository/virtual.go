@@ -277,9 +277,10 @@ func (d *Document) renderVirtual(rel *virtualRel) {
 // repository (fail closed). That creation is a repo_config change, for which the
 // fill rule of the cache (R-ARCH-018) discards the load or flushes the stored
 // snapshot, so the next load sees both.
-func readSnapshot(ctx context.Context, run meta.Runner) ([]q.Repository, map[int64]*virtualRel, error) {
+func readSnapshot(ctx context.Context, run meta.Runner) ([]q.Repository, map[int64]*virtualRel, map[string]string, error) {
 	var rows []q.Repository
 	var rels map[int64]*virtualRel
+	var projects map[string]string
 	err := run.InTx(ctx, func(tx meta.Tx) error {
 		qs, err := queries(tx)
 		if err != nil {
@@ -288,10 +289,13 @@ func readSnapshot(ctx context.Context, run meta.Runner) ([]q.Repository, map[int
 		if rows, err = qs.ListRepositories(ctx); err != nil {
 			return err
 		}
+		if projects, err = projectKeys(ctx, qs); err != nil {
+			return err
+		}
 		rels, err = loadVirtualRels(ctx, qs, virtualIDs(rows))
 		return err
 	})
-	return rows, rels, err
+	return rows, rels, projects, err
 }
 
 // linkVirtual gives every virtual repository of repos its routing view: the

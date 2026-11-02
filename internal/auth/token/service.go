@@ -160,6 +160,10 @@ type CreateRequest struct {
 	// Parent is the presenting token of a token-authenticated create: the
 	// derivation rule of R-AUTH-027 applies.
 	Parent *Info
+	// Delegated says a project administrator creates the token of a project service
+	// account (Q-AUTHZ-177). The token then names no system item, has admin false and
+	// is never non-expiring, whatever else the request says (422 invalid_scope).
+	Delegated bool
 }
 
 func forbidden(code, detail string) error { return errs.E(errs.Forbidden, code, detail) }
@@ -204,6 +208,14 @@ func (s *Service) prepareCreate(ctx context.Context, r CreateRequest) (insertSpe
 	sc, err := scope.Parse(r.Scope, s.o.Scope)
 	if err != nil {
 		return insertSpec{}, err
+	}
+	if r.Delegated {
+		if r.Admin {
+			return insertSpec{}, errs.E(errs.Internal, errs.CodeInternal, "", errs.WithOp("token.prepareCreate"))
+		}
+		if err := checkDelegated(sc); err != nil {
+			return insertSpec{}, err
+		}
 	}
 	// A binding to an endpoint that does not accept the token's type would work nowhere
 	// (R-EP-011). The check is the service's, so the API, the command and every other
@@ -258,6 +270,19 @@ func (s *Service) maxActive(t Type) int {
 		return s.o.Tokens.MaxActive.SAT
 	}
 	return s.o.Tokens.MaxActive.PAT
+}
+
+// checkDelegated is the rule of Q-AUTHZ-177 for a token a project administrator
+// issues: it mirrors the derivation rule (a token carries no more than its owner
+// holds, and the account holds repository rights only), so the scope names no
+// system item and does not exercise system roles. A lifetime of "never" is refused
+// by the lifetime rules, because such a request is no administrator's.
+func checkDelegated(sc scope.Scope) error {
+	if sc.Admin || len(sc.System) > 0 {
+		return errs.E(errs.Unprocessable, errs.CodeInvalidScope,
+			"The scope is invalid: a token of a project service account carries no system item and has admin false.")
+	}
+	return nil
 }
 
 // checkDerivation applies the derivation rule of R-AUTH-027 that does not need
@@ -449,6 +474,11 @@ func (s *Service) insertTx(ctx context.Context, tx meta.Tx, sp insertSpec) (Crea
 	d := map[string]any{
 		"type": string(r.Type), "owner": owner.Ref(), "scope": json.RawMessage(sp.scope.Marshal()),
 		"expiresAt": exp, "createdVia": sp.via, "description": r.Description,
+	}
+	if projects, err := qs.IdentityIsProjectServiceAccount(ctx, r.OwnerID); err != nil {
+		return Created{}, err
+	} else if len(projects) > 0 {
+		d["project"] = projects[0]
 	}
 	if sp.derivedFrom != "" {
 		d["derivedFrom"] = sp.derivedFrom

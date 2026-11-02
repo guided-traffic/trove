@@ -5229,6 +5229,57 @@ malformed repository selector, package pattern or path pattern was stored and ad
 
 **Applied in the spec:** none (R-AUTH-024 and R-AUTH-025 already say it).
 
+### Q-AUTH-189 · The rules of a project service account are checked in the creating transaction
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-AUTHZ-169 and Q-AUTHZ-176 give a project service account its project and a name that starts with the project's key; a global account takes no such name.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The manager checks them in the transaction that inserts the account, with the project row locked `FOR SHARE` (chosen) | `bindProject` reads the project, refuses an unknown one (422 `unknown_project`), a name without the prefix (422 `project_prefix_required`) and, for a global account, a name that a project's key and a hyphen start (422 `name_reserved_by_project`); a deletion of the project waits for the transaction | One place for the API, the command and every other caller; no window between the check and the insert | A global account created at the same moment as a project of that key is caught by the project's own check (409 `project_key_overlap`) |
+| (b) The API handler checks | The handler reads the project first | Closer to the request | The command and the tests bypass it; the project can go between the read and the insert |
+
+**Choice:** (a). An administrator of a project must send `project` and cannot create a global account (403 `forbidden`); the audit events of an account (`serviceaccount.*`) and of its tokens (`token.created`, `token.revoked`) carry `project`.
+
+**Rationale:** the trigger `AI003` is the backstop of the schema, the manager is the contract of the code. The development agent records no revisit condition.
+
+**Applied in the spec:** R-AUTH-020. Code: `internal/auth/principal/serviceaccounts.go`.
+
+### Q-AUTH-190 · A project administrator issues, sees and revokes the tokens of its project's accounts through the token service's own rule
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-AUTHZ-177 lets a project administrator issue a token for a project service account and bounds it. Open: where the bound lives, and what the list, the read and the revocation show.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A flag of the create request, the check in the token service; visibility by the owner's project (chosen) | `CreateRequest.Delegated` makes a scope with `admin: true` or a `system` item a 422 `invalid_scope`; `Admin` stays false, so a lifetime of "never" is refused and the maximum applies; `GET /tokens`, `GET /tokens/<built-in function id>` and `DELETE /tokens/<built-in function id>` admit an administrator of the owner's project; a rotation does not; `owner=sa:<name>` of an account it does not administer is forced to the caller's own tokens as for any caller | Every caller of the service has the rule; no new setting | The rotation of such a token stays with an administrator or the account itself |
+| (b) The handler alone | The API checks the scope | Smaller change | The command and the tests could issue a token the rule forbids |
+
+**Choice:** (a). A caller that may not issue gets the same 403 `forbidden` whether the account exists or not; an administrator of the account's project with `managePolicies` off gets 403 `project_switch_off`.
+
+**Rationale:** the account holds repository rights only, so its token carries no more; the rotation stays out because it would let a delegate extend a token beyond what it issued. The development agent revisits it when an installation wants delegates to rotate.
+
+**Applied in the spec:** R-AUTH-020, R-AUTH-027, R-AUTH-028, R-AUTH-029. Code: `internal/auth/token/service.go`, `internal/api/v1/tokens_api.go`.
+
+### Q-AUTH-191 · A project service account joins no group, in the code and in the schema
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-AUTHZ-175 refuses a project service account as a group member (422 `project_account_not_groupable`); the trigger `AI002` is the backstop.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The membership writer refuses it before the insert, and the trigger's SQLSTATE is mapped to the same answer (chosen) | `changeMembers` asks whether a service account to add has a project; `postgres.IsState(err, "AI002")` turns the trigger's refusal into the same 422 | Every path that adds a member (create group, patch members) answers the same; a path added later is caught by the schema and answered, not a 500 | One helper in the postgres package |
+| (b) The trigger alone | The insert fails | Less code | A 500 for a rule the client can fix |
+
+**Choice:** (a).
+
+**Rationale:** the rule has two enforcers so that neither a code path nor a manual SQL write can bring a global group's grants to a project account. The development agent records no revisit condition.
+
+**Applied in the spec:** R-AUTH-018, R-AUTH-020. Code: `internal/auth/principal/groups.go`, `internal/meta/postgres/sqlstate.go`.
+
 ## What this does not cover
 
 ### H-15 · Consent phishing of command-line browser login

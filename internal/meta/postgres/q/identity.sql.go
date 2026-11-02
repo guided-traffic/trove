@@ -1024,6 +1024,35 @@ func (q *Queries) IdentityInsertUser(ctx context.Context, arg IdentityInsertUser
 	return err
 }
 
+const identityIsProjectServiceAccount = `-- name: IdentityIsProjectServiceAccount :many
+SELECT pr.key
+  FROM service_account s
+  JOIN project pr ON pr.id = s.project_id
+ WHERE s.principal_id = $1::text::uuid
+`
+
+// One row when the principal is a service account of a project; the key of that
+// project. A group membership of such an account is refused (Q-AUTHZ-175).
+func (q *Queries) IdentityIsProjectServiceAccount(ctx context.Context, id string) ([]string, error) {
+	rows, err := q.db.Query(ctx, identityIsProjectServiceAccount, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		items = append(items, key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const identityListGroups = `-- name: IdentityListGroups :many
 SELECT p.id::text AS id, p.name, g.description, g.auto_join, g.origin, p.created_at, p.revision,
        (SELECT count(DISTINCT m.member_id) FROM group_membership m WHERE m.group_id = p.id) AS member_count
@@ -1736,6 +1765,40 @@ func (q *Queries) IdentityPrincipalByName(ctx context.Context, arg IdentityPrinc
 			&i.Status,
 			&i.IsBreakGlass,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const identityProjectShare = `-- name: IdentityProjectShare :many
+
+SELECT id::text AS id, key FROM project WHERE key = $1::text FOR SHARE
+`
+
+type IdentityProjectShareRow struct {
+	ID  string
+	Key string
+}
+
+// Project service accounts (R-AUTHZ-026, Q-AUTHZ-169) ----------------------------
+// The project a service account is created for, locked FOR SHARE: a concurrent
+// delete of the project (FOR UPDATE, which counts the accounts under that lock)
+// waits for this transaction, so the new account is counted or the project is gone.
+func (q *Queries) IdentityProjectShare(ctx context.Context, key string) ([]IdentityProjectShareRow, error) {
+	rows, err := q.db.Query(ctx, identityProjectShare, key)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []IdentityProjectShareRow{}
+	for rows.Next() {
+		var i IdentityProjectShareRow
+		if err := rows.Scan(&i.ID, &i.Key); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

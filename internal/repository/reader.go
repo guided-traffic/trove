@@ -168,7 +168,7 @@ func (r *SnapshotReader) snapshot(ctx context.Context) (*snapshot, error) {
 }
 
 func (r *SnapshotReader) load(ctx context.Context) (*snapshot, error) {
-	rows, rels, err := readSnapshot(ctx, r.run)
+	rows, rels, projects, err := readSnapshot(ctx, r.run)
 	if err != nil {
 		return nil, err
 	}
@@ -177,6 +177,9 @@ func (r *SnapshotReader) load(ctx context.Context) (*snapshot, error) {
 		repo, err := toRepository(row, r.cat)
 		if err != nil {
 			r.log.Error("repository: stored configuration does not load; the repository is disabled", "key", row.Key, "error", err)
+		}
+		if row.ProjectID.Valid {
+			repo.ProjectKey = projects[row.ProjectID.String()]
 		}
 		repos = append(repos, repo)
 	}

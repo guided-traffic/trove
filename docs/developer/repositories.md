@@ -28,6 +28,7 @@ virtual class (members, deploy target, pin rules, claims and their routing) is b
 | [delete.go](../../internal/repository/delete.go) | `Service.Delete`, the job kind `repository-delete` and its handler `RunDeleteJob` |
 | [activity.go](../../internal/repository/activity.go) | `Activity`: the in-memory buffer of `last_activity_at` (R-REPO-012), flushed once a minute and at shutdown |
 | [reader.go](../../internal/repository/reader.go) | `SnapshotReader` (the `Reader` implementation): the snapshot, the negative cache of unknown keys, the lookup of R-ARCH-011 step 2 |
+| [project.go](../../internal/repository/project.go) | the project side of a write (R-AUTHZ-026): `Write{Project, Delegate}`, `resolveProject` (locks the project `FOR SHARE`, 422 `unknown_project`, 422 `project_prefix_required` for a delegate), `projectKeys`, `virtualGuard` (Q-AUTHZ-178) |
 | [codes.go](../../internal/repository/codes.go) | codes of other areas that the validation names as strings |
 | [remote.go](../../internal/repository/remote.go) | `RemoteSettings` and its parts, `SecretField`, `SecretRef`, the strict request form (`remoteInput`, `checkRemoteShape`), `Repository.Remote()`, `upstreamIdentityChanged` |
 | [validate_remote.go](../../internal/repository/validate_remote.go) | `validateRemote`: defaults from the catalog, ranges, `normalizeUpstreamURL`, the warnings, the refusal of the P1 members, the secret fields into `pendingSecret`s |
@@ -74,11 +75,11 @@ change back, R-OPS-015) and the change-log row (`Changes.Notify` on `repo_config
 
 | Operation | Function | Notes |
 |---|---|---|
-| `POST /repositories` | `Create(ctx, caller, body)`, `CreateTx(ctx, tx, …)` | `409 already_exists` also for a key being deleted; never an upsert; `CreateTx` runs in the transaction of an idempotency key |
+| `POST /repositories` | `Create(ctx, caller, body)`, `CreateTx(ctx, tx, …)`; with a project `CreateIn`, `CreateTxIn(ctx, tx, caller, body, Write)` | `409 already_exists` also for a key being deleted; never an upsert; `CreateTx` runs in the transaction of an idempotency key; `Write.Project` assigns the repository in the statement that inserts it (`InsertRepository` has `project_id`), `Write.Delegate` is the project of a project administrator (prefix, virtual rule) |
 | `GET /repositories/{key}` | `Get(ctx, key)` | from PostgreSQL (R-API-052); `Document.WithoutAdminNotes`, `Document.ConsumerView` for the narrower views |
-| `PATCH` | `Patch(ctx, caller, key, pre, apply Patcher)` | `apply` turns the stored document, as JSON, into the patched one under the row lock; the handler passes `v1.MergePatcher(patch)`, the API's one RFC 7396 merge (Q-API-157), and the result is read strictly like a PUT body; `pre` is `MatchVersion(n)` or `MatchAny()`; 428 is the handler's, because the header is |
-| `PUT` | `Replace(ctx, caller, key, pre, body)` | omitted settings revert to defaults; an omitted `key`, `class` or `format` means "unchanged" |
-| `GET /repositories` | `List(ctx, filter)` | sorted by key, keyset paging (`After`, `Limit`, `HasMore`), filters of R-REPO-012 |
+| `PATCH` | `Patch(ctx, caller, key, pre, apply Patcher)`, `PatchIn(…, Write)` | `apply` turns the stored document, as JSON, into the patched one under the row lock; the handler passes `v1.MergePatcher(patch)`, the API's one RFC 7396 merge (Q-API-157), and the result is read strictly like a PUT body; `pre` is `MatchVersion(n)` or `MatchAny()`; 428 is the handler's, because the header is |
+| `PUT` | `Replace(ctx, caller, key, pre, body)`, `ReplaceIn(…, Write)` | omitted settings revert to defaults; an omitted `key`, `class` or `format` means "unchanged"; a `Write.Project` that differs from the stored project is 422 `immutable` at `/project`; a `Write.Delegate` whose project is not the repository's is 404 (the repository moved out since the handler decided) |
+| `GET /repositories` | `List(ctx, filter)` | sorted by key, keyset paging (`After`, `Limit`, `HasMore`), filters of R-REPO-012 (`Project` keeps the repositories of one project; an unknown key keeps none); every reader (`Get`, `List`, `SnapshotReader`) fills `Repository.ProjectKey` from the project table |
 | `DELETE` | `Delete(ctx, caller, key, detach)`, `DeleteTx(ctx, tx, …, pre)` | `DeleteResult{JobID, JobState, Done}`: 202 with the job, or 204 for a repository without content; `pre` is the optional `If-Match` (412 on a stale version) |
 
 Errors are `*errs.Error`: `malformed_request` (400, field code `invalid_document` when no pointer is known), `validation_failed` (422, the codes of R-REPO-008 in `Fields`), `already_exists`
@@ -155,7 +156,24 @@ secret member also needs a field pointer, a `pendingSecret` and a row key in `se
 | `POST /api/v1/repositories/{key}/upstream-test` | `TestRepositoryUpstream` | `repositories:write-config` | [upstream_api.go](../../internal/api/v1/upstream_api.go); `Service.UpstreamTest`; always 200 with a result for a remote repository, 404, 400 `not_applicable` |
 | `POST /api/v1/upstream-tests` | `TestUpstream` | `repositories:write-config` | `Service.UpstreamTestUnsaved`; the body is `{format, remote}`; 422 with every violation, 400 for a misspelt member |
 
-The representation ([repositoryRep](../../internal/api/v1/repositories_api.go)) is the `repository.Document` plus `lifecycle`,
+### Projects and project administrators
+
+A repository belongs to at most one project ([projects.md](projects.md)). The handlers narrow with the helpers of
+[project_scope.go](../../internal/api/v1/project_scope.go) and hand the service the project they decided on:
+
+| Operation | Narrowing (repositories_api.go, upstream_api.go) | Service input |
+|---|---|---|
+| create | `createDelegate`: a holder of `repositories:write-config` acts without a project; otherwise the body names a project the caller administers with `manageRepositories` (403 `forbidden` without `project`, 404 for another project, 403 `project_switch_off`) | `Write{Project, Delegate}` |
+| replace, patch, delete, `upstream-test` | `writeDelegate` = `requireProjectOfRepository(…, ProjectManageRepositories)`: 404 for a repository outside the project, 403 `project_switch_off` | `Write{Project, Delegate}` on replace and patch |
+| `POST /upstream-tests` | `requireAnyRepositoriesSwitch`: any project with the switch; the egress rules are checked when the probe connects, whoever sends it (Q-AUTHZ-173) | none |
+| read | `readsConfig`: the capability, or administration of the repository's project (`AdministersRepository(…, ProjectAny)`), gives the full document | none |
+| list | `delegatedScope`: the project administrator sees readable repositories and those of its projects (deleting ones too); `view=full` only for the latter | `ListFilter.Project` |
+
+The `project` member is not part of the stored document: `takeProject` removes it from a body and the service compares or assigns it
+(Q-REPO-125). A violation is a field error of the validation pass; `project_prefix_required` and `repository_outside_project` also
+become the top-level `code` (Q-REPO-126).
+
+The representation ([repositoryRep](../../internal/api/v1/repositories_api.go)) is the `repository.Document` plus `project`, `lifecycle`,
 `createdAt`, `updatedAt`, `lastActivityAt` and, on a write, `warnings`. The input drops those members before the strict decode, so a
 body obtained by GET can be sent back (Q-API-34). A body error is `400 malformed_request` with the pointer of the member (Q-REPO-84).
 The ETag of the full view is `"<config_version>"`, of the consumer view `"<config_version>-consumer"`. A read of one repository adds the

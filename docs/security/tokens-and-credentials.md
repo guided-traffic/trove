@@ -199,6 +199,24 @@ setup answer into a token, which is the one place where the UI handles a token v
   plain relative path of letters, digits, `/`, `_` and `-` with an optional fragment, and opens it with the router. READMEs and guides go
   through `Render` and are bound without `pageLinks`, so their relative links are still removed (`TestR_API_054_LinkedRenderingResolvesRelativeLinks`).
 
+## Tokens of project service accounts
+
+An administrator of a project issues, sees and revokes the tokens of the service accounts of its project ([R-AUTHZ-026](../spec/authorization.md#r-authz-026--projects-for-delegated-administration),
+[Q-AUTHZ-177](../spec/authorization.md#q-authz-177--what-a-project-administrator-may-do-with-service-accounts-and-their-tokens)).
+The credential it uses is a session or a token with `admin: true`; the token it issues is bounded by the token service itself, so the API,
+the command and a test have the same rule (Q-AUTH-190):
+
+| Property | Rule | Where |
+|---|---|---|
+| lifetime | never non-expiring (`Admin` stays false), at most the SAT maximum | `resolveLifetime` |
+| scope | no `system` item and `admin: false`, else 422 `invalid_scope`; repository grants, `inherit` and an `endpoints` binding are allowed | `checkDelegated` in `prepareCreate` |
+| owner | an account of a project the caller administers with `managePolicies`; any other caller gets the plain 403 whether the account exists or not | `delegatedTokenAccount` |
+| visibility | `GET /tokens`, `GET /tokens/{id}`, `DELETE /tokens/{id}` and `DELETE /service-accounts/{name}/tokens` reach the tokens of the project's accounts and no others; a token elsewhere answers 404; a rotation is not delegated | `seesProject`, `visible` |
+| audit | `token.created` and `token.revoked` carry `project` | `insertTx`, `recordRevoked` |
+
+A project service account has no group, no role and only its project's policies, so what its token can reach is what the project's policies grant it
+([Q-AUTHZ-175](../spec/authorization.md#q-authz-175--a-project-service-account-is-granted-by-its-projects-policies-only)).
+
 ## What this does not cover
 
 ### H-82 · Rejected credentials of one address are counted together
@@ -261,3 +279,22 @@ method `basic`. Nothing is refused and nothing is counted, so the client sees no
 hold, since both credentials are its own; what it loses is the separation it configured. What makes it real: two credentials of
 different principals in one client and a damaged API key. An audit query for pushes with method `basic` from a pipeline that is meant
 to push with an API key shows it; one credential per client avoids it.
+
+### H-400 · A project administrator issues tokens up to the installation's limits
+
+Component: `createServiceAccountToken` for a project service account. Subject: the active-token limit and the lifetime of the tokens of one
+project. Live whenever a project has `managePolicies` on. A token issued by a project administrator is bounded by the installation's
+`auth.tokens.sat` maximum lifetime and `max_active` count for the account, as every service-account token is; there is no limit per
+project, no approval and no notice to an administrator of trove beyond the `token.created` event (which carries `project`). A project
+administrator can therefore keep an account's credentials alive for the full maximum by issuing a new token before the old one ends, as
+long as the switch is on. What makes it real: a project whose administrator is not trusted to renew credentials. Turning `managePolicies`
+off stops the issue and leaves revocation, disabling and deletion with the administrator.
+
+### H-401 · The repository grants of a delegated token are not checked against the project
+
+Component: `checkDelegated` and the scope of a token a project administrator issues. Subject: the repository part of such a scope. Live for
+every such token. The scope names repositories by key or pattern, and the scope validation does not know the project; a grant that names
+a repository outside the project is accepted and does nothing, because the service account holds rights only through its project's
+policies, whose selectors never reach outside it ([Q-AUTHZ-179](../spec/authorization.md#q-authz-179--a-repository-that-leaves-a-project-leaves-its-policies-inert)).
+The effect is a scope that reads wider than the rights behind it, in the token list and in the audit event. What makes it real: a reviewer
+who reads the scope of such a token as the access it has; the access is the intersection with the project's policies.

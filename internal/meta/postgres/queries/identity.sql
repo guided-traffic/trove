@@ -595,3 +595,19 @@ ON CONFLICT (user_id) DO UPDATE
  WHERE sqlc.arg(if_revision)::bigint = 0 OR p.revision = sqlc.arg(if_revision)::bigint
 RETURNING coalesce(p.locale, '')::text AS locale, coalesce(p.theme, '')::text AS theme, p.keyboard_shortcuts,
           coalesce(p.project_filter, '')::text AS project_filter, p.revision;
+
+-- Project service accounts (R-AUTHZ-026, Q-AUTHZ-169) ----------------------------
+
+-- name: IdentityProjectShare :many
+-- The project a service account is created for, locked FOR SHARE: a concurrent
+-- delete of the project (FOR UPDATE, which counts the accounts under that lock)
+-- waits for this transaction, so the new account is counted or the project is gone.
+SELECT id::text AS id, key FROM project WHERE key = sqlc.arg(key)::text FOR SHARE;
+
+-- name: IdentityIsProjectServiceAccount :many
+-- One row when the principal is a service account of a project; the key of that
+-- project. A group membership of such an account is refused (Q-AUTHZ-175).
+SELECT pr.key
+  FROM service_account s
+  JOIN project pr ON pr.id = s.project_id
+ WHERE s.principal_id = sqlc.arg(id)::text::uuid;

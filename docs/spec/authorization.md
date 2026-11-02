@@ -4567,6 +4567,23 @@ accounts; two creates of `web` and `web-app` would each pass it against the stat
 
 **Applied in the spec:** R-AUTHZ-026 (the key rule). Gap: [H-399](#h-399--a-global-service-account-and-a-project-key-created-at-the-same-instant-can-overlap).
 
+### Q-AUTHZ-195 · What a project administrator gets for a request that names no project it may use
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the shared step admits a project administrator to an operation by capability or by a project right; the handler narrows. Open: the answer when the request names no project (a create without `project`, a list of service accounts without `project=`), and the order of the answers for a project that is unknown, unadministered or switched off.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) 403 `forbidden` without a project; 404 for a project it does not administer; 403 `project_switch_off` for one it administers; one 403 for a token issue that is none of its business (chosen) | The caller learns what to send, never whether a foreign project, repository or account exists | No existence oracle; one rule for every operation of the family | A 403 where a 422 would also read well |
+| (b) 422 for a missing project | A validation error | Reads like a form | A 422 is answered only after the caller's right is known; the same request from a caller without any right is a 403 |
+
+**Choice:** (a).
+
+**Rationale:** R-AUTHZ-016 asks for answers that do not tell what the caller may not see. The development agent records no revisit condition.
+
+**Applied in the spec:** R-AUTHZ-026 (the declaration paragraph). Code: `internal/api/v1/repositories_api.go`, `internal/api/v1/groups_api.go`, `internal/api/v1/tokens_api.go`, `internal/api/v1/upstream_api.go`.
+
 ## What this does not cover
 
 ### H-21 · No reservation of name prefixes

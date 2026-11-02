@@ -664,7 +664,7 @@ func TestR_AUTH_020_ServiceAccounts(t *testing.T) {
 		if err != nil || got.Description != "deploys" {
 			t.Fatalf("%+v %v", got, err)
 		}
-		list, err := a.manager.ListServiceAccounts(ctx, "ci", "", 10)
+		list, err := a.manager.ListServiceAccounts(ctx, "ci", "", "", 10)
 		if err != nil || len(list) != 1 {
 			t.Fatalf("%+v %v", list, err)
 		}

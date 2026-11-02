@@ -356,8 +356,16 @@ func TestR_REPO_009_to_013_RepositoryLifecycle(t *testing.T) {
 		if got := items(list("admin", "?class=local,remote&format=generic&format=npm&state=inactive")); len(got) != 0 {
 			t.Errorf("state=inactive: %v", got)
 		}
-		if got := items(list("admin", "?project=acme")); len(got) != 0 {
+		// A project filter selects the repositories assigned to the project; an unknown key selects none (Q-REPO-22).
+		e.project("acme", true, false)
+		if res := a.postJSON("admin", "/api/v1/repositories", map[string]any{"key": "acme-one", "class": "local", "format": "generic", "project": "acme"}); res.status != 201 {
+			t.Fatalf("%d %s", res.status, res.body)
+		}
+		if got := items(list("admin", "?project=acme")); fmt.Sprint(got) != "[acme-one]" {
 			t.Errorf("project: %v", got)
+		}
+		if got := items(list("admin", "?project=nobody")); len(got) != 0 {
+			t.Errorf("an unknown project: %v", got)
 		}
 		all := items(list("admin", ""))
 		var walked []string

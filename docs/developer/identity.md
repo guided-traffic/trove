@@ -45,6 +45,8 @@ the decisions of this area are Q-AUTH-18 to Q-AUTH-22 and Q-AUTH-41 to Q-AUTH-48
 | `principal.go` | The contract: `Store`, `Principal`, `Kind`, `Status`, `LoginClaims`, `Provisioner` |
 | `store.go` | `PGStore`: `ByID`, `ByName`, `Groups` over the cache `auth_principals` |
 | `manager.go`, `groups.go`, `serviceaccounts.go` | `Manager`: users, groups and memberships, service accounts (R-AUTH-016, R-AUTH-018, R-AUTH-020); `Caller.RoleHolders` is the `roles:write` check the API sets; `AuthzHook` (optional, `authz.PrincipalHook` in the wiring) is told of every deleted or renamed principal in the same transaction (R-AUTHZ-028); a duplicate create is `409 already_exists` |
+| `serviceaccounts.go` (projects) | `NewServiceAccount.Project`, `ServiceAccount.Project`, `bindProject`: the name rules of Q-AUTHZ-176 in the creating transaction (the project locked `FOR SHARE`: 422 `unknown_project`, `project_prefix_required`, `name_reserved_by_project`); the `serviceaccount.*` events carry `project`; `ListServiceAccounts(ctx, query, project, after, limit)` (Q-AUTH-189) |
+| `groups.go` (projects) | `refuseProjectAccount` in `changeMembers`: a project service account is no group member (422 `project_account_not_groupable`); `postgres.IsState(err, "AI002")` maps the trigger's refusal to the same answer (Q-AUTH-191) |
 | `guards.go` | `guardRoleHolder` (a principal that holds a system role, or a group that carries one, is changed only with `roles:write`, Q-AUTHZ-69) and `LastAdminGuard` (`last_admin` over active holders, locked on the `admin` binding rows; authz uses it in `UnbindRole`, Q-AUTHZ-70) |
 | `provisioner.go` | `PGProvisioner.SignIn`: just-in-time user, identity link, rename, group sync (R-AUTH-007, R-AUTH-008) |
 | `change.go` | The payload of the change area `auth` and its notify helpers |
@@ -59,7 +61,7 @@ the decisions of this area are Q-AUTH-18 to Q-AUTH-22 and Q-AUTH-41 to Q-AUTH-48
 | `format.go` | Generate, `Check` (syntax step), `Hash`, `Hint` (R-AUTH-022) |
 | `scope.go` | aliases of the scope type (`Scope`, `ScopeGrant`, `Patterns`, `ScopeOptions`) and forwards (`ParseScope`, `DefaultScope`, `ParseStoredScope`); the type, `Parse` (validation, limits), `Marshal` and `Within` (the derivation rule) live in the leaf [internal/auth/scope](../../internal/auth/scope/scope.go), which the stage, `httpserver.Credential` and `authz.Subject` use as well. `scope.Options` (`ScopeOptions`) carries the cross-area checks (actions, system items, endpoints and the three pattern dimensions); `app.TokenScopeOptions` fills them from `authz.Actions()`, `authz.Capabilities()` and the authz validators (Q-AUTH-151) |
 | `lifetime.go` | `resolveLifetime` (R-AUTH-026) |
-| `service.go` | `Service`: `Create`, `Get`, `List`, the record types; `insert` with `lineageCheck` (locks the parent and the rotated token with their `derived_from` chains and decides on what it finds then) |
+| `service.go` | `Service`: `Create`, `Get`, `List`, the record types; `CreateRequest.Delegated` (a project administrator issues the token of a project service account: no `system` item, `admin: false`, 422 `invalid_scope`; never non-expiring, capped at the SAT maximum, Q-AUTH-190); `token.created` and `token.revoked` carry the owner's `project`; `insert` with `lineageCheck` (locks the parent and the rotated token with their `derived_from` chains and decides on what it finds then) |
 | `rotate.go`, `revoke.go` | `Rotate` (the successor keeps the lineage, Q-AUTH-89), `Revoke`, `RevokeByValue`, `RevokeAll`; `revokeTree` locks the tree before the cascade |
 | `validate.go` | `Service.Check`/`Validate`: the validation path, the cache `auth_tokens`, `token.rejected` |
 | `settings.go` | `SettingsStore`: cache `auth_settings`, `Effective`, `Update` (R-AUTH-040) |
@@ -228,6 +230,23 @@ need are `v1.AuthServices` ([auth_services.go](../../internal/api/v1/auth_servic
 | `createServiceAccount` | `POST /api/v1/service-accounts` | `identities:write`, idempotent |
 | `updateServiceAccount`, `deleteServiceAccount` | `PATCH`, `DELETE /api/v1/service-accounts/{name}` | `identities:write` |
 | `disableServiceAccount`, `enableServiceAccount` | `POST /api/v1/service-accounts/{name}/disable`, `/enable` | `identities:write` |
+
+### Project administrators on these operations (R-AUTHZ-026)
+
+The service-account and token operations also admit an administrator of a project (`projectAdmin` in the declaration, [projects.md](projects.md));
+the handlers narrow the caller to the account's project with `delegatedScope`/`refuseProject`
+([project_scope.go](../../internal/api/v1/project_scope.go)). A project that the caller does not administer, and an account outside it, answer 404;
+a request without the project it needs (a create, the list) 403 `forbidden`; a switch that is off 403 `project_switch_off` (Q-AUTHZ-195).
+
+| Operation | Right | Handler |
+|---|---|---|
+| `listServiceAccounts` | any, `project=<key>` required | `narrowAccountList`; `ListServiceAccounts(…, project, …)` |
+| `getServiceAccount`, `updateServiceAccount`, `disableServiceAccount`, `deleteServiceAccount` | any (never blocked by a switch) | `delegatedAccount` |
+| `createServiceAccount` | `managePolicies`, `project` in the body | `narrowAccountCreate`; the manager checks the name |
+| `enableServiceAccount` | `managePolicies` | `delegatedAccount` |
+| `createServiceAccountToken` | `managePolicies` of the account's project; a caller that may not gets one 403 whether the account exists or not | `delegatedTokenAccount`; `CreateRequest.Delegated` |
+| `listTokens` (`owner=sa:<name>`), `getToken`, `revokeToken` | any | `seesProject`, `visible(…, delegated)`; a rotation is not delegated |
+| `revokeServiceAccountTokens` | any | `delegatedAccount` with `tokens:revoke` |
 | `createToken` | `POST /api/v1/tokens` | authenticated (handler: a user with a recent session, or a PAT under the derivation rule), idempotent |
 | `listTokens` | `GET /api/v1/tokens` | authenticated (own tokens; all with `tokens:read`) |
 | `getToken` | `GET /api/v1/tokens/{id}` | authenticated (404 for a token the caller may not see) |

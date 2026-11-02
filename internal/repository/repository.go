@@ -60,9 +60,9 @@ type Repository struct {
 	// ProjectID is the ID (uuid text) of the project the repository is assigned to,
 	// "" when it belongs to none (R-AUTHZ-026). Every reader fills it.
 	ProjectID string
-	// ProjectKey is the key of that project, "" when there is none. The readers of
-	// the service fill it from the project table (WP-C); a Repository built from a
-	// bare row has only ProjectID.
+	// ProjectKey is the key of that project, "" when there is none. The readers
+	// (the snapshot and the service) fill it from the project table; a Repository
+	// built from a bare row has only ProjectID.
 	ProjectKey string
 	// Version is config_version, the ETag source (R-REPO-011).
 	Version   int64

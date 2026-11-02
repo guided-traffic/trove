@@ -345,6 +345,104 @@ func (q *Queries) MarkRepositoryDeleting(ctx context.Context, arg MarkRepository
 	return items, nil
 }
 
+const repositoryProjectKeys = `-- name: RepositoryProjectKeys :many
+SELECT id::text AS id, key FROM project
+`
+
+type RepositoryProjectKeysRow struct {
+	ID  string
+	Key string
+}
+
+// Every project's id and key: the readers resolve project_id of the rows they hold
+// to the key (R-AUTHZ-026).
+func (q *Queries) RepositoryProjectKeys(ctx context.Context) ([]RepositoryProjectKeysRow, error) {
+	rows, err := q.db.Query(ctx, repositoryProjectKeys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RepositoryProjectKeysRow{}
+	for rows.Next() {
+		var i RepositoryProjectKeysRow
+		if err := rows.Scan(&i.ID, &i.Key); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const repositoryProjectShare = `-- name: RepositoryProjectShare :many
+SELECT id::text AS id, key FROM project WHERE key = $1::text FOR SHARE
+`
+
+type RepositoryProjectShareRow struct {
+	ID  string
+	Key string
+}
+
+// The project a repository is created in, locked FOR SHARE: a concurrent delete of
+// the project (FOR UPDATE, which counts the repositories under that lock) waits for
+// this transaction, so the new repository is counted or the project is gone.
+func (q *Queries) RepositoryProjectShare(ctx context.Context, key string) ([]RepositoryProjectShareRow, error) {
+	rows, err := q.db.Query(ctx, repositoryProjectShare, key)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RepositoryProjectShareRow{}
+	for rows.Next() {
+		var i RepositoryProjectShareRow
+		if err := rows.Scan(&i.ID, &i.Key); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const repositoryProjectsByKeys = `-- name: RepositoryProjectsByKeys :many
+SELECT r.key, COALESCE(p.key, '')::text AS project
+  FROM repositories r
+  LEFT JOIN project p ON p.id = r.project_id
+ WHERE r.key = ANY($1::text[])
+`
+
+type RepositoryProjectsByKeysRow struct {
+	Key     string
+	Project string
+}
+
+// The project key of each named repository, empty for one that belongs to none;
+// an unknown key has no row. A project administrator's virtual repository checks
+// its new members and its deploy target with it (Q-AUTHZ-178).
+func (q *Queries) RepositoryProjectsByKeys(ctx context.Context, keys []string) ([]RepositoryProjectsByKeysRow, error) {
+	rows, err := q.db.Query(ctx, repositoryProjectsByKeys, keys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RepositoryProjectsByKeysRow{}
+	for rows.Next() {
+		var i RepositoryProjectsByKeysRow
+		if err := rows.Scan(&i.Key, &i.Project); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateRepositoryConfig = `-- name: UpdateRepositoryConfig :many
 UPDATE repositories
    SET config = $1::text::jsonb,

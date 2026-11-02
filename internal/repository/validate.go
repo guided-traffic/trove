@@ -229,9 +229,11 @@ func (v *validation) err() error {
 	if len(v.fields) == 1 {
 		detail = "1 field is invalid."
 	}
+	// A rule the contract names by its code answers with it at the top as well
+	// as in errors[] (R-AUTHZ-026).
 	for _, f := range v.fields {
-		if f.Code == codeReservedName {
-			code, detail = codeReservedName, f.Detail
+		if f.Code == codeReservedName || f.Code == errs.CodeProjectPrefixRequired || f.Code == errs.CodeRepositoryOutsideProject {
+			code, detail = f.Code, f.Detail
 			break
 		}
 	}

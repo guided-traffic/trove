@@ -4471,6 +4471,41 @@ Context: the generated clients are built from the OpenAPI document, and the crea
 
 **Applied in the spec:** R-REPO-004. Code: `api/openapi.yaml` (`NpmSettings`), `internal/api/v1/format_settings_test.go`.
 
+### Q-REPO-125 · The project of a repository is written on create only, and a project administrator reads the whole document of its project
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-AUTHZ-026 assigns a repository to a project in the transaction that creates it and makes `project` read-only afterwards. Open: what a replace or a patch that names a project does, and what the list and the read show to a project administrator, who holds no `repositories:read-config`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `project` is a member of the representation, taken out of the document by the handler; equal to the stored value it is ignored, otherwise 422 `immutable`; project administrators read the full document of their project (chosen) | A body obtained by `GET` can be sent back; the service compares the stored project with the body's under the row lock; the list and the read treat an administrator of the repository's project as a holder of `repositories:read-config` for that repository only | One representation; no silent change of the assignment; the read-config equivalence of R-AUTHZ-026 holds per repository | The handler and the service each know the member |
+| (b) `project` is ignored on a replace and a patch | Whatever it says, the stored project stays | Simplest | A client believes it moved a repository and it did not |
+| (c) A second document for project administrators | A project-scoped route family | Obvious | Two documents for one repository (rejected in Q-AUTHZ-184) |
+
+**Choice:** (a). The summary of the list names the project for every caller who sees the row, because the project filter of the UI needs it; the consumer view of a read does not. A project administrator also sees the repositories of its project that are being deleted, as a holder of the capability does, and `view=full` returns the repositories of its projects only. The endpoint's exposure ceiling binds it like every subject (R-EP-013).
+
+**Rationale:** the member is part of what a client reads and writes, and a refused change is better than an ignored one. The development agent would revisit the summary rule if an installation treats project keys as confidential.
+
+**Applied in the spec:** R-REPO-004 (the member), R-REPO-010 and R-REPO-012. Code: `internal/api/v1/repositories_api.go`, `internal/repository/project.go`.
+
+### Q-REPO-126 · A project administrator's create names its project, and the refusals answer with their own code
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-AUTHZ-176 and Q-AUTHZ-178 fix the prefix and the virtual rule. Open: how the violations are reported, what a caller that only administers a project must send, and whether the prefix applies to a holder of `repositories:write-config`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Field errors of the validation pass, the code of the rule at the top as well; the prefix binds a project administrator only (chosen) | `project_prefix_required` at `/key`, `unknown_project` at `/project`, `repository_outside_project` at the member or the deploy target, all with `errors[]`; the top-level `code` is `project_prefix_required` or `repository_outside_project` when one of them is among the violations; a caller that is only a project administrator and sends no `project` gets 403 `forbidden`; an administrator of trove assigns any project with any key | Every violation of a document in one answer (R-REPO-008); the acceptance of R-AUTHZ-026 reads its code at the top | A second top-level code beside `reserved_name` |
+| (b) Separate errors before validation | The first violation answers | Simple | A client fixes one problem per request |
+
+**Choice:** (a).
+
+**Rationale:** R-REPO-008 asks for every violation at once, and the contract names the codes. The development agent records no revisit condition.
+
+**Applied in the spec:** R-REPO-008, R-REPO-009. Code: `internal/repository/validate.go`, `internal/repository/project.go`, `internal/repository/members.go`.
+
 ## What this does not cover
 
 ### H-4 · Malicious content from a legitimate upstream

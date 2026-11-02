@@ -76,3 +76,23 @@ DELETE FROM items
 -- name: DeleteRepositoryRow :execrows
 -- The last transaction of R-REPO-013: the key becomes free.
 DELETE FROM repositories WHERE id = sqlc.arg(id)::bigint AND lifecycle = 'deleting';
+
+-- name: RepositoryProjectKeys :many
+-- Every project's id and key: the readers resolve project_id of the rows they hold
+-- to the key (R-AUTHZ-026).
+SELECT id::text AS id, key FROM project;
+
+-- name: RepositoryProjectShare :many
+-- The project a repository is created in, locked FOR SHARE: a concurrent delete of
+-- the project (FOR UPDATE, which counts the repositories under that lock) waits for
+-- this transaction, so the new repository is counted or the project is gone.
+SELECT id::text AS id, key FROM project WHERE key = sqlc.arg(key)::text FOR SHARE;
+
+-- name: RepositoryProjectsByKeys :many
+-- The project key of each named repository, empty for one that belongs to none;
+-- an unknown key has no row. A project administrator's virtual repository checks
+-- its new members and its deploy target with it (Q-AUTHZ-178).
+SELECT r.key, COALESCE(p.key, '')::text AS project
+  FROM repositories r
+  LEFT JOIN project p ON p.id = r.project_id
+ WHERE r.key = ANY(sqlc.arg(keys)::text[]);

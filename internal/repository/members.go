@@ -22,8 +22,9 @@ import (
 // being deleted, of another format or itself virtual (nesting is R-REPO-018,
 // P1), and a deploy target that is not local. The members are locked FOR SHARE
 // in id order, so a concurrent deletion of a member waits for this transaction
-// instead of marking the repository after it was checked.
-func (s *Service) resolveVirtual(ctx context.Context, qs *q.Queries, v *validation, d *Document) (*virtualRel, error) {
+// instead of marking the repository after it was checked. g is the rule of a
+// project administrator's write (Q-AUTHZ-178), nil for any other.
+func (s *Service) resolveVirtual(ctx context.Context, qs *q.Queries, v *validation, d *Document, g *virtualGuard) (*virtualRel, error) {
 	if d.Class != Virtual || d.Virtual == nil {
 		return nil, nil
 	}
@@ -58,6 +59,10 @@ func (s *Service) resolveVirtual(ctx context.Context, qs *q.Queries, v *validati
 	if len(vs.Members) > s.maxMembers {
 		v.add("/virtual/members", codeOutOfRange, "at most "+strconv.Itoa(s.maxMembers)+" members (repositories.max_virtual_members)")
 	}
+	outside, err := g.outside(ctx, qs, keys)
+	if err != nil {
+		return nil, err
+	}
 	rel := &virtualRel{}
 	ref := func(k string) relRef { return relRef{id: byKey[k].ID, key: k} }
 	for i, k := range vs.Members {
@@ -66,6 +71,8 @@ func (s *Service) resolveVirtual(ctx context.Context, qs *q.Queries, v *validati
 		switch {
 		case k == "" || k == d.Key:
 			// reported with the document rules
+		case g != nil && outside[k] && g.isNewMember(k):
+			v.add(ptr, errs.CodeRepositoryOutsideProject, outsideDetail)
 		case !found:
 			v.add(ptr, errs.CodeInvalidMember, "no repository has the key "+strconv.Quote(k))
 		case Lifecycle(row.Lifecycle) == Deleting:
@@ -78,6 +85,7 @@ func (s *Service) resolveVirtual(ctx context.Context, qs *q.Queries, v *validati
 			rel.members = append(rel.members, ref(k))
 		}
 	}
+	g.checkTarget(v, vs.DeployTarget, outside)
 	if vs.DeployTarget != nil {
 		if row, found := byKey[*vs.DeployTarget]; found && slices.Contains(vs.Members, *vs.DeployTarget) {
 			if Class(row.Class) != Local {

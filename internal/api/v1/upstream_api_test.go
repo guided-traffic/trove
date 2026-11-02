@@ -51,6 +51,9 @@ func upstreamServer(t *testing.T, prober repository.UpstreamProber) *Server {
 	return &Server{o: Options{
 		Repositories: RepositoryServices{Service: svc},
 		API:          Services{Config: config.API{MaxConfigurationBodyBytes: 1 << 20}},
+		// The shared step admits the caller before the handler runs; the handler
+		// narrows to the capability or a project (R-AUTHZ-026).
+		Access: projectCaller{caps: map[string]bool{"repositories:write-config": true}},
 	}}
 }
 
