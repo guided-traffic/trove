@@ -10,7 +10,7 @@ and `worker` roles, node drains without outage, and a backup job. Everything aft
 (further registries such as Ansible Galaxy, PyPI, Docker, and platform breadth) is in
 [FULL.md](FULL.md).
 
-The beta release is what the [roadmap](../coverage/roadmap.md) builds in M0 to M5, M4b and the Bastion of M13 included, after
+The beta release is what the [roadmap](../coverage/roadmap.md) builds in M0 to M5, M4b, the projects of M10 and the Bastion of M13 included, after
 the owner walkthrough. Details, exit criteria and requirement IDs of every phase are in the roadmap
 section linked under each heading.
 
@@ -27,6 +27,7 @@ numbers (owner, 2026-11-02).
 | [2 · Access core](#phase-2--access-core-m1) | Login, tokens, permissions, repositories, admin UI | 🟢 |
 | [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | 🟢 |
 | [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual | 🟡 |
+| [5a · Projects](#phase-5a--projects-and-delegated-administration) | Projects with project administrators who manage their repositories, policies and the technical accounts of external parties | ⚪ |
 | [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | ⚪ |
 | [5b · trove Bastion](#phase-5b--trove-bastion-m13) | An exposed, read-only cache instance in front of the main installation that serves released content to external parties and takes load off it | ⚪ |
 | [6 · Vulnerability scanning](#phase-6--vulnerability-scanning-m4b) | Own advisory mirror, findings and vulnerability report, malicious versions blocked, npm and NuGet audits from trove's data | ⚪ |
@@ -243,6 +244,34 @@ Details: [roadmap M3](../coverage/roadmap.md#m3--nuget) · spec: [formats/nuget.
 - 🟢 F-27: the run against nuget.org is green on kind, all seven cases (the forwarded search, nuget.exe, the restore and the
   registrations through the remote and the virtual repository)
 - 🟡 Open: F-30 (`is_semver2` of rows stored before the fix)
+
+## Phase 5a · Projects and delegated administration
+
+Details: spec [authorization.md](../spec/authorization.md) R-AUTHZ-026 · decisions
+[Q-AUTHZ-169](../spec/authorization.md#q-authz-169--a-technical-account-for-a-project-belongs-to-the-project) (owner)
+
+The owner moved projects into the beta on 2026-11-02, before GitLab CI OIDC: project administrators create technical
+accounts for external parties and give them fine or coarse access to chosen repositories of their project, and the
+Bastion serves those parties. Phase 5 then maps GitLab pipelines into projects.
+
+- ⚪ Spec first: R-AUTHZ-026 completed with project service accounts (Q-AUTHZ-169), the project screens and the open
+  decision whether a project administrator may create remote repositories (a new egress path)
+- ⚪ Projects: an immutable key, display name and description, the switches `managePolicies` and `manageRepositories`
+  set by an administrator; a repository belongs to at most one project, repositories a project administrator creates
+  carry the project key as prefix
+- ⚪ Project administrators: users and groups named on the project; they hold `manage` on the project's repositories and,
+  with the switches, manage its policies and repositories; they never bind system roles and see no global policy
+- ⚪ Project policies: fine (one repository by key) or coarse (pattern or class) and only over the project's own
+  repositories; the effect is the union with global policies
+- ⚪ Project service accounts (owner, Q-AUTHZ-169): created, disabled and deleted by project administrators, named
+  `<projectKey>-…`, their tokens issued and revoked by them, granted only through the project's policies; a project is
+  empty, and can be deleted, only without repositories and service accounts
+- ⚪ Admin UI: projects for administrators; for a project administrator the project's repositories, policies, service
+  accounts and their tokens; the auditor sees every project read-only
+- ⚪ Audit of every project change; security page for delegated administration
+- ⚪ Integration tests: a project administrator cannot reach a repository, policy or principal outside the project, cannot
+  bind a system role, cannot create a token that outlives or outranks the project's grants; e2e: a partner's project
+  service account installs with npm and restores with dotnet through the main installation
 
 ## Phase 5 · GitLab CI OIDC (M4)
 

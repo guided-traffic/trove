@@ -133,8 +133,8 @@ parallel.
 
 ### M10 · Identity, access and CI breadth
 - ⚪ SCIM provisioning of users and groups; auto-join groups; deactivation of dormant users
-- ⚪ Further administrator roles: security administrator, auditor, repository and webhook administrators
-- ⚪ Delegated administration: projects, delegated policy and CI-mapping management
+- ⚪ Further administrator roles: security administrator, repository and webhook administrators (the auditor is in the beta, owner 2026-11-02)
+- ⚪ Delegated administration: delegated policy and CI-mapping management (projects moved into the beta as [phase 5a](BETA.md#phase-5a--projects-and-delegated-administration), owner 2026-11-02)
 - ⚪ Token rotation and last-used tracking; browser login handoff for other command-line tools
 - ⚪ Further CI identity providers: GitHub Actions and generic OIDC issuers; CI setup snippets
 - ⚪ npm trusted publishing and provenance from CI

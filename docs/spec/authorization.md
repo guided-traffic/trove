@@ -1763,16 +1763,15 @@ Acceptance criteria: `lead-web` (holding `deploy`, `manage` and `read` in `team-
 adding `sa:sa-web-release` with `["delete"]`.
 
 ### R-AUTHZ-026 · Projects for delegated administration
-Priority: **P1** · Covers: IAM-051, IAM-052, IAM-057
+Priority: **MVP** · Covers: IAM-051, IAM-052, IAM-057
 
 The owner wants projects in the beta (2026-11-02), with project service accounts that project administrators create
-([Q-AUTHZ-169](#q-authz-169--a-technical-account-for-a-project-belongs-to-the-project)); the plan places them, and the
-priority of this requirement is raised with that placement.
+([Q-AUTHZ-169](#q-authz-169--a-technical-account-for-a-project-belongs-to-the-project)); BETA.md places them in phase 5a,
+before GitLab CI OIDC. The requirement text for project service accounts is written at the start of that phase.
 
-Decision: projects are not part of the MVP. In the MVP, administration is centralized (system
-roles), and delegation happens per policy (`manage`, R-AUTHZ-025, P1) and, for CI, per CI issuer
-(R-CI-023, P1). Projects follow as P1 in a reduced form, so that a team can administer its own
-repositories and their policies without a system administrator. The catalog's project roles,
+Projects come in a reduced form, so that a team can administer its own repositories, their policies and the technical
+accounts of its partners without a system administrator. Delegation per policy (`manage`, R-AUTHZ-025) and per CI issuer
+(R-CI-023) stay P1. The catalog's project roles,
 global roles, environments, repository sharing and project quotas (IAM-053 to IAM-064, IAM-068)
 remain P2.
 
