@@ -26,7 +26,7 @@ numbers (owner, 2026-11-02).
 | [1 · Foundation](#phase-1--foundation-m0) | Skeleton, HA-shaped local stack, roles, drain-safe shutdown, TLS everywhere, endpoint foundation | 🟢 |
 | [2 · Access core](#phase-2--access-core-m1) | Login, tokens, permissions, repositories, admin UI | 🟢 |
 | [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | 🟢 |
-| [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual | 🟡 |
+| [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual | 🟢 |
 | [5a · Projects](#phase-5a--projects-and-delegated-administration) | Projects with project administrators who manage their repositories, policies and the technical accounts of external parties | ⚪ |
 | [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | ⚪ |
 | [5b · trove Bastion](#phase-5b--trove-bastion-m13) | An exposed, read-only cache instance in front of the main installation that serves released content to external parties and takes load off it | ⚪ |
@@ -111,6 +111,11 @@ Details: [roadmap M1](../coverage/roadmap.md#m1--access-core)
 - 🟢 Permission policies: principals, repositories, name patterns, actions
 - 🟢 Evaluation engine with caches that stay correct across replicas
 - 🟢 Audit of logins, token changes, policy changes and denied requests
+- 🟢 System role bindings from the Helm values (`config.authz.role_bindings`), applied by `trove migrate` and read-only in
+  the API and the UI, so an IdP group becomes the administrator through GitOps; the `auditor` role reads the metadata of
+  every repository and downloads no artifact (added 2026-11-02, owner:
+  [Q-AUTHZ-170](../spec/authorization.md#q-authz-170--system-role-bindings-declared-in-the-configuration),
+  [Q-AUTHZ-172](../spec/authorization.md#q-authz-172--the-auditor-reads-every-repositorys-metadata-and-triages-but-downloads-nothing))
 
 **Endpoints and exposure**
 - 🟢 Accepted credentials per endpoint; tokens bound to endpoints
@@ -196,7 +201,7 @@ Details: [roadmap M3](../coverage/roadmap.md#m3--nuget) · spec: [formats/nuget.
   address, Q-NUGET-82), merged search over local and remote members decided on the addressed repository, four members at
   a time on one scan budget (Q-NUGET-75, Q-NUGET-76, Q-NUGET-81), publishing through the deployment target
 - 🟢 Authentication: token as password in `nuget.config`, token as API key for push (`X-NuGet-ApiKey`, Q-AUTH-186)
-- 🟡 Clients: the .NET 10 SDK on Linux and nuget.exe on Mono run against trove on every change (e2e `nuget`); setup
+- 🟢 Clients: the .NET 10 SDK on Linux and nuget.exe on Mono run against trove on every change (e2e `nuget`); setup
   instructions for Visual Studio in the guide. The Windows row and the manual Visual Studio checklist run in the owner
   walkthrough of phase 8 ([Q-NUGET-72](../spec/formats/nuget.md#q-nuget-72--the-windows-row-of-e31-and-the-visual-studio-checklist-run-in-the-owner-walkthrough-not-on-a-ci-runner))
 - 🟢 Package UI and client setup snippets for .NET (`dotnet`, nuget.exe, `nuget.config`, the token in each shell's spelling)
@@ -219,10 +224,10 @@ Details: [roadmap M3](../coverage/roadmap.md#m3--nuget) · spec: [formats/nuget.
   against the counting test upstream (set `nuget`, per change), and the run against nuget.org of E3.1 (`TestNuGetClosingPublic`,
   set `nuget-closing`), green on kind after the fix wave; its run in Test and Release on the commit that closes the phase is
   part of that closing run
-- 🟡 NuGet e2e: cold cache with three clients at once (E3.2, one upstream request per `.nupkg`), a push whose answer the edge
+- 🟢 NuGet e2e: cold cache with three clients at once (E3.2, one upstream request per `.nupkg`), a push whose answer the edge
   drops, documents and restores with Valkey stopped (set `nuget-closing`); the drain part moved to phase 7
   ([Q-NUGET-73](../spec/formats/nuget.md#q-nuget-73--the-nuget-part-of-the-drain-test-moves-to-phase-7-with-the-other-long-legs))
-- ⚪ NuGet load joins the drain and failover tests: moved to phase 7 (Q-NUGET-73); the nightly leg `nuget-ha` runs its set
+- 🟢 NuGet load joins the drain and failover tests: moved to phase 7 (Q-NUGET-73), where it is an item; the nightly leg `nuget-ha` runs its set
 - 🟢 NuGet e2e: `dotnet restore` through a customer endpoint gets only exposed versions; a hidden version fails to resolve
   with `NU1102`, and a push answers 403 (`TestNuGetEndpoint`, Q-NUGET-71)
 
@@ -510,7 +515,8 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
   limitations) is written against the code of 2026-11-01, embedded into the binary and shown behind the "?" of the UI
   (R-API-054, R-UI-050, owner 2026-11-01). Open: the pages follow every later phase, and the walkthrough reviews them
 - 🟡 Design language of the owner's example screens in both colour schemes (Q-UI-88, owner 2026-11-01): palette, shell and
-  theme button built and in the component tests; open: the browser tier's colour-contrast check (light and dark) in CI and the
+  theme button built and in the component tests; the primary colour is cogpit's blue and green marks positive status only
+  (Q-UI-96, owner 2026-11-02), every pair held at WCAG AA by a palette test; open: the browser tier's colour-contrast check (light and dark) in CI and the
   owner's review at the walkthrough
 - ⚪ **Beta release** published
 

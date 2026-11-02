@@ -204,6 +204,17 @@ is, what was seen and how far it is confirmed: **confirmed** means checked in th
 development agent, **read** means found by reading the code and not reproduced. Add new findings
 here; remove a finding in the commit that fixes it.
 
+Found on 2026-11-02 while fixing the forwarded-search cache (Q-NUGET-94):
+
+### Proxy
+
+- **F-31 · The upstream client cache drops current clients on the second application of a change** (read, by the
+  development agent that fixed Q-NUGET-94). Every replica applies a `repo_config` change twice, at once and again on the
+  change-log poll; `proxy_upstream_clients` ([clients.go](../../internal/proxy/upstream/clients.go)) evicts the
+  repository's client both times, also one built under the configuration the change produced. It costs a reconnect and a
+  TLS handshake, not a wrong answer. Done when the client cache evicts only clients of an older configuration version, as
+  the query cache does since Q-NUGET-94.
+
 Found on 2026-11-01 while writing the manual (`docs/manual`) and the design change of Q-UI-88:
 
 ### Tests and tools
