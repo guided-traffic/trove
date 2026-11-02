@@ -1464,6 +1464,149 @@ index and refused pages listed by address).
 `packageHash` mismatch is not tested), the symbol packages beyond the push (the symbol server is P1, against nuget.org too), the Windows row
 and Visual Studio, and the drain and failover part of E3.6 (phase 7).
 
+## The OIDC issuer double
+
+[test/oidcstub](../../test/oidcstub) plays a GitLab instance as an OpenID Connect issuer for the tests of GitLab CI OIDC (M4, WP4.6;
+[R-CI-003](../spec/gitlab-ci-oidc.md#r-ci-003--discovery-signing-keys-caching-and-rotation) to
+[R-CI-006](../spec/gitlab-ci-oidc.md#r-ci-006--gitlab-job-configuration-contract), R-CI-018, R-CI-021). It signs GitLab-shaped ID
+tokens with keys that rotate, serves them over TLS with its own CA, fails on command, and counts what it was asked. It depends on the
+standard library only (it must not import `internal/ci`: a test of the validation must not share code with it).
+
+| File | Responsibility |
+|---|---|
+| [server.go](../../test/oidcstub/server.go) | `Server` (keys, fault set, caching, counters under one mutex), the request path (count, fault gate, document, `Cache-Control`/`ETag`/304), `Start`, `StartSelfSigned`, `StartControl` |
+| [keys.go](../../test/oidcstub/keys.go) | `KeyOptions`/`Key`: RSA-2048, RSA-1024, ES256, EdDSA; the JWK with its `kid` (RFC 7638 thumbprint by default), `use`, `key_ops`, `alg` |
+| [mint.go](../../test/oidcstub/mint.go) | `DefaultClaims`, `MintOptions`, `Server.Mint`: the token and the malformed variants |
+| [fault.go](../../test/oidcstub/fault.go) | `Fault`, `Cache`, `Counts` |
+| [control.go](../../test/oidcstub/control.go) | the control API |
+| [tls.go](../../test/oidcstub/tls.go) | a throwaway CA and certificate (`NewSelfSigned`, `CAPEM`), a certificate reloaded when its files change |
+| [cmd/oidcstub](../../test/oidcstub/cmd/oidcstub) | `serve`: both listeners and the control API in one process |
+| [Containerfile](../../test/oidcstub/Containerfile) | the image: a static binary on the release base image (`make oidc-stub-image`) |
+
+### What it serves
+
+- `GET /.well-known/openid-configuration`: `issuer` (its base URL: `Config.PublicURL`, else the address it was started on), `jwks_uri`
+  (`<base>/oauth/discovery/keys`, the path GitLab uses), `id_token_signing_alg_values_supported` (the algorithms of the published keys, RS256
+  with the default key), and the usual `response_types_supported`, `subject_types_supported`.
+- `GET /oauth/discovery/keys`: the key set, with `Cache-Control: max-age=<n>` (default 600 s; `Cache.NoHeader` leaves it out) and, when
+  `Cache.ETag` is set, an `ETag` over the key set and 304 on `If-None-Match`.
+- Anything else is 404; other methods than GET and HEAD are 405. TLS 1.2 or later, HTTP/1.1 only (so a connection can be cut), and
+  a second listener on plain HTTP that exists to be the target of the redirect-out-of-TLS fault.
+
+### Keys
+
+`AddKey(KeyOptions)` adds a key and keeps the old ones (`Rotate()` is `AddKey` with the defaults); `RemoveKey(kid)` takes keys out of the
+JWKS (an empty `kid` removes the keys published without one) but keeps them able to sign, so a test can still mint a token of a revoked key.
+`Mint` signs with the newest published key of the algorithm's family; only `KID` or `SignWith` chooses the RSA-1024 key, an unpublished key or an
+older one.
+
+| `KeyOptions` | Publishes |
+|---|---|
+| `Type` `rsa-2048` (default), `rsa-1024`, `es256`, `eddsa` | the key family; the RSA-1024 key is for the "at least 2048 bits" rule |
+| `KID`, `NoKID` | the `kid` (default: the key's thumbprint), or none |
+| `Use` (default `sig`), `OmitUse` | `use`; `enc` makes a key that must be ignored |
+| `KeyOps` | `key_ops`, for example `["sign"]` without `verify`; an empty list publishes `[]` |
+| `Alg`, `OmitAlg` | the key's own `alg` (default RS256, ES256, EdDSA), for the case where it differs from the token's |
+| `Unpublished` | keeps the key out of the JWKS: it signs, but no verifier can find it |
+
+### Tokens
+
+`DefaultClaims` is the example job of R-CI-006: issuer = the double's base URL, `aud` = `https://packages.example.com` (`Config.Audience`),
+project `acme/billing/invoice-api` (`project_id` `"1234"`), namespace `acme/billing` (`"4711"`), `ref_type` `tag`, `ref` `v1.4.0`,
+`ref_protected` `"true"`, `pipeline_source` `push`, the `job_*`, `source_*`, environment and user claims, `jti` random per token,
+`iat` = now, `nbf` = `iat - 5`, `exp` = `iat + 300`. IDs and booleans are JSON strings, as GitLab writes them; `runner_id` and the NumericDates are numbers.
+
+`MintOptions` changes it: `Claims` overrides by name (a `nil` value is a JSON `null`; `aud` may be a string or a list; a fractional `exp` is a
+non-integer NumericDate), `Remove` drops claims. For the negative cases of R-CI-004:
+
+| Option | Case |
+|---|---|
+| `Alg` `RS256`/`RS384`/`RS512`/`PS256`/`ES256`/`EdDSA` | the algorithm (the key family follows) |
+| `Alg` `HS256`/`HS384`/`HS512` | the algorithm-confusion token: the HMAC secret is the PEM of the newest RSA public key ([Q-CI-24](../spec/gitlab-ci-oidc.md#q-ci-24--the-secret-of-the-algorithm-confusion-token)), or `HMACSecret` |
+| `Alg` `none` | an unsecured JWT (`header.payload.` with an empty signature) |
+| `JWE` | a five-part value in the shape of a compact JWE |
+| `KID`, `NoKID`, `HeaderKID` | the signing key, no `kid` in the header, a `kid` of your choice (unknown, or 300 characters) |
+| `Typ`, `NoTyp` | the header `typ` (default `JWT`), or none |
+| `Headers` | extra header members: `jku`, `x5u`, `jwk`, `x5c`, `crit` |
+| `Duplicate` | members appended to the payload after the regular ones; a name already present becomes a duplicate member name |
+| `InvalidUTF8` | a payload member whose value holds bytes that are not UTF-8 (the signature is valid) |
+| `RawPayload` | the payload bytes, for anything else |
+| `PadTo` | a token of at least that many bytes (the oversized token), validly signed |
+| `ForeignSignature` | signed by a fresh key under the `kid` of a published one |
+
+### Faults and counters
+
+`SetFault(Fault)` replaces the whole fault set (`Fault{}` heals); each field is one case of R-CI-003. `Target` (`discovery` or `jwks`; empty is
+both) limits the response faults.
+
+| Field | What the issuer does |
+|---|---|
+| `Delay` | holds every answer back (a client that times out is still counted) |
+| `Unreachable` | closes connections before the TLS handshake and cuts kept-alive ones |
+| `Status` | answers that status (500) |
+| `NotJSON` | 200 with an HTML body that contains `NonJSONMarker`, for "no byte of the body in `last_error`" |
+| `OversizeBytes` | a valid JSON document of at least that size |
+| `Redirect{Hops, ToHTTP}` | `Hops` 302 answers on https, then the content; with `ToHTTP` the last answer is a redirect to the plain listener |
+| `IssuerMismatch` | discovery names another `issuer` |
+| `JWKSURI` | discovery names that `jwks_uri` (for example `https://169.254.169.254/keys`: egress denied) |
+| `Algorithms`, `NoCommonAlgorithm` | the offered algorithm list, or only `HS256` (`algorithms_not_offered`) |
+
+`Counts()` (reset with `Reset()`) counts `Discovery` and `JWKS` requests, one per fetch whatever the length of a redirect chain (`Hops` counts the
+requests that arrived through a redirect), `NotModified`, `Plain` (a client that arrived on the plain listener followed a redirect out of TLS),
+`Other` and `Refused` (connections cut by `Unreachable`). Minting and the control API are not counted. "Exactly one on-demand fetch" is
+`Counts().JWKS == 1`; "no request" is the zero value of `Counts`.
+
+### Use in a Go test
+
+```go
+stub, _ := oidcstub.New(oidcstub.Config{})
+run, ca, _ := stub.StartSelfSigned()                         // https://127.0.0.1:<port>, its own CA
+defer run.Close()
+// ca.CAPEM is the ca_bundle_ref of the CI issuer; stub.DiscoveryURL() its discovery_url, stub.Issuer() its issuer
+
+tok, _ := stub.Mint(oidcstub.MintOptions{Claims: map[string]any{"ref": "main", "ref_type": "branch"}})
+stub.Rotate()                                                // a new key; the old stays published
+tok2, _ := stub.Mint(oidcstub.MintOptions{})                 // signed by the new key: an unknown kid for trove
+_ = stub.RemoveKey(oldKID)                                   // revoke
+_ = stub.SetFault(oidcstub.Fault{Delay: oidcstub.Duration(4 * time.Second), Target: oidcstub.TargetJWKS})
+fetches := stub.Counts().JWKS
+```
+
+`Start(addr, tlsConfig, plainAddr)` takes the stack's own certificate instead of a throwaway one. The package's own tests
+([stub_test.go](../../test/oidcstub/stub_test.go), [control_test.go](../../test/oidcstub/control_test.go)) verify what it mints with the standard
+library against its JWKS, and show each fault doing what it says.
+
+### Control API
+
+For the tests on kind. A second TLS listener (`-control-listen`, 8444; why it is separate:
+[Q-CI-23](../spec/gitlab-ci-oidc.md#q-ci-23--where-the-issuer-doubles-control-api-listens)) that needs `Authorization: Bearer <token>`; the token is
+read from the environment variable `OIDCSTUB_CONTROL_TOKEN` (or `-control-token-file`), and without one the listener is off. All bodies are JSON;
+the requests are never counted and no fault touches them.
+
+| Request | Effect |
+|---|---|
+| `GET /counts`, `POST /reset[?all=true]` | the counters; reset (with `all`: also heal faults, restore the caching, replace the keys by one fresh key) |
+| `GET /info` | `issuer`, `discovery_url`, `jwks_url`, `keys` |
+| `GET /keys`, `POST /keys` | list; add a key (`KeyOptions` as JSON, `{}` is a default RSA-2048 key: the rotation) |
+| `POST /keys/remove` | `{"kid": "..."}`: out of the JWKS; 404 when there is none |
+| `POST /mint` | `MintOptions` as JSON in, `{"token": "..."}` out; for example `{"claims":{"jti":null},"remove":["nbf"],"alg":"ES256"}` |
+| `GET/POST /fault`, `GET/POST /cache` | the fault set (durations as `"4s"`); `{"max_age":"30s","etag":true}` |
+
+### In the cluster
+
+[deploy/dev/oidcstub.yaml](../../deploy/dev/oidcstub.yaml): Service `oidcstub` with port 443 (issuer), 8444 (control) and 8080 (plain HTTP,
+the target of the redirect-out-of-TLS fault), one replica (keys and counters are in memory), a certificate of the dev CA for
+`oidcstub.<ns>.svc`, the control token in Secret `trove-oidcstub` (key `control-token`, generated by the secret operator, handed to the container
+as `OIDCSTUB_CONTROL_TOKEN`), TCP probes. The issuer it announces is `https://oidcstub.<ns>.svc` (`-public-url`). `deploy/dev/e2e.sh` (marker
+`M4 oidc-stub`) builds the image (`make oidc-stub-image`), loads it, applies the manifest and restarts the Deployment when `TROVE_E2E_OIDCSTUB=1`,
+and exports `TROVE_E2E_OIDCSTUB_HOST` (`oidcstub.<ns>.svc`) and `TROVE_E2E_OIDCSTUB_CONTROL_URL` (`https://oidcstub.<ns>.svc:8444`). No e2e set
+exports the switch yet: a set that needs the double opts in by setting it. trove trusts the dev CA through `proxy.outbound.tls.ca_files`
+([values-dev.yaml](../../deploy/dev/values-dev.yaml)), so the CI issuer needs no `ca_bundle_ref` on kind.
+
+Verified: the image builds, starts with a throwaway certificate, serves the discovery document and mints through the control API (run with
+`docker run`). Not verified: the manifest and the `e2e.sh` block on kind (the cluster was in use by another agent), and that the default egress
+policy admits the pod address of the double.
+
 ## The project tests
 
 `TestNPMProjectPartner` (set `npm`) and `TestNuGetProjectPartner` (set `nuget`) are the end-to-end half of the beta phase 5a item "a

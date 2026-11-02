@@ -574,8 +574,8 @@ replaces step 7.
 **Acceptance criteria**
 
 - Unit tests cover each step with a failing token and assert the reason code. One case is a
-  token signed with HS256 using the RSA public key's bytes as the HMAC secret (the
-  algorithm-confusion attack), which must fail with `algorithm_not_allowed`.
+  token signed with HS256 using the RSA public key's bytes as the HMAC secret (the PEM text of the
+  key, [Q-CI-24](#q-ci-24--the-secret-of-the-algorithm-confusion-token); the algorithm-confusion attack), which must fail with `algorithm_not_allowed`.
 - A GitLab ID token whose `aud` is `["https://packages.example.com", "https://vault.example.com"]`
   is rejected with `audience_not_exclusive` under the default settings. With `allowed_audiences`
   `["https://packages.example.com", "https://packages.internal.example.com"]`, a token whose `aud`
@@ -3374,6 +3374,52 @@ remain the later way to declare mappings, and they never declare an issuer that 
 
 **Applied in the spec:** R-CI-001 (the configuration section, `trove migrate`, removal, the columns `source` and
 `removed_from_configuration`, two acceptance criteria), R-CI-002 (read-only, 409 `issuer_managed_by_configuration`).
+
+### Q-CI-23 · Where the issuer double's control API listens
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the end-to-end tests of M4 run the issuer double (`test/oidcstub`) as a pod and need to mint tokens, rotate
+keys, switch faults and read counters from outside (R-CI-003 and R-CI-004 acceptance criteria). One of the faults is
+"the issuer is unreachable"; another counts requests and asserts that there were none.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A path prefix on the issuer's port, like the control API of the npm and NuGet test upstreams | `/-/stub/...` next to the discovery and key paths, same listener | One port, one Service port | The `unreachable` fault cuts the test off from the very API that heals it; every control call must be excluded from the counters by path; a bearer-token check sits on the listener that trove's own requests reach |
+| (b) A second TLS listener (chosen) | The control API on its own port (`-control-listen`, 8444 in the manifest), same certificate, off without a control token | `unreachable` and the delay faults cannot touch it; the issuer listener carries nothing but what GitLab serves, so a counter never needs an exception | A second Service port, and the pod's readiness probe watches only the issuer port |
+| (c) A separate pod | The control API in a sidecar or second deployment, talking to the double over a socket | Full isolation | A protocol between the two for state that is a few maps in memory; a second image |
+
+**Choice:** (b). The control token comes from the environment variable `OIDCSTUB_CONTROL_TOKEN` (or a file), and without
+it the control listener is not started.
+
+**Rationale:** the faults of R-CI-003 include the issuer's death, and a test must still be able to end it. With (b) the
+double's one reachable surface for trove is exactly the two GitLab paths, so "no request" assertions need no exceptions.
+The development agent would revisit this if the cluster's network policy ever admits only one port per pod.
+
+**Applied in the spec:** none (test tooling); [e2e.md](../developer/e2e.md) section "The OIDC issuer double".
+
+### Q-CI-24 · The secret of the algorithm-confusion token
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the first acceptance criterion of R-CI-004 asks for a token "signed with HS256 using the RSA public key's bytes
+as the HMAC secret". "The bytes" of a public key are not one thing, and a unit test only proves that trove rejects the
+algorithm if it uses the bytes an attacker would use.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The PEM text of the key (PKIX `PUBLIC KEY` block) | What an attacker has after saving a key from a PEM file, and the value that libraries which accept a PEM string as an HMAC secret use in the published form of the attack | The classic case; one fixed value | Misses a verifier that converts the JWK to DER first |
+| (b) The DER of the key | The binary PKIX encoding | Also realistic | Rarer in practice |
+| (c) Every encoding | The double mints several tokens | Complete | A list where the criterion asks for one token; the rejection happens at the algorithm check before any key is touched, so the secret does not change the outcome |
+
+**Choice:** (a) is the default of `MintOptions.HMACSecret` (an HS256, HS384 or HS512 token with no explicit secret); any
+other secret, the DER included, is passed as `HMACSecret`.
+
+**Rationale:** the check under test is the allowlist of R-CI-004 step 3, which fails before a key is looked at, so one
+representative secret is enough, and a test that wants another passes it. The development agent would revisit this if
+validation ever tries an HMAC verification with a key it holds.
+
+**Applied in the spec:** R-CI-004 (the first acceptance criterion names the secret).
 
 ## What this does not cover
 

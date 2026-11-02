@@ -203,6 +203,27 @@ if [ "${TROVE_E2E_NUGETSTUB:-0}" = "1" ]; then
 fi
 # <<< M3 nuget-stub
 
+# >>> M4 oidc-stub
+# ── the GitLab-shaped OIDC issuer double ─────────────────────────────────────
+# TROVE_E2E_OIDCSTUB=1 builds the image of test/oidcstub (make oidc-stub-image), loads it into kind and (re)starts the
+# double of deploy/dev/oidcstub.yaml: Service oidcstub.<ns>.svc, port 443 for the issuer endpoints and 8444 for the
+# control API (mint, rotate, faults, counters), TLS from the dev CA, control token in Secret trove-oidcstub. The tests
+# read TROVE_E2E_OIDCSTUB_HOST (the issuer is https://$TROVE_E2E_OIDCSTUB_HOST) and TROVE_E2E_OIDCSTUB_CONTROL_URL.
+# trove trusts the dev CA for outbound requests through proxy.outbound.tls.ca_files (values-dev.yaml). Nothing here
+# runs without the switch.
+if [ "${TROVE_E2E_OIDCSTUB:-0}" = "1" ]; then
+  log "building the OIDC issuer double image for linux/$ARCH"
+  (cd "$REPO_ROOT" && make --no-print-directory oidc-stub-image IMAGE_ARCH="$ARCH") >"$OUT/oidcstub-image.log" 2>&1 || { tail -20 "$OUT/oidcstub-image.log" >&2; die "OIDC issuer double image build failed"; }
+  kind load docker-image trove-e2e-oidcstub:dev --name "$CLUSTER" >"$OUT/oidcstub-load.log" 2>&1 || { tail -20 "$OUT/oidcstub-load.log" >&2; die "kind load of the OIDC issuer double failed"; }
+  log "starting the OIDC issuer double"
+  render "$DEV_DIR/oidcstub.yaml" | kn apply -f - >/dev/null
+  kn wait --for=condition=Ready certificate/trove-oidcstub-tls --timeout=3m >/dev/null
+  kn rollout restart deployment/trove-oidcstub >/dev/null   # same tag, new image content
+  kn rollout status deployment/trove-oidcstub --timeout=3m >/dev/null || { kn describe pod -l app.kubernetes.io/name=trove-oidcstub >&2; die "the OIDC issuer double did not become ready"; }
+  export TROVE_E2E_OIDCSTUB_HOST="oidcstub.$NS.svc" TROVE_E2E_OIDCSTUB_CONTROL_URL="https://oidcstub.$NS.svc:8444"
+fi
+# <<< M4 oidc-stub
+
 # ── the tests ────────────────────────────────────────────────────────────────
 # The whole path is TLS (R-ARCH-035): the edge serves the dev CA's certificate for localhost, and the
 # pods' :8081 is HTTPS too. The scheme and the CA stay parameters: TROVE_DEV_SCHEME (https|http),

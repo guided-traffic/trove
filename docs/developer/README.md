@@ -54,7 +54,7 @@ no vulnerability scanning and no backup exists yet. Everything marked *planned* 
 | [http-api.md](http-api.md) | Listeners, the middleware chain, the system API and the problem format |
 | [helm-chart.md](helm-chart.md) | The chart: values, rendered objects, validation and the chart tests |
 | [local-profile.md](local-profile.md) | The HA-shaped dev profile on kind, its scripts and its pins |
-| [e2e.md](e2e.md) | The end-to-end suite on the dev cluster: harness, driver, k6 load, tests and open findings; the npm client matrix and its tests (E2.1 to E2.12), the counting npm test upstream and its corpus, the closing run |
+| [e2e.md](e2e.md) | The end-to-end suite on the dev cluster: harness, driver, k6 load, tests and open findings; the npm client matrix and its tests (E2.1 to E2.12), the counting npm test upstream and its corpus, the OIDC issuer double of the CI tests, the closing run |
 | [audit.md](audit.md) | Audit trail: registry, recorder, journal row, query, partitions, how to add an event type |
 | [repositories.md](repositories.md) | The repository model: service, snapshot and unknown-key lookup, validation, patterns, deletion job, the format registry and the generic format |
 | [proxy.md](proxy.md) | The pull-through proxy: the upstream clients of remote repositories (settings applied to the outbound client, credentials, secret references, the client cache, the foreign-host check, the upstream test); the engine adds its sections |
@@ -178,6 +178,7 @@ trove/
 │   │                         # identity/, login/, repository/, tls/, coordination/, postgres/, server/ (each creates its own database)
 │   ├── chart/                # build tag `chart`: render assertions and the lint script
 │   ├── npmstub/              # the counting npm test upstream (TLS only): stub, corpus/ (700 synthetic packages), recorded set, cmd/npmstub, Containerfile
+│   ├── oidcstub/             # the GitLab-shaped OIDC issuer double (TLS only): rotating keys, minted ID tokens, faults, counters, control API, cmd/oidcstub, Containerfile
 │   └── e2e/                  # build tag `e2e`: M0 scenarios (e03 to e16, e99), the M1 access-core scenarios (e1_01 login,
 │                             # e1_08 rate limits, e1_11 scatter, e1_13 transfer, e1_14 exposure), m1_env_test.go; k6 load script
 │                             # clients/: the npm client matrix image (R-NPM-045), npm_clients_test.go
