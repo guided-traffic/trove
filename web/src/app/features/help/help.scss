@@ -151,8 +151,11 @@
   display: none;
 }
 
+// The article takes the width of its column (Q-UI-97): the tables of the manual use the room a wide
+// screen has. Only the prose keeps a measure, set in package-readme.scss (`.help-readme`), and the
+// page's own contents list below.
 .help-article {
-  max-inline-size: 52rem;
+  min-inline-size: 0;
 }
 
 .help-toc {
@@ -160,6 +163,7 @@
   padding: var(--trove-space-3) var(--trove-space-4);
   border-inline-start: 3px solid var(--trove-accent);
   background: var(--trove-table-head-bg);
+  max-inline-size: 48rem;
 
   // One flat list; a third-level heading is indented under its section.
   ul {

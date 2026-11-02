@@ -37,7 +37,7 @@
             </ul>
           </nav>
         }
-        <trove-package-readme lang="en" [readme]="readme()" pageLinks="help/" />
+        <trove-package-readme class="help-readme" lang="en" [readme]="readme()" pageLinks="help/" />
         @if (p.previous || p.next) {
           <nav class="help-pager" i18n-aria-label="@@help.pager" aria-label="Previous and next page">
             @if (p.previous; as prev) {

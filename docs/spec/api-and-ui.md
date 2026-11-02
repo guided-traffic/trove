@@ -3264,6 +3264,9 @@ trove is found, delivered by the frontend. The text is the manual of R-API-054; 
   contents give way to a link back to the overview.
 - The manual's text is English and marked `lang="en"`; the frame is translated (Q-UI-86). The area sits behind the same
   guard as the guides: signed-in callers, anonymous ones where anonymous access is on.
+- **Width** (Q-UI-97). The page takes the width of its column, which grows with the viewport; the prose keeps a measure
+  of 80 characters, tables and code use the full width. A table sits in a container of its own that scrolls sideways
+  when it is wider; its cells break at spaces only, code in a cell stays whole, and the first column has a minimum width.
 - Accessibility as R-UI-044: one `h1`, landmarks for the contents, "On this page" and the page navigation.
 
 Acceptance criteria:
@@ -3274,6 +3277,8 @@ Acceptance criteria:
   neighbours; a link to another page navigates in the application to that page and heading, a link inside the page
   scrolls; an unknown page and a failed read show the error with a retry; axe finds no serious or critical violation
   ([help.spec.ts](../../web/src/app/features/help/help.spec.ts), `app.routes.spec.ts` for both routes).
+- A table of the manual sits in a focusable `.readme-table` container, and wrapping twice does not nest
+  ([package-readme.spec.ts](../../web/src/app/features/packages/package-readme.spec.ts), help.spec.ts).
 
 ### R-UI-020 · Repository list
 Priority: **MVP** · Covers: UI-030, REPO-007
@@ -5799,6 +5804,42 @@ The browser tier's axe run has not seen the blue palette yet.
 
 **Applied in the spec:** Q-UI-88 (superseded in part: the accent); R-UI-002 names the accent;
 [design-language.md](../developer/design-language.md); [web-ui.md](../developer/web-ui.md#design-tokens).
+
+### Q-UI-97 · The manual's article takes the width of its column; only the prose keeps a measure
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the page of the manual was capped at 52 rem, so on a wide screen its tables sat in a narrow column with the
+right half of the screen empty, and the table cells broke inside words ("al / l", "Servi / ce"): the README styles set
+`overflow-wrap: anywhere`, which also lowers the minimum width a column may shrink to, and the table was a `display:
+block` element that never took the container's width.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Widen the article; prose keeps a wide measure of 110 characters, tables and code use the full width | No cap on the article; paragraphs, lists, quotes and headings are capped at `110ch`; each table sits in a full-width container that scrolls sideways | Tables use the room a wide screen has; prose uses more of it too (the owner asked for the room to be used, 2026-11-02) and stays followable; one rule for every width | 110 characters is above the classic comfortable range of 66 to 90; prose still leaves space to its right on a very wide screen |
+| (b) Widen the whole article, prose included | No cap at all | Simplest | Lines of 200 characters on a 2200 px screen are hard to follow |
+| (c) A larger fixed cap (for example 80 rem) | Only the number changes | One line of CSS | Still empty space on wide screens and still too narrow for a wide table; the number is a guess |
+
+**Choice:** (a). Rules (the layout is in [package-readme.scss](../../web/src/app/features/packages/package-readme.scss)
+and [help.scss](../../web/src/app/features/help/help.scss)):
+
+- The article has no `max-inline-size`; the contents column keeps its 15 rem.
+- The help page marks its README `help-readme`; only then are the direct `p`, `ul`, `ol`, `dl`, `blockquote` and
+  headings capped at `110ch`. The "On this page" box is capped at 48 rem.
+- The finishing pass of `PackageReadmeView` wraps every table in `.readme-table`: full width, `overflow-x: auto`, focusable
+  (a keyboard user can scroll it, as with a code block). A table wider than the container scrolls inside it, so the page
+  itself never scrolls sideways (phone width included).
+- Cells break at spaces only: `overflow-wrap: normal` and `word-break: normal` in `th` and `td`, `overflow-wrap:
+  break-word` instead of `anywhere` on the README. Code in a cell does not wrap (`white-space: nowrap`); a long token
+  widens the table and the container scrolls. The first column has a minimum width of 9 rem.
+- Package READMEs share the component, so their tables take the same rules; only the measure is the help page's.
+
+**Rationale:** the owner asked that the manual use the room a wide screen has (2026-11-02). Tables take all of it; prose
+takes 110 characters, wider than the classic measure but still a line the eye can follow back, where a 200-character line
+of option (b) is not. Revisit when a manual page carries a table whose first column is long prose (the 9 rem minimum then
+squeezes less than it helps), or when the owner wants the prose wider or narrower at the walkthrough.
+
+**Applied in the spec:** R-UI-050; [manual.md](../developer/manual.md#layout-of-a-page).
 
 ### Q-API-16 · A `limit` above the maximum is clamped
 

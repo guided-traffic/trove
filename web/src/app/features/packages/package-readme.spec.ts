@@ -205,6 +205,16 @@ describe('README rendering', () => {
     expect(body.querySelector('pre')?.getAttribute('tabindex')).toBe('0');
   });
 
+  it('R-UI-050 a table sits in a focusable container that scrolls sideways, and wrapping twice does not nest', async () => {
+    const r = await show('<table><thead><tr><th>Name</th></tr></thead><tbody><tr><td><code>all</code></td></tr></tbody></table><p>x</p>');
+    expect(r.body.querySelectorAll('.readme-table').length).toBe(1);
+    const wrap = r.body.querySelector('.readme-table');
+    expect(wrap?.getAttribute('tabindex')).toBe('0');
+    expect(wrap?.firstElementChild?.tagName).toBe('TABLE');
+    expect(wrap?.parentElement).toBe(r.body);
+    await expectAccessible(r.root);
+  });
+
   it('R-UI-008 a truncated README and blocked external images are announced as notes', async () => {
     const { root, fixture } = await show('<p>x</p>', { truncated: true, externalImagesBlocked: 2 });
     await settle(fixture);

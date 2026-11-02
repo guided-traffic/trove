@@ -72,6 +72,16 @@ describe('Help', () => {
     expect(scrolled).toBe(true);
   });
 
+  it('R-UI-050 the article is not capped in width; the prose carries the measure class, a table its own scrolling container', async () => {
+    const r = await page('admin', 'overview');
+    expect(r.root.querySelector('.help-article')).not.toBeNull();
+    expect(r.root.querySelector('trove-package-readme')?.classList.contains('help-readme')).toBe(true);
+    const wrap = r.root.querySelector('.help-article .readme-table');
+    expect(wrap?.querySelector('table th')?.textContent).toBe('Role');
+    expect(wrap?.querySelector('td code')?.textContent).toBe('all');
+    await expectAccessible(r.root);
+  });
+
   it('R-UI-050 the first and the last page have one neighbour', async () => {
     const first = await page('user', 'getting-started');
     expect([...first.root.querySelectorAll('.help-pager a')].map((a) => a.getAttribute('rel'))).toEqual(['next']);

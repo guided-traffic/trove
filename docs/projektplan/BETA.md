@@ -389,7 +389,7 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 
 **Phase**
 - 🟡 Contracts: schema, packages, OpenAPI operations, configuration, audit events, change areas, limiters, tasks and the
-  seam between the CI token and the evaluator ([ci-oidc.md](../developer/ci-oidc.md)); the GitLab-shaped issuer double
+  seam between the CI token and the evaluator (contract page `docs/developer/ci-oidc.md`, in progress); the GitLab-shaped issuer double
   `test/oidcstub` (Q-CI-23, Q-CI-24) is built
 - ⚪ GitLab as trusted issuer: discovery, signing keys, key rotation; several GitLab instances side by side (R-CI-005)
 - ⚪ GitLab issuers declared in the Helm values (`config.ci.issuers`), applied by `trove migrate`, shown in trove and
@@ -629,8 +629,8 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
   [manual](../manual/README.md) (7 user and 12 administrator pages, among them installation, configuration and known
   limitations) is written against the code of 2026-11-01, embedded into the binary and shown behind the "?" of the UI
   (R-API-054, R-UI-050, owner 2026-11-01). Open: the pages follow every later phase, and the walkthrough reviews them
-  - 🟡 The manual uses the width it has (owner, 2026-11-02): on a wide screen the article and its tables widen instead of
-    a narrow column with words broken mid-word in table cells; tables that are still too wide scroll in their own box
+  - 🟢 The manual uses the width it has (owner, 2026-11-02; [Q-UI-97](../spec/api-and-ui.md#q-ui-97--the-manuals-article-takes-the-width-of-its-column-only-the-prose-keeps-a-measure)): on a wide screen the article and its tables widen instead of
+    a narrow column with words broken mid-word in table cells; prose up to 110 characters a line, tables that are still too wide scroll in their own box
 - 🟡 Design language of the owner's example screens in both colour schemes (Q-UI-88, owner 2026-11-01): palette, shell and
   theme button built and in the component tests; the primary colour is cogpit's blue and green marks positive status only
   (Q-UI-96, owner 2026-11-02), every pair held at WCAG AA by a palette test; open: the browser tier's colour-contrast check (light and dark) in CI and the

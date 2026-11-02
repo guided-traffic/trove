@@ -12,7 +12,9 @@ trove-package-readme {
   }
 
   .readme {
-    overflow-wrap: anywhere;
+    // A word breaks only where it would overflow, never to narrow a column (a table cell sizes by
+    // its longest word and the container scrolls instead).
+    overflow-wrap: break-word;
     line-height: 1.5;
 
     :is(h1, h2, h3, h4, h5, h6) {
@@ -52,15 +54,53 @@ trove-package-readme {
       height: auto;
     }
 
+    // The finishing pass wraps every table: the container takes the full width and scrolls a table
+    // that is wider, so the columns keep the width of their longest word.
+    .readme-table {
+      max-inline-size: 100%;
+      margin-block: var(--trove-space-3);
+      overflow-x: auto;
+
+      &:focus-visible {
+        outline: var(--trove-focus-ring);
+        outline-offset: 2px;
+      }
+    }
+
     table {
+      inline-size: 100%;
+      border-collapse: collapse;
+    }
+
+    // Before the finishing pass has run, a bare table scrolls itself.
+    .readme > table {
       display: block;
       overflow-x: auto;
-      border-collapse: collapse;
     }
 
     :is(th, td) {
       padding: var(--trove-space-1) var(--trove-space-3);
       border: 1px solid var(--trove-border);
+      overflow-wrap: normal;
+      word-break: normal;
+      text-align: start;
+      vertical-align: top;
     }
+
+    // A name or key in the first column is not squeezed by the prose columns beside it.
+    :is(th, td):first-child {
+      min-inline-size: 9rem;
+    }
+
+    // Short code in a cell stays in one piece; a long token widens the table and the container
+    // scrolls.
+    :is(th, td) code {
+      white-space: nowrap;
+    }
+  }
+
+  // The help page's prose keeps a comfortable measure; tables, code and diagrams use the full width.
+  &.help-readme .readme > :is(p, ul, ol, dl, blockquote, h1, h2, h3, h4, h5, h6) {
+    max-inline-size: 110ch;
   }
 }

@@ -45,6 +45,17 @@ The links are relative to the base href of the UI (`/ui/<locale>/`), so a link o
 route of the same language. In the application, `PackageReadmeView` keeps such a link (no `rel`, no removal) and turns a
 plain click into `Router.navigateByUrl`; the help page scrolls to the fragment once the text is rendered.
 
+## Layout of a page
+
+[Q-UI-97](../spec/api-and-ui.md#q-ui-97--the-manuals-article-takes-the-width-of-its-column-only-the-prose-keeps-a-measure).
+The article has no fixed width; the contents column keeps 15 rem and the article takes the rest. The help page binds its
+README with the class `help-readme`, which caps the direct paragraphs, lists, quotes and headings at `110ch`
+([package-readme.scss](../../web/src/app/features/packages/package-readme.scss)); tables and code use the full width.
+`PackageReadmeView` wraps every table in `.readme-table` (full width, `overflow-x: auto`, `tabindex="0"`), so a table
+wider than the column scrolls inside its container. Cells break at spaces only, code in a cell stays whole, the first
+column is at least 9 rem wide. Below 52 rem of content the contents give way to the link back to the overview. The
+rules are shared with package READMEs except the measure.
+
 ## Add or change a page
 
 1. Write `docs/manual/<section>/<page>.md` by the rules of [docs/manual/README.md](../manual/README.md): title line,

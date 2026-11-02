@@ -50,7 +50,9 @@ export function headingSlug(heading: string, seen: Map<string, number>): string 
  * - with `pageLinks`, a link whose target starts with that prefix stays and opens in the application:
  *   the manual's links to its own pages (`help/<section>/<page>`, R-UI-050), which resolve against the
  *   base href when they are opened in a new tab;
- * - code blocks can take focus, so that a keyboard user can scroll them sideways.
+ * - code blocks can take focus, so that a keyboard user can scroll them sideways;
+ * - a table sits in a `.readme-table` container that takes the full width and scrolls sideways when
+ *   the table is wider, and that can take focus for the same reason.
  */
 @Component({
   selector: 'trove-package-readme',
@@ -108,6 +110,14 @@ export class PackageReadmeView {
         if (!IMAGE_SOURCE.test((img.getAttribute('src') ?? '').trim())) img.remove();
       }
       for (const pre of root.querySelectorAll('pre')) pre.setAttribute('tabindex', '0');
+      for (const table of root.querySelectorAll('table')) {
+        if (table.parentElement?.classList.contains('readme-table')) continue;
+        const wrap = document.createElement('div');
+        wrap.className = 'readme-table';
+        wrap.setAttribute('tabindex', '0');
+        table.replaceWith(wrap);
+        wrap.append(table);
+      }
       const seen = new Map<string, number>();
       for (const h of root.querySelectorAll('h1, h2, h3, h4, h5, h6')) {
         const slug = headingSlug(h.textContent ?? '', seen);
