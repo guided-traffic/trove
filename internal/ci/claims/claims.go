@@ -27,19 +27,6 @@ func refuse(r reason.Reason, pointer, detail string) *Error {
 	return &Error{Reason: r, Pointer: pointer, Detail: detail}
 }
 
-// The codes of a save that the reason leaf does not name. Each is the name of a code of the
-// management API's registry (internal/errs) with the same meaning, so a 422 carries one vocabulary.
-const (
-	// ReasonProjectPrefixRequired: a project mapping's name does not start with "<project>-" (Q-CI-26).
-	ReasonProjectPrefixRequired reason.Reason = "project_prefix_required"
-	// ReasonInvalidPattern: a repository selector, package pattern or path pattern has invalid syntax
-	// or exceeds the limits of R-AUTHZ-004 and R-AUTHZ-005 (1024 characters, 256 patterns per list).
-	ReasonInvalidPattern reason.Reason = "invalid_pattern"
-	// ReasonInvalidValue: a member holds a value outside its closed set (an ownership, a
-	// crossProjectSource, a subject kind) or an inline grant names both or neither of packages and paths.
-	ReasonInvalidValue reason.Reason = "invalid_value"
-)
-
 // Claims is the claim set of a verified subject token, or of a dry-run request. The values are the
 // decoded JSON values: string, bool, json.Number or float64, nil, []any and map[string]any. Claim
 // names are the issuer's spelling (R-CI-010).

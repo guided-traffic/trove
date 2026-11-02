@@ -90,80 +90,8 @@ func (q *Queries) CiExchangeInsertIssuance(ctx context.Context, arg CiExchangeIn
 	return err
 }
 
-const ciExchangeLockIssuer = `-- name: CiExchangeLockIssuer :many
-
-SELECT id::text AS id, name, issuer, enabled, version, mappings_version, allowed_audiences, exclusive_audience,
-       allowed_algorithms, allowed_typ, allow_missing_typ, extract(epoch FROM clock_skew)::bigint AS clock_skew_secs,
-       required_claims, pin_claims, single_use_subject_tokens, COALESCE(extract(epoch FROM max_ttl), 0)::bigint AS max_ttl_secs
-  FROM ci_issuers WHERE id = $1::text::uuid FOR SHARE
-`
-
-type CiExchangeLockIssuerRow struct {
-	ID                     string
-	Name                   string
-	Issuer                 string
-	Enabled                bool
-	Version                int64
-	MappingsVersion        int64
-	AllowedAudiences       []string
-	ExclusiveAudience      bool
-	AllowedAlgorithms      []string
-	AllowedTyp             []string
-	AllowMissingTyp        bool
-	ClockSkewSecs          int64
-	RequiredClaims         []string
-	PinClaims              []string
-	SingleUseSubjectTokens bool
-	MaxTtlSecs             int64
-}
-
-// Queries of the token exchange (R-CI-007, R-CI-018, R-CI-020), the statements of work package W4
-// (docs/developer/ci-oidc.md). They run on the exchange's one transaction: the re-read of the issuer
-// and of the matched mappings FOR SHARE, the replay upsert, the restore cut-off (packages.sql
-// ReadRestoredAt), the issuance record. W4 adds its further statements here; the token row is
-// written through internal/auth/token (IssueCITx), not from here.
-// The exchange's re-read (R-CI-007): the issuer row FOR SHARE, so a write of the issuer or of one of
-// its mappings (which takes FOR UPDATE) waits for the exchange and the exchange for it. The versions
-// are compared with what the evaluation used; the settings that steps 5 to 9 of R-CI-004 read come
-// with it, for the second validation after a change of the issuer's version.
-func (q *Queries) CiExchangeLockIssuer(ctx context.Context, id string) ([]CiExchangeLockIssuerRow, error) {
-	rows, err := q.db.Query(ctx, ciExchangeLockIssuer, id)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []CiExchangeLockIssuerRow{}
-	for rows.Next() {
-		var i CiExchangeLockIssuerRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Issuer,
-			&i.Enabled,
-			&i.Version,
-			&i.MappingsVersion,
-			&i.AllowedAudiences,
-			&i.ExclusiveAudience,
-			&i.AllowedAlgorithms,
-			&i.AllowedTyp,
-			&i.AllowMissingTyp,
-			&i.ClockSkewSecs,
-			&i.RequiredClaims,
-			&i.PinClaims,
-			&i.SingleUseSubjectTokens,
-			&i.MaxTtlSecs,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const ciExchangeLockMappings = `-- name: CiExchangeLockMappings :many
+
 SELECT id::text AS id, enabled, version
   FROM ci_mappings WHERE id = ANY($1::text[]::uuid[]) FOR SHARE
 `
@@ -174,6 +102,11 @@ type CiExchangeLockMappingsRow struct {
 	Version int64
 }
 
+// Queries of the token exchange (R-CI-007, R-CI-018, R-CI-020), the statements of work package W4
+// (docs/developer/ci-oidc.md). They run on the exchange's one transaction: the re-read of the matched
+// mappings FOR SHARE (the issuer row is re-read by ci_issuers.sql CiIssuerByIDShare, the issuer service's
+// LockShareTx), the replay upsert, the restore cut-off, the issuance record. The token row is written
+// through internal/auth/token (IssueCITx), not from here.
 // The matched mappings, re-read FOR SHARE: still enabled, still at the version the evaluation used.
 func (q *Queries) CiExchangeLockMappings(ctx context.Context, ids []string) ([]CiExchangeLockMappingsRow, error) {
 	rows, err := q.db.Query(ctx, ciExchangeLockMappings, ids)
@@ -193,6 +126,21 @@ func (q *Queries) CiExchangeLockMappings(ctx context.Context, ids []string) ([]C
 		return nil, err
 	}
 	return items, nil
+}
+
+const ciExchangeRestoredAt = `-- name: CiExchangeRestoredAt :one
+SELECT COALESCE((SELECT (extract(epoch FROM (value #>> '{}')::timestamptz) * 1000000)::bigint
+                   FROM system_state WHERE key = 'restored_at'), 0)::bigint AS restored_us
+`
+
+// The restore cut-off of a single-use issuer (R-CI-018, Q-CI-13): the time the last restore finished, the
+// system_state key restored_at (R-BAK-022), in microseconds; 0 before the first restore. Read in the exchange's
+// transaction, never kept by a replica, so it holds on a replica that outlived a post-restore.
+func (q *Queries) CiExchangeRestoredAt(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, ciExchangeRestoredAt)
+	var restored_us int64
+	err := row.Scan(&restored_us)
+	return restored_us, err
 }
 
 const ciExchangeUseJTI = `-- name: CiExchangeUseJTI :one

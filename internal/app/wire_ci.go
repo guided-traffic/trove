@@ -10,6 +10,7 @@ import (
 	v1 "github.com/guided-traffic/trove/internal/api/v1"
 	"github.com/guided-traffic/trove/internal/auth/token"
 	"github.com/guided-traffic/trove/internal/ci"
+	"github.com/guided-traffic/trove/internal/ci/claims"
 	"github.com/guided-traffic/trove/internal/cluster"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/jobs"
@@ -17,10 +18,9 @@ import (
 	"github.com/guided-traffic/trove/internal/observability"
 )
 
-// The wiring of the CI federation (docs/developer/ci-oidc.md). Until the work packages of the page
-// build their services, the composition root wires the stubs of internal/ci/stubs.go: every method
-// answers 501 ci_not_implemented, the three tasks run and do nothing, the metrics are registered and
-// stay at zero. A work package replaces its stub here and deletes its type from stubs.go.
+// The wiring of the CI federation (docs/developer/ci-oidc.md): the issuer and key service (W1), the mapping store
+// (W3), the revoker and the issuance service (W5) on every role, the token exchange (W4) on a replica with a client
+// listener, the three tasks and the metrics.
 
 // The kinds and tasks of the CI exchange (R-CI-030). All three are exclusive: two runs never
 // overlap, and every run is idempotent.
@@ -44,20 +44,18 @@ const (
 // resolves issuers and keys for the exchange, a worker replica runs the tasks.
 const AreaCI Area = "ci"
 
-// ciArea is the set of CI services of the replica. A work package replaces its member of the stubs.
+// ciArea is the set of CI services of the replica.
 type ciArea struct {
 	issuers   ci.Issuers
 	mappings  ci.Mappings
 	revoker   ci.Revoker
 	issuances ci.Issuances
-	exchanger ci.Exchanger
 	metrics   *ci.Metrics
 }
 
 // wireCI builds the services: the issuer and key service of work package W1 over the database, the change
-// log, the cache registry and the outbound factory, and the mapping store of work package W3; the stubs of
-// the other work packages until they build theirs (the revoker and the mapping store are the issuer
-// service's collaborators).
+// log, the cache registry and the outbound factory, the mapping store of work package W3, and the revoker and the
+// issuance service of work package W5 (the revoker and the mapping store are the issuer service's collaborators).
 func (a *App) wireCI(_ context.Context, in infra) (ciArea, error) {
 	if err := requireInputs(AreaCI, given("database", in.db), given("change log", in.changes), given("cache registry", in.caches),
 		given("outbound factory", in.out), given("audit recorder", in.rec)); err != nil {
@@ -75,7 +73,7 @@ func (a *App) wireCI(_ context.Context, in infra) (ciArea, error) {
 	if err != nil {
 		return ciArea{}, err
 	}
-	out := ciArea{revoker: revoker, issuances: issuances, exchanger: ci.StubExchanger{}, metrics: metrics}
+	out := ciArea{revoker: revoker, issuances: issuances, metrics: metrics}
 	// The mapping store of work package W3: it takes the revoker of the area and is the issuer service's
 	// collaborator for the cascade of a deletion.
 	mappings, err := ci.NewMappings(ci.MappingsOptions{
@@ -118,10 +116,47 @@ func (a *App) CITokenIssuer() (*token.Service, meta.Runner) {
 	return part[identityArea](a.parts).tokens, a.database()
 }
 
-// ciAPI hands the services to the management API.
+// AreaCIExchange is the token exchange of work package W4 (R-CI-007): only a replica with a client listener serves it,
+// and it takes the two limiters of the limits area.
+const AreaCIExchange Area = "ci_exchange"
+
+// ciExchangeArea is the exchange of a replica with a client listener.
+type ciExchangeArea struct{ exchanger *ci.ExchangeService }
+
+// wireCIExchange builds the exchange over the issuers and the mappings of the CI area, the token service (IssueCITx,
+// W5), the grant index of the decision point (the scope's questions), the audit recorder and the limiters
+// ci_exchange_address and ci_exchange_subject. It is a component: its stop writes the denial counts the replica
+// still holds (R-CI-021).
+func (a *App) wireCIExchange(ctx context.Context, in infra, cs ciArea, id identityArea, az authzArea, lim limitsArea) (ciExchangeArea, error) {
+	if err := requireInputs(AreaCIExchange, given("database", in.db), given("issuer service", cs.issuers), given("mapping store", cs.mappings),
+		given("token service", id.tokens), given("decision point", az.engine), given("limiter set", lim.set)); err != nil {
+		return ciExchangeArea{}, err
+	}
+	engine := az.engine
+	x, err := ci.NewExchange(ci.ExchangeOptions{
+		DB: in.db, Issuers: cs.issuers, Mappings: cs.mappings, Tokens: id.tokens,
+		Grants:   ci.GrantIndexFunc(func(f *claims.Frozen) ci.GrantIndex { return engine.CIScopeOf(f) }),
+		Recorder: in.rec, Metrics: cs.metrics, Config: a.cfg.CI, BaseURL: a.cfg.Server.BaseURL,
+		AddressLimiter: lim.ciAddress, SubjectLimiter: lim.ciSubject, Log: a.log.With("component", "ci-exchange"),
+	})
+	if err != nil {
+		return ciExchangeArea{}, err
+	}
+	if err := a.startComponent(ctx, x); err != nil {
+		return ciExchangeArea{}, err
+	}
+	return ciExchangeArea{exchanger: x}, nil
+}
+
+// ciAPI hands the services to the management API. A replica without the exchange (none serves a client listener
+// without it) leaves Exchanger nil, which the handler answers with 503.
 func (a *App) ciAPI() v1.CIServices {
 	s := part[ciArea](a.parts)
-	return v1.CIServices{Issuers: s.issuers, Mappings: s.mappings, Issuances: s.issuances, Revoker: s.revoker, Exchanger: s.exchanger}
+	out := v1.CIServices{Issuers: s.issuers, Mappings: s.mappings, Issuances: s.issuances, Revoker: s.revoker, Exchange: a.cfg.CI.Exchange}
+	if x := part[ciExchangeArea](a.parts).exchanger; x != nil {
+		out.Exchanger = x
+	}
+	return out
 }
 
 // ciLimiters registers the two cluster-scope limiters of the exchange (R-CI-021, Q-CI-14, R-ARCH-034):
@@ -202,7 +237,7 @@ func (a *App) registerCIJobs(r *jobs.Registry) {
 // registerCIMetrics registers the two gauges of R-CI-020 that are read from PostgreSQL
 // (trove_ci_signing_keys_age_seconds, trove_ci_tokens_active) as a database gauge source, evaluated once
 // per metrics.db_gauge_interval and aggregated with max, never sum, across replicas (R-OPS-007). The
-// counters and histograms are the replica's own, created by wireCI; W1 and W4 increment them.
+// counters and histograms are the replica's own, created by wireCI; the key service and the exchange increment them.
 func (a *App) registerCIMetrics() error {
 	m := a.tele.metrics
 	age := prometheus.NewDesc(ci.MetricKeysAge, "Age of the stored signing key set of a CI issuer, from fetched_at in PostgreSQL (aggregate with max, not sum, across replicas).", []string{"issuer"}, nil)

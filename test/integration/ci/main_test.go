@@ -1,16 +1,15 @@
 //go:build integration
 
 // Package ci tests the GitLab CI OIDC federation (docs/spec/gitlab-ci-oidc.md) against the integration
-// stack with full in-process replicas (test/integration/testenv): the issuers and their signing keys of
-// work package W1 (R-CI-001, R-CI-002, R-CI-003, R-CI-005 as far as it is the issuers', R-CI-030's
-// ci-keys-refresh), against the issuer double of test/oidcstub, which serves discovery and the key set over
-// TLS and rotates, fails and counts. Every test creates a database of its own; the replicas are the
+// stack with full in-process replicas (test/integration/testenv): the issuers and their signing keys (work
+// package W1), the mappings (W3), the token exchange (W4) and the use of a CI token (W5) of
+// docs/developer/ci-oidc.md, against the issuer double of test/oidcstub, which serves discovery and the key
+// set over TLS, mints GitLab-shaped ID tokens, and rotates, fails and counts. Every test creates a database of its own; the replicas are the
 // production composition root (app.New) with Valkey running or, where the criterion says so, stopped.
 //
 // The files of the package are named by what they test (issuers_test.go, keys_test.go, declared_test.go,
-// tasks_test.go) so that the later work packages add theirs beside them. The criteria that need a
-// work package that is not built yet are in pending_test.go behind the build tag ci_pending, and the
-// contract page lists them (docs/developer/ci-oidc.md "Pending criteria").
+// tasks_test.go, exchange*_test.go, replay_test.go, ratelimit_test.go, …). The criteria that need what is not
+// built yet have no test here; the contract page lists them (docs/developer/ci-oidc.md "Pending criteria").
 package ci
 
 import (

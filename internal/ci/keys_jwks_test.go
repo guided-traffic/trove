@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
+	"github.com/guided-traffic/trove/internal/auth/jws"
 	"github.com/guided-traffic/trove/internal/ci/subject"
 )
 
@@ -116,28 +117,46 @@ func TestR_CI_003_TheKeyRulesIgnoreAndReport(t *testing.T) {
 			t.Errorf("key %q is not usable", kid)
 		}
 	}
+	// The reasons are the stable names of the one implementation of the key rules, jws.ParseJWKS (Q-CI-42).
 	want := map[string]string{
-		"enc": `use is not "sig"`, "sign-only": `key_ops does not contain "verify"`, "empty-ops": `key_ops does not contain "verify"`,
-		"weak": "fewer than 2048 bits", "secret": "no verification algorithm", "ec521": "no verification algorithm", "broken": "base64url",
+		"enc": jws.IgnoredUse, "sign-only": jws.IgnoredKeyOps, "empty-ops": jws.IgnoredKeyOps,
+		"weak": jws.IgnoredRSASize, "secret": jws.IgnoredPrivate, "ec521": jws.IgnoredCurve, "broken": jws.IgnoredInvalid,
 	}
 	got := reasons(set)
-	for kid, frag := range want {
-		if !strings.Contains(got[kid], frag) {
-			t.Errorf("key %q: reason %q does not contain %q", kid, got[kid], frag)
+	for kid, r := range want {
+		if got[kid] != r {
+			t.Errorf("key %q: reason %q, want %q", kid, got[kid], r)
 		}
 	}
-	// The second key of the same kid is ignored, the first stays.
-	dup := 0
-	for _, i := range set.Infos {
-		if i.KID == "good-rsa" && i.Ignored {
-			dup++
-		}
-	}
-	if dup != 1 {
-		t.Errorf("duplicate kid ignored %d times, want 1", dup)
+	// Two keys of one kid are both usable and both candidates: the rules of R-CI-003 say nothing of a repeated kid,
+	// and the key status shows what the validation tries.
+	if n := len(set.find("good-rsa", "RS256")); n != 2 {
+		t.Errorf("the candidates of a repeated kid: %d, want 2", n)
 	}
 	if len(set.Infos) != 14 {
 		t.Errorf("every key is reported: %d infos, want 14", len(set.Infos))
+	}
+}
+
+// The key status and the validation read one parse (Q-CI-42): every usable key of the status is a candidate of
+// the selection for a fitting algorithm, and no ignored key ever is.
+func TestR_CI_003_TheKeyStatusAndTheValidationAgree(t *testing.T) {
+	set := parse(t, jwks(
+		rsaJWK(t, 2048, map[string]any{"kid": "r", "alg": "RS256"}),
+		rsaJWK(t, 1024, map[string]any{"kid": "weak"}),
+		rsaJWK(t, 2048, map[string]any{"kid": "enc", "use": "enc"}),
+		ecJWK(t, elliptic.P256(), "P-256", map[string]any{"kid": "e", "alg": "ES384"}),
+		edJWK(t, map[string]any{"kid": "d"}),
+	))
+	alg := map[string]string{"r": "RS256", "weak": "RS256", "enc": "RS256", "e": "ES256", "d": "EdDSA"}
+	for _, info := range set.Infos {
+		got := len(set.find(info.KID, alg[info.KID])) > 0
+		if got == info.Ignored {
+			t.Errorf("key %q: ignored %v (%s), but a candidate: %v", info.KID, info.Ignored, info.IgnoredReason, got)
+		}
+	}
+	if r := reasons(set)["e"]; r != jws.IgnoredAlgorithmMismatch {
+		t.Errorf("a P-256 key with alg ES384: %q, want %q", r, jws.IgnoredAlgorithmMismatch)
 	}
 }
 
@@ -177,9 +196,9 @@ func TestR_CI_003_ADocumentThatIsNoKeySet(t *testing.T) {
 		t.Errorf("an empty set: %s, %v", stored, err)
 	}
 	// A key_ops member of the wrong type is not a list that contains verify.
-	set := parse(t, []byte(`{"keys":[{"kty":"oct","kid":"x","key_ops":"verify"}]}`))
-	if len(set.Usable) != 0 {
-		t.Error("an oct key is usable")
+	set := parse(t, []byte(`{"keys":[{"kty":"oct","kid":"x","key_ops":"verify"}, 7]}`))
+	if len(set.Usable) != 0 || len(set.Infos) != 2 {
+		t.Errorf("an oct key and a non-object: %+v", set.Infos)
 	}
 }
 

@@ -1,47 +1,44 @@
 package ci
 
 import (
-	"crypto"
-	"crypto/ecdsa"
-	"crypto/ed25519"
-	"crypto/elliptic"
-	"crypto/rsa"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
-	"slices"
 
+	"github.com/guided-traffic/trove/internal/auth/jws"
 	"github.com/guided-traffic/trove/internal/ci/subject"
 )
 
-// The key rules of R-CI-003 and the stored form of a key set (R-CI-003 "Data model": the last good key
-// set, public keys only). A fetched JWK Set is reduced to the public members this package reads before it
-// is stored, so a private member that a hostile or careless issuer publishes never reaches the table, and
-// two fetches of the same keys compare equal whatever the issuer's member order or extra members are.
+// The stored form of a key set (R-CI-003 "Data model": the last good key set, public keys only) and its reading.
+// The key rules of R-CI-003 are applied by one implementation, jws.ParseJWKS of the leaf internal/auth/jws, which
+// the login's verifier shares (Q-CI-19, Q-CI-42): at the fetch on the issuer's own document, and again on the
+// stored form when a replica reads the row. The key status (Infos) and the keys the validation tries (find, with
+// jws.Candidates) both come from that one parse, so they cannot disagree.
+//
+// A fetched JWK Set is reduced before it is stored: a usable key keeps the public members the rules and the
+// verification read, a key the rules ignore keeps its kid, kty, alg and the reason. A private member that a
+// hostile or careless issuer publishes therefore never reaches the table, and two fetches of the same keys
+// compare equal whatever the issuer's member order or extra members are.
 
 // maxStoredKeys bounds the keys kept of one fetched set. The response is bounded in bytes already
 // (ci.signing_keys.max_response_bytes); this bounds the stored row and the work per token.
 const maxStoredKeys = 100
 
-// minRSABits is the smallest RSA modulus a key may have (R-CI-003, RFC 7518 §3.3).
-const minRSABits = 2048
-
-// jwkDoc is the stored form of one key: the public members that the key rules and the verification read.
-// KeyOps is a pointer so that an absent member and an empty list differ: an empty `key_ops` does not
-// contain `verify`.
+// jwkDoc is the stored form of one key: the public members that the key rules and the verification read, or, for
+// a key the rules ignore, Ignored with the reason of jws.ParseJWKS and no key material. KeyOps is a pointer so that
+// an absent member and an empty list differ: an empty `key_ops` does not contain `verify`.
 type jwkDoc struct {
-	KTY    string    `json:"kty"`
-	KID    string    `json:"kid,omitempty"`
-	Use    string    `json:"use,omitempty"`
-	KeyOps *[]string `json:"key_ops,omitempty"`
-	Alg    string    `json:"alg,omitempty"`
-	N      string    `json:"n,omitempty"`
-	E      string    `json:"e,omitempty"`
-	Crv    string    `json:"crv,omitempty"`
-	X      string    `json:"x,omitempty"`
-	Y      string    `json:"y,omitempty"`
+	KTY     string    `json:"kty,omitempty"`
+	KID     string    `json:"kid,omitempty"`
+	Use     string    `json:"use,omitempty"`
+	KeyOps  *[]string `json:"key_ops,omitempty"`
+	Alg     string    `json:"alg,omitempty"`
+	N       string    `json:"n,omitempty"`
+	E       string    `json:"e,omitempty"`
+	Crv     string    `json:"crv,omitempty"`
+	X       string    `json:"x,omitempty"`
+	Y       string    `json:"y,omitempty"`
+	Ignored string    `json:"ignored,omitempty"`
 }
 
 // storedSet is the stored JSON of a key set.
@@ -51,10 +48,23 @@ type storedSet struct {
 
 var errNotAKeySet = errors.New("the document is not a JWK Set")
 
-// reduceJWKS decodes a fetched JWK Set document (RFC 7517 §5) and returns the stored form: the
-// whitelisted public members of each key, at most maxStoredKeys keys. An element that is not an object
-// or has no string `kty` is dropped; a member of the wrong type is dropped from its key. The error never
-// carries bytes of the document.
+// parseOne applies the key rules to one JWK entry.
+func parseOne(raw []byte) (*jws.JWK, jws.IgnoredKey) {
+	set, err := jws.ParseJWKS(append(append([]byte(`{"keys":[`), raw...), ']', '}'))
+	switch {
+	case err != nil:
+		return nil, jws.IgnoredKey{Reason: jws.IgnoredInvalid}
+	case len(set.Keys) == 1:
+		return set.Keys[0], jws.IgnoredKey{}
+	case len(set.Ignored) == 1:
+		return nil, set.Ignored[0]
+	}
+	return nil, jws.IgnoredKey{Reason: jws.IgnoredInvalid}
+}
+
+// reduceJWKS decodes a fetched JWK Set document (RFC 7517 §5) and returns the stored form, at most maxStoredKeys
+// keys: the key rules decide each entry, a usable key keeps its whitelisted public members, an ignored one its
+// identification and the reason. The error never carries bytes of the document.
 func reduceJWKS(body []byte) ([]byte, error) {
 	var top struct {
 		Keys *[]json.RawMessage `json:"keys"`
@@ -62,172 +72,81 @@ func reduceJWKS(body []byte) ([]byte, error) {
 	if err := json.Unmarshal(body, &top); err != nil || top.Keys == nil {
 		return nil, errNotAKeySet
 	}
-	out := storedSet{Keys: make([]jwkDoc, 0, len(*top.Keys))}
+	out := storedSet{Keys: make([]jwkDoc, 0, min(len(*top.Keys), maxStoredKeys))}
 	for _, raw := range *top.Keys {
 		if len(out.Keys) >= maxStoredKeys {
 			break
 		}
-		var m map[string]json.RawMessage
-		if json.Unmarshal(raw, &m) != nil {
+		if key, ign := parseOne(raw); key == nil {
+			out.Keys = append(out.Keys, jwkDoc{KID: ign.KID, KTY: ign.KTY, Alg: ign.Alg, Ignored: ign.Reason})
 			continue
 		}
-		str := func(name string) string {
-			var v string
-			if json.Unmarshal(m[name], &v) != nil {
-				return ""
-			}
-			return v
-		}
-		k := jwkDoc{
-			KTY: str("kty"), KID: str("kid"), Use: str("use"), Alg: str("alg"),
-			N: str("n"), E: str("e"), Crv: str("crv"), X: str("x"), Y: str("y"),
-		}
-		if k.KTY == "" {
-			continue
-		}
-		if ops, ok := m["key_ops"]; ok {
-			var list []string
-			if json.Unmarshal(ops, &list) == nil {
-				if list == nil {
-					list = []string{}
-				}
-				k.KeyOps = &list
-			} else {
-				// A key_ops member of the wrong type is not a list that contains verify.
-				k.KeyOps = &[]string{}
-			}
-		}
-		out.Keys = append(out.Keys, k)
+		out.Keys = append(out.Keys, publicMembers(raw))
 	}
 	return json.Marshal(out)
 }
 
-// keySet is a stored key set parsed under the key rules: the usable keys for the verification and the
-// status of every key.
+// publicMembers is the stored form of a usable key: the members of the whitelist, read as strings (a usable key's
+// members have the right types, jws.ParseJWKS checked them).
+func publicMembers(raw json.RawMessage) jwkDoc {
+	var m map[string]json.RawMessage
+	_ = json.Unmarshal(raw, &m)
+	str := func(name string) string {
+		var v string
+		if json.Unmarshal(m[name], &v) != nil {
+			return ""
+		}
+		return v
+	}
+	k := jwkDoc{
+		KTY: str("kty"), KID: str("kid"), Use: str("use"), Alg: str("alg"),
+		N: str("n"), E: str("e"), Crv: str("crv"), X: str("x"), Y: str("y"),
+	}
+	if ops, ok := m["key_ops"]; ok {
+		var list []string
+		_ = json.Unmarshal(ops, &list)
+		if list == nil {
+			list = []string{}
+		}
+		k.KeyOps = &list
+	}
+	return k
+}
+
+// keySet is a stored key set read under the key rules: the status of every key, the usable keys as the
+// validation's subject.Key and as jws keys for the candidate selection.
 type keySet struct {
 	Infos  []KeyInfo
 	Usable []subject.Key
+	keys   []*jws.JWK
 }
 
-// parseStored applies the key rules of R-CI-003 to a stored set: `use` absent or `sig`, `key_ops`
-// absent or containing `verify`, a key type with a verification algorithm of R-CI-001 (RSA, EC with P-256
-// or P-384, OKP with Ed25519), RSA with at least 2048 bits, and one key per `kid`. The rules that depend
-// on the token (the key's own `alg` equal to the token's, the key type fitting the algorithm) are the
-// validation's (subject.Unverified.Verify). A key that fails a rule is kept in Infos with its reason and
-// is not in Usable.
+// parseStored reads a stored set: an entry recorded as ignored keeps its reason, every other entry goes through
+// jws.ParseJWKS again (a set stored before this rule, or one that a later rule refuses, is judged by the rules of
+// this code). The rules that depend on the token (the key's own alg, the key type and curve fitting the algorithm)
+// are applied by the candidate selection and by subject.Unverified.Verify.
 func parseStored(stored []byte) (keySet, error) {
 	var set storedSet
 	if err := json.Unmarshal(stored, &set); err != nil {
 		return keySet{}, fmt.Errorf("stored key set: %w", err)
 	}
 	out := keySet{Infos: make([]KeyInfo, 0, len(set.Keys))}
-	seen := map[string]bool{}
-	for _, k := range set.Keys {
-		info := KeyInfo{KID: k.KID, KTY: k.KTY, Alg: k.Alg}
-		pub, reason := usable(k)
-		if reason == "" && k.KID != "" && seen[k.KID] {
-			reason = "a key with this kid is listed before"
-		}
-		if reason != "" {
-			info.Ignored, info.IgnoredReason = true, reason
-			out.Infos = append(out.Infos, info)
+	for _, doc := range set.Keys {
+		if doc.Ignored != "" {
+			out.Infos = append(out.Infos, KeyInfo{KID: doc.KID, KTY: doc.KTY, Alg: doc.Alg, Ignored: true, IgnoredReason: doc.Ignored})
 			continue
 		}
-		seen[k.KID] = true
-		out.Infos = append(out.Infos, info)
-		out.Usable = append(out.Usable, subject.Key{KID: k.KID, KTY: k.KTY, Alg: k.Alg, Public: pub})
+		raw, _ := json.Marshal(doc)
+		key, ign := parseOne(raw)
+		if key == nil {
+			out.Infos = append(out.Infos, KeyInfo{KID: doc.KID, KTY: doc.KTY, Alg: doc.Alg, Ignored: true, IgnoredReason: ign.Reason})
+			continue
+		}
+		out.Infos = append(out.Infos, KeyInfo{KID: key.KID, KTY: key.KTY, Alg: key.Alg})
+		out.Usable = append(out.Usable, subject.Key{KID: key.KID, KTY: key.KTY, Alg: key.Alg, Public: key.Public})
+		out.keys = append(out.keys, key)
 	}
 	return out, nil
-}
-
-// usable checks one key; reason is empty when the key is usable.
-func usable(k jwkDoc) (crypto.PublicKey, string) {
-	if k.Use != "" && k.Use != "sig" {
-		return nil, `use is not "sig"`
-	}
-	if k.KeyOps != nil && !slices.Contains(*k.KeyOps, "verify") {
-		return nil, `key_ops does not contain "verify"`
-	}
-	switch k.KTY {
-	case "RSA":
-		pub, err := rsaKey(k)
-		if err != nil {
-			return nil, err.Error()
-		}
-		return pub, ""
-	case "EC":
-		pub, err := ecKey(k)
-		if err != nil {
-			return nil, err.Error()
-		}
-		return pub, ""
-	case "OKP":
-		pub, err := okpKey(k)
-		if err != nil {
-			return nil, err.Error()
-		}
-		return pub, ""
-	}
-	return nil, "the key type has no verification algorithm"
-}
-
-func rsaKey(k jwkDoc) (*rsa.PublicKey, error) {
-	n, err := base64.RawURLEncoding.DecodeString(k.N)
-	if err != nil || len(n) == 0 {
-		return nil, errors.New("the RSA modulus is not base64url")
-	}
-	e, err := base64.RawURLEncoding.DecodeString(k.E)
-	if err != nil || len(e) == 0 || len(e) > 4 {
-		return nil, errors.New("the RSA exponent is not usable")
-	}
-	exp := 0
-	for _, b := range e {
-		exp = exp<<8 | int(b)
-	}
-	pub := &rsa.PublicKey{N: new(big.Int).SetBytes(n), E: exp}
-	if pub.N.BitLen() < minRSABits {
-		return nil, fmt.Errorf("the RSA key has fewer than %d bits", minRSABits)
-	}
-	if exp < 3 || exp%2 == 0 {
-		return nil, errors.New("the RSA exponent is not usable")
-	}
-	return pub, nil
-}
-
-func ecKey(k jwkDoc) (*ecdsa.PublicKey, error) {
-	var curve elliptic.Curve
-	switch k.Crv {
-	case "P-256":
-		curve = elliptic.P256()
-	case "P-384":
-		curve = elliptic.P384()
-	default:
-		return nil, errors.New("the curve has no verification algorithm (ES256 and ES384 are accepted)")
-	}
-	x, errX := base64.RawURLEncoding.DecodeString(k.X)
-	y, errY := base64.RawURLEncoding.DecodeString(k.Y)
-	size := (curve.Params().BitSize + 7) / 8
-	if errX != nil || errY != nil || len(x) != size || len(y) != size {
-		return nil, errors.New("the EC coordinates are not usable")
-	}
-	// The uncompressed SEC 1 form lets the standard library check that the point is on the curve.
-	point := append([]byte{4}, append(x, y...)...)
-	pub, err := ecdsa.ParseUncompressedPublicKey(curve, point)
-	if err != nil {
-		return nil, errors.New("the EC point is not on the curve")
-	}
-	return pub, nil
-}
-
-func okpKey(k jwkDoc) (ed25519.PublicKey, error) {
-	if k.Crv != "Ed25519" {
-		return nil, errors.New("the curve has no verification algorithm (EdDSA is accepted with Ed25519)")
-	}
-	x, err := base64.RawURLEncoding.DecodeString(k.X)
-	if err != nil || len(x) != ed25519.PublicKeySize {
-		return nil, errors.New("the Ed25519 key is not usable")
-	}
-	return ed25519.PublicKey(x), nil
 }
 
 // kids lists the key IDs of the usable keys, for the audit event of a fetch (at most the stored keys).
@@ -239,39 +158,14 @@ func (s keySet) kids() []string {
 	return out
 }
 
-// find returns the keys that may verify a token: the usable key of that kid, or, without a kid, every
-// usable key whose key type fits alg, at most subject.MaxKeysWithoutKID.
+// find returns the keys that may verify a token, the selection of jws.Candidates: with a kid, the usable keys of
+// that kid that fit alg; without one, every usable key that fits alg, at most subject.MaxKeysWithoutKID. A key that
+// does not fit is not a candidate, so a token whose kid names a key of another type counts as an unknown kid and
+// gets the re-read and refetch of R-CI-003.
 func (s keySet) find(kid, alg string) []subject.Key {
-	if kid != "" {
-		for _, k := range s.Usable {
-			if k.KID == kid {
-				return []subject.Key{k}
-			}
-		}
-		return nil
-	}
 	var out []subject.Key
-	for _, k := range s.Usable {
-		if familyFits(k.KTY, alg) {
-			out = append(out, k)
-			if len(out) == subject.MaxKeysWithoutKID {
-				break
-			}
-		}
+	for _, k := range jws.Candidates(s.keys, kid, alg, subject.MaxKeysWithoutKID) {
+		out = append(out, subject.Key{KID: k.KID, KTY: k.KTY, Alg: k.Alg, Public: k.Public})
 	}
 	return out
-}
-
-// familyFits reports whether a key type can verify a token of the algorithm: RSA the RS and PS
-// algorithms, EC the ES algorithms, OKP EdDSA. An unknown algorithm fits nothing.
-func familyFits(kty, alg string) bool {
-	switch kty {
-	case "RSA":
-		return len(alg) == 5 && (alg[:2] == "RS" || alg[:2] == "PS")
-	case "EC":
-		return alg == "ES256" || alg == "ES384"
-	case "OKP":
-		return alg == "EdDSA"
-	}
-	return false
 }

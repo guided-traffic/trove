@@ -1965,11 +1965,17 @@ export interface paths {
          * Exchange a CI ID token for a short-lived CI token
          * @description OAuth 2.0 Token Exchange (RFC 8693, R-CI-007): the subject token, the ID token a GitLab job requested for trove's
          *     audience, is the credential. The endpoint requires no trove credential and ignores a session and a CSRF token.
-         *     The body is `application/x-www-form-urlencoded` (normative) or `application/json` with the same parameter names;
-         *     a parameter sent twice answers `400`. Answers carry `Cache-Control: no-store`. Errors are the OAuth error
-         *     response of RFC 6749 section 5.2 with trove's members `reason` and `requestId`, not problem details (R-CI-008);
-         *     a rejected subject token answers `400 invalid_request` (Q-CI-8). The parameters keep the OAuth names of the RFC.
-         *     Until the exchange is built the endpoint answers `501` (problem details).
+         *     The body is `application/x-www-form-urlencoded` (normative) or `application/json` with the same parameter names
+         *     (string values; `ttl` may be a number); a parameter sent twice answers `400 malformed_request`, a parameter the
+         *     exchange does not know is ignored, a parameter without a value counts as omitted (RFC 6749 section 3.1). Answers
+         *     carry `Cache-Control: no-store` and `Pragma: no-cache`. Errors are the OAuth error response of RFC 6749 section
+         *     5.2 with trove's members `reason` and `requestId`, not problem details (R-CI-008); a rejected subject token
+         *     answers `400 invalid_request` (Q-CI-8). The parameters keep the OAuth names of the RFC. The general API rate
+         *     limit does not apply: the limiters `ci_exchange_address` and `ci_exchange_subject` of R-CI-021 do.
+         *
+         *     With `ci.exchange.enabled: false` the path answers `404` (problem details) as a path that does not exist. Every
+         *     method other than `POST` answers `405 method_not_allowed` (problem details) with `Allow: POST`, as every route of
+         *     the API does (R-API-004).
          */
         post: operations["exchangeCiToken"];
         delete?: never;
@@ -4222,11 +4228,8 @@ export interface components {
             actor_token_type?: string;
             /** @description Must match the issuer selected by `iss`. */
             ci_issuer?: string;
-            /**
-             * Format: int64
-             * @description Requested lifetime in seconds; can only shorten (R-CI-016).
-             */
-            ttl?: number;
+            /** @description Requested lifetime in whole seconds (a JSON body may send it as a number too); can only shorten, and one below `ci.token.min_ttl` answers `ttl_below_minimum` (R-CI-016, Q-CI-41). */
+            ttl?: string;
         };
         /** @description The token response (R-CI-007). The token value appears only here. */
         CiExchangeResponse: {
@@ -10439,13 +10442,30 @@ export interface operations {
                     "application/json": components["schemas"]["CiExchangeResponse"];
                 };
             };
-            /** @description The OAuth error response (`invalid_request`, `unsupported_grant_type`, `invalid_scope`, `invalid_target`) with `reason` and `requestId`. */
+            /**
+             * @description The OAuth error response (`invalid_request`, `unsupported_grant_type`, `invalid_scope`, `invalid_target`) with
+             *     `reason` and `requestId`. Under `ci.exchange.expose_reason: false` every 400 is `invalid_request` without
+             *     `reason` and with a generic description.
+             */
             400: {
                 headers: {
+                    "Cache-Control"?: "no-store";
+                    Pragma?: "no-cache";
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["CiExchangeError"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description A method other than `POST`: problem details with `Allow: POST`. */
+            405: {
+                headers: {
+                    Allow?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description `slow_down` with `reason: rate_limited` and `Retry-After` (R-CI-021). */
@@ -10467,18 +10487,10 @@ export interface operations {
                     "application/json": components["schemas"]["CiExchangeError"];
                 };
             };
-            /** @description The exchange is not built in this release (`ci_not_implemented`, problem details). */
-            501: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
             /** @description `temporarily_unavailable` with `reason` `signing_keys_unavailable`, `database_unavailable` or `configuration_changed`, and `Retry-After`. */
             503: {
                 headers: {
+                    "Retry-After"?: number;
                     [name: string]: unknown;
                 };
                 content: {

@@ -231,14 +231,14 @@ func TestR_CI_013_TheGrantSpecification(t *testing.T) {
 	t.Run("R-CI-013 an inline grant names exactly one of packages and paths", func(t *testing.T) {
 		g := npmPublish()
 		g.Paths = &claims.PatternSet{}
-		refused(t, publicIssuer(), input(t, publishMatch, claims.Spec{Inline: []claims.InlineGrant{g}}), claims.ReasonInvalidValue, "/grants/inline/0")
+		refused(t, publicIssuer(), input(t, publishMatch, claims.Spec{Inline: []claims.InlineGrant{g}}), reason.InvalidValue, "/grants/inline/0")
 		g.Packages, g.Paths = nil, nil
-		refused(t, publicIssuer(), input(t, publishMatch, claims.Spec{Inline: []claims.InlineGrant{g}}), claims.ReasonInvalidValue, "/grants/inline/0")
+		refused(t, publicIssuer(), input(t, publishMatch, claims.Spec{Inline: []claims.InlineGrant{g}}), reason.InvalidValue, "/grants/inline/0")
 	})
 	t.Run("R-CI-013 an unknown ownership is refused", func(t *testing.T) {
 		g := npmPublish()
 		g.Ownership = "shared"
-		refused(t, publicIssuer(), input(t, publishMatch, claims.Spec{Inline: []claims.InlineGrant{g}}), claims.ReasonInvalidValue, "/grants/inline/0/ownership")
+		refused(t, publicIssuer(), input(t, publishMatch, claims.Spec{Inline: []claims.InlineGrant{g}}), reason.InvalidValue, "/grants/inline/0/ownership")
 	})
 }
 
@@ -259,7 +259,7 @@ func TestR_CI_014_TemplatesOnSave(t *testing.T) {
 	})
 	t.Run("R-CI-014 a literal selector has the syntax of R-AUTHZ-004", func(t *testing.T) {
 		for _, sel := range []string{"NPM", "@any-thing", "npm-internal:npm", "a"} {
-			refused(t, publicIssuer(), input(t, publishMatch, spec([]string{sel}, "x")), claims.ReasonInvalidPattern, "/grants/inline/0/repositories/0")
+			refused(t, publicIssuer(), input(t, publishMatch, spec([]string{sel}, "x")), reason.InvalidPattern, "/grants/inline/0/repositories/0")
 		}
 		if _, _, err := check(t, publicIssuer(), input(t, publishMatch, spec([]string{"@any-local:npm", "npm-team-*", "@any"}, "x"))); err != nil {
 			t.Fatal(err)
@@ -291,7 +291,7 @@ func TestR_CI_014_TemplatesOnSave(t *testing.T) {
 		for i := range many {
 			many[i] = "a"
 		}
-		refused(t, publicIssuer(), input(t, publishMatch, spec([]string{"npm-internal"}, many...)), claims.ReasonInvalidPattern, "/grants/inline/0/packages/include")
+		refused(t, publicIssuer(), input(t, publishMatch, spec([]string{"npm-internal"}, many...)), reason.InvalidPattern, "/grants/inline/0/packages/include")
 	})
 }
 
@@ -335,7 +335,7 @@ func TestR_CI_012_TheReadOnlyOptInIsVisible(t *testing.T) {
 		t.Fatalf("%v %v", codes(warnings), err)
 	}
 	in.Options.CrossProjectSource = "allow"
-	refused(t, publicIssuer(), in, claims.ReasonInvalidValue, "/options/crossProjectSource")
+	refused(t, publicIssuer(), in, reason.InvalidValue, "/options/crossProjectSource")
 }
 
 func TestTheJobTokenSubjectKindIsRefused(t *testing.T) {
@@ -356,7 +356,7 @@ func TestTheBoundsOfAProjectMapping(t *testing.T) {
 		for _, name := range []string{"release", "web", "web-", "shop-release", "webrelease"} {
 			in := input(t, publishMatch, g)
 			in.Name = name
-			refused(t, f, in, claims.ReasonProjectPrefixRequired, "/name")
+			refused(t, f, in, reason.ProjectPrefixRequired, "/name")
 		}
 		in := input(t, publishMatch, g)
 		in.Name = "web-release"

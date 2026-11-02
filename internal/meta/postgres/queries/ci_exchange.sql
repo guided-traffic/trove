@@ -1,18 +1,8 @@
 -- Queries of the token exchange (R-CI-007, R-CI-018, R-CI-020), the statements of work package W4
--- (docs/developer/ci-oidc.md). They run on the exchange's one transaction: the re-read of the issuer
--- and of the matched mappings FOR SHARE, the replay upsert, the restore cut-off (packages.sql
--- ReadRestoredAt), the issuance record. W4 adds its further statements here; the token row is
--- written through internal/auth/token (IssueCITx), not from here.
-
--- name: CiExchangeLockIssuer :many
--- The exchange's re-read (R-CI-007): the issuer row FOR SHARE, so a write of the issuer or of one of
--- its mappings (which takes FOR UPDATE) waits for the exchange and the exchange for it. The versions
--- are compared with what the evaluation used; the settings that steps 5 to 9 of R-CI-004 read come
--- with it, for the second validation after a change of the issuer's version.
-SELECT id::text AS id, name, issuer, enabled, version, mappings_version, allowed_audiences, exclusive_audience,
-       allowed_algorithms, allowed_typ, allow_missing_typ, extract(epoch FROM clock_skew)::bigint AS clock_skew_secs,
-       required_claims, pin_claims, single_use_subject_tokens, COALESCE(extract(epoch FROM max_ttl), 0)::bigint AS max_ttl_secs
-  FROM ci_issuers WHERE id = sqlc.arg(id)::text::uuid FOR SHARE;
+-- (docs/developer/ci-oidc.md). They run on the exchange's one transaction: the re-read of the matched
+-- mappings FOR SHARE (the issuer row is re-read by ci_issuers.sql CiIssuerByIDShare, the issuer service's
+-- LockShareTx), the replay upsert, the restore cut-off, the issuance record. The token row is written
+-- through internal/auth/token (IssueCITx), not from here.
 
 -- name: CiExchangeLockMappings :many
 -- The matched mappings, re-read FOR SHARE: still enabled, still at the version the evaluation used.
@@ -44,3 +34,10 @@ VALUES (sqlc.arg(token_id)::text::uuid, sqlc.arg(issuer_id)::text::uuid, sqlc.ar
         NULLIF(sqlc.arg(requested_scope)::text, ''), sqlc.arg(granted_scope)::text, sqlc.arg(cross_project)::boolean, now(),
         to_timestamp(sqlc.arg(expires_us)::bigint / 1000000.0), NULLIF(sqlc.arg(client_ip)::text, '')::inet,
         NULLIF(sqlc.arg(user_agent)::text, ''));
+
+-- name: CiExchangeRestoredAt :one
+-- The restore cut-off of a single-use issuer (R-CI-018, Q-CI-13): the time the last restore finished, the
+-- system_state key restored_at (R-BAK-022), in microseconds; 0 before the first restore. Read in the exchange's
+-- transaction, never kept by a replica, so it holds on a replica that outlived a post-restore.
+SELECT COALESCE((SELECT (extract(epoch FROM (value #>> '{}')::timestamptz) * 1000000)::bigint
+                   FROM system_state WHERE key = 'restored_at'), 0)::bigint AS restored_us;

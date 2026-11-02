@@ -2,21 +2,22 @@
 
 Spec [gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md) (R-CI-001 to R-CI-030), beta phase 5 (M4). The page is the contract between the work packages
 that build the federation in parallel, in the shape of [projects.md](projects.md). The decisions behind it are
-[Q-CI-17 to Q-CI-22, Q-CI-26, from W2 Q-CI-27 to Q-CI-29 and, from W3, Q-CI-35 to Q-CI-37](../decisions.md) with [ADR-147](../decisions.md#adr-147--a-ci-token-carries-its-frozen-grants-in-its-cache-entry-and-the-management-api-refuses-ci-tokens-by-default).
+[Q-CI-17 to Q-CI-22, Q-CI-26, from W2 Q-CI-27 to Q-CI-29, from W3 Q-CI-35 to Q-CI-37, from W5 Q-CI-38 to Q-CI-40 and, from W4, Q-CI-41 to Q-CI-43](../decisions.md) with [ADR-147](../decisions.md#adr-147--a-ci-token-carries-its-frozen-grants-in-its-cache-entry-and-the-management-api-refuses-ci-tokens-by-default).
 
 Status: contracts laid; W1 (issuers and keys, [below](#w1-issuers-and-signing-keys)), W2 (the claim engine, the subject-token
 validation and the shared JWS leaf, [below](#w2-the-claim-engine-and-the-validation)), W3 (the mappings, the dry run and the snippet,
-[below](#w3-the-mappings)), W5 (CI tokens at use time, [below](#w5-use-time)) and W6 (the admin UI) built; W4 (the exchange) and W7 (the
-end-to-end tests) pending. The exchange answers `501 ci_not_implemented` as problem details until W4. The issuer double the end-to-end tests
-exchange against is built separately (test/oidcstub).
+[below](#w3-the-mappings)), W4 (the token exchange, [below](#w4-the-exchange)), W5 (CI tokens at use time, [below](#w5-use-time)) and W6
+(the admin UI) built; W7 (the end-to-end tests with the real clients on kind) pending. The issuer double the tests exchange against is
+test/oidcstub.
 
 ## What has to be in your head
 
 - **Two kinds of work, two kinds of package.** The pure parts (conditions, glob, templates, grants, the scope grammar, the save-time rules, the
   validation of a subject token) are leaves with no I/O ([claims](../../internal/ci/claims), [subject](../../internal/ci/subject),
   [reason](../../internal/ci/reason)); the exchange, the dry run and a save evaluate one implementation. The services are in
-  [internal/ci](../../internal/ci) behind interfaces; stubs answer until a work package replaces its member in
-  [wire_ci.go](../../internal/app/wire_ci.go).
+  [internal/ci](../../internal/ci) behind interfaces, wired in [wire_ci.go](../../internal/app/wire_ci.go): every role builds the
+  issuers, the mappings, the revoker and the issuances (step `wireCI`), a role with a client listener the exchange (step
+  `wireCIExchange`, area `ci_exchange`, which takes the two limiters of the limits area).
 - **PostgreSQL decides.** Issuers, mappings, key sets, the replay set and the issuance records are rows; replicas hold in-process copies
   invalidated through the areas `ci_mappings` and `ci_issuer_keys`; the exchange re-reads issuer and mappings `FOR SHARE` and compares
   `version` and `mappings_version` (Q-CI-15); Valkey holds only the two limiters' counters (R-CI-029).
@@ -58,8 +59,8 @@ values are `NULLIF(text, '')` or `0`. [TestCIMigration](../../test/integration/p
 | [internal/ci/reason](../../internal/ci/reason/reason.go) | every `reason` of R-CI-008 (`Reason.OAuth()` gives status and OAuth `error`), every management `code`, the warnings |
 | [internal/ci/claims](../../internal/ci/claims) | `Claims` (normalization, `CrossProject`, `Snapshot`), `Node` (parse, `Validate`, `Evaluate` with `LeafResult` trace, `Pins`), `GlobValid`, `GlobMatch`, `Template`, `Spec`, `InlineGrant`, `Rendered`, `ApplyCaps`, `Options`, `Frozen`, `FrozenMapping`, `Freeze`, `DecodeFrozen`, `ParseScope`, `Narrow`, `NarrowFrozen`, `FormatScope`, `Check` (save-time rules; `IssuerFacts.Project`) (built, W2) |
 | [internal/ci/subject](../../internal/ci/subject/subject.go) | `Parse` (steps 1, 2, 3 shape, 4), `CheckIssuer` (step 5 for the caller's lookup) and `Unverified.Verify` (3 alg and typ, 6 to 9); `Settings`, `Key`, `KeySource` (the unknown-`kid` protocol is the key source's), `Failure` (built, W2) |
-| [internal/ci](../../internal/ci) | types (`Issuer`, `IssuerInput`, `KeyStatus`, `Mapping`, `MappingInput`, `MappingOptions`, `MappingSet`, `Issuance`, `IssuanceFilter`, `EvaluateRequest`, `EvaluateResult`), the interfaces `Issuers` (W1), `Mappings` (W3), `Exchanger` (W4), `Revoker`, `Issuances` (W5, built: `TokenRevoker`, `IssuanceStore`), `Select`, `ComputeTTL`, `Metrics`, `DeclaredFromConfig`, the stubs of W3 and W4 |
-| [internal/auth/jws](../../internal/auth/jws) | the compact-JWS verifier and JWK sets the login and the CI validation share (Q-CI-19): `Parse`, `Token.VerifyWith`, `Fits`, `ParseJWKS` with the report of ignored keys, `SelectKey` (the login's), `Candidates` (the exchange's), `DecodeObject` (built, W2) |
+| [internal/ci](../../internal/ci) | types (`Issuer`, `IssuerInput`, `KeyStatus`, `Mapping`, `MappingInput`, `MappingOptions`, `MappingSet`, `Issuance`, `IssuanceFilter`, `EvaluateRequest`, `EvaluateResult`), the interfaces `Issuers` (W1), `Mappings` (W3), `Exchanger` (W4, built: `ExchangeService`), `Revoker`, `Issuances` (W5, built: `TokenRevoker`, `IssuanceStore`), `Select`, `ComputeTTL`, `Metrics`, `DeclaredFromConfig`; `NotImplemented` for a service option left nil |
+| [internal/auth/jws](../../internal/auth/jws) | the compact-JWS verifier and JWK sets the login, the key store and the CI validation share (Q-CI-19, Q-CI-42): `Parse`, `Token.VerifyWith`, `Fits`, `ParseJWKS` with the report of ignored keys (the one implementation of R-CI-003's key rules), `SelectKey` (the login's), `Candidates` (the key store's), `DecodeObject` (also the exchange's JSON body) (built, W2) |
 
 ### Token and evaluation seam (the part W4 and W5 share)
 
@@ -75,7 +76,7 @@ values are `NULLIF(text, '')` or `0`. [TestCIMigration](../../test/integration/p
 
 ### API
 
-[ci_services.go](../../internal/api/v1/ci_services.go) holds `CIServices` and `ciPending`; one handler file per work package:
+[ci_services.go](../../internal/api/v1/ci_services.go) holds `CIServices`; one handler file per work package:
 [ci_issuers_api.go](../../internal/api/v1/ci_issuers_api.go) (W1), [ci_mappings_api.go](../../internal/api/v1/ci_mappings_api.go) and
 [ci_snippets_api.go](../../internal/api/v1/ci_snippets_api.go) (W3), [ci_exchange.go](../../internal/api/v1/ci_exchange.go) (W4),
 [ci_issuances_api.go](../../internal/api/v1/ci_issuances_api.go) (W5), [ci_project_api.go](../../internal/api/v1/ci_project_api.go) (the project routes: the
@@ -90,8 +91,9 @@ narrowing `requireProject(…, managePolicies)` is real, the work behind it W1, 
 | exchange | `POST /api/v1/auth/oidc/token` | W4 |
 | a project's | `/projects/{key}/ci/issuers`, `…/ci/mappings[/{issuer}/{name}]`, `…/ci/issuers/{issuer}/evaluate`, `…/ci/issuances` | W1, W3, W5 |
 
-The exchange needs no work in the stage (it answers the anonymous principal for the route, `isExchangeRoute`), but W4 must exempt the route from the
-general API rate limit (`limitedPath` in [ratelimit.go](../../internal/api/v1/ratelimit.go)) and answer in the OAuth error shape.
+The exchange needs no work in the stage (it answers the anonymous principal for the route, `isExchangeRoute`); the general API rate limit
+skips the route (`ExchangePath` in `limitedPath`, [ratelimit.go](../../internal/api/v1/ratelimit.go)), which has the limiters of R-CI-021 of
+its own, and every answer but the 404 of a switched-off exchange and the router's 405 is in the OAuth shape ([below](#w4-the-exchange)).
 
 ### Configuration, coordination, audit
 
@@ -99,7 +101,7 @@ general API rate limit (`limitedPath` in [ratelimit.go](../../internal/api/v1/ra
 |---|---|
 | [config/ci.go](../../internal/config/ci.go) | every `ci.*` key with its default; refusals: `ci.token.max_ttl` above `auth.tokens.cit.max_ttl` (both keys named), the retired `ci.exchange.rate_limit.per_issuer_per_second` (file and environment, names the replacements), `ci.job_token_fallback.enabled`; `ci.issuers` (list elements now hold pointers to scalars and string lists, [schema.go](../../internal/config/schema.go)); `trove migrate` calls `ApplyDeclared` always ([migrate_declared.go](../../internal/app/migrate_declared.go)) |
 | [cluster/areas.go](../../internal/cluster/areas.go) | `ci_mappings`, `ci_issuer_keys` |
-| [app/wire_ci.go](../../internal/app/wire_ci.go) | stubs, limiters `ci_exchange_address` and `ci_exchange_subject` (cluster scope, held in `limitsArea`), tasks `ci-keys-refresh` `*/5 * * * *`, `ci-replay-cleanup` `7 * * * *`, `ci-issuance-retention` `40 3 * * *` (exclusive; a stub's not-implemented answer is a success), the metrics and the two database gauges |
+| [app/wire_ci.go](../../internal/app/wire_ci.go) | the services (`wireCI`), the exchange (`wireCIExchange`, a component whose flush writes the denial counts at shutdown), limiters `ci_exchange_address` and `ci_exchange_subject` (cluster scope, held in `limitsArea`), tasks `ci-keys-refresh` `*/5 * * * *`, `ci-replay-cleanup` `7 * * * *`, `ci-issuance-retention` `40 3 * * *` (exclusive; a not-implemented answer is a success), the metrics and the two database gauges |
 | [audit/events_ci.go](../../internal/audit/events_ci.go) | the events of R-CI-020, categories and modes in Q-CI-22; journal flag on `ci.token.revoked` and the `.updated`, `.disabled`, `.deleted` events of issuers and mappings; the record schema has `project` |
 | [errs/codes.go](../../internal/errs/codes.go) | `>>> M4 ci`: `ci_not_implemented` and the management codes |
 
@@ -110,7 +112,7 @@ general API rate limit (`limitedPath` in [ratelimit.go](../../internal/api/v1/ra
 | **W1** issuers and keys (built) | R-CI-001 to R-CI-003, R-CI-005, Q-CI-16; the issuer, key and `Choices` operations; `ApplyDeclared` (migrate: call it always); `ci-keys-refresh`; the key source | `internal/ci/issuers*.go`, `keys*.go`, `ci_issuers_api.go`, `queries/ci_issuers.sql`, the issuer part of `wire_ci.go`, `migrate_declared.go` |
 | **W2** claim engine and validation (built) | R-CI-004, R-CI-010 to R-CI-014, the save-time rules and warnings; `internal/auth/jws`; [what it built and the contract changes](#w2-the-claim-engine-and-the-validation) | `internal/ci/claims/**`, `internal/ci/subject/**`, `internal/auth/jws/**`, `internal/auth/oidc/jws*.go` |
 | **W3** mappings (built) | store, principals, `mappings_version`, R-CI-009, the system and the project routes, the project bounds, the dry run, `Select`, the snippet; `project_not_empty` for a project with mappings; [what it built and the contract changes](#w3-the-mappings) | `internal/ci/mappings*.go`, `select.go`, `ci_mappings_api.go`, `ci_snippets_api.go`, `queries/ci_mappings.sql`, `internal/project` (the delete check) |
-| **W4** exchange | R-CI-007, R-CI-008, R-CI-016, R-CI-018, R-CI-021, the issuance write; calls `IssueCITx` | `internal/ci/exchange*.go`, `ttl.go`, `ci_exchange.go`, `queries/ci_exchange.sql` |
+| **W4** exchange (built) | R-CI-007, R-CI-008, R-CI-016, R-CI-018, R-CI-021, the issuance write; calls `IssueCITx`; [what it built and the contract changes](#w4-the-exchange) | `internal/ci/exchange*.go`, `ttl.go`, `ci_exchange.go`, `queries/ci_exchange.sql`, the exchange part of `wire_ci.go`, `internal/authz/ci_scope.go` |
 | **W5** use time (built) | R-AUTHZ-014 in the evaluator, R-CI-015 ownership, R-CI-017 revocation, issuances (also a project's), bulk revoke, the two retention tasks, `trove_ci_tokens_active`; `IssueCITx` (moved from W4); [what it built](#w5-use-time) | `internal/authz/ci.go`, `ownership_ci.go` and the CI parts of `ownership.go`, `internal/ci/revoke*.go`, `issuances*.go`, `internal/auth/token/cit.go`, `ci_issuances_api.go` and the issuance part of `ci_project_api.go`, `queries/ci_issuances.sql` |
 | **W6** admin UI | R-UI-035, R-UI-036, the issuances tab, the project's CI screens. **Built** against the fakes (see [web-ui.md](web-ui.md#ci-identity)); the browser journey is W7's | `web/**` |
 | **W7** tests and e2e | the acceptance criteria of R-CI-001 to R-CI-030 against the issuer double (test/oidcstub) | `test/integration/ci/**`, `test/e2e/**` |
@@ -175,8 +177,10 @@ What the later work packages need to know:
   nothing (and a `trove migrate` that removes such an issuer stops).
 - **The key source (W4).** `Issuers.KeySource(issuer).Keys(ctx, kid, alg)` returns `subject.ErrUnknownKey` and
   `subject.ErrKeysUnavailable`; a token without kid for an issuer with no stored set counts as an unknown kid. `Resolve` answers from
-  the copy of all issuers, so an unknown `iss` costs no query. The JWK rules are in keys_jwks.go, not in `internal/auth/jws` (W2
-  builds that package in parallel): W2 may replace `parseStored` with its `ParseJWKS` if the two agree.
+  the copy of all issuers, so an unknown `iss` costs no query. The JWK rules are `jws.ParseJWKS`'s
+  ([Q-CI-42](../spec/gitlab-ci-oidc.md#q-ci-42--one-implementation-of-the-key-rules-the-shared-leaf)): keys_jwks.go reduces a fetched set
+  entry by entry with it (a usable key keeps its public members, an ignored one its `kid`, `kty`, `alg` and the reason) and reads the
+  stored form with it again; the candidates of a token are `jws.Candidates`, so the key status and the validation cannot disagree.
 - **The metric** `trove_ci_signing_keys_refresh_total{issuer,trigger,outcome}` is incremented by every fetch; the gauge
   `trove_ci_signing_keys_age_seconds` skips an issuer whose first fetch failed (the placeholder row, Q-CI-32).
 - **Counting the reads of `ci_issuer_keys` in a test.** The test of the random-kid bound
@@ -188,30 +192,24 @@ What the later work packages need to know:
 
 ## Pending criteria
 
-Criteria that need a work package that is not built. The tests that exist are in
-[pending_test.go](../../test/integration/ci/pending_test.go) behind the build tag `ci_pending` (run with
-`-tags 'integration ci_pending'`); the work package named removes the tag from its tests when it builds its part. W5 moved the
-revocation criteria of R-CI-001 and R-CI-002 out of it ([revoke_test.go](../../test/integration/ci/revoke_test.go), tokens through
-`IssueCITx` instead of an exchange).
+Criteria that need something that is not built. The build tag `ci_pending` and its file `pending_test.go` are gone: W4 moved the last
+of its tests into the run ([exchange_mappings_test.go](../../test/integration/ci/exchange_mappings_test.go), through the exchange). What
+waits is listed here with what it waits for; none of it has a test behind a tag.
 
-| Test or criterion | Needs |
+| Criterion | Needs |
 |---|---|
-| `TestR_CI_001_ExchangeAnswersIssuerDisabledForARemovedIssuer` | W4 |
-| `TestR_CI_009_AMergeRequestPipelineOfAProtectedBranchCannotPublish` | W4 (the exchange), W5 (the evaluator judges the publish) |
-| `TestR_CI_009_AnAbsentClaimFailsTheExchangeEvenIfALaterMappingMatches` | W4 |
-| `TestR_CI_019_AMappingCreatedOnAIsUsedByTheNextExchangeOnBWithPropagationBlocked` | W4 (the mapping-set check of R-CI-007) |
-| `TestR_CI_017_DisablingAMappingRevokesItsTokensOnEveryReplica`, `TestR_CI_009_DeletingAMappingRevokesItsTokens` | W4, W5 |
-| `TestR_CI_013_RemovingTheMappingFromAPolicyFailsAnIssuedToken` | W4, W5 (the evaluator reads the policy bindings of the token's mappings) |
-| R-CI-017 "disabling a mapping through replica A": the revoker's part is tested (`TestR_CI_017_ARevocationThroughOneReplicaIsRefusedOnTheOthersWithin2s` calls `RevokeMappingTx` as the store will); the `PUT` of the mapping and the principal's status are W3's | W3 |
 | R-AUTHZ-014 "`POST /api/v1/authz/explain` lists the inline grants with `source.kind` `ci-inline`": the decision's sources already name them (`ci-inline:<issuer>/<mapping>#<n>`); the explainer is not built (Q-AUTHZ-27) | the explainer |
-| R-CI-020 "after the reference pipeline runs …", R-CI-017 with `npm whoami --registry` and `dotnet nuget push -k` from the real clients, R-CI-030's drained cleanup over 100,000 rows | W4, W7 (the e2e tier) |
+| R-CI-020 "after the reference pipeline runs …", R-CI-017 and R-CI-028 with `npm whoami --registry`, `npm publish` and `dotnet nuget push -k` from the real clients, R-CI-029 "a web pod deleted gracefully while 50 jobs exchange" | W7 (the e2e tier on kind) |
+| R-CI-018 and R-CI-029 under a Sentinel failover and `valkey-cli FLUSHALL` (1,000 single-use tokens, 500 exchanges and package requests): the integration tier runs the 1,000 tokens on two replicas with Valkey stopped and cannot fail the shared stack over | W7, or the long tier with a stack of its own |
+| R-CI-030's drained cleanup over 100,000 rows (a node drained under the worker) | W7 |
+| R-CI-008's `job_token_rejected`, `job_not_running`, `gitlab_unreachable` | R-CI-022 (P2, Q-CI-5); [Q-CI-43](../spec/gitlab-ci-oidc.md#q-ci-43--the-reasons-the-integration-tier-cannot-reach) |
 
 The tests of W1 itself are [test/integration/ci](../../test/integration/ci) (`issuers_test.go`, `keys_test.go`, `declared_test.go`,
 `tasks_test.go`) and the unit tests of [internal/ci](../../internal/ci).
 
 | `TestR_CI_004_*` of [subject_test.go](../../internal/ci/subject/subject_test.go) | every step of R-CI-004 with a failing token from the issuer double and its reason, the algorithm-confusion token (Q-CI-24), the audience and skew criteria, the step order, at most 10 keys without `kid` |
 | `TestR_CI_004_*` of [jws_test.go](../../internal/auth/jws/jws_test.go), `TestTheKeyRulesOfAJWKSet` | every supported algorithm, `none` and HMAC never, key fit, no key from a header, the parser's refusals, R-CI-003's key rules and their reasons |
-| `TestR_CI_010_*`, `TestR_CI_011_*`, `TestR_CI_012_*`, `TestR_CI_013_*`, `TestR_CI_014_*`, the scope tests (R-CI-007, no ID in their names until the exchange exists), `TestR_AUTHZ_014_AnEscapedClaimMatchesOnlyItsLiteralName` ([internal/ci/claims](../../internal/ci/claims)) | the glob table, normalization, arrays, `null` and missing claims, `(a+)+$` (median under 1 ms without the race detector, the p99 with `TROVE_PERF_GATE=1`), the limits, the save-time rules and warnings, the cross-project classification and the per-mapping cap, the grant specification, every template example and render error, the pure scope cases |
+| `TestR_CI_010_*`, `TestR_CI_011_*`, `TestR_CI_012_*`, `TestR_CI_013_*`, `TestR_CI_014_*`, the scope tests `TestR_CI_007_*` (the IDs restored with the exchange), `TestR_AUTHZ_014_AnEscapedClaimMatchesOnlyItsLiteralName` ([internal/ci/claims](../../internal/ci/claims)) | the glob table, normalization, arrays, `null` and missing claims, `(a+)+$` (median under 1 ms without the race detector, the p99 with `TROVE_PERF_GATE=1`), the limits, the save-time rules and warnings, the cross-project classification and the per-mapping cap, the grant specification, every template example and render error, the pure scope cases |
 | the login's tests of [internal/auth/oidc](../../internal/auth/oidc) | unchanged and green on the shared verifier |
 
 ## W2: the claim engine and the validation
@@ -301,17 +299,6 @@ policy's principal list),
 [Q-CI-37](../spec/gitlab-ci-oidc.md#q-ci-37--the-edges-of-a-projects-mapping-the-policies-it-sees-the-project-lock-and-a-system-administrators-edit)
 (the edges of a project's mapping).
 
-## W5: use time
-
-Built: R-AUTHZ-014 in the evaluator, the ownership of a GitLab project (R-CI-015), the revocation of CI tokens (R-CI-017), the
-issuance API with the project's view (R-CI-020, Q-CI-26), the two retention tasks (R-CI-030), the gauge `trove_ci_tokens_active`, and
-`IssueCITx` (moved from W4 so that the tests have real CI tokens). Decided on the way:
-[Q-CI-38](../spec/gitlab-ci-oidc.md#q-ci-38--the-revocation-reason-of-a-ci-tokens-row-and-the-events-of-a-revocation) (the row reason
-and the events of a revocation), [Q-CI-39](../spec/gitlab-ci-oidc.md#q-ci-39--a-refused-install-of-a-ci-token-answers-as-every-refused-read)
-(a refused install is a `404` under `hide_existence`), [Q-CI-40](../spec/gitlab-ci-oidc.md#q-ci-40--what-a-ci-publish-claims-when-several-grants-allow-it-and-what-an-added-ci-project-owner-shows)
-(a `bind_project` grant decides the claim; an added project owner's display). The gaps are H-415 to H-417 of
-[ci-federation.md](../security/ci-federation.md#what-this-does-not-cover).
-
 ### Files
 
 | File | Responsibility |
@@ -347,8 +334,8 @@ exists is 409 `already_exists`, a priority held by another mapping of the tier 4
   Failure, Detail}`; there is no flat union of the rendered grants, because a cap and a project bound only their own mapping's. Build the
   bundle with `Frozen.Add(c.Frozen())` per contribution. `Contribution.Mapping` has `ID`, `Ref`, `Tier`, `Project`, `ProjectID`,
   `Version` and `PrincipalID`. `Mapping.Grants.Policies` is read from the policies' principal lists for display; the evaluator reads
-  the live index, not this field. The dry run computes the lifetime itself (`dryRunTTL`, Q-CI-36): call `ComputeTTL` from there once
-  it exists.
+  the live index, not this field. The dry run computes the lifetime with `ComputeTTL`, the exchange's formula (`dryRunTTL` builds its
+  input, Q-CI-36, Q-CI-41).
 - **W5, the revoker.** `RevokeMappingTx(ctx, tx, actor, mapping, CauseMapping)` runs in the write's transaction before the mapping row
   and its principal are deleted (delete) and before the principal's status is set (disable); the mapping is the one read under the issuer
   lock. W3 notifies the change area `auth` for the principal (`principal.NotifyPrincipals`) on a status change and a delete, and the
@@ -372,6 +359,108 @@ exists is 409 `already_exists`, a priority held by another mapping of the tier 4
   `project:…` before `system`).
 - The reference pipeline's closing revocation is a block scalar (the plain form is a YAML mapping) and its error line prints
   `requestId`.
+
+## W4: the exchange
+
+Built: `POST /api/v1/auth/oidc/token` (R-CI-007, R-CI-008), the lifetime (R-CI-016), the replay set and the restore cut-off (R-CI-018),
+the issuance record and the events and metrics of an exchange (R-CI-020), the two budgets and the denial aggregation (R-CI-021), the
+one implementation of the key rules (Q-CI-42). Decided on the way:
+[Q-CI-41](../spec/gitlab-ci-oidc.md#q-ci-41--the-reason-of-a-request-that-cannot-succeed-by-its-own-parameters) (the reason of a
+request that cannot succeed by its own parameters: `ttl_below_minimum`, an empty `subject_token`),
+[Q-CI-42](../spec/gitlab-ci-oidc.md#q-ci-42--one-implementation-of-the-key-rules-the-shared-leaf) and
+[Q-CI-43](../spec/gitlab-ci-oidc.md#q-ci-43--the-reasons-the-integration-tier-cannot-reach) (the reasons the integration tier cannot
+reach). The gaps are H-418 to H-420 of [ci-federation.md](../security/ci-federation.md#what-this-does-not-cover).
+
+### Files
+
+| File | Responsibility |
+|---|---|
+| [ci_exchange.go](../../internal/api/v1/ci_exchange.go) | the handler: the switch (404), `CheckAddress` before the body, the body limit, form or JSON (`jws.DecodeObject`), a parameter twice, the unknown ones ignored and never quoted, the OAuth answer with `Cache-Control: no-store` and `Pragma: no-cache`, `expose_reason`, `Retry-After` |
+| [exchange.go](../../internal/ci/exchange.go) | `ExchangeRequest` (prints without its tokens), `ExchangeResult`, `ExchangeError`, the interface `Exchanger` |
+| [exchange_service.go](../../internal/ci/exchange_service.go) | `ExchangeService`, `ExchangeOptions`, `NewExchange`; `CheckAddress` with `exempt_cidrs`, `Refused`, `Exchange` (steps 1 and 2, the subject budget), the mapping of errors to reasons, the metrics, the log line and the denial event |
+| [exchange_request.go](../../internal/ci/exchange_request.go) | step 1: the parameters (Q-CI-41) |
+| [exchange_tx.go](../../internal/ci/exchange_tx.go) | the transaction: `LockShareTx`, the comparison with the copies, the second validation and `SetTx` on a mismatch, `configuration_changed`, the restore cut-off and the `jti` upsert, the bundle, the scope, `ComputeTTL`, `IssueCITx`, the issuance record, `ci.exchange.succeeded`; the statements behind `exchangeQueries` |
+| [exchange_scope.go](../../internal/ci/exchange_scope.go) | `GrantIndex`, `GrantIndexes`, `GrantIndexFunc`; `narrow`: the stored scope, `scope_malformed` for an unknown key, `NarrowFrozen` with the index as `held`, the answer's `scope` |
+| [exchange_denials.go](../../internal/ci/exchange_denials.go) | the per-replica aggregation of `ci.exchange.denied` (R-CI-021): per address, reason and minute, a timer the first entry arms, at most 10,000 addresses, the flush at shutdown |
+| [ttl.go](../../internal/ci/ttl.go) | `TTLInput`, `ComputeTTL` with the reason of its cause (moved out of exchange.go) |
+| [authz/ci_scope.go](../../internal/authz/ci_scope.go) | `Engine.CIScopeOf`: `UnknownKey`, `Held`, `PolicyItems` on the installed index; the index records the policy entries of CI mapping principals and groups as text (`ciTexts`, [index.go](../../internal/authz/index.go)) |
+| [keys_jwks.go](../../internal/ci/keys_jwks.go) | the stored form of a key set over `jws.ParseJWKS` (Q-CI-42) |
+| [ci_exchange.sql](../../internal/meta/postgres/queries/ci_exchange.sql) | `CiExchangeLockMappings`, `CiExchangeUseJTI`, `CiExchangeRestoredAt`, `CiExchangeInsertIssuance` |
+
+### The request path
+
+1. The handler answers 404 when `ci.exchange.enabled` is false, then `CheckAddress` (one counter; an address of `exempt_cidrs` skips
+   it), then reads at most `ci.exchange.max_body_bytes` and decodes. A refusal of its own goes through `Refused`, so it is counted and
+   recorded like every denial.
+2. `Exchange`: step 1 (`checkRequest`); `subject.Parse`; `Issuers.Resolve` from the copy; `subject.CheckIssuer`; `ci_issuer`;
+   `Verify` with the issuer's key source behind `heldKeys`, which asks it once and keeps the answer; the `jti` rule of single use; the
+   subject budget (the first pin claim, else `sub`); `Mappings.Set` from the copy, before the transaction, because a miss reads on a
+   connection of its own.
+3. One `InTx`: the issuer row `FOR SHARE`; when its `version` and `mappings_version` equal the copies', `Select` on the copy and the
+   matched rows `FOR SHARE` (`CiExchangeLockMappings`); on any difference the stale path: `Verify` again against the re-read row with
+   the keys held (an issuer whose `version` moved), `SetTx`, `Select` again, and a second difference is `configuration_changed`. Then
+   the restore cut-off for a single-use issuer, the `jti` upsert, the selection's failure if any, the bundle (`Contribution.Frozen`
+   per contribution), `narrow`, `ComputeTTL`, `IssueCITx` (owner: the first contribution's principal), `CiExchangeInsertIssuance`
+   (the record's expiry is the token row's) and `ci.exchange.succeeded`, all in that transaction.
+4. After it: `Issuers.Reload` when the copy was stale (`SetTx` already refreshed the mapping copy), `trove_ci_mapping_set_stale_total`,
+   `ci.exchange.replayed` or `.repeated` through the buffer, `trove_ci_exchanges_total` and `trove_ci_exchange_duration_seconds`.
+
+### What the other packages rely on
+
+- **The scope's index answers are the replica's.** `PolicyItems` and `Held` read the installed grant index without waiting for an
+  epoch, as every request decides on the confirmed index (R-AUTHZ-028); a test that exchanges right after a mapping save waits for the
+  replica's index (`xenv.settled` in the tests). The policy grants of the token are decided live at use time either way.
+- **The denials are aggregated per replica.** A test that counts `ci.exchange.denied` rows uses an address of its own
+  (`X-Forwarded-For` through the trusted loopback proxy) or stops the replica, whose flush writes the counts; a summary row carries
+  `count` and no `iss`, `kid` or claims.
+- **The issuance record exists for every token**, written beside the token row (Q-CI-32): the revoker and the bulk revoke find tokens
+  through it.
+
+### Contract changes
+
+- `Exchanger.CheckAddress` takes the `audit.Source` (the address, the user agent and the request ID for the denial event), not an
+  address string; `Exchanger.Refused` is new; `ExchangeRequest.RequestID` is `Source.TraceID`.
+- `ComputeTTL` returns the reason and a detail naming the bound (`(ttl, reason, detail)`) and lives in ttl.go; the reason
+  `ttl_below_minimum` is new (Q-CI-41). The reason names `project_prefix_required`, `invalid_pattern` and `invalid_value` moved from
+  `internal/ci/claims` to `internal/ci/reason`.
+- `StubExchanger` is gone, and so are the stubs: stubs.go keeps `NotImplemented`.
+- `v1.CIServices.Exchange` (the `ci.exchange` settings the handler applies) is new; `ciPending` is gone.
+- `CiExchangeLockIssuer` is gone (the issuer row is `Issuers.LockShareTx`'s); `CiExchangeRestoredAt` is new.
+- The key status names the reasons of `jws.ParseJWKS` (`rsa_key_too_small`, `private_key_material`, …) and lists a repeated `kid` as two
+  usable keys (Q-CI-42).
+- The OpenAPI operation: the 501 is gone, 404 and 405 are documented, `ttl` is a string of digits (a JSON body may send a number),
+  `Pragma` and `Retry-After` are declared.
+
+### Tests
+
+| Test | What it proves |
+|---|---|
+| [exchange_test.go](../../test/integration/ci/exchange_test.go) | R-CI-007's form and JSON exchange with the answer's fields and headers, the scope's policy and inline items; R-CI-017's install and publish with the token; R-CI-016's lifetime criteria and `ttl_below_minimum` |
+| [exchange_errors_test.go](../../test/integration/ci/exchange_errors_test.go) | R-CI-008: every reason the MVP reaches with status, `error` and `reason` (`database_unavailable` by a lock held beyond the lock timeout, `signing_keys_unavailable` by an aged key row and an unreachable double, `internal` by a mapping row that does not decode); the denial event before and after the signature; `expose_reason: false`; the 404 and 405 |
+| [replay_test.go](../../test/integration/ci/replay_test.go) | R-CI-018: single use on and off, concurrent exchanges on two replicas, a failed transaction that leaves no `jti`, the restore cut-off with its skew, `ci.exchange.replayed` and `.repeated` |
+| [ratelimit_test.go](../../test/integration/ci/ratelimit_test.go) | R-CI-021: 1,000 requests in 5 s on three replicas, one replica and three with Valkey stopped; `exempt_cidrs` and the subject budget; 2,000 forged tokens from 20 addresses beside a legitimate project; 10,000 garbage requests without a fetch and under 100 audit rows; R-CI-029: the Valkey keys of the keyspace and an outage that changes no answer |
+| [exchange_mappings_test.go](../../test/integration/ci/exchange_mappings_test.go) | R-CI-007's three criteria on a replica whose change log is stopped with Valkey stopped (R-CI-019's shadowing mapping, `trove_ci_mapping_set_stale_total`), R-CI-009's first match and render failure, R-CI-012's fork pipelines and the recorded fork-in-parent fixture, R-CI-013's live policy binding, R-CI-017's revocation of an exchanged token on three replicas, R-CI-001's removed issuer, R-CI-020's issuance record and events |
+| [exchange_service_test.go](../../internal/ci/exchange_service_test.go), [exchange_request_test.go](../../internal/ci/exchange_request_test.go), [exchange_denials_test.go](../../internal/ci/exchange_denials_test.go), [ttl_test.go](../../internal/ci/ttl_test.go) | the exchange without PostgreSQL: the stale paths and the second mismatch (Q-CI-43), step 1, the aggregation, `ComputeTTL` |
+| [ci_exchange_test.go](../../internal/api/v1/ci_exchange_test.go), [authz/ci_scope_test.go](../../internal/authz/ci_scope_test.go) | the body's decoding and the rate-limit exemption; the index's scope answers |
+
+Every `xenv` of the integration tests checks at its end that no error answer and no log line of its replicas holds a subject token it
+sent or a `trv_cit_` value, and that no log line holds a CI token an answer issued (`checkNoSecrets`).
+
+## W5: use time
+
+Built: R-AUTHZ-014 in the evaluator, the ownership of a GitLab project (R-CI-015), the revocation of CI tokens (R-CI-017), the
+issuance API with the project's view (R-CI-020, Q-CI-26), the two retention tasks (R-CI-030), the gauge `trove_ci_tokens_active`, and
+`IssueCITx` (moved from W4 so that the tests have real CI tokens). Decided on the way:
+[Q-CI-38](../spec/gitlab-ci-oidc.md#q-ci-38--the-revocation-reason-of-a-ci-tokens-row-and-the-events-of-a-revocation) (the row reason
+and the events of a revocation), [Q-CI-39](../spec/gitlab-ci-oidc.md#q-ci-39--a-refused-install-of-a-ci-token-answers-as-every-refused-read)
+(a refused install is a `404` under `hide_existence`), [Q-CI-40](../spec/gitlab-ci-oidc.md#q-ci-40--what-a-ci-publish-claims-when-several-grants-allow-it-and-what-an-added-ci-project-owner-shows)
+(a `bind_project` grant decides the claim; an added project owner's display). The gaps are H-415 to H-417 of
+[ci-federation.md](../security/ci-federation.md#what-this-does-not-cover).
+
+### Files
+
+| File | Responsibility |
+|---|---|
 | [authz/ci.go](../../internal/authz/ci.go) | `CIProject`, `CIGrants` (the contributions resolved against the index: the mapping principal by name, the listed groups by name through `Index.groups`, the project of a project tier), `ciGrantedBy` (per contribution: never `manage`, only `read` under the cap, the project's own policies for a project tier, the inline grants through the token scope's matcher and only on the project's repositories), `ciReadShape`, `ciWriteOf` (whether a `bind_project` grant allows the write, the claimers of rule 2) |
 | [authz/ownership_ci.go](../../internal/authz/ownership_ci.go) | the owner identities of a CI token (`ciOwnFacts`: the project by issuer ID and project ID, the mappings and groups also by principal name), the claim of the project, the display update, `ci.package_ownership.claimed` and `.conflict`, the reference `ci:<issuer>:project:<id>` in the owner operations and in `GET /package-owners` |
 | [authz/ownership.go](../../internal/authz/ownership.go) | the hooks: `keyFor`, `ciResolveClaimers` in `CheckTx` and `PrecheckWrite`, the CI owner in `judge`, `ownerOfRow`, `ClaimTx`, `recordClaim`, `AddOwnerTx`, `RemoveOwnerTx`'s journal entry, `ownedRows` |

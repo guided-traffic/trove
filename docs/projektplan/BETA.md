@@ -424,9 +424,11 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   also as the problem's `code` (Q-CI-30)
 - 🟢 `ca_bundle_ref`: `file:/abs/path` or `env:TROVE_CIC_<NAME>`; the installation's trust always applies and the bundle
   only adds to it (Q-CI-31)
-- 🟡 The exchange: a `ttl` below `ci.token.min_ttl` answers `subject_token_expires_too_soon`, which names the wrong cause; an
-  empty `subject_token` has no stated reason; `ci.exchange.enabled: false` answering 404 is only in the code; the 405 of
-  R-CI-007 is not in OpenAPI (W4)
+- 🟢 The exchange: a `ttl` below `ci.token.min_ttl` answered `subject_token_expires_too_soon`, which names the wrong cause; an
+  empty `subject_token` had no stated reason; `ci.exchange.enabled: false` answering 404 was only in the code; the 405 of
+  R-CI-007 was not in OpenAPI (W4). A requested `ttl` below the floor is the caller's `ttl_below_minimum` at step 1 and an empty
+  `subject_token` a missing parameter, `malformed_request` ([Q-CI-41](../spec/gitlab-ci-oidc.md#q-ci-41--the-reason-of-a-request-that-cannot-succeed-by-its-own-parameters)),
+  and R-CI-007 and the OpenAPI operation state the 404 and the 405 (`TestR_CI_007_TheEndpointsOtherAnswers`)
 - 🟢 The reference pipeline's error line (R-CI-028) printed no `requestId`, which the administrator needs to find the refusal;
   the error line of the examples, the snippet and the manual prints `error`, `error_description`, `reason` and `requestId`, and
   R-CI-028 has the acceptance criterion (W3)
@@ -434,8 +436,10 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   command: a plain scalar with a colon and a space in it. GitLab refuses such a `script` entry. The examples, the manual and the
   snippet write it as a block scalar (`- |`), and a test parses the snippet as YAML (W3)
 - 🟢 `TestR_CI_003_ARotationCausesOneFetchAndRandomKidsCauseNone` failed in 2 of 4 runs: the lookups caused no extra read (the key source lets at most one re-read per `cluster.epoch_poll_interval` through), but PostgreSQL flushed the 10 reads of the preceding rotation into `pg_stat_user_tables` between 0.9 s and 1.6 s late, on either side of the test's 1.5 s wait, so they landed in the measured window; the test now waits 2.5 s (`statsFlushWait`) before each reading and the bound is unchanged
-- 🟡 Two implementations of R-CI-003's key rules: W1's `internal/ci/keys_jwks.go` (built while the shared leaf did not exist)
-  and W2's `jws.ParseJWKS`; one of them goes, so the key status and the validation cannot disagree (W4)
+- 🟢 Two implementations of R-CI-003's key rules: W1's `internal/ci/keys_jwks.go` (built while the shared leaf did not exist)
+  and W2's `jws.ParseJWKS`; one of them goes, so the key status and the validation cannot disagree (W4). The key store stores and
+  reads its sets through `jws.ParseJWKS` and selects with `jws.Candidates`, its own rules are gone
+  ([Q-CI-42](../spec/gitlab-ci-oidc.md#q-ci-42--one-implementation-of-the-key-rules-the-shared-leaf), `TestR_CI_003_TheKeyStatusAndTheValidationAgree`)
 - 🟢 Test and Release run 41525937899 failed in `integration (shard b)`: since W1, `trove migrate` applies `ci.issuers` on
   every run, and the test helper `testenv.DeclareRoleBindings` built a bare configuration without the CI caches' SafetyTTL
   (`cache: "ci_issuers" needs a SafetyTTL`); the helper sets them as `config.Load` does
@@ -457,6 +461,10 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   migration Job built it afresh; the database's earlier content is gone
 - 🟡 `make dev-up` on an existing cluster installs a newly loaded `guidedtraffic/trove:dev` without rolling the pods: the tag
   and the pod spec are unchanged, so the old pods keep the old image until `kubectl rollout restart` (W7)
+- 🟡 `TestR_CI_021_TheAddressBudgetIsOneAcrossReplicas` holds R-CI-021's "1,000 requests within 5 s" as a hard bound; on a
+  CPU-limited CI runner the flood may need longer, which would fail the test without a defect (W4's note; watched)
+- 🟡 R-CI-029's "every replica stays ready and reports `degraded: [valkey]`" while Valkey is stopped has no assertion in the
+  integration tier (W7)
 - 🟡 `TestR_CI_003_StaleAndUnreachable` failed once in W3's full run of `test/integration/ci` while three agents shared
   the stack, and passed alone and in the next full run; watched, not yet reproduced
 - 🟢 Test and Release run 41518863868 failed in `e2e on kind (access-long)`: the journey `06` clicked "Refresh now" by a
@@ -477,8 +485,13 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - 🟡 GitLab issuers declared in the Helm values (`config.ci.issuers`), applied by `trove migrate`, shown in trove and
   read-only there ([Q-CI-16](../spec/gitlab-ci-oidc.md#q-ci-16--ci-issuers-provisioned-through-the-helm-values-are-read-only-in-trove), owner 2026-11-02); built (`ApplyDeclared` in `trove migrate`, `TestR_CI_001_*` in `test/integration/ci`), open: removing
   an issuer that has issuance records waits for the revoker (W5)
-- ⚪ Token exchange: GitLab ID token (`id_tokens:` with trove as audience) in, short-lived CI token (`trv_cit_`) out;
-  `CI_JOB_TOKEN` is not accepted (owner 2026-11-02; its fallback stays P2, R-CI-022)
+- 🟡 Token exchange: GitLab ID token (`id_tokens:` with trove as audience) in, short-lived CI token (`trv_cit_`) out;
+  `CI_JOB_TOKEN` is not accepted (owner 2026-11-02; its fallback stays P2, R-CI-022). Built (W4): `POST /api/v1/auth/oidc/token` with
+  form and JSON bodies, the scope, the lifetime, the re-check of the issuer and the mappings `FOR SHARE` in one transaction with the
+  replay set and the restore cut-off, the issuance record, the events and metrics, the cluster-wide budgets per address and per
+  project and the aggregated denials (Q-CI-41 to Q-CI-43, H-418 to H-420); verified by `test/integration/ci` (`exchange*_test.go`,
+  `replay_test.go`, `ratelimit_test.go`) against the issuer double on one to three replicas with Valkey running and stopped; open: the
+  real clients on kind, a Sentinel failover and `FLUSHALL` during exchanges, a `web` pod deleted under 50 exchanging jobs (W7)
 - ⚪ Audit of the exchange: which pipeline (instance, group, project, branch, pipeline, job) signed in when, as issuance
   records with a tab per issuer in the admin UI (R-CI-020)
 - 🟡 Admin manual: a runbook page for GitLab CI (register an instance in the Helm values, the `id_tokens:` block, a
@@ -513,7 +526,10 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - ⚪ Reference pipeline: `.gitlab-ci.yml` publishing an npm package and pushing a NuGet package
 - 🟡 GitLab's behaviour validated against the owner's unused GitLab instance and recorded as fixtures of the issuer
   double; no integration or e2e test runs against a real GitLab or gitlab.com (owner, 2026-11-02; Q-CI-25)
-- ⚪ Integration tests: invalid signatures, wrong audience, expired tokens, fork merge requests
+- 🟢 Integration tests: invalid signatures, wrong audience, expired tokens, fork merge requests: every reason of R-CI-008 the MVP
+  reaches, through the endpoint with status, `error` and `reason` (`TestR_CI_008_EveryReasonOfTheErrorTable`), the recorded fork merge
+  request run in the parent (`TestR_CI_012_ForkPipelines`), 2,000 forged tokens beside a legitimate project, and a grep of every answer
+  and log line for token material; `configuration_changed` and the three P2 reasons are proven or deferred as Q-CI-43 says
 - ⚪ E2E tests against the issuer double for npm and NuGet (the reference pipeline's exchange and client steps), with a `web` node
   drained during the run and again with Valkey stopped; no test runs against a real GitLab ([Q-CI-25](../spec/gitlab-ci-oidc.md#q-ci-25--gitlabs-behaviour-is-validated-against-a-real-instance-the-tests-run-against-the-double), owner 2026-11-02)
 - 🟢 GitLab's behaviour validated by hand on GitLab 19.0.1 and recorded as fixtures that the issuer double reproduces: ID tokens of 16

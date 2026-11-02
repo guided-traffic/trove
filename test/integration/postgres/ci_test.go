@@ -173,6 +173,18 @@ func TestCIMigration(t *testing.T) {
 				t.Fatalf("CiExchangeUseJTI #%d = %d, %v", want, n, err)
 			}
 		}
+		// The exchange's re-read of its matched mappings and the restore cut-off (R-CI-007, R-CI-018).
+		if rows, err := qs.CiExchangeLockMappings(ctx, []string{ciMapping}); err != nil || len(rows) != 1 || !rows[0].Enabled || rows[0].Version < 1 {
+			t.Fatalf("CiExchangeLockMappings: %+v %v", rows, err)
+		}
+		if us, err := qs.CiExchangeRestoredAt(ctx); err != nil || us != 0 {
+			t.Fatalf("CiExchangeRestoredAt before a restore: %d %v", us, err)
+		}
+		mustExec(t, admin, `INSERT INTO trove.system_state (key, value) VALUES ('restored_at', to_jsonb('2026-11-02T10:00:00.5Z'::text))`)
+		if us, err := qs.CiExchangeRestoredAt(ctx); err != nil || us != time.Date(2026, 11, 2, 10, 0, 0, 5e8, time.UTC).UnixMicro() {
+			t.Fatalf("CiExchangeRestoredAt: %d %v", us, err)
+		}
+		mustExec(t, admin, `DELETE FROM trove.system_state WHERE key = 'restored_at'`)
 		if n, err := qs.CiReplayDeleteExpired(ctx, q.CiReplayDeleteExpiredParams{RetentionSecs: 900, MaxRows: 1000}); err != nil || n != 0 {
 			t.Fatalf("CiReplayDeleteExpired: %d %v", n, err)
 		}

@@ -123,6 +123,10 @@ type Index struct {
 	// groups by name, and the stage resolves no membership for a mapping principal (R-AUTHZ-014). A
 	// group no entry names holds no grant, so it needs no entry here.
 	groups map[string]string
+	// ciTexts maps the ID of a CI mapping principal or of a group to the policy entries naming it, in the text of
+	// the policy: the exchange answers a CI token's policy and group grants as `<action>:<selector>` items with the
+	// selectors as the policy writes them (R-CI-007, ci_scope.go).
+	ciTexts map[string][]textGrant
 	// exposure maps an endpoint name to its compiled exposure rules (R-EP-013).
 	exposure map[string]*endpointExposure
 	// projects maps a project key to the project (R-AUTHZ-026).
@@ -195,6 +199,7 @@ func BuildIndex(s *Snapshot, reg *catalog.Registry, log *slog.Logger) *Index {
 			bindings: map[string]roleSet{},
 			ci:       map[string]string{},
 			groups:   map[string]string{},
+			ciTexts:  map[string][]textGrant{},
 			projects: map[string]*projectInfo{},
 		},
 		log: log, reg: catalog.Or(reg), byID: make(map[int64]*repoInfo, len(s.Repositories)),
@@ -375,6 +380,9 @@ func (b *builder) addPolicy(p q.AuthzBuildPoliciesRow) {
 	// The patterns are compiled once per name rule: the repositories of formats
 	// without package names share one set, every other format has its own.
 	byRule := map[string]*resourceSet{}
+	// effective collects, per CI mapping principal and group, the actions its entries give on some covered
+	// repository, for ciTexts.
+	effective := map[string]ActionSet{}
 	for _, r := range repos {
 		names := namesIn(b.reg, r.Format)
 		key := ""
@@ -419,9 +427,40 @@ func (b *builder) addPolicy(p q.AuthzBuildPoliciesRow) {
 				b.x.grants[r.ID] = m
 			}
 			m[e.PrincipalID] = append(m[e.PrincipalID], grant{policy: p.Name, project: p.ProjectID, actions: acts, res: *byRule[key]})
+			if e.PrincipalKind == dbCIMapping || e.PrincipalKind == dbGroup {
+				effective[e.PrincipalID] |= acts
+			}
 		}
 	}
+	b.addTexts(p, effective)
 	b.x.policies++
+}
+
+// addTexts records the policy entries of CI mapping principals and groups in the policy's text (ciTexts): the
+// selectors as written, the actions the entry has on at least one covered repository.
+func (b *builder) addTexts(p q.AuthzBuildPoliciesRow, effective map[string]ActionSet) {
+	if len(effective) == 0 {
+		return
+	}
+	var sels []string
+	for _, r := range b.selectors[p.ID] {
+		sel, err := selectorOfRow(r)
+		if err != nil {
+			return
+		}
+		sels = append(sels, sel.text(func(id int64) string {
+			if info := b.byID[id]; info != nil {
+				return info.Key
+			}
+			return ""
+		}))
+	}
+	for _, e := range b.entries[p.ID] {
+		if acts := effective[e.PrincipalID]; acts != 0 {
+			b.x.ciTexts[e.PrincipalID] = append(b.x.ciTexts[e.PrincipalID], textGrant{project: p.ProjectID, selectors: sels, actions: acts})
+			delete(effective, e.PrincipalID)
+		}
+	}
 }
 
 func selectorOfRow(r q.AuthzBuildSelectorsRow) (selector, error) {

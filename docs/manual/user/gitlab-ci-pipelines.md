@@ -80,11 +80,11 @@ The answer of a successful exchange (values are examples):
 }
 ```
 
-`scope` lists what the token may do, one item per action and repository selector; `mappings` names the mappings that granted it. The token value is in this answer only, and there is no refresh token: a job that needs a new token exchanges again.
+`scope` lists what the token may do, one item per action and repository selector: first the grants of the permission policies the mappings belong to, with their selectors as the policies write them, then the mappings' own grants. `mappings` names the mappings that granted it. The token value is in this answer only, and there is no refresh token: a job that needs a new token exchanges again. The answer carries `Cache-Control: no-store`, so no proxy keeps it.
 
 ### How long the token lives
 
-`expires_in` is the smallest of: the `ttl` you asked for, or 15 minutes; the maximum of the matched mappings and of the issuer, where set; one hour; and what is left of the ID token. Your administrator may have set other values. An exchange whose token would live less than 30 seconds is refused with `subject_token_expires_too_soon`.
+`expires_in` is the smallest of: the `ttl` you asked for, or 15 minutes; the maximum of the matched mappings and of the issuer, where set; one hour; and what is left of the ID token. Your administrator may have set other values. An exchange whose token would live less than 30 seconds is refused: with `subject_token_expires_too_soon` when the ID token has less than that left, with `ttl_below_minimum` when your `ttl` asks for less.
 
 ## Narrow the token
 
@@ -96,7 +96,7 @@ Without further parameters the token carries every grant of the matched mappings
 
 - `scope` is a space-separated list of items `<action>` or `<action>:<repository selector>`. The actions are `read`, `annotate`, `deploy`, `overwrite` and `delete`; the selectors are those of permission policies: a key (`web-npm`), a key pattern (`web-*`), a class (`@any`, `@any-local`) or a class or pattern with a format (`@any:npm`). An item without a selector stands for every repository.
 - An item that asks for an action the mappings do not grant refuses the whole exchange with `scope_not_granted`; there is no partial token. `manage`, an unknown action or a key that names no repository answers `scope_malformed`. At most 50 distinct items.
-- `--data-urlencode 'ttl=600'` asks for a shorter lifetime in seconds. It can only shorten.
+- `--data-urlencode 'ttl=600'` asks for a shorter lifetime in whole seconds. It can only shorten, and not below 30 seconds (`ttl_below_minimum`).
 - Package-name and path limits are not part of `scope`; the mapping's grants carry them.
 
 ## Use the token with npm
@@ -289,16 +289,18 @@ The job log shows the members `error`, `error_description` and `reason`. The `re
 | `audience_invalid` | The ID token's `aud` is not one trove accepts | Set `aud` to trove's base URL exactly |
 | `audience_not_exclusive` | `aud` also names another service | Declare a separate `id_tokens:` entry for each service |
 | `wrong_subject_token_type`, `subject_token_malformed` | The job sent something other than its ID token, such as `CI_JOB_TOKEN`, or a misspelt variable | Send the variable of the `id_tokens:` block |
+| `malformed_request` | A parameter is missing, empty or sent twice; an empty `subject_token` means the variable of the `id_tokens:` block is not set in this job (a job that declares its own `id_tokens` replaces the default's) | Declare `id_tokens:` in the job, or in `default:` without overriding it |
 | `unknown_issuer`, `issuer_disabled` | trove does not trust your GitLab instance, or not any more | Ask an administrator of trove |
 | `no_matching_mapping` | No mapping covers this pipeline: another project, an unprotected branch, a merge request pipeline, a pipeline source the mapping leaves out | Run it on the refs the mapping names, or ask your project administrator |
 | `cross_project_source_denied` | A merge request pipeline from a fork, run in your project | Intended: fork code gets no token by default |
 | `token_expired`, `subject_token_expires_too_soon` | The ID token has expired, or is about to | Exchange at the start of the job; give the job a timeout |
+| `ttl_below_minimum` | The `ttl` you asked for is below 30 seconds, or a bound your administrator set is | Ask for a longer `ttl`, or ask your administrator |
 | `subject_token_replayed` | The ID token was exchanged before, and single use is on | Exchange once per job |
 | `scope_malformed`, `scope_not_granted` | `scope` is invalid, or asks for more than the mappings grant | Correct `scope`, or ask for the grant |
 | `rate_limited` (`429`) | Too many exchanges at once | `--retry` waits and repeats; if it persists, tell your administrator |
 | `signing_keys_unavailable`, `database_unavailable`, `configuration_changed` (`503`) | A temporary condition at trove | `--retry` repeats; if it persists, tell your administrator |
 
-Until the federation is released, the exchange answers `501` `ci_not_implemented` as problem details, which carry none of these members, so the error line of the snippet prints only `null` values.
+With the exchange switched off by the administrator (`ci.exchange.enabled: false`) the endpoint answers `404` as problem details, which carry none of these members, so the error line of the snippet prints only `null` values.
 
 For anything you cannot fix yourself, give your administrator the time, the GitLab project and job, and the `reason`. The answer also carries a `requestId`, which leads straight to the refusal in trove's audit trail; the error line of the snippet prints it, so give it to your administrator as well. The administrator's table of every reason is in [GitLab CI federation](../admin/gitlab-ci.md#troubleshoot-refused-exchanges).
 

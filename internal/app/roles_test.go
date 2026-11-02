@@ -7,7 +7,7 @@ import (
 
 // listenerOnly are the areas only a role with a client listener has.
 func listenerOnly() []Area {
-	return []Area{AreaLimits, AreaSessions, AreaLogin, AreaAuth, AreaEndpoints, AreaAPI}
+	return []Area{AreaLimits, AreaSessions, AreaLogin, AreaAuth, AreaEndpoints, AreaAPI, AreaCIExchange}
 }
 
 func TestR_ARCH_001_RolesEnableAreas(t *testing.T) {

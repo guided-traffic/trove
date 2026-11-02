@@ -1,10 +1,10 @@
 # CI federation: issuers, signing keys and mappings
 
 Status: the issuer record, its read-only configuration form and the signing-key store (work package W1 of
-[ci-oidc.md](../developer/ci-oidc.md)), the identity mappings with their save-time rules (work package W3) and the use time of a CI
-token (work package W5) are built; the exchange is specified in [gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md) and described here when
-it exists. This page answers two questions: what does trove trust when it trusts a CI issuer, and what can reach or change that trust;
-and what decides what a verified job receives.
+[ci-oidc.md](../developer/ci-oidc.md)), the identity mappings with their save-time rules (work package W3), the token exchange (work
+package W4) and the use time of a CI token (work package W5) are built. This page answers three questions: what does trove trust when it
+trusts a CI issuer, and what can reach or change that trust; what an anonymous caller of the exchange can cause; and what decides what a
+verified job receives.
 
 ## What trust in an issuer means
 
@@ -38,11 +38,15 @@ variable named `TROVE_CIC_<NAME>`, so that no variable of trove's own can be nam
   replica holds a copy, invalidated through the change area `ci_issuer_keys`. A key forged into Valkey would let anyone mint CI tokens,
   so nothing that selects or holds a key is read from there ([R-ARCH-030](../spec/architecture.md)).
 - **Only public members are stored.** A fetched set is reduced to `kty`, `kid`, `use`, `key_ops`, `alg` and the public key parameters
+  of each usable key, and to `kid`, `kty`, `alg` and the reason of each key the rules ignore
   ([keys_jwks.go](../../internal/ci/keys_jwks.go)); a private member, a certificate chain or a URL that the issuer publishes never reaches
   the table. At most 100 keys are kept.
-- **A key is used only if it passes the rules of R-CI-003**: `use` absent or `sig`, `key_ops` absent or containing `verify`, a key type
-  with a verification algorithm of R-CI-001, an RSA modulus of at least 2048 bits, one key per `kid`. The others are shown in the key
-  status with the reason. A token's own `alg` against the key's and the key type against the algorithm are checked by the validation.
+- **A key is used only if it passes the rules of R-CI-003**, applied by one implementation, `jws.ParseJWKS` of the leaf the login shares
+  ([Q-CI-42](../spec/gitlab-ci-oidc.md#q-ci-42--one-implementation-of-the-key-rules-the-shared-leaf)): `use` absent or `sig`, `key_ops`
+  absent or containing `verify`, RSA, EC on P-256 or P-384 or OKP Ed25519, an RSA modulus of at least 2048 bits, a key's own `alg` that
+  fits its type and curve, no private member. The others are shown in the key status with the reason (`rsa_key_too_small`,
+  `private_key_material`, …). The key status and the keys the validation tries come from that one parse, so they cannot disagree; the
+  candidates of a token are the keys of its `kid` that fit its `alg` (`jws.Candidates`), and two keys of one `kid` are both tried.
 - **A removed key is gone.** A set from a successful fetch replaces the stored one; a key that is missing from it is no longer accepted,
   on every replica within the change-area bound.
 - **Fail closed.** A set older than `ci.signing_keys.max_stale` is refused (`signing_keys_unavailable`), after the replica re-read the
@@ -121,10 +125,10 @@ against the project's repositories only. A policy name that is not the project's
 (`policy_outside_project`). A create in the tier locks the project row, so a project cannot be deleted under a mapping.
 
 **The principal** of a mapping mirrors `enabled`: disabling it sets the principal `disabled` in the transaction and notifies the
-change area `auth`, which is the status token validation reads ([R-CI-017](../spec/gitlab-ci-oidc.md), R-AUTH-023); no CI token
-exists yet to show it, because the exchange is not built. Deleting a mapping deletes its principal and,
-through the foreign keys, its entries in policies, so a mapping created under the same name inherits nothing. A mapping that has an
-issuance record is disabled or deleted only through the revoker; until it exists the write answers 501 and changes nothing.
+change area `auth`, which is the status token validation reads ([R-CI-017](../spec/gitlab-ci-oidc.md), R-AUTH-023), and the exchange
+reads it `FOR SHARE` before it issues a token, so a token of a disabled mapping is neither issued nor accepted. Deleting a mapping
+deletes its principal and, through the foreign keys, its entries in policies, so a mapping created under the same name inherits
+nothing. A mapping that has an issuance record is disabled or deleted through the revoker, in the transaction of the write.
 
 **The dry run** takes a claim set and never a token; it issues nothing, records no `jti` and writes no event. A project
 administrator's trace shows its tier only. It reads no policy, which the answer says when a `scope` item depends on one
@@ -134,6 +138,59 @@ administrator's trace shows its tier only. It reads no policy, which the answer 
 `.updated`, `.disabled` and `.deleted` also enter the revocation journal with the mapping's ID, issuer, name, tier, priority and the
 record before ([R-CI-020](../spec/gitlab-ci-oidc.md)). A PUT writes exactly one event, so a change that disables is not hidden behind
 an `.updated`.
+
+## The exchange: an anonymous endpoint
+
+`POST /api/v1/auth/oidc/token` ([ci_exchange.go](../../internal/api/v1/ci_exchange.go),
+[exchange_service.go](../../internal/ci/exchange_service.go)) takes no trove credential. The authentication stage answers the anonymous
+principal for the route whatever the request carries, a session and a CSRF token play no part, and the general API rate limit does not
+count it (`ExchangePath` in [ratelimit.go](../../internal/api/v1/ratelimit.go)). The subject token is the credential, so what an
+anonymous caller can cause is bounded by the order of the checks: each step is cheaper than the next and refuses before it.
+
+| Step | What an anonymous request costs here | The bound |
+|---|---|---|
+| the address budget `ci_exchange_address` | one counter in Valkey, before the body is read | 600 per minute and address, burst 100, cluster-wide; per-replica shares of it while Valkey is unavailable ([R-ARCH-034](../spec/architecture.md)); an address in `exempt_cidrs` skips it and is bounded by `server.max_in_flight` until its token is valid |
+| the body and the parameters | `ci.exchange.max_body_bytes` (64 KiB), the content type, a parameter twice, the pure checks of the parameters | a `ttl` below `ci.token.min_ttl` and an empty `subject_token` are refused here ([Q-CI-41](../spec/gitlab-ci-oidc.md#q-ci-41--the-reason-of-a-request-that-cannot-succeed-by-its-own-parameters)) |
+| the structure of the subject token | `ci.exchange.max_subject_token_bytes` (16 KiB), the JWS and JSON rules ([subject.go](../../internal/ci/subject/subject.go)) | no lookup |
+| the issuer | the in-process copy of every issuer | an unknown `iss` costs no query |
+| the signature | the key lookup and at most 10 verifications | an unknown `kid` costs at most one row read and one fetch per interval and replica ([above](#what-a-forged-kid-costs)) |
+| the subject budget `ci_exchange_subject` | one counter, per issuer and the first pin claim (`project_id`) | 300 per minute, burst 100, cluster-wide; a forged token never reaches it, so it cannot spend a project's budget |
+| the transaction | the reads `FOR SHARE`, the replay upsert, the token row, the issuance record | only for a validly signed token of a configured issuer within its project's budget |
+
+**One transaction decides** ([exchange_tx.go](../../internal/ci/exchange_tx.go)). It re-reads the issuer row and the matched mapping
+rows `FOR SHARE` and compares `version` and `mappings_version` with the replica's copies ([Q-CI-15](../spec/gitlab-ci-oidc.md)). On a
+mismatch it validates the token again against the re-read issuer (an audience removed a moment ago refuses the token), evaluates the
+mapping set it reads in the same transaction and refreshes the copies, so a token reflects the configuration committed when it was
+issued whether or not a change message reached the replica. A refused or failed transaction leaves no `jti`, no token and no record.
+Single use, the restore cut-off and the `jti` are PostgreSQL's alone ([Q-CI-13](../spec/gitlab-ci-oidc.md)): concurrent exchanges of
+one `jti` serialise on its row, and Valkey holds nothing but the two budgets' counters, so its loss or a forged entry can refuse
+exchanges with 429 and cannot make trove accept one.
+
+**What reaches the answer, the log and the audit trail.**
+
+- The answer is the OAuth error response with `reason` and `requestId`. Its description names parameters, settings, claims by name and
+  mappings, never a claim value, a parameter value or token material; the success answer is the one place a CI token appears. Both
+  carry `Cache-Control: no-store` and `Pragma: no-cache`. With `ci.exchange.expose_reason: false` every 400 is `invalid_request` with a
+  generic description ([H-420](#h-420--the-reason-of-a-refusal-tells-an-anonymous-caller-which-issuers-trove-trusts)).
+- The log line of a refusal holds the reason, the issuer's name once it is resolved and the request ID; the request type prints without
+  its tokens (`ExchangeRequest.LogValue`). The integration tests grep every answer and every log line of the replicas for the subject
+  tokens they sent and for any `trv_cit_` value.
+- `ci.exchange.succeeded` is written in the transaction with the token ID, the mappings, the allowlisted claim snapshot (no
+  `user_email`), the scope and the lifetime; `token.created` beside it. `ci.exchange.denied` holds the reason and, before the signature
+  is verified, only the unverified `iss` (cut to 256 bytes) and `kid` (at most 256 characters, R-CI-004), after it the snapshot. Denials
+  are aggregated per replica, address, reason and minute ([exchange_denials.go](../../internal/ci/exchange_denials.go)): the first at
+  once, the rest of the minute as one event with its count, the buffer bounded at 10,000 addresses
+  ([H-419](#h-419--a-flood-from-many-addresses-writes-one-denial-row-per-address)). `ci.exchange.replayed` and `.repeated` carry the
+  `jti` and its count.
+- The metrics label an exchange with the issuer's name only once it was resolved from the configured set, and with a closed outcome
+  and reason, so a forged `iss` adds no series.
+
+**The scope** narrows what the token carries and is its ceiling at use time. What the text of the inline grants cannot decide (a policy
+or group grant, a class or a format filter) the replica's grant index answers ([ci_scope.go](../../internal/authz/ci_scope.go)); the
+index can lag a policy change by the bound of [R-AUTHZ-028](../spec/authorization.md), which can refuse a requested item or leave one
+out of the answer's `scope` but never grants, because the policy grants of a CI token are decided live at use time. A key that names no
+repository is `scope_malformed` once the token matched
+([H-418](#h-418--a-matched-job-learns-which-repository-keys-exist-through-its-scope)).
 
 ## What a CI token can do
 
@@ -251,7 +308,7 @@ see the removal.
 ### H-415 · The inline grants of an issued token survive a narrowing of its mapping
 
 Component: the frozen bundle (R-CI-013, R-CI-017). Subject: a CI token issued before an administrator narrows the mapping's inline
-grants, for example after noticing that a template renders a pattern that is too wide. Live once the exchange is built (W4): the
+grants, for example after noticing that a template renders a pattern that is too wide. Live: the
 token keeps the wide grant until it expires, at most `ci.token.max_ttl` (1 h by default), because editing a mapping revokes nothing.
 What makes it real: a mistaken grant that a job exploits within that hour. The bulk revoke by `mapping` ends those tokens at once, and
 the manual says so; nothing does it automatically.
@@ -273,3 +330,29 @@ the re-creation; [R-AUTHZ-002](../spec/authorization.md) promises that a princip
 which holds for policies, role bindings and owners but not for a mapping's group list. Dormant until the mapping store (W3) saves
 mappings with groups; live then for every system-tier mapping that lists one. What makes it real: an administrator who re-creates a
 deleted group for another team.
+
+### H-418 · A matched job learns which repository keys exist through its scope
+
+Component: the `scope` parameter of the exchange (R-CI-007). Subject: a job whose token matches a mapping and that sends
+`scope=read:<key>` for keys it is not granted. A key that names no repository answers `scope_malformed`, one that exists and is not
+granted `scope_not_granted`, so the job learns whether a repository of that key exists, which `authz.hide_existence` hides from every
+other caller. Live for every job that matches a mapping; on a public issuer that is a pinned project only (R-CI-005), on a private one
+every job a mapping matches. What bounds it: one key per item, 50 items per request, the per-subject budget, and the
+`ci.exchange.denied` events, which hold the reason per request; nothing about the repository is revealed beyond its existence.
+
+### H-419 · A flood from many addresses writes one denial row per address
+
+Component: the aggregation of `ci.exchange.denied` (R-CI-021). Subject: an attacker who sends refused requests from many source
+addresses, an IPv6 prefix or a botnet. The aggregation is per address and reason, so each new address writes its first denial at once:
+up to 10,000 rows per replica, reason and minute before the bounded buffer counts further addresses under the reason alone, and each of
+the first rows may carry up to 256 bytes of a chosen `iss` and a chosen `kid`. Live today. What bounds it: the per-address budget
+before the body is read, the 10,000 keys of the buffer, the audit buffer that drops and counts
+(`trove_audit_events_dropped_total`) when it is full, and the retention of the audit store.
+
+### H-420 · The reason of a refusal tells an anonymous caller which issuers trove trusts
+
+Component: the error answer of the exchange (R-CI-008). Subject: an anonymous caller that sends tokens with chosen `iss` values, or a
+validly signed token of a public issuer. With `ci.exchange.expose_reason: true`, the default, `unknown_issuer` tells an `iss` that trove
+does not trust from one it does (`signature_invalid`, `unknown_signing_key`), and for a token of gitlab.com `no_matching_mapping` tells
+whether a mapping matches its claims. Live with the default. What bounds it: the per-address budget; `expose_reason: false` answers every
+400 with `invalid_request` and keeps the reason in the log and the audit trail, at the cost of the diagnosis a pipeline prints.

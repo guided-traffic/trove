@@ -136,7 +136,7 @@ func checkProjectName(project, name string) error {
 		return nil
 	}
 	if rest, ok := strings.CutPrefix(name, project+"-"); !ok || rest == "" {
-		return refuse(ReasonProjectPrefixRequired, "/name", "the name of a mapping of the project "+project+" starts with "+project+"- and goes on after it")
+		return refuse(reason.ProjectPrefixRequired, "/name", "the name of a mapping of the project "+project+" starts with "+project+"- and goes on after it")
 	}
 	return nil
 }
@@ -181,12 +181,12 @@ func checkInline(g InlineGrant, ptr string, templates map[string]*Template) (Inl
 		}
 	}
 	if (g.Packages == nil) == (g.Paths == nil) {
-		return InlineGrant{}, refuse(ReasonInvalidValue, ptr, "an inline grant names exactly one of packages and paths")
+		return InlineGrant{}, refuse(reason.InvalidValue, ptr, "an inline grant names exactly one of packages and paths")
 	}
 	switch g.Ownership {
 	case "", OwnershipBindProject, OwnershipNone:
 	default:
-		return InlineGrant{}, refuse(ReasonInvalidValue, ptr+"/ownership", "ownership is bind_project or none")
+		return InlineGrant{}, refuse(reason.InvalidValue, ptr+"/ownership", "ownership is bind_project or none")
 	}
 	if err := checkRepositories(g.Repositories, ptr+"/repositories", templates); err != nil {
 		return InlineGrant{}, err
@@ -208,7 +208,7 @@ func checkInline(g InlineGrant, ptr string, templates map[string]*Template) (Inl
 
 func checkRepositories(list []string, ptr string, templates map[string]*Template) error {
 	if len(list) > maxPatterns {
-		return refuse(ReasonInvalidPattern, ptr, "a selector list holds at most 256 selectors")
+		return refuse(reason.InvalidPattern, ptr, "a selector list holds at most 256 selectors")
 	}
 	for i, src := range list {
 		p := ptr + "/" + strconv.Itoa(i)
@@ -220,7 +220,7 @@ func checkRepositories(list []string, ptr string, templates map[string]*Template
 		switch {
 		case t.IsLiteral():
 			if _, err := parseSelector(src); err != nil {
-				return refuse(ReasonInvalidPattern, p, "invalid repository selector: "+err.Error())
+				return refuse(reason.InvalidPattern, p, "invalid repository selector: "+err.Error())
 			}
 		case t.classLike():
 			return refuse(reason.TemplateInvalid, p, "a template never renders a class selector (@…); write the class without a substitution")
@@ -237,7 +237,7 @@ func checkPatternSet(set PatternSet, ptr string, templates map[string]*Template)
 		list []string
 	}{{"include", set.Include}, {"exclude", set.Exclude}} {
 		if len(part.list) > maxPatterns {
-			return refuse(ReasonInvalidPattern, ptr+"/"+part.name, "a pattern list holds at most 256 patterns")
+			return refuse(reason.InvalidPattern, ptr+"/"+part.name, "a pattern list holds at most 256 patterns")
 		}
 		for i, src := range part.list {
 			p := ptr + "/" + part.name + "/" + strconv.Itoa(i)
@@ -247,7 +247,7 @@ func checkPatternSet(set PatternSet, ptr string, templates map[string]*Template)
 			}
 			templates[p] = t
 			if t.IsLiteral() && (src == "" || utf8.RuneCountInString(src) > MaxRenderedLength) {
-				return refuse(ReasonInvalidPattern, p, "a pattern has 1 to 1024 characters")
+				return refuse(reason.InvalidPattern, p, "a pattern has 1 to 1024 characters")
 			}
 		}
 	}
@@ -260,7 +260,7 @@ func checkOptions(o Options) (Options, error) {
 		o.CrossProjectSource = CrossProjectDeny
 	case CrossProjectDeny, CrossProjectReadOnly:
 	default:
-		return Options{}, refuse(ReasonInvalidValue, "/options/crossProjectSource", "crossProjectSource is deny or read_only")
+		return Options{}, refuse(reason.InvalidValue, "/options/crossProjectSource", "crossProjectSource is deny or read_only")
 	}
 	return o, nil
 }

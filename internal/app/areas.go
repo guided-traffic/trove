@@ -163,7 +163,7 @@ type limitsArea struct {
 	replicas   *replicaCount
 	failures   auth.FailureLimiter
 	flowStarts *cluster.Limiter
-	// ciAddress and ciSubject are the exchange's limiters (R-CI-021); work package W4 takes them.
+	// ciAddress and ciSubject are the exchange's limiters (R-CI-021), taken by wireCIExchange.
 	ciAddress, ciSubject *cluster.Limiter
 }
 

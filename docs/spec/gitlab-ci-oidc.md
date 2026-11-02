@@ -1,9 +1,9 @@
 # GitLab CI OIDC federation
 
 Status: specification — the contracts of beta phase 5 are laid (schema, packages, interfaces, API document, configuration,
-audit events, coordination; [developer/ci-oidc.md](../developer/ci-oidc.md)); work package W2 is built (the subject-token
-validation of R-CI-004 and the claim engine of R-CI-010 to R-CI-014, pure and unit-tested), W1 and W3 to W7 are pending, so
-the exchange, the management API and the use of a CI token are not implemented yet
+audit events, coordination; [developer/ci-oidc.md](../developer/ci-oidc.md)); work packages W1 to W6 are built (the issuers and
+keys, the claim engine and the subject-token validation, the mappings, the token exchange, the use of a CI token, the admin UI),
+W7 (the end-to-end tests with the real clients) is pending
 
 This page specifies how a CI job gets trove permissions without a stored secret. A GitLab job
 asks GitLab for an OIDC ID token addressed to trove. It exchanges that token at
@@ -725,12 +725,21 @@ Priority: **MVP** · Covers: CIOIDC-018, ADMAPI-031
 
 `POST /api/v1/auth/oidc/token` implements OAuth 2.0 Token Exchange
 ([RFC 8693](https://www.rfc-editor.org/rfc/rfc8693)). It requires no trove credential: the
-subject token is the credential. Other methods answer 405.
+subject token is the credential. Other methods answer 405 `method_not_allowed` with `Allow: POST`
+(problem details, as every route, R-API-004). With `ci.exchange.enabled: false` the path answers 404
+(problem details `not_found`) as a path that does not exist, before the address budget is counted. The
+general API rate limit does not apply: the two limiters of R-CI-021 do.
 
 Request content types: `application/x-www-form-urlencoded` (RFC 8693 §2.1, normative) and
 `application/json` (an object with the same parameter names and string values, for scripts that
-already send JSON). Any other content type answers 400 [`unsupported_content_type`]. A parameter
-sent twice answers 400 ([RFC 6749 §3.2](https://www.rfc-editor.org/rfc/rfc6749#section-3.2)).
+already send JSON; `ttl` may also be a JSON number). Any other content type answers 400
+[`unsupported_content_type`]. A parameter sent twice answers 400 [`malformed_request`]
+([RFC 6749 §3.2](https://www.rfc-editor.org/rfc/rfc6749#section-3.2)), `audience` and `resource` included, and so does a
+JSON member that appears twice or is not a string. A parameter the exchange does not know is ignored (the same
+section). A parameter sent without a value counts as omitted
+([RFC 6749 §3.1](https://www.rfc-editor.org/rfc/rfc6749#section-3.1)), so an empty `subject_token` is a missing
+required parameter, 400 [`malformed_request`] ([Q-CI-41](#q-ci-41--the-reason-of-a-request-that-cannot-succeed-by-its-own-parameters)).
+A body larger than `ci.exchange.max_body_bytes` answers 400 [`malformed_request`].
 
 | Parameter | Required | Accepted values |
 |---|---|---|
@@ -739,10 +748,10 @@ sent twice answers 400 ([RFC 6749 §3.2](https://www.rfc-editor.org/rfc/rfc6749#
 | `subject_token_type` | yes | `urn:ietf:params:oauth:token-type:id_token` or `urn:ietf:params:oauth:token-type:jwt` (equivalent); `urn:trove:token-type:gitlab-job-token` only with R-CI-022 enabled |
 | `requested_token_type` | no | Absent or `urn:ietf:params:oauth:token-type:access_token` |
 | `scope` | no | Narrows the grants: space-delimited items `<action>` or `<action>:<repository selector>`, e.g. `read:npm-all deploy:npm-internal` (grammar below, Q-CI-2) |
-| `audience`, `resource` | no | When present, MUST equal trove's configured base URL; otherwise 400 `invalid_target` |
+| `audience`, `resource` | no | When present, MUST equal trove's configured base URL (a trailing slash aside); otherwise 400 `invalid_target` [`audience_not_this_server`] |
 | `actor_token`, `actor_token_type` | no | Not supported: present → 400 [`actor_token_not_supported`] |
 | `ci_issuer` (trove extension) | no | CI issuer name; must match the issuer selected by `iss` (R-CI-005) |
-| `ttl` (trove extension) | no | Requested lifetime in seconds; can only shorten (R-CI-016) |
+| `ttl` (trove extension) | no | Requested lifetime in whole seconds; can only shorten (R-CI-016); below `ci.token.min_ttl` 400 [`ttl_below_minimum`] at step 1 (Q-CI-41) |
 
 **Scope parameter.** `scope` is an OAuth scope string
 ([RFC 6749 §3.3](https://www.rfc-editor.org/rfc/rfc6749#section-3.3)) whose items are a compact
@@ -765,8 +774,10 @@ selector  = repository selector of authorization.md R-AUTHZ-004
 - The item is split at its first `:`; the rest, including a format filter, is the selector.
   Items are case-sensitive, duplicates are ignored, and at most 50 distinct items are accepted
   (the grant limit of R-AUTH-024).
-- An unknown action, `manage`, an invalid selector or a key selector naming no existing
-  repository answers 400 `invalid_scope` [`scope_malformed`]. An item that admits no action the
+- An unknown action, `manage` or an invalid selector answers 400 `invalid_scope` [`scope_malformed`] at
+  step 1; a key selector naming no existing repository answers the same at step 8, after the token
+  matched, so an anonymous caller learns nothing of the repositories
+  ([ci-federation.md](../security/ci-federation.md) H-418 keeps what a matched job learns). An item that admits no action the
   matched grants hold at exchange time answers 400 `invalid_scope` [`scope_not_granted`]; no
   partial token is issued. At use time the scope is a ceiling like every token scope
   (R-AUTHZ-013).
@@ -842,7 +853,10 @@ Success response (200, `Content-Type: application/json`, `Cache-Control: no-stor
 
 - `scope` is always returned, in the request grammar above: one item per action and repository
   selector of the effective grants after narrowing, selectors as written in the grants. Package and
-  path patterns are not shown. The authoritative grant is the issuance record (R-CI-020).
+  path patterns are not shown. The policy and group grants come first, as the policies write their
+  selectors and as the replica's grant index holds them (a contribution's cap and its project's bound
+  applied, never `manage`); with `scope` they are the requested items that only a policy, a group or the
+  index could decide. The inline grants follow. The authoritative grant is the issuance record (R-CI-020).
 - No `refresh_token` is ever returned. CI tokens cannot be refreshed. A job that needs a new
   token exchanges its ID token again.
 - The token value appears only in this response. trove stores only its SHA-256 (INV-8).
@@ -912,7 +926,7 @@ response header (R-API-019) and links the answer to the audit event:
 
 | HTTP | `error` | `reason` values |
 |---|---|---|
-| 400 | `invalid_request` | `malformed_request`, `unsupported_content_type`, `unsupported_subject_token_type`, `unsupported_requested_token_type`, `actor_token_not_supported`, `subject_token_malformed`, `wrong_subject_token_type`, `unknown_issuer`, `issuer_disabled`, `issuer_mismatch`, `algorithm_not_allowed`, `token_type_not_allowed`, `unknown_signing_key`, `signature_invalid`, `audience_invalid`, `audience_not_exclusive`, `token_expired`, `token_not_yet_valid`, `issued_in_future`, `required_claim_missing`, `subject_token_replayed`, `subject_token_predates_restore`, `cross_project_source_denied`, `no_matching_mapping`, `grant_render_failed`, `subject_token_expires_too_soon`, `job_token_rejected`, `job_not_running` |
+| 400 | `invalid_request` | `malformed_request`, `unsupported_content_type`, `unsupported_subject_token_type`, `unsupported_requested_token_type`, `actor_token_not_supported`, `subject_token_malformed`, `wrong_subject_token_type`, `unknown_issuer`, `issuer_disabled`, `issuer_mismatch`, `algorithm_not_allowed`, `token_type_not_allowed`, `unknown_signing_key`, `signature_invalid`, `audience_invalid`, `audience_not_exclusive`, `token_expired`, `token_not_yet_valid`, `issued_in_future`, `required_claim_missing`, `subject_token_replayed`, `subject_token_predates_restore`, `cross_project_source_denied`, `no_matching_mapping`, `grant_render_failed`, `subject_token_expires_too_soon`, `ttl_below_minimum`, `job_token_rejected`, `job_not_running` |
 | 400 | `unsupported_grant_type` | `grant_type_unsupported` |
 | 400 | `invalid_scope` | `scope_malformed`, `scope_not_granted` |
 | 400 | `invalid_target` | `audience_not_this_server` |
@@ -930,7 +944,10 @@ response header (R-API-019) and links the answer to the audit event:
 **Acceptance criteria**
 
 - Every reason code in the table has an integration test that triggers it and asserts status,
-  `error` and `reason`.
+  `error` and `reason`, except the four no consistent installation of the MVP can produce: `job_token_rejected`,
+  `job_not_running` and `gitlab_unreachable` belong to the fallback of R-CI-022 (P2), and `configuration_changed`
+  is the second mismatch inside one transaction, which the lock protocol of this page rules out; a unit test with a
+  store that disagrees with itself proves it ([Q-CI-43](#q-ci-43--the-reasons-the-integration-tier-cannot-reach)).
 - No response body or log line produced by these tests contains the subject token or any
   `trv_cit_` value (checked with a grep over the captured output).
 
@@ -1553,7 +1570,12 @@ ttl = min( requested ttl          (if the request sent `ttl`; otherwise ci.token
 
 - GitLab sets the ID token's `exp` to the job timeout, or to 5 minutes when no timeout is
   specified. The last term therefore bounds the CI token by the remaining job lifetime.
-- `ttl < ci.token.min_ttl` → 400 [`subject_token_expires_too_soon`].
+- `ttl < ci.token.min_ttl` is refused with the reason of its cause
+  ([Q-CI-41](#q-ci-41--the-reason-of-a-request-that-cannot-succeed-by-its-own-parameters)): the subject token's
+  remaining lifetime below the floor is 400 [`subject_token_expires_too_soon`]; a requested `ttl` below the floor is
+  the caller's error, 400 [`ttl_below_minimum`], refused at step 1 before the subject token is validated; a mapping's
+  or the issuer's `max_ttl_seconds` below the floor (possible once `ci.token.min_ttl` was raised after the save) is
+  400 [`ttl_below_minimum`] with the description naming the bound.
 - `ci.token.max_ttl` MUST NOT exceed `auth.tokens.cit.max_ttl`, the CI token ceiling of
   [identity-and-authentication.md](identity-and-authentication.md) R-AUTH-026 (6 h). trove
   refuses to start with a larger value. One ceiling governs every CI token, so the two pages
@@ -1580,7 +1602,8 @@ ci:
 
 - An ID token with 10 minutes left and default settings yields `expires_in` ≤ 600.
 - `ttl=60` yields `expires_in` = 60. `ttl=86400` yields at most `ci.token.max_ttl`.
-- An ID token with 20 seconds left yields 400 `subject_token_expires_too_soon`.
+- An ID token with 20 seconds left yields 400 `subject_token_expires_too_soon`; `ttl=10` yields 400
+  `ttl_below_minimum` whose description names `ci.token.min_ttl`.
 - Using the CI token one second after `expires_in` returns 401 on `npm view`.
 - `TROVE_CI_TOKEN_MAX_TTL=12h` with the default `auth.tokens.cit.max_ttl` makes startup fail
   with a message that names both keys.
@@ -2148,7 +2171,10 @@ bounded:
   ends. With n `web` replicas, that is at most 2n events per address, reason and minute. The
   aggregation buffer is per-replica state that requests write and never read
   ([architecture.md](architecture.md) R-ARCH-032). A crashed replica loses at most one minute of
-  counts, never the first denial's event.
+  counts, never the first denial's event. The end of a minute is a timer the first denial arms, not a
+  loop; the flush phase of a shutdown (R-ARCH-024 step 6) writes the counts left. The buffer holds at
+  most 10,000 addresses; a further address is counted under its reason alone. Before the signature
+  is verified the event's unverified `iss` is cut to 256 bytes.
 
 **Configuration**
 
@@ -4185,6 +4211,83 @@ answer, and no rule change).
 
 **Applied in the spec:** R-CI-015 (the claim and the display). Code: `internal/authz/ci.go` (`ciWriteOf`), `internal/authz/ownership_ci.go`
 (`ciFacts`, `ciAddProjectOwner`, `ciTouchDisplay`).
+
+### Q-CI-41 · The reason of a request that cannot succeed by its own parameters
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-CI-016 answered every lifetime below `ci.token.min_ttl` with `subject_token_expires_too_soon`, so a job that sent
+`ttl=10` was told that its ID token expires too soon, and a mapping whose `max_ttl_seconds` lies below a later raised floor refused
+every exchange with the same wrong cause. An empty `subject_token` had no stated reason; it would have reached the JWS parser as
+`subject_token_malformed`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One reason, `subject_token_expires_too_soon` | As written | No new name | Names the wrong cause for the request and for the configuration; an operator compares clocks for a parameter |
+| (b) `malformed_request` for a low `ttl` | The request's generic reason, the cause in the description | No new name | `expose_reason: false` replaces the description, and the audit event records only the reason, so the cause is lost where it is looked for |
+| (c) A reason per cause: `ttl_below_minimum` for the request and a configuration bound, `subject_token_expires_too_soon` for the subject token; an empty parameter is omitted (chosen) | The request's own floor is refused at step 1, before a signature check; the formula names the term that fell below the floor; an empty `subject_token` is a missing parameter, `malformed_request` | The reason says who must act: the pipeline's author, the administrator or the job's timing; a request that cannot succeed costs no signature check; RFC 6749 §3.1 says a parameter without a value counts as omitted | A new reason in R-CI-008's table |
+| (d) Clamp a low `ttl` up to the floor | Issue `ci.token.min_ttl` | No refusal | A longer token than the caller asked for, against "can only shorten" |
+
+**Choice:** (c).
+
+**Rationale:** the reason is what a failed job prints and what the audit event keeps; it has to point at the party that can fix
+it. A requested `ttl` below the floor is the caller's error and can be refused before the token is parsed; the subject token's
+remaining life is the job's timing; a bound of the configuration is the administrator's. The development agent would revisit this if
+a client keys a retry on `subject_token_expires_too_soon` and treats `ttl_below_minimum` as fatal although the floor was just raised.
+
+**Applied in the spec:** R-CI-007 (the `ttl` row, an empty parameter), R-CI-008 (the table), R-CI-016 (the floor's reasons and the
+criterion). Code: `internal/ci/ttl.go` (`ComputeTTL`), `internal/ci/exchange_request.go` (`checkRequest`), `internal/ci/reason`
+(`TTLBelowMinimum`); the dry run calls `ComputeTTL` too (Q-CI-36).
+
+### Q-CI-42 · One implementation of the key rules, the shared leaf
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-CI-003's key rules existed twice: in `internal/ci/keys_jwks.go`, written by W1 while the shared leaf did not exist, and in
+`jws.ParseJWKS` of `internal/auth/jws` (W2, Q-CI-19). They disagreed in places: W1 ignored a second key of the same `kid` and kept a
+key whose private half was published (it only stripped the members), W2 refused the private key and a key whose own `alg` names
+another curve, and the reasons were different texts. The key status showed W1's verdict while the validation fitted W2's.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep W1's rules, remove `ParseJWKS` | The issuer store's parser stays | No change to the key store | The login keeps a parser of its own or moves onto W1's, which lives in a domain package the login must not import |
+| (b) Keep `ParseJWKS`; the key store reduces a fetched set entry by entry with it and reads the stored form with it again (chosen) | A usable key is stored with its public members, an ignored one with its `kid`, `kty`, `alg` and the stable reason; the candidates are `jws.Candidates` | One implementation for the login, the key status and the validation; the stable reason names; a private key is never usable | The reasons in the key status change (`rsa_key_too_small` instead of a sentence); a repeated `kid` is no longer a rule |
+| (c) Both, with a test that holds them equal | Two parsers and a comparison | No migration of code | Two places to fix the next RFC 8725 finding, which Q-CI-19 chose against |
+
+**Choice:** (b). Two keys of one `kid` are both candidates: R-CI-003 names no rule against it, and the validation tries what the
+status shows.
+
+**Rationale:** the key status exists so that an administrator sees why a key is not used; it is only true if it is the validation's own
+verdict. The leaf is the one the login already trusts. The development agent would revisit the repeated `kid` if an issuer publishes
+two keys under one `kid` and the extra verification shows up as cost.
+
+**Applied in the spec:** none (R-CI-003's rules are unchanged). Code: `internal/ci/keys_jwks.go` (`reduceJWKS`, `parseStored`, `find`),
+`TestR_CI_003_TheKeyRulesIgnoreAndReport`, `TestR_CI_003_TheKeyStatusAndTheValidationAgree`.
+
+### Q-CI-43 · The reasons the integration tier cannot reach
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-CI-008 asks for an integration test of every reason in its table. Three belong to the job-token fallback of R-CI-022,
+which is P2 and not built (Q-CI-5). `configuration_changed` is the second mismatch inside one transaction: the transaction holds the
+issuer row `FOR SHARE`, and every mapping write takes that row `FOR UPDATE` first (R-CI-009), so the mapping set the transaction reads
+cannot change before it compares it again.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A fault-injection hook in the production code | A test build makes the store answer inconsistently | An integration test per reason | Code in the exchange whose only purpose is a test, on the path of every exchange |
+| (b) Unit tests with a store that disagrees with itself; the criterion names the exceptions (chosen) | `TestR_CI_007_TheExchangeWithoutADatabase` gives the exchange a mapping store and statements that answer inconsistently; the P2 reasons wait for R-CI-022 | The answer is proven where it can be produced; no test-only path in production | The integration tier does not show the second mismatch |
+| (c) Drop `configuration_changed` | Treat a second mismatch as `internal` | One reason less | A writer outside the lock protocol (a restore replay, a hand-made SQL change) would be a 500 instead of a retryable 503 |
+
+**Choice:** (b).
+
+**Rationale:** the second mismatch exists for a writer outside the protocol, which a consistent test installation does not have; a
+retryable 503 is the right answer for it, and a unit test can make the store disagree. The development agent would revisit this when
+R-CI-022 is built (its three reasons then get their integration tests) or if a second mismatch is ever observed in the metrics
+(`trove_ci_exchanges_total{reason="configuration_changed"}`).
+
+**Applied in the spec:** R-CI-008 (the criterion names the four exceptions and the unit test). Code:
+`internal/ci/exchange_service_test.go`; `test/integration/ci/exchange_errors_test.go` (the other reasons).
 
 ## What this does not cover
 

@@ -11,8 +11,9 @@ import (
 	"github.com/guided-traffic/trove/internal/ci/reason"
 )
 
-// R-CI-007: the pure scope grammar; the exchange that applies it is W4's, so the name carries no requirement ID.
-func TestTheScopeGrammar(t *testing.T) {
+// R-CI-007: the pure scope grammar, the part of the scope parameter that needs no grant index; the exchange
+// applies it (internal/ci/exchange_scope.go).
+func TestR_CI_007_TheScopeGrammar(t *testing.T) {
 	ok := []struct {
 		scope string
 		want  []claims.ScopeItem
@@ -63,8 +64,9 @@ func TestTheScopeGrammar(t *testing.T) {
 	}
 }
 
-// R-CI-007: the pure scope grammar; the exchange that applies it is W4's, so the name carries no requirement ID.
-func TestTheSelectorSyntaxIsTheAuthorizationEngines(t *testing.T) {
+// R-CI-007: the pure scope grammar, the part of the scope parameter that needs no grant index; the exchange
+// applies it (internal/ci/exchange_scope.go).
+func TestR_CI_007_TheSelectorSyntaxIsTheAuthorizationEngines(t *testing.T) {
 	for _, sel := range []string{
 		"npm-internal", "ab", "a", "npm-team-*", "n?m", "*", "@any", "@any-local", "@any-remote", "@any-virtual",
 		"@any-local:npm", "npm-*:npm", "npm-internal:npm", "@any:", "@anything", "NPM", "-npm", "npm_x", strings.Repeat("a", 64),
@@ -83,8 +85,9 @@ func inline(repos []string, actions ...claims.Action) claims.InlineGrant {
 	return claims.InlineGrant{Repositories: repos, Packages: &claims.PatternSet{Include: []string{"@acme-billing/*"}}, Actions: actions, Ownership: claims.OwnershipBindProject}
 }
 
-// R-CI-007: the pure scope grammar; the exchange that applies it is W4's, so the name carries no requirement ID.
-func TestNarrowingWithTheMatchedGrants(t *testing.T) {
+// R-CI-007: the pure scope grammar, the part of the scope parameter that needs no grant index; the exchange
+// applies it (internal/ci/exchange_scope.go).
+func TestR_CI_007_NarrowingWithTheMatchedGrants(t *testing.T) {
 	r := claims.Rendered{
 		Policies: []string{"ci-read-internal"},
 		Inline:   []claims.InlineGrant{inline([]string{"npm-internal"}, claims.Read, claims.Deploy), inline([]string{"nuget-internal", "nuget-team-*"}, claims.Read, claims.Deploy)},

@@ -19,7 +19,7 @@ import (
 
 // The mappings of work package W3 (R-CI-009, R-CI-017, R-CI-019, R-CI-020): the store, the principals, the
 // first match, the save-time rules over HTTP, the policy binding, the events and the cache. The criteria
-// that need the exchange (W4) are in pending_test.go.
+// that need the exchange are in exchange_mappings_test.go.
 
 func TestR_CI_009_TheMappingLifecycle(t *testing.T) {
 	e := newEnv(t, options{valkey: true})
@@ -271,7 +271,7 @@ func TestR_CI_009_TwoIssuersKeepTheirOwnPrincipals(t *testing.T) {
 }
 
 // R-CI-017 (the principal mirrors enabled): the status of the principal follows the flag in the same write. The
-// criteria of R-CI-017 itself are the revocation of tokens and are pending (pending_test.go).
+// criteria of R-CI-017 itself are the revocation of tokens (revoke_test.go, exchange_mappings_test.go).
 func TestThePrincipalOfAMappingMirrorsEnabled(t *testing.T) {
 	e := newEnv(t, options{valkey: true})
 	a := e.web("web-a")

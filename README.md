@@ -175,7 +175,7 @@ The canonical paths under which a NuGet remote repository stores what it fetched
 | `X-Request-Id` | every response; the same value is `requestId` in problem bodies and the trace ID of the request | yes (`internal/httpserver/chain.go`) |
 | `X-Trove-Replica` | the instance name, on responses where `server.replica_header` allows it (default `authenticated`) | yes (`internal/httpserver/chain.go`) |
 | `X-Forwarded-For` or `Forwarded` | the family the edge rewrites: exactly one, chosen by `server.forwarded_header`; the other is never read | yes (`internal/httpserver/clientaddr.go`) |
-| `Authorization` | `Bearer <token>` with a `trv_pat_` or `trv_sat_` value (`trv_cit_` is reserved until the CI exchange). The status code of a refused value is not restated here | yes (`internal/auth/stage.go`) |
+| `Authorization` | `Bearer <token>` with a `trv_pat_`, `trv_sat_` or `trv_cit_` value (the CI token of the exchange). The status code of a refused value is not restated here | yes (`internal/auth/stage.go`) |
 | `X-NuGet-ApiKey` | `<token>` or `<any>:<token>`, read first and only on a route that declares the API key (NuGet's push, delete, relist and symbol push) while `auth.clients.nuget_api_key_header` is on; a value without a well-formed token, such as `az`, is ignored and `Authorization` applies | yes (`internal/auth/stage.go`); the NuGet routes are not registered yet |
 | `X-CSRF-Token` | the value of the `__Host-trv_csrf` cookie, on a state-changing request that the session cookie authenticates; with a same-origin `Origin` or `Sec-Fetch-Site`. Failure: `403 csrf_failed` | yes (`internal/auth/session`) |
 | `Idempotency-Key` | on a create: a replay answers the stored outcome; the same key with another body answers `422 idempotency_key_reused`, a concurrent duplicate `409 idempotency_in_progress` | yes (`internal/api/v1/idempotency.go`) |
@@ -193,7 +193,7 @@ The canonical paths under which a NuGet remote repository stores what it fetched
 | Login-flow binding cookie | `__Host-trv_oidc_binding`, `Path=/`, `HttpOnly`, about 10 minutes; it binds a callback to the browser that started the login (Q-AUTH-2) | yes |
 | Personal token prefix | `trv_pat_` (`internal/auth/token/token.go`, `TypePAT`) | yes |
 | Service-account token prefix | `trv_sat_` | yes |
-| CI token prefix | `trv_cit_` (`TypeCIT`); reserved, no route issues it before the GitLab CI exchange | planned ([GitLab CI OIDC](docs/spec/gitlab-ci-oidc.md)) |
+| CI token prefix | `trv_cit_` (`TypeCIT`); issued by the GitLab CI exchange `POST /api/v1/auth/oidc/token` only | yes ([GitLab CI OIDC](docs/spec/gitlab-ci-oidc.md)) |
 
 ### Environment variables
 
@@ -267,7 +267,7 @@ Names of the areas of the PostgreSQL change log ([internal/cluster/areas.go](int
 | `authz` | the compiled grant index and its epochs | yes |
 | `repo_config` | the repository snapshot and the repository configuration | yes |
 | `jobs`, `cache` | the job queue and the in-process caches of M0 | yes |
-| `ci_mappings` | the in-process copies of the CI issuers and their mappings ([R-CI-002](docs/spec/gitlab-ci-oidc.md), R-CI-009; the exchange compares versions in its transaction and does not wait for it) | contract: the area and its epoch row exist, no producer yet |
+| `ci_mappings` | the in-process copies of the CI issuers and their mappings ([R-CI-002](docs/spec/gitlab-ci-oidc.md), R-CI-009; the exchange compares versions in its transaction and does not wait for it) | yes: every issuer and mapping write notifies it |
 | `ci_issuer_keys` | the in-process copy of a CI issuer's signing key set ([R-CI-003](docs/spec/gitlab-ci-oidc.md)); notified only when the content changed | contract: the area and its epoch row exist, no producer yet |
 
 ### Metrics
@@ -300,7 +300,7 @@ Built families, all with the `trove_` prefix:
 | `trove_api_rate_limited_total`, `trove_ratelimit_decisions_total` | the labels of `internal/api/v1/ratelimit.go` and `internal/cluster/limiter.go` | yes |
 | `trove_jobs_claimed_total`, `trove_jobs_completed_total`, `trove_jobs_running`, `trove_jobs_duration_seconds`, `trove_jobs_claim_errors_total` | the labels of `internal/jobs/metrics.go` | yes |
 | `trove_cache_requests_total`, `trove_cache_entries`, `trove_cache_bytes` | the labels of `internal/cache/metrics.go` | yes |
-| `trove_ci_exchanges_total`, `trove_ci_exchange_duration_seconds`, `trove_ci_signing_keys_refresh_total`, `trove_ci_mapping_set_stale_total`, `trove_ci_job_token_lookups_total`, `trove_ci_job_token_lookup_duration_seconds` | `issuer` and, as the name says, `outcome`, `reason`, `trigger` ([internal/ci/metrics.go](internal/ci/metrics.go), R-CI-020); `trove_ci_signing_keys_refresh_total` counts key fetches by `trigger` (`scheduled`, `unknown_kid`, `admin`) and `outcome` (`success`, `error`) since the key store exists; the others are registered, at zero until the exchange is built |
+| `trove_ci_exchanges_total`, `trove_ci_exchange_duration_seconds`, `trove_ci_signing_keys_refresh_total`, `trove_ci_mapping_set_stale_total`, `trove_ci_job_token_lookups_total`, `trove_ci_job_token_lookup_duration_seconds` | `issuer` and, as the name says, `outcome`, `reason`, `trigger` ([internal/ci/metrics.go](internal/ci/metrics.go), R-CI-020); `trove_ci_signing_keys_refresh_total` counts key fetches by `trigger` (`scheduled`, `unknown_kid`, `admin`) and `outcome` (`success`, `error`) since the key store exists; `trove_ci_exchanges_total` counts every exchange by `issuer` (empty before an issuer was resolved), `outcome` (`success`, `denied` for a 400 or 429, `error` for a 5xx) and `reason` (empty on success), `trove_ci_exchange_duration_seconds` times it by `issuer`, `trove_ci_mapping_set_stale_total` counts the exchanges whose copy lagged and evaluated again from PostgreSQL; the two job-token series stay at zero (R-CI-022, P2) |
 | `trove_ci_signing_keys_age_seconds`, `trove_ci_tokens_active` | `issuer`; gauges read from PostgreSQL once per `metrics.db_gauge_interval`, aggregate with `max`; `trove_ci_tokens_active` is 0 for an issuer without a live token ([internal/app/wire_ci.go](internal/app/wire_ci.go), [internal/ci/issuances.go](internal/ci/issuances.go)) |
 | `trove_nuget_push_replayed_total` | `repo`: pushes of the identical package of a stored version, answered `201` without a change | yes |
 | `trove_nuget_remote_unparseable_packages_total` | `repo`: content a NuGet remote cached that is no NuGet package at all (no ZIP archive, no `.nuspec`, a `.nuspec` that is not XML) and served without NuGet rows | yes |
@@ -393,7 +393,7 @@ The code registry is [internal/errs/codes.go](internal/errs/codes.go). Every pro
 - NuGet (M3): `nuget_invalid_package`, `nuget_invalid_version`, `nuget_invalid_version_range`, `nuget_invalid_id`, `nuget_version_exists`, `nuget_version_deleted`, `nuget_version_reserved`, `nuget_symbol_package_exists`, `nuget_v2_unsupported`, `nuget_not_implemented`, `upstream_package_mismatch`, `nuget_invalid_upstream_document`
 - Remote repositories (M2): `upstream_secret_unavailable`, `source_network_unavailable`, `foreign_host_denied`
 - Package content (M2): `content_refused`
-- GitLab CI OIDC (M4): `ci_not_implemented`, `pin_required`, `pin_claim_not_immutable`, `public_issuer_required`, `kind_not_available`, `issuer_managed_by_configuration`, `discovery_unreachable`, `issuer_mismatch`, `no_usable_keys`, `algorithms_not_offered`, `condition_invalid`, `catch_all_condition`, `unprotected_write`, `unpinned_write`, `empty_grant`, `template_invalid`, `template_unanchored`, `unknown_policy`, `unknown_group`, `mapping_limit_reached`, `priority_taken`, `job_token_fallback_not_available`; the exchange's own `reason` values are in [internal/ci/reason](internal/ci/reason/reason.go) and answer in the OAuth error shape
+- GitLab CI OIDC (M4): `ci_not_implemented`, `pin_required`, `pin_claim_not_immutable`, `public_issuer_required`, `kind_not_available`, `issuer_managed_by_configuration`, `discovery_unreachable`, `issuer_mismatch`, `no_usable_keys`, `algorithms_not_offered`, `condition_invalid`, `catch_all_condition`, `unprotected_write`, `unpinned_write`, `empty_grant`, `template_invalid`, `template_unanchored`, `unknown_policy`, `unknown_group`, `mapping_limit_reached`, `priority_taken`, `job_token_fallback_not_available`; the exchange's own `reason` values are in [internal/ci/reason](internal/ci/reason/reason.go) and answer in the OAuth error shape (R-CI-008): `malformed_request`, `unsupported_content_type`, `unsupported_subject_token_type`, `unsupported_requested_token_type`, `actor_token_not_supported`, `subject_token_malformed`, `wrong_subject_token_type`, `unknown_issuer`, `issuer_disabled`, `issuer_mismatch`, `algorithm_not_allowed`, `token_type_not_allowed`, `unknown_signing_key`, `signature_invalid`, `audience_invalid`, `audience_not_exclusive`, `token_expired`, `token_not_yet_valid`, `issued_in_future`, `required_claim_missing`, `subject_token_replayed`, `subject_token_predates_restore`, `cross_project_source_denied`, `no_matching_mapping`, `grant_render_failed`, `subject_token_expires_too_soon`, `ttl_below_minimum`, `job_token_rejected` (P2), `job_not_running` (P2) (all `400 invalid_request`); `grant_type_unsupported` (`unsupported_grant_type`); `scope_malformed`, `scope_not_granted` (`invalid_scope`); `audience_not_this_server` (`invalid_target`); `rate_limited` (`429 slow_down`); `signing_keys_unavailable`, `gitlab_unreachable` (P2), `database_unavailable`, `configuration_changed` (`503 temporarily_unavailable`); `internal` (`500 server_error`)
 
 </details>
 
@@ -1151,7 +1151,7 @@ ci:                                     # GitLab CI OIDC (docs/spec/gitlab-ci-oi
   token:
     default_ttl: 15m                    # default; 30s to 6h, at most max_ttl
     max_ttl: 1h                         # default; 30s to 6h, at most auth.tokens.cit.max_ttl (both keys are named when it is larger)
-    min_ttl: 30s                        # default; 1s to 1h: a subject token with less left answers subject_token_expires_too_soon
+    min_ttl: 30s                        # default; 1s to 1h: a subject token with less left answers subject_token_expires_too_soon, a lower ttl or bound ttl_below_minimum
   replay:
     retention_after_expiry: 15m         # default; 0s to 168h: how long a recorded jti outlives the subject token
     warn_after_exchanges: 10            # default; at least 1: from here every further exchange of one subject token records ci.exchange.repeated

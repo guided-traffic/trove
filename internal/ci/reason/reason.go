@@ -51,14 +51,18 @@ const (
 	NoMatchingMapping           Reason = "no_matching_mapping"
 	GrantRenderFailed           Reason = "grant_render_failed"
 	SubjectTokenExpiresTooSoon  Reason = "subject_token_expires_too_soon"
-	JobTokenRejected            Reason = "job_token_rejected"       // P2 (R-CI-022)
-	JobNotRunning               Reason = "job_not_running"          // P2 (R-CI-022)
-	RateLimited                 Reason = "rate_limited"             // R-CI-021
-	SigningKeysUnavailable      Reason = "signing_keys_unavailable" // R-CI-003
-	GitLabUnreachable           Reason = "gitlab_unreachable"       // P2 (R-CI-022)
-	DatabaseUnavailable         Reason = "database_unavailable"
-	ConfigurationChanged        Reason = "configuration_changed" // R-CI-007: a second mismatch
-	Internal                    Reason = "internal"
+	// TTLBelowMinimum: the lifetime the request or a lifetime bound of the configuration leaves is below
+	// ci.token.min_ttl (R-CI-016, Q-CI-41); the subject token's own remaining lifetime is
+	// SubjectTokenExpiresTooSoon.
+	TTLBelowMinimum        Reason = "ttl_below_minimum"
+	JobTokenRejected       Reason = "job_token_rejected"       // P2 (R-CI-022)
+	JobNotRunning          Reason = "job_not_running"          // P2 (R-CI-022)
+	RateLimited            Reason = "rate_limited"             // R-CI-021
+	SigningKeysUnavailable Reason = "signing_keys_unavailable" // R-CI-003
+	GitLabUnreachable      Reason = "gitlab_unreachable"       // P2 (R-CI-022)
+	DatabaseUnavailable    Reason = "database_unavailable"
+	ConfigurationChanged   Reason = "configuration_changed" // R-CI-007: a second mismatch
+	Internal               Reason = "internal"
 )
 
 // The `code` of a management error (R-CI-002, R-CI-010, R-CI-011, R-CI-013, R-CI-014, R-CI-022).
@@ -86,6 +90,14 @@ const (
 	UnknownPolicy                Reason = "unknown_policy"
 	UnknownGroup                 Reason = "unknown_group"
 	InvalidSnippet               Reason = "invalid_snippet"
+	// ProjectPrefixRequired: a project mapping's name does not start with "<project>-" (Q-CI-26).
+	ProjectPrefixRequired Reason = "project_prefix_required"
+	// InvalidPattern: a repository selector, package pattern or path pattern has invalid syntax or exceeds the
+	// limits of R-AUTHZ-004 and R-AUTHZ-005 (1024 characters, 256 patterns per list).
+	InvalidPattern Reason = "invalid_pattern"
+	// InvalidValue: a member holds a value outside its closed set (an ownership, a crossProjectSource, a subject
+	// kind) or an inline grant names both or neither of packages and paths.
+	InvalidValue Reason = "invalid_value"
 )
 
 // The warnings a save returns beside its success (R-CI-010, R-CI-011).
@@ -120,7 +132,7 @@ func (r Reason) OAuth() (status int, oauthError string) {
 		IssuerMismatch, AlgorithmNotAllowed, TokenTypeNotAllowed, UnknownSigningKey, SignatureInvalid,
 		AudienceInvalid, AudienceNotExclusive, TokenExpired, TokenNotYetValid, IssuedInFuture,
 		RequiredClaimMissing, SubjectTokenReplayed, SubjectTokenPredatesRestore, CrossProjectSourceDenied,
-		NoMatchingMapping, GrantRenderFailed, SubjectTokenExpiresTooSoon, JobTokenRejected, JobNotRunning:
+		NoMatchingMapping, GrantRenderFailed, SubjectTokenExpiresTooSoon, TTLBelowMinimum, JobTokenRejected, JobNotRunning:
 		return 400, "invalid_request"
 	}
 	return 500, "server_error"

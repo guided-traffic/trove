@@ -125,9 +125,9 @@ func (s *MappingService) evaluate(ctx context.Context, issuerName, project strin
 	}
 	res.Grants = &grants
 	res.Scope = strings.Join(append(slices.Clone(policyItems), strings.Fields(narrowed.InlineScope())...), " ")
-	ttl, failure := s.dryRunTTL(is, sel.Contributions, req)
+	ttl, failure, detail := s.dryRunTTL(is, sel.Contributions, req)
 	if failure != "" {
-		res.Failure, res.Detail = failure, "the subject token has less lifetime left than ci.token.min_ttl"
+		res.Failure, res.Detail = failure, detail
 		res.Grants, res.Scope = nil, ""
 		res.Selected = []string{}
 		return res, nil
@@ -182,30 +182,28 @@ func checkDryRunTimes(req EvaluateRequest, is Issuer) (reason.Reason, string) {
 	return "", ""
 }
 
-// dryRunTTL is the lifetime formula of R-CI-016 for a request without `ttl`: the minimum of the default,
-// the mappings' and the issuer's max_ttl, ci.token.max_ttl and, when the request carries `now` and `exp`,
-// the remaining life of the subject token. A result below ci.token.min_ttl is
-// subject_token_expires_too_soon.
-func (s *MappingService) dryRunTTL(is Issuer, cs []Contribution, req EvaluateRequest) (time.Duration, reason.Reason) {
+// dryRunTTL is the lifetime of R-CI-016 for a request without `ttl` ([ComputeTTL], the exchange's formula): the
+// subject token's remaining life counts when the request carries `now` and `exp` (Q-CI-36).
+func (s *MappingService) dryRunTTL(is Issuer, cs []Contribution, req EvaluateRequest) (time.Duration, reason.Reason, string) {
 	cfg := s.o.Config.Token
-	ttl := min(cfg.DefaultTTL, cfg.MaxTTL)
+	in := TTLInput{Default: cfg.DefaultTTL, Max: cfg.MaxTTL, Min: cfg.MinTTL}
 	if is.MaxTTLSeconds != nil {
-		ttl = min(ttl, time.Duration(*is.MaxTTLSeconds)*time.Second)
+		d := time.Duration(*is.MaxTTLSeconds) * time.Second
+		in.IssuerMax = &d
 	}
 	for _, c := range cs {
 		if c.Mapping.MaxTTLSeconds != nil {
-			ttl = min(ttl, time.Duration(*c.Mapping.MaxTTLSeconds)*time.Second)
+			if d := time.Duration(*c.Mapping.MaxTTLSeconds) * time.Second; in.MappingMax == nil || d < *in.MappingMax {
+				in.MappingMax = &d
+			}
 		}
 	}
 	if req.Now != nil {
 		if exp, ok := req.Claims.First("exp"); ok {
 			if n, err := strconv.ParseInt(exp, 10, 64); err == nil {
-				ttl = min(ttl, time.Duration(n-*req.Now)*time.Second)
+				in.SubjectExpiresAt, in.Now = time.Unix(n, 0), time.Unix(*req.Now, 0)
 			}
 		}
 	}
-	if ttl < cfg.MinTTL {
-		return 0, reason.SubjectTokenExpiresTooSoon
-	}
-	return ttl, ""
+	return ComputeTTL(in)
 }

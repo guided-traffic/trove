@@ -175,6 +175,7 @@ func wiringSteps() []step {
 		newStep(AreaAuth, withListener, (*App).wireAuth),
 		newStep(AreaEndpoints, withListener, (*App).wireEndpoints),
 		newStep(AreaAPI, withListener, (*App).wireAPI),
+		newStep(AreaCIExchange, withListener, (*App).wireCIExchange),
 		newStep(AreaShell, onShell, (*App).wireShell),
 	}
 }

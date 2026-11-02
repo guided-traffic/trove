@@ -130,7 +130,7 @@ The answer is `201` with the full record, every default filled in. With `validat
 | Call | Does |
 |---|---|
 | `GET /api/v1/ci/issuers` | Lists the issuers with their mapping count and key status |
-| `GET /api/v1/ci/issuers/{name}/keys` | The stored key set: key IDs, types, algorithms, ignored keys with the reason, the fetch time, the next refresh and the last error |
+| `GET /api/v1/ci/issuers/{name}/keys` | The stored key set: key IDs, types, algorithms, ignored keys with the reason (`use_not_sig`, `key_ops_without_verify`, `unsupported_key_type`, `unsupported_curve`, `rsa_key_too_small`, `unsupported_algorithm`, `algorithm_key_mismatch`, `private_key_material`, `invalid_key_material`), the fetch time, the next refresh and the last error. The keys listed as usable are exactly the ones a token's signature is checked against |
 | `POST /api/v1/ci/issuers/{name}/keys/refresh` | Fetches the discovery document and the keys now; `502` when the instance is unreachable |
 | `PUT /api/v1/ci/issuers/{name}` | Replaces the issuer; `name`, `issuer` and `kind` are immutable |
 | `DELETE /api/v1/ci/issuers/{name}` | Deletes it; refused with `409` while it has mappings unless `?cascade=true`, which deletes them and their principals in the same transaction |
@@ -421,7 +421,7 @@ The exchange and its consequences are also audit events under **Administration �
 | Event | Category | When |
 |---|---|---|
 | `ci.exchange.succeeded` | `auth` | A token was issued: token ID, issuer, mappings, claim snapshot, granted scope, lifetime |
-| `ci.exchange.denied` | `auth` | An exchange was refused with `400` or `429`: the reason, and the claims once the signature was verified. Per replica, client address and reason, the first refusal of a minute is recorded at once and the rest of that minute as one event with a count |
+| `ci.exchange.denied` | `auth` | An exchange was refused with `400` or `429`: the reason, the issuer once it is known, before the signature was verified only the token's `iss` and `kid`, after it the claim snapshot. Per replica, client address and reason, the first refusal of a minute is recorded at once and the rest of that minute as one event with a `count` (written at the end of the minute or when the replica stops) |
 | `ci.exchange.repeated`, `ci.exchange.replayed` | `auth` | One ID token was exchanged more than `ci.replay.warn_after_exchanges` times (10 by default), or a second time under single use |
 | `ci.token.revoked` | `token` | CI tokens were revoked, with the cause: mapping, issuer, bulk, single, or the job itself |
 | `ci.issuer.*`, `ci.mapping.*` | `identity` | Issuers and mappings were created, updated, disabled, enabled or deleted, with the record before and after |
@@ -475,7 +475,7 @@ To work through a refusal: find the event by request ID, time or project; for a 
 
 | Reason | HTTP and `error` | Cause | Fix |
 |---|---|---|---|
-| `malformed_request` | 400 `invalid_request` | A parameter is missing, sent twice, or the body cannot be parsed | Send each parameter once, form-encoded as the pipeline guide shows |
+| `malformed_request` | 400 `invalid_request` | A parameter is missing or empty (an empty `subject_token` too: the variable of the `id_tokens:` block was not set), sent twice, or the body cannot be parsed or is larger than `ci.exchange.max_body_bytes` (64 KiB) | Send each parameter once, form-encoded as the pipeline guide shows; check that the job declares the variable |
 | `unsupported_content_type` | 400 `invalid_request` | Neither `application/x-www-form-urlencoded` nor `application/json` | Use `--data-urlencode` |
 | `unsupported_subject_token_type` | 400 `invalid_request` | `subject_token_type` is not the ID-token type (the job-token type is not available) | `urn:ietf:params:oauth:token-type:id_token` |
 | `unsupported_requested_token_type` | 400 `invalid_request` | `requested_token_type` other than an access token | Leave it out |
@@ -499,22 +499,23 @@ To work through a refusal: find the event by request ID, time or project; for a 
 | `cross_project_source_denied` | 400 `invalid_request` | A fork pipeline run in the parent project, and no matched mapping opts in | Intended; see [Fork pipelines](#fork-pipelines) |
 | `no_matching_mapping` | 400 `invalid_request` | No mapping of any tier holds for the claims | Dry-run the claim snapshot of the denial event |
 | `grant_render_failed` | 400 `invalid_request` | A template of the matched mapping refers to a missing claim, or a value fails its context or a `require` filter | Fix the template, or guard the claim with `present: true` |
-| `subject_token_expires_too_soon` | 400 `invalid_request` | The token would live less than `ci.token.min_ttl` (30 s by default): the ID token is about to expire, or `ttl` asked for less | Exchange earlier; ask for a longer `ttl` |
+| `subject_token_expires_too_soon` | 400 `invalid_request` | The ID token has less than `ci.token.min_ttl` (30 s by default) left | Exchange earlier in the job; give the job a longer timeout |
+| `ttl_below_minimum` | 400 `invalid_request` | The `ttl` the job asked for is below `ci.token.min_ttl`, or a mapping's or the issuer's `maxTtlSeconds` is (after the floor was raised); `error_description` names which | Ask for a longer `ttl`; raise the bound of the mapping or the issuer |
 | `job_token_rejected`, `job_not_running` | 400 `invalid_request` | Only with the job-token fallback, which this version does not have | — |
 | `grant_type_unsupported` | 400 `unsupported_grant_type` | `grant_type` is not the token-exchange type | `urn:ietf:params:oauth:grant-type:token-exchange` |
-| `scope_malformed` | 400 `invalid_scope` | An unknown action, `manage`, an invalid selector, or a key that names no repository | Correct `scope` |
+| `scope_malformed` | 400 `invalid_scope` | An unknown action, `manage`, an invalid selector, or a key that names no repository (checked after the token matched a mapping) | Correct `scope` |
 | `scope_not_granted` | 400 `invalid_scope` | A `scope` item asks for an action the matched grants do not hold; no partial token is issued | Narrow `scope`, or extend the mapping |
 | `audience_not_this_server` | 400 `invalid_target` | The `audience` or `resource` parameter is not trove's base URL | Leave them out, or send the base URL |
 | `rate_limited` | 429 `slow_down` | A rate limit is spent; `Retry-After` says when to retry | See [Rate limits and runner networks](#rate-limits-and-runner-networks) |
 | `signing_keys_unavailable` | 503 `temporarily_unavailable` | The stored key set is older than `ci.signing_keys.max_stale` (24 h): the instance has been unreachable, or no `worker` replica ran the refresh | Check the key status and the `worker` replicas |
 | `database_unavailable` | 503 `temporarily_unavailable` | PostgreSQL is unavailable | Retry; check the database |
-| `configuration_changed` | 503 `temporarily_unavailable` | The issuer or its mappings changed twice while the exchange ran | Retry |
+| `configuration_changed` | 503 `temporarily_unavailable` | The issuer or its mappings changed twice while the exchange ran, which only a change made outside trove's API can cause | Retry |
 | `gitlab_unreachable` | 503 `temporarily_unavailable` | Only with the job-token fallback | — |
 | `internal` | 500 `server_error` | A defect | Report it with the request ID |
 
 </details>
 
-Until the federation is released, the exchange answers `501` `ci_not_implemented` as problem details, and so do the operations of this page whose part is not built yet; the issuance records, the bulk revoke and the revocation of an issuer's tokens answer already. With `ci.exchange.enabled: false` the exchange answers `404`.
+With `ci.exchange.enabled: false` the exchange answers `404` as a path that does not exist; any method but `POST` answers `405`. Both are problem details, every other answer of the exchange is the OAuth form above, with `Cache-Control: no-store` and `Pragma: no-cache`.
 
 ### Refusals after the exchange
 
@@ -574,7 +575,7 @@ Project administrators manage the mappings of their project. These stay with hol
 | `ci.issuers` | `[]` | The issuers of the Helm values ([above](#in-the-helm-values)) |
 | `ci.token.default_ttl` | `15m` | Lifetime of a CI token when the job asks for none |
 | `ci.token.max_ttl` | `1h` | Upper bound of every CI token; at most `auth.tokens.cit.max_ttl` (`6h`), or the start fails naming both keys |
-| `ci.token.min_ttl` | `30s` | A token that would live shorter is not issued (`subject_token_expires_too_soon`) |
+| `ci.token.min_ttl` | `30s` | A token that would live shorter is not issued: `subject_token_expires_too_soon` when the ID token has less left, `ttl_below_minimum` when the job's `ttl` or a mapping's or issuer's bound is lower |
 | `ci.exchange.enabled` | `true` | `false` answers every exchange with `404` |
 | `ci.exchange.expose_reason` | `true` | `false` leaves `reason` out of the `400` answers; logs and audit keep it |
 | `ci.exchange.max_body_bytes` | `65536` | Largest exchange request |

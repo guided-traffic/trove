@@ -116,8 +116,17 @@ func NewRateLimit(o RateLimitOptions) (func(http.Handler) http.Handler, error) {
 }
 
 func limitedPath(p string) bool {
+	if p == ExchangePath {
+		return false
+	}
 	return isAPIPath(p) || strings.HasPrefix(p, "/files/") || isPackagePath(p)
 }
+
+// ExchangePath is the CI token exchange (R-CI-007). The general API rate limit skips it: its own limiters,
+// ci_exchange_address before the body is read and ci_exchange_subject after the subject token passed validation,
+// bound it cluster-wide (R-CI-021), and a request of a runner fleet behind one NAT address must not spend the
+// anonymous class of every other caller of that address.
+const ExchangePath = "/api/v1/auth/oidc/token"
 
 // isPackagePath is a request on a package protocol: /api/<format>/<repository>/….
 func isPackagePath(p string) bool { return strings.HasPrefix(p, "/api/") && !isAPIPath(p) }
