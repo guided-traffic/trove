@@ -42,10 +42,11 @@ test('R-UI-010 R-UI-011 R-UI-012 wizard, upload, browse and download', async ({ 
   await test.step('the file tree shows it; a file is uploaded in the browser', async () => {
     await page.goto('/ui/en/browse');
     await expectAccessible(page, 'file tree');
-    await page.getByLabel('Repository key').fill(repoKey);
-    await page.getByRole('button', { name: 'Search' }).click();
+    await page.getByLabel('Filter repositories').fill(repoKey);
     await page.getByRole('treeitem', { name: new RegExp(repoKey) }).click();
-    await page.getByRole('button', { name: 'Upload' }).click();
+    await expect(page.getByRole('navigation', { name: 'Location' })).toContainText(repoKey);
+    await expectAccessible(page, 'file tree, a repository selected');
+    await page.getByRole('button', { name: 'Upload files' }).click();
     await expect(page.getByRole('heading', { name: 'Upload files' })).toBeVisible();
     await page.locator('input[type=file]').setInputFiles({
       name: 'hello.txt',
@@ -58,11 +59,19 @@ test('R-UI-010 R-UI-011 R-UI-012 wizard, upload, browse and download', async ({ 
     await page.getByRole('button', { name: 'Close' }).click();
   });
 
+  await test.step('the folder view of the repository lists the file in the right pane', async () => {
+    await page.goto(`/ui/en/browse/${repoKey}`);
+    await expect(page.getByRole('table')).toContainText('hello.txt');
+    await expectAccessible(page, 'repository contents');
+    await page.getByRole('link', { name: 'hello.txt' }).click();
+    await expect(page).toHaveURL(new RegExp(`/browse/${repoKey}/hello\\.txt$`));
+  });
+
   await test.step('it is found by browsing and downloaded with the original bytes', async () => {
     await page.goto(`/ui/en/browse/${repoKey}`);
     await page.getByRole('treeitem', { name: /hello\.txt/ }).click();
-    await expect(page.getByRole('heading', { name: 'Details' })).toBeVisible();
-    await expect(page.getByText('hello.txt').first()).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Location' })).toContainText('hello.txt');
+    await expect(page.getByText('SHA-256')).toBeVisible();
     await expectAccessible(page, 'file details');
     const download = page.waitForEvent('download');
     await page.getByRole('link', { name: 'Download' }).click();

@@ -1,6 +1,8 @@
 import { DOCUMENT, DatePipe, NgTemplateOutlet } from '@angular/common';
 import {
   Component,
+  DestroyRef,
+  LOCALE_ID,
   computed,
   effect,
   inject,
@@ -13,11 +15,12 @@ import {
 import { Tree, TreeItem, TreeItemGroup } from '@angular/aria/tree';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
+import { MatMenuModule } from '@angular/material/menu';
 import { MatTabsModule } from '@angular/material/tabs';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { newIdempotencyKey } from '../../api/client';
-import { FilesApi, Item } from '../../api/files-api';
+import { FilesApi, Item, isFilesAddress } from '../../api/files-api';
 import { ApiError } from '../../api/problem';
 import {
   JobReference,
@@ -25,6 +28,7 @@ import {
   Repository,
   RepositoryConsumerView,
   RepositorySummary,
+  isConsumerView,
 } from '../../api/repositories-api';
 import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
@@ -33,8 +37,12 @@ import { CopyButton } from '../../shared/copy-button';
 import { ErrorNotice } from '../../shared/error-notice';
 import { JobProgress } from '../../shared/job-progress';
 import { PagedResource, asApiError, valueOf } from '../../shared/paged-resource';
+import { DataTable, TableColumn } from '../../shared/ui/data-table';
+import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
+import { formatSize } from '../packages/format-size';
+import { relativeTime } from '../packages/format-time';
 import { FolderDialog, FolderDialogData } from './folder-dialog';
-import { MORE_PREFIX, TreeNode, ancestorsOf, nameOf, parentOf } from './tree-node';
+import { MORE_PREFIX, NodeMeta, TreeNode, ancestorsOf, nameOf, nodeId, parentOf } from './tree-node';
 import { UploadDialog, UploadDialogData } from './upload-dialog';
 
 /** `ui.browser.page_size` (R-UI-010, default 200). The UI cannot read the configuration, so it is a constant. */
@@ -43,23 +51,36 @@ export const BROWSER_PAGE_SIZE = 200;
 /** A delete of a folder with more items than this asks for the folder name (R-UI-011). */
 export const TYPE_TO_CONFIRM_ABOVE = 100;
 
-type Detail =
-  | { readonly kind: 'repository'; readonly repository: Repository | RepositoryConsumerView }
-  | { readonly kind: 'item'; readonly item: Item };
+/** How long the filter field waits after the last keystroke before it narrows the repositories. */
+export const FILTER_DELAY_MS = 250;
+
+type Tab = 'contents' | 'general' | 'statistics' | 'api';
+type SelectionKind = 'repository' | 'folder' | 'file';
+/** One removable chip of an applied filter. */
+interface Chip {
+  readonly key: string;
+  readonly label: string;
+  readonly remove: Readonly<Record<string, string | null>>;
+}
 
 const CLASS_ORDER: Record<string, number> = { virtual: 0, local: 1, remote: 2 };
-const TABS = ['general', 'statistics', 'api'] as const;
+const CLASSES = ['virtual', 'local', 'remote'] as const;
+const ARCHIVE = /\.(zip|tgz|gz|tar|jar|war|whl|nupkg|7z|bz2|xz)$/i;
 
 /** A POSIX shell word for `value`: single quotes, with an embedded single quote closed and escaped. */
 const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 
 /**
- * The file tree (R-UI-010): the readable repositories at the root, children loaded lazily in pages
- * of `BROWSER_PAGE_SIZE` with a "Load more" entry, details of the selection next to it. The
- * selection is the URL (`/browse/{repo}/{path…}`) and a deep link expands the ancestors. The tree
- * follows the WAI-ARIA tree pattern through `@angular/aria` (roles, `aria-expanded`, `aria-level`,
- * `aria-setsize`, `aria-posinset`, arrow keys, Home, End, type-ahead). The actions sit in a toolbar
- * above the details; the context-menu key and Shift+F10 on the tree move focus there.
+ * The file browser (R-UI-010): two bordered panes that fill the height of the content area. The
+ * tree pane has a toolbar (a filter field that narrows the repositories as you type, the shared
+ * filter panel for class and format with removable chips, a sort menu), the readable repositories
+ * at the root and children loaded lazily in pages of `BROWSER_PAGE_SIZE` with a "Load more" entry.
+ * The details pane has the path of the selection as a breadcrumb, the actions of R-UI-011 as a
+ * toolbar, and the content: a repository's summary, a folder's children as the shared data table,
+ * a file's facts, API request and statistics. The selection is the URL (`/browse/{repo}/{path…}`)
+ * and a deep link expands the ancestors. On a narrow screen one pane shows at a time. The tree
+ * follows the WAI-ARIA tree pattern through `@angular/aria`; the context-menu key and Shift+F10
+ * on the tree move focus to the actions.
  */
 @Component({
   selector: 'trove-browse',
@@ -67,17 +88,21 @@ const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")
     DatePipe,
     NgTemplateOutlet,
     MatButtonModule,
+    MatMenuModule,
     MatTabsModule,
     RouterLink,
     Tree,
     TreeItem,
     TreeItemGroup,
     CopyButton,
+    DataTable,
     ErrorNotice,
+    FilterCategory,
+    FilterPanel,
+    FilterToggle,
     JobProgress,
   ],
   templateUrl: './browse.html',
-  styleUrl: './browse.scss',
 })
 export class Browse {
   protected readonly valueOf = valueOf;
@@ -89,6 +114,8 @@ export class Browse {
   private readonly confirm = inject(Confirm);
   private readonly dialog = inject(MatDialog);
   private readonly dom = inject(DOCUMENT);
+  private readonly locale = inject(LOCALE_ID);
+  private readonly destroyRef = inject(DestroyRef);
   protected readonly title = inject(ActivatedRoute).snapshot.title ?? '';
 
   /** Route parameters of the matcher and the query parameters, bound by the router. */
@@ -107,7 +134,16 @@ export class Browse {
   /** Every node ever shown, by id, so that a reload keeps the expanded state. */
   private readonly nodes = new Map<string, TreeNode>();
   private readonly extraRoot = signal<TreeNode | null>(null);
+  /** The node of the selection, once the tree has found it; the folder table reads its children. */
+  protected readonly selectedNode = signal<TreeNode | null>(null);
+  private revealRun = 0;
+  private filterTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** The text of the filter field; the query parameter `q` follows it after a short pause. */
   protected readonly search = signal('');
+  protected readonly panelOpen = signal(false);
+  protected readonly stagedClass = signal('');
+  protected readonly stagedFormat = signal('');
   protected readonly deletion = signal<{ job: JobReference; parent: string } | null>(null);
   protected readonly actionFailure = signal<ApiError | null>(null);
 
@@ -131,35 +167,79 @@ export class Browse {
     if (this.sort() === 'class') {
       return roots.sort(
         (a, b) =>
-          (CLASS_ORDER[a.meta.cls ?? ''] ?? 9) - (CLASS_ORDER[b.meta.cls ?? ''] ?? 9) ||
+          (CLASS_ORDER[a.meta().cls ?? ''] ?? 9) - (CLASS_ORDER[b.meta().cls ?? ''] ?? 9) ||
           a.label.localeCompare(b.label),
       );
     }
     return roots.sort((a, b) => a.label.localeCompare(b.label));
   });
 
-  protected readonly detail = resource<Detail | undefined, { repo: string; path: string } | null>({
-    params: () => this.selected(),
-    loader: async ({ params }): Promise<Detail | undefined> => {
-      if (!params) return undefined;
-      if (params.path === '') {
-        return { kind: 'repository', repository: (await this.repositories.get(params.repo)).value };
-      }
-      return { kind: 'item', item: await this.files.item(params.repo, params.path) };
+  protected readonly chips = computed<readonly Chip[]>(() => {
+    const out: Chip[] = [];
+    const cls = this.class();
+    if (cls) {
+      out.push({
+        key: 'class',
+        label: `${$localize`:@@repo.col.class:Class`}: ${this.classLabel(cls)}`,
+        remove: { class: null },
+      });
+    }
+    const format = this.format();
+    if (format) {
+      out.push({
+        key: 'format',
+        label: `${$localize`:@@repo.col.format:Format`}: ${format}`,
+        remove: { format: null },
+      });
+    }
+    return out;
+  });
+  protected readonly filtered = computed(() => this.chips().length > 0 || !!this.q());
+
+  /** The repository of the selection: its summary, the actions it gates and its API view. */
+  protected readonly repositoryRead = resource<
+    Repository | RepositoryConsumerView | undefined,
+    string | null
+  >({
+    params: () => this.selected()?.repo ?? null,
+    loader: async ({ params }) => (params ? (await this.repositories.get(params)).value : undefined),
+  });
+  protected readonly repositoryDoc = computed(() => valueOf(this.repositoryRead));
+  protected readonly detail = resource<Item | undefined, { repo: string; path: string } | null>({
+    params: () => {
+      const s = this.selected();
+      return s && s.path !== '' ? s : null;
     },
+    loader: async ({ params }) => (params ? this.files.item(params.repo, params.path) : undefined),
   });
-  protected readonly item = computed(() => {
-    const d = valueOf(this.detail);
-    return d?.kind === 'item' ? d.item : null;
-  });
-  protected readonly repository = computed(() => {
-    const d = valueOf(this.detail);
-    return d?.kind === 'repository' ? d.repository : null;
+  protected readonly item = computed(() => valueOf(this.detail) ?? null);
+  /** The repository as the details show it, when the selection is the repository itself. */
+  protected readonly repository = computed(() =>
+    this.selected()?.path === '' ? (this.repositoryDoc() ?? null) : null,
+  );
+  protected readonly fullRepository = computed<Repository | null>(() => {
+    const r = this.repository();
+    return r && !isConsumerView(r) ? r : null;
   });
   protected readonly detailFailure = computed(() => {
-    const e = this.detail.error();
+    const sel = this.selected();
+    const e = sel?.path === '' ? this.repositoryRead.error() : this.detail.error();
     return e ? asApiError(e) : null;
   });
+  protected readonly detailLoading = computed(() => {
+    const sel = this.selected();
+    if (!sel) return false;
+    return sel.path === ''
+      ? this.repositoryRead.isLoading() && !this.repositoryDoc()
+      : this.detail.isLoading() && !this.item();
+  });
+  protected readonly selectionKind = computed<SelectionKind | null>(() => {
+    const sel = this.selected();
+    if (!sel) return null;
+    if (sel.path === '') return 'repository';
+    return this.item()?.kind ?? null;
+  });
+  protected readonly members = computed(() => this.fullRepository()?.virtual?.members ?? []);
 
   /** What the caller may do at the selection (R-UI-005): one batched check, cached for 60 seconds. */
   protected readonly allowed = resource({
@@ -178,6 +258,15 @@ export class Browse {
   protected readonly can = computed(
     () => valueOf(this.allowed) ?? { deploy: false, overwrite: false, delete: false },
   );
+  protected readonly canCreateRepository = computed(() => this.session.has('repositories:write-config'));
+
+  /** Uploads and folders are for local repositories of a raw-files format (R-UI-012, R-API-025). */
+  protected readonly acceptsUploads = computed(() => {
+    const doc = this.repositoryDoc();
+    if (!doc || doc.class !== 'local') return false;
+    const format = valueOf(this.formats)?.find((f) => f.name === doc.format);
+    return !!format && isFilesAddress(format.protocolBasePath);
+  });
 
   protected readonly stats = resource({
     params: () =>
@@ -190,14 +279,23 @@ export class Browse {
     return e ? asApiError(e) : null;
   });
 
-  protected readonly tabName = computed(() => {
-    const t = this.tab();
-    return TABS.find((x) => x === t) ?? 'general';
+  /** The tabs of the details by kind of selection; the first is the default. */
+  protected readonly tabNames = computed<readonly Tab[]>(() => {
+    switch (this.selectionKind()) {
+      case 'folder':
+        return ['contents', 'general', 'api'];
+      case 'file':
+        return ['general', 'statistics', 'api'];
+      default:
+        return ['general', 'api'];
+    }
   });
-  protected readonly tabIndex = computed(() => {
-    const names = this.item()?.kind === 'file' ? TABS : (['general', 'api'] as const);
-    return Math.max(0, (names as readonly string[]).indexOf(this.tabName()));
+  protected readonly tabName = computed<Tab>(() => {
+    const names = this.tabNames();
+    const t = names.find((x) => x === this.tab());
+    return t ?? names[0] ?? 'general';
   });
+  protected readonly tabIndex = computed(() => Math.max(0, this.tabNames().indexOf(this.tabName())));
 
   protected readonly itemJson = computed(() =>
     JSON.stringify(this.item() ?? this.repository(), null, 2),
@@ -210,6 +308,38 @@ export class Browse {
     const url = this.item()?.downloadUrl;
     return url ? `curl -L -O -H "Authorization: Bearer $TROVE_TOKEN" ${shellQuote(url)}` : '';
   });
+
+  /** The path of the selection as breadcrumb links: the repository, then each folder, then the item. */
+  protected readonly crumbs = computed(() => {
+    const sel = this.selected();
+    if (!sel) return [];
+    const parts = sel.path.split('/').filter((p) => p !== '');
+    return [
+      { label: sel.repo, commands: ['/browse', sel.repo] },
+      ...parts.map((p, i) => ({
+        label: p,
+        commands: ['/browse', sel.repo, ...parts.slice(0, i + 1)],
+      })),
+    ];
+  });
+
+  protected readonly folderPath = computed(() => {
+    const s = this.selected();
+    const item = this.item();
+    if (!s) return null;
+    if (s.path === '') return '';
+    return item?.kind === 'folder' ? s.path : null;
+  });
+  protected readonly canUpload = computed(
+    () => this.folderPath() !== null && this.can().deploy && this.acceptsUploads(),
+  );
+
+  protected readonly contentColumns: readonly TableColumn[] = [
+    { id: 'name', label: $localize`:@@browse.col.name:Name` },
+    { id: 'size', label: $localize`:@@browse.fact.size:Size`, numeric: true },
+    { id: 'modified', label: $localize`:@@browse.fact.modified:Last changed` },
+  ];
+
   protected readonly classLabel = (cls: string | undefined): string => {
     switch (cls) {
       case 'local':
@@ -224,10 +354,14 @@ export class Browse {
   };
 
   constructor() {
+    this.destroyRef.onDestroy(() => clearTimeout(this.filterTimer));
     effect(() => {
       const filters = { q: this.q(), class: this.class(), format: this.format() };
       untracked(() => {
-        this.search.set(filters.q ?? '');
+        // The field keeps what the user typed, unless the address changed under it.
+        if ((filters.q ?? '') !== this.search().trim()) this.search.set(filters.q ?? '');
+        this.stagedClass.set(filters.class ?? '');
+        this.stagedFormat.set(filters.format ?? '');
         void this.list.start(this.repositories.list(filters));
       });
     });
@@ -241,7 +375,31 @@ export class Browse {
     });
     effect(() => {
       const sel = this.selected();
-      if (sel) untracked(() => void this.reveal(sel.repo, sel.path));
+      untracked(() => {
+        if (sel) void this.reveal(sel.repo, sel.path);
+        else {
+          this.revealRun++;
+          this.selectedNode.set(null);
+        }
+      });
+    });
+    effect(() => {
+      // A node made by a deep link before the list arrived learns its class and format from the list.
+      for (const r of this.list.items()) {
+        const node = untracked(() => this.nodes.get(r.key));
+        if (node && node.meta().cls === undefined) {
+          node.meta.set({ cls: r.class, format: r.format, disabled: r.disabled });
+        }
+      }
+    });
+    effect(() => {
+      // A repository the list did not show (a deep link) learns its class and format from the read.
+      const doc = this.repositoryDoc();
+      if (!doc) return;
+      const node = untracked(() => this.nodes.get(doc.key));
+      if (node && node.meta().cls === undefined) {
+        node.meta.set({ cls: doc.class, format: doc.format, disabled: 'disabled' in doc && !!doc.disabled });
+      }
     });
   }
 
@@ -260,9 +418,9 @@ export class Browse {
     path: string,
     kind: TreeNode['kind'],
     label: string,
-    meta: TreeNode['meta'] = {},
+    meta: NodeMeta = {},
   ): TreeNode {
-    const id = path === '' ? repository : `${repository}/${path}`;
+    const id = nodeId(repository, path, meta.via);
     let node = this.nodes.get(id);
     if (!node) {
       node = new TreeNode(repository, path, kind, label, meta);
@@ -288,6 +446,10 @@ export class Browse {
     node.loading.set(true);
     node.error.set(null);
     try {
+      if (node.kind === 'repository' && node.meta().cls === 'virtual') {
+        await this.loadMembers(node);
+        return;
+      }
       const fetchPage = this.files.children(node.repository, node.path, BROWSER_PAGE_SIZE);
       const page = await fetchPage(more ? node.cursor : null, BROWSER_PAGE_SIZE);
       const kids = page.items.map((c) =>
@@ -296,6 +458,7 @@ export class Browse {
           node.path === '' ? c.path : `${node.path}/${c.path}`,
           c.kind,
           nameOf(c.path),
+          { size: c.size, modifiedAt: c.modifiedAt },
         ),
       );
       node.children.update((list) => (more ? [...list, ...kids] : kids));
@@ -309,19 +472,58 @@ export class Browse {
     }
   }
 
+  /** A virtual repository's children are its members in resolution order (R-UI-010). */
+  private async loadMembers(node: TreeNode): Promise<void> {
+    const read = (await this.repositories.get(node.repository)).value;
+    const keys = isConsumerView(read) ? [] : (read.virtual?.members ?? []);
+    node.membersHidden.set(isConsumerView(read));
+    const known = new Map(this.list.items().map((r) => [r.key, r]));
+    node.children.set(
+      keys.map((key, i) => {
+        const r = known.get(key);
+        return this.nodeFor(key, '', 'member', key, {
+          via: node.repository,
+          position: i + 1,
+          cls: r?.class,
+          format: r?.format,
+        });
+      }),
+    );
+    node.cursor = null;
+    node.hasMore.set(false);
+    node.loaded.set(true);
+  }
+
   /** Expands the ancestors of the selection, loading pages until each one is found (R-UI-010). */
   private async reveal(repo: string, path: string): Promise<void> {
+    const run = ++this.revealRun;
+    const live = (): boolean => run === this.revealRun;
+    this.selectedNode.set(null);
     const root = this.rootNode(repo);
+    if (path === '') this.selectedNode.set(root);
     root.expanded.set(true);
+    if (root.meta().cls === undefined) {
+      // A deep link to a repository the list did not show: the class decides how it expands.
+      try {
+        const read = (await this.repositories.get(repo)).value;
+        root.meta.set({ cls: read.class, format: read.format });
+      } catch {
+        // The details show the failure; the tree keeps a bare node.
+      }
+      if (!live()) return;
+    }
     if (!root.loaded()) await this.loadChildren(root, false);
+    if (!live()) return;
     let parent = root;
     const chain = path === '' ? [] : [...ancestorsOf(path), path];
     for (const [i, target] of chain.entries()) {
       const next = await this.findChild(parent, target);
-      if (!next) return;
+      if (!next || !live()) return;
+      if (i === chain.length - 1) this.selectedNode.set(next);
       if (i < chain.length - 1 || next.kind === 'folder') {
         next.expanded.set(true);
         if (!next.loaded()) await this.loadChildren(next, false);
+        if (!live()) return;
       }
       parent = next;
     }
@@ -355,21 +557,46 @@ export class Browse {
       return;
     }
     const node = this.nodes.get(id);
-    if (node && id !== this.selectedId()) this.go(node.repository, node.path);
+    if (!node) return;
+    // A member of a virtual repository leads to the repository itself.
+    const target = node.kind === 'member' ? node.repository : id;
+    if (target !== this.selectedId()) this.go(node.repository, node.path);
+    else if (node.kind === 'member') this.treeRef()?.value.set([...this.treeValue()]);
   }
 
   protected go(repo: string, path: string): void {
     void this.router.navigate(['/browse', repo, ...path.split('/').filter((s) => s !== '')], {
-      queryParamsHandling: 'preserve',
+      queryParams: { tab: null },
+      queryParamsHandling: 'merge',
     });
   }
 
   protected goRoot(): void {
-    void this.router.navigate(['/browse']);
+    void this.router.navigate(['/browse'], { queryParamsHandling: 'preserve' });
   }
 
   protected moreId(node: TreeNode): string {
     return MORE_PREFIX + node.id;
+  }
+
+  /** The material icon of a node: the class of a repository, an archive or any other file. */
+  protected iconOf(node: TreeNode): string {
+    switch (node.kind) {
+      case 'repository':
+      case 'member':
+        switch (node.meta().cls) {
+          case 'remote':
+            return 'cloud_download';
+          case 'virtual':
+            return 'layers';
+          default:
+            return 'inventory_2';
+        }
+      case 'folder':
+        return node.expanded() ? 'folder_open' : 'folder';
+      default:
+        return ARCHIVE.test(node.label) ? 'folder_zip' : 'description';
+    }
   }
 
   /** Context-menu key and Shift+F10 move focus to the actions (R-UI-011). */
@@ -380,30 +607,81 @@ export class Browse {
     }
   }
 
-  protected applyFilter(change: Readonly<Record<string, string | null>>): void {
-    void this.router.navigate([], { queryParams: change, queryParamsHandling: 'merge' });
+  // --- filters ------------------------------------------------------------------------------
+
+  protected applyFilter(
+    change: Readonly<Record<string, string | null>>,
+    replaceUrl = false,
+  ): void {
+    void this.router.navigate([], {
+      queryParams: change,
+      queryParamsHandling: 'merge',
+      replaceUrl,
+    });
   }
 
-  protected submitSearch(event: Event): void {
-    event.preventDefault();
-    this.applyFilter({ q: this.search().trim() || null });
+  /** The filter field: the repositories narrow as the user types, after a short pause. */
+  protected onSearchInput(value: string): void {
+    this.search.set(value);
+    clearTimeout(this.filterTimer);
+    this.filterTimer = setTimeout(() => this.commitSearch(), FILTER_DELAY_MS);
   }
+
+  protected commitSearch(): void {
+    clearTimeout(this.filterTimer);
+    const q = this.search().trim() || null;
+    if (q !== (this.q() || null)) this.applyFilter({ q }, true);
+  }
+
+  protected submitFilters(): void {
+    this.applyFilter({ class: this.stagedClass() || null, format: this.stagedFormat() || null });
+    this.panelOpen.set(false);
+  }
+
+  protected clearPanelFilters(): void {
+    this.stagedClass.set('');
+    this.stagedFormat.set('');
+    this.applyFilter({ class: null, format: null });
+  }
+
+  protected clearFilters(): void {
+    this.search.set('');
+    this.applyFilter({ q: null, class: null, format: null });
+  }
+
+  protected removeLabel(label: string): string {
+    return $localize`:@@browse.chip.remove:Remove the filter ${label}:filter:`;
+  }
+
+  protected setSort(value: 'key' | 'class'): void {
+    this.applyFilter({ sort: value === 'class' ? 'class' : null });
+  }
+
+  protected readonly classes = CLASSES;
 
   protected setTab(index: number): void {
-    const names = this.item()?.kind === 'file' ? TABS : (['general', 'api'] as const);
-    const name = names[index] ?? 'general';
-    if (name !== this.tabName()) this.applyFilter({ tab: name === 'general' ? null : name });
+    const name = this.tabNames()[index] ?? 'general';
+    if (name !== this.tabName()) {
+      this.applyFilter({ tab: name === this.tabNames()[0] ? null : name });
+    }
+  }
+
+  // --- the contents table ---------------------------------------------------------------------
+
+  protected sizeOf(node: TreeNode): string {
+    const size = node.meta().size;
+    return node.kind === 'file' && size !== undefined ? formatSize(size) : '–';
+  }
+
+  protected since(iso: string): string {
+    return relativeTime(iso, this.locale);
+  }
+
+  protected commandsOf(node: TreeNode): string[] {
+    return ['/browse', node.repository, ...node.path.split('/').filter((s) => s !== '')];
   }
 
   // --- actions ------------------------------------------------------------------------------
-
-  protected readonly folderPath = computed(() => {
-    const s = this.selected();
-    const item = this.item();
-    if (!s) return null;
-    if (s.path === '') return '';
-    return item?.kind === 'folder' ? s.path : null;
-  });
 
   protected async upload(): Promise<void> {
     const sel = this.selected();
@@ -441,8 +719,7 @@ export class Browse {
   }
 
   private refreshSelectedFolder(): void {
-    const id = this.selectedId();
-    const node = id ? this.nodes.get(id) : undefined;
+    const node = this.selectedNode();
     if (node) this.reload(node);
   }
 
@@ -513,12 +790,18 @@ export class Browse {
   protected readonly moreLabel = $localize`:@@browse.load-more:Load more`;
   protected readonly copyPath = $localize`:@@browse.copy-path:Copy path`;
   protected readonly copyUrl = $localize`:@@browse.copy-url:Copy download URL`;
+  protected readonly copyListing = $localize`:@@browse.copy-listing:Copy listing URL`;
   protected readonly copyDigest = $localize`:@@browse.copy-digest:Copy checksum`;
   protected readonly copyCurl = $localize`:@@browse.copy-curl:Copy the curl command`;
   protected readonly deleteProgress = $localize`:@@browse.delete.progress:Deleting items`;
-  protected readonly tabGeneral = $localize`:@@browse.tab.general:General`;
-  protected readonly tabStats = $localize`:@@browse.tab.statistics:Statistics`;
-  protected readonly tabApi = $localize`:@@browse.tab.api:API`;
+  protected readonly tabLabels: Readonly<Record<Tab, string>> = {
+    contents: $localize`:@@browse.tab.contents:Contents`,
+    general: $localize`:@@browse.tab.general:General`,
+    statistics: $localize`:@@browse.tab.statistics:Statistics`,
+    api: $localize`:@@browse.tab.api:API`,
+  };
+  protected readonly emptyFolder = $localize`:@@browse.folder-empty:This folder is empty.`;
+  protected readonly contentsCaption = $localize`:@@browse.contents.caption:Contents of the selected folder`;
   protected readonly digestNames: readonly (readonly [
     'sha256' | 'sha512' | 'sha1' | 'md5',
     string,

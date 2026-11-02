@@ -3,227 +3,369 @@
 </header>
 
 <div class="browse" [class.has-selection]="selected() !== null">
-  <section class="pane-tree" aria-labelledby="tree-heading">
+  <!-- The tree pane: a toolbar, the filter chips, the count and the tree (R-UI-010) -->
+  <section class="pane pane-tree" aria-labelledby="tree-heading">
     <h2 id="tree-heading" class="visually-hidden" i18n="@@browse.tree.heading">
       Repositories and files
     </h2>
 
-    <form class="toolbar" role="search" (submit)="submitSearch($event)">
-      <div class="field">
-        <label class="field-label" for="tree-q" i18n="@@browse.filter.key">Repository key</label>
+    <div class="pane-head tree-toolbar">
+      <label class="filter-field">
+        <span class="material-icons" aria-hidden="true">search</span>
         <input
-          id="tree-q"
-          class="text-input"
+          class="filter-input"
           type="search"
+          autocomplete="off"
+          spellcheck="false"
+          aria-label="Filter repositories"
+          i18n-aria-label="@@browse.filter.label"
+          placeholder="Filter repositories"
+          i18n-placeholder="@@browse.filter.label"
           [value]="search()"
-          (input)="search.set($any($event.target).value)"
+          (input)="onSearchInput($any($event.target).value)"
+          (keydown.enter)="commitSearch()"
         />
-      </div>
-      <div class="field">
-        <label class="field-label" for="tree-class" i18n="@@repo.col.class">Class</label>
-        <select
-          id="tree-class"
-          class="select-input"
-          (change)="applyFilter({ class: $any($event.target).value || null })"
-        >
-          <option value="" [selected]="!class()" i18n="@@repo.filter.any">Any</option>
-          @for (c of ['virtual', 'local', 'remote']; track c) {
-            <option [value]="c" [selected]="class() === c">{{ classLabel(c) }}</option>
-          }
-        </select>
-      </div>
-      <div class="field">
-        <label class="field-label" for="tree-format" i18n="@@repo.col.format">Format</label>
-        <select
-          id="tree-format"
-          class="select-input"
-          (change)="applyFilter({ format: $any($event.target).value || null })"
-        >
-          <option value="" [selected]="!format()" i18n="@@repo.filter.any">Any</option>
-          @for (f of valueOf(formats) ?? []; track f.name) {
-            <option [value]="f.name" [selected]="format() === f.name" translate="no">
-              {{ f.name }}
-            </option>
-          }
-        </select>
-      </div>
-      <div class="field">
-        <label class="field-label" for="tree-sort" i18n="@@browse.sort">Sort by</label>
-        <select
-          id="tree-sort"
-          class="select-input"
-          (change)="applyFilter({ sort: $any($event.target).value || null })"
-        >
-          <option value="" [selected]="sort() !== 'class'" i18n="@@browse.sort.key">Key</option>
-          <option value="class" [selected]="sort() === 'class'" i18n="@@browse.sort.class">
-            Class, then key
-          </option>
-        </select>
-      </div>
-      <button mat-stroked-button type="submit" i18n="@@repo.filter.apply">Search</button>
-    </form>
-
-    @if (list.error(); as f) {
-      <trove-error-notice [error]="f" (retry)="list.more()" />
-    }
-
-    <ng-template #nodeList let-nodes="nodes" let-parent="parent">
-      @for (node of nodes; track node.id) {
-        <li
-          ngTreeItem
-          #item="ngTreeItem"
-          [parent]="parent"
-          [value]="node.id"
-          [label]="node.label"
-          [expanded]="node.expanded()"
-          (expandedChange)="onExpand(node, $event)"
-        >
-          <span class="node-label">
-            <span class="material-icons inline" aria-hidden="true">{{
-              node.kind === 'repository'
-                ? 'inventory_2'
-                : node.kind === 'folder'
-                  ? 'folder'
-                  : 'description'
-            }}</span>
-            <span translate="no">{{ node.label }}</span>
-            @if (node.kind === 'repository') {
-              <span class="meta"
-                >{{ classLabel(node.meta.cls) }},
-                <span translate="no">{{ node.meta.format }}</span></span
-              >
-              @if (node.meta.disabled) {
-                <span class="meta" i18n="@@repo.badge.disabled">disabled</span>
-              }
-            }
-          </span>
-          @if (node.expandable) {
-            <ul role="group">
-              <ng-template ngTreeItemGroup [ownedBy]="item" #group="ngTreeItemGroup">
-                <ng-container
-                  *ngTemplateOutlet="nodeList; context: { nodes: node.children(), parent: group }"
-                />
-                @if (node.hasMore()) {
-                  <li
-                    ngTreeItem
-                    [parent]="group"
-                    [value]="moreId(node)"
-                    [label]="moreLabel"
-                    [selectable]="true"
-                  >
-                    <span class="node-label more" i18n="@@browse.load-more">Load more</span>
-                  </li>
-                }
-                @if (node.loading()) {
-                  <li class="status-row" role="presentation">
-                    <span role="status" i18n="@@repo.loading">Loading.</span>
-                  </li>
-                }
-                @if (node.error(); as e) {
-                  <li class="status-row" role="presentation">
-                    <trove-error-notice [error]="e" (retry)="loadChildren(node, node.loaded())" />
-                  </li>
-                }
-              </ng-template>
-            </ul>
-          }
-        </li>
-      }
-    </ng-template>
-
-    @if (list.loaded() && roots().length === 0) {
-      <p class="empty" i18n="@@browse.empty">
-        No repository matches. Repositories you may not read are not listed.
-      </p>
-    }
-    <ul
-      ngTree
-      #tree="ngTree"
-      class="tree"
-      aria-label="Repositories and files"
-      i18n-aria-label="@@browse.tree.label"
-      selectionMode="explicit"
-      [value]="treeValue()"
-      (valueChange)="onTreeValue($event)"
-    >
-      <ng-container *ngTemplateOutlet="nodeList; context: { nodes: roots(), parent: tree }" />
-    </ul>
-    @if (list.loading() && !list.loaded()) {
-      <p role="status" i18n="@@repo.loading">Loading.</p>
-    }
-    @if (list.hasMore()) {
-      <p>
+      </label>
+      <div class="tree-tools">
+        <trove-filter-toggle
+          [(open)]="panelOpen"
+          [activeCount]="chips().length"
+          [controls]="panel.panelId"
+        />
         <button
-          mat-stroked-button
+          mat-icon-button
           type="button"
-          [disabled]="list.loading()"
-          (click)="list.more()"
-          i18n="@@browse.more-repositories"
+          class="sort-button"
+          [matMenuTriggerFor]="sortMenu"
+          aria-label="Sort repositories"
+          i18n-aria-label="@@browse.sort.label"
+          title="Sort repositories"
+          i18n-title="@@browse.sort.label"
         >
-          Load more repositories
+          <span class="material-icons" aria-hidden="true">sort</span>
         </button>
-      </p>
+        <mat-menu #sortMenu="matMenu">
+          <button
+            mat-menu-item
+            type="button"
+            role="menuitemradio"
+            [attr.aria-checked]="sort() !== 'class'"
+            (click)="setSort('key')"
+          >
+            <span class="material-icons" aria-hidden="true">{{
+              sort() !== 'class' ? 'check' : ''
+            }}</span>
+            <span i18n="@@browse.sort.key">Key</span>
+          </button>
+          <button
+            mat-menu-item
+            type="button"
+            role="menuitemradio"
+            [attr.aria-checked]="sort() === 'class'"
+            (click)="setSort('class')"
+          >
+            <span class="material-icons" aria-hidden="true">{{
+              sort() === 'class' ? 'check' : ''
+            }}</span>
+            <span i18n="@@browse.sort.class">Class, then key</span>
+          </button>
+        </mat-menu>
+        @if (list.loaded() && !panelOpen()) {
+          <p class="pane-count" role="status">
+            <ng-container i18n="@@browse.count">Repositories</ng-container>:
+            {{ list.items().length }}{{ list.hasMore() ? '+' : '' }}
+          </p>
+        }
+      </div>
+    </div>
+
+    @if (chips().length > 0) {
+      <ul class="chip-row pane-chips" aria-label="Applied filters" i18n-aria-label="@@pkg.chips.label">
+        @for (c of chips(); track c.key) {
+          <li>
+            <span class="chip">
+              <span>{{ c.label }}</span>
+              <button type="button" (click)="applyFilter(c.remove)" [attr.aria-label]="removeLabel(c.label)">
+                <span class="material-icons" aria-hidden="true">close</span>
+              </button>
+            </span>
+          </li>
+        }
+      </ul>
     }
+
+    <div class="pane-body">
+      <trove-filter-panel
+        #panel
+        class="tree-filters"
+        [(open)]="panelOpen"
+        [activeCount]="chips().length"
+        (apply)="submitFilters()"
+        (clearAll)="clearPanelFilters()"
+      >
+        <trove-filter-category
+          i18n-label="@@repo.col.class"
+          label="Class"
+          [active]="!!class()"
+          [expanded]="!!class()"
+        >
+          <div class="check-list" role="radiogroup" aria-label="Class" i18n-aria-label="@@repo.col.class">
+            <label class="check-row">
+              <input type="radio" name="tree-class" [checked]="!stagedClass()" (change)="stagedClass.set('')" />
+              <span i18n="@@repo.filter.any">Any</span>
+            </label>
+            @for (c of classes; track c) {
+              <label class="check-row">
+                <input
+                  type="radio"
+                  name="tree-class"
+                  [checked]="stagedClass() === c"
+                  (change)="stagedClass.set(c)"
+                />
+                <span>{{ classLabel(c) }}</span>
+              </label>
+            }
+          </div>
+        </trove-filter-category>
+        <trove-filter-category
+          i18n-label="@@repo.col.format"
+          label="Format"
+          [active]="!!format()"
+          [expanded]="!!format()"
+        >
+          <div class="check-list" role="radiogroup" aria-label="Format" i18n-aria-label="@@repo.col.format">
+            <label class="check-row">
+              <input type="radio" name="tree-format" [checked]="!stagedFormat()" (change)="stagedFormat.set('')" />
+              <span i18n="@@repo.filter.any">Any</span>
+            </label>
+            @for (f of valueOf(formats) ?? []; track f.name) {
+              <label class="check-row">
+                <input
+                  type="radio"
+                  name="tree-format"
+                  [checked]="stagedFormat() === f.name"
+                  (change)="stagedFormat.set(f.name)"
+                />
+                <span translate="no">{{ f.displayName }}</span>
+              </label>
+            }
+          </div>
+        </trove-filter-category>
+      </trove-filter-panel>
+
+      <div class="tree-scroll" [hidden]="panelOpen()">
+        @if (list.error(); as f) {
+          <trove-error-notice [error]="f" (retry)="list.more()" />
+        }
+
+        <ng-template #nodeList let-nodes="nodes" let-parent="parent">
+          @for (node of nodes; track node.id) {
+            <li
+              ngTreeItem
+              #item="ngTreeItem"
+              [parent]="parent"
+              [value]="node.id"
+              [label]="node.label"
+              [expanded]="node.expanded()"
+              (expandedChange)="onExpand(node, $event)"
+            >
+              <span class="node-label">
+                <span class="material-icons node-chevron" aria-hidden="true">{{
+                  !node.expandable ? '' : node.expanded() ? 'expand_more' : 'chevron_right'
+                }}</span>
+                <span class="material-icons node-icon" [attr.data-class]="node.meta().cls" aria-hidden="true">{{
+                  iconOf(node)
+                }}</span>
+                <span class="node-name" translate="no">{{ node.label }}</span>
+                @if (node.kind === 'repository' || node.kind === 'member') {
+                  @if (node.meta().cls) {
+                    <span class="visually-hidden">, {{ classLabel(node.meta().cls) }}</span>
+                  }
+                  @if (node.meta().format) {
+                    <span class="tag" translate="no">{{ node.meta().format }}</span>
+                  }
+                  @if (node.kind === 'member') {
+                    <span class="tag" i18n="@@browse.tag.resolves-from">resolves from</span>
+                  } @else if (node.meta().cls === 'remote') {
+                    <span class="tag" i18n="@@browse.tag.cache">cache</span>
+                  }
+                  @if (node.meta().disabled) {
+                    <span class="tag" i18n="@@repo.badge.disabled">disabled</span>
+                  }
+                } @else if (node.kind === 'file' && node.meta().size !== undefined) {
+                  <span class="node-size">{{ sizeOf(node) }}</span>
+                }
+              </span>
+              @if (node.expandable) {
+                <ul role="group">
+                  <ng-template ngTreeItemGroup [ownedBy]="item" #group="ngTreeItemGroup">
+                    <ng-container
+                      *ngTemplateOutlet="nodeList; context: { nodes: node.children(), parent: group }"
+                    />
+                    @if (node.hasMore()) {
+                      <li
+                        ngTreeItem
+                        [parent]="group"
+                        [value]="moreId(node)"
+                        [label]="moreLabel"
+                        [selectable]="true"
+                      >
+                        <span class="node-label more" i18n="@@browse.load-more">Load more</span>
+                      </li>
+                    }
+                    @if (node.loading()) {
+                      <li class="status-row" role="presentation">
+                        <span role="status" i18n="@@repo.loading">Loading.</span>
+                      </li>
+                    }
+                    @if (node.membersHidden()) {
+                      <li class="status-row" role="presentation">
+                        <span i18n="@@browse.members-hidden">The members are shown to repository managers only.</span>
+                      </li>
+                    }
+                    @if (node.error(); as e) {
+                      <li class="status-row" role="presentation">
+                        <trove-error-notice [error]="e" (retry)="loadChildren(node, node.loaded())" />
+                      </li>
+                    }
+                  </ng-template>
+                </ul>
+              }
+            </li>
+          }
+        </ng-template>
+
+        @if (list.loaded() && roots().length === 0) {
+          <div class="pane-empty">
+            @if (filtered()) {
+              <p i18n="@@browse.empty">
+                No repository matches. Repositories you may not read are not listed.
+              </p>
+              <button mat-stroked-button type="button" (click)="clearFilters()" i18n="@@browse.clear-filters">
+                Clear all filters
+              </button>
+            } @else {
+              <p i18n="@@browse.empty-none">
+                There is no repository you may read yet.
+              </p>
+              @if (canCreateRepository()) {
+                <a mat-flat-button routerLink="/admin/repositories/new" i18n="@@repo.list.create">Create repository</a>
+              } @else {
+                <p class="hint" i18n="@@browse.empty-ask">
+                  Ask an administrator for read access to a repository.
+                </p>
+              }
+              <a routerLink="/help/user/files" i18n="@@browse.manual-link">How browsing works</a>
+            }
+          </div>
+        }
+        <ul
+          ngTree
+          #tree="ngTree"
+          class="tree"
+          aria-label="Repositories and files"
+          i18n-aria-label="@@browse.tree.label"
+          selectionMode="explicit"
+          [value]="treeValue()"
+          (valueChange)="onTreeValue($event)"
+        >
+          <ng-container *ngTemplateOutlet="nodeList; context: { nodes: roots(), parent: tree }" />
+        </ul>
+        @if (list.loading() && !list.loaded()) {
+          <p class="pane-status" role="status" i18n="@@repo.loading">Loading.</p>
+        }
+        @if (list.hasMore()) {
+          <p class="pane-more">
+            <button
+              mat-stroked-button
+              type="button"
+              [disabled]="list.loading()"
+              (click)="list.more()"
+              i18n="@@browse.more-repositories"
+            >
+              Load more repositories
+            </button>
+          </p>
+        }
+      </div>
+    </div>
   </section>
 
-  <section class="pane-details" aria-labelledby="detail-heading">
-    <h2 id="detail-heading" i18n="@@browse.details.heading">Details</h2>
+  <!-- The details pane: the path and the actions, then the content of the selection -->
+  <section class="pane pane-details" aria-labelledby="detail-heading">
+    <h2 id="detail-heading" class="visually-hidden" i18n="@@browse.details.heading">Details</h2>
     @if (selected(); as sel) {
-      <p class="back">
-        <button mat-button type="button" (click)="goRoot()">
+      <header class="pane-head details-head">
+        <button mat-button type="button" class="back" (click)="goRoot()">
           <span class="material-icons" aria-hidden="true">arrow_back</span>
           <ng-container i18n="@@browse.back">Back to the tree</ng-container>
         </button>
-      </p>
-      <p class="location" translate="no">
-        <strong>{{ sel.repo }}</strong
-        >{{ sel.path ? '/' + sel.path : '' }}
-      </p>
-
-      @if (actionFailure(); as f) {
-        <trove-error-notice [error]="f" />
-      }
-      @if (detailFailure(); as f) {
-        <trove-error-notice [error]="f" (retry)="detail.reload()" />
-      } @else if (detail.isLoading() && !valueOf(detail)) {
-        <p role="status" i18n="@@repo.loading">Loading.</p>
-      } @else {
+        <nav class="path" aria-label="Location" i18n-aria-label="@@browse.location">
+          <ol>
+            @for (c of crumbs(); track $index; let last = $last) {
+              <li translate="no">
+                @if (last) {
+                  <span aria-current="page">{{ c.label }}</span>
+                } @else {
+                  <a
+                    [routerLink]="c.commands"
+                    [queryParams]="{ tab: null }"
+                    queryParamsHandling="merge"
+                    >{{ c.label }}</a
+                  >
+                }
+              </li>
+            }
+          </ol>
+        </nav>
         <div
           id="browse-actions"
-          class="row-actions"
+          class="actions"
           role="toolbar"
           aria-label="Actions"
           i18n-aria-label="@@browse.actions"
         >
           @if (item(); as it) {
             @if (it.kind === 'file' && it.downloadUrl) {
-              <a mat-flat-button [href]="it.downloadUrl" download i18n="@@browse.download"
-                >Download</a
-              >
-              <trove-copy-button [value]="it.downloadUrl" [label]="copyUrl" />
+              <a mat-flat-button [href]="it.downloadUrl" download>
+                <span class="material-icons" aria-hidden="true">download</span>
+                <ng-container i18n="@@browse.download">Download</ng-container>
+              </a>
+              <trove-copy-button [value]="it.downloadUrl" [label]="copyUrl" icon="link" />
+            } @else if (it.kind === 'folder' && it.listingUrl) {
+              <trove-copy-button [value]="it.listingUrl" [label]="copyListing" icon="link" />
             }
             <trove-copy-button [value]="it.path" [label]="copyPath" />
           }
-          @if (folderPath() !== null && can().deploy) {
-            <button mat-stroked-button type="button" (click)="upload()" i18n="@@browse.upload">
-              Upload files
+          @if (repository()) {
+            <a mat-stroked-button routerLink="/setup" [queryParams]="{ repository: sel.repo }">
+              <span class="material-icons" aria-hidden="true">terminal</span>
+              <ng-container i18n="@@browse.client-setup">Client setup</ng-container>
+            </a>
+          }
+          @if (canUpload()) {
+            <button mat-stroked-button type="button" (click)="upload()">
+              <span class="material-icons" aria-hidden="true">upload</span>
+              <ng-container i18n="@@browse.upload">Upload files</ng-container>
             </button>
-            <button
-              mat-stroked-button
-              type="button"
-              (click)="newFolder()"
-              i18n="@@browse.new-folder"
-            >
-              New folder
+            <button mat-stroked-button type="button" (click)="newFolder()">
+              <span class="material-icons" aria-hidden="true">create_new_folder</span>
+              <ng-container i18n="@@browse.new-folder">New folder</ng-container>
             </button>
           }
           @if (item() && can().delete && sel.path !== '') {
-            <button mat-button type="button" (click)="remove()" i18n="@@browse.delete">
-              Delete
+            <button mat-button type="button" (click)="remove()">
+              <span class="material-icons" aria-hidden="true">delete</span>
+              <ng-container i18n="@@browse.delete">Delete</ng-container>
             </button>
           }
         </div>
+      </header>
 
+      <div class="pane-body details-body">
+        @if (actionFailure(); as f) {
+          <trove-error-notice [error]="f" />
+        }
         @if (deletion(); as d) {
           <div class="deleting">
             <span i18n="@@repo.deleting">Deleting</span>
@@ -234,145 +376,253 @@
             />
           </div>
         }
-
-        @if (repository(); as r) {
-          <dl class="facts">
-            <dt i18n="@@repo.col.class">Class</dt>
-            <dd>{{ classLabel(r.class) }}</dd>
-            <dt i18n="@@repo.col.format">Format</dt>
-            <dd translate="no">{{ r.format }}</dd>
-            <dt i18n="@@repo.field.description">Description</dt>
-            <dd>{{ r.description || '–' }}</dd>
-          </dl>
-          <p>
-            <a [routerLink]="['/admin/repositories', sel.repo]" i18n="@@browse.repo-config"
-              >Repository configuration</a
-            >
-          </p>
-        } @else if (item(); as it) {
+        @if (detailFailure(); as f) {
+          <trove-error-notice [error]="f" (retry)="detail.reload(); repositoryRead.reload()" />
+        } @else if (detailLoading()) {
+          <p class="pane-status" role="status" i18n="@@repo.loading">Loading.</p>
+        } @else if (selectionKind()) {
           <mat-tab-group
             animationDuration="0ms"
+            [mat-stretch-tabs]="false"
             [selectedIndex]="tabIndex()"
             (selectedIndexChange)="setTab($event)"
           >
-            <mat-tab [label]="tabGeneral">
-              <div class="tab">
-                <dl class="facts">
-                  <dt i18n="@@browse.fact.path">Path</dt>
-                  <dd translate="no">{{ it.path }}</dd>
-                  <dt i18n="@@browse.fact.kind">Kind</dt>
-                  <dd>
-                    @if (it.kind === 'file') {
-                      <ng-container i18n="@@browse.kind.file">File</ng-container>
-                    } @else {
-                      <ng-container i18n="@@browse.kind.folder">Folder</ng-container>
-                    }
-                  </dd>
-                  @if (it.kind === 'file') {
-                    <dt i18n="@@browse.fact.size">Size</dt>
-                    <dd translate="no">{{ it.size }} B</dd>
-                    <dt i18n="@@browse.fact.media">Media type</dt>
-                    <dd translate="no">{{ it.mediaType }}</dd>
-                  }
-                  <dt i18n="@@browse.fact.created">Created</dt>
-                  <dd>
-                    <time [attr.datetime]="it.created.at">{{
-                      it.created.at | date: 'medium'
-                    }}</time>
-                    @if (it.created.by) {
-                      <ng-container>
-                        <span i18n="@@browse.by">by</span>
-                        <span translate="no">{{ it.created.by }}</span></ng-container
-                      >
-                    }
-                  </dd>
-                  <dt i18n="@@browse.fact.modified">Last changed</dt>
-                  <dd>
-                    <time [attr.datetime]="it.modified.at">{{
-                      it.modified.at | date: 'medium'
-                    }}</time>
-                    @if (it.modified.by) {
-                      <ng-container>
-                        <span i18n="@@browse.by">by</span>
-                        <span translate="no">{{ it.modified.by }}</span></ng-container
-                      >
-                    }
-                  </dd>
-                  @if (it.kind === 'file' && it.contentStatus && it.contentStatus !== 'ok') {
-                    <dt i18n="@@browse.fact.content">Content</dt>
-                    <dd>
-                      <span class="material-icons inline bad" aria-hidden="true">error</span>
-                      @if (it.contentStatus === 'missing') {
-                        <ng-container i18n="@@browse.content.missing"
-                          >The stored content is missing.</ng-container
-                        >
-                      } @else {
-                        <ng-container i18n="@@browse.content.corrupt"
-                          >The stored content failed its checksum.</ng-container
-                        >
-                      }
-                    </dd>
-                  }
-                  @if (it.kind === 'file') {
-                    @for (d of digestNames; track d[0]) {
-                      @if (it.digests?.[d[0]]; as value) {
-                        <dt translate="no">{{ d[1] }}</dt>
-                        <dd>
-                          <code translate="no">{{ value }}</code>
-                          <trove-copy-button [value]="value" [label]="copyDigest" />
-                        </dd>
-                      }
-                    }
-                  }
-                </dl>
-              </div>
-            </mat-tab>
-            @if (it.kind === 'file') {
-              <mat-tab [label]="tabStats">
+            @for (t of tabNames(); track t) {
+              <mat-tab [label]="tabLabels[t]">
                 <div class="tab">
-                  @if (statsFailure(); as f) {
-                    <trove-error-notice [error]="f" (retry)="stats.reload()" />
-                  } @else if (valueOf(stats); as s) {
-                    <dl class="facts">
-                      <dt i18n="@@browse.stats.downloads">Downloads</dt>
-                      <dd translate="no">{{ s.downloads }}</dd>
-                      <dt i18n="@@browse.stats.last">Last download</dt>
-                      <dd>
-                        @if (s.lastDownloadAt; as at) {
-                          <time [attr.datetime]="at">{{ at | date: 'medium' }}</time>
+                  @switch (t) {
+                    @case ('contents') {
+                      <ng-container *ngTemplateOutlet="contents; context: { node: selectedNode() }" />
+                    }
+                    @case ('statistics') {
+                      @if (statsFailure(); as f) {
+                        <trove-error-notice [error]="f" (retry)="stats.reload()" />
+                      } @else if (valueOf(stats); as s) {
+                        <dl class="facts">
+                          <dt i18n="@@browse.stats.downloads">Downloads</dt>
+                          <dd translate="no">{{ s.downloads }}</dd>
+                          <dt i18n="@@browse.stats.last">Last download</dt>
+                          <dd>
+                            @if (s.lastDownloadAt; as at) {
+                              <time [attr.datetime]="at">{{ at | date: 'medium' }}</time>
+                            } @else {
+                              –
+                            }
+                          </dd>
+                          <dt i18n="@@browse.stats.by">Last downloader</dt>
+                          <dd translate="no">{{ s.lastDownloader ?? '–' }}</dd>
+                        </dl>
+                        <p class="hint" i18n="@@browse.stats.hint">
+                          Counts reach the database within a minute of a download.
+                        </p>
+                      } @else {
+                        <p role="status" i18n="@@repo.loading">Loading.</p>
+                      }
+                    }
+                    @case ('api') {
+                      <h3 i18n="@@browse.api.json">The item as the API describes it</h3>
+                      <pre class="code-block" translate="no" tabindex="0">{{ itemJson() }}</pre>
+                      @if (curl()) {
+                        <h3 i18n="@@browse.api.curl">The same request with curl</h3>
+                        <pre class="code-block" translate="no" tabindex="0">{{ curl() }}</pre>
+                      }
+                      @if (downloadCurl()) {
+                        <h3 i18n="@@browse.api.download">Download with curl</h3>
+                        <pre class="code-block" translate="no" tabindex="0">{{ downloadCurl() }}</pre>
+                      }
+                    }
+                    @default {
+                      @if (repository(); as r) {
+                        <dl class="facts">
+                          <dt i18n="@@repo.col.class">Class</dt>
+                          <dd>
+                            {{ classLabel(r.class) }}
+                            @if (r.class === 'remote') {
+                              <span class="hint" i18n="@@browse.remote-hint">Shows the content cached so far.</span>
+                            }
+                          </dd>
+                          <dt i18n="@@repo.col.format">Format</dt>
+                          <dd translate="no">{{ r.format }}</dd>
+                          <dt i18n="@@repo.field.description">Description</dt>
+                          <dd>{{ r.description || '–' }}</dd>
+                          @if (fullRepository(); as full) {
+                            @if (full.disabled) {
+                              <dt i18n="@@browse.fact.status">Status</dt>
+                              <dd>
+                                <span class="material-icons inline" aria-hidden="true">block</span>
+                                <ng-container i18n="@@repo.badge.disabled">disabled</ng-container>
+                              </dd>
+                            }
+                            @if (full.remote?.url; as url) {
+                              <dt i18n="@@browse.fact.upstream">Upstream</dt>
+                              <dd translate="no">{{ url }}</dd>
+                            }
+                            @if (full.project) {
+                              <dt i18n="@@browse.fact.project">Project</dt>
+                              <dd translate="no">{{ full.project }}</dd>
+                            }
+                            @if (full.createdAt) {
+                              <dt i18n="@@browse.fact.created">Created</dt>
+                              <dd>
+                                <time [attr.datetime]="full.createdAt">{{ full.createdAt | date: 'medium' }}</time>
+                              </dd>
+                            }
+                            <dt i18n="@@browse.fact.activity">Last activity</dt>
+                            <dd>
+                              @if (full.lastActivityAt; as at) {
+                                <time [attr.datetime]="at" [attr.title]="at | date: 'medium'">{{ since(at) }}</time>
+                              } @else {
+                                –
+                              }
+                            </dd>
+                          }
+                        </dl>
+                        <p class="links">
+                          @if (fullRepository()) {
+                            <a [routerLink]="['/admin/repositories', sel.repo]" i18n="@@browse.repo-config"
+                              >Repository configuration</a
+                            >
+                          }
+                        </p>
+                        @if (r.class === 'virtual') {
+                          <h3 i18n="@@browse.members">Resolves from</h3>
+                          @if (fullRepository()) {
+                            @if (members().length > 0) {
+                              <ol class="members">
+                                @for (m of members(); track m) {
+                                  <li>
+                                    <a [routerLink]="['/browse', m]" translate="no">{{ m }}</a>
+                                  </li>
+                                }
+                              </ol>
+                            } @else {
+                              <p class="hint" i18n="@@browse.members-none">This repository has no members yet.</p>
+                            }
+                          } @else {
+                            <p class="hint" i18n="@@browse.members-hidden">The members are shown to repository managers only.</p>
+                          }
                         } @else {
-                          –
+                          <h3 i18n="@@browse.tab.contents">Contents</h3>
+                          <ng-container *ngTemplateOutlet="contents; context: { node: selectedNode() }" />
                         }
-                      </dd>
-                      <dt i18n="@@browse.stats.by">Last downloader</dt>
-                      <dd translate="no">{{ s.lastDownloader ?? '–' }}</dd>
-                    </dl>
-                    <p class="hint" i18n="@@browse.stats.hint">
-                      Counts reach the database within a minute of a download.
-                    </p>
-                  } @else {
-                    <p role="status" i18n="@@repo.loading">Loading.</p>
+                      } @else if (item(); as it) {
+                        <dl class="facts">
+                          <dt i18n="@@browse.fact.path">Path</dt>
+                          <dd translate="no">{{ it.path }}</dd>
+                          <dt i18n="@@browse.fact.kind">Kind</dt>
+                          <dd>
+                            @if (it.kind === 'file') {
+                              <ng-container i18n="@@browse.kind.file">File</ng-container>
+                            } @else {
+                              <ng-container i18n="@@browse.kind.folder">Folder</ng-container>
+                            }
+                          </dd>
+                          @if (it.kind === 'file') {
+                            <dt i18n="@@browse.fact.size">Size</dt>
+                            <dd translate="no">{{ it.size }} B</dd>
+                            <dt i18n="@@browse.fact.media">Media type</dt>
+                            <dd translate="no">{{ it.mediaType }}</dd>
+                          }
+                          <dt i18n="@@browse.fact.created">Created</dt>
+                          <dd>
+                            <time [attr.datetime]="it.created.at">{{ it.created.at | date: 'medium' }}</time>
+                            @if (it.created.by) {
+                              <ng-container>
+                                &ngsp;<span i18n="@@browse.by">by</span>&ngsp;<span translate="no">{{ it.created.by }}</span></ng-container
+                              >
+                            }
+                          </dd>
+                          <dt i18n="@@browse.fact.modified">Last changed</dt>
+                          <dd>
+                            <time [attr.datetime]="it.modified.at">{{ it.modified.at | date: 'medium' }}</time>
+                            @if (it.modified.by) {
+                              <ng-container>
+                                &ngsp;<span i18n="@@browse.by">by</span>&ngsp;<span translate="no">{{ it.modified.by }}</span></ng-container
+                              >
+                            }
+                          </dd>
+                          @if (it.kind === 'file' && it.contentStatus && it.contentStatus !== 'ok') {
+                            <dt i18n="@@browse.fact.content">Content</dt>
+                            <dd>
+                              <span class="material-icons inline bad" aria-hidden="true">error</span>
+                              @if (it.contentStatus === 'missing') {
+                                <ng-container i18n="@@browse.content.missing"
+                                  >The stored content is missing.</ng-container
+                                >
+                              } @else {
+                                <ng-container i18n="@@browse.content.corrupt"
+                                  >The stored content failed its checksum.</ng-container
+                                >
+                              }
+                            </dd>
+                          }
+                          @if (it.kind === 'file') {
+                            @for (d of digestNames; track d[0]) {
+                              @if (it.digests?.[d[0]]; as value) {
+                                <dt translate="no">{{ d[1] }}</dt>
+                                <dd class="digest">
+                                  <code translate="no">{{ value }}</code>
+                                  <trove-copy-button [value]="value" [label]="copyDigest" />
+                                </dd>
+                              }
+                            }
+                          }
+                        </dl>
+                      }
+                    }
                   }
                 </div>
               </mat-tab>
             }
-            <mat-tab [label]="tabApi">
-              <div class="tab">
-                <h3 i18n="@@browse.api.json">The item as the API describes it</h3>
-                <pre class="code-block" translate="no" tabindex="0">{{ itemJson() }}</pre>
-                <h3 i18n="@@browse.api.curl">The same request with curl</h3>
-                <pre class="code-block" translate="no" tabindex="0">{{ curl() }}</pre>
-                @if (downloadCurl()) {
-                  <h3 i18n="@@browse.api.download">Download with curl</h3>
-                  <pre class="code-block" translate="no" tabindex="0">{{ downloadCurl() }}</pre>
-                }
-              </div>
-            </mat-tab>
           </mat-tab-group>
         }
-      }
+      </div>
     } @else {
-      <p class="empty" i18n="@@browse.none">Select a repository, folder or file in the tree.</p>
+      <div class="pane-empty details-empty">
+        <span class="material-icons empty-icon" aria-hidden="true">folder_open</span>
+        <p class="empty-title" i18n="@@browse.none-title">Nothing selected</p>
+        <p class="empty" i18n="@@browse.none">Select a repository, folder or file in the tree.</p>
+        <a routerLink="/help/user/files" i18n="@@browse.manual-link">How browsing works</a>
+      </div>
     }
   </section>
 </div>
+
+<!-- The children of a repository or folder as the shared data table (R-UI-010) -->
+<ng-template #contents let-node="node">
+  @if (node) {
+    <trove-data-table
+      [caption]="contentsCaption"
+      [columns]="contentColumns"
+      [loaded]="node.loaded()"
+      [loading]="node.loading()"
+      [error]="node.error()"
+      [empty]="node.children().length === 0"
+      [emptyText]="emptyFolder"
+      [hasMore]="node.hasMore()"
+      (more)="loadChildren(node, true)"
+      (retry)="loadChildren(node, node.loaded())"
+    >
+      @for (child of node.children(); track child.id) {
+        <tr>
+          <th scope="row">
+            <a class="entry" [routerLink]="commandsOf(child)" [queryParams]="{ tab: null }" queryParamsHandling="merge">
+              <span class="material-icons" aria-hidden="true">{{ iconOf(child) }}</span>
+              <span class="entry-name" translate="no">{{ child.label }}</span>
+            </a>
+          </th>
+          <td class="num" translate="no">{{ sizeOf(child) }}</td>
+          <td>
+            @if (child.meta().modifiedAt; as at) {
+              <time [attr.datetime]="at" [attr.title]="at | date: 'medium'">{{ since(at) }}</time>
+            } @else {
+              –
+            }
+          </td>
+        </tr>
+      }
+    </trove-data-table>
+  } @else {
+    <p class="pane-status" role="status" i18n="@@repo.loading">Loading.</p>
+  }
+</ng-template>

@@ -35,8 +35,7 @@ test('R-UI-025 R-UI-026 a group, a policy with its preview, and the effect for b
   await signInWithKeycloak(bob, 'bob', bobPassword);
   const bobSearch = async () => {
     await bob.goto('/ui/en/browse');
-    await bob.getByLabel('Repository key').fill(repoKey);
-    await bob.getByRole('button', { name: 'Search' }).click();
+    await bob.getByLabel('Filter repositories').fill(repoKey);
   };
   await bobSearch();
   await expect(bob.getByText('No repository matches.')).toBeVisible();
@@ -96,7 +95,7 @@ test('R-UI-025 R-UI-026 a group, a policy with its preview, and the effect for b
     await expect(bob.getByRole('treeitem', { name: new RegExp(repoKey) })).toBeVisible();
     await bob.goto(`/ui/en/browse/${repoKey}`);
     await bob.getByRole('treeitem', { name: /docs/ }).click();
-    await expect(bob.getByRole('heading', { name: 'Details' })).toBeVisible();
+    await expect(bob.getByRole('navigation', { name: 'Location' })).toContainText('docs');
     await expectAccessible(bob, 'the file tree of a consumer');
     // The same read on more requests, which land on other replicas, shows the grant everywhere.
     for (let i = 0; i < 4; i++) {

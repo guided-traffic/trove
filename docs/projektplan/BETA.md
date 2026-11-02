@@ -390,7 +390,11 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 **The owner's requests during the run (2026-11-02)**
 - 🟡 The Browse screen reinvented: a real two-pane browser over the full height with a compact tree toolbar (filter as you
   type, filter panel with chips, sort), a details pane with the selection's path and actions, folders as the shared data
-  table, clear empty states (R-UI-010, R-UI-011; owner: "the worst design I have ever seen")
+  table, clear empty states (R-UI-010, R-UI-011; owner: "the worst design I have ever seen";
+  [Q-UI-98](../spec/api-and-ui.md#q-ui-98--the-file-browser-is-two-panes-with-a-toolbar-and-a-details-header)); built,
+  625 web tests and axe in English and German, light and dark, against a stub API; open: the journeys `02` and `03`
+  (updated) on kind, whose dev cluster cannot roll out the current main (its database recorded `00019_projects.sql`
+  before phase 5a split it)
 - 🟢 The manual uses the width of the screen (phase 8, beta documentation; Q-UI-97)
 
 **Phase**

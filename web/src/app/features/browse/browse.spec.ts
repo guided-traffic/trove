@@ -1,6 +1,13 @@
 import { Router } from '@angular/router';
 import { UPLOAD_LIMIT_BYTES } from '../../api/files-api';
-import { FakeFilesApi, FakeNode } from '../../api/testing/fakes-catalog';
+import {
+  FakeFilesApi,
+  FakeNode,
+  FakeRepositoriesApi,
+  GENERIC_FORMAT,
+  PACKAGE_FORMAT,
+} from '../../api/testing/fakes-catalog';
+import { RepositoriesApi, Repository } from '../../api/repositories-api';
 import { FilesApi } from '../../api/files-api';
 import { ApiError } from '../../api/problem';
 import { SessionApi } from '../../api/session-api';
@@ -38,7 +45,11 @@ async function open(
 
 const items = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>('[role="treeitem"]')];
 const labelOf = (el: HTMLElement) =>
-  el.querySelector('.node-label')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+  (
+    el.querySelector(':scope > .node-label .node-name') ?? el.querySelector(':scope > .node-label')
+  )?.textContent
+    ?.replace(/\s+/g, ' ')
+    .trim() ?? '';
 
 describe('File tree', () => {
   it('R-UI-010 the tree lists the readable repositories as tree items with the ARIA tree attributes, and passes the accessibility check', async () => {
@@ -147,7 +158,7 @@ describe('File tree', () => {
 
   it('R-UI-012 uploads a file with progress, the SHA-256 in Repr-Digest and create-only unless "Replace" is ticked; a file above the limit is refused before any request', async () => {
     const { root, fixture, files } = await open({ repo: 'generic-local', path: 'releases' });
-    button(root, 'Upload files').click();
+    button(root, /Upload files/).click();
     await settle(fixture);
     const body = root.ownerDocument.body;
     expect(body.querySelector<HTMLInputElement>('#upload-folder')?.value).toBe('releases');
@@ -187,7 +198,7 @@ describe('File tree', () => {
     const { root, fixture } = await open({ repo: 'generic-local', path: 'releases' }, (f) => {
       f.uploadError = new ApiError(403, { code: 'not_admitted', detail: 'no' }, null);
     });
-    button(root, 'Upload files').click();
+    button(root, /Upload files/).click();
     await settle(fixture);
     const body = root.ownerDocument.body;
     const drop = new Event('drop', { bubbles: true, cancelable: true });
@@ -217,7 +228,7 @@ describe('File tree', () => {
         };
       },
     );
-    button(root, 'Delete').click();
+    button(root, /Delete$/).click();
     await settle(fixture);
     const body = root.ownerDocument.body;
     expect(text(body)).toContain('more than 100 items');
@@ -241,7 +252,7 @@ describe('File tree', () => {
       repo: 'generic-local',
       path: 'readme.txt',
     });
-    button(root, 'Delete').click();
+    button(root, /Delete$/).click();
     await settle(fixture);
     const body = root.ownerDocument.body;
     expect(text(body)).toContain('Delete readme.txt?');
@@ -298,4 +309,202 @@ describe('File tree', () => {
     await settle(fixture);
     expect(root.ownerDocument.activeElement?.closest('#browse-actions')).toBeTruthy();
   });
+
 });
+
+// The two-pane browser (R-UI-010, R-UI-011, Q-UI-97).
+const repo = (over: Partial<Repository> & Pick<Repository, 'key' | 'class' | 'format'>): Repository => ({
+  description: '',
+  disabled: false,
+  ...over,
+});
+
+async function openWith(
+  inputs: Record<string, unknown>,
+  repositories: Repository[],
+  options: { capabilities?: readonly string[]; allow?: (c: { action: string }) => boolean } = {},
+) {
+  const rendered = await renderScreen(Browse, {
+    inputs,
+    ...(options.capabilities ? { capabilities: options.capabilities } : {}),
+    setup: (get) => {
+      if (options.allow) (get(SessionApi) as FakeSessionApi).allow = options.allow;
+      const repos = get(RepositoriesApi) as FakeRepositoriesApi;
+      repos.repositories = repositories;
+      repos.formatsResult = [GENERIC_FORMAT, PACKAGE_FORMAT];
+      const files = get(FilesApi) as FakeFilesApi;
+      const nodes = files.tree.get('generic-local')!;
+      for (const r of repositories) files.tree.set(r.key, nodes.map((n) => ({ ...n })));
+      vi.spyOn(get(Router), 'navigate').mockResolvedValue(true);
+    },
+  });
+  return { ...rendered, router: rendered.get(Router) };
+}
+
+const MIXED = [
+  repo({ key: 'files', class: 'local', format: 'generic', description: 'Build outputs' }),
+  repo({ key: 'npm-local', class: 'local', format: 'npm' }),
+  repo({ key: 'npm-cache', class: 'remote', format: 'npm' }),
+  repo({ key: 'npm-all', class: 'virtual', format: 'npm', virtual: { members: ['npm-local', 'npm-cache'] } }),
+];
+
+describe('Browser panes', () => {
+  it('R-UI-010 the screen has a tree pane and a details pane, a filter field, a count, and passes axe', async () => {
+    const { root } = await openWith({}, MIXED);
+    expect(root.querySelector('.pane-tree [role="tree"]')).toBeTruthy();
+    expect(root.querySelector('.pane-details')).toBeTruthy();
+    expect(root.querySelector('input[type=search][aria-label="Filter repositories"]')).toBeTruthy();
+    expect(text(root.querySelector('.pane-count')!)).toBe('Repositories: 4');
+    expect(root.querySelector('.tree-toolbar button[type=submit]')).toBeNull();
+    expect(text(root)).toContain('Nothing selected');
+    await expectAccessible(root);
+  });
+
+  it('R-UI-010 typing in the filter field narrows the repositories after a pause, without a search button', async () => {
+    const { root, fixture, router } = await openWith({}, MIXED);
+    const input = root.querySelector<HTMLInputElement>('input[type=search]')!;
+    type(input, 'npm');
+    expect(router.navigate).not.toHaveBeenCalled();
+    await sleep(fixture, 320);
+    expect(router.navigate).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { q: 'npm' }, replaceUrl: true }),
+    );
+  });
+
+  it('R-UI-010 an applied class and format show as removable chips; a chip removes its filter', async () => {
+    const { root, fixture, router } = await openWith({ class: 'local', format: 'npm' }, MIXED);
+    const chips = [...root.querySelectorAll('.chip')].map(text);
+    expect(chips).toEqual(['Class: Localclose', 'Format: npmclose']);
+    expect(text(root.querySelector('.filter-count')!)).toBe('2');
+    root.querySelector<HTMLButtonElement>('.chip button[aria-label="Remove the filter Class: Local"]')!.click();
+    await settle(fixture);
+    expect(router.navigate).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { class: null } }),
+    );
+  });
+
+  it('R-UI-010 the filter panel sets class and format, replaces the tree while open and clears all', async () => {
+    const { root, fixture, router } = await openWith({}, MIXED);
+    button(root, /Filters/).click();
+    await settle(fixture);
+    expect(root.querySelector('.tree-scroll')?.hasAttribute('hidden')).toBe(true);
+    button(root, /^Class/).click();
+    await settle(fixture);
+    const local = [...root.querySelectorAll<HTMLInputElement>('input[name="tree-class"]')][2]!;
+    local.click();
+    await settle(fixture);
+    button(root, 'Apply filters').click();
+    await settle(fixture);
+    expect(router.navigate).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { class: 'local', format: null } }),
+    );
+    expect(root.querySelector('.tree-scroll')?.hasAttribute('hidden')).toBe(false);
+  });
+
+  it('R-UI-010 the sort menu offers key and class order; the class order lists virtual before local before remote', async () => {
+    const { root, fixture, router } = await openWith({ sort: 'class' }, MIXED);
+    const names = items(root).map(labelOf);
+    expect(names).toEqual(['npm-all', 'files', 'npm-local', 'npm-cache']);
+    root.querySelector<HTMLButtonElement>('.sort-button')!.click();
+    await settle(fixture);
+    const entries = [...root.ownerDocument.querySelectorAll('[role="menuitemradio"]')];
+    expect(entries.map((e) => e.getAttribute('aria-checked'))).toEqual(['false', 'true']);
+    (entries[0] as HTMLElement).click();
+    await settle(fixture);
+    expect(router.navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { sort: null } }));
+  });
+
+  it('R-UI-010 a virtual repository lists its members in resolution order labelled "resolves from"; a remote one is labelled cache', async () => {
+    const { root, fixture } = await openWith({ sort: 'class' }, MIXED);
+    expect(text(items(root).find((i) => labelOf(i) === 'npm-cache')!)).toContain('cache');
+    const virtual = items(root).find((i) => labelOf(i) === 'npm-all')!;
+    virtual.focus();
+    virtual.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    (root.ownerDocument.activeElement ?? virtual).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
+    );
+    await settle(fixture);
+    const members = items(root).filter((i) => i.getAttribute('aria-level') === '2');
+    expect(members.map(labelOf)).toEqual(['npm-local', 'npm-cache']);
+    for (const m of members) expect(text(m)).toContain('resolves from');
+  });
+
+  it('R-UI-010 a repository shows its summary, a link to its setup and its content as the shared table', async () => {
+    const { root } = await openWith({ repo: 'files', path: '' }, MIXED);
+    expect(text(root.querySelector('.path')!)).toBe('files');
+    expect(text(root)).toContain('Build outputs');
+    expect(root.querySelector('a[href*="/setup"]')).toBeTruthy();
+    const rows = [...root.querySelectorAll('trove-data-table tbody th')].map(text);
+    expect(rows).toEqual(expect.arrayContaining([expect.stringContaining('releases'), expect.stringContaining('readme.txt')]));
+  });
+});
+
+describe('Browser empty states and actions', () => {
+  it('R-UI-010 with no repository an administrator is offered to create one, others are told to ask for access', async () => {
+    const admin = await openWith({}, []);
+    expect(text(admin.root)).toContain('There is no repository you may read yet.');
+    expect(admin.root.querySelector('.pane-tree a[href*="/admin/repositories/new"]')).toBeTruthy();
+    expect(admin.root.querySelector('.pane-tree a[href*="/help/user/files"]')).toBeTruthy();
+    await expectAccessible(admin.root);
+
+    const user = await openWith({}, [], { capabilities: [] });
+    expect(user.root.querySelector('a[href*="/admin/repositories/new"]')).toBeNull();
+    expect(text(user.root)).toContain('Ask an administrator for read access');
+  });
+
+  it('R-UI-010 a filter that matches nothing says so and offers to clear all filters', async () => {
+    const { root, fixture, router } = await openWith({ q: 'zzz' }, MIXED);
+    expect(text(root)).toContain('No repository matches.');
+    button(root, 'Clear all filters').click();
+    await settle(fixture);
+    expect(router.navigate).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { q: null, class: null, format: null } }),
+    );
+  });
+
+  it('R-UI-011 a file offers download and copy, a folder of a generic local repository offers upload and new folder, a package repository offers neither', async () => {
+    const file = await openWith({ repo: 'files', path: 'readme.txt' }, MIXED);
+    expect(text(file.root.querySelector('#browse-actions')!)).toContain('Download');
+    expect(text(file.root.querySelector('#browse-actions')!)).not.toContain('Upload');
+    expect(file.root.querySelector('button[aria-label="Copy download URL"]')).toBeTruthy();
+    expect(file.root.querySelector('button[aria-label="Copy path"]')).toBeTruthy();
+
+    const folder = await openWith({ repo: 'files', path: 'releases' }, MIXED);
+    expect(text(folder.root.querySelector('#browse-actions')!)).toContain('Upload files');
+    expect(text(folder.root.querySelector('#browse-actions')!)).toContain('New folder');
+
+    const npm = await openWith({ repo: 'npm-local', path: '' }, MIXED);
+    expect(text(npm.root.querySelector('#browse-actions')!)).not.toContain('Upload');
+    expect(text(npm.root.querySelector('#browse-actions')!)).toContain('Client setup');
+  });
+
+  it('R-UI-011 without the delete permission there is no Delete; without deploy no upload', async () => {
+    const { root } = await openWith({ repo: 'files', path: 'releases' }, MIXED, {
+      allow: (c) => c.action === 'read',
+    });
+    const actions = text(root.querySelector('#browse-actions')!);
+    expect(actions).not.toContain('Delete');
+    expect(actions).not.toContain('Upload');
+  });
+
+  it('R-UI-010 on a narrow screen the details pane has a way back to the tree', async () => {
+    const { root, router, fixture } = await openWith({ repo: 'files', path: 'readme.txt' }, MIXED);
+    expect(root.querySelector('.browse')?.classList.contains('has-selection')).toBe(true);
+    button(root, /Back to the tree/).click();
+    await settle(fixture);
+    expect(router.navigate).toHaveBeenCalledWith(['/browse'], expect.anything());
+  });
+
+  it('R-UI-010 a folder is browsed from the right pane: its children link to their own address', async () => {
+    const { root } = await openWith({ repo: 'files', path: 'releases' }, MIXED);
+    const link = [...root.querySelectorAll<HTMLAnchorElement>('trove-data-table a.entry')].find((a) =>
+      text(a).includes('1.0'),
+    );
+    expect(link?.getAttribute('href')).toContain('/browse/files/releases/1.0');
+  });
+});
+

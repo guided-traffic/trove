@@ -17,7 +17,7 @@ import { Notifier } from '../core/notifier';
       [title]="label()"
       (click)="copy()"
     >
-      <span class="material-icons" aria-hidden="true">content_copy</span>
+      <span class="material-icons" aria-hidden="true">{{ icon() }}</span>
     </button>
   `,
 })
@@ -26,6 +26,8 @@ export class CopyButton {
 
   readonly value = input.required<string>();
   readonly label = input($localize`:@@copy.label:Copy`);
+  /** The Material icon; the default is the copy glyph, a different one tells apart two copy buttons side by side. */
+  readonly icon = input('content_copy');
 
   protected async copy(): Promise<void> {
     try {

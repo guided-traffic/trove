@@ -1,7 +1,27 @@
-import { signal } from '@angular/core';
+import { WritableSignal, signal } from '@angular/core';
 import { ApiError } from '../../api/problem';
 
-export type NodeKind = 'repository' | 'folder' | 'file';
+/** `member` is a member of a virtual repository, shown under it in resolution order (R-UI-010). */
+export type NodeKind = 'repository' | 'folder' | 'file' | 'member';
+
+/** What the tree shows next to a node: a repository's class and format, the size and time of an entry. */
+export interface NodeMeta {
+  readonly cls?: string;
+  readonly format?: string;
+  readonly disabled?: boolean;
+  /** Files only, from the listing. */
+  readonly size?: number;
+  readonly modifiedAt?: string;
+  /** For a member of a virtual repository: the key of the virtual repository, and the 1-based position. */
+  readonly via?: string;
+  readonly position?: number;
+}
+
+/** The id of a node: key and path joined by a slash, or `<via>><key>` for a virtual repository's member. */
+export function nodeId(repository: string, path: string, via?: string): string {
+  if (via) return `${via}>${repository}`;
+  return path === '' ? repository : `${repository}/${path}`;
+}
 
 /** Prefix of the value of a "Load more" entry in the tree. */
 export const MORE_PREFIX = 'more:';
@@ -21,26 +41,28 @@ export class TreeNode {
   /** The cursor of the next page of children, null when the last page was read. */
   cursor: string | null = null;
 
+  /** Class, format and flags of a repository node; absent until the list or the repository read says them. */
+  readonly meta: WritableSignal<NodeMeta>;
+  /** True when a virtual repository's members are not readable by the caller (consumer view). */
+  readonly membersHidden = signal(false);
+
   constructor(
     readonly repository: string,
     /** The path inside the repository; empty for the repository itself. */
     readonly path: string,
     readonly kind: NodeKind,
     readonly label: string,
-    /** For a repository, the class and format, shown next to its key. */
-    readonly meta: {
-      readonly cls?: string;
-      readonly format?: string;
-      readonly disabled?: boolean;
-    } = {},
-  ) {}
-
-  get id(): string {
-    return this.path === '' ? this.repository : `${this.repository}/${this.path}`;
+    meta: NodeMeta = {},
+  ) {
+    this.meta = signal(meta);
+    this.id = nodeId(repository, path, meta.via);
   }
 
+  /** The tree value of the node; a member of a virtual repository is `<virtual>><member>`. */
+  readonly id: string;
+
   get expandable(): boolean {
-    return this.kind !== 'file';
+    return this.kind === 'repository' || this.kind === 'folder';
   }
 }
 

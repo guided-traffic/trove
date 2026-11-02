@@ -1,0 +1,406 @@
+// The file browser (R-UI-010, Q-UI-98): two bordered panes that fill the height of the content area,
+// a tree pane with a compact toolbar and a details pane with a path, actions and tabs. Global on
+// purpose: the filter panel, the data table and the copy buttons are components whose DOM the
+// screen's own styles would not reach. Colours and lengths come from the tokens only (R-UI-044).
+
+.browse {
+  --browse-height: max(26rem, calc(100dvh - 13.5rem));
+
+  display: grid;
+  grid-template-columns: clamp(18rem, 30%, 26rem) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: var(--trove-space-3);
+  block-size: var(--browse-height);
+
+  .pane {
+    display: flex;
+    flex-direction: column;
+    min-block-size: 0;
+    min-inline-size: 0;
+    border: 1px solid var(--trove-border);
+    border-radius: var(--trove-radius-m);
+    background: var(--trove-surface-raised);
+    overflow: hidden;
+  }
+
+  .pane-head {
+    display: flex;
+    flex: none;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--trove-space-2);
+    padding: var(--trove-space-2) var(--trove-space-3);
+    border-block-end: 1px solid var(--trove-border);
+    background: var(--trove-table-head-bg);
+  }
+
+  .pane-body {
+    flex: 1 1 auto;
+    min-block-size: 0;
+    overflow: auto;
+  }
+
+  .pane-status,
+  .pane-more {
+    margin: var(--trove-space-3);
+    color: var(--trove-text-muted);
+  }
+
+  .pane-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--trove-space-3);
+    padding: var(--trove-space-4);
+    color: var(--trove-text-muted);
+
+    p {
+      margin: 0;
+    }
+  }
+
+  // ---- Tree pane -------------------------------------------------------------------------------
+
+  .tree-toolbar {
+    gap: var(--trove-space-2);
+
+    .filter-toggle {
+      white-space: nowrap;
+    }
+  }
+
+  .tree-tools {
+    display: flex;
+    flex: 1 1 100%;
+    align-items: center;
+    gap: var(--trove-space-1);
+  }
+
+  .filter-field {
+    display: flex;
+    flex: 1 1 100%;
+    align-items: center;
+    gap: var(--trove-space-1);
+    min-inline-size: 0;
+    min-block-size: 36px;
+    padding-inline: var(--trove-space-2);
+    border: 1px solid var(--mat-sys-outline);
+    border-radius: var(--trove-radius-s);
+    background: var(--trove-surface);
+
+    &:focus-within {
+      outline: var(--trove-focus-ring);
+      outline-offset: 1px;
+    }
+
+    .material-icons {
+      font-size: 1.125rem;
+      color: var(--trove-text-muted);
+    }
+  }
+
+  .filter-input {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    padding: var(--trove-space-1) 0;
+    border: 0;
+    background: transparent;
+    color: var(--trove-on-surface);
+    font: inherit;
+    outline: none;
+
+    &::placeholder {
+      color: var(--trove-text-muted);
+      opacity: 1;
+    }
+  }
+
+  .pane-chips {
+    margin: 0;
+    padding: var(--trove-space-2) var(--trove-space-3) 0;
+  }
+
+  .pane-count {
+    flex: none;
+    margin: 0 0 0 auto;
+    color: var(--trove-text-muted);
+    font-size: var(--trove-text-muted-size);
+  }
+
+  .tree-filters {
+    .panel {
+      border: 0;
+      border-radius: 0;
+      box-shadow: none;
+      background: transparent;
+    }
+
+    .check-list {
+      max-block-size: 18rem;
+    }
+  }
+
+  .tree-scroll {
+    padding: var(--trove-space-1) var(--trove-space-2) var(--trove-space-3);
+
+    &[hidden] {
+      display: none;
+    }
+  }
+
+  .tree,
+  .tree ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .tree ul {
+    padding-inline-start: var(--trove-space-4);
+  }
+
+  [ngTreeItem] {
+    outline: none;
+
+    > .node-label {
+      display: flex;
+      align-items: center;
+      gap: var(--trove-space-1);
+      min-block-size: 32px;
+      padding: 0 var(--trove-space-2) 0 0;
+      border-radius: var(--trove-radius-s);
+      cursor: pointer;
+
+      &:hover {
+        background: var(--trove-row-hover);
+      }
+    }
+
+    &[aria-selected='true'] > .node-label {
+      background: var(--trove-accent-container);
+      color: var(--trove-on-accent-container);
+      font-weight: 600;
+    }
+
+    &:focus-visible > .node-label,
+    &[data-active='true']:focus > .node-label {
+      outline: var(--trove-focus-ring);
+      outline-offset: -2px;
+    }
+  }
+
+  .node-chevron {
+    flex: none;
+    inline-size: 1.25rem;
+    font-size: 1.25rem;
+    color: var(--trove-text-muted);
+  }
+
+  .node-icon {
+    flex: none;
+    font-size: 1.25rem;
+    color: var(--trove-text-muted);
+  }
+
+  [aria-selected='true'] > .node-label :is(.node-chevron, .node-icon) {
+    color: inherit;
+  }
+
+  .node-name {
+    flex: 0 1 auto;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .node-size {
+    margin-inline-start: auto;
+    color: var(--trove-text-muted);
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
+
+  .tag {
+    flex: none;
+    padding: 0 var(--trove-space-1);
+    border: 1px solid var(--trove-border-strong);
+    border-radius: var(--trove-radius-s);
+    color: inherit;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    line-height: 1.125rem;
+    white-space: nowrap;
+  }
+
+  .status-row {
+    padding: var(--trove-space-1) var(--trove-space-2);
+    color: var(--trove-text-muted);
+    font-size: var(--trove-text-muted-size);
+  }
+
+  // ---- Details pane ----------------------------------------------------------------------------
+
+  .details-head {
+    justify-content: space-between;
+    row-gap: var(--trove-space-2);
+  }
+
+  .back {
+    display: none;
+  }
+
+  .path {
+    flex: 1 1 100%;
+    min-inline-size: 0;
+
+    ol {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    li + li::before {
+      content: '/';
+      margin-inline: var(--trove-space-2);
+      color: var(--trove-text-muted);
+    }
+
+    li {
+      overflow-wrap: anywhere;
+    }
+
+    [aria-current='page'] {
+      font-weight: 600;
+    }
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--trove-space-2);
+
+    .material-icons {
+      margin-inline-end: var(--trove-space-1);
+      font-size: 1.125rem;
+    }
+
+    trove-copy-button .material-icons {
+      margin: 0;
+    }
+  }
+
+  .details-body {
+    padding: var(--trove-space-2) var(--trove-space-4) var(--trove-space-4);
+  }
+
+  .tab {
+    padding-block: var(--trove-space-3);
+
+    h3 {
+      margin-block: var(--trove-space-4) var(--trove-space-2);
+      font: var(--mat-sys-title-small);
+    }
+  }
+
+  .digest {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--trove-space-1);
+
+    code {
+      min-inline-size: 0;
+      padding-block: var(--trove-space-2);
+      font-size: 0.8125rem;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  .links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--trove-space-4);
+    margin-block: var(--trove-space-3);
+  }
+
+  .members {
+    margin: 0;
+    padding-inline-start: var(--trove-space-6);
+  }
+
+  .deleting {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--trove-space-2);
+    margin-block: var(--trove-space-2);
+  }
+
+  .details-empty {
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+
+    .empty-icon {
+      font-size: 2.5rem;
+    }
+
+    .empty-title {
+      color: var(--trove-on-surface);
+      font: var(--mat-sys-title-medium);
+    }
+  }
+
+  .entry {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--trove-space-2);
+    text-decoration: none;
+
+    .entry-name {
+      text-decoration: underline;
+      text-underline-offset: 0.2em;
+    }
+
+    .material-icons {
+      font-size: 1.25rem;
+      color: var(--trove-text-muted);
+    }
+  }
+
+  // The folder table sits in a pane that scrolls on its own; the table keeps its sticky header
+  // inside a region that is shorter than the pane.
+  .trove-data-table .table-scroll {
+    max-block-size: max(14rem, calc(var(--browse-height) - 11rem));
+  }
+
+  // The filter chips of a pane are a quiet row.
+  .chip-row {
+    margin-block-end: 0;
+  }
+}
+
+// One pane at a time on a narrow content area, with a way back to the tree (R-UI-010). The
+// container query follows the content area, so collapsing the side bar never breaks the layout.
+@container content (max-width: 48rem) {
+  .browse {
+    grid-template-columns: minmax(0, 1fr);
+
+    &.has-selection .pane-tree {
+      display: none;
+    }
+
+    &:not(.has-selection) .pane-details {
+      display: none;
+    }
+
+    .back {
+      display: inline-flex;
+    }
+  }
+}

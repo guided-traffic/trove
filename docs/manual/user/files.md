@@ -4,47 +4,46 @@ The file browser shows the repositories you may read as a tree of folders and fi
 
 ## The file browser
 
-Select **Browse** in the side bar. It is also the start page of trove. The screen has two parts: the tree on the left and **Details** on the right.
+Select **Browse** in the side bar. It is also the start page of trove. The screen has two panes side by side: the tree of repositories and files on the left, and the details of what you select on the right. On a narrow screen one pane shows at a time; **Back to the tree** returns from the details.
 
-At the top of the tree, repositories are listed with their class and format; a repository an administrator switched off carries **disabled**. Expand a repository or a folder to load its entries, 200 at a time; **Load more** at the end of a folder loads the next 200, and **Load more repositories** below the tree loads further repositories. Repositories you may not read are not listed, and neither are files and folders you may not read.
+### The tree
 
-The toolbar above the tree narrows and orders the repositories:
+Above the tree, the field **Filter repositories** keeps the repositories whose key or description contains what you type; the list narrows while you type, there is no search button. **Filters** opens the filter panel inside the tree pane with a **Class** and a **Format** to choose; select **Apply filters** to use them. Each applied filter is shown as a chip below the toolbar; the chip's cross removes it, and **Clear all** in the panel removes both. The sort button orders the repositories by **Key**, or **Class, then key** (virtual, then local, then remote). **Repositories** at the right of the toolbar counts the repositories shown; a plus sign means more can be loaded.
 
-| Field | What it does |
-|---|---|
-| **Repository key** | Keeps repositories whose key or description contains the text; select **Search** to apply it |
-| **Class** | **Any**, **Virtual**, **Local** or **Remote** |
-| **Format** | **Any** or one format |
-| **Sort by** | **Key**, or **Class, then key** (virtual, then local, then remote) |
+Each repository row has an icon for its class (a box for local, a cloud for remote, layers for virtual), the key and a badge with its format. A remote repository carries **cache**, because it shows the files it has cached so far; a repository an administrator switched off carries **disabled**. A virtual repository does not hold files of its own: expand it to see the repositories it **resolves from**, in the order it asks them, and select one to open it. Only people who may read the repository's configuration see the members.
+
+Expand a repository or a folder to load its entries, 200 at a time; **Load more** at the end of a folder loads the next 200, and **Load more repositories** below the tree loads further repositories. Repositories you may not read are not listed, and neither are files and folders you may not read. If there is no repository you may read, the tree says so; an administrator is offered **Create repository**, everyone else should ask an administrator for read access.
 
 What a repository holds depends on its class: a local repository shows what was uploaded or published to it, a remote repository the files it has cached so far, and npm repositories show their package files as trove stores them. See [Repositories](repositories.md#repository-classes).
 
-The selection is part of the page address, for example `https://trove.example.com/ui/en/browse/generic-local/releases/app-1.2.0.tar.gz`, so you can bookmark a file or send the link; opening it expands the tree down to the file.
+The selection is part of the page address, for example `https://trove.example.com/ui/en/browse/generic-local/releases/app-1.2.0.tar.gz`, so you can bookmark a file or send the link; opening it expands the tree down to the file. The browser's back and forward buttons walk through your selections.
 
 The tree works with the keyboard: the arrow keys move and expand, Home and End jump to the first and last entry, and typing a name jumps to it. Shift+F10 or the context-menu key moves the focus to the actions of the selection.
 
-### What the details show
+### The details
+
+The top of the details shows the path of the selection as links (select a folder to go up) and the actions that apply to it and that you may use: **Download**, copy buttons for the address and the path, **Client setup**, **Upload files**, **New folder** and **Delete**. Below that:
 
 | Selection | Details |
 |---|---|
-| A repository | **Class**, **Format**, **Description**, and **Repository configuration**, which opens the repository screen |
-| A folder | Tab **General** with **Path**, **Kind**, **Created** and **Last changed**, each with the user who did it where known; tab **API** |
+| A repository | Tab **General**: **Class**, **Format**, **Description** and, for people who may read its configuration, the upstream address of a remote repository, **Project**, **Created** and **Last activity**, with links **Repository configuration** and **Client setup**; then its content as a table, or for a virtual repository the list **Resolves from**. Tab **API** |
+| A folder | Tab **Contents**: a table of its entries with **Name**, **Size** and **Last changed**; select a name to go into a folder or to a file. Tab **General** with **Path**, **Kind**, **Created** and **Last changed**, each with the user who did it where known; tab **API** |
 | A file | Tab **General** as for a folder plus **Size**, **Media type** and the checksums **SHA-256**, **SHA-512**, **SHA-1** and **MD5**, each with **Copy checksum**; tab **Statistics** with **Downloads**, **Last download** and **Last downloader**; tab **API** |
 
-Download counts reach the statistics within a minute of a download. If a file's stored content is missing or damaged, **General** says so under **Content**; tell an administrator. The **API** tab shows the selection as the management API describes it and the matching curl requests. They send the token from the environment variable `TROVE_TOKEN`: the header is in double quotes so that your shell fills in the value, and the address is in single quotes. Set the variable first, without typing the token into a shell that records its history. **Back to the tree** clears the selection.
+Download counts reach the statistics within a minute of a download. If a file's stored content is missing or damaged, **General** says so under **Content**; tell an administrator. The **API** tab shows the selection as the management API describes it and the matching curl requests. They send the token from the environment variable `TROVE_TOKEN`: the header is in double quotes so that your shell fills in the value, and the address is in single quotes. Set the variable first, without typing the token into a shell that records its history.
 
 ## Download a file
 
 1. Select the file in the tree.
 2. Select **Download**. The browser saves the file under its name.
 
-**Copy download URL** copies the file's address below the files path, which curl and other tools can use (see [Transfer files with curl](#transfer-files-with-curl)). **Copy path** copies the path inside the repository.
+The link button beside **Download** copies the file's address (**Copy download URL**) below the files path, which curl and other tools can use (see [Transfer files with curl](#transfer-files-with-curl)). **Copy path** copies the path inside the repository.
 
 ## Upload files
 
 You need the deploy permission on the target path, and the target must be a generic local repository. npm packages are published with the package manager, not uploaded here: an npm repository refuses an upload from this dialog, and remote and virtual repositories take no uploads at all.
 
-1. Select the repository or the folder to upload into. **Upload files** appears only where you hold the deploy permission.
+1. Select the repository or the folder to upload into. **Upload files** appears only in a local repository of a generic format, and only where you hold the deploy permission.
 2. Select **Upload files**.
 3. Check **Target folder**. It is relative to the root of the repository and prefilled with your selection; missing folders are created, and an empty field is the root.
 4. Drop files onto the dialog, or select **Choose files**.

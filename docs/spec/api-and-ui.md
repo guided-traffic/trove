@@ -2868,22 +2868,36 @@ Acceptance criteria:
 ### R-UI-010 · File tree browser
 Priority: **MVP** · Covers: UI-011, ART-040, ART-041
 
-- Two panes: tree and details; stacked with back navigation on narrow screens. The selection is the
+- Two bordered panes that fill the height of the content area, each with its own scroll: the tree on the
+  left, the details on the right; one pane at a time with back navigation on narrow screens
+  ([Q-UI-98](#q-ui-98--the-file-browser-is-two-panes-with-a-toolbar-and-a-details-header)). The selection is the
   URL (`/browse/{repo}/{path…}`); a deep link expands the ancestors.
-- Tree root: the readable repositories, sortable by class (virtual, local, remote) and key,
-  filterable by key text, format and class. Children load lazily through
-  `/api/v1/repositories/{repoKey}/children` (R-API-025) in pages of `ui.browser.page_size` with a
-  "Load more" entry.
-- A virtual repository's children are its members in resolution order, labelled "resolves from";
-  the tree does not merge member contents. A remote repository shows its cached content, labelled
-  as cache.
-- Details tabs: General (path, kind, size, creation, digests with copy buttons, media type, download,
-  link to the package version when the file belongs to one); Statistics (downloads); Properties (P1,
-  R-API-026); Effective permissions (P1, R-API-034, for callers with `policies:read` or `manage`);
-  API (the item's JSON and the equivalent `curl` command, INV-17).
-- The tree follows the WAI-ARIA tree pattern (roles `tree` and `treeitem`, `aria-expanded`,
-  `aria-level`, `aria-setsize` and `aria-posinset` with lazy loading, arrow keys, Home and End,
-  type-ahead), built on the tree pattern of `@angular/aria` (R-UI-001, Q-UI-1).
+- Tree toolbar: one filter field that narrows the repositories by key text as the user types (no search button; the
+  query parameter `q` follows after a short pause), the shared filter panel for class and format with the applied
+  filters as removable chips and "Clear all", a sort menu (class, then key; or key), and the number of repositories
+  shown. Tree root: the readable repositories. Children load lazily through
+  `/api/v1/repositories/{repoKey}/children` (R-API-025) in pages of `ui.browser.page_size` with a "Load more" entry.
+  A row shows an icon by class (folder and file icons below), the key, a badge with the format and, where it applies,
+  the labels below.
+- A virtual repository's children are its members in resolution order, labelled "resolves from"; a member leads to
+  that repository, and the tree does not merge member contents. A remote repository shows its cached content,
+  labelled as cache.
+- Details header: the path of the selection as a breadcrumb and the actions of R-UI-011 as a toolbar. Content by
+  selection: a repository shows its summary (class, format, description, and for a caller who may read the
+  configuration the upstream, project, creation and last activity), links to its configuration and to the client
+  setup, and its content as the shared data table (a virtual repository lists its members instead); a folder shows
+  its children as the shared data table (name, size, last change) so it is browsed from the right pane too, tabs
+  Contents, General and API; a file shows tabs General (path, kind, size, creation, digests with copy buttons,
+  media type, download), Statistics (downloads) and API (the item's JSON and the equivalent `curl` command, INV-17).
+  Properties (P1, R-API-026) and Effective permissions (P1, R-API-034, for callers with `policies:read` or
+  `manage`) are not built yet. The link from a file to its package version appears when the API reports one; it
+  reports none today (`package` is always null).
+- Empty states: nothing selected (a short text and a link to the manual page), no readable repository (an
+  administrator is offered "Create repository", anyone else is told to ask for access, both get the manual link),
+  and a filter that matches nothing ("Clear all filters").
+- The tree follows the WAI-ARIA tree pattern (roles `tree` and `treeitem`, `aria-expanded`, `aria-level`,
+  `aria-setsize` and `aria-posinset` with lazy loading, arrow keys, Home and End, type-ahead), built on the tree
+  pattern of `@angular/aria` (R-UI-001, Q-UI-1).
 
 Configuration:
 
@@ -2914,8 +2928,12 @@ Priority: **MVP** · Covers: UI-012, UI-016
 | Edit properties | File, folder | `annotate` | P1 |
 | Deploy | Toolbar | `deploy` | P1 |
 
-- Actions are reached through an actions button on the node and through the keyboard (context-menu
-  key, Shift+F10), never through right-click alone.
+- Actions are reached through the toolbar of the details header and through the keyboard (context-menu
+  key, Shift+F10 on the tree move focus to it), never through right-click alone (Q-UI-17, Q-UI-98). "Copy
+  path" and a copy button for the address (the download URL of a file, the listing URL of a folder) sit beside
+  Download. "Upload files" and "New folder" appear on a repository or folder of a local repository whose format
+  is served below the files path (the raw-files family, R-API-025) and only for a caller who holds `deploy`
+  there; "Client setup" on a repository opens the setup page for it. "Invalidate cache" has no control yet.
 - Deleting a file asks for confirmation naming the path. Deleting a folder shows the number of
   items; above 100 items the user types the folder name to confirm. When the trash can is enabled,
   the dialog says the items go there for the retention period. Folder deletion shows the job's
@@ -5852,6 +5870,51 @@ of option (b) is not. Revisit when a manual page carries a table whose first col
 squeezes less than it helps), or when the owner wants the prose wider or narrower at the walkthrough.
 
 **Applied in the spec:** R-UI-050; [manual.md](../developer/manual.md#layout-of-a-page).
+
+### Q-UI-98 · The file browser is two panes with a toolbar and a details header
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the owner called the browser "the worst design I have ever seen" (2026-11-02). It was a loose search form in the
+top-left (key, class, format, sort, a search button), one tree row, a "Details" heading far to the right and an empty
+screen: no panes, no borders, no height, filters unlike the packages and repositories lists, and no visible way to expand
+a node. The design language is Q-UI-88 and Q-UI-96, the lists are Q-UI-68.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Two bordered panes of full height; a compact toolbar and the shared filter panel in the tree pane; a path and an action toolbar above the details | Tree pane `clamp(18rem, 30%, 26rem)`, details pane the rest, both `max(26rem, 100dvh - 13.5rem)` high with their own scroll; filter field narrows as you type, "Filters" opens the shared panel inside the tree pane (class and format as radio groups) with chips, a sort menu, a count; the details header holds the breadcrumb and the actions; a folder's children are the shared data table | Reads as a browser; the filter panel, chips, table and tabs are the ones of the packages and repositories lists, so it is one product; nothing new to learn | The filter panel sits in a 26 rem pane and replaces the tree while open instead of opening at the side |
+| (b) The same panes, the shared panel opening to the right of the details | The panel is a third column | Identical to the lists | The tree is 18 to 26 rem, the details are narrow once a panel sits beside them; on 1280 px three columns do not fit |
+| (c) A draggable splitter between the panes | The width of the tree is the user's | Long keys and deep paths fit | A separator that is keyboard-operable and remembered per user is its own widget; not needed to meet R-UI-010 |
+
+**Choice:** (a). Details:
+
+- The filter field sends `q` to the address (`replaceUrl`, so typing does not fill the history) 250 ms after the last
+  keystroke, and at once on Enter. The server filters (the list's `q`, R-API-025); the screen
+  filters nothing itself.
+- Class and format are single choices (the list API takes one of each), so the panel offers radio groups; chips remove one.
+  Sort is a query parameter (`sort=class`) as before.
+- A tree row is a chevron (the expand state, which the old tree never showed), an icon (inventory for a local, cloud for
+  a remote, layers for a virtual repository; folder; archive or document for a file), the name, and badges: the format, and
+  "cache" on a remote, "disabled" where it is. The class is also in the row's text for assistive technology. A file row
+  shows its size.
+- A virtual repository expands to its members from the repository document (`virtual.members`), each labelled "resolves
+  from" and leading to that repository. A caller who may only read the consumer view does not get the members, and the
+  tree says so. The children endpoint is not asked for a virtual repository.
+- The selected node is the one data source of the folder table: the tree loads a folder once and the table reads its
+  children, with "Load more" in both.
+- Upload and New folder need `deploy` and a local repository of the raw-files family (taken from the format's
+  `protocolBasePath`), where the old screen offered them wherever `deploy` held and let the server refuse; Delete keeps
+  `delete`; Client setup links `/setup?repository=<key>`. No control without a working backend: "Invalidate cache" (R-UI-011,
+  MVP) has no client in the UI yet and is left out.
+- Narrow content area (under 48 rem, a container query): one pane at a time, the details with "Back to the tree".
+- The pattern (two panes, toolbar, panel inside a pane) is in [design-language.md](../developer/design-language.md#the-two-pane-browser).
+
+**Rationale:** the owner's two complaints were structure and the loose form. Panes with borders and their own height give
+the structure; the shared filter panel and data table give the likeness to the lists with no new component. A drag
+splitter is real work (a keyboard-operable separator, persistence) for a width that a clamp already sets sensibly.
+Revisit when a key or path in the tree is regularly cut off, or the owner asks for a resizable tree at the walkthrough.
+
+**Applied in the spec:** R-UI-010, R-UI-011; [web-ui.md](../developer/web-ui.md); [files.md](../manual/user/files.md).
 
 ### Q-API-16 · A `limit` above the maximum is clamped
 

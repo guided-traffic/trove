@@ -68,6 +68,25 @@ The Material base palette is `mat.$azure-palette`: its tone 40 (`#005cbb`) has c
 `mat.$blue-palette` sits at 237°, toward violet. It fills only the tokens `main.scss` does not set (the `secondary` and
 `primary-fixed` families), which neither a Material component trove uses nor a trove style reads today.
 
+## The two-pane browser
+
+The file browser (`/browse`, [Q-UI-98](../spec/api-and-ui.md#q-ui-98--the-file-browser-is-two-panes-with-a-toolbar-and-a-details-header))
+is the one screen built from two panes; a screen that browses a hierarchy beside its details takes the same pattern.
+Its styles are the global partial [_browse.scss](../../web/src/styles/_browse.scss).
+
+- Two flat bordered surfaces (`--trove-surface-raised`, the hairline border, the 6 px radius) side by side, each `max(26rem,
+  100dvh - 13.5rem)` high so the page does not scroll at 1280 x 800 and each pane scrolls on its own. The tree pane is
+  `clamp(18rem, 30%, 26rem)`; the details take the rest.
+- A pane head on the table-head fill: in the tree pane the filter field, then the shared filter toggle, a sort icon button and
+  a count; in the details pane the path as a breadcrumb and the actions as a toolbar. Applied filters are the shared chips under
+  the head. The shared filter panel opens inside the tree pane in place of the tree, without its own border or shadow.
+- A tree row is 32 px high: a chevron, an icon in the muted tone, the name, then small outlined badges (11 px) for the format
+  and the labels "cache", "resolves from" and "disabled". The selected row is `--trove-accent-container`; the focus ring is the
+  solid 2 px ring inside the row.
+- A folder's children use the shared data table, whose scroll region is capped below the pane height so its header stays
+  sticky.
+- Under 48 rem of content width (the `content` container query) one pane shows at a time and the details get a back button.
+
 ## Where the values live
 
 | File | What it holds |

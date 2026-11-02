@@ -251,6 +251,7 @@
       <notes>
         <note category="location">src/app/app.routes.ts:45</note>
         <note category="location">src/app/core/navigation.ts:48</note>
+        <note category="location">src/app/features/browse/browse.ts:119</note>
       </notes>
       <segment>
         <source>Browse</source>
@@ -2076,10 +2077,11 @@
     <unit id="repo.loading">
       <notes>
         <note category="location">src/app/features/audit/audit-log.html:183,185</note>
-        <note category="location">src/app/features/browse/browse.html:119,120</note>
-        <note category="location">src/app/features/browse/browse.html:152,154</note>
-        <note category="location">src/app/features/browse/browse.html:189,191</note>
-        <note category="location">src/app/features/browse/browse.html:354,356</note>
+        <note category="location">src/app/features/browse/browse.html:218,219</note>
+        <note category="location">src/app/features/browse/browse.html:275,277</note>
+        <note category="location">src/app/features/browse/browse.html:382,383</note>
+        <note category="location">src/app/features/browse/browse.html:419,420</note>
+        <note category="location">src/app/features/browse/browse.html:626,629</note>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:17,18</note>
         <note category="location">src/app/features/endpoints/endpoint-detail.html:192,196</note>
         <note category="location">src/app/features/repositories/repository-detail.html:10,12</note>
@@ -2176,8 +2178,8 @@
       <notes>
         <note category="location">src/app/features/audit/audit-log.html:244,245</note>
         <note category="location">src/app/features/audit/audit-log.html:255,256</note>
-        <note category="location">src/app/features/browse/browse.html:29,30</note>
-        <note category="location">src/app/features/browse/browse.html:42,43</note>
+        <note category="location">src/app/features/browse/browse.html:115,117</note>
+        <note category="location">src/app/features/browse/browse.html:139,141</note>
         <note category="location">src/app/features/repositories/repository-list.html:166,167</note>
         <note category="location">src/app/features/repositories/repository-list.html:179,180</note>
       </notes>
@@ -2197,7 +2199,6 @@
     <unit id="repo.filter.apply">
       <notes>
         <note category="location">src/app/features/audit/audit-log.ts:82</note>
-        <note category="location">src/app/features/browse/browse.html:63,66</note>
         <note category="location">src/app/features/repositories/repository-list.ts:125</note>
         <note category="location">src/app/features/system/jobs-page.ts:80,83</note>
       </notes>
@@ -2255,24 +2256,69 @@
     </unit>
     <unit id="browse.tree.heading">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:8,11</note>
+        <note category="location">src/app/features/browse/browse.html:9,12</note>
       </notes>
       <segment>
         <source> Repositories and files </source>
       </segment>
     </unit>
-    <unit id="browse.filter.key">
+    <unit id="browse.filter.label">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:13,15</note>
+        <note category="location">src/app/features/browse/browse.html:20,21</note>
+        <note category="location">src/app/features/browse/browse.html:22,23</note>
       </notes>
       <segment>
-        <source>Repository key</source>
+        <source>Filter repositories</source>
+      </segment>
+    </unit>
+    <unit id="browse.sort.label">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:40,41</note>
+        <note category="location">src/app/features/browse/browse.html:42,43</note>
+      </notes>
+      <segment>
+        <source>Sort repositories</source>
+      </segment>
+    </unit>
+    <unit id="browse.sort.key">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:58,60</note>
+      </notes>
+      <segment>
+        <source>Key</source>
+      </segment>
+    </unit>
+    <unit id="browse.sort.class">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:70,72</note>
+      </notes>
+      <segment>
+        <source>Class, then key</source>
+      </segment>
+    </unit>
+    <unit id="browse.count">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:75,76</note>
+      </notes>
+      <segment>
+        <source>Repositories</source>
+      </segment>
+    </unit>
+    <unit id="pkg.chips.label">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:83</note>
+        <note category="location">src/app/features/packages/package-list.html:120</note>
+      </notes>
+      <segment>
+        <source>Applied filters</source>
       </segment>
     </unit>
     <unit id="repo.col.class">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:23,25</note>
-        <note category="location">src/app/features/browse/browse.html:240,241</note>
+        <note category="location">src/app/features/browse/browse.html:109</note>
+        <note category="location">src/app/features/browse/browse.html:112</note>
+        <note category="location">src/app/features/browse/browse.html:437,438</note>
+        <note category="location">src/app/features/browse/browse.ts:183</note>
         <note category="location">src/app/features/repositories/repository-detail.html:24,25</note>
         <note category="location">src/app/features/repositories/repository-detail.html:58,59</note>
         <note category="location">src/app/features/repositories/repository-list.html:159</note>
@@ -2286,8 +2332,10 @@
     </unit>
     <unit id="repo.col.format">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:36,38</note>
-        <note category="location">src/app/features/browse/browse.html:242,243</note>
+        <note category="location">src/app/features/browse/browse.html:133</note>
+        <note category="location">src/app/features/browse/browse.html:136</note>
+        <note category="location">src/app/features/browse/browse.html:444,445</note>
+        <note category="location">src/app/features/browse/browse.ts:191</note>
         <note category="location">src/app/features/repositories/repository-detail.html:26,27</note>
         <note category="location">src/app/features/repositories/repository-detail.html:64,65</note>
         <note category="location">src/app/features/repositories/repository-list.html:172</note>
@@ -2299,33 +2347,26 @@
         <source>Format</source>
       </segment>
     </unit>
-    <unit id="browse.sort">
+    <unit id="browse.tag.resolves-from">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:51,53</note>
+        <note category="location">src/app/features/browse/browse.html:188,189</note>
       </notes>
       <segment>
-        <source>Sort by</source>
+        <source>resolves from</source>
       </segment>
     </unit>
-    <unit id="browse.sort.key">
+    <unit id="browse.tag.cache">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:57,58</note>
+        <note category="location">src/app/features/browse/browse.html:190,192</note>
       </notes>
       <segment>
-        <source>Key</source>
-      </segment>
-    </unit>
-    <unit id="browse.sort.class">
-      <notes>
-        <note category="location">src/app/features/browse/browse.html:59,61</note>
-      </notes>
-      <segment>
-        <source> Class, then key </source>
+        <source>cache</source>
       </segment>
     </unit>
     <unit id="repo.badge.disabled">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:96,98</note>
+        <note category="location">src/app/features/browse/browse.html:193,195</note>
+        <note category="location">src/app/features/browse/browse.html:453,454</note>
         <note category="location">src/app/features/repositories/repository-list.html:75,77</note>
       </notes>
       <segment>
@@ -2334,24 +2375,76 @@
     </unit>
     <unit id="browse.load-more">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:114,115</note>
-        <note category="location">src/app/features/browse/browse.ts:513</note>
+        <note category="location">src/app/features/browse/browse.html:213,214</note>
+        <note category="location">src/app/features/browse/browse.ts:790</note>
       </notes>
       <segment>
         <source>Load more</source>
       </segment>
     </unit>
+    <unit id="browse.members-hidden">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:223,225</note>
+        <note category="location">src/app/features/browse/browse.html:502,504</note>
+      </notes>
+      <segment>
+        <source>The members are shown to repository managers only.</source>
+      </segment>
+    </unit>
     <unit id="browse.empty">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:136,139</note>
+        <note category="location">src/app/features/browse/browse.html:242,243</note>
       </notes>
       <segment>
         <source> No repository matches. Repositories you may not read are not listed. </source>
       </segment>
     </unit>
+    <unit id="browse.clear-filters">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:245,246</note>
+      </notes>
+      <segment>
+        <source> Clear all filters </source>
+      </segment>
+    </unit>
+    <unit id="browse.empty-none">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:249,250</note>
+      </notes>
+      <segment>
+        <source> There is no repository you may read yet. </source>
+      </segment>
+    </unit>
+    <unit id="repo.list.create">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:252,254</note>
+        <note category="location">src/app/features/repositories/repository-list.html:5,7</note>
+        <note category="location">src/app/features/repositories/repository-list.html:13,18</note>
+      </notes>
+      <segment>
+        <source>Create repository</source>
+      </segment>
+    </unit>
+    <unit id="browse.empty-ask">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:255,256</note>
+      </notes>
+      <segment>
+        <source> Ask an administrator for read access to a repository. </source>
+      </segment>
+    </unit>
+    <unit id="browse.manual-link">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:258,260</note>
+        <note category="location">src/app/features/browse/browse.html:585,588</note>
+      </notes>
+      <segment>
+        <source>How browsing works</source>
+      </segment>
+    </unit>
     <unit id="browse.tree.label">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:143,144</note>
+        <note category="location">src/app/features/browse/browse.html:266,267</note>
       </notes>
       <segment>
         <source>Repositories and files</source>
@@ -2359,7 +2452,7 @@
     </unit>
     <unit id="browse.more-repositories">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:163,166</note>
+        <note category="location">src/app/features/browse/browse.html:286,288</note>
       </notes>
       <segment>
         <source> Load more repositories </source>
@@ -2367,7 +2460,7 @@
     </unit>
     <unit id="browse.details.heading">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:170,172</note>
+        <note category="location">src/app/features/browse/browse.html:296,298</note>
       </notes>
       <segment>
         <source>Details</source>
@@ -2375,15 +2468,23 @@
     </unit>
     <unit id="browse.back">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:175,176</note>
+        <note category="location">src/app/features/browse/browse.html:301,302</note>
       </notes>
       <segment>
         <source>Back to the tree</source>
       </segment>
     </unit>
+    <unit id="browse.location">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:303</note>
+      </notes>
+      <segment>
+        <source>Location</source>
+      </segment>
+    </unit>
     <unit id="browse.actions">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:196</note>
+        <note category="location">src/app/features/browse/browse.html:326</note>
       </notes>
       <segment>
         <source>Actions</source>
@@ -2391,39 +2492,47 @@
     </unit>
     <unit id="browse.download">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:201,203</note>
+        <note category="location">src/app/features/browse/browse.html:332,333</note>
       </notes>
       <segment>
         <source>Download</source>
       </segment>
     </unit>
-    <unit id="browse.upload">
+    <unit id="browse.client-setup">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:209,210</note>
+        <note category="location">src/app/features/browse/browse.html:343,345</note>
       </notes>
       <segment>
-        <source> Upload files </source>
+        <source>Client setup</source>
+      </segment>
+    </unit>
+    <unit id="browse.upload">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:349,350</note>
+      </notes>
+      <segment>
+        <source>Upload files</source>
       </segment>
     </unit>
     <unit id="browse.new-folder">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:217,218</note>
+        <note category="location">src/app/features/browse/browse.html:353,354</note>
       </notes>
       <segment>
-        <source> New folder </source>
+        <source>New folder</source>
       </segment>
     </unit>
     <unit id="browse.delete">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:222,223</note>
+        <note category="location">src/app/features/browse/browse.html:359,360</note>
       </notes>
       <segment>
-        <source> Delete </source>
+        <source>Delete</source>
       </segment>
     </unit>
     <unit id="repo.deleting">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:229,230</note>
+        <note category="location">src/app/features/browse/browse.html:371,372</note>
         <note category="location">src/app/features/repositories/repository-detail.html:197,198</note>
         <note category="location">src/app/features/repositories/repository-list.html:125,126</note>
       </notes>
@@ -2431,9 +2540,73 @@
         <source>Deleting</source>
       </segment>
     </unit>
+    <unit id="browse.stats.downloads">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:402,403</note>
+      </notes>
+      <segment>
+        <source>Downloads</source>
+      </segment>
+    </unit>
+    <unit id="browse.stats.last">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:404,405</note>
+      </notes>
+      <segment>
+        <source>Last download</source>
+      </segment>
+    </unit>
+    <unit id="browse.stats.by">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:412,413</note>
+      </notes>
+      <segment>
+        <source>Last downloader</source>
+      </segment>
+    </unit>
+    <unit id="browse.stats.hint">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:416,417</note>
+      </notes>
+      <segment>
+        <source> Counts reach the database within a minute of a download. </source>
+      </segment>
+    </unit>
+    <unit id="browse.api.json">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:423,424</note>
+      </notes>
+      <segment>
+        <source>The item as the API describes it</source>
+      </segment>
+    </unit>
+    <unit id="browse.api.curl">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:426,427</note>
+      </notes>
+      <segment>
+        <source>The same request with curl</source>
+      </segment>
+    </unit>
+    <unit id="browse.api.download">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:430,431</note>
+      </notes>
+      <segment>
+        <source>Download with curl</source>
+      </segment>
+    </unit>
+    <unit id="browse.remote-hint">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:441,442</note>
+      </notes>
+      <segment>
+        <source>Shows the content cached so far.</source>
+      </segment>
+    </unit>
     <unit id="repo.field.description">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:244,245</note>
+        <note category="location">src/app/features/browse/browse.html:446,447</note>
         <note category="location">src/app/features/repositories/repository-detail.html:28,29</note>
         <note category="location">src/app/features/repositories/repository-fields.ts:18,20</note>
         <note category="location">src/app/features/repositories/repository-wizard.html:174,175</note>
@@ -2443,17 +2616,83 @@
         <source>Description</source>
       </segment>
     </unit>
+    <unit id="browse.fact.status">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:450,451</note>
+      </notes>
+      <segment>
+        <source>Status</source>
+      </segment>
+    </unit>
+    <unit id="browse.fact.upstream">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:457,458</note>
+      </notes>
+      <segment>
+        <source>Upstream</source>
+      </segment>
+    </unit>
+    <unit id="browse.fact.project">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:461,462</note>
+      </notes>
+      <segment>
+        <source>Project</source>
+      </segment>
+    </unit>
+    <unit id="browse.fact.created">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:465,466</note>
+        <note category="location">src/app/features/browse/browse.html:526,527</note>
+      </notes>
+      <segment>
+        <source>Created</source>
+      </segment>
+    </unit>
+    <unit id="browse.fact.activity">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:470,471</note>
+      </notes>
+      <segment>
+        <source>Last activity</source>
+      </segment>
+    </unit>
     <unit id="browse.repo-config">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:249,252</note>
+        <note category="location">src/app/features/browse/browse.html:483,484</note>
       </notes>
       <segment>
         <source>Repository configuration</source>
       </segment>
     </unit>
+    <unit id="browse.members">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:488,489</note>
+      </notes>
+      <segment>
+        <source>Resolves from</source>
+      </segment>
+    </unit>
+    <unit id="browse.members-none">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:499,500</note>
+      </notes>
+      <segment>
+        <source>This repository has no members yet.</source>
+      </segment>
+    </unit>
+    <unit id="browse.tab.contents">
+      <notes>
+        <note category="location">src/app/features/browse/browse.html:505,506</note>
+        <note category="location">src/app/features/browse/browse.ts:798</note>
+      </notes>
+      <segment>
+        <source>Contents</source>
+      </segment>
+    </unit>
     <unit id="browse.fact.path">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:261,262</note>
+        <note category="location">src/app/features/browse/browse.html:510,511</note>
       </notes>
       <segment>
         <source>Path</source>
@@ -2461,7 +2700,7 @@
     </unit>
     <unit id="browse.fact.kind">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:263,265</note>
+        <note category="location">src/app/features/browse/browse.html:512,513</note>
       </notes>
       <segment>
         <source>Kind</source>
@@ -2469,7 +2708,7 @@
     </unit>
     <unit id="browse.kind.file">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:266,267</note>
+        <note category="location">src/app/features/browse/browse.html:515,516</note>
       </notes>
       <segment>
         <source>File</source>
@@ -2477,7 +2716,7 @@
     </unit>
     <unit id="browse.kind.folder">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:268,269</note>
+        <note category="location">src/app/features/browse/browse.html:517,518</note>
       </notes>
       <segment>
         <source>Folder</source>
@@ -2485,7 +2724,8 @@
     </unit>
     <unit id="browse.fact.size">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:272,273</note>
+        <note category="location">src/app/features/browse/browse.html:521,522</note>
+        <note category="location">src/app/features/browse/browse.ts:339</note>
       </notes>
       <segment>
         <source>Size</source>
@@ -2493,24 +2733,16 @@
     </unit>
     <unit id="browse.fact.media">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:274,275</note>
+        <note category="location">src/app/features/browse/browse.html:523,524</note>
       </notes>
       <segment>
         <source>Media type</source>
       </segment>
     </unit>
-    <unit id="browse.fact.created">
-      <notes>
-        <note category="location">src/app/features/browse/browse.html:277,279</note>
-      </notes>
-      <segment>
-        <source>Created</source>
-      </segment>
-    </unit>
     <unit id="browse.by">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:284,285</note>
-        <note category="location">src/app/features/browse/browse.html:296,297</note>
+        <note category="location">src/app/features/browse/browse.html:531</note>
+        <note category="location">src/app/features/browse/browse.html:540</note>
       </notes>
       <segment>
         <source>by</source>
@@ -2518,7 +2750,8 @@
     </unit>
     <unit id="browse.fact.modified">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:289,291</note>
+        <note category="location">src/app/features/browse/browse.html:535,536</note>
+        <note category="location">src/app/features/browse/browse.ts:340</note>
       </notes>
       <segment>
         <source>Last changed</source>
@@ -2526,7 +2759,7 @@
     </unit>
     <unit id="browse.fact.content">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:302,304</note>
+        <note category="location">src/app/features/browse/browse.html:545,546</note>
       </notes>
       <segment>
         <source>Content</source>
@@ -2534,7 +2767,7 @@
     </unit>
     <unit id="browse.content.missing">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:307,308</note>
+        <note category="location">src/app/features/browse/browse.html:550,551</note>
       </notes>
       <segment>
         <source>The stored content is missing.</source>
@@ -2542,71 +2775,23 @@
     </unit>
     <unit id="browse.content.corrupt">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:311,312</note>
+        <note category="location">src/app/features/browse/browse.html:554,555</note>
       </notes>
       <segment>
         <source>The stored content failed its checksum.</source>
       </segment>
     </unit>
-    <unit id="browse.stats.downloads">
+    <unit id="browse.none-title">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:337,338</note>
+        <note category="location">src/app/features/browse/browse.html:583,584</note>
       </notes>
       <segment>
-        <source>Downloads</source>
-      </segment>
-    </unit>
-    <unit id="browse.stats.last">
-      <notes>
-        <note category="location">src/app/features/browse/browse.html:339,340</note>
-      </notes>
-      <segment>
-        <source>Last download</source>
-      </segment>
-    </unit>
-    <unit id="browse.stats.by">
-      <notes>
-        <note category="location">src/app/features/browse/browse.html:347,348</note>
-      </notes>
-      <segment>
-        <source>Last downloader</source>
-      </segment>
-    </unit>
-    <unit id="browse.stats.hint">
-      <notes>
-        <note category="location">src/app/features/browse/browse.html:351,352</note>
-      </notes>
-      <segment>
-        <source> Counts reach the database within a minute of a download. </source>
-      </segment>
-    </unit>
-    <unit id="browse.api.json">
-      <notes>
-        <note category="location">src/app/features/browse/browse.html:361,362</note>
-      </notes>
-      <segment>
-        <source>The item as the API describes it</source>
-      </segment>
-    </unit>
-    <unit id="browse.api.curl">
-      <notes>
-        <note category="location">src/app/features/browse/browse.html:363,364</note>
-      </notes>
-      <segment>
-        <source>The same request with curl</source>
-      </segment>
-    </unit>
-    <unit id="browse.api.download">
-      <notes>
-        <note category="location">src/app/features/browse/browse.html:366,367</note>
-      </notes>
-      <segment>
-        <source>Download with curl</source>
+        <source>Nothing selected</source>
       </segment>
     </unit>
     <unit id="browse.none">
       <notes>
-        <note category="location">src/app/features/browse/browse.html:375,378</note>
+        <note category="location">src/app/features/browse/browse.html:584,585</note>
       </notes>
       <segment>
         <source>Select a repository, folder or file in the tree.</source>
@@ -2628,9 +2813,17 @@
         <source>File tree</source>
       </segment>
     </unit>
+    <unit id="browse.col.name">
+      <notes>
+        <note category="location">src/app/features/browse/browse.ts:338</note>
+      </notes>
+      <segment>
+        <source>Name</source>
+      </segment>
+    </unit>
     <unit id="repo.class.local">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:216</note>
+        <note category="location">src/app/features/browse/browse.ts:346</note>
         <note category="location">src/app/features/guides/guide-page.ts:94</note>
         <note category="location">src/app/features/packages/package-detail.ts:260</note>
         <note category="location">src/app/features/repositories/repository-wizard.ts:60</note>
@@ -2642,7 +2835,7 @@
     </unit>
     <unit id="repo.class.remote">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:218</note>
+        <note category="location">src/app/features/browse/browse.ts:348</note>
         <note category="location">src/app/features/guides/guide-page.ts:96</note>
         <note category="location">src/app/features/packages/package-detail.ts:261</note>
         <note category="location">src/app/features/repositories/repository-wizard.ts:62</note>
@@ -2654,7 +2847,7 @@
     </unit>
     <unit id="repo.class.virtual">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:220</note>
+        <note category="location">src/app/features/browse/browse.ts:350</note>
         <note category="location">src/app/features/guides/guide-page.ts:98</note>
         <note category="location">src/app/features/packages/package-detail.ts:262</note>
         <note category="location">src/app/features/repositories/repository-wizard.ts:64</note>
@@ -2664,9 +2857,17 @@
         <source>Virtual</source>
       </segment>
     </unit>
+    <unit id="browse.chip.remove">
+      <notes>
+        <note category="location">src/app/features/browse/browse.ts:653</note>
+      </notes>
+      <segment>
+        <source>Remove the filter <ph id="0" equiv="filter" disp="label"/></source>
+      </segment>
+    </unit>
     <unit id="browse.folder.created">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:438</note>
+        <note category="location">src/app/features/browse/browse.ts:716</note>
       </notes>
       <segment>
         <source>Folder <ph id="0" equiv="path" disp="created"/> created.</source>
@@ -2674,7 +2875,7 @@
     </unit>
     <unit id="browse.delete.folder-many">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:465</note>
+        <note category="location">src/app/features/browse/browse.ts:742</note>
       </notes>
       <segment>
         <source>The folder holds more than <ph id="0" equiv="limit" disp="TYPE_TO_CONFIRM_ABOVE"/> items. They are deleted for good.</source>
@@ -2682,7 +2883,7 @@
     </unit>
     <unit id="browse.delete.folder">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:466</note>
+        <note category="location">src/app/features/browse/browse.ts:743</note>
       </notes>
       <segment>
         <source>The folder holds <ph id="0" equiv="count" disp="count"/> items. They are deleted for good.</source>
@@ -2690,7 +2891,7 @@
     </unit>
     <unit id="browse.delete.file">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:474</note>
+        <note category="location">src/app/features/browse/browse.ts:751</note>
       </notes>
       <segment>
         <source>The file is deleted for good.</source>
@@ -2698,7 +2899,7 @@
     </unit>
     <unit id="browse.delete.title">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:477</note>
+        <note category="location">src/app/features/browse/browse.ts:754</note>
       </notes>
       <segment>
         <source>Delete <ph id="0" equiv="path" disp="sel.path"/>?</source>
@@ -2706,7 +2907,7 @@
     </unit>
     <unit id="browse.delete.confirm">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:479</note>
+        <note category="location">src/app/features/browse/browse.ts:756</note>
       </notes>
       <segment>
         <source>Delete</source>
@@ -2714,7 +2915,7 @@
     </unit>
     <unit id="browse.delete.failed">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:500</note>
+        <note category="location">src/app/features/browse/browse.ts:777</note>
       </notes>
       <segment>
         <source>The deletion failed. Some items may be gone.</source>
@@ -2722,7 +2923,7 @@
     </unit>
     <unit id="browse.deleted">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:509</note>
+        <note category="location">src/app/features/browse/browse.ts:786</note>
       </notes>
       <segment>
         <source><ph id="0" equiv="path" disp="path"/> deleted.</source>
@@ -2730,7 +2931,7 @@
     </unit>
     <unit id="browse.copy-path">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:514</note>
+        <note category="location">src/app/features/browse/browse.ts:791</note>
       </notes>
       <segment>
         <source>Copy path</source>
@@ -2738,15 +2939,23 @@
     </unit>
     <unit id="browse.copy-url">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:515</note>
+        <note category="location">src/app/features/browse/browse.ts:792</note>
       </notes>
       <segment>
         <source>Copy download URL</source>
       </segment>
     </unit>
+    <unit id="browse.copy-listing">
+      <notes>
+        <note category="location">src/app/features/browse/browse.ts:793</note>
+      </notes>
+      <segment>
+        <source>Copy listing URL</source>
+      </segment>
+    </unit>
     <unit id="browse.copy-digest">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:516</note>
+        <note category="location">src/app/features/browse/browse.ts:794</note>
       </notes>
       <segment>
         <source>Copy checksum</source>
@@ -2754,7 +2963,7 @@
     </unit>
     <unit id="browse.copy-curl">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:517</note>
+        <note category="location">src/app/features/browse/browse.ts:795</note>
       </notes>
       <segment>
         <source>Copy the curl command</source>
@@ -2762,7 +2971,7 @@
     </unit>
     <unit id="browse.delete.progress">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:518</note>
+        <note category="location">src/app/features/browse/browse.ts:796</note>
       </notes>
       <segment>
         <source>Deleting items</source>
@@ -2770,7 +2979,7 @@
     </unit>
     <unit id="browse.tab.general">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:519</note>
+        <note category="location">src/app/features/browse/browse.ts:799</note>
       </notes>
       <segment>
         <source>General</source>
@@ -2778,7 +2987,7 @@
     </unit>
     <unit id="browse.tab.statistics">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:520</note>
+        <note category="location">src/app/features/browse/browse.ts:800</note>
       </notes>
       <segment>
         <source>Statistics</source>
@@ -2786,10 +2995,26 @@
     </unit>
     <unit id="browse.tab.api">
       <notes>
-        <note category="location">src/app/features/browse/browse.ts:521</note>
+        <note category="location">src/app/features/browse/browse.ts:801</note>
       </notes>
       <segment>
         <source>API</source>
+      </segment>
+    </unit>
+    <unit id="browse.folder-empty">
+      <notes>
+        <note category="location">src/app/features/browse/browse.ts:803</note>
+      </notes>
+      <segment>
+        <source>This folder is empty.</source>
+      </segment>
+    </unit>
+    <unit id="browse.contents.caption">
+      <notes>
+        <note category="location">src/app/features/browse/browse.ts:804</note>
+      </notes>
+      <segment>
+        <source>Contents of the selected folder</source>
       </segment>
     </unit>
     <unit id="folder.title">
@@ -5755,14 +5980,6 @@
         <source>Delete</source>
       </segment>
     </unit>
-    <unit id="pkg.chips.label">
-      <notes>
-        <note category="location">src/app/features/packages/package-list.html:120</note>
-      </notes>
-      <segment>
-        <source>Applied filters</source>
-      </segment>
-    </unit>
     <unit id="pkg.list.clear">
       <notes>
         <note category="location">src/app/features/packages/package-list.html:186,187</note>
@@ -6045,7 +6262,7 @@
     </unit>
     <unit id="pkg.readme.truncated">
       <notes>
-        <note category="location">src/app/features/packages/package-readme.ts:61,64</note>
+        <note category="location">src/app/features/packages/package-readme.ts:63,66</note>
       </notes>
       <segment>
         <source> This README is shortened because it is larger than the display limit. </source>
@@ -6053,7 +6270,7 @@
     </unit>
     <unit id="pkg.readme.image-blocked">
       <notes>
-        <note category="location">src/app/features/packages/package-readme.ts:66,68</note>
+        <note category="location">src/app/features/packages/package-readme.ts:68,70</note>
       </notes>
       <segment>
         <source> One external image is shown as a link. </source>
@@ -6061,7 +6278,7 @@
     </unit>
     <unit id="pkg.readme.images-blocked">
       <notes>
-        <note category="location">src/app/features/packages/package-readme.ts:70,72</note>
+        <note category="location">src/app/features/packages/package-readme.ts:72,74</note>
       </notes>
       <segment>
         <source> <ph id="0" equiv="INTERPOLATION" disp="{{ r.externalImagesBlocked }}"/> external images are shown as links. </source>
@@ -9073,15 +9290,6 @@
       </notes>
       <segment>
         <source>Repositories</source>
-      </segment>
-    </unit>
-    <unit id="repo.list.create">
-      <notes>
-        <note category="location">src/app/features/repositories/repository-list.html:5,7</note>
-        <note category="location">src/app/features/repositories/repository-list.html:13,18</note>
-      </notes>
-      <segment>
-        <source>Create repository</source>
       </segment>
     </unit>
     <unit id="repo.list.project-note">
@@ -14138,7 +14346,7 @@
     </unit>
     <unit id="copy.done">
       <notes>
-        <note category="location">src/app/shared/copy-button.ts:33</note>
+        <note category="location">src/app/shared/copy-button.ts:35</note>
       </notes>
       <segment>
         <source>Copied to the clipboard.</source>
@@ -14146,7 +14354,7 @@
     </unit>
     <unit id="copy.failed">
       <notes>
-        <note category="location">src/app/shared/copy-button.ts:36</note>
+        <note category="location">src/app/shared/copy-button.ts:38</note>
       </notes>
       <segment>
         <source>The clipboard is not available. Select the text and copy it.</source>
