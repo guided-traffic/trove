@@ -143,7 +143,7 @@ func TestStreamWithholdsTheTail(t *testing.T) {
 	t.Run("R-REPO-041 the last 64 KiB are released by finish and not before", func(t *testing.T) {
 		rec := httptest.NewRecorder()
 		s := newStream(rec)
-		s.begin("application/octet-stream", int64(len(body)), "trove")
+		s.begin("application/octet-stream", int64(len(body)), "trove", nil)
 		for i := 0; i < len(body); i += 10_000 {
 			_, _ = s.Write(body[i:min(i+10_000, len(body))])
 		}
@@ -163,7 +163,7 @@ func TestStreamWithholdsTheTail(t *testing.T) {
 	t.Run("R-REPO-041 a body that ends inside the withheld tail has not started a response", func(t *testing.T) {
 		rec := httptest.NewRecorder()
 		s := newStream(rec)
-		s.begin("", -1, "trove")
+		s.begin("", -1, "trove", nil)
 		_, _ = s.Write(body[:1000])
 		if started, _ := s.state(); started || rec.Code != 200 && rec.Body.Len() != 0 {
 			t.Fatalf("started %v", started)
@@ -172,7 +172,7 @@ func TestStreamWithholdsTheTail(t *testing.T) {
 	t.Run("R-REPO-026 a client that goes away does not stop the fetch, and nothing is written after detach", func(t *testing.T) {
 		rec := httptest.NewRecorder()
 		s := newStream(rec)
-		s.begin("", -1, "trove")
+		s.begin("", -1, "trove", nil)
 		_, _ = s.Write(body[:2*withheldTail])
 		s.detach()
 		n := rec.Body.Len()

@@ -100,9 +100,30 @@ func Lower(id string) string {
 	return id
 }
 
-// SameID reports whether two IDs are equal under Unicode simple case folding. R-NUGET-003 uses
-// it to hold the ID declared in a package to the ID of the request path that filled the cache.
-func SameID(a, b string) bool { return strings.EqualFold(a, b) }
+// SameID reports whether two IDs are the same ID: equal once both are lower-cased character by
+// character with Unicode's simple lowercase mapping, which is what .NET's ToLowerInvariant does
+// and so how a client turns an ID into the path it requests (R-NUGET-003, Q-NUGET-84). R-NUGET-015
+// uses it to hold the ID declared in a package to the ID of the request path that filled the
+// cache. Unicode case folding goes further than a client does: it matches U+017F LONG S with "s",
+// which no client lower-cases into one another, so it would accept a package under a path no
+// client asks for by its ID. That is why it is not strings.EqualFold. Bytes that are no UTF-8
+// compare as bytes.
+func SameID(a, b string) bool {
+	for a != "" && b != "" {
+		ra, na := utf8.DecodeRuneInString(a)
+		rb, nb := utf8.DecodeRuneInString(b)
+		switch {
+		case ra == utf8.RuneError && na == 1 || rb == utf8.RuneError && nb == 1:
+			if a[:na] != b[:nb] {
+				return false
+			}
+		case unicode.ToLower(ra) != unicode.ToLower(rb):
+			return false
+		}
+		a, b = a[na:], b[nb:]
+	}
+	return a == b
+}
 
 func invalid(id, reason string) *errs.Error {
 	return errs.E(errs.Invalid, CodeInvalid, "package ID "+quote(id)+": "+reason)

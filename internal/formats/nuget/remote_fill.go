@@ -1,9 +1,14 @@
 package nuget
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
+	"errors"
+	"io"
 	"log/slog"
 	"slices"
+	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -11,6 +16,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/nuget/id"
 	"github.com/guided-traffic/trove/internal/formats/nuget/nupkg"
+	"github.com/guided-traffic/trove/internal/formats/nuget/nuspec"
 	"github.com/guided-traffic/trove/internal/formats/nuget/rows"
 	"github.com/guided-traffic/trove/internal/formats/nuget/version"
 	"github.com/guided-traffic/trove/internal/observability"
@@ -32,14 +38,23 @@ func (remoteAdapter) InspectsFill(p formats.Path) bool {
 
 // InspectFill reads the spooled package like an upload (R-NUGET-005 steps 1 to 3, with the
 // upstream rule for the ID of R-NUGET-003 and without the refusal of a symbol package) and holds
-// its declared identity to the path's:
+// its declared identity to the path's (Q-NUGET-84):
 //
-//   - the ID differs from the path's under Unicode simple case folding, or the version's URL
-//     form differs from the path's: 502 upstream_package_mismatch, nothing is stored;
-//   - the archive cannot be read, or the .nuspec is not one: the package is served and cached as
-//     the upstream sent it, logged and counted, and gets no NuGet rows (a nil inspection). The
-//     bytes are never altered;
-//   - otherwise the inspection reaches OnCommit, which records the version (Q-NUGET-53).
+//   - the content is no NuGet package for any reader - no ZIP end record at all, a ZIP archive
+//     without a .nuspec at its root, or a .nuspec that is not well-formed XML: the package is
+//     served and cached as the upstream sent it, logged and counted, and gets no NuGet rows (a nil
+//     inspection). The bytes are never altered. A client cannot read it as a package either, so
+//     nothing is served under the path that a client would take for another package;
+//   - any other refusal of the reader (a limit, a name, duplicate or overlapping entries, central
+//     directory and local headers that disagree, encryption, several .nuspec files, a .nuspec of
+//     another encoding or shape) or an ID or version that does not parse: the identity cannot be
+//     checked, so the package is answered like a mismatch, 502 upstream_package_mismatch, and
+//     nothing is stored;
+//   - the ID differs from the path's (SameID: lower-cased character by character, as a client
+//     lower-cases an ID to build the path), or the version's URL form differs from the path's: 502
+//     upstream_package_mismatch, nothing is stored;
+//   - otherwise the inspection reaches OnCommit, which records the version under the path's ID,
+//     the name the item is stored under (Q-NUGET-53).
 //
 // The archive limits are the defaults of nuget.archive: the hook meets the package without its
 // replica, as Inspect does (H-336).
@@ -53,22 +68,88 @@ func (remoteAdapter) InspectFill(ctx context.Context, _ formats.RemoteContext, p
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		if e, ok := errs.As(err); ok && e.Kind == errs.Invalid {
-			slog.Warn("a cached NuGet package cannot be read; it is served as it came and gets no NuGet rows",
-				"package", t.id, "version", t.version, "cause", e.Detail)
-			return nil, nil //nolint:nilnil // no inspection is the answer for an unreadable package, see above
+		e, ok := errs.As(err)
+		if !ok || e.Kind != errs.Invalid {
+			return nil, err
 		}
-		return nil, err
+		if notAPackage(err, sp) {
+			slog.Warn("a cached NuGet package is no package; it is served as it came and gets no NuGet rows",
+				"package", t.id, "version", t.version, "cause", e.Detail)
+			return nil, nil //nolint:nilnil // no inspection is the answer for content that is no package, see above
+		}
+		return nil, errs.E(errs.UpstreamFailed, errs.CodeUpstreamPackageMismatch,
+			"The upstream answered the request for "+t.id+" "+t.version+" with a package whose identity cannot be checked ("+e.Detail+"); it is not stored.",
+			errs.WithCause(err))
 	}
 	if !sameID(got.declaredID, t.id) || got.lowerVersion != t.version {
 		return nil, errs.E(errs.UpstreamFailed, errs.CodeUpstreamPackageMismatch,
 			"The upstream answered the request for "+t.id+" "+t.version+" with a package that declares "+got.declaredID+" "+got.lowerVersion+"; it is not stored.")
 	}
+	// The rows are keyed by the ID of the path, which names the item and which the removal of
+	// the item finds them by; the declared spelling stays the display name and the catalog
+	// entry's ID.
+	got.lowerID = t.id
 	return &formats.Inspection{
 		Package: t.id, Version: t.version,
 		Properties: map[string]string{"nuget.id": t.id, "nuget.version": t.version},
 		Payload:    got,
 	}, nil
+}
+
+// notAPackage reports whether a refusal of the reader means that the content is no NuGet package
+// for any reader, so that serving it as it came serves nothing a client would take for a package
+// (Q-NUGET-84): no end record of a ZIP archive anywhere a reader looks for one, an archive without
+// a .nuspec at its root, or a .nuspec that is not well-formed XML. Every other refusal is a
+// package trove's reader and a client's may read differently.
+func notAPackage(err error, sp formats.Spooled) bool {
+	switch {
+	case errors.Is(err, nuspec.ErrNotXML):
+		return true
+	case errors.Is(err, nupkg.ErrNotZip):
+		ra, rerr := sp.ReaderAt()
+		return rerr == nil && !hasEndRecord(ra, sp.Size())
+	case errors.Is(err, nupkg.ErrNuspecCount):
+		ra, rerr := sp.ReaderAt()
+		return rerr == nil && rootNuspecs(ra, sp.Size()) == 0
+	}
+	return false
+}
+
+// endRecordWindow is where a ZIP reader looks for the end record: the last 22 bytes of the
+// record and a comment of up to 65,535 bytes.
+const endRecordWindow = 22 + 1<<16 - 1
+
+// hasEndRecord reports whether the signature of a ZIP end record occurs anywhere in the window a
+// ZIP reader searches. An archive whose record the scan refused (a comment that does not end at
+// the end of the file, a damaged directory) still has one, and another reader may open it.
+func hasEndRecord(ra io.ReaderAt, size int64) bool {
+	n := min(size, int64(endRecordWindow))
+	if n < 4 {
+		return false
+	}
+	buf := make([]byte, n)
+	if _, err := ra.ReadAt(buf, size-n); err != nil && !errors.Is(err, io.EOF) {
+		return true // unreadable: not shown to be no archive
+	}
+	return bytes.Contains(buf, []byte("PK\x05\x06"))
+}
+
+// rootNuspecs counts the .nuspec files at the root of an archive as the standard library reads
+// it, with backslashes read as separators as NuGet reads them. It is asked only after the reader
+// checked every name and found no .nuspec; -1 when the archive does not open.
+func rootNuspecs(ra io.ReaderAt, size int64) int {
+	zr, err := zip.NewReader(ra, size)
+	if err != nil {
+		return -1
+	}
+	n := 0
+	for _, f := range zr.File {
+		name := strings.ReplaceAll(f.Name, `\`, "/")
+		if !strings.Contains(name, "/") && strings.HasSuffix(strings.ToLower(name), ".nuspec") {
+			n++
+		}
+	}
+	return n
 }
 
 // readCached runs the reading steps of an upload on a package a remote cached.

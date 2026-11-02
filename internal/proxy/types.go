@@ -144,6 +144,12 @@ type Request struct {
 	Caller   CallerFacts
 	// Serve serves a stored artifact; required for [Engine.Artifact].
 	Serve ServeFunc
+	// Headers sets, on the answer the engine streams to the leader's own client while the
+	// artifact is fetched, the headers of a stored answer that do not depend on the body
+	// (Accept-Ranges, Cache-Control), so that the first answer and the later ones differ only
+	// in the validators the whole body decides (ETag, Last-Modified, Repr-Digest). The host
+	// supplies it, as it supplies Serve; nil sets none.
+	Headers func(h http.Header)
 }
 
 // Document is a metadata document as the engine hands it to the format.

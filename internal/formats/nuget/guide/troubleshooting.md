@@ -33,7 +33,7 @@ A NuGet client prints its own error numbers and often only the status of the ans
 | 502 | `upstream_unreachable` | The remote repository could not connect to its upstream, and the package is not cached | Retry; tell an administrator if it persists |
 | 502 | `upstream_error` | The upstream answered with a server error, and the package is not cached | Retry later |
 | 502 | `upstream_auth_failed` | The upstream refused the remote repository's own credential | An administrator fixes the upstream credential of the remote repository |
-| 502 | `upstream_package_mismatch` | The package the upstream sent is not the ID and version that was asked for; nothing was stored | Tell an administrator; do not work around it |
+| 502 | `upstream_package_mismatch` | The package the upstream sent is not the ID and version that was asked for, or trove cannot read its ID and version; nothing was stored | Tell an administrator; do not work around it |
 | 502 | `egress_denied` | The outbound address policy refuses the upstream's address | An administrator checks the upstream and the egress rules |
 | 502 | `foreign_host_denied` | The upstream's service index points at a host that is neither the upstream nor one of the extra hosts of the remote repository | An administrator adds the host to the remote repository if it is trusted |
 | 503 | `upstream_assumed_offline` | Repeated failures opened the circuit of the upstream, and the package is not cached | Wait for the period of `Retry-After`; trove probes the upstream again |

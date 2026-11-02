@@ -266,7 +266,7 @@ func TestR_NUGET_015_InspectFillHoldsTheDeclaredIdentityToThePath(t *testing.T) 
 	}
 }
 
-func TestR_NUGET_003_InspectFillComparesANonASCIIIDUnderSimpleCaseFolding(t *testing.T) {
+func TestR_NUGET_003_InspectFillComparesANonASCIIIDAsAClientLowerCasesIt(t *testing.T) {
 	const path = "Ünïcode.pkg/1.0.0/Ünïcode.pkg.1.0.0.nupkg" // trove lowercases ASCII letters only
 	if got, err := inspectFill(t, path, buildNupkg(t, "Ünïcode.Pkg", "1.0.0")); err != nil || got == nil {
 		t.Errorf("the declared casing: %v %v", got, err)

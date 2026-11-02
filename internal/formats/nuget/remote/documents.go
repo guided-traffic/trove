@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/guided-traffic/trove/internal/errs"
@@ -116,19 +117,37 @@ func (p rawPage) leaves() ([]Leaf, bool, error) {
 	return out, true, nil
 }
 
+// MaxPages is the most pages one registration index may list, inlined or not (Q-NUGET-83). Every
+// page that is not inlined costs an upstream request, a stored document and possibly a URL-map
+// row when the index is read, so an index that lists more is no document trove reads: 512 pages of
+// nuget.org's 64 leaves are 32,768 versions, which is MaxLeaves.
+const MaxPages = 512
+
+// MaxLeaves is the most versions one rendering of a registration reads, over the index and its
+// pages together (Q-NUGET-83): the leaves are converted to rows held in memory, and a page of tiny
+// leaves would otherwise turn the byte bound into millions of them.
+const MaxLeaves = 32768
+
 // ParseIndex reads a registration index (R-NUGET-009 shape): a list of pages, each inlined
 // with its leaves or listed by bounds and address. The coding of the stored bytes is undone
-// first (Decode).
+// first (Decode). An index that lists more than MaxPages pages is refused.
 func ParseIndex(doc []byte, max int64) (*Index, error) {
 	doc, err := Decode(doc, max)
 	if err != nil {
 		return nil, err
 	}
+	return parseIndex(doc)
+}
+
+func parseIndex(doc []byte) (*Index, error) {
 	var d struct {
 		Items []rawPage `json:"items"`
 	}
 	if err := json.Unmarshal(doc, &d); err != nil {
 		return nil, invalid("The upstream's registration index is not a registration document: " + shorten(err.Error()))
+	}
+	if len(d.Items) > MaxPages {
+		return nil, invalid("The upstream's registration index lists " + strconv.Itoa(len(d.Items)) + " pages; trove reads at most " + strconv.Itoa(MaxPages) + ".")
 	}
 	idx := &Index{Pages: make([]PageRef, 0, len(d.Items))}
 	for _, p := range d.Items {
@@ -150,6 +169,10 @@ func ParsePage(doc []byte, max int64) ([]Leaf, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parsePage(doc)
+}
+
+func parsePage(doc []byte) ([]Leaf, error) {
 	var p rawPage
 	if err := json.Unmarshal(doc, &p); err != nil {
 		return nil, invalid("The upstream's registration page is not a registration document: " + shorten(err.Error()))

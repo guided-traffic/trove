@@ -231,7 +231,7 @@ func (f *Format) remoteRegistration(ctx context.Context, rq *formats.Request, w 
 			if err != nil {
 				return remoteSource{}, err
 			}
-			pages, err := storedPages(ctx, rq, lowerID, bounds)
+			pages, err := storedPages(ctx, rq, lowerID, bounds, false)
 			if err != nil {
 				return remoteSource{}, err
 			}
@@ -277,8 +277,20 @@ func (f *Format) pageBounds(ctx context.Context, rq *formats.Request, lowerID st
 	if err != nil {
 		return nil, err
 	}
+	out, err := boundsOf(parsed)
+	if err != nil {
+		return nil, err
+	}
+	rq.Host.Renditions().Put(key, encodeBounds(out))
+	return out, nil
+}
+
+// boundsOf lists the pages of an index that it does not inline, in its order, by their bounds in
+// URL form. ParseIndex has refused an index of more than remote.MaxPages pages, so the list is
+// bounded (Q-NUGET-83).
+func boundsOf(idx *remote.Index) ([]pageBound, error) {
 	var out []pageBound
-	for _, p := range parsed.Pages {
+	for _, p := range idx.Pages {
 		if p.Inline {
 			continue
 		}
@@ -289,7 +301,6 @@ func (f *Format) pageBounds(ctx context.Context, rq *formats.Request, lowerID st
 		}
 		out = append(out, pageBound{lo, hi})
 	}
-	rq.Host.Renditions().Put(key, encodeBounds(out))
 	return out, nil
 }
 
@@ -312,8 +323,11 @@ func decodeBounds(b []byte) []pageBound {
 }
 
 // storedPages reads the pages of an index through the engine, several at a time. A page the
-// index lists and the upstream does not have is an upstream that contradicts itself.
-func storedPages(ctx context.Context, rq *formats.Request, lowerID string, bounds []pageBound) ([]*formats.RemoteDocument, error) {
+// index lists and the upstream does not have is an upstream that contradicts itself. With
+// unfillable set, a page the caller may not bring into the cache (populate_not_permitted) is
+// left out, nil in the result: the virtual merge of a member the caller may not fill lists only
+// cached versions anyway (R-AUTHZ-008).
+func storedPages(ctx context.Context, rq *formats.Request, lowerID string, bounds []pageBound, unfillable bool) ([]*formats.RemoteDocument, error) {
 	docs := make([]*formats.RemoteDocument, len(bounds))
 	errsOf := make([]error, len(bounds))
 	var wg sync.WaitGroup
@@ -332,6 +346,10 @@ func storedPages(ctx context.Context, rq *formats.Request, lowerID string, bound
 		if err == nil {
 			continue
 		}
+		if e, ok := errs.As(err); ok && unfillable && e.Kind == errs.Forbidden && e.Code == errs.CodePopulateNotPermitted {
+			docs[i] = nil
+			continue
+		}
 		if e, ok := errs.As(err); ok && e.Kind == errs.NotFound {
 			return nil, errs.E(errs.UpstreamFailed, errs.CodeNuGetInvalidUpstreamDocument,
 				"The upstream's registration index of "+lowerID+" lists the page "+bounds[i].lower+" to "+bounds[i].upper+" and the upstream does not have it.")
@@ -342,32 +360,45 @@ func storedPages(ctx context.Context, rq *formats.Request, lowerID string, bound
 }
 
 // remoteVersions reads the leaves of the index and of its pages and returns the versions,
-// ascending.
+// ascending, within the budget of one rendering (Q-NUGET-83).
 func remoteVersions(ctx context.Context, lowerID string, idx *formats.RemoteDocument, pages []*formats.RemoteDocument) ([]remote.Version, error) {
 	raw, err := idx.Bytes(ctx)
 	if err != nil {
 		return nil, err
 	}
-	parsed, err := remote.ParseIndex(raw, MaxDocumentBytes)
+	b := remote.NewBudget(MaxDocumentBytes)
+	parsed, err := b.Index(raw)
 	if err != nil {
 		return nil, err
 	}
-	var leaves []remote.Leaf
-	for _, p := range parsed.Pages {
-		leaves = append(leaves, p.Leaves...)
+	return registrationVersions(ctx, lowerID, parsed, pages, b)
+}
+
+// registrationVersions converts the leaves of a parsed index and of the stored pages it does not
+// inline into versions, ascending. The pages are read one at a time within the budget, and the
+// leaves of a page are converted before the next one is read, so a rendering holds at most the
+// budget's bytes of upstream documents and its leaves (Q-NUGET-83). A nil page was left out
+// (storedPages).
+func registrationVersions(ctx context.Context, lowerID string, idx *remote.Index, pages []*formats.RemoteDocument, b *remote.Budget) ([]remote.Version, error) {
+	c := remote.NewCollector(lowerID)
+	for _, p := range idx.Pages {
+		c.Add(p.Leaves)
 	}
 	for _, d := range pages {
-		b, err := d.Bytes(ctx)
+		if d == nil {
+			continue
+		}
+		raw, err := d.Bytes(ctx)
 		if err != nil {
 			return nil, err
 		}
-		ls, err := remote.ParsePage(b, MaxDocumentBytes)
+		ls, err := b.Page(raw)
 		if err != nil {
 			return nil, err
 		}
-		leaves = append(leaves, ls...)
+		c.Add(ls)
 	}
-	return remote.Merge(leaves, lowerID), nil
+	return c.Versions(), nil
 }
 
 // registrationRender is one registration document to render from the versions of a remote.

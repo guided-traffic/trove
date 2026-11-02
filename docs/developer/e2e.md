@@ -1136,6 +1136,11 @@ path more than twice and no `.nupkg` path more than once, over every host.
 | `omit_resources` | `@type` prefixes left out of the service index, for example `PackageBaseAddress` |
 | `strict_hosts` | a resource asked from the wrong host answers 404 (only with two distinct hosts) |
 | `require_authorization` | 401 unless `Authorization` equals this value |
+| `gzip_always` | the version lists and the documents of both registration hives answer gzip-coded whatever `Accept-Encoding` asks, as nuget.org's gzip hive does (Q-NUGET-82) |
+
+The corpus marks `Newtonsoft.Json` 13.0.1 deprecated (reasons, message, `Newtonsoft.Json` `[13.0.3, )` as the alternate)
+and records an advisory against it (`advisoryUrl` on github.com, severity 2), in the JSON-LD form nuget.org writes, with
+an `@id` and `@type` on the upstream for each, so the pass-through of Q-NUGET-85 is in every run.
 
 The control API (`-control-token-file`, bearer token) has `GET /-/stub/counts`, `POST /-/stub/reset[?all=true]`,
 `GET`/`POST /-/stub/mode`, and `POST /-/stub/publish|drop|restore|unlist|relist` with `{"name","version"}`

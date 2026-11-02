@@ -267,11 +267,14 @@ func (f *fetcher) artifact(ctx context.Context, resp *http.Response, idle *atomi
 	// An artifact that the format inspects before it is stored (the fill hook) reaches no
 	// client before the hook ran: the leader is served from the stored entry like every
 	// request that waited, so a refusal answers 502 to all of them (WP3.0a).
-	hook := rq.Adapter.InspectsFill(rq.Path)
+	//
+	// Nor does a body that fits in the withheld tail: no byte of it would leave before the
+	// commit, so streaming it gains nothing, and the stored entry answers it with every
+	// header of a stored answer, the validators included (Q-NUGET-86).
+	held := rq.Adapter.InspectsFill(rq.Path) || resp.ContentLength <= withheldTail
 	var tee *stream
-	if f.st.stream != nil && resp.ContentLength >= 0 && !hook {
-		tee = f.st.stream
-		tee.begin(resp.Header.Get("Content-Type"), resp.ContentLength, CacheStatus{Forwarded: "uri-miss", FwdStatus: resp.StatusCode, Stored: true}.Header())
+	if f.st.stream != nil && resp.ContentLength >= 0 && !held {
+		tee = f.begin(resp)
 	}
 	// The upstream log record completes with the body, before this function returns:
 	// it reads the status of the response the client is going to get.
@@ -288,7 +291,7 @@ func (f *fetcher) artifact(ctx context.Context, resp *http.Response, idle *atomi
 		return f.integrityMismatch(ctx, sp)
 	}
 	var payload any
-	if hook {
+	if rq.Adapter.InspectsFill(rq.Path) {
 		if payload, err = rq.Adapter.InspectFill(ctx, rq.Path, sp); err != nil {
 			return f.fillRefused(err, resp.StatusCode)
 		}
@@ -307,8 +310,8 @@ func (f *fetcher) artifact(ctx context.Context, resp *http.Response, idle *atomi
 		return f.digestChanged(ctx, sp, changed)
 	case err != nil:
 		if ee, ok := errs.As(err); ok && ee.Code == errs.CodeObjectStoreUnavail {
-			if hook && f.st.stream != nil && resp.ContentLength >= 0 {
-				tee = f.replay(sp, resp) // inspected and verified, so the leader's client may have it now
+			if held && f.st.stream != nil && resp.ContentLength >= 0 {
+				tee = f.replay(sp, resp) // verified, and inspected where the format inspects, so the leader's client may have it now
 			}
 			return f.passThrough(tee)
 		}
@@ -331,12 +334,20 @@ func (f *fetcher) fillRefused(err error, status int) flightResult {
 }
 
 // replay hands the spooled body to the leader's client: the artifact could not be stored
-// because the object store is unavailable and the client was held back for the fill
-// hook, which has accepted the body.
+// because the object store is unavailable and the client was held back, for the fill hook,
+// which has accepted the body, or because the body fits in the withheld tail.
 func (f *fetcher) replay(sp *items.Spooled, resp *http.Response) *stream {
-	tee := f.st.stream
-	tee.begin(resp.Header.Get("Content-Type"), resp.ContentLength, CacheStatus{Forwarded: "uri-miss", FwdStatus: resp.StatusCode, Stored: true}.Header())
+	tee := f.begin(resp)
 	_, _ = io.Copy(tee, sp.Reader()) // the stream drops a client that went away and never fails
+	return tee
+}
+
+// begin fixes the headers of the answer streamed to the leader's own client: the upstream's
+// media type and length, the Cache-Status, and the headers of a stored answer the host names
+// that do not depend on the body (Request.Headers, Q-NUGET-86).
+func (f *fetcher) begin(resp *http.Response) *stream {
+	tee := f.st.stream
+	tee.begin(resp.Header.Get("Content-Type"), resp.ContentLength, CacheStatus{Forwarded: "uri-miss", FwdStatus: resp.StatusCode, Stored: true}.Header(), f.rq.Headers)
 	return tee
 }
 

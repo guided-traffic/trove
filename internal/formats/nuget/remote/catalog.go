@@ -117,7 +117,7 @@ func Convert(l Leaf, lowerID string) (v Version, ok bool) {
 			PackageTypes: []string{"dependency"}, Metadata: meta,
 		},
 		Extras: registration.Passthrough{
-			Deprecation: compact(e["deprecation"]), Vulnerabilities: compact(e["vulnerabilities"]), Other: unknown(e),
+			Deprecation: passThrough(e["deprecation"], false), Vulnerabilities: passThrough(e["vulnerabilities"], true), Other: unknown(e),
 		},
 	}, true
 }
@@ -231,11 +231,8 @@ func holdsAddress(raw []byte) bool {
 		if err != nil {
 			return false
 		}
-		if s, ok := t.(string); ok {
-			l := strings.ToLower(strings.TrimSpace(s))
-			if strings.HasPrefix(l, "http://") || strings.HasPrefix(l, "https://") {
-				return true
-			}
+		if s, ok := t.(string); ok && looksLikeAddress(s) {
+			return true
 		}
 	}
 }
@@ -244,20 +241,52 @@ func holdsAddress(raw []byte) bool {
 // is listed once, by the first leaf (an index and a page can both name it while the upstream
 // moves a version between pages).
 func Merge(leaves []Leaf, lowerID string) []Version {
-	seen := map[string]bool{}
-	out := make([]Version, 0, len(leaves))
+	c := NewCollector(lowerID)
+	c.Add(leaves)
+	return c.Versions()
+}
+
+// Collector converts the leaves of a registration to versions as they are read, page by page, so
+// that the leaves of a page are not held once they are converted (Q-NUGET-83). A version that two
+// leaves name is listed once, by the first leaf added.
+type Collector struct {
+	lowerID string
+	seen    map[string]bool
+	out     []collected
+}
+
+type collected struct {
+	v      Version
+	parsed version.Version
+}
+
+// NewCollector returns a collector for the leaves of the ID lowerID.
+func NewCollector(lowerID string) *Collector {
+	return &Collector{lowerID: lowerID, seen: map[string]bool{}}
+}
+
+// Add converts leaves; a leaf without a version trove can parse is left out (Convert).
+func (c *Collector) Add(leaves []Leaf) {
 	for _, l := range leaves {
-		v, ok := Convert(l, lowerID)
-		if !ok || seen[v.Row.LowerVersion] {
+		v, ok := Convert(l, c.lowerID)
+		if !ok || c.seen[v.Row.LowerVersion] {
 			continue
 		}
-		seen[v.Row.LowerVersion] = true
-		out = append(out, v)
+		parsed, err := version.Parse(v.Row.LowerVersion)
+		if err != nil { // cannot happen: Convert parsed it
+			continue
+		}
+		c.seen[v.Row.LowerVersion] = true
+		c.out = append(c.out, collected{v: v, parsed: parsed})
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		a, _ := version.Parse(out[i].Row.LowerVersion)
-		b, _ := version.Parse(out[j].Row.LowerVersion)
-		return version.Compare(a, b) < 0
-	})
+}
+
+// Versions returns the versions added, ascending by precedence.
+func (c *Collector) Versions() []Version {
+	sort.SliceStable(c.out, func(i, j int) bool { return version.Compare(c.out[i].parsed, c.out[j].parsed) < 0 })
+	out := make([]Version, len(c.out))
+	for i, x := range c.out {
+		out[i] = x.v
+	}
 	return out
 }

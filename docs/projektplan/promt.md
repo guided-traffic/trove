@@ -209,26 +209,6 @@ started and stopped before it changed the tree; phase 4 stays open until these a
 
 ### NuGet
 
-- **F-22 · A virtual repository with a nuget.org member answers 502 on registration documents** (confirmed by a probe test of
-  the code review). `merge.DecodeUpstream` and `decodeFlat` ([merge/](../../internal/formats/nuget/merge)) do not inflate the
-  gzip bytes a remote stores unchanged, and refuse an index whose pages are listed by URL (more than 128 versions), although
-  Q-NUGET-56 wants every page inlined for the merge (Q-NUGET-67 hands over the raw index). Every nuget.org ID through
-  `nuget-all` fails; the stub only gzips when asked and its IDs have two versions, so
-  `TestR_NUGET_018_AVirtualRepositoryMergesALocalAndARemoteMember` passes, and
-  `TestR_NUGET_017_AnIndexWithPagesByUrlIsAnUpstreamFailureNotAShortList` pins the defect. With it (read): the merge counts a
-  version as cached from any cached file, not only its `.nupkg` (`formathost/virtual.go` `CachedVersion`); the merge drops parts
-  of a remote entry (reuse `remote.Convert`); `MergeFingerprint` covers only the index digest, so a changed page under an unchanged
-  index keeps the old ETag.
-- **F-24 · Upstream addresses in `deprecation` and `vulnerabilities`** (read). The remote and the merge copy them verbatim,
-  with `advisoryUrl` and any upstream `@id`; [nuget.md](../spec/formats/nuget.md) R-NUGET-015 says both "passed through" and
-  "every URL except projectUrl, licenseUrl and iconUrl is trove's". Decide, write back, and add a vulnerability and a deprecation to
-  the stub's corpus; the run against nuget.org (F-27) would see it on `newtonsoft.json` below 13.0.1.
-- **F-25 · The cache fill of a remote** (confirmed in the code). Every refusal of the archive reader skips the identity check
-  ([H-338](../security/nuget-remote.md#h-338--a-package-the-archive-reader-refuses-is-cached-without-its-identity-check)); an index
-  may list any number of pages ([H-339](../security/nuget-remote.md#h-339--one-registration-index-of-an-upstream-can-list-any-number-of-pages));
-  the identity check folds Unicode case while the rows keep the declared ID
-  ([H-340](../security/nuget-remote.md#h-340--the-identity-check-folds-unicode-case-the-rows-keep-the-declared-spelling)). And (seen in
-  e2e): the first answer to a cache miss on a remote file has no `ETag`, `Accept-Ranges` or `Cache-Control`, a stored answer has them.
 - **F-27 · The run against nuget.org of E3.1 has no test** (confirmed). npm has a read-only subset against the public
   registry in `TestNPMClosing`; NuGet's closing set has none. Planned: a remote of `https://api.nuget.org/v3/index.json` and a
   virtual repository with it, `dotnet restore` of `Newtonsoft.Json` and of an ID with more than 128 versions, nuget.exe through the
@@ -238,8 +218,6 @@ started and stopped before it changed the tree; phase 4 stays open until these a
   subtests, 18 and 41 writes in about 5 s, and the pacing comment at `e1_11_scatter_test.go:253` still describes the token bucket
   that Q-API-3 replaced. CI has not hit it (R-API-052 takes 4.8 to 6.7 s there). Fix in the test: a token per subtest, and a guard
   that reads the class's `RateLimit-Policy` and fails a write that would exceed it.
-- **F-29 · `Discoverer` has no kit check** (confirmed). R-ARCH-025 wants a kit check with every new behaviour; the engine caps a
-  discovery document's size and NuGet's own tests cover its parser. A crafted-document fixture needs its own design.
 
 Found on 2026-11-01 while writing the manual (`docs/manual`) and the design change of Q-UI-88:
 

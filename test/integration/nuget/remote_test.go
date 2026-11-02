@@ -106,8 +106,14 @@ func TestR_NUGET_015_RegistrationsAreRenderedOnTheServingRepository(t *testing.T
 		}
 	}
 
-	// Every address of the document except the three web links of people is a trove address.
+	// Every address of the document except the web links of people (projectUrl, licenseUrl,
+	// iconUrl, advisoryUrl) is a trove address; the upstream's deprecation and advisory of 13.0.1
+	// come without its @id and @type (Q-NUGET-85).
 	a := e.get(rep, rRemote, "v3/registration-semver2/newtonsoft.json/index.json")
+	if !strings.Contains(string(a.Body), `"deprecation":{"alternatePackage":{"id":"Newtonsoft.Json","range":"[13.0.3, )"},"message":"Use 13.0.3 or later.","reasons":["Legacy","CriticalBugs"]}`) ||
+		!strings.Contains(string(a.Body), `"vulnerabilities":[{"advisoryUrl":"`+nugetstub.Advisory+`","severity":"2"}]`) {
+		t.Errorf("the deprecation and the advisory of 13.0.1 are not passed through as the client reads them: %s", a.Body)
+	}
 	var any_ any
 	if err := json.Unmarshal(a.Body, &any_); err != nil {
 		t.Fatal(err)
@@ -124,7 +130,7 @@ func TestR_NUGET_015_RegistrationsAreRenderedOnTheServingRepository(t *testing.T
 				walk(key, e)
 			}
 		case string:
-			if (strings.HasPrefix(x, "http://") || strings.HasPrefix(x, "https://")) && key != "projectUrl" && key != "licenseUrl" && key != "iconUrl" {
+			if (strings.HasPrefix(x, "http://") || strings.HasPrefix(x, "https://")) && key != "projectUrl" && key != "licenseUrl" && key != "iconUrl" && key != "advisoryUrl" {
 				if !strings.HasPrefix(x, base) {
 					t.Errorf("%s = %q is not below %s", key, x, base)
 				}
@@ -470,6 +476,68 @@ func TestR_NUGET_014_AnUpstreamWithoutPackageContentAnswers502OnTheFirstFetch(t 
 	}
 	if b := e.get(rep, rRemote, "v3/flatcontainer/newtonsoft.json/index.json"); b.Status != 200 {
 		t.Errorf("after the repair: %d %s", b.Status, b.Body)
+	}
+}
+
+// manyPages answers the registration index of contoso.huge with an index that lists pages pages
+// by address in both hives, and counts the requests for a page of it; everything else goes to the
+// upstream.
+type manyPages struct {
+	next  http.Handler
+	pages int
+	mu    sync.Mutex
+	asked int
+}
+
+func (m *manyPages) wrap(next http.Handler) http.Handler { m.next = next; return m }
+
+func (m *manyPages) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	for _, hive := range []string{"/v3/registration/contoso.huge/", "/v3/registration-gz/contoso.huge/"} {
+		rest, ok := strings.CutPrefix(r.URL.Path, hive)
+		if !ok {
+			continue
+		}
+		if rest != "index.json" {
+			m.mu.Lock()
+			m.asked++
+			m.mu.Unlock()
+			http.Error(w, "not here", http.StatusNotFound)
+			return
+		}
+		items := make([]string, m.pages)
+		for i := range items {
+			items[i] = fmt.Sprintf(`{"@id":"https://%s%spage/1.%d.0/1.%d.0.json","count":1,"lower":"1.%d.0","upper":"1.%d.0"}`, r.Host, hive, i, i, i, i)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"count":%d,"items":[%s]}`, m.pages, strings.Join(items, ","))
+		return
+	}
+	m.next.ServeHTTP(w, r)
+}
+
+// TestR_NUGET_015_AnIndexOfMorePagesThanTroveReadsIs502AndFetchesNoPage (Q-NUGET-83): an upstream
+// whose registration index of an ID lists more pages than one rendering reads is answered 502
+// nuget_invalid_upstream_document before a page is fetched, and nothing of the index is stored,
+// so the next request is refused the same way and costs one index request, not one per page.
+// Before, every page was fetched, stored and mapped, each retry paying again.
+func TestR_NUGET_015_AnIndexOfMorePagesThanTroveReadsIs502AndFetchesNoPage(t *testing.T) {
+	mp := &manyPages{pages: 600}
+	e := newRemoteEnv(t, remoteOptions{Wrap: mp.wrap})
+	rep := e.start(1)[0]
+	for range 2 {
+		a := e.get(rep, rRemote, "v3/registration-semver2/contoso.huge/index.json")
+		if a.Status != 502 || !strings.Contains(string(a.Body), "nuget_invalid_upstream_document") {
+			t.Fatalf("%d %s, want 502 nuget_invalid_upstream_document", a.Status, a.Body)
+		}
+	}
+	mp.mu.Lock()
+	asked := mp.asked
+	mp.mu.Unlock()
+	if asked != 0 {
+		t.Errorf("%d page requests, want none", asked)
+	}
+	if n := e.st.Number(`SELECT count(*) FROM remote_url_map m JOIN repositories r ON r.id = m.repo_id WHERE r.key = $1`, rRemote); n != 0 {
+		t.Errorf("%d URL-map rows, want none", n)
 	}
 }
 

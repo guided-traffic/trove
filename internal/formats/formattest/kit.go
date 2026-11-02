@@ -100,6 +100,10 @@ type Fixture struct {
 	// [InspectJSON] and [InspectXML] build the standard cases of the four archive
 	// and document types.
 	Inspect []InspectCase
+	// Discovery are the discovery documents of check 6 for a format whose remote adapter
+	// follows one (formats.Discoverer): at least one the format reads, and the crafted ones of
+	// its own shape that it must refuse. The kit adds crafted documents of no shape at all.
+	Discovery []DiscoveryCase
 	// Content are the requests of check 7: one per Download, Metadata, Computed and
 	// Volatile route at least, and for each such route one that it serves (a status
 	// below 400), since the content headers are checked on what a route serves.
@@ -192,6 +196,15 @@ type InspectCase struct {
 	Path      string
 	MediaType string
 	Input     crafted.Input
+}
+
+// DiscoveryCase is one discovery document of check 6: an upstream's document as the engine
+// hands it to ParseDiscovery, after its size bound.
+type DiscoveryCase struct {
+	Name string
+	Doc  []byte
+	// Valid says the format reads the document; ParseDiscovery refuses every other one.
+	Valid bool
 }
 
 // ContentCase is one request of check 7.
@@ -386,6 +399,8 @@ func (r *run) skipProblem(c Check, reason string) string {
 		return fmt.Sprintf("%s is skipped (%s) and the format has a virtual adapter", c, reason)
 	case c == CheckInspect && r.hasRoute(formats.Upload):
 		return fmt.Sprintf("%s is skipped (%s) and the format has an upload route, whose body Inspect reads", c, reason)
+	case c == CheckInspect && (formats.CapabilitiesOf(r.f).Remote.Discovery != nil || formats.CapabilitiesOf(r.f).Remote.Fill != nil):
+		return fmt.Sprintf("%s is skipped (%s) and the format's remote adapter reads what an upstream sends (a discovery document or a fill hook), which the check bounds", c, reason)
 	case c == CheckRevision && (r.d.PackageNames || r.hasWriteRoutes()):
 		return fmt.Sprintf("%s is skipped (%s) and the format has package names or a route that writes", c, reason)
 	case c == CheckSetup && (len(r.d.Clients) > 0 || len(r.f.SetupTemplates()) > 0 || len(r.f.Guide()) > 0):

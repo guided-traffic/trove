@@ -22,7 +22,33 @@ type Version struct {
 	Dependencies []Dependency
 	Published    time.Time
 	Listed       bool
+	// Deprecation and Vulnerabilities are what the registration says of the version, in the
+	// JSON-LD form nuget.org writes them: each with an @id in the upstream's catalog.
+	Deprecation     *Deprecation
+	Vulnerabilities []Vulnerability
 }
+
+// Deprecation is the deprecation of a version.
+type Deprecation struct {
+	Reasons []string
+	Message string
+	// AlternateID and AlternateRange name the package to use instead; empty for none.
+	AlternateID, AlternateRange string
+}
+
+// Vulnerability is an advisory against a version: a web page for people and a severity from 0
+// (low) to 3 (critical), as nuget.org writes it.
+type Vulnerability struct {
+	AdvisoryURL string
+	Severity    int
+}
+
+// Advisory is the advisory the corpus records against NewtonsoftID 13.0.1, and the alternate
+// package its deprecation names.
+const (
+	Advisory          = "https://github.com/advisories/GHSA-5crp-9r3c-p9vr"
+	DeprecatedVersion = "13.0.1"
+)
 
 // Package is one package ID with its versions in ascending order.
 type Package struct {
@@ -161,9 +187,16 @@ func Default() *Corpus {
 		}
 		c.add(p)
 	}
-	simple(NewtonsoftID, "Synthetic stand-in for a popular JSON package", "13.0.1", "13.0.3")
+	simple(NewtonsoftID, "Synthetic stand-in for a popular JSON package", DeprecatedVersion, "13.0.3")
 	simple(UtilID, "Synthetic package for claim and pin tests", "2.0.0", "2.1.0")
 	simple(OtherID, "Synthetic package served in place of another", "1.0.0")
+	// The older version carries a deprecation and an advisory, as versions of popular packages on
+	// nuget.org do, so the members a remote passes through are in every run (R-NUGET-015).
+	nj := c.packages[strings.ToLower(NewtonsoftID)]
+	nj.Versions[0].Deprecation = &Deprecation{
+		Reasons: []string{"Legacy", "CriticalBugs"}, Message: "Use 13.0.3 or later.", AlternateID: NewtonsoftID, AlternateRange: "[13.0.3, )",
+	}
+	nj.Versions[0].Vulnerabilities = []Vulnerability{{AdvisoryURL: Advisory, Severity: 2}}
 	return c
 }
 

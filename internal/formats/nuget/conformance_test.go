@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -234,6 +235,39 @@ func conformance(f *Format) formattest.Fixture {
 		OptionNames: []string{"--password", "--store-password-in-clear-text", "-Password", "ClearTextPassword", "TROVE_TOKEN"},
 		Remote:      remoteFixture(),
 		Merge:       mergeFixture(),
+		Discovery:   discoveryFixture(),
+	}
+}
+
+// discoveryFixture are the service indexes of check 6 (R-ARCH-025): one in the shape nuget.org serves,
+// and crafted ones that must be refused - an address with user info, a scheme that is no web
+// scheme, a relative address, an index that lacks the package content resource among 20,000
+// others, a resource whose type nests 100,000 deep.
+func discoveryFixture() []formattest.DiscoveryCase {
+	const index = `{"version":"3.0.0","resources":[
+	 {"@id":"https://api.nuget.test/v3-flatcontainer/","@type":"PackageBaseAddress/3.0.0"},
+	 {"@id":"https://api.nuget.test/v3/registration5-gz-semver2/","@type":"RegistrationsBaseUrl/3.6.0"},
+	 {"@id":"https://search.nuget.test/query","@type":"SearchQueryService/3.5.0"}]}`
+	with := func(content string) []byte {
+		return []byte(`{"resources":[{"@id":"` + content + `","@type":"PackageBaseAddress/3.0.0"},{"@id":"https://h.test/r/","@type":"RegistrationsBaseUrl/3.6.0"}]}`)
+	}
+	many := make([]byte, 0, 20_000*60)
+	many = append(many, `{"resources":[`...)
+	for i := range 20_000 {
+		if i > 0 {
+			many = append(many, ',')
+		}
+		many = append(many, fmt.Sprintf(`{"@id":"https://h.test/%d/","@type":"Other/%d"}`, i, i)...)
+	}
+	many = append(many, `]}`...)
+	deep := `{"resources":[{"@id":"https://h.test/c/","@type":` + strings.Repeat("[", 100_000) + strings.Repeat("]", 100_000) + `}]}`
+	return []formattest.DiscoveryCase{
+		{Name: "a service index in the shape nuget.org serves", Doc: []byte(index), Valid: true},
+		{Name: "an address with user info", Doc: with("https://user:secret@h.test/c/")},
+		{Name: "a scheme that is no web scheme", Doc: with("file:///etc/")},
+		{Name: "a relative address", Doc: with("/c/")},
+		{Name: "20,000 resources without the package content", Doc: many},
+		{Name: "a type nested 100,000 deep", Doc: []byte(deep)},
 	}
 }
 

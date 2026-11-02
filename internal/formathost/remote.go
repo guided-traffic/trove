@@ -78,6 +78,12 @@ func (r *remote) Artifact(ctx context.Context, rq *formats.Request, p formats.Pa
 		fi := itemOf(rq.RepoRef(), it)
 		return r.h.Items().Serve(ctx, rq, w, fi, formats.ServeStored)
 	}
+	// The headers edge.ServeItem gives a stored answer that do not depend on the body, for the
+	// answer the engine streams while it fetches (Q-NUGET-86).
+	preq.Headers = func(h http.Header) {
+		h.Set("Accept-Ranges", "bytes")
+		h.Set("Cache-Control", edge.CacheControl(rq.Request))
+	}
 	return r.e.Artifact(ctx, preq, w, rq.Request)
 }
 

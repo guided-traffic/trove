@@ -122,11 +122,11 @@ A remote NuGet repository reads the service index of its upstream (`remote.url`,
 |---|---|---|---|
 | `502` | `upstream_error` naming `PackageBaseAddress/3.0.0` or `RegistrationsBaseUrl` | The address is no NuGet v3 feed: its service index lacks a resource trove needs (a NuGet v2 feed is not supported) | Correct `remote.url`; it must end in the `index.json` of a v3 feed |
 | `502` | `foreign_host_denied` | The service index names a resource on a host that is neither the upstream's nor in the remote's extra hosts (nuget.org spreads its resources over hosts of `nuget.org`) | Add the host to the remote's extra hosts; for nuget.org the proposed entry is `*.nuget.org` |
-| `502` | `upstream_package_mismatch` | The upstream answered a request for one package with a package that declares another ID or version; nothing was stored | Report it to the owner of the upstream; the restore works as soon as the upstream serves the right package |
+| `502` | `upstream_package_mismatch` | The upstream answered a request for one package with a package that declares another ID or version, or with an archive trove's reader refuses so that its ID and version cannot be checked (the detail names the reason); nothing was stored | Report it to the owner of the upstream; the restore works as soon as the upstream serves the right package |
 | `502` | `nuget_invalid_upstream_document` | A version list, registration index or page of the upstream is not what its address promises; the copy trove had stays | Retry later; if it persists the upstream is broken |
 | `404` | `not_found` | The upstream does not have the ID or the version, or the ID matches an exclude pattern of the remote, or the ID was withdrawn by the upstream (its cached packages stay stored and are served by the cache view) | Check the spelling and the patterns |
 
-Cached packages are served while the upstream is down. A package that cannot be read as a NuGet package is cached and served as the upstream sent it; it has no entry in the package view and no search hit, and is counted in `trove_nuget_remote_unparseable_packages_total`. The search of a remote answers from the packages it has cached; the forwarding of a search to the upstream is not built yet.
+Cached packages are served while the upstream is down. Content that is no NuGet package at all (no ZIP archive, no `.nuspec` in it, a `.nuspec` that is not XML) is cached and served as the upstream sent it; it has no entry in the package view and no search hit, and is counted in `trove_nuget_remote_unparseable_packages_total`. The search of a remote answers from the packages it has cached; the forwarding of a search to the upstream is not built yet.
 
 ### EINTEGRITY, audits and upstream failures
 

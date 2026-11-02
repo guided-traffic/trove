@@ -182,6 +182,27 @@ func (s *Server) catalogEntry(b bases, hive string, p *Package, v Version, badDi
 		}
 		entry["dependencyGroups"] = []map[string]any{{"@type": "PackageDependencyGroup", "targetFramework": ".NETStandard2.0", "dependencies": deps}}
 	}
+	if d := v.Deprecation; d != nil {
+		dep := map[string]any{
+			"@id": leafURL(b, hive, p, v.Version) + "#deprecation", "@type": "deprecation", "reasons": d.Reasons, "message": d.Message,
+		}
+		if d.AlternateID != "" {
+			dep["alternatePackage"] = map[string]any{
+				"@id": b.api + hive + strings.ToLower(d.AlternateID) + "/index.json", "@type": "alternatePackage", "id": d.AlternateID, "range": d.AlternateRange,
+			}
+		}
+		entry["deprecation"] = dep
+	}
+	if len(v.Vulnerabilities) > 0 {
+		list := make([]map[string]any, len(v.Vulnerabilities))
+		for i, x := range v.Vulnerabilities {
+			list[i] = map[string]any{
+				"@id": leafURL(b, hive, p, v.Version) + "#vulnerability/GitHub/" + strconv.Itoa(i+1), "@type": "Vulnerability",
+				"advisoryUrl": x.AdvisoryURL, "severity": strconv.Itoa(x.Severity),
+			}
+		}
+		entry["vulnerabilities"] = list
+	}
 	return entry
 }
 

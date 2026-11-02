@@ -187,7 +187,7 @@ func (r *Resolver) build(ctx context.Context, c Caller, p *Plan, m Merger, ttl t
 		return nil, err
 	}
 	e.bytes = doc
-	e.fingerprint = mergeFingerprint(p.Fingerprint, parts)
+	e.fingerprint = mergeFingerprint(p.Fingerprint, parts, doc)
 	e.keep = !e.partial && e.expires.After(now)
 	switch {
 	case e.partial:
@@ -262,9 +262,13 @@ func (r *Resolver) call(c Caller, v repository.Repository, mem Member, d Descrip
 }
 
 // mergeFingerprint is an input of the ETag: the plan fingerprint, then for every part the member,
-// the tier, the revision it was built from and the versions the merge may take from its cache. It
-// changes whenever the merged bytes could.
-func mergeFingerprint(plan [32]byte, parts []Part) [32]byte {
+// the tier, the revision it was built from and the versions the merge may take from its cache,
+// then the merged bytes. A format may read more of a member than the document the engine handed
+// it - NuGet reads the registration pages a remote member's index lists by address (Q-NUGET-82) -
+// and a page can change while its index does not, so the revisions alone do not say when the
+// merged bytes changed; their digest does. The merge is deterministic, so every replica that
+// merges the same inputs computes the same fingerprint (R-NUGET-030).
+func mergeFingerprint(plan [32]byte, parts []Part, merged []byte) [32]byte {
 	h := sha256.New()
 	h.Write(plan[:])
 	for _, p := range parts {
@@ -283,6 +287,8 @@ func mergeFingerprint(plan [32]byte, parts []Part) [32]byte {
 			h.Write([]byte(v))
 		}
 	}
+	sum := sha256.Sum256(merged)
+	h.Write(sum[:])
 	var out [32]byte
 	copy(out[:], h.Sum(nil))
 	return out
@@ -301,7 +307,7 @@ func (r *Resolver) firstMatch(ctx context.Context, c Caller, p *Plan, m Merger) 
 		}
 		if found {
 			r.m.resolved(repo, sourceLocal)
-			return &Merged{Bytes: doc, MergeFingerprint: mergeFingerprint(p.Fingerprint, []Part{{Member: mem, Tier: TierLocal, Revision: Revision{RevSeq: rev}}})}, nil
+			return &Merged{Bytes: doc, MergeFingerprint: mergeFingerprint(p.Fingerprint, []Part{{Member: mem, Tier: TierLocal, Revision: Revision{RevSeq: rev}}}, doc)}, nil
 		}
 	}
 	for _, mem := range p.Remote() {
@@ -334,7 +340,7 @@ func (r *Resolver) firstMatch(ctx context.Context, c Caller, p *Plan, m Merger) 
 		}
 		r.m.resolved(repo, source)
 		part := Part{Member: mem, Tier: TierRemote, Revision: Revision{Digest: doc.Digest}, Restricted: !mem.MayFill, Stale: doc.Stale}
-		return &Merged{Bytes: bytes, MergeFingerprint: mergeFingerprint(p.Fingerprint, []Part{part})}, nil
+		return &Merged{Bytes: bytes, MergeFingerprint: mergeFingerprint(p.Fingerprint, []Part{part}, bytes)}, nil
 	}
 	r.m.resolved(repo, sourceNone)
 	if failure != nil {

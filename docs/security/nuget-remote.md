@@ -38,27 +38,35 @@ trove sends no request for them while they are only stored.
 | Any metadata document | the repository's `limits.maxMetadataBytes` (else `proxy.max_metadata_bytes`) while it is received, then `MaxDocumentBytes` (128 MiB) for what is read into memory | the document is the document its path promises, before anything is stored; the previous entry stays on a failure | `PrepareFill` |
 | A gzip-coded hive | the inflated size is bounded by `MaxDocumentBytes` whatever the stored size is | the stream starts with the gzip magic and inflates within the bound | `remote.Decode` |
 | The version list | | `{"versions": [...]}`; a string that is no version is left out of the rendering | `remote.VersionList` |
-| A registration index and its pages | | the pages are lists of leaves; a page the index lists without a bound or an address is no index; a leaf without a parseable version is left out | `remote.ParseIndex`, `ParsePage` |
+| A registration index and its pages | at most 512 pages per index, else no index (nothing stored, no page fetched); per rendering at most 32,768 versions and `MaxDocumentBytes` inflated over the index and all its pages together, the pages read and converted one at a time (Q-NUGET-83) | the pages are lists of leaves; a page the index lists without a bound or an address is no index; a leaf without a parseable version is left out | `remote.ParseIndex`, `ParsePage`, `remote.Budget` |
 | A package | `limits.maxArtifactBytes` (else `proxy.max_artifact_bytes`) while it is received | the archive and the `.nuspec` are read like an upload's; the declared ID and version are the path's (below) | `InspectFill` |
 
 The registration documents a client receives are rendered from the stored ones and are not passed through: the addresses are trove's, the paging is
 trove's, the hive filter of R-NUGET-004 is applied, and a member of a catalog entry that trove does not name is kept only when it holds no string that looks
 like an `http` or `https` address (Q-NUGET-52). The three web links for people (`projectUrl`, `licenseUrl`, `iconUrl`) are passed through as the upstream wrote
-them, as are the `deprecation` and `vulnerabilities` members; a client shows them to a person, and trove neither follows nor fetches them.
+them; a client shows them to a person, and trove neither follows nor fetches them. The `deprecation` and `vulnerabilities` members are passed through without
+the upstream's JSON-LD `@id` and `@type` at any depth (they name the upstream's catalog and registration) and without any other member that holds an address;
+the `advisoryUrl` of an advisory is kept as a fourth web link for people when it is an absolute `http` or `https` address without user info, and dropped
+otherwise (Q-NUGET-85). A virtual repository with a remote member renders the same entries: its merge reads the member's stored index and pages with the
+remote's own reading and conversion, within the same bounds (Q-NUGET-82).
 
 ## The identity of a cached package
 
 NuGet v3 announces no digest of a package (H-35), so the declared identity is the one check that the upstream served the package that was asked for. The
 package is inspected after the digest check and before the item is committed, outside any transaction, and no byte of it reaches a client before that:
 
-- The ID the `.nuspec` declares must equal the ID of the path under Unicode simple case folding, and the version's URL form must equal the path's. A package
-  that fails is 502 `upstream_package_mismatch` to every request of the fetch, and nothing is stored: no blob, no item, no row and no negative entry, so
-  the right package is served as soon as the upstream serves it.
-- A package the archive reader refuses is served and cached as the upstream sent it, logged and counted in
-  `trove_nuget_remote_unparseable_packages_total{repo}`, and gets no NuGet row. The bytes are never altered. Every refusal of the reader counts, not only "not
-  a ZIP archive, no or several `.nuspec`, a `.nuspec` that does not parse": the hook treats any error of kind `invalid` as an unreadable package
-  ([remote_fill.go](../../internal/formats/nuget/remote_fill.go) `InspectFill`), and that includes the limits, the name rules, duplicate and overlapping entries and
-  an ID or version that does not parse. The identity check is not applied to those bytes (H-338).
+- The ID the `.nuspec` declares must equal the ID of the path once both are lowercased character by character with Unicode's simple lowercase mapping, the way
+  a client lowercases an ID into its path (U+212A KELVIN SIGN matches `k`, U+017F LONG S does not match `s`), and the version's URL form must equal the
+  path's. A package that fails is 502 `upstream_package_mismatch` to every request of the fetch, and nothing is stored: no blob, no item, no row and no
+  negative entry, so the right package is served as soon as the upstream serves it. The rows of an accepted package are keyed by the path's ID, the name of
+  its item (Q-NUGET-84).
+- Content that no reader takes for a package is served and cached as the upstream sent it, logged and counted in
+  `trove_nuget_remote_unparseable_packages_total{repo}`, and gets no NuGet row: no ZIP end record in the window a ZIP reader searches, a ZIP archive without a
+  `.nuspec` at its root, a `.nuspec` that is not well-formed XML. The bytes are never altered. A client cannot read such content as a package either.
+- Every other refusal of the reader - a limit, a name the push road refuses, duplicate or overlapping entries, a central directory the local headers
+  contradict, encryption, several `.nuspec` files, a `.nuspec` of another encoding or shape - and an ID or version that does not parse is 502
+  `upstream_package_mismatch`, nothing stored: the identity cannot be checked, and another reader may read the archive as a package
+  ([remote_fill.go](../../internal/formats/nuget/remote_fill.go) `InspectFill`, `notAPackage`; Q-NUGET-84).
 - The `.nuspec` file of a remote is fetched from the upstream as its own cached artifact and is not checked (Q-NUGET-54).
 
 The rows of a cached package (`origin = 'cache'`) come from the package's own `.nuspec`, so search and the package view of a remote show what the package
@@ -114,12 +122,13 @@ Subject: every remote NuGet repository on an installation that set `nuget.archiv
 
 Live today, and only where those settings differ from the defaults. The hook of the remote engine receives the spooled package and the remote's context and
 no handle on the replica, so it reads the archive with the defaults of `nuget.archive` (65,535 entries, 4 GiB declared, a compression ratio of 100, a `.nuspec`
-of 1 MiB). The push route applies the configured values. What is read into memory stays bounded by the fixed bounds of R-ARCH-028 either way.
+of 1 MiB). The push route applies the configured values. What is read into memory stays bounded by the fixed bounds of R-ARCH-028 either way, and a limit
+the hook meets refuses the package with 502 `upstream_package_mismatch` (Q-NUGET-84), so no package passes the identity check unread.
 
-What makes it real: because a refusal of the reader on a fill means "serve without the identity check" (H-338), a configured limit tighter than the default
-would not refuse more packages on a remote; it would let more of them past the identity check. Handing the configured limits to the hook is therefore only
-right after H-338 is closed. The addition (a field of `RemoteContext`) changes the frozen contract and is an ADR of its own
-([ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)).
+What makes it real: an installation that raised `max_entries` or `max_uncompressed_bytes` above the defaults to accept large packages on push cannot restore
+such a package through a remote: the fill refuses it under the defaults. An installation that tightened a limit has its remote accept packages its push road
+would refuse, with their identity checked. Handing the configured limits to the hook is a field of `RemoteContext`, a change of the frozen contract and an
+ADR of its own ([ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)).
 
 ### H-337 · The registration of a remote is what the upstream says, not what the package declares
 
@@ -136,48 +145,6 @@ What makes it real: a client resolves its dependency graph from the registration
 that serves a graph in its registration that differs from its packages decides which packages a restore selects. That is the upstream's own authority over its
 feed, which a remote repository accepts by being configured; the gap is that trove cannot tell the two apart for a version it has not cached, and shows the
 registration of a version that it has cached unchanged. The cached rows of origin `cache` come from the package and are what search shows.
-
-### H-338 · A package the archive reader refuses is cached without its identity check
-
-Stage: `InspectFill` ([remote_fill.go](../../internal/formats/nuget/remote_fill.go)), on a cache fill of a `.nupkg` by a remote repository.
-
-Subject: every remote NuGet repository; the package a client receives for an ID and version it asked for.
-
-Live today (confirmed by reading the code; found by the security audit of 2026-11-02 and not reproduced with a crafted archive). Every error of kind `invalid`
-from the archive reader returns "no inspection", and the engine stores and serves the bytes. The upstream (or anyone between it and trove on an `http` upstream)
-can therefore serve package B under the path of package A and have it cached for good, by making B's archive one the reader refuses: a `.nuspec` that
-compresses better than 100:1, more than 65,535 entries, more than 4 GiB declared, or names the push road refuses (traversal, duplicates, overlapping entries,
-central directory and local headers that disagree). Those are the archives the push road refuses to protect clients, and a remote serves them.
-
-What makes it real: an upstream that is malicious or compromised, or an `http` upstream. The fix lets only "no ZIP archive", "no `.nuspec`" and "not XML"
-pass as not-a-package, and answers every other refusal with 502 and stores nothing (open finding F-25 of
-[promt.md](../projektplan/promt.md#8--open-findings)).
-
-### H-339 · One registration index of an upstream can list any number of pages
-
-Stage: the rendering of a remote's registration index and version list ([handlers_remote.go](../../internal/formats/nuget/handlers_remote.go) `pageBounds`,
-`storedPages`, `remoteVersions`).
-
-Subject: the replica that renders, its memory and the upstream request budget of the remote.
-
-Live today (confirmed by reading the code). `pageBounds` takes every page the index lists and `storedPages` fetches and stores each, eight at a time; nothing
-caps how many pages one index may list, and the rendering holds the index and every page in memory at once, each page up to `MaxDocumentBytes` inflated. One
-client request for the index of an ID can therefore cause as many upstream fetches, cache entries and URL-map rows as the upstream lists pages, and a
-rendering that fails caches nothing, so each retry pays again. What makes it real: an upstream that is malicious or compromised, or an `http` upstream. The
-fix caps the pages per index (502 `nuget_invalid_upstream_document`) and bounds the inflated bytes of one rendering (open finding F-25).
-
-### H-340 · The identity check folds Unicode case, the rows keep the declared spelling
-
-Stage: `InspectFill` and the rows of a cached package ([remote_fill.go](../../internal/formats/nuget/remote_fill.go), [id.go](../../internal/formats/nuget/id/id.go)
-`SameID`).
-
-Subject: the NuGet rows of a cached package whose declared ID differs from the path's ID outside ASCII.
-
-Live today (confirmed by reading the code). `SameID` is `strings.EqualFold`, which treats U+212A KELVIN SIGN as `k` and U+017F LONG S as `s`; the rows are keyed
-by the declared ID, the item by the path's ID. A package whose `.nuspec` declares such an ID passes the check for the ASCII path, its rows land under a
-different package than its item, and the later eviction leaves an orphan package row. The client receives the package it asked for by path; what is wrong is
-search and the package view of the remote. What makes it real: an upstream that serves such a `.nuspec`. The fix keys the rows by the path's ID once the check
-passed, or compares the lower-cased forms of R-NUGET-003 (open finding F-25).
 
 ### H-347 · The count of a forwarded search tells a caller with row-level reads how many upstream matches it may not see
 
@@ -196,3 +163,21 @@ hidden.
 What makes it real: an upstream that holds packages the caller may not read and that the remote's credential reads, such as another installation or a
 private feed. For nuget.org the count is public anyway. Closing it gives a caller with row-level reads a count of what the pages seen so far support (the
 results kept, and one page more while the upstream reports more), which changes the count R-NUGET-034 promises and needs a decision of its own.
+
+### H-348 · A remote member whose registration page cannot be read fails the merged registration, not only itself
+
+Stage: the merge of a virtual repository's registration entries, where the NuGet virtual adapter reads the pages a remote member's stored index lists by
+address ([virtual_remote.go](../../internal/formats/nuget/virtual_remote.go) `remoteMemberEntries`, Q-NUGET-82).
+
+Subject: every virtual NuGet repository with a remote member; the registration documents of an ID that the remote member's upstream lists with pages by
+address (128 or more versions on nuget.org), including the versions the local members hold.
+
+Live today. The virtual engine leaves out a remote member it cannot ask and serves the rest as a partial merge (R-REPO-020), but a page is read inside the
+format's merge, which can only succeed or fail as a whole: the contract gives a merge no way to mark one member partial. A page the upstream lists and does
+not serve (`nuget_invalid_upstream_document`), or a page that cannot be fetched while it is not stored, answers the virtual repository's registration
+documents of that ID with 502, where a failing index would have left the member out. The version list and the package files are not affected; a member
+the caller may not fill leaves out the pages it has not stored instead of failing.
+
+What makes it real: an upstream that is down, or that lists a page it does not serve, for an ID that a local member of the same virtual repository also holds
+and that no claim or pin rule keeps away from the remote. A claim of the local member (`local.autoClaim`) keeps the remote out of the ID's merge and closes
+it for that ID (R-REPO-023).

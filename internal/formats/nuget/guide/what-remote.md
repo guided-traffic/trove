@@ -6,7 +6,7 @@ The repository is read-only: `dotnet nuget push`, `nuget push`, delete and relis
 
 - The upstream's service index, the version lists and the registration documents are kept for the repository's metadata period (five minutes unless the repository sets another) and then checked with the upstream again. A version published upstream shows up within that period.
 - An ID the upstream does not have is remembered for the negative period (30 minutes unless the repository sets another).
-- A `.nupkg` is cached for good, because its bytes never change. trove checks that the package inside is the ID and version the client asked for; a package that is not answers `502` `upstream_package_mismatch` and nothing is stored.
+- A `.nupkg` is cached for good, because its bytes never change. trove checks that the package inside is the ID and version the client asked for; a package that is not, or whose ID and version trove cannot read, answers `502` `upstream_package_mismatch` and nothing is stored.
 - Search is forwarded to the upstream while the repository's `forwardSearch` setting is on, and the answer is kept for a short time. A search term that an administrator protects, a claimed internal name for instance, is never forwarded.
 
 ### While the upstream is down

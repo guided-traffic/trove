@@ -8,6 +8,10 @@
 // documents and the version list from it for the repository the client addressed, after
 // the merged-metadata cache, so the cached bytes hold no URL a request chose (R-REPO-043).
 //
+// A remote member's registration reaches the merge as entries the format converted from the
+// stored index and its pages with the remote's own conversion (FromRemote), so a version shows
+// the same entry through the remote repository and through a virtual repository.
+//
 // Per version the entry comes from the member that tier resolution would pick for the
 // version's .nupkg (R-REPO-019): the local members in order, then the remote members whose
 // cache holds the package, then the remote members that would fetch it. Because the
@@ -66,11 +70,21 @@ type Entry struct {
 	Types []string `json:"types,omitempty"`
 	// Metadata is the JSON object of R-NUGET-005 that registration.ParseMetadata reads.
 	Metadata json.RawMessage `json:"metadata,omitempty"`
-	// Deprecation and Vulnerabilities are the upstream's members, passed through.
+	// Deprecation and Vulnerabilities are the upstream's members, passed through without its
+	// addresses (Q-NUGET-85).
 	Deprecation     json.RawMessage `json:"deprecation,omitempty"`
 	Vulnerabilities json.RawMessage `json:"vulnerabilities,omitempty"`
+	// Other are the further members of the upstream's catalog entry that the remote keeps
+	// (R-NUGET-015, Q-NUGET-52), in its order.
+	Other []Member `json:"other,omitempty"`
 	// Source is the key of the member the entry came from; the merge sets it.
 	Source string `json:"source,omitempty"`
+}
+
+// Member is a kept member of an upstream's catalog entry: its key and its compact value.
+type Member struct {
+	Key   string          `json:"k"`
+	Value json.RawMessage `json:"v"`
 }
 
 // Doc is the document of a local member and the merged document.
@@ -85,7 +99,13 @@ type Part struct {
 	Tier   Tier
 	// Position is the member's place in the resolution order.
 	Position int
-	Doc      []byte
+	// Doc is the member's document: the version list of the flat container (plain JSON), or
+	// the neutral document of a local member's registration entries.
+	Doc []byte
+	// Entries are the registration entries of a remote member, which the format reads from the
+	// stored index and the pages it does not inline (FromRemote, Q-NUGET-82); Doc is not read
+	// for them.
+	Entries []Entry
 	// Cached are the versions (URL form) of a remote member whose package is cached.
 	Cached map[string]bool
 	// Restricted says that the caller may not fill the member's cache: only the cached
@@ -104,10 +124,10 @@ func (r rank) less(o rank) bool {
 	return r.position < o.position
 }
 
-// Do merges the documents of the members of one ID. Local members hold the neutral Doc
-// (flat: the version list of the flat container), remote members the upstream's document
-// of the same path. The result is a Doc, ascending by precedence, in which every entry
-// names the member it came from.
+// Do merges the documents of the members of one ID. Local members hold the neutral Doc,
+// remote members their Entries (flat: every member holds the version list of the flat
+// container). The result is a Doc, ascending by precedence, in which every entry names the
+// member it came from.
 func Do(kind Kind, parts []Part) ([]byte, error) {
 	won := map[string]Entry{}
 	ranks := map[string]rank{}
@@ -160,7 +180,7 @@ func decode(kind Kind, p Part) ([]Entry, error) {
 	case p.Tier == Local:
 		return Decode(p.Doc)
 	}
-	return DecodeUpstream(p.Doc)
+	return p.Entries, nil
 }
 
 // decodeFlat reads the version list of the flat container, which a local member and an

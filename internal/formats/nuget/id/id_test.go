@@ -133,6 +133,12 @@ func TestR_NUGET_003_SameID(t *testing.T) {
 		{"MÜLLER", "müller", true},
 		{"Acme.Widgets", "Acme.Widget", false},
 		{"a", "b", false},
+		// U+212A KELVIN SIGN lower-cases to "k" as .NET's ToLowerInvariant does: a client asks
+		// for the path "kelvin". U+017F LONG S only folds to "s"; no client lower-cases one into
+		// the other, so the IDs differ (Q-NUGET-84).
+		{"Kelvin", "kelvin", true},
+		{"ſecret", "secret", false},
+		{"Secret", "ſecret", false},
 	}
 	for _, tt := range tests {
 		if got := SameID(tt.a, tt.b); got != tt.want {

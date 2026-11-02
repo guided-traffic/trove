@@ -37,15 +37,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch rt.kind {
 	case KindIndex:
-		s.writeDocument(w, r, s.indexDoc(b, mode), s.indexTime(), false)
+		s.writeDocument(w, r, s.indexDoc(b, mode), s.indexTime(), false, false)
 	case KindVersions:
-		s.serveVersions(w, r, rt)
+		s.serveVersions(w, r, rt, mode)
 	case KindNuspec, KindNupkg:
 		s.serveFile(w, r, rt, mode)
 	case KindRegIndex, KindRegPage, KindRegLeaf:
 		s.serveRegistration(w, r, rt, mode, b)
 	case KindSearch:
-		s.writeDocument(w, r, s.searchDoc(b, r.URL.Query()), s.indexTime(), false)
+		s.writeDocument(w, r, s.searchDoc(b, r.URL.Query()), s.indexTime(), false, false)
 	default:
 		writeError(w, http.StatusNotFound, "not found")
 	}
@@ -125,13 +125,13 @@ func (s *Server) gate(w http.ResponseWriter, r *http.Request, rt route, m Mode, 
 	return true
 }
 
-func (s *Server) serveVersions(w http.ResponseWriter, r *http.Request, rt route) {
+func (s *Server) serveVersions(w http.ResponseWriter, r *http.Request, rt route, m Mode) {
 	p, modified, ok := s.view(rt.id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "Not found")
 		return
 	}
-	s.writeDocument(w, r, versionsDoc(p), modified, false)
+	s.writeDocument(w, r, versionsDoc(p), modified, false, m.GzipAlways)
 }
 
 func (s *Server) serveRegistration(w http.ResponseWriter, r *http.Request, rt route, m Mode, b bases) {
@@ -160,7 +160,7 @@ func (s *Server) serveRegistration(w http.ResponseWriter, r *http.Request, rt ro
 		}
 		body = s.registrationLeafDoc(b, rt.hive, p, p.Versions[i])
 	}
-	s.writeDocument(w, r, body, modified, rt.hive == registrationGz)
+	s.writeDocument(w, r, body, modified, rt.hive == registrationGz, m.GzipAlways)
 }
 
 // serveFile answers the .nuspec and the .nupkg of a version. The version need not be visible in the
@@ -200,8 +200,8 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, rt route, m M
 
 // writeDocument answers a request with a JSON document: a weak ETag over the body, which gzip
 // content coding does not change, Last-Modified, and 304 for a matching validator. A gzip document
-// is compressed when the client's Accept-Encoding allows it.
-func (s *Server) writeDocument(w http.ResponseWriter, r *http.Request, body []byte, modified time.Time, gz bool) {
+// is compressed when the client's Accept-Encoding allows it, and always is (Mode.GzipAlways).
+func (s *Server) writeDocument(w http.ResponseWriter, r *http.Request, body []byte, modified time.Time, gz, always bool) {
 	sum := sha256.Sum256(body)
 	etag := `W/"` + hex.EncodeToString(sum[:16]) + `"`
 	h := w.Header()
@@ -209,14 +209,14 @@ func (s *Server) writeDocument(w http.ResponseWriter, r *http.Request, body []by
 	h.Set("Last-Modified", modified.UTC().Format(http.TimeFormat))
 	h.Set("Cache-Control", "public, max-age=300")
 	h.Set("Content-Type", "application/json")
-	if gz {
+	if gz && !always {
 		h.Set("Vary", "Accept-Encoding")
 	}
 	if notModified(r, etag, modified) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
-	if gz && strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+	if always || gz && strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 		var buf bytes.Buffer
 		zw, _ := gzip.NewWriterLevel(&buf, gzip.BestSpeed) // the level is valid
 		_, _ = zw.Write(body)

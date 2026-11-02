@@ -59,6 +59,11 @@ type indexDoc struct {
 // service index, or that lacks a required resource, is an upstream failure naming what is
 // missing (Q-NUGET-14: the first fetch of a misconfigured remote answers 502).
 func ParseDiscovery(doc []byte) (*Discovery, error) {
+	// A service index is a JSON object; anything else is refused before the decoder scans it,
+	// which for a large array would read every value first (R-ARCH-028).
+	if t := bytes.TrimLeft(doc, " \t\r\n"); len(t) == 0 || t[0] != '{' {
+		return nil, upstream("The upstream's service index is not a JSON document: it is no JSON object.")
+	}
 	var idx indexDoc
 	if err := json.NewDecoder(bytes.NewReader(doc)).Decode(&idx); err != nil {
 		return nil, upstream("The upstream's service index is not a JSON document: " + shorten(err.Error()))

@@ -232,7 +232,7 @@ func (f *Format) virtualRegistration(ctx context.Context, rq *formats.Request, w
 			for i, e := range entries {
 				var x registration.Passthrough
 				all[i], x = versionOf(e)
-				if x.Deprecation != nil || x.Vulnerabilities != nil {
+				if x.Deprecation != nil || x.Vulnerabilities != nil || len(x.Other) > 0 {
 					doc.Extras[e.Version] = x
 				}
 			}

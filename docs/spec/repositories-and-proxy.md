@@ -2557,7 +2557,11 @@ Priority: **MVP** · Covers: RMT-022
   HTTP/2: reset the stream), so no client receives a complete response with unverified content
   ([RFC 9112, section 8](https://www.rfc-editor.org/rfc/rfc9112#section-8)). The leader streams
   only when the upstream announced the length of the body, and the status line goes out with the
-  first byte beyond the withheld tail, so an error before that is a plain 502 (Q-REPO-94). Nothing is stored;
+  first byte beyond the withheld tail, so an error before that is a plain 502 (Q-REPO-94). A body
+  whose announced length fits in the withheld tail is not streamed: the stored entry answers the
+  leader like a waiter, with every header of a stored answer; a streamed answer carries the headers
+  of a stored answer that do not depend on the body (`Accept-Ranges`, `Cache-Control`), not its
+  validators ([formats/nuget.md](formats/nuget.md) Q-NUGET-86). Nothing is stored;
   collapsed followers get 502 `upstream_integrity_mismatch`; a security event is logged; nothing is
   negatively cached.
 - **Immutable stays immutable.** When refreshed metadata announces, for an artifact already cached, a

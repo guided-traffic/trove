@@ -112,8 +112,8 @@ func newStream(w http.ResponseWriter) *stream {
 }
 
 // begin fixes the headers of the response: the upstream's media type and, when it
-// announced one, its length.
-func (s *stream) begin(contentType string, length int64, cacheStatus string) {
+// announced one, its length, then what more sets (nil sets nothing).
+func (s *stream) begin(contentType string, length int64, cacheStatus string, more func(http.Header)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.header = http.Header{}
@@ -124,6 +124,9 @@ func (s *stream) begin(contentType string, length int64, cacheStatus string) {
 		s.header.Set("Content-Length", strconv.FormatInt(length, 10))
 	}
 	s.header.Set("Cache-Status", cacheStatus)
+	if more != nil {
+		more(s.header)
+	}
 	s.begun = true
 }
 

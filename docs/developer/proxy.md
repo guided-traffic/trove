@@ -374,9 +374,10 @@ replica never calls `Acquire`; it waits for another replica's flight and fetches
 entry whose `validated_at` differs from the one the request read first as fresh, so a period of 0 does not make every waiter fetch again.
 `flight_role` is defined in Q-REPO-92.
 
-The leader's own client is streamed (`stream`) only when the upstream announced a length, the request is a plain `GET` and the format declares no fill
-hook for the path (`Adapter.InspectsFill`); the last 64 KiB wait for the commit. With a hook the leader is served from the stored entry like a waiter
-(no byte before `InspectFill` accepted), and with the object store down the accepted body is replayed from the spool (`fetcher.replay`). A failure after the status line is `panic(http.ErrAbortHandler)` in the handler goroutine, which the format dispatcher
+The leader's own client is streamed (`stream`) only when the upstream announced a length longer than the withheld tail (64 KiB), the request is a plain `GET` and the format declares no fill
+hook for the path (`Adapter.InspectsFill`); the last 64 KiB wait for the commit. A body within the tail is answered from the stored entry like a waiter's, with every header of a stored answer; a streamed answer
+carries the headers the host names in `Request.Headers` (`Accept-Ranges`, `Cache-Control`), not the validators (Q-NUGET-86). With a hook the leader is served from the stored entry like a waiter
+(no byte before `InspectFill` accepted), and with the object store down a body that was held back (a hook, or a body within the tail) is replayed from the spool once verified (`fetcher.replay`). A failure after the status line is `panic(http.ErrAbortHandler)` in the handler goroutine, which the format dispatcher
 lets through. The stream is the request's, not the flight's: `detach` ends its share before the handler returns.
 
 ### State per replica (R-ARCH-032, R-REPO-049)

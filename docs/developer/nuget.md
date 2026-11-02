@@ -107,7 +107,7 @@ when the code exists). To add a section: a file in `guide/`, a line in `guideSec
 ### Tests
 
 `go test ./internal/formats/nuget/` runs the conformance kit (all eleven checks run and none is skipped, `TestR_ARCH_010_NoCheckIsSkipped`; check 6 runs the crafted
-packages through the remote adapter's fill hook as well, and the three P1 routes that answer 501, embedded files, autocomplete and the symbol server, are the
+packages through the remote adapter's fill hook as well, and crafted service indexes (`discoveryFixture`) through `ParseDiscovery`, and the three P1 routes that answer 501, embedded files, autocomplete and the symbol server, are the
 fixture's `NoContent` entries, Q-ARCH-281), the route and matching tables, the classification, the error shape and the service index. [test/integration/nuget](../../test/integration/nuget) creates repositories through the management
 API, reads the service index over HTTP with every credential form, and asserts the 404, 405, 409 and 501 answers; [view_store_test.go](../../test/integration/nuget/view_store_test.go) runs the view reads against PostgreSQL and [view_api_test.go](../../test/integration/nuget/view_api_test.go) the package screens of the management API over NuGet rows.
 
@@ -284,7 +284,7 @@ Things to know when changing a document:
   `title`, `summary`, `description`, `language`, `authors`, `tags` (a list), `projectUrl`, `iconUrl`, `licenseUrl`, `license{type,version,value}`,
   `requireLicenseAcceptance`, `minClientVersion` and `dependencyGroups[{targetFramework, dependencies[{id, version}]}]`; a damaged object makes the document a 500.
 - The remote class is served by [handlers_remote.go](../../internal/formats/nuget/handlers_remote.go) and the virtual class is not served here. A handler for them switches on `rq.Repo.Class` before `serveDocument`; `registration.Doc.Extras` carries the pass-through
-  `deprecation` and `vulnerabilities` of an upstream entry.
+  `deprecation` and `vulnerabilities` of an upstream entry (without the upstream's `@id` and `@type`, Q-NUGET-85) and the members the remote keeps; the virtual class renders the same `Extras` from the merged entries (Q-NUGET-82).
 - Tests: the fixture in [documents_fixture_test.go](../../internal/formats/nuget/documents_fixture_test.go) is a Host of the kit over a `docStore` (the twin, with the two document
   reads) and commits versions the way a write does, raising the revision. It is the place to start a test of a document.
 
@@ -365,17 +365,17 @@ the negative cache and the circuit ([proxy.md](proxy.md)); the format adds the a
 | File | Responsibility |
 |---|---|
 | [remote.go](../../internal/formats/nuget/remote.go) | The adapter (`Remote()` returns the stable value `remoteAdapter`, which embeds `formats.RemoteBase`): `parseTarget` (the canonical paths of a remote: discovery `.nuget/index.json`, `{id}/index.json`, `{id}/.registration/index.json`, `{id}/.registration/page/{lower}/{upper}.json`, the `.nupkg` and `.nuspec`), `DiscoveryDocument`/`ParseDiscovery`, `UpstreamRequest`, `PrepareFill` with the URL-map rows, `OnFill` (the `metadata_changed` signal), `Rewrite`, `UpstreamQuery` |
-| [remote_fill.go](../../internal/formats/nuget/remote_fill.go) | `InspectsFill` (the `.nupkg` only) and `InspectFill` (the identity check, 502 `upstream_package_mismatch`; an unreadable package gives no inspection), `commitFill` (version, package row and the NuGet row of origin `cache`), `onCacheRemoved`, the counter `trove_nuget_remote_unparseable_packages_total{repo}` |
+| [remote_fill.go](../../internal/formats/nuget/remote_fill.go) | `InspectsFill` (the `.nupkg` only) and `InspectFill` (the identity check by `id.SameID`, 502 `upstream_package_mismatch`; `notAPackage` lets only content no reader takes for a package pass without an inspection, every other refusal of the reader is the 502 as well, Q-NUGET-84; the rows take the path's ID), `commitFill` (version, package row and the NuGet row of origin `cache`), `onCacheRemoved`, the counter `trove_nuget_remote_unparseable_packages_total{repo}` |
 | [handlers_remote.go](../../internal/formats/nuget/handlers_remote.go) | The documents of a remote: `serveRemote` (permission, exposure, the stored documents, the validator, the rendition cache, the rendering), `remoteFlatIndex`, `remoteRegistration`, `remoteFile`, `renderRegistration` |
 | [search_remote.go](../../internal/formats/nuget/search_remote.go) | The forwarded search (R-NUGET-016): `runRemoteSearch` (a remote addressed directly), `searchRemoteMember` (a remote member of a virtual repository, on the request `rq.Member` derives), `remoteSearch`, `mayForward` (`forwardSearch`, the cache view, an endpoint without cache fill, the withheld-query rule over `withheldNames`), `forwardSearch` (`Host.Remote().Query` on `v3/search`, the fallback to the cache-only search), `forwardParams`, `keepForCaller`/`forwardedHit` (patterns, `KeepsAway`, the read scope), `hit` (an upstream result to a `rows.SearchHit` with `rows.Forwarded`), `readableOnly` |
 | [metrics_search.go](../../internal/formats/nuget/metrics_search.go) | `trove_nuget_search_withheld_total{repo}`, `trove_nuget_search_forward_failures_total{repo}` |
-| [remote/](../../internal/formats/nuget/remote) | The leaf: `ParseDiscovery` (the resource types in the order of R-NUGET-014, the shape of every address), `Join` (one escaped segment per segment), `Decode` (bounded gunzip), `VersionList`, `ParseIndex`, `ParsePage`, `Convert`/`Merge` (a leaf to the row the renderer reads, with the pass-through members) |
+| [remote/](../../internal/formats/nuget/remote) | The leaf: `ParseDiscovery` (the resource types in the order of R-NUGET-014, the shape of every address), `Join` (one escaped segment per segment), `Decode` (bounded gunzip), `VersionList`, `ParseIndex` (at most `MaxPages` pages), `ParsePage`, `Budget` (the bytes and leaves of one rendering, Q-NUGET-83), `Convert`/`Merge`/`Collector` (a leaf to the row the renderer reads, with the pass-through members; `passThrough` drops the upstream's `@id`/`@type` from `deprecation` and `vulnerabilities`, Q-NUGET-85) |
 
 **Request path.** A handler of a remote route switches on `rq.Repo.Class == formats.Remote` before the local code (`handleFlatIndex`, `serveRegistration`, `serveFile`). The version list is read with
 `Remote().Metadata` and rendered in URL form, ascending. A registration document is read as the stored index plus the pages it does not inline (fetched in parallel, at most 8 at once, each its own
-cache entry), parsed into `remote.Version`s and rendered by the renderer of the local class (`registration.Doc` with `Extras`, `UpstreamIDs`) with the hive's filter and trove's paging. The validator is a
+cache entry; an index of more than 512 pages is refused at its fill, Q-NUGET-83), read page by page within one `remote.Budget` (`registrationVersions`) and parsed into `remote.Version`s and rendered by the renderer of the local class (`registration.Doc` with `Extras`, `UpstreamIDs`) with the hive's filter and trove's paging. The validator is a
 hash of the inputs of the rendering and the digests of the stored documents, so a 304 costs the engine's reads and no parse; the page list of an index is cached per digest in the rendition cache.
-`Rewrite` is the semver2 hive with the default paging, which the kit's check 4 exercises. Cached packages go through the engine's `Artifact`; the first byte leaves after `InspectFill` accepted the package.
+`Rewrite` is the semver2 hive with the default paging, which the kit's check 4 exercises. Cached packages go through the engine's `Artifact`; the first byte leaves after `InspectFill` accepted the package. A file the format does not inspect (the `.nuspec`) streams to the request that fetches it only when it is longer than the engine's withheld tail of 64 KiB; a shorter one is answered from the stored entry, with its `ETag` (Q-NUGET-86).
 
 **Search.** `handleSearch` sends a remote repository to `runRemoteSearch`. A query goes to the upstream unless `forwardSearch` is off, the request is the cache view or comes through an endpoint
 that fills no caches, or a name of the query is protected (`withheldNames` hands each term, each phrase word and each run of ID characters to `Resolver.KeepsAway`; Q-NUGET-80). The format
@@ -390,8 +390,8 @@ repository's request for the withheld rule and the read scope, and leaves step 2
 **Adding a resource.** Add its canonical path to `parseTarget` and `upstreamURL`, give `PrepareFill` the validation of its document, decide in `InspectsFill` whether it is inspected, and give the handler its
 branch. Mind `Classify`: the engine's gone-ID rule and the URL map act on the package `Classify` names for the path.
 
-**What a virtual repository can use.** `storedDocument` reads a stored document of the remote for a request addressed to it (for a member, the request derived through `Request.Member`), `remoteVersions` turns the
-stored index and pages into the versions of an ID (`remote.Version`: the row the renderer reads and the pass-through members), and `renderRegistration` renders them; the merge of the rows of several members is the virtual package's.
+**What a virtual repository uses.** `storedDocument` reads a stored document of the remote for a request addressed to it (for a member, the request derived through `Request.Member`), `storedPages` reads the pages an index lists, and `registrationVersions` turns the
+stored index and pages into the versions of an ID within a `remote.Budget` (`remote.Version`: the row the renderer reads and the pass-through members). The virtual adapter reads a remote member's registration with exactly these (`remoteMemberEntries`, Q-NUGET-82), so the two classes cannot render one version differently.
 
 **Tests.** The leaf: `go test ./internal/formats/nuget/remote/`. The adapter, the fill hooks and the documents over the in-memory upstream of the kit (`formattest.MemRemote`):
 [remote_test.go](../../internal/formats/nuget/remote_test.go). End to end against the counting test upstream in the test process, with two replicas and with Valkey on and off:
@@ -402,7 +402,7 @@ through a wrapper of the stub's handler. The upstream is a TLS server with a
 self-signed CA the replicas trust through `proxy.outbound.tls.ca_files`, reachable under two names (`127.0.0.1` for the index and the registrations, `localhost` for the flat container) with `localhost`
 as the remote's extra host; a test wraps the stub's handler to change what it answers (a gzip-coded hive, a flat container without a version, garbage in place of a package).
 
-**Limits worth knowing.** The archive limits of `InspectFill` are the defaults of `nuget.archive` (H-336, [nuget-remote.md](../security/nuget-remote.md)). The count of a forwarded search is the upstream's less the page's removals, also for a caller with row-level reads (H-347). A feed whose flat container
+**Limits worth knowing.** The archive limits of `InspectFill` are the defaults of `nuget.archive`, and a package beyond them is refused with 502 (H-336, [nuget-remote.md](../security/nuget-remote.md)). One rendering reads at most 512 pages, 32,768 versions and `MaxDocumentBytes` of an upstream's registration (Q-NUGET-83). The count of a forwarded search is the upstream's less the page's removals, also for a caller with row-level reads (H-347). A feed whose flat container
 lacks a version its registration lists is served only after a registration of the ID was read (Q-NUGET-54).
 ## Virtual repositories
 
@@ -411,8 +411,8 @@ caches the merged document of an ID; the format contributes the strategy per pat
 
 | Piece | Responsibility |
 |---|---|
-| [virtual.go](../../internal/formats/nuget/virtual.go) | `Format.Virtual()`: `Strategy` (the version list and the registration entries are merged, every other path is first match), `LocalDocument` (a member's rows to its document, with the `rev_seq` read before the rows), `Merge` (to package `merge`), `ArtifactPrefix` (`{lower_id}/`). `VariantFlat`, `VariantRegistration`. |
-| [merge](../../internal/formats/nuget/merge) | `Do` (the per-version source rule: local, then a remote member whose cache holds the package, then the remote members that would fetch it; ties by position), `DecodeUpstream` (an upstream registration index with its pages inlined to entries), the neutral `Doc`. No host, no request, no clock. |
+| [virtual.go](../../internal/formats/nuget/virtual.go) | `Format.Virtual()`: `Strategy` (the version list and the registration entries are merged, every other path is first match), `LocalDocument` (a member's rows to its document, with the `rev_seq` read before the rows), `Merge` (to package `merge`; a remote member's version list inflated, its registration read by `remoteMemberEntries` in [virtual_remote.go](../../internal/formats/nuget/virtual_remote.go)), `ArtifactPrefix` (`{lower_id}/`). `VariantFlat`, `VariantRegistration`. |
+| [merge](../../internal/formats/nuget/merge) | `Do` (the per-version source rule: local, then a remote member whose cache holds the package, then the remote members that would fetch it; ties by position), `FromRemote` (the remote's versions to entries, with the members the remote keeps), the neutral `Doc`. No host, no request, no clock. |
 | [handlers_virtual.go](../../internal/formats/nuget/handlers_virtual.go) | `serveVirtual` (authorize, exposure, `Resolver.Metadata`, validator from the lower-case ID and the merge fingerprint, the rendition cache unless the merge is partial), `serveVirtualFiltered` (on an endpoint with rules the validator from the filtered rendering, Q-NUGET-87), `renderMerged`, `virtualFlat`, `virtualRegistration`, `virtualFile` (`Resolver.Artifact`). The existing handlers branch on `rq.Repo.Class` in one line each. |
 | [search_virtual.go](../../internal/formats/nuget/search_virtual.go) | `runVirtualSearch`: `Resolver.Plan`, the read scope through the virtual repository, one `searchRepo` per local member, at most `maxMemberSearches` (four) at once on one `scanBudget` (Q-NUGET-76); `memberPatterns` (the member's and the virtual repository's patterns, Q-NUGET-77), `exposedHit` (the view of the addressed repository, Q-NUGET-75) and `KeepsAway` per result; `mergeHits`/`unionHit`. `searchRemote` asks a remote member through its forwarded search ([search_remote.go](../../internal/formats/nuget/search_remote.go)); its results pass the same patterns, view and `KeepsAway`. |
 | [metrics_virtual.go](../../internal/formats/nuget/metrics_virtual.go) | `trove_nuget_virtual_member_skipped_total{repo,reason}`; the one reason is `unavailable` (a partial merge). |
@@ -426,16 +426,16 @@ rendition from the cache) and hashes the filtered bytes into the ETag instead of
 **Writes.** Nothing here: the dispatcher sends a write route (`Classes: local`) addressed to a virtual repository to its deployment target (`redirectClass`), so `handlePush`, `handleDelete` and `handleRelist` run on the target and `rq.Addressed()` is the target.
 The service index lists the publish resources when `Resolver.DeployTarget` resolves one (`takesPushes`); the decision point refuses a write on a virtual repository without a target with 403 before the dispatcher is reached (Q-NUGET-59).
 
-**What a remote member must hand over** (the contract with the remote adapter, Q-NUGET-56). For `{lower_id}/index.json` the stored upstream version list; for `{lower_id}/.registration/index.json`, variant `registration`, the upstream's registration index
-with every page inlined (`items` present on each page). `merge.DecodeUpstream` fails a member with `upstream_failed` when a page has none.
-The remote adapter does not keep that contract yet: since Q-NUGET-67 it hands over the stored upstream bytes, which are gzip-coded for the gzip hives
-and list the pages of an ID with 128 or more versions by URL, and `DecodeUpstream` and `decodeFlat` inflate nothing. A registration of a nuget.org ID
-through a virtual repository therefore answers 502; the test upstream gzips only when asked and has no ID that large, so the tests pass. Open finding
-F-22 of [promt.md](../projektplan/promt.md#8--open-findings).
+**What a remote member hands over** (Q-NUGET-67, Q-NUGET-82). The engine asks a remote member for `{lower_id}/index.json` (variant `flat`) and `{lower_id}/.registration/index.json` (variant `registration`)
+and hands over the bytes the remote stores there: the upstream's, gzip-coded when the upstream codes them, and for the registration the index alone. `Merge` inflates the version list
+(`remoteFlatDocument`) and reads the registration with `remoteMemberEntries`: the index within the merge's `remote.Budget`, the pages it lists by address through the member (`Request.Member`, so the
+member's populate right decides a fetch; a member the caller may not fill leaves out a page it has not stored), converted by the remote's `Collector` and handed to `merge.Do` as `Part.Entries`.
+A page that cannot be read fails the merge (H-348, [nuget-remote.md](../security/nuget-remote.md)). The bridge counts a version as cached only with its `.nupkg` (the artifact the fill hook inspects), and
+the engine's merge fingerprint ends with the digest of the merged bytes, so a page that changes under an unchanged index changes the `ETag`.
 
 **Tests.** The merge: `go test ./internal/formats/nuget/merge/`. The handlers over a stand-in for the engine that merges the documents a test names ([virtual_test.go](../../internal/formats/nuget/virtual_test.go), `mergeResolver`), the search over a port per
 repository ([search_virtual_test.go](../../internal/formats/nuget/search_virtual_test.go)), and check 5 of the conformance kit ([virtual_fixture_test.go](../../internal/formats/nuget/virtual_fixture_test.go)). Over PostgreSQL, with the real engine, pin rules, claims, grants and two replicas:
-[test/integration/nuget/virtual_test.go](../../test/integration/nuget/virtual_test.go). With a remote member and the upstream stub: [virtual_remote_test.go](../../test/integration/nuget/virtual_remote_test.go)
+[test/integration/nuget/virtual_test.go](../../test/integration/nuget/virtual_test.go). With a remote member over the counting test upstream (its mode `gzip_always`, the 200-version ID, a member the caller may not fill, the first answer of a cache miss): [test/integration/nuget/virtual_remote_test.go](../../test/integration/nuget/virtual_remote_test.go)
 (documents) and [forwarded_search_test.go](../../test/integration/nuget/forwarded_search_test.go) (search).
 
 **Adding a document to the merge.** Give it a canonical path that `Classify` knows as metadata of a package, extend `documentOf` and `LocalDocument`, give `merge.Do` its kind, and render it in `handlers_virtual.go`; the validator and the rendition key already carry the fingerprint.

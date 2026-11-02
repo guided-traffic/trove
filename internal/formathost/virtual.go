@@ -40,13 +40,15 @@ func NewResolver(engine VirtualEngine, scoper authz.ReadScoper, find func(id str
 	if find == nil {
 		find = formats.Lookup
 	}
-	return &resolver{e: engine, scoper: scoper, find: find}, nil
+	return &resolver{e: engine, scoper: scoper, find: find, caps: formats.RemoteCapabilities}, nil
 }
 
 type resolver struct {
 	e      VirtualEngine
 	scoper authz.ReadScoper
 	find   func(id string) (formats.Format, bool)
+	// caps are the remote capabilities a format registered (formats.RemoteCapabilities).
+	caps func(formats.ID) formats.RemoteCaps
 }
 
 var _ formats.Resolver = (*resolver)(nil)
@@ -100,7 +102,7 @@ func (r *resolver) Metadata(ctx context.Context, rq *formats.Request, p formats.
 	if err != nil {
 		return nil, err
 	}
-	m, err := r.e.Metadata(ctx, c, plan, merger{rq: rq, p: p, f: f, a: a})
+	m, err := r.e.Metadata(ctx, c, plan, merger{rq: rq, p: p, f: f, a: a, fill: r.caps(f.Descriptor().ID).Fill})
 	if err != nil {
 		return nil, err
 	}
@@ -300,6 +302,8 @@ type merger struct {
 	p  formats.Path
 	f  formats.Format
 	a  formats.VirtualAdapter
+	// fill is the format's fill hook, nil for a format without one.
+	fill formats.FillInspector
 }
 
 var _ virtual.Merger = merger{}
@@ -339,7 +343,11 @@ func (m merger) ArtifactPrefix(d virtual.Descriptor) string {
 }
 
 // CachedVersion names the version a cached artifact path belongs to, by the format's own
-// classification.
+// classification. A version counts as cached only when the artifact that records it is: for a
+// format whose remote adapter inspects what it fetches (FillInspector), the artifact it inspects,
+// whose fill records the version (NuGet's .nupkg). Another file of the version (a .nuspec, a
+// symbol package) is no package the second tier can serve in its place, so a caller who may not
+// fill would be shown a version whose package it cannot download (R-AUTHZ-008).
 func (m merger) CachedVersion(p string) string {
 	c, err := repository.CleanPath(p)
 	if err != nil {
@@ -347,6 +355,9 @@ func (m merger) CachedVersion(p string) string {
 	}
 	info := m.f.Classify(c)
 	if info.Kind != formats.Content {
+		return ""
+	}
+	if m.fill != nil && !m.fill.InspectsFill(c) {
 		return ""
 	}
 	return info.Version

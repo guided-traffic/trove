@@ -59,6 +59,11 @@ type Mode struct {
 	// RequireAuthorization, when set, answers 401 to every request whose Authorization header is
 	// not exactly this value.
 	RequireAuthorization string `json:"require_authorization,omitempty"`
+	// GzipAlways answers the version lists and the documents of both registration hives
+	// gzip-coded whatever the request's Accept-Encoding says, as an upstream does whose stored
+	// blobs carry the coding themselves (nuget.org's gzip hive answers gzip to a client that asks
+	// for identity). The service index and the search are not affected.
+	GzipAlways bool `json:"gzip_always,omitempty"`
 }
 
 // Validate rejects a mode the stub does not implement.

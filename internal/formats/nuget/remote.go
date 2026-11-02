@@ -441,8 +441,8 @@ func regKindOf(k docKind) registrationKind {
 	return kindIndex
 }
 
-// sameID reports whether the ID a package declares is the one asked for, under Unicode simple
-// case folding (R-NUGET-003).
+// sameID reports whether the ID a package declares is the one asked for: equal once both are
+// lower-cased as a client lower-cases an ID into its path (R-NUGET-003, Q-NUGET-84).
 func sameID(declared, asked string) bool { return id.SameID(declared, asked) }
 
 // sortedURLForms returns the version strings in URL form, deduplicated and ascending by

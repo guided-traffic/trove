@@ -1739,7 +1739,13 @@ own tests:
    (`formattest/crafted`): it answers `413` or `422` within 5 s, and the heap, sampled with
    `runtime/metrics`, stays within 512 MiB of its baseline. A format whose remote adapter inspects fills
    (`FillInspector`, Q-ARCH-267) runs every crafted input its hook takes through `InspectFill` as well, under the same
-   time and heap bounds and without a panic; what the hook answers is the format's (Q-ARCH-281).
+   time and heap bounds and without a panic; what the hook answers is the format's (Q-ARCH-281). A format whose remote
+   adapter follows a discovery document (`Discoverer`, Q-ARCH-268) runs the kit's crafted documents (JSON nested 100,000
+   deep, an array of a million values, a page of HTML, invalid UTF-8, nothing) and the fixture's own (`Discovery`, at
+   least one the format reads) through `ParseDiscovery` under the same bounds: a crafted document is refused, a valid one
+   read, without a panic, and the document the adapter names is a metadata path of the format. Check 6 cannot be skipped
+   for a format whose remote adapter reads a discovery document or inspects fills: R-ARCH-025's kit check for those
+   behaviours.
 7. Responses of `Download`, `Metadata`, `Computed` and `Volatile` routes carry the content headers of
    R-ARCH-007, including when the handler tries to remove them; a `Volatile` route may return
    package-derived bytes, and none of the four serves a `Content-Disposition` but `Download`. No route of

@@ -73,17 +73,6 @@ func (f *Format) searchRemoteMember(ctx context.Context, rq *formats.Request, m 
 	return f.remoteSearch(ctx, searchSource{rq: rq, call: call, ref: m.Member, merged: true}, st, p)
 }
 
-// memberRequest is the request made for a member of the addressed virtual repository, found by
-// key among its members; a planned member that is none is an internal error, never an omission.
-func memberRequest(rq *formats.Request, key string) (*formats.Request, error) {
-	for _, m := range rq.Repo.Members() {
-		if m.Key == key {
-			return rq.Member(&m)
-		}
-	}
-	return nil, errs.E(errs.Internal, errs.CodeInternal, "A planned member of the virtual repository is not one of its members.")
-}
-
 // remoteSearch answers a search of one remote: forwarded when it may be, else, and when the
 // upstream cannot be asked, from the remote's cache.
 func (f *Format) remoteSearch(ctx context.Context, s searchSource, st Store, p search.Params) ([]rows.SearchHit, int, error) {

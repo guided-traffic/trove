@@ -743,7 +743,9 @@ and then freezes it.
   the fixtures with its reason: npm's two audit routes and its deferred GET, NuGet's three P1 routes (`NoContent`), npm's
   four write routes that change no package row (`NoRevision`) (Q-ARCH-281). The additions NuGet needed moved npm in the
   same change or are optional interfaces npm does not need (the rows of WP3.0 below; ADR-141 lists them). The exposure
-  adapter of E3.7 is part of the frozen surface.
+  adapter of E3.7 is part of the frozen surface. Check 6 also holds a remote adapter's discovery parser (`Discoverer`) to
+  its bounds on crafted service indexes (`TestR_ARCH_025_TheDiscoveryParserMeetsTheBoundsOfCheck6`, NuGet's
+  `discoveryFixture`); the kit is no part of the frozen surface, so `contract.txt` did not change.
 - **E3.4** Every row of R-AUTHZ-007's action map has one test per format. The test shows the
   operation succeeds with the action and fails without it.
 

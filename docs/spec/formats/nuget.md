@@ -290,8 +290,10 @@ Package IDs:
   rule it is the ASCII-lowercased ID, which equals .NET's `ToLowerInvariant` for ASCII. For a
   cached upstream package it is the ID segment of the request path that filled the cache,
   percent-decoded as UTF-8 with only its ASCII letters lowercased: for non-ASCII characters this is
-  the client's own lowercasing, which the upstream accepted. The declared ID MUST equal it under
-  Unicode simple case folding (R-NUGET-015). trove never lowercases a non-ASCII ID itself, so no ID
+  the client's own lowercasing, which the upstream accepted. The declared ID MUST equal it once both
+  are lowercased character by character with Unicode's simple lowercase mapping, as .NET's
+  `ToLowerInvariant` lowercases an ID into its path, and the rows of the cached package take the path's
+  ID (R-NUGET-015, Q-NUGET-84). trove never lowercases a non-ASCII ID to build a name or a URL, so no ID
   can map to different URLs on client and server. A cached package whose ID violates the local rule
   cannot be copied or moved into a local repository (400). [authorization.md](../authorization.md)
   compares name patterns against `lower_id`.
@@ -1291,8 +1293,15 @@ time (R-REPO-043) apply. The NuGet plug-in classifies requests into descriptors 
 - Stored upstream documents stay unchanged. Registration documents are not passed through: at
   serve time the plug-in parses the stored upstream index and pages, drops versions the requested
   hive must not show (R-NUGET-004, using each leaf's version and dependency ranges), and renders
-  its own index, pages and leaves with R-NUGET-009's paging. Catalog entry properties are copied,
-  including `deprecation` and `vulnerabilities`; unknown properties are kept.
+  its own index, pages and leaves with R-NUGET-009's paging. Catalog entry properties are copied;
+  `deprecation` and `vulnerabilities` are copied without the upstream's JSON-LD `@id` and `@type` at
+  any depth, with `advisoryUrl` kept as a web link when it is an absolute `http` or `https` address
+  without user info (Q-NUGET-85); unknown properties that hold no address are kept (Q-NUGET-52).
+- One rendering reads at most 512 pages of an index (an index that lists more is no registration
+  index: 502 `nuget_invalid_upstream_document`, nothing stored), at most 32,768 versions (502
+  `nuget_invalid_upstream_document`) and at most `MaxDocumentBytes` inflated over the index and all its
+  pages together (502 `upstream_item_too_large`); the pages are read and converted one at a time
+  (Q-NUGET-83).
 - URL rewriting in rendered documents:
 
 | Property | Rewritten to |
@@ -1302,17 +1311,25 @@ time (R-REPO-043) apply. The NuGet plug-in classifies requests into descriptors 
 | `catalogEntry.@id` | the serving repository's leaf URL |
 | `iconUrl` pointing into the upstream package content base | the serving repository's flat container `icon` URL (P1, R-NUGET-024); unchanged before that |
 | `projectUrl`, `licenseUrl`, other `iconUrl` values | unchanged (web links shown to people) |
+| `advisoryUrl` of an entry of `vulnerabilities` | unchanged when it is an absolute `http` or `https` address without user info (a web link shown to people), dropped otherwise (Q-NUGET-85) |
+| `@id` and `@type` inside `deprecation`, `vulnerabilities` and `alternatePackage` | dropped (Q-NUGET-85) |
 
 - Upstream URLs for package content are derived from the discovered `PackageBaseAddress` and the
   canonical path, never from a host named in a client request (R-REPO-043).
 - Every cached `.nupkg` is parsed like an upload (R-NUGET-005 steps 1 to 4 with the upstream ID
   rule of R-NUGET-003, without the `SymbolsPackage` rejection) and recorded with `origin = 'cache'`
-  rows; a package that fails parsing is still served and cached, logged and counted (R-NUGET-028),
-  but gets no NuGet rows. The bytes are never altered. A cached `.nupkg` whose `.nuspec` parses but
-  declares an ID that differs from the request's ID segment under Unicode simple case folding, or a
-  version whose URL form differs from the canonical path, MUST be refused with 502
-  `upstream_package_mismatch` and not stored. NuGet v3 announces no content digest (H-35), so the
-  declared identity is the only check that the upstream served the package that was asked for.
+  rows under the ID of the request path. Content that no reader takes for a package (no ZIP end
+  record, a ZIP archive without a `.nuspec` at its root, a `.nuspec` that is not well-formed XML) is
+  still served and cached, logged and counted (R-NUGET-028), but gets no NuGet rows; the bytes are
+  never altered. Every other refusal of the reader (a limit, a name, duplicate or overlapping entries,
+  central directory and local headers that disagree, several `.nuspec` files, a `.nuspec` of another
+  encoding or shape) and an ID or version that does not parse MUST be refused with 502
+  `upstream_package_mismatch`, because the identity cannot be checked (Q-NUGET-84). A cached `.nupkg`
+  whose `.nuspec` declares an ID that differs from the request's ID segment (both lowercased as
+  R-NUGET-003 says), or a version whose URL form differs from the canonical path, MUST be refused with
+  502 `upstream_package_mismatch`. A refused package is not stored. NuGet v3 announces no content
+  digest (H-35), so the declared identity is the only check that the upstream served the package that
+  was asked for.
 - Patterns and package-less requests (Q-NUGET-7). Include and exclude patterns of the remote
   (R-REPO-005), namespace claims and pin rules (R-REPO-023) are name patterns matched against the
   descriptor's package name, so `excludePatterns: ["Acme.*"]` keeps internal IDs away from
@@ -1367,7 +1384,9 @@ Acceptance criteria (against a stub v3 upstream in CI and, in the full run of Te
 - `dotnet restore` of a project referencing `Newtonsoft.Json 13.0.3` through `nuget-org` succeeds;
   the `.nupkg` is cached; a second restore with the upstream unreachable succeeds.
 - Every URL in `curl <base>/api/nuget/nuget-org/v3/registration-semver2/newtonsoft.json/index.json`
-  except `projectUrl`, `licenseUrl` and `iconUrl` starts with `<base>/api/nuget/nuget-org/v3/`.
+  except `projectUrl`, `licenseUrl`, `iconUrl` and `advisoryUrl` starts with
+  `<base>/api/nuget/nuget-org/v3/` (Q-NUGET-85); the `deprecation` and `vulnerabilities` of a version
+  that has them are in the document.
 - For a stub upstream with 200 versions of one ID in non-inlined pages, the remote's index uses
   trove's paging and contains all 200 leaves.
 - With `excludePatterns: ["Acme.*"]`,
@@ -1501,10 +1520,13 @@ metadata cache (R-REPO-020) and dependency-confusion protection (R-REPO-023) are
 - Member documents (Q-NUGET-56). Two documents of an ID are merged, each at the canonical path the
   remote adapter stores it at (R-NUGET-015): the version list at `{lower_id}/index.json`, and the
   registration entries at `{lower_id}/.registration/index.json`. A local member contributes the
-  rows of its stored versions; a remote member contributes its stored upstream document, which for
-  the registration entries is the upstream's index with every page inlined (a page the upstream lists
-  by URL alone, without its leaves, is not an index the merge can read, and the member then fails as
-  an upstream failure instead of contributing a short list). The merged document is neutral: it holds
+  rows of its stored versions; a remote member contributes its stored upstream document, inflated when
+  the upstream coded it with gzip, and for the registration entries the format reads the pages the
+  stored index lists by address through the member, as the remote itself reads them, and converts the
+  leaves with the remote's conversion, so a version shows the same entry through the remote and through
+  the virtual repository (Q-NUGET-82). A page that cannot be read fails the merge as an upstream
+  failure instead of contributing a short list ([H-348](../../security/nuget-remote.md#h-348--a-remote-member-whose-registration-page-cannot-be-read-fails-the-merged-registration-not-only-itself)); a member the caller may not fill contributes
+  the pages it has stored. The merged document is neutral: it holds
   no address and no hive, so one cache entry serves the three hives and every serving address; the
   handler renders the version list, the index, the pages and the leaves from it for the repository the
   client addressed, with R-NUGET-009's paging, the hive's SemVer 2.0.0 rule (R-NUGET-004) and the
@@ -3933,7 +3955,7 @@ Context: R-NUGET-015 lists the descriptors of a remote (the service index, the v
 
 ### Q-NUGET-52 · A remote's registration is parsed and rendered again; what it keeps of the upstream's entry
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by Q-NUGET-85**: `deprecation` and `vulnerabilities` are kept without the upstream's `@id` and `@type`, and `advisoryUrl` joins the web links of people; by Q-NUGET-83 for the bounds of one rendering.
 
 Context: R-NUGET-015 says the stored upstream documents stay unchanged, registration documents are not passed through, trove renders its own index, pages and leaves with the paging of R-NUGET-009, catalog entry properties are copied and unknown properties are kept. Every address in the rendered documents except `projectUrl`, `licenseUrl` and `iconUrl` must be trove's. An upstream may store a hive gzip-coded whatever the request asked for.
 
@@ -3951,7 +3973,7 @@ Context: R-NUGET-015 says the stored upstream documents stay unchanged, registra
 
 ### Q-NUGET-53 · The packages a remote caches: inspected before they are stored, recorded with origin `cache`
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by Q-NUGET-84**: only content no reader takes for a package is served without the identity check, every other refusal of the reader is 502 `upstream_package_mismatch`; the declared ID is compared as a client lower-cases it, not under case folding, and the rows take the path's ID.
 
 Context: R-NUGET-015 parses every cached `.nupkg` like an upload, records it with the rows of origin `cache`, serves and caches a package that cannot be read, and refuses a package whose declared identity is not the asked one with 502 `upstream_package_mismatch`. Q-ARCH-267 gives the format a hook that runs before the item is committed and before a byte reaches a client.
 
@@ -3965,7 +3987,7 @@ Context: R-NUGET-015 parses every cached `.nupkg` like an upload, records it wit
 
 **Rationale:** the identity is the only check an upstream without a digest allows (H-35); doing it in the hook keeps every waiter of the fetch on one verdict. The development agent revisits the limits when the contract gives a fill hook the replica (H-336).
 
-**Applied in the spec:** R-NUGET-028 (the label of the counter). Code: [remote_fill.go](../../../internal/formats/nuget/remote_fill.go), [hooks.go](../../../internal/formats/nuget/hooks.go), [hooks_remove.go](../../../internal/formats/nuget/hooks_remove.go). Tests: `TestR_NUGET_015_InspectFillHoldsTheDeclaredIdentityToThePath`, `TestR_NUGET_003_InspectFillComparesANonASCIIIDUnderSimpleCaseFolding`, `TestR_NUGET_015_AnUnreadablePackageIsServedAsItCameAndGetsNoRows`, `TestR_NUGET_015_AFilledPackageIsRecordedWithTheRowsOfOriginCache`, `TestR_NUGET_015_RemovingACachedPackageRemovesItsVersionAndWritesNoTombstone`, `TestR_NUGET_015_AnIdentityMismatchIs502AndStoresNothing`, `TestR_NUGET_015_APackageOfAnotherVersionAtTheURLOfThisOneIs502`, `TestR_NUGET_015_APackageThatIsNoPackageIsServedAsItCameCountedAndGetsNoRows`.
+**Applied in the spec:** R-NUGET-028 (the label of the counter). Code: [remote_fill.go](../../../internal/formats/nuget/remote_fill.go), [hooks.go](../../../internal/formats/nuget/hooks.go), [hooks_remove.go](../../../internal/formats/nuget/hooks_remove.go). Tests: `TestR_NUGET_015_InspectFillHoldsTheDeclaredIdentityToThePath`, `TestR_NUGET_003_InspectFillComparesANonASCIIIDAsAClientLowerCasesIt`, `TestR_NUGET_015_AnUnreadablePackageIsServedAsItCameAndGetsNoRows`, `TestR_NUGET_015_AFilledPackageIsRecordedWithTheRowsOfOriginCache`, `TestR_NUGET_015_RemovingACachedPackageRemovesItsVersionAndWritesNoTombstone`, `TestR_NUGET_015_AnIdentityMismatchIs502AndStoresNothing`, `TestR_NUGET_015_APackageOfAnotherVersionAtTheURLOfThisOneIs502`, `TestR_NUGET_015_APackageThatIsNoPackageIsServedAsItCameCountedAndGetsNoRows`.
 
 ### Q-NUGET-54 · The `.nuspec` of a remote, and a package address the flat container does not serve
 
@@ -4007,7 +4029,7 @@ Revisited on 2026-11-02, when the forwarded search was built (finding F-20 of th
 
 ### Q-NUGET-56 · What the members of a virtual repository hand to the merge, and what the merge hands back
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by Q-NUGET-82**: a remote member's registration is read by the adapter from the stored index, inflated, and the pages it lists by address, and is merged whole; the merge fingerprint includes the merged bytes.
 
 Context: the merged-metadata cache stores one entry per virtual repository, canonical path and variant, and keeps it until a member's revision changes. NuGet serves the same ID in three hives, under the address of whichever virtual repository the client named, with an exposure view of its endpoint, and a remote member stores the upstream's documents unchanged (R-NUGET-015). The merge must take one document per member and give one document back.
 
@@ -4021,7 +4043,7 @@ Context: the merged-metadata cache stores one entry per virtual repository, cano
 
 **Rationale:** the engine already stores one entry per member set, and the ETag inputs of R-NUGET-002 are exactly the fingerprint; rendering after the cache keeps the format's single rendering path. The development agent revisits this when a remote repository with more than a few thousand versions of one ID makes the inlined index too large to merge on every rebuild (the member document would then carry only the entries of the versions the merge window shows), or when a second hive needs different member documents.
 
-**Applied in the spec:** R-NUGET-017 (member documents, the partial merge, the per-ID read check). Code: [merge.go](../../../internal/formats/nuget/merge/merge.go), [upstream.go](../../../internal/formats/nuget/merge/upstream.go), [virtual.go](../../../internal/formats/nuget/virtual.go), [handlers_virtual.go](../../../internal/formats/nuget/handlers_virtual.go). Tests: `TestR_NUGET_017_TheVersionListIsTheUnionAscendingByPrecedence`, `TestR_NUGET_017_AVersionComesFromTheMemberTierResolutionWouldPick`, `TestR_NUGET_017_AnIndexWithPagesByUrlIsAnUpstreamFailureNotAShortList`, `TestR_NUGET_017_ARegistrationEntryComesFromTheMemberTierResolutionPicks`, `TestR_NUGET_017_APartialMergeIsServedAndNeverKept`, the conformance kit's check 5, and the integration tests `TestR_NUGET_017_AVirtualRepositoryMergesTheDocumentsAndFilesOfItsMembers`, `TestR_NUGET_017_APushToAMemberIsVisibleThroughTheVirtualRepositoryAtOnce`.
+**Applied in the spec:** R-NUGET-017 (member documents, the partial merge, the per-ID read check). Code: [merge.go](../../../internal/formats/nuget/merge/merge.go), [upstream.go](../../../internal/formats/nuget/merge/upstream.go), [virtual.go](../../../internal/formats/nuget/virtual.go), [handlers_virtual.go](../../../internal/formats/nuget/handlers_virtual.go). Tests: `TestR_NUGET_017_TheVersionListIsTheUnionAscendingByPrecedence`, `TestR_NUGET_017_AVersionComesFromTheMemberTierResolutionWouldPick`, `TestR_NUGET_017_ARemoteMemberWithPagesByAddressIsMergedWhole` (Q-NUGET-82), `TestR_NUGET_017_ARegistrationEntryComesFromTheMemberTierResolutionPicks`, `TestR_NUGET_017_APartialMergeIsServedAndNeverKept`, the conformance kit's check 5, and the integration tests `TestR_NUGET_017_AVirtualRepositoryMergesTheDocumentsAndFilesOfItsMembers`, `TestR_NUGET_017_APushToAMemberIsVisibleThroughTheVirtualRepositoryAtOnce`.
 
 ### Q-NUGET-57 · Claims and pin rules keep a package away from local members in a search too
 
@@ -4244,7 +4266,7 @@ Context: a virtual repository asks every member for the document it merges, with
 
 **Rationale:** the documents are small and bounded by `MaxDocumentBytes`; the engine's validators make the three entries refresh independently, as they would for any two variants. The development agent revisits this when the engine can alias variants of one path.
 
-**Applied in the spec:** none in a requirement. Code: `storesVariant` in [remote.go](../../../internal/formats/nuget/remote.go). Tests: `TestR_NUGET_015_...` fill cases in `remote_test.go` and `TestR_NUGET_018_AVirtualRepositoryMergesALocalAndARemoteMember`.
+**Applied in the spec:** none in a requirement. Code: `storesVariant` in [remote.go](../../../internal/formats/nuget/remote.go). Tests: `TestR_NUGET_015_...` fill cases in `remote_test.go` and `TestR_NUGET_017_AVirtualRepositoryMergesARemoteMemberThatGzipsAndPagesItsRegistration`.
 
 ### Q-NUGET-68 · The repositories of the remote and virtual e2e tests: a fresh pair per test, and a short circuit period where the test stops the upstream
 
@@ -4498,6 +4520,103 @@ Context: R-NUGET-018 step 6 said that a remote member contributes nothing until 
 **Rationale:** the rules of R-NUGET-016 are the remote's, whichever road reaches it; the virtual repository adds only its claims and pin rules, which `Resolver.KeepsAway` already evaluates per member. The development agent revisits this when the merge asks a remote member for fewer results than the local members (Q-NUGET-58's revisit condition), which would change what the member is asked for.
 
 **Applied in the spec:** R-NUGET-018 step 6. Code: [search_virtual.go](../../../internal/formats/nuget/search_virtual.go) `searchRemote`, [search_remote.go](../../../internal/formats/nuget/search_remote.go) `searchRemoteMember`, `remoteSearch`. Tests: `TestR_NUGET_018_ARemoteMemberIsSearchedThroughTheVirtualRepositorysMembers`, `TestR_NUGET_018_AVirtualRepositoryForwardsThroughItsRemoteMember` (`test/integration/nuget`).
+
+### Q-NUGET-82 · A remote member's registration reaches the merge as the remote reads it: inflated, with the pages its index lists, converted by the remote
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-NUGET-56 wanted a remote member to hand the merge its upstream index with every page inlined, and Q-NUGET-67 hands the merge the bytes the remote stores. Those bytes are gzip-coded when the upstream codes them (nuget.org's registration hive answers gzip to a request for identity), and the index of an ID with 128 or more versions lists its pages by address. The merge decoded neither, so every nuget.org ID answered 502 through a virtual repository; the code review of 2026-11-02 found it with a probe test. With it: the merge converted an upstream entry with its own code (an entry without `id` rendered `"id":""`, the members the remote keeps were dropped), a version counted as cached from any cached file of it (a `.nuspec` alone listed the version to a caller who may not fill), and the merge fingerprint covered the index's digest alone, so a page that changed under an unchanged index kept the old `ETag` and rendering.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The NuGet virtual adapter reads the member's registration the way the remote's own handler does (chosen) | `Merge` inflates the stored index the engine handed over, reads the pages it lists by address through the member (`Request.Member`, the member's remote engine, its populate right), converts every leaf with `remote.Convert`, and hands the merge entries; the version list is inflated before it is merged | One reading and one conversion for the remote and the virtual repository, so a version shows the same entry through both; the frozen contract is unchanged; a page is fetched, stored and revalidated like the remote's own | A page that cannot be read fails the whole merge, because a merge cannot mark one member partial (H-348); a page has its own period, so the merged entry can hold an older page until the index's entry expires |
+| (b) The remote stores an inlined index under the variant `registration` | `PrepareFill` would assemble index and pages | The merge reads one document | `PrepareFill` sees one fetched document and fetches nothing; the engine would have to fetch pages inside a fill |
+| (c) A hook of the virtual engine through which a format hands over a member's further documents | The engine collects pages like documents | A page failure could make the merge partial | A change of the frozen contract (ADR-141) for one format's paging |
+
+**Choice:** (a). `merge.Part` carries `Entries` for a remote member and `merge.FromRemote` converts the remote's versions, keeping the members the remote keeps (`Entry.Other`). A member the caller may not fill contributes the leaves of the pages it has stored: a page it would have to fetch is left out, since the merge lists only its cached versions anyway (R-AUTHZ-008). One budget bounds the reading of every remote member of a merge (Q-NUGET-83). The bridge counts a version as cached only when the artifact the format's fill hook inspects is cached, NuGet's `.nupkg` (`formathost` `CachedVersion`, a format without a hook keeps its classification). The virtual engine's merge fingerprint ends with the SHA-256 of the merged bytes, so it changes whenever the bytes do: a format may read more than the documents the engine handed it.
+
+**Rationale:** a remote and a virtual repository that disagree about one version are two answers to one question; reading through the member keeps the populate right and the engine's collapsing on every page. The fingerprint was "changes whenever the merged bytes could", which a format that reads further documents falsifies; hashing the bytes makes it exact at the cost of one SHA-256 per merge. The development agent revisits this when the contract can mark a member partial from inside a merge (then a page failure becomes a partial merge and H-348 closes).
+
+**Applied in the spec:** R-NUGET-017 (member documents); Q-NUGET-56 superseded in part. Code: [virtual_remote.go](../../../internal/formats/nuget/virtual_remote.go), [virtual.go](../../../internal/formats/nuget/virtual.go), [merge/upstream.go](../../../internal/formats/nuget/merge/upstream.go), [handlers_remote.go](../../../internal/formats/nuget/handlers_remote.go), [formathost/virtual.go](../../../internal/formathost/virtual.go), [virtual/metadata.go](../../../internal/virtual/metadata.go). Tests: `TestR_NUGET_017_AGzipCodedRemoteMemberIsMerged`, `TestR_NUGET_017_ARemoteMemberWithPagesByAddressIsMergedWhole`, `TestR_AUTHZ_008_ARestrictedRemoteMemberContributesTheCachedVersionsOfTheStoredPages`, `TestR_NUGET_017_ARemoteEntryShowsTheSameThroughTheVirtualRepository`, `TestR_NUGET_017_ARemoteEntryIsTheRemotesOwnConversion`, `TestR_AUTHZ_008_AVersionCountsAsCachedOnlyWhenTheArtifactItsFillRecordsIsCached`, `TestR_REPO_020_TheMergeFingerprintFollowsTheMergedBytes`, and the integration tests `TestR_NUGET_017_AVirtualRepositoryMergesARemoteMemberThatGzipsAndPagesItsRegistration` (the stub's mode `gzip_always` and the 200-version ID through `nuget-mixed`), `TestR_AUTHZ_008_AVersionWhoseOnlyCachedFileIsItsNuspecIsNotListedToACallerWhoMayNotFill`.
+
+### Q-NUGET-83 · What one rendering reads of an upstream registration: 512 pages per index, 32,768 versions, and one document's bytes for all of it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: nothing bounded how many pages an upstream's registration index may list. Each page it lists by address costs an upstream request, a stored document and possibly a URL-map row, and the rendering held the index and every page in memory, each up to `MaxDocumentBytes` inflated. One client request could make trove fetch and store as many pages as the upstream lists, and a rendering that failed cached nothing, so each retry paid again (the security audit of 2026-11-02).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An index of more than 512 pages is no registration index; one rendering reads at most 32,768 leaves and at most `MaxDocumentBytes` inflated over the index and all its pages together, converting page by page (chosen) | `remote.ParseIndex` refuses the index, so a fill stores nothing and no page is fetched; `remote.Budget` bounds the rendering of a remote and the merge of a virtual repository | Every cost of one request is bounded by constants; a rendering holds at most one document's worth of upstream bytes, the bound the heap gate of R-ARCH-005 assumes of a document held in memory | An upstream ID with more than 32,768 versions cannot be rendered |
+| (b) A cap on pages alone | 512 pages | Simple | Pages of tiny leaves still turn the byte bound into millions of rows |
+| (c) A setting per remote | `remote.limits.maxRegistrationPages` | An operator can raise it | A setting for a case no known feed has, and a new member of the repository document |
+
+**Choice:** (a). Over the page cap: 502 `nuget_invalid_upstream_document`, the previous stored index kept. Over the leaves: 502 `nuget_invalid_upstream_document`. Over the bytes: 502 `upstream_item_too_large`. The budget of a virtual merge is shared by its remote members.
+
+**Rationale:** nuget.org pages hold 64 leaves, so 512 pages are 32,768 versions; the caps are far above the IDs the development agent knows of (not checked against nuget.org's largest ID), and they turn "as many as the upstream says" into a constant. The development agent revisits the caps when an upstream ID needs more.
+
+**Applied in the spec:** R-NUGET-015 (the bounds of a registration). Code: [remote/documents.go](../../../internal/formats/nuget/remote/documents.go), [remote/budget.go](../../../internal/formats/nuget/remote/budget.go), [remote/catalog.go](../../../internal/formats/nuget/remote/catalog.go) (`Collector`), [handlers_remote.go](../../../internal/formats/nuget/handlers_remote.go). Tests: `TestR_NUGET_015_AnIndexOfMorePagesThanTroveReadsIsNoDocument`, `TestR_NUGET_015_ARenderingReadsOneDocumentsWorthOfAnUpstreamRegistration`, `TestR_NUGET_015_CollectorConvertsPageByPageAndKeepsTheFirstLeaf`, and the integration test `TestR_NUGET_015_AnIndexOfMorePagesThanTroveReadsIs502AndFetchesNoPage`.
+
+### Q-NUGET-84 · Which fetched package is served without its identity check, and how its declared ID is compared
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-NUGET-53 served and cached every package the archive reader refused, without the identity check. That covered more than "this is no package": a `.nuspec` that compresses better than 100:1, more than 65,535 entries, names the push road refuses, duplicate or overlapping entries, a central directory the local headers contradict, several `.nuspec` files, an ID or a version that does not parse. An upstream could serve package B under the path of package A in such an archive and have it cached under A for good. The identity check compared the declared ID with the path's under Unicode case folding, which matches U+017F LONG S with `s`, and the rows took the declared spelling, while the item took the path's, so an eviction left an orphan package row.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Only content no reader takes for a package passes as it came: no ZIP end record in the window a reader searches, a ZIP archive without a `.nuspec` at its root, a `.nuspec` that is not well-formed XML; every other refusal, and an ID or version that does not parse, is 502 `upstream_package_mismatch` and stores nothing (chosen) | What passes cannot be taken by a client for another package; everything a client might read is checked or refused | Closes the bypass; the push road's protections hold for cached packages too | A legacy package that a client reads and trove's reader refuses (more than 65,535 entries, a `.nuspec` in another encoding) cannot be restored through trove |
+| (b) Every refusal passes | Q-NUGET-53 | Every legacy package is served | The bypass above |
+| (c) Always run the identity check, under the fixed bounds of R-ARCH-028 only | Read the `.nuspec` whatever the reader refused | Fewer refusals | The refusals of structure (overlap, a directory two readers read differently) are what makes the `.nuspec` trove reads possibly not the one a client reads |
+
+| Option for the ID | What it means | For | Against |
+|---|---|---|---|
+| (a) Both sides lower-cased character by character with Unicode's simple lowercase mapping, as .NET's `ToLowerInvariant` does, must be equal; the rows take the path's ID (chosen) | A client builds the path by lower-casing the ID that way, so the declared ID equals the path's exactly when a client would ask for it there | U+212A KELVIN SIGN matches `k` (a client asks for `kelvin`), U+017F LONG S does not match `s`; no orphan rows | Go's and .NET's tables can differ in a character the development agent did not check |
+| (b) Unicode simple case folding | Q-NUGET-53 | — | Accepts IDs no client asks for at that path |
+| (c) The declared ID with its ASCII letters lower-cased equals the path's ID | The audit's proposal | Strict | A client asks for a legacy ID such as `Ünïcode.Pkg` as `ünïcode.pkg`, which this refuses; R-NUGET-003 promises those IDs stay restorable (Q-NUGET-3) |
+
+**Choice:** (a) and (a). The pass-through cases are recognised by the reader's reason (`nupkg.ErrNotZip` with no end-record signature in the last 64 KiB and 22 bytes, `nupkg.ErrNuspecCount` with no root `.nuspec` as `archive/zip` lists the entries, `nuspec.ErrNotXML`), so a damaged archive that another reader may still open is refused. The detail of the 502 names the reader's reason. The counter `trove_nuget_remote_unparseable_packages_total` counts what passes. This deviates from the fix the task named for the comparison ("ASCII lower-case"), for the reason in (c).
+
+**Rationale:** the identity is the only check an upstream without a digest allows (H-35); a package served without it must be one nobody can mistake for a package. The development agent revisits the list when a feed in use serves packages that clients read and trove's reader refuses (then the reader's limits, not the pass-through, should move), and the comparison if a difference between Go's and .NET's lowercase tables shows.
+
+**Applied in the spec:** R-NUGET-003 (the comparison and the rows' ID), R-NUGET-015 (the fill); Q-NUGET-53 superseded in part. Code: [remote_fill.go](../../../internal/formats/nuget/remote_fill.go), [id.go](../../../internal/formats/nuget/id/id.go) `SameID`. Tests: `TestR_NUGET_015_APackageWhoseIdentityCannotBeCheckedIs502AndStoresNothing`, `TestR_NUGET_015_ContentThatIsNoPackageForAnyReaderIsServedAsItCame`, `TestR_NUGET_003_TheRowsOfACachedPackageAreKeyedByThePathsID`, `TestR_NUGET_003_SameID`, `TestR_NUGET_003_InspectFillComparesANonASCIIIDAsAClientLowerCasesIt`.
+
+### Q-NUGET-85 · A remote's deprecation, vulnerabilities and alternate package come without the upstream's addresses; advisoryUrl stays a link for people
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-015 said both "catalog entry properties are copied, including `deprecation` and `vulnerabilities`" and "every URL except `projectUrl`, `licenseUrl` and `iconUrl` is trove's". nuget.org writes both members as JSON-LD: the deprecation, each advisory and the alternate package carry an `@id` in its catalog or registration, and an advisory carries `advisoryUrl`, a page on github.com. The remote and the merge copied the members verbatim, so the criterion failed on every package with an advisory (`newtonsoft.json` below 13.0.1 on nuget.org); the stub had none, so CI passed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Drop `@id` and `@type` at every depth; keep `advisoryUrl` when it is an absolute `http` or `https` address without user info, like `projectUrl`; drop any other member that holds an address (chosen) | A client reads `reasons`, `message`, `alternatePackage.id` and `.range`, `severity`, `advisoryUrl`, all kept | The advisory link a person follows stays; no address of the upstream's API remains | A client that read `@id` would lose it (none known) |
+| (b) Rewrite each `@id` to trove's leaf with a fragment, the alternate package's to trove's registration index | The JSON-LD shape stays | Closest to nuget.org's bytes | Addresses that nothing resolves on trove's side (a leaf fragment), for no client that reads them |
+| (c) Pass both members verbatim and amend the criterion | Q-NUGET-52 | Nothing lost | The upstream's catalog addresses in trove's documents |
+| (d) Drop `advisoryUrl` too | Strict | Every URL trove's | The advisory a person needs to judge a vulnerable dependency is gone |
+
+**Choice:** (a). The members are written compact with their keys in order; a member with nothing left is absent; a non-web `advisoryUrl` is dropped and its advisory kept with its severity. The local class has neither member. The stub's corpus deprecates `Newtonsoft.Json` 13.0.1 (with an alternate package) and records an advisory against it, with nuget.org's JSON-LD addresses, so the rule is in every run.
+
+**Rationale:** `advisoryUrl` is a link shown to people, like `projectUrl`, which trove never follows; the JSON-LD addresses are the upstream's API, which trove replaces everywhere else. The development agent revisits this if a client turns out to read a dropped member.
+
+**Applied in the spec:** R-NUGET-015 (the copy rule, the URL table and the criterion on the URLs of a registration); Q-NUGET-52 superseded in part. Code: [remote/passthrough.go](../../../internal/formats/nuget/remote/passthrough.go), [remote/catalog.go](../../../internal/formats/nuget/remote/catalog.go), [test/nugetstub](../../../test/nugetstub/docs.go). Tests: `TestR_NUGET_015_DeprecationAndVulnerabilitiesComeWithoutTheUpstreamsAddresses`, `TestR_NUGET_015_APassThroughMemberWithNothingLeftIsAbsent`, `TestR_NUGET_015_TheCorpusDeprecatesAVersionAndRecordsAnAdvisory`, and the integration tests `TestR_NUGET_015_RegistrationsAreRenderedOnTheServingRepository`, `TestR_NUGET_017_AVirtualRepositoryMergesARemoteMemberThatGzipsAndPagesItsRegistration`.
+
+### Q-NUGET-86 · The first answer to a cache miss: a body within the withheld tail is answered from the stored entry, a longer one streams with the headers that do not depend on the body
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the request that fetches an artifact streams the upstream's body to its client while it arrives (R-REPO-041, Q-REPO-94); that answer carried the upstream's media type, the length and `Cache-Status`, and none of `ETag`, `Last-Modified`, `Accept-Ranges`, `Cache-Control` and `Repr-Digest`, which every later answer from the stored entry carries. The e2e test of E3.6 found it on the `.nuspec` of a remote and had to fetch the file once before it compared replicas. NuGet's `.nupkg` was not affected: the fill hook serves its leader from the stored entry (Q-ARCH-267).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A body whose announced length fits in the withheld tail (64 KiB) is not streamed: the stored entry answers it with every header of a stored answer; a longer body streams with `Accept-Ranges` and the `Cache-Control` of a stored answer, which the host names (`proxy.Request.Headers`) (chosen) | No byte of a body within the tail leaves before the commit anyway, so serving it from the entry costs nothing; a long body keeps its early first byte | Small files (a `.nuspec`, most documents of a package) answer the same on the first request as later; a streamed answer differs only in the validators the whole body decides | A body longer than 64 KiB still has no `ETag`, `Last-Modified` or `Repr-Digest` on its first answer |
+| (b) Never stream: the leader is answered from the stored entry | Q-REPO-94 (c) | Every first answer is a stored one | Q-REPO-94 refused it: a large artifact sends nothing for minutes and meets idle timeouts of the edge |
+| (c) Keep the stream as it was | — | No change | The difference E3.6 found |
+
+**Choice:** (a). With the object store unavailable, a body that was held back (the fill hook, or a body within the tail) is replayed to the leader from the spool, verified, with the same headers. npm and every other format follow the same rule; their tarballs above 64 KiB stream as before.
+
+**Rationale:** the withheld tail already decides when the first byte leaves; making the threshold of streaming the same number removes the only case in which streaming bought nothing and cost the headers. The validators of a longer body need the body. The development agent revisits this when a client needs a validator on the first answer of a large artifact (then the leader waits for the commit as a waiter does, and Q-REPO-94 is reopened).
+
+**Applied in the spec:** [repositories-and-proxy.md](../repositories-and-proxy.md) R-REPO-041 (the withheld tail). Code: [proxy/artifact.go](../../../internal/proxy/artifact.go), [proxy/integrity.go](../../../internal/proxy/integrity.go), [proxy/types.go](../../../internal/proxy/types.go) `Request.Headers`, [formathost/remote.go](../../../internal/formathost/remote.go). Tests: the integration test `TestR_NUGET_015_TheFirstAnswerOfACacheMissCarriesTheHeadersOfAStoredAnswer` (directly and through a virtual repository), and the proxy and npm integration packages, which pass unchanged.
 
 ### Q-NUGET-87 · On an endpoint with rules the validator of a local or virtual document follows its filtered bytes, and a virtual validator names the ID
 

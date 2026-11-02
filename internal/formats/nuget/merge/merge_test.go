@@ -9,6 +9,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats/nuget/merge"
+	"github.com/guided-traffic/trove/internal/formats/nuget/remote"
 )
 
 func local(t *testing.T, entries ...merge.Entry) []byte {
@@ -40,6 +41,21 @@ func upstream(entries ...string) []byte {
 }
 
 func leaf(catalog string) string { return `{"@id":"x","catalogEntry":` + catalog + `}` }
+
+// upstreamEntries are the entries of a remote member whose upstream index inlines the leaves
+// given, as the format hands them to the merge: the remote's own conversion (merge.FromRemote).
+func upstreamEntries(t *testing.T, leaves ...string) []merge.Entry {
+	t.Helper()
+	idx, err := remote.ParseIndex(upstream(leaves...), 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ls []remote.Leaf
+	for _, p := range idx.Pages {
+		ls = append(ls, p.Leaves...)
+	}
+	return merge.FromRemote(remote.Merge(ls, "acme.widgets"))
+}
 
 func decoded(t *testing.T, b []byte) []merge.Entry {
 	t.Helper()
@@ -79,10 +95,10 @@ func TestR_NUGET_017_TheVersionListIsTheUnionAscendingByPrecedence(t *testing.T)
 // tier the earlier position wins, whatever the order of the parts.
 func TestR_NUGET_017_AVersionComesFromTheMemberTierResolutionWouldPick(t *testing.T) {
 	parts := []merge.Part{
-		{Member: "fetch", Tier: merge.Remote, Position: 0, Doc: upstream(leaf(`{"id":"Acme.Widgets","version":"1.0.0","description":"fetch"}`), leaf(`{"id":"Acme.Widgets","version":"3.0.0","description":"fetch"}`))},
+		{Member: "fetch", Tier: merge.Remote, Position: 0, Entries: upstreamEntries(t, leaf(`{"id":"Acme.Widgets","version":"1.0.0","description":"fetch"}`), leaf(`{"id":"Acme.Widgets","version":"3.0.0","description":"fetch"}`))},
 		{
 			Member: "cached", Tier: merge.Remote, Position: 1, Cached: map[string]bool{"1.0.0": true},
-			Doc: upstream(leaf(`{"id":"Acme.Widgets","version":"1.0.0","description":"cached"}`), leaf(`{"id":"Acme.Widgets","version":"2.0.0","description":"cached"}`)),
+			Entries: upstreamEntries(t, leaf(`{"id":"Acme.Widgets","version":"1.0.0","description":"cached"}`), leaf(`{"id":"Acme.Widgets","version":"2.0.0","description":"cached"}`)),
 		},
 		{Member: "second-local", Tier: merge.Local, Position: 3, Doc: local(t, entry("4.0.0", "second"), entry("5.0.0", "second"))},
 		{Member: "first-local", Tier: merge.Local, Position: 2, Doc: local(t, entry("4.0.0", "first"))},
@@ -139,7 +155,7 @@ func TestR_AUTHZ_008_ARestrictedMemberListsOnlyWhatItHasCached(t *testing.T) {
 func TestR_NUGET_017_MergingIsDeterministic(t *testing.T) {
 	ps := []merge.Part{
 		{Member: "a", Tier: merge.Local, Doc: local(t, entry("1.0.0", "a"), entry("1.1.0", "a"), entry("2.0.0", "a"))},
-		{Member: "b", Tier: merge.Remote, Position: 1, Doc: upstream(leaf(`{"id":"Acme.Widgets","version":"1.0.0"}`), leaf(`{"id":"Acme.Widgets","version":"3.0.0"}`))},
+		{Member: "b", Tier: merge.Remote, Position: 1, Entries: upstreamEntries(t, leaf(`{"id":"Acme.Widgets","version":"1.0.0"}`), leaf(`{"id":"Acme.Widgets","version":"3.0.0"}`))},
 	}
 	first, err := merge.Do(merge.Registration, ps)
 	if err != nil {
@@ -153,28 +169,27 @@ func TestR_NUGET_017_MergingIsDeterministic(t *testing.T) {
 	}
 }
 
-// TestR_NUGET_015_AnUpstreamCatalogEntryBecomesTheMetadataOfTheRows: the members the
-// registration documents show are carried over, the pass-through members are kept as the
-// upstream wrote them, and the SemVer 2.0.0 classification follows R-NUGET-004.
-func TestR_NUGET_015_AnUpstreamCatalogEntryBecomesTheMetadataOfTheRows(t *testing.T) {
-	doc := upstream(
-		leaf(`{"id":"Newtonsoft.Json","version":"13.0.3","authors":["James","Newton-King"],"description":"Json.","tags":"json serialization","listed":false,`+
-			`"published":"2023-03-08T10:00:00.123+00:00","licenseExpression":"MIT","requireLicenseAcceptance":false,`+
+// TestR_NUGET_017_ARemoteEntryIsTheRemotesOwnConversion: the entries of a remote member are
+// the remote's conversion of its leaves (Q-NUGET-82): an entry without an id takes the ID of the
+// request, the members the remote keeps travel with the entry, the pass-through members come
+// without the upstream's addresses, and the SemVer 2.0.0 classification follows R-NUGET-004. The
+// merge decoded the upstream's index itself before and lost the first two.
+func TestR_NUGET_017_ARemoteEntryIsTheRemotesOwnConversion(t *testing.T) {
+	es := upstreamEntries(t,
+		leaf(`{"version":"13.0.3","authors":["James","Newton-King"],"description":"Json.","tags":"json serialization","listed":false,`+
+			`"published":"2023-03-08T10:00:00.123+00:00","licenseExpression":"MIT","requireLicenseAcceptance":false,"copyright":"(c) J",`+
 			`"dependencyGroups":[{"targetFramework":"net6.0","dependencies":[{"id":"Other","range":"[1.0.0, )"}]}],`+
-			`"deprecation":{"message":"old","reasons":["Legacy"]},"vulnerabilities":null}`),
-		leaf(`{"id":"Newtonsoft.Json","version":"14.0.0-beta1"}`),
-		leaf(`{"id":"Newtonsoft.Json","version":"14.0.0","dependencyGroups":[{"dependencies":[{"id":"X","range":"[1.0.0-a.b, )"}]}]}`),
-		leaf(`{"id":"Newtonsoft.Json","version":"not a version"}`),
+			`"deprecation":{"@id":"https://up.test/cat#deprecation","message":"old","reasons":["Legacy"]},"vulnerabilities":null}`),
+		leaf(`{"id":"Acme.Widgets","version":"14.0.0-beta1"}`),
+		leaf(`{"id":"Acme.Widgets","version":"14.0.0","dependencyGroups":[{"dependencies":[{"id":"X","range":"[1.0.0-a.b, )"}]}]}`),
+		leaf(`{"id":"Acme.Widgets","version":"not a version"}`),
 	)
-	es, err := merge.DecodeUpstream(doc)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if len(es) != 3 {
 		t.Fatalf("%d entries, want 3 (a text that is no version is dropped)", len(es))
 	}
 	e := es[0]
-	if e.Version != "13.0.3" || e.Listed || !e.Published.Equal(time.Date(2023, 3, 8, 10, 0, 0, 123000000, time.UTC)) || e.Semver2 || e.Prerelease {
+	if e.Version != "13.0.3" || e.DeclaredID != "acme.widgets" || e.Listed || e.Semver2 || e.Prerelease ||
+		!e.Published.Equal(time.Date(2023, 3, 8, 10, 0, 0, 123000000, time.UTC)) {
 		t.Errorf("first entry = %+v", e)
 	}
 	var m struct {
@@ -196,29 +211,39 @@ func TestR_NUGET_015_AnUpstreamCatalogEntryBecomesTheMetadataOfTheRows(t *testin
 	if string(e.Deprecation) != `{"message":"old","reasons":["Legacy"]}` || e.Vulnerabilities != nil {
 		t.Errorf("pass-through = %s / %s", e.Deprecation, e.Vulnerabilities)
 	}
+	if len(e.Other) != 1 || e.Other[0].Key != "copyright" || string(e.Other[0].Value) != `"(c) J"` {
+		t.Errorf("kept members = %+v", e.Other)
+	}
 	if !es[1].Listed || !es[1].Prerelease || es[1].Semver2 {
 		t.Errorf("a leaf without listed is listed: %+v", es[1])
 	}
 	if !es[2].Semver2 {
 		t.Errorf("a dependency range with a SemVer 2.0.0 bound makes the version SemVer 2.0.0-specific: %+v", es[2])
 	}
+	// The kept members survive the merged document, which the merged-metadata cache holds.
+	out, err := merge.Do(merge.Registration, []merge.Part{{Member: "r", Tier: merge.Remote, Entries: es}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	back := decoded(t, out)
+	if len(back) != 3 || len(back[0].Other) != 1 || back[0].DeclaredID != "acme.widgets" || len(back[0].Members()) != 1 {
+		t.Errorf("merged = %+v", back)
+	}
 }
 
-// TestR_NUGET_017_AnIndexWithPagesByUrlIsAnUpstreamFailureNotAShortList: a page without its
-// leaves cannot be merged, and a member that contributed some of its versions only would
-// answer a list that changes with the upstream's paging.
-func TestR_NUGET_017_AnIndexWithPagesByUrlIsAnUpstreamFailureNotAShortList(t *testing.T) {
-	for name, doc := range map[string]string{
-		"a page by URL": `{"count":1,"items":[{"@id":"https://u/page/1.0.0/2.0.0.json","count":64,"lower":"1.0.0","upper":"2.0.0"}]}`,
-		"not JSON":      `<html>`,
-	} {
-		_, err := merge.Do(merge.Registration, []merge.Part{{Member: "r", Tier: merge.Remote, Doc: []byte(doc)}})
+// TestR_NUGET_017_AFlatListOfARemoteMemberIsReadAsTheMergeReceivesIt: the version list of a
+// remote member reaches the merge as plain JSON (the adapter inflates a gzip-coded one), and a
+// document that is no version list is an upstream failure, not an empty list.
+func TestR_NUGET_017_AFlatListOfARemoteMemberIsReadAsTheMergeReceivesIt(t *testing.T) {
+	for name, doc := range map[string]string{"not JSON": `<html>`, "no list": `{"versions":"1.0.0"}`} {
+		_, err := merge.Do(merge.Flat, []merge.Part{{Member: "r", Tier: merge.Remote, Doc: []byte(doc)}})
 		if e, ok := errs.As(err); !ok || e.Kind != errs.UpstreamFailed {
 			t.Errorf("%s: %v, want an upstream failure", name, err)
 		}
 	}
-	// An index with no page is an ID without versions, not a failure.
-	if es, err := merge.DecodeUpstream([]byte(`{"count":0,"items":[]}`)); err != nil || len(es) != 0 {
-		t.Errorf("empty index: %v %v", es, err)
+	// A remote member without a version contributes nothing and fails nothing.
+	out, err := merge.Do(merge.Registration, []merge.Part{{Member: "r", Tier: merge.Remote}})
+	if err != nil || len(decoded(t, out)) != 0 {
+		t.Errorf("empty member: %s %v", out, err)
 	}
 }

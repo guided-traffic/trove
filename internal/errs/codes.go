@@ -534,7 +534,7 @@ var registry = []CodeInfo{
 	{CodeNuGetSymbolsExist, Conflict, "NuGet symbol package exists", "The version holds a symbol package with other bytes. Symbols must match the binaries of the immutable package, so a symbol package is never replaced: push the package and its symbols under a new version."},
 	{CodeNuGetNotImplemented, NotImplemented, "NuGet operation not implemented", "The operation is part of the NuGet v3 protocol and is not served by this build of trove yet."},
 	{CodeNuGetInvalidUpstreamDocument, UpstreamFailed, "Invalid NuGet upstream document", "The upstream answered a NuGet metadata request (version list, registration index or page) with a document that is not what the request promises. The previous copy, if any, is kept and served."},
-	{CodeUpstreamPackageMismatch, UpstreamFailed, "Upstream served another package", "The upstream answered a package request with a .nupkg whose declared ID or version is not the one asked for. Nothing is stored."},
+	{CodeUpstreamPackageMismatch, UpstreamFailed, "Upstream served another package", "The upstream answered a package request with a .nupkg whose declared ID or version is not the one asked for, or whose archive trove's reader refuses so that the ID and version cannot be checked. Nothing is stored."},
 	// <<< M3 nuget
 }
 

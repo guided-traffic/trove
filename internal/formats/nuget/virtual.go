@@ -7,6 +7,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/nuget/merge"
 	"github.com/guided-traffic/trove/internal/formats/nuget/registration"
+	"github.com/guided-traffic/trove/internal/formats/nuget/remote"
 	"github.com/guided-traffic/trove/internal/formats/nuget/rows"
 )
 
@@ -22,8 +23,8 @@ import (
 //     [VariantFlat]. A member's document is the list as the flat container serves it.
 //   - the registration entries, at "{lower_id}/.registration/index.json", variant
 //     [VariantRegistration]. A local member's document is the neutral document of package
-//     merge; a remote member's is the upstream's registration index with every page
-//     inlined (Q-NUGET-56).
+//     merge; a remote member's is the upstream's registration index as the remote stores it,
+//     which the adapter reads with the pages it does not inline (Q-NUGET-82).
 //
 // The merged bytes hold no address and no hive: the handler renders the answer for the
 // repository the client addressed, in the hive the client asked, after the cache.
@@ -32,7 +33,8 @@ import (
 const (
 	// VariantFlat is the version list of the flat container.
 	VariantFlat = "flat"
-	// VariantRegistration is the registration entries of an ID, upstream pages inlined.
+	// VariantRegistration is the registration entries of an ID; a remote member's pages are
+	// read by the adapter (Q-NUGET-82).
 	VariantRegistration = "registration"
 )
 
@@ -135,17 +137,33 @@ func (a virtualAdapter) LocalDocument(ctx context.Context, rq *formats.Request, 
 
 // Merge applies the per-version source rule (R-NUGET-017): the entry of a version comes
 // from the member that tier resolution would pick for its .nupkg, a member the caller may
-// not fill supplies the versions it has cached only (R-AUTHZ-008).
-func (a virtualAdapter) Merge(_ context.Context, _ *formats.Request, p formats.Path, docs []formats.MemberDocument) ([]byte, error) {
-	kind, _, ok := a.f.documentOf(p)
+// not fill supplies the versions it has cached only (R-AUTHZ-008). A remote member's
+// document is the upstream's as the remote stores it, gzip-coded or not; its registration is
+// read with the pages its index does not inline (Q-NUGET-82), within one budget for the whole
+// merge (Q-NUGET-83).
+func (a virtualAdapter) Merge(ctx context.Context, rq *formats.Request, p formats.Path, docs []formats.MemberDocument) ([]byte, error) {
+	kind, id, ok := a.f.documentOf(p)
 	if !ok {
 		return nil, errs.E(errs.Internal, errs.CodeInternal, "The path is no merged document of the NuGet format.")
 	}
+	budget := remote.NewBudget(MaxDocumentBytes)
 	parts := make([]merge.Part, len(docs))
 	for i, d := range docs {
 		parts[i] = merge.Part{
 			Member: d.Member.Key, Tier: mergeTier(d.Tier), Position: d.Position, Doc: d.Doc,
 			Cached: d.CachedVersions, Restricted: d.Restricted,
+		}
+		if d.Tier == formats.TierLocal {
+			continue
+		}
+		var err error
+		if kind == merge.Flat {
+			parts[i].Doc, err = remoteFlatDocument(d.Doc)
+		} else {
+			parts[i].Entries, err = a.f.remoteMemberEntries(ctx, rq, d, id, budget)
+		}
+		if err != nil {
+			return nil, err
 		}
 	}
 	return merge.Do(kind, parts)
@@ -179,5 +197,5 @@ func versionOf(e merge.Entry) (rows.RegistrationVersion, registration.Passthroug
 			IsPrerelease: e.Prerelease, IsSemver2: e.Semver2, PublishedAt: e.Published,
 		},
 		PackageTypes: e.Types, Metadata: e.Metadata,
-	}, registration.Passthrough{Deprecation: e.Deprecation, Vulnerabilities: e.Vulnerabilities}
+	}, registration.Passthrough{Deprecation: e.Deprecation, Vulnerabilities: e.Vulnerabilities, Other: e.Members()}
 }

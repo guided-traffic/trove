@@ -330,9 +330,12 @@ func less(a, b formats.MemberDocument) bool {
 
 // inspect is check 6: every crafted input is rejected with 413 or 422 within
 // five seconds, and the heap stays within 512 MiB of its baseline. A format whose
-// remote adapter inspects fills runs the inputs its hook takes through it as well.
+// remote adapter inspects fills runs the inputs its hook takes through it as well,
+// and one whose remote adapter follows a discovery document runs crafted discovery
+// documents through its parser (discovery).
 func (r *run) inspect() {
-	if len(r.fx.Inspect) == 0 {
+	disc := formats.CapabilitiesOf(r.f).Remote.Discovery
+	if len(r.fx.Inspect) == 0 && (disc == nil || r.hasRoute(formats.Upload)) {
 		r.failf("the fixture has no crafted Inspect case and the check is not skipped")
 		return
 	}
@@ -366,13 +369,16 @@ func (r *run) inspect() {
 			r.inspectFill(fill, c.Name, in, lim)
 		}
 	}
+	if disc != nil {
+		r.discovery(disc, lim)
+	}
 }
 
 // inspectFill holds the fill hook of a remote adapter (formats.FillInspector) to the bounds of
 // R-ARCH-028 on the same crafted input: it reads what an upstream sent, which is as untrusted as an
-// upload (Q-ARCH-267). What it answers is the format's - NuGet serves and caches an archive it
-// cannot read as it came - so the check asks that it returns in time, within the heap budget and
-// without a panic (Q-ARCH-281).
+// upload (Q-ARCH-267). What it answers is the format's - NuGet refuses most archives it cannot
+// read and serves content that is no package as it came (Q-NUGET-84) - so the check asks that it
+// returns in time, within the heap budget and without a panic (Q-ARCH-281).
 func (r *run) inspectFill(fill formats.FillInspector, name string, in formats.InspectInput, lim untrusted.Limits) {
 	rc := formats.RemoteContext{Repo: r.host(formats.Remote).Repo()}
 	m := measure(func(ctx context.Context) error {
