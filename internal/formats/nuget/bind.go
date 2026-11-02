@@ -25,6 +25,8 @@ type replica struct {
 	remote *remoteMetrics
 	// virt counts what a virtual repository leaves out, nil likewise.
 	virt *virtualMetrics
+	// search counts the withheld and the failed forwarded searches, nil likewise.
+	search *searchMetrics
 }
 
 // Bind gives the format the nuget section of the configuration of the replica that owns the
@@ -37,6 +39,7 @@ func (f *Format) Bind(h formats.Host, cfg *config.Config, m *observability.Metri
 		r.writes = newWriteMetrics(m)
 		r.remote = newRemoteMetrics(m)
 		r.virt = newVirtualMetrics(m)
+		r.search = newSearchMetrics(m)
 	}
 	f.replicas.Store(h, r)
 	if d := h.FormatData(ID); d != nil {
@@ -72,7 +75,7 @@ func defaultReplica() *replica {
 			MaxUncompressedBytes: config.ByteSize(nupkg.DefaultMaxUncompressedBytes), MaxCompressionRatio: nupkg.DefaultMaxRatio,
 		},
 		Registration: config.NuGetRegistration{PageSize: 64, InlineBelow: 128},
-		Search:       config.NuGetSearch{DefaultTake: 20, MaxTake: 1000, MaxSkip: 3000, VirtualMergeWindow: 1000},
+		Search:       config.NuGetSearch{DefaultTake: 20, MaxTake: 1000, MaxSkip: 3000, VirtualMergeWindow: 1000, RemoteResultTTL: defaultRemoteResultTTL},
 	}}
 }
 

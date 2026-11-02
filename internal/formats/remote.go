@@ -128,7 +128,8 @@ type RemoteAdapter interface {
 // The engine resolves the document before it asks [RemoteAdapter.UpstreamRequest] for any other path: as a
 // metadata document of the repository, stored, revalidated and collapsed like every other, ahead of the
 // fetch's slot. It parses it with ParseDiscovery and hands the result to every call of that fetch as
-// [RemoteContext.Discovery]. The request for the document itself carries none.
+// [RemoteContext.Discovery]. The request for the document itself carries none. The host resolves it the
+// same way for a pass-through query and hands it to [RemoteAdapter.UpstreamQuery] (Q-ARCH-282).
 type Discoverer interface {
 	// DiscoveryDocument names the document: its canonical path and stored variant.
 	DiscoveryDocument() (p Path, variant string, ok bool)

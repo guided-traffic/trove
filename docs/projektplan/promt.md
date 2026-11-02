@@ -209,12 +209,6 @@ started and stopped before it changed the tree; phase 4 stays open until these a
 
 ### NuGet
 
-- **F-20 · The forwarded search of a remote is not built** (confirmed). R-NUGET-016 is MVP and in M3's scope (WP3.2), and
-  Q-NUGET-55 left it to "the package that forwards". A remote searches only what it has cached, and `searchRemote` in
-  [search_virtual.go](../../internal/formats/nuget/search_virtual.go) returns nothing, so the search of `nuget-all` lists no
-  package of nuget.org. Also: `Classify("v3/search")` names the package `v3`, so a populate check on a forwarded search would
-  be decided for that package. Done when R-NUGET-016's and R-NUGET-018's criteria pass, the two-replica and Valkey-stopped
-  timing case in e2e.
 - **F-22 · A virtual repository with a nuget.org member answers 502 on registration documents** (confirmed by a probe test of
   the code review). `merge.DecodeUpstream` and `decodeFlat` ([merge/](../../internal/formats/nuget/merge)) do not inflate the
   gzip bytes a remote stores unchanged, and refuse an index whose pages are listed by URL (more than 128 versions), although
@@ -238,7 +232,7 @@ started and stopped before it changed the tree; phase 4 stays open until these a
 - **F-27 · The run against nuget.org of E3.1 has no test** (confirmed). npm has a read-only subset against the public
   registry in `TestNPMClosing`; NuGet's closing set has none. Planned: a remote of `https://api.nuget.org/v3/index.json` and a
   virtual repository with it, `dotnet restore` of `Newtonsoft.Json` and of an ID with more than 128 versions, nuget.exe through the
-  remote, the URLs of the registration, `dotnet package search` (needs F-20, and F-22 for the virtual registration).
+  remote, the URLs of the registration, `dotnet package search` (needs F-22 for the virtual registration).
 - **F-28 · `TestE1_11Scatter` of `access-long` meets the write budget** (confirmed, 2 of 5 runs of R-API-014 and R-API-052 alone on
   kind at 42f7a1d). The class `api_write` of R-API-016 is a sliding window of 50 writes per 5 s per token; one token carries both
   subtests, 18 and 41 writes in about 5 s, and the pacing comment at `e1_11_scatter_test.go:253` still describes the token bucket

@@ -15,7 +15,7 @@ import (
 
 // The search resource of local repositories (R-NUGET-010, R-AUTHZ-016). A virtual
 // repository merges the searches of its members (search_virtual.go, R-NUGET-018); a remote
-// one joins with its adapter (R-NUGET-016).
+// one forwards the query to its upstream (search_remote.go, R-NUGET-016).
 
 const (
 	// searchScanBatch is the page a scan of a repository the caller reads row by row asks
@@ -58,8 +58,11 @@ func (f *Format) handleSearch(ctx context.Context, rq *formats.Request, w http.R
 	)
 	if !p.NoMatch {
 		run := f.runSearch
-		if rq.Repo.Class == formats.Virtual {
+		switch rq.Repo.Class {
+		case formats.Virtual:
 			run = f.runVirtualSearch
+		case formats.Remote:
+			run = f.runRemoteSearch // the forwarded search, search_remote.go (R-NUGET-016)
 		}
 		if hits, total, err = run(ctx, rq, st, p); err != nil {
 			return err

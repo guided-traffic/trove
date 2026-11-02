@@ -26,7 +26,8 @@ type packageType struct {
 }
 
 // result is one package of the data array. Owners, verified, deprecation and vulnerabilities
-// are not members: a local package has none (R-NUGET-010).
+// are members only of a result a remote's upstream returned: a local package has none
+// (R-NUGET-010, R-NUGET-016).
 type result struct {
 	ID             string        `json:"@id"`
 	Type           string        `json:"@type"`
@@ -44,6 +45,11 @@ type result struct {
 	TotalDownloads int64         `json:"totalDownloads"`
 	PackageTypes   []packageType `json:"packageTypes"`
 	Versions       []versionRef  `json:"versions"`
+	// The members of a forwarded result (Q-NUGET-78); nil for a local package.
+	Owners          *[]string       `json:"owners,omitempty"`
+	Verified        *bool           `json:"verified,omitempty"`
+	Deprecation     json.RawMessage `json:"deprecation,omitempty"`
+	Vulnerabilities json.RawMessage `json:"vulnerabilities,omitempty"`
 }
 
 type document struct {
@@ -117,8 +123,11 @@ func (m metadata) typeNames(stored []string) []packageType {
 // Render renders the search document (R-NUGET-010): totalHits and one object per hit. feed
 // is the v3 root of the repository the client addressed, with its trailing slash. A hit
 // carries its latest visible version and the listed visible versions, ascending; semVer2
-// says which registration hive the links point into. Downloads are 0 until R-STOR-015
-// ships; the protocol needs the property, not a value.
+// says which registration hive the links point into, also for a result an upstream returned
+// (R-NUGET-016). The downloads of a stored version are 0 until R-STOR-015 ships; the protocol
+// needs the property, not a value. A hit whose latest version carries what an upstream's
+// result said (rows.Forwarded) renders its owners, verified flag, deprecation, vulnerabilities
+// and total downloads as well.
 func Render(feed string, semVer2 bool, total int, hits []rows.SearchHit) ([]byte, error) {
 	hive := feed + hiveLegacy
 	if semVer2 {
@@ -142,7 +151,13 @@ func Render(feed string, semVer2 bool, total int, hits []rows.SearchHit) ([]byte
 			Versions:     make([]versionRef, 0, len(h.Listed)),
 		}
 		for _, v := range h.Listed {
-			r.Versions = append(r.Versions, versionRef{ID: hive + h.LowerID + "/" + v.LowerVersion + ".json", Version: v.FullVersion})
+			r.Versions = append(r.Versions, versionRef{ID: hive + h.LowerID + "/" + v.LowerVersion + ".json", Version: v.FullVersion, Downloads: v.Downloads})
+			r.TotalDownloads += v.Downloads
+		}
+		if fw := h.Latest.Forwarded; fw != nil {
+			owners, verified := append([]string{}, fw.Owners...), fw.Verified
+			r.Owners, r.Verified, r.TotalDownloads = &owners, &verified, fw.TotalDownloads
+			r.Deprecation, r.Vulnerabilities = present(fw.Deprecation), present(fw.Vulnerabilities)
 		}
 		doc.Data = append(doc.Data, r)
 	}
@@ -151,4 +166,12 @@ func Render(feed string, semVer2 bool, total int, hits []rows.SearchHit) ([]byte
 		return nil, errs.E(errs.Internal, errs.CodeInternal, "", errs.WithCause(err))
 	}
 	return b, nil
+}
+
+// present returns a member an upstream sent, or nil for one it did not send or sent as null.
+func present(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	return raw
 }

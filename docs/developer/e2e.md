@@ -1109,7 +1109,7 @@ port (two hosts without a resolver; a test certificate needs both names), and an
 | Registrations, identity | `/v3/registration/{id}/…` | API | `RegistrationsBaseUrl` and the `3.0.0-beta`/`3.0.0-rc` aliases |
 | Registrations, gzip | `/v3/registration-gz/{id}/…` | API | `RegistrationsBaseUrl/3.4.0` and `/3.6.0`; compressed when `Accept-Encoding` allows; the weak `ETag` is the same with and without coding |
 | Package content | `/v3-flatcontainer/{id}/index.json`, `/{version}/{id}.{version}.nupkg`, `/{version}/{id}.nuspec` | content | `PackageBaseAddress/3.0.0`; a dropped version keeps its files |
-| Search | `/query?q=&skip=&take=&prerelease=` | content | `SearchQueryService` and aliases; `q=packageid:x` is an exact ID; unlisted versions are left out |
+| Search | `/query?q=&skip=&take=&prerelease=` | content | `SearchQueryService` and aliases; `q=packageid:x` is an exact ID; unlisted versions are left out; every result names the owner `SearchOwner` and is `verified`, version i (from 0, unlisted ones included) has `VersionDownloads(i)` downloads and `totalDownloads` sums every version, so a test sees whether a forwarded search keeps the upstream's members (R-NUGET-016) |
 
 A registration index has pages of 64 leaves. Below 128 versions the pages are inlined (`items`, `@id` `…/index.json#page/lo/hi`);
 from 128 they are listed without `items` and fetched at `…/page/{lower}/{upper}.json`, which is what the package

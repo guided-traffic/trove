@@ -1,15 +1,16 @@
 # NuGet remote repositories
 
 Status: built (M3, phase 4): the remote class of NuGet, the proxy and cache of a NuGet v3 feed (R-NUGET-014, R-NUGET-015, R-NUGET-031). The virtual class
-of NuGet is built and merges a remote member's documents (R-NUGET-017). The forwarded search (R-NUGET-016), the vulnerability documents, the symbol files and
-the embedded files are not built; a remote repository searches the packages it has cached.
+of NuGet is built and merges a remote member's documents (R-NUGET-017). The forwarded search is built (R-NUGET-016, 2026-11-02): a remote sends a search to
+its upstream unless a name of the query is protected, and a virtual repository merges a remote member's forwarded results (R-NUGET-018). The vulnerability
+documents, the symbol files and the embedded files are not built.
 
 This page describes what an upstream NuGet feed can make trove do and show, and what limits that. The upstream is a party trove does not trust: its documents
 decide which addresses trove contacts, which bytes it stores and what its clients are told. The outbound rules it relies on (addresses, TLS, credentials,
 redirects) are on [egress.md](egress.md), [transport-encryption.md](transport-encryption.md) and [data-and-secret-flow.md](data-and-secret-flow.md); the
 patterns, claims and the shadowing check on [repository-model.md](repository-model.md); the read permission on [permissions.md](permissions.md). The
-requirements are R-NUGET-014, R-NUGET-015 and R-NUGET-031 in [spec/formats/nuget.md](../spec/formats/nuget.md); the code is
-[internal/formats/nuget](../../internal/formats/nuget) (`remote.go`, `remote_fill.go`, `handlers_remote.go`) and its leaves
+requirements are R-NUGET-014, R-NUGET-015, R-NUGET-016 and R-NUGET-031 in [spec/formats/nuget.md](../spec/formats/nuget.md); the code is
+[internal/formats/nuget](../../internal/formats/nuget) (`remote.go`, `remote_fill.go`, `handlers_remote.go`, `search_remote.go`) and its leaves
 [remote](../../internal/formats/nuget/remote) and [registration](../../internal/formats/nuget/registration).
 
 ## Where an address comes from
@@ -62,6 +63,46 @@ package is inspected after the digest check and before the item is committed, ou
 
 The rows of a cached package (`origin = 'cache'`) come from the package's own `.nuspec`, so search and the package view of a remote show what the package
 declares, and not what the upstream's registration says (H-337).
+
+## The forwarded search
+
+A remote with `nuget.forwardSearch: true` (the default) sends a client's search to the search resource the upstream's service index names (R-NUGET-016,
+[search_remote.go](../../internal/formats/nuget/search_remote.go)), through the engine's pass-through (Q-ARCH-270). A virtual repository asks each remote
+member the same way (R-NUGET-018).
+
+**What leaves the installation with a forwarded query:**
+
+| What | Leaves | Where it is decided |
+|---|---|---|
+| The text of `q` as the client typed it | yes, unless a name in it is protected (below) | `mayForward` |
+| `skip` and `take` (clamped to `nuget.search.max_skip` and `max_take`), `prerelease`, `semVerLevel` (sent only as `2.0.0`), `packageType` (lowercased) | yes, in the form trove validated | `forwardParams` |
+| The caller's name, token, cookie or address | no; the request carries `User-Agent: trove/<version>`, the remote's own credential and custom headers only to a host its hop policy names (step 5 above), and a trace context only with `tracing.propagate_to_upstreams` | the engine's upstream client ([internal/outbound](../../internal/outbound)) |
+| The address | the search resource of the stored service index; its host is the upstream's origin or an `extraHosts` entry, as for every address (steps 1, 2 and 4 above) | the host resolves the index (Q-ARCH-282), the engine checks the host |
+
+**Withheld queries.** A query is answered from the remote's cache, and nothing is sent, when a name it carries is one that an exclude pattern of the remote,
+a claim in effect or a pin rule keeps away from it, or the literal stem of such a prefix pattern (`acme` for `Acme.*`); `Resolver.KeepsAway` decides in
+memory. The names are each term without its field, a phrase word by word, and every run of ID characters inside a word, so punctuation does not carry a
+protected name past the rule (`acme!` asks about `acme`, Q-NUGET-80). Through a virtual repository the claims and pin rules in effect there count; on a remote
+addressed directly the `global` claims, while remote refusal is on. Include patterns protect nothing. Withheld queries are counted in
+`trove_nuget_search_withheld_total{repo}`. Free-text words that name no protected package (`payments`, a project code name) still leave; an installation
+for which they are sensitive sets `forwardSearch: false` on the remote.
+
+Nothing is sent either with `forwardSearch: false`, on the cache view `<key>~cache`, on an endpoint with `cache_fill: false`, for an offline remote, and for a
+caller who may not fill the remote while no answer to the same query is cached on the replica (the populate check of R-AUTHZ-008, Q-NUGET-79).
+
+**What comes back.** The answer is bounded like a metadata document (the repository's `limits.maxMetadataBytes`, else `proxy.max_metadata_bytes`, while it
+is received; `MaxDocumentBytes` in memory) and kept as received in the replica's memory only (`proxy_query_results`, for `nuget.search.remote_result_ttl`;
+never in Valkey or PostgreSQL). It is filtered on every use, so a claim or a grant change applies to a cached answer as soon as the replica has applied it:
+
+- a result whose ID the remote's include and exclude patterns do not admit, that a claim or a pin rule keeps away, that is no NuGet ID, or of which the
+  caller may read no version is removed, and `totalHits` is reduced by the results removed from the page (H-347);
+- a version the caller may not read is removed; when it is the upstream's latest, the result shows none of the description, links, `deprecation` and
+  `vulnerabilities` that describe it (Q-NUGET-78);
+- every registration address is the serving repository's; `projectUrl`, `licenseUrl`, `iconUrl` and a vulnerability's `advisoryUrl` are links for people and
+  pass as the upstream wrote them; a member of a result that R-NUGET-016 does not name is dropped.
+
+An upstream failure, an open circuit, a missing search resource and an answer that is no search document fall back to the cache-only search with 200 and are
+counted in `trove_nuget_search_forward_failures_total{repo}`.
 
 ## What this does not cover
 
@@ -137,3 +178,21 @@ by the declared ID, the item by the path's ID. A package whose `.nuspec` declare
 different package than its item, and the later eviction leaves an orphan package row. The client receives the package it asked for by path; what is wrong is
 search and the package view of the remote. What makes it real: an upstream that serves such a `.nuspec`. The fix keys the rows by the path's ID once the check
 passed, or compares the lower-cased forms of R-NUGET-003 (open finding F-25).
+
+### H-347 · The count of a forwarded search tells a caller with row-level reads how many upstream matches it may not see
+
+Stage: the filter of a forwarded answer ([search_remote.go](../../internal/formats/nuget/search_remote.go) `keepForCaller`), for a remote addressed directly
+and for a remote member of a virtual repository.
+
+Subject: a caller whose read of a remote is decided per package or version (a grant with package patterns, a token scope, an endpoint with exposure rules)
+searching a remote whose upstream holds packages that caller may not read; also the packages an exclude pattern or a claim keeps away from the remote,
+when the query itself names none of them.
+
+Live today, as R-NUGET-016 and R-NUGET-034 specify it: `totalHits` is the upstream's count less the results removed from the returned page. The upstream's
+matches beyond the page are counted whatever the caller may read, and a request with `take=0` returns the upstream's count unreduced, so
+`q=packageid:<name>&take=0` tells whether a package of a guessed name exists upstream, and a free-text query how many match. The names themselves stay
+hidden.
+
+What makes it real: an upstream that holds packages the caller may not read and that the remote's credential reads, such as another installation or a
+private feed. For nuget.org the count is public anyway. Closing it gives a caller with row-level reads a count of what the pages seen so far support (the
+results kept, and one page more while the upstream reports more), which changes the count R-NUGET-034 promises and needs a decision of its own.

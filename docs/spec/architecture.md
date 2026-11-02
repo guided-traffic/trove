@@ -1252,7 +1252,7 @@ type RemoteAdapter interface {
 // Discoverer: the format's upstream addressing follows a discovery document (R-NUGET-014). The engine resolves it
 // as a metadata document of the repository before it asks UpstreamRequest for any other path, parses it with
 // ParseDiscovery and gives the result to every call of that fetch as RemoteContext.Discovery. The request for the
-// document itself carries none.
+// document itself carries none. The host resolves it the same way for UpstreamQuery (Q-ARCH-282).
 type Discoverer interface {
 	DiscoveryDocument() (p Path, variant string, ok bool)
 	ParseDiscovery(ctx context.Context, rc RemoteContext, doc []byte) (any, error)
@@ -1962,7 +1962,12 @@ fixes their order and the components involved.
    who may not fill it (R-AUTHZ-008, R-EP-019) is served from that cache only, and a miss answers `formats.ErrOffline`, which
    the format turns into its own cache-only answer. Identical queries in flight on one replica wait for one contact. The
    answer is stored as neither a cache entry nor an item, and a missing resource at the upstream writes no negative entry.
-   *Status (milestone M3):* built (WP3.0c). No route of npm is `Volatile`; the first user is NuGet's search (R-NUGET-016).
+   For a format whose addressing follows a discovery document (`Discoverer`), the host resolves it as step 2 below says,
+   with the request's mode and populate check, before the adapter builds the request, and hands it over as
+   `RemoteContext.Discovery`; a populate refusal for the document is the query's `formats.ErrOffline` and is not audited
+   (Q-ARCH-282).
+   *Status (milestone M3):* built (WP3.0c). No route of npm is `Volatile`; the first user is NuGet's search (R-NUGET-016),
+   built 2026-11-02.
 7. The proxy looks up the cache entry in PostgreSQL, and on a miss the negative entry in its
    in-process L1 and then in Valkey (R-ARCH-030). Without Valkey, only the L1 answers. The outcomes
    are owned by the proxy page; the codes shown are those it uses:
@@ -7510,6 +7515,40 @@ paragraph, an acceptance criterion). Code: `internal/formats/formattest/kit.go`,
 `TestQ_ARCH_281_AContentRouteThatOnlyRefusesIsListed`, `TestQ_ARCH_281_EveryStorageHookIsDrivenByAChange`,
 `TestQ_ARCH_281_TheFillHookMeetsTheBoundsOfCheck6`, `TestR_ARCH_010_KitSkips`, `TestR_ARCH_010_NoCheckIsSkipped`,
 `TestR_ARCH_010_Conformance`.
+
+### Q-ARCH-282 · How does the road of a pass-through query resolve the discovery document of a format that has one?
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the engine resolves the discovery document of a `Discoverer` at the start of every fetch, before the slot, and
+hands the parsed form to every call of the fetch as `RemoteContext.Discovery` (Q-ARCH-268). The pass-through of a
+`Volatile` request (Q-ARCH-270) has no adapter in the engine: `proxy.QueryRequest` carries two functions, `Build` and
+`Accept`, and the host built the format's `RemoteContext` without the discovery document. NuGet's search resource is
+announced in the service index, so the forwarded search (R-NUGET-016) could not build its request; Q-NUGET-55 left
+the host side to the package that forwards.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The host's `Build` resolves the document through the engine's `Metadata`, with the caller's mode and a populate check that refuses without an audit event, parses it with the format's `Discoverer` and hands it to `UpstreamQuery` (chosen) | `internal/formathost/query.go` `discovery`, `quietPopulate` | No change of the engine's API or of the frozen contract; the document is the cache entry fetches use, stored, revalidated and collapsed by the same rules; the caller's mode and populate check decide as they do for a fetch | The engine looks the document up for every query, also one answered from the per-replica cache, because `Build` runs before the lookup (the URL is the key) |
+| (b) The engine resolves it: `QueryRequest` gains the format's adapter and `Query` calls the fetcher's `discover` | One place for discovery | The fetch and the query share the code | The pass-through gains the adapter Q-ARCH-270 kept it free of; a change of `proxy`'s API and its tests for one format |
+| (c) The format resolves it through `Host.Remote().Metadata` and passes the search address as a parameter | No host change | Works today | Rejected in Q-NUGET-55 (c): the cached answer's key would hold an address the format put in, a second way to address the upstream beside the service index |
+
+**Choice:** (a). A refusal of the populate check for the document (a caller who may not fill the remote, no stored
+document) answers the query with `ErrOffline`, so the format answers from its cache, and writes no
+`populate_not_permitted` event: a query brings no content into the repository, and the engine answers a caller who may
+not fill a query in the same way. A negative, missing or unparsable document is an upstream failure, which the format
+counts and answers from its cache (R-NUGET-016). A format without a `Discoverer` builds its request as before.
+
+**Rationale:** the address a query is sent to must come from the same document, under the same rules, as the address a
+fetch is sent to; (a) gets that with one call of the engine's existing road and no new surface. The cost of (a) is one
+lookup of the document's cache entry per query; its bytes come from the replica's metadata cache
+(`proxy.metadata_cache_bytes`) while it holds them. The
+development agent revisits this when that read shows in profiles of a search-heavy installation, or when a second format
+with a `Discoverer` passes queries through; (b) is the next step then.
+
+**Applied in the spec:** R-ARCH-013 step 6, R-ARCH-008 (the `Discoverer` block). Code: `internal/formathost/query.go`.
+Tests: `TestR_NUGET_016_ARemoteForwardsItsSearchAndFallsBackToItsCache`, `TestR_NUGET_018_AVirtualRepositoryForwardsThroughItsRemoteMember`
+(`test/integration/nuget`), `TestR_ARCH_013_QueryThroughTheHost` (`test/integration/proxy`, a format without a `Discoverer`).
 
 ## What this does not cover
 

@@ -782,7 +782,8 @@ and then freezes it.
 
 - WP3.1, NuGet local: ingestion, push with identical-bytes retries, unlist and delete, flat
   container, registrations, search;
-- WP3.2, remote and virtual repositories, with forwarded search cached per replica (Q-NUGET-8);
+- WP3.2, remote and virtual repositories, with forwarded search cached per replica (Q-NUGET-8); the forwarded
+  search of a remote and of a remote member was built on 2026-11-02 (Q-NUGET-78 to Q-NUGET-81, Q-ARCH-282);
 - WP3.3, symbol package push, which validates and stores the `.snupkg`; extraction and indexing
   are the `nuget-symbol-index` job of M6 (Q-NUGET-11);
 - WP3.4, the acceptance suite, including the Windows runner and the `scatter` and Valkey-stopped

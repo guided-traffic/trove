@@ -318,15 +318,27 @@ func matchesQuery(p *Package, term string, exact bool) bool {
 	return strings.Contains(p.Lower(), term) || strings.Contains(strings.ToLower(p.Description), term)
 }
 
+// SearchOwner is the owner every search result of the stub names, and every result says verified,
+// so that a test sees whether a remote keeps both (R-NUGET-016).
+const SearchOwner = "contoso"
+
+// VersionDownloads is the download count the stub's search gives the i-th version (from 0, in
+// ascending order, unlisted versions included) of a package: 1000 times its position plus one.
+// The total downloads of a result sum every version of the package, listed or not, as nuget.org's
+// do, so the total is not the sum of the versions a result lists.
+func VersionDownloads(i int) int64 { return int64(i+1) * 1000 }
+
 func searchHit(b bases, p *Package, prerelease bool) map[string]any {
 	var versions []map[string]any
 	latest := ""
-	for _, v := range p.Versions {
+	var total int64
+	for i, v := range p.Versions {
+		total += VersionDownloads(i)
 		if !v.Listed || (!prerelease && isPrerelease(v.Version)) {
 			continue
 		}
 		latest = v.Version
-		versions = append(versions, map[string]any{"version": v.Version, "downloads": 0, "@id": leafURL(b, registrationGz, p, v.Version)})
+		versions = append(versions, map[string]any{"version": v.Version, "downloads": VersionDownloads(i), "@id": leafURL(b, registrationGz, p, v.Version)})
 	}
 	if latest == "" {
 		return nil
@@ -334,7 +346,7 @@ func searchHit(b bases, p *Package, prerelease bool) map[string]any {
 	return map[string]any{
 		"@id": indexURL(b, registrationGz, p), "@type": "Package", "registration": indexURL(b, registrationGz, p),
 		"id": p.ID, "version": latest, "description": p.Description, "summary": "", "title": p.ID,
-		"authors": []string{"Contoso"}, "owners": []string{}, "tags": []string{}, "totalDownloads": 0, "verified": false,
+		"authors": []string{"Contoso"}, "owners": []string{SearchOwner}, "tags": []string{}, "totalDownloads": total, "verified": true,
 		"packageTypes": []map[string]string{{"name": "Dependency"}}, "versions": versions,
 	}
 }

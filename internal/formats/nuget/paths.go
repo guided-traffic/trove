@@ -158,6 +158,9 @@ func (f *Format) Classify(p formats.Path) formats.PathInfo {
 		return formats.PathInfo{Kind: formats.PathComputed}
 	}
 	segs := strings.Split(p.Path, "/")
+	if isQueryPath(segs) {
+		return formats.PathInfo{Kind: formats.PathVolatile}
+	}
 	switch segs[0] {
 	case canonDiscovery, canonVulnerability:
 		return formats.PathInfo{Kind: formats.PathMetadata}
@@ -189,6 +192,14 @@ func (f *Format) Classify(p formats.Path) formats.PathInfo {
 		return classifyVersionFile(info, ver, rest[1:])
 	}
 	return info
+}
+
+// isQueryPath reports whether a path is the one a pass-through query names, "v3/search" or
+// "v3/autocomplete" (R-NUGET-016): repository-level, so that the populate check of a forwarded
+// search is decided for the repository and not for a package named "v3" (Q-NUGET-79). The
+// canonical layout keeps nothing below "{id}/search" for any ID, so no stored path is lost.
+func isQueryPath(segs []string) bool {
+	return len(segs) == 2 && segs[0] == FeedSegment && (segs[1] == resSearch || segs[1] == resAutocomplete)
 }
 
 // classifyVersionFile classifies a path below "{id}/{version}/".

@@ -203,13 +203,13 @@ func (s memberScope) MayRead(repo, pkg, version string) bool {
 	return s.may == nil || s.may(repo, pkg, version)
 }
 
-// TestR_NUGET_018_ARemoteMemberContributesNothingUntilItsSearchIsBuilt: the forwarded search of
-// R-NUGET-016 is a later package, so a remote member in the plan takes no part and does not
-// make the search fail; a plan that admits nothing is an empty result and not an error.
-func TestR_NUGET_018_ARemoteMemberContributesNothingUntilItsSearchIsBuilt(t *testing.T) {
+// TestR_NUGET_018_APlanThatAdmitsNothingIsAnEmptyResult: a plan that admits nothing is an empty
+// result and not an error, and so is a plan without members. A remote member takes part through
+// its forwarded search (search_remote_test.go, test/integration/nuget).
+func TestR_NUGET_018_APlanThatAdmitsNothingIsAnEmptyResult(t *testing.T) {
 	res := &mergeResolver{}
 	h, _ := virtualSearchHost(t, 0, []formats.PlannedMember{
-		memberAt(11, "local", formats.TierLocal, 0), memberAt(20, "remote", formats.TierRemote, 1),
+		memberAt(11, "local", formats.TierLocal, 0),
 	}, map[int64][]rows.SearchHit{11: {pkg("Acme.Widgets", "1.0.0")}}, res)
 	d := decodeSearch(t, doSearch(t, h, "q=acme"))
 	if !slices.Equal(idsOf(d), []string{"Acme.Widgets"}) || d.TotalHits != 1 {

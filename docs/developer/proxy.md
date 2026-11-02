@@ -34,6 +34,9 @@ must be on the upstream's host or an `extraHosts` entry (`Allowed`), and an egre
 and writes no negative entry. Without a current copy, a repository that may not contact its upstream (offline, `proxy.global_offline`, the cache view,
 `only-if-cached`) and a caller whose populate check refuses (R-AUTHZ-008, R-EP-019: counted in `trove_endpoint_cache_fill_refused_total`) get
 `formats.ErrOffline` and no request leaves. A current copy is served to every caller; `QueryResult.Body` is shared with the cache and must not be changed.
+For a format with a `Discoverer`, the host's `Build` ([internal/formathost/query.go](../../internal/formathost/query.go) `discovery`) resolves the discovery
+document with `Engine.Metadata`, the request's mode and a populate check whose refusal is not audited, and hands the parsed form to `UpstreamQuery` as
+`RemoteContext.Discovery`; a refusal is the query's `ErrOffline` (Q-ARCH-282). NuGet's forwarded search is the first user (R-NUGET-016).
 
 ## The upstream clients
 

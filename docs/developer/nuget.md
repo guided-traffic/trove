@@ -324,7 +324,7 @@ the validators on two replicas: [test/integration/nuget/exposure_test.go](../../
 
 ## Search
 
-The search of a local repository (R-NUGET-010, R-AUTHZ-016; decisions Q-NUGET-45 to Q-NUGET-47) is four pieces.
+The search of a local repository (R-NUGET-010, R-AUTHZ-016; decisions Q-NUGET-45 to Q-NUGET-47) is four pieces. A remote repository forwards its search and falls back to this one over its cached rows ([the remote class](#the-remote-class)); a virtual repository merges its members ([virtual repositories](#virtual-repositories)).
 
 | Piece | Responsibility |
 |---|---|
@@ -359,7 +359,7 @@ search of a local and of a virtual repository: [search_scope_test.go](../../test
 
 ## The remote class
 
-A remote repository of NuGet proxies and caches a NuGet v3 feed (R-NUGET-014, R-NUGET-015, R-NUGET-031; Q-NUGET-51 to Q-NUGET-55). The engine owns the request path, freshness, collapsing,
+A remote repository of NuGet proxies and caches a NuGet v3 feed and forwards searches to it (R-NUGET-014 to R-NUGET-016, R-NUGET-031; Q-NUGET-51 to Q-NUGET-55, Q-NUGET-78 to Q-NUGET-81). The engine owns the request path, freshness, collapsing,
 the negative cache and the circuit ([proxy.md](proxy.md)); the format adds the adapter below.
 
 | File | Responsibility |
@@ -367,6 +367,8 @@ the negative cache and the circuit ([proxy.md](proxy.md)); the format adds the a
 | [remote.go](../../internal/formats/nuget/remote.go) | The adapter (`Remote()` returns the stable value `remoteAdapter`, which embeds `formats.RemoteBase`): `parseTarget` (the canonical paths of a remote: discovery `.nuget/index.json`, `{id}/index.json`, `{id}/.registration/index.json`, `{id}/.registration/page/{lower}/{upper}.json`, the `.nupkg` and `.nuspec`), `DiscoveryDocument`/`ParseDiscovery`, `UpstreamRequest`, `PrepareFill` with the URL-map rows, `OnFill` (the `metadata_changed` signal), `Rewrite`, `UpstreamQuery` |
 | [remote_fill.go](../../internal/formats/nuget/remote_fill.go) | `InspectsFill` (the `.nupkg` only) and `InspectFill` (the identity check, 502 `upstream_package_mismatch`; an unreadable package gives no inspection), `commitFill` (version, package row and the NuGet row of origin `cache`), `onCacheRemoved`, the counter `trove_nuget_remote_unparseable_packages_total{repo}` |
 | [handlers_remote.go](../../internal/formats/nuget/handlers_remote.go) | The documents of a remote: `serveRemote` (permission, exposure, the stored documents, the validator, the rendition cache, the rendering), `remoteFlatIndex`, `remoteRegistration`, `remoteFile`, `renderRegistration` |
+| [search_remote.go](../../internal/formats/nuget/search_remote.go) | The forwarded search (R-NUGET-016): `runRemoteSearch` (a remote addressed directly), `searchRemoteMember` (a remote member of a virtual repository, on the request `rq.Member` derives), `remoteSearch`, `mayForward` (`forwardSearch`, the cache view, an endpoint without cache fill, the withheld-query rule over `withheldNames`), `forwardSearch` (`Host.Remote().Query` on `v3/search`, the fallback to the cache-only search), `forwardParams`, `keepForCaller`/`forwardedHit` (patterns, `KeepsAway`, the read scope), `hit` (an upstream result to a `rows.SearchHit` with `rows.Forwarded`), `readableOnly` |
+| [metrics_search.go](../../internal/formats/nuget/metrics_search.go) | `trove_nuget_search_withheld_total{repo}`, `trove_nuget_search_forward_failures_total{repo}` |
 | [remote/](../../internal/formats/nuget/remote) | The leaf: `ParseDiscovery` (the resource types in the order of R-NUGET-014, the shape of every address), `Join` (one escaped segment per segment), `Decode` (bounded gunzip), `VersionList`, `ParseIndex`, `ParsePage`, `Convert`/`Merge` (a leaf to the row the renderer reads, with the pass-through members) |
 
 **Request path.** A handler of a remote route switches on `rq.Repo.Class == formats.Remote` before the local code (`handleFlatIndex`, `serveRegistration`, `serveFile`). The version list is read with
@@ -374,6 +376,16 @@ the negative cache and the circuit ([proxy.md](proxy.md)); the format adds the a
 cache entry), parsed into `remote.Version`s and rendered by the renderer of the local class (`registration.Doc` with `Extras`, `UpstreamIDs`) with the hive's filter and trove's paging. The validator is a
 hash of the inputs of the rendering and the digests of the stored documents, so a 304 costs the engine's reads and no parse; the page list of an index is cached per digest in the rendition cache.
 `Rewrite` is the semver2 hive with the default paging, which the kit's check 4 exercises. Cached packages go through the engine's `Artifact`; the first byte leaves after `InspectFill` accepted the package.
+
+**Search.** `handleSearch` sends a remote repository to `runRemoteSearch`. A query goes to the upstream unless `forwardSearch` is off, the request is the cache view or comes through an endpoint
+that fills no caches, or a name of the query is protected (`withheldNames` hands each term, each phrase word and each run of ID characters to `Resolver.KeepsAway`; Q-NUGET-80). The format
+calls `Host.Remote().Query` with the path `v3/search` (which `Classify` answers as a volatile path without a package, so the populate check is the repository's), the parameters as
+`ParseParams` left them and `nuget.search.remote_result_ttl`; the host resolves the service index on the way (`internal/formathost/query.go`, Q-ARCH-282) and `UpstreamQuery` maps the
+query to its search resource. The answer is the upstream's as received and is filtered on every use: a result is converted into a `rows.SearchHit` whose latest version carries the
+members a local package has none of (`rows.Forwarded`: owners, verified, deprecation, vulnerabilities, total downloads) and whose versions carry their download counts, so
+`search.Render` and the merge of a virtual repository handle it like a local hit (Q-NUGET-78). `ErrOffline` (no contact allowed, nothing cached) falls back to the cache-only search,
+which is `searchRepo` over the remote's rows of origin `cache`; so does every upstream failure, counted. A remote member of a virtual repository runs the same code with the virtual
+repository's request for the withheld rule and the read scope, and leaves step 2 of R-NUGET-018 (`KeepsAway` per result) to the merge (Q-NUGET-81).
 
 **Adding a resource.** Add its canonical path to `parseTarget` and `upstreamURL`, give `PrepareFill` the validation of its document, decide in `InspectsFill` whether it is inspected, and give the handler its
 branch. Mind `Classify`: the engine's gone-ID rule and the URL map act on the package `Classify` names for the path.
@@ -383,11 +395,14 @@ stored index and pages into the versions of an ID (`remote.Version`: the row the
 
 **Tests.** The leaf: `go test ./internal/formats/nuget/remote/`. The adapter, the fill hooks and the documents over the in-memory upstream of the kit (`formattest.MemRemote`):
 [remote_test.go](../../internal/formats/nuget/remote_test.go). End to end against the counting test upstream in the test process, with two replicas and with Valkey on and off:
-[test/integration/nuget/remote_test.go](../../test/integration/nuget/remote_test.go) (`make test-integration INTEGRATION_PKGS=./test/integration/nuget`). The upstream is a TLS server with a
+[test/integration/nuget/remote_test.go](../../test/integration/nuget/remote_test.go) (`make test-integration INTEGRATION_PKGS=./test/integration/nuget`). The forwarded search over the in-memory
+pass-through: [search_remote_test.go](../../internal/formats/nuget/search_remote_test.go); against the counting upstream, with a remote, a remote with `forwardSearch: false`, one with an
+exclude pattern and a virtual repository over two replicas: [forwarded_search_test.go](../../test/integration/nuget/forwarded_search_test.go), which counts the upstream's searches by `q`
+through a wrapper of the stub's handler. The upstream is a TLS server with a
 self-signed CA the replicas trust through `proxy.outbound.tls.ca_files`, reachable under two names (`127.0.0.1` for the index and the registrations, `localhost` for the flat container) with `localhost`
 as the remote's extra host; a test wraps the stub's handler to change what it answers (a gzip-coded hive, a flat container without a version, garbage in place of a package).
 
-**Limits worth knowing.** The archive limits of `InspectFill` are the defaults of `nuget.archive` (H-336, [nuget-remote.md](../security/nuget-remote.md)). `forwardSearch` has no effect yet (Q-NUGET-55). A feed whose flat container
+**Limits worth knowing.** The archive limits of `InspectFill` are the defaults of `nuget.archive` (H-336, [nuget-remote.md](../security/nuget-remote.md)). The count of a forwarded search is the upstream's less the page's removals, also for a caller with row-level reads (H-347). A feed whose flat container
 lacks a version its registration lists is served only after a registration of the ID was read (Q-NUGET-54).
 ## Virtual repositories
 
@@ -399,7 +414,7 @@ caches the merged document of an ID; the format contributes the strategy per pat
 | [virtual.go](../../internal/formats/nuget/virtual.go) | `Format.Virtual()`: `Strategy` (the version list and the registration entries are merged, every other path is first match), `LocalDocument` (a member's rows to its document, with the `rev_seq` read before the rows), `Merge` (to package `merge`), `ArtifactPrefix` (`{lower_id}/`). `VariantFlat`, `VariantRegistration`. |
 | [merge](../../internal/formats/nuget/merge) | `Do` (the per-version source rule: local, then a remote member whose cache holds the package, then the remote members that would fetch it; ties by position), `DecodeUpstream` (an upstream registration index with its pages inlined to entries), the neutral `Doc`. No host, no request, no clock. |
 | [handlers_virtual.go](../../internal/formats/nuget/handlers_virtual.go) | `serveVirtual` (authorize, exposure, `Resolver.Metadata`, validator from the lower-case ID and the merge fingerprint, the rendition cache unless the merge is partial), `serveVirtualFiltered` (on an endpoint with rules the validator from the filtered rendering, Q-NUGET-87), `renderMerged`, `virtualFlat`, `virtualRegistration`, `virtualFile` (`Resolver.Artifact`). The existing handlers branch on `rq.Repo.Class` in one line each. |
-| [search_virtual.go](../../internal/formats/nuget/search_virtual.go) | `runVirtualSearch`: `Resolver.Plan`, the read scope through the virtual repository, one `searchRepo` per local member, at most `maxMemberSearches` (four) at once on one `scanBudget` (Q-NUGET-76); `memberPatterns` (the member's and the virtual repository's patterns, Q-NUGET-77), `exposedHit` (the view of the addressed repository, Q-NUGET-75) and `KeepsAway` per result; `mergeHits`/`unionHit`. `searchRemote` is the seam of the forwarded search; its results pass the same patterns, view and `KeepsAway`. |
+| [search_virtual.go](../../internal/formats/nuget/search_virtual.go) | `runVirtualSearch`: `Resolver.Plan`, the read scope through the virtual repository, one `searchRepo` per local member, at most `maxMemberSearches` (four) at once on one `scanBudget` (Q-NUGET-76); `memberPatterns` (the member's and the virtual repository's patterns, Q-NUGET-77), `exposedHit` (the view of the addressed repository, Q-NUGET-75) and `KeepsAway` per result; `mergeHits`/`unionHit`. `searchRemote` asks a remote member through its forwarded search ([search_remote.go](../../internal/formats/nuget/search_remote.go)); its results pass the same patterns, view and `KeepsAway`. |
 | [metrics_virtual.go](../../internal/formats/nuget/metrics_virtual.go) | `trove_nuget_virtual_member_skipped_total{repo,reason}`; the one reason is `unavailable` (a partial merge). |
 
 **The way a request runs.** `GET flatcontainer/{id}/index.json` and the three registration documents authorize the read on the ID, apply the endpoint's exposure, and ask `Resolver.Metadata` for the merge of
@@ -420,6 +435,7 @@ F-22 of [promt.md](../projektplan/promt.md#8--open-findings).
 
 **Tests.** The merge: `go test ./internal/formats/nuget/merge/`. The handlers over a stand-in for the engine that merges the documents a test names ([virtual_test.go](../../internal/formats/nuget/virtual_test.go), `mergeResolver`), the search over a port per
 repository ([search_virtual_test.go](../../internal/formats/nuget/search_virtual_test.go)), and check 5 of the conformance kit ([virtual_fixture_test.go](../../internal/formats/nuget/virtual_fixture_test.go)). Over PostgreSQL, with the real engine, pin rules, claims, grants and two replicas:
-[test/integration/nuget/virtual_test.go](../../test/integration/nuget/virtual_test.go). Remote members join those tests with the remote class (they need the upstream stub).
+[test/integration/nuget/virtual_test.go](../../test/integration/nuget/virtual_test.go). With a remote member and the upstream stub: [virtual_remote_test.go](../../test/integration/nuget/virtual_remote_test.go)
+(documents) and [forwarded_search_test.go](../../test/integration/nuget/forwarded_search_test.go) (search).
 
 **Adding a document to the merge.** Give it a canonical path that `Classify` knows as metadata of a package, extend `documentOf` and `LocalDocument`, give `merge.Do` its kind, and render it in `handlers_virtual.go`; the validator and the rendition key already carry the fingerprint.

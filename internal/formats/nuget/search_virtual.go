@@ -212,10 +212,10 @@ func exposedHit(view formats.ExposureView, h rows.SearchHit) (rows.SearchHit, bo
 	return out, true
 }
 
-// searchRemote is the search of a remote member. The forwarded search of R-NUGET-016 is the
-// work package that fills it; until a remote member is searched, it contributes nothing.
-func (f *Format) searchRemote(context.Context, *formats.Request, formats.PlannedMember, search.Params) ([]rows.SearchHit, int, error) {
-	return nil, 0, nil
+// searchRemote is the search of a remote member: its forwarded search of R-NUGET-016 with the
+// withheld-query rule of this virtual repository, or its cache-only search (search_remote.go).
+func (f *Format) searchRemote(ctx context.Context, rq *formats.Request, m formats.PlannedMember, p search.Params) ([]rows.SearchHit, int, error) {
+	return f.searchRemoteMember(ctx, rq, m, p)
 }
 
 // exactIDs are the values of the terms that name an ID whole: a free-text word or an id: /

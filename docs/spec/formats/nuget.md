@@ -1402,11 +1402,18 @@ Priority: **MVP** · Covers: PKG-NUGET-024, PKG-NUGET-028
   refusal (a `global` claim, R-REPO-023), or not readable by the caller are removed, and
   `totalHits` is reduced by the number removed from the returned page. Through a virtual
   repository, R-NUGET-018 step 2 also removes IDs that its claims and pin rules keep away from this
-  remote.
+  remote. A result is converted into the shape of a local result and rendered by the same code: a
+  version that is no NuGet version and a result without a version are dropped, a caller whose read is
+  decided per version sees only the versions it may read (R-NUGET-034), with `totalDownloads` their
+  sum, and when the upstream's latest version is among the hidden ones the result shows none of the
+  metadata, `deprecation` and `vulnerabilities` that describe it; members of a result that neither
+  R-NUGET-010's result table nor this bullet names are not passed on (Q-NUGET-78).
 - **Withheld queries** (Q-NUGET-4). A query is not forwarded when one of its terms is protected;
   the remote then answers that request with its cache-only search. The plug-in splits `q` into
   terms as R-NUGET-010 does (a phrase into its words), drops a `field:` prefix and lowercases each
-  term like an ID (R-NUGET-003). A term is protected when, for a package whose `lower_id` equals
+  term like an ID (R-NUGET-003); it also asks about every run of the characters an ID may hold inside
+  a word, with and without a separator at its ends, so `acme!`, `acme*` and `unknown:acme` ask about
+  `acme` (Q-NUGET-80). A term is protected when, for a package whose `lower_id` equals
   the term, an exclude pattern of the remote, a namespace claim in effect for the request or a pin
   rule in effect for the request would keep the package away from this remote (R-REPO-005,
   R-REPO-023; through a virtual repository the claims and pin rules in effect in that virtual
@@ -1421,8 +1428,11 @@ Priority: **MVP** · Covers: PKG-NUGET-024, PKG-NUGET-028
 - Forwarded responses are kept in the engine's registered in-process cache `proxy_query_results` of
   each `web` replica (Q-NUGET-8, Q-NUGET-16, [architecture.md](../architecture.md) R-ARCH-013 step 6,
   R-ARCH-018, Q-ARCH-270), for `nuget.search.remote_result_ttl` and within `proxy.query_cache_bytes`
-  (8 MiB by default). The plug-in calls `Host.Remote().Query` with the path, the clamped parameters
-  and the period; the engine owns the request, the cache, the circuit and the metrics.
+  (8 MiB by default). The plug-in calls `Host.Remote().Query` with the path `v3/search` (which names
+  no package, so the populate check is the repository's, Q-NUGET-79), the clamped parameters and the
+  period; the host resolves the remote's service index first, as a fetch does, and the engine owns
+  the request, the cache, the circuit and the metrics ([architecture.md](../architecture.md)
+  Q-ARCH-282).
   - The key is the remote repository and the upstream request URL with its parameters. The entry is
     the upstream response as received.
   - Pattern, claim, pin-rule and permission filtering and the URL rewriting run on every use, so a
@@ -1433,10 +1443,16 @@ Priority: **MVP** · Covers: PKG-NUGET-024, PKG-NUGET-028
   - Two replicas may answer one query from copies fetched up to `remote_result_ttl` apart, and
     either may ask the upstream instead. Both answers meet the same contract, which is why this
     per-replica state does not break INV-18 (R-NUGET-030).
-  - Forwarding needs `read` on the remote. It stores nothing in the repository, so the cache fill
-    rule does not apply.
-- When the upstream search fails or the circuit is open (R-REPO-029), the remote answers from its
-  cache-only search.
+  - Forwarding needs `read` on the remote. It stores nothing in the repository, but a query without
+    a cached answer contacts the upstream only for a caller who passes the populate check of
+    R-AUTHZ-008, as every other contact does (Q-ARCH-270); a caller who does not is served a cached
+    answer or the cache-only search. The cache view (R-REPO-032) and an endpoint with
+    `cache_fill: false` (R-NUGET-034, R-EP-019) answer with the cache-only search and use no cached
+    answer either (Q-NUGET-79).
+- When the upstream search fails, the circuit is open (R-REPO-029), the upstream announces no
+  search resource or answers with something that is no search document, the remote answers from its
+  cache-only search with 200, and counts it in `trove_nuget_search_forward_failures_total`
+  (R-NUGET-028).
 - `forwardSearch: false`: the remote answers with the cache-only search, which is R-NUGET-010 over
   its `origin = 'cache'` rows.
 - Autocomplete (P1) follows the same two modes.
@@ -1598,8 +1614,13 @@ R-REPO-019's filtering:
 6. `totalHits` is the sum of the members' `totalHits` minus the duplicates and removals seen in the
    window, and never less than the packages the merge found. It is an estimate; clients use it only to
    decide whether to load more. A remote member contributes through the forwarded search of
-   R-NUGET-016, which joins the merge at one seam (`Format.searchRemote`); until then it contributes
-   nothing.
+   R-NUGET-016, which joins the merge at one seam (`Format.searchRemote`): the member is asked for the
+   window like every member, its `totalHits` is the upstream's less the results R-NUGET-016 removed
+   from it, and its results keep the members R-NUGET-016 keeps (download counts, owners, `verified`,
+   `deprecation`, `vulnerabilities`), which a package of several members takes from the member that
+   holds its latest version (Q-NUGET-81). A withheld query, an upstream failure, and a caller who
+   may not fill the member when no answer is cached, make the member contribute its cache-only
+   search.
 
 All URLs in the merged result point at the virtual repository. Autocomplete (P1) merges the same
 way: ID mode as a deduplicated union in the order above, version mode as the ascending union of the
@@ -2520,8 +2541,11 @@ pre-releases):
   [authorization.md](../authorization.md) (H-21).
 - **Search terms leave the network.** With `forwardSearch` on, search terms typed by users go to
   the upstream (R-NUGET-016), except queries with a term that an exclude pattern, a claim or a pin
-  rule protects. Free-text terms that no such pattern covers (`payments`, a project code name)
-  still leave; installations for which those are sensitive turn forwarding off per remote.
+  rule protects, also when punctuation surrounds it (Q-NUGET-80). Free-text terms that no such
+  pattern covers (`payments`, a project code name) still leave; installations for which those are
+  sensitive turn forwarding off per remote. The count a forwarded answer reports for a caller whose
+  read is decided per package is the upstream's less what the returned page removed
+  ([nuget-remote.md](../../security/nuget-remote.md#h-347--the-count-of-a-forwarded-search-tells-a-caller-with-row-level-reads-how-many-upstream-matches-it-may-not-see) H-347).
 - **Symbol probes leave the network.** Debuggers request a PDB for every loaded module. A symbol
   request whose routing name (the file name in the key) no exclude pattern, claim or pin rule
   covers, and that no local member answers, goes to the upstream symbol server and discloses the
@@ -3979,6 +4003,8 @@ Context: the forwarded search of a remote (R-NUGET-016) is a later work package.
 
 **Applied in the spec:** none. Code: [remote.go](../../../internal/formats/nuget/remote.go) `UpstreamQuery`, [discovery.go](../../../internal/formats/nuget/remote/discovery.go) `SearchURL`. Tests: `TestR_NUGET_016_TheQuerySeamMapsAPassThroughSearchWhenTheIndexIsResolved`, `TestR_NUGET_015_SearchURLSortsTheParameters`, `TestR_NUGET_015_APackageIsCachedWithItsRowsAndServedWhenTheUpstreamIsDown` (the cache-only search).
 
+Revisited on 2026-11-02, when the forwarded search was built (finding F-20 of the phase 4 review): the choice stands, and the condition it named has come. The host resolves the service index on the road of `Query` the way `fetcher.discover` does and hands it to `UpstreamQuery` ([architecture.md](../architecture.md) Q-ARCH-282); the seam needed no change of the frozen contract. `forwardSearch: true` now forwards, and the sentence "the setting has no effect yet" of the choice no longer holds. What a forwarded answer becomes is Q-NUGET-78, when a remote forwards Q-NUGET-79, the names the withheld-query rule asks about Q-NUGET-80, and a remote member's part of the merged search Q-NUGET-81.
+
 ### Q-NUGET-56 · What the members of a virtual repository hand to the merge, and what the merge hands back
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -4400,6 +4426,78 @@ Context: the include and exclude patterns of R-REPO-005 are routing rules; `Auth
 **Rationale:** a pattern withdraws a package from what a repository serves, and search is part of what it serves. The development agent revisits this when a repository with patterns holds so many packages that common queries reach the scan's bound; the patterns would then move into the statement as a compiled set, as R-API-029 plans for grants.
 
 **Applied in the spec:** R-NUGET-010 (the matching paragraph, the implementation bullet and an acceptance criterion), R-NUGET-018 step 1. Code: [handlers_search.go](../../../internal/formats/nuget/handlers_search.go) `patternsOf`, `searchRepo`; [search_virtual.go](../../../internal/formats/nuget/search_virtual.go) `memberPatterns`. Security: [repository-model.md](../../security/repository-model.md), [nuget-virtual.md](../../security/nuget-virtual.md). Tests: the integration tests `TestR_REPO_005_TheNuGetSearchOfALocalRepositoryAppliesItsPatterns` and `TestR_REPO_005_TheNuGetSearchOfAVirtualRepositoryAppliesItsAndItsMembersPatterns`.
+
+### Q-NUGET-78 · A forwarded result is converted into the shape of a local result, filtered per version, and keeps the members R-NUGET-016 names
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-016 rewrites the addresses of a forwarded result as R-NUGET-015 does and keeps `owners`, `verified`, `deprecation`, `vulnerabilities`, the download counts and `packageTypes`. R-NUGET-034 shows a caller on an endpoint with rules only the exposed versions, with `version` the latest of them and `totalDownloads` their sum. R-NUGET-018 merges a remote member's results with the local ones by `lower_id`, the package-level fields coming from the latest version of the union. Open were how the upstream's answer travels through the filter and the merge, which of its members pass, and what a result shows whose latest version the caller may not read.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Each result becomes the search row of a local package: the versions in URL form with their download counts, the result's metadata as the latest version's metadata, and the members a local package has no column for (`rows.Forwarded`) on the latest version; one renderer; a member that R-NUGET-010's result table and R-NUGET-016 do not name is not passed on; a hidden latest version takes its metadata with it (chosen) | `search_remote.go` converts, `search.Render` renders local, cached and forwarded results alike | One renderer and one merge for every result; the forwarded members move with the latest version in a union, as step 4 of R-NUGET-018 has the package-level fields move; nothing an upstream adds unannounced reaches a client; a caller never sees what a hidden version says | A member an upstream adds later is dropped until it is named; a result whose latest version is hidden shows no description |
+| (b) Pass the upstream's JSON through and edit the addresses and the version list in place | A filter over a JSON tree | Every member the upstream sends reaches the client | A second renderer for the merge; members trove does not know pass unchecked, the opposite of the rule for the registration (Q-NUGET-52); the description of a hidden latest version stays |
+| (c) Ask the upstream's registration of each result for the metadata of the latest readable version | One more document per result | A full result for a caller with a version rule | One more upstream request per result and page; a search fills the cache with registrations |
+
+**Choice:** (a). A result whose ID is no NuGet ID, or that lists no version that parses, is removed like a result a pattern excludes, so `totalHits` is reduced for it too. The versions are deduplicated by their URL form and sorted ascending; `version` is the highest of them. The metadata (title, summary, description, authors, tags, the three web links, the package types) is the result's only when the upstream's own `version` is that highest version, and otherwise left out, as are `deprecation` and `vulnerabilities`, which describe the upstream's latest version. `owners` is a list (a single string is one owner). `totalDownloads` is the upstream's, or, once a version was removed for the caller, the sum of the versions shown. `deprecation` and `vulnerabilities` pass as received; the address in a vulnerability's `advisoryUrl` is a link for people like `projectUrl`.
+
+**Rationale:** the search, the cache-only search and the merge already speak one row shape, and carrying the forwarded members on the latest version is exactly where R-NUGET-018 wants the package-level fields to come from; a second renderer for the upstream's JSON would have to repeat every rule of R-NUGET-010 and R-NUGET-034 a second time. Dropping the metadata of a hidden latest version is the fail-closed reading of R-NUGET-034 ("only exposed IDs and versions"); fetching the readable version's metadata (c) would turn a search into a registration fill. The development agent revisits this when a client is seen to rely on a member that is dropped, or when the decision on upstream addresses in `deprecation` and `vulnerabilities` (open finding F-24) changes what a remote's registration passes on; the search then follows it.
+
+**Applied in the spec:** R-NUGET-016 (the first bullet). Code: [search_remote.go](../../../internal/formats/nuget/search_remote.go) `hit`, `readableOnly`, [forwarded.go](../../../internal/formats/nuget/rows/forwarded.go), [document.go](../../../internal/formats/nuget/search/document.go) `Render`. Tests: `TestR_NUGET_016_AForwardedSearchIsRewrittenIntoTheRemoteAndKeepsTheUpstreamMembers`, `TestR_NUGET_034_AForwardedResultShowsOnlyTheVersionsTheCallerMayRead`, `TestR_NUGET_016_ARemoteForwardsItsSearchAndFallsBackToItsCache` (`test/integration/nuget`).
+
+### Q-NUGET-79 · When a remote forwards: the engine's populate check decides a contact, the cache view and an endpoint that fills no caches search the cache
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-016 said "Forwarding needs `read` on the remote. It stores nothing in the repository, so the cache fill rule does not apply." The engine's pass-through, decided later ([architecture.md](../architecture.md) Q-ARCH-270), contacts the upstream for a query without a cached answer only when the populate check of R-AUTHZ-008 allows it, and serves a cached answer to any caller. R-NUGET-034 has a remote answer with its cache-only search on an endpoint with `cache_fill: false`, and the cache view (R-REPO-032) never contacts the upstream. The populate check is asked for the coordinate the format's `Classify` gives the query's path, and `Classify("v3/search")` named the package `v3`, because `v3` is a valid ID. Open were which rule the format follows, and for which coordinate the check is asked.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The engine's rule decides a contact; the format answers with the cache-only search, without asking the engine, on the cache view, on an endpoint that fills no caches, with `forwardSearch: false` and for a withheld query; the query's path `v3/search` names no package (chosen) | The two cases R-NUGET-034 and R-REPO-032 name are visible in the request (`rq.CacheView`, `rq.Subject`); `Classify` answers `v3/search` and `v3/autocomplete` as a volatile path without a package | One rule for what may leave the replica (Q-ARCH-270); no audit event and no new contract member; a caller whose grants name packages forwards as its repository-level read of the route allows | A caller who may not fill the remote is served answers that other callers caused, and may see a package it cannot download because it is not cached |
+| (b) `read` alone, as the old sentence says | A contact that bypasses the populate check | Forwarding for every reader | A second road for what may leave the replica; a read-only endpoint's search would reach the upstream, which R-EP-019 forbids |
+| (c) Cache-only for every caller who may not fill, also when an answer is cached | The format needs the caller's fill right for a remote addressed directly | Consistent with the merge's rule that a caller who may not fill sees only cached versions (R-AUTHZ-008) | The contract gives that right only for the members of a plan (`PlannedMember.MayFill`); a remote addressed directly would need a new member of the frozen contract and an ADR |
+
+**Choice:** (a), and R-NUGET-016's sentence is corrected. An upstream failure, an open circuit, an upstream that announces no search resource and an answer that is no search document fall back to the cache-only search with 200 and are counted in `trove_nuget_search_forward_failures_total`; `ErrOffline` (no contact allowed and no cached answer) falls back without being counted; an internal error is answered as one.
+
+**Rationale:** the pass-through is the same act as a fetch minus the store, and Q-ARCH-270 gave it the fetch's rules for a contact; repeating a weaker rule in the format would let a search leave where a fetch may not. The cached answer a caller who may not fill receives is the upstream's public answer, filtered for that caller like every other use; a listed package that is not cached is refused at download as any uncached package is for that caller. The path names no package because a query names none, as R-NUGET-015 already says of search ("repository-level"); `v3/search` can never be a stored path of a package `v3`, so nothing is lost. The development agent revisits this when the owner wants option (c), or when the contract gains the fill right of a request for formats anyway.
+
+**Applied in the spec:** R-NUGET-016 (the bullets on forwarding and on failures). Code: [search_remote.go](../../../internal/formats/nuget/search_remote.go) `mayForward`, `forwardSearch`, [paths.go](../../../internal/formats/nuget/paths.go) `isQueryPath`. Tests: `TestR_NUGET_016_TheRemoteSearchesItsCacheWhereItMayNotForward`, `TestR_NUGET_016_AnUpstreamThatCannotBeAskedOrFailsLeavesTheCacheSearch`, `TestR_NUGET_016_TheSearchPathOfAQueryNamesNoPackage`.
+
+### Q-NUGET-80 · The withheld-query rule also asks about the runs of ID characters inside a word
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-016 asks `Resolver.KeepsAway` about each term of a query, after the field prefix is dropped and the term is folded like an ID, and a phrase word by word; a term that is no name of the format keeps nothing away (Q-NUGET-17). A word with a character an ID cannot hold (`acme!`, `acme*`, `"acme,"`, `unknown:acme`) is no name, so it was never protected, while an upstream's tokenizer reads `acme` from it and nuget.org learns the claimed name.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Ask about the word and about every maximal run of letters, digits, `.`, `-` and `_` in it, with and without separators at its ends (chosen) | `withheldNames` in the format; `KeepsAway` unchanged | Punctuation an upstream ignores no longer carries a protected name past the rule; the core's rule stays one function | A few more in-memory lookups per query; a query such as `acme!` is withheld where the spec's letter would have forwarded it |
+| (b) Ask about the term as written | The letter of R-NUGET-016 | Nothing to build | A trailing punctuation mark sends a claimed name to the upstream |
+| (c) Also ask about every dot-separated part of a word | `contoso.acme` asks about `acme` | Closer to how some upstreams tokenize IDs | `contoso.acme` names no package below `Acme.*`; more queries withheld for names the claims do not cover |
+
+**Choice:** (a).
+
+**Rationale:** the rule exists so that a query for a protected namespace does not leave the network; a rule that a stray `!` defeats protects only careful users. Splitting further at dots (c) would withhold queries for other organisations' packages that merely contain the word. The development agent revisits this if users report public results missing for queries with punctuation, or when an upstream is seen to tokenize at characters that are part of IDs.
+
+**Applied in the spec:** R-NUGET-016 (withheld queries). Code: [search_remote.go](../../../internal/formats/nuget/search_remote.go) `withheldNames`. Tests: `TestR_NUGET_016_TheWithheldRuleAsksAboutEveryNameAQueryCarries`, `TestR_NUGET_016_AWithheldQueryIsAnsweredFromTheCacheAndCounted`.
+
+### Q-NUGET-81 · A remote member of a virtual repository is searched by the code that searches a remote addressed directly
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-018 step 6 said that a remote member contributes nothing until the forwarded search exists, and named the seam `Format.searchRemote`, which returns the member's hits and count like a local member's search. Step 1 wants the withheld-query rule evaluated with the virtual repository's claims and pin rules, step 2 removes what they keep away from the member, and the member's own include and exclude patterns decide what it serves.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `searchRemote` runs the search of the remote addressed directly on a request derived with `rq.Member`, with the virtual repository's request for the withheld rule and the read scope; it applies the member's patterns to the results and leaves step 2 to the merge; its count is the upstream's less its own removals (chosen) | One `remoteSearch` for both roads | The member's client, cache and populate check apply and the addressed repository stays the virtual one (Q-AUTHZ-165); a claim is asked about once per result; the merge stays unchanged | A planned member that is no member of the repository is an internal error, which a unit test with a hand-built repository cannot set up, so the virtual road is tested over the integration stack |
+| (b) A merge-only path that asks the upstream for the window and converts the answer in the merge | The member is a source of rows to the merge | No member request | A second copy of the forwarding rules; the member's populate check and cache would be decided on the virtual repository |
+| (c) Search the member's cache only through a virtual repository, forward only on the remote | Simplest | No new road | R-NUGET-018's acceptance criteria (local packages before upstream results) cannot pass; developers add nuget.org as a second source, the setup R-NUGET-026 warns against |
+
+**Choice:** (a). The member is asked for the window like a local member (`take` up to `nuget.search.virtual_merge_window`, from 0), and its results carry their forwarded members into the merge (Q-NUGET-78).
+
+**Rationale:** the rules of R-NUGET-016 are the remote's, whichever road reaches it; the virtual repository adds only its claims and pin rules, which `Resolver.KeepsAway` already evaluates per member. The development agent revisits this when the merge asks a remote member for fewer results than the local members (Q-NUGET-58's revisit condition), which would change what the member is asked for.
+
+**Applied in the spec:** R-NUGET-018 step 6. Code: [search_virtual.go](../../../internal/formats/nuget/search_virtual.go) `searchRemote`, [search_remote.go](../../../internal/formats/nuget/search_remote.go) `searchRemoteMember`, `remoteSearch`. Tests: `TestR_NUGET_018_ARemoteMemberIsSearchedThroughTheVirtualRepositorysMembers`, `TestR_NUGET_018_AVirtualRepositoryForwardsThroughItsRemoteMember` (`test/integration/nuget`).
 
 ### Q-NUGET-87 · On an endpoint with rules the validator of a local or virtual document follows its filtered bytes, and a virtual validator names the ID
 

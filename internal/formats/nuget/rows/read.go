@@ -16,6 +16,9 @@ type VersionEntry struct {
 	// LowerVersion is the URL form (package_versions.version), FullVersion the full
 	// normalized form (package_versions.display_version).
 	LowerVersion, FullVersion string
+	// Downloads is the version's download count: the upstream's for a result of a forwarded
+	// search (R-NUGET-016), 0 for a stored version until R-STOR-015 ships.
+	Downloads int64
 	// DeclaredID is the ID casing of this version's .nuspec.
 	DeclaredID   string
 	Listed       bool
@@ -41,6 +44,9 @@ type RegistrationVersion struct {
 	PackageTypes []string
 	// Metadata is nuget_version.metadata, the JSON object of R-NUGET-005.
 	Metadata []byte
+	// Forwarded is what an upstream's search result says of the package beyond the metadata:
+	// nil for a stored version (R-NUGET-016, Q-NUGET-78).
+	Forwarded *Forwarded
 }
 
 // RegistrationPackage is the package a registration document renders: its revision
