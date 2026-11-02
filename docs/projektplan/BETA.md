@@ -27,7 +27,7 @@ numbers (owner, 2026-11-02).
 | [2 · Access core](#phase-2--access-core-m1) | Login, tokens, permissions, repositories, admin UI | 🟢 |
 | [3 · npm registry](#phase-3--npm-registry-m2) | npm local, remote, virtual | 🟢 |
 | [4 · NuGet registry](#phase-4--nuget-net-registry-m3) | NuGet v3 local, remote, virtual | 🟢 |
-| [5a · Projects](#phase-5a--projects-and-delegated-administration) | Projects with project administrators who manage their repositories, policies and the technical accounts of external parties | 🟡 |
+| [5a · Projects](#phase-5a--projects-and-delegated-administration) | Projects with project administrators who manage their repositories, policies and the technical accounts of external parties | 🟢 |
 | [5 · GitLab CI OIDC](#phase-5--gitlab-ci-oidc-m4) | CI jobs get scoped tokens without stored secrets | ⚪ |
 | [5b · trove Bastion](#phase-5b--trove-bastion-m13) | An exposed, read-only cache instance in front of the main installation that serves released content to external parties and takes load off it | ⚪ |
 | [6 · Vulnerability scanning](#phase-6--vulnerability-scanning-m4b) | Own advisory mirror, findings and vulnerability report, malicious versions blocked, npm and NuGet audits from trove's data | ⚪ |
@@ -312,7 +312,7 @@ Bastion serves those parties. Phase 5 then maps GitLab pipelines into projects.
   (commit fb53a61)
 - 🟢 F-31 (upstream client cache) fixed; F-19 closed on the green failover leg of nightly run 41420733312
 
-**Security audit and code review of the phase (2026-11-02; fix wave planned)**
+**Security audit and code review of the phase (2026-11-02; fixed in the fix wave, what stays open is an H-item of its page or F-32)**
 - 🟢 HIGH · A project administrator with `manageRepositories` could send installation secrets to a host it chooses: the
   unsaved upstream test resolves any `secretRef` (`env` `TROVE_CAC_…`, a file in `secrets_dir`) and sends it to the URL of
   the request, and a `PATCH` that changes the URL of an assigned remote keeps its sealed password (`{"set": true}`)
@@ -334,7 +334,7 @@ Bastion serves those parties. Phase 5 then maps GitLab pipelines into projects.
   project administrator about group memberships, repositories and service accounts outside its project
   (`authz_api.go`, `policy_list.go`, `validate.go`). Fixed: unknown and foreign answer alike, `expandGroups` is 403 for a
   delegate (Q-AUTHZ-197)
-- ⚪ LOW · A project service account bound through `authz.role_bindings` or named in a global entry is refused only in
+- 🟢 LOW · A project service account bound through `authz.role_bindings` or named in a global entry was refused only in
   code, not by the database; a race between a handler's narrowing and the policy write or the saved upstream test; global
   policy names under a project's prefix; an auto-join group in a project policy stands in for `authenticated`; a delegated
   token may be self-rotatable and so unbounded; "New policy" in a project-scoped list creates a global policy; the spec
@@ -354,7 +354,7 @@ Bastion serves those parties. Phase 5 then maps GitLab pipelines into projects.
 - 🟢 MEDIUM (code review) · A service account named exactly `<key>-` (the UI prefills it) passed the code check and failed
   the trigger `AI003`, which was not mapped: `500` instead of `422 project_prefix_required` (`serviceaccounts.go`). Fixed:
   at least one character after the hyphen for service accounts, repositories and policies, `AI003` mapped (Q-AUTH-193)
-- ⚪ LOW (code review) · Migration `00019_projects` builds indexes and constraints on existing tables without
+- 🟢 LOW (code review) · Migration `00019_projects` built indexes and constraints on existing tables without
   `CONCURRENTLY` / `NOT VALID`, against R-HA-018's expand class (fixable in the file: not released yet); a 0.9.x rewrite of
   a project policy with no entries succeeds; the project checks of a policy write open their own transactions (500 on a
   race with a project delete, a second pool connection per lookup); the project delete removes policies by name;
@@ -366,9 +366,8 @@ Bastion serves those parties. Phase 5 then maps GitLab pipelines into projects.
     in a role binding, a global entry or another project's policy; the project delete removes each policy at the version
     it read and for its project (Q-AUTHZ-204, Q-AUTHZ-199; H-407 closed); the
     retry rounds are tested; the package comment and the unused queries corrected
-- ⚪ LOW (UI fix wave) · `PUT /projects/{key}/repositories/{repoKey}?move=true` takes no expected current owner, so an
-  administrator's move can take a repository from a project it was moved to between the dialog's read and the request; the
-  dialog re-reads the owners right before and asks when one changed, which leaves only that window
+- ➡️ LOW (UI fix wave) · The assignment API takes no expected current owner: moved to the open findings as
+  [F-32](promt.md#8--open-findings)
 - 🟢 (code review, predates the phase) · `repository.Service.List` ordered in SQL and compared its cursor bytewise in Go;
   under the integration database's `en_US.utf8` it lost `web-b`, `web-c` and `web.d` across pages
   (`TestR_REPO_012_ListPagesEveryKeyOnceInByteOrder`). Fixed: `ORDER BY key COLLATE "C"`; the column itself is not
