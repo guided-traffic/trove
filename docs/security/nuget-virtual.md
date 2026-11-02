@@ -57,7 +57,7 @@ pattern, claim or pin rule to a search) and merges their answers.
   member list; no store is read through it (H-329).
 - **Claims and pin rules.** A result of a member is removed when the virtual repository's claims or pin rules keep its ID away from that member
   (`Resolver.KeepsAway`, Q-NUGET-57), so the search never lists what the documents of the same virtual repository deny.
-- **Bounds.** At most four members are asked at once, remote members included, each scan holds one database connection per batch, and the scans of
+- **Bounds.** At most four members are asked at once, remote members included, each scan holds one database connection for its one transaction, and the scans of
   one request, a remote member's cache-only search included, share one budget of 200,000 packages; above it the request answers 400 and never a partial count (Q-NUGET-76). A request whose context ends while it
   waits for a slot asks no further member.
 - **Count.** `totalHits` is the sum of the members' counts minus the duplicates and removals seen in the merge window (R-NUGET-018 step 6). A local

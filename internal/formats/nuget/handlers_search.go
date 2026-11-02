@@ -192,6 +192,19 @@ func newScanBudget() *scanBudget {
 // spend takes n packages from the budget and reports whether the budget still holds.
 func (b *scanBudget) spend(n int) bool { return b.left.Add(-int64(n)) >= 0 }
 
+// refund gives back what an attempt of a scan spent before its transaction started over.
+func (b *scanBudget) refund(n int) { b.left.Add(int64(n)) }
+
+// Scanner is what a store offers that reads the scan of a caller whose reads are decided per
+// version as one statement in one transaction, in rank order, a batch at a time as the rows
+// arrive (Q-NUGET-74): the repository is ranked once and every batch comes from one snapshot.
+// start runs at the beginning of every attempt, because a retried transaction starts over;
+// visit gets each batch, which it must not keep, and returns false to stop. The PostgreSQL store
+// implements it; a store without it is scanned in batches of Search with PerVersion.
+type Scanner interface {
+	SearchScan(ctx context.Context, q rows.SearchQuery, batch int, start func(), visit func([]rows.SearchHit) (bool, error)) error
+}
+
 // errScanTooLarge is the answer to a query that matches more packages than the budget.
 func errScanTooLarge() error {
 	return errs.E(errs.Invalid, errs.CodeInvalid, "The query matches too many packages to count the ones you may read. Narrow the query.")
@@ -216,19 +229,20 @@ type windowEntry struct {
 // unreadable version reaches the result.
 func searchRows(ctx context.Context, st Store, q rows.SearchQuery, p search.Params, mayRead func(lowerID, lowerVersion string) bool, budget *scanBudget) ([]rows.SearchHit, int, error) {
 	scan := q
-	scan.PackageType, scan.KeysOnly, scan.PerVersion, scan.Limit = "", true, true, searchScanBatch
+	scan.PackageType, scan.KeysOnly, scan.PerVersion = "", true, true
 	versionTerms := versionTermsOf(q.Terms)
 	var (
-		total  int
-		window []windowEntry
+		total, spent int
+		window       []windowEntry
 	)
-	for scan.Offset = 0; ; scan.Offset += searchScanBatch {
-		batch, err := st.Search(ctx, scan)
-		if err != nil {
-			return nil, 0, err
-		}
+	start := func() {
+		budget.refund(spent)
+		total, spent, window = 0, 0, nil
+	}
+	visit := func(batch []rows.SearchHit) (bool, error) {
+		spent += len(batch)
 		if !budget.spend(len(batch)) {
-			return nil, 0, errScanTooLarge()
+			return false, errScanTooLarge()
 		}
 		for _, h := range batch {
 			readable, latest := readableVersions(h, mayRead)
@@ -241,12 +255,10 @@ func searchRows(ctx context.Context, st Store, q rows.SearchQuery, p search.Para
 			}
 			total++
 		}
-		if len(batch) < searchScanBatch {
-			break
-		}
-		if err := ctx.Err(); err != nil {
-			return nil, 0, err
-		}
+		return true, ctx.Err()
+	}
+	if err := scanAll(ctx, st, scan, start, visit); err != nil {
+		return nil, 0, err
 	}
 	if len(window) == 0 {
 		return nil, total, nil
@@ -272,6 +284,28 @@ func searchRows(ctx context.Context, st Store, q rows.SearchQuery, p search.Para
 		}
 	}
 	return hits, total, nil
+}
+
+// scanAll hands the scan of a query to visit a batch at a time: through one statement when the
+// store is a Scanner, else through batches of Search paged by offset.
+func scanAll(ctx context.Context, st Store, scan rows.SearchQuery, start func(), visit func([]rows.SearchHit) (bool, error)) error {
+	if sc, ok := st.(Scanner); ok {
+		return sc.SearchScan(ctx, scan, searchScanBatch, start, visit)
+	}
+	start()
+	scan.Limit = searchScanBatch
+	for scan.Offset = 0; ; scan.Offset += searchScanBatch {
+		batch, err := st.Search(ctx, scan)
+		if err != nil {
+			return err
+		}
+		if more, err := visit(batch); err != nil || !more {
+			return err
+		}
+		if len(batch) < searchScanBatch {
+			return nil
+		}
+	}
 }
 
 // readableVersions returns the URL forms of the listed visible versions of a hit the caller

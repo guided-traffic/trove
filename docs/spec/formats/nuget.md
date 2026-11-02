@@ -1056,7 +1056,8 @@ package whose latest version under the filters is visible:
   the repository whole, of a repository without include and exclude patterns, is counted and paged
   by SQL. A caller whose read depends on the package or the version (a grant with package patterns,
   a token scope, an endpoint with exposure rules), and every caller of a repository with patterns,
-  is served by a scan: the format reads the candidates in rank order in batches of 500 with the keys
+  is served by a scan: the format reads the candidates in rank order, from one statement in one
+  transaction in batches of 500 as they arrive, with the keys
   of every listed visible version and, per version, whether that version satisfies the terms other
   than `version:` (a candidate is a package with such a version whose `version:` terms each name a
   listed visible version). It asks the patterns and the decision point about each version, and keeps
@@ -4404,6 +4405,8 @@ Context: R-NUGET-010 matches a package by the row of its latest visible version 
 **Choice:** (a). The flag covers every term but `version:`, whose test is an equality on the URL form that the format applies to the readable list. A version the store gave no flag matches nothing, so a store that does not answer the question lists nothing rather than everything. The rank of the scan is the rank of `NuGetSearchPage`, the tier of the latest visible version, so a caller who reads row by row sees the packages in the order of one who reads whole; for a term of several words that meets ID tokens, the tier can follow the ID casing of a newer hidden version ([H-345](../../security/endpoints-and-exposure.md#h-345--the-rank-of-a-nuget-search-result-can-follow-the-id-casing-of-a-hidden-version)).
 
 **Rationale:** the terms must be applied where the caller's reads are, and only the decision point knows those. Flags per version keep the matcher in one place, PostgreSQL, and the decision in another, the decision point. The development agent revisits this when profiling shows that the per-version scan dominates a replica (the scan would then become option (b) with keyset paging), or when autocomplete (R-NUGET-011) is built and needs the same scan.
+
+**Revisited** after the code review of the fix wave: the scan was read in batches of 500, each its own statement and transaction that ranked the whole repository again and paged by offset, so a request cost the batches times the versions and its batches saw different snapshots. The data port now reads `NuGetSearchScan` as one statement in one transaction and hands its rows over a batch at a time as they arrive (`Store.SearchScan`, the format's `Scanner`); a retried transaction starts the count over and gives the scan budget back what the abandoned attempt spent.
 
 **Applied in the spec:** R-NUGET-010 (the field table, the matching paragraph, the implementation bullet), R-NUGET-034 (the search bullet and an acceptance criterion). Code: [nuget_search.sql](../../../internal/meta/postgres/queries/nuget_search.sql) `NuGetSearchScan`, [search.go](../../../internal/formatdata/nuget/search.go) `searchScan`, [read.go](../../../internal/formats/nuget/rows/read.go) `SearchQuery.PerVersion`, `SearchHit.ListedMatch`, [handlers_search.go](../../../internal/formats/nuget/handlers_search.go) `searchRows`, the twin in [nugettest](../../../internal/formats/nuget/nugettest/store.go). Tests: `TestR_NUGET_034_SearchTermsMeetOnlyTheVersionsTheCallerMayRead`, `TestR_NUGET_034_TheScanDecidesOnTheFlagsOfTheReadableVersions`, and the integration test `TestR_NUGET_034_SearchTermsMeetOnlyExposedVersions`.
 

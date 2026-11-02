@@ -349,11 +349,12 @@ All of this stays inside the owner's own rights; the bound is the owner, the lif
 Live today for a caller whose read of a NuGet repository is narrowed row by row (`authz.ReadRows`: a package pattern in a grant, a token
 scope with elements, or an endpoint with exposure rules), and for every caller of a repository with include or exclude patterns (Q-NUGET-77),
 who calls `GET …/v3/search` (R-NUGET-010, Q-NUGET-45). SQL cannot ask the decision point which versions the caller may read, so `totalHits`
-stays exact by scanning the candidates in rank order in batches of 500 and asking `MayRead` per listed version; the scan stops with `400`
-above 200,000 packages and never returns a partial count. Each batch is one statement that tests the terms on every listed visible version
-of the repository, so that a term meets only the versions the caller may read (`NuGetSearchScan`, Q-NUGET-74), and pages with an offset: the
-database work of one request grows with the batches times the versions of the repository. The CPU on the replica is proportional to the
-candidates (not to the page): a query that matches a large repository, repeated, can hold a replica and the database busy, and each request
+stays exact by scanning the candidates in rank order and asking `MayRead` per listed version; the scan stops with `400` above 200,000
+packages and never returns a partial count. The scan is one statement in one transaction that tests the terms on every listed visible
+version of the repository, so that a term meets only the versions the caller may read (`NuGetSearchScan`, Q-NUGET-74), ranks the
+repository once and hands its rows to the format in batches of 500 as they arrive (`Store.SearchScan`); the database work of one request
+is one pass over the versions of the repository and a sort of its candidates, and the transaction holds a connection for the whole scan.
+The CPU on the replica is proportional to the candidates (not to the page): a query that matches a large repository, repeated, can hold a replica and the database busy, and each request
 pays the scan again because nothing caches it. A caller with an unrestricted read (`ReadAll`) of a repository without patterns is counted and
 paged by SQL and pays no scan. What bounds it today is the 1,024-byte and 16-term limit of `q` and the 200,000 cap; nothing caches or
 rate-limits the scan itself. Closing it needs the readable package names handed to the statement (the condition is in Q-NUGET-45 and

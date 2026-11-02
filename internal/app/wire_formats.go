@@ -82,6 +82,10 @@ type formatHostArea struct {
 // its constructor here, and a missing or wrong binding is a start-up error (typed
 // wiring). The npm port records its events with the replica's audit recorder and
 // the source of the request in the context.
+// The NuGet search reads the scan of a row-level reader through one statement when its store
+// offers it (Q-NUGET-74); the PostgreSQL store must, or the scan pages by offset again.
+var _ nugetformat.Scanner = (*nugetdata.Store)(nil)
+
 func formatPorts(db meta.Runner, rec audit.Recorder, blobs *blob.Store, queue *jobs.Queue) (map[formats.ID]any, error) {
 	st, err := npm.New(npm.Options{
 		DB: db, Recorder: rec, Source: httpserver.SourceFrom,

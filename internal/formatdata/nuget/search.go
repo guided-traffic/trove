@@ -3,6 +3,7 @@ package nuget
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"strings"
 	"time"
 	"unicode"
@@ -200,6 +201,57 @@ func (s *Store) searchScan(ctx context.Context, query rows.SearchQuery) ([]rows.
 		return nil
 	})
 	return out, err
+}
+
+// SearchScan is the scan of searchScan read as one statement in one transaction, in rank order,
+// a batch of at most batch hits at a time as the rows arrive (Q-NUGET-74): the repository is
+// ranked once and every batch comes from one snapshot, where the batches of Search with
+// PerVersion each ranked it again and paged by offset in a transaction of their own. start runs
+// at the beginning of every attempt, because a retried transaction starts over; visit gets each
+// batch, which it must not keep, and returns false to stop.
+func (s *Store) SearchScan(ctx context.Context, query rows.SearchQuery, batch int, start func(), visit func([]rows.SearchHit) (bool, error)) error {
+	terms, err := termsJSON(query.Terms)
+	if err != nil {
+		return err
+	}
+	batch = max(batch, 1)
+	return s.o.DB.InTx(ctx, func(tx meta.Tx) error {
+		start()
+		ptx, ok := postgres.Unwrap(tx)
+		if !ok {
+			return errs.E(errs.Internal, errs.CodeInternal, "nuget: the transaction is not the database's")
+		}
+		rs, err := ptx.Query(ctx, q.NuGetSearchScanSQL, int64(0), int64(math.MaxInt64), terms, query.RepoID, query.Prerelease, query.SemVer2)
+		if err != nil {
+			return err
+		}
+		defer rs.Close()
+		buf := make([]rows.SearchHit, 0, batch)
+		for rs.Next() {
+			var lowerID, versions string
+			if err := rs.Scan(&lowerID, &versions); err != nil {
+				return err
+			}
+			h, err := scanHitOf(lowerID, versions)
+			if err != nil {
+				return err
+			}
+			if buf = append(buf, h); len(buf) < batch {
+				continue
+			}
+			if more, err := visit(buf); err != nil || !more {
+				return err
+			}
+			buf = buf[:0]
+		}
+		if err := rs.Err(); err != nil {
+			return err
+		}
+		if len(buf) > 0 {
+			_, err = visit(buf)
+		}
+		return err
+	})
 }
 
 // scanHitOf builds the hit of a scan row: the listed visible versions with their match flags,
