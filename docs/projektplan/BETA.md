@@ -266,25 +266,26 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 
 ## Phase 5b · trove Bastion (M13)
 
-Details: [roadmap M13](../coverage/roadmap.md#p1-platform-milestones) · spec: `docs/spec/bastion.md` (to be written first)
+Details: [roadmap M13](../coverage/roadmap.md#p1-platform-milestones) · spec: [bastion.md](../spec/bastion.md)
 
 The owner moved the Bastion into the beta on 2026-11-02, before vulnerability scanning, so that phase 7 hardens it with
 everything else. Its main purpose (owner): an exposed artifact instance that gives external parties read access to released
 content, caches artifacts and takes as much load as possible off the main installation. It is exposed to the internet and
 to denial-of-service attempts.
 
-- ⚪ Spec page `docs/spec/bastion.md` first: deployment profile, trust between Bastion and main installation, the cache, and
+- 🟢 Spec page [bastion.md](../spec/bastion.md) first: deployment profile, trust between Bastion and main installation, the cache, and
   what the Bastion refuses. Decided by the owner on 2026-10-31: the Bastion asks the main installation whether a
   credential is valid and what it may read, and keeps the answers for a short, bounded time; it holds no copy of
   users, tokens or policies. Decided by the owner on 2026-11-02: the Bastion's own credential towards the main
   installation is a token that a trove administrator of the main installation issues for the Bastion (read only, nothing
   else); a client certificate is not its identity, because a TLS-terminating reverse proxy in front of the main
   installation would not pass it on. The Bastion connects to the main endpoint of the main installation (owner,
-  2026-11-02): the Bastion replaces the customer endpoint of the earlier plans. Open for the page:
-  the bound, the interface on the main installation, the rotation of the Bastion's token, and the state it keeps beyond
-  its cache. Catalog entries it pulls forward: the chained
-  remote repository RMT-040 to RMT-046 (P2) and the edge deployment profile and its trust pairing DIST-024 and DIST-025
-  (Later); their priorities are raised with the page
+  2026-11-02): the Bastion replaces the customer endpoint of the earlier plans. Settled on the page: the bound (R-BAS-020,
+  R-BAS-026), the interface on the main installation (R-BAS-008 to R-BAS-017), the renewal of the Bastion's token
+  (R-BAS-006), and the state it keeps beyond its cache (answers in memory and, optionally, signed in Valkey; R-BAS-020,
+  R-BAS-034). Catalog entries it pulls forward: the chained remote repository (RMT-040, RMT-041, RMT-044) and the read-only
+  deployment profile with its trust between source and instance (DIST-024, DIST-025), raised to MVP with the page; RMT-042,
+  RMT-043, RMT-045 and RMT-046 stay P2 (Q-BAS-47)
 - ⚪ A second Helm chart (`trove-bastion`) for this instance type (owner, 2026-11-02) with its own Ingress, Service, NetworkPolicy and TLS Secret; horizontal replicas
   without PostgreSQL of its own if the design allows, otherwise the smallest state that keeps the replicas consistent
 - ⚪ Same authentication as the main installation: personal, service-account and CI tokens and the same login, with

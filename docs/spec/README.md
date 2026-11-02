@@ -63,14 +63,16 @@ Given by the project owner; not up for redesign in these pages:
   vulnerability dashboard, and this is part of the beta. How it scans (advisory data, matching, blocking) is the development
   agent's design on [vulnerability-scanning.md](vulnerability-scanning.md); the record is
   [ADR-131](../decisions.md#adr-131--own-vulnerability-scanning-with-a-dashboard-in-the-beta).
-- **trove Bastion after the beta (2026-10-31).** A second, smaller deployment of trove, installed with a Helm chart of
-  its own and reached through an Ingress of its own, that serves the packages of a main installation close to its
-  consumers: clients authenticate with the same credentials and the same procedure as at the main installation, and
-  a package cache on the Bastion keeps what it served, so repeated downloads do not reach the main installation. It is
-  planned as milestone M13 ([FULL.md](../projektplan/FULL.md#m13--trove-bastion)); its spec page is written first. It is
-  read-only for package content: publishes and every other write go to the main installation (owner, 2026-10-31).
+- **trove Bastion in the beta (2026-10-31, moved into the beta on 2026-11-02).** A second, smaller deployment of trove,
+  installed with the Helm chart `trove-bastion` and reached through an Ingress of its own, that gives external parties read
+  access to a main installation's content with the main installation's tokens, is exposed to the internet, keeps a cache of
+  what it served and takes as much load as possible off the main installation. It is phase 5b of the
+  [project plan](../projektplan/BETA.md#phase-5b--trove-bastion-m13) (milestone M13), specified on [bastion.md](bastion.md).
+  It is read-only for package content: publishes and every other write go to the main installation (owner, 2026-10-31).
   It asks the main installation whether a credential is valid and what it may read, and keeps the answers for a
-  short, bounded time; it holds no copy of users, tokens or policies (owner, 2026-10-31).
+  short, bounded time; it holds no copy of users, tokens or policies (owner, 2026-10-31). It has no web interface, is
+  configured only through its chart, and talks to the main installation only when both speak the same interface version
+  (owner, 2026-11-02; [ADR-142](../decisions.md#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta)).
 
 ## Design invariants
 
@@ -90,10 +92,13 @@ one container image serves UI, management API and package protocols.
 **INV-2 · Process model and roles.** One binary and one container image, `trove`, with roles. A
 role is a set of enabled subsystems chosen by configuration, not a separate build. Roles of the
 MVP: `web` (every HTTP request: UI, management API, package protocols, raw files), `worker`
-(background jobs from the job queue: indexing, garbage collection, cleanup, webhook delivery) and
-`backup` (the backup and restore commands, run as Kubernetes Job or CronJob). The configuration
-key `process.role` selects the role of `trove serve`: `web`, `worker` or `all`, with no default
-([architecture.md](architecture.md) R-ARCH-001). The Helm chart deploys `web` and `worker` as
+(background jobs from the job queue: indexing, garbage collection, cleanup, webhook delivery),
+`backup` (the backup and restore commands, run as Kubernetes Job or CronJob) and `bastion` (the
+internet-facing read-only cache instance of [bastion.md](bastion.md), deployed only by the chart
+`trove-bastion`, without PostgreSQL; Q-BAS-22). The configuration
+key `process.role` selects the role of `trove serve`: `web`, `worker`, `bastion` or `all`, with no
+default ([architecture.md](architecture.md) R-ARCH-001); `all` never includes `bastion`, whose
+configuration schema is its own. The Helm chart deploys `web` and `worker` as
 separate Deployments from the start, each with its own replica count and autoscaling, and never
 renders `all`. The combined role `all` exists only for a binary started outside the chart during
 development; the local development profile runs the chart with separate `web` and `worker`
@@ -114,7 +119,10 @@ short-lived coordination ([architecture.md](architecture.md) R-ARCH-030). Nothin
 serves to a client and no positive authentication or authorization result is read from Valkey,
 so Valkey holds no shared cache of either (Q-ARCH-16). Nothing in Valkey is the only copy of
 durable data: losing Valkey or its contents (an outage, a Sentinel failover with asynchronous
-replication, a flush, a restart) costs performance only, never correctness or data. Request
+replication, a flush, a restart) costs performance only, never correctness or data. The Bastion
+refines this for its own optional Valkey: by the owner's decision it may hold the main
+installation's answers, signed so that a Valkey writer cannot forge them, and every use checks them
+against the revocation feed ([bastion.md](bastion.md) R-BAS-020, R-BAS-034, Q-BAS-11, Q-BAS-32). Request
 collapsing and negative caching then work per replica, rate limits are approximated per replica,
 and changes reach the other replicas at the speed of the change-log poll (INV-12). A backup does
 not include Valkey. Mutual exclusion whose failure would corrupt data (schema migrations,
@@ -178,6 +186,7 @@ prefix, stored only as a SHA-256 hash, revocable immediately, with an expiry and
 | `trv_pat_` | Personal access token of a user |
 | `trv_sat_` | Service-account token |
 | `trv_cit_` | CI token from an OIDC exchange (short-lived) |
+| `trv_bst_` | Bastion token of a Bastion registration; accepted only by the Bastion interface ([bastion.md](bastion.md) R-BAS-004, Q-BAS-23) |
 
 Format: `<prefix><32 random bytes, base62><6-character base62 CRC32 of the preceding part>`, so
 secret scanners can recognise and pre-validate a leaked token offline. UI sessions are separate:
@@ -264,11 +273,13 @@ PostgreSQL and Valkey high availability and S3 durability come from the platform
 and does not bundle production instances.
 
 **INV-13 · Deployment.** The Helm chart `trove` in `deploy/helm/trove` is the supported
-deployment. It renders one Deployment per role (`web`, `worker`), the backup CronJob, a migration
+deployment; the chart `trove-bastion` in `deploy/helm/trove-bastion` deploys the role `bastion` and
+nothing else ([bastion.md](bastion.md) R-BAS-045). The chart `trove` renders one Deployment per role (`web`, `worker`), the backup CronJob, a migration
 Job hook, Services, an Ingress or Gateway route, PodDisruptionBudgets, HorizontalPodAutoscalers,
 a ServiceMonitor and NetworkPolicies. No ReadWriteMany volume is used anywhere: scratch space is
 `emptyDir` or a generic ephemeral volume (ReadWriteOnce, deleted with its pod). A role that ever
-needs persistent local storage gets one ReadWriteOnce volume per pod; none is planned. Secrets
+needs persistent local storage gets one ReadWriteOnce volume per pod; the only one planned is the
+optional persistent cache volume of the role `bastion` ([bastion.md](bastion.md) R-BAS-030). Secrets
 come from existing Kubernetes Secrets; S3 credentials from workload identity (IRSA and similar)
 or static keys.
 
@@ -385,4 +396,5 @@ acceptance criteria.
 | [api-and-ui.md](api-and-ui.md) | `R-API`, `R-UI` | Management API conventions and surface, Angular UI information architecture |
 | [endpoints.md](endpoints.md) | `R-EP` | Endpoints: a client listener per endpoint with its hosts (exact and one wildcard), base URL, certificates by SNI and optional pool; identification by listener and `421` for foreign hosts; surface and accepted credentials per endpoint, endpoint-bound tokens; host-root bindings and where host roots are needed; exposure rules as a ceiling in the decision point, their API and screen; filtered metadata, URLs, cache keys and cache fill per endpoint; chart rendering and observability |
 | [vulnerability-scanning.md](vulnerability-scanning.md) | `R-VULN` | Vulnerability scanning by package identity: the advisory mirror from the OSV dumps of the served ecosystems (GitHub Advisory Database, OpenSSF malicious packages) and the CISA known-exploited list, online and offline synchronization on `worker`, matching with each format's version order and the rule for claimed names, findings with severities, triage statuses and history, download blocking of malicious versions, `npm audit` and NuGet audit answered from trove's data, the vulnerability report in API and UI, operations, backups and replicas |
+| [bastion.md](bastion.md) | `R-BAS` | The trove Bastion: the role `bastion` and its chart `trove-bastion`; the Bastion token and registrations on the main installation; the Bastion interface (handshake, credential and read check, read shapes, marking of responses, write refusal by probe, revocation feed, download intake) and its own version; serving without format knowledge: the mirrored URL space, fetching with the caller's token, answers and their validity, shared and per-caller documents, the negative cache, the concurrency budget; the main installation unreachable; the cache on an own bucket or a local volume; optional Valkey; blocking in two stages; audit, metrics, alerts, the chart's values and the test suites |
 | `builds.md` (not yet written) | `R-BLD` | Build records, their API, retention, promotion and storage: the record schema and its PostgreSQL tables, the API and permissions ([authorization.md](authorization.md) R-AUTHZ-027), mapping of CI job names to build names, promotion, run retention and the retention hooks of [storage.md](storage.md) R-STOR-043. P1; written before P1 build work starts (milestone M9), and the page that creates it turns `builds.md` in this cell into a link to itself. One owner, decided the same way three times: option (a) of [Q-AUTHZ-8](authorization.md#q-authz-8--spec-page-for-build-metadata), [Q-STOR-3](storage.md#q-stor-3--owner-of-build-records) and [Q-API-5](api-and-ui.md#q-api-5--owning-page-for-build-information); build records are not deferred to P2. It must provide R-STOR-043's contract: a run has a name, a number, a start time and its files as repository, path and SHA-256, and records live in PostgreSQL tables, not as repository items. |

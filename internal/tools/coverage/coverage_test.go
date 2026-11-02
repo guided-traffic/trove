@@ -52,13 +52,13 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 	}
 	m := newModel(c, pageOrder(filepath.Join(repoRoot(t), "docs", "features"), c.Pages), map[string]bool{})
 
-	// Catalog priority -> entries, listed in a Covers: line; measured 2026-10-31, after the page
-	// vulnerability-scanning.md raised its features to MVP.
+	// Catalog priority -> entries, listed in a Covers: line; measured 2026-11-02, after the page
+	// bastion.md raised its features to MVP.
 	want := map[string][2]int{
-		prioMVP:   {379, 379},
+		prioMVP:   {384, 384},
 		prioP1:    {517, 293},
-		prioP2:    {895, 23},
-		prioLater: {376, 0},
+		prioP2:    {892, 23},
+		prioLater: {374, 0},
 		prioOut:   {72, 0},
 	}
 	t.Run("E0.8 catalog counts per priority", func(t *testing.T) {
@@ -79,11 +79,11 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 		if got := len(m.Features); got != 2239 {
 			t.Errorf("catalog entries: got %d, want 2239", got)
 		}
-		if got := m.countSpecified(m.Features); got != 695 {
-			t.Errorf("listed entries: got %d, want 695", got)
+		if got := m.countSpecified(m.Features); got != 700 {
+			t.Errorf("listed entries: got %d, want 700", got)
 		}
-		if got := m.countOpen(m.Features); got != 1544 {
-			t.Errorf("not listed entries: got %d, want 1544", got)
+		if got := m.countOpen(m.Features); got != 1539 {
+			t.Errorf("not listed entries: got %d, want 1539", got)
 		}
 	})
 	t.Run("E0.8 requirement counts", func(t *testing.T) {
@@ -91,8 +91,8 @@ func TestRealDocsReproduceTheMeasuredNumbers(t *testing.T) {
 		for _, r := range m.Reqs {
 			count[r.Priority]++
 		}
-		if len(m.Reqs) != 629 || count[prioMVP] != 476 || count[prioP1] != 148 || count[prioP2] != 5 {
-			t.Errorf("requirements: got %d (MVP %d, P1 %d, P2 %d), want 629 (476, 148, 5)",
+		if len(m.Reqs) != 678 || count[prioMVP] != 525 || count[prioP1] != 148 || count[prioP2] != 5 {
+			t.Errorf("requirements: got %d (MVP %d, P1 %d, P2 %d), want 678 (525, 148, 5)",
 				len(m.Reqs), count[prioMVP], count[prioP1], count[prioP2])
 		}
 	})

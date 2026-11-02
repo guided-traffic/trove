@@ -847,7 +847,7 @@ Any further consumer of the shared configuration beyond that read operation is u
 ## Chained instances
 
 ### RMT-040 · Chained remote repository
-Priority: **P2**
+Priority: **MVP**
 
 A chained remote repository is a remote repository whose upstream is a local, remote, federated or
 virtual repository on another instance of the same kind of system (including an edge instance).
@@ -890,7 +890,7 @@ self-hosted product.
 UI: basic tab of a remote repository whose URL points at another instance.
 
 ### RMT-041 · Download statistics reporting
-Priority: **P2**
+Priority: **MVP**
 
 | Setting | Meaning | Default |
 |---|---|---|
@@ -930,7 +930,7 @@ Purpose: the operator can copy such items from the cache to a local repository t
 (RMT-003). Limits: not supported for generic repositories.
 
 ### RMT-044 · Uncached retrieval through a virtual repository for chained requests
-Priority: **P2**
+Priority: **MVP**
 
 This is a setting of the virtual repository on the source instance that a chained remote points at.
 

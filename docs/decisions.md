@@ -203,6 +203,9 @@ checked every earlier decision against them:
 | [ADR-139](#adr-139--compatibility-is-checked-against-the-latest-release-in-ci) | Compatibility is checked against the latest release in CI | Decided by the development agent — owner review at the walkthrough |
 | [ADR-140](#adr-140--typescript-is-held-below-61-until-angulars-peer-range-admits-7x) | TypeScript is held below 6.1 until Angular's peer range admits 7.x | Decided by the development agent — owner review at the walkthrough |
 | [ADR-141](#adr-141--the-format-contract-is-frozen-at-version-1) | The format contract is frozen at version 1 | Decided by the development agent — owner review at the walkthrough |
+| [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) | The trove Bastion: an internet-facing, read-only cache instance in the beta | Accepted (owner constraint, 2026-10-31 and 2026-11-02) |
+| [ADR-143](#adr-143--the-bastion-decides-through-the-main-installations-own-routes-and-answers-it-keeps-briefly) | The Bastion decides through the main installation's own routes and answers it keeps briefly | Decided by the development agent — owner review at the walkthrough |
+| [ADR-144](#adr-144--the-bastion-token-is-a-type-of-its-own-and-the-interface-a-version-of-its-own) | The Bastion token is a type of its own, and the interface a version of its own | Decided by the development agent — owner review at the walkthrough |
 
 </details>
 
@@ -5297,6 +5300,97 @@ surface file gives way to a compatibility checker against the release, and the v
 **Spec:** [spec/architecture.md](spec/architecture.md) R-ARCH-008, R-ARCH-009, R-ARCH-010, R-ARCH-025;
 [coverage/roadmap.md](coverage/roadmap.md#m3--nuget) E3.3 and WP3.5.
 
+## trove Bastion
+
+### ADR-142 · The trove Bastion: an internet-facing, read-only cache instance in the beta
+
+**Status:** Accepted (owner constraint, 2026-10-31 and 2026-11-02)
+
+**Context.** On 2026-10-31 the owner asked for a second, smaller deployment that serves a main installation's packages close to
+its consumers, read-only, asking the main installation about credentials instead of holding a copy of them; it was planned as
+milestone M13 after the beta. On 2026-11-02 the owner moved it into the beta as phase 5b, before vulnerability scanning, and
+decided its shape in a series of decisions: an exposed artifact instance that gives external parties read access, caches
+artifacts and takes as much load as possible off the main installation, exposed to the internet and to denial-of-service
+attempts.
+
+**Decision.** The trove Bastion is the role `bastion` of the trove image, deployed only by its own chart `trove-bastion`, without
+PostgreSQL, a web interface, a login or settings outside the chart. It connects to the main endpoint of the main installation
+with a token an administrator of the main installation issues for it, which reads no package; it fetches with each caller's own
+token, caches the bytes in an own bucket or a local volume (never the main installation's object store), and serves a cached item
+to a caller only after the main installation said that caller may read it. It keeps those answers for a configurable period,
+follows a revocation feed every few seconds, keeps answers for a grace period while the main installation is unreachable and then
+serves nothing. It mirrors the main installation's URL space, the main installation renders documents for its host, and documents
+are shared only with callers the main installation confirmed as reading the whole repository. Valkey is optional. It blocks in two
+stages, the Bastion's own and a coarser one at HAProxy Ingress; volumetric attacks are the network provider's. Downloads served
+from its cache are reported to the main installation's audit. Its token is renewed by hand with an overlap. Its interface with the
+main installation has a version of its own, equal on both sides, and a mismatch is alerted.
+
+**Consequences.** A beta phase and a spec page; the roadmap's M13 points at the page. INV-2 gains the role, INV-13 the chart,
+INV-8 the token prefix (ADR-144), and INV-3 a refinement for the Bastion's Valkey (ADR-143). The catalog entries the page covers
+(RMT-040, RMT-041, RMT-044, DIST-024, DIST-025) are raised to MVP. The further endpoint as the way to reach outside parties is
+replaced by the Bastion; endpoints stay a capability of the main installation.
+
+**Alternatives considered.** None; set by the owner. The owner's options are recorded as Q-BAS-1 to Q-BAS-21.
+
+**Spec:** [spec/bastion.md](spec/bastion.md), [spec/README.md](spec/README.md#owner-constraints),
+[projektplan/BETA.md](projektplan/BETA.md#phase-5b--trove-bastion-m13).
+
+### ADR-143 · The Bastion decides through the main installation's own routes and answers it keeps briefly
+
+**Status:** Decided by the development agent — owner review at the walkthrough
+
+**Context.** The owner's decisions leave the Bastion without format knowledge and without a copy of identities, yet require it to
+serve cached content only to callers the main installation allowed, to share documents only with confirmed full readers, and to
+drop revoked tokens within seconds; Valkey may share the main installation's answers, which INV-3 forbade for the main
+installation because whoever writes Valkey could grant.
+
+**Decision.** A cached artifact is checked by a conditional request with the caller's own credential through the real route, which
+the main installation answers from PostgreSQL after its normal decision; responses to Bastion requests carry marking headers the
+core derives from the route kind and the caller's read shape (`full` over every member of a virtual repository, the populate right
+included). The revocation feed reads the journaled audit events with a lookback and adds withdrawn content; answers validate
+themselves at use against the receipt times of feed entries; answers stored in Valkey are signed; cached artifacts are revalidated
+after a period, so withdrawals the feed does not carry are bounded too.
+
+**Consequences.** One decision path: the Bastion never decides what the main installation's routes would not. Callers with
+narrowed reads cost one conditional request per artifact and period; callers who read the whole repository cost none. INV-3 is
+refined for the Bastion, not for the main installation. Gaps H-383, H-385 and H-387 record what remains.
+
+**Alternatives considered.** A check operation that classifies paths into coordinates (a second classifier next to the format's
+routes); the Bastion parsing paths per format (format knowledge); the change log as the feed (internal payloads, broadenings,
+resets on pruning); deleting answers on feed entries without use-time validation (a race that keeps a revoked token for the
+period); unsigned answers in Valkey (a Valkey writer could grant). Decided in Q-BAS-27 to Q-BAS-33.
+
+**Revisit condition:** callers with narrowed reads dominate a Bastion's traffic, or every withdrawal gains a feed entry.
+
+**Spec:** [spec/bastion.md](spec/bastion.md) R-BAS-012, R-BAS-013, R-BAS-015, R-BAS-020, R-BAS-022, R-BAS-026, R-BAS-032,
+R-BAS-034.
+
+### ADR-144 · The Bastion token is a type of its own, and the interface a version of its own
+
+**Status:** Decided by the development agent — owner review at the walkthrough (the version's existence and the equality rule are
+the owner's, ADR-142)
+
+**Context.** The owner requires a token issued by an administrator of the main installation that only has tokens checked and reads
+no package, and an interface version raised only when the interface changes.
+
+**Decision.** The Bastion token has the type `bst` (`trv_bst_`) and belongs to a principal of the kind `bastion` that holds no
+grants; every route but the Bastion interface refuses the type before a lookup. Registrations are managed with `endpoints:*`,
+revocation also with `tokens:revoke`. The interface lives under `/api/v1/bastion/` on the main endpoint, with the Bastion token in
+`Trove-Bastion-Authorization` on forwarded requests; every change of the interface raises `bastion.InterfaceVersion`, guarded by a
+surface file and its test, like the frozen format contract.
+
+**Consequences.** INV-8 gains a prefix; R-AUTH-022 a type; R-AUTHZ-002 a principal kind; R-ARCH-025 a surface. Main installation
+and Bastions upgrade together when the version rises.
+
+**Alternatives considered.** A service-account token narrowed by scope (reads no package only as long as no grant reaches the
+service account); a shared static secret (no issuance or revocation); a listener of its own for the interface; additive changes
+within a version. Decided in Q-BAS-23 to Q-BAS-26.
+
+**Revisit condition:** a second kind of machine client needs the same token shape, or lockstep upgrades become a burden after the
+stable release.
+
+**Spec:** [spec/bastion.md](spec/bastion.md) R-BAS-004, R-BAS-005, R-BAS-008, R-BAS-009.
+
 ## Decisions by the development agent
 
 The development agent selected each of these decisions from the options documented in the
@@ -6122,6 +6216,53 @@ Questions raised by that revision are listed in their page's order like every ot
 | [Q-VULN-20](spec/vulnerability-scanning.md#q-vuln-20--which-findings-block-a-download-and-who-sets-and-lifts-a-block) | Which findings block a download, and who sets and lifts a block? | (a) triage only: malicious versions blocked by default; every other block set by a holder of `vulnerabilities:triage` on a confirmed finding, for that version in that repository, and lifted in triage; no severity threshold (owner, 2026-10-31) | [ADR-134](#adr-134--malicious-versions-are-blocked-at-download-by-default) |
 | [Q-VULN-21](spec/vulnerability-scanning.md#q-vuln-21--epss-is-an-operator-option-whose-terms-the-operator-decides) | Who decides on EPSS's terms of use? | (a) EPSS stays P1, an operator option off by default; the operator who switches it on decides, and the documentation says FIRST states no licence (owner, 2026-10-31) | — |
 | [Q-VULN-22](spec/vulnerability-scanning.md#q-vuln-22--a-block-set-in-triage-is-a-finding-status) | How is a block set in triage stored and changed? | (a) a finding status `blocked`, reached from `confirmed` and left to `confirmed` or `dismissed` | [ADR-134](#adr-134--malicious-versions-are-blocked-at-download-by-default) |
+| [Q-BAS-1](spec/bastion.md#q-bas-1--the-bastion-asks-the-main-installation-and-keeps-no-copy-of-users-tokens-or-policies) | How does the Bastion know what a caller may read? | (a) it asks the main installation and keeps the answers briefly; no copy of users, tokens or policies (owner, 2026-10-31) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
+| [Q-BAS-2](spec/bastion.md#q-bas-2--the-bastion-is-read-only-for-package-content) | May the Bastion take writes? | (a) read-only for package content; writes refused in the protocol's shape, pointing at the main installation (owner, 2026-10-31) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
+| [Q-BAS-3](spec/bastion.md#q-bas-3--the-bastions-credential-is-a-token-issued-by-an-administrator-of-the-main-installation) | What is the Bastion's credential towards the main installation? | (a) a token issued by an administrator of the main installation, not a client certificate (owner, 2026-11-02) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
+| [Q-BAS-4](spec/bastion.md#q-bas-4--the-bastion-connects-to-the-main-endpoint-and-replaces-the-customer-endpoint) | Which endpoint of the main installation does the Bastion use? | (a) the main endpoint; the Bastion replaces the customer endpoint (owner, 2026-11-02) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
+| [Q-BAS-5](spec/bastion.md#q-bas-5--a-second-helm-chart-trove-bastion) | How is the Bastion deployed? | (a) a second Helm chart `trove-bastion`, without PostgreSQL (owner, 2026-11-02) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
+| [Q-BAS-6](spec/bastion.md#q-bas-6--a-caller-reads-what-its-token-may-read-there-is-no-release-step) | What does a caller read through the Bastion? | (a) what its token may read on the main installation; no release step (owner, 2026-11-02) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
+| [Q-BAS-7](spec/bastion.md#q-bas-7--the-bastion-fetches-with-the-callers-token-and-its-own-token-reads-no-package) | With which credential does the Bastion fetch? | (a) the caller's; the Bastion's own token only has tokens checked and reads no package (owner, 2026-11-02) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
+| [Q-BAS-8](spec/bastion.md#q-bas-8--answers-are-kept-for-a-period-and-a-revocation-feed-drops-them-within-seconds) | How fast does a revocation reach the Bastion? | (a) answers kept for a configurable period, a revocation feed polled every few seconds (owner, 2026-11-02) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
+| [Q-BAS-9](spec/bastion.md#q-bas-9--the-main-installation-unreachable-grace-period-503-for-unseen-tokens-then-nothing) | What happens while the main installation is unreachable? | (a) a grace period (15 min proposed) for held answers, `503` for unseen tokens, then nothing (owner, 2026-11-02) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
+| [Q-BAS-10](spec/bastion.md#q-bas-10--the-cache-an-own-bucket-or-a-local-volume-never-the-main-installations-object-store) | Where does the Bastion cache? | (a) an own bucket or a local volume per replica, never the main installation's object store (owner, 2026-11-02) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
+| [Q-BAS-11](spec/bastion.md#q-bas-11--valkey-is-optional-and-without-it-budgets-are-divided-by-the-replicas) | Does the Bastion need Valkey? | (a) optional; with it shared state, without it budgets divided by the replicas; routing by path for local volumes (owner, 2026-11-02) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
+| [Q-BAS-12](spec/bastion.md#q-bas-12--anonymous-reads-as-on-the-main-installation-with-misses-absorbed-at-the-bastion) | Does the Bastion admit anonymous reads? | (a) exactly when the main installation does, with a negative cache, a budget and stricter limits (owner, 2026-11-02) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
+| [Q-BAS-13](spec/bastion.md#q-bas-13--downloads-served-from-the-cache-are-reported-to-the-main-installations-audit) | Are downloads from the cache audited? | (a) reported in batches to the main installation's audit under `audit.record_downloads`, buffered, losses counted (owner, 2026-11-02) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
+| [Q-BAS-14](spec/bastion.md#q-bas-14--no-web-interface-at-the-bastion) | Does the Bastion have a web interface? | (a) no: package clients and raw downloads with tokens only (owner, 2026-11-02) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
+| [Q-BAS-15](spec/bastion.md#q-bas-15--the-bastion-is-configured-only-through-its-chart) | Where is the Bastion configured? | (a) only in its chart; a change is a rollout (owner, 2026-11-02) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
+| [Q-BAS-16](spec/bastion.md#q-bas-16--blocking-in-two-stages) | Where is abuse blocked? | (a) in two stages, the Bastion and a coarser, wider, switchable limit at HAProxy Ingress; volumetric attacks are the network provider's (owner, 2026-11-02) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
+| [Q-BAS-17](spec/bastion.md#q-bas-17--the-bastion-mirrors-the-main-installations-url-space) | How does the Bastion know the main installation's repositories and URLs? | (a) it mirrors the URL space; the main installation renders for the Bastion's host (owner, 2026-11-02) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
+| [Q-BAS-18](spec/bastion.md#q-bas-18--metadata-shared-for-confirmed-full-readers-filtered-documents-per-caller) | Which documents does the Bastion share? | (a) marked documents with confirmed full readers; filtered documents per caller with a conditional request (owner, 2026-11-02) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
+| [Q-BAS-19](spec/bastion.md#q-bas-19--the-bastion-token-is-renewed-by-hand-with-an-overlap) | How is the Bastion token renewed? | (a) by hand with an overlap, reloaded without a restart, a metric and a warning 30 days before expiry (owner, 2026-11-02) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
+| [Q-BAS-20](spec/bastion.md#q-bas-20--the-bastion-interface-has-a-version-of-its-own-equal-on-both-sides) | How do the two sides agree on the interface? | (a) a version of its own, equal on both sides, a mismatch alerted (owner, 2026-11-02) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
+| [Q-BAS-21](spec/bastion.md#q-bas-21--internet-exposure-limits-blocking-failed-sign-in-timeouts-and-a-configurable-cache) | How is the internet-facing instance protected? | (a) per-address limits, blocks, failed-sign-in timeouts at the Bastion; the main installation counts the real client (owner, 2026-11-02) | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
+| [Q-BAS-22](spec/bastion.md#q-bas-22--the-bastion-is-a-role-of-the-trove-image) | Is the Bastion a role of the trove image or a binary of its own? | (a) the role `bastion` of the one image | [ADR-142](#adr-142--the-trove-bastion-an-internet-facing-read-only-cache-instance-in-the-beta) |
+| [Q-BAS-23](spec/bastion.md#q-bas-23--the-bastion-token-is-a-token-type-of-its-own-on-a-bastion-principal) | What form has the Bastion token? | (b) the type `bst` (`trv_bst_`) on a principal of the kind `bastion` that holds no grants | [ADR-144](#adr-144--the-bastion-token-is-a-type-of-its-own-and-the-interface-a-version-of-its-own) |
+| [Q-BAS-24](spec/bastion.md#q-bas-24--bastion-registrations-are-managed-with-the-endpoint-capabilities) | Which capability manages Bastions? | (a) `endpoints:read` and `endpoints:write`; `tokens:revoke` also revokes | [ADR-144](#adr-144--the-bastion-token-is-a-type-of-its-own-and-the-interface-a-version-of-its-own) |
+| [Q-BAS-25](spec/bastion.md#q-bas-25--the-interface-lives-under-apiv1bastion-on-the-main-endpoint) | Where does the interface live? | (a) `/api/v1/bastion/` on the main endpoint; the Bastion token in `Trove-Bastion-Authorization` on forwarded requests | [ADR-144](#adr-144--the-bastion-token-is-a-type-of-its-own-and-the-interface-a-version-of-its-own) |
+| [Q-BAS-26](spec/bastion.md#q-bas-26--every-change-of-the-interface-raises-its-version) | When is the interface version raised? | (a) on every change, guarded by a surface file | [ADR-144](#adr-144--the-bastion-token-is-a-type-of-its-own-and-the-interface-a-version-of-its-own) |
+| [Q-BAS-27](spec/bastion.md#q-bas-27--a-cached-artifact-is-checked-through-the-real-route) | How does the Bastion learn that a caller may read a cached artifact? | (a) a conditional request with the caller's credential through the real route | [ADR-143](#adr-143--the-bastion-decides-through-the-main-installations-own-routes-and-answers-it-keeps-briefly) |
+| [Q-BAS-28](spec/bastion.md#q-bas-28--what-reads-the-whole-repository-means) | What does reading the whole repository mean? | (a) the read shape `full`: `ReadAll` with the populate right, over every member of a virtual repository | [ADR-143](#adr-143--the-bastion-decides-through-the-main-installations-own-routes-and-answers-it-keeps-briefly) |
+| [Q-BAS-29](spec/bastion.md#q-bas-29--the-feed-reads-the-journals-events-from-the-audit-table) | What is the revocation feed built from? | (a) the journal's audit events by `(occurred_at, id)` with a lookback | [ADR-143](#adr-143--the-bastion-decides-through-the-main-installations-own-routes-and-answers-it-keeps-briefly) |
+| [Q-BAS-30](spec/bastion.md#q-bas-30--the-feed-also-carries-withdrawn-content) | What does the feed carry beyond access removals? | (a) withdrawn content (unpublish, delete, from M4b blocks), with kinds that drop narrowly | [ADR-143](#adr-143--the-bastion-decides-through-the-main-installations-own-routes-and-answers-it-keeps-briefly) |
+| [Q-BAS-31](spec/bastion.md#q-bas-31--cached-artifacts-are-revalidated-after-a-period) | Are cached artifacts revalidated? | (b) by a conditional request after `artifact_revalidate_after` | [ADR-143](#adr-143--the-bastion-decides-through-the-main-installations-own-routes-and-answers-it-keeps-briefly) |
+| [Q-BAS-32](spec/bastion.md#q-bas-32--answers-validate-themselves-against-the-feed-and-are-signed-in-valkey) | How are answers protected against races and Valkey writers? | (b) validity checked at use against the feed's receipt times; records in Valkey signed | [ADR-143](#adr-143--the-bastion-decides-through-the-main-installations-own-routes-and-answers-it-keeps-briefly) |
+| [Q-BAS-33](spec/bastion.md#q-bas-33--a-replica-starts-with-the-feed-history-of-an-answers-lifetime) | What does a starting replica know of earlier revocations? | (a) it reads the feed history of an answer's lifetime first | [ADR-143](#adr-143--the-bastion-decides-through-the-main-installations-own-routes-and-answers-it-keeps-briefly) |
+| [Q-BAS-34](spec/bastion.md#q-bas-34--without-valkey-budgets-divide-by-the-charts-replica-count) | By which count are budgets divided without Valkey? | (a) the chart's `replicaCount`, or `autoscaling.maxReplicas` | — |
+| [Q-BAS-35](spec/bastion.md#q-bas-35--the-concurrency-budget-is-per-replica-with-a-share-for-anonymous-misses) | Is the concurrency budget towards the main installation shared? | (a) a per-replica share in both modes, anonymous capped at a share | — |
+| [Q-BAS-36](spec/bastion.md#q-bas-36--a-failed-authentication-timeout-refuses-unverified-credentials-only) | What does a failed-authentication timeout refuse? | (b) unverified credentials only; known credentials and anonymous requests continue | — |
+| [Q-BAS-37](spec/bastion.md#q-bas-37--one-refusal-threshold-blocks-an-address-with-doubling-durations) | When is an address blocked? | (a) one refusal threshold, durations doubling to a maximum, IPv6 per `/64` | — |
+| [Q-BAS-38](spec/bastion.md#q-bas-38--writes-are-refused-by-the-main-installation-from-a-bodiless-probe) | How are writes refused in the protocol's shape? | (a) a bodiless probe the main installation answers in the format's shape | — |
+| [Q-BAS-39](spec/bastion.md#q-bas-39--the-bastions-own-refusals-are-problem-details) | What do the Bastion's own refusals look like? | (a) problem details with the family's challenge | — |
+| [Q-BAS-40](spec/bastion.md#q-bas-40--no-cache-state-in-the-bastions-answers) | Does the Bastion tell its cache state? | (a) no `Cache-Status` | — |
+| [Q-BAS-41](spec/bastion.md#q-bas-41--search-results-go-to-the-main-installation-per-caller) | Are search results shared? | (a) no: per caller on every request | — |
+| [Q-BAS-42](spec/bastion.md#q-bas-42--negative-entries-are-served-only-to-full-readers) | Who receives a cached negative answer? | (a) only callers with a `full` answer | — |
+| [Q-BAS-43](spec/bastion.md#q-bas-43--the-bucket-backend-evicts-by-listing-access-markers) | How does the bucket backend evict by last access? | (a) access markers and two listings per sweep, signed entries, five basic S3 operations | — |
+| [Q-BAS-44](spec/bastion.md#q-bas-44--unreachable-means-a-failed-handshake-or-a-stale-feed) | When is the main installation unreachable, and does it gate readiness? | (a) a failed handshake or a stale feed; readiness does not depend on it | — |
+| [Q-BAS-45](spec/bastion.md#q-bas-45--downloads-are-buffered-in-memory-and-spooled-at-shutdown) | Where do download events wait? | (a) in memory, spooled to the cache backend at shutdown | — |
+| [Q-BAS-46](spec/bastion.md#q-bas-46--default-periods-and-limits) | Which defaults for periods and limits? | (a) answers 5 min, metadata 1 min, artifacts 10 min, negative 1 min, feed 2 s, grace 15 min, warning 30 days, volume backend | — |
+| [Q-BAS-47](spec/bastion.md#q-bas-47--which-catalog-entries-the-bastion-pulls-forward) | Which catalog entries does the Bastion pull forward? | (b) RMT-040, RMT-041, RMT-044, DIST-024, DIST-025 to MVP; RMT-042, RMT-043, RMT-045, RMT-046 stay P2 | — |
 | [Q-ROAD-1](coverage/roadmap.md#q-road-1--generic-local-repositories-in-m1) | Generic local repositories in M1? | (a) the local class of the generic format is built in M1 as MVP, from a new spec page `formats/generic.md`; remote and virtual generic stay P1 | — |
 | [Q-ROAD-2](coverage/roadmap.md#q-road-2--backup-and-restore-in-the-beta) | Backup and restore in the beta? | (e) trove's own backup create and restore, the platform layer (R-HA-023, R-HA-025) and the revocation journal (R-HA-054, R-AUTHZ-031) are MVP and gate in M5; their work runs in its own lane from M1 on, and M0 gives every table its export class. Revisited 2026-10-28: was (a), both kept at P1 and the journal after 1.0 | [ADR-094](#adr-094--a-configurable-backup-job-writes-consistent-backups-to-s3), [ADR-078](#adr-078--restores-keep-metadata-and-blobs-consistent-by-ordering-not-by-coordination) |
 | [Q-ROAD-3](coverage/roadmap.md#q-road-3--ecosystems-the-owners-teams-use-after-npm-and-nuget) | Which ecosystems after npm and NuGet? | (a) the P1 format order of the roadmap stands; revisited 2026-10-29: Ansible Galaxy (owner demand) is F0 and P1, ahead of F1 | — |

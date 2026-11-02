@@ -698,7 +698,7 @@ export (both generations).
 ## Distribution to edge instances
 
 ### DIST-024 · Distribution topology and edge instances
-Priority: **Later**
+Priority: **MVP**
 
 Distribution ships a signed release set from a **source** instance to one or more **targets**.
 
@@ -732,7 +732,7 @@ distribution (critical error).
 Installation methods: [ha-and-deployment.md](ha-and-deployment.md).
 
 ### DIST-025 · Trust between source and edge instances
-Priority: **Later**
+Priority: **MVP**
 
 Source and targets must trust each other before distribution. Two methods exist:
 

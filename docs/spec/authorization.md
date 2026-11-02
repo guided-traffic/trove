@@ -130,6 +130,7 @@ Principal kinds and their reference syntax in this page's API:
 | CI identity mapping | `ci:<issuer>/<mapping>` | [gitlab-ci-oidc.md](gitlab-ci-oidc.md) (R-CI-009); mapping names are unique per CI issuer only, hence the issuer prefix |
 | Anonymous | `anonymous` | [identity-and-authentication.md](identity-and-authentication.md) (R-AUTH-037), R-AUTHZ-003 |
 | Authenticated | `authenticated` | R-AUTHZ-030; a built-in row of the `principal` table like `anonymous` |
+| Bastion | `bastion:<name>` | [bastion.md](bastion.md) R-BAS-004 (phase 5b): owns Bastion tokens only; never holds a grant, a role, an owner record or a membership (`422 principal_not_allowed`) |
 
 - Policies, role bindings and owner records MUST reference principals by their immutable ID in
   the `principal` table, never by name. The API accepts and returns references by name and
@@ -667,7 +668,7 @@ lists as system scope items (R-AUTH-025) use the same names; the others extend t
 | `settings:read`, `settings:write` | yes, yes | yes, — | yes, — | — | — |
 | `security-settings:write`: the authorization settings of this page | yes | yes | — | — | — |
 | `audit:read` | yes | yes | yes | — | — |
-| `endpoints:read`, `endpoints:write`: endpoints and their exposure rules ([endpoints.md](endpoints.md) R-EP-016) | yes, yes | yes, yes | yes, — | yes, — | — |
+| `endpoints:read`, `endpoints:write`: endpoints and their exposure rules ([endpoints.md](endpoints.md) R-EP-016), and Bastion registrations with their tokens ([bastion.md](bastion.md) R-BAS-004) | yes, yes | yes, yes | yes, — | yes, — | — |
 | `vulnerabilities:triage`, from M4b: change the status of vulnerability findings, which sets, lifts or restores download blocks (a block on a confirmed finding, the dismissal of a malicious one); effective only together with `read` on the finding's repository or `content:metadata-read` ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-013, Q-VULN-8, Q-VULN-20) | yes | yes | yes | — | — |
 | `content:metadata-read`: read the metadata of every repository (package lists, versions, documents, search, package pages, vulnerability findings), never an artifact (owner, [Q-AUTHZ-172](#q-authz-172--the-auditor-reads-every-repositorys-metadata-and-triages-but-downloads-nothing)) | yes | — | yes | — | — |
 

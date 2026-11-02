@@ -1639,6 +1639,7 @@ Priority: **MVP** · Covers: TOK-002, TOK-004, TOK-006
 | Personal access token (PAT) | `trv_pat_` | user | the user (UI, API, npm web login, device login) |
 | Service-account token (SAT) | `trv_sat_` | service account | administrators, owners (P1), `trove admin` |
 | CI token (CIT) | `trv_cit_` | CI identity mapping | the CI exchange only ([gitlab-ci-oidc.md](gitlab-ci-oidc.md)) |
+| Bastion token (BST) | `trv_bst_` | Bastion registration (principal kind `bastion`) | holders of `endpoints:write`, `trove admin bastion token create`; accepted only by the Bastion interface ([bastion.md](bastion.md) R-BAS-004, R-BAS-005; phase 5b) |
 
 **Format.** The format is exact, so independent implementations and secret scanners agree:
 
@@ -1652,7 +1653,8 @@ token    = body + checksum                                         // always 57 
 - The alphabet is `0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz`, most
   significant digit first, left-padded with `0`. 43 base62 digits hold 256 bits; 6 digits hold
   32 bits.
-- The scanner pattern is `\btrv_(?:pat|sat|cit)_[0-9A-Za-z]{49}\b`.
+- The scanner pattern is `\btrv_(?:pat|sat|cit|bst)_[0-9A-Za-z]{49}\b`; `bst` joins with the Bastion token (phase 5b),
+  whose row widens the `type` check of `api_token` in the same change.
 - The checksum lets a scanner reject random look-alikes offline. It is not a security mechanism.
 - Test vector, with 32 zero bytes as `random`:
   - `trv_pat_000000000000000000000000000000000000000000010kJbh`;

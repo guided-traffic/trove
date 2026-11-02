@@ -96,6 +96,7 @@ and the background workers (INV-1, INV-2).
 | Invocation | Purpose |
 |---|---|
 | `trove serve --role web\|worker\|all` | Runs one replica of a role. The flag overrides `process.role`. |
+| `trove serve --role bastion` | Runs one replica of the trove Bastion, deployed only by the chart `trove-bastion` ([bastion.md](bastion.md) R-BAS-001, phase 5b). |
 | `trove migrate [up\|status]` | Applies or lists the embedded migrations behind the compatibility gate (R-ARCH-026). |
 | `trove backup create\|list\|verify\|delete\|prune\|restore` | The `backup` role: creates a consistent backup into the configured S3 target, lists, verifies, deletes or prunes the backups there, or restores one into an empty installation, then exits (INV-19, [backup-and-restore.md](backup-and-restore.md) R-BAK-009, R-BAK-016, R-BAK-018 to R-BAK-021). It has no client listener and uses no Valkey. The chart runs `create` as a CronJob and `restore` as a Job. |
 | `trove admin …` | Bootstrap and recovery: break-glass administrator ([identity-and-authentication.md](identity-and-authentication.md)), `admin config validate` ([operations-and-observability.md](operations-and-observability.md)), `admin secrets status` (R-ARCH-021; the same status is served by `GET /api/v1/system/encryption`). |
@@ -116,6 +117,9 @@ is interchangeable with any other replica of that role:
 | Change-log poll and signal subscriber (R-ARCH-018) | yes | yes | no | yes |
 | Replica registry row and heartbeat ([operations-and-observability.md](operations-and-observability.md) R-OPS-003) | yes | yes | no | yes |
 
+- The role `bastion` ([bastion.md](bastion.md) R-BAS-001) enables none of the subsystems of the table above except the ops
+  listener and, when its chart configures one, the Valkey client; its client listener serves the Bastion's read flow, and its
+  configuration schema refuses every key of another subsystem.
 - A role also names the **wiring areas** it enables (R-ARCH-024 step 8, Q-ARCH-209): the units of
   composition that build a typed part of the replica, such as the database, the audit recorder, the
   object store, the Valkey client and the coordination layer, and the domain areas on top of them.
@@ -3847,6 +3851,7 @@ Priority: **MVP** · Covers: OPS-072, EVT-072
 | Database schema | Migration sequence | Not a public interface. N and N-1 run against one schema (INV-3, R-ARCH-026). |
 | Token formats | `trv_*_` prefixes (INV-8) | A prefix never changes meaning. New token types get new prefixes. |
 | Metrics, log and audit fields | Names and labels | Stable within a major. A renamed metric is emitted under both names for at least 2 minors ([operations-and-observability.md](operations-and-observability.md)). |
+| Bastion interface | `bastion.InterfaceVersion`, an integer of its own, carried in `Trove-Bastion-Interface` ([bastion.md](bastion.md) R-BAS-009) | Main installation and Bastion talk only at the same version; every change of the interface raises it, guarded by its surface file; a release that raises it says so in its notes |
 | Format contract | `formats.ContractVersion`, frozen at 1 since the end of M3 ([ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)) | Internal and compile-time checked; no external promise. Every change is an ADR; the rule for changing it is below |
 
 **Major version 0.** trove releases stay on major version 0 until the owner decides otherwise
