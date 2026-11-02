@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/guided-traffic/trove/test/nugetstub"
 )
@@ -108,6 +109,19 @@ func concurrentColdRestores(t *testing.T, fx *nugetFixture, purpose string) {
 func TestNuGetClosing(t *testing.T) {
 	requireNuGetClosingRun(t)
 	fx := nugetFx(t)
+
+	// R-NUGET-016's claim criterion with Valkey stopped: within cluster.epoch_poll_interval plus 1 s (the bound allows one
+	// more second, as E1.14 does); the case with Valkey is TestNuGetSearchClaimTiming of the set nuget.
+	t.Run("R-NUGET-016 R-REPO-023 a claim removes the cached forwarded result on every replica with Valkey stopped within epoch_poll_interval plus 1 s", func(t *testing.T) {
+		c := newClaimTiming(t, "claimstop")
+		withValkeyStopped(t, func() {
+			webReadyDegraded(t, true)
+			// cached while Valkey is down, so the answer is still fresh (nuget.search.remote_result_ttl) when the claim lands
+			c.cachedEverywhere("Valkey stopped")
+			c.claimAndWait("Valkey stopped", 4*time.Second)
+		})
+		webReadyDegraded(t, false)
+	})
 
 	t.Run("R-NUGET-030 R-NUGET-031 E3.6 the documents are the same on every replica with Valkey stopped", func(t *testing.T) {
 		withValkeyStopped(t, func() {
