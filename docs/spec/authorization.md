@@ -1784,9 +1784,14 @@ accounts of its partners without a system administrator. Delegation per policy (
 - No project key is another project's key followed by a hyphen and more (`web` and `web-app` cannot both exist), and no
   key is the start, up to a hyphen, of the name of a global service account (409 `project_key_overlap`,
   [Q-AUTHZ-176](#q-authz-176--names-of-a-project-are-prefixed-with-its-key-and-a-global-name-never-takes-a-project-prefix)).
+  Creating projects is serialised, so that two overlapping keys cannot both pass
+  ([Q-AUTHZ-194](#q-authz-194--project-creation-is-serialised-and-the-overlap-rule-reads-one-state),
+  [H-399](#h-399--a-global-service-account-and-a-project-key-created-at-the-same-instant-can-overlap)).
 - A repository belongs to at most one project. `admin` and `repository-admin` (`repositories:write-config`) assign and
   unassign existing repositories; moving one between projects requires `?move=true` (409 `repository_assigned`
-  otherwise). Repository keys stay globally unique and URLs do not change (INV-5, INV-6).
+  otherwise). Repository keys stay globally unique and URLs do not change (INV-5, INV-6). An assignment and an
+  unassignment move the repository's `config_version` (its ETag) and notify `authz` and `repo_config`
+  ([Q-AUTHZ-191](#q-authz-191--an-assignment-moves-the-repositorys-configuration-version-and-tells-both-areas)).
 - A repository that a project administrator creates (with `manageRepositories`) names its project in the create request,
   MUST have a key that starts with `<projectKey>-` (422 `project_prefix_required`) and is assigned in the transaction
   that creates it. No other path lets a project administrator assign a repository.
@@ -1851,6 +1856,9 @@ capability ([R-UI-041](api-and-ui.md#r-ui-041--projects), [Q-AUTHZ-181](#q-authz
 **Deleting a project.** A project can be deleted only when no repository, in any lifecycle state, is assigned and no
 service account belongs to it (409 `project_not_empty`). Its policies are deleted with it, each through the policy
 store (audited and journaled like any policy deletion), and its administrator entries go ([Q-AUTHZ-185](#q-authz-185--versions-delete-order-the-epoch-and-the-journal-of-project-writes)).
+Everything a client can cause is refused before the first policy is deleted; the delete is not one transaction
+([Q-AUTHZ-192](#q-authz-192--a-project-delete-is-not-one-transaction),
+[H-398](#h-398--a-failed-project-delete-can-leave-the-project-without-some-of-its-policies)).
 
 **The declaration.** An operation that project administrators may call declares `permission: <capability>` and
 `projectAdmin: <right>` (R-API-008): the capability, or administration of at least one project with the right. The
@@ -1926,7 +1934,9 @@ Operations of other pages that project administrators call, each with its projec
   write, and a stale tag answers 412 with `currentEtag`. The privilege switches make this a grant
   change: a stale `PUT` could switch `manageRepositories` back on after another administrator
   turned it off. Adding or removing a project administrator and assigning a repository bind one
-  pair and are exempt; they do not move the project's version (Q-AUTHZ-185).
+  pair and are exempt; they do not move the project's version (Q-AUTHZ-185). A write that changes nothing (the
+  administrator already was one, the repository already belongs to the project) records no event and answers the
+  current epoch ([Q-AUTHZ-193](#q-authz-193--what-an-administrator-write-that-changes-nothing-does)).
 - Every write above answers `Trove-Authz-Epoch` (R-AUTHZ-032). The writes of a project, its administrators and its
   assignments, and the creation and deletion of project service accounts, are audited in the transaction of the change
   (R-AUTHZ-029): `authz.project.created`, `.updated`, `.deleted`, `.admin_added`, `.admin_removed`,
@@ -4476,6 +4486,87 @@ projects' anonymous access (IAM-062, P2), which would lift the rule.
 **Applied in the spec:** R-AUTHZ-026 (project policies), R-AUTHZ-030. Code: `Service.projectRule`
 (`internal/authz/validate.go`).
 
+### Q-AUTHZ-191 · An assignment moves the repository's configuration version and tells both areas
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the project is a member of the repository's document (`project`), and the assignment writes `repositories.project_id`.
+R-AUTHZ-026 names the two change areas an assignment notifies and says nothing of the repository's `config_version`, its ETag
+(R-API-012) and the version a cache keyed by it compares (Q-NUGET-94).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The assignment moves `config_version` and notifies `repo_config` with op `updated` (chosen) | The statement that sets `project_id` also does `config_version = config_version + 1`; the `repo_config` payload is the repository package's own (`id`, `key`, `op`, `version`) | A client that read the repository before the assignment gets 412 on a write and no 304 for a document that has another `project`; replicas refresh their snapshot of repositories (which carries `project_id`) the way they do for any change | Caches keyed by the version drop the repository's entries of older versions on an assignment, which is rare |
+| (b) The assignment leaves `config_version` | Only `project_id` changes | No cache drop | The ETag of the document stays while the document changes; a conditional GET answers 304 for a stale `project` |
+| (c) A version of its own for the project member | A second revision column | Precise | A second ETag on one resource |
+
+**Choice:** (a). The op is `updated`: the repository package's vocabulary is the event names without `repository.`, and the
+only ops with a meaning of their own are `deleting` and `deleted`.
+
+**Rationale:** correctness of the conditional requests outweighs one cache refill on a rare, administrator-only write. The
+development agent revisits it when the repository package gives assignments an op of their own.
+
+**Applied in the spec:** R-AUTHZ-026 (assignment); code in `internal/project` and `ProjectAssignRepository`.
+
+### Q-AUTHZ-192 · A project delete is not one transaction
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: Q-AUTHZ-185 deletes the policies one by one through the policy store so that each deletion is audited and journaled,
+then the project. The policy store opens a transaction of its own per deletion.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Read and refuse first, delete the policies, then one closing transaction that locks, counts again and deletes the project (chosen) | A read refuses an unknown project, a stale `If-Match` and a project that is not empty before any policy is touched; the closing transaction repeats the checks under the project's row lock, and a policy created meanwhile sends the delete round again (three rounds at most) | Uses the policy store unchanged; a refused delete deletes nothing in every case a client can cause; the foreign keys of repositories and service accounts remain the safety net | A failure between the policy deletions and the closing transaction (a crash, a repository assigned in the gap) leaves a project without some of its policies (H-398) |
+| (b) A policy-store method on the caller's transaction | One transaction | Atomic | A change in the policy store, which another work package owns |
+| (c) Rely on the cascade | `ON DELETE CASCADE` only | Less code | Q-AUTHZ-185 (c): unaudited, unjournaled deletions |
+
+**Choice:** (a).
+
+**Rationale:** every refusal a client can provoke comes before the first policy deletion; what is left is a crash or a race
+in a window of milliseconds, and its result (a project with fewer policies than it had) takes access away and never grants.
+The development agent revisits it when the policy store offers a deletion on the caller's transaction.
+
+**Applied in the spec:** R-AUTHZ-026 (deleting a project). Gap: [H-398](#h-398--a-failed-project-delete-can-leave-the-project-without-some-of-its-policies).
+
+### Q-AUTHZ-193 · What an administrator write that changes nothing does
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `PUT /projects/{key}/admins/{principalRef}` answers 201 or 200 (R-AUTHZ-026); assigning a repository to the project it
+already belongs to answers success.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A no-op is not a write (chosen) | It records no audit event, notifies no area and moves no epoch; it answers the current `Trove-Authz-Epoch`, so that a client that waits for the epoch of its request does not wait for a change that never comes | The audit log holds changes only; an idempotent client is not punished | The header of a no-op is the epoch of the last change, not of the request |
+| (b) A no-op records an event and raises the epoch | Every call is an event | Every call visible | Noise; a retry loop floods the log and invalidates the indexes of every replica |
+
+**Choice:** (a). A user or group named in the reference is read in the transaction of the write, not from the principal
+store's cache: the answer is the one the write commits against.
+
+**Rationale:** the audit log and the change log exist for changes (R-AUTHZ-029, R-AUTHZ-028).
+
+**Applied in the spec:** R-AUTHZ-026 (API table).
+
+### Q-AUTHZ-194 · Project creation is serialised, and the overlap rule reads one state
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the overlap rule of Q-AUTHZ-176 compares a new key with every other key and with the names of global service
+accounts; two creates of `web` and `web-app` would each pass it against the state the other has not committed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) An advisory lock on the key space (chosen) | Every create takes the transaction-scoped configuration lock of its own object type (`cluster.ConfigProjects`, R-ARCH-017) before it checks the rule | Exactly one of two overlapping creates wins, whichever replica answers; no schema change | Creates of projects queue behind each other, a rare administrator write |
+| (b) A database constraint | An exclusion constraint on the key prefix | Declarative | It cannot express the rule against service account names; a schema change |
+| (c) Check without a lock | The state of the read | Simplest | The race |
+
+**Choice:** (a). The lock covers project creation only; a global service account created in the same instant is H-399.
+
+**Rationale:** project creation is rare and administrator-only, so the queue costs nothing.
+
+**Applied in the spec:** R-AUTHZ-026 (the key rule). Gap: [H-399](#h-399--a-global-service-account-and-a-project-key-created-at-the-same-instant-can-overlap).
+
 ## What this does not cover
 
 ### H-21 · No reservation of name prefixes
@@ -4532,3 +4623,20 @@ not security), and a rewrite of a project policy on it fails. The name rules (Q-
 replica's creation of a global service account or repository. After the last 0.9.x replica is gone the rights hold on
 every replica; a global service account that was created in the window with a project's prefix stays and is listed as
 global.
+
+### H-398 · A failed project delete can leave the project without some of its policies
+
+A project is deleted by deleting its policies one by one through the policy store, each in a transaction of its own, and then
+the project (Q-AUTHZ-192). Everything a client can cause is refused before the first policy deletion (an unknown project, a
+stale `If-Match`, a repository or service account that remains). A crash of the replica, or a repository assigned in the
+milliseconds between the policy deletions and the closing transaction, leaves the project with fewer policies than it had; every
+deletion is audited and journaled as any policy deletion, and nothing grants. The delete answers 409 or 5xx and can be
+repeated; the policies are not restored.
+
+### H-399 · A global service account and a project key created at the same instant can overlap
+
+The creation of projects is serialised (Q-AUTHZ-194), and the creation of a global service account checks the project keys it
+reads. The two checks do not share a lock: a project `web` and a global service account `web-bot` created in the same instant
+can both succeed. The name is then a global account that starts with a project's prefix, which the administrator of `web` could
+mistake for its own; the account has no project grant, and nothing is granted by the name. The overlap is found by
+`ProjectGlobalAccountsWithPrefix` the next time a project key is created and by the listing of global service accounts.

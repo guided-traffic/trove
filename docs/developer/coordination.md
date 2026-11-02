@@ -179,7 +179,7 @@ Leases are session-level advisory locks on a connection of the lease pool (`db.L
 | 1 | `cluster.LockLease` | Lease, second key = registered lease number (`scheduler` = 1) | `lease_manager.go` |
 | 2 | `cluster.LockFetchRetired` | Retired, never reused | nowhere |
 | 3 | `cluster.LockMigration` | Migration lock, second key 0 | `internal/meta/postgres/migrate.go` (its own `lockMigration`, compared by a test) |
-| 4 | `cluster.LockConfig` | Transaction-scoped configuration lock; `cluster.LockConfigObject(ctx, tx, cluster.ConfigDocuments)` | callers in configuration transactions |
+| 4 | `cluster.LockConfig` | Transaction-scoped configuration lock; `cluster.LockConfigObject(ctx, tx, cluster.ConfigDocuments)`; object types: virtual membership 1, documents 2, project creation 3 (`cluster.ConfigProjects`) | callers in configuration transactions |
 
 [locks_scan_test.go](../../internal/cluster/locks_scan_test.go) scans every Go source and query under `internal/` and `cmd/` and fails on a
 one-argument form, an ad-hoc first argument, category 2, or the shared form outside `internal/backup/`.

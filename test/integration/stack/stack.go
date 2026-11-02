@@ -50,6 +50,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/catalog"
 	"github.com/guided-traffic/trove/internal/httpserver"
 	"github.com/guided-traffic/trove/internal/meta/postgres"
+	"github.com/guided-traffic/trove/internal/project"
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/test/integration/idapi"
 	"github.com/guided-traffic/trove/test/integration/testenv"
@@ -401,6 +402,8 @@ type Replica struct {
 	Changes *cluster.Changes
 	Engine  *authz.Engine
 	Service *authz.Service
+	// Projects is the project service (R-AUTHZ-026).
+	Projects project.Service
 	// Repos is the repository service with the authorization area's hook, which
 	// records authz.settings.changed (R-AUTHZ-031).
 	Repos  *repository.Service
@@ -484,6 +487,9 @@ func (e *Env) NewReplica(name string, o Options) *Replica {
 	r.Service = authz.NewService(authz.ServiceOptions{
 		DB: r.DB, Changes: r.Changes, Principals: principals{e}, Repositories: repositories{e}, Recorder: rec,
 	})
+	r.Projects = project.New(project.Options{
+		DB: r.DB, Changes: r.Changes, Principals: principals{e}, Repositories: repositories{e}, Policies: r.Service, Recorder: rec,
+	})
 	if r.Repos, err = repository.NewService(repository.Options{
 		Runner: r.DB, Catalog: catalog.Default(), Recorder: rec, Notifier: r.Changes, Hooks: authz.NewSettingsHook(rec), Log: quiet(),
 	}); err != nil {
@@ -542,7 +548,7 @@ func (r *Replica) serve(o Options, rec audit.Recorder) {
 		Engine: r.Engine, Authenticate: r.testAuth, Validator: o.Validator,
 		Options: func(_ *authz.Engine, o *v1.Options) {
 			o.AuditStore = r.Store
-			o.Authz = v1.AuthzServices{Policies: r.Service, Engine: r.Engine}
+			o.Authz = v1.AuthzServices{Policies: r.Service, Engine: r.Engine, Projects: r.Projects}
 			o.API = v1.Services{Config: cfg, Store: r.DB, Audit: rec}
 		},
 	})

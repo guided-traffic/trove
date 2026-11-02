@@ -2473,7 +2473,7 @@ connections (Q-ARCH-14).
 | 1 | `lease` | registered lease number (`scheduler` = 1) | a lease-pool connection of a `worker` replica; session lock with fencing ([ha-and-helm.md](ha-and-helm.md) R-HA-006) |
 | 2 | `fetch` (retired) | — | Not used since 2026-10-28: the fetch lock lives in Valkey (R-ARCH-033, Q-ARCH-6). The number stays reserved and is never reused. |
 | 3 | `migration` | 0 | Session locks on the session host: `trove migrate`, exclusive (R-ARCH-026, [ha-and-helm.md](ha-and-helm.md) R-HA-019); the database phase of `trove backup create`, shared `pg_advisory_lock_shared(3, 0)` on the snapshot connection ([backup-and-restore.md](backup-and-restore.md) R-BAK-005); `trove backup restore`, exclusive, until it finishes (R-BAK-021) |
-| 4 | `config` | registered object type (virtual membership = 1, configuration documents = 2) | `pg_advisory_xact_lock` inside configuration transactions; works through a transaction-mode pooler |
+| 4 | `config` | registered object type (virtual membership = 1, configuration documents = 2, project creation = 3) | `pg_advisory_xact_lock` inside configuration transactions; works through a transaction-mode pooler |
 
 - No category hashes its `objid`. New categories are added in `internal/cluster/locks.go`, never as
   ad-hoc keys.

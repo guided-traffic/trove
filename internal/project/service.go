@@ -6,7 +6,6 @@ import (
 	"github.com/guided-traffic/trove/internal/audit"
 	"github.com/guided-traffic/trove/internal/auth/principal"
 	"github.com/guided-traffic/trove/internal/authz"
-	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/meta"
 	"github.com/guided-traffic/trove/internal/repository"
 )
@@ -81,9 +80,12 @@ type Options struct {
 	// Changes notifies the change areas authz and repo_config in the transaction of a
 	// write.
 	Changes authz.Changes
-	// Principals resolves the references of administrators.
-	Principals principal.Store
-	// Repositories resolves the repository of an assignment.
+	// Principals and Repositories are the read sides of the principal and repository
+	// areas. The service reads the principal of an administrator reference and the
+	// repository of an assignment in the transaction of the write instead, so that
+	// the answer is the one the write commits against and not a cached one; they
+	// stay options so that the composition names the dependency.
+	Principals   principal.Store
 	Repositories repository.Reader
 	// Policies deletes the policies of a deleted project through the policy store.
 	Policies *authz.Service
@@ -91,8 +93,7 @@ type Options struct {
 	Recorder audit.Recorder
 }
 
-// New creates the service. WP-B replaces the body of the returned type; until then
-// every method answers 501 not_implemented, which the API passes on.
+// New creates the service.
 func New(o Options) Service {
 	if o.Recorder == nil {
 		o.Recorder = audit.Nop{}
@@ -101,42 +102,3 @@ func New(o Options) Service {
 }
 
 type service struct{ o Options }
-
-func notImplemented() error {
-	return errs.E(errs.NotImplemented, errs.CodeNotImplemented, "Projects are not available in this build yet.")
-}
-
-func (s *service) List(context.Context) ([]Project, error)      { return nil, notImplemented() }
-func (s *service) Get(context.Context, string) (Project, error) { return Project{}, notImplemented() }
-
-func (s *service) CreateIn(context.Context, meta.Tx, authz.Subject, Input, *int64) (Project, error) {
-	return Project{}, notImplemented()
-}
-
-func (s *service) Replace(context.Context, authz.Subject, string, int64, Input) (Project, int64, error) {
-	return Project{}, 0, notImplemented()
-}
-
-func (s *service) Delete(context.Context, authz.Subject, string, int64) (int64, error) {
-	return 0, notImplemented()
-}
-
-func (s *service) AddAdmin(context.Context, authz.Subject, string, string) (PrincipalRef, bool, int64, error) {
-	return PrincipalRef{}, false, 0, notImplemented()
-}
-
-func (s *service) RemoveAdmin(context.Context, authz.Subject, string, string) (int64, error) {
-	return 0, notImplemented()
-}
-
-func (s *service) Assign(context.Context, authz.Subject, string, string, bool) (int64, error) {
-	return 0, notImplemented()
-}
-
-func (s *service) Unassign(context.Context, authz.Subject, string, string) (int64, error) {
-	return 0, notImplemented()
-}
-
-func (s *service) LookupPrincipals(context.Context, string, PrincipalKind, int) ([]PrincipalRef, error) {
-	return nil, notImplemented()
-}

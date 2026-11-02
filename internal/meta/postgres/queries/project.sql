@@ -127,13 +127,16 @@ SELECT r.id AS repository_id, COALESCE(p.id::text, '')::text AS project_id, COAL
 -- row changes only when it belongs to no project or to the one in `from`
 -- (empty: a repository without a project), so two concurrent assignments cannot
 -- both win. No row back: the repository is unknown or belongs to another project
--- (409 repository_assigned). project_id empty unassigns.
+-- (409 repository_assigned). project_id empty unassigns. config_version moves on:
+-- the project is a member of the repository's document, so a client that holds
+-- the old ETag must not write over, or be answered 304 for, the other state.
 UPDATE repositories
    SET project_id = NULLIF(sqlc.arg(project_id)::text, '')::uuid, updated_at = now(),
+       config_version = config_version + 1,
        updated_by = NULLIF(sqlc.arg(actor)::text, '')::uuid
  WHERE key = sqlc.arg(repository_key)::text
    AND project_id IS NOT DISTINCT FROM NULLIF(sqlc.arg(from_project_id)::text, '')::uuid
-RETURNING id AS repository_id;
+RETURNING id AS repository_id, config_version;
 
 -- name: ProjectRepositoryKeys :many
 -- The repositories of a project, every lifecycle state, by key.
@@ -189,6 +192,13 @@ SELECT kind, name
    AND starts_with(name, sqlc.arg(prefix)::text)
  ORDER BY kind, name
  LIMIT sqlc.arg(max_rows)::int;
+
+-- name: ProjectPrincipalByRef :many
+-- The user or group an administrator reference names, read in the writer's
+-- transaction (the cached principal store may lag a user created a moment ago).
+SELECT id::text AS id, kind, name, status
+  FROM principal
+ WHERE kind = sqlc.arg(kind)::text AND name = sqlc.arg(name)::text;
 
 -- name: ProjectsOfPrincipals :many
 -- The projects administered by any of the principals (a subject and its groups),

@@ -109,10 +109,11 @@ func (q *Queries) ProjectAdminsOfAll(ctx context.Context) ([]ProjectAdminsOfAllR
 const projectAssignRepository = `-- name: ProjectAssignRepository :many
 UPDATE repositories
    SET project_id = NULLIF($1::text, '')::uuid, updated_at = now(),
+       config_version = config_version + 1,
        updated_by = NULLIF($2::text, '')::uuid
  WHERE key = $3::text
    AND project_id IS NOT DISTINCT FROM NULLIF($4::text, '')::uuid
-RETURNING id AS repository_id
+RETURNING id AS repository_id, config_version
 `
 
 type ProjectAssignRepositoryParams struct {
@@ -122,12 +123,19 @@ type ProjectAssignRepositoryParams struct {
 	FromProjectID string
 }
 
+type ProjectAssignRepositoryRow struct {
+	RepositoryID  int64
+	ConfigVersion int64
+}
+
 // Sets the project of a repository. The condition makes the move explicit: the
 // row changes only when it belongs to no project or to the one in `from`
 // (empty: a repository without a project), so two concurrent assignments cannot
 // both win. No row back: the repository is unknown or belongs to another project
-// (409 repository_assigned). project_id empty unassigns.
-func (q *Queries) ProjectAssignRepository(ctx context.Context, arg ProjectAssignRepositoryParams) ([]int64, error) {
+// (409 repository_assigned). project_id empty unassigns. config_version moves on:
+// the project is a member of the repository's document, so a client that holds
+// the old ETag must not write over, or be answered 304 for, the other state.
+func (q *Queries) ProjectAssignRepository(ctx context.Context, arg ProjectAssignRepositoryParams) ([]ProjectAssignRepositoryRow, error) {
 	rows, err := q.db.Query(ctx, projectAssignRepository,
 		arg.ProjectID,
 		arg.Actor,
@@ -138,13 +146,13 @@ func (q *Queries) ProjectAssignRepository(ctx context.Context, arg ProjectAssign
 		return nil, err
 	}
 	defer rows.Close()
-	items := []int64{}
+	items := []ProjectAssignRepositoryRow{}
 	for rows.Next() {
-		var repository_id int64
-		if err := rows.Scan(&repository_id); err != nil {
+		var i ProjectAssignRepositoryRow
+		if err := rows.Scan(&i.RepositoryID, &i.ConfigVersion); err != nil {
 			return nil, err
 		}
-		items = append(items, repository_id)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -615,6 +623,51 @@ func (q *Queries) ProjectPolicyNames(ctx context.Context, id string) ([]string, 
 			return nil, err
 		}
 		items = append(items, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const projectPrincipalByRef = `-- name: ProjectPrincipalByRef :many
+SELECT id::text AS id, kind, name, status
+  FROM principal
+ WHERE kind = $1::text AND name = $2::text
+`
+
+type ProjectPrincipalByRefParams struct {
+	Kind string
+	Name string
+}
+
+type ProjectPrincipalByRefRow struct {
+	ID     string
+	Kind   string
+	Name   string
+	Status string
+}
+
+// The user or group an administrator reference names, read in the writer's
+// transaction (the cached principal store may lag a user created a moment ago).
+func (q *Queries) ProjectPrincipalByRef(ctx context.Context, arg ProjectPrincipalByRefParams) ([]ProjectPrincipalByRefRow, error) {
+	rows, err := q.db.Query(ctx, projectPrincipalByRef, arg.Kind, arg.Name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectPrincipalByRefRow{}
+	for rows.Next() {
+		var i ProjectPrincipalByRefRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.Name,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

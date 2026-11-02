@@ -82,3 +82,7 @@ The gaps of these mechanisms are recorded on the spec page that describes them, 
   the identity provider's group administers the project;
 - [H-395](../spec/authorization.md#h-395--during-a-rollout-from-09x-the-rights-of-a-project-are-partly-absent-and-its-name-rules-are-not-enforced) —
   the rights of a project during a rollout from 0.9.x.
+- [H-398](../spec/authorization.md#h-398--a-failed-project-delete-can-leave-the-project-without-some-of-its-policies) — a project
+  delete that fails after the policy deletions leaves the project with fewer policies;
+- [H-399](../spec/authorization.md#h-399--a-global-service-account-and-a-project-key-created-at-the-same-instant-can-overlap) —
+  a global service account and a project key created at the same instant can overlap.
