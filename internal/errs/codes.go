@@ -305,6 +305,11 @@ const (
 	CodeUpstreamPackageMismatch = "upstream_package_mismatch"
 )
 
+// CodeNuGetInvalidUpstreamDocument is the 502 of a document a NuGet upstream served that is not
+// the document its path promises (R-NUGET-015): a version list, a registration index or a page
+// that does not parse. The previous entry stays.
+const CodeNuGetInvalidUpstreamDocument = "nuget_invalid_upstream_document"
+
 // Codes of the immutability of a NuGet version number (R-NUGET-006): the version exists
 // with other bytes, was removed and is never accepted again, or is reserved for the
 // journaled bytes of a restore (Q-NUGET-10).
@@ -523,6 +528,7 @@ var registry = []CodeInfo{
 	{CodeNuGetVersionReserved, Conflict, "NuGet version reserved", "A restore of a backup reserved the number of this version for the package that was published after the backup's snapshot. Only that package, byte for byte, is accepted; any other build needs a new version."},
 	{CodeNuGetSymbolsExist, Conflict, "NuGet symbol package exists", "The version holds a symbol package with other bytes. Symbols must match the binaries of the immutable package, so a symbol package is never replaced: push the package and its symbols under a new version."},
 	{CodeNuGetNotImplemented, NotImplemented, "NuGet operation not implemented", "The operation is part of the NuGet v3 protocol and is not served by this build of trove yet."},
+	{CodeNuGetInvalidUpstreamDocument, UpstreamFailed, "Invalid NuGet upstream document", "The upstream answered a NuGet metadata request (version list, registration index or page) with a document that is not what the request promises. The previous copy, if any, is kept and served."},
 	{CodeUpstreamPackageMismatch, UpstreamFailed, "Upstream served another package", "The upstream answered a package request with a .nupkg whose declared ID or version is not the one asked for. Nothing is stored."},
 	// <<< M3 nuget
 }

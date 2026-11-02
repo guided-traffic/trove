@@ -13,7 +13,7 @@ imports the format contract and the leaf packages below, and reaches its tables 
 
 | File | Responsibility |
 |---|---|
-| [format.go](../../internal/formats/nuget/format.go) | `Format`, `Descriptor` (the catalog facts: class `local` for now, Q-NUGET-28; the upstream, the 300 s and 1800 s periods, `ChecksumRequireUnsupported`, `NotifyAreas`, `DataPort`), `Inspect` (reads a package for the roads around the push route, Q-NUGET-38) |
+| [format.go](../../internal/formats/nuget/format.go) | `Format`, `Descriptor` (the catalog facts: the classes `local` and `remote`, Q-NUGET-28; the upstream, the 300 s and 1800 s periods, `ChecksumRequireUnsupported`, `NotifyAreas`, `DataPort`), `Inspect` (reads a package for the roads around the push route, Q-NUGET-38) |
 | [routes.go](../../internal/formats/nuget/routes.go) | The route table of R-NUGET-001, written once; the route names (`nuget.flatcontainer.nupkg`, Q-NUGET-30); `op`, which records `X-NuGet-Session-Id` |
 | [match.go](../../internal/formats/nuget/match.go) | The matchers of the protocol paths, `Match` (the 404 `nuget_v2_unsupported`, the normalization of the ID, the version and the file name), the package-name rule `names` |
 | [paths.go](../../internal/formats/nuget/paths.go) | The canonical paths (`NupkgPath`, `NuspecPath`, `PackageDocumentPath`), `Classify`, `CanonicalPath` (route to canonical path), the routing name of a symbol key |
@@ -26,6 +26,7 @@ imports the format contract and the leaf packages below, and reaches its tables 
 | [setup.go](../../internal/formats/nuget/setup.go) | `clients` (dotnet, nuget, visual-studio) and `SetupTemplates` (Q-NUGET-49) |
 | [guide.go](../../internal/formats/nuget/guide.go), [guide/](../../internal/formats/nuget/guide) | `Guide` and its Markdown templates, one file per section (Q-NUGET-50) |
 | [exposure.go](../../internal/formats/nuget/exposure.go) | The exposure adapter: packages and versions, no tags; NuGet's range grammar. `hiddenVersion` and `onRulesEndpoint` are the questions the handlers ask (R-NUGET-034, [NuGet on a customer endpoint](#nuget-on-a-customer-endpoint)) |
+| [remote.go](../../internal/formats/nuget/remote.go), [remote_fill.go](../../internal/formats/nuget/remote_fill.go), [handlers_remote.go](../../internal/formats/nuget/handlers_remote.go) | The remote class ([below](#the-remote-class)) |
 | [handlers_stub.go](../../internal/formats/nuget/handlers_stub.go) | One method per route that is not built; the package that builds it moves the method into a file of its own |
 | [nugettest](../../internal/formats/nuget/nugettest/store.go), [view.go](../../internal/formats/nuget/nugettest/view.go) | The in-memory twin of the port, for the conformance kit and unit tests; it records the versions `InsertVersion` is handed and answers the view reads over them |
 
@@ -268,7 +269,7 @@ Things to know when changing a document:
 - The registration reads `nuget_version.metadata` with the keys of the table in R-NUGET-005 (Q-NUGET-43). The writer of the row (`rows.VersionInput.Metadata`) must produce
   `title`, `summary`, `description`, `language`, `authors`, `tags` (a list), `projectUrl`, `iconUrl`, `licenseUrl`, `license{type,version,value}`,
   `requireLicenseAcceptance`, `minClientVersion` and `dependencyGroups[{targetFramework, dependencies[{id, version}]}]`; a damaged object makes the document a 500.
-- The remote and virtual classes are not served here. A handler for them switches on `rq.Repo.Class` before `serveDocument`; `registration.Doc.Extras` carries the pass-through
+- The remote class is served by [handlers_remote.go](../../internal/formats/nuget/handlers_remote.go) and the virtual class is not served here. A handler for them switches on `rq.Repo.Class` before `serveDocument`; `registration.Doc.Extras` carries the pass-through
   `deprecation` and `vulnerabilities` of an upstream entry.
 - Tests: the fixture in [documents_fixture_test.go](../../internal/formats/nuget/documents_fixture_test.go) is a Host of the kit over a `docStore` (the twin, with the two document
   reads) and commits versions the way a write does, raising the revision. It is the place to start a test of a document.
@@ -337,3 +338,36 @@ different split changes which packages `json` finds. The metadata object must ca
 The statements against PostgreSQL, with rows inserted in the shape of `NuGetInsertVersion` and real grants (package include and exclude patterns): [test/integration/nuget/search_test.go](../../test/integration/nuget/search_test.go). When the push road exists, a test of push-then-search joins them.
 
 **Adding a field or a tier.** Parse it in [query.go](../../internal/formats/nuget/search/query.go), add the branch to the `CASE` of both statements (`NuGetSearchCount` and `NuGetSearchPage` carry the same predicate and must stay equal), extend the field table of R-NUGET-010, and add the case to `TestR_NUGET_010_ParseSplitsTheQueryIntoTerms` and `TestR_NUGET_010_FieldTermsLimitTheMatch`.
+
+## The remote class
+
+A remote repository of NuGet proxies and caches a NuGet v3 feed (R-NUGET-014, R-NUGET-015, R-NUGET-031; Q-NUGET-51 to Q-NUGET-55). The engine owns the request path, freshness, collapsing,
+the negative cache and the circuit ([proxy.md](proxy.md)); the format adds the adapter below.
+
+| File | Responsibility |
+|---|---|
+| [remote.go](../../internal/formats/nuget/remote.go) | The adapter (`Remote()` returns the stable value `remoteAdapter`, which embeds `formats.RemoteBase`): `parseTarget` (the canonical paths of a remote: discovery `.nuget/index.json`, `{id}/index.json`, `{id}/.registration/index.json`, `{id}/.registration/page/{lower}/{upper}.json`, the `.nupkg` and `.nuspec`), `DiscoveryDocument`/`ParseDiscovery`, `UpstreamRequest`, `PrepareFill` with the URL-map rows, `OnFill` (the `metadata_changed` signal), `Rewrite`, `UpstreamQuery` |
+| [remote_fill.go](../../internal/formats/nuget/remote_fill.go) | `InspectsFill` (the `.nupkg` only) and `InspectFill` (the identity check, 502 `upstream_package_mismatch`; an unreadable package gives no inspection), `commitFill` (version, package row and the NuGet row of origin `cache`), `onCacheRemoved`, the counter `trove_nuget_remote_unparseable_packages_total{repo}` |
+| [handlers_remote.go](../../internal/formats/nuget/handlers_remote.go) | The documents of a remote: `serveRemote` (permission, exposure, the stored documents, the validator, the rendition cache, the rendering), `remoteFlatIndex`, `remoteRegistration`, `remoteFile`, `renderRegistration` |
+| [remote/](../../internal/formats/nuget/remote) | The leaf: `ParseDiscovery` (the resource types in the order of R-NUGET-014, the shape of every address), `Join` (one escaped segment per segment), `Decode` (bounded gunzip), `VersionList`, `ParseIndex`, `ParsePage`, `Convert`/`Merge` (a leaf to the row the renderer reads, with the pass-through members) |
+
+**Request path.** A handler of a remote route switches on `rq.Repo.Class == formats.Remote` before the local code (`handleFlatIndex`, `serveRegistration`, `serveFile`). The version list is read with
+`Remote().Metadata` and rendered in URL form, ascending. A registration document is read as the stored index plus the pages it does not inline (fetched in parallel, at most 8 at once, each its own
+cache entry), parsed into `remote.Version`s and rendered by the renderer of the local class (`registration.Doc` with `Extras`, `UpstreamIDs`) with the hive's filter and trove's paging. The validator is a
+hash of the inputs of the rendering and the digests of the stored documents, so a 304 costs the engine's reads and no parse; the page list of an index is cached per digest in the rendition cache.
+`Rewrite` is the semver2 hive with the default paging, which the kit's check 4 exercises. Cached packages go through the engine's `Artifact`; the first byte leaves after `InspectFill` accepted the package.
+
+**Adding a resource.** Add its canonical path to `parseTarget` and `upstreamURL`, give `PrepareFill` the validation of its document, decide in `InspectsFill` whether it is inspected, and give the handler its
+branch. Mind `Classify`: the engine's gone-ID rule and the URL map act on the package `Classify` names for the path.
+
+**What a virtual repository can use.** `storedDocument` reads a stored document of the remote for a request addressed to it (for a member, the request derived through `Request.Member`), `remoteVersions` turns the
+stored index and pages into the versions of an ID (`remote.Version`: the row the renderer reads and the pass-through members), and `renderRegistration` renders them; the merge of the rows of several members is the virtual package's.
+
+**Tests.** The leaf: `go test ./internal/formats/nuget/remote/`. The adapter, the fill hooks and the documents over the in-memory upstream of the kit (`formattest.MemRemote`):
+[remote_test.go](../../internal/formats/nuget/remote_test.go). End to end against the counting test upstream in the test process, with two replicas and with Valkey on and off:
+[test/integration/nuget/remote_test.go](../../test/integration/nuget/remote_test.go) (`make test-integration INTEGRATION_PKGS=./test/integration/nuget`). The upstream is a TLS server with a
+self-signed CA the replicas trust through `proxy.outbound.tls.ca_files`, reachable under two names (`127.0.0.1` for the index and the registrations, `localhost` for the flat container) with `localhost`
+as the remote's extra host; a test wraps the stub's handler to change what it answers (a gzip-coded hive, a flat container without a version, garbage in place of a package).
+
+**Limits worth knowing.** The archive limits of `InspectFill` are the defaults of `nuget.archive` (H-336, [nuget-remote.md](../security/nuget-remote.md)). `forwardSearch` has no effect yet (Q-NUGET-55). A feed whose flat container
+lacks a version its registration lists is served only after a registration of the ID was read (Q-NUGET-54).

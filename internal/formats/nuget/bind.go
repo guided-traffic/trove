@@ -21,6 +21,8 @@ type replica struct {
 	cfg config.NuGet
 	// writes counts the pushes, nil on a Host nobody bound with a metrics registry.
 	writes *writeMetrics
+	// remote counts what the remote class meets, nil on a Host nobody bound with a registry.
+	remote *remoteMetrics
 }
 
 // Bind gives the format the nuget section of the configuration of the replica that owns the
@@ -31,6 +33,7 @@ func (f *Format) Bind(h formats.Host, cfg *config.Config, m *observability.Metri
 	r := &replica{cfg: cfg.NuGet}
 	if m != nil {
 		r.writes = newWriteMetrics(m)
+		r.remote = newRemoteMetrics(m)
 	}
 	f.replicas.Store(h, r)
 	if d := h.FormatData(ID); d != nil {

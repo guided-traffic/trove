@@ -20,6 +20,8 @@ A local repository keeps what is published to it, and a publish is visible as so
 
 A remote repository is a pull-through cache of an upstream registry; for npm the default upstream is `https://registry.npmjs.org/`. The first request for a package fetches it from the upstream and stores it; later requests are answered from trove. While the upstream is down, trove serves what it has cached. A version that the upstream withdraws is no longer served, even from the cache, unless an administrator chose otherwise. You cannot publish to a remote repository.
 
+For NuGet the default upstream is `https://api.nuget.org/v3/index.json`: trove reads the service index of the feed and takes the package files and documents from the addresses it names. A NuGet remote checks every package it caches: the ID and version the package declares must be the ones the request named, otherwise the answer is `502` `upstream_package_mismatch` and nothing is stored. A version that disappears from the upstream's lists stays downloadable from the cache by its exact address; an ID the upstream no longer has is not served at all, though its cached packages stay stored and the cache view (`<key>~cache`) lists them.
+
 ### Virtual repositories
 
 A virtual repository is one address for several npm repositories in an order an administrator sets, for example an internal local repository followed by a remote one. Point your package manager at a virtual repository and you get internal and public packages through one address and one token. Keep in mind:
@@ -49,6 +51,7 @@ The repository screen shows these addresses for your installation, so you do not
 | Format | Classes | Clients the guides and setup cover | Where its content appears in the UI |
 |---|---|---|---|
 | npm | Local, remote, virtual | npm, pnpm, Yarn Berry (2 and later), Yarn Classic (1.x) | **Packages** and **Browse** |
+| NuGet | Local, remote | .NET CLI (dotnet), NuGet CLI (nuget.exe), Visual Studio | **Packages** and **Browse** |
 | Generic | Local | curl | **Browse** only: generic files have no package names, so they are not listed under **Packages** |
 
 Generic repositories store files of any kind at paths you choose: installers, archives, documents, build outputs. Other formats are not built yet; see [Known limitations](../admin/limitations.md).

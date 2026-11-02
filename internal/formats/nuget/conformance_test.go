@@ -2,6 +2,7 @@ package nuget
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"testing"
@@ -213,9 +214,65 @@ func conformance(f *Format) formattest.Fixture {
 			Seed:     seedVersions("view.sample", "1.0.0", "1.10.0", "1.2.0", "2.0.0-beta.1", "2.0.0"),
 		},
 		OptionNames: []string{"--password", "--store-password-in-clear-text", "-Password", "ClearTextPassword", "TROVE_TOKEN"},
+		Remote:      remoteFixture(),
 		Skip: map[formattest.Check]string{
-			formattest.CheckRewrite: "the remote class and its adapter are WP3.2a (Q-NUGET-28)",
-			formattest.CheckMerge:   "the virtual class and its adapter are WP3.2c (Q-NUGET-28)",
+			formattest.CheckMerge: "the virtual class and its adapter are WP3.2c (Q-NUGET-28)",
+		},
+	}
+}
+
+// upstreamHost is the origin of the remote repository of the kit's check 4.
+const upstreamHost = "https://api.upstream.test"
+
+// remoteFixture is the fixture of check 4: the stored documents of a remote repository as the
+// upstream serves them. Their package content addresses are on the upstream's host, and none
+// may be left in the rendered document.
+func remoteFixture() *formattest.RemoteFixture {
+	const (
+		content = upstreamHost + "/v3-flatcontainer/acme.widgets/"
+		reg     = upstreamHost + "/v3/registration/acme.widgets/"
+	)
+	leaf := func(version string) string {
+		return `{"@id":"` + reg + version + `.json","@type":"Package","catalogEntry":{"@id":"` + reg + version + `.json",` +
+			`"id":"Acme.Widgets","version":"` + version + `","listed":true,"published":"2026-10-01T10:00:00Z","authors":"Acme",` +
+			`"description":"Widgets","packageContent":"` + content + version + `/acme.widgets.` + version + `.nupkg",` +
+			`"dependencyGroups":[{"targetFramework":"net8.0","dependencies":[{"id":"Acme.Core","range":"[1.0.0, )","registration":"` + upstreamHost + `/v3/registration/acme.core/index.json"}]}]},` +
+			`"packageContent":"` + content + version + `/acme.widgets.` + version + `.nupkg","registration":"` + reg + `index.json"}`
+	}
+	index := `{"@id":"` + reg + `index.json","count":1,"items":[{"@id":"` + reg + `index.json#page/1.0.0/1.1.0","count":2,"lower":"1.0.0","upper":"1.1.0",` +
+		`"items":[` + leaf("1.0.0") + `,` + leaf("1.1.0-beta.1") + `]}]}`
+	page := `{"@id":"` + reg + `page/1.0.0/1.1.0.json","count":1,"lower":"1.0.0","upper":"1.0.0","items":[` + leaf("1.0.0") + `]}`
+	return &formattest.RemoteFixture{
+		Upstream: upstreamHost,
+		Docs: []formattest.RemoteDoc{
+			{Name: "registration index", Path: "acme.widgets/.registration/index.json", Variant: documentVariant, Body: []byte(index)},
+			{Name: "registration page", Path: "acme.widgets/.registration/page/1.0.0/1.0.0.json", Variant: documentVariant, Body: []byte(page)},
+			{Name: "version list", Path: "acme.widgets/index.json", Variant: documentVariant, Body: []byte(`{"versions":["1.0.0","1.1.0-beta.1"]}`)},
+		},
+		DownloadLinks: func(doc []byte) []string {
+			var out []string
+			var walk func(v any)
+			walk = func(v any) {
+				switch x := v.(type) {
+				case map[string]any:
+					for k, e := range x {
+						if s, ok := e.(string); ok && (k == "packageContent" || k == "registration" || k == "@id") {
+							out = append(out, s)
+							continue
+						}
+						walk(e)
+					}
+				case []any:
+					for _, e := range x {
+						walk(e)
+					}
+				}
+			}
+			var v any
+			if json.Unmarshal(doc, &v) == nil {
+				walk(v)
+			}
+			return out
 		},
 	}
 }

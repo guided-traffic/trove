@@ -114,6 +114,20 @@ A NuGet push (`dotnet nuget push`, `nuget push`) goes to a local repository, or 
 
 `dotnet nuget delete` unlists the version by default: it disappears from search and stays downloadable and restorable, and the command can be repeated. In a repository whose delete mode is `delete` it removes the version for good, and repeating the command still succeeds. Deleting a version that never existed is `404`.
 
+### NuGet: restores through a remote repository
+
+A remote NuGet repository reads the service index of its upstream (`remote.url`, by default `https://api.nuget.org/v3/index.json`) and caches what a restore asks for. These answers have a code in the body, which `curl` shows; the NuGet clients print the status and its reason phrase only.
+
+| Answer | Code | What it means | What to do |
+|---|---|---|---|
+| `502` | `upstream_error` naming `PackageBaseAddress/3.0.0` or `RegistrationsBaseUrl` | The address is no NuGet v3 feed: its service index lacks a resource trove needs (a NuGet v2 feed is not supported) | Correct `remote.url`; it must end in the `index.json` of a v3 feed |
+| `502` | `foreign_host_denied` | The service index names a resource on a host that is neither the upstream's nor in the remote's extra hosts (nuget.org spreads its resources over hosts of `nuget.org`) | Add the host to the remote's extra hosts; for nuget.org the proposed entry is `*.nuget.org` |
+| `502` | `upstream_package_mismatch` | The upstream answered a request for one package with a package that declares another ID or version; nothing was stored | Report it to the owner of the upstream; the restore works as soon as the upstream serves the right package |
+| `502` | `nuget_invalid_upstream_document` | A version list, registration index or page of the upstream is not what its address promises; the copy trove had stays | Retry later; if it persists the upstream is broken |
+| `404` | `not_found` | The upstream does not have the ID or the version, or the ID matches an exclude pattern of the remote, or the ID was withdrawn by the upstream (its cached packages stay stored and are served by the cache view) | Check the spelling and the patterns |
+
+Cached packages are served while the upstream is down. A package that cannot be read as a NuGet package is cached and served as the upstream sent it; it has no entry in the package view and no search hit, and is counted in `trove_nuget_remote_unparseable_packages_total`. The search of a remote answers from the packages it has cached; the forwarding of a search to the upstream is not built yet.
+
 ### EINTEGRITY, audits and upstream failures
 
 - `EINTEGRITY` usually means the lockfile was written against a registry that served other bytes for that version.
@@ -182,7 +196,7 @@ Each code with its status and meaning. `GET /api/v1/problems/<code>` gives the d
 | `validation_failed` | 422 | A field of the request is invalid; the answer names it |
 | `rate_limited` | 429 | Too many requests; wait for `Retry-After` |
 | `npm_not_implemented`, `npm_audit_unavailable` | 501 | An npm operation, or an audit, that trove does not offer here |
-| `upstream_unreachable`, `upstream_error`, `upstream_auth_failed`, `upstream_integrity_mismatch`, `npm_invalid_upstream_document`, `egress_denied`, `foreign_host_denied` | 502 | The remote repository's upstream failed, refused or sent something trove does not accept, and nothing usable is cached |
+| `upstream_unreachable`, `upstream_error`, `upstream_auth_failed`, `upstream_integrity_mismatch`, `npm_invalid_upstream_document`, `nuget_invalid_upstream_document`, `upstream_package_mismatch`, `egress_denied`, `foreign_host_denied` | 502 | The remote repository's upstream failed, refused or sent something trove does not accept, and nothing usable is cached |
 | `server_busy`, `shutting_down` | 503 | The replica is at its limit or stopping; retry |
 | `database_unavailable`, `authz_stale`, `unavailable` | 503 | A dependency is temporarily unavailable; retry |
 | `upstream_assumed_offline`, `shadow_check_unavailable`, `fetch_queue_timeout` | 503 | The upstream is assumed down, or busy; retry after `Retry-After` |

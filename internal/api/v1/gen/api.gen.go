@@ -975,13 +975,16 @@ func (e PermissionPolicyInputResourceType) Valid() bool {
 
 // Defines values for RemoteFormatName.
 const (
-	RemoteFormatNameNpm RemoteFormatName = "npm"
+	RemoteFormatNameNpm   RemoteFormatName = "npm"
+	RemoteFormatNameNuget RemoteFormatName = "nuget"
 )
 
 // Valid indicates whether the value is a known member of the RemoteFormatName enum.
 func (e RemoteFormatName) Valid() bool {
 	switch e {
 	case RemoteFormatNameNpm:
+		return true
+	case RemoteFormatNameNuget:
 		return true
 	default:
 		return false

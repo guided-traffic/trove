@@ -105,7 +105,7 @@ func TestR_UI_049_NuGetHasAGuideForEveryVariant(t *testing.T) {
 				t.Errorf("Guide() returns %s for the class %s, which is not registered", s.ID, c)
 			}
 		}
-		if s.ID == "nuget.remote.what" || s.ID == "nuget.virtual.what" {
+		if s.ID == "nuget.virtual.what" {
 			t.Errorf("Guide() returns %s before the class registers", s.ID)
 		}
 	}

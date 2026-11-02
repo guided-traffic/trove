@@ -10,6 +10,7 @@
 package registration
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -110,6 +111,15 @@ func (f Feed) Nupkg(lowerID, lowerVersion string) string {
 // A local package has none and the members are absent (R-NUGET-009).
 type Passthrough struct {
 	Deprecation, Vulnerabilities json.RawMessage
+	// Other are further members of the upstream's catalog entry that trove keeps
+	// (R-NUGET-015), written after the vulnerabilities in the order given.
+	Other []Member
+}
+
+// Member is a member of a catalog entry written as it is: a key and a compact JSON value.
+type Member struct {
+	Key   string
+	Value json.RawMessage
 }
 
 // Doc renders the documents of one ID in one hive.
@@ -120,6 +130,9 @@ type Doc struct {
 	Paging  Paging
 	// Extras are the pass-through members by URL-form version; nil for a local package.
 	Extras map[string]Passthrough
+	// UpstreamIDs says the ID of a dependency is judged by the rule of an upstream, which
+	// admits IDs outside ASCII (R-NUGET-003): the documents of a remote repository.
+	UpstreamIDs bool
 }
 
 // Visible keeps the versions a hive lists: the SemVer 2.0.0-specific ones only in the
@@ -209,6 +222,31 @@ type entry struct {
 	DependencyGroups         []dependencyGroup `json:"dependencyGroups,omitempty"`
 	Deprecation              json.RawMessage   `json:"deprecation,omitempty"`
 	Vulnerabilities          json.RawMessage   `json:"vulnerabilities,omitempty"`
+
+	// other are the members of an upstream's entry that are kept, written last.
+	other []Member
+}
+
+// MarshalJSON writes the members in their fixed order and then the kept members of an
+// upstream's entry, so that the bytes depend on the entry alone.
+func (e entry) MarshalJSON() ([]byte, error) {
+	type plain entry
+	b, err := document.Marshal(plain(e))
+	if err != nil || len(e.other) == 0 {
+		return b, err
+	}
+	out := bytes.TrimSuffix(b, []byte("}"))
+	for _, m := range e.other {
+		key, err := document.Marshal(m.Key)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ',')
+		out = append(out, key...)
+		out = append(out, ':')
+		out = append(out, m.Value...)
+	}
+	return append(out, '}'), nil
 }
 
 type dependencyGroup struct {
@@ -342,7 +380,7 @@ func (d Doc) entry(v rows.RegistrationVersion) (entry, error) {
 			x := dependency{ID: dep.ID, Range: dep.Version}
 			// The dependency's registration is a URL of this repository, which can hold
 			// the ID only when the local rule admits it (R-NUGET-003).
-			if id.ValidateLocal(dep.ID) == nil {
+			if d.dependencyHasRegistration(dep.ID) {
 				x.Registration = d.Feed.Index(d.Hive, id.Lower(dep.ID))
 			}
 			dg.Dependencies = append(dg.Dependencies, x)
@@ -350,7 +388,16 @@ func (d Doc) entry(v rows.RegistrationVersion) (entry, error) {
 		e.DependencyGroups = append(e.DependencyGroups, dg)
 	}
 	if x, ok := d.Extras[v.LowerVersion]; ok {
-		e.Deprecation, e.Vulnerabilities = x.Deprecation, x.Vulnerabilities
+		e.Deprecation, e.Vulnerabilities, e.other = x.Deprecation, x.Vulnerabilities, x.Other
 	}
 	return e, nil
+}
+
+// dependencyHasRegistration says whether the registration of a dependency is a URL this
+// repository can hold: the ID passes the rule of the repository's class.
+func (d Doc) dependencyHasRegistration(depID string) bool {
+	if d.UpstreamIDs {
+		return id.ValidateUpstream(depID) == nil
+	}
+	return id.ValidateLocal(depID) == nil
 }

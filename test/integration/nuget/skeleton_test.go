@@ -55,7 +55,7 @@ func TestR_NUGET_001_ARepositoryCanBeCreatedAndItsServiceIndexAnswers(t *testing
 			if f.DefaultMetadataTTLSeconds == nil || *f.DefaultMetadataTTLSeconds != 300 || f.DefaultNotFoundTTLSeconds == nil || *f.DefaultNotFoundTTLSeconds != 1800 {
 				t.Errorf("periods %v and %v, want 300 and 1800 (Q-NUGET-2)", f.DefaultMetadataTTLSeconds, f.DefaultNotFoundTTLSeconds)
 			}
-			if len(f.Classes) != 1 || f.Classes[0] != "local" {
+			if len(f.Classes) != 2 || f.Classes[0] != "local" || f.Classes[1] != "remote" {
 				t.Errorf("classes = %v", f.Classes)
 			}
 			for _, want := range []string{`"deleteMode"`, `"forwardSearch"`, `"additionalProperties":false`} {
@@ -103,7 +103,7 @@ func TestR_NUGET_001_ARepositoryCanBeCreatedAndItsServiceIndexAnswers(t *testing
 	})
 
 	t.Run("R-NUGET-001 the classes whose adapters do not exist yet are refused (Q-NUGET-28)", func(t *testing.T) {
-		for _, class := range []string{"remote", "virtual"} {
+		for _, class := range []string{"virtual"} {
 			ans := post(map[string]any{"key": "nuget-" + class, "class": class, "format": "nuget"})
 			if ans.Status < 400 || ans.Status >= 500 {
 				t.Errorf("%s: %d %s", class, ans.Status, ans.Body)

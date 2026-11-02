@@ -38,6 +38,9 @@ func (f *Format) handleRegistrationLeaf(ctx context.Context, rq *formats.Request
 // rows of one read (Store.Registration). An ID with no version visible in the hive has no
 // document, whatever the kind; a leaf of a version the hive does not list is missing too.
 func (f *Format) serveRegistration(ctx context.Context, rq *formats.Request, w http.ResponseWriter, kind registrationKind) error {
+	if rq.Repo.Class == formats.Remote {
+		return f.remoteRegistration(ctx, rq, w, kind)
+	}
 	hive, ok := registration.ParseHive(rq.Params.Get("hive"))
 	if !ok {
 		return errNoSuchResource()

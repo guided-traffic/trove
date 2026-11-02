@@ -55,8 +55,11 @@ func storeOf(data any) (Store, error) {
 // writes the audit event; the generated .nuspec is linked to the version. Anything else
 // is refused: a NuGet repository holds the versions that a push created, on their
 // canonical paths, and a file that reached it any other way would be one no document
-// lists. The upload of the management API, copy and move are not served yet (Q-NUGET-32);
-// a remote fill is not either, because the remote class is not registered.
+// lists. The upload of the management API, copy and move are not served yet (Q-NUGET-32).
+//
+// The package a remote repository cached (OriginFill) is recorded with the rows of origin
+// cache when its inspection accepted it; an unreadable one, and the files that are no package
+// (a .nuspec), are stored as they came (R-NUGET-015, Q-NUGET-53).
 func (f *Format) OnCommit(ctx context.Context, tx formats.Tx, c formats.CommitEvent) error {
 	switch p := c.Payload.(type) {
 	case *pushCommit:
@@ -67,6 +70,12 @@ func (f *Format) OnCommit(ctx context.Context, tx formats.Tx, c formats.CommitEv
 		return f.commitSymbols(ctx, tx, c, p)
 	}
 	if c.Origin == formats.OriginFill {
+		if in, ok := fillPayload(c); ok {
+			return f.commitFill(ctx, tx, c, in)
+		}
+		if t, err := parseTarget(c.Path); err == nil && t.kind == kindPackage {
+			f.uncounted(c)
+		}
 		return nil
 	}
 	return notImplemented("the upload of a package through the management API; push it with a NuGet client")

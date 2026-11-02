@@ -80,6 +80,9 @@ type Store struct {
 	// Journal holds the journal entry of each published or deleted event, in order, as the
 	// database store would pass it to the audit recorder.
 	Journal []string
+	// Cached logs the versions a remote repository recorded when it cached their packages
+	// (origin cache), which write no event and so are not in Published.
+	Cached []rows.VersionInput
 }
 
 // New creates an empty store.
@@ -167,10 +170,12 @@ func (s *Store) InsertVersion(_ context.Context, tx formats.Tx, in rows.VersionI
 	}
 	s.insert(in)
 	rev := fmt.Sprintf("%d/%s", in.RepoID, in.LowerID)
-	published := len(s.Published)
+	published, cached := len(s.Published), len(s.Cached)
 	if in.Origin != rows.OriginCache {
 		s.Published = append(s.Published, in)
 		s.Journal = append(s.Journal, journal(in.RepoID, in.LowerID, in.LowerVersion, in.SHA512))
+	} else {
+		s.Cached = append(s.Cached, in)
 	}
 	undo(tx, func() {
 		s.mu.Lock()
@@ -181,6 +186,8 @@ func (s *Store) InsertVersion(_ context.Context, tx formats.Tx, in rows.VersionI
 		s.revs[rev]--
 		if in.Origin != rows.OriginCache {
 			s.Published, s.Journal = s.Published[:published], s.Journal[:published]
+		} else {
+			s.Cached = s.Cached[:cached]
 		}
 	})
 	return nil

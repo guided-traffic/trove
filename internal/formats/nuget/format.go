@@ -74,7 +74,7 @@ func (f *Format) Descriptor() formats.Descriptor {
 		Facts: catalog.Facts{
 			ID:               ID,
 			DisplayName:      "NuGet",
-			Classes:          []formats.Class{formats.Local},
+			Classes:          []formats.Class{formats.Local, formats.Remote},
 			Layout:           Layout,
 			ProtocolBasePath: "/api/nuget/{key}/",
 			// The upstream a remote repository proposes and the host family nuget.org serves

@@ -20,6 +20,9 @@ const (
 // without a version, or without one the endpoint exposes, is a 404 (R-NUGET-008,
 // R-NUGET-034). The list is a rendered document with a weak validator (R-NUGET-002).
 func (f *Format) handleFlatIndex(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
+	if rq.Repo.Class == formats.Remote {
+		return f.remoteFlatIndex(ctx, rq, w)
+	}
 	lowerID := rq.Params.Get("id")
 	repoID := rq.RepoRef().ID
 	keep := exposes(viewOf(rq), lowerID)
@@ -69,6 +72,9 @@ func (f *Format) handleNuspec(ctx context.Context, rq *formats.Request, w http.R
 // that is not stored, or that the caller may not read, or that the endpoint hides, answers
 // 404.
 func (f *Format) serveFile(ctx context.Context, rq *formats.Request, w http.ResponseWriter, lowerID, ver, path, mediaType string) error {
+	if rq.Repo.Class == formats.Remote {
+		return f.remoteFile(ctx, rq, w, lowerID, ver, path, mediaType)
+	}
 	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: lowerID, Version: ver, Actions: []formats.Action{formats.ActionRead}}); err != nil {
 		return err
 	}

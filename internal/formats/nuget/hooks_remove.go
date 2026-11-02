@@ -43,6 +43,9 @@ type removedNupkg struct {
 // generic layer, which asks the format seam for every package of the removed files. The
 // writer of this hook is bound to no request and decides none.
 func (f *Format) OnItemsRemoved(ctx context.Context, tx formats.Tx, e formats.ItemsEvent) error {
+	if e.Repo.Class == formats.Remote {
+		return f.onCacheRemoved(ctx, e)
+	}
 	if e.Repo.Class != formats.Local {
 		return nil
 	}

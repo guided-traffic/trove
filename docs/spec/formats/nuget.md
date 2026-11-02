@@ -1194,10 +1194,11 @@ Remote settings shared by all formats are fields of the `remote` section owned b
 
 - `remote.url` is the upstream's v3 service index URL. The default for a new NuGet remote is
   `https://api.nuget.org/v3/index.json`.
-- On create, update and the upstream test (R-REPO-024 probes the service index), the plug-in
-  requires a `PackageBaseAddress/3.0.0` resource and at least one `RegistrationsBaseUrl` type in
-  the upstream index; otherwise the configuration is refused with 422 naming the missing resource.
-  A v2-only upstream is refused.
+- The plug-in requires a `PackageBaseAddress/3.0.0` resource and at least one
+  `RegistrationsBaseUrl` type in the upstream index. The configuration is not refused on create
+  or update; the first request that needs the index answers 502 `upstream_error` naming the
+  missing resource, and the upstream test of R-REPO-024 shows the same (Q-NUGET-14, Q-NUGET-51).
+  A v2-only upstream fails the same way.
 - Resource discovery picks, from the upstream index: `PackageBaseAddress/3.0.0`; the registration
   hive in the order `RegistrationsBaseUrl/3.6.0`, `/3.4.0`, unversioned; `SearchQueryService/3.5.0`
   before the unversioned type; the autocomplete resource likewise; `VulnerabilityInfo/6.7.0` (P1).
@@ -1237,8 +1238,8 @@ Acceptance criteria:
 
 - Creating a remote with only `remote.url` set to nuget.org's index succeeds; the upstream test
   reports it reachable.
-- Creating a remote whose upstream index lacks `PackageBaseAddress/3.0.0` (stub server) is refused
-  with 422 naming it.
+- A remote whose upstream index lacks `PackageBaseAddress/3.0.0` (stub server) answers its first
+  request with 502 `upstream_error` naming it, and stores nothing.
 - A remote whose upstream is `nuget-all` on a second trove instance restores packages through
   both instances.
 
@@ -1254,9 +1255,9 @@ time (R-REPO-043) apply. The NuGet plug-in classifies requests into descriptors 
 | service index | rendered | — | none; built from the remote's configuration |
 | (discovery) | metadata | `.nuget/index.json` | upstream service index |
 | `flatcontainer/{lower_id}/index.json` | metadata; the ID's package document (R-REPO-003) | `{lower_id}/index.json` | upstream package content `{lower_id}/index.json` |
-| `.nupkg` | artifact | `{lower_id}/{lower_version}/{lower_id}.{lower_version}.nupkg` | upstream package content URL; when that answers 404 but the upstream registration lists the version, the leaf's `packageContent` (recorded in `remote_url_map`) |
-| `.nuspec` | artifact | `{lower_id}/{lower_version}/{lower_id}.nuspec` | extracted from the cached `.nupkg`; when that is not cached, upstream package content `.nuspec` |
-| any registration document | metadata | `{lower_id}/.registration/index.json` and `{lower_id}/.registration/page/{n}.json` | upstream registration index of the discovered hive, plus every non-inlined page |
+| `.nupkg` | artifact | `{lower_id}/{lower_version}/{lower_id}.{lower_version}.nupkg` | upstream package content URL; where a registration of the ID that trove has read names another `packageContent` for the version, that address (recorded in `remote_url_map`, Q-NUGET-54) |
+| `.nuspec` | artifact | `{lower_id}/{lower_version}/{lower_id}.nuspec` | upstream package content `.nuspec`, cached as an item of its own (Q-NUGET-54) |
+| any registration document | metadata | `{lower_id}/.registration/index.json` and `{lower_id}/.registration/page/{lower}/{upper}.json` (the bounds of the page in URL form, Q-NUGET-51) | upstream registration index of the discovered hive, plus every non-inlined page |
 | search, autocomplete | search | — | R-NUGET-016 |
 | symbol file (P1) | artifact; routing name = first segment of the key (the file name the debugger looks for) without its last extension, lowercased | `.symbols/<key>` | R-NUGET-022 |
 | vulnerability index and pages (P1) | metadata | `.vulnerabilities/index.json`, `.vulnerabilities/<name>.json` | R-NUGET-023 |
@@ -2042,7 +2043,7 @@ Event catalog, schema and metric conventions are owned by
   `nuget.registration.index`, `nuget.registration.page`, `nuget.registration.leaf`. The route name
   is the handler label of the request log and of `trove_http_requests_total` (Q-NUGET-30).
 - Format metrics (# example names): `trove_nuget_virtual_member_skipped_total{repository,reason}`,
-  `trove_nuget_remote_unparseable_packages_total{repository}`,
+  `trove_nuget_remote_unparseable_packages_total{repo}` (the label is `repo`, as for the replay counter),
   `trove_nuget_search_forward_failures_total{repository}`,
   `trove_nuget_search_withheld_total{repository}` (R-NUGET-016),
   `trove_nuget_push_replayed_total{repo}` (R-NUGET-006; `repo` is the repository label R-OPS-007 allows) and, from P1,
@@ -3884,6 +3885,96 @@ Context: R-NUGET-034 has the filter run "after the merge of a virtual repository
 **Rationale:** the paging of R-NUGET-009 is a function of the list, so the filter belongs before it. The development agent revisits this if a remote or virtual class can only produce bytes; it then rebuilds rows from them before the predicate.
 
 **Applied in the spec:** R-NUGET-034. Code: [handlers_flat.go](../../../internal/formats/nuget/handlers_flat.go), [handlers_registration.go](../../../internal/formats/nuget/handlers_registration.go), [handlers_search.go](../../../internal/formats/nuget/handlers_search.go) (unchanged: the scope holds the rules), [exposure.go](../../../internal/formats/nuget/exposure.go). Tests: `TestR_NUGET_034_AcceptanceDocumentsOfTheExampleRule`, `TestR_NUGET_034_PagingRunsOverTheExposedVersions`, `TestR_NUGET_034_SearchOnAnEndpointWithRules`, `TestR_NUGET_034_DocumentsOnAnEndpointWithRules` (integration).
+
+### Q-NUGET-51 · What a NuGet remote stores of an upstream, and where its registration pages live
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-015 lists the descriptors of a remote (the service index, the version list, the registration index and "every non-inlined page") and the three hives a client can ask for. The engine stores a metadata document per path and variant, keeps it fresh, and uses the URL map for metadata paths as well (Q-ARCH-268). The page path of the table was `page/{n}.json`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One variant `doc`, the bytes of the upstream as they came; one upstream hive stored (`RegistrationsBaseUrl/3.6.0`, else `/3.4.0`, else the unversioned type); the three hives are renderings; a page is keyed by its bounds, `page/{lower}/{upper}.json` (chosen) | The registration index is stored once and its non-inlined pages once each, under the paths the engine collapses and refreshes | One upstream request per document and period however many hives clients use; a stored page that is fresh can only ever be served for the range it holds | An upstream that has only the unversioned hive shows no SemVer 2.0.0 versions in any hive |
+| (b) One stored document per trove hive | Three upstream hives are fetched | A hive could be passed through | Three times the requests and the storage; a client of the SemVer 1 hive would fetch a document the SemVer 2 hive already holds |
+| (c) A page keyed by its position, `page/{n}.json` | The sketch of R-NUGET-015 | Short paths | The index can name another range for position `n` while the entry for `n` is still fresh, and trove would serve the old range's leaves for the new bounds until the entry expires |
+
+**Choice:** (a). The service index is the discovery document at `.nuget/index.json`; a feed whose index lacks `PackageBaseAddress/3.0.0` or every registration type answers the first request with 502 `upstream_error` naming the resource, and nothing is stored (Q-NUGET-14). The index's `PrepareFill` records the URL-map row of a page whose address is not the one derived from the registration base, and of a leaf whose `packageContent` is not the derived package address; a derived address needs no row.
+
+**Rationale:** the engine already owns freshness, collapsing and the circuit per path, so every document that has its own path gets them; the hive, the paging and the SemVer 2.0.0 filter are functions of the stored bytes and the serving repository (Q-NUGET-52), so they cost no request. The development agent revisits this when an upstream turns up that serves the SemVer 2.0.0 hive only in a form the stored hive cannot supply, or when a measurement shows that stored pages of old bounds pile up faster than the cache's retention removes them.
+
+**Applied in the spec:** R-NUGET-015 (the table row of the registration documents). Code: [remote.go](../../../internal/formats/nuget/remote.go) `parseTarget`, `PrepareFill`, `RegistrationPagePath`; [discovery.go](../../../internal/formats/nuget/remote/discovery.go). Tests: `TestR_NUGET_015_ACanonicalPathIsTakenApartOrIsNoResourceOfARemote`, `TestR_NUGET_015_PrepareFillRecordsOnlyTheAddressesThatAreNotTheDerivedOnes`, `TestR_NUGET_014_DiscoveryPicksTheResourcesInTheOrderOfTheSpec`, `TestR_NUGET_014_AnUpstreamWithoutPackageContentAnswers502OnTheFirstFetch`, `TestR_NUGET_015_AnIDWithManyVersionsIsRePagedAndCollapsed`.
+
+### Q-NUGET-52 · A remote's registration is parsed and rendered again; what it keeps of the upstream's entry
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-015 says the stored upstream documents stay unchanged, registration documents are not passed through, trove renders its own index, pages and leaves with the paging of R-NUGET-009, catalog entry properties are copied and unknown properties are kept. Every address in the rendered documents except `projectUrl`, `licenseUrl` and `iconUrl` must be trove's. An upstream may store a hive gzip-coded whatever the request asked for.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Parse the stored index and pages into the rows the local renderer reads, keep `deprecation`, `vulnerabilities` and the unknown members that hold no address, and render with `registration.Doc`; inflate a gzip-coded document within the bound (chosen) | One renderer for both classes; the hive filter, the paging and the addresses are the renderer's | Deterministic bytes; the same `ETag` on every replica | A member that holds an address is not kept, and a catalog entry's order of members is trove's |
+| (b) Pass the stored document through and replace the upstream's addresses in the text | A textual rewrite | Every member is kept | It cannot re-page (R-NUGET-009), cannot filter a hive, and misses an address in a member it does not know |
+| (c) Keep every unknown member | (a) without the address rule | Nothing is lost | An unknown member such as `readmeUrl` or an alias list would carry the upstream's address into a document that must not |
+
+**Choice:** (a). `readmeUrl` is left out as R-NUGET-009 says. The SemVer 2.0.0 flag of a version is the flag of its version and of the bounds of its dependency ranges (R-NUGET-004). A leaf whose version does not parse is left out; a missing `listed` is true; a missing ID is the ID of the request. `authors` as a list and `tags` as a string are read as well. The `ETag` of a document is a hash of the render version, the repository, the serving key, the response base URL, the endpoint with its exposure fingerprint, the configuration version, the paging, and the SHA-256 of every stored document the rendering reads; it is computed before the rendering, so a 304 costs the reads of the engine and no parse. The pages an index does not inline are listed from the replica's rendition cache under the index's digest, so the index is parsed once per document, not once per request. `Rewrite` of the adapter renders the semver2 hive with the default paging.
+
+**Rationale:** the renderer is the one the local class tests pin down byte by byte, and a remote differs from a local repository only in where the rows come from. The address rule is the only way to keep "unknown properties are kept" and "no upstream address" true at once. The development agent revisits this if a client turns out to read a member that the address rule dropped.
+
+**Applied in the spec:** none (R-NUGET-015 already states the behaviour; the address rule is the detail). Code: [catalog.go](../../../internal/formats/nuget/remote/catalog.go), [documents.go](../../../internal/formats/nuget/remote/documents.go), [handlers_remote.go](../../../internal/formats/nuget/handlers_remote.go), [registration.go](../../../internal/formats/nuget/registration/registration.go). Tests: `TestR_NUGET_015_ConvertTakesTheMetadataTheDocumentsRender`, `TestR_NUGET_004_ARangeWithASemVer2BoundMakesTheVersionSemVer2`, `TestR_NUGET_009_ARemoteRegistrationIsRenderedPerHiveWithTheDocumentsOfTheUpstream`, `TestR_NUGET_015_RegistrationsAreRenderedOnTheServingRepository`, `TestR_NUGET_015_AGzipHiveIsAnsweredToEveryClientInTheCodingItAccepts`, `TestR_ARCH_028_DecodeInflatesGzipWithinTheBoundAndOnlyThen`, `TestR_NUGET_030_ReplicasRenderTheSameBytesAndTheSameValidator`.
+
+### Q-NUGET-53 · The packages a remote caches: inspected before they are stored, recorded with origin `cache`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-015 parses every cached `.nupkg` like an upload, records it with the rows of origin `cache`, serves and caches a package that cannot be read, and refuses a package whose declared identity is not the asked one with 502 `upstream_package_mismatch`. Q-ARCH-267 gives the format a hook that runs before the item is committed and before a byte reaches a client.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `InspectFill` reads the package and holds its identity to the path; an unreadable package gives no inspection; `OnCommit` of a fill records the version from the inspection, and the removal of a cached item removes its version (chosen) | The hook is the check, the commit hook is the record | Nothing is stored for a mismatch; the rows are written in the transaction that stores the item | The hook has no replica, so the archive limits are the defaults (H-336) |
+| (b) Record the rows from the registration | No inspection | Rows exist before the package | The rows would be the upstream's word, and a package that was never fetched would be a version (H-337) |
+| (c) Refuse an unreadable package with 502 | Stricter | No uninspected bytes in the cache | R-NUGET-015 serves and caches what it cannot read, and a feed with an unusual package would fail a restore |
+
+**Choice:** (a). The ID of the `.nuspec` is compared with the path's under Unicode simple case folding (`id.SameID`), the version by its URL form; the ID passes the upstream rule only through that equality, because the path's ID was validated by it. A symbol package is not refused. A version that is recorded already (the item was evicted and fetched again) keeps its row and takes the new item as its lead item. Nothing is claimed, no tombstone is written and no event is recorded: no request published anything and a remote has no owners. The removal of a `.nupkg` of a remote's cache (an eviction, the items API) removes the version row with its NuGet row and raises the package's revision, and writes no tombstone, because a remote can fetch the version again. An unreadable package is logged where it is found and counted at the commit, where the replica is known: `trove_nuget_remote_unparseable_packages_total{repo}` (the spec's label `repository` is `repo`, as for `trove_nuget_push_replayed_total`).
+
+**Rationale:** the identity is the only check an upstream without a digest allows (H-35); doing it in the hook keeps every waiter of the fetch on one verdict. The development agent revisits the limits when the contract gives a fill hook the replica (H-336).
+
+**Applied in the spec:** R-NUGET-028 (the label of the counter). Code: [remote_fill.go](../../../internal/formats/nuget/remote_fill.go), [hooks.go](../../../internal/formats/nuget/hooks.go), [hooks_remove.go](../../../internal/formats/nuget/hooks_remove.go). Tests: `TestR_NUGET_015_InspectFillHoldsTheDeclaredIdentityToThePath`, `TestR_NUGET_003_InspectFillComparesANonASCIIIDUnderSimpleCaseFolding`, `TestR_NUGET_015_AnUnreadablePackageIsServedAsItCameAndGetsNoRows`, `TestR_NUGET_015_AFilledPackageIsRecordedWithTheRowsOfOriginCache`, `TestR_NUGET_015_RemovingACachedPackageRemovesItsVersionAndWritesNoTombstone`, `TestR_NUGET_015_AnIdentityMismatchIs502AndStoresNothing`, `TestR_NUGET_015_APackageOfAnotherVersionAtTheURLOfThisOneIs502`, `TestR_NUGET_015_APackageThatIsNoPackageIsServedAsItCameCountedAndGetsNoRows`.
+
+### Q-NUGET-54 · The `.nuspec` of a remote, and a package address the flat container does not serve
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-015 extracts the `.nuspec` from the cached `.nupkg` and falls back to the upstream's, and fetches the leaf's `packageContent` when the flat container answers 404 for a version the registration lists. The engine has one upstream URL per path (the derived one, or the URL-map row), records a 404 of an artifact as a negative entry, and has no second candidate.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The `.nuspec` is fetched from the upstream as an artifact of its own; the leaf's address is used once a registration of the ID that trove read has recorded it in the URL map (chosen) | Two paths, two cached artifacts; the map row is the address | No engine change; a restore from the flat container, as every client does, is one request per file | The `.nuspec` costs a request of its own and is not checked; the first request of a version whose flat container address differs from the registration's, before any registration was read, is the flat container's 404 |
+| (b) Read the `.nuspec` out of the cached package and fall back to the upstream | The spec's sketch | One fetch for both files | The hook would have to store a second item of a fill, which the contract does not offer |
+| (c) After a 404, read the registration and ask again | The spec's sketch | Covers the first request | The 404 is a negative entry for the path (R-REPO-028) and the second request would meet it; the engine would have to offer a candidate list |
+
+**Choice:** (a). The registration read of an ID records the leaf addresses that differ from the derived ones, and the next request of that version uses the recorded address (`TestR_NUGET_015_APackageTheFlatContainerDoesNotHaveIsFetchedFromThePackageContentOfItsLeaf`). A client that restores from the flat container alone, against a feed whose flat container lacks a version its registration lists, is served by trove as the feed serves it: 404.
+
+**Rationale:** the protocol's package content resource is the flat container, which a conforming feed serves for every version it lists (the test upstream does); the fallback protects against a feed that does not, at the cost of a contract change (a candidate list in the engine). That a real feed needs it is not verified. The development agent revisits this when a feed turns up where the first request fails, by adding the candidate to the engine.
+
+**Applied in the spec:** R-NUGET-015 (the two table rows). Code: [remote.go](../../../internal/formats/nuget/remote.go) `packageMappings`, `UpstreamRequest`. Tests: the one named above, `TestR_NUGET_015_PrepareFillRecordsOnlyTheAddressesThatAreNotTheDerivedOnes`, `TestR_NUGET_015_APackageFileOfARemoteIsFetchedThroughTheEngineAfterTheReadPermission`.
+
+### Q-NUGET-55 · The seam for the forwarded search: the adapter maps the search resource, a remote searches its cache until then
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the forwarded search of a remote (R-NUGET-016) is a later work package. The contract passes a `Volatile` request through `RemoteFetcher.Query`, which asks the adapter for the upstream request with `UpstreamQuery`. The road of `Query` builds the adapter's context without the discovery document (`internal/formathost/query.go`), and the search resource is announced in the service index.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The adapter maps the query to the search resource of `RemoteContext.Discovery` and answers an internal error when it is absent; the road of `Query` is extended by the work package that forwards (chosen) | The format side is done and tested; the host side is one call | The seam is exercised by a unit test; nothing changes in the engine now | The forwarded search needs a change in the host before it works |
+| (b) Extend the road of `Query` in this package | The seam works end to end | Complete | It changes the host and the contract's tests of the engine, which belong to the package that forwards |
+| (c) A reserved parameter that carries the resolved search URL | No host change | Works now | The key of the cached answer would hold an address the format put in; a second way to address the upstream beside the service index |
+
+**Choice:** (a). Until the forwarding exists, the search of a remote repository answers from the NuGet rows of its cache (origin `cache`), as R-NUGET-016 describes for `nuget.forwardSearch: false`; the setting `forwardSearch: true` has no effect yet. The `Query` of a remote is not called by the format.
+
+**Rationale:** the host side belongs to the package that gives the setting a meaning. The development agent revisits this when that package starts: it resolves the discovery document in `internal/formathost/query.go` the way `fetcher.discover` does and hands it to `UpstreamQuery`.
+
+**Applied in the spec:** none. Code: [remote.go](../../../internal/formats/nuget/remote.go) `UpstreamQuery`, [discovery.go](../../../internal/formats/nuget/remote/discovery.go) `SearchURL`. Tests: `TestR_NUGET_016_TheQuerySeamMapsAPassThroughSearchWhenTheIndexIsResolved`, `TestR_NUGET_015_SearchURLSortsTheParameters`, `TestR_NUGET_015_APackageIsCachedWithItsRowsAndServedWhenTheUpstreamIsDown` (the cache-only search).
 
 ## What this does not cover
 

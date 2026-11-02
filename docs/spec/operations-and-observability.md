@@ -1024,6 +1024,7 @@ HTTP duration histograms use the buckets 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.
 | `trove_backup_check_ok` | gauge | `check` | Result of the platform backup checks ([ha-and-helm.md](ha-and-helm.md) R-HA-023), written by the `backup-check` task |
 | `trove_revocation_journal_pending` | gauge | — | Revocation-journal backlog ([ha-and-helm.md](ha-and-helm.md) R-HA-054) |
 | `trove_nuget_push_replayed_total` | counter | `repo` | Pushes of the identical bytes of a stored NuGet version, answered as accepted without a new event ([formats/nuget.md](formats/nuget.md) R-NUGET-006, R-NUGET-028, Q-NUGET-6; that page's label `repository` is `repo` here) |
+| `trove_nuget_remote_unparseable_packages_total` | counter | `repo` | Packages a NuGet remote repository cached that could not be read as a NuGet package and were served without NuGet rows ([formats/nuget.md](formats/nuget.md) R-NUGET-015, R-NUGET-028, Q-NUGET-53; that page's label `repository` is `repo` here) |
 | `trove_nuget_symbol_index_lag_seconds` (P1) | gauge | — | Age of the oldest symbol package not yet indexed (R-NUGET-021, R-NUGET-028) |
 | `trove_nuget_symbol_index_failures_total` (P1) | counter | `repo`, `reason` | Symbol packages whose indexing ended with an error (R-NUGET-021, R-NUGET-028) |
 | `trove_vuln_source_last_success_timestamp_seconds` (M4b) | gauge | `source`, `ecosystem` | Last sync run of the advisory source that ended changed or unchanged; read from PostgreSQL ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-024) |
