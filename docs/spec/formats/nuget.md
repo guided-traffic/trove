@@ -69,9 +69,9 @@ ID's existence (used by the gone rule of R-REPO-029 and the shadowing probe of R
 request descriptors as in R-NUGET-015, where symbol files carry a routing name derived from the file
 name in the symbol key.
 
-The skeleton of the format (phase 4, WP3.1c) registers the class `local` alone; `remote` and `virtual`
-join when their adapters exist, each in the change that writes the adapter (Q-NUGET-28), and the format
-enums of the management API follow the registry (Q-API-190). Two kinds of path meet in the format
+The skeleton of the format (phase 4, WP3.1c) registers the class `local` alone; `virtual` joined with its
+adapter (WP3.2c, Q-NUGET-56) and `remote` joins when its adapter exists, each in the change that writes the
+adapter (Q-NUGET-28), and the format enums of the management API follow the registry (Q-API-190). Two kinds of path meet in the format
 and are never mixed: the *protocol path* a client requests below `/api/nuget/<repoKey>/`
 (`v3/flatcontainer/acme.widgets/index.json`) and the *canonical path* of an item or a cache entry
 (`acme.widgets/index.json`, R-NUGET-005, R-NUGET-015). The routes match protocol paths; the descriptors
@@ -1456,6 +1456,18 @@ metadata cache (R-REPO-020) and dependency-confusion protection (R-REPO-023) are
 
 - Because the metadata winner and the content winner follow the same order, the registration
   entry a client reads always describes the bytes it downloads.
+- Member documents (Q-NUGET-56). Two documents of an ID are merged, each at the canonical path the
+  remote adapter stores it at (R-NUGET-015): the version list at `{lower_id}/index.json`, and the
+  registration entries at `{lower_id}/.registration/index.json`. A local member contributes the
+  rows of its stored versions; a remote member contributes its stored upstream document, which for
+  the registration entries is the upstream's index with every page inlined (a page the upstream lists
+  by URL alone, without its leaves, is not an index the merge can read, and the member then fails as
+  an upstream failure instead of contributing a short list). The merged document is neutral: it holds
+  no address and no hive, so one cache entry serves the three hives and every serving address; the
+  handler renders the version list, the index, the pages and the leaves from it for the repository the
+  client addressed, with R-NUGET-009's paging, the hive's SemVer 2.0.0 rule (R-NUGET-004) and the
+  endpoint's exposure (R-NUGET-034). A remote member whose cache the caller may not fill contributes
+  only the versions whose package it has cached (R-AUTHZ-008).
 - NuGet v3 has no "latest version" artifact request; clients choose from version lists. The union
   already contains every member's versions, upstream ones included, which is what REPO-036 asks
   for.
@@ -1479,7 +1491,12 @@ metadata cache (R-REPO-020) and dependency-confusion protection (R-REPO-023) are
   merged entry whose remote input was refreshed expires with that entry when the signal is lost.
   A claim that the first push creates (`local.autoClaim`) reaches the other replicas through the
   change log within the bound of R-ARCH-018. A merge without a transiently failing remote member is served
-  with `Cache-Status: trove; detail=partial` and not cached (R-REPO-020).
+  with `Cache-Status: trove; detail=partial` and not cached (R-REPO-020); its rendering is not kept
+  either, and `trove_nuget_virtual_member_skipped_total{repo,reason="unavailable"}` counts it.
+- The read check is per member and per ID (`Resolver.Plan`). The merged entry is shared by every
+  caller with the same members, so a grant narrower than the ID (a version pattern) is not applied
+  inside the merge; the download of the version applies it, and the document may list a version the
+  caller cannot fetch.
 
 Configuration (per virtual repository; `virtual` belongs to
 [repositories-and-proxy.md](../repositories-and-proxy.md) and is shown for context):
@@ -1513,6 +1530,9 @@ Acceptance criteria:
   replica within one second sees the new version, also with Valkey stopped.
 - With the stub upstream down and nothing cached, local packages still restore through
   `nuget-all`, and the version list of a remote-only ID answers 502, not 404 (R-REPO-019).
+- Two local members that both hold `Acme.Widgets 1.5.0` list it once; the registration entry and the
+  `.nupkg` are the first member's (`Trove-Resolved-From`), and the validator of every merged document
+  is the same on every replica.
 
 ### R-NUGET-018 · Virtual repository: merged search and autocomplete
 Priority: **MVP** · Covers: PKG-NUGET-026, PKG-NUGET-028
@@ -1526,20 +1546,26 @@ R-REPO-019's filtering:
    fill; rows are kept by the caller's `Resolver.ReadScope` (architecture.md Q-ARCH-271). Local
    members use R-NUGET-010, remote members R-NUGET-016, including its withheld-query rule evaluated
    with this virtual repository's claims and pin rules.
-2. Results of a remote member are removed for every ID that this virtual repository's pin rules
-   or claims keep away from that member (R-REPO-023, as in R-NUGET-017): an ID whose selected pin
-   rule does not name the member, or, without a pin rule, an ID that a claim in effect here
-   covers.
+2. Results of a member are removed for every ID that this virtual repository's pin rules or claims
+   keep away from that member (R-REPO-023, as in R-NUGET-017), through `Resolver.KeepsAway`: an ID
+   whose selected pin rule does not name the member, or, without a pin rule, an ID that a claim in
+   effect here covers and the member does not hold. This applies to local members as well
+   (Q-NUGET-57), so a search never lists what the version list, the registration and the download of
+   the same virtual repository deny.
 3. The merged order is: packages whose ID equals a query term exactly (from any member), then the
    remaining results member by member in resolution order, each member's own order kept.
 4. Results are deduplicated by `lower_id`. For a package found in several members, `versions` is
    the union (for equal versions the member that tier resolution would pick wins), `version` and
    the package-level fields come from the latest version of that union, `totalDownloads` is the
    sum.
-5. The page `[skip, skip + take)` of the merged list is returned; positions beyond
-   `virtual_merge_window` return an empty `data`.
+5. The page `[skip, skip + take)` of the merged list is returned; positions at or beyond
+   `virtual_merge_window` return an empty `data`, and a page that crosses the window ends at it
+   (Q-NUGET-58).
 6. `totalHits` is the sum of the members' `totalHits` minus the duplicates and removals seen in the
-   window. It is an estimate; clients use it only to decide whether to load more.
+   window, and never less than the packages the merge found. It is an estimate; clients use it only to
+   decide whether to load more. A remote member contributes through the forwarded search of
+   R-NUGET-016, which joins the merge at one seam (`Format.searchRemote`); until then it contributes
+   nothing.
 
 All URLs in the merged result point at the virtual repository. Autocomplete (P1) merges the same
 way: ID mode as a deduplicated union in the order above, version mode as the ascending union of the
@@ -1550,7 +1576,7 @@ Configuration (system file):
 ```yaml
 nuget:
   search:
-    virtual_merge_window: 1000   # default (proposed)
+    virtual_merge_window: 1000   # default; 1 to 10000
 ```
 
 Acceptance criteria:
@@ -1573,14 +1599,16 @@ Priority: **MVP** · Covers: PKG-NUGET-027, REPO-038
   would. Permissions and ownership are checked on the target; the virtual repository's own `read`
   gate applies as well (R-AUTHZ-009 rule 5). Unlist and relist never touch other members.
 - Without a deploy target, the publish resources are not listed (R-NUGET-002) and publish requests
-  answer 405 `no_deploy_target`.
+  are refused: the decision point denies a write on a virtual repository without a target, so the
+  answer is 403 `forbidden` and nothing is stored; the dispatcher's 405 `no_deploy_target` stays behind
+  it for a decision that admits the write (Q-NUGET-59).
 
 Acceptance criteria:
 
 - `dotnet nuget push Acme.Widgets.1.4.0.nupkg --source trove-all --api-key "$TOKEN"` stores the
   package in `nuget-local`; `/files/nuget-local/acme.widgets/1.4.0/acme.widgets.1.4.0.nupkg`
   exists.
-- After removing the deploy target, the same push fails with 405 and the service index of
+- After removing the deploy target, the same push is refused with 403 and the service index of
   `nuget-all` lists no `PackagePublish/2.0.0`.
 
 ### R-NUGET-020 · Symbol package push
@@ -2042,7 +2070,7 @@ Event catalog, schema and metric conventions are owned by
   `nuget.flatcontainer.nupkg`, `nuget.flatcontainer.nuspec`, `nuget.flatcontainer.embedded`,
   `nuget.registration.index`, `nuget.registration.page`, `nuget.registration.leaf`. The route name
   is the handler label of the request log and of `trove_http_requests_total` (Q-NUGET-30).
-- Format metrics (# example names): `trove_nuget_virtual_member_skipped_total{repository,reason}`,
+- Format metrics (# example names): `trove_nuget_virtual_member_skipped_total{repo,reason}`,
   `trove_nuget_remote_unparseable_packages_total{repo}` (the label is `repo`, as for the replay counter),
   `trove_nuget_search_forward_failures_total{repository}`,
   `trove_nuget_search_withheld_total{repository}` (R-NUGET-016),
@@ -3362,9 +3390,9 @@ Context: R-NUGET-001 lists three classes. `formats.Validate` refuses a format th
 
 **Choice:** (a). The facts of a remote repository (`DefaultUpstreamURL`, `DefaultExtraHosts`, the 300 s and 1800 s periods, `ChecksumRequireUnsupported`) and the `forwardSearch` member of the settings are declared now, so that the catalog answers for the whole format from the start and the adapters add no catalog change.
 
-**Rationale:** a class is a promise that a repository of it works. The development agent revisits this when the remote adapter lands (the same change lists `remote` and adds it to the enums) and again for `virtual`.
+**Rationale:** a class is a promise that a repository of it works. The development agent revisits this when the remote adapter lands (the same change lists `remote` and adds it to the enums). The virtual adapter has landed (Q-NUGET-56): the class is listed and `VirtualFormatName` carries `nuget`.
 
-**Applied in the spec:** R-NUGET-001 (the paragraph after the format registration). Code: [format.go](../../../internal/formats/nuget/format.go) `Descriptor`. Tests: `TestR_NUGET_001_TheDescriptorCarriesTheCatalogFacts`, `TestR_NUGET_001_ARepositoryCanBeCreatedAndItsServiceIndexAnswers` (a remote and a virtual create are refused).
+**Applied in the spec:** R-NUGET-001 (the paragraph after the format registration). Code: [format.go](../../../internal/formats/nuget/format.go) `Descriptor`. Tests: `TestR_NUGET_001_TheDescriptorCarriesTheCatalogFacts`, `TestR_NUGET_001_ARepositoryCanBeCreatedAndItsServiceIndexAnswers` (a remote create is refused; a virtual one is created by `TestR_NUGET_001_AVirtualRepositoryOfTheFormatCanBeCreatedThroughTheManagementAPI`).
 
 ### Q-NUGET-29 · Routes match protocol paths, descriptors speak canonical paths
 
@@ -3975,6 +4003,77 @@ Context: the forwarded search of a remote (R-NUGET-016) is a later work package.
 **Rationale:** the host side belongs to the package that gives the setting a meaning. The development agent revisits this when that package starts: it resolves the discovery document in `internal/formathost/query.go` the way `fetcher.discover` does and hands it to `UpstreamQuery`.
 
 **Applied in the spec:** none. Code: [remote.go](../../../internal/formats/nuget/remote.go) `UpstreamQuery`, [discovery.go](../../../internal/formats/nuget/remote/discovery.go) `SearchURL`. Tests: `TestR_NUGET_016_TheQuerySeamMapsAPassThroughSearchWhenTheIndexIsResolved`, `TestR_NUGET_015_SearchURLSortsTheParameters`, `TestR_NUGET_015_APackageIsCachedWithItsRowsAndServedWhenTheUpstreamIsDown` (the cache-only search).
+
+### Q-NUGET-56 · What the members of a virtual repository hand to the merge, and what the merge hands back
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the merged-metadata cache stores one entry per virtual repository, canonical path and variant, and keeps it until a member's revision changes. NuGet serves the same ID in three hives, under the address of whichever virtual repository the client named, with an exposure view of its endpoint, and a remote member stores the upstream's documents unchanged (R-NUGET-015). The merge must take one document per member and give one document back.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Merge rendered documents | Each member renders the registration for the serving address and hive; the merge splices the pages | The merged bytes are the answer | One cache entry per hive and per address; the remote document is rewritten before the merge; the paging of the union is computed from rendered pages |
+| (b) A neutral document per member and a neutral merged document, rendered after the cache (chosen) | A local member hands over its stored versions with their metadata, a remote member its stored upstream index with every page inlined, the version list is the flat container's own document; the merge picks the entry of each version by tier and position and records the member; the handler renders the hive, the paging and the addresses | One cache entry serves three hives and every address; the merged bytes hold no URL a request chose; the same rendering code as a local repository, so the paging and the SemVer 2 rule cannot differ | The handler parses the merged document on a rendition miss; the remote adapter must be able to hand over an index with its pages inlined |
+| (c) Merge the leaves from the leaf URLs | Fetch each leaf | None | A request per version |
+
+**Choice:** (b). The paths are the ones R-NUGET-015 stores (`{lower_id}/index.json` and `{lower_id}/.registration/index.json`), the variants are `flat` and `registration`. A page the upstream lists by URL alone cannot be merged: the member fails as an upstream failure, and the merge never lists a prefix of its versions. The validator is the weak value of R-NUGET-002 over the merge fingerprint of the engine (the members after pin rules and claims, the revision of each local member, the digest of each remote document) and the serving inputs; a partial merge keeps neither the engine's entry nor the rendition.
+
+**Rationale:** the engine already stores one entry per member set, and the ETag inputs of R-NUGET-002 are exactly the fingerprint; rendering after the cache keeps the format's single rendering path. The development agent revisits this when a remote repository with more than a few thousand versions of one ID makes the inlined index too large to merge on every rebuild (the member document would then carry only the entries of the versions the merge window shows), or when a second hive needs different member documents.
+
+**Applied in the spec:** R-NUGET-017 (member documents, the partial merge, the per-ID read check). Code: [merge.go](../../../internal/formats/nuget/merge/merge.go), [upstream.go](../../../internal/formats/nuget/merge/upstream.go), [virtual.go](../../../internal/formats/nuget/virtual.go), [handlers_virtual.go](../../../internal/formats/nuget/handlers_virtual.go). Tests: `TestR_NUGET_017_TheVersionListIsTheUnionAscendingByPrecedence`, `TestR_NUGET_017_AVersionComesFromTheMemberTierResolutionWouldPick`, `TestR_NUGET_017_AnIndexWithPagesByUrlIsAnUpstreamFailureNotAShortList`, `TestR_NUGET_017_ARegistrationEntryComesFromTheMemberTierResolutionPicks`, `TestR_NUGET_017_APartialMergeIsServedAndNeverKept`, the conformance kit's check 5, and the integration tests `TestR_NUGET_017_AVirtualRepositoryMergesTheDocumentsAndFilesOfItsMembers`, `TestR_NUGET_017_APushToAMemberIsVisibleThroughTheVirtualRepositoryAtOnce`.
+
+### Q-NUGET-57 · Claims and pin rules keep a package away from local members in a search too
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-018 step 2 removes the results of *remote* members for the IDs that the pin rules and claims keep away. The version list, the registration and the download apply the same rules to local members (R-NUGET-017: a pin rule names the members that contribute, a claim leaves only the local members holding the most specific claim).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Remote members only | As written | Fewer calls | A search lists a local package that the version list of the same virtual repository answers 404 for; a client that picks it from the search fails on restore |
+| (b) Every member (chosen) | `Resolver.KeepsAway(member, lower_id)` for each result of each member | Search, list, registration and download agree; the call reads the replica's in-memory index and runs no query | One in-memory lookup per result of the window |
+
+**Choice:** (b). The totals are reduced by the removals, as for remote results.
+
+**Rationale:** the requirement states the rule for the case that mattered when it was written (a remote member reaching an internal ID); the rule itself is the virtual repository's, not the member class's. The development agent revisits this if the lookup shows in a profile of a search at the largest window.
+
+**Applied in the spec:** R-NUGET-018 step 2. Code: [search_virtual.go](../../../internal/formats/nuget/search_virtual.go) `runVirtualSearch`. Tests: `TestR_NUGET_018_AClaimOrAPinRuleKeepsAPackageAwayFromAMember`.
+
+### Q-NUGET-58 · The window, the order and the total of a merged search
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-018 fixes the shape (each member asked for `min(skip + take, window)` results from 0, exact ID first, member order, deduplication by `lower_id`, an estimated total) and leaves the setting a proposal. Open: the bounds of the setting, what a page that crosses the window shows, what counts as an exact ID, and which total a page past the window answers.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `nuget.search.virtual_merge_window`, default 1000, 1 to 10000; the page ends at the window; an exact ID is a free-text word or an `id:` or `packageid:` term equal to the `lower_id`; a page at or beyond the window asks the members to count only (chosen) | A hard bound of work per request, independent of `skip`; the response never shows a position the merge did not fully order | `totalHits` stays meaningful beyond the window; the members' cost is the count alone | A client that pages past the window gets an empty page and must narrow the query |
+| (b) The window grows with `skip` | Ask for `skip + take` | Deep paging works | Unbounded work per request, against `max_skip` of 3000 and `max_take` of 1000 |
+| (c) A page that crosses the window shows what the members returned | The merge is longer than the window | Fewer empty pages | The order beyond the window is not the merge order |
+
+**Choice:** (a). The total is the sum of the members' counts minus the removals and the duplicates seen in the window, and never below the number of packages the merge holds. The members are asked in parallel; the first error fails the request, because a local member's failure is the replica's.
+
+**Rationale:** the window is the only protection against a deep skip multiplying the work by the number of members. The development agent revisits this if a deployment pages beyond 1000 results of a virtual repository in practice, or when the forwarded search of a remote member (R-NUGET-016) makes the cost of one member high enough to ask the remote for fewer results than the local members.
+
+**Applied in the spec:** R-NUGET-018 steps 5 and 6 and its configuration block. Code: [nuget.go](../../../internal/config/nuget.go) `VirtualMergeWindow`, [search_virtual.go](../../../internal/formats/nuget/search_virtual.go). Tests: `TestR_NUGET_018_ThePackagesOfTheMembersAreMergedInTheOrderOfTheRequirement`, `TestR_NUGET_018_ThePageIsCutFromTheMergeAndTheMembersAreAskedForTheWindow`, `TestR_AUTHZ_016_TheReadScopeOfTheCallerAppliesToEachMemberSeparately`, and the integration test `TestR_NUGET_018_SearchMergesTheLocalMembers`.
+
+### Q-NUGET-59 · A write to a virtual repository without a deployment target is refused with 403
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-NUGET-019 says that without a deploy target a publish answers 405 `no_deploy_target`. The coarse check of the dispatcher decides the route's action on the addressed repository before the class is looked at, and the decision point (R-AUTHZ-009 rule 5) denies a write on a virtual repository that has no deployment target, for every caller including an administrator. The 405 of the dispatcher is therefore not reached; the npm format meets the same fact (R-NPM-029).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Accept the 403, change the requirement (chosen) | The write is refused with 403 `forbidden`, nothing is stored, the service index lists no publish resource | No change to the decision point for one format; the refusal is safe | The client sees 403 and not the clearer 405 |
+| (b) Let the decision point admit the write so that the dispatcher answers 405 | A change in `internal/authz` | The message names the cause | A cross-format change of the decision point, outside the format; an admitted write on a repository that cannot take it |
+| (c) Answer 405 from the format | The format checks the target before the dispatcher | Same message | The coarse check has refused already |
+
+**Choice:** (a). The service index lists the publish resources exactly when `Resolver.DeployTarget` resolves one, so a client reads from the index that the repository takes no push.
+
+**Rationale:** the refusal is the same fail-closed outcome with a less specific code. The development agent revisits this if the owner wants the 405 (the change is one case in the decision point and the dispatcher, for every format at once).
+
+**Applied in the spec:** R-NUGET-019 (the second bullet and the second acceptance criterion). Code: [index.go](../../../internal/formats/nuget/index.go) `takesPushes`. Tests: `TestR_NUGET_019_ThePublishResourcesAreListedWhenThereIsADeploymentTarget`, and the integration test `TestR_NUGET_019_PublishingThroughAVirtualRepositoryGoesToItsDeploymentTarget`.
 
 ## What this does not cover
 

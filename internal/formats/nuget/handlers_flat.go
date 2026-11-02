@@ -23,6 +23,9 @@ func (f *Format) handleFlatIndex(ctx context.Context, rq *formats.Request, w htt
 	if rq.Repo.Class == formats.Remote {
 		return f.remoteFlatIndex(ctx, rq, w)
 	}
+	if rq.Repo.Class == formats.Virtual {
+		return f.virtualFlat(ctx, rq, w)
+	}
 	lowerID := rq.Params.Get("id")
 	repoID := rq.RepoRef().ID
 	keep := exposes(viewOf(rq), lowerID)
@@ -74,6 +77,9 @@ func (f *Format) handleNuspec(ctx context.Context, rq *formats.Request, w http.R
 func (f *Format) serveFile(ctx context.Context, rq *formats.Request, w http.ResponseWriter, lowerID, ver, path, mediaType string) error {
 	if rq.Repo.Class == formats.Remote {
 		return f.remoteFile(ctx, rq, w, lowerID, ver, path, mediaType)
+	}
+	if rq.Repo.Class == formats.Virtual {
+		return f.virtualFile(ctx, rq, w, lowerID, ver, path, mediaType)
 	}
 	if err := rq.Host.Authorize(ctx, rq, formats.Target{Package: lowerID, Version: ver, Actions: []formats.Action{formats.ActionRead}}); err != nil {
 		return err

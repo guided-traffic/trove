@@ -23,6 +23,8 @@ type replica struct {
 	writes *writeMetrics
 	// remote counts what the remote class meets, nil on a Host nobody bound with a registry.
 	remote *remoteMetrics
+	// virt counts what a virtual repository leaves out, nil likewise.
+	virt *virtualMetrics
 }
 
 // Bind gives the format the nuget section of the configuration of the replica that owns the
@@ -34,6 +36,7 @@ func (f *Format) Bind(h formats.Host, cfg *config.Config, m *observability.Metri
 	if m != nil {
 		r.writes = newWriteMetrics(m)
 		r.remote = newRemoteMetrics(m)
+		r.virt = newVirtualMetrics(m)
 	}
 	f.replicas.Store(h, r)
 	if d := h.FormatData(ID); d != nil {
@@ -69,7 +72,7 @@ func defaultReplica() *replica {
 			MaxUncompressedBytes: config.ByteSize(nupkg.DefaultMaxUncompressedBytes), MaxCompressionRatio: nupkg.DefaultMaxRatio,
 		},
 		Registration: config.NuGetRegistration{PageSize: 64, InlineBelow: 128},
-		Search:       config.NuGetSearch{DefaultTake: 20, MaxTake: 1000, MaxSkip: 3000},
+		Search:       config.NuGetSearch{DefaultTake: 20, MaxTake: 1000, MaxSkip: 3000, VirtualMergeWindow: 1000},
 	}}
 }
 

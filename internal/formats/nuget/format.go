@@ -64,8 +64,8 @@ func New() *Format {
 
 // Descriptor returns the catalog entry of R-NUGET-001 and the contract facts.
 //
-// The format registers the class local only; remote and virtual join with their adapters,
-// which are separate work packages (Q-NUGET-28). The facts that only a remote repository
+// The format registers the classes whose adapters exist: local and virtual (Q-NUGET-28,
+// Q-NUGET-56); remote joins with its adapter, which is a work package of its own. The facts that only a remote repository
 // reads (the upstream, the periods, the checksum rule) are declared now, so the catalog
 // answers for the whole format from the start.
 func (f *Format) Descriptor() formats.Descriptor {
@@ -74,7 +74,7 @@ func (f *Format) Descriptor() formats.Descriptor {
 		Facts: catalog.Facts{
 			ID:               ID,
 			DisplayName:      "NuGet",
-			Classes:          []formats.Class{formats.Local, formats.Remote},
+			Classes:          []formats.Class{formats.Local, formats.Remote, formats.Virtual},
 			Layout:           Layout,
 			ProtocolBasePath: "/api/nuget/{key}/",
 			// The upstream a remote repository proposes and the host family nuget.org serves

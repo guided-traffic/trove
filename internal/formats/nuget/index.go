@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
 	"github.com/guided-traffic/trove/internal/formats/nuget/document"
 )
@@ -68,8 +69,21 @@ func ServiceIndex(feed string, publish bool) []byte {
 }
 
 // takesPushes reports whether the service index lists the publish resources for the
-// repository the request addressed.
-func takesPushes(rq *formats.Request) bool { return rq.Repo.Class == formats.Local }
+// repository the request addressed: a local repository does, a virtual one when it has a
+// deployment target (R-NUGET-019), a remote one never.
+func takesPushes(ctx context.Context, rq *formats.Request) (bool, error) {
+	switch rq.Repo.Class {
+	case formats.Local:
+		return true, nil
+	case formats.Virtual:
+		_, err := rq.Host.Resolver().DeployTarget(ctx, rq)
+		if e, ok := errs.As(err); ok && e.Code == errs.CodeNoDeployTarget {
+			return false, nil
+		}
+		return err == nil, err
+	}
+	return false, nil
+}
 
 // indexETag is the weak validator of the service index (R-NUGET-002): a hash of the inputs
 // of the rendering, computed without rendering. The inputs are the render version, the
@@ -109,12 +123,16 @@ const jsonContentType = document.ContentType
 // R-NUGET-002). It is static per repository: nothing is read from storage, so the permission
 // is the repository-level read of the coarse check, and an unauthenticated client is
 // challenged here first (R-NUGET-012).
-func (f *Format) handleIndex(_ context.Context, rq *formats.Request, w http.ResponseWriter) error {
+func (f *Format) handleIndex(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
 	links := rq.Host.Links(rq)
 	feed := links.Registry(rq.Addressed()+servingSuffix(rq)) + FeedSegment + "/"
+	publish, err := takesPushes(ctx, rq)
+	if err != nil {
+		return err
+	}
 	// An endpoint with exposure rules accepts no writes, so it advertises no publish resource
 	// (R-NUGET-034, Q-EP-68).
-	publish := takesPushes(rq) && !onRulesEndpoint(rq)
+	publish = publish && !onRulesEndpoint(rq)
 	etag := indexETag(rq, links.Base(), publish)
 	h := w.Header()
 	h.Set("ETag", etag)
@@ -129,7 +147,7 @@ func (f *Format) handleIndex(_ context.Context, rq *formats.Request, w http.Resp
 	if rq.Method == http.MethodHead {
 		return nil
 	}
-	_, err := w.Write(body)
+	_, err = w.Write(body)
 	return err
 }
 

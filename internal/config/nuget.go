@@ -34,10 +34,11 @@ type NuGetRegistration struct {
 // NuGetSearch bounds a search (R-NUGET-010) and sets the period of a forwarded one
 // (R-NUGET-016, Q-NUGET-16).
 type NuGetSearch struct {
-	DefaultTake     int           `yaml:"default_take" default:"20" validate:"min=1,max=1000" doc:"Results of a search that names no take."`
-	MaxTake         int           `yaml:"max_take" default:"1000" validate:"min=1,max=10000" doc:"Largest take; a larger one is clamped."`
-	MaxSkip         int           `yaml:"max_skip" default:"3000" validate:"min=0,max=1000000" doc:"Largest skip; a larger one answers 400."`
-	RemoteResultTTL time.Duration `yaml:"remote_result_ttl" default:"60s" validate:"min=0s,max=1h" doc:"How long the answer of a forwarded search is kept; 0s keeps none. The engine cuts it to one hour (Q-NUGET-16)."`
+	DefaultTake        int           `yaml:"default_take" default:"20" validate:"min=1,max=1000" doc:"Results of a search that names no take."`
+	MaxTake            int           `yaml:"max_take" default:"1000" validate:"min=1,max=10000" doc:"Largest take; a larger one is clamped."`
+	MaxSkip            int           `yaml:"max_skip" default:"3000" validate:"min=0,max=1000000" doc:"Largest skip; a larger one answers 400."`
+	VirtualMergeWindow int           `yaml:"virtual_merge_window" default:"1000" validate:"min=1,max=10000" doc:"How many results of each member a search through a virtual repository merges; positions beyond it answer an empty data (R-NUGET-018)."`
+	RemoteResultTTL    time.Duration `yaml:"remote_result_ttl" default:"60s" validate:"min=0s,max=1h" doc:"How long the answer of a forwarded search is kept; 0s keeps none. The engine cuts it to one hour (Q-NUGET-16)."`
 }
 
 // validateNuGetCoupling checks the NuGet limits against each other: a default

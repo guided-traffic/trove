@@ -24,10 +24,11 @@ For NuGet the default upstream is `https://api.nuget.org/v3/index.json`: trove r
 
 ### Virtual repositories
 
-A virtual repository is one address for several npm repositories in an order an administrator sets, for example an internal local repository followed by a remote one. Point your package manager at a virtual repository and you get internal and public packages through one address and one token. Keep in mind:
+A virtual repository is one address for several npm repositories, or several NuGet repositories, in an order an administrator sets, for example an internal local repository followed by a remote one. Point your package manager at a virtual repository and you get internal and public packages through one address and one token. Keep in mind:
 
 - You need the read permission on the members too. A member you may not read is left out without notice.
 - Publishing through a virtual repository goes to its deployment target, a local member. A virtual repository without one refuses every publish.
+- For NuGet, the version list and the package documents of an ID are the union of the versions of its members. A version that two members hold comes from the first one in the order, and so does the package you download; a search lists a package once, with the versions of all members.
 - A name that a local member has claimed is served only from that member, so a public package with the same name and a higher version never replaces an internal one.
 
 ## Repository keys

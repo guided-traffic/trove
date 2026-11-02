@@ -3674,7 +3674,7 @@ export interface components {
          * @description The formats whose classes contain `virtual`. The create form offers these for a virtual repository.
          * @enum {string}
          */
-        VirtualFormatName: "npm";
+        VirtualFormatName: "npm" | "nuget";
         RepositoryWarning: {
             code: string;
             pointer?: string;

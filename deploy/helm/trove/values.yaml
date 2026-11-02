@@ -171,6 +171,7 @@ config:
   #     default_take: 20                # default: at most max_take
   #     max_take: 1000                  # default
   #     max_skip: 3000                  # default: a larger skip answers 400
+  #     virtual_merge_window: 1000      # default: results per member a virtual repository merges
   #     remote_result_ttl: 60s          # default: how long a forwarded search answer is kept, at most 1h
 
 # ── TLS on trove's own listeners (R-HA-063, R-ARCH-035) ────────────────────

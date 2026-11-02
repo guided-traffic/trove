@@ -231,6 +231,7 @@ nuget:
     default_take: 20                 # default; 1 to 1000, at most max_take (R-NUGET-010)
     max_take: 1000                   # default; 1 to 10000
     max_skip: 3000                   # default; 0 to 1000000, a larger skip answers 400
+    virtual_merge_window: 1000       # default; 1 to 10000, results per member a virtual repository merges (R-NUGET-018, Q-NUGET-58)
     remote_result_ttl: 60s           # default; 0s to 1h, how long a forwarded search answer is kept (R-NUGET-016, Q-NUGET-16)
 ui:
   readme:

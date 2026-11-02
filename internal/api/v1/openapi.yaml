@@ -8917,7 +8917,7 @@ components:
     VirtualFormatName:
       type: string
       description: The formats whose classes contain `virtual`. The create form offers these for a virtual repository.
-      enum: [npm]
+      enum: [npm, nuget]
     # <<< WP2.1 formats
     RepositoryWarning:
       type: object

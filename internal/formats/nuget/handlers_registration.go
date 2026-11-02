@@ -41,6 +41,9 @@ func (f *Format) serveRegistration(ctx context.Context, rq *formats.Request, w h
 	if rq.Repo.Class == formats.Remote {
 		return f.remoteRegistration(ctx, rq, w, kind)
 	}
+	if rq.Repo.Class == formats.Virtual {
+		return f.virtualRegistration(ctx, rq, w, kind)
+	}
 	hive, ok := registration.ParseHive(rq.Params.Get("hive"))
 	if !ok {
 		return errNoSuchResource()

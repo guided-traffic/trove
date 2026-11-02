@@ -153,9 +153,10 @@ func seedVersions(lowerID string, versions ...string) func(h *formattest.Host) e
 
 // conformance is the fixture of the NuGet format for the kit (R-ARCH-010). The skeleton
 // serves the service index and answers 501 for every other route, so checks 4 and 5 have no
-// adapter to run over (the remote and the virtual class join with their adapters, Q-NUGET-28)
-// and the checks that need a pipeline or a view are skipped with their reason; the kit
-// refuses a skip once the format has what the check is about.
+// remote adapter to run over (the remote class joins with its adapter, Q-NUGET-28), the
+// virtual adapter runs check 5 (merge, R-NUGET-017), and the checks that need a pipeline or a
+// view are skipped with their reason; the kit refuses a skip once the format has what the
+// check is about.
 func conformance(f *Format) formattest.Fixture {
 	const notBuilt = http.StatusNotImplemented
 	feed := func(p string) string { return "v3/" + p }
@@ -215,9 +216,7 @@ func conformance(f *Format) formattest.Fixture {
 		},
 		OptionNames: []string{"--password", "--store-password-in-clear-text", "-Password", "ClearTextPassword", "TROVE_TOKEN"},
 		Remote:      remoteFixture(),
-		Skip: map[formattest.Check]string{
-			formattest.CheckMerge: "the virtual class and its adapter are WP3.2c (Q-NUGET-28)",
-		},
+		Merge:       mergeFixture(),
 	}
 }
 

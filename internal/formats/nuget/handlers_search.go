@@ -12,8 +12,9 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/nuget/search"
 )
 
-// The search resource of local repositories (R-NUGET-010, R-AUTHZ-016). Remote and
-// virtual repositories join with their adapters (R-NUGET-016, R-NUGET-018).
+// The search resource of local repositories (R-NUGET-010, R-AUTHZ-016). A virtual
+// repository merges the searches of its members (search_virtual.go, R-NUGET-018); a remote
+// one joins with its adapter (R-NUGET-016).
 
 const (
 	// searchScanBatch is the page a scan of a repository the caller reads row by row asks
@@ -54,7 +55,11 @@ func (f *Format) handleSearch(ctx context.Context, rq *formats.Request, w http.R
 		total int
 	)
 	if !p.NoMatch {
-		if hits, total, err = f.runSearch(ctx, rq, st, p); err != nil {
+		run := f.runSearch
+		if rq.Repo.Class == formats.Virtual {
+			run = f.runVirtualSearch
+		}
+		if hits, total, err = run(ctx, rq, st, p); err != nil {
 			return err
 		}
 	}
@@ -84,8 +89,15 @@ func (f *Format) runSearch(ctx context.Context, rq *formats.Request, st Store, p
 	if err != nil {
 		return nil, 0, err
 	}
+	return searchRepo(ctx, st, scope, key, rq.RepoRef().ID, p)
+}
+
+// searchRepo is the search of one local repository for the caller whose read scope is
+// given: the hits of the page p names and the number of packages the caller may read that
+// match. A virtual repository runs it for each of its local members (R-NUGET-018).
+func searchRepo(ctx context.Context, st Store, scope formats.ReadScope, key string, repoID int64, p search.Params) (hits []rows.SearchHit, total int, err error) {
 	q := rows.SearchQuery{
-		RepoID: rq.RepoRef().ID, Terms: p.Terms, Prerelease: p.Prerelease, SemVer2: p.SemVer2, PackageType: p.PackageType,
+		RepoID: repoID, Terms: p.Terms, Prerelease: p.Prerelease, SemVer2: p.SemVer2, PackageType: p.PackageType,
 	}
 	switch scope.Shape(key) {
 	case formats.ReadAll:
