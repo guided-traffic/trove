@@ -296,6 +296,10 @@ to denial-of-service attempts.
   the main installation does. Because an anonymous request costs an attacker nothing, the Bastion absorbs misses itself:
   a negative cache for names the main installation does not have, a budget of concurrent requests to the main
   installation that misses cannot exceed, and stricter per-address limits for requests without a credential
+- ⚪ Audit of downloads (owner, 2026-11-02): the Bastion reports the downloads it serves from its cache to the main
+  installation in batches (who, what, when, address; origin Bastion), under the same `audit.record_downloads` switch; it
+  buffers them, bounded, while the main installation is unreachable and sends them later; events lost to a full buffer are
+  counted and reported
 - ⚪ The main installation counts the real client: the Bastion stops abuse before a request reaches the main installation,
   and the main installation lists the Bastion's addresses in `server.trusted_proxies`, so its per-address limits apply to
   the client and not to the Bastion
