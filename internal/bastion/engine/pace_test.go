@@ -52,12 +52,20 @@ func paceServer(t *testing.T, s *siteHarness, size int64) (addr string, body *en
 
 func paceRequest(t *testing.T, s *siteHarness, addr string) net.Conn {
 	t.Helper()
+	return paceRequestBuffered(t, s, addr, 4096)
+}
+
+// paceRequestBuffered is paceRequest with the client's receive buffer: a small one (4096) makes the server's
+// writes block as soon as the client stops reading; 0 keeps the system's, which a client that keeps up needs on
+// Linux, where a tiny window and delayed acknowledgements throttle even a reader that takes every byte.
+func paceRequestBuffered(t *testing.T, s *siteHarness, addr string, rcvbuf int) net.Conn {
+	t.Helper()
 	c, err := net.Dial("tcp", addr)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tc, ok := c.(*net.TCPConn); ok {
-		_ = tc.SetReadBuffer(4096)
+	if tc, ok := c.(*net.TCPConn); ok && rcvbuf > 0 {
+		_ = tc.SetReadBuffer(rcvbuf)
 	}
 	t.Cleanup(func() { _ = c.Close() })
 	fmt.Fprintf(c, "GET /api/npm/npm-all/some/big HTTP/1.1\r\nHost: packages.example.com\r\nConnection: close\r\nAuthorization: Bearer %s\r\n\r\n", s.full)
@@ -116,7 +124,7 @@ func TestR_BAS_025_APassThroughBodyDoesNotHoldItsSlotForAClientThatDoesNotTakeIt
 		// the machine (a CPU-limited runner moved this body at well under 1 MiB/s).
 		s, addr, body, returned := newSite(t, 8<<20)
 		s.e.paceChunk, s.e.paceGrace, s.e.paceMinRate = 10*time.Second, 400*time.Millisecond, 1<<10
-		c := paceRequest(t, s, addr)
+		c := paceRequestBuffered(t, s, addr, 0)
 		n, err := io.Copy(io.Discard, bufio.NewReader(c))
 		if n < 8<<20 {
 			t.Fatalf("%d bytes read (%v), want the whole body", n, err)

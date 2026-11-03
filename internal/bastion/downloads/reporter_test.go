@@ -168,9 +168,8 @@ func TestR_BAS_039_ABatchGoesAtBatchSizeAndAPartialOneAtTheFlushInterval(t *test
 			t.Errorf("event %d changed: %+v", i, got[i])
 		}
 	}
-	if n := maintest.Value(e2.m.AuditEvents.WithLabelValues("sent")); n != 3 {
-		t.Errorf("sent = %v", n)
-	}
+	// The reporter counts a batch as sent when the send has returned, after the sender holds its events.
+	eventually(t, "sent = 3", func() bool { return maintest.Value(e2.m.AuditEvents.WithLabelValues("sent")) == 3 })
 	eventually(t, "the buffer empties", func() bool { return maintest.Value(e2.m.AuditBuffer) == 0 })
 }
 
