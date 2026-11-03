@@ -1769,8 +1769,10 @@ the same code; it reaches no network, and `Stub.Start` and the container answer 
 | [counts.go](../../test/osvstub/counts.go) | the request log and `Counts` |
 | [control.go](../../test/osvstub/control.go) | the control API below `/-/stub/` |
 | [real.go](../../test/osvstub/real.go) | the frozen real records ([testdata/real](../../test/osvstub/testdata/real/README.md)), embedded |
+| [reference.go](../../test/osvstub/reference.go) | the recorded public answers and the OSV records of R-VULN-017's reference comparison ([testdata/reference](../../test/osvstub/testdata/reference/README.md)), embedded; the toggle `reference` |
 | [tls.go](../../test/osvstub/tls.go) | `Start` (TLS or nothing), a throwaway CA, a certificate reloaded when its files change |
 | [cmd/osvfreeze](../../test/osvstub/cmd/osvfreeze) | fetches the real records again (`make osv-real-refresh`) |
+| [cmd/osvreference](../../test/osvstub/cmd/osvreference) | posts the reference bodies to the public registry and fetches the records of the answers again (`make osv-reference-refresh`) |
 
 ### What it serves
 
@@ -1824,11 +1826,21 @@ packages `trove-test-*` are not in the npm test upstream's generated corpus: a t
 | `big-details` | `GHSA-aaaa-aaaa-0010`, `details` of 100 KiB |
 | `js-reference` | `GHSA-aaaa-aaaa-0011`, one reference is `javascript:alert(1)` |
 | `real` | the 22 real records of the next section, with a new `modified` |
+| `reference` | the npm records behind the public answers of R-VULN-017's reference comparison ([testdata/reference](../../test/osvstub/testdata/reference/README.md)), with a new `modified` |
 
 **Real records.** [testdata/real](../../test/osvstub/testdata/real/README.md) holds 13 npm and 9 NuGet records of the live feeds, taken on 2026-11-03 from
 `api.osv.dev` (GitHub Advisory Database, CC-BY 4.0; OpenSSF malicious-packages, Apache-2.0), among them `GHSA-vr7g-88fq-vhq3` and
 `GHSA-473q-m89c-ghf8`: SEMVER and ECOSYSTEM ranges, `last_affected`, `versions[]`, three withdrawn records, four `MAL-` records, CVSS 3.1 and 4.0, records without
 a vector. `osvstub.Real()` returns them for the matching corpus of R-VULN-009; `make osv-real-refresh` takes them again (network access needed; the tests never need it).
+
+**Reference data of R-VULN-017.** [testdata/reference](../../test/osvstub/testdata/reference/README.md) holds, taken on one day (2026-11-03), the public registry's bulk
+answers for the reference lockfile (`perf/npm/reference/package-lock.json`, 541 names, 594 versions) and for a control body of ten real packages with known advisories,
+and the OSV records of every GHSA identifier those answers name (67 records, `api.osv.dev`). `osvstub.ReferenceAnswers()` returns the bodies and answers,
+`osvstub.ReferenceRecords()` the records, and the toggle `reference` serves the records. `make osv-reference-refresh` records all of it again (network access to
+`registry.npmjs.org` and `api.osv.dev` needed; both are read on the same run, so the answers and the records agree; the tests never need the network). The answer for
+the reference lockfile is `{}`: it resolves from the synthetic corpus, whose names the public registry has no advisory for; the control body is what makes the
+comparison of `TestR_VULN_017_TheReferenceLockfileMatchesThePublicAnswer` carry identifiers. A refresh moves the public answer and the records together, so the test
+stays green unless the matching or the severity rules differ from the day's data; a difference after a refresh is analysed, not adjusted away.
 
 ### Faults and the dataset
 

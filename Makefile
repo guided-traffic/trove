@@ -549,4 +549,7 @@ osv-expected: $(OSV_SCANNER_BIN) ## Freeze the results of osv-scanner's offline 
 .PHONY: osv-real-refresh
 osv-real-refresh: ## Fetch the real OSV records of test/osvstub/testdata/real/ids.txt again from api.osv.dev (needs network); review the diff, the tests name fields of them
 	go run ./test/osvstub/cmd/osvfreeze -dir test/osvstub/testdata/real
+.PHONY: osv-reference-refresh
+osv-reference-refresh: ## Record the public npm bulk answer for perf/npm/reference/package-lock.json and the OSV records behind it again (needs network); the reference test of R-VULN-017 compares against them
+	go run ./test/osvstub/cmd/osvreference -lock perf/npm/reference/package-lock.json -dir test/osvstub/testdata/reference
 # <<< M4b osv-stub

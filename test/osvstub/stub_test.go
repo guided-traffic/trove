@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -533,7 +534,7 @@ func TestToggles(t *testing.T) { // R-VULN-006, R-VULN-001 (trove-test-late)
 	f := newServer(t, Config{})
 	var info Info
 	_ = json.Unmarshal(f.mustControl(http.MethodGet, "/-/stub/dataset", nil).body, &info)
-	for _, name := range []string{ToggleLate, ToggleInvalidID, ToggleBigDetails, ToggleJSReference, ToggleReal} {
+	for _, name := range []string{ToggleLate, ToggleInvalidID, ToggleBigDetails, ToggleJSReference, ToggleReal, ToggleReference} {
 		if on, ok := info.Toggles[name]; !ok || on {
 			t.Errorf("toggle %s: present %v, on %v", name, ok, on)
 		}
@@ -954,6 +955,69 @@ func TestRealRecords(t *testing.T) {
 			if _, ok := want["NuGet/"+id]; !ok {
 				t.Errorf("%s is not frozen", id)
 			}
+		}
+	}
+}
+
+// R-VULN-017 (E4b.5): the recorded reference data is what SOURCE.json says, every identifier of the public answers has its
+// record, and the toggle serves the records.
+func TestReferenceData(t *testing.T) {
+	raw, err := referenceFS.ReadFile("testdata/reference/SOURCE.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var src struct {
+		Taken string
+		Files []struct{ Path, SHA256 string }
+	}
+	if err := json.Unmarshal(raw, &src); err != nil || len(src.Files) == 0 {
+		t.Fatalf("SOURCE.json: %v, %d files", err, len(src.Files))
+	}
+	if _, err := time.Parse(time.DateOnly, src.Taken); err != nil {
+		t.Errorf("taken %q: %v", src.Taken, err)
+	}
+	for _, f := range src.Files {
+		b, err := referenceFS.ReadFile("testdata/reference/" + f.Path)
+		if err != nil {
+			t.Errorf("%s: %v", f.Path, err)
+			continue
+		}
+		if sum := sha256.Sum256(b); hex.EncodeToString(sum[:]) != f.SHA256 {
+			t.Errorf("%s differs from SOURCE.json", f.Path)
+		}
+	}
+	ref := ReferenceAnswers()
+	if ref.Taken != src.Taken {
+		t.Errorf("taken %q, SOURCE.json %q", ref.Taken, src.Taken)
+	}
+	have := map[string]bool{}
+	for _, r := range ReferenceRecords() {
+		have[r.ID] = true
+		var o struct{ ID, Modified string }
+		if err := json.Unmarshal(r.Body, &o); err != nil || o.ID != r.ID || o.Modified == "" {
+			t.Errorf("%s: %v", r.ID, err)
+		}
+	}
+	for _, answer := range [][]byte{ref.PublicAnswer, ref.ControlAnswer} {
+		var a map[string][]struct{ URL string }
+		if err := json.Unmarshal(answer, &a); err != nil {
+			t.Fatal(err)
+		}
+		for name, advs := range a {
+			for _, x := range advs {
+				if id := strings.TrimPrefix(x.URL, "https://github.com/advisories/"); !have[id] {
+					t.Errorf("%s: no record of %s", name, id)
+				}
+			}
+		}
+	}
+	stub := New(Config{})
+	if err := stub.Toggle(ToggleReference, true); err != nil {
+		t.Fatal(err)
+	}
+	for id := range have {
+		if !slices.Contains(stub.IDs("npm"), id) {
+			t.Errorf("the toggle does not serve %s", id)
 		}
 	}
 }

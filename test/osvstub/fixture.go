@@ -55,6 +55,7 @@ const (
 	ToggleBigDetails  = "big-details"  // IDBigDetails: details of 100 KiB (npm)
 	ToggleJSReference = "js-reference" // IDJSReference: one reference is a javascript: URL (npm)
 	ToggleReal        = "real"         // the records frozen in testdata/real, with a new modified
+	ToggleReference   = "reference"    // the npm records behind the public answers recorded in testdata/reference (R-VULN-017), with a new modified
 )
 
 // DetailsSize is the size of the details of the ToggleBigDetails record.
@@ -195,6 +196,7 @@ func DefaultFixture() *Fixture {
 			ToggleBigDetails:  {"npm": {rec(big)}},
 			ToggleJSReference: {"npm": {rec(js)}},
 			ToggleReal:        realGroups(),
+			ToggleReference:   referenceGroups(),
 		},
 		KEV: []KEVEntry{
 			{CVEID: "CVE-2026-9001", VendorProject: "Example", Product: "Example Server", DateAdded: "2026-10-05", Ransomware: "Known"},

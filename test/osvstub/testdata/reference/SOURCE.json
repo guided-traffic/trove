@@ -1,0 +1,362 @@
+{
+  "taken": "2026-11-03",
+  "lockfile": "perf/npm/reference/package-lock.json",
+  "names": 541,
+  "versions": 594,
+  "controlNames": 10,
+  "bulk": "https://registry.npmjs.org/-/npm/v1/security/advisories/bulk",
+  "records": "https://api.osv.dev/v1/vulns/{id}",
+  "files": [
+    {
+      "path": "control-bulk.json",
+      "sha256": "3a5aa5941e12c630599cf77fb11568a099975529606020c6ec7b6035cd9fa750"
+    },
+    {
+      "path": "control-request.json",
+      "sha256": "a9ac78149f58c20eeb6b0870616d0a5b14366fd51a49b673f458c0111e184422"
+    },
+    {
+      "path": "public-bulk.json",
+      "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"
+    },
+    {
+      "path": "public-request.json",
+      "sha256": "aa9851bc01605c5adde66273f1466729edc583eee7ff13ff0d14642ac5d8ef20"
+    },
+    {
+      "path": "records/GHSA-29mw-wpgm-hmr9.json",
+      "sha256": "977026d5aaae7103d99e02b14ea931c842c72659d7bbf4860deebfbdea3614cd",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-2cf5-4w76-r9qv.json",
+      "sha256": "8c9f2ac8b302688fd5f4d8356bb74fdcec466fc5e109d57b98fe87cb1312c41b",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-2qvq-rjwj-gvw9.json",
+      "sha256": "4d432574568f89de2b8a11d7b8bc739eed35f126120412bdd701ca42108b4dca",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-2w6w-674q-4c4q.json",
+      "sha256": "d10a4ce009dd070a6ba634f6e3251bc374a7fd630d0cc9931649022bec0bef39",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-35jh-r3h4-6jhm.json",
+      "sha256": "8f0e3db6f1346af4b02f9698a609d3f74553f5dbf21fe10c093942bb3df823f2",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-35jp-ww65-95wh.json",
+      "sha256": "40db333f1f7bc351828545380e15467f67faff9f83210d816ccd156f9d2c70a8",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-3cqr-58rm-57f8.json",
+      "sha256": "edd286cad890b743b1b8f36a283bc03be2f734a6f91a01e89305aedb993f3f9d",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-3g43-6gmg-66jw.json",
+      "sha256": "41277c7507371e59ca162ee926dbac49f488c589e9fac2673427dd4e1ebf91b4",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-3mfm-83xf-c92r.json",
+      "sha256": "b7569402e196173f2bf97b8ad6f4b4c64243104207d2716c3afaecca9509db51",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-3p68-rc4w-qgx5.json",
+      "sha256": "9a2571edd6af94e162e38627b6586f564c45fe0601f221855116630c493014e7",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-3w6x-2g7m-8v23.json",
+      "sha256": "dbaffc7d9990c9681f64a61a75416221e4accef401ac7772a070c2333645060a",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-42h9-826w-cgv3.json",
+      "sha256": "24ef8dc6d6377d19f94b58c644fa886851196de1919fc8dd7a07efb729b4968c",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-43fc-jf86-j433.json",
+      "sha256": "bc678277cc3440442db349c7a51e111d9f462d5ebacbfa76f5230c42086b1fa9",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-442j-39wm-28r2.json",
+      "sha256": "a4e77d43faae6ed518af9e61dbb843e7ef41bcb39abe1dbd6caef315eb32e434",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-445q-vr5w-6q77.json",
+      "sha256": "7b98955dfbd9d5b74731aa4fb0649f40ed9e7ae6342623a614f3af31400b58a8",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-4hjh-wcwx-xvwj.json",
+      "sha256": "d961b6672fd1b0f08aaceba5f1145cf3e5ec9f945fa0631ef02bb14d74b6d674",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-4w2v-q235-vp99.json",
+      "sha256": "448eb601751d0594169cab2e3ed58ebe11c38f348390196c345a1947b91f791b",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-5c9x-8gcm-mpgx.json",
+      "sha256": "eac10fb3eeab648d1136b369fa1a71bd15b74bcba4dfbf3e883d72b07b8d1d0a",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-62hf-57xw-28j9.json",
+      "sha256": "ef9f428ee68345547169bf12ad3014390048c0a5952bdf1e1bab0aa3f3410abf",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-67hx-6x53-jw92.json",
+      "sha256": "cf433eb7eca91408db95c8e2a80463e09e1b73cd5d932037afb13f1d03911bbf",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-6chq-wfr3-2hj9.json",
+      "sha256": "b1de685b61bd0f04cf86c1d20f28dea10cbc1bd09049dc65ed71fae52a3ca28a",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-765h-qjxv-5f44.json",
+      "sha256": "158db9c85b94d181f86f037e3dca6d90fa0d08be064df2dca8fa8946879892d9",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-777c-7fjr-54vf.json",
+      "sha256": "9f58f274b7cd9548126df54d2e6b26ba60460a02635f68f70763da94761d76e9",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-7q8q-rj6j-mhjq.json",
+      "sha256": "e022934343cc129e1e2c94f79e8e93edd1c00eb29d7a4c9a217ef659eeff8f68",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-898c-q2cr-xwhg.json",
+      "sha256": "2d72e1e3b377199c21bd13e64496b584244a1bec215b45b1f9c90c8ab2e5b568",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-8r5x-fm3f-whwj.json",
+      "sha256": "c15db12793e7b614c10ea50d18cb990bf7d1a0681546e94e8d1ac2c0c42932a4",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-9cx6-37pm-9jff.json",
+      "sha256": "0c89d50dd8e648ab6bdf43b62a662cbed4741549f2c0d61e61bd4caae05a1587",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-9fr6-4gfg-395g.json",
+      "sha256": "e6c08128e7b1f1415d45200ab7138cce5c5b05d72ef9b2c82fe370c83cacaaf1",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-cph5-m8f7-6c5x.json",
+      "sha256": "0f015b256e8c6e5d896113c7863763808a5450d6762cd27aba176ab20f1b5b89",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-f2jv-r9rf-7988.json",
+      "sha256": "64821e51dbe86d3217c183495dfc6b5d2e5f41dff5db2f1e90c9861e18d7406f",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-fvcv-3m26-pcqx.json",
+      "sha256": "7548eb5619d9f12f4a223762d49c6a10ac781ea713d866933ec0a47e55958f35",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-g9r4-xpmj-mj65.json",
+      "sha256": "0d0c6f4ae70906fe31c40ba8e22a90576f42d20e1166d3d8620a84792b284236",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-hfxv-24rg-xrqf.json",
+      "sha256": "265f9483b118d77d443922ae0804a843c8b2408bf9eaf0e86896aab09e02dfa8",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-j5f8-grm9-p9fc.json",
+      "sha256": "c5c269c9fe55d74d459dff071048a58abb76cc248ef508f3ed41232ade4a1a83",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-j8rh-479h-cp32.json",
+      "sha256": "8a42356682a7464f301fe6756eedb77145903a3c57b9c3f5d60ca6a7289e8bee",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-jqh4-m9w3-8hp9.json",
+      "sha256": "db44f28b4734317b2316d0988e131222a32ef14e7f9cff78c4019fc7b577794c",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-jr5f-v2jv-69x6.json",
+      "sha256": "c8fe1bfa42e1d4d18065a2d8cc6ffaa283888330636df02b3b3ea171a53f25b5",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-m7pr-hjqh-92cm.json",
+      "sha256": "8c71226ad4a29b9d690e53547bd4508bfb970cb4cbc14bd45990040077c82b1b",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-mh6f-8j2x-4483.json",
+      "sha256": "203a87f285e57f30eb708e9767e9e7c9e66700d22f2931d20f92c4a1a6ae5423",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-mmx7-hfxf-jppx.json",
+      "sha256": "96e45c4fb58a6a76b3989f79a8060ac381716561b3332cfe3118ccd85643d799",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-p6mc-m468-83gw.json",
+      "sha256": "f7e53d51d424814849b5b7de9d58ac015fe3d8ef451d9091b3db0104bda62a25",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-p8wg-vrv2-v86f.json",
+      "sha256": "4ab4e374f0901cf99006160cfb7973bfec3b3d5354bad059a4f5c54fd5c43934",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-p92q-9vqr-4j8v.json",
+      "sha256": "c8231a28a3d2a5913bbcf4ed6a3805d78b6778646663ede263f3aa57bec1ec5e",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-pf86-5x62-jrwf.json",
+      "sha256": "8d31717a4df9e600dc7d65b6c2255430ee5dc5b0b33afd7d2ac0b4710dcf5844",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-pjwm-pj3p-43mv.json",
+      "sha256": "e1909e4eb10b21b61fa5b24895c9c7ed0af26d6446f611902e6661f3c26161cd",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-pjwm-rvh2-c87w.json",
+      "sha256": "9c88d7ad85cc5e2a2db4e170137c98044b28029c9bfed1313c5a9f70408bcd78",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-pmv8-rq9r-6j72.json",
+      "sha256": "25526967a30ab4e195b0cf09a068cd6974d78c52a6a126087995cf618084901c",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-pmwg-cvhr-8vh7.json",
+      "sha256": "7eba2122ade87ea4c12de55d415bda2957744bcb6621296d0b8bb04fe9ff73da",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-q2c6-c6pm-g3gh.json",
+      "sha256": "dbb85e86486172f977681e557ad115b088f3c2aa27c289ab275a6844b39f548f",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-q8qp-cvcw-x6jj.json",
+      "sha256": "ad92e93ce737abf5043be7f67a22080252b276e6a8dc8c5b595e2a7024509997",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-qw6h-vgh9-j6wx.json",
+      "sha256": "f41f4ae48d4f1d7d8f2662bb8d4ee589628ddd3684962ce662096d42c6b85bae",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-r5fr-rjxr-66jc.json",
+      "sha256": "c6b2e4956b1a34f2074b85c71a8ea66a27a4c206839934e15eb4f396960c69a3",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-r683-j2x4-v87g.json",
+      "sha256": "bed1bb372b82447a9b70dd596f72f7399fb62f9e80fa3456979df19088bbd6f5",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-rv95-896h-c2vc.json",
+      "sha256": "1123de9244d3925475aef0e4098591e31205d2713f73f4a730aa6faacbc2d446",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-vf2m-468p-8v99.json",
+      "sha256": "c2fa3514c1dc040b4baef205e5c0c993f83709c0287c999bdfd4655189115145",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-vh66-26gq-q6x8.json",
+      "sha256": "9a0134e6b8ce717530631c1b1cb1084a5966720b4ec1d08f1179911b0c681f34",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-vh95-rmgr-6w4m.json",
+      "sha256": "c8951852323b5e361042859d3c86655f18f678485fd4e87f420033b2ec4a2419",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-w7rc-rwvf-8q5r.json",
+      "sha256": "348508a54f6a4e2694d751b9824459324050ef31b72d2c54aa5f7ea3c73c4780",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-w9j2-pvgh-6h63.json",
+      "sha256": "0be839ade7c121acbdf96877696225a3817a8993c299a0fefec5d5acd6bd875f",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-wf5p-g6vw-rhxx.json",
+      "sha256": "6100ed2ce38df8f93bf865c59b93c64a58f7d2ccbb88165de6577ec2c4f51117",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-xhjh-pmcv-23jw.json",
+      "sha256": "c8b445521765f838e886bc09bd068e057be322f2edb1970b3b223e8d92df2d69",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-xhpv-hc6g-r9c6.json",
+      "sha256": "cc1cf0207fab544937e8a3e15b675135a3f8ad7f75883304c47ce882ae28f06e",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-xjpj-3mr7-gcpf.json",
+      "sha256": "afdd06c31df7dfd860d814d7e47863e7412637720eba0580e4b5d1792b5e3da9",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-xvch-5gv4-984h.json",
+      "sha256": "a75f019d5bde3f0d04125f1084fe5c39e1e8be6b9e3fceae941888d91a146d9e",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-xw65-4hp5-5hc7.json",
+      "sha256": "c15495a8c94695daee441f5042d183a1cd7cc98f2da136a8405bcadf634df200",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-xx6v-rp6x-q39c.json",
+      "sha256": "1ffba2828d176ec3e9c4dd2424d57eec422f1ec04f625b8a433aef253981a37e",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "path": "records/GHSA-xxjr-mmjv-4gpg.json",
+      "sha256": "52e2fa92fc36c696ee38902e81c0fbdf45c674c50fce111e623c97bbefb31c36",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    }
+  ]
+}
