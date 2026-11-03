@@ -327,6 +327,10 @@ The label sets of the M1 families are not restated per family in this pass; read
 | Services | `<fullname>` (client port), `<fullname>-ops` (ops port) | yes |
 | Network policies | `<fullname>-web`, `<fullname>-worker`, `<fullname>-migrate` | yes |
 | Backup CronJob, restore Job | `<fullname>-backup`, `<fullname>-restore` | planned (M5) |
+| Bastion chart | `deploy/helm/trove-bastion`, released with the chart `trove` at the same version; its own `<fullname>` (release name, or `<release>-trove-bastion`) | yes (phase 5b) |
+| Bastion workload | `<fullname>` (Deployment, or StatefulSet with `cacheVolume.type: persistent`), `--role bastion`, ports `https` 8443 and `ops` 8081 | yes |
+| Bastion objects | ConfigMap `<fullname>-config`, Services `<fullname>` and `<fullname>-ops`, Ingress, NetworkPolicy, PodDisruptionBudget, HorizontalPodAutoscaler, ServiceMonitor and PrometheusRule `<fullname>`; Certificate `<fullname>-tls` (cert-manager); no Secret, Role or RoleBinding | yes |
+| Bastion Ingress annotations | `haproxy-ingress.github.io/` `limit-rps`, `limit-connections`, `limit-whitelist` (edge limit), `balance-algorithm`, `assign-backend-server-id`, `config-backend` (routing by path), `secure-backends`, `secure-sni`, `secure-verify-ca-secret` | yes |
 
 ### GitLab CI OIDC
 

@@ -1,0 +1,23 @@
+# The explicit plaintext switch (INV-20): no TLS on the listeners, plain probes, no Certificate. Egress and
+# edge limit off, a single replica without the HA enforcement: the smallest render the chart allows.
+highAvailability:
+  enforce: false
+replicaCount: 1
+config:
+  server:
+    base_url: https://packages.example.com            # example
+  bastion:
+    main:
+      url: https://trove.example.com                  # example
+secrets:
+  mainToken:
+    existingSecret: trove-bastion-token               # example
+tls:
+  enabled: false
+edgeLimit:
+  enabled: false
+ingress:
+  enabled: false
+networkPolicy:
+  egress:
+    enabled: false

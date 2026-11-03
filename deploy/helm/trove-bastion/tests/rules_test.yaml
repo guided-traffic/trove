@@ -1,0 +1,272 @@
+# promtool test rules for the PrometheusRule of the chart (R-BAS-041): one test per alert that fires on its
+# failure input, and one test on healthy input in which no alert fires. The rule file is rendered from
+# ci/bucket-valkey.yaml (Valkey on, so TroveBastionValkeyUnavailable exists) as release trove-bastion in the
+# namespace default: test/chart/bastion_rules_test.go renders it into rules.yaml next to a copy of this file.
+# The series carry the labels the ServiceMonitor gives them (namespace, service of the ops Service, pod).
+rule_files:
+  - rules.yaml
+
+evaluation_interval: 1m
+
+tests:
+  # --- healthy: nothing fires ----------------------------------------------------------------------------
+  - name: healthy Bastion, no alert fires
+    interval: 1m
+    input_series:
+      - {series: 'trove_bastion_interface_mismatch{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '0x200'}
+      - {series: 'trove_bastion_main_reachable{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '1x200'}
+      - {series: 'trove_bastion_main_reachable{namespace="default",service="trove-bastion-ops",pod="p2"}', values: '1x200'}
+      - {series: 'trove_bastion_main_unreachable_since_timestamp_seconds{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '0x200'}
+      - {series: 'trove_bastion_answer_period_seconds{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '300x200'}
+      - {series: 'trove_bastion_grace_period_seconds{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '900x200'}
+      - {series: 'trove_bastion_base_url_mismatch{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '0x200'}
+      - {series: 'trove_bastion_token_remaining_seconds{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '5000000x200'}
+      - {series: 'trove_bastion_token_warn_before_seconds{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '2592000x200'}
+      - {series: 'trove_bastion_main_token_refused{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '0x200'}
+      - {series: 'trove_bastion_feed_lag_seconds{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '1x200'}
+      - {series: 'trove_bastion_main_budget_exhausted_total{namespace="default",service="trove-bastion-ops",pod="p1",class="authenticated"}', values: '0x200'}
+      - {series: 'trove_bastion_audit_events_dropped_total{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '0x200'}
+      - {series: 'trove_bastion_cache_corrupt_total{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '0x200'}
+      - {series: 'trove_valkey_available{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '1x200'}
+      - {series: 'kube_deployment_status_replicas_available{namespace="default",deployment="trove-bastion"}', values: '2x200'}
+    alert_rule_test:
+      - {eval_time: 3h, alertname: TroveBastionInterfaceMismatch, exp_alerts: []}
+      - {eval_time: 3h, alertname: TroveBastionMainUnreachable, exp_alerts: []}
+      - {eval_time: 3h, alertname: TroveBastionMainUnreachableSingleReplica, exp_alerts: []}
+      - {eval_time: 3h, alertname: TroveBastionGraceExhausted, exp_alerts: []}
+      - {eval_time: 3h, alertname: TroveBastionBaseURLMismatch, exp_alerts: []}
+      - {eval_time: 3h, alertname: TroveBastionTokenExpiresSoon, exp_alerts: []}
+      - {eval_time: 3h, alertname: TroveBastionTokenRefused, exp_alerts: []}
+      - {eval_time: 3h, alertname: TroveBastionFeedStale, exp_alerts: []}
+      - {eval_time: 3h, alertname: TroveBastionMainBudgetSaturated, exp_alerts: []}
+      - {eval_time: 3h, alertname: TroveBastionAuditEventsDropped, exp_alerts: []}
+      - {eval_time: 3h, alertname: TroveBastionCacheCorrupt, exp_alerts: []}
+      - {eval_time: 3h, alertname: TroveBastionValkeyUnavailable, exp_alerts: []}
+      - {eval_time: 3h, alertname: TroveBastionReplicasNotReady, exp_alerts: []}
+
+  # --- TroveBastionInterfaceMismatch ---------------------------------------------------------------------
+  - name: TroveBastionInterfaceMismatch fires on a mismatch
+    interval: 1m
+    input_series:
+      - {series: 'trove_bastion_interface_mismatch{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '0x2 1x20'}
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: TroveBastionInterfaceMismatch
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: TroveBastionInterfaceMismatch
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: The Bastion and the main installation speak different interface versions.
+              description: The Bastion serves nothing it cannot verify with the main installation. Upgrade the side that is behind (R-BAS-028).
+
+  # --- TroveBastionMainUnreachable: no replica reaches the main installation ------------------------------
+  - name: TroveBastionMainUnreachable fires when every replica is cut off, the single-replica alert stays silent
+    interval: 1m
+    input_series:
+      - {series: 'trove_bastion_main_reachable{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '1x2 0x30'}
+      - {series: 'trove_bastion_main_reachable{namespace="default",service="trove-bastion-ops",pod="p2"}', values: '1x2 0x30'}
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: TroveBastionMainUnreachable
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: TroveBastionMainUnreachable
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: No Bastion replica reaches the main installation.
+              description: Callers are served from answers within the grace period and get 503 afterwards (R-BAS-027).
+      - eval_time: 10m
+        alertname: TroveBastionMainUnreachableSingleReplica
+        exp_alerts: []
+
+  # --- TroveBastionMainUnreachableSingleReplica: some replicas reach it, some do not ---------------------
+  - name: TroveBastionMainUnreachableSingleReplica fires when one replica is cut off, the all-replicas alert stays silent
+    interval: 1m
+    input_series:
+      - {series: 'trove_bastion_main_reachable{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '1x2 0x30'}
+      - {series: 'trove_bastion_main_reachable{namespace="default",service="trove-bastion-ops",pod="p2"}', values: '1x32'}
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: TroveBastionMainUnreachableSingleReplica
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: TroveBastionMainUnreachableSingleReplica
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: Some Bastion replicas do not reach the main installation while others do.
+              description: A network path, a NetworkPolicy or one node is the likely cause.
+      - eval_time: 10m
+        alertname: TroveBastionMainUnreachable
+        exp_alerts: []
+
+  # --- TroveBastionGraceExhausted: unreachable for longer than answer period + grace period --------------
+  - name: TroveBastionGraceExhausted fires after answer period plus grace period (1200 s)
+    interval: 1m
+    input_series:
+      - {series: 'trove_bastion_main_unreachable_since_timestamp_seconds{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '100x60'}
+      - {series: 'trove_bastion_answer_period_seconds{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '300x60'}
+      - {series: 'trove_bastion_grace_period_seconds{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '900x60'}
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: TroveBastionGraceExhausted
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: TroveBastionGraceExhausted
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: The main installation has been unreachable longer than the answer period plus the grace period.
+              description: The Bastion refuses every request with 503 until the main installation is reachable again (R-BAS-027).
+
+  # --- TroveBastionBaseURLMismatch ----------------------------------------------------------------------
+  - name: TroveBastionBaseURLMismatch fires on a mismatch
+    interval: 1m
+    input_series:
+      - {series: 'trove_bastion_base_url_mismatch{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '1x20'}
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: TroveBastionBaseURLMismatch
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: config.server.base_url differs from the base URL the main installation registered for this Bastion.
+              description: Correct config.server.base_url or the registration (R-BAS-010).
+
+  # --- TroveBastionTokenExpiresSoon: 20 days left, warning from 30 days (R-BAS-006) --------------------
+  - name: TroveBastionTokenExpiresSoon fires below the warning threshold the Bastion reports
+    interval: 1m
+    input_series:
+      - {series: 'trove_bastion_token_remaining_seconds{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '1728000x200'}
+      - {series: 'trove_bastion_token_warn_before_seconds{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '2592000x200'}
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: TroveBastionTokenExpiresSoon
+        exp_alerts: []
+      - eval_time: 2h
+        alertname: TroveBastionTokenExpiresSoon
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: The Bastion token expires within the warning period.
+              description: Issue a second token at the main installation and replace the token Secret (R-BAS-006).
+
+  # --- TroveBastionTokenRefused -------------------------------------------------------------------------
+  - name: TroveBastionTokenRefused fires when the main installation refuses the token
+    interval: 1m
+    input_series:
+      - {series: 'trove_bastion_main_token_refused{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '1x20'}
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: TroveBastionTokenRefused
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: The main installation refuses the Bastion token.
+              description: The token was revoked or expired. Replace the token Secret (R-BAS-006).
+
+  # --- TroveBastionFeedStale ----------------------------------------------------------------------------
+  - name: TroveBastionFeedStale fires when the feed lags more than 30 s
+    interval: 1m
+    input_series:
+      - {series: 'trove_bastion_feed_lag_seconds{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '45x20'}
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: TroveBastionFeedStale
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: TroveBastionFeedStale
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: The revocation feed lags more than 30 seconds behind the main installation.
+              description: A revocation at the main installation reaches the Bastion late (R-BAS-026).
+
+  # --- TroveBastionMainBudgetSaturated ------------------------------------------------------------------
+  - name: TroveBastionMainBudgetSaturated fires while requests exhaust the budget
+    interval: 1m
+    input_series:
+      - {series: 'trove_bastion_main_budget_exhausted_total{namespace="default",service="trove-bastion-ops",pod="p1",class="authenticated"}', values: '0+10x40'}
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: TroveBastionMainBudgetSaturated
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: TroveBastionMainBudgetSaturated
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: The concurrency budget towards the main installation is exhausted.
+              description: Requests are answered 503 bastion_busy. Raise config.bastion.main.max_concurrent or find the traffic (R-BAS-025).
+
+  # --- TroveBastionAuditEventsDropped -------------------------------------------------------------------
+  - name: TroveBastionAuditEventsDropped fires when events were dropped
+    interval: 1m
+    input_series:
+      - {series: 'trove_bastion_audit_events_dropped_total{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '0x5 7x20'}
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: TroveBastionAuditEventsDropped
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: TroveBastionAuditEventsDropped
+        exp_alerts:
+          - exp_labels: {severity: warning, namespace: default, service: trove-bastion-ops, pod: p1}
+            exp_annotations:
+              summary: Download events were dropped before they reached the main installation's audit.
+              description: The audit buffer was full (R-BAS-039, H-391).
+
+  # --- TroveBastionCacheCorrupt -------------------------------------------------------------------------
+  - name: TroveBastionCacheCorrupt fires when content failed its check
+    interval: 1m
+    input_series:
+      - {series: 'trove_bastion_cache_corrupt_total{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '0x5 1x60'}
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: TroveBastionCacheCorrupt
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: TroveBastionCacheCorrupt
+        exp_alerts:
+          - exp_labels: {severity: warning, namespace: default, service: trove-bastion-ops, pod: p1}
+            exp_annotations:
+              summary: Cached content failed its integrity check.
+              description: The object and its entries were deleted and fetched again (R-BAS-032). Check the cache volume or bucket.
+
+  # --- TroveBastionValkeyUnavailable (rendered while Valkey is configured) -----------------------------
+  - name: TroveBastionValkeyUnavailable fires when no replica reaches Valkey
+    interval: 1m
+    input_series:
+      - {series: 'trove_valkey_available{namespace="default",service="trove-bastion-ops",pod="p1"}', values: '0x30'}
+      - {series: 'trove_valkey_available{namespace="default",service="trove-bastion-ops",pod="p2"}', values: '0x30'}
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: TroveBastionValkeyUnavailable
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: TroveBastionValkeyUnavailable
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: No Bastion replica reaches Valkey.
+              description: Blocks, counters and answers work per replica at the divided limits until it is back (R-BAS-034).
+
+  # --- TroveBastionReplicasNotReady ---------------------------------------------------------------------
+  - name: TroveBastionReplicasNotReady fires below two available replicas
+    interval: 1m
+    input_series:
+      - {series: 'kube_deployment_status_replicas_available{namespace="default",deployment="trove-bastion"}', values: '1x30'}
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: TroveBastionReplicasNotReady
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: TroveBastionReplicasNotReady
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: Fewer than two Bastion replicas are ready.
+              description: Needs kube-state-metrics. The Bastion is meant to run at least two replicas spread across nodes (R-BAS-043).

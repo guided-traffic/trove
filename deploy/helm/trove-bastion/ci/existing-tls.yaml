@@ -1,0 +1,33 @@
+# The listener's key pair from an existing Secret (no Certificate), an emptyDir cache, a CA bundle from a
+# Secret, a pull secret and a digest-pinned image.
+global:
+  imagePullSecrets:
+    - name: registry-pull                             # example
+image:
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000   # example
+config:
+  server:
+    base_url: https://packages.example.com            # example
+  bastion:
+    main:
+      url: https://trove.example.com                  # example
+secrets:
+  mainToken:
+    existingSecret: trove-bastion-token               # example
+    key: bastion-token                                # example
+trustedCA:
+  existingSecret: corp-ca-bundle                      # example
+tls:
+  existingSecret: trove-bastion-listener              # example
+  certManager:
+    enabled: false
+cacheVolume:
+  type: emptyDir
+networkPolicy:
+  ingress:
+    probeCIDRs: ["10.0.0.0/8"]                        # example
+  egress:
+    main:
+      to:
+        - ipBlock:
+            cidr: 198.51.100.10/32                    # example

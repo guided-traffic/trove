@@ -1,0 +1,12 @@
+apiVersion: v2
+name: trove-bastion
+description: The trove Bastion, a read-only, internet-facing cache instance in front of a main trove installation (trove serve --role bastion).
+type: application
+# version and appVersion are rewritten to the release version by the release pipeline (build.yml,
+# job release-helm-gh): R-ARCH-025, R-BAS-045, appVersion = trove's version, which is the image tag.
+version: 0.0.0-dev
+appVersion: 0.0.0-dev
+kubeVersion: ">=1.30.0-0"
+home: https://github.com/guided-traffic/trove
+sources:
+  - https://github.com/guided-traffic/trove

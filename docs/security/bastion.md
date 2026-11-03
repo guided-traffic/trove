@@ -119,6 +119,12 @@ The gaps of the Bastion's mechanisms are recorded on the spec page, where the me
   timing of a hit tells;
 - [H-391](../spec/bastion.md#h-391--download-events-lost-to-a-full-buffer-a-crash-or-an-ephemeral-spool-are-missing-from-the-audit)
   — download events lost before they reach the audit.
+- [H-432](../spec/bastion.md#h-432--the-edge-limit-counts-per-tcp-peer-address-and-has-no-burst) — the edge limit keys on the TCP
+  peer address and has no burst;
+- [H-433](../spec/bastion.md#h-433--the-egress-policy-names-the-main-installation-by-address) — the egress policy names the main
+  installation by address;
+- [H-434](../spec/bastion.md#h-434--a-controller-that-ignores-the-annotations-turns-the-edge-limit-and-routing-off-silently) — a
+  controller that ignores the Ingress annotations turns the edge limit and routing off silently.
 
 This page does not describe the main installation's own mechanisms that the Bastion relies on (the decision point, token
 validation, the revocation journal); their pages and gaps are linked above. It records no gap of its own.

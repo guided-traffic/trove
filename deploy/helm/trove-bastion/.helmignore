@@ -1,0 +1,5 @@
+# Files that are not part of the packaged chart.
+.DS_Store
+.git
+ci/
+tests/

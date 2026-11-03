@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "trove-bastion.fullname" . }}-config
+  labels:
+    {{- include "trove-bastion.labels" (dict "root" . "component" "config") | nindent 4 }}
+  {{- with (include "trove-bastion.commonAnnotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+data:
+  trove.yaml: |
+    {{- include "trove-bastion.config" . | nindent 4 }}

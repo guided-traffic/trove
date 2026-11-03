@@ -32,6 +32,10 @@ LINT_BIN       := .bin/golangci-lint-$(GOLANGCI_LINT_VERSION)-$(GOVERSION)
 GOVULNCHECK_BIN := .bin/govulncheck-$(GOVULNCHECK_VERSION)-$(GOVERSION)
 GOCYCLO_BIN    := .bin/gocyclo-$(GOCYCLO_VERSION)-$(GOVERSION)
 OASDIFF_BIN    := .bin/oasdiff-$(OASDIFF_VERSION)-$(GOVERSION)
+# promtool is a release binary, not built by Go, so its name carries the pin only (tools/versions.env).
+PROMTOOL_BIN   := .bin/promtool-$(PROMTOOL_VERSION)
+PROMTOOL_OS    := $(shell uname -s | tr '[:upper:]' '[:lower:]')
+PROMTOOL_ARCH  := $(shell uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
 
 IMAGE       ?= guidedtraffic/trove:dev
 IMAGE_ARCH  ?= $(shell go env GOARCH)
@@ -218,6 +222,10 @@ versions-check: ## One version per tool (E0.2): go, Node, sqlc, oapi-codegen, th
 	  if [ "$$have" != "$(KUBECTL_VERSION)" ]; then echo "kubectl: installed $$have, pin is $(KUBECTL_VERSION)"; fail=1; fi; fi; \
 	if command -v helm >/dev/null; then have="$$(helm version --template '{{.Version}}')"; \
 	  if [ "$$have" != "$(HELM_VERSION)" ]; then echo "helm: installed $$have, pin is $(HELM_VERSION)"; fail=1; fi; fi; \
+	if [ -x "$(PROMTOOL_BIN)" ]; then have="$$($(PROMTOOL_BIN) --version | sed -n 's/^promtool, version \([^ ]*\) .*/v\1/p')"; \
+	  if [ "$$have" != "$(PROMTOOL_VERSION)" ]; then echo "promtool: $(PROMTOOL_BIN) is $$have, pin is $(PROMTOOL_VERSION)"; fail=1; fi; fi; \
+	if command -v promtool >/dev/null; then have="$$(promtool --version | sed -n 's/^promtool, version \([^ ]*\) .*/v\1/p')"; \
+	  if [ "$$have" != "$(PROMTOOL_VERSION)" ]; then echo "promtool: installed $$have, pin is $(PROMTOOL_VERSION)"; fail=1; fi; fi; \
 	if command -v k6 >/dev/null; then have="$$(k6 version | sed -n 's/^k6 v\([^ ]*\).*/v\1/p')"; \
 	  if [ "$$have" != "$(K6_VERSION)" ]; then echo "k6: installed $$have, pin is $(K6_VERSION)"; fail=1; fi; fi; \
 	if docker buildx version >/dev/null 2>&1; then have="$$(docker buildx version | awk '{print $$2}')"; \
@@ -332,9 +340,27 @@ TESTLOG := sed -n -E -e 's/.*"Output":"(([^"\\]|\\.)*)".*/\1/p' | sed -e 's/\\n/
 chart-lint: ## helm lint and helm template over every value set (test/chart/lint.sh)
 	test/chart/lint.sh
 
+# The release archive of promtool at its pin, verified against the SHA-256 of the platform in tools/versions.env.
+$(PROMTOOL_BIN):
+	@mkdir -p .bin
+	@set -euo pipefail; \
+	  want="$$(printenv "PROMTOOL_SHA256_$$(echo '$(PROMTOOL_OS)_$(PROMTOOL_ARCH)' | tr '[:lower:]' '[:upper:]')" || true)"; \
+	  if [ -z "$$want" ]; then echo "promtool: tools/versions.env has no digest for $(PROMTOOL_OS)/$(PROMTOOL_ARCH)"; exit 1; fi; \
+	  tmp="$$(mktemp -d)"; trap 'rm -rf "$$tmp"' EXIT; \
+	  name="prometheus-$(PROMTOOL_VERSION:v%=%).$(PROMTOOL_OS)-$(PROMTOOL_ARCH)"; \
+	  curl -fsSL -o "$$tmp/promtool.tar.gz" "https://github.com/prometheus/prometheus/releases/download/$(PROMTOOL_VERSION)/$$name.tar.gz"; \
+	  if command -v sha256sum >/dev/null; then got="$$(sha256sum "$$tmp/promtool.tar.gz" | awk '{print $$1}')"; \
+	  else got="$$(shasum -a 256 "$$tmp/promtool.tar.gz" | awk '{print $$1}')"; fi; \
+	  if [ "$$got" != "$$want" ]; then echo "promtool: $$name.tar.gz has SHA-256 $$got, tools/versions.env pins $$want"; exit 1; fi; \
+	  tar -xzf "$$tmp/promtool.tar.gz" -C "$$tmp" --strip-components=1 "$$name/promtool"; \
+	  mv "$$tmp/promtool" $@
+
+.PHONY: promtool
+promtool: $(PROMTOOL_BIN) ## Fetch promtool at its pin into .bin (the rule tests of the charts use it)
+
 .PHONY: chart-test
-chart-test: ## Chart render assertions of E0.7 (test/chart/test.sh); .out/test-chart.json
-	test/chart/test.sh
+chart-test: $(PROMTOOL_BIN) ## Chart render assertions of E0.7 and the promtool rule tests of the PrometheusRule (test/chart/test.sh); .out/test-chart.json
+	TROVE_PROMTOOL=$(abspath $(PROMTOOL_BIN)) test/chart/test.sh
 
 .PHONY: dev-up
 dev-up: ## Create the kind cluster and install the dev profile (deploy/dev/up.sh)

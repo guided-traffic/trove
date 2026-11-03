@@ -1,0 +1,32 @@
+{{- if .Values.metrics.prometheusRule.enabled }}
+{{- /*
+R-BAS-041: every alert of _rules.tpl except metrics.prometheusRule.disabledAlerts, then extraRules.
+deploy/helm/trove-bastion/tests/rules_test.yaml tests the rendered rules with promtool (test/chart).
+*/ -}}
+{{- $disabled := .Values.metrics.prometheusRule.disabledAlerts }}
+{{- $rules := list }}
+{{- range include "trove-bastion.rules.all" . | fromYamlArray }}
+{{- if not (has .alert $disabled) }}
+{{- $rules = append $rules . }}
+{{- end }}
+{{- end }}
+{{- $rules = concat $rules .Values.metrics.prometheusRule.extraRules }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "trove-bastion.fullname" . }}
+  labels:
+    {{- include "trove-bastion.labels" (dict "root" . "component" "bastion") | nindent 4 }}
+    {{- with .Values.metrics.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with (include "trove-bastion.commonAnnotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  groups:
+    - name: trove-bastion
+      rules:
+        {{- toYaml $rules | nindent 8 }}
+{{- end }}

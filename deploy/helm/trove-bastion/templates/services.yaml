@@ -1,0 +1,62 @@
+{{- /*
+Both Services render sessionAffinity: None, fixed and not a value (R-BAS-045): any replica can answer any
+request. <fullname> carries the https port, <fullname>-ops the operations port.
+*/ -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "trove-bastion.fullname" . }}
+  labels:
+    {{- include "trove-bastion.labels" (dict "root" . "component" "bastion") | nindent 4 }}
+    {{- with .Values.service.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- $ann := merge (dict) .Values.service.annotations .Values.commonAnnotations }}
+  {{- if $ann }}
+  annotations:
+    {{- toYaml $ann | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  sessionAffinity: None
+  {{- with .Values.service.ipFamilyPolicy }}
+  ipFamilyPolicy: {{ . }}
+  {{- end }}
+  {{- with .Values.service.ipFamilies }}
+  ipFamilies:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  ports:
+    - name: https
+      port: {{ .Values.service.port }}
+      targetPort: https
+      protocol: TCP
+      {{- if .Values.tls.enabled }}
+      appProtocol: https
+      {{- end }}
+  selector:
+    {{- include "trove-bastion.selectorLabels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "trove-bastion.fullname" . }}-ops
+  labels:
+    {{- include "trove-bastion.labels" (dict "root" . "component" "ops") | nindent 4 }}
+  {{- with (include "trove-bastion.commonAnnotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  sessionAffinity: None
+  ports:
+    - name: ops
+      port: {{ .Values.service.opsPort }}
+      targetPort: ops
+      protocol: TCP
+      {{- if .Values.tls.enabled }}
+      appProtocol: https
+      {{- end }}
+  selector:
+    {{- include "trove-bastion.selectorLabels" . | nindent 4 }}

@@ -1,0 +1,74 @@
+{{- if .Values.ingress.enabled }}
+{{- /*
+The Bastion is reached through its own Ingress (R-BAS-045). The host is routed whole: path / with
+pathType Prefix. The ops port is never routed. The annotations are HAProxy Ingress keys with the
+controller's default prefix, verified against its v0.16.3 documentation and source (Q-BAS-56); any other
+controller ignores them (NOTES.txt says so):
+  edgeLimit (R-BAS-038):    limit-rps, limit-connections, limit-whitelist (from blocking.exempt_cidrs).
+  routeByPath (R-BAS-033):  balance-algorithm uri, assign-backend-server-id, and the snippet
+                            "hash-type consistent": URI hashing moves about 1/n of the paths when a
+                            pod is added, drained or replaced.
+  TLS to the pods (R-BAS-044): secure-backends, secure-sni and secure-verify-ca-secret.
+*/ -}}
+{{- $hp := "haproxy-ingress.github.io/" }}
+{{- $fullname := include "trove-bastion.fullname" . }}
+{{- $hosts := .Values.ingress.hosts }}
+{{- if not $hosts }}
+{{- $hosts = list (include "trove-bastion.baseHost" .) }}
+{{- end }}
+{{- $ann := dict }}
+{{- if .Values.edgeLimit.enabled }}
+{{- $_ := set $ann (print $hp "limit-rps") (toString .Values.edgeLimit.requestsPerSecond) }}
+{{- $_ := set $ann (print $hp "limit-connections") (toString .Values.edgeLimit.connections) }}
+{{- with (dig "bastion" "blocking" "exempt_cidrs" (list) .Values.config) }}
+{{- $_ := set $ann (print $hp "limit-whitelist") (join "," .) }}
+{{- end }}
+{{- end }}
+{{- if .Values.cacheVolume.routeByPath }}
+{{- $_ := set $ann (print $hp "balance-algorithm") "uri" }}
+{{- $_ := set $ann (print $hp "assign-backend-server-id") "true" }}
+{{- $_ := set $ann (print $hp "config-backend") "hash-type consistent" }}
+{{- end }}
+{{- if .Values.tls.enabled }}
+{{- $_ := set $ann (print $hp "secure-backends") "true" }}
+{{- if .Values.ingress.backendTLS.verify }}
+{{- $_ := set $ann (print $hp "secure-verify-ca-secret") (default (include "trove-bastion.tlsSecretName" .) .Values.ingress.backendTLS.caSecret) }}
+{{- $_ := set $ann (print $hp "secure-sni") (printf "%s.%s.svc" $fullname .Release.Namespace) }}
+{{- end }}
+{{- end }}
+{{- $ann = merge $ann (merge (dict) .Values.ingress.annotations .Values.commonAnnotations) }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "trove-bastion.labels" (dict "root" . "component" "bastion") | nindent 4 }}
+    {{- with .Values.ingress.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- if $ann }}
+  annotations:
+    {{- toYaml $ann | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range $hosts }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullname }}
+                port:
+                  name: https
+    {{- end }}
+{{- end }}

@@ -68,11 +68,11 @@ Conventions on this page:
 | The client address is the right-most address of the one header family `server.forwarded_header` selects that is not a trusted proxy; the other family is never read. A forwarded origin selects the response base URL only when the peer is a trusted proxy and the origin is an entry of `server.additional_base_urls`. | [clientaddr.go](../../internal/httpserver/clientaddr.go); [architecture.md](architecture.md) R-ARCH-006, [operations-and-observability.md](operations-and-observability.md) R-OPS-005 |
 | The revocation journal is the set of transactional audit events whose registry entry declares `journal: revocation`; they are rows of `audit_event`, keyed by `(occurred_at, id)`, with `occurred_at` the transaction's `now()`. | [00006_audit.sql](../../internal/meta/postgres/migrations/00006_audit.sql), `audit.JournalRevocation` in [registry.go](../../internal/audit/registry.go); [ha-and-helm.md](ha-and-helm.md) R-HA-054 |
 | npm's `replace-registry-host` (default `npmjs`) replaces only `registry.npmjs.org` in a lockfile's `resolved` URLs; `always` replaces every host with the configured registry. | `npm help config` of npm 11.20.0 |
+| HAProxy Ingress v0.16.3, the controller of the local profile, reads `limit-rps`, `limit-connections`, `limit-whitelist` (backend scope; HTTP answer `429`), `balance-algorithm`, `assign-backend-server-id`, `config-backend` and `secure-backends`, `secure-sni`, `secure-verify-ca-secret` as annotations with the prefix `haproxy-ingress.github.io/`; it has no key for `hash-type`, so consistent hashing is a `config-backend` snippet, which the controller accepts unless `--disable-config-keywords` forbids it. | `docs/content/en/docs/configuration/keys.md` and `command-line.md`, `rootfs/etc/templates/haproxy/haproxy.tmpl`, `pkg/converters/ingress/annotations/backend.go` and `pkg/converters/ingress/types/annotations.go` of `jcmoraisjr/haproxy-ingress` at the tag `v0.16.3` (`DEV_HAPROXY_INGRESS_IMAGE` in `tools/versions.env`), fetched with `gh api` on 2026-11-03; [Q-BAS-56](#q-bas-56--haproxy-ingress-annotations-as-verified-against-the-controller-of-the-local-profile) |
 
-Not verified on this page, and this is the gap: the annotation names of HAProxy Ingress for a per-address request and connection
-limit and for URI hashing (R-BAS-033, R-BAS-038) come from the controller's documentation as the development agent remembers it;
-the chart test of R-BAS-045 pins them against the controller version of the local profile before the chart relies on them.
-Whether `dotnet restore` sends every request of one restore with the same credential through one source is assumed from the
+Not verified on this page, and this is the gap: how the controller behaves when it runs (a flood refused with `429`, a path
+pinned to one pod, what `limit-rps` counts for a keep-alive connection) is read from its documentation and templates, not
+observed; the e2e suite does that (R-BAS-049). Whether `dotnet restore` sends every request of one restore with the same credential through one source is assumed from the
 NuGet client's source-credential model and is checked by the e2e suite (R-BAS-049).
 
 </details>
@@ -1250,7 +1250,8 @@ Priority: **MVP** · Covers: trove-only
 
 - With `backend: volume` and `cacheVolume.routeByPath: true`, the chart makes HAProxy Ingress choose the replica by a
   consistent hash of the request path (URI hashing), so each artifact lives on one replica and the volumes together hold more
-  than one could (owner, Q-BAS-11). The annotation names are R-BAS-045's.
+  than one could (owner, Q-BAS-11). The annotation names are R-BAS-045's; the controller has no key for consistent hashing, so
+  the chart renders it as a `config-backend` snippet, which a controller that forbids snippets drops without failing (H-434).
 - Routing changes nothing in correctness: a request on another replica is a miss. A replica added or drained moves about
   `1 ÷ n` of the paths.
 - The chart refuses `routeByPath` with the bucket backend and without `ingress.enabled`.
@@ -1386,6 +1387,12 @@ Priority: **MVP** · Covers: trove-only
 - It is set wider than the Bastion's own: the chart refuses `edgeLimit.requestsPerSecond` at or below
   `config.bastion.limits.authenticated.requests_per_second`, so the Bastion's stage, which knows credentials and misses, decides
   first and the ingress only cuts what would overload the Bastion itself.
+- What the controller does with the values (verified for v0.16.3, [Q-BAS-56](#q-bas-56--haproxy-ingress-annotations-as-verified-against-the-controller-of-the-local-profile)):
+  it tracks the connection's source address in a stick table and answers `429` while the address has more than
+  `edgeLimit.connections` concurrent tracked streams or more than `edgeLimit.requestsPerSecond` new ones in the last second,
+  except for the addresses of `limit-whitelist`. There is no burst: a client whose rate is above the per-second value is
+  refused while it stays above. The address is the TCP peer's, so behind a load balancer that does not pass the client
+  address on, all callers share one budget (H-432).
 - Volumetric attacks on bandwidth are the network provider's, not the Bastion's (H-382).
 
 Acceptance criteria:
@@ -1481,7 +1488,7 @@ The chart's PrometheusRule (`metrics.prometheusRule.enabled`) holds these alerts
 | Alert | Expression (sketch) | For | Severity |
 |---|---|---|---|
 | `TroveBastionInterfaceMismatch` | `max(trove_bastion_interface_mismatch) == 1` | 1m | critical |
-| `TroveBastionMainUnreachable` | `min(trove_bastion_main_reachable) == 0` (every replica) | 2m | critical |
+| `TroveBastionMainUnreachable` | `max(trove_bastion_main_reachable) == 0` (every replica) | 2m | critical |
 | `TroveBastionMainUnreachableSingleReplica` | `min(trove_bastion_main_reachable) == 0 and max(trove_bastion_main_reachable) == 1` | 5m | warning |
 | `TroveBastionGraceExhausted` | `time() - min(trove_bastion_main_unreachable_since_timestamp_seconds > 0) > max(trove_bastion_answer_period_seconds + trove_bastion_grace_period_seconds)` | 0m | critical |
 | `TroveBastionBaseURLMismatch` | `max(trove_bastion_base_url_mismatch) == 1` | 1m | critical |
@@ -1493,6 +1500,12 @@ The chart's PrometheusRule (`metrics.prometheusRule.enabled`) holds these alerts
 | `TroveBastionCacheCorrupt` | `increase(trove_bastion_cache_corrupt_total[1h]) > 0` | 0m | warning |
 | `TroveBastionValkeyUnavailable` | `max(trove_valkey_available) == 0` (rendered only with Valkey configured) | 5m | warning |
 | `TroveBastionReplicasNotReady` | `min(kube_deployment_status_replicas_available{deployment=~"<fullname>"}) < 2` (or the StatefulSet's) | 5m | warning |
+
+Expressions are sketches. Two things differ from them in the chart ([Q-BAS-57](#q-bas-57--the-rule-tests-run-with-a-pinned-promtool-and-the-rules-are-scoped-to-the-release)):
+`TroveBastionMainUnreachable` uses `max(…) == 0`, because `min(…) == 0` is true as soon as one replica is cut off and would fire
+next to the single-replica alert instead of only when every replica is; and every selector is scoped to the release
+(`namespace` and `service="<fullname>-ops"`, the labels the chart's ServiceMonitor puts on the series), because one Prometheus
+scrapes several Bastions and an aggregate over all of them would blend their states.
 
 Acceptance criteria:
 
@@ -1572,7 +1585,7 @@ A second Helm chart for this instance type (owner, [Q-BAS-5](#q-bas-5--a-second-
 | Deployment, or StatefulSet with `cacheVolume.type: persistent` | `<fullname>` | `trove serve --role bastion`; container ports `https` 8443 and `ops` 8081 |
 | ConfigMap | `<fullname>-config` | `/etc/trove/trove.yaml` from `config`, with the chart-managed keys |
 | Service | `<fullname>` (`https`, no session affinity), `<fullname>-ops` | — |
-| Ingress | `<fullname>` | host of `config.server.base_url`; `ingress.tls`; the annotations of `edgeLimit` and `cacheVolume.routeByPath` |
+| Ingress | `<fullname>` | host of `config.server.base_url`; `ingress.tls`; the annotations of `edgeLimit`, `cacheVolume.routeByPath` and `ingress.backendTLS` |
 | Certificate (cert-manager), optional | `<fullname>-tls` | with `tls.certManager.enabled` |
 | NetworkPolicy | `<fullname>` | R-BAS-047 |
 | PodDisruptionBudget, HorizontalPodAutoscaler | `<fullname>` | — |
@@ -1585,20 +1598,36 @@ A second Helm chart for this instance type (owner, [Q-BAS-5](#q-bas-5--a-second-
   `secrets.mainToken.existingSecret` set; `secrets.signingKey.existingSecret` set with the bucket backend or Valkey;
   `config.bastion.cache.bucket.bucket` with the bucket backend; `routeByPath` only with the volume backend and `ingress.enabled`;
   `edgeLimit` wider than the Bastion's limits (R-BAS-038); with `highAvailability.enforce` at least two replicas, a PDB and
-  host spreading; a value under `config` that is chart-managed or not in the role's schema.
-- **HAProxy Ingress annotations** *(not verified on this page; pinned by the chart test against the local profile's
-  controller)*: `haproxy-ingress.github.io/limit-rps`, `haproxy-ingress.github.io/limit-connections` and
-  `haproxy-ingress.github.io/limit-whitelist` (from `config.bastion.blocking.exempt_cidrs`) for `edgeLimit`;
-  `haproxy-ingress.github.io/balance-algorithm: uri` with consistent hashing for `routeByPath`. A controller other than HAProxy
-  Ingress ignores them, and the chart's NOTES say so.
+  host spreading; a value under `config` that is chart-managed or not in the role's schema; a certificate source for the
+  listener while `tls.enabled` (`tls.existingSecret`, or `tls.certManager.issuerRef.name`); an egress target
+  (`networkPolicy.egress.main.to`, and `valkey`, `cacheBucket` or `tracing` while they are used) and an ingress peer for the
+  https port, because an empty peer list would mean "anywhere"; exactly one key in `trustedCA.keys`; an entry of
+  `ingress.annotations` that the chart renders itself; a name in `metrics.prometheusRule.disabledAlerts` that is no alert
+  ([Q-BAS-55](#q-bas-55--what-a-render-needs-and-what-the-values-file-left-open)).
+- **HAProxy Ingress annotations** *(verified against HAProxy Ingress v0.16.3, the controller of the local profile,
+  [Q-BAS-56](#q-bas-56--haproxy-ingress-annotations-as-verified-against-the-controller-of-the-local-profile))*, all with the
+  controller's default prefix `haproxy-ingress.github.io/`:
+  - `edgeLimit`: `limit-rps`, `limit-connections` and `limit-whitelist` (from `config.bastion.blocking.exempt_cidrs`,
+    comma-separated, omitted while the list is empty);
+  - `cacheVolume.routeByPath`: `balance-algorithm: uri`, `assign-backend-server-id: "true"` (stable server IDs, so a pod added or
+    replaced moves about `1 ÷ n` of the paths) and `config-backend: hash-type consistent`, because the controller has no key of
+    its own for consistent hashing;
+  - `tls.enabled`: `secure-backends: "true"`, `secure-sni: <fullname>.<namespace>.svc` and, while `ingress.backendTLS.verify`,
+    `secure-verify-ca-secret` (`ingress.backendTLS.caSecret`, empty = the listener's Secret, which must carry `ca.crt`).
+
+  A user value of `ingress.annotations` for one of these keys is refused. A controller other than HAProxy Ingress ignores them,
+  and the chart's NOTES say so (H-434).
 
 Acceptance criteria:
 
 - `helm template` with only the required values (`config.server.base_url`, `config.bastion.main.url`,
-  `secrets.mainToken.existingSecret`) renders a Deployment with two replicas, a PDB, the Ingress with the edge-limit annotations,
-  a NetworkPolicy, and no Secret, no Role and no PersistentVolumeClaim.
-- The chart test runs against HAProxy Ingress in the local profile: the edge limit refuses a flood, routing by path pins a path
-  to one pod.
+  `secrets.mainToken.existingSecret`, a certificate source `tls.certManager.issuerRef.name` and the egress target
+  `networkPolicy.egress.main.to`, [Q-BAS-55](#q-bas-55--what-a-render-needs-and-what-the-values-file-left-open)) renders a
+  Deployment with two replicas, a PDB, the Ingress with the edge-limit annotations, a NetworkPolicy, and no Secret, no Role and no
+  PersistentVolumeClaim.
+- The chart test pins the annotation names to the controller version of the local profile: a change of
+  `DEV_HAPROXY_INGRESS_IMAGE` fails it until the names are verified against the new version. The e2e suite (R-BAS-049) runs
+  against that controller: the edge limit refuses a flood, routing by path pins a path to one pod.
 
 ### R-BAS-046 · Values reference
 Priority: **MVP** · Covers: DIST-024
@@ -1606,7 +1635,8 @@ Priority: **MVP** · Covers: DIST-024
 The complete `values.yaml` of `trove-bastion`. Every value carries `# default (proposed)` or `# example`. Keys under `config`
 are the Bastion's configuration file (R-BAS-001); the chart-managed keys (`server.tls`, `bastion.main.token_file`,
 `bastion.main.ca_file`, `bastion.signing_key_file`, `bastion.cache.volume.dir`, `bastion.cache.bucket.ca_file`,
-`bastion.replicas`, the Valkey secret files) are rendered by the chart and refused when set.
+`bastion.cache.bucket.credentials.access_key_id_file` and `secret_access_key_file`, `bastion.replicas`, the Valkey secret files
+`valkey.username_file`, `valkey.password_file` and `valkey.tls.ca_file`) are rendered by the chart and refused when set.
 
 <details>
 <summary>deploy/helm/trove-bastion/values.yaml</summary>
@@ -1809,7 +1839,7 @@ secrets:
 trustedCA:
   existingSecret: ""                    # default (proposed); example: corp-ca-bundle; trust for the main installation, Valkey and the bucket
   existingConfigMap: ""                 # default (proposed); example: corp-ca-bundle (trust-manager target)
-  keys: [ca-bundle.crt]                 # default (proposed)
+  keys: [ca-bundle.crt]                 # default (proposed); exactly one key: the bundle is one file (bastion.main.ca_file)
 
 # ── TLS of the Bastion's own listener (R-BAS-044) ───────────────────────────
 tls:
@@ -1892,6 +1922,9 @@ ingress:
   labels: {}                            # default (proposed)
   hosts: []                             # default (proposed): empty = host of config.server.base_url
   tls: []                               # default (proposed); example: [{secretName: trove-bastion-public-tls, hosts: [packages.example.com]}]
+  backendTLS:                           # TLS from the Ingress to the pods while tls.enabled (R-BAS-044, Q-BAS-55); HAProxy Ingress keys
+    verify: true                        # default (proposed): the controller verifies the pods' certificate against caSecret
+    caSecret: ""                        # default (proposed): empty = the listener's Secret (tls.existingSecret or <fullname>-tls), which must carry ca.crt
 
 edgeLimit:                              # stage 1 of the blocking (R-BAS-038)
   enabled: true                         # default (proposed)
@@ -2927,6 +2960,116 @@ needs one of them.
 **Applied in the spec:** the `Priority:` lines of RMT-040, RMT-041, RMT-044 ([remote-repositories.md](../features/remote-repositories.md))
 and DIST-024, DIST-025 ([distribution-and-lifecycle.md](../features/distribution-and-lifecycle.md)); the roadmap's M13 row.
 
+### Q-BAS-55 · What a render needs, and what the values file left open
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep the acceptance criterion as written, derive the rest | Three required values; the chart invents a certificate source and an egress target | Matches the criterion | An invented egress target is "anywhere", and no certificate source means a listener without a key pair: both silently weaker than the values file says |
+| (b) The values file wins: correct the criterion (chosen) | The two values the file marks `required` (`tls.certManager.issuerRef.name`, `networkPolicy.egress.main.to`) join the three; an empty peer list is refused everywhere, because Kubernetes reads it as "anywhere" | Nothing is weakened silently; every refusal names its value | A first render needs five values, not three |
+| (c) Default both to permissive values | Egress to `0.0.0.0/0` on 443, a self-signed listener certificate | Three values render | Defeats R-BAS-047 and R-BAS-044 by default |
+
+**Choice:** (b).
+
+**Rationale:** the values file of R-BAS-046 says `required` for both and the acceptance criterion of R-BAS-045 lists three; one
+of the two texts had to give, and the file is the one a user reads. The same reasoning refuses an empty `networkPolicy.egress.valkey.to`
+while Valkey is configured, `cacheBucket.to` with the bucket backend, `tracing.to` with tracing, `networkPolicy.ingress.https.from`
+(the Bastion is reached through its Ingress only), and a `trustedCA.keys` with other than one key (`bastion.main.ca_file` is one file).
+Two values were missing for a working install and are added to the values file: `ingress.backendTLS.verify` and `.caSecret`, because
+the listener speaks TLS (R-BAS-044) and an Ingress that is not told so sends it plaintext. The chart also renders the bucket
+credential files `bastion.cache.bucket.credentials.access_key_id_file` and `secret_access_key_file` (managed keys, named by analogy
+with the chart `trove`; they are reconciled with the role's generated schema when it lands). The development agent would
+revisit (b) if the Bastion gets an operator that can supply the issuer and the egress target.
+
+**Applied in the spec:** R-BAS-045 (validation list, acceptance criteria), R-BAS-046 (`ingress.backendTLS`, `trustedCA.keys`, managed keys).
+
+### Q-BAS-56 · HAProxy Ingress annotations as verified against the controller of the local profile
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The names of the sketch, unverified | `limit-rps`, `limit-connections`, `limit-whitelist`, `balance-algorithm: uri` "with consistent hashing" | No work | The sketch named a hashing mode no key sets |
+| (b) Names verified at the controller's tag, consistent hashing as a snippet (chosen) | The three limit keys as they are; `balance-algorithm: uri` plus `assign-backend-server-id` plus `config-backend: hash-type consistent`; a chart test that fails when the controller pin moves | Every name read in the documentation and the template of the tag the local profile installs; a version change cannot pass unnoticed | A snippet is the only way to consistent hashing, and a controller that forbids snippets drops it (H-434) |
+| (c) Leave balancing to the user | No routing annotations | No snippet | R-BAS-033 would not be a chart feature |
+
+**Choice:** (b).
+
+**Rationale:** verified on 2026-11-03 against `jcmoraisjr/haproxy-ingress` at `v0.16.3` (the chart version and image of
+`DEV_HAPROXY_INGRESS_CHART_VERSION` and `DEV_HAPROXY_INGRESS_IMAGE`): `keys.md` lists `limit-connections`, `limit-rps` and
+`limit-whitelist` as backend-scope keys and documents the prefix `haproxy-ingress.github.io/`; `haproxy.tmpl` renders them as a
+stick table keyed on `src`, `http-request deny deny_status 429` on `sc1_conn_cur` and `sc1_conn_rate` (so `limit-rps` is a rate of new
+tracked streams per second per address, with no burst) and an `acl wlist_conn src …` for the whitelist (ten CIDRs per line);
+`balance-algorithm` is copied verbatim into `balance`; no template line or key sets `hash-type`, so consistent hashing needs the
+`config-backend` snippet, which `command-line.md` says is accepted unless `--disable-config-keywords` lists its keyword (the local
+profile's `deploy/dev/haproxy-values.yaml` sets no such flag); `assign-backend-server-id` (since v0.13) is documented as what keeps
+hash assignments stable when pods change. `secure-backends`, `secure-sni` and `secure-verify-ca-secret` (a Secret with `ca.crt`,
+read in the Ingress's namespace) are the same keys the chart `trove` uses. What is not verified is the behaviour of a running
+controller (R-BAS-049 does that). The development agent would revisit this when the controller pin moves; the chart test says so.
+
+**Applied in the spec:** the facts table, R-BAS-033, R-BAS-038, R-BAS-045.
+
+### Q-BAS-57 · The rule tests run with a pinned promtool, and the rules are scoped to the release
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `go install` the module at a pin, as the other Go tools | `.bin/promtool-<pin>-<go>` | One mechanism | Refused by Go: the module's `go.mod` carries `replace` directives |
+| (b) The release archive at a pin, checked against a SHA-256 per platform (chosen) | `PROMTOOL_VERSION` and four digests in `tools/versions.env`, `make promtool` into `.bin`, `make chart-test` depends on it and hands the path to the test | No Docker, runs on the runners and laptops, tampering fails the digest | A new version is five lines, not one |
+| (c) The Prometheus container image | Pinned by digest | Same as the other images | Needs Docker in the chart job and from a Go test |
+
+**Choice:** (b), and the rules are scoped to the release.
+
+**Rationale:** the chart `trove` renders no PrometheusRule yet, so there was no promtool pin or CI job to reuse; this change adds the
+first one, in the existing `chart` job (it runs `make chart-test`), and `make versions-check` compares the installed copies with
+the pin. The rule tests are a Go test (`TestR_BAS_041_PromtoolRules`) that renders the rule file and runs `promtool check rules` and
+`promtool test rules` against `deploy/helm/trove-bastion/tests/rules_test.yaml`, so the result is in `.out/test-chart.json` and the
+coverage generator sees the requirement. Two expressions differ from the sketch of R-BAS-041: `TroveBastionMainUnreachable` is
+`max(…) == 0` (the sketch's `min(…) == 0` fires when one replica is cut off) and every selector carries the release's `namespace`
+and ops `service`. The development agent would revisit the scoping if a Bastion is scraped without the chart's ServiceMonitor, whose
+labels it relies on.
+
+**Applied in the spec:** R-BAS-041.
+
+### Q-BAS-58 · The `config` subtree is typed loosely until the role's generated schema is wired in
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Wait for the generated schema | No `values.schema.json` yet | One step | The chart ships unvalidated |
+| (b) Everything outside `config` strict now, `config` as the chart `trove` has it (chosen) | `config` is a free-form object with the keys the chart reads typed; the generated role schema replaces that one property when it exists | Same shape as the chart `trove`, one property to swap, the chart is validated today | Until then a typo inside `config` fails in the binary, not at `helm install` |
+| (c) Hand-write the role's schema | A copy of the binary's keys in the chart | Strict today | A second source that drifts |
+
+**Choice:** (b).
+
+**Rationale:** R-BAS-046 wants the `config` subtree validated against the schema the binary emits for the role `bastion`; that file
+is being produced by another work package, and the chart `trove` has the same open gap for its own schema. The wiring is
+described in [docs/developer/helm-chart.md](../developer/helm-chart.md#the-bastion-chart). The development agent would revisit this
+when the generated file lands.
+
+**Applied in the spec:** R-BAS-046 (acceptance criteria stay; the mechanism is staged).
+
+### Q-BAS-59 · One release job publishes both charts
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Both charts in the existing job `release-helm-gh` (chosen) | Version and appVersion of both `Chart.yaml` set to the release, two packages, one index merge, one push to `gh-pages` | One push, one index, one flow; the chart versions equal the trove version | The two charts always share a version number |
+| (b) A second job | Its own push to `gh-pages` | Independent | Two pushes race on one branch with `--force` |
+| (c) Independent chart versions | The Bastion chart versions on its own | Chart changes without an image | Against R-ARCH-025's `appVersion` = trove version and the single semantic-release flow |
+
+**Choice:** (a).
+
+**Rationale:** semantic-release sets the version, the workflow `Release Docker & Helm` reads it from the release tag, and nothing is
+tagged by hand ([docs/developer/releasing.md](../developer/releasing.md)). A single job keeps the `gh-pages` branch a single writer.
+The development agent would revisit (c) if the chart ever has to release without the image.
+
+**Applied in the spec:** R-BAS-045 (released with the chart `trove`).
+
 ## What this does not cover
 
 ### H-382 · A volumetric attack on bandwidth is not absorbed by the Bastion
@@ -3034,3 +3177,37 @@ audit); a crashed replica loses its buffer, counted nowhere but in its last scra
 installation spools to the cache backend, which with an ephemeral volume is deleted with the pod. It is the Bastion's form of
 [H-122](../security/audit.md#h-122--a-crashed-replica-loses-the-buffered-asynchronous-events-and-its-open-summaries). What makes it
 real: long outages of the main installation, crashes, and the volume backend without a persistent volume.
+
+### H-432 · The edge limit counts per TCP peer address and has no burst
+
+Stage: R-BAS-038 (stage 1, HAProxy Ingress). Subject: the callers behind one address, and the coarse protection of the Bastion.
+
+Dormant until a Bastion is installed with `edgeLimit.enabled`; then live on every one. HAProxy Ingress keys its limit on the source
+address of the TCP connection it accepts. Behind a load balancer that does not pass the client address on (no proxy protocol, no
+preserved source address), every caller shares the budget of the balancer's address: the limit then refuses everyone together or
+nobody. Callers behind one NAT share a budget as well. The limit has no burst allowance: a client whose rate is above
+`edgeLimit.requestsPerSecond` streams a second is refused while it stays above. What makes it real: an edge that terminates
+connections behind a balancer without the real address, which the chart cannot detect (NOTES.txt says so); the Bastion's own stage 2
+reads the forwarded address through `server.trusted_proxies` and is not affected. `edgeLimit.enabled: false` closes it.
+
+### H-433 · The egress policy names the main installation by address
+
+Stage: R-BAS-047, `networkPolicy.egress.main.to`. Subject: the availability of the Bastion towards the main installation.
+
+Dormant until a Bastion runs with the egress policy (on by default); then live on every one. A NetworkPolicy selects by pod, namespace
+or address, never by name, so `networkPolicy.egress.main.to` holds the address of the main installation's ingress. When that address
+changes, the Bastion is cut off until the value is changed and rolled out, and then serves from answers for the grace period
+(R-BAS-027) and refuses afterwards. What makes it real: a main installation behind a load balancer or an ingress whose address
+is not fixed; a CNI with FQDN policies (an `extra` rule in `networkPolicy.egress.extra`) closes it.
+
+### H-434 · A controller that ignores the annotations turns the edge limit and routing off silently
+
+Stage: R-BAS-038 and R-BAS-033, the Ingress annotations. Subject: the coarse limit in front of the Bastion, and the placement of artifacts
+on the volumes.
+
+Dormant until the Bastion is installed behind an ingress controller other than HAProxy Ingress, or behind HAProxy Ingress started with
+`--disable-config-keywords` for `hash-type`; then live. The controller ignores an annotation it does not know and drops a snippet it
+forbids, with a log line at most; the chart cannot see which controller reads its Ingress and renders no error. The edge limit is then
+absent (the Bastion's own limits and blocking still hold), and with `routeByPath` each replica fills its own copy of every path
+instead of one (performance only, the volumes together hold less). What makes it real: a different ingress class, or a hardened
+HAProxy Ingress; NOTES.txt names the dependence, and the e2e run checks the annotations against the local profile's controller only.

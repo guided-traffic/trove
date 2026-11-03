@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# helm lint and helm template for every value set of the chart: deploy/helm/trove/ci/*.yaml and
-# the dev profile's values (deploy/dev/values-dev.yaml, also with values-pooler.yaml layered on
-# it). Needs only helm at the version pinned in tools/versions.env, no cluster.
+# helm lint and helm template for every value set of the chart trove (deploy/helm/trove/ci/*.yaml and
+# the dev profile's values: deploy/dev/values-dev.yaml, also with values-pooler.yaml layered on
+# it) and of the chart trove-bastion (deploy/helm/trove-bastion/ci/*.yaml). Needs only helm at the
+# version pinned in tools/versions.env, no cluster.
 #
 # The render assertions (what the output must and must not contain) are in chart_test.go and run
 # with `make chart-test`.
@@ -9,6 +10,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CHART="$ROOT/deploy/helm/trove"
+BASTION_CHART="$ROOT/deploy/helm/trove-bastion"
 # shellcheck source=/dev/null
 . "$ROOT/tools/versions.env"
 
@@ -21,9 +23,9 @@ fi
 
 sets=("$CHART"/ci/*.yaml)
 failed=0
-run() {
-  local label="$1"; shift
-  if out="$(helm lint --strict "$CHART" "$@" 2>&1 && helm template trove "$CHART" "$@" 2>&1 >/dev/null)"; then
+run_chart() {
+  local chart="$1" release="$2" label="$3"; shift 3
+  if out="$(helm lint --strict "$chart" "$@" 2>&1 && helm template "$release" "$chart" "$@" 2>&1 >/dev/null)"; then
     echo "ok    $label"
   else
     echo "FAIL  $label" >&2
@@ -31,12 +33,20 @@ run() {
     failed=1
   fi
 }
+run() {
+  local label="$1"; shift
+  run_chart "$CHART" trove "$label" "$@"
+}
 
 for f in "${sets[@]}"; do
   run "ci/$(basename "$f")" -f "$f"
 done
 run "deploy/dev/values-dev.yaml" -f "$ROOT/deploy/dev/values-dev.yaml"
 run "deploy/dev/values-dev.yaml + values-pooler.yaml" -f "$ROOT/deploy/dev/values-dev.yaml" -f "$ROOT/deploy/dev/values-pooler.yaml"
+
+for f in "$BASTION_CHART"/ci/*.yaml; do
+  run_chart "$BASTION_CHART" trove-bastion "trove-bastion ci/$(basename "$f")" -f "$f"
+done
 
 # Offline rendering has no cluster capabilities; the kubeconform run of R-HA-028 joins with the
 # CI workflow (the tool is not pinned yet).

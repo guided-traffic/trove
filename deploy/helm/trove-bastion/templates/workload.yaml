@@ -1,0 +1,197 @@
+{{- /*
+The Bastion pods (R-BAS-045): a Deployment <fullname>, or a StatefulSet <fullname> with
+cacheVolume.type: persistent, which gives every pod a claim of its own (R-BAS-030). Both run
+"trove serve --role bastion"; no other role is rendered (R-BAS-001).
+*/ -}}
+{{- $kind := include "trove-bastion.workloadKind" . -}}
+{{- $backend := dig "bastion" "cache" "backend" "volume" .Values.config -}}
+{{- $volume := eq $backend "volume" -}}
+{{- $httpsPort := include "trove-bastion.port" (dig "server" "listen" ":8443" .Values.config) -}}
+{{- $opsPort := include "trove-bastion.port" (dig "server" "ops_listen" ":8081" .Values.config) -}}
+apiVersion: apps/v1
+kind: {{ $kind }}
+metadata:
+  name: {{ include "trove-bastion.fullname" . }}
+  labels:
+    {{- include "trove-bastion.labels" (dict "root" . "component" "bastion") | nindent 4 }}
+  {{- with (include "trove-bastion.commonAnnotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  minReadySeconds: {{ .Values.minReadySeconds }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  {{- if eq $kind "StatefulSet" }}
+  serviceName: {{ include "trove-bastion.fullname" . }}
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  {{- else }}
+  strategy:
+    {{- toYaml .Values.strategy | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "trove-bastion.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include "trove-bastion.config" . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "trove-bastion.labels" (dict "root" . "component" "bastion") | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "trove-bastion.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- include "trove-bastion.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- include "trove-bastion.topologySpread" . | nindent 6 }}
+      {{- with .Values.initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: trove
+          image: {{ include "trove-bastion.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - serve
+            - --role
+            - bastion
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: https
+              containerPort: {{ $httpsPort }}
+              protocol: TCP
+            - name: ops
+              containerPort: {{ $opsPort }}
+              protocol: TCP
+          env:
+            - name: TROVE_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: TROVE_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: TROVE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: TROVE_RUNTIME_MEMORY_LIMIT_BYTES
+              valueFrom:
+                resourceFieldRef:
+                  resource: limits.memory
+                  divisor: "1"
+            - name: TROVE_RUNTIME_TERMINATION_GRACE_PERIOD
+              value: {{ printf "%ds" (int64 .Values.terminationGracePeriodSeconds) | quote }}
+            {{- if not (dig "limits" "cpu" "" .Values.resources) }}
+            - name: GOMAXPROCS
+              valueFrom:
+                resourceFieldRef:
+                  resource: requests.cpu
+                  divisor: "1"
+            {{- end }}
+            - name: TMPDIR
+              value: /tmp
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- include "trove-bastion.probes" . | nindent 10 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/trove/trove.yaml
+              subPath: trove.yaml
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            {{- if $volume }}
+            - name: cache
+              mountPath: /var/cache/trove-bastion
+            {{- end }}
+            {{- include "trove-bastion.secretVolumeMounts" . | nindent 12 }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        {{- with .Values.sidecars }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "trove-bastion.fullname" . }}-config
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.tmp.sizeLimit }}
+        {{- if and $volume (eq .Values.cacheVolume.type "ephemeral") }}
+        - name: cache
+          ephemeral:
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  {{- toYaml .Values.cacheVolume.accessModes | nindent 18 }}
+                {{- with .Values.cacheVolume.storageClassName }}
+                storageClassName: {{ . }}
+                {{- end }}
+                resources:
+                  requests:
+                    storage: {{ .Values.cacheVolume.size }}
+        {{- else if and $volume (eq .Values.cacheVolume.type "emptyDir") }}
+        - name: cache
+          emptyDir:
+            sizeLimit: {{ .Values.cacheVolume.size }}
+        {{- end }}
+        {{- include "trove-bastion.secretVolumes" . | nindent 8 }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+  {{- if eq $kind "StatefulSet" }}
+  volumeClaimTemplates:
+    - metadata:
+        name: cache
+        labels:
+          {{- include "trove-bastion.selectorLabels" . | nindent 10 }}
+      spec:
+        accessModes:
+          {{- toYaml .Values.cacheVolume.accessModes | nindent 10 }}
+        {{- with .Values.cacheVolume.storageClassName }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.cacheVolume.size }}
+  {{- end }}

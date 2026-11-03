@@ -1,7 +1,7 @@
 # Release Docker & Helm: runs on every published release (semantic-release publishes it on main, see
 # release.yml). The release's tag is the version: the image guidedtraffic/trove (Docker Hub) for
-# linux/amd64 and linux/arm64, built from the Containerfile, and the Helm chart in the gh-pages branch
-# (the chart repository https://guided-traffic.github.io/trove/) with the release's assets.
+# linux/amd64 and linux/arm64, built from the Containerfile, and the Helm charts trove and trove-bastion in the
+# gh-pages branch (the chart repository https://guided-traffic.github.io/trove/) with the release's assets.
 # docs/developer/releasing.md (The release pipeline) describes the jobs and the secrets.
 name: Release Docker & Helm
 
@@ -158,27 +158,31 @@ jobs:
         with:
           version: ${{ env.HELM_VERSION }}
 
-      # Update the chart version and the app version to the release, and the image tag in values.yaml
-      # (the only line that starts with two spaces and "tag:", see test/chart/image_test.go).
-      - name: Update Chart Version
+      # Update the chart version and the app version of both charts to the release (R-ARCH-025, R-BAS-045),
+      # and the image tag in the values.yaml of the chart trove (the only line that starts with two spaces
+      # and "tag:", see test/chart/image_test.go). The chart trove-bastion keeps image.tag empty, which
+      # means its appVersion.
+      - name: Update Chart Versions
         id: version
         run: |
           # Extract the version from the release tag (without the 'v' prefix)
           VERSION=${GITHUB_REF_NAME#v}
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          # Update the chart version and the app version
-          sed -i "s/^version:.*$/version: ${VERSION}/" deploy/helm/trove/Chart.yaml
-          sed -i "s/^appVersion:.*$/appVersion: \"${VERSION}\"/" deploy/helm/trove/Chart.yaml
+          # Update the chart version and the app version of both charts
+          for chart in trove trove-bastion; do
+            sed -i "s/^version:.*$/version: ${VERSION}/" "deploy/helm/${chart}/Chart.yaml"
+            sed -i "s/^appVersion:.*$/appVersion: \"${VERSION}\"/" "deploy/helm/${chart}/Chart.yaml"
+          done
           # Update the image tag in values.yaml
           sed -i "s/^  tag:.*$/  tag: \"${VERSION}\"/" deploy/helm/trove/values.yaml
 
-      - name: Create Helm Package
+      - name: Create Helm Packages
         run: |
           cd deploy/helm
-          helm package trove/
+          helm package trove/ trove-bastion/
           mkdir -p repo
           mv ./*.tgz repo/
-          # Create a temporary index for the new chart
+          # Create a temporary index for the new charts
           helm repo index repo/ --url https://guided-traffic.github.io/trove/
           cd ../..
 
@@ -230,6 +234,7 @@ jobs:
         with:
           files: |
             trove-${{ steps.version.outputs.version }}.tgz
+            trove-bastion-${{ steps.version.outputs.version }}.tgz
             index.yaml
           fail_on_unmatched_files: true
         env:

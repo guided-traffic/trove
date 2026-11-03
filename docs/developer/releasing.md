@@ -3,7 +3,7 @@
 Every push to `main` and every pull request runs the checks ([CI](#ci)). Once every job of a push
 run on `main` passed, Semantic Release publishes a GitHub release ([release flow](#release-flow)),
 and [`build.yml`](../../.github/workflows/build.yml) builds the product from that tag: the image
-`guidedtraffic/trove` on Docker Hub, and the Helm chart in the chart repository on GitHub Pages
+`guidedtraffic/trove` on Docker Hub, and the Helm charts `trove` and `trove-bastion` in the chart repository on GitHub Pages
 ([the release pipeline](#the-release-pipeline)). What the release contains and how the image is
 built: [`Containerfile`](../../Containerfile).
 
@@ -15,11 +15,12 @@ check is a job of its own, with its own make target, so it runs the same locally
 organisation's self-hosted runners, which are ephemeral pods (Ubuntu 24.04, Docker) without `make` or a C
 compiler. A job therefore installs what it calls: `make` and the C compiler (`build-essential`), `file`
 and `jq` where a step uses them, the Docker Compose plugin for the integration stack, Go from `go.mod`,
-Node.js from `web/.nvmrc`, and the pinned helm, kubectl, kind and Docker Buildx.
+Node.js from `web/.nvmrc`, and the pinned helm, kubectl, kind and Docker Buildx; the chart job also fetches promtool
+at its pin (`make promtool`, below).
 
 | Job | Make target | Runs |
 |---|---|---|
-| versions (E0.2) | `make versions-check` | go, node (`web/.nvmrc`), sqlc, oapi-codegen, golangci-lint, oasdiff (when built), kind, kubectl, helm, k6 and docker buildx against their pins. The job installs the pinned helm, kubectl, kind and buildx first, so the runner's copies are not the ones checked |
+| versions (E0.2) | `make versions-check` | go, node (`web/.nvmrc`), sqlc, oapi-codegen, golangci-lint, oasdiff (when built), promtool (when fetched), kind, kubectl, helm, k6 and docker buildx against their pins. The job installs the pinned helm, kubectl, kind and buildx first, so the runner's copies are not the ones checked |
 | Code Linting | `make lint` | golangci-lint (pinned; its binary is cached by version and Go version) with the linters of [.golangci.yml](../../.golangci.yml), then `go vet` |
 | GoSec Security Scan | `make gosec` | golangci-lint with only gosec enabled, the settings and the accepted findings of [.golangci.yml](../../.golangci.yml) |
 | Vulnerability Check | `make vuln` | govulncheck (pinned) over the module |
@@ -30,7 +31,7 @@ Node.js from `web/.nvmrc`, and the pinned helm, kubectl, kind and Docker Buildx.
 | unit tests | `make test` | the race detector; uploads `.out/test-unit.json` (`test-unit`) and `.out/coverage/unit.out` (`profile-unit`) |
 | web (Angular) | `make web-ci`, `make web-lint`, `make web-test`, `make web-embed` | `npm ci` (fails when `package.json` and the lockfile disagree), ESLint and the R-UI-046 rules, the Angular unit tests, the production build embedded into `internal/webui/dist` |
 | Malware Scan (source code) | `make malware-scan` | ClamAV (`clamscan --recursive --infected`) over the tree, without `.git`, `node_modules` and the build outputs; any infected file fails; uploads `clamav-report` |
-| chart (E0.7) | `make chart-lint`, `make chart-test` | `helm lint` over every value set, the render assertions of [test/chart](../../test/chart); uploads `.out/test-chart.json` (`test-chart`) |
+| chart (E0.7) | `make chart-lint`, `make chart-test` | `helm lint` and `helm template` over every value set of both charts (`deploy/helm/trove/ci`, `deploy/helm/trove-bastion/ci`, the dev profile), the render assertions of [test/chart](../../test/chart) for both charts, and the `promtool check rules` / `promtool test rules` run over the Bastion's PrometheusRule ([rules_test.yaml](../../deploy/helm/trove-bastion/tests/rules_test.yaml)); `make chart-test` fetches promtool into `.bin` at `PROMTOOL_VERSION` of [tools/versions.env](../../tools/versions.env), checked against the SHA-256 of the platform; uploads `.out/test-chart.json` (`test-chart`) |
 | image | `make image IMAGE=trove:ci` | the [Containerfile](../../Containerfile) for the runner's architecture, loaded into Docker; the image must run as `65532:65532` (R-HA-033) |
 | Container Scan (Trivy, built image) | `make image IMAGE=trove:scan`, then Trivy | Trivy (pinned `TRIVY_VERSION`) on the built image: fixed OS and library vulnerabilities of CRITICAL or HIGH, secrets and misconfigurations; SARIF uploaded as `trivy-container-report` |
 | integration (Valkey 9.1, shard a, b) | `make integration-up`, `make test-integration SHARD=<a\|b>`, `make integration-down` | the integration tier against the compose stack on TLS, on Valkey 9.1 only (no older line is guaranteed while trove is in development); two legs with a stack each, shard `a` the packages `coordination`, `npm`, `repository` and `proxy`, shard `b` every other one; uploads `test-integration-<shard>` and `profile-integration-<shard>` |
@@ -132,7 +133,7 @@ make lint gosec vuln cyclo generate-check build
 make test                               # unit tests, race detector, .out/coverage/unit.out
 make web-ci web-lint web-test web-embed # Node.js from web/.nvmrc
 make malware-scan                       # needs clamscan on PATH
-make chart-lint chart-test
+make chart-lint chart-test              # both charts; chart-test fetches promtool at its pin into .bin
 make image IMAGE=trove:ci               # the Containerfile, host architecture
 make integration-up test-integration integration-down
 make minio-up s3-conformance minio-down # needs Docker and the MinIO source build
@@ -285,14 +286,14 @@ since the last tag.
 
 [`build.yml`](../../.github/workflows/build.yml) ("Release Docker & Helm") runs on `release: published`.
 The tag is the version: `v0.1.0` gives the image the tags `0.1.0`, `0.1` and `0` (the `latest` tag
-belongs to pushes to `main`, not to releases), and the chart `version` and `appVersion` `0.1.0`. Every
+belongs to pushes to `main`, not to releases), and the `version` and `appVersion` `0.1.0` of both charts. Every
 job checks out the tag.
 
 | Job | Runner | What it does |
 |---|---|---|
 | Build Docker Image | self-hosted | [docker/build-push-action](https://github.com/docker/build-push-action) builds [Containerfile](../../Containerfile) for `linux/amd64,linux/arm64` and pushes `guidedtraffic/trove` to Docker Hub with the tags of [docker/metadata-action](https://github.com/docker/metadata-action); provenance and SBOM attestations; the build arguments are the pins (`NODE_VERSION` from [web/.nvmrc](../../web/.nvmrc), `GO_VERSION` from [go.mod](../../go.mod), `RUNTIME_BASE_IMAGE` from [tools/versions.env](../../tools/versions.env)) and the version, the commit and the commit's date for the binary's version line |
 | Scan and attach the SBOM | same | the SPDX SBOM by anchore/sbom-action with `SYFT_VERSION`, uploaded to the release; a Docker Scout CVE report |
-| Release Helm Chart to GitHub Pages | same | `deploy/helm/trove` with `version` and `appVersion` set to the release and the image tag in `values.yaml`, packaged, added to the chart repository's `index.yaml` on the `gh-pages` branch, and `trove-<version>.tgz` and `index.yaml` attached to the release |
+| Release Helm Chart to GitHub Pages | same | `deploy/helm/trove` and `deploy/helm/trove-bastion` with `version` and `appVersion` set to the release (and the image tag in the `values.yaml` of `trove`), packaged together with one `helm package`, added to the chart repository's `index.yaml` on the `gh-pages` branch in one push, and `trove-<version>.tgz`, `trove-bastion-<version>.tgz` and `index.yaml` attached to the release |
 
 **The Containerfile** has three stages. `web` runs `npm ci` and `npm run build:embed` on the Node.js of
 `web/.nvmrc`; `build` cross-compiles the binary for the target platform on the build platform
@@ -301,11 +302,14 @@ job checks out the tag.
 host architecture.
 
 **The chart repository** is `https://guided-traffic.github.io/trove/`, served from the `gh-pages`
-branch: every release adds its package and the merged `index.yaml`. The release's assets are the
-package of that release and the index. The chart's defaults point at the image: `image.registry:
+branch: every release adds the packages of both charts and the merged `index.yaml`. The release's assets are the
+two packages of that release and the index. The Bastion chart has no version of its own: its `version` and `appVersion`
+are the trove version of the release (R-ARCH-025, R-BAS-045), so one release publishes `trove` and `trove-bastion` at the same
+number, and a Bastion chart is installed with the image of its `appVersion` (its `image.tag` is empty, which means
+`appVersion`; the release job leaves that line alone). The chart's defaults point at the image: `image.registry:
 docker.io`, `image.repository: guidedtraffic/trove` ([values.yaml](../../deploy/helm/trove/values.yaml)),
 checked by [test/chart/image_test.go](../../test/chart/image_test.go). The release job rewrites the line
-`  tag:` of `values.yaml`; the test fails when a second line of that shape appears.
+`  tag:` of the `values.yaml` of the chart `trove`; the test fails when a second line of that shape appears.
 
 Not in the pipeline: a chart SBOM, a chart attestation, and any signature. Only the image carries
 attestations: a provenance and an SBOM attestation in its image index.

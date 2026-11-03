@@ -1,0 +1,77 @@
+# The bucket backend with Valkey (Sentinel), a trust bundle, tracing and the monitoring objects: the
+# profile of the e2e run with a SeaweedFS bucket (R-BAS-049). Also the set the rule tests render
+# (test/chart/bastion_rules_test.go), so the Valkey alert is part of the rule file.
+config:
+  server:
+    base_url: https://packages.example.com            # example
+    trusted_proxies: ["10.244.0.0/16"]                # example
+  bastion:
+    main:
+      url: https://trove.example.com                  # example
+    cache:
+      backend: bucket
+      bucket:
+        endpoint: https://object.storage.eu01.onstackit.cloud   # example
+        region: eu01                                  # example
+        bucket: trove-bastion-partners                # example
+    blocking:
+      exempt_cidrs: ["198.51.100.0/24"]               # example
+  valkey:
+    mode: sentinel
+    sentinel:
+      addresses:                                      # example
+        - trove-bastion-valkey-sentinel-0:26379
+        - trove-bastion-valkey-sentinel-1:26379
+        - trove-bastion-valkey-sentinel-2:26379
+      primary_name: trove-bastion                     # example
+  tracing:
+    enabled: true
+    endpoint: https://otel-collector.observability:4318   # example
+secrets:
+  mainToken:
+    existingSecret: trove-bastion-token               # example
+  signingKey:
+    existingSecret: trove-bastion-signing             # example
+  cacheBucket:
+    existingSecret: trove-bastion-s3                  # example
+  valkey:
+    existingSecret: trove-bastion-valkey              # example
+  valkeyCA:
+    existingSecret: trove-bastion-valkey-ca           # example
+trustedCA:
+  existingConfigMap: corp-ca-bundle                   # example
+tls:
+  existingSecret: trove-bastion-listener              # example
+ingress:
+  tls:
+    - secretName: trove-bastion-public-tls            # example
+      hosts: [packages.example.com]
+networkPolicy:
+  egress:
+    main:
+      to:
+        - ipBlock:
+            cidr: 198.51.100.10/32                    # example
+    valkey:
+      to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: trove-bastion-valkey   # example
+    cacheBucket:
+      to:
+        - ipBlock:
+            cidr: 0.0.0.0/0                           # example
+    tracing:
+      to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability     # example
+metrics:
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: kube-prometheus-stack                  # example
+  prometheusRule:
+    enabled: true
+    labels:
+      release: kube-prometheus-stack                  # example

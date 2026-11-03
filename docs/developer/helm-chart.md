@@ -2,6 +2,7 @@
 
 The chart lives in [deploy/helm/trove](../../deploy/helm/trove). This page covers its layout, what
 it renders, how its values reach the pods, how it is validated and tested, and how to extend it.
+The second chart, `trove-bastion`, has its own section at the end: [The Bastion chart](#the-bastion-chart).
 The requirements are in [ha-and-helm.md](../spec/ha-and-helm.md) (R-HA-002, R-HA-011, R-HA-019,
 R-HA-027 to R-HA-037, R-HA-056, R-HA-061, R-HA-063) and [endpoints.md](../spec/endpoints.md) (R-EP-008); the dev profile that installs it is described in
 [local-profile.md](local-profile.md).
@@ -452,3 +453,126 @@ passes: no PVC, no StatefulSet.
 **Add a role or pool.** Both roles come from one loop in `deployments.yaml`, `pdb.yaml` and the
 validation; extend the loops, not a copy. Selector labels are immutable: a new selector label
 needs a migration plan for the existing Deployments.
+
+## The Bastion chart
+
+The second chart, [deploy/helm/trove-bastion](../../deploy/helm/trove-bastion), deploys the Bastion: `trove serve --role bastion`,
+a read-only, internet-facing cache in front of a main installation ([spec/bastion.md](../spec/bastion.md), R-BAS-001, R-BAS-002,
+R-BAS-025, R-BAS-030, R-BAS-033, R-BAS-038, R-BAS-040 to R-BAS-047; the security view is
+[security/bastion.md](../security/bastion.md)). It is separate from the chart `trove` on purpose (Q-BAS-5): no PostgreSQL, no
+object store of the main installation, no migration Job, no second role, no Secret, no Role and no RoleBinding. The helper
+names are `trove-bastion.*` (`_helpers.tpl`), the idioms are those of the chart `trove`: `<fullname>` (release name, or
+`<release>-trove-bastion`, cut at 50 characters), the secret mount list used for volumes and mounts, the fail-fast
+validation, restricted pod security, probes on the ops port, `extraObjects` through `tpl`.
+
+```text
+deploy/helm/trove-bastion/
+├── Chart.yaml              version = appVersion = 0.0.0-dev (build.yml rewrites both with the release version)
+├── values.yaml             the block of R-BAS-046, every value "default (proposed)" or "example"
+├── values.schema.json      draft-07, additionalProperties false outside config; config is the hook (below)
+├── ci/                     value sets the tests render (not packaged, see .helmignore)
+│   ├── required-only.yaml      the five values a render needs (Q-BAS-55)
+│   ├── bucket-valkey.yaml      bucket backend, Sentinel Valkey, trust bundle, tracing, ServiceMonitor, PrometheusRule
+│   ├── persistent-routed.yaml  StatefulSet with a claim template, routing by path, edge-limit whitelist
+│   ├── autoscaling.yaml        HPA, bastion.replicas = autoscaling.maxReplicas
+│   ├── existing-tls.yaml       tls.existingSecret, no Certificate, emptyDir cache, CA bundle from a Secret
+│   └── plaintext.yaml          tls.enabled: false, no egress policy, no Ingress
+├── tests/rules_test.yaml   promtool test rules for the PrometheusRule (not packaged)
+└── templates/
+    ├── _helpers.tpl        names, labels, image, config merge, secret and ConfigMap mounts, probes, topology spread
+    ├── _validate.tpl       fail-fast validation (R-BAS-045), managed-key refusal (R-BAS-002)
+    ├── _rules.tpl          the alerts of R-BAS-041 and the list of their names
+    ├── _notes.tpl          NOTES.txt
+    ├── workload.yaml       Deployment, or StatefulSet with cacheVolume.type: persistent
+    ├── configmap.yaml  services.yaml  ingress.yaml  certificate.yaml  networkpolicy.yaml  pdb.yaml  hpa.yaml
+    ├── serviceaccount.yaml  servicemonitor.yaml  prometheusrule.yaml  extra-objects.yaml  validate.yaml  NOTES.txt
+```
+
+**What it renders.** The names are the table of R-BAS-045 (also in the [README](../../README.md#kubernetes-and-helm)). The workload is
+a Deployment, or a StatefulSet with `cacheVolume.type: persistent`, whose claim template gives every pod a volume of its own; the
+cache volume of the default `ephemeral` type is a generic ephemeral volume of the pod, `emptyDir` an `emptyDir`, and the bucket
+backend mounts none (the spool of fills is `/tmp`). `replicas` is `replicaCount`, and absent with `autoscaling.enabled`, where the
+HPA owns it.
+
+**Configuration (R-BAS-002).** `trove-bastion.config` merges `config` with the keys the chart manages (managed wins):
+`bastion.main.token_file`, `bastion.main.ca_file` and `bastion.cache.bucket.ca_file` (the one key of `trustedCA`),
+`bastion.signing_key_file`, `bastion.cache.volume.dir` (`/var/cache/trove-bastion`, volume backend), the bucket credential
+files (`source: static`), `bastion.replicas`, `valkey.username_file`, `valkey.password_file` and `valkey.tls.ca_file` (the Valkey CA,
+else the trust bundle) while Valkey is configured, and `server.tls` with the listener pair while `tls.enabled` (`server.ops_tls` keeps
+its default, which inherits it). `trove-bastion.validate` refuses a managed key under `config`. The ConfigMap `<fullname>-config` is
+mounted at `/etc/trove/trove.yaml` with `subPath`, and `checksum/config` is the hash of the merged text only: the Secrets are
+mounted as directories without `subPath`, so a replaced Secret reaches the files (token, TLS, trust bundle are re-read by the
+binary) and rolls nothing, while any change of `config` rolls the pods.
+
+**Ingress annotations (R-BAS-033, R-BAS-038, R-BAS-044).** Verified against HAProxy Ingress `v0.16.3` (Q-BAS-56); prefix
+`haproxy-ingress.github.io/`:
+
+| Value | Annotations |
+|---|---|
+| `edgeLimit.enabled` | `limit-rps`, `limit-connections`, `limit-whitelist` (joined `config.bastion.blocking.exempt_cidrs`, omitted while empty) |
+| `cacheVolume.routeByPath` | `balance-algorithm: uri`, `assign-backend-server-id: "true"`, `config-backend: hash-type consistent` |
+| `tls.enabled` | `secure-backends: "true"`, `secure-sni: <fullname>.<namespace>.svc`, and with `ingress.backendTLS.verify` `secure-verify-ca-secret` (`caSecret`, else the listener's Secret) |
+
+[test/chart/bastion_haproxy_test.go](../../test/chart/bastion_haproxy_test.go) fails when `DEV_HAPROXY_INGRESS_IMAGE` or
+`DEV_HAPROXY_INGRESS_CHART_VERSION` of [tools/versions.env](../../tools/versions.env) moves away from the version the names were
+read against: verify the keys in the controller's `keys.md`, `haproxy.tmpl` and `annotations/backend.go` at the new tag with `gh api`,
+then move the constant. That the controller refuses a flood and pins a path is the e2e suite's (R-BAS-049).
+
+**Validation.** Every row fails `helm template` and names the values: the two URLs (set, `https`), the token Secret, the signing key
+with the bucket backend or Valkey, the bucket and its credentials Secret, `cacheVolume.type: persistent` with the bucket backend,
+`routeByPath` without the volume backend or without `ingress.enabled`, `edgeLimit.requestsPerSecond` not above
+`config.bastion.limits.authenticated.requests_per_second`, a certificate source, the egress targets and the https ingress peer
+(an empty list means "anywhere"), one trust bundle key, an `ingress.annotations` key the chart renders, a name in `disabledAlerts` that
+is no alert, autoscaling bounds and metric, `highAvailability.enforce` (two replicas, a PDB, host spreading `DoNotSchedule` with
+`nodeTaintsPolicy: Honor`, no standalone Valkey, three Sentinels), and the managed keys.
+
+**Schema and the `config` hook.** [values.schema.json](../../deploy/helm/trove-bastion/values.schema.json) is generated once from
+the key set of `values.yaml` and edited by hand afterwards (like the one of the chart `trove`); everything outside `config` is
+`additionalProperties: false`. The `config` property is a free-form object with a description and the few keys the templates read
+typed. R-BAS-046 wants it validated against the schema the binary emits for the role `bastion` (R-HA-029's mechanism), which another
+work package produces as a generated file in `internal/config`; until it is wired, a typo under `config` fails in the binary, not at
+`helm install`. The wiring is one step: replace the value of `properties.config` in `values.schema.json` with the generated role schema
+(without its `$schema` and `$id`, as the root is draft-07), and make sure the schema lists the chart-managed keys of the paragraph
+above, because the binary reads them. Then add a subtest to `TestR_BAS_046_ValuesReferenceIsTheSpecBlock` that a typo under
+`config.bastion` fails `helm template`, and a check in `make generate-check` that the embedded copy equals the generated file.
+
+**PrometheusRule and its tests (R-BAS-041).** `_rules.tpl` holds the alerts as a YAML list; `prometheusrule.yaml` drops the names
+of `disabledAlerts` and appends `extraRules`. The Valkey alert exists only while `config.valkey.mode` is not `none`, and the replica
+alert reads the StatefulSet's metric for a StatefulSet. Selectors carry the release's `namespace` and ops `service`, because one
+Prometheus can scrape several Bastions; thresholds come from gauges of the Bastion. [tests/rules_test.yaml](../../deploy/helm/trove-bastion/tests/rules_test.yaml)
+has one healthy test in which no alert fires and one test per alert in which it fires; `TestR_BAS_041_PromtoolRules` renders the
+rule file from `ci/bucket-valkey.yaml`, runs `promtool check rules` and `promtool test rules`, and fails when an alert lacks either
+kind of test. promtool is the release binary at `PROMTOOL_VERSION` of `tools/versions.env` (`go install` of the module is refused by
+its `replace` directives): `make promtool` fetches it into `.bin/promtool-<version>` after checking the SHA-256 of the platform,
+`make chart-test` depends on it and passes the path as `TROVE_PROMTOOL`, `make versions-check` compares installed copies with the pin.
+Running the test by hand needs `TROVE_PROMTOOL`.
+
+**Tests.** `make chart-lint` lints and renders every `ci/` set of both charts; `make chart-test` runs the Bastion's tests next to the
+other chart tests:
+
+| Test | Asserts |
+|---|---|
+| `TestR_BAS_045_RequiredValuesRenderTheResources` | the required values give a Deployment with two replicas, PDB, Ingress with the edge-limit annotations, NetworkPolicy and no Secret, Role, RoleBinding or PVC (in every set); the names; every validation row names its values |
+| `TestR_BAS_045_HAProxyAnnotationsArePinnedToTheLocalControllerVersion` | the annotation names against the controller version of the local profile |
+| `TestR_BAS_046_ValuesReferenceIsTheSpecBlock` | the key set of `helm show values` equals the block parsed from `docs/spec/bastion.md`; every value is marked `default` or `example` |
+| `TestR_BAS_002_ConfigurationOnlyThroughTheChart` | the ConfigMap and its mount, every `config` value in the file, the managed keys, Secret mounts without `subPath`, no Secret in the environment, managed keys refused, the checksum changes with a `config` value and not with the token Secret |
+| `TestR_BAS_025_ReplicasAreRenderedIntoTheConfiguration` | `bastion.replicas` is `replicaCount`, or `autoscaling.maxReplicas` with an HPA and no `replicas` field |
+| `TestR_BAS_030_CacheVolumeKinds` | persistent gives a StatefulSet with a claim template, ephemeral and `emptyDir`, the bucket backend no volume |
+| `TestR_BAS_033_RouteByPath`, `TestR_BAS_038_EdgeLimitIsWiderThanTheBastionsOwn` | the annotations, the refusals naming both values, a user annotation that collides |
+| `TestR_BAS_047_NetworkPolicy` | ingress peers and ports, egress on by default, the targets added while used, no empty peer list |
+| `TestR_BAS_043_PodDisruptionBudgetAndSpreading` | PDB, spread, `highAvailability.enforce`, probes |
+| `TestR_BAS_044_TLS`, `TestR_BAS_040_ServiceMonitor` | Certificate or existing Secret, backend TLS annotations, trust bundles, the plaintext switch, the ServiceMonitor |
+| `TestR_BAS_041_PrometheusRuleAlerts`, `TestR_BAS_041_PromtoolRules` | the alert names, `disabledAlerts`, scoping; promtool |
+
+**Extension checklists.**
+
+*Add a value.* Add it to [values.yaml](../../deploy/helm/trove-bastion/values.yaml) with `# default (proposed)` or `# example` and to
+the values block of [spec/bastion.md](../spec/bastion.md) R-BAS-046 (the key-set test compares them), to
+[values.schema.json](../../deploy/helm/trove-bastion/values.schema.json), use it in a template, add a validation row if a wrong value
+must fail, and a subtest named with the requirement.
+
+*Add an alert.* Add it to `_rules.tpl` and to `trove-bastion.rules.names`, to the table of R-BAS-041, and a failure test and a healthy
+assertion to `tests/rules_test.yaml`; `TestR_BAS_041_PromtoolRules` fails without them.
+
+*Add a Secret.* Add an entry to `trove-bastion.secretMounts` and the file path to `trove-bastion.config`, the managed key to the list in
+`_validate.tpl` and to R-BAS-046's list of managed keys.

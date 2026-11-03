@@ -1,0 +1,59 @@
+{{- if .Values.metrics.serviceMonitor.enabled }}
+{{- /*
+R-BAS-040: scrapes the ops port of <fullname>-ops, every pod, path /metrics. The first relabeling is fixed
+and sets role="bastion"; metrics.serviceMonitor.relabelings are appended after it. With TLS the endpoint
+verifies the pods against ca.crt of the listener's Secret, which is read from the namespace of the
+ServiceMonitor (validated: the release namespace) under the name of the ops Service.
+*/ -}}
+{{- $sm := .Values.metrics.serviceMonitor }}
+{{- $fullname := include "trove-bastion.fullname" . }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $fullname }}
+  {{- with $sm.namespace }}
+  namespace: {{ . }}
+  {{- end }}
+  labels:
+    {{- include "trove-bastion.labels" (dict "root" . "component" "bastion") | nindent 4 }}
+    {{- with $sm.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with (include "trove-bastion.commonAnnotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "trove-bastion.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: ops
+  endpoints:
+    - port: ops
+      path: /metrics
+      interval: {{ $sm.interval }}
+      scrapeTimeout: {{ $sm.scrapeTimeout }}
+      {{- if .Values.tls.enabled }}
+      scheme: https
+      tlsConfig:
+        serverName: {{ $fullname }}-ops.{{ .Release.Namespace }}.svc
+        ca:
+          secret:
+            name: {{ include "trove-bastion.tlsSecretName" . }}
+            key: ca.crt
+      {{- end }}
+      relabelings:
+        - targetLabel: role
+          replacement: bastion
+        {{- with $sm.relabelings }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with $sm.metricRelabelings }}
+      metricRelabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

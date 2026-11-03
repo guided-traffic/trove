@@ -1,0 +1,46 @@
+{{- /*
+The listener's certificate (R-BAS-044, R-BAS-045), only while tls.existingSecret is empty and
+tls.certManager.enabled: the Secret <fullname>-tls is created by cert-manager, not by this chart. The
+names are the Service names, which the Ingress (secure-sni) and Prometheus (ServiceMonitor serverName)
+verify.
+*/ -}}
+{{- if and .Values.tls.enabled (not .Values.tls.existingSecret) .Values.tls.certManager.enabled }}
+{{- $fullname := include "trove-bastion.fullname" . }}
+{{- $ns := .Release.Namespace }}
+{{- $cm := .Values.tls.certManager }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $fullname }}-tls
+  labels:
+    {{- include "trove-bastion.labels" (dict "root" . "component" "tls") | nindent 4 }}
+  {{- with (include "trove-bastion.commonAnnotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  secretName: {{ $fullname }}-tls
+  duration: {{ $cm.duration }}
+  renewBefore: {{ $cm.renewBefore }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+  dnsNames:
+    - {{ $fullname }}
+    - {{ $fullname }}.{{ $ns }}
+    - {{ $fullname }}.{{ $ns }}.svc
+    - {{ $fullname }}.{{ $ns }}.svc.cluster.local
+    - {{ $fullname }}-ops
+    - {{ $fullname }}-ops.{{ $ns }}
+    - {{ $fullname }}-ops.{{ $ns }}.svc
+    - {{ $fullname }}-ops.{{ $ns }}.svc.cluster.local
+  issuerRef:
+    group: cert-manager.io
+    kind: {{ $cm.issuerRef.kind }}
+    name: {{ $cm.issuerRef.name }}
+{{- end }}

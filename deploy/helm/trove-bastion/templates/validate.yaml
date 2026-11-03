@@ -1,0 +1,2 @@
+{{- /* Renders nothing; fails the release when the values are unusable (R-BAS-045). */ -}}
+{{- $_ := include "trove-bastion.validate" . -}}
