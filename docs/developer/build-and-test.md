@@ -55,6 +55,8 @@ with their pins and fails on a difference; a tool that is not installed is not a
 | `nuget-stub-image` | builds the counting NuGet test upstream (`test/nugetstub/cmd/nugetstub`) for `linux/<IMAGE_ARCH>` on the release base image, tag `NUGET_STUB_IMAGE` (default `trove-e2e-nugetstub:dev`); see [e2e.md](e2e.md) |
 | `nuget-vectors`, `nuget-vectors-check` | write, or check against a regeneration, the golden vectors of the NuGet version, range and ID rules ([tools/nugetvectors](../../tools/nugetvectors)) with the pinned .NET SDK image and NuGet.Versioning; need Docker (`DOTNET=local` runs a local `dotnet`) |
 | `nuget-reference-check` | fails when [perf/nuget/reference](../../perf/README.md) differs from a regeneration by the counting NuGet test upstream (`nugetstub reference -check`, no Docker); CI runs it in the job generate |
+| `osv-stub-image` | builds the test advisory source (`test/osvstub/cmd/osvstub`) for `linux/<IMAGE_ARCH>` on the release base image, tag `OSV_STUB_IMAGE` (default `trove-e2e-osvstub:dev`); see [e2e.md](e2e.md#the-test-advisory-source) |
+| `osv-real-refresh` | fetches the real OSV records frozen in `test/osvstub/testdata/real` again from `api.osv.dev` (`test/osvstub/cmd/osvfreeze`); needs network, manual, never in CI |
 | `fuzz-nuget` | runs each NuGet fuzz target (`NUGET_FUZZ_TARGETS`, `package:Target` pairs) for `NUGET_FUZZTIME` (default 5m); a failing input stays in the package's `testdata/fuzz`. CI runs one target per leg for 30 minutes, on the closing run only ([releasing.md](releasing.md#ci)) |
 | `coverage` | `go run ./internal/tools/coverage`, see [coverage.md](coverage.md) |
 | `chart-lint`, `chart-test` | call `test/chart/lint.sh` and `test/chart/test.sh`; provided by the chart work package |

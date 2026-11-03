@@ -1,0 +1,138 @@
+{
+  "taken": "2026-11-03",
+  "from": "https://api.osv.dev/v1/vulns/{id}",
+  "records": [
+    {
+      "ecosystem": "npm",
+      "id": "GHSA-vr7g-88fq-vhq3",
+      "sha256": "da23ddb09af9ac802b45bc6ebb71e7950acd872065c95a4592a653d8ae8807d6",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "ecosystem": "npm",
+      "id": "GHSA-35jh-r3h4-6jhm",
+      "sha256": "8f0e3db6f1346af4b02f9698a609d3f74553f5dbf21fe10c093942bb3df823f2",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "ecosystem": "npm",
+      "id": "GHSA-xvch-5gv4-984h",
+      "sha256": "ee66872a066d767f6903a8452e69e0feac1fd26d44e25905f75fbb66919789f3",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "ecosystem": "npm",
+      "id": "GHSA-5rqg-jm4f-cqx7",
+      "sha256": "43b1e5ddaeb1b207dcee67d31f98395d582d80a0fec3a20bec9fb2774a3f63e4",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "ecosystem": "npm",
+      "id": "GHSA-mh6f-8j2x-4483",
+      "sha256": "eff04c63ab06eda66c6e7d667dd7080afc82f23c22c7ab3e248526ee6e8c43b0",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "ecosystem": "npm",
+      "id": "GHSA-jj78-5fmv-mv28",
+      "sha256": "1311394f7306c859b279c117c0055a6d413ea530364f625d548529f52852914d",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "ecosystem": "npm",
+      "id": "GHSA-c7hr-j4mj-j2w6",
+      "sha256": "330781549e0607e3d15d80d4c70cd41c81474dcbdcc96b97e3c1b0c12e9dfe26",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "ecosystem": "npm",
+      "id": "GHSA-29xp-372q-xqph",
+      "sha256": "27111fde8fa6440bc4edc0f71e2be5e1a063e3d371c6315582dac8d07825de13",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "ecosystem": "npm",
+      "id": "GHSA-pjwm-rvh2-c87w",
+      "sha256": "b4a624537996f5319581b4f77160bccdce424cb837867e2980b026160a651e0a",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "ecosystem": "npm",
+      "id": "GHSA-3h52-269p-cp9r",
+      "sha256": "392f7992273dacfcdf841d63967cde1e762b666553db35dd323f65e7b92d62ff",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "ecosystem": "npm",
+      "id": "GHSA-27h2-hvpr-p74q",
+      "sha256": "4d279189ced15055d92654daaecc752dd516cfa468f649a74ca85e6175cc1dea",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "ecosystem": "npm",
+      "id": "MAL-2025-46969",
+      "sha256": "33b79eab8cde9c110389c49330f2598e29dedf49bca52bea09e69cbeedd4c6a3",
+      "license": "Apache-2.0 (OpenSSF malicious-packages)"
+    },
+    {
+      "ecosystem": "npm",
+      "id": "MAL-2026-5587",
+      "sha256": "0ca3b7dd3f7f3aa7270a8fb10bdefbdc80db3a63fc71cdcceef884cc23813d97",
+      "license": "Apache-2.0 (OpenSSF malicious-packages)"
+    },
+    {
+      "ecosystem": "NuGet",
+      "id": "GHSA-473q-m89c-ghf8",
+      "sha256": "13dbb36e841509e36ebc235627d7b0c6261115648216064cf7c66a1f2df67524",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "ecosystem": "NuGet",
+      "id": "GHSA-5crp-9r3c-p9vr",
+      "sha256": "a1d3602c5f4095ae0f85bed89f5e2842d938a8a9a29b6306ae0280b97d836f90",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "ecosystem": "NuGet",
+      "id": "GHSA-2hr5-cvwp-jr5w",
+      "sha256": "491963caca7d82748a8d9fab53bd23ad5333f6577c36bfaf96d7185bcdd15ff5",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "ecosystem": "NuGet",
+      "id": "GHSA-29rv-fqx2-4c9f",
+      "sha256": "2dfd14136edbb9e5f904f133918ef29b1ae991cce53fa70ad200bd5286b5f12f",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "ecosystem": "NuGet",
+      "id": "GHSA-2m65-m22p-9wjw",
+      "sha256": "810899a891160882671fe8a9afa142ec752350412f88b5e0a928c994b9195d34",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "ecosystem": "NuGet",
+      "id": "GHSA-23cv-jh4v-vffm",
+      "sha256": "35fd5e9a443f2b5ea7d405994a3751b190bda685043f6efbb4d814f7fa8539de",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "ecosystem": "NuGet",
+      "id": "GHSA-2pqj-h3vj-pqgw",
+      "sha256": "0bc0cd471cfe74b607299e887c6f389a7c5f9860a2a1b0a7553b9789e76e6723",
+      "license": "CC-BY-4.0 (GitHub Advisory Database)"
+    },
+    {
+      "ecosystem": "NuGet",
+      "id": "MAL-2024-11505",
+      "sha256": "46fbd379e5abc2b22d700efbbf24853695a2f042cf5b51a415510556ed62ad79",
+      "license": "Apache-2.0 (OpenSSF malicious-packages)"
+    },
+    {
+      "ecosystem": "NuGet",
+      "id": "MAL-2024-11506",
+      "sha256": "0421dfce0fbf51e4f44a42bc1f18b10d9f63f5583fe8c915e17a7d0c4e33ddb6",
+      "license": "Apache-2.0 (OpenSSF malicious-packages)"
+    }
+  ]
+}

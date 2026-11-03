@@ -256,6 +256,28 @@ if [ "${TROVE_E2E_OIDCSTUB:-0}" = "1" ]; then
 fi
 # <<< M4 oidc-stub
 
+# >>> M4b osv-stub
+# ── the test advisory source (R-VULN-029) ────────────────────────────────────
+# TROVE_E2E_OSVSTUB=1 builds the image of test/osvstub (make osv-stub-image), loads it into kind and (re)starts the stub
+# of deploy/dev/osvstub.yaml: Service osvstub.<ns>.svc on 443, TLS from the dev CA, control token in Secret
+# trove-osvstub. It serves osv.dev's bucket layout (<ecosystem>/all.zip, modified_id.csv, <id>.json, ecosystems.txt) and
+# the known-exploited catalog from a synthetic fixture for the test packages of the npm and NuGet test upstreams. The tests
+# read TROVE_E2E_OSVSTUB_HOST (vulnerabilities.sources.osv.base_url is https://$TROVE_E2E_OSVSTUB_HOST/, the catalog is
+# https://$TROVE_E2E_OSVSTUB_HOST/sites/default/files/feeds/known_exploited_vulnerabilities.json). trove trusts the dev CA
+# for upstreams through proxy.outbound.tls.ca_files (values-dev.yaml). Nothing here runs without the switch.
+if [ "${TROVE_E2E_OSVSTUB:-0}" = "1" ]; then
+  log "building the test advisory source image for linux/$ARCH"
+  (cd "$REPO_ROOT" && make --no-print-directory osv-stub-image IMAGE_ARCH="$ARCH") >"$OUT/osvstub-image.log" 2>&1 || { tail -20 "$OUT/osvstub-image.log" >&2; die "test advisory source image build failed"; }
+  kind load docker-image trove-e2e-osvstub:dev --name "$CLUSTER" >"$OUT/osvstub-load.log" 2>&1 || { tail -20 "$OUT/osvstub-load.log" >&2; die "kind load of the test advisory source failed"; }
+  log "starting the test advisory source"
+  render "$DEV_DIR/osvstub.yaml" | kn apply -f - >/dev/null
+  kn wait --for=condition=Ready certificate/trove-osvstub-tls --timeout=3m >/dev/null
+  kn rollout restart deployment/trove-osvstub >/dev/null   # same tag, new image content
+  kn rollout status deployment/trove-osvstub --timeout=3m >/dev/null || { kn describe pod -l app.kubernetes.io/name=trove-osvstub >&2; die "the test advisory source did not become ready"; }
+  export TROVE_E2E_OSVSTUB_HOST="osvstub.$NS.svc"
+fi
+# <<< M4b osv-stub
+
 # ── the tests ────────────────────────────────────────────────────────────────
 # The whole path is TLS (R-ARCH-035): the edge serves the dev CA's certificate for localhost, and the
 # pods' :8081 is HTTPS too. The scheme and the CA stay parameters: TROVE_DEV_SCHEME (https|http),

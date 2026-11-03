@@ -1,0 +1,25 @@
+# The frozen real records: "<ecosystem> <id>" per line. `make osv-real-refresh` fetches them again.
+# Mix: SEMVER and ECOSYSTEM ranges, last_affected, versions[] lists, withdrawn records, MAL- records,
+# CVSS 3.1 and 4.0, advisories without a severity vector.
+npm GHSA-vr7g-88fq-vhq3
+npm GHSA-35jh-r3h4-6jhm
+npm GHSA-xvch-5gv4-984h
+npm GHSA-5rqg-jm4f-cqx7
+npm GHSA-mh6f-8j2x-4483
+npm GHSA-jj78-5fmv-mv28
+npm GHSA-c7hr-j4mj-j2w6
+npm GHSA-29xp-372q-xqph
+npm GHSA-pjwm-rvh2-c87w
+npm GHSA-3h52-269p-cp9r
+npm GHSA-27h2-hvpr-p74q
+npm MAL-2025-46969
+npm MAL-2026-5587
+NuGet GHSA-473q-m89c-ghf8
+NuGet GHSA-5crp-9r3c-p9vr
+NuGet GHSA-2hr5-cvwp-jr5w
+NuGet GHSA-29rv-fqx2-4c9f
+NuGet GHSA-2m65-m22p-9wjw
+NuGet GHSA-23cv-jh4v-vffm
+NuGet GHSA-2pqj-h3vj-pqgw
+NuGet MAL-2024-11505
+NuGet MAL-2024-11506

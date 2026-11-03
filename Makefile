@@ -522,3 +522,20 @@ nuget-stub-image: ## Build the counting NuGet test upstream image (NUGET_STUB_IM
 nuget-reference-check: ## Fail when perf/nuget/reference differs from a regeneration by the counting NuGet test upstream (the corpus is deterministic; CI: generate)
 	go run ./test/nugetstub/cmd/nugetstub reference -check perf/nuget/reference
 # <<< M3 nuget
+
+# >>> M4b osv-stub
+# The test advisory source of the vulnerability-scanning tests (test/osvstub, R-VULN-029, docs/developer/e2e.md) and the
+# refresh of the real records frozen for it. Edit only between the markers.
+OSV_STUB_IMAGE ?= trove-e2e-osvstub:dev
+
+.PHONY: osv-stub-image
+osv-stub-image: ## Build the test advisory source image (OSV_STUB_IMAGE, IMAGE_ARCH) on the release base image
+	@mkdir -p .out/osvstub
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(IMAGE_ARCH) go build -trimpath -ldflags '-s -w' -o .out/osvstub/osvstub-linux-$(IMAGE_ARCH) ./test/osvstub/cmd/osvstub
+	docker buildx build --load --platform linux/$(IMAGE_ARCH) --build-arg RUNTIME_BASE_IMAGE=$(RUNTIME_BASE_IMAGE) \
+	  -f test/osvstub/Containerfile -t $(OSV_STUB_IMAGE) .out/osvstub
+
+.PHONY: osv-real-refresh
+osv-real-refresh: ## Fetch the real OSV records of test/osvstub/testdata/real/ids.txt again from api.osv.dev (needs network); review the diff, the tests name fields of them
+	go run ./test/osvstub/cmd/osvfreeze -dir test/osvstub/testdata/real
+# <<< M4b osv-stub

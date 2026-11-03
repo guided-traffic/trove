@@ -1748,6 +1748,137 @@ TROVE_GITLAB_URL=https://localhost:8929 TROVE_GITLAB_CA_FILE=ssl/ca.crt TROVE_GI
 
 </details>
 
+## The test advisory source
+
+[test/osvstub](../../test/osvstub) is the advisory source of the vulnerability-scanning tests
+([R-VULN-029](../spec/vulnerability-scanning.md#r-vuln-029--acceptance-suite)). It stands in for osv.dev's bucket and for the
+CISA catalog: the sync of [R-VULN-004](../spec/vulnerability-scanning.md#r-vuln-004--online-synchronization) and the import of
+R-VULN-005 read the fixture from it, and the tests read what trove requested from its request log. Like the other doubles it is a Go
+package (`New(cfg) *Stub`, an `http.Handler`, so `httptest.NewTLSServer(osvstub.New(cfg))` works), a container
+([cmd/osvstub](../../test/osvstub/cmd/osvstub), [Containerfile](../../test/osvstub/Containerfile)) and a pod of the dev cluster, all
+the same code; it reaches no network, and `Stub.Start` and the container answer TLS only.
+
+| File | Responsibility |
+|---|---|
+| [stub.go](../../test/osvstub/stub.go) | `Config`, `Stub`: the dataset under one mutex (records per ecosystem, the catalog, toggles, faults), `Upsert`, `UpsertAt`, `UpsertAdvisory`, `Withdraw`, `Remove`, `Toggle`, `SetFiller`, `AddKEV`, `RemoveKEV`, `SetFault`, `ResetAll`, `Archive`, `ChangeFile`, `IDs`, `Record`, `Info`; the archive and the change file are rebuilt when records changed |
+| [fixture.go](../../test/osvstub/fixture.go) | `DefaultFixture`: the synthetic records, the toggle groups, the catalog; the constants with the names, ids and versions the tests use |
+| [advisory.go](../../test/osvstub/advisory.go) | `Advisory`, the builder of an OSV record, and the range events |
+| [serve.go](../../test/osvstub/serve.go) | the request path: resolve the object, apply the faults, headers (`ETag`, `x-goog-hash`, `Cache-Control`), then `http.ServeContent` for `304`, `206`, `416` and `HEAD` |
+| [fault.go](../../test/osvstub/fault.go) | `Fault` and its scope |
+| [counts.go](../../test/osvstub/counts.go) | the request log and `Counts` |
+| [control.go](../../test/osvstub/control.go) | the control API below `/-/stub/` |
+| [real.go](../../test/osvstub/real.go) | the frozen real records ([testdata/real](../../test/osvstub/testdata/real/README.md)), embedded |
+| [tls.go](../../test/osvstub/tls.go) | `Start` (TLS or nothing), a throwaway CA, a certificate reloaded when its files change |
+| [cmd/osvfreeze](../../test/osvstub/cmd/osvfreeze) | fetches the real records again (`make osv-real-refresh`) |
+
+### What it serves
+
+| Path | Answer |
+|---|---|
+| `/ecosystems.txt` | `npm`, `NuGet`, one per line |
+| `/<ecosystem>/all.zip` | one entry per record, `<id>.json` (a record whose id is no safe file name, `../x`, is stored as `invalid-id-<hash>.json`, so the validation refuses the record and the unpacking does not refuse the archive); deterministic bytes for one dataset |
+| `/<ecosystem>/modified_id.csv` | `<modified>,<id>` per record, newest first, `modified` as `2026-11-01T00:00:00.000000Z` |
+| `/<ecosystem>/<id>.json` | the record |
+| `/sites/default/files/feeds/known_exploited_vulnerabilities.json` | the catalog: `title`, `catalogVersion`, `dateReleased`, `count`, `vulnerabilities[]` with `cveID`, `vendorProject`, `product`, `vulnerabilityName`, `dateAdded`, `shortDescription`, `requiredAction`, `dueDate`, `knownRansomwareCampaignUse`, `notes`, `cwes` |
+
+Every bucket object carries `ETag` (the quoted MD5 of the body), `Last-Modified`, `Accept-Ranges: bytes`, `Cache-Control: public, max-age=3600` and
+**two** `x-goog-hash` lines (`crc32c=…` and `md5=<base64>`), as the bucket sends them; a client that reads only the first line never sees the
+digest. `If-None-Match` (a list, `*` and weak forms) and `If-Modified-Since` answer `304`; `Range: bytes=a-b`, `a-` and `-n` answer `206` with
+`Content-Range` and `416` past the end. The catalog has `ETag` and `Last-Modified` too, and no `x-goog-hash`. The bucket itself answers `206` to a ranged
+read of a change file (verified on 2026-11-03 against `NuGet/modified_id.csv`), so the switch below is for the case the spec calls a fallback.
+
+### The fixture
+
+All identifiers are synthetic (`GHSA-aaaa-…`, `MAL-2026-…`) and follow the rules of R-VULN-006. The names are the constants of
+[fixture.go](../../test/osvstub/fixture.go). `modified` of the fixture is `2026-10-01T00:00:00Z` plus one minute per record; every later change gets a
+`modified` later than all before (even with a clock that stands still).
+
+| Ecosystem | Record | Package and versions | What it is for |
+|---|---|---|---|
+| npm | `GHSA-aaaa-aaaa-0001` | `trove-test-vuln`: `1.0.0` affected, `1.0.1` fixed | SEMVER range, CVSS 3.1 `…/C:H/I:N/A:N` (7.5, high) |
+| npm | `MAL-2026-1234` | `trove-test-mal@1.0.0` | `versions[]` only, no severity |
+| npm | `MAL-2026-1235` | `@acme/ui` `1.0.0`, `2.0.0` | malicious record on a claimed internal name |
+| npm | `GHSA-aaaa-bbbb-cccc` and `CVE-2026-0001` | `trove-test-alias`: `2.0.0` affected, `2.1.0` fixed | the alias group of R-VULN-006 (each names the other) |
+| npm | `GHSA-aaaa-aaaa-0003` | `left-pad`, `last_affected: 1.3.0` | a name of the npm test upstream's own corpus |
+| npm | `GHSA-aaaa-aaaa-0004` | `trove-test-cvss` | CVSS 4.0 (9.3) and 3.1 (7.5) vectors |
+| npm | `GHSA-aaaa-aaaa-0005` | `trove-test-qualitative` | `database_specific.severity: MODERATE` and no vector |
+| npm | `GHSA-aaaa-aaaa-0006` | `trove-test-nosev` | no severity at all |
+| npm | `GHSA-aaaa-aaaa-0007` | `trove-test-badrange` | `fixed: "not-a-version"` (unevaluable) |
+| npm | `GHSA-aaaa-aaaa-0008` | `trove-test-list`: `1.0.0`, `1.2.0` | a `versions[]` list on a non-`MAL-` record |
+| npm | `GHSA-aaaa-aaaa-0009` | `trove-test-withdrawn` | `withdrawn` set; the archive keeps it |
+| NuGet | `GHSA-aaaa-aaaa-0101` | `Newtonsoft.Json`: `13.0.1` affected, `13.0.3` fixed | ECOSYSTEM range, CVSS 3.1 7.5 (high) |
+| NuGet | `MAL-2026-1301` | `Contoso.Json.Codecs@1.0.0` | malicious, `versions[]` only |
+| NuGet | `GHSA-aaaa-aaaa-0102` | `Contoso.Util`: `2.0.0` | `last_affected`, CVSS 5.3 (medium) |
+
+The NuGet names and versions are those of the NuGet test upstream's default corpus; `TestNuGetFixtureMatchesTheNuGetUpstream` fails when the two drift. The npm
+packages `trove-test-*` are not in the npm test upstream's generated corpus: a test publishes them (to a local repository, or through the upstream's
+`/-/stub/publish`) and `left-pad` is in its corpus.
+
+**Toggles** (off at start; `PUT /-/stub/toggles/<name>` `{"on":true}` adds the records with a new `modified`, `false` removes them):
+
+| Toggle | Adds |
+|---|---|
+| `late` | `GHSA-aaaa-aaaa-0002` for `trove-test-late` (`2.0.0` affected, `2.0.1` fixed, high), and for NuGet `GHSA-aaaa-aaaa-0103` for `Contoso.Util@2.1.0` (fixed `2.2.0`) |
+| `invalid-id` | a record with the id `../x` |
+| `big-details` | `GHSA-aaaa-aaaa-0010`, `details` of 100 KiB |
+| `js-reference` | `GHSA-aaaa-aaaa-0011`, one reference is `javascript:alert(1)` |
+| `real` | the 22 real records of the next section, with a new `modified` |
+
+**Real records.** [testdata/real](../../test/osvstub/testdata/real/README.md) holds 13 npm and 9 NuGet records of the live feeds, taken on 2026-11-03 from
+`api.osv.dev` (GitHub Advisory Database, CC-BY 4.0; OpenSSF malicious-packages, Apache-2.0), among them `GHSA-vr7g-88fq-vhq3` and
+`GHSA-473q-m89c-ghf8`: SEMVER and ECOSYSTEM ranges, `last_affected`, `versions[]`, three withdrawn records, four `MAL-` records, CVSS 3.1 and 4.0, records without
+a vector. `osvstub.Real()` returns them for the matching corpus of R-VULN-009; `make osv-real-refresh` takes them again (network access needed; the tests never need it).
+
+### Faults and the dataset
+
+A `Fault` is set per ecosystem (`npm`, `NuGet`) or for the catalog (`kev`) and replaces the earlier one; `{}` clears it. `scope` (`all`, `archive`, `changes`,
+`records`) narrows `delayMs`, `error`, `truncate` and `abort`.
+
+| Member | Effect |
+|---|---|
+| `delayMs` | waits before answering (it ends when the client goes away) |
+| `error` | answers this status (500) with a short text |
+| `truncate` | cuts the body to half; length, `ETag` and digests describe the cut body, so the download succeeds and the archive does not open |
+| `abort` | declares the full length, sends half and drops the connection |
+| `digestMismatch` | the `md5` of `x-goog-hash` of an archive is wrong; `ETag` and the bytes are right |
+| `invalidPercent`, `invalid` | at least this share (rounded up) of the records, spread evenly over the sorted ids, and the named ones, are replaced by `{"id":…,"modified":"not-a-timestamp"}`, in the archive and when fetched singly |
+| `shrinkPercent` | at least this share of the records is left out of the archive (change file and single records keep them) |
+| `notFound` | `<id>.json` answers 404 for these ids while the change file still lists them |
+| `noRange` | `Range` is ignored (`200`, full body) and `Accept-Ranges` is not sent |
+
+The fixture has 12 npm and 3 NuGet records, too few for "2 % invalid" or "30 % fewer"; `PUT /-/stub/filler/<ecosystem>` `{"count":n}` (or `-filler n`, `Config.Filler`)
+holds exactly `n` synthetic records `GHSA-fill-NNNN-0000` besides them. A test that needs exact numbers reads `GET /-/stub/dataset` (records, change rows, archive size
+and digests per ecosystem).
+
+### Counting and control API
+
+Every request outside `/-/stub/` is logged: method, path, ecosystem, kind (`archive`, `changes`, `record`, `ecosystems`, `kev`, `other`), status, `Range`, whether it was conditional,
+bytes. `Counts` has `total`, `kinds` (`"npm/record"`, `"NuGet/archive"`, `"kev"`, …), `paths` (requests, conditional, notModified, ranged, partial, errors per path) and the log
+(newest last, at most 5000). A test asserts "no request" with `Total == 0` after `ResetCounts`, and "exactly 3 record requests" with `Records("npm") == 3`. The control API needs the bearer token
+(without `Config.ControlToken` it does not exist) and is not counted:
+
+| Request | Does |
+|---|---|
+| `GET /-/stub/requests[?log=false]` | `Counts` |
+| `POST /-/stub/reset[?all=true]` | zero the counts; with `all`, the dataset, toggles, faults and the catalog go back to the fixture |
+| `GET /-/stub/dataset` | `Info`: per ecosystem the records, change rows, newest `modified`, archive bytes, MD5 and SHA-256; catalog size; toggles |
+| `GET /-/stub/faults`, `PUT`/`DELETE /-/stub/faults/{ecosystem}` | read, set (a `Fault`), clear |
+| `POST /-/stub/records` | `{"ecosystem","record":{…},"modified"?}` adds or replaces a record, sets `modified` (later than every earlier one unless given), answers `{"modified"}` |
+| `POST /-/stub/withdraw`, `POST /-/stub/remove` | `{"ecosystem","id"}`: set `withdrawn` (the archive keeps the record), delete the record |
+| `PUT /-/stub/toggles/{name}`, `PUT /-/stub/filler/{ecosystem}` | as above |
+| `POST /-/stub/kev`, `DELETE /-/stub/kev/{cve}` | add (`{"cveID":"CVE-2026-0001"}` suffices; `dateAdded` defaults to today) or remove a catalog entry |
+
+### In the cluster
+
+[deploy/dev/osvstub.yaml](../../deploy/dev/osvstub.yaml): the Service `osvstub` on 443 in front of one pod (the dataset and the log are in memory), a certificate of the dev CA,
+the control token in Secret `trove-osvstub` (key `control-token`), TCP probes (an HTTP probe would be counted). [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) (marker `M4b osv-stub`) builds
+the image (`make osv-stub-image`), loads it into kind, applies the manifest and restarts the Deployment when `TROVE_E2E_OSVSTUB=1`, and exports `TROVE_E2E_OSVSTUB_HOST`
+(`osvstub.<ns>.svc`). The base URL of the source is `https://$TROVE_E2E_OSVSTUB_HOST/`; trove trusts the dev CA for upstreams through `proxy.outbound.tls.ca_files`
+([values-dev.yaml](../../deploy/dev/values-dev.yaml)). No test set exports the switch yet; the vulnerability tests of the e2e tier add it with their set.
+
+Verified: the unit tests (`go test -race ./test/osvstub/...`), the rendered manifest parses (`render` of [lib.sh](../../deploy/dev/lib.sh) and `kubectl create --dry-run=client`), and the image
+built by `make osv-stub-image` starts, serves over TLS and refuses plain HTTP. Not verified: a deployment on kind (the cluster is shared) and a fetch by a trove `worker`.
+
 ## The CI tests
 
 The tests of GitLab CI OIDC (M4, [R-CI-028](../spec/gitlab-ci-oidc.md#r-ci-028--reference-pipeline-npm-and-nuget-from-gitlab-ci), roadmap E4.1 and E4.4 to
