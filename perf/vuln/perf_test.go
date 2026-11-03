@@ -64,6 +64,9 @@ func newInstallation(t *testing.T) *installation {
 		"TROVE_VULNERABILITIES_SOURCES_OSV_BASE_URL=" + run.URL + "/",
 		"TROVE_VULNERABILITIES_SOURCES_KEV_MODE=off",
 		"TROVE_VULNERABILITIES_SOURCES_OSV_TIMEOUT=30m",
+		// A worker enqueues the latest due slot of its tasks when it starts, and a running vuln-sync-osv makes the
+		// run of V-1 answer 409 (one OSV sync at a time, R-VULN-004): the test decides when the sync runs.
+		`TROVE_MAINTENANCE_TASKS={"vuln-sync-osv":{"enabled":false,"schedule":"*/15 * * * *"},"vuln-sync-osv-full":{"enabled":false,"schedule":"17 3 * * 0"},"vuln-sync-kev":{"enabled":false,"schedule":"41 */6 * * *"}}`,
 	}})
 	in := &installation{t: t, st: st, stub: stub}
 	in.admin, in.grantee = st.User("rita"), st.User("grace")
