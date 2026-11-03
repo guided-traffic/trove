@@ -471,6 +471,9 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - 🟡 Test and Release run 41549404703 failed in `unit tests` at `TestFlightLockSubscriptions` ("fifty waiters of one flight
   cost one SUBSCRIBE", R-ARCH-033): a waiter saw the flight `gone` without its outcome; the flight code is unchanged in this
   phase, so the flake predates it; cause not known yet
+- 🟡 Test and Release run 41553486196 failed in `unit tests` at `TestStallTimeout` ("every successful chunk moves the deadline,
+  so a slow but steady transfer completes", R-ARCH-005: the body arrived cut at 70 bytes); `internal/httpserver`'s stall
+  handling is unchanged in this phase, so the timing flake predates it on the loaded runners; cause not known yet
 - 🟡 `TestR_CI_003_StaleAndUnreachable` failed once in W3's full run of `test/integration/ci` while three agents shared
   the stack, and passed alone and in the next full run; watched, not yet reproduced
 - 🟢 Test and Release run 41518863868 failed in `e2e on kind (access-long)`: the journey `06` clicked "Refresh now" by a
