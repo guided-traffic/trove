@@ -136,6 +136,15 @@ m.DBGauges().Add(observability.GaugeSource{
 go m.DBGauges().Run(ctx) // the composition root starts it once
 ```
 
+The vulnerability scanning registers one such source, `vuln` ([store/gauges.go](../../internal/vuln/store/gauges.go),
+registered in the `WP-G` block of [wire_vuln.go](../../internal/app/wire_vuln.go)): the five gauges of
+[R-VULN-024](../spec/vulnerability-scanning.md) (`trove_vuln_source_*`, `trove_vuln_findings`, `trove_vuln_claimed_name_matches`) over three
+statements of [vuln_ops.sql](../../internal/meta/postgres/queries/vuln_ops.sql). The descriptors are `vmetrics.GaugeDescs()`, so the
+families stay defined in one place. The source fills the series a dashboard and the alerts need but the tables do not have rows for:
+a series with 0 for every configured source without a row of `vuln_source_state` (after a restore or before the first run, so that
+`TroveVulnerabilityDataStale` fires on it), every severity, status and kind of the findings gauge, and both kinds for every
+ecosystem of the claimed-match gauge (Q-VULN-56). A source whose mode is `off`, and a disabled scanning, have no source series.
+
 A failing source keeps its previous values; `trove_metrics_db_gauges_last_success_timestamp_seconds` advances
 only when every source succeeded and is absent until the first success. The help text of such a gauge says to
 aggregate with `max`, not `sum`.

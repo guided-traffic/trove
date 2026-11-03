@@ -674,6 +674,43 @@
               "pattern": "^([0-9]+h)?([0-9]+m)?([0-9]+s)?$"
             }
           }
+        },
+        "vulnerabilities": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "stale_after": {
+              "type": "string",
+              "pattern": "^([0-9]+h)?([0-9]+m)?([0-9]+s)?$"
+            },
+            "sources": {
+              "type": "object",
+              "properties": {
+                "osv": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "online",
+                        "repository",
+                        "off"
+                      ]
+                    },
+                    "max_archive_size": {
+                      "type": [
+                        "string",
+                        "integer"
+                      ],
+                      "description": "Kubernetes quantity"
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       },
       "additionalProperties": true
@@ -1727,6 +1764,36 @@
           }
         }
       }
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "prometheusRule": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "labels": {
+              "type": "object"
+            },
+            "disabledAlerts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "extraRules": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

@@ -18,8 +18,9 @@ of being silently ignored.
 |---|---|
 | `web` and `worker` Deployments, always both (R-HA-002); a pool Deployment per endpoint with `pool.enabled` (R-EP-008) | autoscaling (HPA, also for endpoint pools), `web.pools`, `worker.pools` (R-HA-062) |
 | client Service `<fullname>` and ops Service `<fullname>-ops`, `sessionAffinity: None` (R-HA-037) | Gateway API HTTPRoute (R-HA-038), `contentOrigin` |
-| PodDisruptionBudget per Deployment, topology spread with `nodeTaintsPolicy: Honor` (R-HA-032) | NetworkPolicy egress and the egress example (R-HA-042), ServiceMonitor, PrometheusRule |
+| PodDisruptionBudget per Deployment, topology spread with `nodeTaintsPolicy: Honor` (R-HA-032) | NetworkPolicy egress and the egress example (R-HA-042), ServiceMonitor, and every alert of the PrometheusRule but the three of the vulnerability scanning (R-HA-045, see [The PrometheusRule](#the-prometheusrule)) |
 | NetworkPolicy ingress for `web`, `worker` and the migration Job (R-HA-042) | |
+| PrometheusRule with the three alerts of the vulnerability scanning (R-HA-045, R-VULN-024), `metrics.prometheusRule.*` | |
 | migration Job as `pre-install,pre-upgrade` hook, with hook ConfigMap and ServiceAccount (R-HA-019) | backup CronJob, restore Job, post-restore Job (R-HA-060) |
 | configuration file `trove.yaml`, Secret wiring including the login secrets `secrets.oidc` and `secrets.breakGlass`, downward-API variables (R-HA-030) | `secrets.backupTarget`, `trustedCA`, `bootstrap` |
 | restricted-PSS security contexts, probes, spool and `/tmp` volumes (R-HA-033 to R-HA-035, R-HA-061) | `initContainers`, `sidecars`, `lifecycle`, Service types beyond the three in the schema |
@@ -44,11 +45,13 @@ deploy/helm/trove/
 ├── Chart.yaml              apiVersion v2; version = appVersion = 0.0.0-dev (the release pipeline, build.yml, rewrites both)
 ├── values.yaml             defaults; every value commented "default (proposed)" or "example"
 ├── values.schema.json      draft-07, additionalProperties false for everything the chart owns
+├── tests/rules_test.yaml   promtool test rules for the PrometheusRule (not packaged)
 ├── ci/                     value sets the tests render (not packaged, see .helmignore)
 │   ├── required-only.yaml      only the values R-HA-031 names as required
 │   ├── ha-ingress.yaml         every optional Secret, Ingress with TLS, ephemeral spool
 │   ├── single-node.yaml        no enforcement, one replica per role, standalone Valkey
 │   ├── migrations-disabled.yaml  migrations.mode disabled, minAvailable budget, image digest
+│   ├── monitoring.yaml         the PrometheusRule on, the vulnerabilities section the chart reads (the rule tests render this set)
 │   ├── endpoints.yaml          two further endpoints on the main web pods, own Ingress classes, certificates by SNI
 │   ├── endpoints-pool.yaml     an endpoint with a pool of its own
 │   └── s3-provisioner.yaml     bucket, region, endpoint and credentials from one provisioner Secret
@@ -67,6 +70,8 @@ deploy/helm/trove/
     ├── endpoint-services.yaml, endpoint-ingress.yaml, endpoint-networkpolicy.yaml   per further endpoint
     ├── NOTES.txt           endpoints and warnings
     ├── networkpolicy.yaml  ingress policies for web, worker and the migration Job
+    ├── prometheusrule.yaml the PrometheusRule (only with metrics.prometheusRule.enabled); the alerts are _rules.tpl
+    ├── _rules.tpl          the alerts as a YAML list (trove.rules.all) and their names (trove.rules.names)
     ├── configmap.yaml      <fullname>-config (trove.yaml)
     ├── serviceaccount.yaml
     ├── migrate.yaml        hook ConfigMap, hook ServiceAccount and the migration Job
@@ -373,11 +378,34 @@ tests in `chart_test.go` assert both, row by row.
 | a chart-managed key set inside `config` | implemented (secret file paths, `storage.spool.dir`) |
 | `config.metrics.auth: static` without `secrets.metricsToken` | implemented |
 | `spool.headroom` not smaller than the spool; sizes that are not quantities | implemented |
+| the worker spool budget below `config.vulnerabilities.sources.osv.max_archive_size` while `config.vulnerabilities.enabled` (default true) and the OSV mode (default `online`) is not `off` (R-VULN-025) | implemented, naming the archive limit and `worker.spool.sizeLimit` |
+| a name in `metrics.prometheusRule.disabledAlerts` that is no alert of the chart | implemented, listing the names |
 | `tls.enabled` without `tls.secretName` (names the key and the opt-out); `ingress.enabled` with TLS and verification but no `caSecret` (haproxy, ingress-nginx) or `serversTransport` (traefik); `tls.clientCA` with haproxy and no `clientCertSecret`; the same three rules for the merged `ingress.backendTLS` of each further endpoint with `ingress.enabled` (`endpoints.<name>.ingress.backendTLS.caSecret`, `.serversTransport`, `.clientCertSecret` with the endpoint's `tls.clientCaSecret`); `tls.clientCA`, `tls.ops`, `tls.backendTLSPolicy` without `tls.enabled`; `tls.backendTLSPolicy.enabled` without `caConfigMapName` | implemented |
 | pooler (`session_host`, control endpoint), backup, restore, pools, gateway, ServiceMonitor, `contentOrigin` | with those features |
 | a `ReadWriteMany` spool, `--set ingress.path=…`, any unknown key | schema |
 
 </details>
+
+## The PrometheusRule
+
+`metrics.prometheusRule.enabled` renders one PrometheusRule `<fullname>`, group `<fullname>`: every alert of
+[_rules.tpl](../../deploy/helm/trove/templates/_rules.tpl) except `disabledAlerts`, then `extraRules`, with `labels` on the object. Only
+the three alerts of the vulnerability scanning are written (R-VULN-024): `TroveVulnerabilityDataStale`,
+`TroveVulnerabilitySyncFailing` and `TroveVulnerabilityClaimedNameMalicious`. The other rows of R-HA-045's table are not implemented
+(the list is in the spec's status paragraph of R-HA-045), and neither is the ServiceMonitor with its `role` and `pool` relabelings: the
+scrape is the operator's.
+
+- Every selector carries `namespace="<release namespace>"`, so two installations in one Prometheus do not blend (Q-VULN-55). A scrape
+  through the Prometheus operator always sets that label.
+- The stale threshold is `config.vulnerabilities.stale_after` (default `24h`, parsed by `trove.seconds`), the key the binary reads; a
+  `stale_after` that arrives only through `extraEnv` is not seen.
+- A rule file renders no object when every alert is disabled and `extraRules` is empty.
+- To add an alert: append it to `trove.rules.all` and its name to `trove.rules.names`, add a test that fires and one that stays silent to
+  [tests/rules_test.yaml](../../deploy/helm/trove/tests/rules_test.yaml) (`TestR_VULN_024_PromtoolRules` fails otherwise), and a row to
+  R-HA-045.
+
+[tests/rules_test.yaml](../../deploy/helm/trove/tests/rules_test.yaml) is rendered from `ci/monitoring.yaml` as release `trove` in the
+namespace `default` and run with the pinned promtool (`make chart-test` fetches it, see [The Bastion chart](#the-bastion-chart)).
 
 ## Value sets and tests
 
@@ -414,6 +442,10 @@ is where the coverage generator reads the IDs from.
 | `R-HA-030` (`TestMigrationJobSecrets`) | the migration Job mounts no key ring; `web` and `worker` do |
 | `R-ARCH-006` (`TestTrustedProxiesExample`) | the `trusted_proxies` example is no pod-wide range and the default list is empty |
 | `R-HA-035`, `R-HA-036` | spool `sizeLimit` and budget; `GOMAXPROCS` rule; default resources |
+| `R-VULN-025` (`TestR_VULN_025_SpoolHoldsOneArchive`) | the worker spool must hold one archive: the defaults pass, a larger `max_archive_size` fails naming both values (also in mode `repository`), the headroom counts, mode `off` and a disabled scanning are not checked, the worker's `TROVE_STORAGE_SPOOL_MAX_BYTES` follows its own `sizeLimit` |
+| `R-VULN-025` (`TestR_VULN_025_ConfigurationPassesThrough`) | the `vulnerabilities` section reaches `trove.yaml` as set; `ci/monitoring.yaml` passes `trove admin config validate` with the other sets |
+| `R-VULN-024` (`TestR_VULN_024_PrometheusRuleValues`) | no rule by default; the three alerts and their severities; the `labels`; the threshold follows `stale_after`; every selector is scoped to the namespace; `disabledAlerts` and `extraRules`; a misspelt alert name fails; all alerts disabled renders nothing |
+| `R-VULN-024` (`TestR_VULN_024_PromtoolRules`) | `promtool check rules` and `promtool test rules` over the rendered rules, and one firing and one silent test per alert |
 | `R-HA-029` (memory) | a `web` pod or endpoint pool without a memory limit, or one whose memory slots (`trove.requestBytes` and the three cache budgets, the formula of `internal/app/memory.go`) are fewer than 64, fails; `2G`, `64Mi` and a plain integer render |
 | `R-HA-032` | PDB, spread, tolerations, default replica counts and rolling update |
 | `R-HA-037`, `R-ARCH-032` | `sessionAffinity: None` everywhere, no affinity annotations, Ingress path `/` and `Prefix`, `ingress.path` fails naming `path` |

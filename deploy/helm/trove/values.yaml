@@ -156,6 +156,17 @@ config:
       max_size: 10GiB                   # default (proposed) in storage.md; must fit the spool (R-HA-035)
   metrics:
     auth: none                          # default (proposed): none | static (needs secrets.metricsToken)
+  # The vulnerability scanning (R-VULN-025, docs/spec/vulnerability-scanning.md). Every key has a default in the binary and
+  # is rendered only when set here; the chart reads three of them: enabled, sources.osv.mode and sources.osv.max_archive_size
+  # (the worker spool must hold one archive, validated), and stale_after (the threshold of TroveVulnerabilityDataStale).
+  # vulnerabilities:
+  #   enabled: true                     # default (proposed)
+  #   enforcement: enforce              # default (proposed): enforce | report
+  #   stale_after: 24h                  # default (proposed)
+  #   sources:
+  #     osv:
+  #       mode: online                  # default (proposed): online | repository | off
+  #       max_archive_size: 1GiB        # default (proposed); at most the worker spool budget (worker.spool.sizeLimit - spool.headroom)
   # The NuGet format (docs/developer/configuration.md, R-NUGET-005, R-NUGET-009, R-NUGET-010, R-NUGET-016). Every key has a default and
   # is rendered only when set here; the settings of one repository (deleteMode, forwardSearch) are in its document, not in this file.
   # nuget:
@@ -298,6 +309,14 @@ secrets:
   metricsToken:
     existingSecret: ""                  # default (proposed); needed with config.metrics.auth static
     key: token                          # default (proposed)
+
+# ── Monitoring (R-HA-045; only the alerts of the vulnerability scanning so far) ─
+metrics:
+  prometheusRule:
+    enabled: false                      # default (proposed); needs the Prometheus operator's CRDs
+    labels: {}                          # default (proposed); example: {release: kube-prometheus-stack}
+    disabledAlerts: []                  # default (proposed); example: [TroveVulnerabilitySyncFailing]
+    extraRules: []                      # default (proposed); appended after the alerts of the chart
 
 # ── Network policy (R-HA-042; ingress only, egress is not rendered yet) ─────
 networkPolicy:

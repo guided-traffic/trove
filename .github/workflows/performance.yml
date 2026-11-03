@@ -10,7 +10,8 @@
 # scripts of R-ARCH-027 (Q-HA-67), job e2e-nuget runs leg nuget-ha (the drain and failover under the NuGet load, Q-ARCH-277;
 # no test of that name exists yet, so the set passes with a notice, Q-ARCH-276) and job e2e-ci runs leg ci-ha (the long legs of the GitLab CI OIDC
 # suite, E4.7) and job e2e-bastion runs the sets bastion and bastion-long (R-BAS-049: the Bastion's scenarios on kind, the long ones being the drain
-# and the floods). What the jobs run and how to reproduce them:
+# and the floods), and job vuln-perf runs the performance run of the vulnerability scanning (R-VULN-028, V-1 to V-9, perf/vuln) against the
+# integration stack and opens an issue on a miss. What the jobs run and how to reproduce them:
 # docs/developer/releasing.md#ha-and-performance-nightly.
 #
 # Every job runs on the organisation's self-hosted runners (runs-on: self-hosted).
@@ -81,6 +82,109 @@ jobs:
           path: .out/test-performance.json
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Container logs (failure only)
+        if: failure()
+        run: |
+          docker compose -f test/integration/compose.yaml ps -a || true
+          for c in $(docker ps -a --filter "name=trove-it-" --format '{{.Names}}'); do
+            echo "::group::logs of $c"
+            docker logs --timestamps "$c" 2>&1 | tail -n 300 || true
+            echo "::endgroup::"
+          done
+
+      - name: make integration-down
+        if: always()
+        run: make integration-down
+
+  # R-VULN-028: the performance run of the vulnerability scanning (V-1 to V-9): 100,000 stored versions seeded in SQL, the
+  # npm and NuGet dumps of the test advisory source at the size of the real ones, one web and one worker replica against the
+  # integration stack (perf/vuln). It runs here and nowhere else: Test and Release never starts it (owner, 2026-11-01).
+  # TROVE_PERF_GATE=1 makes a value above its target fail the job; a failed job opens an issue that lists the misses.
+  vuln-perf:
+    name: R-VULN-028 vulnerability scanning performance (V-1 to V-9)
+    runs-on: self-hosted
+    timeout-minutes: 150
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Load the tool pins
+        uses: ./.github/actions/load-pins
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential jq
+
+      - name: Install the Docker Compose plugin (the integration stack)
+        run: |
+          set -euo pipefail
+          docker compose version >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y docker-compose-v2; }
+          docker compose version
+
+      - name: Log in to Docker Hub (stack image pulls)
+        uses: docker/login-action@v4
+        with:
+          username: guidedtraffic
+          password: ${{ secrets.DOCKERHUB_PAT }}
+
+      - name: make integration-up
+        run: make integration-up
+
+      - name: The performance run (perf/vuln)
+        id: run
+        timeout-minutes: 120
+        run: |
+          set -euo pipefail
+          mkdir -p .out
+          set -a
+          . .dev/integration/env
+          set +a
+          TROVE_PERF_GATE=1 go test -count=1 -p 1 -tags integration -timeout 115m -run 'TestR_VULN_028' -json ./perf/vuln/... | tee .out/test-vuln-perf.json
+
+      - name: Upload the report (perf-vuln.json) and the go test -json stream
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vuln-perf
+          path: |
+            .out/perf-vuln.json
+            .out/test-vuln-perf.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Open a regression issue (a miss or a failed run)
+        if: failure() && steps.run.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          body=.out/vuln-perf-issue.md
+          {
+            echo "The nightly performance run of the vulnerability scanning (R-VULN-028) failed: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            if [ -f .out/perf-vuln.json ]; then
+              echo "Scenarios above their target (value, target):"
+              echo
+              jq -r '.results[] | select(.met | not) | "- \(.id) \(.scenario): \(.value) \(.unit), target \(.target) \(.unit)"' .out/perf-vuln.json
+              echo
+              echo "Every value of the run is in the artifact vuln-perf (perf-vuln.json)."
+            else
+              echo "The run ended before it wrote its report (perf-vuln.json is missing); see the job log."
+            fi
+          } > "$body"
+          gh issue create --title "Performance regression: vulnerability scanning (R-VULN-028), run ${GITHUB_RUN_ID}" --body-file "$body"
 
       - name: Container logs (failure only)
         if: failure()

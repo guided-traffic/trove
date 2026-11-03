@@ -1,0 +1,40 @@
+# The PrometheusRule of R-HA-045 (the alerts of the vulnerability scanning, R-VULN-024) and the vulnerabilities section
+# the chart reads (R-VULN-025). The rules are rendered into a rule file and tested with promtool
+# (deploy/helm/trove/tests/rules_test.yaml, test/chart).
+config:
+  server:
+    base_url: https://trove.example.com            # example
+  database:
+    host: trove-db-rw.trove.svc                    # example
+  storage:
+    s3:
+      bucket: trove-blobs                          # example
+  valkey:
+    sentinel:
+      addresses:                                   # example
+        - trove-valkey-sentinel-0.trove-valkey-sentinel.trove.svc:26379
+        - trove-valkey-sentinel-1.trove-valkey-sentinel.trove.svc:26379
+        - trove-valkey-sentinel-2.trove-valkey-sentinel.trove.svc:26379
+      primary_name: trove                          # example
+  vulnerabilities:
+    enabled: true                                  # default (proposed)
+    stale_after: 24h                               # default (proposed)
+    sources:
+      osv:
+        mode: online                               # default (proposed)
+        max_archive_size: 1GiB                     # default (proposed)
+tls:
+  secretName: trove-tls                            # example
+secrets:
+  database:
+    existingSecret: trove-db-app                   # example
+  valkey:
+    existingSecret: trove-valkey                   # example
+  encryption:
+    existingSecret: trove-encryption-keys          # example
+    keys: [2026-10.key]                            # example
+metrics:
+  prometheusRule:
+    enabled: true                                  # example
+    labels:
+      release: kube-prometheus-stack               # example

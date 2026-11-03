@@ -71,6 +71,7 @@ The ops Service selects every `web` and `worker` pod, so each replica is scraped
 | PostgreSQL | `trove_db_pool_connections`, `trove_db_pool_max_connections`, `trove_db_pool_empty_acquires_total` |
 | Object store and upstreams | `trove_storage_s3_requests_total`, `trove_storage_s3_request_duration_seconds`, `trove_outbound_requests_total`, `trove_outbound_request_duration_seconds`, `trove_outbound_egress_denied_total` |
 | Caches | `trove_cache_requests_total`, `trove_cache_entries`, `trove_cache_bytes`, `trove_cache_flushes_total` |
+| Vulnerability scanning | `trove_vuln_source_last_success_timestamp_seconds`, `trove_vuln_source_records`, `trove_vuln_source_consecutive_failures` (labels `source`, `ecosystem`), `trove_vuln_sync_runs_total`, `trove_vuln_sync_records_total`, `trove_vuln_unevaluable_ranges_total`, `trove_vuln_evaluations_total`, `trove_vuln_evaluation_duration_seconds`, `trove_vuln_findings` (`severity`, `status`, `kind`), `trove_vuln_downloads_blocked_total`, `trove_vuln_audit_requests_total`, `trove_vuln_claimed_name_matches` (`ecosystem`, `kind`) |
 | Audit and telemetry | `trove_audit_events_total`, `trove_audit_events_dropped_total`, `trove_metrics_label_overflow_total`, `trove_tracing_spans_dropped_total` |
 
 Gauges read from PostgreSQL, such as `trove_jobs_queued`, are reported by every replica; aggregate them with `max`, not `sum`.
@@ -200,6 +201,38 @@ cache:
 
 The caches of remote repositories (fetched packages and their metadata) are a different matter; see [Managing repositories](repositories.md).
 
+## Vulnerability scanning
+
+The scanning needs the `worker` role: the sync of the advisory data and the evaluation of the stored versions run there. Nothing on this page makes a replica unready, because no replica can repair advisory data; the system information, the report banner and the alerts show it.
+
+**Alerts.** The chart renders a PrometheusRule when you ask for it. It needs the Prometheus operator's custom resource definitions and a scrape of the ops port (see Metrics above); every selector is scoped to the release's namespace.
+
+```yaml
+metrics:
+  prometheusRule:
+    enabled: true                  # default: false
+    labels: {release: kube-prometheus-stack}   # example: the label your Prometheus selects rules by
+    disabledAlerts: []             # default; example: [TroveVulnerabilitySyncFailing]
+    extraRules: []                 # default: your own rules, appended after the chart's
+```
+
+| Alert | Fires when | Severity |
+|---|---|---|
+| `TroveVulnerabilityDataStale` | no sync run of a source and ecosystem has ended successfully for longer than `vulnerabilities.stale_after` (default 24h, read from `config.vulnerabilities.stale_after`) for 15 minutes. A source that never synced counts: its last success is 0 | warning |
+| `TroveVulnerabilitySyncFailing` | three consecutive runs of one source and ecosystem failed. The last error is on the sources page of the vulnerability section | warning |
+| `TroveVulnerabilityClaimedNameMalicious` | a malicious-package advisory names a package name that a local repository claims | critical |
+
+A name in `disabledAlerts` that is no alert of the chart fails the install. If you set `stale_after` only through an environment variable (`extraEnv`), set it in `config.vulnerabilities.stale_after` as well, or the alert keeps the 24-hour default.
+
+**Worker spool.** A sync downloads one archive into the worker's spool. While `vulnerabilities.sources.osv.mode` is `online` or `repository`, the chart refuses an install in which the worker's spool budget (`worker.spool.sizeLimit`, else `spool.sizeLimit`, minus `spool.headroom`) is smaller than `vulnerabilities.sources.osv.max_archive_size` (default `1GiB`; the default worker spool is `5Gi` with `2GiB` headroom). The message names both values.
+
+**After a restore.** The findings and their history are part of a backup; the advisory data is not, because the next sync fetches it again. A restored installation therefore starts with every ecosystem empty:
+
+- every finding keeps its status, and every blocked or malicious version stays refused; a dismissed finding stays dismissed, and its history is intact;
+- no finding resolves while the data is missing, and new versions are served unevaluated (or refused, where a repository sets `onMissingData: block`);
+- `npm audit` through trove answers `503` and the NuGet vulnerability resource is not listed;
+- the system information shows each source with state `empty`, `TroveVulnerabilityDataStale` fires after 15 minutes, and the first `vuln-sync-osv` slot (every 15 minutes by default) imports the data and starts the full evaluation. You can start it at once from the task list.
+
 ## What to watch
 
 | Signal | Meaning |
@@ -214,6 +247,8 @@ The caches of remote repositories (fetched packages and their metadata) are a di
 | `trove_jobs_queued` rising, or no live worker on System status | background work is not getting done |
 | `increase(trove_audit_events_dropped_total[15m]) > 0` | audit events reached only the log stream |
 | `increase(trove_db_pool_empty_acquires_total[5m])` high | the database pool is too small for the load |
+| `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing` | advisory data of a source is older than `vulnerabilities.stale_after`, or three sync runs in a row failed; see [Vulnerability scanning](#vulnerability-scanning) |
+| `TroveVulnerabilityClaimedNameMalicious` | a malicious-package advisory names a package name your installation treats as internal |
 | `trove_endpoint_misdirected_total` rising | clients or the ingress send an endpoint hosts it does not serve |
 
 TLS details are in [TLS and certificates](tls-and-certificates.md); endpoint metrics in [Endpoints and exposure rules](endpoints.md).

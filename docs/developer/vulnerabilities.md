@@ -157,6 +157,65 @@ throughout, H last. A and B meet at `advisory`, `match` and the tables; C at the
 Each work package adds its section here, in the shape of [ci-oidc.md](ci-oidc.md): Files, what the others rely on, contract changes, tests. Numbers it may use: Q-VULN 28 to 29 (S), 30 to 34 (A), 35 to 39 (B), 40 to 43 (C),
 44 to 47 (D), 48 to 51 (E), 52 to 54 (F), 55 to 58 (G), 59 to 60 (H); H-numbers 477 to 479 (A), 480 to 482 (B), 483 to 485 (C), 486 to 487 (D), 488 to 489 (E), 490 (F), 491 to 493 (G), 494 (H).
 
+### G · Operations
+
+R-VULN-024 (the gauges, the alerts, the facts), R-VULN-026 (the restore), R-VULN-027 (nothing built: the page is documentation, the
+state is the other packages'), R-VULN-028 (the performance run) and the chart's part of R-VULN-025. Decisions:
+[Q-VULN-55 to Q-VULN-58](../spec/vulnerability-scanning.md#q-vuln-55--the-alerts-are-scoped-to-the-releases-namespace-and-the-stale-threshold-is-vulnerabilitiesstale_after);
+gaps: H-491 to H-493 on [the security page](../security/vulnerability-scanning.md).
+
+**Files**
+
+| File | Responsibility |
+|---|---|
+| [queries/vuln_ops.sql](../../internal/meta/postgres/queries/vuln_ops.sql) | three read statements: `VulnOpsSourceStates` (the rows of `vuln_source_state`, `synced_at` as epoch seconds, 0 and `has_synced` false for none), `VulnOpsFindingCounts`, `VulnOpsClaimedMatchCounts` |
+| [store/ops.go](../../internal/vuln/store/ops.go) | `SourceStates`, `FindingCounts`, `ClaimedMatchCounts` over a `Database` (a retrying `Read`, which `*postgres.DB` implements) |
+| [store/gauges.go](../../internal/vuln/store/gauges.go) | `GaugeSource(db, expected, ecosystems)`: the `observability.GaugeSource` `vuln` over `vmetrics.GaugeDescs()`; `ExpectedSources(config)`; `gaugeMetrics`, the pure part |
+| [app/wire_vuln.go](../../internal/app/wire_vuln.go), block `WP-G` | `DBGauges().Add(store.GaugeSource(in.db, ...))` on every role, so every replica reports them and the aggregation is `max` |
+| [app/vuln_facts.go](../../internal/app/vuln_facts.go) | the block `vulnerabilityData` of `GET /api/v1/system/info`: `vulnerabilityFacts` reads the table through the same `SourceStates`, `vulnFactsFrom` is the pure part. The field `VulnerabilityData` of `v1.Facts` ([handlers.go](../../internal/api/v1/handlers.go)) carries it; `configFacts` sets it when the database answers |
+| [deploy/helm/trove/templates/prometheusrule.yaml](../../deploy/helm/trove/templates/prometheusrule.yaml), [_rules.tpl](../../deploy/helm/trove/templates/_rules.tpl), [tests/rules_test.yaml](../../deploy/helm/trove/tests/rules_test.yaml) | the three alerts and their promtool tests; see [helm-chart.md](helm-chart.md#the-prometheusrule) |
+| [_validate.tpl](../../deploy/helm/trove/templates/_validate.tpl), [values.yaml](../../deploy/helm/trove/values.yaml), [values.schema.json](../../deploy/helm/trove/values.schema.json), [ci/monitoring.yaml](../../deploy/helm/trove/ci/monitoring.yaml) | the worker spool against `max_archive_size`, `metrics.prometheusRule.*`, the typed keys of `config.vulnerabilities` the chart reads |
+| [test/integration/vulnrestore](../../test/integration/vulnrestore) | the restore tests and the gauge tests, below |
+| [perf/vuln](../../perf/vuln), job `vuln-perf` of [performance.yml](../../.github/workflows/performance.yml) | the performance run, [perf/README.md](../../perf/README.md#the-vulnerability-scanning-run) |
+
+**What the others rely on.** The gauge source is registered once per replica in `wireVuln` and reads the configuration captured at start
+(`vcfg`), so a changed `vulnerabilities` section needs a restart like the rest of the configuration. The gauges and the facts read
+`vuln_source_state` only through `store.SourceStates`; E's sources operation reads the same table and should agree with the facts on
+`state`, `syncedAt` and `failures`. The facts' `stale` is `now - synced_at > stale_after` with the replica's clock, as `DataState.Stale`
+is; it does not read A's cache, because the system information is a rare, bounded read and must not depend on the cache's `SafetyTTL`.
+
+**Gauges.** Zero-filling (Q-VULN-56) is what makes `TroveVulnerabilityDataStale` fire for a restored installation: the gauge carries
+`source`/`ecosystem` for every configured source, 0 without a row. If a work package makes the sync create the row of every configured
+source at start-up, nothing changes: the value of a row without `synced_at` is 0 as well.
+
+**The restore test** ([restore_test.go](../../test/integration/vulnrestore/restore_test.go)) builds the state a restore leaves, by SQL
+(`seedInstallation`): four versions published through a replica, the synced state of an earlier life (source state, advisories,
+affected entries, a KEV row, a pending evaluation, a claimed match), three findings with their history (a dismissed one, a blocked one in
+a second repository, an open malicious one), then `TRUNCATE` of the six transient tables taken from the export registry
+(`transientTables`), so a seventh transient table is emptied too. `snapshot` and `requireHeld` compare the statuses and require that the
+history of every finding keeps its first events (an evaluation may add events, never change one).
+
+| Test | Needs |
+|---|---|
+| `TestR_VULN_026_TheStateARestoreLeaves`: the classes of the eight tables, exported or not, the emulated state | nothing of the other packages (passes today) |
+| `TestR_VULN_026_FailSafeBeforeTheFirstSync`: the facts say `empty`, the gauges show the source at 0 and the findings by status (passes today); the 403 answers and the 200 of the dismissed version; an evaluation job on a pending advisory that is not in `vuln_advisory` resolves nothing | the block check (C) for the downloads; the job kind `vuln-evaluate` and the fail-safe of R-VULN-011 (B) for the evaluation, which is inserted into `job` directly because the kind has no task |
+| `TestR_VULN_026_AfterTheSyncAndTheFullEvaluation`: the task `vuln-sync-osv` imports from the in-process test source, the full evaluation follows (`full_evaluation_requested_at` cleared, a succeeded `vuln-evaluate` job), the statuses and histories are as before, three findings, the downloads answer as before | the sync and the task (A), the full evaluation after the first complete import (B), the block check (C) |
+| `TestR_VULN_024_DatabaseGauges`, `TestR_VULN_024_GaugesWithoutAnyRow`: the values follow the rows on two replicas, `/readyz` stays 200 with a source that failed three times, the zero series | nothing (passes today) |
+
+The tests that need other packages fail on a tree without them; they are the acceptance of R-VULN-026 once the packages are merged. They
+use the environment variables `TROVE_VULNERABILITIES_SOURCES_OSV_BASE_URL`, `..._ECOSYSTEMS`, `..._KEV_MODE` and
+`TROVE_METRICS_DB_GAUGE_INTERVAL` (1 s) to point the replicas at the stub and to read the gauges quickly.
+
+**Unit tests.** [store/gauges_test.go](../../internal/vuln/store/gauges_test.go) (the three gauges, the zero series, the 60 series of the
+findings gauge, `ExpectedSources`) and [app/vuln_facts_test.go](../../internal/app/vuln_facts_test.go).
+
+**Chart tests.** [test/chart/vuln_rules_test.go](../../test/chart/vuln_rules_test.go): `TestR_VULN_024_PromtoolRules`,
+`TestR_VULN_024_PrometheusRuleValues`, `TestR_VULN_025_SpoolHoldsOneArchive`, `TestR_VULN_025_ConfigurationPassesThrough` (`make chart-test`).
+
+**Performance.** `perf/vuln` seeds in SQL and measures V-1 to V-9 against the code of the other packages; it compiles and its setup is
+tested (`TestR_VULN_028_TheSeededInstallation`, 100,000 versions in about 2 s), the scenarios run once A to E are merged. How to read
+a run: [perf/README.md](../../perf/README.md#the-vulnerability-scanning-run).
+
 ## Tests that pass now
 
 These contract tests carry their requirement IDs in comments or in names that say what they pin; the evidence of a requirement comes from the tests of its work package (Q-ROAD-5).

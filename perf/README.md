@@ -6,6 +6,7 @@ driver and the scripts of the other formats join this directory with the work pa
 ```
 perf/
 ├── README.md                    this file
+├── vuln/                        the performance run of the vulnerability scanning (R-VULN-028, V-1 to V-9), see below
 ├── k6/
 │   └── npm.js                   the targets of R-ARCH-027 an npm client meets (P-1, P-3, P-5, P-7, P-8), against one web replica
 ├── nuget/
@@ -16,6 +17,32 @@ perf/
         ├── package.json         the reference project: root dependencies chosen from the corpus
         └── package-lock.json    its lockfile (lockfileVersion 3), 707 entries today
 ```
+
+## The vulnerability scanning run
+
+[vuln](vuln) is a Go test package (build tag `integration`) that measures the scenarios V-1 to V-9 of R-VULN-028. It seeds 100,000
+stored versions in SQL (90,000 npm in 9,000 packages across `npm-local` and `npm-remote`, 10,000 NuGet in `nuget-local`), starts the
+test advisory source ([test/osvstub](../test/osvstub)) with 231,000 npm and 7,400 NuGet records, which are the frozen dumps (the
+generator is deterministic), and runs one `web` and one `worker` replica of the composition root against the integration stack. The
+package names are those of the filler records, so version 1.0.0 of every package has one finding.
+
+| File | What it is |
+|---|---|
+| `vuln/env_test.go` | the report (`.out/perf-vuln.json`), the percentile and histogram helpers, the publish body |
+| `vuln/perf_test.go` | `TestR_VULN_028_PerformanceRun`: V-1 to V-9 in order |
+| `vuln/seed_test.go` | `TestR_VULN_028_TheSeededInstallation`: the shape of the seeded installation |
+
+```shell
+make integration-up
+set -a; . .dev/integration/env; set +a
+go test -count=1 -p 1 -tags integration -timeout 115m -run 'TestR_VULN_028' ./perf/vuln/...     # reports
+TROVE_PERF_GATE=1 go test -count=1 -p 1 -tags integration -timeout 115m -run 'TestR_VULN_028' ./perf/vuln/...   # a miss fails
+```
+
+It runs in the job `vuln-perf` of [HA and Performance (nightly)](../.github/workflows/performance.yml) with the gate on, and never in
+Test and Release. Every value of a run is in `perf-vuln.json` (artifact `vuln-perf`, 30 days); a miss opens an issue. The
+environment is the integration stack with the replicas in the test process, not the reference environment of R-ARCH-027
+([H-491](../docs/security/vulnerability-scanning.md#h-491--the-performance-run-is-not-the-reference-environment)).
 
 ## The npm load scripts
 

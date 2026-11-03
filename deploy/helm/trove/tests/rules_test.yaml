@@ -1,0 +1,115 @@
+# promtool test rules for the PrometheusRule of the chart (R-HA-045, R-VULN-024): one test per alert that fires on its
+# failure input, and one test on healthy input in which no alert fires. The rule file is rendered from ci/monitoring.yaml
+# as release trove in the namespace default: test/chart/vuln_rules_test.go renders it into rules.yaml next to a copy of this
+# file. The series carry the namespace label that a scrape through the Prometheus operator gives them.
+rule_files:
+  - rules.yaml
+
+evaluation_interval: 1m
+
+tests:
+  # --- healthy: nothing fires ----------------------------------------------------------------------------
+  # The clock of a promtool test starts at 0, so a fresh last success is a value just below the
+  # evaluation time: the series says 89000 (1000 s old at 1500 min = 90000 s).
+  - name: healthy sources, no alert fires
+    interval: 1m
+    input_series:
+      - {series: 'trove_vuln_source_last_success_timestamp_seconds{namespace="default",source="osv",ecosystem="npm",pod="w1"}', values: '89000x2000'}
+      - {series: 'trove_vuln_source_last_success_timestamp_seconds{namespace="default",source="osv",ecosystem="NuGet",pod="w1"}', values: '89000x2000'}
+      - {series: 'trove_vuln_source_consecutive_failures{namespace="default",source="osv",ecosystem="npm",pod="w1"}', values: '0x2000'}
+      - {series: 'trove_vuln_source_consecutive_failures{namespace="default",source="osv",ecosystem="NuGet",pod="w1"}', values: '2x2000'}
+      - {series: 'trove_vuln_claimed_name_matches{namespace="default",ecosystem="npm",kind="malicious",pod="w1"}', values: '0x2000'}
+      - {series: 'trove_vuln_claimed_name_matches{namespace="default",ecosystem="npm",kind="vulnerability",pod="w1"}', values: '5x2000'}
+    alert_rule_test:
+      - {eval_time: 1500m, alertname: TroveVulnerabilityDataStale, exp_alerts: []}
+      - {eval_time: 1500m, alertname: TroveVulnerabilitySyncFailing, exp_alerts: []}
+      - {eval_time: 1500m, alertname: TroveVulnerabilityClaimedNameMalicious, exp_alerts: []}
+
+  # --- TroveVulnerabilityDataStale ------------------------------------------------------------------------
+  # The last success is at 1000 s, so the data is older than 86400 s from 87400 s (1457 min) on; the alert holds for 15 minutes first (fires from 1472 min).
+  - name: TroveVulnerabilityDataStale fires when the last success is older than stale_after for 15 minutes
+    interval: 1m
+    input_series:
+      - {series: 'trove_vuln_source_last_success_timestamp_seconds{namespace="default",source="osv",ecosystem="npm",pod="w1"}', values: '1000x2000'}
+      - {series: 'trove_vuln_source_last_success_timestamp_seconds{namespace="default",source="osv",ecosystem="npm",pod="w2"}', values: '1000x2000'}
+      - {series: 'trove_vuln_source_last_success_timestamp_seconds{namespace="default",source="osv",ecosystem="NuGet",pod="w1"}', values: '85000x2000'}
+    alert_rule_test:
+      - eval_time: 1450m
+        alertname: TroveVulnerabilityDataStale
+        exp_alerts: []
+      - eval_time: 1480m
+        alertname: TroveVulnerabilityDataStale
+        exp_alerts:
+          - exp_labels: {severity: warning, source: osv, ecosystem: npm}
+            exp_annotations:
+              summary: The advisory data of osv npm is older than vulnerabilities.stale_after.
+              description: No sync run of this source and ecosystem ended successfully within vulnerabilities.stale_after. Enforcement and evaluation continue on the stored data (R-VULN-024). A source that never synced has the value 0 and fires too. Check the worker pods, the task vuln-sync-osv or vuln-sync-kev, and the egress to the source.
+
+  - name: TroveVulnerabilityDataStale fires on a source that never synced (the gauge is 0)
+    interval: 1m
+    input_series:
+      - {series: 'trove_vuln_source_last_success_timestamp_seconds{namespace="default",source="kev",ecosystem="",pod="w1"}', values: '0x2000'}
+    alert_rule_test:
+      - eval_time: 1000m
+        alertname: TroveVulnerabilityDataStale
+        exp_alerts: []
+      - eval_time: 1500m
+        alertname: TroveVulnerabilityDataStale
+        exp_alerts:
+          - exp_labels: {severity: warning, source: kev}
+            exp_annotations:
+              summary: The advisory data of kev  is older than vulnerabilities.stale_after.
+              description: No sync run of this source and ecosystem ended successfully within vulnerabilities.stale_after. Enforcement and evaluation continue on the stored data (R-VULN-024). A source that never synced has the value 0 and fires too. Check the worker pods, the task vuln-sync-osv or vuln-sync-kev, and the egress to the source.
+
+  - name: TroveVulnerabilityDataStale ignores the series of another namespace
+    interval: 1m
+    input_series:
+      - {series: 'trove_vuln_source_last_success_timestamp_seconds{namespace="other",source="osv",ecosystem="npm",pod="w1"}', values: '1000x2000'}
+    alert_rule_test:
+      - {eval_time: 1500m, alertname: TroveVulnerabilityDataStale, exp_alerts: []}
+
+  # --- TroveVulnerabilitySyncFailing ----------------------------------------------------------------------
+  - name: TroveVulnerabilitySyncFailing fires at the third consecutive failure and clears after a success
+    interval: 1m
+    input_series:
+      - {series: 'trove_vuln_source_consecutive_failures{namespace="default",source="osv",ecosystem="npm",pod="w1"}', values: '0 1 2 3 3 3 0 0 0'}
+      - {series: 'trove_vuln_source_consecutive_failures{namespace="default",source="osv",ecosystem="NuGet",pod="w1"}', values: '1x9'}
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: TroveVulnerabilitySyncFailing
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: TroveVulnerabilitySyncFailing
+        exp_alerts:
+          - exp_labels: {severity: warning, source: osv, ecosystem: npm}
+            exp_annotations:
+              summary: Three consecutive sync runs of osv npm failed.
+              description: The last error is in GET /api/v1/vulnerabilities/sources and in the audit event vulnerability.source.failed (R-VULN-024). The data is not refreshed until a run succeeds.
+      - eval_time: 8m
+        alertname: TroveVulnerabilitySyncFailing
+        exp_alerts: []
+
+  # --- TroveVulnerabilityClaimedNameMalicious -------------------------------------------------------------
+  - name: TroveVulnerabilityClaimedNameMalicious fires on a malicious match and not on a vulnerability match
+    interval: 1m
+    input_series:
+      - {series: 'trove_vuln_claimed_name_matches{namespace="default",ecosystem="npm",kind="malicious",pod="w1"}', values: '0 0 1 1 1'}
+      - {series: 'trove_vuln_claimed_name_matches{namespace="default",ecosystem="NuGet",kind="vulnerability",pod="w1"}', values: '4x5'}
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: TroveVulnerabilityClaimedNameMalicious
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: TroveVulnerabilityClaimedNameMalicious
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: A malicious-package advisory names a package name that this installation treats as internal.
+              description: Look at GET /api/v1/vulnerabilities/claimed-name-matches. A public package of that name exists, which is how a dependency-confusion attempt looks (R-VULN-010, R-VULN-024).
+
+  - name: TroveVulnerabilityClaimedNameMalicious ignores a malicious count of another namespace
+    interval: 1m
+    input_series:
+      - {series: 'trove_vuln_claimed_name_matches{namespace="other",ecosystem="npm",kind="malicious",pod="w1"}', values: '1x5'}
+    alert_rule_test:
+      - {eval_time: 3m, alertname: TroveVulnerabilityClaimedNameMalicious, exp_alerts: []}

@@ -179,6 +179,28 @@ applies that rule to the roles web and all only.
 {{- end -}}
 
 {{- /*
+The OSV source's archive (R-VULN-025): a worker downloads one archive into its spool, so the worker's spool budget
+(spool size minus spool.headroom) must hold vulnerabilities.sources.osv.max_archive_size while the scanning is enabled
+and the source is online or repository (the binary's defaults: enabled true, mode online, 1GiB).
+*/ -}}
+{{- $vuln := dig "vulnerabilities" (dict) $cfg -}}
+{{- $osv := dig "sources" "osv" (dict) $vuln -}}
+{{- if and (dig "enabled" true $vuln) (ne (dig "mode" "online" $osv) "off") -}}
+{{- $archive := include "trove.bytes" (dig "max_archive_size" "1GiB" $osv) | int64 -}}
+{{- $workerBudget := include "trove.spoolBudget" (dict "root" $ "role" "worker") | int64 -}}
+{{- if gt $archive $workerBudget -}}
+{{- fail (printf "trove: config.vulnerabilities.sources.osv.max_archive_size (%v) is larger than the worker spool budget of %d bytes (spool size minus spool.headroom); raise worker.spool.sizeLimit or spool.sizeLimit, lower the archive limit, or set config.vulnerabilities.sources.osv.mode: off (R-VULN-025)" (dig "max_archive_size" "1GiB" $osv) $workerBudget) -}}
+{{- end -}}
+{{- end -}}
+{{- /* The PrometheusRule (R-HA-045): a name in disabledAlerts that is no alert is a typo. */ -}}
+{{- $alertNames := include "trove.rules.names" . | fromJsonArray -}}
+{{- range $v.metrics.prometheusRule.disabledAlerts -}}
+{{- if not (has . $alertNames) -}}
+{{- fail (printf "trove: metrics.prometheusRule.disabledAlerts names %q, which is no alert of the chart (%s)" . (join ", " $alertNames)) -}}
+{{- end -}}
+{{- end -}}
+
+{{- /*
 Memory (R-HA-036, Q-HA-70, Q-ARCH-243): a web pod sizes what it admits from its memory limit, (0.8 ×
 runtime.memory_limit_ratio × limits.memory − the caches' byte budgets) / the bytes of one request
 (R-ARCH-005 step 4). A pod

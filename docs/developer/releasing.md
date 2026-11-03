@@ -188,7 +188,13 @@ The report `test-performance` is kept for 30 days. Beside it, the job `npm-ha-so
 load scripts of R-ARCH-027 against one replica (`TestNPMPerf`, reported, not gated); the three-force-delete crash runs by hand only, and the closing run runs the ten force-deletes
 in its leg `npm-ha-closing` ([Q-HA-67](../spec/ha-and-helm.md#q-ha-67--where-and-how-often-the-scenarios-under-npm-load-run)). Its reports
 `e2e-npm-report-npm-ha-soak` and `e2e-npm-artifacts-npm-ha-soak` are kept for 30 days. A failed night is not wired to an issue or a
-notification: look at the Actions list. The other targets of R-ARCH-027 (`perf/`) are not part of this workflow.
+notification, except the job `vuln-perf` (below): look at the Actions list. The other targets of R-ARCH-027 (`perf/`) are not part of this workflow.
+
+Job `vuln-perf` runs the performance run of the vulnerability scanning (R-VULN-028, scenarios V-1 to V-9, [perf/vuln](../../perf/vuln)) against the
+integration stack with `TROVE_PERF_GATE=1`: it seeds 100,000 stored versions in SQL, imports the 231,000-record npm dump of the test advisory source,
+evaluates, and measures; it uploads `perf-vuln.json` and the `go test -json` stream as `vuln-perf` (30 days) and, when a scenario is above its target
+or the run fails, opens an issue that lists the misses (the job has `issues: write`, no other job has). It is the only job of the workflow that
+opens an issue ([Q-VULN-57](../spec/vulnerability-scanning.md#q-vuln-57--the-performance-run-is-a-test-package-on-the-integration-stack-gated-and-reported-by-the-nightly-workflow)).
 
 Job `e2e-nuget` runs `make e2e SET=nuget-ha` on a kind cluster (edge port 8090, cluster `trove-nuget-ha-<run id>`, reports
 `e2e-nuget-report-nuget-ha` and `e2e-nuget-artifacts-nuget-ha`, kept 14 days). No test is named `TestNuGetHA...` yet, so the set passes

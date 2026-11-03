@@ -3917,6 +3917,10 @@ Priority: **MVP** · Covers: HA-005
   A `worker` pod spools only the cache fills of jobs and, from P1, the `nuget-symbol-index` job,
   which spools one extracted PDB at a time ([formats/nuget.md](formats/nuget.md) R-NUGET-021), so
   its default is smaller.
+- A `worker` spool also holds one advisory archive while a sync runs ([vulnerability-scanning.md](vulnerability-scanning.md)
+  R-VULN-025): the chart refuses a worker spool budget (size minus `spool.headroom`) below
+  `config.vulnerabilities.sources.osv.max_archive_size` while the scanning is enabled and the OSV source is `online` or
+  `repository`, and the failure names both values.
 - `resources.requests.ephemeral-storage` should cover the expected steady use, not the limit, so
   pods schedule on ordinary nodes. The `sizeLimit` caps the worst case.
 - `medium: Memory` is allowed but counts against the memory limit. It is meant for small,
@@ -4304,7 +4308,9 @@ Priority: **MVP** · Covers: HA-054
 **Status.** The ingress policy is shipped and enabled by default: the `web` pods admit port 8080 from `http.from`
 (anywhere when empty), port 8081 from `ops.from` (the monitoring namespace by default) and `probeCIDRs`; the `worker`
 pods admit 8081 only; the migration Job admits nothing. The egress policy is not implemented, which is H-41. Enforcement
-on the cluster's CNI is not verified in this build.
+on the cluster's CNI is not verified in this build. The egress policy, when it is built, must admit `worker` pods to 443 on the
+configured advisory source hosts ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-025: `vulnerabilities.sources.osv.base_url`,
+`kev.url`).
 
 With `networkPolicy.enabled: true` (default) the chart renders, for the `web` and `worker` pods:
 
@@ -4430,6 +4436,20 @@ the IPv6 client address of the `curl -6` request.
 
 ### R-HA-045 · Monitoring integration
 Priority: **MVP** · Covers: HA-055
+
+**Status.** The PrometheusRule is rendered by the main chart with `metrics.prometheusRule.{enabled,labels,disabledAlerts,extraRules}`
+(`disabledAlerts` refuses a name that is no alert), tested by `promtool test rules`
+([deploy/helm/trove/tests/rules_test.yaml](../../deploy/helm/trove/tests/rules_test.yaml), `make chart-test`). It carries the three alerts
+of the vulnerability scanning ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-024, Q-VULN-55): `TroveVulnerabilityDataStale`,
+`TroveVulnerabilitySyncFailing` and `TroveVulnerabilityClaimedNameMalicious`. The rows of the table below are **not** rendered yet:
+`TroveReplicasNotReady`, `TroveDatabaseUnreachable`, `TroveObjectStoreUnreachable`, `TroveObjectStoreUnreachableSingleReplica`,
+`TroveDatabasePoolSaturated`, `TroveControlConnectionWaits`, `TroveJobsStuck`, `TroveLeaseLost`, `TroveMixedVersions`,
+`TroveSpoolNearlyFull`, `TroveBlobMissing`, `TroveGCStale`, `TroveBackupCheckFailed`, `TroveRevocationJournalBacklog`,
+`TroveValkeyUnavailable`, `TroveValkeyUnavailableSingleReplica`, `TroveValkeySentinelsDegraded`, `TroveValkeyFailoverFlapping`,
+`TroveValkeyPrimaryDisagreement`, `TroveBackupStale`, `TroveBackupFailed`, `TroveBackupRunningLong`, `TroveBackupGlobalHoldLong`,
+`TroveBackupSourceDamage` and `TroveBackupVerifyFindings`. The ServiceMonitor and its `role` and `pool` relabelings are not rendered
+either: the scrape is the operator's own, and the rule scopes its selectors by `namespace`, which every scrape through the
+Prometheus operator carries.
 
 MVP since 2026-10-28. INV-12 requires that a Valkey outage is alerted on, the backup alerts of
 [backup-and-restore.md](backup-and-restore.md) R-BAK-014 are MVP, and MVP acceptance criteria

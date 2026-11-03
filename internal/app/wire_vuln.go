@@ -8,6 +8,7 @@ import (
 	"github.com/guided-traffic/trove/internal/jobs"
 	"github.com/guided-traffic/trove/internal/vuln"
 	vmetrics "github.com/guided-traffic/trove/internal/vuln/metrics"
+	"github.com/guided-traffic/trove/internal/vuln/store"
 )
 
 // The wiring of the vulnerability scanning (docs/developer/vulnerabilities.md). The contract wave builds the area, the
@@ -65,6 +66,14 @@ func (a *App) wireVuln(_ context.Context, in infra) (vulnArea, error) {
 	// >>> WP-D
 	// The advisories over the store, the claim index and the cache vuln_nuget_page: out.advisories.
 	// <<< WP-D
+
+	// >>> WP-G
+	// The database gauges of R-VULN-024, evaluated in the background once per metrics.db_gauge_interval (Q-OPS-18).
+	vcfg := a.cfg.Vulnerabilities
+	a.tele.metrics.DBGauges().Add(store.GaugeSource(in.db,
+		func() []store.ExpectedSource { return store.ExpectedSources(vcfg) },
+		func() []string { return vcfg.Sources.OSV.EffectiveEcosystems() }))
+	// <<< WP-G
 
 	return out, nil
 }

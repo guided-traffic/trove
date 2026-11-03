@@ -59,6 +59,7 @@ func (f configFacts) Facts(ctx context.Context) (v1.Facts, error) {
 			out.InstallationID, out.Incarnation = &sf.InstallationID, &sf.Incarnation
 		}
 		out.Database = databaseFacts(ctx, db)
+		out.VulnerabilityData = f.a.vulnerabilityFacts(ctx, time.Now())
 	}
 	return out, nil
 }

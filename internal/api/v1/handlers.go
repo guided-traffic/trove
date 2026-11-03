@@ -88,6 +88,8 @@ type Facts struct {
 	ConfigAsCode   bool
 	Formats        []string
 	MemoryLimit    int64
+	// VulnerabilityData is the advisory data's state (R-VULN-024); nil where the scanning is not wired on this replica.
+	VulnerabilityData *gen.VulnerabilityDataFacts
 }
 
 // FactSource supplies Facts.
@@ -333,6 +335,7 @@ func (s *Server) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	out.Runtime.Goos, out.Runtime.Goarch, out.Runtime.Gomaxprocs = runtime.GOOS, runtime.GOARCH, runtime.GOMAXPROCS(0)
 	out.Runtime.MemoryLimitBytes = facts.MemoryLimit
+	out.VulnerabilityData = facts.VulnerabilityData
 	writeJSON(w, r, http.StatusOK, out)
 }
 
