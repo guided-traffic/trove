@@ -465,7 +465,7 @@ from the page's tokens, principals and repositories selects the answers in one p
 
 **Collapsing**: `group` is a single-flight per replica (checks are shared with their result, misses with a wait and a second decision); with the
 bucket backend and Valkey `shared.FlightLock` makes the other replicas wait (`waitRemote`, at most 30 s); a lock that cannot be asked
-returns `held` with an error and the replica fetches itself. A waiter of the replica's own flight waits at most `collapseWait` (30 s) and then answers `503 bastion_busy` (`waitLeader`).
+returns `held` with an error and the replica fetches itself. A waiter of the replica's own flight waits at most `collapseWait` (30 s) and then answers `503 bastion_busy` (`waitLeader`). A miss decides on what it read from the cache before it joins, so `miss` closes two windows: a request whose cache key already carries the Vary waits for a flight still led under the plain key (a fetch that began before the replica knew the names and has not stored its entry yet), and a request that becomes the leader of a flight finds the entry the just-ended flight left (`leftEntry`) and decides again instead of fetching a second time (R-BAS-018, R-BAS-025).
 A key whose last fetch left nothing shareable is marked for a minute and not collapsed (Q-BAS-86): a mark that depends on the caller's rights (a refusal, a private document) is the caller's own
 (`markVolatileFor`, keyed by credential and cache key), a mark that does not (a search, a document too large to keep) is the key's (`markVolatile`, Q-BAS-125).
 

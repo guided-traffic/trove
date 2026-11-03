@@ -277,10 +277,24 @@ func (e *engine) miss(q *rq) (again bool) {
 		e.forward(q, mainclient.KindForward, "", nil)
 		return false
 	}
+	if q.cacheKey != q.baseKey {
+		// A fetch that began before this replica knew the Vary of the target leads under the plain key, and its
+		// entry is not stored yet, although the names are known since the response arrived: a request that
+		// computed the full key meanwhile would otherwise lead a second fetch of the same document.
+		if c := e.fetches.running(q.baseKey); c != nil {
+			return e.waitLeader(q, c)
+		}
+	}
 	key := q.cacheKey
 	c, leader := e.fetches.join(key)
 	if !leader {
 		return e.waitLeader(q, c)
+	}
+	if e.leftEntry(q) {
+		// The flight this request would have waited for ended between its look at the cache and its join: the
+		// leader's entry is there now, so decide again instead of fetching a second time (R-BAS-018, R-BAS-025).
+		e.fetches.finish(key, c, nil, nil)
+		return true
 	}
 	held, release := e.remoteLock(q)
 	// The flight ends when the request returns, or, for an artifact fill that outlives the request, when the
@@ -298,6 +312,17 @@ func (e *engine) miss(q *rq) (again bool) {
 	}
 	e.forward(q, mainclient.KindForward, "", nil)
 	return false
+}
+
+// leftEntry reports whether a fetch that ended after this request looked at the cache has left an entry for it. The
+// request decided "miss" on what it read before, and only a request that joins as the leader can have missed the
+// end of a flight that way: the leader stores its entry before it ends the flight, so a flight that is gone has
+// left its entry. The Vary of the target is learned again first, because the entry is kept under the key it names.
+func (e *engine) leftEntry(q *rq) bool {
+	e.computeKey(q)
+	e.learnVaryFromCache(q.ctx(), q)
+	_, ok := e.loadEntry(q.ctx(), q.cacheKey)
+	return ok
 }
 
 // waitLeader waits for the fetch another request of this replica leads for the same cache key. A wait that

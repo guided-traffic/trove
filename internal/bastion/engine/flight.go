@@ -36,6 +36,13 @@ func (g *group) join(key string) (*call, bool) {
 	return c, true
 }
 
+// running returns the call of a key that has a leader, or nil.
+func (g *group) running(key string) *call {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.calls[key]
+}
+
 // finish ends the leader's call and wakes the waiters. A call ends once: a second finish changes nothing, and
 // never removes a later call of the same key.
 func (g *group) finish(key string, c *call, val any, err error) {

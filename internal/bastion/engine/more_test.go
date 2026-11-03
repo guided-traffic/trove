@@ -86,6 +86,68 @@ func TestR_BAS_018_TheCacheKeyOfADocumentIsLearnedFromVaryAndCollapsedWaitersFin
 	}
 }
 
+// A request that looked at the cache before the leader of its document stored the entry, and joined the fetch only
+// after the leader ended it, is the leader of a flight that nobody waits for: it must find the entry the ended
+// flight left and decide again instead of fetching a second time. The window is a few microseconds wide, so the
+// test sets it up by hand: the request carries the cache key and the Vary knowledge it had before the entry existed.
+func TestR_BAS_018_ALateJoinerOfAnEndedFlightFindsTheLeadersEntryAndDoesNotFetchAgain(t *testing.T) {
+	m := &fakeMain{}
+	s := newSiteHarness(t, options{main: m})
+	s.site.docs[doc] = "document"
+	if w := s.get(doc, "Authorization", bearer(s.full), "Accept", "application/json"); w.Code != 200 {
+		t.Fatalf("%d", w.Code)
+	}
+	before := m.count(mainclient.KindForward)
+	if before != 1 {
+		t.Fatalf("%d forwards by the leader", before)
+	}
+	s.e.vary.remove(doc) // this replica has not learned the Vary of the target (yet)
+	r := httptest.NewRequest(http.MethodGet, doc, nil)
+	r.Header.Set("Accept", "application/json")
+	q := &rq{e: s.e, r: r, target: doc, baseKey: doc, cacheKey: doc}
+	if !s.e.miss(q) {
+		t.Fatal("the late joiner did not decide again")
+	}
+	if got := m.count(mainclient.KindForward); got != before {
+		t.Fatalf("%d forwards, want %d", got, before)
+	}
+}
+
+// A fetch that began before this replica knew the Vary of the target leads under the plain key, and its entry is stored
+// after the names are learned. A request that computes the full key in between must wait for that flight and not
+// lead a fetch of its own.
+func TestR_BAS_018_ARequestWithTheFullKeyWaitsForTheFlightOfThePlainKey(t *testing.T) {
+	m := &fakeMain{}
+	s := newSiteHarness(t, options{main: m})
+	s.site.docs[doc] = "document"
+	c, leader := s.e.fetches.join(doc) // the leader of the first fetch, which has not stored its entry yet
+	if !leader {
+		t.Fatal("not the leader")
+	}
+	s.e.vary.put(doc, []string{"Accept"}, 0) // learned from its response
+	r := httptest.NewRequest(http.MethodGet, doc, nil)
+	r.Header.Set("Accept", "application/json")
+	q := &rq{e: s.e, r: r, target: doc, baseKey: doc}
+	s.e.computeKey(q)
+	if q.cacheKey == doc {
+		t.Fatal("the key does not carry the Vary")
+	}
+	done := make(chan bool)
+	go func() { done <- s.e.miss(q) }()
+	select {
+	case <-done:
+		t.Fatal("the request did not wait for the flight")
+	case <-time.After(100 * time.Millisecond):
+	}
+	s.e.fetches.finish(doc, c, nil, nil)
+	if !<-done {
+		t.Fatal("the request did not decide again")
+	}
+	if n := m.count(mainclient.KindForward); n != 0 {
+		t.Fatalf("%d forwards", n)
+	}
+}
+
 func TestR_BAS_019_TheForwardedFamilyDecidesWhichHeaderCarriesTheHost(t *testing.T) {
 	s := newSiteHarness(t, options{cfg: []func(*configT){func(c *configT) {
 		c.Server.TrustedProxies = []string{"10.244.0.1"}
