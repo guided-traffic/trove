@@ -15116,7 +15116,7 @@ components:
       properties:
         source: {type: string, enum: [osv, kev]}
         ecosystem: {type: string, description: The OSV ecosystem; empty for kev.}
-        mode: {type: string, enum: [online, repository, off]}
+        mode: {type: string, enum: [online, repository, "off"]}
         repository:
           type: [string, "null"]
           description: The key of the configured mirror repository in the mode `repository` (R-VULN-005), else `null`.
@@ -15219,7 +15219,7 @@ components:
             properties:
               source: {type: string, enum: [osv, kev]}
               ecosystem: {type: string}
-              mode: {type: string, enum: [online, repository, off]}
+              mode: {type: string, enum: [online, repository, "off"]}
               state: {type: string, enum: [empty, complete]}
               stale: {type: boolean}
               syncedAt: {type: [string, "null"], format: date-time}

@@ -178,7 +178,9 @@ type vulnIndexEntry struct {
 }
 
 // handleVulnPage serves <feed>/vulnerabilities/trove.json: from the replica's page cache, rendered on a miss (R-VULN-018).
-func (f *Format) handleVulnPage(ctx context.Context, rq *formats.Request, w http.ResponseWriter) error {
+func (f *Format) handleVulnPage(ctx context.Context, rq *formats.Request, w http.ResponseWriter) (err error) {
+	// The page is the audit's data request: it is counted with npm's audits in trove_vuln_audit_requests_total (R-VULN-024).
+	defer func() { rq.Host.Vulnerabilities().CountAudit(ID, VulnInfoLocal, vulnOutcome(err)) }()
 	d, err := vulnAvailable(rq)
 	if err != nil {
 		return err
@@ -187,6 +189,24 @@ func (f *Format) handleVulnPage(ctx context.Context, rq *formats.Request, w http
 		key := strconv.Itoa(RenderVersion) + "/" + d.PageKey(vulnEcosystem)
 		return d.Page(ctx, key, func(ctx context.Context) ([]byte, error) { return renderVulnPage(ctx, d) })
 	})
+}
+
+// vulnOutcome is the outcome label of a page request: ok, refused (the repository does not serve trove's data),
+// unavailable (the NuGet data is not complete) or error.
+func vulnOutcome(err error) string {
+	if err == nil {
+		return "ok"
+	}
+	e, ok := errs.As(err)
+	switch {
+	case !ok:
+		return "error"
+	case e.Kind == errs.NotFound:
+		return "refused"
+	case e.Code == errs.CodeVulnerabilityDataUnavailable:
+		return "unavailable"
+	}
+	return "error"
 }
 
 // vulnEntry is one entry of a package's list on the page.

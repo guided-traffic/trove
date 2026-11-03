@@ -84,7 +84,8 @@ type Metrics struct {
 	// DownloadsBlocked counts refused downloads (and, in the mode report, would-be refusals) by format, reason (malicious,
 	// triage, missing_data) and mode (enforce, report).
 	DownloadsBlocked *prometheus.CounterVec
-	// AuditRequests counts client audits answered from trove's data by format, mode and outcome.
+	// AuditRequests counts the client audit requests by format, mode and outcome: npm's bulk audits in every mode, and
+	// NuGet's vulnerability page, the data of its audit.
 	AuditRequests *prometheus.CounterVec
 }
 
@@ -111,7 +112,7 @@ func New(reg prometheus.Registerer) (*Metrics, error) {
 			Name: DownloadsBlocked, Help: "Downloads refused by a finding or by missing advisory data, by format, reason (malicious, triage, missing_data) and mode (enforce, report) (R-VULN-015).",
 		}, blockedLabels()),
 		AuditRequests: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: AuditRequests, Help: "Client audits answered from trove's advisory data, by format, mode and outcome (R-VULN-017, R-VULN-018).",
+			Name: AuditRequests, Help: "Client audit requests (npm bulk audits in every mode, the NuGet vulnerability page), by format, mode and outcome (R-VULN-017, R-VULN-018).",
 		}, auditLabels()),
 	}
 	if reg == nil {
