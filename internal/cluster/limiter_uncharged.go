@@ -116,13 +116,13 @@ func (l *Limiter) TakeUncharged(ctx context.Context, bucket string) Verdict {
 	if err != nil {
 		l.set.store.degraded()
 		l.inFallback.Store(true)
-		return l.record(l.takeLocal(bucket, now, l.share(), ModeFallback))
+		return l.record(l.takeLocal(bucket, now, l.share(), 1, ModeFallback))
 	}
 	l.inFallback.Store(false)
-	v := l.windowVerdict(cur, prev, el)
+	v := l.windowVerdict(cur, prev, el, 1)
 	if !v.Allowed {
 		l.markRefused(ctx, s, bucket, idx)
-		v.RetryAfter = wholeSeconds(l.retryAfter(cur-1, prev, el))
+		v.RetryAfter = wholeSeconds(l.retryAfter(cur-1, prev, el, 1))
 	}
 	return l.record(v)
 }

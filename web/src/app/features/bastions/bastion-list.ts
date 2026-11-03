@@ -5,11 +5,12 @@ import { firstValueFrom } from 'rxjs';
 import { Bastion, BastionsApi } from '../../api/bastions-api';
 import { ApiError } from '../../api/problem';
 import { SessionStore } from '../../core/session-store';
+import { DraftStore } from '../../shared/drafts';
 import { Needs } from '../../shared/access/needs';
 import { ErrorNotice } from '../../shared/error-notice';
 import { asApiError } from '../../shared/paged-resource';
 import { BastionCard } from './bastion-card';
-import { BastionCreateDialog } from './bastion-dialogs';
+import { BastionCreateDialog, BastionTokenDraft } from './bastion-dialogs';
 
 /**
  * Administration → Bastions (R-BAS-007): the registrations of the trove Bastions in front of this
@@ -42,7 +43,7 @@ import { BastionCreateDialog } from './bastion-dialogs';
       <p class="muted" i18n="@@bastions.empty">No Bastion is registered.</p>
     } @else {
       @for (b of items(); track b.name) {
-        <trove-bastion-card [bastion]="b" (changed)="load()" />
+        <trove-bastion-card [bastion]="b" [draft]="restored()" (changed)="load()" />
       }
     }
   `,
@@ -57,6 +58,8 @@ export class BastionList {
   protected readonly loaded = signal(false);
   protected readonly error = signal<ApiError | null>(null);
   protected readonly canWrite = computed(() => this.session.has('endpoints:write'));
+  /** The entries of a token dialog kept across a re-authentication (R-UI-042), taken once; the card of its registration reopens the dialog. */
+  protected readonly restored = signal<BastionTokenDraft | null>(inject(DraftStore).take<BastionTokenDraft>());
 
   constructor() {
     void this.load();

@@ -20,6 +20,9 @@ const (
 	kindUser subjectKind = iota
 	kindServiceAccount
 	kindCI
+	// kindBastion is a Bastion registration (R-BAS-004): it holds no grant, no role and no membership and is
+	// never part of authenticated, so its principal set is empty.
+	kindBastion
 )
 
 // kindOf classifies the subject for its principal set. A subject whose kind is
@@ -30,6 +33,8 @@ func kindOf(sub Subject) subjectKind {
 		return kindServiceAccount
 	case principal.KindCI:
 		return kindCI
+	case principal.KindBastion:
+		return kindBastion
 	}
 	return kindUser
 }
@@ -231,7 +236,7 @@ func (x *Index) rolesOf(sub Subject) roleSet {
 	if isBreakGlass(sub) {
 		rs |= RoleAdmin.bit()
 	}
-	if kindOf(sub) == kindCI {
+	if k := kindOf(sub); k == kindCI || k == kindBastion {
 		return rs
 	}
 	if sub.ID != "" {
@@ -814,6 +819,8 @@ func (e *Engine) Effective(ctx context.Context, sub Subject) (Me, error) {
 		me.Principals = append(me.Principals, "sa:"+sub.Name)
 	case kindCI:
 		me.Principals = append(me.Principals, sub.Mappings...)
+	case kindBastion:
+		return me, nil // no principal set, no role, no capability (R-BAS-004)
 	default:
 		me.Principals = append(me.Principals, "user:"+sub.Name)
 	}

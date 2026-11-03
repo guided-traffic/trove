@@ -328,7 +328,7 @@ operations that require it when called with a session; the OpenAPI document mark
 
 | Operation family | Operations |
 |---|---|
-| Tokens | Creating and rotating personal and service-account tokens (R-API-032) |
+| Tokens | Creating and rotating personal and service-account tokens (R-API-032); issuing a Bastion token ([bastion.md](bastion.md) R-BAS-004, `createBastionToken`) |
 | Command-line login | Approving or denying an `npm login` or a device-code login (P1; R-AUTH-034, R-AUTH-036) |
 | Permissions | Creating, replacing and deleting permission policies; binding and unbinding system roles (R-API-033) |
 | Projects | Replacing and deleting a project, adding and removing a project administrator, assigning and unassigning a repository ([authorization.md](authorization.md) R-AUTHZ-026) |

@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, DestroyRef, LOCALE_ID, computed, inject, input, output, signal } from '@angular/core';
+import { Component, DestroyRef, LOCALE_ID, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { firstValueFrom } from 'rxjs';
@@ -13,7 +13,7 @@ import { Confirm } from '../../shared/confirm-dialog';
 import { ErrorNotice } from '../../shared/error-notice';
 import { asApiError } from '../../shared/paged-resource';
 import { DataTable, TableColumn } from '../../shared/ui/data-table';
-import { BastionTokenDialog } from './bastion-dialogs';
+import { BastionTokenDialog, BastionTokenDialogData, BastionTokenDraft } from './bastion-dialogs';
 
 /** A token that expires within this many days carries the warning mark (R-BAS-007). */
 export const BASTION_TOKEN_WARN_DAYS = 30;
@@ -158,6 +158,8 @@ export function tokenExpiry(token: Pick<BastionTokenSummary, 'expiresAt'>, now: 
 })
 export class BastionCard {
   readonly bastion = input.required<Bastion>();
+  /** Entries of the token dialog kept across a re-authentication; the card opens the dialog with them once. */
+  readonly draft = input<BastionTokenDraft | null>(null);
   /** The registration changed or went away: the page reads the list again. */
   readonly changed = output<void>();
 
@@ -218,6 +220,17 @@ export class BastionCard {
 
   constructor() {
     inject(DestroyRef).onDestroy(() => this.secret.set(null));
+    // A draft kept across re-authentication (R-UI-042) reopens the token dialog of its registration.
+    let restored = false;
+    effect(() => {
+      const draft = this.draft();
+      if (restored || !draft || draft.bastion !== this.bastion().name || !this.canWrite()) return;
+      restored = true;
+      untracked(() => {
+        this.notifier.status($localize`:@@bastion.draft-restored:Your entries were restored. Issue the token again.`);
+        void this.issue(draft);
+      });
+    });
   }
 
   protected expiry(t: BastionTokenSummary): 'expired' | 'soon' | 'ok' {
@@ -234,9 +247,9 @@ export class BastionCard {
     return $localize`:@@bastion.secret-note:For ${this.bastion().name}:name:: ${s.description}:description:`;
   }
 
-  protected async issue(): Promise<void> {
-    const ref = this.dialog.open<BastionTokenDialog, { name: string }, BastionTokenCreated>(BastionTokenDialog, {
-      data: { name: this.bastion().name },
+  protected async issue(draft?: BastionTokenDraft): Promise<void> {
+    const ref = this.dialog.open<BastionTokenDialog, BastionTokenDialogData, BastionTokenCreated>(BastionTokenDialog, {
+      data: { name: this.bastion().name, draft },
       maxWidth: '36rem',
     });
     const created = await firstValueFrom(ref.afterClosed());

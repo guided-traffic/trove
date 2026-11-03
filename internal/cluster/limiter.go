@@ -60,7 +60,7 @@ type Verdict struct {
 // windowStore is the counter storage of the cluster scope. *Valkey is the
 // production implementation (valkey_ratelimit.go); the unit tests use a map.
 type windowStore interface {
-	hit(ctx context.Context, limiter, bucket string, idx int64, ttl time.Duration) (cur, prev int64, err error)
+	hit(ctx context.Context, limiter, bucket string, idx int64, ttl time.Duration, n int64) (cur, prev int64, err error)
 	read(ctx context.Context, limiter, bucket string, idx int64, ttl time.Duration) (cur, prev int64, err error)
 	count(ctx context.Context, limiter, bucket string, idx int64, ttl time.Duration) error
 	available() bool
@@ -69,8 +69,8 @@ type windowStore interface {
 
 type valkeyWindows struct{ v *Valkey }
 
-func (w valkeyWindows) hit(ctx context.Context, limiter, bucket string, idx int64, ttl time.Duration) (int64, int64, error) {
-	return w.v.windowHit(ctx, limiter, bucket, idx, ttl)
+func (w valkeyWindows) hit(ctx context.Context, limiter, bucket string, idx int64, ttl time.Duration, n int64) (int64, int64, error) {
+	return w.v.windowHit(ctx, limiter, bucket, idx, ttl, n)
 }
 
 func (w valkeyWindows) read(ctx context.Context, limiter, bucket string, idx int64, ttl time.Duration) (int64, int64, error) {
@@ -286,32 +286,53 @@ func (l *Limiter) Take(ctx context.Context, bucket string) Verdict {
 // in, where the held requests of a client below its rate add up to a burst it
 // never sent. A zero or future at is now; the local buckets decide at now.
 func (l *Limiter) TakeAt(ctx context.Context, bucket string, at time.Time) Verdict {
+	return l.TakeNAt(ctx, bucket, 1, at)
+}
+
+// MaxTakeUnits bounds the units one TakeNAt charges: in the cluster scope each unit is one INCR of the
+// request's transaction (the ACL of R-ARCH-030 has no INCRBY), so a caller groups what it counts into units of
+// a size that keeps n small.
+const MaxTakeUnits = 100
+
+// TakeNAt is TakeAt for a request that is charged n units instead of one: a batch of download events is
+// charged by the units of events it holds (R-BAS-016, Q-BAS-117). The n units are counted, admitted or not, as
+// one request is; a request is admitted when the window holds them all, so n above the burst is never
+// admitted. n below 1 counts as 1; n above MaxTakeUnits is refused without being counted.
+func (l *Limiter) TakeNAt(ctx context.Context, bucket string, n int, at time.Time) Verdict {
+	n = max(1, n)
+	if n > MaxTakeUnits {
+		mode := ModeCluster
+		if l.scope == ScopeReplica {
+			mode = ModeReplica
+		}
+		return l.record(Verdict{Limit: l.burst, Window: l.window, Reset: l.window, RetryAfter: wholeSeconds(l.window), Mode: mode})
+	}
 	now := l.set.now()
 	if at.IsZero() || at.After(now) {
 		at = now
 	}
 	if l.scope == ScopeReplica {
-		return l.record(l.takeLocal(bucket, now, 1, ModeReplica))
+		return l.record(l.takeLocal(bucket, now, 1, n, ModeReplica))
 	}
 	if l.usesValkey() {
 		idx, el := l.windowIndex(at)
-		cur, prev, err := l.set.store.hit(ctx, l.keyName, l.bucketKey(bucket), idx, 2*l.window)
+		cur, prev, err := l.set.store.hit(ctx, l.keyName, l.bucketKey(bucket), idx, 2*l.window, int64(n))
 		if err == nil {
 			l.inFallback.Store(false)
-			return l.record(l.windowVerdict(cur, prev, el))
+			return l.record(l.windowVerdict(cur, prev, el, n))
 		}
 		l.set.store.degraded()
 	} else if l.set.store != nil {
 		l.set.store.degraded()
 	}
 	l.inFallback.Store(true)
-	return l.record(l.takeLocal(bucket, now, l.share(), ModeFallback))
+	return l.record(l.takeLocal(bucket, now, l.share(), n, ModeFallback))
 }
 
 // windowVerdict applies the sliding-window rule to the counters of a check
 // that counted the request: admitted when previous x (1 - elapsed / W) +
 // current <= burst.
-func (l *Limiter) windowVerdict(cur, prev int64, elapsed float64) Verdict {
+func (l *Limiter) windowVerdict(cur, prev int64, elapsed float64, units int) Verdict {
 	est := float64(prev)*(1-elapsed) + float64(cur)
 	v := Verdict{
 		Allowed: est <= float64(l.burst), Limit: l.burst, Window: l.window, Mode: ModeCluster,
@@ -319,20 +340,20 @@ func (l *Limiter) windowVerdict(cur, prev int64, elapsed float64) Verdict {
 		Reset:     time.Duration((1 - elapsed) * float64(l.window)),
 	}
 	if !v.Allowed {
-		v.RetryAfter = wholeSeconds(l.retryAfter(cur, prev, elapsed))
+		v.RetryAfter = wholeSeconds(l.retryAfter(cur, prev, elapsed, units))
 	}
 	return v
 }
 
-// retryAfter is the time after which a request would be admitted if the caller
-// sent nothing more, computed from the counters of the check. It solves the
+// retryAfter is the time after which a request of units would be admitted if the
+// caller sent nothing more, computed from the counters of the check. It solves the
 // admission rule for the rest of the current window, and when the current
 // window cannot admit again, for the next one, whose previous counter is cur.
-func (l *Limiter) retryAfter(cur, prev int64, elapsed float64) time.Duration {
-	burst, w := float64(l.burst), float64(l.window)
-	// Within the current window the next request counts as cur+1 and is admitted
-	// when prev x (1 - x') <= burst - cur - 1, that is from x' = 1 - need/prev.
-	if need := burst - float64(cur) - 1; need >= 0 {
+func (l *Limiter) retryAfter(cur, prev int64, elapsed float64, units int) time.Duration {
+	burst, w, u := float64(l.burst), float64(l.window), float64(units)
+	// Within the current window the next request counts as cur+units and is admitted
+	// when prev x (1 - x') <= burst - cur - units, that is from x' = 1 - need/prev.
+	if need := burst - float64(cur) - u; need >= 0 {
 		if prev == 0 {
 			return 0
 		}
@@ -340,10 +361,10 @@ func (l *Limiter) retryAfter(cur, prev int64, elapsed float64) time.Duration {
 			return time.Duration((max(x, elapsed) - elapsed) * w)
 		}
 	}
-	// Next window: previous = cur, current = 0, the next request counts as 1.
+	// Next window: previous = cur, current = 0, the next request counts as units.
 	y := 0.0
 	if c := float64(cur); c > 0 {
-		y = max(0, 1-(burst-1)/c)
+		y = max(0, 1-(burst-u)/c)
 	}
 	return time.Duration(((1 - elapsed) + y) * w)
 }
@@ -353,9 +374,9 @@ func wholeSeconds(d time.Duration) time.Duration {
 	return max(s, time.Second)
 }
 
-// takeLocal is the token bucket of the fallback and of the replica scope. The
-// bucket has rate/n and burst max(1, burst/n).
-func (l *Limiter) takeLocal(key string, now time.Time, n int, mode Mode) Verdict {
+// takeLocal is the token bucket of the fallback and of the replica scope, taking
+// units tokens. The bucket has rate/n and burst max(1, burst/n).
+func (l *Limiter) takeLocal(key string, now time.Time, n, units int, mode Mode) Verdict {
 	rate := l.rate / float64(n)
 	capacity := float64(max(1, l.burst/n))
 	l.mu.Lock()
@@ -367,11 +388,11 @@ func (l *Limiter) takeLocal(key string, now time.Time, n int, mode Mode) Verdict
 		b.tokens, b.updated = math.Min(capacity, b.tokens+dt*rate), now
 	}
 	v := Verdict{Limit: int(capacity), Window: l.window, Mode: mode, Reset: l.window}
-	if b.tokens >= 1 {
-		b.tokens--
+	if u := float64(units); b.tokens >= u {
+		b.tokens -= u
 		v.Allowed = true
 	} else {
-		v.RetryAfter = wholeSeconds(time.Duration((1 - b.tokens) / rate * float64(time.Second)))
+		v.RetryAfter = wholeSeconds(time.Duration((u - b.tokens) / rate * float64(time.Second)))
 	}
 	v.Remaining = int(math.Floor(b.tokens))
 	return v

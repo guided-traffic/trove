@@ -28,39 +28,48 @@ func (v *Valkey) windowKeys(limiter, bucket string, idx int64, ttl time.Duration
 }
 
 // windowHit is the check of a limiter that counts requests: one round trip,
-// MULTI, INCR of the current window's key, EXPIRE <key> <ttl> NX, GET of the
-// previous window's key, EXEC. It returns the counter of the current window
-// including this request and the counter of the previous one. No script is
-// used (R-ARCH-034).
-func (v *Valkey) windowHit(ctx context.Context, limiter, bucket string, idx int64, ttl time.Duration) (cur, prev int64, err error) {
+// MULTI, n INCR of the current window's key (n is the units of the request, one
+// for a request that counts once), EXPIRE <key> <ttl> NX, GET of the previous
+// window's key, EXEC. It returns the counter of the current window including
+// this request and the counter of the previous one. No script and no command
+// beyond those of the least-privilege ACL is used (R-ARCH-030, R-ARCH-034):
+// INCRBY is not among them, so n units are n INCR in the one transaction, and
+// TakeNAt bounds n by MaxTakeUnits.
+func (v *Valkey) windowHit(ctx context.Context, limiter, bucket string, idx int64, ttl time.Duration, n int64) (cur, prev int64, err error) {
 	ck, pk, err := v.windowKeys(limiter, bucket, idx, ttl)
 	if err != nil {
 		return 0, 0, err
 	}
+	n = max(1, n)
 	err = v.exec(ctx, "incr", func(ctx context.Context, c valkey.Client) error {
-		res := c.DoMulti(ctx,
-			c.B().Multi().Build(),
-			c.B().Incr().Key(ck.name).Build(),
+		cmds := make(valkey.Commands, 0, n+4)
+		cmds = append(cmds, c.B().Multi().Build())
+		for range n {
+			cmds = append(cmds, c.B().Incr().Key(ck.name).Build())
+		}
+		cmds = append(cmds,
 			c.B().Expire().Key(ck.name).Seconds(ceilSeconds(ck.ttl)).Nx().Build(),
 			c.B().Get().Key(pk.name).Build(),
 			c.B().Exec().Build(),
 		)
-		for _, r := range res[:4] {
+		res := c.DoMulti(ctx, cmds...)
+		last := len(res) - 1
+		for _, r := range res[:last] {
 			if err := r.Error(); err != nil {
 				return err
 			}
 		}
-		out, err := res[4].ToArray()
+		out, err := res[last].ToArray()
 		if err != nil {
 			return err
 		}
-		if len(out) != 3 {
-			return fmt.Errorf("EXEC returned %d replies, want 3", len(out))
+		if want := int(n) + 2; len(out) != want {
+			return fmt.Errorf("EXEC returned %d replies, want %d", len(out), want)
 		}
-		if cur, err = out[0].AsInt64(); err != nil {
+		if cur, err = out[n-1].AsInt64(); err != nil {
 			return err
 		}
-		prev, err = optionalCounter(out[2])
+		prev, err = optionalCounter(out[n+1])
 		return err
 	})
 	return cur, prev, err

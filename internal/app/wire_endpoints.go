@@ -134,12 +134,16 @@ func (a *App) startEndpoint(rt *endpointRuntime, router *httpserver.Router) erro
 		return fmt.Errorf("endpoint %s: %w", rt.cfg.Name, err)
 	}
 	trace, reqLog := a.tele.clientStages(cfg, rt.cfg.Name)
+	bastion, err := a.bastionStage(rt)
+	if err != nil {
+		return fmt.Errorf("endpoint %s: %w", rt.cfg.Name, err)
+	}
 	handler := httpserver.Chain{
 		Router: router, Log: a.log, Endpoint: rt.ep, Events: endpointEvents{m: a.tele.metrics},
 		Trace: trace, TraceID: observabilityRequestID, AccessLog: reqLog,
 		OnRequest: label, MaxInFlight: rt.ep.MaxInFlight(), Resolver: resolver, Annotate: annotate,
 		Memory: a.memGuard, OnShed: func(reason string) { a.tele.metrics.RequestShed(rt.cfg.Name, reason) },
-		Authenticate: a.authenticate(rt), Bastion: a.bastionStage(rt.cfg.Default), Preflight: part[apiArea](a.parts).preflight, RateLimit: a.endpointStage(rt), Replica: a.id.Instance, ReplicaHeader: rt.ep.ReplicaHeader(),
+		Authenticate: a.authenticate(rt), Bastion: bastion, Preflight: part[apiArea](a.parts).preflight, RateLimit: a.endpointStage(rt), Replica: a.id.Instance, ReplicaHeader: rt.ep.ReplicaHeader(),
 		Draining: a.health.Draining,
 	}.Handler()
 

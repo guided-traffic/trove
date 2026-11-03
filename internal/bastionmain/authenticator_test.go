@@ -14,11 +14,13 @@ type fakeValidator struct {
 	info  token.BastionInfo
 	err   error
 	calls int
+	reqs  []token.Request
 	noted []string
 }
 
-func (f *fakeValidator) AuthenticateBastion(_ context.Context, _ string, _ token.Request) (token.BastionInfo, error) {
+func (f *fakeValidator) AuthenticateBastion(_ context.Context, _ string, req token.Request) (token.BastionInfo, error) {
 	f.calls++
+	f.reqs = append(f.reqs, req)
 	return f.info, f.err
 }
 
@@ -30,7 +32,7 @@ func (f *fakeValidator) NoteUse(id, addr string) { f.noted = append(f.noted, id+
 func TestR_BAS_004_TheAuthenticatorMapsEveryVerdictToOneError(t *testing.T) {
 	for _, verdict := range []error{token.ErrMalformed, token.ErrUnknown, token.ErrRevoked, token.ErrExpired, token.ErrOwner} {
 		v := &fakeValidator{err: verdict}
-		_, err := NewAuthenticator(v, nil).Authenticate(context.Background(), "x")
+		_, err := NewAuthenticator(v).Authenticate(context.Background(), "x", AuthRequest{})
 		if !errors.Is(err, ErrTokenInvalid) {
 			t.Errorf("%v: err = %v, want ErrTokenInvalid", verdict, err)
 		}
@@ -39,7 +41,7 @@ func TestR_BAS_004_TheAuthenticatorMapsEveryVerdictToOneError(t *testing.T) {
 		}
 	}
 	down := errs.E(errs.Unavailable, errs.CodeDatabaseUnavailable, "down")
-	_, err := NewAuthenticator(&fakeValidator{err: down}, nil).Authenticate(context.Background(), "x")
+	_, err := NewAuthenticator(&fakeValidator{err: down}).Authenticate(context.Background(), "x", AuthRequest{})
 	if errors.Is(err, ErrTokenInvalid) || !errors.Is(err, down) {
 		t.Fatalf("a store failure became a verdict on the token: %v", err)
 	}
@@ -50,7 +52,7 @@ func TestR_BAS_004_TheAuthenticatorMapsEveryVerdictToOneError(t *testing.T) {
 func TestR_BAS_004_TheAuthenticatorReturnsTheRegistrationAndNotesTheUse(t *testing.T) {
 	exp := time.Date(2027, 11, 2, 10, 0, 0, 0, time.UTC)
 	v := &fakeValidator{info: token.BastionInfo{TokenID: "t1", Hint: "trv_bst_3kQ9", BastionID: "b1", Name: "partners", ExpiresAt: exp}}
-	got, err := NewAuthenticator(v, func(context.Context) string { return "198.51.100.20" }).Authenticate(context.Background(), "x")
+	got, err := NewAuthenticator(v).Authenticate(context.Background(), "x", AuthRequest{ClientAddr: "198.51.100.20"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,6 +62,34 @@ func TestR_BAS_004_TheAuthenticatorReturnsTheRegistrationAndNotesTheUse(t *testi
 	}
 	if len(v.noted) != 1 || v.noted[0] != "t1@198.51.100.20" {
 		t.Fatalf("noted = %v", v.noted)
+	}
+}
+
+// TestR_BAS_005_ARejectedBastionTokenNamesTheRequestsSourceAndTheUseIsTheBastions: token.rejected of a Bastion
+// token carries the source of the request it came with, and the token's last use records that address - the
+// Bastion's own, as the chain resolved it before the Bastion's forwarded headers count - never the address of a
+// caller it forwards for (R-BAS-017, R-AUTH-031). The throttle of the address reaches the token service, and a
+// refusal for it is ErrThrottled, no verdict on the token.
+func TestR_BAS_005_ARejectedBastionTokenNamesTheRequestsSourceAndTheUseIsTheBastions(t *testing.T) {
+	th := &countingThrottle{}
+	src := AuthRequest{Throttle: th, ClientAddr: "198.51.100.20", UserAgent: "trove-bastion/0.15.0"}
+	v := &fakeValidator{err: token.ErrRevoked}
+	if _, err := NewAuthenticator(v).Authenticate(context.Background(), "x", src); !errors.Is(err, ErrTokenInvalid) {
+		t.Fatalf("err = %v", err)
+	}
+	if got := v.reqs[0]; got.Source.ClientAddr != "198.51.100.20" || got.Source.UserAgent != "trove-bastion/0.15.0" || got.Throttle == nil || got.RetryAfter != time.Minute {
+		t.Fatalf("the token service was given %+v", got)
+	}
+	v = &fakeValidator{info: token.BastionInfo{TokenID: "t1", Name: "partners"}}
+	if _, err := NewAuthenticator(v).Authenticate(context.Background(), "x", src); err != nil {
+		t.Fatal(err)
+	}
+	if len(v.noted) != 1 || v.noted[0] != "t1@198.51.100.20" {
+		t.Fatalf("noted = %v", v.noted)
+	}
+	v = &fakeValidator{err: &token.ThrottledError{RetryAfter: time.Minute}}
+	if _, err := NewAuthenticator(v).Authenticate(context.Background(), "x", src); !errors.Is(err, ErrThrottled) || errors.Is(err, ErrTokenInvalid) {
+		t.Fatalf("a throttled lookup: %v", err)
 	}
 }
 

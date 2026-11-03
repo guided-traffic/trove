@@ -45,7 +45,7 @@ func TestR_BAS_010_TheHandshakeAnswersWhatTheBastionNeeds(t *testing.T) {
 	if rp.Header.Get("Content-Type") != "application/json" || rp.Header.Get("Cache-Control") != "no-store" {
 		t.Errorf("headers = %v", rp.Header)
 	}
-	tok, _ := s.bastion.Authenticate(context.Background(), bst)
+	tok, _ := s.bastion.Authenticate(context.Background(), bst, bastionmain.AuthRequest{})
 	if h.InterfaceVersion != iface.InterfaceVersion || h.Bastion.Name != "partners" || h.Bastion.TokenID != tok.TokenID || !h.Bastion.TokenExpiresAt.Equal(tok.ExpiresAt) {
 		t.Errorf("identity = %+v", h)
 	}

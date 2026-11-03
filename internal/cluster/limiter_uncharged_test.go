@@ -10,7 +10,7 @@ import (
 // hitNet and refuse make memWindows an unchargedStore: the refusals live in counters of the limiter named
 // <limiter>-refused, the way the Valkey store keeps them.
 func (m *memWindows) hitNet(ctx context.Context, l, b string, idx int64, ttl time.Duration) (int64, int64, error) {
-	cur, prev, err := m.hit(ctx, l, b, idx, ttl)
+	cur, prev, err := m.hit(ctx, l, b, idx, ttl, 1)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -125,7 +125,7 @@ func TestR_BAS_035_AnUnchargedLimitFallsBackAndNeverFailsTheRequest(t *testing.T
 // bareStore is a windowStore without the counters of refusals.
 type bareStore struct{}
 
-func (bareStore) hit(context.Context, string, string, int64, time.Duration) (int64, int64, error) {
+func (bareStore) hit(context.Context, string, string, int64, time.Duration, int64) (int64, int64, error) {
 	return 1, 0, nil
 }
 

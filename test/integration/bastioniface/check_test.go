@@ -156,7 +156,9 @@ func TestR_BAS_011_ACheckWritesTheAuditOfADirectRequestAndNoAuthzDenied(t *testi
 // 301st rejected credential within a minute the answer is throttled with retryAfterSeconds, a direct request from
 // the same address is throttled too, and a second caller through the same Bastion is not slowed down.
 func TestR_BAS_011_FourHundredFailedChecksFromOneAddressAreThrottled(t *testing.T) {
-	f := newCheckFixture(t, siteOpts{})
+	// The test connects through loopback as the main installation's own ingress (server.trusted_proxies), so the
+	// direct request below names its client address in X-Forwarded-For.
+	f := newCheckFixture(t, siteOpts{trusted: []string{"127.0.0.1/32", "::1/128"}})
 	const addr = "203.0.113.50"
 	var firstThrottled int
 	for i := 1; i <= 400; i++ {

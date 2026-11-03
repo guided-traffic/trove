@@ -165,6 +165,8 @@ type limitsArea struct {
 	flowStarts *cluster.Limiter
 	// ciAddress and ciSubject are the exchange's limiters (R-CI-021), taken by wireCIExchange.
 	ciAddress, ciSubject *cluster.Limiter
+	// bastionEvents charges the download events of a Bastion registration (R-BAS-016, Q-BAS-117).
+	bastionEvents *cluster.Limiter
 }
 
 // sessionsArea is the session store: the session.Validator of the authentication

@@ -12,7 +12,8 @@ import { helpFor } from '../../core/help-topics';
 import { Navigation } from '../../core/navigation';
 import { SessionStore } from '../../core/session-store';
 import { seriousViolations } from '../../testing/axe';
-import { buttonByText, renderScreen, settle, sleep, storedText, text, type, typeInto } from '../../testing/screen';
+import { DraftStore } from '../../shared/drafts';
+import { browserStorage, buttonByText, renderScreen, settle, sleep, storedText, text, type, typeInto } from '../../testing/screen';
 import { BASTION_TOKEN_WARN_DAYS, tokenExpiry } from './bastion-card';
 import { BastionList } from './bastion-list';
 
@@ -186,6 +187,48 @@ describe('Bastions screen (R-BAS-007)', () => {
     expect(api.calls.filter((c) => c.startsWith('revokeToken'))).toEqual(['revokeToken partners t-lost']);
     expect(api.keys).toHaveLength(1);
     expect(root.querySelector('trove-token-secret')).toBeTruthy();
+  });
+
+  it('R-API-007 R-UI-042 issuing a token with a session whose sign-in is not recent keeps the non-secret entries as a draft, never a token', async () => {
+    browserStorage.clear('session');
+    const { fixture, root, get } = await renderScreen(BastionList);
+    const api = get(BastionsApi) as FakeBastionsApi;
+    api.failure = new ApiError(401, { code: 'reauthentication_required' }, 'req-1');
+    buttonByText(card(root, 'partners'), 'Issue token').click();
+    await settle(fixture);
+    const dialog = overlay().querySelector('trove-bastion-token-dialog') as HTMLElement;
+    typeInto(dialog, 'Description', 'partners 2027');
+    typeInto(dialog, 'Lifetime in days', '365');
+    buttonByText(dialog, 'Issue token').click();
+    await settle(fixture);
+    const stored = browserStorage.entries('session').filter(([k]) => k.startsWith('trove.draft:'));
+    expect(stored).toHaveLength(1);
+    expect(JSON.parse(stored[0]![1])).toEqual({ bastion: 'partners', description: 'partners 2027', days: '365' });
+    expect(storedText()).not.toContain('trv_');
+    expect(root.querySelector('trove-token-secret')).toBeNull();
+    browserStorage.clear('session');
+  });
+
+  it('R-API-007 R-UI-042 after the sign-in the draft reopens the token dialog of its registration, once, and the token is issued', async () => {
+    browserStorage.clear('session');
+    const { fixture, root, get } = await renderScreen(BastionList, {
+      setup: (get) => {
+        get(DraftStore).keep({ bastion: 'partners', description: 'partners 2027', days: '365' });
+      },
+    });
+    await settle(fixture);
+    const dialogs = overlay().querySelectorAll('trove-bastion-token-dialog');
+    expect(dialogs).toHaveLength(1);
+    const dialog = dialogs[0] as HTMLElement;
+    expect(text(dialog)).toContain('partners');
+    expect((dialog.querySelector('input[name="description"]') as HTMLInputElement).value).toBe('partners 2027');
+    expect((dialog.querySelector('input[name="days"]') as HTMLInputElement).value).toBe('365');
+    expect(browserStorage.entries('session').filter(([k]) => k.startsWith('trove.draft:'))).toHaveLength(0);
+    buttonByText(dialog, 'Issue token').click();
+    await sleep(fixture, 100);
+    expect((get(BastionsApi) as FakeBastionsApi).calls).toContain('createToken partners partners 2027 31536000');
+    expect(card(root, 'partners').querySelector('trove-token-secret')).toBeTruthy();
+    expect(overlay().querySelectorAll('trove-bastion-token-dialog')).toHaveLength(0);
   });
 
   it('R-BAS-004 disables a registration after a confirmation, with the ETag it read, and enables it again', async () => {

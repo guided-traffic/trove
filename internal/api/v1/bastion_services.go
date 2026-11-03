@@ -70,16 +70,26 @@ func BastionPrincipal(rec bastionmain.Recognition) httpserver.Principal {
 // BastionRouteAuth wraps the authentication stage of an endpoint's chain: a request on an interface route
 // carries the proof of the recognition stage and no credential of a caller, so it is admitted as the
 // registration whatever the anonymous switches say (R-BAS-008, Q-BAS-52); the authentication stage is where an
-// anonymous request of an endpoint that admits none is refused, and it must not refuse the Bastion. Every other
-// request is the stage's. admitted, when set, is told of the principal (the request log names it).
+// anonymous request of an endpoint that admits none is refused, and it must not refuse the Bastion.
+//
+// A recognized write probe (R-BAS-014) is admitted as the anonymous caller for routing only, whatever the
+// anonymous switches say: it carries no credential of a caller by design, and the marking stage answers it at
+// the route match - 403 bastion_read_only or 204 - before any decision, handler or body read (Q-BAS-118). The
+// recognition stage admits a forward only below /api/<format>/ and /files/, whose routes all tell the marking
+// stage their kind first, so a probe reaches no handler. Every other request is the stage's. admitted, when
+// set, is told of the registration on an interface route (the request log names it).
 func BastionRouteAuth(stage func(*http.Request) (httpserver.Principal, error), admitted func(*http.Request, httpserver.Principal)) func(*http.Request) (httpserver.Principal, error) {
 	return func(r *http.Request) (httpserver.Principal, error) {
-		if rec, ok := bastionmain.RecognitionFrom(r.Context()); ok && rec.Route {
+		rec, ok := bastionmain.RecognitionFrom(r.Context())
+		switch {
+		case ok && rec.Route:
 			p := BastionPrincipal(rec)
 			if admitted != nil {
 				admitted(r, p)
 			}
 			return p, nil
+		case ok && rec.Probe:
+			return httpserver.AnonymousPrincipal(), nil
 		}
 		return stage(r)
 	}

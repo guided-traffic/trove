@@ -98,6 +98,16 @@ func WithClient(ctx context.Context, client netip.Addr) context.Context {
 	return context.WithValue(ctx, keyInfo, info)
 }
 
+// WithResolved returns ctx whose resolved request information is info, as a resolver with another set of trusted
+// proxies computed it for the same request; the user agent and the time step 5 took the request stay. The
+// recognition of a Bastion request uses it once the Bastion token was checked: the forwarded headers then count
+// with the Bastions' egress addresses trusted, for that request only (R-BAS-017).
+func WithResolved(ctx context.Context, info RequestInfo) context.Context {
+	old := InfoFrom(ctx)
+	info.UserAgent, info.Received = old.UserAgent, old.Received
+	return context.WithValue(ctx, keyInfo, info)
+}
+
 // WithPrincipal stores the caller; the authentication stage and tests use it.
 func WithPrincipal(ctx context.Context, p Principal) context.Context {
 	return context.WithValue(ctx, keyPrincipal, p)

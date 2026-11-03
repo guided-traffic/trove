@@ -8813,7 +8813,9 @@ paths:
         (`ttlSeconds` at most `auth.tokens.bst.max_ttl`, default `auth.tokens.bst.default_ttl`; `400 invalid_ttl` beyond) and at
         most `auth.tokens.max_active_per_principal.bst` unrevoked tokens exist per registration (`409 token_limit_reached`), so
         a renewal by hand fits its overlap (R-BAS-006). The value is in this answer only, which is never cached. Records
-        `token.created` with `resource_type: bastion`.
+        `token.created` with `resource_type: bastion`. A session needs a recent authentication (`401
+        reauthentication_required`, R-API-007), as for every other token it mints.
+      x-trove-recent-auth: true
       x-trove-permission:
         permission: endpoints:write
       x-trove-idempotency-key: optional

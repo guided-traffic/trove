@@ -27,14 +27,14 @@ func newMemWindows() *memWindows { return &memWindows{counts: map[string]int64{}
 
 func (m *memWindows) key(l, b string, idx int64) string { return fmt.Sprintf("%s/%s/%d", l, b, idx) }
 
-func (m *memWindows) hit(_ context.Context, l, b string, idx int64, _ time.Duration) (int64, int64, error) {
+func (m *memWindows) hit(_ context.Context, l, b string, idx int64, _ time.Duration, n int64) (int64, int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.calls++
 	if m.fail {
 		return 0, 0, errors.New("boom")
 	}
-	m.counts[m.key(l, b, idx)]++
+	m.counts[m.key(l, b, idx)] += n
 	return m.counts[m.key(l, b, idx)], m.counts[m.key(l, b, idx-1)], nil
 }
 

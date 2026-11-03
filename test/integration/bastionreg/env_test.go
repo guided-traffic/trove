@@ -209,6 +209,14 @@ func (e *env) events(action string) []auditRow {
 	return out
 }
 
+// bastionAuth asks the real authenticator as the recognition stage does, for a request the Bastion sent from
+// 198.51.100.20 (its own address, before its forwarded headers count, R-BAS-017).
+type bastionAuth struct{ a *bastionmain.Authenticator }
+
+func (b bastionAuth) Authenticate(ctx context.Context, raw string) (bastionmain.BastionToken, error) {
+	return b.a.Authenticate(ctx, raw, bastionmain.AuthRequest{ClientAddr: "198.51.100.20", UserAgent: "trove-bastion/0.15.0"})
+}
+
 // countingDB counts the reads and transactions of the token service, so that a test can tell that a request
 // was refused before the token table was asked.
 type countingDB struct {
@@ -277,7 +285,7 @@ type replica struct {
 	tokens     *token.Service
 	stage      *auth.Stage
 	regs       *bastionmain.Registrations
-	auth       *bastionmain.Authenticator
+	auth       bastionAuth
 	srv        *httptest.Server
 	handler    http.Handler
 
@@ -363,7 +371,7 @@ func (e *env) newReplica(name string, o replicaOpts) *replica {
 	r.regs = bastionmain.NewRegistrations(bastionmain.RegistrationOptions{
 		DB: r.db, Notifier: r.changes, Recorder: rec, Tokens: r.tokens, Max: o.maxRegistrations,
 	})
-	r.auth = bastionmain.NewAuthenticator(r.tokens, func(context.Context) string { return "198.51.100.20" })
+	r.auth = bastionAuth{bastionmain.NewAuthenticator(r.tokens)}
 	r.stage = auth.New(auth.Options{
 		Tokens: r.tokens, Uses: r.tokens, Principals: r.principals, Settings: r.settings, Limiter: auth.NewLocalLimiter(300, time.Minute, nil, nil),
 		BasicEnabled: true, APIKeyHeader: true, Metrics: metrics, ClientAddr: func(*http.Request) netip.Addr { return netip.MustParseAddr("203.0.113.7") }, Log: quiet,

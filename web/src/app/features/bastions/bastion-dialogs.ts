@@ -5,6 +5,7 @@ import { newIdempotencyKey } from '../../api/client';
 import { ApiError } from '../../api/problem';
 import { Bastion, BASTION_NAME_PATTERN, BastionsApi, BastionTokenCreated, NewBastionToken } from '../../api/bastions-api';
 import { Notifier } from '../../core/notifier';
+import { DraftStore } from '../../shared/drafts';
 import { TextField } from '../../shared/access/fields';
 import { fromDays } from '../../shared/access/duration';
 import { fieldErrorAt } from '../../shared/field-errors';
@@ -91,9 +92,20 @@ export class BastionCreateDialog {
   }
 }
 
-/** What the token dialog is opened with: the registration the token is for. */
+/**
+ * The non-secret entries of the token dialog, kept across a re-authentication (R-API-007, R-UI-042): the
+ * registration they are for, the description and the lifetime as typed. Never a token value (R-UI-043).
+ */
+export interface BastionTokenDraft {
+  readonly bastion: string;
+  readonly description: string;
+  readonly days: string;
+}
+
+/** What the token dialog is opened with: the registration the token is for, and a draft to fill it with. */
 export interface BastionTokenDialogData {
   readonly name: string;
+  readonly draft?: BastionTokenDraft;
 }
 
 /**
@@ -101,7 +113,9 @@ export interface BastionTokenDialogData {
  * takes the installation's default (`auth.tokens.bst.default_ttl`). The secret comes back to the card,
  * which shows it once (R-UI-043). A repeated request whose first answer was lost answers
  * `token_already_issued`: the token whose value was lost is revoked and the request is made again with a
- * new key, like the token screens do (R-UI-042).
+ * new key, like the token screens do (R-UI-042). A session whose sign-in is not recent answers
+ * `reauthentication_required` (R-API-007): the entries are kept as a draft of the route, and the screen
+ * opens the dialog with them again after the sign-in, as the token screens do.
  */
 @Component({
   selector: 'trove-bastion-token-dialog',
@@ -147,12 +161,13 @@ export class BastionTokenDialog {
   protected readonly data = inject<BastionTokenDialogData>(MAT_DIALOG_DATA);
   private readonly api = inject(BastionsApi);
   private readonly ref = inject<MatDialogRef<BastionTokenDialog, BastionTokenCreated>>(MatDialogRef);
+  private readonly drafts = inject(DraftStore);
   private key = newIdempotencyKey();
 
   protected readonly descriptionHint = $localize`:@@bastion-token.description-hint:For the renewal: say which year or rollout the token is for.`;
   protected readonly daysHint = $localize`:@@bastion-token.days-hint:Leave empty for the installation's default. A token always expires.`;
-  protected readonly description = signal('');
-  protected readonly days = signal('');
+  protected readonly description = signal(this.data.draft?.description ?? '');
+  protected readonly days = signal(this.data.draft?.days ?? '');
   protected readonly busy = signal(false);
   protected readonly error = signal<ApiError | null>(null);
   private readonly localDaysError = signal<string | null>(null);
@@ -188,7 +203,11 @@ export class BastionTokenDialog {
     try {
       this.ref.close(await this.createOnce(body));
     } catch (e) {
-      this.error.set(asApiError(e));
+      const error = asApiError(e);
+      this.error.set(error);
+      if (error.code === 'reauthentication_required') {
+        this.drafts.keep({ bastion: this.data.name, description: this.description(), days: this.days() } satisfies BastionTokenDraft);
+      }
     } finally {
       this.busy.set(false);
     }

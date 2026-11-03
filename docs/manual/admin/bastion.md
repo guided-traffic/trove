@@ -20,7 +20,7 @@ The Bastion has a credential of its own, a token of the type `bst` (prefix `trv_
 
 | Where | What |
 |---|---|
-| Main installation | A registration and a token (the next two sections); its address in `server.additional_base_urls`; the Bastion's egress address in `server.trusted_proxies` |
+| Main installation | A registration and a token (the next two sections); its address in `server.additional_base_urls`; the Bastion's egress address in `bastions.trusted_proxies` |
 | Bastion namespace | The Secret of the token; a TLS certificate source for the listener (cert-manager or a Secret); the main installation reachable over HTTPS; a public name and certificate on the Bastion's ingress |
 | Network | The Bastion reaches the main installation's endpoint on port 443; the main installation does not reach the Bastion |
 
@@ -34,7 +34,7 @@ A registration is a principal of its own kind, `bastion:<name>`. It has no permi
 ## Issue the token
 
 1. On the card of the registration choose **Issue token**.
-2. Enter a **Description** that says which rollout or year the token is for, and a **Lifetime in days**. Leave the lifetime empty for the default, `auth.tokens.bst.default_ttl` (`8760h`, one year); the longest allowed is `auth.tokens.bst.max_ttl` (`9480h`), and a longer entry is refused with `invalid_ttl`. A Bastion token always expires.
+2. Enter a **Description** that says which rollout or year the token is for, and a **Lifetime in days**. If your sign-in is not recent, trove asks you to sign in again; your entries are kept, and the dialog opens again with them afterwards. Leave the lifetime empty for the default, `auth.tokens.bst.default_ttl` (`8760h`, one year); the longest allowed is `auth.tokens.bst.max_ttl` (`9480h`), and a longer entry is refused with `invalid_ttl`. A Bastion token always expires.
 3. Copy the token from the panel **Your new token** (**Copy**, or **Show** and copy by hand). It has 57 characters and is shown once; trove stores only its hash. **I have copied it** closes the panel.
 4. Put the token into the Secret that the chart reads. The chart never creates a Secret:
 
@@ -48,18 +48,20 @@ A token that expires in less than 30 days carries the mark **Expires in …**, a
 
 ## Settings on the main installation
 
-Two settings make the main installation treat the Bastion's requests as the callers' own and write URLs on the Bastion's host. Set them in `config.server` of the chart `trove`:
+Two settings make the main installation treat the Bastion's requests as the callers' own and write URLs on the Bastion's host. Set them in `config` of the chart `trove`:
 
 ```yaml
 config:
+  bastions:
+    trusted_proxies: ["198.51.100.20/32"]                    # example: the address the Bastion connects from
   server:
-    trusted_proxies: ["10.244.0.0/16", "198.51.100.20/32"]   # example: your ingress pods and the Bastion's egress address
+    trusted_proxies: ["10.244.3.17", "10.244.5.9"]           # example: your own ingress pods, as before; not the Bastion
     additional_base_urls: ["https://packages.example.com"]   # example: the Bastion's config.server.base_url
 ```
 
 | Setting | Why the Bastion needs it |
 |---|---|
-| `server.trusted_proxies` | The Bastion sends the address of the real client as the only entry of `X-Forwarded-For` and `Forwarded`. With the Bastion's egress address in this list, the main installation's rate limits, its failed-sign-in throttle and its audit trail apply to the client and not to the Bastion. List the address the main installation sees the Bastion connect from, as narrowly as you can (a host address or a small range), never a whole network |
+| `bastions.trusted_proxies` | The Bastion sends the address of the real client as the only entry of `X-Forwarded-For` and `Forwarded`, and its own host as the forwarded host. The main installation believes them only for a request that carries a valid Bastion token and comes from an address in this list; then its rate limits, its failed-sign-in throttle and its audit trail apply to the client and not to the Bastion. Any other request from that address - another workload behind the same NAT, for example - cannot choose its address or the host its links are written for. List the address the main installation sees the Bastion connect from, after your own ingress: a host address or a small range, never a whole network. Do **not** put it into `server.trusted_proxies`: an address there is believed for every request, and the main installation logs a warning at start when the two lists overlap |
 | `server.additional_base_urls` | The Bastion sends its own base URL as the forwarded host. With the URL in this list, every address the main installation renders for the Bastion, such as npm's tarball links, is on the Bastion's host. Without it the main installation answers with its own address, the Bastion detects that, treats the main installation as unreachable and serves no client a document with the wrong addresses |
 
 The entry must equal the Bastion's `config.server.base_url`: the same scheme and host, and the port if one is set. The comparison ignores a trailing slash and upper case in the scheme and host. The Client setup page and the guides use the same list: they offer a Bastion as a place to install from only when its reported address is in it.
@@ -217,7 +219,7 @@ When the main installation is unreachable for a replica, the replica serves what
 | `TroveBastionMainUnreachable` | critical | Every replica treats the main installation as unreachable, for 2 minutes | The Bastion cannot reach the main installation, or it refuses the Bastion. Check the main installation, the network policy and the egress address, the trust bundle, and whether `TroveBastionTokenRefused` or `TroveBastionBaseURLMismatch` fire too. Clients get cached content for the grace period, then `503` |
 | `TroveBastionMainUnreachableSingleReplica` | warning | Some, but not all, replicas treat it as unreachable, for 5 minutes | The fault is in one pod or its node: look at that pod's log and network |
 | `TroveBastionGraceExhausted` | critical | A replica has been unreachable for longer than `answers.period` plus `grace_period` | The replica serves nothing: every read answers `503`. Restore the connection to the main installation |
-| `TroveBastionBaseURLMismatch` | critical | The main installation does not render URLs for the Bastion's host, for 1 minute | The Bastion's base URL is missing from `server.additional_base_urls` of the main installation, or the main installation does not trust the Bastion's egress address in `server.trusted_proxies` and so ignores the forwarded host. The Bastion refuses to serve rather than hand out the main installation's URLs |
+| `TroveBastionBaseURLMismatch` | critical | The main installation does not render URLs for the Bastion's host, for 1 minute | The Bastion's base URL is missing from `server.additional_base_urls` of the main installation, or the address the Bastion connects from is not in `bastions.trusted_proxies`, so the main installation ignores the forwarded host. The Bastion refuses to serve rather than hand out the main installation's URLs |
 | `TroveBastionTokenExpiresSoon` | warning | The token in use has less than `bastion.token.warn_before` left, for 1 hour | Renew the token as above |
 | `TroveBastionTokenRefused` | critical | The main installation refuses the token, for 1 minute | The token was revoked, has expired, or its registration is disabled or deleted. Issue a token, put it into the Secret, and enable the registration if you disabled it |
 | `TroveBastionFeedStale` | warning | The last successful poll of the revocation feed is older than 30 seconds, for 2 minutes | The replica may not know a recent revocation. Revoked tokens keep reading from the cache until their answers expire. Check the connection and the load of the main installation |
@@ -231,14 +233,14 @@ When the main installation is unreachable for a replica, the replica serves what
 
 **Disable** on the card stops the Bastion's token from working, without deleting anything. The replicas then treat the main installation as unreachable and serve from their cache within the grace period. **Enable** reverses it. **Delete** asks you to type the name, removes the registration and revokes its tokens at once; the Bastion's pods keep running until you remove them, and answer as for an unreachable main installation.
 
-A Bastion that is no longer needed is removed with `helm uninstall`, and its registration deleted here. Remove its address from `server.additional_base_urls` and `server.trusted_proxies` afterwards.
+A Bastion that is no longer needed is removed with `helm uninstall`, and its registration deleted here. Remove its address from `server.additional_base_urls` and `bastions.trusted_proxies` afterwards.
 
 ## What the Bastion does not do
 
 - It is read-only. Publishing, changing tags and unpublishing are done on the main installation.
 - A new version, or a security fix, reaches a Bastion cache after its metadata period (`bastion.cache.metadata_revalidate_after`, default `1m`; artifacts after `artifact_revalidate_after`, default `10m`).
 - A token revoked on the main installation is dropped at the Bastion through the feed within seconds; while the main installation is unreachable, it can read on from the cache for up to the grace period.
-- Download counts and the audit trail of the main installation include what the Bastion serves from its cache, reported in batches.
+- Download counts and the audit trail of the main installation include what the Bastion serves from its cache, reported in batches. A registration may report `bastions.downloads.events_per_second` downloads a second (default `200`, bursts up to `events_burst`, `2000`); beyond that the main installation answers `429` and the Bastion sends the batch again later. What the Bastion's buffer cannot hold meanwhile is recorded as a `bastion.downloads.dropped` event.
 - The ops listener serves its metrics without sign-in; the chart's network policy admits it only from the monitoring namespace.
 
 See also [Endpoints and exposure rules](endpoints.md) for the other way to open an installation to outside clients, [Managing tokens](tokens.md) and [Monitoring and operations](operations.md).

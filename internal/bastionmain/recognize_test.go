@@ -25,11 +25,19 @@ const (
 	pat        = "trv_pat_0123456789012345678901234567890123"
 )
 
-// fakeTokens is the TokenAuthenticator of the tests.
-type fakeTokens struct{ calls int }
+// fakeTokens is the TokenAuthenticator of the tests. Like the token service, it asks the throttle of the request
+// only for a token it does not hold (tokValid is held) and then refuses without a lookup.
+type fakeTokens struct {
+	calls int
+	reqs  []AuthRequest
+}
 
-func (f *fakeTokens) Authenticate(_ context.Context, raw string) (BastionToken, error) {
+func (f *fakeTokens) Authenticate(ctx context.Context, raw string, req AuthRequest) (BastionToken, error) {
 	f.calls++
+	f.reqs = append(f.reqs, req)
+	if raw != tokValid && req.Throttle != nil && req.Throttle.Exceeded(ctx) {
+		return BastionToken{}, ErrThrottled
+	}
 	switch raw {
 	case tokValid:
 		return BastionToken{

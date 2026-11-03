@@ -264,10 +264,13 @@ type fakeTokens struct {
 
 func (f *fakeTokens) asked() int { f.mu.Lock(); defer f.mu.Unlock(); return f.calls }
 
-func (f *fakeTokens) Authenticate(_ context.Context, raw string) (bastionmain.BastionToken, error) {
+func (f *fakeTokens) Authenticate(ctx context.Context, raw string, req bastionmain.AuthRequest) (bastionmain.BastionToken, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.calls++
+	if _, held := f.tokens[raw]; !held && req.Throttle != nil && req.Throttle.Exceeded(ctx) {
+		return bastionmain.BastionToken{}, bastionmain.ErrThrottled // the token service's order: the cache, then the throttle
+	}
+	f.calls++ // a lookup
 	if t, ok := f.tokens[raw]; ok {
 		return t, nil
 	}
@@ -327,8 +330,10 @@ func (f *fakeShapes) Shapes(_ context.Context, idx *authz.Index, subject authz.S
 
 // siteOpts describe the main installation of a test.
 type siteOpts struct {
-	// trusted are server.trusted_proxies and additional server.additional_base_urls.
+	// trusted are server.trusted_proxies (none by default), egress bastions.trusted_proxies (the loopback
+	// addresses the tests connect from, by default) and additional server.additional_base_urls.
 	trusted    []string
+	egress     []string
 	additional []string
 	forwarded  httpserver.ForwardedHeader
 	// feed overrides the feed's bounds; zero values keep the defaults of the configuration.
@@ -566,13 +571,29 @@ func (e *env) newSite(o siteOpts) *site {
 			"bastionAuthorization": r.Header.Get(iface.HeaderAuthorization),
 		})
 	}))
-	trusted := o.trusted
-	if len(trusted) == 0 {
-		trusted = []string{"127.0.0.1/32", "::1/128"}
+	egress := o.egress
+	if len(egress) == 0 {
+		egress = []string{"127.0.0.1/32", "::1/128"}
 	}
-	resolver, err := httpserver.NewResolver(trusted, baseURL, o.additional, httpserver.WithForwardedHeader(o.forwarded))
+	resolver, err := httpserver.NewResolver(o.trusted, baseURL, o.additional, httpserver.WithForwardedHeader(o.forwarded))
 	if err != nil {
 		t.Fatal(err)
+	}
+	// The re-derivation of the composition root (app.bastionForwarded, Q-BAS-116): a recognized request from a
+	// listed Bastion egress is resolved again with that egress trusted.
+	bastionResolver, err := httpserver.NewResolver(append(append([]string(nil), o.trusted...), egress...), baseURL, o.additional, httpserver.WithForwardedHeader(o.forwarded))
+	if err != nil {
+		t.Fatal(err)
+	}
+	egressPrefixes := (&config.Bastions{TrustedProxies: egress}).TrustedProxyPrefixes()
+	forwarded := func(r *http.Request) context.Context {
+		client := httpserver.InfoFrom(r.Context()).Client
+		for _, p := range egressPrefixes {
+			if client.IsValid() && p.Contains(client.Unmap()) {
+				return httpserver.WithResolved(r.Context(), bastionResolver.Resolve(r))
+			}
+		}
+		return r.Context()
 	}
 	problem := func(w http.ResponseWriter, r *http.Request, err error) {
 		errs.Write(w, r, err, httpserver.RequestID(r.Context()), httpserver.Logger(r.Context()))
@@ -581,9 +602,13 @@ func (e *env) newSite(o siteOpts) *site {
 		Log: quiet, Router: router, Resolver: resolver, Replica: name, ReplicaHeader: httpserver.ReplicaAlways,
 		Authenticate: v1.BastionRouteAuth(credential, nil),
 		Bastion: bastionmain.Stages{Recognize: bastionmain.Recognize(bastionmain.RecognizeOptions{
-			Tokens: s.bastion, Metrics: s.metrics, Problem: problem,
+			Tokens: s.bastion, Metrics: s.metrics, Problem: problem, Forwarded: forwarded,
 			Throttle: func(r *http.Request) bastionmain.Throttle {
 				return auth.NewAddressThrottle(limiter, httpserver.InfoFrom(r.Context()).Client, nil, bastionmain.ThrottleScope)
+			},
+			Source: func(r *http.Request) (string, string) {
+				src := httpserver.SourceFrom(r.Context())
+				return src.ClientAddr, src.UserAgent
 			},
 		})}.Chain(),
 	}.Handler()

@@ -138,7 +138,9 @@ func (s *Service) RevokeAllOfBastionTx(ctx context.Context, tx meta.Tx, c princi
 // another type, a malformed, unknown, revoked, expired token and a token whose registration is disabled are
 // one of the Err values; PostgreSQL not answering is an *errs.Error of kind Unavailable, never a cached
 // acceptance. The cache, its invalidation by the change area auth and the revocation bound are those of every
-// token (R-AUTH-023); a revoked or expired token logs token.rejected at most once an hour.
+// token (R-AUTH-023); a revoked or expired token logs token.rejected at most once an hour, with req.Source. A
+// token the cache does not hold while req.Throttle is exceeded is a [ThrottledError] unless its marker says it
+// was valid recently; the throttle counts nothing here, the caller counts what it refuses.
 func (s *Service) AuthenticateBastion(ctx context.Context, raw string, req Request) (BastionInfo, error) {
 	typ, err := Check(raw)
 	if err != nil || typ != TypeBST {
@@ -153,6 +155,14 @@ func (s *Service) AuthenticateBastion(ctx context.Context, raw string, req Reque
 			}
 			s.tokens.Remove(hash) // expired since the fill: the database path logs the rejection
 		}
+	}
+	// The throttle is asked after the cache, as Check asks it: a token the replica holds costs no read of the
+	// shared counters, and a known token of a throttled address passes on its marker (R-AUTH-038, Q-BAS-65).
+	if req.Throttle != nil && req.Throttle.Exceeded(ctx) {
+		if s.o.Recent == nil || !s.o.Recent.Seen(ctx, hash[:]) {
+			return BastionInfo{}, &ThrottledError{RetryAfter: req.RetryAfter}
+		}
+		s.o.Metrics.ThrottleExempt("marker")
 	}
 	load := func(ctx context.Context) (cachedToken, error) { return s.loadBastion(ctx, hash) }
 	var ct cachedToken
@@ -170,6 +180,11 @@ func (s *Service) AuthenticateBastion(ctx context.Context, raw string, req Reque
 			return BastionInfo{}, rej.err
 		}
 		return BastionInfo{}, err
+	}
+	if s.o.Recent != nil {
+		if err := s.o.Recent.Mark(ctx, hash[:]); err != nil {
+			s.log.Debug("token marker not written", "err", err)
+		}
 	}
 	return bastionInfo(raw, ct.info), nil
 }

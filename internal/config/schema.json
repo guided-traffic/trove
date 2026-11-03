@@ -751,6 +751,21 @@
         "downloads": {
           "additionalProperties": false,
           "properties": {
+            "events_burst": {
+              "default": 2000,
+              "description": "Download events one window of the limiter admits; at least max_batch, so that every batch can fit (R-BAS-016). Charged in units of 100 events.",
+              "maximum": 100000,
+              "minimum": 100,
+              "type": "integer",
+              "x-trove-env": "TROVE_BASTIONS_DOWNLOADS_EVENTS_BURST"
+            },
+            "events_per_second": {
+              "default": 200,
+              "description": "Download events one registration may report per second across the replicas (R-BAS-016); a batch beyond the budget is answered 429 with Retry-After and sent again by the Bastion.",
+              "minimum": 1,
+              "type": "number",
+              "x-trove-env": "TROVE_BASTIONS_DOWNLOADS_EVENTS_PER_SECOND"
+            },
             "max_age": {
               "default": "720h",
               "description": "An event older than this is not recorded and counts as dropped (R-BAS-016).",
@@ -799,6 +814,15 @@
           "minimum": 1,
           "type": "integer",
           "x-trove-env": "TROVE_BASTIONS_MAX_REGISTRATIONS"
+        },
+        "trusted_proxies": {
+          "default": [],
+          "description": "Addresses or CIDRs the Bastions connect from: their forwarded client address and host count only on a request whose Bastion token was recognized (R-BAS-017). Do not list them in server.trusted_proxies. A /0 prefix is refused.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "x-trove-env": "TROVE_BASTIONS_TRUSTED_PROXIES"
         }
       },
       "type": "object"

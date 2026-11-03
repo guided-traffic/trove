@@ -98,6 +98,10 @@ const (
 	// "your" groups or marks what the caller may publish does: a Metadata route must answer every caller
 	// that may read everything alike, so check 12 fails it (R-BAS-013).
 	VariesByCaller Defect = "varies-by-caller"
+	// VariesByHeader lets the package document name the client's User-Agent, a request header it does not name
+	// in Vary: a shared copy keyed by what Vary names would serve one client's document to another, so check 12
+	// fails it (R-BAS-013, Q-BAS-86).
+	VariesByHeader Defect = "varies-by-header"
 )
 
 // Option adjusts the format; it is not a defect.
@@ -112,6 +116,10 @@ const StripHeaders Option = "strip-headers"
 // of a stored package, as a search that returns titles and descriptions does. The core
 // puts the headers of Metadata on it (Q-ARCH-258), so the variant passes check 7.
 const SearchReadsPackages Option = "search-reads-packages"
+
+// VaryUserAgent names User-Agent in the Vary of the package document. With VariesByHeader the variant passes
+// check 12: a document may vary by a request header it names in Vary.
+const VaryUserAgent Option = "vary-user-agent"
 
 // Format is the test format.
 type Format struct {
@@ -674,7 +682,13 @@ func (f Format) docGet(ctx context.Context, rq *formats.Request, w http.Response
 	if f.has(string(VariesByCaller)) {
 		doc = append(append([]byte(nil), doc...), []byte("\n// served to "+rq.Subject.Name)...)
 	}
+	if f.has(string(VariesByHeader)) {
+		doc = append(append([]byte(nil), doc...), []byte("\n// rendered for "+rq.UserAgent())...)
+	}
 	f.strip(w)
+	if f.has(string(VaryUserAgent)) {
+		w.Header().Set("Vary", "User-Agent")
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_, err = w.Write(doc)
 	f.strip(w)

@@ -30,8 +30,7 @@ const behindFactor = 4
 
 // feedActions are the audit actions that can yield an entry (R-BAS-015). The registry of the audit package
 // stays the one list of journaled actions; this is the subset the mapping reads, passed to the query as a text
-// array. An action in the journal that is not here (authz.ownership.*, package.published, the project events)
-// yields no entry, as the table of R-BAS-015 says.
+// array. An action in the journal that is not here is in noFeedEntry with the reason it yields no entry.
 func feedActions() []string {
 	return []string{
 		audit.EventTokenRevoked, audit.EventCITokenRevoked, audit.EventTokenRotated,
@@ -41,13 +40,31 @@ func feedActions() []string {
 		audit.EventCIIssuerUpdated, audit.EventCIIssuerDisabled, audit.EventCIIssuerDeleted,
 		audit.EventCIMappingUpdated, audit.EventCIMappingDisabled, audit.EventCIMappingDeleted,
 		"endpoint.exposure.updated", "endpoint.exposure.deleted",
-		audit.EventSettingsAuthChanged,
+		audit.EventSettingsAuthChanged, audit.EventProjectRepositoryUnassigned,
 		audit.EventNPMUnpublish, audit.EventPackageDeleted,
 	}
 }
 
 // FeedActions returns the audit actions the feed reads, for the tests and the documentation.
 func FeedActions() []string { return feedActions() }
+
+// noFeedEntry are the events the revocation journal copies that yield no entry, each with the reason it narrows
+// nothing a Bastion keeps (R-BAS-015, Q-BAS-120). Every journaled event of the audit registry is either read by
+// the feed or listed here; TestR_BAS_015_EveryJournaledEventIsClassified holds the two lists to the registry.
+func noFeedEntry() map[string]string {
+	return map[string]string{
+		"authz.ownership.removed":      "bounds who may publish a package name (R-AUTHZ-018); a read is never decided by ownership",
+		"authz.ownership.released":     "bounds who may publish a package name (R-AUTHZ-018); a read is never decided by ownership",
+		audit.EventPackagePublished:    "reserves the version numbers a publish took (R-HA-054); a Bastion never publishes",
+		audit.EventProjectUpdated:      "the switches managePolicies and manageRepositories bound what project administrators may change; no read follows from them",
+		audit.EventProjectDeleted:      "a project is deleted only when it holds no repository and no service account, and its policies are deleted before it, each journaled as authz.policy.deleted (grants)",
+		audit.EventProjectAdminRemoved: "the administration of a project gives manage on its repositories, and no action implies read (R-AUTHZ-001)",
+	}
+}
+
+// NoFeedEntry returns the journaled events that yield no entry, with their reasons, for the tests and the
+// documentation.
+func NoFeedEntry() map[string]string { return noFeedEntry() }
 
 // FeedOptions configure [NewFeed].
 type FeedOptions struct {
@@ -164,6 +181,11 @@ func mapEvent(ev FeedEvent, defaultEndpoint string) []rawEntry {
 	case audit.EventGroupDeleted, "authz.policy.deleted", "authz.policy.updated", "authz.settings.changed",
 		audit.EventCIIssuerUpdated, audit.EventCIIssuerDisabled, audit.EventCIIssuerDeleted,
 		audit.EventCIMappingUpdated, audit.EventCIMappingDisabled, audit.EventCIMappingDeleted:
+		return grants
+	case audit.EventProjectRepositoryUnassigned:
+		// The repository leaves the project's policies behind (R-AUTHZ-026): any caller's read of it, and of every
+		// virtual repository over it, may have narrowed. A content entry drops only the URL answers of a repository,
+		// not its shape answers, so only grants is exact enough (Q-BAS-120).
 		return grants
 	case "endpoint.exposure.updated", "endpoint.exposure.deleted":
 		// Only the exposure of the default endpoint reaches a Bastion, which connects to it (Q-BAS-4).

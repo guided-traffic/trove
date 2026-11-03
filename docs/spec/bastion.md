@@ -7,7 +7,10 @@ are built: the main installation's side (registrations and the `bst` token, the 
 [Q-BAS-65](#q-bas-65--the-recognition-admits-an-interface-route-on-its-own-proof-throttles-tokens-it-cannot-place-and-counts-the-bastion-in-the-read-class)
 to [Q-BAS-69](#q-bas-69--the-last-contact-is-remembered-per-replica-bounded-per-registration-and-its-event-is-asynchronous), the marking and the
 probe) and the Bastion's own side (the client and the link, the engine, the cache, the shared state and the guard, the server), wired into one role
-([Q-BAS-100](#q-bas-100--one-implementation-of-the-link-the-budget-the-sweep-and-the-cache-use-and-the-role-builds-real-components-only)). Phase 5b of the [project plan](../projektplan/BETA.md#phase-5b--trove-bastion-m13)
+([Q-BAS-100](#q-bas-100--one-implementation-of-the-link-the-budget-the-sweep-and-the-cache-use-and-the-role-builds-real-components-only)); a review of the
+main installation's side tightened recognition, forwarded-header trust and the download intake
+([Q-BAS-115](#q-bas-115--a-request-with-trove-bastion-authorization-is-a-forward-and-a-forward-reaches-only-the-package-families) to
+[Q-BAS-120](#q-bas-120--unassigning-a-repository-from-a-project-drops-every-permission-answer-and-every-journaled-event-is-classified)). Phase 5b of the [project plan](../projektplan/BETA.md#phase-5b--trove-bastion-m13)
 builds the MVP requirements of this page (milestone M13 of the [roadmap](../coverage/roadmap.md#p1-platform-milestones), moved
 into the beta by the owner on 2026-11-02). The owner's decisions of 2026-10-31 and 2026-11-02 are binding and recorded as
 [Q-BAS-1](#q-bas-1--the-bastion-asks-the-main-installation-and-keeps-no-copy-of-users-tokens-or-policies) to
@@ -250,7 +253,8 @@ Priority: **MVP** · Covers: DIST-025
   `bastion:<name>`, name `^[a-z][a-z0-9-]{0,19}$` ([authorization.md](authorization.md) R-AUTHZ-002). It holds no grants, no
   roles, no group memberships and no package ownership: a policy entry, a role binding, an owner record or a membership that
   names it answers `422 principal_not_allowed` ([Q-BAS-60](#q-bas-60--a-bastion-registration-is-refused-by-every-write-path-with-one-top-level-422-principal_not_allowed)).
-  It is never part of `authenticated` (R-AUTHZ-030): its token is refused by every route that could admit it. At most
+  It is never part of `authenticated` (R-AUTHZ-030): its token is refused by every route that could admit it, and the decision point
+  gives the kind `bastion` an empty principal set (no `authenticated`, no grant, no role), should any route ever decide for it. At most
   `bastions.max_registrations` registrations exist. A registration can be disabled, which refuses its tokens like a disabled
   service account's ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-020), and deleted, which revokes
   them.
@@ -276,7 +280,7 @@ Priority: **MVP** · Covers: DIST-025
 | `GET /api/v1/bastions`, `GET /api/v1/bastions/{name}` | `endpoints:read` | name, description, `enabled`, its tokens (ID, hint, `expiresAt`, `createdAt`, `lastUsedAt`), and the last contact of R-BAS-010: time, client address, Bastion release, interface version, reported base URL, replica |
 | `PATCH /api/v1/bastions/{name}` `{"description", "enabled"}` | `endpoints:write` | `200` |
 | `DELETE /api/v1/bastions/{name}` | `endpoints:write` | `204`; revokes its tokens (`token.revoked`, journaled) |
-| `POST /api/v1/bastions/{name}/tokens` `{"description", "ttlSeconds"}` | `endpoints:write` | `201` with the token secret, once (R-AUTH-022) |
+| `POST /api/v1/bastions/{name}/tokens` `{"description", "ttlSeconds"}` | `endpoints:write`; a session needs a recent authentication ([api-and-ui.md](api-and-ui.md) R-API-007) | `201` with the token secret, once (R-AUTH-022) |
 | `DELETE /api/v1/bastions/{name}/tokens/{id}` | `endpoints:write` or `tokens:revoke` | `204`; `token.revoked`, journaled (R-HA-054) |
 
 - `trove admin bastion create <name>`, `trove admin bastion token create <name> --ttl <duration>` and
@@ -399,7 +403,7 @@ Priority: **MVP** · Covers: trove-only
   For npm, the configure snippet sets `replace-registry-host=always`, so that a lockfile written against another host resolves
   through the Bastion.
 - **Manual.** The admin manual gains `docs/manual/admin/bastion.md`: register a Bastion, issue its token, the chart values of a
-  minimal and of an HA install, the settings on the main installation (`server.trusted_proxies`,
+  minimal and of an HA install, the settings on the main installation (`bastions.trusted_proxies`,
   `server.additional_base_urls`), verify with the handshake metric, renew the token, and what each alert of R-BAS-041 means.
 
 Acceptance criteria:
@@ -434,6 +438,10 @@ installation's ingress or its Service.
   Bastion token is `Authorization: Bearer`. On a forwarded request it is `Trove-Bastion-Authorization: Bearer`, the caller's own
   credential stays in `Authorization` exactly as the caller sent it, and the forwarded headers of R-BAS-017 carry the client
   address and the Bastion's host.
+- **Forward or interface call.** A request that carries `Trove-Bastion-Authorization` is a forward, whatever its path; a request
+  without it whose path the router decodes to a route below `/api/v1/bastion/` is an interface call, with the Bastion token in
+  `Authorization`. A forward of a path outside `/api/<format>/` and `/files/` answers `404 not_found` before authentication
+  (R-BAS-014, [Q-BAS-115](#q-bas-115--a-request-with-trove-bastion-authorization-is-a-forward-and-a-forward-reaches-only-the-package-families)).
 - **Recognition.** The main installation treats a request as a Bastion request only when `Trove-Bastion-Authorization` (or, on
   the interface routes, `Authorization`) carries a valid `bst` token of an enabled registration. A request with
   `Trove-Bastion-*` headers but no valid Bastion token is served as an ordinary request: the headers are ignored and no
@@ -452,10 +460,15 @@ installation's ingress or its Service.
 - **Recognition in detail** ([Q-BAS-65](#q-bas-65--the-recognition-admits-an-interface-route-on-its-own-proof-throttles-tokens-it-cannot-place-and-counts-the-bastion-in-the-read-class)).
   The token is the Bearer credential of the first line of the header, and only a value that starts with `trv_bst_` is looked at; any
   other credential leaves the request ordinary. The stages behind the recognition receive the request without the Bastion token. A
-  rejected Bastion token counts as a failure of the client address in a budget of its own, and an address in throttled mode is
-  refused `429 rate_limited` before the token is looked up; a request whose token names no registration is counted under the
-  registration `unknown`. A recognized interface request is the registration's, not the address's: the request log names it and the
-  general limits charge it to the class `read` under the bucket `token:<token ID>`, whatever the method.
+  rejected Bastion token counts as a failure of the address that sent it (the address before the Bastion's forwarded headers count,
+  R-BAS-017) in a budget of its own; while that address is in throttled mode, a token the replica does not hold in its token cache, and
+  whose marker does not say it was valid recently, is refused `429 rate_limited` without a lookup, as every other credential is
+  (R-AUTH-038); a token the replica holds costs no read of the shared counters. A request whose token names no registration is counted
+  under the registration `unknown`. `token.rejected` of a Bastion token names the request's source, and the last use of an accepted one
+  records the address the Bastion connected from, never a caller's it forwards for. A recognized interface request is the registration's,
+  not the address's: the request log names it, also on the check, which runs a caller's credential through the authentication stage
+  without touching the line ([Q-BAS-119](#q-bas-119--the-check-runs-the-credential-through-a-stage-that-records-nothing-in-the-request-log)), and the general limits charge it to the class `read` under the bucket `token:<token ID>`,
+  whatever the method.
 
 Acceptance criteria:
 
@@ -463,6 +476,10 @@ Acceptance criteria:
   `application/problem+json`; with `Trove-Bastion-Authorization: Bearer $PAT` (a valid token of another type) the request is
   served as an ordinary one without marking headers.
 - The request log of the main installation shows `Trove-Bastion-Authorization` as `[REDACTED]`.
+- A forward of `GET /api/%76%31/tokens` or `GET /api/%761/bastion/handshake` (the router decodes both to routes of `/api/v1/`) with a
+  valid Bastion token in `Trove-Bastion-Authorization` answers `404 not_found` and runs no route, never `401 bastion_token_invalid`
+  (`TestR_BAS_014_AForwardOutsideThePackageFamiliesReachesNoRoute`); the log line of `POST /api/v1/bastion/check` names the registration
+  (`TestR_BAS_008_TheCheckLeavesTheRequestLogLineOfTheRegistration`).
 
 ### R-BAS-009 · The interface version
 Priority: **MVP** · Covers: trove-only
@@ -520,7 +537,8 @@ after every reconnect, and after a feed entry of the kind `settings` (R-BAS-015)
 
 *(example answer)*
 
-- `responseBaseUrl` is the response base URL the main installation derived for this request (R-OPS-005, R-EP-003). The Bastion
+- `responseBaseUrl` is the response base URL the main installation derived for this request (R-OPS-005, R-EP-003), with the
+  Bastion's forwarded host counted only when the Bastion connected from an address of `bastions.trusted_proxies` (R-BAS-017). The Bastion
   requires it to equal its own `server.base_url`; otherwise it logs `bastion base URL not honoured by the main installation`,
   sets `trove_bastion_base_url_mismatch 1` and treats the main installation as unreachable, so that no client ever receives a
   document with the main installation's URLs from the Bastion.
@@ -655,14 +673,17 @@ recognized Bastion request; no format code is involved, because the dispatcher k
   Bastion's host, and its ETag is the same for every `full` subject (R-NPM-013's inputs). A format whose document varies by
   anything but the repository's content and the request headers it names in `Vary` must render such a route as `Volatile`; the
   conformance kit has a check (check 12, [Q-BAS-72](#q-bas-72--the-conformance-kit-compares-documents-between-callers-as-check-12)) that
-  sends one document request as a user, a service account and the anonymous caller and compares status, bytes and validators.
+  sends one document request as a user, a service account and the anonymous caller - each with a request context of its own and request
+  headers of its own (credential, client, session, forwarded address), except the headers the first answer names in `Vary`, which
+  all send alike - and compares status, bytes and validators.
   npm's `-/whoami` and `-/ping` answer by who asks and are `Volatile` since that check found them.
 - The headers are added only to Bastion requests and stripped from every other response, so an ordinary caller never learns
   its own shape.
 - Details the table leaves open ([Q-BAS-71](#q-bas-71--the-mark-stage-is-an-edge-package-and-learns-the-caller-from-the-authentication-stage)):
   the subject is `invalid` on every `401` and on a credential that is no token (a session cookie), and `anonymous` for a caller
   without a credential; a response that no route matched or that the decision refused carries the repository when the route is
-  known and no `Trove-Bastion-Read`; a response on an interface route of the Bastion carries `Trove-Bastion-Class: pass` and
+  known and no `Trove-Bastion-Read` (on `/files/` too: the raw file handler tells the marking the decision once the service allowed
+  the read); a response on an interface route of the Bastion carries `Trove-Bastion-Class: pass` and
   `Trove-Bastion-Interface` only; a `/files/` path with a trailing slash, and the root, is a listing (`shared` or `private`
   like a document), any other `/files/` path a download.
 
@@ -686,6 +707,9 @@ answers a write in the client's protocol shape and points at the main installati
 - A request with a method other than `GET` and `HEAD` is first sent to the main installation as a **probe**: the same method,
   path and query, the request headers of R-BAS-021, `Content-Length: 0`, no body, no caller credential, and
   `Trove-Bastion-Probe: 1`. The Bastion reads none of the caller's body while it waits.
+- The probe carries no credential of a caller by design. The authentication stage admits a recognized probe as the anonymous caller
+  for routing only, whatever the anonymous switches say, so that it reaches the route match ([Q-BAS-118](#q-bas-118--a-write-probe-is-admitted-as-the-anonymous-caller-for-routing-only));
+  every route below `/api/<format>/` and `/files/` tells the marking stage its kind there first, and the probe goes no further (H-469).
 - The main installation's middleware answers a Bastion probe after routing and before any handler or body read:
   - a route whose `RouteKind` is `Upload`, `Delete` or `Admin`, or whose coarse action is not `read`: `403` with the problem
     code `bastion_read_only` in the format's error shape (R-ARCH-023), whose detail names the main installation's URL of the
@@ -700,6 +724,9 @@ answers a write in the client's protocol shape and points at the main installati
   `bastion.cache.metadata_revalidate_after`. After a `204` it forwards the real request with its body (at most
   `bastion.main.max_forwarded_body`; a larger body answers `413` from the Bastion) and the caller's credential; the answer is
   `pass`. A request with a body above the limit is refused before the probe. The credential of the real request is checked after the `204` ([Q-BAS-81](#q-bas-81--a-write-is-decided-by-the-probe-first-its-credential-is-checked-only-if-the-real-request-is-forwarded)).
+- A forward of any path outside `/api/<format>/` and `/files/` - judged on the path as the router decodes it, segment by segment, so
+  `/api/%76%31/tokens` is `/api/v1/tokens` - answers `404 not_found` as problem details of the management API before authentication,
+  whatever its method and credential: a forward reaches no route of the management API, the login tree or the UI ([Q-BAS-115](#q-bas-115--a-request-with-trove-bastion-authorization-is-a-forward-and-a-forward-reaches-only-the-package-families)).
 - A forwarded non-probe write that reaches the main installation anyway (a defect) is refused the same way, since the
   Bastion token makes every write `bastion_read_only`.
 - The test is the route's kind and action, not the method alone ([Q-BAS-74](#q-bas-74--a-write-is-a-route-of-a-writing-kind-or-a-coarse-action-other-than-read)):
@@ -715,6 +742,9 @@ Acceptance criteria:
   64 KiB of the upload body were read.
 - `npm audit` through the Bastion returns the main installation's answer.
 - 1,000 `PUT` requests to one path within a minute cause one probe to the main installation.
+- With anonymous access off, the probe of `npm publish` answers `403 bastion_read_only` with the main installation's URL through the
+  real authentication stage, the probe of `npm audit` `204`, and no handler runs
+  (`TestR_BAS_014_AProbeIsAnsweredThroughTheRealAuthenticationStage`).
 
 ### R-BAS-015 · Revocation feed
 Priority: **MVP** · Covers: RMT-040
@@ -734,7 +764,8 @@ the content events below ([Q-BAS-29](#q-bas-29--the-feed-reads-the-journals-even
 | `settings.auth.changed` | `{"kind": "settings"}`, and `grants` when anonymous access was switched off |
 | `npm.unpublish`, `package.deleted` | `{"kind": "content", "repositories": [<key>, …]}`: the repository and every virtual repository that includes it, recursively, at the time the feed is read |
 | from M4b: `vulnerability.finding.status_changed` and `vulnerability.finding.reopened` with `block: set` ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-013) | `content` for the finding's repository and its virtual repositories |
-| `authz.ownership.*`, `package.published` and every other journaled event | none: they bound writes or reserve numbers, which the Bastion never does |
+| `authz.project.repository_unassigned` | `grants`: the repository left its project's policies behind ([Q-BAS-120](#q-bas-120--unassigning-a-repository-from-a-project-drops-every-permission-answer-and-every-journaled-event-is-classified)) |
+| `authz.ownership.removed`, `authz.ownership.released`, `package.published`, `authz.project.updated`, `authz.project.deleted`, `authz.project.admin_removed` | none: they bound publishing, reserve numbers, bound what project administrators may change, or narrow reads through events of their own (a project's policies are deleted before it, each `authz.policy.deleted`); each is listed with its reason, and every journaled event of the audit registry is either mapped or listed (`TestR_BAS_015_EveryJournaledEventIsClassified`) |
 
 ```json
 {
@@ -822,12 +853,18 @@ most `bastions.downloads.max_batch` (owner, [Q-BAS-13](#q-bas-13--downloads-serv
   An event that breaks its contract (no time, repository or path, a SHA-256 that is no digest) is dropped like one older than `max_age`;
   both are added to the count of `bastion.downloads.dropped`, which also names the parts (`reported`, `expired`, `invalid`). A batch above
   `max_batch` is refused `422`.
+- **Budget** ([Q-BAS-117](#q-bas-117--download-events-are-charged-to-their-registration-by-their-count)). Every batch is charged to its registration by its events, in units of 100 rounded up, on a cluster limiter of R-ARCH-034
+  (`bastion.download_events`, bucket the registration). A batch the budget does not hold answers `429 rate_limited` with `Retry-After`
+  and records nothing; the Bastion keeps it and sends it again (Q-BAS-78), and what its bounded buffer cannot hold meanwhile is counted
+  as lost (R-BAS-039). `events_burst` holds `max_batch`, so every batch can fit; the budget is per registration (H-468).
 
 ```yaml
 bastions:                              # the main installation's section (the Bastion's own is bastion)
   downloads:
     max_batch: 1000                    # default (proposed)
     max_age: 720h                      # default (proposed)
+    events_per_second: 200             # default (proposed): per registration, across the replicas
+    events_burst: 2000                 # default (proposed): holds max_batch; the window is events_burst / events_per_second; units of 100
 ```
 
 Acceptance criteria:
@@ -836,6 +873,8 @@ Acceptance criteria:
   events with `origin: bastion`, the callers' token ID and client address, within two `flush_interval`s; the cold run's 20 were
   recorded by the main installation without `origin`.
 - A batch with `"dropped": 7` yields one `bastion.downloads.dropped` event with count 7.
+- With the defaults, two batches of 1,000 events are recorded and a third within the window answers `429` with `Retry-After` and records
+  nothing; another registration is not slowed down (`TestR_BAS_016_DownloadEventsAreChargedToTheRegistrationByTheirCount`).
 
 ### R-BAS-017 · The real client and the Bastion's host at the main installation
 Priority: **MVP** · Covers: trove-only
@@ -846,19 +885,25 @@ The main installation counts the real client and renders documents for the Basti
 - **Client address.** The Bastion sends exactly one forwarded-for entry, the client address it determined with its own
   `server.trusted_proxies` (R-BAS-019), in both header families: `X-Forwarded-For: <address>` and `Forwarded: for=<address>`
   (quoted and bracketed for IPv6). It replaces whatever forwarded headers the caller sent. The main installation lists the
-  Bastion's egress addresses in its `server.trusted_proxies`, so R-ARCH-006 resolves the client address to the caller's, in
-  whichever family `server.forwarded_header` selects; its rate limits, its failed-credential throttle and its audit then apply
-  to the client, not to the Bastion.
+  Bastions' egress addresses in `bastions.trusted_proxies`, not in `server.trusted_proxies` ([Q-BAS-116](#q-bas-116--the-bastions-forwarded-headers-count-only-for-a-recognized-request-from-an-address-of-bastionstrusted_proxies)). After the Bastion
+  token was checked, a request whose address - as R-ARCH-006 resolves it with `server.trusted_proxies`, which name the main
+  installation's own ingress - is one of `bastions.trusted_proxies` is resolved again with those addresses trusted as well, so the
+  client address is the caller's, in whichever family `server.forwarded_header` selects; the rate limits, the failed-credential
+  throttle and the audit then apply to the client, not to the Bastion. A request from the same address without a valid Bastion
+  token - any workload that shares the Bastion's egress - forwards nothing: its client address stays the egress address.
 - **Host.** The Bastion sends its base URL's scheme, host and port as `X-Forwarded-Proto`, `X-Forwarded-Host`,
-  `X-Forwarded-Port` and as `proto=` and `host=` of the same `Forwarded` element. The main installation lists the Bastion's
+  `X-Forwarded-Port` and as `proto=` and `host=` of the same `Forwarded` element; the main installation counts them by the same rule
+  as the client address (behind its own ingress they are what the ingress reports, H-467). The main installation lists the Bastion's
   base URL in `server.additional_base_urls`, so every URL it renders for the Bastion is on the Bastion's host (R-OPS-005,
   R-EP-003); the handshake proves it (R-BAS-010). The Bastion therefore carries no format knowledge: it never rewrites a body.
 - Main installation values for the example *(example)*:
 
 ```yaml
 server:
-  trusted_proxies: ["10.244.0.0/16", "198.51.100.20/32"]   # example: the main ingress pods and the Bastion's egress address
+  trusted_proxies: ["10.244.3.17", "10.244.5.9"]           # example: the main installation's own ingress pods, never the Bastion
   additional_base_urls: ["https://packages.example.com"]   # example
+bastions:
+  trusted_proxies: ["198.51.100.20/32"]                    # default []; example: the address the Bastion connects from
 ```
 
 Acceptance criteria:
@@ -867,6 +912,10 @@ Acceptance criteria:
   log and audit as `203.0.113.7`, with either value of the main installation's `server.forwarded_header`.
 - `npm view @acme/sdk dist.tarball` through the Bastion prints a URL on `packages.example.com`, and no body or header the e2e run
   captures at the Bastion contains `trove.example.com`, except the `bastion_read_only` detail of R-BAS-014.
+- A request from the Bastion's egress address without a Bastion token that sends `X-Forwarded-For: 203.0.113.7` and
+  `X-Forwarded-Host: packages.example.com` is served with the egress address as its client and on the main installation's base URL
+  (`TestR_BAS_017_AnUnrecognizedRequestFromTheBastionsEgressForwardsNothing`,
+  `TestR_BAS_017_TheBastionsForwardedHeadersCountOnlyForARecognizedBastionRequest`).
 - A loop of failed credentials from one caller through the Bastion is throttled by the main installation per that caller's
   address, while a second caller through the same Bastion is not slowed down.
 
@@ -3529,13 +3578,15 @@ Status: **Decided by the development agent** — selected from the options below
 | (a) `token.Service.AuthenticateBastion` validates through the replica's `auth_tokens` cache, the freshness gate and the change area `auth`; `bastionmain.Authenticator` maps its verdicts to `ErrTokenInvalid` and notes the use (chosen) | The revocation bound of R-AUTH-023, the single-flight lookup, the rejection log (`token.rejected` once an hour) and the last-used buffer are the ones of every token; a disabled registration and a revocation flush the same cache entries | No second cache to keep correct; `Service.Check` stays closed to the type | The type `bst` is known to the token service, which refuses it on `Check` and accepts it on a method of its own |
 | (b) A cache and a lookup of its own in `internal/bastionmain` | Independent of the token service | No change to the token package | A second implementation of the bound, the flights and the invalidation on the hot path of the interface |
 
-**Choice:** (a). The lookup is the contract's query `BastionTokenBySecret`, extended by `rejection_due`. The authenticator is called
-without the failed-credential throttle of R-AUTH-038 (the seam has no request), which H-435 records.
+**Choice:** (a). The lookup is the contract's query `BastionTokenBySecret`, extended by `rejection_due`. The authenticator was called
+without the failed-credential throttle of R-AUTH-038 (the seam had no request); since the review of the main installation's side the seam
+carries the request (`bastionmain.AuthRequest`: the throttle of the sending address, asked after a cache miss, and the source that
+`token.rejected` names and the last use records), and that gap is closed.
 
 **Rationale:** the bound is a property of the cache, not of the type. The development agent would revisit (b) if the interface gets its
 own revocation channel.
 
-**Applied in the spec:** R-BAS-004, R-BAS-005; H-435; code: `internal/auth/token/bastion.go`, `internal/bastionmain/authenticator.go`.
+**Applied in the spec:** R-BAS-004, R-BAS-005; code: `internal/auth/token/bastion.go`, `internal/bastionmain/authenticator.go`.
 
 ### Q-BAS-63 · A Bastion token's lifetime is `ttlSeconds` alone, every violation is `400 invalid_ttl`, the description is optional
 
@@ -3602,6 +3653,13 @@ a throttled address if the Bastion's egress address turns out to be shared with 
 
 **Applied in the spec:** R-BAS-008; code: [recognize.go](../../internal/bastionmain/recognize.go), [bastion_services.go](../../internal/api/v1/bastion_services.go),
 [ratelimit.go](../../internal/api/v1/ratelimit.go), [limiter.go](../../internal/auth/limiter.go), [wire_bastion.go](../../internal/app/wire_bastion.go).
+
+**Amended by the review of the main installation's side:** the throttle is asked after the replica's token cache, by the token service
+(`AuthenticateBastion` with the request's throttle), as for every other credential: a token the replica holds passes a throttled
+address and costs no read of the shared counters, a token it does not hold is refused without a lookup unless its marker says it was valid
+recently (`TestR_BAS_008_ABastionTokenAsksTheThrottleOnlyOnACacheMiss`). The address counted is the one that sent the token, before the
+Bastion's forwarded headers count ([Q-BAS-116](#q-bas-116--the-bastions-forwarded-headers-count-only-for-a-recognized-request-from-an-address-of-bastionstrusted_proxies)).
+H-440 is narrowed accordingly.
 
 ### Q-BAS-66 · The check runs the credential through the endpoint's authentication stage
 
@@ -3673,7 +3731,9 @@ read yields `grants`; a withdrawal event without a repository yields no entry an
 are counted as events, `4 × max_page` of them at most (`reset` beyond). A reset answers no entries and the position of now, which is the
 newest journaled event within the lookback or, without one, `t:<database clock>`; the handshake's `feed.cursor` is the same position.
 `content` entries list the repository first, then every virtual repository that includes it, recursively, in key order.
-The project events (`project.*`) and the ownership events are journaled but yield no entry, as the table says; the vulnerability events join with M4b.
+The ownership events and the project events other than an unassignment are journaled but yield no entry, each with its reason in `noFeedEntry`;
+`authz.project.repository_unassigned` yields `grants` ([Q-BAS-120](#q-bas-120--unassigning-a-repository-from-a-project-drops-every-permission-answer-and-every-journaled-event-is-classified),
+amended by the review); the vulnerability events join with M4b.
 
 **Rationale:** each choice keeps a Bastion from keeping an answer an event may have narrowed, and from stalling. The development agent
 would revisit the count of events behind the cursor if journaled events become so frequent that the bound is reached in normal operation
@@ -3777,6 +3837,14 @@ check found two routes in npm: `-/whoami` (the caller's name) and `-/ping` (`401
 
 **Rationale:** the property is the one a Bastion relies on (R-BAS-013): a `shared` document is the same for every full reader. The
 development agent would revisit the number when the vulnerability check is built.
+
+**Amended by the review of the main installation's side:** the callers differ in more than `rq.Subject`. Each arrives with a request
+context of its own (a request-log holder naming it, as the chain fills it) and with request headers of its own - `Authorization`,
+`Cookie`, `User-Agent`, `Referer`, `X-Forwarded-For`, `Npm-Session`, `Npm-Command`, `X-NuGet-Session-Id` - except those the first answer
+names in `Vary`, which every caller sends alike (all of them for `Vary: *`). A document that varies by a header it does not name in `Vary`
+fails the check (the defect `varies-by-header` of the testformat; with `Vary: User-Agent` it passes). A format reads no principal from the
+context, which R-ARCH-008 keeps out of its imports; the context is varied so that a host or contract code that read it would be compared
+as well. npm and NuGet pass unchanged.
 
 **Applied in the spec:** R-BAS-013, R-ARCH-010 (checks 12 and 13); code: `internal/formats/formattest/checks_shared.go`,
 `internal/formats/npm/routes.go`, `internal/formats/npm/format.go`, `internal/archtest/subject.go`.
@@ -4522,6 +4590,181 @@ engine looked for the route in the stripped header, so it never saw it: the Bast
 **Applied in the spec:** R-BAS-014; code: `internal/bastion/mainclient/client.go`, `internal/bastion/engine/probe.go`, `TestR_BAS_014_TheRouteOfAProbeAnswerSurvivesTheStrippedMarking`,
 `TestR_BAS_014_WritesAreRefusedInTheFormatsShape`.
 
+### Q-BAS-115 · A request with Trove-Bastion-Authorization is a forward, and a forward reaches only the package families
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the review of the main installation's side found that a recognized forward reached every route of the endpoint with the
+caller's credential: `GET /api/v1/tokens`, and `GET /api/%76%31/tokens`, which the router decodes segment by segment to the same route,
+listed the caller's tokens through a Bastion. It also found (a proof of concept of the Bastion-side review) that a forward whose path
+decodes to an interface route was taken for an interface call: `Authorization` then held the caller's credential, the answer was `401
+bastion_token_invalid`, and the Bastion read that as the refusal of its own token and marked the replica unreachable - one request, a
+denial of service. R-BAS-014 also says a forwarded non-probe write is refused.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The presence of `Trove-Bastion-Authorization` makes a request a forward on every path; an interface call is a request without it, on a path the router decodes to `/api/v1/bastion/…`; the Recognize stage answers a recognized forward outside `/api/<format>/` and `/files/` - judged on the path split and decoded segment by segment, as `net/http.ServeMux` matches - with `404 not_found`, a problem of the management API, before authentication (chosen) | One rule in the stage that already holds the token; the families are the ones whose routes all call the marking stage's observer before deciding or reading a body | No route of another family runs for a forward, whatever the escapes; a forward can never be answered `bastion_token_invalid` for the caller's credential; the answer is the one every unrouted path gets, so it needs no code and tells nothing new; no change to `internal/bastion/iface` | The Bastion sees a `404` for a path it should never have sent |
+| (b) A dedicated code, `bastion_not_forwarded` (404) | The same rule, a code of its own | Says why | A new problem code on the wire is a change of the interface surface and raises `InterfaceVersion` |
+| (c) Judge the decoded `r.URL.Path`, or the pattern the router picked (`r.Pattern`) | Prefix tests on the decoded path, or on the route label | Shorter | The decoded path is not the router's: `/api%2Fv1/x` decodes to `/api/v1/x`, which no route serves; the pattern is empty outside the chain, so the rule would depend on how the request reached the stage |
+| (d) The refusal in the Mark stage | After recognition, before the router | The stage knows the routes | It runs after the token check as well; nothing is gained, and the stage that recognizes the request is the one that decides what it is |
+
+**Choice:** (a). `routingSegments` decodes each segment with `url.PathUnescape` and keeps one that does not decode, which is what the
+router does; `/files/…` and `/api/<x>/…` with `<x>` neither empty nor `v1` pass, everything else - the management API, the interface,
+`/auth/`, `/ui/`, `/`, a path whose first segment holds an encoded slash - is refused, for every method. Inside the two families the
+marking stage refuses the unsafe methods of the routes that are not read routes (Q-BAS-74), and a path with no route ends in the format's
+or the core's `404` without a handler, which together is "unsafe methods outside the read routes are refused". The interface accepts
+the Bastion token in `Authorization` only when `Trove-Bastion-Authorization` is absent; with that header on an interface path the request
+is a forward and is refused `404`, and with another credential in it the request is an ordinary one.
+
+**Rationale:** the Bastion forwards the package clients' read paths and nothing else (R-BAS-003); the main installation must not rely on
+it doing so, because the forwarded credential is the caller's. The development agent would revisit the code of the refusal if the
+Bastion needs to tell a refused forward from an unknown path (that raises the interface version), and the family rule if a format
+mounts a route outside `/api/<format>/`.
+
+**Applied in the spec:** R-BAS-008, R-BAS-014; code: [recognize.go](../../internal/bastionmain/recognize.go) (`routingSegments`,
+`interfacePath`, `forwardablePath`), `TestR_BAS_014_AForwardReachesOnlyThePackageFamilies`,
+`TestR_BAS_008_AnInterfaceCallCarriesNoTroveBastionAuthorization`, `TestR_BAS_014_AForwardOutsideThePackageFamiliesReachesNoRoute`
+(through the real chain and the routes of the management API).
+
+### Q-BAS-116 · The Bastion's forwarded headers count only for a recognized request from an address of `bastions.trusted_proxies`
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. It narrows
+the means of the owner's [Q-BAS-21](#q-bas-21--internet-exposure-limits-blocking-failed-sign-in-timeouts-and-a-configurable-cache) and
+[Q-BAS-17](#q-bas-17--the-bastion-mirrors-the-main-installations-url-space), whose words list the Bastion in `server.trusted_proxies`,
+and keeps their intent: the main installation's limits and audit apply to the real client, and documents are rendered for the
+Bastion's host.
+
+Context: with the Bastion's egress address in `server.trusted_proxies`, every request from that address was believed, Bastion token or
+not. Any workload sharing the egress (a node's SNAT, a NAT in the DMZ) could set `X-Forwarded-For` or `Forwarded` and so rotate its
+address past the failed-credential throttle, push a victim's address into throttled mode, write any `source_ip` into the audit trail,
+and choose the response base URL among `server.additional_base_urls`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A key of its own, `bastions.trusted_proxies`; after the Bastion token was checked, a recognized request whose address - stage 5's client address, resolved with `server.trusted_proxies` (the main installation's own ingress) - lies in it is resolved again with both lists trusted (`httpserver.WithResolved`), and the request log learns the new address (chosen) | The forwarded entry counts only when the hop that wrote it is a listed Bastion and the request proved it is one | Nothing a request without a valid Bastion token sends moves its address or its base URL; the main installation's own ingress works as before; a stolen token used from elsewhere forwards nothing; the old configuration still works | One more key to set; an entry also listed in `server.trusted_proxies` is trusted for everyone, which start-up logs |
+| (b) Keep `server.trusted_proxies` and refuse forwarded headers of unrecognized requests from the egress | Needs the egress known anyway | No new key | The same list would mean two things, and an operator cannot tell which entries are Bastions |
+| (c) The Bastion sends the caller's address in a header of the interface and the main installation reads it only after recognition | No forwarded headers for the client address | Exact | A new header is a change of `internal/bastion/iface` (raises `InterfaceVersion`), and the host still needs the forwarded host |
+
+**Choice:** (a). The re-derivation is `RecognizeOptions.Forwarded`, built by the composition root (`app.bastionForwarded`) from a second
+resolver of the default endpoint over `server.trusted_proxies` plus `bastions.trusted_proxies`; it runs for interface calls too, so
+the handshake's `responseBaseUrl` honours the Bastion's host only from a listed address. The source of the token itself - the
+`token.rejected` of a rejected one, the last use of an accepted one, the throttle bucket of rejected ones - is the address before the
+re-derivation, the Bastion's own. Without `bastions.trusted_proxies` nothing is re-derived. `bastions.trusted_proxies` is validated as
+`server.trusted_proxies` is (an address or a CIDR, no `/0`).
+
+**Rationale:** the trust in a forwarded address belongs to the proof that the forwarder is a Bastion, which only the recognition has.
+The development agent would revisit the key if the Bastion connects through an egress whose address changes (then the registration
+would have to carry it, H-386's deferred address binding).
+
+**Applied in the spec:** R-BAS-007 (the manual), R-BAS-008, R-BAS-010, R-BAS-017; code: [bastions.go](../../internal/config/bastions.go)
+(`TrustedProxies`), [recognize.go](../../internal/bastionmain/recognize.go), [wire_bastion.go](../../internal/app/wire_bastion.go)
+(`bastionForwarded`), [context.go](../../internal/httpserver/context.go) (`WithResolved`),
+`TestR_BAS_017_TheBastionsForwardedHeadersCountOnlyForARecognizedBastionRequest`,
+`TestR_BAS_017_AnUnrecognizedRequestFromTheBastionsEgressForwardsNothing`; open: H-467.
+
+### Q-BAS-117 · Download events are charged to their registration by their count
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: one request of the intake carries up to `max_batch` events. The request rate of the read class (50 a second by default) let one
+Bastion token write some 50,000 `artifact.downloaded` rows a second, and it filled each replica's asynchronous audit buffer
+(`audit.async_buffer`, 10,000), after which other asynchronous events went to the log copy only.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A cluster limiter of R-ARCH-034, `bastion.download_events`, bucket the registration, charged by the events of a batch in units of 100, rounded up (`TakeNAt`: n units are n `INCR` in the one transaction of the check, since the least-privilege ACL of R-ARCH-030 has no `INCRBY`); a batch it does not hold answers `429 rate_limited` with `Retry-After` and records nothing (chosen) | `bastions.downloads.events_per_second` (200) and `events_burst` (2,000, holding `max_batch`) | Bounds the rows a token can write, across the replicas, with one round trip per batch and at most 100 `INCR` (`max_batch` is at most 10,000); the Bastion already keeps and resends a batch answered `429` (Q-BAS-78); a burst of a cold start fits two full batches | A batch of one event costs a unit of 100; a Bastion that serves more than the budget for long loses what its buffer cannot hold, counted (R-BAS-039) |
+| (b) Lower `max_batch` | Smaller requests | No new mechanism | The request rate still multiplies; more requests for the same events |
+| (c) Refuse while the audit writer's buffer is above a level | Back-pressure | Follows the real load | Per replica, invisible to the other replicas, and it refuses everyone's events at once |
+| (d) One `INCRBY` per batch, charged per event | Exact | One command | Needs `INCRBY` in the ACL of the main installation's Valkey user, which the chart, the local profile and the integration stack would all have to grant; the integration test against the stack found the limiter falling back to the replica's share without it |
+
+**Choice:** (a). An empty batch that reports only lost events costs nothing. The limiter falls back to the replica's share while Valkey
+is unavailable, like every limiter of R-ARCH-034; a request of more than `cluster.MaxTakeUnits` (100) units is refused without being
+counted. Configuration refuses an `events_burst` whose whole units do not hold `max_batch` rounded up (a full batch would never fit), one
+below 100, and a window above 12 hours.
+
+**Rationale:** the events are what costs, so the events are what is charged; the registration is who sends them. The development agent
+would revisit the default if a Bastion's normal traffic meets it (the lost count in `bastion.downloads.dropped` shows it), and a
+budget shared by all registrations if many registrations at once fill the audit buffer (H-468).
+
+**Applied in the spec:** R-BAS-016; code: [downloads.go](../../internal/bastionmain/downloads.go) (`EventBudget`),
+[limiter.go](../../internal/cluster/limiter.go) (`TakeNAt`), [valkey_ratelimit.go](../../internal/cluster/valkey_ratelimit.go),
+[wire_bastion.go](../../internal/app/wire_bastion.go) (`LimiterBastionDownloadEvents`), [bastions.go](../../internal/config/bastions.go),
+`TestR_BAS_016_DownloadEventsAreChargedToTheRegistrationByTheirCount`, `TestR_BAS_016_ARequestIsChargedItsUnits`.
+
+### Q-BAS-118 · A write probe is admitted as the anonymous caller for routing only
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: with anonymous access off (the default), the authentication stage answered a probe - recognized, `Trove-Bastion-Probe: 1`, no
+credential of a caller by design - `401 credentials_required` before the router ran, so `npm publish` through a Bastion got a `401`
+instead of R-BAS-014's `403 bastion_read_only`. The tests had used a stand-in authentication that admitted every request.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The Bastion's wrapper of the authentication stage (`v1.BastionRouteAuth`) returns the anonymous caller for a recognized probe without running the stage (chosen) | The probe reaches the route match, where the marking stage answers it | One line where the interface calls are admitted; the decision point still refuses the anonymous caller everywhere, so no read opens; the rate limits charge the probe to the caller's address | The admission rests on every route of the two families telling the marking stage its kind first (H-469) |
+| (b) Admit it as the registration | The Bastion principal | Names the Bastion in the log | A principal the decision point should never see would reach the route; the rate limits would charge the Bastion |
+| (c) Answer the probe in the Recognize stage | No router | Simple | The stage does not know the route, its kind or the format's error shape, which R-BAS-014 asks for |
+
+**Choice:** (a). A probe never passes the route match: a route that is not a read route is refused `403 bastion_read_only`, a read route
+that takes a body is answered `204` (Q-BAS-74), and a path with no route ends in the format's or the core's `404`. Only forwards of the
+package families reach the stage at all (Q-BAS-115). A forwarded request without a caller credential that is no probe is still the
+stage's, and refused while anonymous access is off.
+
+**Rationale:** the probe is the Bastion's question about a route, not a request of a caller, so the anonymous rule has nothing to decide
+on it. The development agent would revisit (a) if a handler is mounted below `/api/<format>/` or `/files/` that does not call the
+observer (H-469).
+
+**Applied in the spec:** R-BAS-014; code: [bastion_services.go](../../internal/api/v1/bastion_services.go) (`BastionRouteAuth`),
+`TestR_BAS_014_AProbeIsAnsweredThroughTheRealAuthenticationStage` (the real stage of `internal/auth`, the real dispatcher and raw file
+handler).
+
+### Q-BAS-119 · The check runs the credential through a stage that records nothing in the request log
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the check (Q-BAS-66) runs the caller's credential through the endpoint's authentication stage on a clone of the Bastion's
+request; the stage recorded the principal it accepted in the request-log holder of the context, which the clone shares, so the line of
+`POST /api/v1/bastion/check` named the checked caller instead of the registration (R-BAS-008).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The composition root's credential stage records nothing; the chain's authentication function records the principal it returns (chosen) | `credentialStage` returns the principal, `authenticate` wraps it with `recordPrincipal` | The log line of every request stays the chain's; the check needs no special case | None found |
+| (b) Give the clone a request-log holder of its own | `observability.WithRequestInfo` on the clone's context | Local to the check | The clone's holder is thrown away; a later caller of the stage would meet the same trap |
+
+**Choice:** (a).
+
+**Rationale:** what the request log says about a request is the chain's business, not the business of whoever runs the stage. The
+development agent would revisit it if a second caller of the stage needs the record.
+
+**Applied in the spec:** R-BAS-008; code: [wire_identity.go](../../internal/app/wire_identity.go) (`authenticate`, `credentialStage`),
+`TestR_BAS_008_TheCheckLeavesTheRequestLogLineOfTheRegistration`.
+
+### Q-BAS-120 · Unassigning a repository from a project drops every permission answer, and every journaled event is classified
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `authz.project.repository_unassigned` is journaled as a revocation (R-AUTHZ-031): a repository that leaves its project leaves
+the project's policies behind, so callers' reads of it can narrow. The feed mapped it to no entry, and the test of R-BAS-015 checked a
+fixed list, so a new journaled event could leave the feed unnoticed.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `grants`; every journaled event of the audit registry is either read by the feed or listed with its reason in `noFeedEntry`, and the test is driven by the registry (chosen) | All permission answers dropped on an unassignment | Exact enough: the Bastion drops only URL answers on a `content` entry, not shape answers (R-BAS-026, rule 3 of R-BAS-020), so a `full` answer the unassignment ended would survive anything else | Unassignments are rare; each drops every caller's answers once |
+| (b) `content` for the repository and its virtual closure | Repository-scoped | Fewer answers dropped | Not exact: shape answers survive it |
+| (c) `content` with a new meaning that drops shape answers too | Repository-scoped and exact | Fewest answers dropped | Changes the meaning of a feed entry kind, which raises `InterfaceVersion` |
+
+**Choice:** (a). The other journaled events yield no entry, with these reasons: `authz.ownership.removed` and `.released` bound who may
+publish a name; `package.published` reserves numbers; `authz.project.updated` changes the switches that bound what project administrators
+may change; `authz.project.deleted` deletes only an empty project, whose policies were deleted first, each `authz.policy.deleted`
+(`grants`); `authz.project.admin_removed` ends the administration, which gives `manage` and no read (no action implies another,
+R-AUTHZ-001).
+
+**Rationale:** a narrowing the Bastion keeps is worse than answers it asks again. The development agent would revisit (c) when the
+interface version is raised for another reason.
+
+**Applied in the spec:** R-BAS-015; code: [feed.go](../../internal/bastionmain/feed.go) (`mapEvent`, `feedActions`, `noFeedEntry`),
+`TestR_BAS_015_EveryJournaledEventIsClassified`, `TestR_BAS_015_UnassigningARepositoryDropsEveryPermissionAnswer`.
+
 ### Q-BAS-121 · A path is classified as the main installation's router will read it, and a token refusal on a forward is no statement about the Bastion's token
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -4840,7 +5083,8 @@ throttle, its audit trail, and the token and principal IDs of the feed.
 Dormant until phase 5b; then live wherever a Bastion token exists. The token is a bearer secret in a Secret of the Bastion's
 namespace, accepted from any address. Its holder can ask the check about any credential with a client address of its choice, so
 the main installation's throttle and its `token.rejected` events count against that address; add `artifact.downloaded` events
-for any principal and path (always marked with the registration's name, so attributable to the Bastion, not to the principal);
+for any principal and path, at most `bastions.downloads.events_per_second` a second (Q-BAS-117; always marked with the registration's
+name, so attributable to the Bastion, not to the principal);
 and read the token and principal IDs of the feed. It cannot read a package, write content or issue a token. What makes it real: a
 compromised Bastion pod or a leaked Secret; revoking the token ends it, and the last contact on the screen of R-BAS-007 shows
 unknown addresses.
@@ -4937,19 +5181,6 @@ absent (the Bastion's own limits and blocking still hold), and with `routeByPath
 instead of one (performance only, the volumes together hold less). What makes it real: a different ingress class, or a hardened
 HAProxy Ingress; NOTES.txt names the dependence, and the e2e run checks the annotations against the local profile's controller only.
 
-### H-435 · Unknown Bastion tokens presented on the interface are not counted by the failed-credential throttle
-
-Stage: the Bastion interface and the recognition of a forwarded request (R-BAS-005, R-BAS-008), with the throttle of R-AUTH-038.
-Subject: the load on the token table and the main installation's failed-credential protection for the interface routes.
-
-Live on every main installation: any client that reaches the default endpoint can send `Authorization: Bearer trv_bst_…` to an
-interface route or a `Trove-Bastion-Authorization` header. The
-authenticator behind `bastionmain.TokenAuthenticator` takes no request, so a Bastion token that fails (unknown, revoked, expired, or its registration disabled) is neither counted against the client address nor refused without a lookup while the address is in
-throttled mode, as `Service.Check` does for every other credential. A well-formed unknown token costs one indexed read; a
-guess cannot succeed (256 random bits). What makes it real: an attacker who reaches the interface routes and sends well-formed
-random tokens at the rate the request limits allow; closing it needs the recognition stage to pass its throttle to
-`AuthenticateBastion` (the parameter exists), which is the work of the recognition package.
-
 ### H-436 · Deleting a registration deletes its token rows, so a later use of a deleted token is unknown and not logged
 
 Stage: `DELETE /api/v1/bastions/{name}` (R-BAS-004) and the rejection log of R-AUTH-023 step 4. Subject: the audit evidence of a
@@ -5005,13 +5236,14 @@ What makes it real: a tailing consumer of `GET /api/v1/audit/events` or of the e
 Stage: the failed-credential throttle in the recognition (Q-BAS-65). Subject: the Bastion whose egress address is shared with a client that sends
 rejected tokens to the main installation.
 
-Live on every main installation with a Bastion. The recognition counts a rejected `trv_bst_` token against the client address, in a budget of
-its own (the size of the failed-credential budget of R-AUTH-038: 300 a minute by default), and refuses the address with `429` while it is in
-throttled mode, without looking at the token it carries: a Bastion's valid token from that address is refused as well. A forwarded request is counted against the
-caller's address (the one the Bastion forwards), so the Bastion itself is only affected on its interface routes, where the address is its egress
-address. What makes it real: another workload behind the same egress address that sends 300 or more rejected Bastion tokens to the main
-installation within a minute, or a Bastion whose own token was revoked and keeps calling; `auth.rate_limit.exempt_cidrs` with the Bastion's egress
-address closes it, at the price of letting that address guess tokens.
+Live on every main installation with a Bastion, for a token the replica does not hold. The recognition counts a rejected `trv_bst_` token
+against the address that sent it (the Bastion's egress for every request a Bastion sends, forwards included: the forwarded headers count
+only after the token check, Q-BAS-116), in a budget of its own (the size of the failed-credential budget of R-AUTH-038: 300 a minute by
+default). While the address is in throttled mode, a Bastion token that is in the replica's token cache, or whose marker says it was valid
+recently, passes; one that is neither - after a restart of the main installation's replica, or once the cache entry aged out - is refused
+`429` without a lookup, a valid one included. What makes it real: another workload behind the same egress address that sends 300 or more
+rejected Bastion tokens to the main installation within a minute, or a Bastion whose own token was revoked and keeps calling;
+`auth.rate_limit.exempt_cidrs` with the Bastion's egress address closes it, at the price of letting that address guess tokens.
 ### H-441 · `absent` rests on the notes of the core's lookups, not on the routes
 
 Stage: R-BAS-013 and R-BAS-024, the marking of a `404`. Subject: a negative entry at the Bastion for an item that is merely
@@ -5242,6 +5474,41 @@ Live in the suite. The Bastion has no counter of request-body bytes, so the test
 not wait for the body, and bounds what was read by what was sent (1 KiB), not by what the Bastion's socket buffers took in a long upload. What makes it real: a change that reads the body after
 answering, which this test would not see.
 
+### H-467 · Behind the main installation's own ingress the forwarded host is what the ingress reports
+
+Stage: R-BAS-017, R-OPS-005 (the response base URL). Subject: which entry of `server.additional_base_urls` - the Bastion's host among
+them - a response is rendered on.
+
+Live where the main installation's ingress passes on an `X-Forwarded-Host` (or the `host=` of `Forwarded`) that a client sent; dormant
+where it overwrites them with its own. The client address of a request counts a Bastion's entry only when the request was recognized
+and came from an address of `bastions.trusted_proxies` (Q-BAS-116), but the forwarded host is read from the right-most entry whenever the
+TCP peer is a trusted proxy, as for every request (R-OPS-005): behind an ingress that keeps a client's header, any client of the main
+installation can have its documents rendered on the Bastion's host, as on any other additional base URL. It changes where links point,
+not what a caller may read. What makes it real: an ingress configured to pass the client's forwarded host; the ingress's own setting
+that overwrites it closes it.
+
+### H-468 · The download budget is per registration, so many registrations at their budget still fill the audit buffer
+
+Stage: the download intake (R-BAS-016, Q-BAS-117). Subject: the asynchronous audit buffer of the main installation's replicas and the
+events other areas record asynchronously.
+
+Dormant with one or a few registrations; live when many registrations report at their budget together. Each registration may report
+`events_per_second` events (200 by default) across the replicas, so the default maximum of 16 registrations may write 3,200
+`artifact.downloaded` events a second. A replica whose `audit.async_buffer` (10,000) is full sends further asynchronous events to the
+log copy only. What makes it real: many Bastion tokens - legitimate Bastions under load, or a holder of several tokens (H-386) - reporting
+at once; a lower `events_per_second` bounds it.
+
+### H-469 · A probe admitted for routing runs any handler below the package families that does not tell the marking its route
+
+Stage: the authentication of a recognized probe (R-BAS-014, Q-BAS-118). Subject: what a holder of the Bastion token can run as the
+anonymous caller while anonymous access is off.
+
+Dormant: every route below `/api/<format>/` and `/files/` today is the format dispatcher's or the raw file handler's, which call the
+marking stage's observer after the route match and before any decision, handler or body read, and a probe never passes that call. A
+handler mounted below those prefixes that does not call it would run for a probe as the anonymous caller - the decision point still
+refuses the anonymous caller everything anonymous access off forbids, but a handler that decides nothing would serve. What makes it
+real: a new route below the package families outside the dispatcher; a test of the route table that every pattern below them is the
+dispatcher's or the raw file handler's would hold it.
 ### H-470 · The Bastion assumes the feed's default lookback when it keeps the IDs of applied entries
 
 Stage: R-BAS-026, `answers.FeedLog`. Subject: the entries a Bastion applies once.

@@ -3,6 +3,7 @@ package bastionmain
 import (
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/guided-traffic/trove/internal/audit"
@@ -106,37 +107,72 @@ func TestR_BAS_015_TheMappingTableOfTheFeed(t *testing.T) {
 	}
 }
 
-// TestR_BAS_015_EveryActionOfTheTableIsAJournaledOrRegisteredEvent: the list the query reads holds registered
-// action names only, so a renamed event cannot silently leave the feed.
-func TestR_BAS_015_EveryActionOfTheTableIsARegisteredEvent(t *testing.T) {
+// TestR_BAS_015_EveryJournaledEventIsClassified is driven by the audit registry: every event the revocation journal
+// copies is either read by the feed (FeedActions) or listed with its reason in the set of events that yield no
+// entry (NoFeedEntry), never both, so a new journaled event fails here until someone decides whether it narrows
+// what a Bastion may keep. Every action the feed reads is a registered transactional event, and an event of the
+// no-entry set yields no entry.
+func TestR_BAS_015_EveryJournaledEventIsClassified(t *testing.T) {
+	read := map[string]bool{}
 	for _, name := range FeedActions() {
+		read[name] = true
 		typ, ok := audit.Lookup(name)
 		if !ok {
-			t.Errorf("%s is not a registered audit event", name)
+			t.Errorf("%s is read by the feed and is not a registered audit event", name)
 			continue
 		}
 		if typ.Mode != audit.Transactional {
 			t.Errorf("%s is %s: the feed reads committed state changes", name, typ.Mode)
 		}
 	}
-	journaled := map[string]bool{}
-	for _, name := range FeedActions() {
-		journaled[name] = true
+	none := NoFeedEntry()
+	journaled := 0
+	for _, typ := range audit.Types() {
+		if typ.Journal != audit.JournalRevocation {
+			continue
+		}
+		journaled++
+		reason, listed := none[typ.Name]
+		switch {
+		case read[typ.Name] && listed:
+			t.Errorf("%s is read by the feed and listed as yielding no entry", typ.Name)
+		case !read[typ.Name] && !listed:
+			t.Errorf("%s is journaled as a revocation and not classified: map it in mapEvent and FeedActions, or list it in noFeedEntry with the reason it narrows nothing a Bastion keeps", typ.Name)
+		case listed && strings.TrimSpace(reason) == "":
+			t.Errorf("%s is listed without a reason", typ.Name)
+		}
 	}
-	// An event the journal flags revocation for and that the table of R-BAS-015 maps must be in the list: the
-	// feed is built on the revocation journal, plus the content events.
-	for _, name := range []string{
-		audit.EventTokenRevoked, audit.EventTokenRotated, audit.EventUserDisabled, audit.EventUserDeleted,
-		audit.EventSADisabled, audit.EventSADeleted, audit.EventGroupMembersChanged, audit.EventUserGroupsSynced, audit.EventGroupDeleted,
-		audit.EventSettingsAuthChanged, audit.EventCITokenRevoked,
-	} {
-		typ, _ := audit.Lookup(name)
-		if typ.Journal != audit.JournalRevocation || !journaled[name] {
-			t.Errorf("%s: journal %q, in the feed %v", name, typ.Journal, journaled[name])
+	if journaled == 0 {
+		t.Fatal("the registry holds no journaled event: the test reads the wrong registry")
+	}
+	for name := range none {
+		typ, ok := audit.Lookup(name)
+		if !ok || typ.Journal != audit.JournalRevocation {
+			t.Errorf("%s is listed as yielding no entry but is no journaled event: drop it from the list", name)
+		}
+		if got := mapEvent(FeedEvent{Action: name, Repository: "npm-local", ResourceID: "0192f1c4-0000-7000-8000-0000000000a1"}, "default"); got != nil {
+			t.Errorf("%s is listed as yielding no entry and yields %+v", name, got)
 		}
 	}
 	if !slices.Contains(FeedActions(), audit.EventNPMUnpublish) {
 		t.Error("npm.unpublish is not in the feed")
+	}
+}
+
+// TestR_BAS_015_UnassigningARepositoryDropsEveryPermissionAnswer: a repository that leaves its project leaves the
+// project's policies behind (R-AUTHZ-026), so every caller's read of it may have narrowed. A content entry would
+// not do: the Bastion drops the URL answers of a repository on it, not the shape answers (R-BAS-026), so a full
+// answer the unassignment ended would be kept (Q-BAS-120).
+func TestR_BAS_015_UnassigningARepositoryDropsEveryPermissionAnswer(t *testing.T) {
+	ev := FeedEvent{
+		Action: audit.EventProjectRepositoryUnassigned, Repository: "acme-npm",
+		Details: []byte(`{"epoch":7,"project":"acme","projectId":"p","repository":"acme-npm","repositoryId":"r","moved":false}`),
+	}
+	if got := mapEvent(ev, "default"); !reflect.DeepEqual(got, []rawEntry{{kind: iface.FeedGrants}}) {
+		t.Errorf("entries = %+v, want one grants entry", got)
+	}
+	if !slices.Contains(FeedActions(), audit.EventProjectRepositoryUnassigned) {
+		t.Error("the feed's query does not read authz.project.repository_unassigned")
 	}
 }
 

@@ -156,6 +156,10 @@ func TestR_BAS_005_TheAuthenticatorValidatesAgainstTheDatabase(t *testing.T) {
 		if len(evs) != 1 || evs[0].Details["reason"] != "revoked" || evs[0].Details["hint"] != secret[:12] || evs[0].Details["owner"] != "bastion:partners" {
 			t.Fatalf("token.rejected = %+v, want one event", evs)
 		}
+		// R-BAS-005 (item of the review): the rejection names the source of the request it came with.
+		if src := e.text(`SELECT COALESCE(host(source_ip), '') || ' ' || COALESCE(user_agent, '') FROM audit_event WHERE action = 'token.rejected'`); src != "198.51.100.20 trove-bastion/0.15.0" {
+			t.Errorf("token.rejected names the source %q, want the Bastion's address and agent", src)
+		}
 	})
 }
 

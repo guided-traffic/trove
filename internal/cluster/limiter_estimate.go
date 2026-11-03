@@ -30,7 +30,7 @@ func (l *Limiter) Estimate(ctx context.Context, bucket string, add bool) (int, e
 	var cur, prev int64
 	var err error
 	if add {
-		cur, prev, err = l.set.store.hit(ctx, l.keyName, l.bucketKey(bucket), idx, 2*l.window)
+		cur, prev, err = l.set.store.hit(ctx, l.keyName, l.bucketKey(bucket), idx, 2*l.window, 1)
 	} else {
 		cur, prev, err = l.set.store.read(ctx, l.keyName, l.bucketKey(bucket), idx, 2*l.window)
 	}

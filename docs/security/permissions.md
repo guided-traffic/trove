@@ -279,12 +279,13 @@ the bound of R-AUTHZ-028 (`TestR_AUTHZ_028_ProjectAdministratorRemovalIsRefusedO
 A Bastion registration ([R-BAS-004](../spec/bastion.md#r-bas-004--bastion-registrations-and-the-bastion-token-on-the-main-installation)) is a
 principal of the kind `bastion`, and no decision of this page is ever made about it: its token is refused by type on every route but the
 Bastion interface, and the interface admits the recognition stage's proof, not a grant (`{bastion: true}`). It is never part of
-`authenticated`, because no request of it reaches the decision point. The rule is held twice:
+`authenticated`, because no request of it reaches the decision point. The rule is held three times:
 
 | Line | What refuses | Answer |
 |---|---|---|
 | The writes | a policy entry and its validation, a role binding, an owner record, a group member and a project administrator that names `bastion:<name>` ([Q-BAS-60](../spec/bastion.md#q-bas-60--a-bastion-registration-is-refused-by-every-write-path-with-one-top-level-422-principal_not_allowed)) | `422 principal_not_allowed`; `TestR_BAS_004_ABastionHoldsNoGrant` and the unit tests next to each path |
 | The database | the guards of `authz_role_binding` and `group_membership` name the kinds they admit (`AI001`) | the row is refused; the same test writes around the API |
+| The decision point | the kind `bastion` has an empty principal set: no `authenticated`, no own ID, no role, no capability ([decide.go](../../internal/authz/decide.go), [index.go](../../internal/authz/index.go)) | every decision refuses it, should a route ever ask; `TestR_BAS_004_ABastionRegistrationIsNeverPartOfAuthenticated` |
 
 Managing registrations needs `endpoints:read` and `endpoints:write`, and revoking one Bastion token `tokens:revoke` as well
 ([Q-BAS-24](../spec/bastion.md#q-bas-24--bastion-registrations-are-managed-with-the-endpoint-capabilities)): `security-admin` holds all three,

@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/guided-traffic/trove/internal/authz"
 	"github.com/guided-traffic/trove/internal/formats"
+	"github.com/guided-traffic/trove/internal/observability"
 )
 
 // sharedSubjects are callers the Host allows to read everything: a user, a service account and the anonymous
@@ -18,6 +20,79 @@ func sharedSubjects(base authz.Subject) []authz.Subject {
 	bot.Anonymous, bot.Kind, bot.ID, bot.Name, bot.Groups = false, "service_account", "22222222-2222-2222-2222-22222222bbbb", "ci-bot", nil
 	anon.Anonymous, anon.Kind, anon.ID, anon.Name, anon.Groups = true, "anonymous", "", "", nil
 	return []authz.Subject{user, bot, anon}
+}
+
+// callerHeaders are the request headers of each caller of check 12, in the order of sharedSubjects: what tells
+// callers apart without saying what they ask for - the credential, the client, its session and the hops in
+// front of it. Their values differ between the callers. A document that varies by one of them must name it in
+// Vary, where a Bastion's shared copy is keyed by it (Q-BAS-86); a header the first answer names in Vary is sent
+// alike to every caller.
+func callerHeaders() []http.Header {
+	return []http.Header{
+		{
+			"Authorization": {"Basic YWxpY2U6dHJ2X3BhdF9hbGljZQ=="}, "User-Agent": {"npm/11.20.0 node/v24.0.0 linux x64"},
+			"Cookie": {"session=alice"}, "Npm-Session": {"0123456789abcdef"}, "Npm-Command": {"install"},
+			"X-Nuget-Session-Id": {"11111111-1111-1111-1111-111111111111"}, "X-Forwarded-For": {"203.0.113.1"}, "Referer": {"https://a.example/"},
+		},
+		{
+			"Authorization": {"Bearer trv_sat_ci-bot"}, "User-Agent": {"NuGet Command Line/6.14.0 (Linux)"},
+			"Npm-Session": {"fedcba9876543210"}, "Npm-Command": {"ci"},
+			"X-Nuget-Session-Id": {"22222222-2222-2222-2222-222222222222"}, "X-Forwarded-For": {"198.51.100.2"},
+		},
+		{"User-Agent": {"curl/8.11.0"}},
+	}
+}
+
+// varyNames returns the header names a response names in Vary, canonical, and whether it names "*".
+func varyNames(h http.Header) (map[string]bool, bool) {
+	out := map[string]bool{}
+	for _, line := range h.Values("Vary") {
+		for _, n := range strings.Split(line, ",") {
+			n = strings.TrimSpace(n)
+			if n == "*" {
+				return out, true
+			}
+			if n != "" {
+				out[http.CanonicalHeaderKey(n)] = true
+			}
+		}
+	}
+	return out, false
+}
+
+// headersFor returns the request headers of caller i: its own, except those the first answer names in Vary,
+// which every caller sends as the first did (all of them when Vary is "*").
+func headersFor(i int, first *Response) http.Header {
+	all := callerHeaders()
+	if first == nil {
+		return all[i].Clone()
+	}
+	named, star := varyNames(first.Result().Header)
+	out := http.Header{}
+	for name, v := range all[i] {
+		if !star && !named[name] {
+			out[name] = append([]string(nil), v...)
+		}
+	}
+	for name, v := range all[0] {
+		if star || named[name] {
+			out[name] = append([]string(nil), v...)
+		}
+	}
+	return out
+}
+
+// callerContext is the request context of a caller: a request-log holder that names the caller, as the chain's
+// authentication fills it in production (R-OPS-010), so each caller arrives with a context of its own and not
+// only with a subject of its own. A format reads none of it (R-ARCH-008 lets it import neither the HTTP shell nor
+// its principal); a Host or contract code that did would be compared too.
+func callerContext(sub authz.Subject) context.Context {
+	ctx, ri := observability.WithRequestInfo(context.Background())
+	if !sub.Anonymous {
+		ri.SetPrincipal(sub.Name, string(sub.Kind), sub.ID)
+		ri.SetToken("token-of-"+sub.Name, "bearer")
+	}
+	return ctx
 }
 
 func subjectName(s authz.Subject) string {
@@ -38,8 +113,9 @@ func sharedHeaders() []string {
 // serves one copy to every full reader, so a document that varies by the caller (a user name, a group, whether
 // there is a credential) must be rendered by a Volatile route. Every content case that a Metadata or Computed
 // route serves is sent once to a Host seeded as the fixture says, as each of three callers; the status, the body
-// and the validators must be equal. The seed is made once, by the fixture's own subject, so only the rendering
-// is compared and not what a publisher left in the rows.
+// and the validators must be equal. The callers differ in the subject, in the request context and in every
+// request header of callerHeaders that the first answer does not name in Vary. The seed is made once, by the
+// fixture's own subject, so only the rendering is compared and not what a publisher left in the rows.
 func (r *run) shared() {
 	routes := r.f.Routes()
 	if len(routes) == 0 {
@@ -77,7 +153,7 @@ func (r *run) shared() {
 		got := make([]*Response, len(subjects))
 		var rt *formats.Route
 		for i, sub := range subjects {
-			rq, err := h.NewRequest(context.Background(), method, c.Path, bytes.NewReader(nil))
+			rq, err := h.NewRequest(callerContext(sub), method, c.Path, bytes.NewReader(nil))
 			if err != nil {
 				r.failf("content case %q: %v", c.Name, err)
 				break
@@ -87,6 +163,9 @@ func (r *run) shared() {
 				break
 			}
 			rq.Subject = sub
+			for name, v := range headersFor(i, got[0]) {
+				rq.Header[name] = v
+			}
 			got[i] = h.ServeRequest(rq, false)
 		}
 		if rt == nil || (rt.Kind != formats.Metadata && rt.Kind != formats.Computed) || got[len(got)-1] == nil {

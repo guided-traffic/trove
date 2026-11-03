@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/api/edge"
@@ -120,7 +121,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if obs != nil {
 			if match, ok := routeOf(r, key, p); ok {
-				decided(obs, r, caller, match)
+				caller = decided(obs, r, caller, match)
 			}
 		}
 		switch r.Method {
@@ -158,14 +159,34 @@ func routeOf(r *http.Request, key string, p repository.Cleaned) (bastionmain.Rou
 	return m, true
 }
 
-// decided tells the observer the subject and the index the request decides on. The decision itself is the
-// service's, made while it resolves the path, so the observer learns them as soon as the caller exists.
-func decided(obs bastionmain.RouteObserver, r *http.Request, caller files.Caller, m bastionmain.RouteMatch) {
+// decided returns the caller whose first allowed decision tells the observer the subject and the index the
+// request decides on. The decision itself is the service's, made while it resolves the path, so the observer
+// learns it from the service's question: after the read was allowed and before the item is looked up, and never
+// for a refused read, whose marking carries no Trove-Bastion-Read (R-BAS-013, Q-BAS-71).
+func decided(obs bastionmain.RouteObserver, r *http.Request, caller files.Caller, m bastionmain.RouteMatch) files.Caller {
 	var idx *authz.Index
 	if acc, ok := caller.Access.(*edge.Access); ok {
 		idx = acc.Index()
 	}
-	obs.Decided(r, bastionmain.RouteDecision{Match: m, Subject: caller.Subject, Index: idx})
+	d := bastionmain.RouteDecision{Match: m, Subject: caller.Subject, Index: idx}
+	caller.Access = &observedAccess{Access: caller.Access, allowed: func() { obs.Decided(r, d) }}
+	return caller
+}
+
+// observedAccess calls allowed once, at the first decision that allows its request.
+type observedAccess struct {
+	files.Access
+	once    sync.Once
+	allowed func()
+}
+
+// Decide implements files.Access.
+func (a *observedAccess) Decide(ctx context.Context, c authz.Coordinate) authz.Decision {
+	d := a.Access.Decide(ctx, c)
+	if d.Allowed() {
+		a.once.Do(a.allowed)
+	}
+	return d
 }
 
 // splitPath cuts "/files/<key>/<rest>" at the first slash after the key and

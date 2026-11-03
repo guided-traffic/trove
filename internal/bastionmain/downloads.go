@@ -32,8 +32,16 @@ type IntakeOptions struct {
 	MaxAge   time.Duration
 	// Record is audit.record_downloads. Off, the intake answers and records nothing (R-BAS-016).
 	Record bool
+	// Events charges a batch to its registration by its events (Q-BAS-117); nil charges nothing.
+	Events EventBudget
 	Now    func() time.Time
 }
+
+// EventBudget charges events download events of the registration bastionID and reports whether the budget
+// holds them, and otherwise after how long it would (Q-BAS-117). The composition root passes a cluster limiter
+// of R-ARCH-034 (bastions.downloads.events_per_second and events_burst), so the budget is the registration's
+// across the replicas of the main installation.
+type EventBudget func(ctx context.Context, bastionID string, events int) (ok bool, retryAfter time.Duration)
 
 // Intake accepts the download events a Bastion served from its cache (R-BAS-016).
 type Intake struct {
@@ -66,10 +74,12 @@ type Outcome struct {
 	Disabled bool
 }
 
-// Accept records the events of a batch (R-BAS-016). A batch above max_batch is refused as a whole (422); an
-// event whose time lies in the future is recorded at the time of receipt, one older than max_age or one that
-// breaks the contract of the event is dropped and counted. A batch that reports lost events, or loses events
-// here, writes one bastion.downloads.dropped with the total, so the loss is in the audit trail itself.
+// Accept records the events of a batch (R-BAS-016). A batch above max_batch is refused as a whole (422), and
+// so is one whose events the registration's budget does not hold (429 with Retry-After; nothing is recorded,
+// the Bastion keeps the batch and sends it again, Q-BAS-117); an event whose time lies in the future is
+// recorded at the time of receipt, one older than max_age or one that breaks the contract of the event is
+// dropped and counted. A batch that reports lost events, or loses events here, writes one
+// bastion.downloads.dropped with the total, so the loss is in the audit trail itself.
 func (in *Intake) Accept(ctx context.Context, rec Recognition, req iface.DownloadsRequest) (Outcome, error) {
 	if !in.o.Record {
 		return Outcome{Disabled: true}, nil
@@ -81,6 +91,13 @@ func (in *Intake) Accept(ctx context.Context, rec Recognition, req iface.Downloa
 	if req.Dropped < 0 {
 		return Outcome{}, errs.E(errs.Invalid, errs.CodeInvalid, "The count of dropped events is negative.",
 			errs.WithFields(errs.FieldError{Pointer: "/dropped", Code: "negative", Detail: "must not be negative"}))
+	}
+	if in.o.Events != nil && len(req.Events) > 0 {
+		if ok, retry := in.o.Events(ctx, rec.BastionID, len(req.Events)); !ok {
+			return Outcome{}, errs.E(errs.RateLimited, errs.CodeRateLimited,
+				"The registration reported more download events than bastions.downloads.events_per_second allows; send the batch again later.",
+				errs.WithRetryAfter(retry))
+		}
 	}
 	now := in.o.Now()
 	kinds, err := in.kinds(ctx, req.Events)

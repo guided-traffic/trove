@@ -20533,6 +20533,15 @@
         <target>Aktionen</target>
       </segment>
     </unit>
+    <unit id="bastion.draft-restored">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:230</note>
+      </notes>
+      <segment>
+        <source>Your entries were restored. Issue the token again.</source>
+        <target>Ihre Eingaben wurden wiederhergestellt. Stellen Sie das Token erneut aus.</target>
+      </segment>
+    </unit>
     <unit id="bastion.secret-note">
       <notes>
         <note category="location">src/app/features/bastions/bastion-card.ts:234</note>

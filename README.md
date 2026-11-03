@@ -360,6 +360,7 @@ The label sets of the M1 families are not restated per family in this pass; read
 | Bastion token | `trv_bst_…` (57 characters) | owner is the registration; always expires; at most `auth.tokens.max_active_per_principal.bst` unrevoked per registration; `created_via` `api`, `ui` or `admin-cli`; hint `trv_bst_` and four characters |
 | Commands | `trove admin bastion create <name>`, `trove admin bastion token create <name> [--ttl <duration>]`, `trove admin bastion token revoke <name> <token-id>` | from a `web` pod, actor `admin-cli` |
 | Tables | `bastion`, `bastion_contact` (transient) | migrations 00032 to 00034 |
+| Limiter of the download intake | `bastion.download_events`, bucket `bastion:<registration ID>`, a batch charged by its events in units of 100 (`bastions.downloads.events_per_second`, `events_burst`) | cluster scope ([R-BAS-016](docs/spec/bastion.md)) |
 
 ### Projects
 
@@ -416,7 +417,7 @@ The code registry is [internal/errs/codes.go](internal/errs/codes.go). Every pro
 - NuGet (M3): `nuget_invalid_package`, `nuget_invalid_version`, `nuget_invalid_version_range`, `nuget_invalid_id`, `nuget_version_exists`, `nuget_version_deleted`, `nuget_version_reserved`, `nuget_symbol_package_exists`, `nuget_v2_unsupported`, `nuget_not_implemented`, `upstream_package_mismatch`, `nuget_invalid_upstream_document`
 - Remote repositories (M2): `upstream_secret_unavailable`, `source_network_unavailable`, `foreign_host_denied`
 - Package content (M2): `content_refused`
-- Bastion interface (phase 5b): `bastion_token_invalid` (`401`, the Bastion token of a request is invalid, on every path as problem details), `bastion_interface_mismatch` (`400`, with the member `interfaceVersion`), `invalid_cursor` (`400`, a feed cursor that does not parse) and `rate_limited` (`429`, an address with too many rejected Bastion tokens); the registry also holds `bastion_read_only`, `bastion_not_served`, `bastion_base_url_unknown`, `bastion_not_implemented` and `principal_not_allowed`, and the Bastion's own refusals of R-BAS-029
+- Bastion interface (phase 5b): `bastion_token_invalid` (`401`, the Bastion token of a request is invalid, on every path as problem details), `bastion_interface_mismatch` (`400`, with the member `interfaceVersion`), `invalid_cursor` (`400`, a feed cursor that does not parse), `rate_limited` (`429`, an address with too many rejected Bastion tokens, or a batch of download events beyond the registration's budget) and `not_found` (`404`, a forward of a path outside `/api/<format>/` and `/files/`); the registry also holds `bastion_read_only`, `bastion_not_served`, `bastion_base_url_unknown`, `bastion_not_implemented` and `principal_not_allowed`, and the Bastion's own refusals of R-BAS-029
 - GitLab CI OIDC (M4): `ci_not_implemented`, `pin_required`, `pin_claim_not_immutable`, `public_issuer_required`, `kind_not_available`, `issuer_managed_by_configuration`, `discovery_unreachable`, `issuer_mismatch`, `no_usable_keys`, `algorithms_not_offered`, `condition_invalid`, `catch_all_condition`, `unprotected_write`, `unpinned_write`, `empty_grant`, `template_invalid`, `template_unanchored`, `unknown_policy`, `unknown_group`, `mapping_limit_reached`, `priority_taken`, `job_token_fallback_not_available`; the exchange's own `reason` values are in [internal/ci/reason](internal/ci/reason/reason.go) and answer in the OAuth error shape (R-CI-008): `malformed_request`, `unsupported_content_type`, `unsupported_subject_token_type`, `unsupported_requested_token_type`, `actor_token_not_supported`, `subject_token_malformed`, `wrong_subject_token_type`, `unknown_issuer`, `issuer_disabled`, `issuer_mismatch`, `algorithm_not_allowed`, `token_type_not_allowed`, `unknown_signing_key`, `signature_invalid`, `audience_invalid`, `audience_not_exclusive`, `token_expired`, `token_not_yet_valid`, `issued_in_future`, `required_claim_missing`, `subject_token_replayed`, `subject_token_predates_restore`, `cross_project_source_denied`, `no_matching_mapping`, `grant_render_failed`, `subject_token_expires_too_soon`, `ttl_below_minimum`, `job_token_rejected` (P2), `job_not_running` (P2) (all `400 invalid_request`); `grant_type_unsupported` (`unsupported_grant_type`); `scope_malformed`, `scope_not_granted` (`invalid_scope`); `audience_not_this_server` (`invalid_target`); `rate_limited` (`429 slow_down`); `signing_keys_unavailable`, `gitlab_unreachable` (P2), `database_unavailable`, `configuration_changed` (`503 temporarily_unavailable`); `internal` (`500 server_error`)
 
 </details>
@@ -1223,7 +1224,13 @@ ci:                                     # GitLab CI OIDC (docs/spec/gitlab-ci-oi
   #     ca_bundle_ref: file:/var/run/secrets/gitlab-ca/ca.crt # example: an instance behind a private CA
 bastions:                               # the main installation's side of the Bastion (docs/spec/bastion.md; the Bastion's own tree is a separate file)
   max_registrations: 16                 # default; 1 to 256; also bounds the bastion label of the interface metrics (R-BAS-004)
-  # check, feed and downloads: the keys of the Bastion interface (R-BAS-011, R-BAS-015, R-BAS-016)
+  trusted_proxies: []                   # default; example: ["198.51.100.20/32"], the address a Bastion connects from; its forwarded client address and host count only for a request with a valid Bastion token (R-BAS-017); never list it in server.trusted_proxies
+  downloads:
+    max_batch: 1000                     # default; events one request of the intake accepts (R-BAS-016)
+    max_age: 720h                       # default; older events are counted as dropped
+    events_per_second: 200              # default; download events one registration may report per second across the replicas; beyond it 429 and the Bastion sends again
+    events_burst: 2000                  # default; at least 100 and holds max_batch; charged in units of 100 events
+  # check and feed: the bounds of the check and the revocation feed (R-BAS-011, R-BAS-015)
 ui:
   readme:
     max_source_bytes: 512KiB            # default; 1KiB to 16MiB: a longer README is cut and flagged `truncated`
@@ -1243,6 +1250,7 @@ ui:
 | `valkey.tls.mode`, `valkey.sentinel.tls`, `valkey.allow_insecure` | `verify-full`, `true`, `false` | `disable` and plaintext Sentinel connections are refused without `allow_insecure`; `verify-ca` needs `ca_file`. Sentinel without a password and verification against the system roots are warned about at start. | [H-64](docs/security/transport-encryption.md), [Q-HA-30](docs/spec/ha-and-helm.md) |
 | `server.tls.certificates`, `client_auth` | empty, `none` | Empty is plain HTTP. A client certificate is verified against `client_ca_file`; `require` refuses a client without one in the handshake. | [transport encryption](docs/security/transport-encryption.md), [Q-ARCH-32](docs/spec/architecture.md) |
 | `server.trusted_proxies`, `server.forwarded_header` | `[]`, `x-forwarded-for` | The edge's addresses may set the client address through one header family. A wider list lets a client choose its address. A `/0` prefix is refused. | [roles and trust boundaries](docs/security/roles-and-trust-boundaries.md), [R-ARCH-006](docs/spec/architecture.md) |
+| `bastions.trusted_proxies` | `[]` | The Bastions' egress addresses: their forwarded client address and host count only for a request that carries a valid Bastion token. Listed in `server.trusted_proxies` instead, the address would be believed for any request from it, Bastion token or not. A `/0` prefix is refused. | [Bastion](docs/security/bastion.md), [Q-BAS-116](docs/spec/bastion.md) |
 | `tracing.incoming_context`, `tracing.trusted_peers` | `trusted_peers`, `[]` | No incoming trace context is continued by default; only the listed peers can choose the trace ID. `server.trusted_proxies` grants no trace trust. | [roles and trust boundaries](docs/security/roles-and-trust-boundaries.md), [Q-OPS-32](docs/spec/operations-and-observability.md) |
 | `server.base_url` | empty | Empty is for development only. Set the `https` origin of the edge. | [R-OPS-005](docs/spec/operations-and-observability.md) |
 | `system.bootstrap_anonymous_read` | `false` | `true` lets anonymous callers read the installation facts and the replica list on the client port. Startup refuses it with an `https` base URL that is not localhost. | [H-63](docs/security/roles-and-trust-boundaries.md), [Q-API-14](docs/spec/api-and-ui.md) |
@@ -1374,7 +1382,7 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 | `GET /api/v1/bastions/{name}` | `getBastion` | `endpoints:read` |
 | `PATCH /api/v1/bastions/{name}` | `updateBastion` | `endpoints:write` · `If-Match` |
 | `DELETE /api/v1/bastions/{name}` | `deleteBastion` | `endpoints:write` |
-| `POST /api/v1/bastions/{name}/tokens` | `createBastionToken` | `endpoints:write` · idempotent · the secret once |
+| `POST /api/v1/bastions/{name}/tokens` | `createBastionToken` | `endpoints:write` · recent sign-in · idempotent · the secret once |
 | `DELETE /api/v1/bastions/{name}/tokens/{id}` | `revokeBastionToken` | `endpoints:write` or `tokens:revoke` |
 
 **auth-settings**

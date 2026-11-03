@@ -6,7 +6,7 @@ interface](#package-2-the-main-installations-interface)), package 3 ([marking, t
 shape](#marking-the-write-probe-and-the-read-shape-package-3)), package 4 ([the link to the main installation](#the-link-to-the-main-installation-package-4a),
 [the engine](#the-engine-package-4b) and [how the role is wired](#how-the-role-is-wired-package-4c)), package 5 ([the cache backends](#the-cache-backends-package-5)),
 package 6 ([shared state and guard](#shared-state-and-the-guard)) and package 8 (the screen, client setup and the manual). The specification is
-[spec/bastion.md](../spec/bastion.md) (R-BAS-001 to R-BAS-049, decisions Q-BAS-1 to Q-BAS-104), its security perspective [security/bastion.md](../security/bastion.md), the plan
+[spec/bastion.md](../spec/bastion.md) (R-BAS-001 to R-BAS-049, decisions Q-BAS-1 onward), its security perspective [security/bastion.md](../security/bastion.md), the plan
 [projektplan/BETA.md](../projektplan/BETA.md#phase-5b--trove-bastion-m13).
 
 The Bastion is a role of the one image, `trove serve --role bastion`, with a configuration tree of its own, no PostgreSQL, no UI and a
@@ -59,25 +59,42 @@ the configuration trees and the skeleton. A change to one of those in a work pac
 ## Package 2: the main installation's interface
 
 Requests of a Bastion meet these pieces in this order: the Recognize stage in the chain of the default endpoint
-([recognize.go](../../internal/bastionmain/recognize.go): token, throttle, version, `Recognition`), the authentication function
-(`v1.BastionRouteAuth` admits an interface route as the registration, every other request is the stage's), the shared authorization step
-(`{bastion: true}`), then the handler. The four handlers are thin over the services of `v1.BastionServices`.
+([recognize.go](../../internal/bastionmain/recognize.go): forward or interface call, token with the throttle, version, the route-family
+backstop, the re-derivation of the forwarded headers, `Recognition`), the authentication function (`v1.BastionRouteAuth` admits an
+interface call as the registration and a write probe as the anonymous caller for routing only, every other request is the stage's), the
+shared authorization step (`{bastion: true}`), then the handler. The four handlers are thin over the services of `v1.BastionServices`.
+
+What the Recognize stage decides, in order (Q-BAS-115, Q-BAS-116):
+
+1. **Forward or interface call.** `Trove-Bastion-Authorization` present: a forward, on every path, with the token of that header. Absent:
+   an interface call when `routingSegments(r.URL.EscapedPath())` - the path split and decoded segment by segment, as `net/http.ServeMux`
+   matches - starts with `api`, `v1`, `bastion`; the token is then the one of `Authorization`. Any other credential: an ordinary request.
+2. **Token.** `TokenAuthenticator.Authenticate(ctx, raw, AuthRequest)` with the throttle of the sending address and its source
+   (`RecognizeOptions.Throttle`, `.Source`, both from stage 5's resolution with `server.trusted_proxies`). The token service asks the
+   throttle only after a cache miss; `ErrThrottled` is `429`, `ErrTokenInvalid` `401` and a count against the address.
+3. **Version**, then the **backstop**: a forward outside `forwardablePath` (`/files/…`, `/api/<x>/…` with `<x>` not `v1`) is `404
+   not_found`.
+4. **Re-derivation**: `RecognizeOptions.Forwarded` (the composition root's `bastionForwarded`) resolves the request again with
+   `bastions.trusted_proxies` trusted when stage 5's client address is one of them, and replaces the request information
+   (`httpserver.WithResolved`) and the request log's address.
 
 | File | Responsibility |
 |---|---|
 | [bastionmain/recognize.go](../../internal/bastionmain/recognize.go) | `Recognize`, `RecognizeOptions`, `Throttle`, the interface metrics, the removal of the Bastion token from the request behind it |
-| [bastionmain/feed.go](../../internal/bastionmain/feed.go) | `Feed` (`Read`, `Position`), `mapEvent`: the table of R-BAS-015, the cursor, the resets |
+| [bastionmain/feed.go](../../internal/bastionmain/feed.go) | `Feed` (`Read`, `Position`), `mapEvent`: the table of R-BAS-015, `noFeedEntry`: the journaled events without an entry and why, the cursor, the resets |
 | [bastionmain/contact.go](../../internal/bastionmain/contact.go) | `Contacts.Record`: the contact upsert, the memory gate, the cap of 256 rows, `bastion.contact`; `Release` |
-| [bastionmain/downloads.go](../../internal/bastionmain/downloads.go) | `Intake.Accept`: `artifact.downloaded` per event, `bastion.downloads.dropped` |
+| [bastionmain/downloads.go](../../internal/bastionmain/downloads.go) | `Intake.Accept`: the budget of the registration (`EventBudget`; the composition root charges units of 100 events), `artifact.downloaded` per event, `bastion.downloads.dropped` |
 | [api/v1/bastion_services.go](../../internal/api/v1/bastion_services.go) | `BastionServices`, `writeInterface`, `BastionPrincipal`, `BastionRouteAuth` |
 | [api/v1/bastion_handshake_api.go](../../internal/api/v1/bastion_handshake_api.go), [bastion_check_api.go](../../internal/api/v1/bastion_check_api.go), [bastion_feed_api.go](../../internal/api/v1/bastion_feed_api.go), [bastion_downloads_api.go](../../internal/api/v1/bastion_downloads_api.go) | the four operations |
-| [app/wire_bastion.go](../../internal/app/wire_bastion.go) (the `package 2` block) | the Recognize stage, `bastionServices`, the metrics, the throttle; `bastionTokens` and `bastionShapes` are the two accessors packages 1 and 3 fill |
+| [app/wire_bastion.go](../../internal/app/wire_bastion.go) (the `package 2` block) | the Recognize stage, `bastionForwarded` (the re-derivation over `bastions.trusted_proxies`), `bastionEventBudget` (the limiter `bastion.download_events`), `bastionServices`, the metrics, the throttle; `bastionTokens` and `bastionShapes` are the two accessors packages 1 and 3 fill |
 | [audit/events_bastion_iface.go](../../internal/audit/events_bastion_iface.go) | `bastion.contact`, `bastion.downloads.dropped` |
 | [meta/postgres/queries/bastion_feed_names.sql](../../internal/meta/postgres/queries/bastion_feed_names.sql), [bastion_contact_cap.sql](../../internal/meta/postgres/queries/bastion_contact_cap.sql) | the two statements package 2 added to the contract's files |
 
 Things other code now relies on: `httpserver.Credential.ExpiresAt` (the marking's `expires=` and the check's `expiresAt`), `httpserver.KindBastion`,
-`httpserver.WithClient` (the check runs a credential for the caller's address), `audit.Event.At`, `auth.NewAddressThrottle`,
-`postgres.IsNoRows`. Recognition is also where the main installation's own hot path can be slowed by a Bastion: it adds a header lookup to every
+`httpserver.WithClient` (the check runs a credential for the caller's address), `httpserver.WithResolved` (the re-derivation),
+`audit.Event.At`, `auth.NewAddressThrottle`, `postgres.IsNoRows`, `cluster.Limiter.TakeNAt` (a request charged n units, n `INCR` in one transaction, at most `MaxTakeUnits`), and
+`App.credentialStage`, which records nothing in the request log: `App.authenticate` does, so the check leaves the line of the registration
+alone (Q-BAS-119). The kind `bastion` has an empty principal set in the decision point (`authz.kindBastion`). Recognition is also where the main installation's own hot path can be slowed by a Bastion: it adds a header lookup to every
 request of the default endpoint and a store lookup only for a value that starts with `trv_bst_`.
 
 To replace a seam: `App.bastionTokens` returns package 1's `TokenAuthenticator` (without one, every Bastion token is invalid), `App.bastionShapes`
@@ -574,6 +591,12 @@ so the subject is right for answers that never reach a route. What happens to on
    refusal and any other `NotFound` of the remote engine. A route needs to do nothing.
 4. At the status line the stage sets the class from the route kind, the status and the shape (R-BAS-013's table; `absent` needs a `404`, a
    `full` shape, a missing lookup and no unknown one), the repository, the shape, the subject and the interface version.
+
+`/files/` tells the observer the decision through the caller's `files.Access` (`observedAccess` in [rawfiles/handler.go](../../internal/api/rawfiles/handler.go)):
+the first allowed decision of the service calls `Decided`, so a refused read never gets a shape. A probe reaches the route match through
+`BastionRouteAuth` as the anonymous caller; a route mounted below `/api/<format>/` or `/files/` must call `Observer.Matched` before it
+decides or reads a body, or it would run for a probe (H-469). Kit check 12 gives each caller its own request context and headers
+(`callerHeaders`, except those the first answer names in `Vary`); a route that varies by a header it does not name in `Vary` fails it.
 
 Adding a lookup that decides a `404` in the core (a new engine, a new host store): call `bastionmain.NoteMissing(ctx)` only when the result is
 independent of the subject and of state that can change without the item changing; otherwise `NoteUnknown`. Both are no-ops outside a Bastion

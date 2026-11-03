@@ -43,7 +43,9 @@ installation's subsystems: no PostgreSQL, no object store of the main installati
 listener's chain is stages 1 to 5, then the engine for every path (`Router.SetFallback`, so the engine sees the path as received); there is no
 authentication stage and no rate-limit stage, because the engine's guard owns both. A path outside the mirrored families
 is `404 bastion_not_served`; the server builds and runs the link, the cache, the shared state, the guard and the download buffer around the engine. [bastion.md](bastion.md) has the packages, the seams and the flows. On the main installation the chain gets a stage
-between the client address and the authentication (`Chain.Bastion`, only on the default endpoint) that recognizes a Bastion request and marks its response.
+between the client address and the authentication (`Chain.Bastion`, only on the default endpoint) that recognizes a Bastion request and marks its response;
+for a recognized request it resolves the client address and the base URL again with `bastions.trusted_proxies` trusted (`httpserver.WithResolved`),
+and it refuses a forward outside `/api/<format>/` and `/files/` before the authentication.
 
 ## What runs where
 

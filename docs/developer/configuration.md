@@ -138,9 +138,11 @@ scalars, pointers to scalars (a key left out is nil and takes the default of R-C
 Two trees serve the Bastion ([bastion.md](bastion.md), Q-BAS-50).
 
 **The main installation's keys** ([bastions.go](../../internal/config/bastions.go), the `bastions` section; `AuthTokenBST` in
-[auth_identity.go](../../internal/config/auth_identity.go)): `bastions.max_registrations` (`16`, 1 to 256), `bastions.check.max_repositories`
-(`16`), `bastions.feed.lookback` (`5m`, 30s to 1h) and `bastions.feed.max_page` (`1000`), `bastions.downloads.max_batch` (`1000`) and
-`bastions.downloads.max_age` (`720h`), `auth.tokens.bst.default_ttl` (`8760h`) and `max_ttl` (`9480h`, `default_ttl` must not exceed it) and
+[auth_identity.go](../../internal/config/auth_identity.go)): `bastions.max_registrations` (`16`, 1 to 256), `bastions.trusted_proxies` (`[]`,
+addresses or CIDRs as `server.trusted_proxies`, no `/0`; `Bastions.Validate`, `TrustedProxyPrefixes`), `bastions.check.max_repositories`
+(`16`), `bastions.feed.lookback` (`5m`, 30s to 1h) and `bastions.feed.max_page` (`1000`), `bastions.downloads.max_batch` (`1000`),
+`bastions.downloads.max_age` (`720h`), `bastions.downloads.events_per_second` (`200`) and `events_burst` (`2000`, at least 100, holding `max_batch`
+in units of `config.DownloadEventsPerUnit` (100), a window of at most 12 h), `auth.tokens.bst.default_ttl` (`8760h`) and `max_ttl` (`9480h`, `default_ttl` must not exceed it) and
 `auth.tokens.max_active_per_principal.bst` (`3`). `bst` in an endpoint's `auth.token_types` stops startup naming the key
 ([endpoints.go](../../internal/config/endpoints.go), R-BAS-005).
 

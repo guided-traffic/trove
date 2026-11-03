@@ -20,6 +20,9 @@ func TestR_ARCH_010_TheTestFormatPassesTheKit(t *testing.T) {
 	t.Run("a handler that deletes the content headers still sends them", func(t *testing.T) {
 		formattest.Run(t, testformat.With(testformat.StripHeaders), testformat.Fixture())
 	})
+	t.Run("R-BAS-013 a document that varies by a request header it names in Vary passes check 12", func(t *testing.T) {
+		formattest.Run(t, testformat.With(testformat.VariesByHeader, testformat.Defect(testformat.VaryUserAgent)), testformat.Fixture())
+	})
 	t.Run("Q-ARCH-258 a Volatile search that returns package-derived bytes passes, with or without a handler that deletes the headers", func(t *testing.T) {
 		formattest.Run(t, testformat.With(testformat.SearchReadsPackages), testformat.Fixture())
 		formattest.Run(t, testformat.With(testformat.SearchReadsPackages, testformat.StripHeaders), testformat.Fixture())
@@ -102,6 +105,7 @@ func TestR_ARCH_010_Defects(t *testing.T) {
 		},
 		{"R-ARCH-010 a document path no GET route resolves fails check 10", testformat.WrongDocumentPath, formattest.CheckNames, "does not match a route", nil},
 		{"R-BAS-013 a package document that names the caller fails check 12", testformat.VariesByCaller, formattest.CheckShared, "the document differs between", nil},
+		{"R-BAS-013 a package document that varies by a request header it does not name in Vary fails check 12", testformat.VariesByHeader, formattest.CheckShared, "the document differs between", nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

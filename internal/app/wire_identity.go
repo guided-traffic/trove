@@ -345,12 +345,20 @@ func (a *App) authServices() v1.AuthServices {
 // httpserver.Principal. The chain is built after every step has run, so the stage
 // is there.
 func (a *App) authenticate(rt *endpointRuntime) func(*http.Request) (httpserver.Principal, error) {
-	return v1.BastionRouteAuth(a.credentialStage(rt), recordPrincipal)
+	stage := a.credentialStage(rt)
+	return v1.BastionRouteAuth(func(r *http.Request) (httpserver.Principal, error) {
+		p, err := stage(r)
+		if err == nil {
+			recordPrincipal(r, p)
+		}
+		return p, err
+	}, recordPrincipal)
 }
 
 // credentialStage is the authentication stage of an endpoint as a function of the request: the stage of the
-// auth area behind the conversion to httpserver.Principal. The check of the Bastion interface runs a caller's
-// credential through it (R-BAS-011).
+// auth area behind the conversion to httpserver.Principal. It records nothing in the request log: the chain's
+// authentication (authenticate) does, and the check of the Bastion interface runs a caller's credential through
+// it on behalf of the registration, whose request the log line stays (R-BAS-008, R-BAS-011, Q-BAS-119).
 func (a *App) credentialStage(rt *endpointRuntime) func(*http.Request) (httpserver.Principal, error) {
 	rules := endpointRules(rt)
 	rules.PublicRoute = a.publicRoute(rt)
@@ -362,8 +370,6 @@ func (a *App) credentialStage(rt *endpointRuntime) func(*http.Request) (httpserv
 		if err != nil {
 			return httpserver.Principal{}, err
 		}
-		p := principalFromResult(res)
-		recordPrincipal(r, p)
-		return p, nil
+		return principalFromResult(res), nil
 	})
 }

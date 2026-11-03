@@ -115,7 +115,9 @@ l.Count(ctx, bucket)             // one failure
 - Scope `cluster` counts in Valkey (key family `rl`, version 1, `rl:v1:<limiter>:<bucket hash>:<window index>`, expiry
   two windows; the limiter name has `.` written as `-`; the bucket is a SHA-256, never a raw name). A `Take` is one round
   trip, `MULTI`, `INCR`, `EXPIRE … NX`, `GET` of the previous window, `EXEC`, and no script. The request is counted before
-  it is decided, so refused requests use up budget. `Exceeded` is a pipelined `GET` of both windows, `Count` the `INCR` part.
+  it is decided, so refused requests use up budget. `TakeNAt(ctx, bucket, n, at)` charges n units in the same round trip as n
+  `INCR` of the one transaction (the ACL has no `INCRBY`), n at most `MaxTakeUnits` (100); the download intake of the Bastion
+  interface charges a batch with it (Q-BAS-117). `Exceeded` is a pipelined `GET` of both windows, `Count` the `INCR` part.
   The window index comes from the replica's wall clock; clock skew between replicas of some milliseconds moves a window
   boundary by that much. `TakeAt(ctx, bucket, at)` counts and decides in the window of `at`, the time the request was
   received (`httpserver.RequestInfo.Received`, step 5 of the chain); the API and endpoint limits call it, so a request that

@@ -43,10 +43,12 @@ func (a *App) wireLimits(ctx context.Context, in infra) (limitsArea, error) {
 	n := a.cfg.Auth.RateLimit.FailuresPerAddress
 	s := a.cfg.Auth.RateLimit.StartsPerAddress
 	ciAddress, ciSubject := ciLimiters(ls, a.ciRateLimit())
+	dl := a.cfg.Bastions.Downloads
 	return limitsArea{
 		set: ls, replicas: count, ciAddress: ciAddress, ciSubject: ciSubject,
-		failures:   ls.NewLimiter("auth.credential_failures", cluster.ScopeCluster, float64(n)/60, n),
-		flowStarts: ls.NewLimiter("auth.flow_starts", cluster.ScopeCluster, float64(s)/60, s),
+		bastionEvents: ls.NewLimiter(LimiterBastionDownloadEvents, cluster.ScopeCluster, dl.LimiterRate(), dl.LimiterBurst()),
+		failures:      ls.NewLimiter("auth.credential_failures", cluster.ScopeCluster, float64(n)/60, n),
+		flowStarts:    ls.NewLimiter("auth.flow_starts", cluster.ScopeCluster, float64(s)/60, s),
 	}, nil
 }
 

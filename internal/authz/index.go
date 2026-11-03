@@ -527,6 +527,8 @@ func (x *Index) principalIDs(sub Subject) []string {
 		}
 	}
 	switch kindOf(sub) {
+	case kindBastion:
+		return nil // a Bastion registration is no member of anything, authenticated included (R-BAS-004)
 	case kindServiceAccount:
 		add(sub.ID)
 	case kindCI:

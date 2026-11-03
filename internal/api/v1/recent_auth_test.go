@@ -40,7 +40,7 @@ func tokenCaller(*http.Request) (httpserver.Principal, error) {
 // in this build. The command-line login and configuration-as-code rows join when
 // those operations do; the CI identity rows are the issuer and mapping writes.
 var recentAuthOperations = []string{
-	"addPackageOwner", "addProjectAdmin", "assignProjectRepository", "bindRole", "createCiIssuer", "createCiMapping", "createProjectCiMapping",
+	"addPackageOwner", "addProjectAdmin", "assignProjectRepository", "bindRole", "createBastionToken", "createCiIssuer", "createCiMapping", "createProjectCiMapping",
 	"createExposureRule", "createPermissionPolicy", "createServiceAccountToken", "createToken", "deleteCiIssuer", "deleteCiMapping", "deleteProjectCiMapping",
 	"deleteExposureRule", "deletePermissionPolicy", "deleteProject", "deleteRepository", "patchExposureRule", "patchPermissionPolicy",
 	"removePackageOwner", "removeProjectAdmin", "replaceCiIssuer", "replaceCiMapping", "replaceProjectCiMapping", "replaceExposureRule",
