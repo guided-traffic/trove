@@ -56,7 +56,7 @@ selects are never touched.
 
 | Target | Script | What it does |
 |---|---|---|
-| `make dev-up` | `up.sh` | creates the cluster and installs everything; idempotent (a second run takes about 40 s) |
+| `make dev-up` | `up.sh` | creates the cluster and installs everything; idempotent (a second run takes about 40 s). The ID of the loaded trove image is a pod annotation (`trove-dev/image-id`), so a newly built image rolls the `web` and `worker` pods and an unchanged one rolls nothing |
 | `make dev-down` | `down.sh` | deletes the kind cluster `trove` and `.dev/` |
 | `make dev-failover` | `failover.sh [instance]` | PostgreSQL switchover to the standby, waits until the old primary is a standby again |
 | `make dev-valkey-failover` | `valkey-failover.sh` | `SENTINEL FAILOVER trove-valkey`, waits until another pod is primary |

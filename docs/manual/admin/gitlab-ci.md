@@ -2,8 +2,6 @@
 
 How GitLab CI jobs get short-lived trove tokens without a stored secret, and how administrators set it up: registering a GitLab instance, letting the pipelines of a GitLab project publish to the repositories of a project, giving a whole GitLab instance or group read access, testing mappings with the dry run, reading the issuance records, revoking tokens and troubleshooting refused exchanges.
 
-> **Not available in this version yet.** GitLab CI federation is being built. Until it is released, the token exchange and every CI operation of the management API answer `501` with the code `ci_not_implemented`, and the administration area has no CI screens. This page describes the behaviour the feature is built to, so that you can plan with it. Until then, pipelines use a service-account token as [Permissions](permissions.md#a-ci-service-account) shows.
-
 ## What the federation does
 
 1. A GitLab job declares an `id_tokens:` entry, and GitLab gives it an ID token: a JWT that the instance signs and addresses to trove (its `aud` is trove's base URL).
@@ -407,6 +405,18 @@ Write the claims as GitLab sends them, IDs and booleans as strings. `scope` is o
 
 Real claims come from an earlier exchange: the issuance record holds the claim snapshot of every token, and the audit event of a refused exchange holds it once the signature was verified. Copy the snapshot into `claims`, change a value, and watch which leaf fails.
 
+## In the administration area
+
+Everything above is also available as screens, under **Administration › CI identity** (`/admin/ci`). The screens call the same operations, so what the API refuses they refuse with the same reason.
+
+- **CI identity** lists the issuers with their name, kind, issuer URL, accepted audiences, the number of mappings, the state of the signing keys (the number of usable keys and when they were fetched, or the failure) and the source (`api` or `configuration`). **Issued tokens** opens the issuances of all issuers; **New issuer** (holders of `ci:write`) opens the form.
+- **New CI issuer** has the fields of [the issuer settings](#register-a-gitlab-instance): **Name**, **Issuer URL**, **Description**, **Enabled**, **Accepted audiences** (one per line; empty means the base URL and `npm:` with the host name), **Public issuer** and **Pin claims**. **More settings** holds the discovery document and key set URLs, the signing algorithms, the exclusive-audience switch, the required claims, the clock skew, the maximum token lifetime, **Reject a second exchange of the same ID token**, the outbound proxy and the **CA bundle** (`file:/path` or `env:NAME`). **Check the discovery document and the keys before saving** is on by default; **Create issuer** then opens the issuer on its **Keys** tab.
+- The **issuer page** has the tabs **Settings**, **Keys**, **Mappings** and **Issuances**, and the buttons **All issuers**, **Test with claims** and **Delete issuer** (it asks you to type the name, and says that the issuer's mappings are deleted and its tokens revoked). An issuer from the Helm values shows its settings read-only and names the configuration as its source.
+- The **Mappings** tab lists the mappings in evaluation order with **New mapping**. The **mapping editor** has the cards **General** (**Name**, **Description**, **Priority**, **Enabled**), **Condition** (the **Builder** or the **JSON** view of the same condition, with a line that reads it back), **Grants** (**Policies**, **Groups** and **Inline grants** with **Repositories**, **Applies to**, **Include**, **Exclude**, the **Actions** and the **Ownership of package names**) and **Options and lifetime** (**Maximum token lifetime (seconds)**, **Pipelines from other projects** with `deny` or `read_only`, and **Allow unprotected refs to use write grants**). The editor warns before the server does, for a public issuer without a pin, for a writing grant without `ref_protected`, and for an ownership of `none`. **Create mapping** or **Save mapping** saves; the warnings of the save appear under **Saved, with warnings**. **Test with claims** tests the saved mapping, and **CI snippet** prints the `id_tokens:` and exchange lines for the mapping in the shell of a package client.
+- The **claim tester** (**Test with claims**) takes **Claims as JSON, or paste an ID token**. A pasted token is decoded in the browser and discarded; only its claims are sent, and the screen says that the signature was not checked and that the token is still a credential until it expires. **Insert sample GitLab claims** fills in a typical set. **Evaluate** shows whether a mapping matches, every mapping looked at with the first failed leaf and the expected and actual value of each leaf, the resulting grants and the token that would be issued. It is the dry run of [Test a mapping](#test-a-mapping-with-the-dry-run); it issues nothing.
+- **Issued tokens** filters the issuances by issuer, GitLab project ID, project path, pipeline, job, mapping, state and period. **Details** shows one record with its grants, its claims and, for holders of `tokens:read`, its use. **Revoke matching tokens** (holders of `tokens:revoke`) needs one issuer and one of project ID, pipeline ID, job ID or mapping among the filters, counts the active tokens first and asks before it revokes them.
+- A project administrator finds the same under **Administration › Projects › the project › CI identity**: the issuers they may name, the mappings of the project, the tokens issued through them, **New mapping** and **Test with claims** over the project's tier. The grants offer the repositories of the project and `@any` for all of them.
+
 ## Read the issuance records
 
 Every successful exchange writes an issuance record in the same transaction that creates the token. It holds only verified claims, never the token, its hash, `user_email` or `user_identities`.
@@ -626,7 +636,6 @@ Project administrators manage the mappings of their project. These stay with hol
 
 ## Limits of this version
 
-- The federation is not released yet; see the note at the top of this page.
 - GitLab is the only kind of issuer. `CI_JOB_TOKEN` is never accepted; its fallback is not built.
 - Mappings are managed through the API only; there are no configuration documents for them, and mapping management cannot be delegated to a group outside a project.
 - A group with subgroups is pinned by listing IDs ([Groups with subgroups](#groups-with-subgroups)).

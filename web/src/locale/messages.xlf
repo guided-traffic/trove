@@ -16492,7 +16492,7 @@
         <note category="location">src/app/features/ci/issuer-form.ts:144,147</note>
       </notes>
       <segment>
-        <source>One per line. Immutable ID claims only. Empty: project_id and namespace_id.</source>
+        <source>One per line. Immutable ID claims only. Empty: project_id, namespace_id, job_project_id and job_namespace_id.</source>
       </segment>
     </unit>
     <unit id="ci.form.advanced">

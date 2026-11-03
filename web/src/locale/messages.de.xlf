@@ -18483,8 +18483,8 @@
         <note category="location">src/app/features/ci/issuer-form.ts:144,147</note>
       </notes>
       <segment>
-        <source>One per line. Immutable ID claims only. Empty: project_id and namespace_id.</source>
-        <target>Eine pro Zeile. Nur unveränderliche ID-Claims. Leer: project_id und namespace_id.</target>
+        <source>One per line. Immutable ID claims only. Empty: project_id, namespace_id, job_project_id and job_namespace_id.</source>
+        <target>Eine pro Zeile. Nur unveränderliche ID-Claims. Leer: project_id, namespace_id, job_project_id und job_namespace_id.</target>
       </segment>
     </unit>
     <unit id="ci.form.advanced">

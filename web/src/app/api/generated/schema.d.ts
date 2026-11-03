@@ -6157,15 +6157,6 @@ export interface components {
             };
             content?: never;
         };
-        /** @description The operation belongs to a work package of the CI federation that is not built in this release (`ci_not_implemented`). */
-        NotImplementedCI: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
     };
     parameters: {
         /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
@@ -9852,7 +9843,6 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -9889,7 +9879,6 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -9920,7 +9909,6 @@ export interface operations {
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -9965,7 +9953,6 @@ export interface operations {
             428: components["responses"]["PreconditionRequired"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -10002,7 +9989,6 @@ export interface operations {
             412: components["responses"]["PreconditionFailed"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -10032,7 +10018,6 @@ export interface operations {
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -10062,7 +10047,6 @@ export interface operations {
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             502: components["responses"]["BadGateway"];
             503: components["responses"]["Unavailable"];
         };
@@ -10093,7 +10077,6 @@ export interface operations {
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -10134,7 +10117,6 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -10167,7 +10149,6 @@ export interface operations {
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -10214,7 +10195,6 @@ export interface operations {
             428: components["responses"]["PreconditionRequired"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -10249,7 +10229,6 @@ export interface operations {
             412: components["responses"]["PreconditionFailed"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -10287,7 +10266,6 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -10326,7 +10304,6 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -10376,7 +10353,6 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -10407,7 +10383,6 @@ export interface operations {
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -10442,7 +10417,6 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -10555,7 +10529,6 @@ export interface operations {
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -10585,7 +10558,6 @@ export interface operations {
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -10626,7 +10598,6 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -10661,7 +10632,6 @@ export interface operations {
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -10710,7 +10680,6 @@ export interface operations {
             428: components["responses"]["PreconditionRequired"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -10747,7 +10716,6 @@ export interface operations {
             412: components["responses"]["PreconditionFailed"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -10787,7 +10755,6 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -10828,7 +10795,6 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };
@@ -10870,7 +10836,6 @@ export interface operations {
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
-            501: components["responses"]["NotImplementedCI"];
             503: components["responses"]["Unavailable"];
         };
     };

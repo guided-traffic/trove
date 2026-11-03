@@ -113,5 +113,5 @@ After you sign in, **Administration** shows **Projects** only. The global lists,
 ## Limits of this version
 
 - Project roles, global roles, environments, repository sharing and project quotas do not exist. A project has two switches and one kind of administrator.
-- GitLab CI mappings of a project are not released yet. Once they are, the switch **Manage policies and service accounts** also lets the project's administrators manage the mappings that let GitLab pipelines read and publish in the project, and a project with mappings is not empty; [GitLab CI federation](gitlab-ci.md) describes them. Delegating mappings to a group outside a project does not exist.
+- The switch **Manage policies and service accounts** also lets the project's administrators manage the mappings that let GitLab pipelines read and publish in the project, and a project with mappings is not empty; [GitLab CI federation](gitlab-ci.md) describes them. Delegating mappings to a group outside a project does not exist.
 - The lookup of users and groups finds any name by its start, so a project administrator can enumerate names by prefix; it returns no e-mail address and no membership.

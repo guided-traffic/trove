@@ -6049,9 +6049,6 @@ type Internal = Problem
 // NotFound RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
 type NotFound = Problem
 
-// NotImplementedCI RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
-type NotImplementedCI = Problem
-
 // PayloadTooLarge RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
 type PayloadTooLarge = Problem
 

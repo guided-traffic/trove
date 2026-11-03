@@ -459,8 +459,10 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   the development sessions with their tool binaries; `.dockerignore` leaves `.claude` out
 - 🟢 The owner's dev cluster runs the current main again (owner, 2026-11-02, option a): its `trove` schema was dropped and the
   migration Job built it afresh; the database's earlier content is gone
-- 🟡 `make dev-up` on an existing cluster installs a newly loaded `guidedtraffic/trove:dev` without rolling the pods: the tag
-  and the pod spec are unchanged, so the old pods keep the old image until `kubectl rollout restart` (W7)
+- 🟢 `make dev-up` on an existing cluster installed a newly loaded `guidedtraffic/trove:dev` without rolling the pods: the tag
+  and the pod spec were unchanged. `deploy/dev/up.sh` now puts the loaded image's ID into the pod annotation `trove-dev/image-id` of
+  both roles, so the pods roll exactly when the image changed and a second run with the same image changes nothing (checked on the
+  dev cluster: a changed image rolled `web` and `worker`, the next `make dev-up` left the pods alone; W7)
 - 🟡 `TestR_CI_021_TheAddressBudgetIsOneAcrossReplicas` holds R-CI-021's "1,000 requests within 5 s" as a hard bound; on a
   CPU-limited CI runner the flood may need longer, which would fail the test without a defect (W4's note; watched)
 - 🟡 R-CI-029's "every replica stays ready and reports `degraded: [valkey]`" while Valkey is stopped has no assertion in the
@@ -581,22 +583,26 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - 🟡 GitLab issuers declared in the Helm values (`config.ci.issuers`), applied by `trove migrate`, shown in trove and
   read-only there ([Q-CI-16](../spec/gitlab-ci-oidc.md#q-ci-16--ci-issuers-provisioned-through-the-helm-values-are-read-only-in-trove), owner 2026-11-02); built (`ApplyDeclared` in `trove migrate`, `TestR_CI_001_*` in `test/integration/ci`), open: removing
   an issuer that has issuance records waits for the revoker (W5)
-- 🟡 Token exchange: GitLab ID token (`id_tokens:` with trove as audience) in, short-lived CI token (`trv_cit_`) out;
+- 🟢 Token exchange: GitLab ID token (`id_tokens:` with trove as audience) in, short-lived CI token (`trv_cit_`) out;
   `CI_JOB_TOKEN` is not accepted (owner 2026-11-02; its fallback stays P2, R-CI-022). Built (W4): `POST /api/v1/auth/oidc/token` with
   form and JSON bodies, the scope, the lifetime, the re-check of the issuer and the mappings `FOR SHARE` in one transaction with the
   replay set and the restore cut-off, the issuance record, the events and metrics, the cluster-wide budgets per address and per
   project and the aggregated denials (Q-CI-41 to Q-CI-43, H-418 to H-420); verified by `test/integration/ci` (`exchange*_test.go`,
-  `replay_test.go`, `ratelimit_test.go`) against the issuer double on one to three replicas with Valkey running and stopped; open: the
-  real clients on kind, a Sentinel failover and `FLUSHALL` during exchanges, a `web` pod deleted under 50 exchanging jobs (W7)
-- ⚪ Audit of the exchange: which pipeline (instance, group, project, branch, pipeline, job) signed in when, as issuance
-  records with a tab per issuer in the admin UI (R-CI-020)
-- 🟡 Admin manual: a runbook page for GitLab CI (register an instance in the Helm values, the `id_tokens:` block, a
+  `replay_test.go`, `ratelimit_test.go`) against the issuer double on one to three replicas with Valkey running and stopped; the real clients on kind, a Sentinel failover and `FLUSHALL` during exchanges and a `web` pod deleted under 50 exchanging jobs were W7's and passed (`TestCIPipeline`, `TestCIHASingleUse`, `TestCIHAPodDelete`, [e2e.md](../developer/e2e.md#the-ci-tests))
+- 🟢 Audit of the exchange: which pipeline (instance, group, project, branch, pipeline, job) signed in when, as issuance
+  records with a tab per issuer in the admin UI (R-CI-020). Evidence: `TestCIPipeline` (the issuance of each job of the reference
+  pipeline shows `projectId`, `ref` and `sha`; the publish's audit entry `artifact.deployed` carries the issuance's `token_id`;
+  `token.revoked` with the reason `owner`), the journey `13-ci` (the Issuances tab, the detail, the bulk revoke); see
+  [e2e.md](../developer/e2e.md#the-ci-tests)
+- 🟢 Admin manual: a runbook page for GitLab CI (register an instance in the Helm values, the `id_tokens:` block, a
   mapping, verify with the dry run, read the issuances, troubleshoot refusals) (owner 2026-11-02), written while the phase is
   built (owner, 2026-11-02), with three how-tos: how a project administrator lets the pipelines of a GitLab project write
   to the project's repositories; how a project administrator gives a whole GitLab instance or group read access to the
-  whole project or to one repository; how a pipeline gets its trove token. Written against the contracts:
-  [admin/gitlab-ci.md](../manual/admin/gitlab-ci.md) and [user/gitlab-ci-pipelines.md](../manual/user/gitlab-ci-pipelines.md), each
-  with a "not available yet" note that the change shipping the exchange removes ([ci-oidc.md](../developer/ci-oidc.md#the-manual-pages))
+  whole project or to one repository; how a pipeline gets its trove token. Documented in
+  [admin/gitlab-ci.md](../manual/admin/gitlab-ci.md) and [user/gitlab-ci-pipelines.md](../manual/user/gitlab-ci-pipelines.md);
+  W7 removed the "not available yet" notes and the 501 paragraphs, added the section on the screens, checked the labels against
+  `web/src/app/features/ci` and the nuget.config of the pipeline against the run (Q-CI-44), and removed the "not released yet"
+  wording of the related pages ([ci-oidc.md](../developer/ci-oidc.md#the-manual-pages))
 - 🟡 Project administrators manage the CI mappings of their project (owner, 2026-11-02; Q-CI-26): a mapping tier per
   project, grants only over the project's repositories and policies, the save-time rules unchanged; issuers stay the
   system administrators'. Built (W3): the project routes with the narrowing, the bounds, the dry run and the snippet of the
@@ -616,18 +622,28 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   replica with and without Valkey, the issuance API with a project's view, the two retention tasks (Q-CI-38 to Q-CI-40; H-415 to H-417).
   Verified by the integration tests of `test/integration/ci` with tokens issued through `IssueCITx`; open: the same through the exchange
   (W4) and the mapping store (W3), and the e2e journey (W7)
-- 🟡 Admin UI: CI issuers, mappings, dry run and claim tester; built against the API fakes with the issuances, bulk revoke
-  and the project's CI screens (`/admin/ci…`, `/admin/projects/:key/ci…`, Q-UI-99, Q-UI-100; 713 web tests); open: against
-  the backend of W1 to W5, and a browser journey (W7)
-- ⚪ Reference pipeline: `.gitlab-ci.yml` publishing an npm package and pushing a NuGet package
+- 🟡 Admin UI: CI issuers, mappings, dry run and claim tester; the issuances, bulk revoke and the project's CI screens
+  (`/admin/ci…`, `/admin/projects/:key/ci…`, Q-UI-99, Q-UI-100; 713 web tests). Against the real backend by the journey `13-ci`
+  (an administrator registers the issuer double with its CA, creates the reference mapping in the editor, tests a claim set with a pasted
+  token decoded in the browser, reads the issuance and revokes it; a project administrator manages a mapping of its project; axe in
+  both colour schemes; part of `TestE1_11Journeys`). Open: the axe check of the issuance detail dialog fails with
+  `scrollable-region-focusable` (its two `<pre>` blocks and the dialog content scroll without keyboard access), so `13-ci` and
+  `make e2e SET=access-long` are red until that screen is fixed; the rest of the journey passes
+- 🟢 Reference pipeline: `.gitlab-ci.yml` publishing an npm package and pushing a NuGet package: the Examples of the
+  specification, run as written by `TestCIPipeline` (`make e2e SET=ci`); the first run found that the Example's `dotnet nuget push` needs
+  the push source in `nuget.config` (Q-CI-44)
 - 🟡 GitLab's behaviour validated against the owner's unused GitLab instance and recorded as fixtures of the issuer
   double; no integration or e2e test runs against a real GitLab or gitlab.com (owner, 2026-11-02; Q-CI-25)
 - 🟢 Integration tests: invalid signatures, wrong audience, expired tokens, fork merge requests: every reason of R-CI-008 the MVP
   reaches, through the endpoint with status, `error` and `reason` (`TestR_CI_008_EveryReasonOfTheErrorTable`), the recorded fork merge
   request run in the parent (`TestR_CI_012_ForkPipelines`), 2,000 forged tokens beside a legitimate project, and a grep of every answer
   and log line for token material; `configuration_changed` and the three P2 reasons are proven or deferred as Q-CI-43 says
-- ⚪ E2E tests against the issuer double for npm and NuGet (the reference pipeline's exchange and client steps), with a `web` node
-  drained during the run and again with Valkey stopped; no test runs against a real GitLab ([Q-CI-25](../spec/gitlab-ci-oidc.md#q-ci-25--gitlabs-behaviour-is-validated-against-a-real-instance-the-tests-run-against-the-double), owner 2026-11-02)
+- 🟢 E2E tests against the issuer double for npm and NuGet (the reference pipeline's exchange and client steps), with a `web` node
+  drained during the run and again with Valkey stopped; no test runs against a real GitLab. `make e2e SET=ci` on every change (E4.1,
+  E4.4 to E4.6: protected tag and unprotected branch with the real npm and .NET clients, the fork's merge request, the dry run against the
+  issuances, expiry and the 2 s revocation, the tasks on workers) and `make e2e SET=ci-ha` nightly (E4.7: a drained node, Valkey stopped
+  with every replica ready and `degraded: [valkey]`, 250 single-use tokens across a Sentinel failover and `FLUSHALL`, a `web` pod deleted
+  under 50 exchanging jobs); the results are in [e2e.md](../developer/e2e.md#the-ci-tests) ([Q-CI-25](../spec/gitlab-ci-oidc.md#q-ci-25--gitlabs-behaviour-is-validated-against-a-real-instance-the-tests-run-against-the-double), owner 2026-11-02)
 - 🟢 GitLab's behaviour validated by hand on GitLab 19.0.1 and recorded as fixtures that the issuer double reproduces: ID tokens of 16
   cases, the key set and its caching, `CI_JOB_TOKEN`'s shape (`make oidc-fixtures`, `test/oidcstub/testdata`); a fork merge request
   opened by a parent member runs in the parent, no claim pins an ancestor group (H-27)
@@ -864,6 +880,6 @@ Details: [roadmap: owner walkthrough](../coverage/roadmap.md#owner-walkthrough)
 | **npm** | 🟢 | 🟢 | 🟡 |
 | **NuGet (.NET)** | 🟢 | 🟡 | ⚪ |
 | Projects (delegated administration) | 🟢 | 🟢 | — |
-| GitLab CI OIDC | ⚪ | ⚪ | ⚪ |
+| GitLab CI OIDC | 🟢 | 🟢 | 🟡 |
 | Vulnerability scanning | ⚪ | ⚪ | ⚪ |
 | Backup and restore | ⚪ | ⚪ | — |

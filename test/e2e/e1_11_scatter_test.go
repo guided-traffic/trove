@@ -525,9 +525,21 @@ func TestE1_11Journeys(t *testing.T) {
 	// The journeys sign in with the break-glass password and as alice and bob; a lockout left by an earlier test
 	// would fail the first of them for a reason that is not the UI.
 	adm.do(http.MethodPost, "/api/v1/users/admin/unlock", nil).want(t, "unlock break-glass", 204)
-	cmd := exec.Command("npx", "playwright", "test")
+	// The journey 13-ci registers the issuer double and exchanges an ID token: the Go side mints the tokens, which carry the claim set of a
+	// protected tag of the example project, recorded from the real thing (ci_env_test.go), and passes them with the issuer URL.
+	dbl := double(t, "oidcstub", "TROVE_E2E_OIDCSTUB_HOST")
+	nonce := time.Now().UnixNano() % 1_000_000_000
+	mintCI := func(n int64) string {
+		c := protectedTag(t, "v1.4.0").with(map[string]any{"aud": cfg.edgeURL, "job_id": fmt.Sprint(nonce*10 + n), "pipeline_id": fmt.Sprint(nonce)})
+		return dbl.mint(t, c.set, c.remove)
+	}
+	// TROVE_E2E_PLAYWRIGHT_ARGS narrows a run while a journey is written (for example `tests/13-ci.spec.ts`); a set of CI never sets it.
+	cmd := exec.Command("npx", append([]string{"playwright", "test"}, strings.Fields(os.Getenv("TROVE_E2E_PLAYWRIGHT_ARGS"))...)...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
+		"TROVE_E2E_OIDCSTUB_ISSUER="+dbl.issuer(),
+		"TROVE_E2E_CI_TOKEN_PASTE="+mintCI(1),
+		"TROVE_E2E_CI_TOKEN_EXCHANGE="+mintCI(2),
 		"TROVE_E2E_EDGE_URL="+cfg.edgeURL,
 		"TROVE_E2E_KEYCLOAK_ADDR="+keycloakAddr(t),
 		"NODE_EXTRA_CA_CERTS="+cfg.caFile,

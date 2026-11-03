@@ -197,7 +197,7 @@ The tables below list the keys an installation most often sets. Every key with i
 <details>
 <summary>GitLab CI federation</summary>
 
-The federation is being built; until then these keys are accepted and the CI operations answer `501`. [GitLab CI federation](gitlab-ci.md#configuration-keys) lists every key of the section and explains how to register a GitLab instance.
+[GitLab CI federation](gitlab-ci.md#configuration-keys) lists every key of the section and explains how to register a GitLab instance.
 
 | Key | Default | Meaning |
 |---|---|---|

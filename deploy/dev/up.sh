@@ -246,6 +246,12 @@ else
   values=(-f "$DEV_DIR/values-dev.yaml" --set-json "networkPolicy.probeCIDRs=$probe_cidrs")
   [ "$EDGE_PORT" = "8080" ] || values+=(--set "config.server.base_url=https://localhost:$EDGE_PORT" \
     --set "endpoints.customers.baseUrl=https://packages.trove.localhost:$EDGE_PORT")
+  # The tag stays guidedtraffic/trove:dev while the image behind it changes, and kind load replaces the image on the nodes
+  # without touching the pod spec, so helm would find nothing to roll. The image ID in a pod annotation of both roles
+  # changes the spec exactly when the loaded image changed; a second run with the same image changes nothing (the profile
+  # switches of the e2e suite run this script again and must not roll the pods).
+  image_id="$(docker image inspect -f '{{.Id}}' "$IMAGE")"
+  values+=(--set-string "web.podAnnotations.trove-dev/image-id=$image_id" --set-string "worker.podAnnotations.trove-dev/image-id=$image_id")
   [ "$POOLER" = "1" ] && values+=(-f "$DEV_DIR/values-pooler.yaml")
   [ "$PROFILE" = "scatter" ] && values+=(-f "$DEV_DIR/values-scatter.yaml")
   log "installing the trove release (helm upgrade --install trove, migration Job first)"

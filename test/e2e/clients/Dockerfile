@@ -5,6 +5,8 @@
 # credential.
 #
 #   NODE_IMAGE  E2E_CLIENTS_NODE_IMAGE of tools/versions.env (the tag is web/.nvmrc; make versions-check)
+#   CURL_VERSION, JQ_VERSION   E2E_CLIENTS_CURL_VERSION, E2E_CLIENTS_JQ_VERSION: the exact apt versions of the two tools the
+#               exchange step of the reference pipeline (R-CI-028) runs
 #   --build-context fwd=<dir>   a directory with the static forwarder fwd-linux-<arch> (build.sh builds it)
 ARG NODE_IMAGE
 
@@ -18,6 +20,12 @@ RUN npm ci --ignore-scripts --no-audit --no-fund && npm rebuild pnpm12 --no-audi
 
 FROM ${NODE_IMAGE}
 ARG TARGETARCH
+ARG CURL_VERSION
+ARG JQ_VERSION
+# curl and jq: the exchange step of the reference pipeline (R-CI-028) is `printf ... | curl ... | jq`, as a GitLab job runs it.
+RUN apt-get update \
+ && apt-get install --yes --no-install-recommends "curl=${CURL_VERSION}" "jq=${JQ_VERSION}" \
+ && rm -rf /var/lib/apt/lists/*
 # The npm of the Node image is a second npm 11; the clients are the rows of package.json and nothing
 # else, so the image has no `npm`, `npx` or `corepack` on its PATH.
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \

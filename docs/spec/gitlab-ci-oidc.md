@@ -2960,12 +2960,17 @@ token in `TROVE_TOKEN`:
   <packageSources>
     <clear />
     <add key="trove" value="https://packages.example.com/api/nuget/nuget-all/v3/index.json" />
+    <add key="trove-internal" value="https://packages.example.com/api/nuget/nuget-internal/v3/index.json" />
   </packageSources>
   <packageSourceCredentials>
     <trove>
       <add key="Username" value="ci" />
       <add key="ClearTextPassword" value="%TROVE_TOKEN%" />
     </trove>
+    <trove-internal>
+      <add key="Username" value="ci" />
+      <add key="ClearTextPassword" value="%TROVE_TOKEN%" />
+    </trove-internal>
   </packageSourceCredentials>
 </configuration>
 ```
@@ -2998,6 +3003,10 @@ Notes on the examples:
   when the variable is unset
   ([nuget.config reference](https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file#using-environment-variables)).
   An unset `TROVE_TOKEN` therefore shows up as a 401, not as anonymous access.
+- `nuget-internal` is a source of `nuget.config` of its own because `dotnet nuget push` fetches the service index of its
+  `--source` before it sends the API key, and an installation answers that request with 401 unless it carries credentials
+  (R-AUTHZ-016). NuGet attaches the credentials of `packageSourceCredentials` to a `--source` URL that equals a configured
+  source, so the push step needs no other change. Found by the end-to-end run of this pipeline on kind (Q-CI-44).
 - `--api-key "$TROVE_TOKEN"` puts the token in `dotnet`'s argument list. From NuGet 7.6 the
   `NUGET_API_KEY` environment variable can carry it instead (same reference). trove accepts
   both through `X-NuGet-ApiKey` (INV-8). Pushing with the `nuget.config` Basic credentials and no
@@ -4397,6 +4406,74 @@ R-CI-022 is built (its three reasons then get their integration tests) or if a s
 
 **Applied in the spec:** R-CI-008 (the criterion names the four exceptions and the unit test). Code:
 `internal/ci/exchange_service_test.go`; `test/integration/ci/exchange_errors_test.go` (the other reasons).
+
+### Q-CI-44 · The Examples' nuget.config names the push source
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the end-to-end run of the reference pipeline on kind ran the Example's `dotnet nuget push "out/*.nupkg" --source
+"$TROVE_URL/api/nuget/nuget-internal/v3/index.json" --api-key "$TROVE_TOKEN"` and got `401` on the service index of the source. The
+.NET client fetches the index of its `--source` before it sends the API key, trove answers an unauthenticated request with 401 and a
+challenge (R-AUTHZ-016, [formats/nuget.md](formats/nuget.md)), and the `nuget.config` of the Examples carried credentials for the
+source `trove` (`nuget-all`) only. NuGet attaches `packageSourceCredentials` to a `--source` URL that equals a configured source.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A second source in the `nuget.config` (chosen) | `trove-internal` for `nuget-internal`, with the same credentials; the push step stays as written | One file, no change to the push command, works for a repository that requires authentication | A restore also asks `nuget-internal`, which `nuget-all` already contains |
+| (b) Push through `nuget-all` | The virtual repository forwards the push to its deployment target | One source | The CI token's inline grant names `nuget-internal`; a virtual repository authorizes a publish on its target (R-AUTHZ-009), an extra rule to rely on |
+| (c) Let the service index of `nuget-internal` answer anonymous requests | A repository that does not require authentication serves its index | No client configuration | R-AUTHZ-016 challenges every anonymous request; the repository would need an anonymous grant for a document that carries no package |
+
+**Choice:** (a).
+
+**Rationale:** it is the smallest change that keeps the specified push step and the specified authorization rules. The development
+agent would revisit it if NuGet clients send the API key with the index request, or if the Examples gain a source mapping that makes
+a restore ask `nuget-all` only.
+
+**Applied in the spec:** the `nuget.config` of the Examples and the note under it. Also in
+[user/gitlab-ci-pipelines.md](../manual/user/gitlab-ci-pipelines.md). Code: `test/e2e/ci_env_test.go` reads the file from the Examples.
+
+### Q-CI-45 · curl and jq in the client images of the end-to-end tests
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the exchange step of the Examples runs `curl` and `jq`; a GitLab job image gets them from the step's `apt-get`. The client pods
+of the npm and NuGet suites run as a non-root user on a read-only root file system, and the npm image has neither tool, the NuGet image
+curl only.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Install both in the two images with exact apt versions (chosen) | `E2E_CLIENTS_CURL_VERSION`, `E2E_CLIENTS_JQ_VERSION`, `E2E_NUGETCLIENTS_JQ_VERSION` in `tools/versions.env`, checked by `make versions-check` | The step runs as written, with the real tools | Three pins; a superseded package fails the image build, as the Mono pin does |
+| (b) A third image for the exchange step | A pod with curl and jq runs the step | The two client images stay as they are | The job's shell would have to hand its environment from one pod to another; the step is no longer one shell |
+| (c) The test posts the exchange itself | Go replaces `curl` and `jq` | No pin | The Examples are not run as written |
+
+**Choice:** (a).
+
+**Rationale:** the criterion is that the pipeline's steps run as the specification writes them. The development agent would revisit it
+when Renovate can update the apt pins of the images.
+
+**Applied in:** `tools/versions.env`, `test/e2e/clients/Dockerfile` and `nugetclients/Dockerfile`, `build.sh`, `check-pins.mjs`,
+`make versions-check`.
+
+### Q-CI-46 · How the end-to-end tests take the pipeline and the issuers
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: three choices of the harness. Where the steps come from; which job variables a pipeline without `rules:` has on an unprotected
+branch (`CI_COMMIT_TAG` is empty there, and `npm version ""` stops the job before the publish that R-CI-028 wants refused); and the
+issuer of the single-use tests (an issuer URL is unique, and the double announces one).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The tests read the Examples from this page; the unprotected-branch job gets `CI_COMMIT_TAG` as a pipeline variable; a second double instance is the single-use issuer (chosen) | `specExamples` parses the issuer and mapping bodies, the `.gitlab-ci.yml` and the `nuget.config`; `deploy/dev/oidcstub.yaml` is applied once per double (`STUB=oidcstub`, `oidcstub-single`) | The page and the tests cannot drift; the refusal is proven at `npm publish`, not at `npm version`; the single-use issuer has its own keys and counters | The tests depend on the layout of the page; a second pod in the nightly set |
+| (b) Copies of the steps in the tests | Go strings | Independent of the page | Two copies |
+| (c) Switch the one issuer to single use for the test | `PATCH` the issuer | No second pod | The default setting is not what the other tests meet; no second issuer, against the wording of E4.7 |
+
+**Choice:** (a).
+
+**Rationale:** the specification says the Examples are part of it (R-CI-028). The development agent would revisit the variable if the
+Examples gain a rule for branch pipelines.
+
+**Applied in:** `test/e2e/ci_env_test.go` (`specExamples`, `runJob`), `ci_ha_test.go`, `deploy/dev/oidcstub.yaml`, `deploy/dev/e2e.sh`.
 
 ### Q-CI-47 · A project tier changes only what its own tier gives a token
 

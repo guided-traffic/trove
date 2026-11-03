@@ -4719,8 +4719,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
     post:
       operationId: createCiIssuer
       tags: [ci]
@@ -4772,8 +4770,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
   /api/v1/ci/issuers/{name}:
     parameters:
       - name: name
@@ -4813,8 +4809,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
     put:
       operationId: replaceCiIssuer
       tags: [ci]
@@ -4876,8 +4870,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
     delete:
       operationId: deleteCiIssuer
       tags: [ci]
@@ -4918,8 +4910,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
   /api/v1/ci/issuers/{name}/keys:
     parameters:
       - name: name
@@ -4958,8 +4948,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
   /api/v1/ci/issuers/{name}/keys/refresh:
     parameters:
       - name: name
@@ -5000,8 +4988,6 @@ paths:
           $ref: "#/components/responses/BadGateway"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
   /api/v1/ci/issuers/{issuer}/mappings:
     parameters:
       - name: issuer
@@ -5038,8 +5024,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
     post:
       operationId: createCiMapping
       tags: [ci]
@@ -5093,8 +5077,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
   /api/v1/ci/issuers/{issuer}/mappings/{name}:
     parameters:
       - name: issuer
@@ -5141,8 +5123,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
     put:
       operationId: replaceCiMapping
       tags: [ci]
@@ -5199,8 +5179,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
     delete:
       operationId: deleteCiMapping
       tags: [ci]
@@ -5231,8 +5209,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
   /api/v1/ci/issuers/{issuer}/evaluate:
     parameters:
       - name: issuer
@@ -5285,8 +5261,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
   /api/v1/ci/issuers/{issuer}/snippets/{kind}:
     parameters:
       - name: issuer
@@ -5350,8 +5324,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
   /api/v1/ci/issuances:
     get:
       operationId: listCiIssuances
@@ -5393,8 +5365,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
   /api/v1/ci/issuances/{tokenId}:
     parameters:
       - name: tokenId
@@ -5434,8 +5404,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
   /api/v1/ci/issuances/revoke:
     post:
       operationId: revokeCiIssuances
@@ -5479,8 +5447,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
   /api/v1/auth/oidc/token:
     post:
       operationId: exchangeCiToken
@@ -5622,8 +5588,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
   /api/v1/projects/{key}/ci/mappings:
     parameters:
       - name: key
@@ -5661,8 +5625,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
     post:
       operationId: createProjectCiMapping
       tags: [ci]
@@ -5713,8 +5675,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
   /api/v1/projects/{key}/ci/mappings/{issuer}/{name}:
     parameters:
       - name: key
@@ -5769,8 +5729,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
     put:
       operationId: replaceProjectCiMapping
       tags: [ci]
@@ -5826,8 +5784,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
     delete:
       operationId: deleteProjectCiMapping
       tags: [ci]
@@ -5859,8 +5815,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
   /api/v1/projects/{key}/ci/issuers/{issuer}/evaluate:
     parameters:
       - name: key
@@ -5919,8 +5873,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
   /api/v1/projects/{key}/ci/issuers/{issuer}/snippets/{kind}:
     parameters:
       - name: key
@@ -5991,8 +5943,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
   /api/v1/projects/{key}/ci/issuances:
     parameters:
       - name: key
@@ -6038,8 +5988,6 @@ paths:
           $ref: "#/components/responses/Internal"
         "503":
           $ref: "#/components/responses/Unavailable"
-        "501":
-          $ref: "#/components/responses/NotImplementedCI"
   # <<< M4 ci
   # >>> M1 files
   /api/v1/repositories/{repoKey}/items:
@@ -8850,14 +8798,6 @@ components:
       headers:
         ETag:
           $ref: "#/components/headers/ETag"
-    # >>> M4 ci
-    NotImplementedCI:
-      description: The operation belongs to a work package of the CI federation that is not built in this release (`ci_not_implemented`).
-      content:
-        application/problem+json:
-          schema:
-            $ref: "#/components/schemas/Problem"
-    # <<< M4 ci
   schemas:
     Problem:
       type: object

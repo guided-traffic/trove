@@ -6,6 +6,8 @@
 #
 #   SDK_IMAGE        E2E_NUGETCLIENTS_SDK_IMAGE of tools/versions.env (the .NET SDK image, pinned by digest)
 #   MONO_VERSION     E2E_NUGETCLIENTS_MONO_VERSION: the apt version of the Mono packages of the SDK image's Ubuntu
+#   JQ_VERSION       E2E_NUGETCLIENTS_JQ_VERSION: the exact apt version of jq, which the exchange step of the reference pipeline
+#                    (R-CI-028) runs next to the curl of the SDK image
 #   NUGET_EXE_VERSION, NUGET_EXE_SHA256   E2E_NUGETCLIENTS_NUGET_EXE_*: the nuget.exe on dist.nuget.org and its digest
 #   --build-context fwd=<dir>   a directory with the static forwarder fwd-linux-<arch> (build.sh builds it)
 ARG SDK_IMAGE
@@ -20,12 +22,13 @@ RUN curl --fail --silent --show-error --location --output /nuget.exe \
 FROM ${SDK_IMAGE}
 ARG TARGETARCH
 ARG MONO_VERSION
+ARG JQ_VERSION
 # mono-complete: the runtime and every class library nuget.exe may load (the dependencies of the package are
 # pinned to its version, so this one pin fixes all of Mono); ca-certificates-mono carries cert-sync, which fills the
 # Mono trust store from a PEM bundle (entrypoint.sh). Exactly the pinned version: a superseded package fails the
-# build instead of changing the client.
+# build instead of changing the client. jq is the second tool of the reference pipeline's exchange step (R-CI-028).
 RUN apt-get update \
- && apt-get install --yes --no-install-recommends "mono-complete=${MONO_VERSION}" "ca-certificates-mono=${MONO_VERSION}" \
+ && apt-get install --yes --no-install-recommends "mono-complete=${MONO_VERSION}" "ca-certificates-mono=${MONO_VERSION}" "jq=${JQ_VERSION}" \
  && rm -rf /var/lib/apt/lists/* \
  && mkdir /work && chown 1000:1000 /work
 COPY --from=nugetexe /nuget.exe /opt/nuget/nuget.exe

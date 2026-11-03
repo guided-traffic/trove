@@ -107,6 +107,6 @@ To change the colours, select **Theme** in the top bar and choose **Follow the s
 | Browse, download, upload and delete files, in the browser or with curl | [Browsing and transferring files](files.md) |
 | Configure npm, pnpm, Yarn or curl for a repository | [Connecting a package client](client-setup.md) |
 | Create a token for a package manager or a CI job | [Personal access tokens](access-tokens.md) |
-| Publish from a GitLab CI pipeline without a stored token (not released yet) | [GitLab CI pipelines](gitlab-ci-pipelines.md) |
+| Publish from a GitLab CI pipeline without a stored token | [GitLab CI pipelines](gitlab-ci-pipelines.md) |
 | Understand an error message | [Errors and troubleshooting](troubleshooting.md) |
 | Install, configure and operate trove | [How trove runs](../admin/overview.md) |

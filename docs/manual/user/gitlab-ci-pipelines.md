@@ -2,8 +2,6 @@
 
 How a GitLab CI job gets a short-lived trove token without a stored secret: the id_tokens block, the token exchange with curl, narrowing the token, configuring npm and NuGet with it, revoking it as the last step of the job, what never to do with it, and what a refused exchange means.
 
-> **Not available in this version yet.** GitLab CI federation is being built. Until it is released, the token exchange answers `501` with the code `ci_not_implemented`, and so does every CI operation of the management API. This page describes the behaviour the feature is built to. Until then, a pipeline uses a service-account token stored as a masked, protected CI/CD variable ([Personal and service-account tokens](access-tokens.md#personal-and-service-account-tokens)).
-
 ## How it works
 
 A job asks GitLab for an ID token addressed to trove, posts it to trove, and gets a `trv_cit_` token back that lives for minutes. trove decides what the token may do from the verified facts about the job: which GitLab project it belongs to, whether it runs on a protected branch or tag, how the pipeline was started. Nothing secret is stored in GitLab, and the token dies with the job. The rules that turn those facts into permissions are the identity mappings, which an administrator of your trove project or of trove writes ([GitLab CI federation](../admin/gitlab-ci.md)).
@@ -138,12 +136,17 @@ A `nuget.config` in the repository root reads the token from the environment as 
   <packageSources>
     <clear />
     <add key="trove" value="https://trove.example.com/api/nuget/web-nuget-all/v3/index.json" />
+    <add key="trove-internal" value="https://trove.example.com/api/nuget/web-nuget/v3/index.json" />
   </packageSources>
   <packageSourceCredentials>
     <trove>
       <add key="Username" value="ci" />
       <add key="ClearTextPassword" value="%TROVE_TOKEN%" />
     </trove>
+    <trove-internal>
+      <add key="Username" value="ci" />
+      <add key="ClearTextPassword" value="%TROVE_TOKEN%" />
+    </trove-internal>
   </packageSourceCredentials>
 </configuration>
 ```
@@ -171,6 +174,7 @@ push-nuget:
 
 - The user name in `nuget.config` is not checked. When `TROVE_TOKEN` is not set, NuGet keeps the literal text `%TROVE_TOKEN%`, so a missing token shows up as `401`, not as anonymous access.
 - `dotnet nuget push --api-key` sends the token as `X-NuGet-ApiKey`. The token stands in `dotnet`'s argument list while the push runs, visible to other processes on the same runner.
+- `web-nuget` is a source of its own because `dotnet nuget push` fetches the service index of its `--source` before it sends the API key, and trove answers that request with `401` unless it carries credentials. NuGet attaches the credentials of `packageSourceCredentials` to a `--source` URL that equals a configured source, so the push command stays as it is.
 - `<clear />` keeps every other source out, so packages resolve through trove only.
 
 ## Revoke the token as the last step

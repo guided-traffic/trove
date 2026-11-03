@@ -4,10 +4,10 @@ Spec [gitlab-ci-oidc.md](../spec/gitlab-ci-oidc.md) (R-CI-001 to R-CI-030), beta
 that build the federation in parallel, in the shape of [projects.md](projects.md). The decisions behind it are
 [Q-CI-17 to Q-CI-22, Q-CI-26, from W2 Q-CI-27 to Q-CI-29, from W3 Q-CI-35 to Q-CI-37, from W5 Q-CI-38 to Q-CI-40, from W4 Q-CI-41 to Q-CI-43 and, from the fix wave A of the security audit, Q-CI-47 to Q-CI-51](../decisions.md) with [ADR-147](../decisions.md#adr-147--a-ci-token-carries-its-frozen-grants-in-its-cache-entry-and-the-management-api-refuses-ci-tokens-by-default).
 
-Status: contracts laid; W1 (issuers and keys, [below](#w1-issuers-and-signing-keys)), W2 (the claim engine, the subject-token
+Status: built. W1 (issuers and keys, [below](#w1-issuers-and-signing-keys)), W2 (the claim engine, the subject-token
 validation and the shared JWS leaf, [below](#w2-the-claim-engine-and-the-validation)), W3 (the mappings, the dry run and the snippet,
 [below](#w3-the-mappings)), W4 (the token exchange, [below](#w4-the-exchange)), W5 (CI tokens at use time, [below](#w5-use-time)) and W6
-(the admin UI) built; W7 (the end-to-end tests with the real clients on kind) pending. The issuer double the tests exchange against is
+(the admin UI) and W7 ([below](#w7-the-end-to-end-tests-on-kind)) are built. The issuer double the tests exchange against is
 test/oidcstub.
 
 ## What has to be in your head
@@ -119,8 +119,8 @@ its own, and every answer but the 404 of a switched-off exchange and the router'
 | **W3** mappings (built) | store, principals, `mappings_version`, R-CI-009, the system and the project routes, the project bounds, the dry run, `Select`, the snippet; `project_not_empty` for a project with mappings; [what it built and the contract changes](#w3-the-mappings) | `internal/ci/mappings*.go`, `select.go`, `ci_mappings_api.go`, `ci_snippets_api.go`, `queries/ci_mappings.sql`, `internal/project` (the delete check) |
 | **W4** exchange (built) | R-CI-007, R-CI-008, R-CI-016, R-CI-018, R-CI-021, the issuance write; calls `IssueCITx`; [what it built and the contract changes](#w4-the-exchange) | `internal/ci/exchange*.go`, `ttl.go`, `ci_exchange.go`, `queries/ci_exchange.sql`, the exchange part of `wire_ci.go`, `internal/authz/ci_scope.go` |
 | **W5** use time (built) | R-AUTHZ-014 in the evaluator, R-CI-015 ownership, R-CI-017 revocation, issuances (also a project's), bulk revoke, the two retention tasks, `trove_ci_tokens_active`; `IssueCITx` (moved from W4); [what it built](#w5-use-time) | `internal/authz/ci.go`, `ownership_ci.go` and the CI parts of `ownership.go`, `internal/ci/revoke*.go`, `issuances*.go`, `internal/auth/token/cit.go`, `ci_issuances_api.go` and the issuance part of `ci_project_api.go`, `queries/ci_issuances.sql` |
-| **W6** admin UI | R-UI-035, R-UI-036, the issuances tab, the project's CI screens. **Built** against the fakes (see [web-ui.md](web-ui.md#ci-identity)); the browser journey is W7's | `web/**` |
-| **W7** tests and e2e | the acceptance criteria of R-CI-001 to R-CI-030 against the issuer double (test/oidcstub) | `test/integration/ci/**`, `test/e2e/**` |
+| **W6** admin UI (built) | R-UI-035, R-UI-036, the issuances tab, the project's CI screens (see [web-ui.md](web-ui.md#ci-identity)); the browser journey `13-ci` is W7's | `web/**` |
+| **W7** tests and e2e (built) | the acceptance criteria of R-CI-001 to R-CI-030 against the issuer double (test/oidcstub) | `test/integration/ci/**`, `test/e2e/**` |
 
 Order: W2 first (pure), then W1 and W3, then W4, then W5 and W6; W7 throughout.
 
@@ -130,11 +130,10 @@ The behaviour is documented for users while it is built (owner, 2026-11-02): [ad
 the project administrator's how-tos, dry run, issuances, revocation, every refusal reason, rate limits, the `ci.*` keys) and
 [user/gitlab-ci-pipelines.md](../manual/user/gitlab-ci-pipelines.md) (`id_tokens:`, the exchange, `scope`, npm and NuGet, the closing
 revocation). A work package that changes a documented path, field, code, default or rule updates the page in the same change.
-Both pages open with a **Not available in this version yet** note, and [tokens.md](../manual/admin/tokens.md),
+The notes "Not available in this version yet" of both pages and the "not released yet" wording of [tokens.md](../manual/admin/tokens.md),
 [permissions.md](../manual/admin/permissions.md), [projects.md](../manual/admin/projects.md), [limitations.md](../manual/admin/limitations.md),
-[configuration.md](../manual/admin/configuration.md), [access-tokens.md](../manual/user/access-tokens.md),
-[client-setup.md](../manual/user/client-setup.md) and [getting-started.md](../manual/user/getting-started.md) say "not released yet"
-where they link them; the change that ships the exchange removes those notes. The open point on pinning a group with subgroups
+[configuration.md](../manual/admin/configuration.md), [client-setup.md](../manual/user/client-setup.md) and [getting-started.md](../manual/user/getting-started.md)
+were removed by W7, which shipped the exchange; the admin page has a section for the screens (**In the administration area**). The open point on pinning a group with subgroups
 (admin page, "Groups with subgroups") is updated with the result of the check against a real GitLab (Q-CI-25).
 
 ## Tests that pass now
@@ -178,8 +177,8 @@ What the later work packages need to know:
 - **`Mappings.DeleteForIssuerTx` (W3, built).** Added to the interface for the cascade of an issuer's deletion; W3's store deletes the
   mappings and their principals on the issuer's transaction, one `ci.mapping.deleted` each.
 - **The revoker (W5).** `Issuers.Replace` (disable), `Delete` and `ApplyDeclared` (removal) call `Revoker.RevokeIssuerTx` in their
-  transaction only when the issuer has a row in `ci_token_issuances`. With the stub revoker such a write answers 501 and changes
-  nothing (and a `trove migrate` that removes such an issuer stops).
+  transaction only when the issuer has a row in `ci_token_issuances`; the revoker is the real one (W5), so the tokens are revoked
+  in the same transaction (the stub that answered 501 is gone).
 - **The key source (W4).** `Issuers.KeySource(issuer).Keys(ctx, kid, alg)` returns `subject.ErrUnknownKey` and
   `subject.ErrKeysUnavailable`; a token without kid for an issuer with no stored set counts as an unknown kid. `Resolve` answers from
   the copy of all issuers; a miss or a disabled hit re-reads them at most once per replica and `cluster.epoch_poll_interval`
@@ -205,9 +204,7 @@ waits is listed here with what it waits for; none of it has a test behind a tag.
 | Criterion | Needs |
 |---|---|
 | R-AUTHZ-014 "`POST /api/v1/authz/explain` lists the inline grants with `source.kind` `ci-inline`": the decision's sources already name them (`ci-inline:<issuer>/<mapping>#<n>`); the explainer is not built (Q-AUTHZ-27) | the explainer |
-| R-CI-020 "after the reference pipeline runs …", R-CI-017 and R-CI-028 with `npm whoami --registry`, `npm publish` and `dotnet nuget push -k` from the real clients, R-CI-029 "a web pod deleted gracefully while 50 jobs exchange" | W7 (the e2e tier on kind) |
-| R-CI-018 and R-CI-029 under a Sentinel failover and `valkey-cli FLUSHALL` (1,000 single-use tokens, 500 exchanges and package requests): the integration tier runs the 1,000 tokens on two replicas with Valkey stopped and cannot fail the shared stack over | W7, or the long tier with a stack of its own |
-| R-CI-030's drained cleanup over 100,000 rows (a node drained under the worker) | W7 |
+| R-CI-030's drained cleanup over 100,000 rows (a node drained under the worker): W7 checks where the three tasks run, not a drain under one | a test with 100,000 expired rows and a worker node drained |
 | R-CI-008's `job_token_rejected`, `job_not_running`, `gitlab_unreachable` | R-CI-022 (P2, Q-CI-5); [Q-CI-43](../spec/gitlab-ci-oidc.md#q-ci-43--the-reasons-the-integration-tier-cannot-reach) |
 
 The tests of W1 itself are [test/integration/ci](../../test/integration/ci) (`issuers_test.go`, `keys_test.go`, `declared_test.go`,
@@ -333,7 +330,7 @@ row, the bindings, `CiIssuerBumpMappings` and `cluster.Notify` on `ci_mappings`,
 (`claims.CheckProjectName`, Q-CI-51). A name that exists is 409 `already_exists`, a priority held by another mapping of the tier 409
 `priority_taken`, a limit 422 `mapping_limit_reached` (`ci.mappings.max_per_issuer`, or `ci.mappings.max_per_project` for a project's tier,
 `checkProjectQuota`). A disable or delete revokes only when the mapping has a row in `ci_token_issuances` (`CiMappingHasIssuances`, bounded to unexpired records, Q-CI-53) and
-then calls `Revoker.RevokeMappingTx`; with the stub that answers 501 and nothing changes.
+then calls `Revoker.RevokeMappingTx` in the same transaction.
 
 ### What the other packages rely on
 
@@ -583,3 +580,23 @@ answer, the prefix order, the replay margin, the issuer re-read). The gaps are H
 | [revoke_bound_test.go](../../test/integration/ci/revoke_bound_test.go) | the revocations of a mapping and an issuer read the unexpired issuance records only (3,000 expired records beside 20,000 live tokens of other kinds) |
 | [declared_test.go](../../test/integration/ci/declared_test.go) `TestR_CI_001_ADeclaredIssuerKeepsItsIssuerURL` | `trove migrate` refuses a changed issuer URL, naming both, and applies the new instance under a new name |
 | `TestQ_CI_47_*`, `TestR_CI_009_*`, `TestR_CI_016_*`, `TestQ_CI_51_*`, `TestR_CI_018_*` of [internal/ci](../../internal/ci), [internal/authz](../../internal/authz/ci_test.go), [internal/ci/claims](../../internal/ci/claims/bounds_test.go), [internal/config](../../internal/config/ci_test.go) | the selection per tier, the lifetimes, the bundle of the exchange, the evaluator's drop, version 2 and 1, the size bounds, the compiled condition against the trace, the scope answer, the stored expiry, the configuration floors |
+
+## W7: the end-to-end tests on kind
+
+The reference pipeline of R-CI-028 with the real npm and .NET clients against the issuer double, in the scatter profile; the page is
+[e2e.md](e2e.md#the-ci-tests). What W7 built:
+
+| What | Where |
+|---|---|
+| The set `ci` (every change: `TestCIPipeline`, `TestCITokens`, `TestCITasks`) and the set `ci-ha` (nightly: the drained node, Valkey stopped, the failover with `FLUSHALL`, the deleted pod) | [test/e2e/ci_*_test.go](../../test/e2e), [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh), the jobs `e2e-ci` of Test and Release (port 8091) and of HA and Performance (port 8092) |
+| The browser journey `13-ci` | [web/e2e/tests/13-ci.spec.ts](../../web/e2e/tests/13-ci.spec.ts), started by `TestE1_11Journeys` |
+| The double on kind, once per issuer (`STUB=oidcstub`, `oidcstub-single`), pinned to the control-plane node | [deploy/dev/oidcstub.yaml](../../deploy/dev/oidcstub.yaml) |
+| `curl` and `jq` in the client images, with exact apt pins | `tools/versions.env`, `test/e2e/clients`, `test/e2e/nugetclients` (Q-CI-45) |
+| `make dev-up` rolls the pods when the loaded image changed | [deploy/dev/up.sh](../../deploy/dev/up.sh) |
+
+### Contract changes
+
+- The OpenAPI document has no `501` answer on the CI operations any more (`NotImplementedCI` is gone); `ci_not_implemented` remains in the
+  error codes for a service option left nil (the issuer service of `trove migrate`) and for the task handlers.
+- The `nuget.config` of the specification's Examples names `nuget-internal` as a source with credentials (Q-CI-44), found by the first run of
+  the pipeline.

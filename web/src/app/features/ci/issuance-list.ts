@@ -33,7 +33,7 @@ export interface IssuanceDetailData {
   imports: [DatePipe, MatButtonModule, MatDialogModule, ErrorNotice],
   template: `
     <h2 mat-dialog-title i18n="@@ci.issuance.title">Issued token</h2>
-    <mat-dialog-content>
+    <mat-dialog-content tabindex="0">
       @if (error(); as e) {
         <trove-error-notice [error]="e" />
       }
@@ -86,9 +86,10 @@ export interface IssuanceDetailData {
         }
       </dl>
       <h3 i18n="@@ci.issuance.grants">Grants of the token</h3>
-      <pre translate="no">{{ grants }}</pre>
+      <!-- A scrolling block is a tab stop, so a keyboard user can scroll it (WCAG 2.1.1, axe scrollable-region-focusable). -->
+      <pre translate="no" tabindex="0" i18n-aria-label="@@ci.issuance.grants" aria-label="Grants of the token">{{ grants }}</pre>
       <h3 i18n="@@ci.issuance.claims">Claims at the time of the exchange</h3>
-      <pre translate="no">{{ claims }}</pre>
+      <pre translate="no" tabindex="0" i18n-aria-label="@@ci.issuance.claims" aria-label="Claims at the time of the exchange">{{ claims }}</pre>
     </mat-dialog-content>
     <mat-dialog-actions align="end">
       <button mat-button type="button" mat-dialog-close i18n="@@ci.close">Close</button>

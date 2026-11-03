@@ -142,7 +142,7 @@ const toLines = (text: string): string[] => splitValues(text.replace(/,/g, '\n')
           [(value)]="pinClaims"
           [error]="fieldError('/pinClaims')"
           i18n-hint="@@ci.form.pin-hint"
-          hint="One per line. Immutable ID claims only. Empty: project_id and namespace_id."
+          hint="One per line. Immutable ID claims only. Empty: project_id, namespace_id, job_project_id and job_namespace_id."
         />
 
         <details class="advanced">

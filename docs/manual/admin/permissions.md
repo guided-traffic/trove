@@ -105,7 +105,7 @@ Roles are fixed; there are no custom roles. A role is bound to a user, a group o
 | `settings:read`, `settings:write` | **System status** and **Settings**: read; change the authentication settings and run maintenance tasks |
 | `audit:read` | **Audit log** |
 | `projects:read`, `projects:write` | **Projects**: read every project with its administrators and counts; create, change and delete projects, and set their switches and administrators. Only the `admin` role holds `projects:write`. See [Projects and delegated administration](projects.md) |
-| `ci:read`, `ci:write` | The CI issuers, mappings and dry run of [GitLab CI federation](gitlab-ci.md), which is not released yet: its operations answer `501` |
+| `ci:read`, `ci:write` | The CI issuers, mappings and dry run of [GitLab CI federation](gitlab-ci.md), which administers the issuers and mappings under **Administration › CI identity** |
 | `webhooks:read`, `webhooks:write`, `security-settings:write` | Reserved; no screen or operation of this version uses them |
 
 </details>

@@ -11,7 +11,7 @@ This page lists what this version of trove does not do, and the known weak spots
 
 ## CI pipelines and automation
 
-- **No CI token exchange.** GitLab CI jobs cannot exchange their ID token for a short-lived trove token yet; the `trv_cit_` token type and the CI operations exist, and every one of them answers `501` `ci_not_implemented`. Use a service-account token with a narrow scope and an expiry, stored as a masked CI variable. [GitLab CI federation](gitlab-ci.md) describes the feature being built.
+- **GitLab is the only CI issuer.** GitHub Actions and generic OpenID Connect issuers answer `422` `kind_not_available`, and the `CI_JOB_TOKEN` fallback is not built. A pipeline of another system uses a service-account token with a narrow scope and an expiry, stored as a masked CI variable. [GitLab CI federation](gitlab-ci.md) describes what exists.
 - **No webhooks.** The `webhook-admin` role and the webhook audit category exist, but there are no webhooks to configure.
 
 ## Vulnerability scanning

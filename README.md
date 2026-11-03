@@ -13,7 +13,7 @@
 > The NuGet registry: local, remote and virtual repositories, symbol package push, the package screens, client setup and guides,
 > NuGet on customer endpoints, the forwarded search, and the format contract frozen at version 1; the findings of its reviews and
 > security audits are fixed but for the open ones ([open findings](docs/projektplan/promt.md#8--open-findings)).
-> Not built yet: GitLab CI federation, vulnerability scanning, backup and restore, and the HA hardening of
+> GitLab CI OIDC federation (M4) is built; its end-to-end tests run in the `ci` set. Not built yet: vulnerability scanning, backup and restore, and the HA hardening of
 > phase 7. Everything else is the target design in [docs/spec/](docs/spec/README.md). `v0.1.0` is the
 > last release made before the switch to the organisation's CI and release standard; it was published to `ghcr.io`. Releases
 > from now on are cut by Semantic Release from the conventional commits on `main`, and published to Docker Hub and to the chart
@@ -109,11 +109,12 @@ Built (M3, NuGet; the phase is open for its [remaining findings](docs/projektpla
 - 🔀 **NuGet virtual repositories.** One source for local packages and, nuget.org through a remote: the service index, the version list and the registration documents are the union of the members that remain after permissions, pin rules and claims; a version two members hold comes from the first one, and its package is the one the registration describes (`Trove-Resolved-From`). A push, unlist, relist or delete addressed to the virtual repository runs on its deployment target. Search merges the members (exact ID first, then member by member, window `nuget.search.virtual_merge_window`), four at a time, with the include and exclude patterns of the virtual repository and of each member; a remote member contributes its forwarded search, withheld for the names the virtual repository's claims and pin rules protect. A remote member's registration is merged whole, gzip-coded and paged as nuget.org serves it, and shows the same entries as the remote (Q-NUGET-82). See [NuGet](docs/developer/nuget.md#virtual-repositories).
 - 🌐 **NuGet on customer endpoints.** Version lists, registrations and search list only the versions an endpoint exposes, and a search term meets only those, so `totalHits` tells nothing of a hidden version; through a virtual repository the virtual repository's rules decide, also for a token scoped to it. `dotnet add package` of a hidden version fails with `NU1102`, and the endpoint offers no push (`403`). See [endpoints](docs/developer/endpoints.md) and [NuGet virtual repositories](docs/security/nuget-virtual.md).
 - 🖥️ **NuGet package screens, setup and guides.** The package pages of NuGet repositories, setup snippets for `dotnet`, nuget.exe and `nuget.config` with the token in each shell's spelling, and a guide for local, remote and virtual repositories with the .NET CLI, nuget.exe and Visual Studio. See [NuGet](docs/developer/nuget.md) and [web UI](docs/developer/web-ui.md).
+- 🪪 **GitLab CI OIDC federation (M4).** A GitLab job exchanges its ID token for a `trv_cit_` token that lives minutes: issuers with discovery and rotating signing keys, ordered mappings with claim conditions, templated grants and ownership binding, replay protection, issuance records, revocation (also by the job itself as its last step), the dry run and the claim tester, and the admin screens. The reference pipeline runs with the real npm and .NET clients against an issuer double on kind. See [GitLab CI pipelines](docs/manual/user/gitlab-ci-pipelines.md), [GitLab CI federation](docs/manual/admin/gitlab-ci.md) and [ci-oidc.md](docs/developer/ci-oidc.md).
 - 🔒 **Format contract frozen.** The contract between the core and a format is at version 1, its surface is recorded and checked, and npm and NuGet pass all eleven conformance checks; every later change is an ADR ([ADR-141](docs/decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)). See [formats](docs/developer/formats.md).
 
-Not built yet (see the [roadmap](docs/coverage/roadmap.md)): the symbol server of NuGet; GitLab CI OIDC federation;
+Not built yet (see the [roadmap](docs/coverage/roadmap.md)): the symbol server of NuGet;
 vulnerability scanning; backup and restore and the HA hardening of phase 7; remote and virtual repositories for the generic format; the UI
-screens of search, trash, builds, webhooks and CI identity.
+screens of search, trash, builds and webhooks.
 
 ## 📛 Naming conventions
 
@@ -547,6 +548,32 @@ of plaintext keep their own settings on purpose:
 ```shell
 make integration-up && make test-integration
 ```
+
+**4. Use trove from GitLab CI** (no stored secret). Register the GitLab instance once, give the pipelines of one project a mapping, and let
+the job exchange its ID token (the steps are those of [GitLab CI pipelines](docs/manual/user/gitlab-ci-pipelines.md)):
+
+```shell
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' -d '{"name":"gitlab-main","kind":"gitlab","issuer":"https://gitlab.example.com"}' \
+  https://trove.example.com/api/v1/ci/issuers                                                             # example
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' -d @mapping.json \
+  https://trove.example.com/api/v1/ci/issuers/gitlab-main/mappings                                        # example: mapping.json as in docs/spec/gitlab-ci-oidc.md
+```
+
+```yaml
+.trove:
+  id_tokens:
+    TROVE_ID_TOKEN: {aud: "https://trove.example.com"}                                                    # example: trove's base URL
+  before_script:
+    - |
+      TROVE_TOKEN="$(printf '%s' "$TROVE_ID_TOKEN" | curl -sS --retry 3 \
+        --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:token-exchange' \
+        --data-urlencode 'subject_token_type=urn:ietf:params:oauth:token-type:id_token' \
+        --data-urlencode 'subject_token@-' https://trove.example.com/api/v1/auth/oidc/token | jq -er .access_token)"
+      export TROVE_TOKEN
+```
+
+Verify with the claim tester (**Administration › CI identity**, the issuer, **Test with claims**) before the first pipeline runs, and with
+`GET /api/v1/ci/issuances?jobId=<CI_JOB_ID>` afterwards.
 
 <details>
 <summary>Upgrade, uninstall and the failure scripts</summary>
@@ -1123,7 +1150,7 @@ api:
     package_anonymous: {requests_per_second: 20, burst: 100}  # default (package requests without credentials, per address)
 repositories:
   lookup_wait: 5s                       # default; at least 100ms: wait for the change-log poll on a key the snapshot does not know
-ci:                                     # GitLab CI OIDC (docs/spec/gitlab-ci-oidc.md; the behavior is built by the work packages of docs/developer/ci-oidc.md)
+ci:                                     # GitLab CI OIDC (docs/spec/gitlab-ci-oidc.md, docs/developer/ci-oidc.md)
   signing_keys:
     default_refresh_interval: 1h        # default; 1m to 168h: next refresh when the response carries no Cache-Control max-age
     min_refresh_interval: 5m            # default; 10s to 24h: lower clamp, and the retry delay after a failed fetch
@@ -1359,7 +1386,7 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 
 **ci**
 
-Answer `501 ci_not_implemented` until their work packages are built ([docs/developer/ci-oidc.md](docs/developer/ci-oidc.md)). A CI token is refused on every operation of this document except the repository-content operations and `GET` and `DELETE /api/v1/tokens/current` (`403 ci_token_restricted`).
+The operations of GitLab CI federation ([docs/developer/ci-oidc.md](docs/developer/ci-oidc.md), [admin manual](docs/manual/admin/gitlab-ci.md)). A CI token is refused on every operation of this document except the repository-content operations and `GET` and `DELETE /api/v1/tokens/current` (`403 ci_token_restricted`).
 
 | Method and path | Operation | Permission |
 |---|---|---|
@@ -1861,7 +1888,7 @@ requirement of the chart is [HA and Helm](docs/spec/ha-and-helm.md).
 | `make chart-lint`, `make chart-test` | Helm lint over every value set; render assertions (`chart` build tag) |
 | `make integration-up`, `make test-integration`, `make integration-down` | Integration stack and tests (`integration` build tag, `test/integration/<area>`) |
 | `make coverage` | Regenerates the requirement checklist in `docs/coverage/` |
-| `make dev-up`, `make dev-down`, `make e2e` | Local profile, its teardown, and the end-to-end suite (`e2e` build tag; `SET=access` runs the access-core tests) |
+| `make dev-up`, `make dev-down`, `make e2e` | Local profile, its teardown, and the end-to-end suite (`e2e` build tag; `SET=access` runs the access-core tests, `SET=ci` the GitLab CI reference pipeline, `SET=ci-ha` its long legs). A second `dev-up` rolls the pods when the loaded image changed |
 | `make dev-valkey-stop`, `make dev-valkey-start` | Stops Valkey and the Sentinels until the start target; the test holds the outage for a criterion of unknown length |
 
 ## 🛠 Development

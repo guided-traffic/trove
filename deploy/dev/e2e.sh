@@ -35,6 +35,10 @@
 #   e2e.sh nuget-closing  TestNuGetClosing...: the additions of the run that closes the phase (CI: job e2e-nuget, closing=true)
 #   e2e.sh nuget-ha     TestNuGetHA...: drain and failover under the NuGet load (CI: job e2e-nuget in the nightly HA and
 #                       Performance workflow). A set may name no test (nuget-ha today): then it passes with a notice (Q-ARCH-276)
+#   e2e.sh ci           the reference pipeline of GitLab CI OIDC (TestCI..., not TestCIHA...) against the issuer double with the npm and
+#                       NuGet client pods, E4.1 and E4.4 to E4.6; CI: job e2e-ci
+#   e2e.sh ci-ha        TestCIHA...: the pipeline under a drained node, with Valkey stopped, across a forced Sentinel failover and FLUSHALL,
+#                       and under a deleted web pod, E4.7 (CI: job e2e-ci in the nightly HA and Performance workflow)
 #   e2e.sh <regex>      any other argument is a `go test -run` expression
 #
 # Environment: TROVE_DEV_HTTP_PORT (the port the cluster was created with; read back from the node),
@@ -55,10 +59,11 @@ set_name="${1:-default}"
 case "$set_name" in
   default) run='^Test(E03|E04|E06|E07|E12|E13|E14|E15|E16)' ;;
   push) run='^Test(E03|E04|E06|E07|E12|E14|E15|E16|E1_14|E99)' ;;
-  full) run='^Test(E03|E04|E06|E07|E12|E13|E14|E15|E16|E1_|E99)' ;;
+  full) run='^Test(E03|E04|E06|E07|E12|E13|E14|E15|E16|E1_|E99)'; export TROVE_E2E_OIDCSTUB=1 ;;
   failover) run='^Test(E13|E1_08)' ;;
-  access-long) run='^TestE1_(01|11|13)' ;;
-  access) run='^TestE1_' ;;
+  # the journeys include 13-ci, which registers the issuer double and exchanges an ID token (docs/developer/e2e.md#the-ci-tests)
+  access-long) run='^TestE1_(01|11|13)'; export TROVE_E2E_OIDCSTUB=1 ;;
+  access) run='^TestE1_'; export TROVE_E2E_OIDCSTUB=1 ;;
   drain) run='^TestE14' ;;
   # >>> M2 npm-clients
   clients) run='^TestNPMClients$'; NPM_CLIENTS=1 ;;
@@ -92,6 +97,14 @@ case "$set_name" in
   npm-ha-crash) run='^TestNPMHACrash$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 ;;
   npm-ha-soak) run='^TestNPM(HACrash|Perf)$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NPM_CRASH_SOAK=1 ;;
   npm-ha-closing) run='^TestNPM(HA|HACrash|HAClosing|Perf)$'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NPM_CLOSING=1 TROVE_E2E_NPM_CRASH_SOAK=1 ;;
+  # >>> M4 ci
+  # GitLab CI OIDC (R-CI-028, roadmap M4 E4.1 to E4.7, docs/developer/e2e.md#the-ci-tests): the reference pipeline's steps
+  # with the real npm and .NET clients of the client pods against the issuer double, in the scatter profile. `ci` runs on
+  # every change (CI: job e2e-ci); `ci-ha` is the long leg (a drained node, Valkey stopped, a forced failover, a deleted
+  # pod under 50 jobs) and runs in the nightly HA and Performance workflow and by hand (owner, docs/projektplan/promt.md).
+  ci) run='^TestCI'; skip='^TestCIHA'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=2; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=2; export TROVE_E2E_OIDCSTUB=1 ;;
+  ci-ha) run='^TestCIHA'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=2; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=2; export TROVE_E2E_OIDCSTUB=1 TROVE_E2E_OIDCSTUB_SINGLE=1 ;;
+  # <<< M4 ci
   *) run="$set_name" ;;
 esac
 
@@ -206,21 +219,27 @@ fi
 # >>> M4 oidc-stub
 # ── the GitLab-shaped OIDC issuer double ─────────────────────────────────────
 # TROVE_E2E_OIDCSTUB=1 builds the image of test/oidcstub (make oidc-stub-image), loads it into kind and (re)starts the
-# double of deploy/dev/oidcstub.yaml: Service oidcstub.<ns>.svc, port 443 for the issuer endpoints and 8444 for the
-# control API (mint, rotate, faults, counters), TLS from the dev CA, control token in Secret trove-oidcstub. The tests
-# read TROVE_E2E_OIDCSTUB_HOST (the issuer is https://$TROVE_E2E_OIDCSTUB_HOST) and TROVE_E2E_OIDCSTUB_CONTROL_URL.
-# trove trusts the dev CA for outbound requests through proxy.outbound.tls.ca_files (values-dev.yaml). Nothing here
-# runs without the switch.
+# double of deploy/dev/oidcstub.yaml with STUB=oidcstub: Service oidcstub.<ns>.svc, port 443 for the issuer endpoints and
+# 8444 for the control API (mint, rotate, faults, counters), TLS from the dev CA, control token in Secret trove-oidcstub.
+# The tests read TROVE_E2E_OIDCSTUB_HOST (the issuer is https://$TROVE_E2E_OIDCSTUB_HOST) and TROVE_E2E_OIDCSTUB_CONTROL_URL.
+# TROVE_E2E_OIDCSTUB_SINGLE=1 starts a second double, STUB=oidcstub-single, the issuer of the single-use tests (its own
+# issuer URL, keys, counters and control token; TROVE_E2E_OIDCSTUB_SINGLE_HOST). trove trusts the dev CA for outbound
+# requests through proxy.outbound.tls.ca_files (values-dev.yaml). Nothing here runs without the switch.
 if [ "${TROVE_E2E_OIDCSTUB:-0}" = "1" ]; then
   log "building the OIDC issuer double image for linux/$ARCH"
   (cd "$REPO_ROOT" && make --no-print-directory oidc-stub-image IMAGE_ARCH="$ARCH") >"$OUT/oidcstub-image.log" 2>&1 || { tail -20 "$OUT/oidcstub-image.log" >&2; die "OIDC issuer double image build failed"; }
   kind load docker-image trove-e2e-oidcstub:dev --name "$CLUSTER" >"$OUT/oidcstub-load.log" 2>&1 || { tail -20 "$OUT/oidcstub-load.log" >&2; die "kind load of the OIDC issuer double failed"; }
-  log "starting the OIDC issuer double"
-  render "$DEV_DIR/oidcstub.yaml" | kn apply -f - >/dev/null
-  kn wait --for=condition=Ready certificate/trove-oidcstub-tls --timeout=3m >/dev/null
-  kn rollout restart deployment/trove-oidcstub >/dev/null   # same tag, new image content
-  kn rollout status deployment/trove-oidcstub --timeout=3m >/dev/null || { kn describe pod -l app.kubernetes.io/name=trove-oidcstub >&2; die "the OIDC issuer double did not become ready"; }
+  stubs="oidcstub"
+  [ "${TROVE_E2E_OIDCSTUB_SINGLE:-0}" != "1" ] || stubs="oidcstub oidcstub-single"
+  for stub in $stubs; do
+    log "starting the OIDC issuer double $stub"
+    render "$DEV_DIR/oidcstub.yaml" | sed -e "s|\${STUB}|$stub|g" | kn apply -f - >/dev/null
+    kn wait --for=condition=Ready "certificate/trove-$stub-tls" --timeout=3m >/dev/null
+    kn rollout restart "deployment/trove-$stub" >/dev/null   # same tag, new image content
+    kn rollout status "deployment/trove-$stub" --timeout=3m >/dev/null || { kn describe pod -l "app.kubernetes.io/name=trove-$stub" >&2; die "the OIDC issuer double $stub did not become ready"; }
+  done
   export TROVE_E2E_OIDCSTUB_HOST="oidcstub.$NS.svc" TROVE_E2E_OIDCSTUB_CONTROL_URL="https://oidcstub.$NS.svc:8444"
+  [ "${TROVE_E2E_OIDCSTUB_SINGLE:-0}" != "1" ] || export TROVE_E2E_OIDCSTUB_SINGLE_HOST="oidcstub-single.$NS.svc"
 fi
 # <<< M4 oidc-stub
 

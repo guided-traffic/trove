@@ -599,7 +599,7 @@ How the pieces fit:
 - **Tests.** [ci-model.spec.ts](../../web/src/app/features/ci/ci-model.spec.ts) (conditions, rules, claim input), [ci-api.spec.ts](../../web/src/app/api/ci-api.spec.ts) (what leaves the browser),
   [ci-issuer-screens.spec.ts](../../web/src/app/features/ci/ci-issuer-screens.spec.ts) (list, issuer, keys, create, issuances), [ci-editor-screens.spec.ts](../../web/src/app/features/ci/ci-editor-screens.spec.ts)
   (editor, tester, project screens), [ci-routes.spec.ts](../../web/src/app/features/ci/ci-routes.spec.ts) (every route navigated with input binding, which catches a parameter named differently in the route and the screen).
-  There is **no browser journey yet**: the e2e suite runs against the deployed stack, where the backend answers 501 until its work packages land, and a journey cannot be written pending without skipping; it is W7's.
+  The browser journey is [13-ci.spec.ts](../../web/e2e/tests/13-ci.spec.ts), against the real backend and the issuer double ([e2e.md](e2e.md#the-ci-tests)).
 
 ## How to add a feature area
 
