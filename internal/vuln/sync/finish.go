@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/audit"
@@ -196,17 +195,12 @@ func (s *Service) finishIncremental(ctx context.Context, eco string, res Result,
 }
 
 // enqueueEvaluate enqueues the evaluation job in the transaction that made the data change visible (R-VULN-011). The kind is
-// registered by the evaluation's work package; a build without it has nothing to evaluate with, which is logged and not
-// an error of the sync.
+// registered by every build that registers the sync, so an unknown kind is a wiring error and fails the run.
 func (s *Service) enqueueEvaluate(ctx context.Context, tx metaTx) error {
 	if s.o.Jobs == nil {
 		return nil
 	}
 	_, err := s.o.Jobs.Enqueue(ctx, tx, jobs.EnqueueSpec{Kind: vuln.KindEvaluate, DedupKey: vuln.DedupEvaluate})
-	if errors.Is(err, jobs.ErrUnknownKind) {
-		s.log.Warn("the advisory data changed and the job " + vuln.KindEvaluate + " is not registered in this build; nothing evaluates the change")
-		return nil
-	}
 	return err
 }
 

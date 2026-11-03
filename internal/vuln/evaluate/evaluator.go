@@ -12,8 +12,9 @@ import (
 	"github.com/guided-traffic/trove/internal/vuln/store"
 )
 
-// complete reports whether the ecosystem's data is complete as the replica's cache says: no query. A replica without the
-// state cache reads as not complete, so the evaluation of a commit only adds (R-VULN-011).
+// complete reports whether the ecosystem's data is complete as the replica's cache says. It is for a caller that holds no
+// transaction: a miss of the cache loads through the pool (the commit hook reads the state row on its own connection instead). A
+// replica without the state cache reads as not complete, so the evaluation only adds (R-VULN-011).
 func (s *Service) complete(ecosystem string) bool {
 	return s.o.States != nil && s.o.States.State(ecosystem).Complete
 }
@@ -44,7 +45,7 @@ func (s *Service) view(ctx context.Context, key string) (repoView, repository.Re
 
 // OnVersionCommitted implements [vuln.Evaluator]: it evaluates the version of the item a commit wrote, in the commit's
 // transaction, after the format's OnCommit linked the item to its version (R-VULN-011). The cost is the lookup of the item's
-// version, one indexed query on vuln_affected, and the findings of the name in the repository; findings are written in the
+// version, one indexed query on vuln_affected, the findings of the name in the repository and the state row of the ecosystem; findings are written in the
 // same transaction. A version that is committed again (a re-fill) changes nothing the second time.
 func (s *Service) OnVersionCommitted(ctx context.Context, tx meta.Tx, c vuln.CommittedVersion) error {
 	if !s.o.Enabled {
@@ -85,8 +86,15 @@ func (s *Service) OnVersionCommitted(ctx context.Context, tx meta.Tx, c vuln.Com
 	if trigger == "" {
 		trigger = vuln.TriggerPublish
 	}
+	// The data state is read on the commit's own connection: the replica's cache loads through the pool, and a commit that holds a
+	// connection while it waits for another one starves the pool when commits run concurrently (the waiters of one row lock hold
+	// the connections the load needs).
+	complete, err := ev.DataComplete(ctx, eco.Name)
+	if err != nil {
+		return err
+	}
 	r := &run{
-		s: s, tx: tx, ev: ev, eco: eco, trigger: trigger, canResolve: s.complete(eco.Name), inTx: ev,
+		s: s, tx: tx, ev: ev, eco: eco, trigger: trigger, canResolve: complete, inTx: ev,
 		repos: func(id int64) (repoView, bool) { return rv, id == rv.ID },
 	}
 	if err := r.evaluateNames(ctx, []string{ver.Name}, []store.StoredVersion{ver}, ofVersion); err != nil {
