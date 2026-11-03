@@ -471,6 +471,28 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
   substring match, and the new task `ci-keys-refresh` added a "Run task ci-keys-refresh now" button to the same screen; the
   locator is exact now
 
+**Code review of the phase (2026-11-03; status per item)**
+- 🟡 HIGH · "Overwrite" in the conflict dialog of the mapping editor and the issuer form sends the whole stale form with the
+  new `If-Match`, so another administrator's narrowing (a removed `deploy`, a removed audience) is undone without being shown
+  (`mapping-editor.ts`, `issuer-form.ts`, the shared resolver builds merge patches; R-CI-002, R-UI-042)
+- 🟡 MEDIUM · An issuance record whose token row went with a deleted mapping's principal shows `active: true` and no
+  `revokedAt` until it expires; `?active=false` returns it with `"active": true` (`ci_issuances.sql`, `issuance.go`)
+- 🟡 MEDIUM · The bulk revoke confirms the count of all applied filters but sends only issuer, project ID, pipeline, job and
+  mapping, so it revokes every active token of that mapping across projects and time (`issuance-list.ts`)
+- 🟡 MEDIUM · Browse: revealing a selection while a load of the same folder runs loops in microtasks and freezes the tab
+  (`browse.ts` `findChild`/`loadChildren`)
+- 🟡 MEDIUM · Disabling or deleting a mapping or an issuer scans every issuance of the issuer within the retention (no index
+  on `mapping_ids`, no expiry bound) while the issuer row is locked `FOR UPDATE`, so its exchanges wait into 503
+- 🟡 MEDIUM · A project's view of an issuance strips the other tiers' grants but keeps `grantedScope` and `requestedScope`,
+  which list them (`issuances.go` `onlyProject`)
+- 🟡 MEDIUM · The UI offers a project administrator no CI snippet, although the project route exists (`mapping-editor.ts`,
+  `ci-api.ts`)
+- 🟡 MEDIUM · The manual, the README, OpenAPI (26 `501` responses) and the contract page still say the federation answers 501
+  or is not built; the UI's "not available yet" card is dead code (W7 closes the documentation)
+- 🟡 LOW · The "audience removed on A" subtest does not reach the in-transaction re-validation; the CI editors keep no draft
+  across a re-authentication (R-UI-042); Browse keeps a reloaded node's old size and kind; the claim tester has no form view
+  (R-UI-036); a just-created or re-enabled issuer is refused on a lagging replica until the cache's SafetyTTL
+
 **Phase**
 - 🟢 Contracts: schema (migrations `00026` to `00028`), packages (`internal/ci`, `claims`, `subject`, `reason`), every
   operation of R-API-035 and the project routes in OpenAPI (answering 501 until built), configuration `ci.*`, the audit
