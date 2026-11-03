@@ -11,14 +11,22 @@ import (
 )
 
 func main() {
-	out := flag.String("out", "schema.json", "output file")
+	out := flag.String("out", "schema.json", "output file of the main configuration tree")
+	bastionOut := flag.String("bastion-out", "", "output file of the role bastion's tree (empty: not written)")
 	flag.Parse()
-	b, err := config.MustDescribe().JSONSchema()
+	write(*out, config.MustDescribe().JSONSchema)
+	if *bastionOut != "" {
+		write(*bastionOut, config.BastionDescribe().BastionJSONSchema)
+	}
+}
+
+func write(path string, render func() ([]byte, error)) {
+	b, err := render()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "schemagen:", err)
 		os.Exit(1)
 	}
-	if err := os.WriteFile(*out, append(b, '\n'), 0o600); err != nil {
+	if err := os.WriteFile(path, append(b, '\n'), 0o600); err != nil {
 		fmt.Fprintln(os.Stderr, "schemagen:", err)
 		os.Exit(1)
 	}

@@ -515,7 +515,13 @@ func (s *Server) validateEndpointPolicy(r *Report, base string, ep Endpoint, e R
 		r.Add(base+".auth.token_types", "is empty; list at least one of pat, sat, cit")
 	}
 	for _, t := range e.TokenTypes {
-		if t != "pat" && t != "sat" && t != "cit" {
+		switch t {
+		case "pat", "sat", "cit":
+		case "bst":
+			// The Bastion token is accepted by the Bastion interface of the default endpoint and nowhere else; no
+			// list of accepted types can widen that (R-BAS-005).
+			r.Add(base+".auth.token_types", "lists bst: a Bastion token is accepted only on the Bastion interface, never as an endpoint's credential (R-BAS-005); list pat, sat or cit")
+		default:
 			r.Add(base+".auth.token_types", "%q is not a token type (pat, sat, cit)", t)
 		}
 	}

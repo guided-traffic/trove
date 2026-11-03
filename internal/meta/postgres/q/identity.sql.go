@@ -1188,7 +1188,8 @@ SELECT t.id::text AS id, t.type, t.hint, t.principal_id::text AS owner_id, p.kin
        coalesce(t.derived_from::text, '')::text AS derived_from, t.last_used_at, coalesce(host(t.last_used_addr), '')::text AS last_used_addr,
        coalesce(t.expires_at IS NOT NULL AND t.expires_at <= now(), false)::boolean AS expired, t.ci_context
   FROM api_token t JOIN principal p ON p.id = t.principal_id
- WHERE ($1::text = '' OR t.id < $1::text::uuid)
+ WHERE t.type <> 'bst'
+   AND ($1::text = '' OR t.id < $1::text::uuid)
    AND ($2::text = '' OR t.principal_id = $2::text::uuid)
    AND ($3::text = '' OR t.type = $3::text)
    AND (CASE $4::text
@@ -1239,7 +1240,8 @@ type IdentityListTokensRow struct {
 	CiContext        []byte
 }
 
-// Keyset order by id descending (a UUIDv7 sorts by creation time).
+// Keyset order by id descending (a UUIDv7 sorts by creation time). Bastion tokens (type bst) are not listed: they
+// belong to a registration and are shown with it (R-BAS-004).
 func (q *Queries) IdentityListTokens(ctx context.Context, arg IdentityListTokensParams) ([]IdentityListTokensRow, error) {
 	rows, err := q.db.Query(ctx, identityListTokens,
 		arg.After,
@@ -2271,7 +2273,7 @@ SELECT t.id::text AS id, t.type, t.hint, t.principal_id::text AS owner_id, p.kin
        coalesce(t.derived_from::text, '')::text AS derived_from, t.last_used_at, coalesce(host(t.last_used_addr), '')::text AS last_used_addr,
        coalesce(t.expires_at IS NOT NULL AND t.expires_at <= now(), false)::boolean AS expired, t.ci_context
   FROM api_token t JOIN principal p ON p.id = t.principal_id
- WHERE t.id = $1::text::uuid
+ WHERE t.id = $1::text::uuid AND t.type <> 'bst'
 `
 
 type IdentityTokenRowRow struct {
@@ -2299,6 +2301,8 @@ type IdentityTokenRowRow struct {
 	CiContext        []byte
 }
 
+// A Bastion token (type bst) is managed through its registration (queries/bastion_registration.sql, R-BAS-004)
+// and is not a token of the token API: no row here, so GET, DELETE and rotate of /tokens/{id} answer 404 for it.
 func (q *Queries) IdentityTokenRow(ctx context.Context, id string) ([]IdentityTokenRowRow, error) {
 	rows, err := q.db.Query(ctx, identityTokenRow, id)
 	if err != nil {

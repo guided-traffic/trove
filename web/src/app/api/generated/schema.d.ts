@@ -3063,6 +3063,210 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/bastions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the Bastion registrations
+         * @description The registrations of trove Bastions ordered by name, each with its unrevoked tokens (ID, hint, expiry, creation,
+         *     last use) and the last contact of each replica: time, client address, release, interface version and the base URL it
+         *     reported (R-BAS-004, R-BAS-010). At most `bastions.max_registrations` exist, so the list is one page.
+         */
+        get: operations["listBastions"];
+        put?: never;
+        /**
+         * Register a Bastion
+         * @description Creates a principal of the kind `bastion` (reference `bastion:<name>`, R-AUTHZ-002) that holds no grant, role, ownership
+         *     or membership. At most `bastions.max_registrations` exist (`409` beyond). Records `bastion.created`. Its token is issued
+         *     by `POST /api/v1/bastions/{name}/tokens`.
+         */
+        post: operations["createBastion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bastions/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The registration name (R-BAS-004). */
+                name: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Read a Bastion registration
+         * @description The registration with its unrevoked tokens and the last contact of each replica (R-BAS-004, R-BAS-010). The ETag is the
+         *     registration's revision.
+         */
+        get: operations["getBastion"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a Bastion registration
+         * @description Deletes the registration and revokes its tokens (`token.revoked`, journaled, R-HA-054). Records `bastion.deleted`.
+         */
+        delete: operations["deleteBastion"];
+        options?: never;
+        head?: never;
+        /**
+         * Change or disable a Bastion registration
+         * @description Changes the description and enables or disables the registration (JSON merge patch). A disabled registration refuses its
+         *     tokens like a disabled service account's (R-AUTH-020). Records `bastion.updated`; a switch to disabled is journaled
+         *     for the feed as `principal` (R-BAS-015).
+         */
+        patch: operations["updateBastion"];
+        trace?: never;
+    };
+    "/api/v1/bastions/{name}/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Issue a Bastion token
+         * @description Issues a token of the type `bst` (`trv_bst_`, R-AUTH-022) for the registration. It has no scope, always expires
+         *     (`ttlSeconds` at most `auth.tokens.bst.max_ttl`, default `auth.tokens.bst.default_ttl`; `400 invalid_ttl` beyond) and at
+         *     most `auth.tokens.max_active_per_principal.bst` unrevoked tokens exist per registration (`409 token_limit_reached`), so
+         *     a renewal by hand fits its overlap (R-BAS-006). The value is in this answer only, which is never cached. Records
+         *     `token.created` with `resource_type: bastion`.
+         */
+        post: operations["createBastionToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bastions/{name}/tokens/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke a Bastion token
+         * @description Revokes one token of the registration; `204` for a token that is revoked already. The handler requires `endpoints:write`
+         *     or `tokens:revoke` (Q-BAS-24), so a security administrator can revoke a leaked token without managing endpoints; the
+         *     declaration is the coarse `authenticated` form for that reason. Records `token.revoked` with `resource_type: bastion`,
+         *     journaled (R-HA-054).
+         */
+        delete: operations["revokeBastionToken"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bastion/handshake": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Bastion handshake
+         * @description The Bastion interface (R-BAS-008, interface version in `x-trove-bastion-interface`). Called by a Bastion with its
+         *     token as `Authorization: Bearer` at start, every `bastion.main.handshake_interval`, after a reconnect and after a feed
+         *     entry of the kind `settings` (R-BAS-010). The answer carries the main installation's interface version, the registration
+         *     and the token in use, the response base URL this request resolved to, the effective anonymous switch, the download
+         *     switch and the feed position. Records the replica's last contact at most once a minute. Not part of the management
+         *     API's v1 promise but of the interface version (R-ARCH-025, R-BAS-009).
+         */
+        get: operations["bastionHandshake"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bastion/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check a caller's credential and read shape
+         * @description The Bastion interface (R-BAS-011, R-BAS-012). Validates the caller's credential as a direct request would (R-AUTH-023
+         *     including the failed-credential throttle for `clientAddress`, `token.rejected` with that address) and answers the
+         *     subject and, for at most `bastions.check.max_repositories` repository keys, the read shape `full`, `partial` or `none`
+         *     with the status the caller would receive. It writes no `authz.denied` events.
+         */
+        post: operations["bastionCheck"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bastion/feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The revocation feed
+         * @description The Bastion interface (R-BAS-015, Q-BAS-29, Q-BAS-30). The journaled audit events that remove or narrow access and the
+         *     content events, as entries of the kinds `token`, `principal`, `grants`, `settings` and `content`. `after` is the
+         *     `cursor` of an earlier answer or a synthetic `t:<RFC 3339>`; the answer holds every entry newer than the cursor and the
+         *     entries within `bastions.feed.lookback` behind it, which the Bastion skips by ID. `reset: true` tells the Bastion to
+         *     drop every answer.
+         */
+        get: operations["bastionFeed"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bastion/downloads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report downloads served from a Bastion's cache
+         * @description The Bastion interface (R-BAS-016). A batch of at most `bastions.downloads.max_batch` events, each recorded as an
+         *     asynchronous `artifact.downloaded` with `details.origin: bastion`; an event older than `bastions.downloads.max_age` is
+         *     not recorded and counts as dropped, one in the future is recorded at the time of receipt. A non-zero `dropped` records
+         *     `bastion.downloads.dropped`. With `audit.record_downloads: false` the answer is `204` and nothing is recorded.
+         */
+        post: operations["bastionDownloads"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -6015,8 +6219,234 @@ export interface components {
             items: components["schemas"]["OwnedPackage"][];
             nextCursor: string | null;
         };
+        /**
+         * @description A Bastion registration, a principal of the kind `bastion` (R-BAS-004).
+         * @example {
+         *       "id": "0192f0c4-7a7e-7b51-9b1e-2f0d6c9e1a40",
+         *       "name": "partners",
+         *       "description": "The partner network",
+         *       "enabled": true,
+         *       "createdAt": "2026-11-02T10:00:00Z",
+         *       "tokens": [
+         *         {
+         *           "id": "0192f0d1-1c2a-7c3e-8a51-6f7d2b9c4e41",
+         *           "hint": "trv_bst_3kQ9",
+         *           "description": "partners 2026",
+         *           "createdAt": "2026-11-02T10:05:00Z",
+         *           "expiresAt": "2027-11-02T10:05:00Z",
+         *           "lastUsedAt": "2026-11-02T10:06:12Z"
+         *         }
+         *       ],
+         *       "contacts": [
+         *         {
+         *           "replica": "trove-bastion-7d9c-x2k4q",
+         *           "contactAt": "2026-11-02T10:06:12Z",
+         *           "clientAddress": "198.51.100.20",
+         *           "release": "0.15.0",
+         *           "interfaceVersion": 1,
+         *           "baseUrl": "https://packages.example.com"
+         *         }
+         *       ]
+         *     }
+         */
+        Bastion: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            description: string;
+            enabled: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            /** @description The unrevoked tokens, newest first. Neither the value nor its hash is part of it. */
+            tokens: components["schemas"]["BastionTokenSummary"][];
+            /** @description The last contact of each replica, the most recent first (R-BAS-010). */
+            contacts: components["schemas"]["BastionContact"][];
+        };
+        BastionList: {
+            items: components["schemas"]["Bastion"][];
+        };
+        BastionTokenSummary: {
+            /** Format: uuid */
+            id: string;
+            hint: string;
+            description: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            lastUsedAt: string | null;
+        };
+        BastionContact: {
+            replica: string;
+            /** Format: date-time */
+            contactAt: string;
+            clientAddress: string | null;
+            release: string;
+            interfaceVersion: number;
+            /** @description The base URL the Bastion reported; empty when it reported none. */
+            baseUrl: string;
+        };
+        /**
+         * @example {
+         *       "name": "partners",
+         *       "description": "The partner network"
+         *     }
+         */
+        NewBastion: {
+            name: string;
+            description?: string;
+        };
+        /** @description The read-only members of `Bastion` are accepted and ignored. */
+        BastionPatch: {
+            description?: string;
+            enabled?: boolean;
+        };
+        /**
+         * @example {
+         *       "description": "partners 2026",
+         *       "ttlSeconds": 31536000
+         *     }
+         */
+        NewBastionToken: {
+            description?: string;
+            /** @description The lifetime; at most `auth.tokens.bst.max_ttl`, default `auth.tokens.bst.default_ttl`. */
+            ttlSeconds?: number;
+        };
+        /** @description A Bastion token with its value. The value is in this answer only. */
+        BastionTokenCreated: {
+            /** Format: uuid */
+            id: string;
+            /** @description The secret, 57 characters with the prefix `trv_bst_`. Shown once. */
+            token: string;
+            hint: string;
+            description: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        /** @description The answer of the handshake (R-BAS-010). */
+        BastionHandshake: {
+            interfaceVersion: number;
+            bastion: {
+                name: string;
+                /** Format: uuid */
+                tokenId: string;
+                /** Format: date-time */
+                tokenExpiresAt: string;
+            };
+            installation: {
+                baseUrl: string;
+                release: string;
+            };
+            responseBaseUrl: string;
+            anonymousAccess: boolean;
+            recordDownloads: boolean;
+            feed: {
+                cursor: string;
+            };
+            /** Format: date-time */
+            serverTime: string;
+        };
+        BastionCheckRequest: {
+            /** @description The token string the caller presented, or `null` for an anonymous caller. */
+            credential: string | null;
+            clientAddress: string;
+            repositories: string[];
+        };
+        BastionCheckAnswer: {
+            subject: components["schemas"]["BastionSubject"];
+            repositories: {
+                [key: string]: components["schemas"]["BastionRepositoryRead"];
+            };
+        };
+        BastionSubject: {
+            /** @enum {string} */
+            kind: "token" | "anonymous" | "anonymous_refused" | "invalid" | "throttled";
+            /** Format: uuid */
+            tokenId?: string;
+            /** Format: uuid */
+            principalId?: string;
+            /** Format: date-time */
+            expiresAt?: string;
+            retryAfterSeconds?: number;
+        };
+        BastionRepositoryRead: {
+            /** @enum {string} */
+            read: "full" | "partial" | "none";
+            /**
+             * @description Set with `none`: the status the caller would receive for a read of the repository.
+             * @enum {integer}
+             */
+            status?: 401 | 403 | 404;
+        };
+        BastionFeedAnswer: {
+            entries: components["schemas"]["BastionFeedEntry"][];
+            cursor: string;
+            more: boolean;
+            reset: boolean;
+        };
+        BastionFeedEntry: {
+            id: string;
+            /** Format: date-time */
+            at: string;
+            /** @enum {string} */
+            kind: "token" | "principal" | "grants" | "settings" | "content";
+            tokens?: string[];
+            principals?: string[];
+            repositories?: string[];
+        };
+        BastionDownloadsRequest: {
+            events: components["schemas"]["BastionDownloadEvent"][];
+            dropped: number;
+            /** Format: date-time */
+            droppedSince?: string;
+        };
+        BastionDownloadEvent: {
+            /** Format: date-time */
+            at: string;
+            /** Format: uuid */
+            tokenId?: string;
+            /** Format: uuid */
+            principalId?: string;
+            clientAddress: string;
+            repository: string;
+            path: string;
+            sha256: string;
+            userAgent?: string;
+            replica: string;
+        };
     };
     responses: {
+        /** @description The operation belongs to the Bastion work and is not built in this release yet (`bastion_not_implemented`). */
+        NotImplemented: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description The request names another interface version than this installation speaks, or none (`bastion_interface_mismatch`); the problem carries `interfaceVersion` (R-BAS-009). */
+        BastionInterfaceMismatch: {
+            headers: {
+                "Trove-Bastion-Interface": components["headers"]["BastionInterface"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description The Bastion token is invalid, revoked, expired, of the wrong type or its registration is disabled (`bastion_token_invalid`, R-BAS-008). */
+        BastionTokenInvalid: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
         /** @description The request carries no valid credential. */
         Unauthenticated: {
             headers: {
@@ -6159,6 +6589,12 @@ export interface components {
         };
     };
     parameters: {
+        /**
+         * @description The Bastion's interface version (R-BAS-009). Required on every request of a Bastion: a request without it, or with
+         *     another version, is answered `400 bastion_interface_mismatch` before the operation runs. It is declared optional
+         *     here so that the answer is the interface's, not the binder's.
+         */
+        BastionInterface: number;
         /** @description Page size, 1 to `api.page_size_max` (R-API-010). */
         Limit: number;
         /** @description The `nextCursor` of the previous page. Opaque; valid only with the filters and sort it was issued for. */
@@ -6179,6 +6615,8 @@ export interface components {
     };
     requestBodies: never;
     headers: {
+        /** @description The main installation's version of the Bastion interface (R-BAS-009). */
+        BastionInterface: number;
         /** @description The trace ID of the request (W3C Trace Context); quote it when reporting a problem. */
         RequestId: string;
         /** @description Strong entity tag of the representation, the quoted revision (R-API-012). */
@@ -12128,6 +12566,13 @@ export interface operations {
                 version?: string;
                 /** @description An npm scope (`@team-a`); adds the scoped variant of the registry configuration. */
                 scope?: string;
+                /**
+                 * @description The name of a Bastion registration (R-BAS-007). The snippets are rendered on the base URL the Bastion reported at its
+                 *     last handshake, provided it is an entry of `server.additional_base_urls` (`409 bastion_base_url_unknown` otherwise),
+                 *     and carry no publish snippets, since a Bastion is read-only; for npm the configure snippet sets
+                 *     `replace-registry-host=always`. An unknown name answers `404`.
+                 */
+                bastion?: string;
             };
             header?: never;
             path: {
@@ -12956,6 +13401,408 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    listBastions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The registrations. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BastionList"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplemented"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    createBastion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewBastion"];
+            };
+        };
+        responses: {
+            /** @description The registration. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Bastion"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplemented"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    getBastion: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description An ETag the client holds; a match answers `304` (R-API-012). */
+                "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+            };
+            path: {
+                /** @description The registration name (R-BAS-004). */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The registration. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Bastion"];
+                };
+            };
+            /** @description The `If-None-Match` tag is the current one. */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplemented"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    deleteBastion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The registration name (R-BAS-004). */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The registration is deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplemented"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    updateBastion: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012). */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description The registration name (R-BAS-004). */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/merge-patch+json": components["schemas"]["BastionPatch"];
+            };
+        };
+        responses: {
+            /** @description The registration after the change. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Bastion"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            428: components["responses"]["PreconditionRequired"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplemented"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    createBastionToken: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 1 to 255 printable ASCII characters, preferably a UUID (R-API-014). */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewBastionToken"];
+            };
+        };
+        responses: {
+            /** @description The token with its value. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    /** @description `no-store`: the answer holds a secret. */
+                    "Cache-Control"?: "no-store";
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BastionTokenCreated"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplemented"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    revokeBastionToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The token is revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplemented"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    bastionHandshake: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description The Bastion's interface version (R-BAS-009). Required on every request of a Bastion: a request without it, or with
+                 *     another version, is answered `400 bastion_interface_mismatch` before the operation runs. It is declared optional
+                 *     here so that the answer is the interface's, not the binder's.
+                 */
+                "Trove-Bastion-Interface"?: components["parameters"]["BastionInterface"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The handshake. */
+            200: {
+                headers: {
+                    "Trove-Bastion-Interface": components["headers"]["BastionInterface"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BastionHandshake"];
+                };
+            };
+            400: components["responses"]["BastionInterfaceMismatch"];
+            401: components["responses"]["BastionTokenInvalid"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplemented"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    bastionCheck: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description The Bastion's interface version (R-BAS-009). Required on every request of a Bastion: a request without it, or with
+                 *     another version, is answered `400 bastion_interface_mismatch` before the operation runs. It is declared optional
+                 *     here so that the answer is the interface's, not the binder's.
+                 */
+                "Trove-Bastion-Interface"?: components["parameters"]["BastionInterface"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BastionCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description The subject and the shapes. */
+            200: {
+                headers: {
+                    "Trove-Bastion-Interface": components["headers"]["BastionInterface"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BastionCheckAnswer"];
+                };
+            };
+            400: components["responses"]["BastionInterfaceMismatch"];
+            401: components["responses"]["BastionTokenInvalid"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplemented"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    bastionFeed: {
+        parameters: {
+            query: {
+                /** @description A cursor in wire form (R-BAS-015). */
+                after: string;
+                /** @description Entries at most; capped at `bastions.feed.max_page`. */
+                limit?: number;
+            };
+            header?: {
+                /**
+                 * @description The Bastion's interface version (R-BAS-009). Required on every request of a Bastion: a request without it, or with
+                 *     another version, is answered `400 bastion_interface_mismatch` before the operation runs. It is declared optional
+                 *     here so that the answer is the interface's, not the binder's.
+                 */
+                "Trove-Bastion-Interface"?: components["parameters"]["BastionInterface"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The entries after the cursor. */
+            200: {
+                headers: {
+                    "Trove-Bastion-Interface": components["headers"]["BastionInterface"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BastionFeedAnswer"];
+                };
+            };
+            400: components["responses"]["BastionInterfaceMismatch"];
+            401: components["responses"]["BastionTokenInvalid"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplemented"];
+            503: components["responses"]["Unavailable"];
+        };
+    };
+    bastionDownloads: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description The Bastion's interface version (R-BAS-009). Required on every request of a Bastion: a request without it, or with
+                 *     another version, is answered `400 bastion_interface_mismatch` before the operation runs. It is declared optional
+                 *     here so that the answer is the interface's, not the binder's.
+                 */
+                "Trove-Bastion-Interface"?: components["parameters"]["BastionInterface"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BastionDownloadsRequest"];
+            };
+        };
+        responses: {
+            /** @description The events are accepted. */
+            204: {
+                headers: {
+                    "Trove-Bastion-Interface": components["headers"]["BastionInterface"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BastionInterfaceMismatch"];
+            401: components["responses"]["BastionTokenInvalid"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+            500: components["responses"]["Internal"];
+            501: components["responses"]["NotImplemented"];
             503: components["responses"]["Unavailable"];
         };
     };

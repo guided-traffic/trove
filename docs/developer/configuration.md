@@ -19,7 +19,8 @@ specified in [operations-and-observability.md](../spec/operations-and-observabil
 | [endpoints.go](../../internal/config/endpoints.go) | `server.endpoints` and `server.endpoint_rate_limits`: the endpoint entries, their defaults (`ResolveEndpoints`) and validation, see [endpoints.md](endpoints.md) |
 | [rules.go](../../internal/config/rules.go), [value.go](../../internal/config/value.go), [units.go](../../internal/config/units.go) | `validate` tag rules, text and YAML value parsing, `ByteSize` |
 | [secret.go](../../internal/config/secret.go), [report.go](../../internal/config/report.go) | the `Secret` type; `Report`, `Validator`, `CommandValidator`, `Command`, `Error` |
-| [effective.go](../../internal/config/effective.go), [jsonschema.go](../../internal/config/jsonschema.go), [schemagen](../../internal/config/schemagen/main.go), [schema.json](../../internal/config/schema.json) | redacted view, JSON Schema generator and its committed output |
+| [effective.go](../../internal/config/effective.go), [jsonschema.go](../../internal/config/jsonschema.go), [schemagen](../../internal/config/schemagen/main.go), [schema.json](../../internal/config/schema.json), [bastion.schema.json](../../internal/config/bastion.schema.json) | redacted view, JSON Schema generator and its committed outputs (the main tree's and the role bastion's) |
+| [bastions.go](../../internal/config/bastions.go), [bastion_role.go](../../internal/config/bastion_role.go) | the main installation's section `bastions`, and the configuration tree of the role bastion (`BastionConfig`, `LoadBastion`), see [Bastion keys](#bastion-keys) |
 
 Sections that exist in the specification but have no owner yet are not in the tree: `backup`, `retention`,
 `ci`, `proxy` (apart from the keys listed under [M2 keys](#m2-keys)), `support`,
@@ -131,6 +132,35 @@ specification. `Config.validateCI` refuses `ci.token.max_ttl` above `auth.tokens
 schema bounds `ci.replay.retention_after_expiry` at `1m` at least (Q-CI-51); the retired key `ci.exchange.rate_limit.per_issuer_per_second` is refused in the
 file and in the environment with the names of its replacements (`retiredKeys`, [load.go](../../internal/config/load.go), R-CI-021). A list element may hold
 scalars, pointers to scalars (a key left out is nil and takes the default of R-CI-001) and lists of strings. Only `trove migrate` applies `ci.issuers`.
+
+## Bastion keys
+
+Two trees serve the Bastion ([bastion.md](bastion.md), Q-BAS-50).
+
+**The main installation's keys** ([bastions.go](../../internal/config/bastions.go), the `bastions` section; `AuthTokenBST` in
+[auth_identity.go](../../internal/config/auth_identity.go)): `bastions.max_registrations` (`16`, 1 to 256), `bastions.check.max_repositories`
+(`16`), `bastions.feed.lookback` (`5m`, 30s to 1h) and `bastions.feed.max_page` (`1000`), `bastions.downloads.max_batch` (`1000`) and
+`bastions.downloads.max_age` (`720h`), `auth.tokens.bst.default_ttl` (`8760h`) and `max_ttl` (`9480h`, `default_ttl` must not exceed it) and
+`auth.tokens.max_active_per_principal.bst` (`3`). `bst` in an endpoint's `auth.token_types` stops startup naming the key
+([endpoints.go](../../internal/config/endpoints.go), R-BAS-005).
+
+**The role's tree** ([bastion_role.go](../../internal/config/bastion_role.go)): a second root struct `BastionConfig` with the sections `server`
+(listen, ops_listen, base_url, trusted_proxies, forwarded_header, max_in_flight, tls, ops_tls), `bastion` (main, answers, feed, cache,
+limits, failed_auth, blocking, audit, token, replicas, signing_key_file), `valkey` (the main section's keys with `mode: none` as the default),
+`log`, `tracing` (without `incoming_context` and `trusted_peers`: the role never continues a caller's trace context) and `runtime`. It is
+loaded by `config.LoadBastion`, which reuses the loader with `Options.Role` set: a key of any other section, in the file or the
+environment, stops startup with a message that names the key and the role (`database.host is not a key of the role bastion`), a mapping
+is walked so that the leaf is named, and `--role bastion` is the only way to select it (`process.role` is not a key of the tree). The
+only flag is `--log-level`. `http` in `bastion.main.url` is refused naming the key; the defaults and ranges are those of R-BAS-046
+(`TestR_BAS_001_TheRoleLoadsWithTheMinimalKeysAndTheSpecDefaults`, `TestR_BAS_046_TheRangesOfTheSpecificationAreEnforced`).
+
+Keys the chart renders carry the tag `chart:"managed"` (on a field or a whole struct); `Key.ChartManaged` and the schema node
+`x-trove-chart-managed: true` carry it to the chart, which refuses a value under `config` for them (R-BAS-046). The role's JSON
+Schema is [bastion.schema.json](../../internal/config/bastion.schema.json), written by the same `go generate ./internal/config` as
+`schema.json` (`schemagen -bastion-out`), committed and checked by `make generate-check`; the chart `trove-bastion` includes it as the
+schema of its `config` value (R-HA-029's mechanism). The sections the role does not have (`health`, `metrics`) are used at their
+defaults through `BastionConfig.HealthSection` and `MetricsSection`; `ServerSection` returns the server section in the form the
+listeners read.
 
 ## Endpoint keys
 

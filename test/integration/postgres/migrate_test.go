@@ -34,8 +34,15 @@ func TestMigrateEmptyDatabase(t *testing.T) {
 		if len(res.Applied) != len(embedded) || res.NothingToDo || res.SchemaApplied != postgres.RequiredSchema() {
 			t.Fatalf("result = %+v", res)
 		}
-		if res.CompatFloor != "0.0.0" {
-			t.Fatalf("compat floor = %q", res.CompatFloor)
+		// The floor is the highest requires-app of the applied contract steps, 0.0.0 while there is none (R-HA-018).
+		wantFloor := "0.0.0"
+		for _, s := range embedded {
+			if s.Phase == "contract" && versionAfter(s.RequiresApp, wantFloor) {
+				wantFloor = s.RequiresApp
+			}
+		}
+		if res.CompatFloor != wantFloor {
+			t.Fatalf("compat floor = %q, want %q", res.CompatFloor, wantFloor)
 		}
 		if n := scalar[int](t, admin, "SELECT count(*) FROM trove.schema_migration"); n != len(embedded) {
 			t.Fatalf("schema_migration rows = %d", n)
@@ -539,3 +546,17 @@ func TestPreflight(t *testing.T) {
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+// versionAfter reports whether the release a is later than b, both "major.minor.patch": numerically, so that 0.10.0
+// follows 0.9.0.
+func versionAfter(a, b string) bool {
+	pa, pb := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(pa) && i < len(pb); i++ {
+		na, _ := strconv.Atoi(pa[i])
+		nb, _ := strconv.Atoi(pb[i])
+		if na != nb {
+			return na > nb
+		}
+	}
+	return len(pa) > len(pb)
+}

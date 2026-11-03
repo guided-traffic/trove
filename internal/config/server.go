@@ -54,18 +54,24 @@ func (s *Server) Validate(r *Report) {
 	if s.ShutdownTimeout != 0 && s.ShutdownTimeout < time.Second {
 		r.Add("shutdown_timeout", "must be 0 (derived) or at least 1s")
 	}
-	for _, c := range s.TrustedProxies {
+	checkTrustedProxies(r, "trusted_proxies", s.TrustedProxies)
+	s.validateEndpoints(r)
+}
+
+// checkTrustedProxies requires every entry to be an address or a CIDR and refuses a /0 prefix, which would
+// trust every peer (R-ARCH-006).
+func checkTrustedProxies(r *Report, key string, list []string) {
+	for _, c := range list {
 		_, n, err := net.ParseCIDR(c)
 		switch {
 		case err != nil && net.ParseIP(c) == nil:
-			r.Add("trusted_proxies", "%q is neither an address nor a CIDR", c)
+			r.Add(key, "%q is neither an address nor a CIDR", c)
 		case err == nil:
 			if ones, _ := n.Mask.Size(); ones == 0 {
-				r.Add("trusted_proxies", "%q covers every address and would trust every peer; list the edge's own addresses", c)
+				r.Add(key, "%q covers every address and would trust every peer; list the edge's own addresses", c)
 			}
 		}
 	}
-	s.validateEndpoints(r)
 }
 
 // checkOrigin enforces R-OPS-005: scheme, host and optional port, nothing else.

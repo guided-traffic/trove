@@ -41,6 +41,9 @@ type Key struct {
 	Required   bool         // `validate:"required"`
 	Rules      []rule       // other validation rules
 	Doc        string       // `doc:"…"` tag
+	// ChartManaged is the tag `chart:"managed"`: the chart renders the key from its own values (a mounted file,
+	// the replica count) and refuses a value under `config` (R-BAS-001, R-BAS-046). The JSON Schema marks it.
+	ChartManaged bool
 }
 
 // Section is a struct node of the tree. Sections may implement Validator.
@@ -56,6 +59,8 @@ type Schema struct {
 	byPath   map[string]int
 	byEnv    map[string]int
 	structs  map[string]bool
+	// managed holds the paths of the sections tagged chart:"managed": every key below is chart-managed.
+	managed map[string]bool
 }
 
 var (
@@ -69,7 +74,7 @@ var (
 // snake_case, two keys that derive the same environment variable, an
 // unsupported type, an unparsable default or rule (R-ARCH-020).
 func Describe(t reflect.Type) (*Schema, []error) {
-	s := &Schema{byPath: map[string]int{}, byEnv: map[string]int{}, structs: map[string]bool{}}
+	s := &Schema{byPath: map[string]int{}, byEnv: map[string]int{}, structs: map[string]bool{}, managed: map[string]bool{}}
 	var errs []error
 	if t.Kind() != reflect.Struct {
 		return nil, []error{fmt.Errorf("config root %s is not a struct", t)}
@@ -122,9 +127,12 @@ func (s *Schema) walk(t reflect.Type, prefix string, idx []int, errs *[]error) {
 			s.addKey(Key{Path: path, Kind: KindSecretValue, Index: append(append([]int(nil), fidx...), 0), Type: reflect.TypeOf(""), Doc: f.Tag.Get("doc")}, where, errs)
 			s.addKey(Key{Path: path + "_file", Kind: KindSecretFile, Index: append(append([]int(nil), fidx...), 1), Type: reflect.TypeOf(""), Doc: f.Tag.Get("doc")}, where, errs)
 		case f.Type.Kind() == reflect.Struct:
+			if f.Tag.Get("chart") == "managed" {
+				s.managed[path] = true
+			}
 			s.walk(f.Type, path+".", fidx, errs)
 		default:
-			k := Key{Path: path, Kind: KindValue, Index: fidx, Type: f.Type, Doc: f.Tag.Get("doc")}
+			k := Key{Path: path, Kind: KindValue, Index: fidx, Type: f.Type, Doc: f.Tag.Get("doc"), ChartManaged: f.Tag.Get("chart") == "managed"}
 			if sec := f.Tag.Get("secret"); sec != "" {
 				if sec != "file" || f.Type.Kind() != reflect.String || !strings.HasSuffix(name, "_file") {
 					*errs = append(*errs, fmt.Errorf("%s: secret:%q needs a string field whose yaml name ends in _file", where, sec))
@@ -163,6 +171,10 @@ func (s *Schema) walk(t reflect.Type, prefix string, idx []int, errs *[]error) {
 
 func (s *Schema) addKey(k Key, where string, errs *[]error) {
 	k.Env = envName(k.Path)
+	for p := k.Path; !k.ChartManaged && strings.Contains(p, "."); {
+		p = p[:strings.LastIndex(p, ".")]
+		k.ChartManaged = s.managed[p]
+	}
 	if j, dup := s.byEnv[k.Env]; dup {
 		*errs = append(*errs, fmt.Errorf("%s: keys %q and %q derive the same environment variable %s", where, s.Keys[j].Path, k.Path, k.Env))
 		return

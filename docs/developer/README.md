@@ -22,7 +22,8 @@ no vulnerability scanning and no backup exists yet. Everything marked *planned* 
   contradict it ([spec/README.md](../spec/README.md#design-invariants)).
 - **Roles, one binary** ([R-ARCH-001](../spec/architecture.md)). `web` answers HTTP and never claims a job or
   holds a lease. `worker` claims jobs, holds leases and serves only the ops listener. `all` combines both
-  for a local run outside the chart. The `backup` role is planned.
+  for a local run outside the chart. `bastion` is the read-only cache of phase 5b with a configuration tree of its own and
+  no PostgreSQL ([bastion.md](bastion.md)). The `backup` role is planned.
 - **PostgreSQL decides, Valkey accelerates.** State whose loss would corrupt data lives in PostgreSQL,
   including every mutual exclusion whose failure would corrupt data. Valkey holds shared ephemeral state and
   never the only copy of anything. Only `internal/cluster` talks to Valkey, and every key expires.
@@ -67,6 +68,7 @@ no vulnerability scanning and no backup exists yet. Everything marked *planned* 
 | [identity.md](identity.md) | Principals, groups, service accounts, tokens, the authentication stage, caches and revocation propagation, the failed-credential throttle |
 | [authorization.md](authorization.md) | Permission policies, roles, the evaluation, the compiled grant index and its invalidation, epochs and `Trove-Authz-Min-Epoch`, how an operation declares its permission, the populate check and `MemberUsable`, package ownership |
 | [projects.md](projects.md) | Projects and delegated administration: the contracts (engine questions, project service, API operations and declarations, error codes, audit events, schema), the decisions behind them, who owns which file, and the tests that pass when |
+| [bastion.md](bastion.md) | The trove Bastion (phase 5b): the contracts of the eight work packages: package tree, the seams and who implements each, the interface guard, the request flows (hit, check, miss, write probe), the schema and configuration it added, how to run the role locally; status: contracts laid, work packages pending |
 | [ci-oidc.md](ci-oidc.md) | GitLab CI OIDC federation: the contracts laid for beta phase 5 (schema, the `internal/ci` packages and interfaces, the token and evaluation seam, the gate, API, configuration, events, tasks), the project tier, the work packages W1 to W7 and their files; status: contracts laid, work packages pending |
 | [files.md](files.md) | Raw transfer under `/files/`: the generic layer over the item store, deploy, download with Range, folders, the items API, deletes, activity and download statistics |
 | [items.md](items.md) | The item store: the one commit and its order, the storage hooks, spool, read, listing rows, subtree delete and the `items-delete` job |
@@ -146,6 +148,8 @@ trove/
 │   │                         # session/ (UI sessions, CSRF, the session cache), oidc/ (providers, login flow, callback, break-glass),
 │   │                         # jws/ (compact JWS and JWK sets, a leaf the login and the CI validation share)
 │   ├── authz/                # decision point: engine, compiled grant index, epochs, policy and role service, decision audit
+│   ├── bastion/              # the trove Bastion's own code (R-BAS-001, bastion.md): iface (the wire contract), answers, metrics, mainclient, cache, shared, guard, downloads, engine, server; imports no subsystem of the main installation (archtest)
+│   ├── bastionmain/          # the main installation's side of the Bastion: the seams of the work packages (recognition, token authenticator, read-shape resolver, route observer, chain stages)
 │   ├── backup/tables/        # table registry: the export class of every table (leaf layer)
 │   ├── blob/                 # store, spool, digests, commit, download, GC; s3/ is the S3 client; blobtest/ fixtures
 │   ├── buildinfo/            # version, commit and build date from -ldflags

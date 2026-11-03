@@ -47,6 +47,7 @@ type EndpointEvents interface {
 //  3. request log and metrics
 //  4. in-flight limit and memory guard
 //  5. client address and base URL
+//     (5b. the Bastion interface: recognition and marking, Chain.Bastion)
 //  6. authentication
 //  7. rate limits
 //  8. the handler (the router)
@@ -99,6 +100,12 @@ type Chain struct {
 	// anonymous.
 	Authenticate func(*http.Request) (Principal, error)
 
+	// Bastion is the stage of the Bastion interface (R-BAS-008, Q-BAS-52): it runs after stage 5 and before
+	// the authentication of stage 6, because it recognizes a Bastion request (and takes the Bastion token out
+	// of Authorization on an interface route) before the stage looks at credentials, and marks the response
+	// of every stage after it. internal/bastionmain.Stages composes the two halves. Nil means none.
+	Bastion func(http.Handler) http.Handler
+
 	// Preflight runs between stage 5 and the authentication of stage 6: it answers
 	// what a browser sends without credentials and that must not be refused for
 	// lacking them, the CORS preflight of an allowed origin (R-API-018), and passes
@@ -125,6 +132,9 @@ func (c Chain) Handler() http.Handler {
 		h = c.RateLimit(h)
 	}
 	h = c.authStage(h)
+	if c.Bastion != nil {
+		h = c.Bastion(h)
+	}
 	if c.Preflight != nil {
 		h = c.Preflight(h)
 	}

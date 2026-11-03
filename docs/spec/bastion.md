@@ -1,6 +1,9 @@
 # trove Bastion
 
-Status: specification — not implemented. Phase 5b of the [project plan](../projektplan/BETA.md#phase-5b--trove-bastion-m13)
+Status: specification — the contracts of phase 5b are laid in the code ([developer/bastion.md](../developer/bastion.md), decisions
+[Q-BAS-48](#q-bas-48--a-registration-is-a-principal-row-plus-a-subtype-table-the-kind-and-the-token-type-are-admitted-by-one-contract-step)
+to [Q-BAS-54](#q-bas-54--the-roles-process-reuses-the-shell-of-the-others-and-answers-bastion_not_served-until-the-engine-exists)); the logic of the
+work packages is not built. Phase 5b of the [project plan](../projektplan/BETA.md#phase-5b--trove-bastion-m13)
 builds the MVP requirements of this page (milestone M13 of the [roadmap](../coverage/roadmap.md#p1-platform-milestones), moved
 into the beta by the owner on 2026-11-02). The owner's decisions of 2026-10-31 and 2026-11-02 are binding and recorded as
 [Q-BAS-1](#q-bas-1--the-bastion-asks-the-main-installation-and-keeps-no-copy-of-users-tokens-or-policies) to
@@ -151,6 +154,8 @@ Priority: **MVP** · Covers: DIST-024
   `server.trusted_proxies`, `server.forwarded_header`, `server.max_in_flight`, `server.tls`, the section `bastion` of this page,
   `valkey`, `log`, `tracing` and `runtime`. A key of another section (`database`, `storage`, `auth`, `authz`, `ci`, `backup`,
   `audit`, `server.endpoints`, `server.additional_base_urls`, …) stops startup with an error that names the key and the role.
+  The role has `server.ops_tls` as well (R-BAS-044), is chosen by `--role bastion` and by nothing else, and takes `--log-level` as
+  its one flag ([Q-BAS-50](#q-bas-50--the-role-has-a-configuration-tree-of-its-own-chosen-by---role-alone)).
 - Horizontal replicas: every Bastion replica is identical and interchangeable (INV-2); a request may reach any replica, and
   nothing a request needs is held only by the replica an earlier request reached (INV-18): answers, document copies and a
   local cache volume are caches whose loss costs performance only. The Bastion has no PostgreSQL; what it must not lose lives
@@ -267,7 +272,7 @@ Acceptance criteria:
 
 - `POST /api/v1/bastions {"name": "partners"}` then `POST /api/v1/bastions/partners/tokens {"ttlSeconds": 31536000}` returns a
   57-character `trv_bst_` token that passes R-AUTH-022's checksum; `ttlSeconds` above `max_ttl` answers `400 invalid_ttl`, and a
-  fourth unrevoked token answers `409 too_many_tokens`.
+  fourth unrevoked token answers `409 token_limit_reached` (the registry's code for the limit, [Q-BAS-53](#q-bas-53--unbuilt-operations-answer-501-bastion_not_implemented-three-codes-follow-the-existing-registry)).
 - A policy entry for `bastion:partners` and a role binding of `admin` to it answer `422 principal_not_allowed`.
 - A caller with `endpoints:read` only gets `403` on the token creation; `tokens:revoke` alone may revoke a Bastion token.
 
@@ -394,8 +399,10 @@ installation's ingress or its Service.
   package route, because they concern the Bastion, never the caller; the Bastion never passes them on (R-BAS-027).
 - `Trove-Bastion-Authorization` is redacted like `Authorization` in every log, span and support bundle (R-OPS-013), and the
   main installation never echoes a `Trove-Bastion-*` request header.
-- The operations are in the OpenAPI document under the tag `bastion`, marked `x-trove-bastion-interface: <n>`; they are not
-  part of the management API's v1 promise but of the interface version (R-ARCH-025).
+- The operations are in the OpenAPI document under the tag `bastion`, marked `x-trove-bastion-interface: <n>` and declared
+  `x-trove-permission: {bastion: true}`, which the shared authorization step admits on the recognition result alone
+  ([Q-BAS-52](#q-bas-52--recognition-and-marking-are-one-chain-stage-before-authentication-the-dispatcher-tells-an-observer-about-the-route));
+  they are not part of the management API's v1 promise but of the interface version (R-ARCH-025).
 - Main side metrics: `trove_bastion_interface_requests_total{bastion, operation, outcome}` and
   `trove_bastion_forwarded_requests_total{bastion, class}` (`class` of R-BAS-013); `bastion` is the registration name, bounded
   by `bastions.max_registrations`.
@@ -413,7 +420,7 @@ Priority: **MVP** · Covers: trove-only
 The Bastion interface has a version of its own, separate from the release number (owner,
 [Q-BAS-20](#q-bas-20--the-bastion-interface-has-a-version-of-its-own-equal-on-both-sides)).
 
-- The version is a positive integer, `bastion.InterfaceVersion` in code, starting at 1. It is raised by every change of the
+- The version is a positive integer, `iface.InterfaceVersion` in `internal/bastion/iface`, starting at 1. It is raised by every change of the
   interface: a route, a request or response field, a header, a marking value, a feed entry kind, or the meaning of any of them
   ([Q-BAS-26](#q-bas-26--every-change-of-the-interface-raises-its-version)). Nothing is added "within" a version: equality is the
   rule, so neither side has to read a field it does not know.
@@ -573,7 +580,7 @@ recognized Bastion request; no format code is involved, because the dispatcher k
 | `Trove-Bastion-Class` | `artifact` for a `200` or `304` of a `Download` route or of a file under `/files/`; `shared` for a `200` or `304` of a `Metadata` or `Computed` route (or a `/files/` folder listing) when the caller's shape on the addressed repository is `full`; `private` for the same routes otherwise; `absent` for a `404` of a read route when the item does not exist in the repository for any subject (no member holds it, the remote's negative cache or upstream says so); `pass` for every other answer (`Volatile` and other routes, errors, redirects) |
 | `Trove-Bastion-Repository` | the addressed repository key |
 | `Trove-Bastion-Read` | the caller's shape on the addressed repository (R-BAS-012) |
-| `Trove-Bastion-Subject` | `token=<token ID>; principal=<principal ID>; expires=<unix seconds>`, or `anonymous`, or `invalid` on a `401` for a rejected credential |
+| `Trove-Bastion-Subject` | `token=<token ID>; principal=<principal ID>; expires=<unix seconds>` (`expires` left out for a token that does not expire, [Q-BAS-49](#q-bas-49--the-interface-is-one-package-of-wire-types-four-details-of-the-contract-are-fixed-in-it)), or `anonymous`, or `invalid` on a `401` for a rejected credential |
 | `Trove-Bastion-Interface` | the main installation's interface version |
 
 - `absent` is set only by the remote and virtual engines and the local lookup when they know the item is missing for every
@@ -668,6 +675,10 @@ the content events below ([Q-BAS-29](#q-bas-29--the-feed-reads-the-journals-even
   `occurred_at > cursor.at − bastions.feed.lookback`, and the Bastion skips the IDs it has applied. `cursor` names the last entry
   returned, or the request's cursor when there is none; `more` is true when `limit` (at most `bastions.feed.max_page`) cut the
   answer.
+- **Entry IDs and paging** ([Q-BAS-49](#q-bas-49--the-interface-is-one-package-of-wire-types-four-details-of-the-contract-are-fixed-in-it)).
+  An event that yields more than one entry gives the others the IDs `<event ID>:1`, `<event ID>:2`. A read is two queries: all
+  entries within the lookback up to and including the cursor, and the entries after it, cut by `limit`, so a page always advances;
+  when the entries behind the cursor exceed four times `bastions.feed.max_page`, the answer is `reset: true`.
 - **Reset.** `reset: true` when the entry the cursor names no longer exists although its time lies within the audit retention
   (a point-in-time restore or a failover that lost commits), when the cursor's time lies after the main installation's clock by
   more than `lookback`, or when it lies before the audit retention. The Bastion then drops every answer (R-BAS-026) and takes the
@@ -1636,7 +1647,10 @@ The complete `values.yaml` of `trove-bastion`. Every value carries `# default (p
 are the Bastion's configuration file (R-BAS-001); the chart-managed keys (`server.tls`, `bastion.main.token_file`,
 `bastion.main.ca_file`, `bastion.signing_key_file`, `bastion.cache.volume.dir`, `bastion.cache.bucket.ca_file`,
 `bastion.cache.bucket.credentials.access_key_id_file` and `secret_access_key_file`, `bastion.replicas`, the Valkey secret files
-`valkey.username_file`, `valkey.password_file` and `valkey.tls.ca_file`) are rendered by the chart and refused when set.
+`valkey.username_file`, `valkey.password_file` and `valkey.tls.ca_file`) are rendered by the chart and refused when set; the binary
+marks them in its schema (`x-trove-chart-managed`), and so are `server.ops_tls` and `tracing.ca_file`. The schema the chart
+validates `config` against is `internal/config/bastion.schema.json`. The role has no `incoming_context` key under `tracing`
+(R-BAS-042).
 
 <details>
 <summary>deploy/helm/trove-bastion/values.yaml</summary>
@@ -2960,6 +2974,193 @@ needs one of them.
 **Applied in the spec:** the `Priority:` lines of RMT-040, RMT-041, RMT-044 ([remote-repositories.md](../features/remote-repositories.md))
 and DIST-024, DIST-025 ([distribution-and-lifecycle.md](../features/distribution-and-lifecycle.md)); the roadmap's M13 row.
 
+### Q-BAS-48 · A registration is a principal row plus a subtype table; the kind and the token type are admitted by one contract step
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the contract work of phase 5b lays the schema the parallel work packages share. `principal.kind` and `api_token.type` are
+`CHECK … IN (…)` lists in migration 00007, which is immutable; neither lists `bastion` or `bst`. R-HA-018 classifies every `DROP` of
+a constraint as a contract step, and `ParseSteps` refuses it in an expand file.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Expand 00032 (the table `bastion`, `bastion_contact`, the name rule, the token guard), contract 00033 (replace the two checks, `NOT VALID`), expand 00034 (validate) (chosen) | The checks are replaced the one way the rules allow; `requires-app >= 0.1.0` because the step only loosens | Every constraint stays honest: the database refuses a kind or type outside the list; the rules of R-HA-018 and R-ARCH-026 hold unchanged; no release is made unable to serve | A contract step ships in a feature release; the floor of an empty database becomes `0.1.0` instead of `0.0.0` (one test states the rule instead of the constant) |
+| (b) Keep the checks, store a registration as a `service_account` with a marker table | No schema change of the existing tables | No contract step | The kind would not be `bastion`; the guards of group membership and role binding would admit it, so "holds no grant, no membership" would rest on the API alone (against Q-BAS-23) |
+| (c) Replace the checks inside a `DO` block built from strings | The lint does not see the `DROP` | Stays an expand file | Evades the rule instead of meeting it |
+
+**Choice:** (a).
+
+**Rationale:** a registration is a principal of the kind `bastion` (R-AUTHZ-002, Q-BAS-23) and the database must be able to say so
+and refuse the rest: the guards of `authz_role_binding` (00011) and `group_membership` (00007) name the kinds they admit, and
+`bastion` is none of them (`AI001`), which makes "never a grant holder" structural. The registration's own columns go to a subtype
+table, as a service account's do, with `principal.revision` as its ETag (a trigger bumps it when the description changes). The
+last contact of a replica is a transient table pruned by its writer after 30 days; the feed needs no index of its own, because
+`(occurred_at, id)` is the primary key of `audit_event` and the lookback window is minutes long (an index on the partitioned
+table cannot be built concurrently). The development agent would revisit this if a second principal kind needs the same step: the
+checks could then be replaced by a table of kinds.
+
+The token API does not see a Bastion token: `IdentityListTokens` and `IdentityTokenRow` exclude the type `bst`, so `GET /tokens` never
+lists one and `GET`, `DELETE` and rotate of `/tokens/{id}` answer `404` for it. A Bastion token belongs to its registration
+(`/bastions/{name}/tokens`), and the enums of the token API stay as they are (adding `bst` to a response enum is a breaking change
+of the contract, R-ARCH-025).
+
+**Applied in the spec:** R-BAS-004 (the error for a fourth token is the existing `token_limit_reached`, see Q-BAS-53),
+R-BAS-010, R-BAS-015; code: `internal/meta/postgres/migrations/00032_bastion.sql` to `00034_bastion_validate.sql`, the query files
+`bastion_registration.sql`, `bastion_contact.sql`, `bastion_feed.sql`.
+
+### Q-BAS-49 · The interface is one package of wire types; four details of the contract are fixed in it
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-BAS-008 to R-BAS-016 give the shapes of the bodies and headers; writing them as types showed four places the page leaves
+open.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `internal/bastion/iface` holds every header, class, shape, kind, cursor, body and problem code, with the rules below (chosen) | One import for both sides; the surface guard reads this one package | Both sides cannot drift; the guard of R-BAS-009 is a test over one directory | A change anywhere in it raises the version, also a comment-only change of a constant's value |
+| (b) Types on each side, equal by test | Two copies | No shared package | A field added on one side passes until the other side is built |
+
+**Choice:** (a), with these details:
+
+1. **Subject header.** `expires=` is left out for a token that does not expire (a service-account token may); the check answer's
+   `expiresAt` is absent then. `Trove-Bastion-Subject` carries `token`, `anonymous` or `invalid` only; `anonymous_refused` and
+   `throttled` exist in the check answer alone.
+2. **Entry IDs.** An audit event that yields more than one entry (`settings.auth.changed` yields `settings` and, when anonymous access
+   was switched off, `grants`) gives the first the event's ID and the others `<event ID>:1`, `<event ID>:2`, so every entry has an ID
+   of its own and the same event always yields the same IDs.
+3. **Paging with the lookback.** A read is two queries: the entries within the lookback up to and including the cursor (late commits,
+   all of them, re-sent for the Bastion to skip) and the entries after it, cut by `limit`. A page therefore always advances. When the
+   entries behind the cursor exceed four times `bastions.feed.max_page`, the answer is `reset: true`, never a truncated list.
+4. **Strict decoding.** Both sides decode every body with `iface.DecodeStrict`: an unknown member is an error, because equality of the
+   versions is the rule (R-BAS-009). The cursor's text form is `base64url(<RFC 3339 time>|<event ID>)`, opaque to the Bastion; the
+   synthetic form stays `t:<RFC 3339>`.
+
+**Rationale:** (1) a non-expiring service-account token is real and a made-up expiry would be a lie in a security header; (2) without
+it the Bastion's deduplication by ID would drop the second entry of an event; (3) with one query and a limit, a lookback window that
+holds more than a page returns the same first page forever, which would stall the revocation feed; (4) a Bastion that ignores a
+member it does not know serves under rules it does not understand. The development agent would revisit (3) if journaled events become
+so frequent that the safety bound is reached in normal operation (Q-BAS-29's condition).
+
+**Applied in the spec:** R-BAS-009 (the constant is `iface.InterfaceVersion`), R-BAS-013, R-BAS-015; code: `internal/bastion/iface`,
+`testdata/interface.txt`, `TestR_BAS_009_TheInterfaceChangesOnlyWithItsVersion`.
+
+### Q-BAS-50 · The role has a configuration tree of its own, chosen by `--role` alone
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A second root struct `BastionConfig` loaded by `LoadBastion`, with its own generated JSON Schema (chosen) | Same loader, tags and units; a key of another section is unknown to the tree | The refusal of R-BAS-001 is the loader's own unknown-key error, naming key and role; the chart validates `config` against exactly the role's schema (R-HA-029) | Two trees and two schema files |
+| (b) The main tree with a role check per section | One tree | One file | The role's schema would list every key of the main installation; the refusal is a second mechanism |
+
+**Choice:** (a). Details: the role is chosen by `trove serve --role bastion` and nothing else (`process.role` is not a key of the
+tree, so a file that holds it is refused); the one flag the role takes is `--log-level`; a file key or an environment variable of
+another section is refused with the key and the role in the message, and a mapping is walked, so `database.host` is named rather than
+`database`; the keys the chart renders carry the tag `chart:"managed"`, which the schema exports as `x-trove-chart-managed: true`
+(`server.tls`, `server.ops_tls`, `bastion.main.token_file`, `bastion.main.ca_file`, `bastion.signing_key_file`,
+`bastion.cache.volume.dir`, `bastion.cache.bucket.ca_file`, the three bucket credential files, `bastion.replicas`, the Valkey
+username and password files, `tracing.ca_file`); the role has `server.ops_tls` (R-BAS-044 names the ops listener's TLS); the sections
+`health` and `metrics` of the main tree do not exist in the role, the server uses their defaults and a fixed drain delay of 5 s;
+`valkey.key_prefix` empty is derived from the host of `server.base_url` and the client sees `trove-bastion:<prefix>:`; the schema file
+is `internal/config/bastion.schema.json`, written by the same `go generate` as `schema.json`.
+
+**Rationale:** the refusal in the acceptance of R-BAS-001 comes for free from a loader that does not know the key, and the chart's
+schema cannot admit a key the binary refuses. The development agent would revisit the fixed drain delay if a Bastion behind a slower
+ingress needs a different one.
+
+**Applied in the spec:** R-BAS-001, R-BAS-002, R-BAS-034, R-BAS-044, R-BAS-046; code: `internal/config/bastion_role.go`.
+
+### Q-BAS-51 · The Bastion's code is a tree of small packages under an allow-list; the read-shape resolver is package 3's
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `internal/bastion/{iface, answers, metrics, mainclient, cache, shared, guard, downloads, engine, server}` under an allow-list rule, and `internal/bastionmain` for the main side (chosen) | One package per parallel work package, an archtest rule that holds the tree to the platform packages | The packages are built in parallel without editing a shared file; R-BAS-001's "no subsystem" is a failing test | Several small packages |
+| (b) One package `internal/bastion` | Fewer files | Simple | Eight developers in one package; no rule can say which part imports what |
+
+**Choice:** (a). The allow-list (`internal/archtest/bastion.go`): `errs`, `config`, `buildinfo`, `observability` and its health
+package, `tlsfiles`, `outbound`, `httpserver` with its content wrapper; `internal/cluster` for `internal/bastion/shared` only (the
+Valkey client and its degradation, R-ARCH-031) and `internal/blob/s3` for `internal/bastion/cache` only (the S3 client for the bucket
+backend), because only those two packages may import the Valkey client and the AWS SDK (R-ARCH-002). The main installation's side
+lives in `internal/bastionmain`, a domain package, because it needs the decision point and the Bastion's tree may not import it. The
+**read-shape resolver** (R-BAS-012) is declared in `internal/bastionmain` and implemented by work package 3: the marking asks it on
+the hot path of every forwarded read and the acceptance test `TestR_BAS_012_ShapeAgreesWithTheDecisionPoint` belongs to it; the check
+operation of work package 2 consumes it, and tests it against a double until package 3 lands.
+
+**Rationale:** the rule is an allow-list, as R-ARCH-008's is, so a package that did not exist when it was written is refused by
+default. The development agent would revisit the entry for `cluster` if its Valkey client is split from the change log, which would
+let the Bastion import the client alone.
+
+**Applied in the spec:** R-BAS-001, R-BAS-012; code: `internal/archtest/bastion.go`, `internal/archtest/layers.go`.
+
+### Q-BAS-52 · Recognition and marking are one chain stage before authentication; the dispatcher tells an observer about the route
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A stage `Chain.Bastion` between the client address and the authentication, composed of Recognize (package 2) and Mark (package 3), and a `RouteObserver` in the request context that the dispatcher calls after the match and after the decision (chosen) | The recognition result is a context value; the shared authorization step admits the interface routes on it (`x-trove-permission: {bastion: true}`); the observer refuses write probes in the format's shape and the marking wrapper adds the headers | No format code is involved (R-BAS-013); the token is taken out of `Authorization` before the stage looks at credentials; a nil stage costs nothing | A change to the dispatcher and the chain |
+| (b) Marking in the authentication stage | Fewer stages | One place | The stage knows no route; the probe answer needs the format's `WriteError` |
+| (c) Each format marks its responses | Format code | None | Against R-BAS-013 and Q-BAS-27 |
+
+**Choice:** (a). The stages exist only on the chain of the default endpoint. The observer sees `RouteMatch` (format, repository key, route
+name, method, kind, coarse action) before the decision and `RouteDecision` (subject, index, repository class) after it; the raw file
+handler (`/files/`) gets the same two calls from work package 3. The interface routes carry the new declaration form `{bastion: true}`
+with `x-trove-bastion-interface: <n>`, and the document refuses a version other than the build's.
+
+**Rationale:** the authentication stage would refuse `trv_bst_` as an unknown token on every route (R-BAS-005), so the recognition has
+to run first and to move the validated token out of `Authorization` on an interface route; the marking has to wrap the writer outside
+the stage to mark a `401` for a rejected credential. The development agent would revisit the rawfiles call if `/files/` moves under the
+dispatcher.
+
+**Applied in the spec:** R-BAS-005, R-BAS-008, R-BAS-013, R-BAS-014; code: `internal/bastionmain`, `internal/httpserver/chain.go`,
+`internal/api/dispatch/dispatcher.go`, `internal/api/v1/authorize.go`.
+
+### Q-BAS-53 · Unbuilt operations answer 501 `bastion_not_implemented`; three codes follow the existing registry
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Stub handlers answer `501 bastion_not_implemented` when the composition root says so, `503` otherwise; the registry gains the Bastion codes; the existing `token_limit_reached` serves the fourth-token error (chosen) | The operations are in the document and routed; the smoke tests of the document stay green | The build, the contract tests and the generated client types exist before the logic | A flag in `v1.Options` until the last stub leaves |
+| (b) Leave the operations out of the document until built | Nothing to stub | Less to remove | The packages would edit the shared document; the interface surface could not be reviewed |
+| (c) A new code `too_many_tokens` | Matches the page | The words of the page | A second code for the rule the registry already has |
+
+**Choice:** (a). `principal_not_allowed` is registered (422, R-BAS-004), because the existing `principal_outside_project` names a
+project; the codes of R-BAS-029 and `bastion_base_url_unknown` are registered with their kinds; `trove_bastion_interface_requests_total`
+and `trove_bastion_forwarded_requests_total` live in `internal/bastionmain`, the Bastion's metrics in `internal/bastion/metrics`,
+all defined once.
+
+**Rationale:** a code is never reused or renamed (R-ARCH-025); the page's `too_many_tokens` was never in the registry. The development
+agent would revisit this if the owner wants the page's name, which would be a rename of one constant before the first release that
+carries it.
+
+**Applied in the spec:** R-BAS-004; code: `internal/errs/codes.go`, `internal/api/v1/bastion_*_api.go`, `internal/app/wire_bastion.go`.
+
+### Q-BAS-54 · The role's process reuses the shell of the others and answers `bastion_not_served` until the engine exists
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `internal/bastion/server` builds the listeners, the TLS reloaders, the chain stages 1 to 5 and the ops handler from `internal/httpserver`, `observability` and `tlsfiles`, and hands every path to the engine through `Router.SetFallback` (chosen) | The TLS reload, request log, metrics, client address and shutdown are the ones of the other roles; a placeholder engine refuses | One implementation of each; the skeleton runs and can be probed before the engine exists | The binary links code the role never runs |
+| (b) A new `app` area per role | Fits the wiring table | Same place | The areas are PostgreSQL-shaped; the role would need a shell profile of its own |
+
+**Choice:** (a). Startup reads the token file (R-BAS-006) and the signing key before a port is bound; readiness is the start-up check,
+the TLS material and the engine's `Ready`, and does not depend on the main installation (Q-BAS-44); the drain is readiness off, the
+drain delay, the client listener's shutdown by the deadline, the engine's `Drain`, then the ops listener. `trove admin config validate`
+does not know the role (the check is the start of the role, which stops on a defect).
+
+**Rationale:** the specification says the role reuses the TLS reloader, the limiters, the request log and the client address
+(Q-BAS-22); a second shell would be a second implementation of each. The server builds its chain itself, an `httpserver.Chain`
+without an `Endpoint`: it is the one place besides `internal/app` that the endpoint-construction rule of R-EP-002 lets build one,
+because the role has no endpoints, no host set and no surface (`internal/archtest/endpoint.go`). The development agent would revisit the exclusion of `admin
+config validate` when the first operator asks for an offline check of a Bastion file.
+
+**Applied in the spec:** R-BAS-001, R-BAS-006, R-BAS-043, R-BAS-044; code: `internal/bastion/server`, `internal/app/bastion.go`,
+`cmd/trove/serve.go`.
+
 ### Q-BAS-55 · What a render needs, and what the values file left open
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -3177,6 +3378,26 @@ audit); a crashed replica loses its buffer, counted nowhere but in its last scra
 installation spools to the cache backend, which with an ephemeral volume is deleted with the pod. It is the Bastion's form of
 [H-122](../security/audit.md#h-122--a-crashed-replica-loses-the-buffered-asynchronous-events-and-its-open-summaries). What makes it
 real: long outages of the main installation, crashes, and the volume backend without a persistent volume.
+
+### H-428 · The ops listener of a Bastion serves its metrics without authentication
+
+Stage: R-BAS-040 and R-BAS-047. Subject: what the series of the Bastion tell a party that reaches the ops port.
+
+Live on every Bastion from the first build of the role. The role has no `metrics` section: the ops listener serves `/metrics` as the
+main installation does with `metrics.auth: none`, and the chart's NetworkPolicy admits the ops port from the monitoring namespace and
+the probe CIDRs only (R-BAS-047). The series carry no address, token, path or repository key (R-BAS-040), but they tell how much
+traffic the Bastion carries, how full its cache is, whether the main installation is reachable and when its token expires. What makes
+it real: a pod in the allowed namespace that is not the monitoring stack, or a chart with `networkPolicy.enabled: false`.
+
+### H-429 · Until the engine and the guard are built, a Bastion refuses every read and limits nothing
+
+Stage: the contract work of phase 5b (`internal/bastion/engine`, `internal/bastion/guard`). Subject: a build of the role that has the
+skeleton and not yet the work packages 4 and 6.
+
+Dormant once phase 5b is complete. The skeleton serves `404 bastion_not_served` to every client request, which is safe; its guard is a
+placeholder that admits every request and every credential attempt, which is safe only because no request reaches a read. The server
+logs the placeholders at start. What makes it real: a release cut between the work packages in which the engine is built before the
+guard; the engine's constructor must refuse a placeholder guard and a placeholder cache once it serves reads.
 
 ### H-432 · The edge limit counts per TCP peer address and has no burst
 

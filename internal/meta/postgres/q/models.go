@@ -167,6 +167,22 @@ type AuthzRoleBinding struct {
 	Source      string
 }
 
+type Bastion struct {
+	PrincipalID pgtype.UUID
+	Description string
+}
+
+type BastionContact struct {
+	BastionID        pgtype.UUID
+	Replica          string
+	ContactAt        pgtype.Timestamptz
+	ClientAddress    *netip.Addr
+	Release          string
+	InterfaceVersion int32
+	BaseUrl          string
+	TokenID          pgtype.UUID
+}
+
 type Blob struct {
 	Sha256          []byte
 	Sha1            []byte

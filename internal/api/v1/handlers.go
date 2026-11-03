@@ -191,6 +191,14 @@ type Options struct {
 	// error answers the operations with 503.
 	LoadManual func() (*manual.Manual, error)
 	// <<< M2 manual
+
+	// >>> M13 bastion
+	// BastionStubs is set by the composition root while an operation of the Bastion work is a stub
+	// (bastion_*_api.go): the stub answers 501 bastion_not_implemented. Unset, as in the tests of this
+	// package, a stub answers 503 like an operation whose service is not wired. The flag and the stubs leave
+	// together with the last of them.
+	BastionStubs bool
+	// <<< M13 bastion
 }
 
 // Server implements gen.ServerInterface.

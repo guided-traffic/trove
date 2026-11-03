@@ -22,6 +22,7 @@ type AuthTokens struct {
 	PAT                 AuthTokenPAT  `yaml:"pat"`
 	SAT                 AuthTokenSAT  `yaml:"sat"`
 	CIT                 AuthTokenCIT  `yaml:"cit"`
+	BST                 AuthTokenBST  `yaml:"bst"`
 	MaxActive           AuthTokenMax  `yaml:"max_active_per_principal"`
 }
 
@@ -44,10 +45,18 @@ type AuthTokenCIT struct {
 	MaxTTL time.Duration `yaml:"max_ttl" default:"6h" validate:"min=1m,max=6h" doc:"Hard ceiling; the CI exchange sets the issued lifetime."`
 }
 
+// AuthTokenBST is the lifetime policy of Bastion tokens (R-BAS-004, R-AUTH-026). A Bastion token always
+// expires, and the default and the ceiling leave room for a renewal by hand with an overlap (R-BAS-006).
+type AuthTokenBST struct {
+	DefaultTTL time.Duration `yaml:"default_ttl" default:"8760h" validate:"min=1h" doc:"Lifetime of a Bastion token when the request names none: one year (R-BAS-004)."`
+	MaxTTL     time.Duration `yaml:"max_ttl" default:"9480h" validate:"min=1h" doc:"Ceiling of a Bastion token's lifetime: one year and a month, so a yearly renewal fits its overlap (R-BAS-004)."`
+}
+
 // AuthTokenMax bounds the active tokens of one principal (R-AUTH-026).
 type AuthTokenMax struct {
 	PAT int `yaml:"pat" default:"50" validate:"min=1"`
 	SAT int `yaml:"sat" default:"20" validate:"min=1"`
+	BST int `yaml:"bst" default:"3" validate:"min=1" doc:"Unrevoked Bastion tokens per registration, so that a renewal's overlap fits (R-BAS-004)."`
 }
 
 // AuthAnonymous is the operator's ceiling for anonymous access (R-AUTH-037).
@@ -83,6 +92,9 @@ func (t *AuthTokens) Validate(r *Report) {
 	}
 	if t.SAT.DefaultTTL > t.SAT.MaxTTL {
 		r.Add("sat.default_ttl", "(%s) must not exceed sat.max_ttl (%s)", t.SAT.DefaultTTL, t.SAT.MaxTTL)
+	}
+	if t.BST.DefaultTTL > t.BST.MaxTTL {
+		r.Add("bst.default_ttl", "(%s) must not exceed bst.max_ttl (%s)", t.BST.DefaultTTL, t.BST.MaxTTL)
 	}
 }
 

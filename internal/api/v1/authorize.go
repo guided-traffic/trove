@@ -10,6 +10,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/authz"
+	"github.com/guided-traffic/trove/internal/bastionmain"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/httpserver"
 )
@@ -20,6 +21,11 @@ import (
 type Requirement struct {
 	// Public admits every caller: {public: true}.
 	Public bool
+	// Bastion admits a request of a Bastion on the Bastion interface: {bastion: true} (R-BAS-005, R-BAS-008).
+	// It decides on the recognition stage's result alone ([bastionmain.RecognitionFrom]): the Bastion token
+	// was checked there, it has no subject of the decision point, and it grants nothing else. The form is
+	// valid only with x-trove-bastion-interface, which the document checks.
+	Bastion bool
 	// Authenticated admits every authenticated caller: {authenticated: true}.
 	// With PublicSwitch ({authenticated: true, publicSwitch: <key>}) the
 	// operation is public while that configuration switch is on.
@@ -57,6 +63,8 @@ func (q Requirement) String() string {
 	switch {
 	case q.Public:
 		return "public"
+	case q.Bastion:
+		return "a recognized Bastion"
 	case q.Authenticated && q.PublicSwitch != "":
 		return "authenticated, or public with " + q.PublicSwitch
 	case q.Authenticated:
@@ -99,6 +107,11 @@ func parseRequirement(raw map[string]any) (Requirement, error) {
 			return Requirement{Public: true}, nil
 		}
 		return Requirement{}, fmt.Errorf("public must be true (leave it out instead of false)")
+	case "bastion":
+		if v, ok := raw["bastion"].(bool); ok && v {
+			return Requirement{Bastion: true}, nil
+		}
+		return Requirement{}, fmt.Errorf("bastion must be true (leave it out instead of false)")
 	case "authenticated", "authenticated,publicSwitch":
 		if v, ok := raw["authenticated"].(bool); !ok || !v {
 			return Requirement{}, fmt.Errorf("authenticated must be true")
@@ -311,6 +324,13 @@ func (s *Server) decide(r *http.Request, q Requirement) error {
 	switch {
 	case q.Public:
 		return nil
+	case q.Bastion:
+		// The recognition stage stored the proof; without it the Bastion token was missing or the stage is
+		// not wired, and the answer is the one of an invalid Bastion token (R-BAS-008).
+		if rec, ok := bastionmain.RecognitionFrom(ctx); ok && rec.Route {
+			return nil
+		}
+		return errs.E(errs.Unauthenticated, errs.CodeBastionTokenInvalid, "The Bastion token is missing or invalid.", errs.WithChallenge("Bearer"))
 	case q.Authenticated:
 		if q.PublicSwitch != "" && s.switchOn(q.PublicSwitch) {
 			return nil

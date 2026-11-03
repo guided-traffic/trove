@@ -47,8 +47,13 @@ type Config struct {
 	// The M4 section: the GitLab CI OIDC federation (ci.go).
 	CI CI `yaml:"ci"`
 
+	// The Bastion interface of the main installation (R-BAS-004 to R-BAS-017): the registrations, the check, the
+	// feed and the download intake (bastions.go). The Bastion's own configuration is a tree of its own
+	// (BastionConfig in bastion_role.go); the section named bastion there has nothing to do with this one.
+	Bastions Bastions `yaml:"bastions"`
+
 	// ConfigAsCode holds secrets_dir, which the secret references of M2 use.
 	ConfigAsCode AsCode `yaml:"config_as_code"`
 }
 
-//go:generate go run ./schemagen -out schema.json
+//go:generate go run ./schemagen -out schema.json -bastion-out bastion.schema.json

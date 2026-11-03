@@ -27,7 +27,7 @@ const (
 // Prefix returns the prefix of a token type, or "" for an unknown type.
 func Prefix(t Type) string {
 	switch t {
-	case TypePAT, TypeSAT, TypeCIT:
+	case TypePAT, TypeSAT, TypeCIT, TypeBST:
 		return "trv_" + string(t) + "_"
 	}
 	return ""

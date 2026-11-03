@@ -19,6 +19,10 @@ const endpointRule = "R-EP-002"
 // spelled, so an import alias, a function value (f := httpserver.NewEndpoint), a
 // new(httpserver.Endpoint), a composite literal or a local type alias of Chain
 // do not get around it. Test files are not loaded.
+//
+// The one other builder is the role bastion's process, internal/bastion/server (Q-BAS-54): it has no
+// endpoints (one client listener, no host set, no surface), so its chain is built without an Endpoint and the
+// endpoint model is never made up there; the check still refuses it NewEndpoint and an Endpoint value.
 func CheckEndpointConstruction(module string, pkgs []*packages.Package) []Violation {
 	var out []Violation
 	for _, p := range pkgs {
@@ -26,6 +30,7 @@ func CheckEndpointConstruction(module string, pkgs []*packages.Package) []Violat
 		if p.TypesInfo == nil || under(r, "internal/httpserver") || under(r, "internal/app") {
 			continue
 		}
+		chainAllowed := under(r, "internal/bastion/server")
 		seen := map[string]bool{}
 		add := func(file, what string) {
 			key := file + "|" + what
@@ -47,7 +52,7 @@ func CheckEndpointConstruction(module string, pkgs []*packages.Package) []Violat
 						add(file, "httpserver.NewEndpoint")
 					}
 				case *ast.CompositeLit:
-					if name := bannedValueType(p.TypesInfo.TypeOf(x)); name != "" {
+					if name := bannedValueType(p.TypesInfo.TypeOf(x)); name != "" && (!chainAllowed || name != "Chain") {
 						add(file, "httpserver."+name+"{}")
 					}
 				case *ast.CallExpr:
@@ -70,7 +75,7 @@ func CheckEndpointConstruction(module string, pkgs []*packages.Package) []Violat
 			if !ok {
 				continue
 			}
-			if name := bannedValueType(v.Type()); name != "" {
+			if name := bannedValueType(v.Type()); name != "" && (!chainAllowed || name != "Chain") {
 				pos := p.Fset.Position(id.Pos())
 				add(rel(module, p.PkgPath)+"/"+baseName(pos.Filename), "a value of httpserver."+name)
 			}

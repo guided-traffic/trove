@@ -379,6 +379,8 @@ VALUES (sqlc.arg(id)::text::uuid, sqlc.arg(type)::text, sqlc.arg(secret_sha256):
 RETURNING expires_at, created_at;
 
 -- name: IdentityTokenRow :many
+-- A Bastion token (type bst) is managed through its registration (queries/bastion_registration.sql, R-BAS-004)
+-- and is not a token of the token API: no row here, so GET, DELETE and rotate of /tokens/{id} answer 404 for it.
 SELECT t.id::text AS id, t.type, t.hint, t.principal_id::text AS owner_id, p.kind AS owner_kind, p.name AS owner_name,
        t.description, t.scope, t.self_rotatable, t.created_at, coalesce(t.created_by::text, '')::text AS created_by,
        t.created_via, t.expires_at, t.revoked_at, coalesce(t.revoked_by::text, '')::text AS revoked_by,
@@ -386,10 +388,11 @@ SELECT t.id::text AS id, t.type, t.hint, t.principal_id::text AS owner_id, p.kin
        coalesce(t.derived_from::text, '')::text AS derived_from, t.last_used_at, coalesce(host(t.last_used_addr), '')::text AS last_used_addr,
        coalesce(t.expires_at IS NOT NULL AND t.expires_at <= now(), false)::boolean AS expired, t.ci_context
   FROM api_token t JOIN principal p ON p.id = t.principal_id
- WHERE t.id = sqlc.arg(id)::text::uuid;
+ WHERE t.id = sqlc.arg(id)::text::uuid AND t.type <> 'bst';
 
 -- name: IdentityListTokens :many
--- Keyset order by id descending (a UUIDv7 sorts by creation time).
+-- Keyset order by id descending (a UUIDv7 sorts by creation time). Bastion tokens (type bst) are not listed: they
+-- belong to a registration and are shown with it (R-BAS-004).
 SELECT t.id::text AS id, t.type, t.hint, t.principal_id::text AS owner_id, p.kind AS owner_kind, p.name AS owner_name,
        t.description, t.scope, t.self_rotatable, t.created_at, coalesce(t.created_by::text, '')::text AS created_by,
        t.created_via, t.expires_at, t.revoked_at, coalesce(t.revoked_by::text, '')::text AS revoked_by,
@@ -397,7 +400,8 @@ SELECT t.id::text AS id, t.type, t.hint, t.principal_id::text AS owner_id, p.kin
        coalesce(t.derived_from::text, '')::text AS derived_from, t.last_used_at, coalesce(host(t.last_used_addr), '')::text AS last_used_addr,
        coalesce(t.expires_at IS NOT NULL AND t.expires_at <= now(), false)::boolean AS expired, t.ci_context
   FROM api_token t JOIN principal p ON p.id = t.principal_id
- WHERE (sqlc.arg(after)::text = '' OR t.id < sqlc.arg(after)::text::uuid)
+ WHERE t.type <> 'bst'
+   AND (sqlc.arg(after)::text = '' OR t.id < sqlc.arg(after)::text::uuid)
    AND (sqlc.arg(owner_id)::text = '' OR t.principal_id = sqlc.arg(owner_id)::text::uuid)
    AND (sqlc.arg(type)::text = '' OR t.type = sqlc.arg(type)::text)
    AND (CASE sqlc.arg(state)::text

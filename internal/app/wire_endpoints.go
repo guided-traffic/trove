@@ -139,7 +139,7 @@ func (a *App) startEndpoint(rt *endpointRuntime, router *httpserver.Router) erro
 		Trace: trace, TraceID: observabilityRequestID, AccessLog: reqLog,
 		OnRequest: label, MaxInFlight: rt.ep.MaxInFlight(), Resolver: resolver, Annotate: annotate,
 		Memory: a.memGuard, OnShed: func(reason string) { a.tele.metrics.RequestShed(rt.cfg.Name, reason) },
-		Authenticate: a.authenticate(rt), Preflight: part[apiArea](a.parts).preflight, RateLimit: a.endpointStage(rt), Replica: a.id.Instance, ReplicaHeader: rt.ep.ReplicaHeader(),
+		Authenticate: a.authenticate(rt), Bastion: a.bastionStage(rt.cfg.Default), Preflight: part[apiArea](a.parts).preflight, RateLimit: a.endpointStage(rt), Replica: a.id.Instance, ReplicaHeader: rt.ep.ReplicaHeader(),
 		Draining: a.health.Draining,
 	}.Handler()
 

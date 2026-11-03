@@ -18,6 +18,9 @@ const (
 	KindServiceAccount Kind = "service_account"
 	// KindCI is a CI identity mapping row (M4).
 	KindCI Kind = "ci"
+	// KindBastion is a Bastion registration (R-BAS-004): the owner of Bastion tokens, never a subject of the
+	// decision point and never a holder of a grant, role, ownership or membership.
+	KindBastion Kind = "bastion"
 	// KindAnonymous and KindAuthenticated are the built-in rows (R-AUTHZ-003,
 	// R-AUTHZ-030).
 	KindAnonymous     Kind = "anonymous"

@@ -72,12 +72,21 @@ func layerTable() []layerRule {
 		{"internal/ci/subject", layerLeaf},
 		{"internal/auth/jws", layerLeaf},
 		{"docs/manual", layerLeaf}, // the embedded files of the manual, nothing but embed (R-API-054)
+		// The trove Bastion (R-BAS-001, Q-BAS-51): the wire contract, the answers' validity rules and the metrics are
+		// leaves that the main installation's side and the Bastion's share or read; they import nothing of the module.
+		{"internal/bastion/iface", layerLeaf},
+		{"internal/bastion/answers", layerLeaf},
+		{"internal/bastion/metrics", layerLeaf},
 
 		{"internal/meta/postgres", layerInfra},
 		{"internal/blob", layerInfra},
 		{"internal/cluster", layerInfra},
 		{"internal/outbound", layerInfra},
 		{"internal/secrets", layerInfra},
+		// The Bastion's clients and stores: the main installation's client, the cache backends, the shared state.
+		{"internal/bastion/mainclient", layerInfra},
+		{"internal/bastion/cache", layerInfra},
+		{"internal/bastion/shared", layerInfra},
 
 		{"internal/repository", layerDomain},
 		{"internal/files", layerDomain},
@@ -94,12 +103,20 @@ func layerTable() []layerRule {
 		{"internal/jobs", layerDomain},
 		{"internal/audit", layerDomain},
 		{"internal/backup", layerDomain},
+		// The main installation's side of the Bastion (seams, recognition, registrations, marking) and the Bastion's
+		// guard and download buffer.
+		{"internal/bastionmain", layerDomain},
+		{"internal/bastion/guard", layerDomain},
+		{"internal/bastion/downloads", layerDomain},
 
 		{"internal/httpserver", layerEdge},
 		{"internal/api", layerEdge},
 		{"internal/webui", layerEdge},
 		{"internal/formats", layerEdge},
 		{"internal/formathost", layerEdge},
+		// The Bastion's request flow and its role: they answer HTTP.
+		{"internal/bastion/engine", layerEdge},
+		{"internal/bastion/server", layerEdge},
 
 		{"internal/app", layerApp},
 		{"cmd", layerCmd},

@@ -1,0 +1,136 @@
+package shared
+
+import (
+	"context"
+	"testing"
+	"time"
+)
+
+type clock struct{ t time.Time }
+
+func (c *clock) now() time.Time          { return c.t }
+func (c *clock) advance(d time.Duration) { c.t = c.t.Add(d) }
+
+func newClock() *clock { return &clock{t: time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC)} }
+
+func TestR_BAS_035_ABucketAdmitsItsBurstThenTheRate(t *testing.T) {
+	c := newClock()
+	s := NewLocal(1, c.now)
+	rate := Rate{PerSecond: 10, Burst: 40}
+	ctx := context.Background()
+	admitted := 0
+	for i := 0; i < 1000; i++ {
+		if ok, _, _ := s.Limiter.Allow(ctx, "bastion.anonymous", "203.0.113.7", rate); ok {
+			admitted++
+		}
+	}
+	if admitted != 40 {
+		t.Fatalf("admitted %d at once, want the burst of 40", admitted)
+	}
+	c.advance(10 * time.Second)
+	admitted = 0
+	for i := 0; i < 1000; i++ {
+		if ok, _, _ := s.Limiter.Allow(ctx, "bastion.anonymous", "203.0.113.7", rate); ok {
+			admitted++
+		}
+	}
+	if admitted != 40 {
+		t.Fatalf("after 10 s: %d, want the burst of 40 again (100 tokens, capped)", admitted)
+	}
+	if ok, _, _ := s.Limiter.Allow(ctx, "bastion.anonymous", "203.0.113.8", rate); !ok {
+		t.Fatal("a second address was slowed down")
+	}
+}
+
+func TestR_BAS_034_WithoutValkeyTheRateIsDividedByTheReplicas(t *testing.T) {
+	c := newClock()
+	s := NewLocal(2, c.now)
+	ok := 0
+	for i := 0; i < 1000; i++ {
+		if a, _, _ := s.Limiter.Allow(context.Background(), "bastion.anonymous", "a", Rate{PerSecond: 10, Burst: 40}); a {
+			ok++
+		}
+	}
+	if ok != 20 {
+		t.Fatalf("burst per replica = %d, want 40 / 2", ok)
+	}
+	if s.Limiter.Replicas() != 2 || s.Shared() {
+		t.Fatal("the local state claims to be shared or to have one replica")
+	}
+}
+
+func TestR_BAS_036_AWindowCountsOnlyWithinItsPeriod(t *testing.T) {
+	c := newClock()
+	s := NewLocal(1, c.now)
+	ctx := context.Background()
+	for i := 1; i <= 3; i++ {
+		n, _ := s.Limiter.Add(ctx, "bastion.failed_auth", "a", 10*time.Minute)
+		if n != i {
+			t.Fatalf("count after %d = %d", i, n)
+		}
+		c.advance(time.Minute)
+	}
+	c.advance(8 * time.Minute) // the first event is 11 minutes old, the others 10 and 9
+	if n, _ := s.Limiter.Count(ctx, "bastion.failed_auth", "a", 10*time.Minute); n != 1 {
+		t.Fatalf("count = %d, want 1", n)
+	}
+}
+
+func TestR_BAS_037_ABlockExpiresAndItsLevelIsKeptForADay(t *testing.T) {
+	c := newClock()
+	s := NewLocal(1, c.now)
+	ctx := context.Background()
+	if err := s.Blocks.Set(ctx, "198.51.100.9", 15*time.Minute, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := s.Blocks.Blocked(ctx, "198.51.100.9"); !ok {
+		t.Fatal("not blocked")
+	}
+	if n, _ := s.Blocks.Size(ctx); n != 1 {
+		t.Fatalf("size = %d", n)
+	}
+	c.advance(16 * time.Minute)
+	if _, ok, _ := s.Blocks.Blocked(ctx, "198.51.100.9"); ok {
+		t.Fatal("still blocked after the duration")
+	}
+	if lv, _ := s.Blocks.Level(ctx, "198.51.100.9"); lv != 1 {
+		t.Fatalf("level = %d, want 1 within 24 h", lv)
+	}
+	c.advance(24 * time.Hour)
+	if lv, _ := s.Blocks.Level(ctx, "198.51.100.9"); lv != 0 {
+		t.Fatalf("level = %d after 24 h", lv)
+	}
+}
+
+func TestR_BAS_025_AFlightLockIsHeldByOneAndReleased(t *testing.T) {
+	s := NewLocal(1, nil)
+	ctx := context.Background()
+	held, release, _ := s.Flights.TryAcquire(ctx, "k")
+	if !held {
+		t.Fatal("the first caller did not get the lock")
+	}
+	if again, _, _ := s.Flights.TryAcquire(ctx, "k"); again {
+		t.Fatal("a second caller got the lock")
+	}
+	release()
+	if again, _, _ := s.Flights.TryAcquire(ctx, "k"); !again {
+		t.Fatal("the lock was not released")
+	}
+}
+
+func TestR_BAS_034_AnswerRecordsExpire(t *testing.T) {
+	c := newClock()
+	s := NewLocal(1, c.now)
+	ctx := context.Background()
+	_ = s.Answers.Put(ctx, AnswerShape, "h", []byte("signed"), time.Minute)
+	if b, ok, _ := s.Answers.Get(ctx, AnswerShape, "h"); !ok || string(b) != "signed" {
+		t.Fatalf("get = %q %v", b, ok)
+	}
+	if _, ok, _ := s.Answers.Get(ctx, AnswerURL, "h"); ok {
+		t.Fatal("a record of another kind was returned")
+	}
+	c.advance(2 * time.Minute)
+	if _, ok, _ := s.Answers.Get(ctx, AnswerShape, "h"); ok {
+		t.Fatal("an expired record was returned")
+	}
+}

@@ -557,7 +557,7 @@ func TestAuthorizationStep(t *testing.T) {
 		for pattern, op := range doc.Operations() {
 			q := op.Requirement
 			n := 0
-			for _, set := range []bool{q.Public, q.Authenticated, q.Permission != "", q.Role != "", q.Action != ""} {
+			for _, set := range []bool{q.Public, q.Bastion, q.Authenticated, q.Permission != "", q.Role != "", q.Action != ""} {
 				if set {
 					n++
 				}

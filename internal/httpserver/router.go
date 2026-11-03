@@ -55,6 +55,8 @@ type Router struct {
 	uncleaned atomic.Pointer[[]uncleanedRoute]
 	// shapes are the error shapes of path prefixes (HandleErrorShape).
 	shapes shapeTable
+	// custom replaces the answer to a request no route claims (SetFallback).
+	custom atomic.Pointer[http.Handler]
 }
 
 // ShapeFunc renders an error in the body and with the headers a protocol's
@@ -254,6 +256,12 @@ func (r *Router) Pattern(req *http.Request) string {
 	return p
 }
 
+// SetFallback makes h answer every request that no route claims, in place of the 404 and 405 problems of the
+// router. A role that serves one path space with a handler of its own (the Bastion, which mirrors the main
+// installation's URL space and answers its own refusals, R-BAS-018) registers it here, and with
+// HandleUncleaned for the paths ServeMux would redirect.
+func (r *Router) SetFallback(h http.Handler) { r.custom.Store(&h) }
+
 // probeMethods are the methods fallback tries to build an Allow header.
 func probeMethods() []string {
 	return []string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete}
@@ -263,6 +271,10 @@ func probeMethods() []string {
 // only when no pattern matches the path, and "/" always matches, so the router
 // asks the mux itself whether the path exists for another method.
 func (r *Router) fallback(w http.ResponseWriter, req *http.Request) {
+	if h := r.custom.Load(); h != nil {
+		(*h).ServeHTTP(w, req)
+		return
+	}
 	var allow []string
 	if r.servesPath != nil && !r.servesPath(req.URL.Path) {
 		Problem(w, req, errs.E(errs.NotFound, errs.CodeNotFound, "No route matches the request path."))

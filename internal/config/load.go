@@ -57,6 +57,9 @@ type Options struct {
 	SkipSecretFiles bool
 	// Command selects the command-specific checks of CheckFor; Load runs them.
 	Command Command
+	// Role names the role whose tree is loaded when it is not the main one ("bastion"): an unknown key or
+	// environment variable is then reported as a key that does not belong to the role (R-BAS-001).
+	Role string
 }
 
 // Loaded is the result of a successful Load.
@@ -232,6 +235,10 @@ func (l *loader) walkNode(file, prefix string, n *yaml.Node) {
 				l.fail("%s: %s is retired: %s", at, path, why)
 				continue
 			}
+			if l.opts.Role != "" {
+				l.failRoleKey(file, path, vn, kn.Line)
+				continue
+			}
 			msg := fmt.Sprintf("%s: unknown key %q", at, path)
 			if c, near := closest(kn.Value, siblings); near {
 				msg += fmt.Sprintf(" (did you mean %q?)", prefix+c)
@@ -256,6 +263,30 @@ func (l *loader) walkNode(file, prefix string, n *yaml.Node) {
 	}
 }
 
+// failRoleKey reports a key of a file that the role's tree does not hold, naming the key and the role. A
+// mapping is walked, so that database.host is named, not only database (R-BAS-001).
+func (l *loader) failRoleKey(file, path string, n *yaml.Node, line int) {
+	if n.Kind == yaml.MappingNode && len(n.Content) > 0 {
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			l.failRoleKey(file, path+"."+n.Content[i].Value, n.Content[i+1], n.Content[i].Line)
+		}
+		return
+	}
+	l.fail("%s:%d: %s is not a key of the role %s; the role reads the sections %s only", file, line, path, l.opts.Role, strings.Join(l.topSections(), ", "))
+}
+
+// topSections lists the sections at the root of the tree.
+func (l *loader) topSections() []string {
+	var out []string
+	for s := range l.schema.structs {
+		if !strings.Contains(s, ".") {
+			out = append(out, s)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 func (l *loader) applyEnv() {
 	var names []string
 	vals := map[string]string{}
@@ -277,6 +308,10 @@ func (l *loader) applyEnv() {
 		if !ok {
 			if path, why, retired := retiredEnv(name); retired {
 				l.fail("%s: %s is retired: %s", name, path, why)
+				continue
+			}
+			if l.opts.Role != "" {
+				l.fail("%s: not a setting of the role %s (every setting of a %s is a value of its chart, R-BAS-002)", name, l.opts.Role, l.opts.Role)
 				continue
 			}
 			msg := fmt.Sprintf("unknown environment variable %s", name)

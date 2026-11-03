@@ -118,7 +118,11 @@ The gaps of the Bastion's mechanisms are recorded on the spec page, where the me
 - [H-390](../spec/bastion.md#h-390--the-time-of-an-answer-tells-a-caller-whether-others-fetched-a-package-recently) — what the
   timing of a hit tells;
 - [H-391](../spec/bastion.md#h-391--download-events-lost-to-a-full-buffer-a-crash-or-an-ephemeral-spool-are-missing-from-the-audit)
-  — download events lost before they reach the audit.
+  — download events lost before they reach the audit;
+- [H-428](../spec/bastion.md#h-428--the-ops-listener-of-a-bastion-serves-its-metrics-without-authentication) — the ops listener's
+  metrics carry no authentication;
+- [H-429](../spec/bastion.md#h-429--until-the-engine-and-the-guard-are-built-a-bastion-refuses-every-read-and-limits-nothing) — a
+  build of the role between the work packages;
 - [H-432](../spec/bastion.md#h-432--the-edge-limit-counts-per-tcp-peer-address-and-has-no-burst) — the edge limit keys on the TCP
   peer address and has no burst;
 - [H-433](../spec/bastion.md#h-433--the-egress-policy-names-the-main-installation-by-address) — the egress policy names the main

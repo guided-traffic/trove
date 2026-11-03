@@ -127,6 +127,8 @@ func (o Owner) Ref() string {
 		return "sa:" + o.Name
 	case principal.KindCI:
 		return "ci:" + o.Name
+	case principal.KindBastion:
+		return "bastion:" + o.Name
 	}
 	return o.Name
 }

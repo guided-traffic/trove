@@ -1,5 +1,7 @@
 package errs
 
+import "github.com/guided-traffic/trove/internal/bastion/iface"
+
 // Codes are stable snake_case identifiers and part of the API contract: a code
 // is never reused or renamed within an API major version (R-ARCH-025). This file
 // is the single registry; the problem catalog served under
@@ -246,6 +248,40 @@ const (
 )
 
 // <<< M4 ci
+//
+// >>> M13 bastion
+
+// Codes of the trove Bastion (R-BAS-004, R-BAS-008, R-BAS-009, R-BAS-014, R-BAS-029). The ones the two sides
+// exchange are defined once in internal/bastion/iface, which both import; the rest are the main installation's.
+const (
+	// CodeBastionTokenInvalid: the Bastion token of a request is invalid (401).
+	CodeBastionTokenInvalid = iface.CodeTokenInvalid
+	// CodeBastionInterfaceMismatch: the interface version of the request differs (400); the problem carries
+	// interfaceVersion.
+	CodeBastionInterfaceMismatch = iface.CodeInterfaceMismatch
+	// CodeBastionReadOnly: a write through a Bastion (403).
+	CodeBastionReadOnly = iface.CodeReadOnly
+	// CodeBastionNotServed: a path the Bastion does not serve (404).
+	CodeBastionNotServed = iface.CodeNotServed
+	// CodeBastionBaseURLUnknown: client-setup for a Bastion whose reported base URL is not an additional base
+	// URL of the installation (409).
+	CodeBastionBaseURLUnknown = iface.CodeBaseURLUnknown
+	// CodeBastionNotImplemented answers an operation of the Bastion work that is not built yet; it leaves with
+	// the last stub.
+	CodeBastionNotImplemented = iface.CodeNotImplemented
+	// CodePrincipalNotAllowed: a policy entry, a role binding, an owner record or a membership names a Bastion
+	// registration (422, R-BAS-004).
+	CodePrincipalNotAllowed = "principal_not_allowed"
+	// The Bastion's own refusals (R-BAS-029): the Bastion produces them, the registry documents them.
+	CodeMainFailed      = iface.CodeMainFailed
+	CodeMainUnreachable = iface.CodeMainUnreachable
+	CodeBastionBusy     = iface.CodeBusy
+	CodeMainTimeout     = iface.CodeMainTimeout
+	CodeAuthTimeout     = iface.CodeAuthTimeout
+	CodeAddressBlocked  = iface.CodeAddressBlocked
+)
+
+// <<< M13 bastion
 //
 // >>> M1 repository
 // Repository model (R-REPO-001 to R-REPO-013, R-ARCH-005). invalid_pattern,
@@ -585,6 +621,22 @@ var registry = []CodeInfo{
 	{CodePolicyOutsideProject, Invalid, "Policy outside the project", "A project administrator's mapping may name only policies of its own project."},
 	{CodeMappingsUnpinned, Conflict, "Mappings unpinned", "The issuer change would leave mappings that pin none of the issuer's pin_claims where the pin rules require one (pin_required on a public issuer, unpinned_write on a private one); the problem lists them in mappings. Pin them, or delete them, first."},
 	// <<< M4 ci
+	//
+	// >>> M13 bastion
+	{CodeBastionTokenInvalid, Unauthenticated, "Bastion token invalid", "The Bastion token of the request is invalid, revoked, expired or its registration is disabled. It concerns the Bastion, not the caller."},
+	{CodeBastionInterfaceMismatch, Invalid, "Bastion interface mismatch", "The request names another version of the Bastion interface than this installation speaks, or none; the member interfaceVersion is this installation's. Upgrade the Bastion or the installation so that they speak the same version."},
+	{CodeBastionReadOnly, Forbidden, "Bastion is read-only", "A Bastion serves reads only; the detail names the URL of the repository on the main installation, where to publish."},
+	{CodeBastionNotServed, NotFound, "Not served by a Bastion", "A Bastion serves the package clients' read paths (/api/<format>/… and /files/…) and nothing else."},
+	{CodeBastionBaseURLUnknown, Conflict, "Bastion base URL unknown", "The base URL the Bastion reported at its last handshake is not an entry of server.additional_base_urls; add it, and the snippets are rendered on it."},
+	{CodeBastionNotImplemented, NotImplemented, "Bastion operation not implemented", "The operation is part of the Bastion work and is not built in this release yet."},
+	{CodePrincipalNotAllowed, Unprocessable, "Principal not allowed", "A Bastion registration holds no grant, role, ownership or group membership: it owns Bastion tokens only."},
+	{CodeMainFailed, UpstreamFailed, "Main installation failed", "The Bastion could not get an answer from the main installation (connect or TLS error, or an unmarked 5xx of a proxy in front of it)."},
+	{CodeMainUnreachable, Unavailable, "Main installation unreachable", "The Bastion cannot reach the main installation and holds no usable answer for this request; retry later."},
+	{CodeBastionBusy, Unavailable, "Bastion busy", "The Bastion's budget of concurrent requests to the main installation is used up; retry after the Retry-After."},
+	{CodeMainTimeout, UpstreamTimeout, "Main installation timed out", "The main installation did not answer within the Bastion's time limit."},
+	{CodeAuthTimeout, RateLimited, "Authentication timeout", "Too many failed authentications came from this address; unverified credentials are refused until the Retry-After has passed."},
+	{CodeAddressBlocked, RateLimited, "Address blocked", "The address was blocked for sending too many refused requests; retry after the Retry-After."},
+	// <<< M13 bastion
 	//
 	// >>> M1 repository
 	{CodeRepositoryDisabled, NotFound, "Repository disabled", "The repository is disabled and takes no part in resolution, download or deploy; the management API still works."},

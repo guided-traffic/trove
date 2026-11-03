@@ -61,6 +61,102 @@ func (e AuthSettingsStatusBreakGlassPasswordStatus) Valid() bool {
 	}
 }
 
+// Defines values for BastionFeedEntryKind.
+const (
+	BastionFeedEntryKindContent   BastionFeedEntryKind = "content"
+	BastionFeedEntryKindGrants    BastionFeedEntryKind = "grants"
+	BastionFeedEntryKindPrincipal BastionFeedEntryKind = "principal"
+	BastionFeedEntryKindSettings  BastionFeedEntryKind = "settings"
+	BastionFeedEntryKindToken     BastionFeedEntryKind = "token"
+)
+
+// Valid indicates whether the value is a known member of the BastionFeedEntryKind enum.
+func (e BastionFeedEntryKind) Valid() bool {
+	switch e {
+	case BastionFeedEntryKindContent:
+		return true
+	case BastionFeedEntryKindGrants:
+		return true
+	case BastionFeedEntryKindPrincipal:
+		return true
+	case BastionFeedEntryKindSettings:
+		return true
+	case BastionFeedEntryKindToken:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BastionRepositoryReadRead.
+const (
+	BastionRepositoryReadReadFull    BastionRepositoryReadRead = "full"
+	BastionRepositoryReadReadNone    BastionRepositoryReadRead = "none"
+	BastionRepositoryReadReadPartial BastionRepositoryReadRead = "partial"
+)
+
+// Valid indicates whether the value is a known member of the BastionRepositoryReadRead enum.
+func (e BastionRepositoryReadRead) Valid() bool {
+	switch e {
+	case BastionRepositoryReadReadFull:
+		return true
+	case BastionRepositoryReadReadNone:
+		return true
+	case BastionRepositoryReadReadPartial:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BastionRepositoryReadStatus.
+const (
+	N401 BastionRepositoryReadStatus = 401
+	N403 BastionRepositoryReadStatus = 403
+	N404 BastionRepositoryReadStatus = 404
+)
+
+// Valid indicates whether the value is a known member of the BastionRepositoryReadStatus enum.
+func (e BastionRepositoryReadStatus) Valid() bool {
+	switch e {
+	case N401:
+		return true
+	case N403:
+		return true
+	case N404:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BastionSubjectKind.
+const (
+	BastionSubjectKindAnonymous        BastionSubjectKind = "anonymous"
+	BastionSubjectKindAnonymousRefused BastionSubjectKind = "anonymous_refused"
+	BastionSubjectKindInvalid          BastionSubjectKind = "invalid"
+	BastionSubjectKindThrottled        BastionSubjectKind = "throttled"
+	BastionSubjectKindToken            BastionSubjectKind = "token"
+)
+
+// Valid indicates whether the value is a known member of the BastionSubjectKind enum.
+func (e BastionSubjectKind) Valid() bool {
+	switch e {
+	case BastionSubjectKindAnonymous:
+		return true
+	case BastionSubjectKindAnonymousRefused:
+		return true
+	case BastionSubjectKindInvalid:
+		return true
+	case BastionSubjectKindThrottled:
+		return true
+	case BastionSubjectKindToken:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CacheEntryKind.
 const (
 	CacheEntryKindArtifact CacheEntryKind = "artifact"
@@ -837,16 +933,16 @@ func (e EndpointConfigurationWildcardRoot) Valid() bool {
 
 // Defines values for EndpointRateLimitKey.
 const (
-	Address   EndpointRateLimitKey = "address"
-	Principal EndpointRateLimitKey = "principal"
+	EndpointRateLimitKeyAddress   EndpointRateLimitKey = "address"
+	EndpointRateLimitKeyPrincipal EndpointRateLimitKey = "principal"
 )
 
 // Valid indicates whether the value is a known member of the EndpointRateLimitKey enum.
 func (e EndpointRateLimitKey) Valid() bool {
 	switch e {
-	case Address:
+	case EndpointRateLimitKeyAddress:
 		return true
-	case Principal:
+	case EndpointRateLimitKeyPrincipal:
 		return true
 	default:
 		return false
@@ -2628,16 +2724,16 @@ func (e ListRepositoriesParamsState) Valid() bool {
 
 // Defines values for ListRepositoriesParamsView.
 const (
-	Full    ListRepositoriesParamsView = "full"
-	Summary ListRepositoriesParamsView = "summary"
+	ListRepositoriesParamsViewFull    ListRepositoriesParamsView = "full"
+	ListRepositoriesParamsViewSummary ListRepositoriesParamsView = "summary"
 )
 
 // Valid indicates whether the value is a known member of the ListRepositoriesParamsView enum.
 func (e ListRepositoriesParamsView) Valid() bool {
 	switch e {
-	case Full:
+	case ListRepositoriesParamsViewFull:
 		return true
-	case Summary:
+	case ListRepositoriesParamsViewSummary:
 		return true
 	default:
 		return false
@@ -2989,6 +3085,167 @@ type AuthzMe struct {
 	Projects []AdministeredProject `json:"projects"`
 	Roles    []RoleName            `json:"roles"`
 	Scope    *ScopeSummary         `json:"scope"`
+}
+
+// Bastion A Bastion registration, a principal of the kind `bastion` (R-BAS-004).
+type Bastion struct {
+	// Contacts The last contact of each replica, the most recent first (R-BAS-010).
+	Contacts    []BastionContact   `json:"contacts"`
+	CreatedAt   time.Time          `json:"createdAt"`
+	Description string             `json:"description"`
+	Enabled     bool               `json:"enabled"`
+	Id          openapi_types.UUID `json:"id"`
+	Name        string             `json:"name"`
+
+	// Tokens The unrevoked tokens, newest first. Neither the value nor its hash is part of it.
+	Tokens []BastionTokenSummary `json:"tokens"`
+}
+
+// BastionCheckAnswer defines model for BastionCheckAnswer.
+type BastionCheckAnswer struct {
+	Repositories map[string]BastionRepositoryRead `json:"repositories"`
+	Subject      BastionSubject                   `json:"subject"`
+}
+
+// BastionCheckRequest defines model for BastionCheckRequest.
+type BastionCheckRequest struct {
+	ClientAddress string `json:"clientAddress"`
+
+	// Credential The token string the caller presented, or `null` for an anonymous caller.
+	Credential   *string  `json:"credential"`
+	Repositories []string `json:"repositories"`
+}
+
+// BastionContact defines model for BastionContact.
+type BastionContact struct {
+	// BaseUrl The base URL the Bastion reported; empty when it reported none.
+	BaseUrl          string    `json:"baseUrl"`
+	ClientAddress    *string   `json:"clientAddress"`
+	ContactAt        time.Time `json:"contactAt"`
+	InterfaceVersion int       `json:"interfaceVersion"`
+	Release          string    `json:"release"`
+	Replica          string    `json:"replica"`
+}
+
+// BastionDownloadEvent defines model for BastionDownloadEvent.
+type BastionDownloadEvent struct {
+	At            time.Time           `json:"at"`
+	ClientAddress string              `json:"clientAddress"`
+	Path          string              `json:"path"`
+	PrincipalId   *openapi_types.UUID `json:"principalId,omitempty"`
+	Replica       string              `json:"replica"`
+	Repository    string              `json:"repository"`
+	Sha256        string              `json:"sha256"`
+	TokenId       *openapi_types.UUID `json:"tokenId,omitempty"`
+	UserAgent     *string             `json:"userAgent,omitempty"`
+}
+
+// BastionDownloadsRequest defines model for BastionDownloadsRequest.
+type BastionDownloadsRequest struct {
+	Dropped      int                    `json:"dropped"`
+	DroppedSince *time.Time             `json:"droppedSince,omitempty"`
+	Events       []BastionDownloadEvent `json:"events"`
+}
+
+// BastionFeedAnswer defines model for BastionFeedAnswer.
+type BastionFeedAnswer struct {
+	Cursor  string             `json:"cursor"`
+	Entries []BastionFeedEntry `json:"entries"`
+	More    bool               `json:"more"`
+	Reset   bool               `json:"reset"`
+}
+
+// BastionFeedEntry defines model for BastionFeedEntry.
+type BastionFeedEntry struct {
+	At           time.Time            `json:"at"`
+	Id           string               `json:"id"`
+	Kind         BastionFeedEntryKind `json:"kind"`
+	Principals   *[]string            `json:"principals,omitempty"`
+	Repositories *[]string            `json:"repositories,omitempty"`
+	Tokens       *[]string            `json:"tokens,omitempty"`
+}
+
+// BastionFeedEntryKind defines model for BastionFeedEntry.Kind.
+type BastionFeedEntryKind string
+
+// BastionHandshake The answer of the handshake (R-BAS-010).
+type BastionHandshake struct {
+	AnonymousAccess bool `json:"anonymousAccess"`
+	Bastion         struct {
+		Name           string             `json:"name"`
+		TokenExpiresAt time.Time          `json:"tokenExpiresAt"`
+		TokenId        openapi_types.UUID `json:"tokenId"`
+	} `json:"bastion"`
+	Feed struct {
+		Cursor string `json:"cursor"`
+	} `json:"feed"`
+	Installation struct {
+		BaseUrl string `json:"baseUrl"`
+		Release string `json:"release"`
+	} `json:"installation"`
+	InterfaceVersion int       `json:"interfaceVersion"`
+	RecordDownloads  bool      `json:"recordDownloads"`
+	ResponseBaseUrl  string    `json:"responseBaseUrl"`
+	ServerTime       time.Time `json:"serverTime"`
+}
+
+// BastionList defines model for BastionList.
+type BastionList struct {
+	Items []Bastion `json:"items"`
+}
+
+// BastionPatch The read-only members of `Bastion` are accepted and ignored.
+type BastionPatch struct {
+	Description *string `json:"description,omitempty"`
+	Enabled     *bool   `json:"enabled,omitempty"`
+}
+
+// BastionRepositoryRead defines model for BastionRepositoryRead.
+type BastionRepositoryRead struct {
+	Read BastionRepositoryReadRead `json:"read"`
+
+	// Status Set with `none`: the status the caller would receive for a read of the repository.
+	Status *BastionRepositoryReadStatus `json:"status,omitempty"`
+}
+
+// BastionRepositoryReadRead defines model for BastionRepositoryRead.Read.
+type BastionRepositoryReadRead string
+
+// BastionRepositoryReadStatus Set with `none`: the status the caller would receive for a read of the repository.
+type BastionRepositoryReadStatus int
+
+// BastionSubject defines model for BastionSubject.
+type BastionSubject struct {
+	ExpiresAt         *time.Time          `json:"expiresAt,omitempty"`
+	Kind              BastionSubjectKind  `json:"kind"`
+	PrincipalId       *openapi_types.UUID `json:"principalId,omitempty"`
+	RetryAfterSeconds *int                `json:"retryAfterSeconds,omitempty"`
+	TokenId           *openapi_types.UUID `json:"tokenId,omitempty"`
+}
+
+// BastionSubjectKind defines model for BastionSubject.Kind.
+type BastionSubjectKind string
+
+// BastionTokenCreated A Bastion token with its value. The value is in this answer only.
+type BastionTokenCreated struct {
+	CreatedAt   time.Time          `json:"createdAt"`
+	Description string             `json:"description"`
+	ExpiresAt   time.Time          `json:"expiresAt"`
+	Hint        string             `json:"hint"`
+	Id          openapi_types.UUID `json:"id"`
+
+	// Token The secret, 57 characters with the prefix `trv_bst_`. Shown once.
+	Token string `json:"token"`
+}
+
+// BastionTokenSummary defines model for BastionTokenSummary.
+type BastionTokenSummary struct {
+	CreatedAt   time.Time          `json:"createdAt"`
+	Description string             `json:"description"`
+	ExpiresAt   time.Time          `json:"expiresAt"`
+	Hint        string             `json:"hint"`
+	Id          openapi_types.UUID `json:"id"`
+	LastUsedAt  *time.Time         `json:"lastUsedAt"`
 }
 
 // CacheEntry defines model for CacheEntry.
@@ -4425,6 +4682,20 @@ type ManualSection struct {
 type MembershipChange struct {
 	Add    *[]string `json:"add,omitempty"`
 	Remove *[]string `json:"remove,omitempty"`
+}
+
+// NewBastion defines model for NewBastion.
+type NewBastion struct {
+	Description *string `json:"description,omitempty"`
+	Name        string  `json:"name"`
+}
+
+// NewBastionToken defines model for NewBastionToken.
+type NewBastionToken struct {
+	Description *string `json:"description,omitempty"`
+
+	// TtlSeconds The lifetime; at most `auth.tokens.bst.max_ttl`, default `auth.tokens.bst.default_ttl`.
+	TtlSeconds *int `json:"ttlSeconds,omitempty"`
 }
 
 // NewGroup defines model for NewGroup.
@@ -6004,6 +6275,9 @@ type WhoamiPrincipal struct {
 // WhoamiPrincipalKind defines model for WhoamiPrincipal.Kind.
 type WhoamiPrincipalKind string
 
+// BastionInterface defines model for BastionInterface.
+type BastionInterface = int
+
 // Cursor defines model for Cursor.
 type Cursor = string
 
@@ -6037,6 +6311,12 @@ type BadGateway = Problem
 // BadRequest RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
 type BadRequest = Problem
 
+// BastionInterfaceMismatch RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+type BastionInterfaceMismatch = Problem
+
+// BastionTokenInvalid RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+type BastionTokenInvalid = Problem
+
 // Conflict RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
 type Conflict = Problem
 
@@ -6048,6 +6328,9 @@ type Internal = Problem
 
 // NotFound RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
 type NotFound = Problem
+
+// NotImplemented RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
+type NotImplemented = Problem
 
 // PayloadTooLarge RFC 9457 problem details. The extension members are `code`, `requestId` and `errors`.
 type PayloadTooLarge = Problem
@@ -6138,6 +6421,62 @@ type ExportAuditEventsParams struct {
 
 // ExportAuditEventsParamsFormat defines parameters for ExportAuditEvents.
 type ExportAuditEventsParamsFormat string
+
+// BastionCheckParams defines parameters for BastionCheck.
+type BastionCheckParams struct {
+	// TroveBastionInterface The Bastion's interface version (R-BAS-009). Required on every request of a Bastion: a request without it, or with
+	// another version, is answered `400 bastion_interface_mismatch` before the operation runs. It is declared optional
+	// here so that the answer is the interface's, not the binder's.
+	TroveBastionInterface *BastionInterface `json:"Trove-Bastion-Interface,omitempty"`
+}
+
+// BastionDownloadsParams defines parameters for BastionDownloads.
+type BastionDownloadsParams struct {
+	// TroveBastionInterface The Bastion's interface version (R-BAS-009). Required on every request of a Bastion: a request without it, or with
+	// another version, is answered `400 bastion_interface_mismatch` before the operation runs. It is declared optional
+	// here so that the answer is the interface's, not the binder's.
+	TroveBastionInterface *BastionInterface `json:"Trove-Bastion-Interface,omitempty"`
+}
+
+// BastionFeedParams defines parameters for BastionFeed.
+type BastionFeedParams struct {
+	// After A cursor in wire form (R-BAS-015).
+	After string `form:"after" json:"after"`
+
+	// Limit Entries at most; capped at `bastions.feed.max_page`.
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// TroveBastionInterface The Bastion's interface version (R-BAS-009). Required on every request of a Bastion: a request without it, or with
+	// another version, is answered `400 bastion_interface_mismatch` before the operation runs. It is declared optional
+	// here so that the answer is the interface's, not the binder's.
+	TroveBastionInterface *BastionInterface `json:"Trove-Bastion-Interface,omitempty"`
+}
+
+// BastionHandshakeParams defines parameters for BastionHandshake.
+type BastionHandshakeParams struct {
+	// TroveBastionInterface The Bastion's interface version (R-BAS-009). Required on every request of a Bastion: a request without it, or with
+	// another version, is answered `400 bastion_interface_mismatch` before the operation runs. It is declared optional
+	// here so that the answer is the interface's, not the binder's.
+	TroveBastionInterface *BastionInterface `json:"Trove-Bastion-Interface,omitempty"`
+}
+
+// GetBastionParams defines parameters for GetBastion.
+type GetBastionParams struct {
+	// IfNoneMatch An ETag the client holds; a match answers `304` (R-API-012).
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// UpdateBastionParams defines parameters for UpdateBastion.
+type UpdateBastionParams struct {
+	// IfMatch The ETag loaded with the resource, or `*` to overwrite deliberately (R-API-012).
+	IfMatch IfMatch `json:"If-Match"`
+}
+
+// CreateBastionTokenParams defines parameters for CreateBastionToken.
+type CreateBastionTokenParams struct {
+	// IdempotencyKey 1 to 255 printable ASCII characters, preferably a UUID (R-API-014).
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
 
 // ListCiIssuancesParams defines parameters for ListCiIssuances.
 type ListCiIssuancesParams struct {
@@ -6717,6 +7056,12 @@ type GetClientSetupParams struct {
 
 	// Scope An npm scope (`@team-a`); adds the scoped variant of the registry configuration.
 	Scope *string `form:"scope,omitempty" json:"scope,omitempty"`
+
+	// Bastion The name of a Bastion registration (R-BAS-007). The snippets are rendered on the base URL the Bastion reported at its
+	// last handshake, provided it is an entry of `server.additional_base_urls` (`409 bastion_base_url_unknown` otherwise),
+	// and carry no publish snippets, since a Bastion is read-only; for npm the configure snippet sets
+	// `replace-registry-host=always`. An unknown name answers `404`.
+	Bastion *string `form:"bastion,omitempty" json:"bastion,omitempty"`
 }
 
 // GetClientSetupParamsCredentials defines parameters for GetClientSetup.
@@ -6985,6 +7330,21 @@ type CheckPermissionsJSONRequestBody = PermissionCheckRequest
 
 // ValidatePermissionPolicyJSONRequestBody defines body for ValidatePermissionPolicy for application/json ContentType.
 type ValidatePermissionPolicyJSONRequestBody = PermissionPolicyInput
+
+// BastionCheckJSONRequestBody defines body for BastionCheck for application/json ContentType.
+type BastionCheckJSONRequestBody = BastionCheckRequest
+
+// BastionDownloadsJSONRequestBody defines body for BastionDownloads for application/json ContentType.
+type BastionDownloadsJSONRequestBody = BastionDownloadsRequest
+
+// CreateBastionJSONRequestBody defines body for CreateBastion for application/json ContentType.
+type CreateBastionJSONRequestBody = NewBastion
+
+// UpdateBastionApplicationMergePatchPlusJSONRequestBody defines body for UpdateBastion for application/merge-patch+json ContentType.
+type UpdateBastionApplicationMergePatchPlusJSONRequestBody = BastionPatch
+
+// CreateBastionTokenJSONRequestBody defines body for CreateBastionToken for application/json ContentType.
+type CreateBastionTokenJSONRequestBody = NewBastionToken
 
 // RevokeCiIssuancesJSONRequestBody defines body for RevokeCiIssuances for application/json ContentType.
 type RevokeCiIssuancesJSONRequestBody = CiRevokeRequest
@@ -7268,6 +7628,39 @@ type ServerInterface interface {
 	// ValidatePermissionPolicy Validate a permission policy without storing it
 	// (POST /api/v1/authz/validate-policy)
 	ValidatePermissionPolicy(w http.ResponseWriter, r *http.Request)
+	// BastionCheck Check a caller's credential and read shape
+	// (POST /api/v1/bastion/check)
+	BastionCheck(w http.ResponseWriter, r *http.Request, params BastionCheckParams)
+	// BastionDownloads Report downloads served from a Bastion's cache
+	// (POST /api/v1/bastion/downloads)
+	BastionDownloads(w http.ResponseWriter, r *http.Request, params BastionDownloadsParams)
+	// BastionFeed The revocation feed
+	// (GET /api/v1/bastion/feed)
+	BastionFeed(w http.ResponseWriter, r *http.Request, params BastionFeedParams)
+	// BastionHandshake Bastion handshake
+	// (GET /api/v1/bastion/handshake)
+	BastionHandshake(w http.ResponseWriter, r *http.Request, params BastionHandshakeParams)
+	// ListBastions List the Bastion registrations
+	// (GET /api/v1/bastions)
+	ListBastions(w http.ResponseWriter, r *http.Request)
+	// CreateBastion Register a Bastion
+	// (POST /api/v1/bastions)
+	CreateBastion(w http.ResponseWriter, r *http.Request)
+	// DeleteBastion Delete a Bastion registration
+	// (DELETE /api/v1/bastions/{name})
+	DeleteBastion(w http.ResponseWriter, r *http.Request, name string)
+	// GetBastion Read a Bastion registration
+	// (GET /api/v1/bastions/{name})
+	GetBastion(w http.ResponseWriter, r *http.Request, name string, params GetBastionParams)
+	// UpdateBastion Change or disable a Bastion registration
+	// (PATCH /api/v1/bastions/{name})
+	UpdateBastion(w http.ResponseWriter, r *http.Request, name string, params UpdateBastionParams)
+	// CreateBastionToken Issue a Bastion token
+	// (POST /api/v1/bastions/{name}/tokens)
+	CreateBastionToken(w http.ResponseWriter, r *http.Request, name string, params CreateBastionTokenParams)
+	// RevokeBastionToken Revoke a Bastion token
+	// (DELETE /api/v1/bastions/{name}/tokens/{id})
+	RevokeBastionToken(w http.ResponseWriter, r *http.Request, name string, id openapi_types.UUID)
 	// ListCiIssuances List the issued CI tokens
 	// (GET /api/v1/ci/issuances)
 	ListCiIssuances(w http.ResponseWriter, r *http.Request, params ListCiIssuancesParams)
@@ -8160,6 +8553,439 @@ func (siw *ServerInterfaceWrapper) ValidatePermissionPolicy(w http.ResponseWrite
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ValidatePermissionPolicy(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// BastionCheck operation middleware
+func (siw *ServerInterfaceWrapper) BastionCheck(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params BastionCheckParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Trove-Bastion-Interface" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Trove-Bastion-Interface")]; found {
+		var TroveBastionInterface BastionInterface
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Trove-Bastion-Interface", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Trove-Bastion-Interface", valueList[0], &TroveBastionInterface, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Trove-Bastion-Interface", Err: err})
+			return
+		}
+
+		params.TroveBastionInterface = &TroveBastionInterface
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.BastionCheck(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// BastionDownloads operation middleware
+func (siw *ServerInterfaceWrapper) BastionDownloads(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params BastionDownloadsParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Trove-Bastion-Interface" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Trove-Bastion-Interface")]; found {
+		var TroveBastionInterface BastionInterface
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Trove-Bastion-Interface", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Trove-Bastion-Interface", valueList[0], &TroveBastionInterface, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Trove-Bastion-Interface", Err: err})
+			return
+		}
+
+		params.TroveBastionInterface = &TroveBastionInterface
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.BastionDownloads(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// BastionFeed operation middleware
+func (siw *ServerInterfaceWrapper) BastionFeed(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params BastionFeedParams
+
+	// ------------- Required query parameter "after" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "after", r.URL.Query(), &params.After, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "after"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "after", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Trove-Bastion-Interface" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Trove-Bastion-Interface")]; found {
+		var TroveBastionInterface BastionInterface
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Trove-Bastion-Interface", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Trove-Bastion-Interface", valueList[0], &TroveBastionInterface, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Trove-Bastion-Interface", Err: err})
+			return
+		}
+
+		params.TroveBastionInterface = &TroveBastionInterface
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.BastionFeed(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// BastionHandshake operation middleware
+func (siw *ServerInterfaceWrapper) BastionHandshake(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params BastionHandshakeParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Trove-Bastion-Interface" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Trove-Bastion-Interface")]; found {
+		var TroveBastionInterface BastionInterface
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Trove-Bastion-Interface", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Trove-Bastion-Interface", valueList[0], &TroveBastionInterface, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Trove-Bastion-Interface", Err: err})
+			return
+		}
+
+		params.TroveBastionInterface = &TroveBastionInterface
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.BastionHandshake(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListBastions operation middleware
+func (siw *ServerInterfaceWrapper) ListBastions(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListBastions(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateBastion operation middleware
+func (siw *ServerInterfaceWrapper) CreateBastion(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateBastion(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteBastion operation middleware
+func (siw *ServerInterfaceWrapper) DeleteBastion(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteBastion(w, r, name)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetBastion operation middleware
+func (siw *ServerInterfaceWrapper) GetBastion(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetBastionParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetBastion(w, r, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateBastion operation middleware
+func (siw *ServerInterfaceWrapper) UpdateBastion(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateBastionParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		err := fmt.Errorf("Header parameter If-Match is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "If-Match", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateBastion(w, r, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateBastionToken operation middleware
+func (siw *ServerInterfaceWrapper) CreateBastionToken(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateBastionTokenParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateBastionToken(w, r, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeBastionToken operation middleware
+func (siw *ServerInterfaceWrapper) RevokeBastionToken(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeBastionToken(w, r, name, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -12578,6 +13404,19 @@ func (siw *ServerInterfaceWrapper) GetClientSetup(w http.ResponseWriter, r *http
 		return
 	}
 
+	// ------------- Optional query parameter "bastion" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "bastion", r.URL.Query(), &params.Bastion, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "bastion"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "bastion", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetClientSetup(w, r, repoKey, params)
 	}))
@@ -15159,6 +15998,17 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/packages/{packageName}/owners", wrapper.AddPackageOwner)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/repositories/{repoKey}/packages/{packageName}/owners/{owner}", wrapper.RemovePackageOwner)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/package-owners", wrapper.ListOwnedPackages)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/bastions", wrapper.ListBastions)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/bastions", wrapper.CreateBastion)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/bastions/{name}", wrapper.DeleteBastion)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/bastions/{name}", wrapper.GetBastion)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/bastions/{name}", wrapper.UpdateBastion)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/bastions/{name}/tokens", wrapper.CreateBastionToken)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/bastions/{name}/tokens/{id}", wrapper.RevokeBastionToken)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/bastion/handshake", wrapper.BastionHandshake)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/bastion/check", wrapper.BastionCheck)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/bastion/feed", wrapper.BastionFeed)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/bastion/downloads", wrapper.BastionDownloads)
 
 	return m
 }

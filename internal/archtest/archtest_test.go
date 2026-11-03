@@ -611,6 +611,7 @@ func TestRealTree(t *testing.T) {
 		all = append(all, CheckModuleImportBans(module, pkgs)...)
 		all = append(all, CheckModuleBans(module, pkgs)...)
 		all = append(all, CheckStorageValkey(pkgs)...)
+		all = append(all, CheckBastionImports(module, pkgs)...)
 		wantClean(t, all)
 	})
 	t.Run("R-ARCH-002 no HTTP client or dial outside internal/outbound", func(t *testing.T) {

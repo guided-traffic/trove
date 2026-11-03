@@ -23,6 +23,7 @@ import (
 
 	"github.com/guided-traffic/trove/internal/api/edge"
 	"github.com/guided-traffic/trove/internal/authz"
+	"github.com/guided-traffic/trove/internal/bastionmain"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats"
@@ -198,6 +199,22 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if d.o.Label != nil {
 		d.o.Label(ctx, route.Name)
 	}
+	// The Bastion marking stage learns the route here (R-BAS-013, R-BAS-014): it may refuse a write probe
+	// in the format's shape or answer the request itself, before any decision or body read.
+	obs := bastionmain.ObserverFrom(ctx)
+	match := bastionmain.RouteMatch{
+		Format: id, RepoKey: key, Name: route.Name, Method: r.Method, Kind: route.Kind.String(), Action: route.Action,
+	}
+	if obs != nil {
+		handled, err := obs.Matched(w, r, match)
+		if err != nil {
+			fail(err)
+			return
+		}
+		if handled {
+			return
+		}
+	}
 	acc, err := edge.Resolve(ctx, d.o.Decider, edge.SubjectFrom(r), key)
 	if err != nil { // 503 authz_stale, 412 authz_epoch_unknown
 		fail(err)
@@ -219,6 +236,9 @@ func (d *Dispatcher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if cacheView && repo.Class != repository.Remote {
 		fail(errs.E(errs.NotFound, errs.CodeRepositoryNotFound, "No repository has the requested key."))
 		return
+	}
+	if obs != nil {
+		obs.Decided(r, bastionmain.RouteDecision{Match: match, Subject: acc.Subject, Index: acc.Index(), Class: string(repo.Class)})
 	}
 	rq := &formats.Request{
 		Request: r, Repo: &repo, Route: route, Params: params, Path: cleaned, Escaped: rest,

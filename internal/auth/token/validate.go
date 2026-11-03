@@ -90,6 +90,13 @@ func (s *Service) Check(ctx context.Context, raw string, req Request) (Info, err
 		s.count(ctx, req)
 		return Info{}, ErrMalformed
 	}
+	if typ == TypeBST {
+		// A Bastion token is a credential of the Bastion interface only (R-BAS-005): here it is a token
+		// that does not exist, answered like one, before the cache and the token table are asked. It counts
+		// as a failed credential of its address (R-AUTH-038).
+		s.count(ctx, req)
+		return Info{}, ErrUnknown
+	}
 	hash := Hash(raw)
 	gateOpen := s.o.Gate.Open()
 	if gateOpen {

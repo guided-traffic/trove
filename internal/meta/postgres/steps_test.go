@@ -23,9 +23,15 @@ func TestEmbeddedSteps(t *testing.T) {
 		if len(steps) < 4 || steps[0].Name != "00001_foundation" {
 			t.Fatalf("steps = %+v", steps)
 		}
+		// A contract step is rare and named: it ships one release after the release that stopped using the
+		// object, or only loosens (Q-BAS-48), and a new one is added to this list on purpose.
+		contract := map[string]bool{"00033_bastion_kinds": true}
 		for _, s := range steps {
-			if s.Phase != phaseExpand {
-				t.Errorf("%s: the first migrations are expand steps, got %s", s.Name, s.Phase)
+			if s.Phase != phaseExpand && !contract[s.Name] {
+				t.Errorf("%s: an unlisted contract step: the migrations are expand steps unless a decision says otherwise, got %s", s.Name, s.Phase)
+			}
+			if s.Phase == phaseExpand && contract[s.Name] {
+				t.Errorf("%s is listed as a contract step but is %s", s.Name, s.Phase)
 			}
 		}
 	})

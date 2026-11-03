@@ -33,6 +33,18 @@ stops. Requirements: [R-ARCH-001](../spec/architecture.md), [R-ARCH-005](../spec
 | [facts.go](../../internal/app/facts.go) | System information from the configuration (the format list is the catalog's); the replica list from the replica registry |
 | [fixture_on.go](../../internal/app/fixture_on.go) / [fixture_off.go](../../internal/app/fixture_off.go) | The `drainfixture` test build |
 
+## The role bastion
+
+`trove serve --role bastion` does not go through `app.New`: [cmd/trove/serve.go](../../cmd/trove/serve.go) chooses it before the main
+tree is loaded and calls [`app.RunBastion`](../../internal/app/bastion.go), which runs [internal/bastion/server](../../internal/bastion/server).
+The server builds the same shell as the other roles (the TLS reloaders of `internal/httpserver`, the request log and metrics of
+`internal/observability`, the health registry, the client address resolver) around two listeners, `:8443` and `:8081`, and enables none of the main
+installation's subsystems: no PostgreSQL, no object store of the main installation, no jobs, no formats, no API, no UI. The client
+listener's chain is stages 1 to 5, then the engine for every path (`Router.SetFallback`, so the engine sees the path as received); there is no
+authentication stage and no rate-limit stage, because the engine's guard owns both. Until the engine is built every client request
+is `404 bastion_not_served`. [bastion.md](bastion.md) has the packages, the seams and the flows. On the main installation the chain gets a stage
+between the client address and the authentication (`Chain.Bastion`, only on the default endpoint) that recognizes a Bastion request and marks its response.
+
 ## What runs where
 
 `SubsystemsFor` encodes the table of R-ARCH-001. `web`: client and ops listener, main pool, Valkey,

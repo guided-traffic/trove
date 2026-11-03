@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/guided-traffic/trove/internal/bastion/iface"
 )
 
 // specYAML is the embedded copy of api/openapi.yaml. `go generate` refreshes it,
@@ -45,6 +47,10 @@ type Operation struct {
 	// operations, and on the operations that declare this (GET and DELETE /tokens/current, R-CI-013,
 	// R-CI-017). Every other operation refuses it with 403 ci_token_restricted (Q-CI-18).
 	CIAdmitted bool
+	// BastionInterface is x-trove-bastion-interface: the interface version the operation belongs to
+	// (R-BAS-008, R-BAS-009); 0 for every other operation. It is set exactly on the operations whose
+	// x-trove-permission is {bastion: true}, and equals iface.InterfaceVersion.
+	BastionInterface int
 }
 
 // Document is the parsed OpenAPI document.
@@ -115,7 +121,11 @@ func LoadDocument(raw []byte) (*Document, error) {
 			if err != nil {
 				problems = append(problems, fmt.Errorf("%s (%s): x-trove-ci: %w", pattern, id, err))
 			}
-			o := Operation{ID: id, Pattern: pattern, Permission: perm, Requirement: req, RecentAuth: recent, IfMatchRequired: op["x-trove-if-match"] == "required", CIAdmitted: admitted}
+			bastionVersion, err := parseBastionInterface(op, req)
+			if err != nil {
+				problems = append(problems, fmt.Errorf("%s (%s): x-trove-bastion-interface: %w", pattern, id, err))
+			}
+			o := Operation{ID: id, Pattern: pattern, Permission: perm, Requirement: req, RecentAuth: recent, IfMatchRequired: op["x-trove-if-match"] == "required", CIAdmitted: admitted, BastionInterface: bastionVersion}
 			if isFilesPattern(pattern) {
 				d.files[pattern] = o
 			} else {
@@ -153,6 +163,26 @@ func parseCIAdmitted(op map[string]any) (bool, error) {
 		return true, nil
 	}
 	return false, fmt.Errorf("must be admitted (leave the member out to refuse CI tokens), not %v", raw)
+}
+
+// parseBastionInterface reads x-trove-bastion-interface of an operation. The member and the permission form
+// {bastion: true} go together, and the member's value is the interface version of this build: an operation
+// documented for another version is a change of the interface that the guard of R-BAS-009 did not see.
+func parseBastionInterface(op map[string]any, req Requirement) (int, error) {
+	raw, has := op["x-trove-bastion-interface"]
+	switch {
+	case !has && !req.Bastion:
+		return 0, nil
+	case !has:
+		return 0, fmt.Errorf("the operation is declared {bastion: true} but names no interface version")
+	case !req.Bastion:
+		return 0, fmt.Errorf("only an operation declared {bastion: true} belongs to the Bastion interface")
+	}
+	v, ok := raw.(int)
+	if !ok || v != iface.InterfaceVersion {
+		return 0, fmt.Errorf("is %v, the interface version of this build is %d (R-BAS-009)", raw, iface.InterfaceVersion)
+	}
+	return v, nil
 }
 
 // FileOperations returns the operations of the raw file path (/files/...) keyed

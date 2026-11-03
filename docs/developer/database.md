@@ -453,6 +453,26 @@ Expand steps of beta phase 5 ([ci-oidc.md](ci-oidc.md)): 00026 creates `ci_issue
 `ON DELETE CASCADE`, Q-CI-20), seeds the epoch rows of `ci_mappings` and `ci_issuer_keys`, and adds `package_owner_ci_issuer_id_fkey` `NOT VALID`; 00027 builds its index
 `CONCURRENTLY`; 00028 validates it. 00029 to 00031 add the indexes of the issuance statements (Q-CI-53), each a single `CREATE INDEX CONCURRENTLY` in its own no-transaction step (R-HA-018): `ci_issuances_issued` (the list without a filter), `ci_issuances_issuer_issued` (the list of one issuer) and `ci_issuances_contributions` (a GIN on `grants -> 'contributions'` for a project's list). There is no index on `audit_event.token_id`: the table is partitioned, `CREATE INDEX CONCURRENTLY` is refused on a partitioned table, and the usage summary reads a window of the partitions' primary key. The plans are checked on a seeded table by [ci_issuance_plans_test.go](../../test/integration/postgres/ci_issuance_plans_test.go). These steps add indexes only, so nothing is registered in [tables_ci.go](../../internal/meta/postgres/tables_ci.go) and no export class changes.
 
+## Migrations of the Bastion (Q-BAS-48)
+
+Beta phase 5b ([bastion.md](bastion.md)) adds three steps. A registration is a principal of the kind `bastion` plus a row of `bastion`,
+the way a service account is a principal plus a `service_account` row; `principal.revision` is its ETag.
+
+| Step | Class | Content |
+|---|---|---|
+| [00032_bastion](../../internal/meta/postgres/migrations/00032_bastion.sql) | expand | the tables `bastion` (kind guard `AI001`, a revision trigger on the description) and `bastion_contact` (last contact per registration and replica, R-BAS-010; transient in backups); the check `principal_bastion_name` (`^[a-z][a-z0-9-]{0,19}$`, added `NOT VALID`); the `api_token_kind` guard admits the kind |
+| [00033_bastion_kinds](../../internal/meta/postgres/migrations/00033_bastion_kinds.sql) | **contract**, `requires-app >= 0.1.0` | replaces the checks `principal_kind_check` (adds `bastion`) and `api_token_type_check` (adds `bst`), `NOT VALID`. The step only loosens, so no release is made unable to serve and the floor of a fresh database is `0.1.0`; it is a contract step because the rules classify every `DROP` of a constraint there |
+| [00034_bastion_validate](../../internal/meta/postgres/migrations/00034_bastion_validate.sql) | expand | `VALIDATE CONSTRAINT` of the three checks |
+
+The guards of `authz_role_binding` and `group_membership` name the kinds they admit and `bastion` is none of them (`AI001`). The
+feed needs no new index: it reads `audit_event` by `(occurred_at, id)`, the primary key, within a window of minutes (an index on the
+partitioned table cannot be built `CONCURRENTLY`). The queries are in three files of their own, so the work packages never edit a
+shared one: [bastion_registration.sql](../../internal/meta/postgres/queries/bastion_registration.sql) (package 1),
+[bastion_contact.sql](../../internal/meta/postgres/queries/bastion_contact.sql) (package 2 writes, 1 and 8 read) and
+[bastion_feed.sql](../../internal/meta/postgres/queries/bastion_feed.sql) (package 2). Registrations of the export classes are in
+[tables_bastion.go](../../internal/meta/postgres/tables_bastion.go). Tested by
+[bastion_test.go](../../test/integration/postgres/bastion_test.go).
+
 ## Projects tables (00019 to 00025)
 
 Migrations 00019 to 00025 are expand steps (R-AUTHZ-026) in the shape R-HA-018 asks of a step that touches tables that

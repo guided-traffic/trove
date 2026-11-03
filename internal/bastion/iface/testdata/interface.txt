@@ -1,0 +1,164 @@
+interface version 1
+const APIPrefix = "/api/"
+const APIv1Prefix = "/api/v1/"
+const BearerScheme = "Bearer"
+const ClassAbsent Class = "absent"
+const ClassArtifact Class = "artifact"
+const ClassPass Class = "pass"
+const ClassPrivate Class = "private"
+const ClassShared Class = "shared"
+const CodeAddressBlocked = "address_blocked"
+const CodeAuthTimeout = "auth_timeout"
+const CodeBaseURLUnknown = "bastion_base_url_unknown"
+const CodeBusy = "bastion_busy"
+const CodeCredentialsNeeded = "credentials_required"
+const CodeInterfaceMismatch = "bastion_interface_mismatch"
+const CodeInvalidToken = "invalid_token"
+const CodeMainFailed = "main_failed"
+const CodeMainTimeout = "main_timeout"
+const CodeMainUnreachable = "main_unreachable"
+const CodeMethodNotAllowed = "method_not_allowed"
+const CodeMisdirected = "misdirected_request"
+const CodeNotImplemented = "bastion_not_implemented"
+const CodeNotServed = "bastion_not_served"
+const CodePayloadTooLarge = "payload_too_large"
+const CodeRateLimited = "rate_limited"
+const CodeReadOnly = "bastion_read_only"
+const CodeTokenInvalid = "bastion_token_invalid"
+const FeedContent FeedKind = "content"
+const FeedGrants FeedKind = "grants"
+const FeedPrincipal FeedKind = "principal"
+const FeedSettings FeedKind = "settings"
+const FeedToken FeedKind = "token"
+const FilesPrefix = "/files/"
+const HeaderAuthorization = "Trove-Bastion-Authorization"
+const HeaderClass = "Trove-Bastion-Class"
+const HeaderForwarded = "Forwarded"
+const HeaderForwardedFor = "X-Forwarded-For"
+const HeaderForwardedHost = "X-Forwarded-Host"
+const HeaderForwardedPort = "X-Forwarded-Port"
+const HeaderForwardedProto = "X-Forwarded-Proto"
+const HeaderInterface = "Trove-Bastion-Interface"
+const HeaderPrefix = "Trove-Bastion-"
+const HeaderProbe = "Trove-Bastion-Probe"
+const HeaderRead = "Trove-Bastion-Read"
+const HeaderReplica = "Trove-Bastion-Replica"
+const HeaderRepository = "Trove-Bastion-Repository"
+const HeaderRoute = "Trove-Bastion-Route"
+const HeaderSubject = "Trove-Bastion-Subject"
+const MediaType = "application/json"
+const OperationCheck = "check"
+const OperationDownloads = "downloads"
+const OperationFeed = "feed"
+const OperationHandshake = "handshake"
+const PathCheck = "/api/v1/bastion/check"
+const PathDownloads = "/api/v1/bastion/downloads"
+const PathFeed = "/api/v1/bastion/feed"
+const PathHandshake = "/api/v1/bastion/handshake"
+const PathPrefix = "/api/v1/bastion/"
+const ProbeValue = "1"
+const ProblemMediaType = "application/problem+json"
+const ProblemMemberInterfaceVersion = "interfaceVersion"
+const QueryAfter = "after"
+const QueryLimit = "limit"
+const ReadFull Read = "full"
+const ReadNone Read = "none"
+const ReadPartial Read = "partial"
+const RouteReadWithBody = "read-with-body"
+const SubjectAnonymous SubjectKind = "anonymous"
+const SubjectAnonymousRefused SubjectKind = "anonymous_refused"
+const SubjectInvalid SubjectKind = "invalid"
+const SubjectThrottled SubjectKind = "throttled"
+const SubjectToken SubjectKind = "token"
+const SyntheticCursorPrefix = "t:"
+const TokenPrefix = "trv_bst_"
+const TokenTypeBST = "bst"
+const UserAgentPrefix = "trove-bastion/"
+func (Class) Valid() bool
+func (Cursor) String() string
+func (Cursor) Synthetic() bool
+func (FeedKind) Valid() bool
+func (Marking) Set(h http.Header)
+func (Read) Valid() bool
+func (Subject) Header() string
+func DecodeStrict(r io.Reader, v any) error
+func Marshal(v any) ([]byte, error)
+func ParseCursor(s string) (Cursor, error)
+func ParseMarking(h http.Header) (m Marking, ok bool, err error)
+func ParseSubjectHeader(v string) (Subject, error)
+func StripMarking(h http.Header)
+type CheckAnswer struct
+type CheckAnswer: field Repositories map[string]RepositoryRead `json:"repositories"`
+type CheckAnswer: field Subject Subject `json:"subject"`
+type CheckRequest struct
+type CheckRequest: field ClientAddress string `json:"clientAddress"`
+type CheckRequest: field Credential *string `json:"credential"`
+type CheckRequest: field Repositories []string `json:"repositories"`
+type Class string
+type Cursor struct
+type Cursor: field At time.Time
+type Cursor: field ID string
+type DownloadEvent struct
+type DownloadEvent: field At time.Time `json:"at"`
+type DownloadEvent: field ClientAddress string `json:"clientAddress"`
+type DownloadEvent: field Path string `json:"path"`
+type DownloadEvent: field PrincipalID string `json:"principalId,omitempty"`
+type DownloadEvent: field Replica string `json:"replica"`
+type DownloadEvent: field Repository string `json:"repository"`
+type DownloadEvent: field SHA256 string `json:"sha256"`
+type DownloadEvent: field TokenID string `json:"tokenId,omitempty"`
+type DownloadEvent: field UserAgent string `json:"userAgent,omitempty"`
+type DownloadsRequest struct
+type DownloadsRequest: field Dropped int `json:"dropped"`
+type DownloadsRequest: field DroppedSince *time.Time `json:"droppedSince,omitempty"`
+type DownloadsRequest: field Events []DownloadEvent `json:"events"`
+type FeedAnswer struct
+type FeedAnswer: field Cursor string `json:"cursor"`
+type FeedAnswer: field Entries []FeedEntry `json:"entries"`
+type FeedAnswer: field More bool `json:"more"`
+type FeedAnswer: field Reset bool `json:"reset"`
+type FeedEntry struct
+type FeedEntry: field At time.Time `json:"at"`
+type FeedEntry: field ID string `json:"id"`
+type FeedEntry: field Kind FeedKind `json:"kind"`
+type FeedEntry: field Principals []string `json:"principals,omitempty"`
+type FeedEntry: field Repositories []string `json:"repositories,omitempty"`
+type FeedEntry: field Tokens []string `json:"tokens,omitempty"`
+type FeedKind string
+type Handshake struct
+type Handshake: field AnonymousAccess bool `json:"anonymousAccess"`
+type Handshake: field Bastion HandshakeBastion `json:"bastion"`
+type Handshake: field Feed HandshakeFeed `json:"feed"`
+type Handshake: field Installation HandshakeInstallation `json:"installation"`
+type Handshake: field InterfaceVersion int `json:"interfaceVersion"`
+type Handshake: field RecordDownloads bool `json:"recordDownloads"`
+type Handshake: field ResponseBaseURL string `json:"responseBaseUrl"`
+type Handshake: field ServerTime time.Time `json:"serverTime"`
+type HandshakeBastion struct
+type HandshakeBastion: field Name string `json:"name"`
+type HandshakeBastion: field TokenExpiresAt time.Time `json:"tokenExpiresAt"`
+type HandshakeBastion: field TokenID string `json:"tokenId"`
+type HandshakeFeed struct
+type HandshakeFeed: field Cursor string `json:"cursor"`
+type HandshakeInstallation struct
+type HandshakeInstallation: field BaseURL string `json:"baseUrl"`
+type HandshakeInstallation: field Release string `json:"release"`
+type Marking struct
+type Marking: field Class Class
+type Marking: field Interface int
+type Marking: field Read Read
+type Marking: field Repository string
+type Marking: field Subject Subject
+type Read string
+type RepositoryRead struct
+type RepositoryRead: field Read Read `json:"read"`
+type RepositoryRead: field Status int `json:"status,omitempty"`
+type Subject struct
+type Subject: field ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+type Subject: field Kind SubjectKind `json:"kind"`
+type Subject: field PrincipalID string `json:"principalId,omitempty"`
+type Subject: field RetryAfterSeconds *int `json:"retryAfterSeconds,omitempty"`
+type Subject: field TokenID string `json:"tokenId,omitempty"`
+type SubjectKind string
+var ErrCursor = errors.New("bastion feed cursor: malformed")
+var ErrMarking = errors.New("bastion marking: malformed")

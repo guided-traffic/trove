@@ -492,6 +492,28 @@
         "tokens": {
           "additionalProperties": false,
           "properties": {
+            "bst": {
+              "additionalProperties": false,
+              "properties": {
+                "default_ttl": {
+                  "default": "8760h",
+                  "description": "Lifetime of a Bastion token when the request names none: one year (R-BAS-004).",
+                  "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+                  "type": "string",
+                  "x-trove-env": "TROVE_AUTH_TOKENS_BST_DEFAULT_TTL",
+                  "x-trove-type": "duration"
+                },
+                "max_ttl": {
+                  "default": "9480h",
+                  "description": "Ceiling of a Bastion token's lifetime: one year and a month, so a yearly renewal fits its overlap (R-BAS-004).",
+                  "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+                  "type": "string",
+                  "x-trove-env": "TROVE_AUTH_TOKENS_BST_MAX_TTL",
+                  "x-trove-type": "duration"
+                }
+              },
+              "type": "object"
+            },
             "cache_ttl": {
               "default": "15s",
               "description": "SafetyTTL of the four auth caches; bounds staleness only if an invalidation were lost.",
@@ -533,6 +555,13 @@
             "max_active_per_principal": {
               "additionalProperties": false,
               "properties": {
+                "bst": {
+                  "default": 3,
+                  "description": "Unrevoked Bastion tokens per registration, so that a renewal's overlap fits (R-BAS-004).",
+                  "minimum": 1,
+                  "type": "integer",
+                  "x-trove-env": "TROVE_AUTH_TOKENS_MAX_ACTIVE_PER_PRINCIPAL_BST"
+                },
                 "pat": {
                   "default": 50,
                   "minimum": 1,
@@ -698,6 +727,78 @@
           },
           "type": "array",
           "x-trove-env": "TROVE_AUTHZ_ROLE_BINDINGS"
+        }
+      },
+      "type": "object"
+    },
+    "bastions": {
+      "additionalProperties": false,
+      "properties": {
+        "check": {
+          "additionalProperties": false,
+          "properties": {
+            "max_repositories": {
+              "default": 16,
+              "description": "Repository keys one check may ask about (R-BAS-011).",
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_BASTIONS_CHECK_MAX_REPOSITORIES"
+            }
+          },
+          "type": "object"
+        },
+        "downloads": {
+          "additionalProperties": false,
+          "properties": {
+            "max_age": {
+              "default": "720h",
+              "description": "An event older than this is not recorded and counts as dropped (R-BAS-016).",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_BASTIONS_DOWNLOADS_MAX_AGE",
+              "x-trove-type": "duration"
+            },
+            "max_batch": {
+              "default": 1000,
+              "description": "Events one request of the intake accepts (R-BAS-016).",
+              "maximum": 10000,
+              "minimum": 1,
+              "type": "integer",
+              "x-trove-env": "TROVE_BASTIONS_DOWNLOADS_MAX_BATCH"
+            }
+          },
+          "type": "object"
+        },
+        "feed": {
+          "additionalProperties": false,
+          "properties": {
+            "lookback": {
+              "default": "5m",
+              "description": "A feed read returns every entry newer than its cursor minus this period, so a transaction that committed late is not missed; longer than any transaction (the replay margin of R-HA-054).",
+              "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
+              "type": "string",
+              "x-trove-env": "TROVE_BASTIONS_FEED_LOOKBACK",
+              "x-trove-type": "duration"
+            },
+            "max_page": {
+              "default": 1000,
+              "description": "Entries one feed read returns at most (R-BAS-015).",
+              "maximum": 10000,
+              "minimum": 10,
+              "type": "integer",
+              "x-trove-env": "TROVE_BASTIONS_FEED_MAX_PAGE"
+            }
+          },
+          "type": "object"
+        },
+        "max_registrations": {
+          "default": 16,
+          "description": "Bastion registrations that may exist; also bounds the bastion label of the interface metrics (R-BAS-004).",
+          "maximum": 256,
+          "minimum": 1,
+          "type": "integer",
+          "x-trove-env": "TROVE_BASTIONS_MAX_REGISTRATIONS"
         }
       },
       "type": "object"

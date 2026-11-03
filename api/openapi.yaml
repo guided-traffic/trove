@@ -120,6 +120,19 @@ tags:
   - name: manual
     description: The trove manual of the running version, for the help area of the UI (R-API-054, R-UI-050).
   # <<< M2 manual
+  # >>> M13 bastion
+  - name: bastions
+    description: |
+      Registrations of trove Bastions on the main installation and their tokens (R-BAS-004): the principal of the kind
+      `bastion`, its `bst` tokens and the last contact of each replica.
+  - name: bastion
+    description: |
+      The Bastion interface of the main installation (R-BAS-008 to R-BAS-016): handshake, credential and read check,
+      revocation feed and download intake. The operations are called by a Bastion with its token, carry the interface
+      version in `x-trove-bastion-interface` and are not part of the management API's v1 promise but of the interface
+      version (R-ARCH-025, R-BAS-009).
+  # <<< M13 bastion
+  #
 security:
   - bearerAuth: []
 paths:
@@ -7589,6 +7602,16 @@ paths:
           description: An npm scope (`@team-a`); adds the scoped variant of the registry configuration.
           schema:
             type: string
+        - name: bastion
+          in: query
+          description: |
+            The name of a Bastion registration (R-BAS-007). The snippets are rendered on the base URL the Bastion reported at its
+            last handshake, provided it is an entry of `server.additional_base_urls` (`409 bastion_base_url_unknown` otherwise),
+            and carry no publish snippets, since a Bastion is read-only; for npm the configure snippet sets
+            `replace-registry-host=always`. An unknown name answers `404`.
+          schema:
+            type: string
+            pattern: "^[a-z][a-z0-9-]{0,19}$"
       responses:
         "200":
           description: The snippets.
@@ -8569,6 +8592,510 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
   # <<< M2 ownership
+  #
+  # >>> M13 bastion
+  /api/v1/bastions:
+    get:
+      operationId: listBastions
+      tags: [bastions]
+      summary: List the Bastion registrations
+      description: |
+        The registrations of trove Bastions ordered by name, each with its unrevoked tokens (ID, hint, expiry, creation,
+        last use) and the last contact of each replica: time, client address, release, interface version and the base URL it
+        reported (R-BAS-004, R-BAS-010). At most `bastions.max_registrations` exist, so the list is one page.
+      x-trove-permission:
+        permission: endpoints:read
+      responses:
+        "200":
+          description: The registrations.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BastionList"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      operationId: createBastion
+      tags: [bastions]
+      summary: Register a Bastion
+      description: |
+        Creates a principal of the kind `bastion` (reference `bastion:<name>`, R-AUTHZ-002) that holds no grant, role, ownership
+        or membership. At most `bastions.max_registrations` exist (`409` beyond). Records `bastion.created`. Its token is issued
+        by `POST /api/v1/bastions/{name}/tokens`.
+      x-trove-permission:
+        permission: endpoints:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewBastion"
+      responses:
+        "201":
+          description: The registration.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Bastion"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/bastions/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        description: The registration name (R-BAS-004).
+        schema:
+          type: string
+          pattern: "^[a-z][a-z0-9-]{0,19}$"
+    get:
+      operationId: getBastion
+      tags: [bastions]
+      summary: Read a Bastion registration
+      description: |
+        The registration with its unrevoked tokens and the last contact of each replica (R-BAS-004, R-BAS-010). The ETag is the
+        registration's revision.
+      x-trove-permission:
+        permission: endpoints:read
+      parameters:
+        - $ref: "#/components/parameters/IfNoneMatch"
+      responses:
+        "200":
+          description: The registration.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Bastion"
+        "304":
+          description: The `If-None-Match` tag is the current one.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    patch:
+      operationId: updateBastion
+      tags: [bastions]
+      summary: Change or disable a Bastion registration
+      description: |
+        Changes the description and enables or disables the registration (JSON merge patch). A disabled registration refuses its
+        tokens like a disabled service account's (R-AUTH-020). Records `bastion.updated`; a switch to disabled is journaled
+        for the feed as `principal` (R-BAS-015).
+      x-trove-permission:
+        permission: endpoints:write
+      x-trove-if-match: required
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: "#/components/schemas/BastionPatch"
+      responses:
+        "200":
+          description: The registration after the change.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Bastion"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "412":
+          $ref: "#/components/responses/PreconditionFailed"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "428":
+          $ref: "#/components/responses/PreconditionRequired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    delete:
+      operationId: deleteBastion
+      tags: [bastions]
+      summary: Delete a Bastion registration
+      description: |
+        Deletes the registration and revokes its tokens (`token.revoked`, journaled, R-HA-054). Records `bastion.deleted`.
+      x-trove-permission:
+        permission: endpoints:write
+      responses:
+        "204":
+          description: The registration is deleted.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/bastions/{name}/tokens:
+    post:
+      operationId: createBastionToken
+      tags: [bastions]
+      summary: Issue a Bastion token
+      description: |
+        Issues a token of the type `bst` (`trv_bst_`, R-AUTH-022) for the registration. It has no scope, always expires
+        (`ttlSeconds` at most `auth.tokens.bst.max_ttl`, default `auth.tokens.bst.default_ttl`; `400 invalid_ttl` beyond) and at
+        most `auth.tokens.max_active_per_principal.bst` unrevoked tokens exist per registration (`409 token_limit_reached`), so
+        a renewal by hand fits its overlap (R-BAS-006). The value is in this answer only, which is never cached. Records
+        `token.created` with `resource_type: bastion`.
+      x-trove-permission:
+        permission: endpoints:write
+      x-trove-idempotency-key: optional
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-z][a-z0-9-]{0,19}$"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewBastionToken"
+      responses:
+        "201":
+          description: The token with its value.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
+            Cache-Control:
+              description: '`no-store`: the answer holds a secret.'
+              schema:
+                type: string
+                enum: [no-store]
+            Idempotency-Replayed:
+              $ref: "#/components/headers/IdempotencyReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BastionTokenCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/bastions/{name}/tokens/{id}:
+    delete:
+      operationId: revokeBastionToken
+      tags: [bastions]
+      summary: Revoke a Bastion token
+      description: |
+        Revokes one token of the registration; `204` for a token that is revoked already. The handler requires `endpoints:write`
+        or `tokens:revoke` (Q-BAS-24), so a security administrator can revoke a leaked token without managing endpoints; the
+        declaration is the coarse `authenticated` form for that reason. Records `token.revoked` with `resource_type: bastion`,
+        journaled (R-HA-054).
+      x-trove-permission:
+        authenticated: true
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-z][a-z0-9-]{0,19}$"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: The token is revoked.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/bastion/handshake:
+    get:
+      operationId: bastionHandshake
+      tags: [bastion]
+      summary: Bastion handshake
+      description: |
+        The Bastion interface (R-BAS-008, interface version in `x-trove-bastion-interface`). Called by a Bastion with its
+        token as `Authorization: Bearer` at start, every `bastion.main.handshake_interval`, after a reconnect and after a feed
+        entry of the kind `settings` (R-BAS-010). The answer carries the main installation's interface version, the registration
+        and the token in use, the response base URL this request resolved to, the effective anonymous switch, the download
+        switch and the feed position. Records the replica's last contact at most once a minute. Not part of the management
+        API's v1 promise but of the interface version (R-ARCH-025, R-BAS-009).
+      x-trove-bastion-interface: 1
+      x-trove-permission:
+        bastion: true
+      parameters:
+        - $ref: "#/components/parameters/BastionInterface"
+      responses:
+        "200":
+          description: The handshake.
+          headers:
+            Trove-Bastion-Interface:
+              $ref: "#/components/headers/BastionInterface"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BastionHandshake"
+        "400":
+          $ref: "#/components/responses/BastionInterfaceMismatch"
+        "401":
+          $ref: "#/components/responses/BastionTokenInvalid"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/bastion/check:
+    post:
+      operationId: bastionCheck
+      tags: [bastion]
+      summary: Check a caller's credential and read shape
+      description: |
+        The Bastion interface (R-BAS-011, R-BAS-012). Validates the caller's credential as a direct request would (R-AUTH-023
+        including the failed-credential throttle for `clientAddress`, `token.rejected` with that address) and answers the
+        subject and, for at most `bastions.check.max_repositories` repository keys, the read shape `full`, `partial` or `none`
+        with the status the caller would receive. It writes no `authz.denied` events.
+      x-trove-bastion-interface: 1
+      x-trove-permission:
+        bastion: true
+      parameters:
+        - $ref: "#/components/parameters/BastionInterface"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BastionCheckRequest"
+      responses:
+        "200":
+          description: The subject and the shapes.
+          headers:
+            Trove-Bastion-Interface:
+              $ref: "#/components/headers/BastionInterface"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BastionCheckAnswer"
+        "400":
+          $ref: "#/components/responses/BastionInterfaceMismatch"
+        "401":
+          $ref: "#/components/responses/BastionTokenInvalid"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/bastion/feed:
+    get:
+      operationId: bastionFeed
+      tags: [bastion]
+      summary: The revocation feed
+      description: |
+        The Bastion interface (R-BAS-015, Q-BAS-29, Q-BAS-30). The journaled audit events that remove or narrow access and the
+        content events, as entries of the kinds `token`, `principal`, `grants`, `settings` and `content`. `after` is the
+        `cursor` of an earlier answer or a synthetic `t:<RFC 3339>`; the answer holds every entry newer than the cursor and the
+        entries within `bastions.feed.lookback` behind it, which the Bastion skips by ID. `reset: true` tells the Bastion to
+        drop every answer.
+      x-trove-bastion-interface: 1
+      x-trove-permission:
+        bastion: true
+      parameters:
+        - $ref: "#/components/parameters/BastionInterface"
+        - name: after
+          in: query
+          required: true
+          description: A cursor in wire form (R-BAS-015).
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Entries at most; capped at `bastions.feed.max_page`.
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: The entries after the cursor.
+          headers:
+            Trove-Bastion-Interface:
+              $ref: "#/components/headers/BastionInterface"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BastionFeedAnswer"
+        "400":
+          $ref: "#/components/responses/BastionInterfaceMismatch"
+        "401":
+          $ref: "#/components/responses/BastionTokenInvalid"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /api/v1/bastion/downloads:
+    post:
+      operationId: bastionDownloads
+      tags: [bastion]
+      summary: Report downloads served from a Bastion's cache
+      description: |
+        The Bastion interface (R-BAS-016). A batch of at most `bastions.downloads.max_batch` events, each recorded as an
+        asynchronous `artifact.downloaded` with `details.origin: bastion`; an event older than `bastions.downloads.max_age` is
+        not recorded and counts as dropped, one in the future is recorded at the time of receipt. A non-zero `dropped` records
+        `bastion.downloads.dropped`. With `audit.record_downloads: false` the answer is `204` and nothing is recorded.
+      x-trove-bastion-interface: 1
+      x-trove-permission:
+        bastion: true
+      parameters:
+        - $ref: "#/components/parameters/BastionInterface"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BastionDownloadsRequest"
+      responses:
+        "204":
+          description: The events are accepted.
+          headers:
+            Trove-Bastion-Interface:
+              $ref: "#/components/headers/BastionInterface"
+        "400":
+          $ref: "#/components/responses/BastionInterfaceMismatch"
+        "401":
+          $ref: "#/components/responses/BastionTokenInvalid"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  # <<< M13 bastion
+  #
 components:
   securitySchemes:
     bearerAuth:
@@ -8576,6 +9103,14 @@ components:
       scheme: bearer
       description: A trove token (`trv_` prefix). Credentials that are present but invalid always give `401`.
   headers:
+    # >>> M13 bastion
+    BastionInterface:
+      description: The main installation's version of the Bastion interface (R-BAS-009).
+      schema:
+        type: integer
+        minimum: 1
+    # <<< M13 bastion
+    #
     RequestId:
       description: The trace ID of the request (W3C Trace Context); quote it when reporting a problem.
       schema:
@@ -8616,6 +9151,20 @@ components:
         type: string
         enum: ["true"]
   parameters:
+    # >>> M13 bastion
+    BastionInterface:
+      name: Trove-Bastion-Interface
+      in: header
+      required: false
+      description: |
+        The Bastion's interface version (R-BAS-009). Required on every request of a Bastion: a request without it, or with
+        another version, is answered `400 bastion_interface_mismatch` before the operation runs. It is declared optional
+        here so that the answer is the interface's, not the binder's.
+      schema:
+        type: integer
+        minimum: 1
+    # <<< M13 bastion
+    #
     Limit:
       name: limit
       in: query
@@ -8686,6 +9235,30 @@ components:
     # <<< M2 packages
     #
   responses:
+    # >>> M13 bastion
+    NotImplemented:
+      description: The operation belongs to the Bastion work and is not built in this release yet (`bastion_not_implemented`).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    BastionInterfaceMismatch:
+      description: The request names another interface version than this installation speaks, or none (`bastion_interface_mismatch`); the problem carries `interfaceVersion` (R-BAS-009).
+      headers:
+        Trove-Bastion-Interface:
+          $ref: "#/components/headers/BastionInterface"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    BastionTokenInvalid:
+      description: The Bastion token is invalid, revoked, expired, of the wrong type or its registration is disabled (`bastion_token_invalid`, R-BAS-008).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    # <<< M13 bastion
+    #
     Unauthenticated:
       description: The request carries no valid credential.
       headers:
@@ -13203,3 +13776,343 @@ components:
         nextCursor:
           type: [string, "null"]
     # <<< M2 ownership
+
+    # >>> M13 bastion
+    Bastion:
+      type: object
+      description: A Bastion registration, a principal of the kind `bastion` (R-BAS-004).
+      required: [id, name, description, enabled, createdAt, tokens, contacts]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          pattern: "^[a-z][a-z0-9-]{0,19}$"
+        description:
+          type: string
+        enabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        tokens:
+          type: array
+          description: The unrevoked tokens, newest first. Neither the value nor its hash is part of it.
+          items:
+            $ref: "#/components/schemas/BastionTokenSummary"
+        contacts:
+          type: array
+          description: The last contact of each replica, the most recent first (R-BAS-010).
+          items:
+            $ref: "#/components/schemas/BastionContact"
+      example:
+        id: 0192f0c4-7a7e-7b51-9b1e-2f0d6c9e1a40
+        name: partners
+        description: The partner network
+        enabled: true
+        createdAt: "2026-11-02T10:00:00Z"
+        tokens:
+          - id: 0192f0d1-1c2a-7c3e-8a51-6f7d2b9c4e41
+            hint: trv_bst_3kQ9
+            description: partners 2026
+            createdAt: "2026-11-02T10:05:00Z"
+            expiresAt: "2027-11-02T10:05:00Z"
+            lastUsedAt: "2026-11-02T10:06:12Z"
+        contacts:
+          - replica: trove-bastion-7d9c-x2k4q
+            contactAt: "2026-11-02T10:06:12Z"
+            clientAddress: 198.51.100.20
+            release: 0.15.0
+            interfaceVersion: 1
+            baseUrl: https://packages.example.com
+    BastionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Bastion"
+    BastionTokenSummary:
+      type: object
+      required: [id, hint, description, createdAt, expiresAt, lastUsedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        hint:
+          type: string
+        description:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: [string, "null"]
+          format: date-time
+    BastionContact:
+      type: object
+      required: [replica, contactAt, clientAddress, release, interfaceVersion, baseUrl]
+      properties:
+        replica:
+          type: string
+        contactAt:
+          type: string
+          format: date-time
+        clientAddress:
+          type: [string, "null"]
+        release:
+          type: string
+        interfaceVersion:
+          type: integer
+        baseUrl:
+          type: string
+          description: The base URL the Bastion reported; empty when it reported none.
+    NewBastion:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          pattern: "^[a-z][a-z0-9-]{0,19}$"
+        description:
+          type: string
+          maxLength: 1024
+      example:
+        name: partners
+        description: The partner network
+    BastionPatch:
+      type: object
+      description: The read-only members of `Bastion` are accepted and ignored.
+      properties:
+        description:
+          type: string
+          maxLength: 1024
+        enabled:
+          type: boolean
+    NewBastionToken:
+      type: object
+      properties:
+        description:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        ttlSeconds:
+          type: integer
+          minimum: 1
+          description: The lifetime; at most `auth.tokens.bst.max_ttl`, default `auth.tokens.bst.default_ttl`.
+      example:
+        description: partners 2026
+        ttlSeconds: 31536000
+    BastionTokenCreated:
+      type: object
+      description: A Bastion token with its value. The value is in this answer only.
+      required: [id, token, hint, description, createdAt, expiresAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        token:
+          type: string
+          description: The secret, 57 characters with the prefix `trv_bst_`. Shown once.
+        hint:
+          type: string
+        description:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+    BastionHandshake:
+      type: object
+      additionalProperties: false
+      description: The answer of the handshake (R-BAS-010).
+      required: [interfaceVersion, bastion, installation, responseBaseUrl, anonymousAccess, recordDownloads, feed, serverTime]
+      properties:
+        interfaceVersion:
+          type: integer
+          minimum: 1
+        bastion:
+          type: object
+          additionalProperties: false
+          required: [name, tokenId, tokenExpiresAt]
+          properties:
+            name:
+              type: string
+            tokenId:
+              type: string
+              format: uuid
+            tokenExpiresAt:
+              type: string
+              format: date-time
+        installation:
+          type: object
+          additionalProperties: false
+          required: [baseUrl, release]
+          properties:
+            baseUrl:
+              type: string
+            release:
+              type: string
+        responseBaseUrl:
+          type: string
+        anonymousAccess:
+          type: boolean
+        recordDownloads:
+          type: boolean
+        feed:
+          type: object
+          additionalProperties: false
+          required: [cursor]
+          properties:
+            cursor:
+              type: string
+        serverTime:
+          type: string
+          format: date-time
+    BastionCheckRequest:
+      type: object
+      additionalProperties: false
+      required: [credential, clientAddress, repositories]
+      properties:
+        credential:
+          type: [string, "null"]
+          description: The token string the caller presented, or `null` for an anonymous caller.
+        clientAddress:
+          type: string
+        repositories:
+          type: array
+          items:
+            type: string
+    BastionCheckAnswer:
+      type: object
+      additionalProperties: false
+      required: [subject, repositories]
+      properties:
+        subject:
+          $ref: "#/components/schemas/BastionSubject"
+        repositories:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/BastionRepositoryRead"
+    BastionSubject:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [token, anonymous, anonymous_refused, invalid, throttled]
+        tokenId:
+          type: string
+          format: uuid
+        principalId:
+          type: string
+          format: uuid
+        expiresAt:
+          type: string
+          format: date-time
+        retryAfterSeconds:
+          type: integer
+          minimum: 1
+    BastionRepositoryRead:
+      type: object
+      additionalProperties: false
+      required: [read]
+      properties:
+        read:
+          type: string
+          enum: [full, partial, none]
+        status:
+          type: integer
+          enum: [401, 403, 404]
+          description: 'Set with `none`: the status the caller would receive for a read of the repository.'
+    BastionFeedAnswer:
+      type: object
+      additionalProperties: false
+      required: [entries, cursor, more, reset]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/BastionFeedEntry"
+        cursor:
+          type: string
+        more:
+          type: boolean
+        reset:
+          type: boolean
+    BastionFeedEntry:
+      type: object
+      additionalProperties: false
+      required: [id, at, kind]
+      properties:
+        id:
+          type: string
+        at:
+          type: string
+          format: date-time
+        kind:
+          type: string
+          enum: [token, principal, grants, settings, content]
+        tokens:
+          type: array
+          items:
+            type: string
+        principals:
+          type: array
+          items:
+            type: string
+        repositories:
+          type: array
+          items:
+            type: string
+    BastionDownloadsRequest:
+      type: object
+      additionalProperties: false
+      required: [events, dropped]
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/BastionDownloadEvent"
+        dropped:
+          type: integer
+          minimum: 0
+        droppedSince:
+          type: string
+          format: date-time
+    BastionDownloadEvent:
+      type: object
+      additionalProperties: false
+      required: [at, clientAddress, repository, path, sha256, replica]
+      properties:
+        at:
+          type: string
+          format: date-time
+        tokenId:
+          type: string
+          format: uuid
+        principalId:
+          type: string
+          format: uuid
+        clientAddress:
+          type: string
+        repository:
+          type: string
+        path:
+          type: string
+        sha256:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        userAgent:
+          type: string
+        replica:
+          type: string
+    # <<< M13 bastion
