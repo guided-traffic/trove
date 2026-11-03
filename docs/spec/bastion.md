@@ -2,10 +2,12 @@
 
 Status: specification — the contracts of phase 5b are laid in the code ([developer/bastion.md](../developer/bastion.md), decisions
 [Q-BAS-48](#q-bas-48--a-registration-is-a-principal-row-plus-a-subtype-table-the-kind-and-the-token-type-are-admitted-by-one-contract-step)
-to [Q-BAS-54](#q-bas-54--the-roles-process-reuses-the-shell-of-the-others-and-answers-bastion_not_served-until-the-engine-exists)); the logic of the
-work packages is built as each of them lands (the main installation's interface, work package 2, with
+to [Q-BAS-54](#q-bas-54--the-roles-process-reuses-the-shell-of-the-others-and-answers-bastion_not_served-until-the-engine-exists)); both sides
+are built: the main installation's side (registrations and the `bst` token, the interface with
 [Q-BAS-65](#q-bas-65--the-recognition-admits-an-interface-route-on-its-own-proof-throttles-tokens-it-cannot-place-and-counts-the-bastion-in-the-read-class)
-to [Q-BAS-69](#q-bas-69--the-last-contact-is-remembered-per-replica-bounded-per-registration-and-its-event-is-asynchronous)). Phase 5b of the [project plan](../projektplan/BETA.md#phase-5b--trove-bastion-m13)
+to [Q-BAS-69](#q-bas-69--the-last-contact-is-remembered-per-replica-bounded-per-registration-and-its-event-is-asynchronous), the marking and the
+probe) and the Bastion's own side (the client and the link, the engine, the cache, the shared state and the guard, the server), wired into one role
+([Q-BAS-100](#q-bas-100--one-implementation-of-the-link-the-budget-the-sweep-and-the-cache-use-and-the-role-builds-real-components-only)). Phase 5b of the [project plan](../projektplan/BETA.md#phase-5b--trove-bastion-m13)
 builds the MVP requirements of this page (milestone M13 of the [roadmap](../coverage/roadmap.md#p1-platform-milestones), moved
 into the beta by the owner on 2026-11-02). The owner's decisions of 2026-10-31 and 2026-11-02 are binding and recorded as
 [Q-BAS-1](#q-bas-1--the-bastion-asks-the-main-installation-and-keeps-no-copy-of-users-tokens-or-policies) to
@@ -328,7 +330,10 @@ The renewal is manual (owner, [Q-BAS-19](#q-bas-19--the-bastion-token-is-renewed
 2. The new token reaches the Bastion's Secret (`secrets.mainToken`) through GitOps; the chart never writes it, and the Bastion
    holds no right to write a Secret or to issue a token (its ServiceAccount has no Kubernetes API access, R-BAS-045).
 3. Every replica re-reads the token file every `bastion.main.token_reload_interval` and on a change of the file, and uses the
-   new token from its next request to the main installation; requests in flight finish with the old one. No restart.
+   new token from its next request to the main installation; requests in flight finish with the old one. No restart. A change
+   of the file is noticed by a check of its identity (the file behind the link, its size and its time) every second, so a
+   rotation of the mounted Secret does not wait for the interval
+   ([Q-BAS-77](#q-bas-77--the-token-file-is-watched-by-a-one-second-identity-check-besides-the-interval-read)).
 4. The administrator revokes the old token once the screen of R-BAS-007 shows the new token's `lastUsedAt` from every replica's
    contact. A replica that still uses a revoked token gets `401 bastion_token_invalid` and treats the main installation as
    unreachable (R-BAS-027), `trove_bastion_main_token_refused` is 1 and `TroveBastionTokenRefused` fires (R-BAS-041).
@@ -674,7 +679,7 @@ answers a write in the client's protocol shape and points at the main installati
 - The Bastion replays a `403` or `404` probe answer to the caller and keeps it per method and path for
   `bastion.cache.metadata_revalidate_after`. After a `204` it forwards the real request with its body (at most
   `bastion.main.max_forwarded_body`; a larger body answers `413` from the Bastion) and the caller's credential; the answer is
-  `pass`. A request with a body above the limit is refused before the probe.
+  `pass`. A request with a body above the limit is refused before the probe. The credential of the real request is checked after the `204` ([Q-BAS-81](#q-bas-81--a-write-is-decided-by-the-probe-first-its-credential-is-checked-only-if-the-real-request-is-forwarded)).
 - A forwarded non-probe write that reaches the main installation anyway (a defect) is refused the same way, since the
   Bastion token makes every write `bastion_read_only`.
 - The test is the route's kind and action, not the method alone ([Q-BAS-74](#q-bas-74--a-write-is-a-route-of-a-writing-kind-or-a-coarse-action-other-than-read)):
@@ -854,7 +859,7 @@ The Bastion holds no repository list; every repository of the main installation 
 Q-BAS-17). Each request passes these steps in order; the first that answers ends it:
 
 1. **Host.** The effective host (R-EP-003 rules, with the Bastion's own trusted proxies) must be the host of
-   `server.base_url`; any other host, an IP literal and a missing host answer `421 misdirected_request`.
+   `server.base_url`; any other host, an IP literal and a missing host answer `421 misdirected_request` (a port is not part of the host, [Q-BAS-83](#q-bas-83--the-engine-decides-the-host-and-takes-the-client-address-from-the-chain)).
 2. **Block list** (R-BAS-037): a blocked address answers `429 address_blocked`.
 3. **Path family.** `/api/v1/…` and every path outside `/api/<format>/<key>/…` and `/files/<key>/…` answer `404
    bastion_not_served` (R-BAS-003). `<key>` is the addressed repository key for the Bastion's bookkeeping until the main
@@ -862,7 +867,7 @@ Q-BAS-17). Each request passes these steps in order; the first that answers ends
    answers `404` without a request. The Bastion reads no other part of a path.
 4. **Per-address limits** (R-BAS-035) and **credentials** (R-BAS-019), including the failed-authentication timeout (R-BAS-036).
 5. **Method.** `GET` and `HEAD` go to the read flow (R-BAS-020 to R-BAS-024); `OPTIONS` answers `405`; every other method goes
-   to the write refusal of R-BAS-014.
+   to the write refusal of R-BAS-014. A write needs no credential before its probe ([Q-BAS-81](#q-bas-81--a-write-is-decided-by-the-probe-first-its-credential-is-checked-only-if-the-real-request-is-forwarded)).
 6. **Read flow**: the cache entry for the request's cache key and the caller's answers decide between a hit, a check and a miss.
 
 - **Cache key**: the path and query exactly as received (percent-encoding kept), and the normalized values of the request
@@ -892,7 +897,8 @@ without sessions:
 - **Anonymous.** A request without a credential is anonymous exactly when the main installation admits anonymous requests
   (owner, [Q-BAS-12](#q-bas-12--anonymous-reads-as-on-the-main-installation-with-misses-absorbed-at-the-bastion)): with
   `anonymousAccess: false` from the handshake the Bastion answers `401 credentials_required` with the challenge itself, without a
-  request; with `true` the anonymous caller's answers are kept under the key `anonymous`, shared by every anonymous caller, since
+  request; before the first successful handshake the setting is not known and an anonymous request answers `503 main_unreachable`
+  ([Q-BAS-99](#q-bas-99--a-replica-that-has-not-handshaken-answers-an-anonymous-request-503)); with `true` the anonymous caller's answers are kept under the key `anonymous`, shared by every anonymous caller, since
   the main installation's decision does not depend on the client address ([authorization.md](authorization.md) R-AUTHZ-029).
 - **Client address.** R-ARCH-006 with the Bastion's `server.trusted_proxies` and `server.forwarded_header`. For the limits and
   blocks of R-BAS-035 to R-BAS-037 an IPv6 address counts as its `/64`.
@@ -929,10 +935,12 @@ An answer is what the main installation said about a caller (owner,
      replicas;
   4. `o` is not earlier than the start of the replica's feed history plus 15 s (R-BAS-026).
 - A refused or invalid answer is kept like an allowed one, so a refused caller costs the main installation one request per
-  period; a widening of a right may take the period to reach the Bastion (owner).
+  period; a widening of a right may take the period to reach the Bastion (owner). A `403` is kept, and a `404` only
+  when it answers a conditional request for content the Bastion holds; a `404` that answers a plain fetch is not, because it may be a
+  missing name that a narrowed reader asks for again ([Q-BAS-80](#q-bas-80--a-404-that-answers-a-plain-fetch-is-not-kept-as-the-callers-url-answer)).
 - Answers live in the replica's memory (at most `bastion.answers.max_entries`, least recently used first) and, with Valkey, in
   Valkey as signed records (R-BAS-034). A replica may refresh an answer that a request uses in the last fifth of its period in
-  the background, with one collapsed request.
+  the background, with one collapsed request (the shape answer, through the check; URL answers renew by use, [Q-BAS-84](#q-bas-84--the-background-refresh-renews-shape-and-credential-answers-url-answers-renew-by-use)).
 
 ```yaml
 bastion:
@@ -1004,7 +1012,7 @@ for the bound (owner, Q-BAS-7):
   store (R-STOR-012), so a check costs no artifact transfer.
 - **Refuse without a request** when the caller's shape answer is `none`: the Bastion answers the stored status (R-BAS-029).
 - `Range` and `If-Range` with the content address, `If-None-Match` and `HEAD` from the caller are answered from the entry
-  (RFC 9110), after the same permission rule.
+  (RFC 9110), after the same permission rule. A range is verified by reading the object to its end ([Q-BAS-82](#q-bas-82--a-range-is-verified-by-reading-the-object-to-its-end-a-callers-range-or-conditional-on-a-miss-is-answered-from-the-verified-spool)).
 
 Acceptance criteria:
 
@@ -1088,7 +1096,8 @@ Priority: **MVP** · Covers: trove-only
 - **Budget** ([Q-BAS-35](#q-bas-35--the-concurrency-budget-is-per-replica-with-a-share-for-anonymous-misses)). Every request to
   the main installation except the handshake and the feed takes a slot: forwards, conditional requests, checks, probes,
   download batches. A replica holds at most `ceil(bastion.main.max_concurrent ÷ bastion.replicas)` slots, of which requests on
-  behalf of anonymous callers may hold at most `bastion.main.anonymous_share`. A request that gets no slot within
+  behalf of anonymous callers may hold at most `bastion.main.anonymous_share`, rounded down and at least one slot while the share is above 0
+  ([Q-BAS-75](#q-bas-75--the-anonymous-cap-of-the-budget-is-the-share-rounded-down-at-least-one-slot)). A request that gets no slot within
   `bastion.main.queue_timeout` answers `503 bastion_busy` with `Retry-After: 1`. Misses can therefore never put more than the
   budget onto the main installation, whatever arrives.
 - **Collapsing.** Concurrent misses for one cache key share one fetch per replica (single-flight), and with Valkey one fetch
@@ -1124,7 +1133,9 @@ The Bastion follows the revocation feed every few seconds, so a revoked token or
   its receipt time, which makes every matching answer unusable (R-BAS-020 rule 3), and deletes the matching answers from memory
   and, best effort, from Valkey. `settings` triggers a handshake. Entries are kept for `answers.period + grace_period + 15 s`.
 - **Start.** A starting replica reads the feed from `t:<now − answers.period − answers.grace_period − 15 s>` before it uses any
-  answer from Valkey; that time is the start of its feed history (rule 4). Until the first read succeeds it uses no shared answer.
+  answer from Valkey; that time is the start of its feed history (rule 4). Until the first read succeeds it uses no shared answer. A read that returns no entry moves a synthetic cursor forward to
+  the time of the request, so the next read is cheap and the main installation's lookback covers late commits
+  ([Q-BAS-76](#q-bas-76--the-synthetic-feed-cursor-moves-to-the-send-time-of-an-empty-read))
 - **Reset.** On `reset: true` the replica drops every answer it holds and ignores every answer in Valkey obtained before the
   reset (rule 4 with the reset time as the history start).
 - **Bound.** While the main installation is reachable, a narrowing committed at the main installation is in force at every
@@ -1156,7 +1167,10 @@ Answers the Bastion already holds stay valid for a configurable grace period bey
 - **Unreachable** ([Q-BAS-44](#q-bas-44--unreachable-means-a-failed-handshake-or-a-stale-feed)) is a state of each replica: it
   begins when the handshake fails (connect or TLS error, timeout, `5xx`, `401 bastion_token_invalid`, `400
   bastion_interface_mismatch`, a base URL mismatch) or when no feed poll has succeeded for `bastion.main.unreachable_after`, and
-  ends when a handshake and a feed poll succeed again. Forward errors alone do not begin it.
+  ends when a handshake and a feed poll succeed again. Forward errors alone do not begin it, and neither does one failed feed
+  poll. A replica starts unreachable, since its start; the first poll that succeeds after a failed one is followed by a
+  handshake; a `401 bastion_token_invalid` or a mismatch in the answer to any request begins the state at once
+  ([Q-BAS-79](#q-bas-79--the-link-is-one-state-machine-per-replica-run-by-the-server)).
 - While unreachable, the replica sends nothing to the main installation except handshake and feed probes every
   `poll_interval`, and:
   - a caller whose answers allow a cached entry (R-BAS-022, R-BAS-023, with rule 1 extended by `grace_period`) gets cached
@@ -1315,7 +1329,8 @@ Priority: **MVP** · Covers: trove-only
   of write access to the bucket or Valkey without the key can delete records but cannot make the Bastion serve other bytes or
   accept a forged answer (H-387).
 - The key is required with the bucket backend or Valkey; it is rotated by replacing the Secret, which makes every signed record
-  unverifiable and costs one refill (performance only).
+  unverifiable and costs one refill (performance only). With the volume backend and no Valkey the key may be absent: the entries are
+  then stored without a signature, the bytes are verified all the same ([Q-BAS-98](#q-bas-98--the-cache-takes-no-signer-where-the-configuration-allows-no-key-and-keeps-plain-entries), H-460).
 
 Acceptance criteria:
 
@@ -1507,6 +1522,10 @@ Priority: **MVP** · Covers: RMT-041
 - At shutdown the replica sends its buffer within the drain; what it cannot send it writes to the cache backend's
   `audit-spool/`, at most `bastion.audit.spool_max_events`, and any replica sends spooled files once the main installation is
   reachable, deleting each after a `2xx`. With a volume backend the spool survives only with a persistent volume (H-391).
+- A drain writes one spool file, one batch of at most `batch_size` events per line, the unreported `dropped` count on the first
+  line; `spool_max_events` bounds one drain's file. A batch the main installation refuses as a whole (`400`, `413`, `422`) is
+  dropped and counted, every other failure is retried; a spool file of which some lines were delivered is replaced by one with
+  the rest ([Q-BAS-78](#q-bas-78--a-refused-batch-is-dropped-everything-else-is-retried-and-a-spool-file-is-one-drain)).
 
 ```yaml
 bastion:
@@ -1628,12 +1647,18 @@ Priority: **MVP** · Covers: trove-only
 
 - **Startup**: configuration validation (R-BAS-001), the token file (R-BAS-006), TLS material, the cache backend's first check,
   the listeners; then the handshake and the feed history (R-BAS-026), which do not gate readiness.
+- **Who runs what.** The server runs the link (handshake, feed, reachability), the token reloader, the download buffer and the cache
+  sweeper for the life of the process and drains them in the order below; the engine reads their state, starts none of them and runs
+  only its own janitor ([Q-BAS-79](#q-bas-79--the-link-is-one-state-machine-per-replica-run-by-the-server),
+  [Q-BAS-100](#q-bas-100--one-implementation-of-the-link-the-budget-the-sweep-and-the-cache-use-and-the-role-builds-real-components-only),
+  [Q-BAS-101](#q-bas-101--the-server-runs-the-cache-sweeper-and-the-drain-stops-it-before-the-engine)).
 - **Readiness** does not depend on the main installation
   ([Q-BAS-44](#q-bas-44--unreachable-means-a-failed-handshake-or-a-stale-feed)): a replica that cannot reach it still serves what
   the grace period allows. It fails while draining, while the listeners are not bound, and before the cache backend's first
   check passed.
 - **Drain** follows R-ARCH-024: readiness flips, the drain delay passes, in-flight requests finish within the termination grace
-  period, the audit buffer is sent or spooled (R-BAS-039), the Valkey leases are released. A transfer cut at the deadline is
+  period, the sweeper and the buffer's flush loop stop, the engine drains, the audit buffer is sent or spooled (R-BAS-039), the link
+  and the token reloader stop, the Valkey leases are released. A transfer cut at the deadline is
   resumed by the client with `Range` and `If-Range` on another replica (R-BAS-022).
 - At least two replicas spread across nodes behind a PodDisruptionBudget that evicts one pod at a time (INV-12's rule for a
   long-running role); the chart enforces it with `highAvailability.enforce` (R-BAS-045).
@@ -3221,7 +3246,8 @@ carries it.
 
 ### Q-BAS-54 · The role's process reuses the shell of the others and answers `bastion_not_served` until the engine exists
 
-Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. The placeholder engine it names is gone: the engine
+([Q-BAS-100](#q-bas-100--one-implementation-of-the-link-the-budget-the-sweep-and-the-cache-use-and-the-role-builds-real-components-only)) is the handler of the client listener.
 
 | Option | What it means | For | Against |
 |---|---|---|---|
@@ -3719,6 +3745,242 @@ adds a route of that shape that a Bastion must forward.
 
 **Applied in the spec:** R-BAS-014; code: `internal/api/bastionmark`, `internal/api/rawfiles/handler.go`.
 
+### Q-BAS-75 · The anonymous cap of the budget is the share rounded down, at least one slot
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `floor(slots × anonymous_share)`, at least 1 while the share is above 0 (chosen) | 64 slots and 0.25 give 16 anonymous slots; 4 slots give 1 | Never more than the share, except by the one slot of a tiny budget; anonymous callers are not locked out by rounding | A budget of 1 to 3 slots lets anonymous requests hold a quarter or more |
+| (b) `floor` only | 4 slots and 0.25 give 1, 2 slots give 0 | Exactly at most the share | A small budget silently refuses every anonymous miss |
+| (c) `ceil` | 5 slots and 0.25 give 2 | Simple | Above the share at most budgets |
+
+**Choice:** (a). A share of 0 gives anonymous callers no slot, which is how an operator says "no anonymous misses".
+
+**Rationale:** the acceptance of R-BAS-025 (8 slots, 2 replicas, anonymous at most 2 in all) holds: 4 slots per replica, 1
+anonymous each. The cap is part of the total, so a flood of anonymous misses leaves the rest of the slots to authenticated
+callers. The development agent would revisit this if replicas ever run with a budget of fewer than 4 slots in production.
+
+**Applied in the spec:** R-BAS-025; code: `internal/bastion/mainclient/budget.go`, `TestR_BAS_025_TheBudgetIsTheCeilingOfTheShareAndAnonymousIsACapOfIt`.
+
+### Q-BAS-76 · The synthetic feed cursor moves to the send time of an empty read
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) After a read without entries, `t:<time the read was sent>` (chosen) | The next read starts there; the main installation's lookback covers late commits | One cheap indexed query per poll; no new member in the interface | Trusts the two clocks (H-445) |
+| (b) Keep `t:<start - period - grace - 15 s>` until an entry arrives | The cursor of the first read stays | Nothing to trust | Every poll re-reads the whole history of an answer's lifetime, for as long as no entry arrives |
+| (c) Switch to the cursor of the handshake | The main installation's own position | No clock | The handshake's position can lie after the history read: entries in between are covered only if the lookback is long enough, which the Bastion cannot know |
+
+**Choice:** (a). An answer that names an entry replaces the cursor by that entry's, as the interface defines.
+
+**Rationale:** R-BAS-015 returns "the request's cursor when there is none", which for the synthetic form would be re-read in full at
+every poll. The lookback of the main installation exists for commits that carry an earlier time than their neighbours; moving
+the time to the request is what it is for. The development agent would revisit this if H-445 becomes real, with the main
+installation's `serverTime` as the reference for the cursor.
+
+**Applied in the spec:** R-BAS-026; code: `internal/bastion/link`, `TestR_BAS_026_TheFeedStartsAtTheSyntheticCursorAndTheHistoryStartsThere`.
+
+### Q-BAS-77 · The token file is watched by a one-second identity check besides the interval read
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Every second compare the file's identity (the file behind the link, size, time); read when it differs; read in full every `token_reload_interval` regardless (chosen) | A rotated Secret is used within about a second | No new dependency; works for the kubelet's symbolic-link swap; the interval read catches a change that keeps identity | A stat per second per replica |
+| (b) A file-system notification library | Event driven | Immediate | A new dependency; the kubelet swaps a link in the directory, which needs a directory watch and its own care |
+| (c) The interval alone | Ten seconds | Simplest | Not "on a change of the file" (R-BAS-006) |
+
+**Choice:** (a).
+
+**Rationale:** the acceptance of R-BAS-006 (70 s from the Secret's value to every replica) is dominated by the kubelet's sync; the
+Bastion's share of it is a second. The development agent would revisit this if a platform without stable file identities
+appears (the interval read still holds).
+
+**Applied in the spec:** R-BAS-006; code: `internal/bastion/mainclient/reload.go`.
+
+### Q-BAS-78 · A refused batch is dropped, everything else is retried, and a spool file is one drain
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `400`, `413` and `422` for a batch drop it, count it and report the count; everything else keeps the events; a drain writes one file, a batch per line; a file of which some lines were delivered is replaced by the rest; a spool file is claimed through the flight lock (chosen) | The buffer cannot be blocked by one malformed batch; delivery is at least once | No poison batch; no duplicate lines after a partial failure | A replica without Valkey on a shared bucket can deliver a file twice (H-444) |
+| (b) Retry every failure | Nothing is dropped | Simple | A batch the main installation will never take stops every later one |
+| (c) One file per batch | Atomic per file | No rewrite | A thousand files per drain; a name collision per millisecond in a backend that names files by time |
+
+**Choice:** (a).
+
+**Rationale:** the loss is in the audit trail itself (`bastion.downloads.dropped`), which is what R-BAS-039 asks of a loss. The
+development agent would revisit the claim if package 5's backends offer an atomic move, which would replace the flight lock.
+
+**Applied in the spec:** R-BAS-039; H-444; code: `internal/bastion/downloads/reporter.go`.
+
+### Q-BAS-79 · The link is one state machine per replica, run by the server
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `internal/bastion/link` holds the state; the server runs the link, the token reloader and the download buffer; the engine reads `Link.State()` and wraps its client with `Link.Guard` (chosen) | A failed handshake, a refused token or a mismatch begins unreachable; one failed poll does not; the first poll after a failure is followed by a handshake; a replica starts unreachable | The lifecycle of the three loops is in one place, with the drain; the request flow has no state machine of its own | The engine's `Start` no longer starts them |
+| (b) The engine runs the loops | Everything in one package | One owner of the request flow | The drain order and the readiness live in the server; two owners of the same loops |
+| (c) A handshake after every failed poll | A reconnect handshakes at once | Fast detection | A transient connect error makes the replica unreachable at the next tick, so `unreachable_after` never decides anything |
+
+**Choice:** (a). The client never follows a redirect (the Bastion token travels in a header that a redirect policy does not strip),
+reads the main URL's CA bundle again without a restart, and is built by the shared outbound factory with an empty egress
+address policy (H-446).
+
+**Rationale:** Q-BAS-44 puts reachability on the handshake and the feed, and R-BAS-043 puts the drain in the server. The development
+agent would revisit this if the engine needs to react to a change of state within a request, which a `Watch` on the link already
+allows.
+
+**Applied in the spec:** R-BAS-027, R-BAS-028, R-BAS-043; H-446; code: `internal/bastion/link`, `internal/bastion/server`, `internal/bastion/mainclient`.
+
+### Q-BAS-80 · A 404 that answers a plain fetch is not kept as the caller's URL answer
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-BAS-020 keeps "the stored refusal" of a forwarded or conditional request as a URL answer, so a refused caller costs the main
+installation one request per period. R-BAS-024's acceptance says a `partial` reader asking for a missing name twice sends two
+requests. A `404` marked `pass` for a `partial` reader may be a missing name or a hidden one; kept, the second request would be
+answered from memory.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Keep every `403` and `404` refusal | The second request for a missing name is answered at the Bastion | Fewest requests | Contradicts the acceptance of R-BAS-024; a flood of distinct missing names is not helped by it anyway |
+| (b) Keep a `403`, and a `404` only when it answers a conditional request for content the Bastion holds (chosen) | A refused caller of a cached artifact or document costs one request per period; a missing name is asked every time | Both acceptances hold; the refusal that matters (a cached item the caller may not read, R-BAS-022) is kept | A `partial` reader's misses for plain names reach the main installation, bounded by the per-address miss limit and the budget |
+| (c) Keep nothing | Every refusal asks again | Simplest | Against R-BAS-020 and R-BAS-022 |
+
+**Choice:** (b).
+
+**Rationale:** the acceptance criteria of R-BAS-022 (a `404` replayed for a tarball outside `@acme/*`) and R-BAS-024 (two requests for
+a missing name) describe different situations: the first has a cache entry and a conditional request, the second has neither. (b) keeps
+exactly that difference. The development agent would revisit it if narrowed readers' misses dominate the main installation's load.
+
+**Applied in the spec:** R-BAS-020 (the sentence on kept refusals); code: `engine.onPass`, `TestR_BAS_024_APartialReaderAsksTheMainInstallationEveryTime`,
+`TestR_BAS_022_APartialReaderCostsOneConditionalRequestPerTarballAnsweredByA304`.
+
+### Q-BAS-81 · A write is decided by the probe first; its credential is checked only if the real request is forwarded
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-BAS-018 lists the credential step before the method step, and R-BAS-019 answers `401 credentials_required` to an anonymous
+request while anonymous access is off. NuGet pushes with `X-NuGet-ApiKey` and no `Authorization` (R-BAS-019), and its acceptance is a
+`403` from the probe, not a `401`. The real request of a read route that takes a body needs a checked credential.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Credentials first for every method | A push without `Authorization` answers `401` | The order as written | `dotnet nuget push` gets a `401` that asks for a credential the Bastion will never accept for a write; the acceptance of R-BAS-014 fails |
+| (b) The probe first for a method other than `GET` and `HEAD`; after a `204` the credential steps run, then the real request is forwarded (chosen) | A write is refused in the protocol's shape whatever it carries | Both acceptances hold; no credential is sent with the probe anyway | The per-address request limit and the miss limit apply, the failed-authentication count does not |
+| (c) Credentials first, but a missing credential is not an error for a write | Two rules | — | A malformed `Authorization` on a write is neither counted nor refused |
+
+**Choice:** (b). A body whose length is known is streamed to the real request, at most `max_forwarded_body` (a larger announced length
+answers `413` before the probe). A chunked body is held in memory up to the limit and answers `413` above it (H-448).
+
+**Rationale:** the probe carries no credential, so the credential steps protect nothing before it. The development agent would revisit it
+if a format's write route needed the caller's identity to be refused in its own shape.
+
+**Applied in the spec:** R-BAS-014, R-BAS-018 (step 5 precedes the credential step for writes); code: `engine.write`, `TestR_BAS_014_ANuGetPushWithoutACredentialIsStillRefusedByTheProbe`.
+
+### Q-BAS-82 · A range is verified by reading the object to its end; a caller's Range or conditional on a miss is answered from the verified spool
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Serve a range without verification | Read only the requested bytes | Cheapest | R-BAS-032's "verified while they are served" does not hold for a range; a replaced object is served on ranges |
+| (b) Read the object to its end, write the bytes of the range, withhold the last 64 KiB of the output until the SHA-256 of the whole object matched (chosen) | A range costs one pass over the object | R-BAS-032 holds for every transfer, including the resume of a cut transfer with `Range` and `If-Range` (R-BAS-043) | A small range of a large object reads all of it (H-449) |
+| (c) Refuse ranges | Always `200` | Simple | R-BAS-022 asks for `Range` and `If-Range` |
+
+**Choice:** (b). A caller's `Range`, `If-Range` or `If-None-Match` on a miss is not forwarded (R-BAS-021): the whole artifact is fetched,
+verified and committed, then the request is answered from the spool with the same rules. Several ranges, another unit and a failed
+`If-Range` answer `200` with the whole representation, which RFC 9110 allows.
+
+**Rationale:** correctness of the integrity claim over speed of a rare request; package clients resume whole downloads, they do not seek.
+The development agent would revisit it if a client was found that ranges through large cached objects, which would call for a verified
+block map in the entry.
+
+**Applied in the spec:** R-BAS-022, R-BAS-032; code: `engine.streamVerified`, `engine.fillArtifact`.
+
+### Q-BAS-83 · The engine decides the host and takes the client address from the chain
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the Bastion's chain (Q-BAS-54) has no endpoint, so the resolver sets no effective host and flags no misdirected request, while R-BAS-018 step 1 asks for `421`.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The engine compares the host (chosen) | The request's host, or the right-most forwarded host of the configured family when the peer is in `server.trusted_proxies`, lower-cased, without port and trailing dot, must equal the host of `server.base_url`; an IP literal and an empty host never match | The step is where the spec puts it, no change to the chain | The engine reads `server.trusted_proxies` once more |
+| (b) A host set on the chain | Misdirected answered by the chain | Shared code | The chain's endpoint machinery for a role without endpoints (Q-BAS-54) |
+
+**Choice:** (a). The client address is the chain's (`httpserver.InfoFrom`), the TCP peer without a chain; the guard gets
+`guard.AddressKey` of it, the main installation gets the address itself.
+
+**Rationale:** a port is not part of R-EP-003's host rule. The development agent would revisit it when the chain grows a host check that
+needs no endpoint.
+
+**Applied in the spec:** R-BAS-018 step 1; code: `engine.stepHost`, `TestR_BAS_018_TheHostIsTheHostOfTheBaseURL`.
+
+### Q-BAS-84 · The background refresh renews shape and credential answers; URL answers renew by use
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Refresh every answer kind | A conditional request in the background for each URL | Complete | A background request for every cached URL of every caller; the request that triggers it is already answered |
+| (b) Refresh the shape (and with it the credential) answer through one collapsed check (chosen) | A `full` reader in steady use never waits for the renewal; the check answers for the repository | One request per credential and repository | A URL answer of a `partial` reader expires at the period and is renewed by its next conditional request |
+| (c) No refresh | The first request after the period waits | None | R-BAS-020 offers the refresh |
+
+**Choice:** (b), in the last fifth of the period, only while the main installation is reachable. The goroutine holds the token string for the
+duration of that check (H-447).
+
+**Rationale:** the `full` reader is the one who gets the most hits and the one for whom the answer is a single entry per repository.
+The development agent would revisit it if `partial` readers' conditional requests show as a burst at each period boundary.
+
+**Applied in the spec:** R-BAS-020; code: `engine.refreshShape`, `TestR_BAS_020_AnAnswerInTheLastFifthOfItsPeriodIsRefreshedInTheBackgroundWithOneCollapsedCheck`.
+
+### Q-BAS-85 · The engine owns the budget, the sweep schedule and the janitor, and sees the link through one interface
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough. **Superseded in part by
+[Q-BAS-100](#q-bas-100--one-implementation-of-the-link-the-budget-the-sweep-and-the-cache-use-and-the-role-builds-real-components-only):** the budget is
+`mainclient.SlotBudget`, the link is `link.Link`, the sweep is `Cache.RunSweeper`; what stays is the janitor and the sums (slots per replica, the two
+areas of the cache).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The engine package defines `Link` (reachable, anonymous access, history start, failed, run), `NewBudget` and the loops (chosen) | The link package of work package 4a implements `Link`; `mainclient.Options.Budget` is `engine.NewBudget`; `engine.Start` runs the link, the download buffer, the sweep and the janitor | The interface says "the engine owns the implementation" of the budget; one place starts and stops the loops | The link package must satisfy an interface of the engine |
+| (b) Each package starts its own loops | The server wires every goroutine | — | Several shutdown paths (R-BAS-043) |
+
+**Choice:** (a). `engine.New` returns the placeholder while a dependency (including a missing `Link`) is a stub. The budget of a replica is
+`ceil(max_concurrent ÷ replicas)` slots, anonymous at most `max(1, floor(slots × anonymous_share))`. The sweep runs every `sweep_interval` ±20 % under the
+sweep lease: the documents area is held to `documents_max_bytes`, the artifacts area to `max_bytes − documents_max_bytes`, so documents never evict artifacts
+(R-BAS-031). The janitor (every minute) drops answers past period plus grace, the feed log's entries older than period plus grace plus 15 s, and the
+registries' expired items.
+
+**Rationale:** the contract page assigned the budget implementation and the loops to the engine; one lifecycle keeps the drain of R-BAS-043 in one place.
+The development agent would revisit the janitor's pruning of the feed log if the link package prunes it on its own schedule.
+
+**Applied in the spec:** R-BAS-025, R-BAS-031, R-BAS-043; code: `engine.NewBudget`, `engine.Link`, `engine.Start`.
+
+### Q-BAS-86 · The cache key learns Vary per replica, and results that cannot be shared are not collapsed
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A replica learns the headers a target varies by from the responses it saw, per replica (chosen) | The key is the target as received plus the lower-cased values of those headers, in the order of their names; `Vary: *`, `Authorization` and `Cookie` make a response not kept | No format knowledge, no new shared record | A replica that restarted fetches a target once more to learn it (performance only) |
+| (b) A shared Vary index in the bucket | Learned once | Fewer fetches | A second record type to sign and sweep |
+
+**Choice:** (a). A fetch whose result is not shareable (a `private` document, a `pass` answer, a refusal, an oversized document) marks its cache key
+for one minute; requests for a marked key are not collapsed, so no waiter pays a second round trip for nothing (R-BAS-025). A waiter whose leader
+left a shareable result decides again with it and does not wait twice.
+
+**Rationale:** collapsing is for results every caller can use; for the others it only serialises callers. The development agent would revisit (a) if
+restarts of replicas with a large document set show as a burst of fetches.
+
+**Applied in the spec:** R-BAS-018, R-BAS-025; code: `engine.computeKey`, `engine.learnVary`, `engine.markVolatile`.
+
 ### Q-BAS-87 · The bytes of documents have a tree of their own
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
@@ -3882,10 +4144,10 @@ what it decided. Two additions to the contract: `Verdict.Quiet` (a blocked addre
 engine keeps such a request out of the request log), and `shared.State.Timeouts`, the failed-authentication timeouts, a list of the kind of
 the block list in a family of its own. `trove_bastion_blocked_addresses` is the number of blocks the replica set or served (Valkey has
 no command for the size of a family that the ACL user may run), refreshed every 5 s and after a block (H-454). The placeholder `guard.Stub` and
-`guard.IsStub` are removed and `engine.Deps.Stubbed` no longer names a guard. The development agent would revisit the fail-open rule if a
+`guard.IsStub` are removed; the role builds real components only (Q-BAS-100). The development agent would revisit the fail-open rule if a
 defect of the state were found to hide a missing limit for long: the guard would then count the errors in a metric.
 
-**Applied in the spec:** R-BAS-037, H-429; [bastion.md](../developer/bastion.md#shared-state-and-the-guard).
+**Applied in the spec:** R-BAS-037; [bastion.md](../developer/bastion.md#shared-state-and-the-guard).
 
 ### Q-BAS-95 · The Bastions screen is one page with a card per registration
 
@@ -3948,6 +4210,148 @@ repository ([H-458](#h-458--the-address-a-registration-reports-chooses-among-the
 development agent would revisit (c) when a Bastion needs an address of an endpoint.
 
 **Applied in the spec:** R-BAS-007. Implementation: `bastionBase` in [packages_api.go](../../internal/api/v1/packages_api.go).
+
+### Q-BAS-98 · The cache takes no signer where the configuration allows no key, and keeps plain entries
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-BAS-032 requires the signing key with the bucket backend or Valkey, and the configuration accepts a missing key with the volume backend and no
+Valkey. `cache.New` required a signer, so the role could not start in the one configuration that the validation allows.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `cache.New` accepts a nil signer; `SignEntry` and `VerifyEntry` of a nil signer write and read the plain JSON (chosen) | The volume keeps unsigned entries; the bytes are still verified against their content address | The configuration stays as specified; the cache survives a restart; one code path | Whoever can write the volume can point an entry at other bytes of the volume (H-460) |
+| (b) A key per process, generated at start | Entries are signed | Looks uniform | Every restart makes every entry unverifiable: the volume's persistence is worth nothing |
+| (c) A key generated into the volume | Entries are signed | Persists | The key lies next to the data it protects: no protection |
+| (d) Require the key always | The validation changes | One mode | The chart and the configuration contract change for a case in which the writer of the volume is the pod itself |
+
+**Choice:** (a).
+
+**Rationale:** with the volume backend and no Valkey the only writers of the entries are the replica and whoever has the volume, and that writer can already delete
+the cache or fill it with objects under any content address it can compute; the digest check at every read still stops a replaced object. The signature
+exists for the shared stores (the bucket, Valkey), where the key separates the replicas from a writer of the store (H-387). The development agent would
+revisit this if the volume is ever shared by several pods or by a sidecar.
+
+**Applied in the spec:** R-BAS-032, H-460; code: `internal/bastion/cache/sign.go`, `internal/bastion/cache/store.go`, `TestR_BAS_032_WithoutASigningKey…`.
+
+### Q-BAS-99 · A replica that has not handshaken answers an anonymous request 503
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-BAS-019 admits an anonymous request exactly when the handshake said `anonymousAccess: true`. Before the first successful handshake of a process (a start
+while the main installation is down) the setting is not known.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `503 main_unreachable` until the first handshake (chosen) | Neither admitted nor refused as a credential problem | Honest: the Bastion does not know; the client retries, as for an unseen token | A warm cache serves no anonymous request until the main installation answered once |
+| (b) `401 credentials_required` | Unknown means off | Safe | A wrong statement to a client: anonymous access may be on; clients stop retrying |
+| (c) Admit from the cache | Unknown means on | Availability | Serves content the main installation may have closed to anonymous readers |
+
+**Choice:** (a). The same holds for an unseen token, and for every answer, because `HistoryStart` is zero before the first feed read (R-BAS-026).
+
+**Rationale:** a start during an outage is the case R-BAS-043 accepts (ready, `503`, serves after the main installation is back); the three options differ only
+for anonymous readers, and only (a) neither misleads nor widens access. The development agent would revisit this if the handshake's last result were persisted.
+
+**Applied in the spec:** R-BAS-019; code: `engine.stepCredentials`, `TestR_BAS_019_AnAnonymousRequestBeforeTheFirstHandshakeIs503`.
+
+### Q-BAS-100 · One implementation of the link, the budget, the sweep and the cache use, and the role builds real components only
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the engine (package 4b) and the link, the client and the server (package 4a) were built in parallel against the contracts, and each wrote what the other was
+to provide: an `engine.Link`, an `engine.NewBudget`, a sweep, a fill with verification and signing over the raw `cache.Backend`, and loops that the engine started. Package 5
+(the cache) and package 6 (the shared state and the guard) were merged meanwhile and implement the same things.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `link.Link`, `mainclient.SlotBudget`, `Cache.RunSweeper`, `cache.Cache` and the Valkey `AnswerStore` stay; the engine's copies go (chosen) | The engine holds a `*link.Link` (`State`, `AnswerState`, `Watch`, `SetSink`), a client wrapped by `Link.Guard`, and a `*cache.Cache`; the stubs and `Deps.Stubbed` go | One implementation of each thing, each tested where it lives; the engine keeps only what is its own: the request flow, the withheld tail towards the client, the janitor | The engine's tests move onto the real link and a real cache on a temporary volume |
+| (b) The engine's interfaces stay and the others adapt | Adapters between the two sets | Few changes in the engine | Two implementations of the budget and the sweep run side by side |
+
+**Choice:** (a). `Failed(err)` of the engine's link interface is `Link.Guard`: a refused token and an interface mismatch in any answer make the replica unreachable at
+once, and no other error of a forward does (R-BAS-027, Q-BAS-44). The slot of a request is held until the body ends or is closed, so the engine closes every body
+on every path. The sweep keeps the limits of Q-BAS-88 and the lease of Q-BAS-90.
+
+**Rationale:** the contract page assigned each thing to one package; the duplicates arose only because the packages could not see each other. Q-BAS-85 (the engine owns the
+budget and the sweep) is superseded where it says so; Q-BAS-82's "verified spool" is the committed fill. The development agent would revisit this if the cache's `Open`
+cannot serve a ranged read cheaply enough (H-449).
+
+**Applied in the spec:** R-BAS-021, R-BAS-025, R-BAS-027, R-BAS-031, R-BAS-043; code: `internal/bastion/engine`, `internal/bastion/server`,
+`TestR_BAS_025_EveryPathClosesTheResponseBodyAndSoReleasesItsSlot`.
+
+### Q-BAS-101 · The server runs the cache sweeper, and the drain stops it before the engine
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Cache.RunSweeper` is started by the server with `shared.State` as its lease source, and stopped with the flush loop, before `Engine.Drain` (chosen) | The sweep runs for the life of the process; the sweep lease is the shared state's | The cache owns its schedule (R-BAS-031: ±20 % for a bucket); the engine does not need to know the sweep | The sweep and the janitor are two loops |
+| (b) The engine starts it | One `Start` | — | The engine would own a loop of another package (Q-BAS-79's rule) |
+
+**Choice:** (a). Readiness has one cache check, `cache`: the cache's first `Check` (`Cache.Ready`), through `Engine.Ready`.
+
+**Rationale:** the sweeper reads and deletes only the cache; no request waits for it, so it stops as soon as the listener stopped. The development agent would revisit
+this if a sweep ever has to wait for the last request.
+
+**Applied in the spec:** R-BAS-031, R-BAS-043; code: `server.runLink`, `server.Shutdown`, `TestR_BAS_031_TheServerRunsTheCacheSweeper`.
+
+### Q-BAS-102 · A quiet verdict reaches the request log through a slot in the request context
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: `guard.Verdict.Quiet` says a request is not to be logged one by one (R-BAS-037): a blocked address answers many requests and the guard logs one line per block.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The server puts a slot into the request context before the request log; the engine sets it; the logger of the request log skips a record whose context carries a set slot (chosen) | `engine.WithQuietSlot`, `engine.Quiet` | Nothing outside the Bastion changes; the request is still counted in the metrics | A wrapper around the log handler |
+| (b) `observability.RequestLog` gains a flag in `RequestInfo` | A shared package changes | Cleaner for every role | Outside the Bastion's packages; the other roles would carry a field they never set |
+| (c) Log every request | — | Simple | A flood from a blocked address fills the log: the thing R-BAS-037 forbids |
+
+**Choice:** (a).
+
+**Rationale:** the log record is written after the response with the request's context, so a slot put in before the log is seen by it. The development agent would revisit this if
+`observability` offers a skip for a request.
+
+**Applied in the spec:** R-BAS-037; code: `engine/quiet.go`, `server.requestLog`, `TestR_BAS_037_ARequestFromABlockedAddressIsCountedButNotLoggedOneByOne`.
+
+### Q-BAS-103 · A fill can be kept readable after its commit, and a cache can be given a fault for a test
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: a request with `Range` or a conditional header on a miss is answered from the fill after it was committed (Q-BAS-82). R-BAS-030 says a failing backend never fails a request.
+`Fill.Commit` removed the spool file, so a backend that refused the commit left nothing to answer from. The tests of the engine and the server also need a backend that is down at the
+first check or refuses writes.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `Fill.Keep` leaves the spool readable after `Commit` (`Fill.Reader`), `Fill.Abort` releases it; `cache.Options.Fault` wraps the storage with a switch (chosen) | A refused commit still answers the request; tests inject failures through the real code path | No failed request for a failing backend; no second storage in the tests | Two small additions to package 5's API |
+| (b) Answer `502` when the commit is refused | Nothing to add | Simple | A cache failure fails a request |
+| (c) Test doubles of `cache.Backend` | The engine's tests replace the cache | No production seam | The engine uses `*cache.Cache`, not the interface; the double would reimplement the cache |
+
+**Choice:** (a). `Fault` is nil in production and the storage is not wrapped.
+
+**Rationale:** both additions are narrow and tested in `internal/bastion/cache`. The development agent would revisit `Fault` if the bucket's own transport hook (`Options.WrapTransport`) were enough for
+every test.
+
+**Applied in the spec:** R-BAS-030; code: `cache/fill.go`, `cache/fault.go`, `TestR_BAS_021_AKeptFillCanStillAnswerAfterTheCommitWasRefused`.
+
+### Q-BAS-104 · The whole-role scenario runs on one clock in `roletest`, started from a configuration file
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-BAS-048 asks for the role against an in-process main installation, with both cache backends.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One scenario in `internal/bastion/roletest`, run by a test in that package (volume) and by one in `test/integration/bastion` (bucket); one settable clock serves the replica (through `server.Options.Deps`) and `maintest` (chosen) | The periods (30 s, 1 m) are crossed without waiting; the timers of the link run in real time | The same assertions for both backends; no wait of minutes | The clock is injected through a test hook of the server |
+| (b) Real time with the shortest periods | No hook | Nothing injected | The grace period is at least 30 s of waiting per run, and a loaded runner makes it flaky |
+| (c) Two scenarios | Each backend its own | Free to differ | The backends would drift apart |
+
+**Choice:** (a). The revocation bound of 5 s is measured in real time: the poll interval is the configuration's minimum, 1 s.
+
+**Rationale:** the scenario is the Go-side acceptance of R-BAS-043 and R-BAS-048 for the volume and the bucket. The development agent would revisit the single clock if the link's timers
+themselves become the subject of a test.
+
+**Applied in the spec:** R-BAS-043, R-BAS-048; code: `internal/bastion/roletest`, `test/integration/bastion`.
 
 ## What this does not cover
 
@@ -4066,16 +4470,6 @@ main installation does with `metrics.auth: none`, and the chart's NetworkPolicy 
 the probe CIDRs only (R-BAS-047). The series carry no address, token, path or repository key (R-BAS-040), but they tell how much
 traffic the Bastion carries, how full its cache is, whether the main installation is reachable and when its token expires. What makes
 it real: a pod in the allowed namespace that is not the monitoring stack, or a chart with `networkPolicy.enabled: false`.
-
-### H-429 · Until the engine and the guard are built, a Bastion refuses every read and limits nothing
-
-Stage: the contract work of phase 5b (`internal/bastion/engine`, `internal/bastion/cache`). Subject: a build of the role that has the
-skeleton and not yet the work packages 4 and 5.
-
-Dormant once phase 5b is complete. The skeleton serves `404 bastion_not_served` to every client request, which is safe. The guard is
-built (it is no placeholder any more, Q-BAS-94); the cache backend is a placeholder until package 5, which is safe only because no
-request reaches a read. The server logs the placeholders at start. What makes it real: a release cut between the work packages in
-which the engine is built before the cache backend; the engine's constructor must refuse a placeholder cache once it serves reads.
 
 ### H-432 · The edge limit counts per TCP peer address and has no burst
 
@@ -4211,12 +4605,91 @@ the credential either way. A Bastion that counted `invalid` subjects as failed a
 callers; the failed-authentication timeout of R-BAS-036 counts credentials the main installation rejected, which the Bastion
 knows from the request it sent (a credential present) and not from this header. What makes it real: a change of the Bastion that
 reads the header for that count.
+
+### H-444 · Download events spooled by a draining replica can be delivered twice
+
+Stage: R-BAS-039, the audit spool. Subject: the uniqueness of the main installation's download audit for downloads served by a Bastion.
+
+Dormant until a Bastion drains during an outage of the main installation; then live with `audit.record_downloads: true`. Replicas
+claim a spool file through the flight lock before they send it: with Valkey two replicas do not take one file, without it on a
+bucket shared by several replicas nothing coordinates, and two replicas that list the file in the same moment both send it. The
+events carry no ID the main installation could deduplicate on. A file of which some lines were delivered is replaced by a file with
+the rest, written before the old one is deleted; a crash between the two sends those lines again. What makes it real: a drain
+during an outage, the bucket backend without Valkey, several replicas becoming reachable together.
+
+### H-445 · A Bastion clock ahead of the main installation's shortens the feed lookback
+
+Stage: R-BAS-026, the synthetic cursor of Q-BAS-76. Subject: revocations that commit late.
+
+Live on every Bastion. After a read without entries the cursor time is the Bastion's clock; the main installation reads from that
+time minus `bastions.feed.lookback` in its own. A Bastion clock ahead by *s* leaves a lookback of *lookback − s* for a transaction
+that starts before a poll and commits after it: a revocation whose transaction stays open longer than that is not returned by the
+next read. A skew beyond the lookback is answered with `reset: true`, which is safe. What makes it real: a Bastion node whose
+clock drifts by minutes together with a transaction at the main installation that stays open for minutes; rule 3 of R-BAS-020
+assumes a bounded skew between replicas as well.
+
+### H-446 · The connection to the main installation is not under the egress address policy
+
+Stage: R-BAS-044, `bastion.main.url`. Subject: where the Bastion token and the callers' credentials are sent.
+
+Live on every Bastion. The client is built by the shared outbound factory with an empty deny list: `bastion.main.url` is operator
+configuration, as the object store endpoint is, and a main installation in a private range has to be reachable. The connect-time
+policy that keeps an upstream registry from pointing into the cluster's own services does not apply; what protects the token and the
+credentials is the verification of the main installation's certificate against the system roots and `ca_file`. What makes it real: a
+DNS record for the main installation's host name that an attacker can change, together with a certificate for that name that the
+roots or the bundle accept; the chart's egress policy (R-BAS-047) limits the connection to the main installation's address as well.
+
+### H-447 · A background refresh keeps the token string beyond its request
+
+Stage: R-BAS-020 (the refresh in the last fifth of a period, Q-BAS-84), R-BAS-019 (no token kept beyond the request). Subject: the
+credentials of callers in steady use.
+
+Live on every Bastion, for a caller whose `full` shape answer is in the last fifth of its period while the main installation is
+reachable. R-BAS-019 says the Bastion keeps no token beyond the request. The refresh is one collapsed check sent after the request
+that triggered it, and its goroutine holds the token string until the check ends: at most `bastion.main.response_header_timeout` plus
+`bastion.main.queue_timeout`. The string is in the process's memory only, never in a log, a metric, the cache or Valkey. What makes it
+real: a memory dump of a replica taken in that window, which is the same exposure as the request that is in flight. There is no setting
+that closes it other than the refresh itself; a caller whose answer expires without a refresh waits for the check instead.
+
+### H-448 · A chunked body of a read route that takes a body is held in memory
+
+Stage: R-BAS-014 (the real request after a `204` probe, Q-BAS-81). Subject: the memory of a replica.
+
+Live on every Bastion, for a request to a route the main installation answered `204 read-with-body` (npm's bulk advisory request) whose
+body has no `Content-Length`. The Bastion needs a known length to forward it, so it reads up to `bastion.main.max_forwarded_body` into
+memory before the request is sent, and answers `413` above it. A body whose length is announced is streamed and bounded by that length.
+With `server.max_in_flight` such requests at once a replica holds up to that many times the limit (1024 × 8 MiB by default). What makes it
+real: many clients sending chunked bodies to a read-with-body route, from addresses that pass the per-address limits; lowering
+`max_forwarded_body` or `server.max_in_flight` closes it.
+
+### H-449 · A range request costs a read of the whole object
+
+Stage: R-BAS-022 and R-BAS-032 (Q-BAS-82). Subject: the bandwidth between a replica and its cache backend.
+
+Live on every Bastion with cached artifacts. The bytes of a range are verified against the content address, so the object is read to its
+end for any range. A caller who may read a large cached artifact can ask for many small ranges and make the replica read the object
+each time; with the bucket backend that is egress from the bucket. The per-address limits (R-BAS-035) bound the rate, not the volume.
+What makes it real: a reader of a large object and a client that ranges through it; `bastion.cache.max_object_bytes` bounds the object.
+
+### H-450 · Concurrent fills spool up to `max_object_bytes` each to temporary storage
+
+Stage: R-BAS-021 and R-BAS-030 (the spool of a fill). Subject: the temporary storage of a replica.
+
+Live on every Bastion. A fill spools the artifact to a temporary file while it streams (below `bastion.cache.volume.dir`/tmp with the volume
+backend, in the pod's `tmp` volume with the bucket backend), and the file is removed when the fill ends. The files together are bounded by
+the number of concurrent fills, which the budget bounds (`bastion.main.max_concurrent` ÷ `bastion.replicas`, R-BAS-025), times
+`bastion.cache.max_object_bytes`: 32 × 2 GiB with the defaults and two replicas. A pod whose storage is smaller cannot spool what it
+receives: a plain fill is passed through unkept and counted in `trove_bastion_cache_errors_total{op="spool"}`, and a request with `Range`
+or a conditional header, which is answered from the spool, answers `502 main_failed`. What makes it real: a burst of cold requests for
+large artifacts and a pod with a small `tmp` volume (the chart default is 1 Gi, `tmp.sizeLimit`); the engine does not check it.
+
 ### H-451 · A ranged read of a cached artifact is not verified
 
 Stage: R-BAS-022's answer to `Range` and `If-Range` from the cache, and R-BAS-032. Subject: the integrity of the bytes of a ranged
 download.
 
-Dormant until the engine serves ranges from the cache; then live on every Bastion that does. The verifying reader checks the SHA-256
+Dormant: the engine does not use `Cache.OpenRange`. It answers a range through the verifying read of the whole object (Q-BAS-82, H-449), so a
+ranged download is verified. The gap is live for any consumer that calls `OpenRange`. The verifying reader checks the SHA-256
 of a whole object; a range is a part of it and cannot be checked against the digest (the carve-out of R-STOR-013). Whoever can write
 the bucket, or the volume of a replica, and replaces a cached object, makes a ranged reader receive the other bytes, where a whole
 read aborts and deletes the object. The package managers the Bastion serves read whole files. What makes it real: a client that
@@ -4272,6 +4745,7 @@ Live on every Bastion without Valkey, and for blocks set while its Valkey is una
 duration and the counters of such a replica are in its memory; a restart (a rollout, a crash, an eviction) empties them, so an address
 blocked at level 4 for 2 hours returns at once and its next block lasts 15 minutes. A block set while Valkey is unavailable is not written
 to Valkey when it returns. What makes it real: an attacker who outlasts one replica's lifetime; Valkey closes it.
+
 ### H-457 · A reader without endpoints:read is not offered the Bastion as a target
 
 Stage: R-BAS-007, the **Install from** step of the setup page and of the guides. Subject: a developer who may read a repository and
@@ -4297,3 +4771,23 @@ meant; no other address can reach a snippet. Separately, the answers `404`, `409
 whether a registration of that name exists. What makes it real: a stolen Bastion token and a listed address that a reader trusts for a
 different purpose; an attacker who guesses names (at most 16 registrations, each name matching `^[a-z][a-z0-9-]{0,19}$`) learns only
 that a name exists, never a token or a contact.
+
+### H-459 · An artifact whose spool fails during the transfer reaches the caller unverified, and a Range request on it fails
+
+Stage: R-BAS-021, the fill of a miss. Subject: the bytes of one transfer.
+
+Live on every Bastion, and dormant until the temporary storage of the replica fails (a full volume, a pod's temporary directory that cannot be written). The digest of an artifact is
+taken by the fill as the bytes are written to it. When a write to the spool fails, the fill stops taking bytes, the replica cannot check the whole transfer against the content address,
+and it passes the bytes through as a miss it cannot keep: the caller receives them without the withheld tail's guarantee, and nothing is stored. A request with `Range` or a conditional
+header, which is answered from the committed fill, answers `502 main_failed`. The main installation is reached over a verified TLS connection, so the unverified bytes are the ones it sent;
+what is lost is the check against its own `ETag`. What makes it real: a full volume together with a main installation that serves corrupt bytes.
+
+### H-460 · Without a signing key the entries on the volume are not authenticated
+
+Stage: R-BAS-032, Q-BAS-98. Subject: which bytes an entry names.
+
+Live on every Bastion with the volume backend and no Valkey that has no `signing_key_file`; dormant otherwise (the bucket and Valkey require the key). The entry names the content address
+and the headers of a cached response and is stored as plain JSON. Whoever can write the volume can point an entry at another object of the volume, or change its headers and its
+`validatedAt`, so that a caller receives other cached bytes under the name of the first, or an entry that never expires. The bytes themselves are verified against their content address at every
+read, and a replaced object is detected. What makes it real: write access to the volume of a replica, which is a compromised pod or a mounted volume that something else writes to; the
+chart gives the volume to one pod.

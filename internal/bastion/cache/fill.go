@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"hash"
+	"io"
 	"os"
 	"sync"
 
@@ -22,6 +23,7 @@ type Fill struct {
 	limit int64
 
 	mu   sync.Mutex
+	keep bool
 	f    *os.File
 	name string
 	h    hash.Hash
@@ -42,6 +44,23 @@ func (c *Cache) NewFill(kind EntryKind) (*Fill, error) {
 		return nil, c.back.fail(metrics.OpPut, err)
 	}
 	return &Fill{c: c, kind: kind, limit: limit, f: f, name: f.Name(), h: sha256.New()}, nil
+}
+
+// Keep makes the temporary file outlive [Fill.Commit], so that a caller can still answer from it when the
+// backend refused the commit (a cache failure is never a failed request, R-BAS-030). The file is then read with
+// [Fill.Reader] and released by [Fill.Abort]. Call it before Commit.
+func (f *Fill) Keep() {
+	f.mu.Lock()
+	f.keep = true
+	f.mu.Unlock()
+}
+
+// Reader returns the bytes written so far from the start. It is valid until [Fill.Abort], and after
+// [Fill.Commit] only for a fill that was kept.
+func (f *Fill) Reader() *io.SectionReader {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return io.NewSectionReader(f.f, 0, f.n)
 }
 
 // Write implements io.Writer.
@@ -87,9 +106,11 @@ func (f *Fill) Commit(ctx context.Context, sha string) error {
 		return os.ErrClosed
 	}
 	f.done = true
-	defer func() { _ = os.Remove(f.name) }()
-	if err := f.f.Close(); err != nil {
-		return f.c.back.fail(metrics.OpPut, err)
+	if !f.keep {
+		defer func() { _ = os.Remove(f.name) }()
+		if err := f.f.Close(); err != nil {
+			return f.c.back.fail(metrics.OpPut, err)
+		}
 	}
 	got := f.h.Sum(nil)
 	if hex.EncodeToString(got) != sha {
@@ -98,11 +119,11 @@ func (f *Fill) Commit(ctx context.Context, sha string) error {
 	return f.c.back.commitFile(WithArea(ctx, f.kind), sha, f.n, f.name, got)
 }
 
-// Abort discards the fill. It is safe to call after Commit.
+// Abort discards the fill. It is safe to call after Commit; for a kept fill it releases the temporary file.
 func (f *Fill) Abort() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.done {
+	if f.done && !f.keep {
 		return
 	}
 	f.done = true

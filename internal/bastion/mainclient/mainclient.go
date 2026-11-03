@@ -3,19 +3,24 @@
 // the only package of the Bastion that talks to the main installation, so the budget, the interface headers,
 // the forwarded-for headers, the token and the error classes are applied in one place.
 //
-// Work package 4 implements [Client] over net/http with TLS (the system roots plus bastion.main.ca_file,
-// R-BAS-044) and hands it to the engine; the tests of the other packages use [Fake]-style doubles of the
-// interface. Everything here is a contract: [Stub] is the placeholder that answers [ErrNotBuilt].
+// [HTTPClient] (client.go) implements [Client] over net/http with TLS only (the system roots plus
+// bastion.main.ca_file, read again without a restart, R-BAS-044); [SlotBudget] (budget.go) is the budget of
+// R-BAS-025; [Reloader] (reload.go) re-reads the token file (R-BAS-006).
 package mainclient
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/guided-traffic/trove/internal/bastion/iface"
+	"github.com/guided-traffic/trove/internal/bastion/metrics"
+	"github.com/guided-traffic/trove/internal/observability"
+	"github.com/guided-traffic/trove/internal/tlsfiles"
 )
 
 // Class says on whose behalf a request to the main installation is made; the budget gives anonymous callers a
@@ -45,12 +50,12 @@ const (
 // Budget is the hook through which every request but the handshake and the feed takes a slot of the replica's
 // concurrency budget (R-BAS-025). Acquire waits at most bastion.main.queue_timeout and returns [ErrBusy] when
 // no slot is free; the returned function releases the slot and must be called exactly once, after the response
-// body was read to its end or closed. The engine owns the implementation (package 4), mainclient only calls it.
+// body was read to its end or closed. [SlotBudget] implements it; the [Client] calls it, the engine does not.
 type Budget interface {
 	Acquire(ctx context.Context, class Class) (release func(), err error)
 }
 
-// Token is the Bastion token in use and what is known about it (R-BAS-006). The engine's token reloader owns
+// Token is the Bastion token in use and what is known about it (R-BAS-006). The server's token reloader owns
 // the value and replaces it atomically; requests in flight finish with the old one.
 type Token struct {
 	// Value is the trv_bst_ string. It is a secret: never logged, never in an error.
@@ -77,10 +82,12 @@ var (
 	// (R-BAS-009, R-BAS-028). The wrapping error is *MismatchError.
 	ErrInterfaceMismatch = errors.New("mainclient: the interface versions differ")
 	// ErrUnreachable: a connect or TLS error, a timeout or an unmarked 5xx; 502 main_failed or 504 main_timeout
-	// for the caller, and no answer is kept (R-BAS-021).
+	// for the caller, and no answer is kept (R-BAS-021). The wrapping error is *UnreachableError.
 	ErrUnreachable = errors.New("mainclient: the main installation did not answer")
-	// ErrNotBuilt is what [Stub] answers.
-	ErrNotBuilt = errors.New("mainclient: not built yet (work package 4)")
+	// ErrBadAnswer: the main installation answered, but not with what the interface says: an unexpected
+	// status on an interface route, a body that does not decode strictly, a malformed marking. The wrapping
+	// error is *AnswerError. For the caller it is 502 main_failed.
+	ErrBadAnswer = errors.New("mainclient: the main installation's answer is not what the interface defines")
 )
 
 // MismatchError carries the version the main installation spoke, when it said (the problem member
@@ -92,6 +99,53 @@ func (e *MismatchError) Error() string { return ErrInterfaceMismatch.Error() }
 
 // Is matches [ErrInterfaceMismatch].
 func (e *MismatchError) Is(target error) bool { return target == ErrInterfaceMismatch }
+
+// UnreachableError is the error of a request that got no usable answer. Timeout is true for a deadline, a
+// connect or TLS-handshake timeout and a response-header timeout (504 main_timeout); Status is the status of an
+// unmarked 5xx, 0 for a transport failure.
+type UnreachableError struct {
+	Err     error
+	Status  int
+	Timeout bool
+}
+
+// Error implements error. The text names no URL query and no header.
+func (e *UnreachableError) Error() string {
+	if e.Status != 0 {
+		return fmt.Sprintf("%s: status %d", ErrUnreachable.Error(), e.Status)
+	}
+	return fmt.Sprintf("%s: %v", ErrUnreachable.Error(), e.Err)
+}
+
+// Unwrap returns the transport error.
+func (e *UnreachableError) Unwrap() error { return e.Err }
+
+// Is matches [ErrUnreachable].
+func (e *UnreachableError) Is(target error) bool { return target == ErrUnreachable }
+
+// AnswerError carries the status and, when the body was a problem, its code.
+type AnswerError struct {
+	Status int
+	Code   string
+	Err    error
+}
+
+// Error implements error.
+func (e *AnswerError) Error() string {
+	switch {
+	case e.Err != nil:
+		return fmt.Sprintf("%s: status %d: %v", ErrBadAnswer.Error(), e.Status, e.Err)
+	case e.Code != "":
+		return fmt.Sprintf("%s: status %d, code %s", ErrBadAnswer.Error(), e.Status, e.Code)
+	}
+	return fmt.Sprintf("%s: status %d", ErrBadAnswer.Error(), e.Status)
+}
+
+// Unwrap returns the decoding error, if any.
+func (e *AnswerError) Unwrap() error { return e.Err }
+
+// Is matches [ErrBadAnswer].
+func (e *AnswerError) Is(target error) bool { return target == ErrBadAnswer }
 
 // Forward is a caller's request on its way to the main installation (R-BAS-021, R-BAS-017).
 type Forward struct {
@@ -123,7 +177,8 @@ type Response struct {
 	Header http.Header
 	Body   io.ReadCloser
 	// Marking is the parsed marking of the response; Marked is false for an answer without iface.HeaderClass
-	// (a proxy in front of the main installation), which the engine treats as an error when it is a 5xx.
+	// (a proxy in front of the main installation). An unmarked 5xx never arrives here: it is an
+	// [ErrUnreachable]. The Trove-Bastion-* headers are removed from Header, so that nothing replays them.
 	Marking iface.Marking
 	Marked  bool
 }
@@ -145,9 +200,9 @@ type Client interface {
 	Do(ctx context.Context, f Forward) (*Response, error)
 }
 
-// Options are what the implementation needs; the engine builds them from the configuration.
+// Options are what [New] needs; the server builds them from the configuration.
 type Options struct {
-	// URL is bastion.main.url.
+	// URL is bastion.main.url; https only (R-BAS-044).
 	URL string
 	// BaseURL is server.base_url: the scheme, host and port the client sends as the forwarded host
 	// (R-BAS-017).
@@ -156,34 +211,27 @@ type Options struct {
 	Replica string
 	Release string
 	Tokens  TokenSource
-	Budget  Budget
+	// Budget is the slot budget; nil means no bound (tests of other packages).
+	Budget Budget
 	// ConnectTimeout and ResponseHeaderTimeout are bastion.main.connect_timeout and response_header_timeout.
 	ConnectTimeout        time.Duration
 	ResponseHeaderTimeout time.Duration
+	// CAFile is bastion.main.ca_file: a bundle added to the system roots and read again without a restart.
+	CAFile string
+	// Metrics counts trove_bastion_main_requests_total, the duration and trove_bastion_main_token_refused.
+	Metrics *metrics.Metrics
+	// Log, Tracer, Obs and TLSMetrics wire the shared outbound factory (upstream log, client spans with
+	// traceparent, outbound and trust-store metrics); all may be nil.
+	Log        *slog.Logger
+	Tracer     *observability.Tracer
+	Obs        *observability.Metrics
+	TLSMetrics *tlsfiles.Metrics
+	// TrustCheckEvery is how often the CA file is looked at again at most; zero means the outbound factory's
+	// default (10 s). Tests shorten it.
+	TrustCheckEvery time.Duration
+	// WrapTransport wraps the outbound factory's transport. Tests set it to inject faults (maintest.Faulty);
+	// production leaves it nil.
+	WrapTransport func(http.RoundTripper) http.RoundTripper
+	// Now is the clock; nil means time.Now.
+	Now func() time.Time
 }
-
-// Stub is the placeholder client of the contract work: every method answers [ErrNotBuilt].
-type Stub struct{}
-
-var _ Client = Stub{}
-
-// Handshake implements [Client].
-func (Stub) Handshake(context.Context) (iface.Handshake, error) {
-	return iface.Handshake{}, ErrNotBuilt
-}
-
-// Check implements [Client].
-func (Stub) Check(context.Context, Class, iface.CheckRequest) (iface.CheckAnswer, error) {
-	return iface.CheckAnswer{}, ErrNotBuilt
-}
-
-// Feed implements [Client].
-func (Stub) Feed(context.Context, iface.Cursor, int) (iface.FeedAnswer, error) {
-	return iface.FeedAnswer{}, ErrNotBuilt
-}
-
-// Downloads implements [Client].
-func (Stub) Downloads(context.Context, iface.DownloadsRequest) error { return ErrNotBuilt }
-
-// Do implements [Client].
-func (Stub) Do(context.Context, Forward) (*Response, error) { return nil, ErrNotBuilt }

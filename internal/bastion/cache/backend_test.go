@@ -271,15 +271,15 @@ func TestR_BAS_039_TheAuditSpoolIsListedReadAndDeletedOldestFirst(t *testing.T) 
 
 func TestR_BAS_030_TheFirstCheckGatesReadinessAndLaterFailuresAreMissesCounted(t *testing.T) {
 	r := newRig(t)
-	fl := &flaky{store: r.back.s}
-	r.back.s = fl
+	fl := &Fault{}
+	r.back.s = &faultStore{store: r.back.s, f: fl}
 	ctx := context.Background()
 
-	fl.down.Store(true)
+	fl.SetDown(true)
 	if err := r.Ready(ctx); err == nil {
 		t.Fatal("a failing backend was ready at the first check")
 	}
-	fl.down.Store(false)
+	fl.SetDown(false)
 	if err := r.Ready(ctx); err != nil {
 		t.Fatalf("first readiness: %v", err)
 	}
@@ -291,7 +291,7 @@ func TestR_BAS_030_TheFirstCheckGatesReadinessAndLaterFailuresAreMissesCounted(t
 		t.Fatal(err)
 	}
 
-	fl.down.Store(true)
+	fl.SetDown(true)
 	if err := r.Ready(ctx); err != nil {
 		t.Fatalf("readiness is gated only at the first check: %v", err)
 	}
@@ -315,7 +315,7 @@ func TestR_BAS_030_TheFirstCheckGatesReadinessAndLaterFailuresAreMissesCounted(t
 		t.Errorf("spool: %v", err)
 	}
 	// A missing key and a cancelled context are no backend error.
-	fl.down.Store(false)
+	fl.SetDown(false)
 	before = errs(t, r.m, metrics.OpGet)
 	if _, _, err := r.LookupEntry(ctx, "/absent"); !errors.Is(err, ErrNotFound) {
 		t.Fatal(err)
@@ -326,7 +326,7 @@ func TestR_BAS_030_TheFirstCheckGatesReadinessAndLaterFailuresAreMissesCounted(t
 	if errs(t, r.m, metrics.OpGet) != before {
 		t.Error("a miss or a cancelled request was counted as a backend error")
 	}
-	fl.down.Store(false)
+	fl.SetDown(false)
 	if _, _, err := r.LookupEntry(ctx, "/k"); err != nil {
 		t.Fatalf("the backend is back: %v", err)
 	}

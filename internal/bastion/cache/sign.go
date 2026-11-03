@@ -66,11 +66,15 @@ func (s *Signer) Verify(d Domain, key string, record []byte) ([]byte, error) {
 	return payload, nil
 }
 
-// SignEntry marshals and signs an entry under its cache key.
+// SignEntry marshals and signs an entry under its cache key. A nil signer (the configuration allows no key with
+// the volume backend and no Valkey, Q-BAS-98) stores the plain JSON.
 func (s *Signer) SignEntry(cacheKey string, e Entry) ([]byte, error) {
 	b, err := json.Marshal(e)
 	if err != nil {
 		return nil, err
+	}
+	if s == nil {
+		return b, nil
 	}
 	return s.Sign(DomainEntry, cacheKey, b), nil
 }
@@ -78,9 +82,12 @@ func (s *Signer) SignEntry(cacheKey string, e Entry) ([]byte, error) {
 // VerifyEntry verifies and unmarshals an entry record read under cacheKey. A record that fails its signature,
 // or that does not decode, is [ErrBadSignature]: the caller deletes it and counts the metric.
 func (s *Signer) VerifyEntry(cacheKey string, record []byte) (Entry, error) {
-	payload, err := s.Verify(DomainEntry, cacheKey, record)
-	if err != nil {
-		return Entry{}, err
+	payload := record
+	if s != nil {
+		var err error
+		if payload, err = s.Verify(DomainEntry, cacheKey, record); err != nil {
+			return Entry{}, err
+		}
 	}
 	var e Entry
 	if err := json.Unmarshal(payload, &e); err != nil {

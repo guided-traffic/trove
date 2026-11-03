@@ -1,7 +1,7 @@
 // Package cache is the Bastion's cache: the interface of a backend that holds content-addressed bytes, signed
 // entries, access markers and the audit spool (R-BAS-030 to R-BAS-032), the entry types, and the HMAC signer
-// of R-BAS-032. The bucket backend and the volume backend (work package 5) implement [Backend]; the engine
-// (work package 4) and the download buffer (work package 7) use it and know neither.
+// of R-BAS-032. The bucket backend and the volume backend implement [Backend]; the engine and the download
+// buffer use the [Cache] around it and know neither.
 //
 // The layout below the backend's root (a bucket prefix or the volume directory) is the same for both:
 //
@@ -39,8 +39,6 @@ var (
 	ErrTooLarge = errors.New("cache: the object is larger than the cache keeps")
 	// ErrInvalid: a content address, key hash or replica name that is not of the layout's form.
 	ErrInvalid = errors.New("cache: invalid name")
-	// ErrNotBuilt is what [Stub] answers.
-	ErrNotBuilt = errors.New("cache: not built yet (work package 5)")
 )
 
 // EntryKind says what an entry holds.
@@ -135,55 +133,3 @@ type Backend interface {
 	SpoolRead(ctx context.Context, f SpoolFile) ([]byte, error)
 	SpoolDelete(ctx context.Context, f SpoolFile) error
 }
-
-// Stub is the placeholder backend of the contract work: every method answers [ErrNotBuilt].
-type Stub struct{}
-
-var _ Backend = Stub{}
-
-// Check implements [Backend].
-func (Stub) Check(context.Context) error { return ErrNotBuilt }
-
-// PutObject implements [Backend].
-func (Stub) PutObject(context.Context, string, int64, io.Reader) error { return ErrNotBuilt }
-
-// GetObject implements [Backend].
-func (Stub) GetObject(context.Context, string, int64, int64) (io.ReadCloser, error) {
-	return nil, ErrNotBuilt
-}
-
-// HeadObject implements [Backend].
-func (Stub) HeadObject(context.Context, string) (ObjectInfo, error) { return ObjectInfo{}, ErrNotBuilt }
-
-// DeleteObject implements [Backend].
-func (Stub) DeleteObject(context.Context, string) error { return ErrNotBuilt }
-
-// PutEntry implements [Backend].
-func (Stub) PutEntry(context.Context, string, []byte) error { return ErrNotBuilt }
-
-// GetEntry implements [Backend].
-func (Stub) GetEntry(context.Context, string) ([]byte, error) { return nil, ErrNotBuilt }
-
-// DeleteEntry implements [Backend].
-func (Stub) DeleteEntry(context.Context, string) error { return ErrNotBuilt }
-
-// Touch implements [Backend].
-func (Stub) Touch(context.Context, string) error { return ErrNotBuilt }
-
-// Usage implements [Backend].
-func (Stub) Usage(context.Context) (Usage, error) { return Usage{}, ErrNotBuilt }
-
-// Sweep implements [Backend].
-func (Stub) Sweep(context.Context, string, int64, int64) (int, error) { return 0, ErrNotBuilt }
-
-// SpoolWrite implements [Backend].
-func (Stub) SpoolWrite(context.Context, string, []byte) error { return ErrNotBuilt }
-
-// SpoolList implements [Backend].
-func (Stub) SpoolList(context.Context) ([]SpoolFile, error) { return nil, ErrNotBuilt }
-
-// SpoolRead implements [Backend].
-func (Stub) SpoolRead(context.Context, SpoolFile) ([]byte, error) { return nil, ErrNotBuilt }
-
-// SpoolDelete implements [Backend].
-func (Stub) SpoolDelete(context.Context, SpoolFile) error { return ErrNotBuilt }

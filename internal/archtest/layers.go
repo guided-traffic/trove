@@ -87,6 +87,8 @@ func layerTable() []layerRule {
 		{"internal/bastion/mainclient", layerInfra},
 		{"internal/bastion/cache", layerInfra},
 		{"internal/bastion/shared", layerInfra},
+		// The in-process main installation of the Bastion's tests (and the spool double of the download buffer's).
+		{"internal/bastion/maintest", layerInfra},
 
 		{"internal/repository", layerDomain},
 		{"internal/files", layerDomain},
@@ -108,6 +110,8 @@ func layerTable() []layerRule {
 		{"internal/bastionmain", layerDomain},
 		{"internal/bastion/guard", layerDomain},
 		{"internal/bastion/downloads", layerDomain},
+		// The replica's standing connection to the main installation (handshake, feed, reachability).
+		{"internal/bastion/link", layerDomain},
 
 		{"internal/httpserver", layerEdge},
 		{"internal/api", layerEdge},
@@ -117,6 +121,8 @@ func layerTable() []layerRule {
 		// The Bastion's request flow and its role: they answer HTTP.
 		{"internal/bastion/engine", layerEdge},
 		{"internal/bastion/server", layerEdge},
+		// The scenario of the whole role in one process (R-BAS-048): it starts the server.
+		{"internal/bastion/roletest", layerEdge},
 
 		{"internal/app", layerApp},
 		{"cmd", layerCmd},

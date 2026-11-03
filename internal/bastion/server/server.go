@@ -1,17 +1,22 @@
 // Package server is the process of the role bastion (R-BAS-001, R-BAS-043, R-BAS-044): the configuration is
-// loaded and validated by internal/config, the token file is read, the TLS material of the two listeners is
-// loaded and reloaded, the engine is built, and two listeners serve: the client listener, which hands every
-// request to the engine, and the ops listener with /healthz, /readyz and /metrics.
+// loaded and validated by internal/config, the token file and the signing key are read, the cache backend, the
+// shared state, the guard, the client of the main installation with its budget, the link, the token reloader
+// and the download buffer are built, the TLS material of the two listeners is loaded and reloaded, and two
+// listeners serve: the client listener, which hands every request to the engine, and the ops listener with
+// /healthz, /readyz and /metrics.
 //
 // It enables none of the main installation's subsystems: no PostgreSQL pool, no object-store client for the
 // main installation's blobs, no job runner, no format route table, no management API, no UI, no login
 // (R-BAS-001). The archtest rule of R-BAS-001 holds its imports to the platform packages.
 //
-// Start order (R-BAS-043): the token file, the signing key, the TLS material and the engine's dependencies are
+// The server runs the loops of the pieces; the engine runs only its own janitor. Start order (R-BAS-043): the
+// token file, the signing key, the CA file of the main installation, the TLS material and the dependencies are
 // read when the server is built, so a defect stops startup before a port is bound; then the ops listener, then
-// the client listener; readiness follows. The handshake and the feed history run in the engine and do not gate
-// readiness. Drain order (R-ARCH-024): readiness off, the drain delay, the client listener shuts down by the
-// deadline, the engine drains (downloads sent or spooled), the ops listener last.
+// the client listener; readiness follows the cache backend's first check. The link (handshake, feed history,
+// reachability), the token reloader, the download buffer and the cache sweeper then run in the background and
+// do not gate readiness. Drain order (R-ARCH-024, R-BAS-043): readiness off, the drain delay, the client
+// listener shuts down by the deadline, the sweeper and the buffer's flush loop stop, the engine drains, the
+// download buffer is sent or spooled, then the link and the reloader stop, the ops listener last.
 package server
 
 import (
@@ -28,11 +33,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/guided-traffic/trove/internal/bastion/answers"
 	"github.com/guided-traffic/trove/internal/bastion/cache"
 	"github.com/guided-traffic/trove/internal/bastion/downloads"
 	"github.com/guided-traffic/trove/internal/bastion/engine"
 	"github.com/guided-traffic/trove/internal/bastion/iface"
+	"github.com/guided-traffic/trove/internal/bastion/link"
 	"github.com/guided-traffic/trove/internal/bastion/mainclient"
 	bmetrics "github.com/guided-traffic/trove/internal/bastion/metrics"
 	"github.com/guided-traffic/trove/internal/buildinfo"
@@ -54,8 +59,8 @@ type Options struct {
 	// DrainDelay replaces config.BastionShutdownDrainDelay, the time between the readiness flip and the stop of
 	// the client listener; tests set it short. Production leaves it zero.
 	DrainDelay time.Duration
-	// Deps lets a test replace what the work packages build; the zero value uses the placeholders of the
-	// contract work and the configuration's own values. Production passes nil.
+	// Deps lets a test replace what the server builds from the configuration (the cache, the guard, the shared
+	// state, the buffer) before the link is wired over the client. Production passes nil.
 	Deps func(*engine.Deps)
 }
 
@@ -78,9 +83,18 @@ type Server struct {
 	clientTLS, opsTLS *httpserver.ListenerTLS
 	client, ops       *httpserver.Server
 
+	link     *link.Link
+	reloader *mainclient.Reloader
+	holder   *mainclient.Holder
+
 	started    atomic.Bool
 	healthStop context.CancelFunc
 	engineStop context.CancelFunc
+	// reportStop stops the download buffer's flush loop and sweepStop the cache sweeper (before the drain),
+	// linkStop the link and the token reloader (after it).
+	reportStop context.CancelFunc
+	sweepStop  context.CancelFunc
+	linkStop   context.CancelFunc
 	bg         sync.WaitGroup
 	fatal      chan error
 	// closers are released at the end: the Valkey client and the guard's loop.
@@ -183,8 +197,9 @@ func (s *Server) checkObserver() health.Observer {
 	}
 }
 
-// buildDeps reads the token file and the signing key and assembles the engine's dependencies: the placeholders
-// of the work packages that are not built, the local shared state and the configuration's own values.
+// buildDeps reads the token file and the signing key and assembles the engine's dependencies from the
+// configuration: the shared state and the guard, the cache with its backend, the client of the main
+// installation with its budget, the link and the download buffer (R-BAS-043).
 func (s *Server) buildDeps() (engine.Deps, error) {
 	b := s.cfg.Bastion
 	tok, err := mainclient.ReadTokenFile(b.Main.TokenFile)
@@ -209,15 +224,61 @@ func (s *Server) buildDeps() (engine.Deps, error) {
 	if err != nil {
 		return engine.Deps{}, err
 	}
+	c, err := cache.New(context.Background(), b.Cache, signer, cache.Options{
+		Metrics: s.bm, Logger: s.log.With("component", "cache"), TempDir: os.TempDir(),
+	})
+	if err != nil {
+		return engine.Deps{}, fmt.Errorf("bastion.cache: %w", err)
+	}
+	s.holder = mainclient.NewHolder(tok)
+	client, err := mainclient.New(mainclient.Options{
+		URL: b.Main.URL, BaseURL: s.cfg.Server.BaseURL, Replica: s.instance, Release: buildinfo.Get().Version, Tokens: s.holder,
+		Budget: mainclient.NewBudget(mainclient.BudgetOptions{
+			MaxConcurrent: b.Main.MaxConcurrent, Replicas: b.Replicas, AnonymousShare: b.Main.AnonymousShare,
+			QueueTimeout: b.Main.QueueTimeout, Metrics: s.bm,
+		}),
+		ConnectTimeout: b.Main.ConnectTimeout, ResponseHeaderTimeout: b.Main.ResponseHeaderTimeout, CAFile: b.Main.CAFile,
+		Metrics: s.bm, Log: s.log, Tracer: s.tracer, Obs: s.metrics, TLSMetrics: s.tlsm,
+	})
+	if err != nil {
+		return engine.Deps{}, fmt.Errorf("bastion.main: %w", err)
+	}
 	d := engine.Deps{
 		Config: s.cfg, Log: s.log.With("component", "engine"), Metrics: s.bm, Replica: s.instance, Release: buildinfo.Get().Version,
-		Main: mainclient.Stub{}, Tokens: mainclient.NewHolder(tok), Cache: cache.Stub{}, Signer: signer,
-		Shared: st, Guard: g, Downloads: downloads.Stub{}, Feed: answers.NewFeedLog(),
+		Main: client, Cache: c, Shared: st, Guard: g,
 	}
 	if s.o.Deps != nil {
 		s.o.Deps(&d)
 	}
+	s.wireLink(&d)
 	return d, nil
+}
+
+// wireLink builds the link over the client the dependencies hold, wraps that client with the link's guard (a
+// refused token or an interface mismatch in any answer makes the replica unreachable, a failing forward
+// alone does not, Q-BAS-44), and builds the token reloader and the download buffer (unless a test replaced
+// it). The buffer follows recordDownloads of the handshake and reports while the link is reachable.
+func (s *Server) wireLink(d *engine.Deps) {
+	b := s.cfg.Bastion
+	s.link = link.New(link.Options{Client: d.Main, Config: link.ConfigFrom(s.cfg), Metrics: s.bm, Log: s.log, Tokens: s.holder, Now: d.Now})
+	d.Main = s.link.Guard(d.Main)
+	d.Link = s.link
+	s.reloader = mainclient.NewReloader(mainclient.ReloaderOptions{
+		Path: b.Main.TokenFile, Interval: b.Main.TokenReloadInterval, Holder: s.holder, Metrics: s.bm,
+		Log: s.log.With("component", "token"), OnChange: func(mainclient.Token) { s.link.TokenChanged() }, Now: d.Now,
+	})
+	if d.Downloads == nil {
+		o := downloads.ReporterOptions{
+			Config: b.Audit, Replica: s.instance, Sender: d.Main, Reachable: s.link.Reachable, Metrics: s.bm, Log: s.log, Now: d.Now,
+			Spool: d.Cache.Backend(),
+		}
+		if d.Shared != nil && d.Shared.Flights != nil {
+			o.Claim = d.Shared.Flights.TryAcquire
+		}
+		d.Downloads = downloads.NewReporter(o)
+	}
+	buf := d.Downloads
+	s.link.Watch(func(st link.State) { buf.SetEnabled(st.Handshaken && st.RecordDownloads) })
 }
 
 // exportConstants sets the gauges that are configuration (R-BAS-040, R-BAS-041): the periods the alert rules
@@ -279,9 +340,6 @@ func (s *Server) OpsAddr() net.Addr {
 // a listener afterwards arrives on the channel Run watches.
 func (s *Server) Start(ctx context.Context) error {
 	s.log.Info("starting", "role", config.BastionRole, "instance", s.instance, "interface", iface.InterfaceVersion)
-	if stub := s.deps.Stubbed(); len(stub) > 0 {
-		s.log.Warn("the Bastion runs with placeholders: it answers every request bastion_not_served", "placeholders", strings.Join(stub, ","))
-	}
 	s.health.AddReadiness("startup", func(context.Context) error {
 		if !s.started.Load() {
 			return health.WithReason(errStarting, "starting")
@@ -289,7 +347,11 @@ func (s *Server) Start(ctx context.Context) error {
 		return nil
 	}, false)
 	s.addTLSReadiness()
-	s.health.AddReadiness("engine", s.engine.Ready, true)
+	// The first check of the cache backend gates the first readiness; a later failure is reported, never unready
+	// (R-BAS-043, R-BAS-030). The main installation gates nothing (Q-BAS-44).
+	s.health.AddReadiness("cache", func(ctx context.Context) error {
+		return health.WithReason(s.engine.Ready(ctx), "cache backend check failed")
+	}, true)
 
 	opsHandler := httpserver.OpsHandler(httpserver.OpsOptions{
 		Live: s.health.LiveHandler(), Ready: s.health.ReadyHandler(), Metrics: s.metrics.Handler(),
@@ -328,9 +390,32 @@ func (s *Server) Start(ctx context.Context) error {
 	s.serve(s.client)
 	s.log.Info("client listener bound", "addr", s.client.Addr().String())
 	s.started.Store(true)
+	s.runLink(ctx)
 	// The start-up check turned true: first readiness does not wait for the next tick.
 	s.health.Refresh(ctx)
 	return nil
+}
+
+// runLink starts the loops of the pieces the engine uses: the link (handshake, feed), the token reloader, the
+// download buffer and the cache sweeper, which takes the sweep lease from the shared state (R-BAS-031). They do
+// not gate readiness (R-BAS-043).
+func (s *Server) runLink(ctx context.Context) {
+	lctx, lcancel := context.WithCancel(context.WithoutCancel(ctx))
+	s.linkStop = lcancel
+	rctx, rcancel := context.WithCancel(context.WithoutCancel(ctx))
+	s.reportStop = rcancel
+	cctx, ccancel := context.WithCancel(context.WithoutCancel(ctx))
+	s.sweepStop = ccancel
+	s.bg.Add(4)
+	go func() { defer s.bg.Done(); s.link.Run(lctx) }()
+	go func() { defer s.bg.Done(); s.reloader.Run(lctx) }()
+	go func() { defer s.bg.Done(); s.deps.Cache.RunSweeper(cctx, s.deps.Shared) }()
+	go func() {
+		defer s.bg.Done()
+		if err := s.deps.Downloads.Run(rctx); err != nil {
+			s.log.Warn("download buffer stopped", "error", err)
+		}
+	}()
 }
 
 func (s *Server) addTLSReadiness() {
@@ -397,15 +482,48 @@ func (s *Server) clientHandler() (http.Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("server.trusted_proxies: %w", err)
 	}
-	reqLog := observability.RequestLog(s.log, s.metrics, observability.WithListener("client"),
-		observability.WithRequestRecords(s.cfg.Log.Request.Enabled))
 	return httpserver.Chain{
-		Router: router, Log: s.log, Trace: s.tracer.MiddlewareFor(""), TraceID: observability.RequestID, AccessLog: reqLog,
+		Router: router, Log: s.log, Trace: s.tracer.MiddlewareFor(""), TraceID: observability.RequestID, AccessLog: s.requestLog(),
 		OnRequest:   func(r *http.Request) { observability.RequestInfoFrom(r.Context()).SetHandler("bastion") },
 		MaxInFlight: sec.MaxInFlight, Resolver: resolver, Annotate: annotate,
 		Replica: s.instance, ReplicaHeader: httpserver.ReplicaNever, Draining: s.health.Draining,
 	}.Handler(), nil
 }
+
+// requestLog is the request log of the client listener. A request the guard refused as quiet (an address on
+// the block list, R-BAS-037) is counted in the metrics but not logged: the guard logs one line per block, not
+// one per refused request. The engine marks the request in a slot this stage puts into the context; the
+// logger below skips the record when the slot says so.
+func (s *Server) requestLog() func(http.Handler) http.Handler {
+	logger := slog.New(quietHandler{s.log.Handler()})
+	reqLog := observability.RequestLog(logger, s.metrics, observability.WithListener("client"),
+		observability.WithRequestRecords(s.cfg.Log.Request.Enabled))
+	return func(next http.Handler) http.Handler {
+		inner := reqLog(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			inner.ServeHTTP(w, r.WithContext(engine.WithQuietSlot(r.Context())))
+		})
+	}
+}
+
+// quietHandler drops the records of requests the engine marked as quiet.
+type quietHandler struct{ slog.Handler }
+
+// Handle implements [slog.Handler].
+func (h quietHandler) Handle(ctx context.Context, r slog.Record) error {
+	if engine.Quiet(ctx) {
+		return nil
+	}
+	return h.Handler.Handle(ctx, r)
+}
+
+// WithAttrs implements [slog.Handler].
+func (h quietHandler) WithAttrs(a []slog.Attr) slog.Handler {
+	return quietHandler{h.Handler.WithAttrs(a)}
+}
+
+// WithGroup implements [slog.Handler].
+func (h quietHandler) WithGroup(n string) slog.Handler { return quietHandler{h.Handler.WithGroup(n)} }
 
 // annotate records the resolved client address and the effective host for the request log.
 func annotate(r *http.Request, info httpserver.RequestInfo) {
@@ -417,8 +535,10 @@ func annotate(r *http.Request, info httpserver.RequestInfo) {
 }
 
 func (s *Server) abort() {
-	if s.engineStop != nil {
-		s.engineStop()
+	for _, stop := range []context.CancelFunc{s.engineStop, s.sweepStop, s.reportStop, s.linkStop} {
+		if stop != nil {
+			stop()
+		}
 	}
 	if s.healthStop != nil {
 		s.healthStop()
@@ -457,11 +577,24 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.engineStop != nil {
 		s.engineStop()
 	}
+	if s.sweepStop != nil {
+		s.sweepStop()
+	}
+	if s.reportStop != nil {
+		s.reportStop() // the flush loop stops; Drain sends what is left
+	}
 	dctx, dcancel := context.WithDeadline(ctx, deadline.Add(config.ShutdownMargin/2))
 	if err := s.engine.Drain(dctx); err != nil {
 		errsOut = append(errsOut, fmt.Errorf("drain engine: %w", err))
 	}
+	// The buffer is sent or spooled after the last request that could add to it (R-BAS-039).
+	if err := s.deps.Downloads.Drain(dctx); err != nil {
+		errsOut = append(errsOut, fmt.Errorf("drain downloads: %w", err))
+	}
 	dcancel()
+	if s.linkStop != nil {
+		s.linkStop()
+	}
 	octx, ocancel := context.WithTimeout(ctx, config.ShutdownMargin/2)
 	if s.ops != nil {
 		_ = s.ops.Shutdown(octx)

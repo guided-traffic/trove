@@ -5,13 +5,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"io"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -167,70 +165,6 @@ func readAllT(t testing.TB, rc io.ReadCloser) []byte {
 		t.Fatal(err)
 	}
 	return b
-}
-
-// flaky wraps a store and fails every operation while down is set.
-type flaky struct {
-	store
-	down atomic.Bool
-}
-
-var errDown = errors.New("the backend is down")
-
-func (f *flaky) guard() error {
-	if f.down.Load() {
-		return errDown
-	}
-	return nil
-}
-
-func (f *flaky) putFile(ctx context.Context, key, name string, size int64, sum []byte) error {
-	if err := f.guard(); err != nil {
-		return err
-	}
-	return f.store.putFile(ctx, key, name, size, sum)
-}
-
-func (f *flaky) putBytes(ctx context.Context, key string, b []byte) error {
-	if err := f.guard(); err != nil {
-		return err
-	}
-	return f.store.putBytes(ctx, key, b)
-}
-
-func (f *flaky) get(ctx context.Context, key string, off, n int64) (io.ReadCloser, error) {
-	if err := f.guard(); err != nil {
-		return nil, err
-	}
-	return f.store.get(ctx, key, off, n)
-}
-
-func (f *flaky) stat(ctx context.Context, key string) (int64, time.Time, error) {
-	if err := f.guard(); err != nil {
-		return 0, time.Time{}, err
-	}
-	return f.store.stat(ctx, key)
-}
-
-func (f *flaky) list(ctx context.Context, prefix string, fn func(string, int64, time.Time) error) error {
-	if err := f.guard(); err != nil {
-		return err
-	}
-	return f.store.list(ctx, prefix, fn)
-}
-
-func (f *flaky) remove(ctx context.Context, key string) error {
-	if err := f.guard(); err != nil {
-		return err
-	}
-	return f.store.remove(ctx, key)
-}
-
-func (f *flaky) touch(ctx context.Context, key string) error {
-	if err := f.guard(); err != nil {
-		return err
-	}
-	return f.store.touch(ctx, key)
 }
 
 // val reads the value of a counter or a gauge.

@@ -32,6 +32,8 @@ type Options struct {
 	Now func() time.Time
 	// HoldBack is the withheld tail of a verified read; zero is [DefaultHoldBack].
 	HoldBack int
+	// Fault lets a test make the storage fail; nil in production.
+	Fault *Fault
 	// WrapTransport lets a test count the requests the bucket's client sends; nil leaves the transport alone.
 	WrapTransport func(http.RoundTripper) http.RoundTripper
 }
@@ -52,6 +54,9 @@ func (o *Options) fill() {
 }
 
 func newBackend(s store, o Options) *backend {
+	if o.Fault != nil {
+		s = &faultStore{store: s, f: o.Fault}
+	}
 	return &backend{s: s, now: o.Now, count: func(op string) { o.Metrics.CacheErrors.WithLabelValues(op).Inc() }}
 }
 
@@ -114,13 +119,11 @@ type Cache struct {
 	touched map[string]time.Time
 }
 
-// New opens the backend of cfg.Backend and returns the cache. The signer is required (the signing key of
-// bastion.signing_key_file, R-BAS-032). New does not touch the backend's storage beyond preparing directories;
+// New opens the backend of cfg.Backend and returns the cache. The signer holds the signing key of
+// bastion.signing_key_file (R-BAS-032); it may be nil only where the configuration allows no key (the volume
+// backend without Valkey), and entries are then stored without a signature (Q-BAS-98). New does not touch the backend's storage beyond preparing directories;
 // [Cache.Ready] is the first check.
 func New(ctx context.Context, cfg config.BastionCache, signer *Signer, o Options) (*Cache, error) {
-	if signer == nil {
-		return nil, errors.New("cache: a signer is required")
-	}
 	o.fill()
 	var b *backend
 	switch cfg.Backend {

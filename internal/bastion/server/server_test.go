@@ -78,10 +78,13 @@ server:
   base_url: https://packages.example.com
 %s
 bastion:
+  cache:
+    volume:
+      dir: %s
   main:
     url: https://trove.example.com
     token_file: %s
-`, extra, tokenFile)
+`, extra, filepath.Join(filepath.Dir(tokenFile), "cache"), tokenFile)
 }
 
 func start(t *testing.T, cfgYAML string) *harness {
@@ -116,6 +119,7 @@ func get(t *testing.T, url string, header ...string) (int, http.Header, string) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	req.Host = "packages.example.com" // server.base_url of the configurations below
 	for i := 0; i+1 < len(header); i += 2 {
 		req.Header.Set(header[i], header[i+1])
 	}
@@ -139,10 +143,11 @@ func waitReady(t *testing.T, h *harness) {
 	}
 }
 
-// TestR_BAS_001_TheRoleServesItsTwoListenersAndRefusesEveryClientRequest: with the keys of the acceptance the
-// role starts, becomes ready, and the client listener answers 404 bastion_not_served as problem details to the
-// paths the spec names (R-BAS-001, R-BAS-003) until the engine replaces the placeholder.
-func TestR_BAS_001_TheRoleServesItsTwoListenersAndRefusesEveryClientRequest(t *testing.T) {
+// TestR_BAS_001_TheRoleServesItsTwoListenersAndAnswersWithItsOwnProblems: with the keys of the acceptance the
+// role starts, becomes ready, and the client listener answers as the engine does: 404 bastion_not_served as
+// problem details to the paths the spec names, 421 to another host, and 503 main_unreachable to a read that
+// needs a main installation that is not reachable (R-BAS-001, R-BAS-003, R-BAS-027).
+func TestR_BAS_001_TheRoleServesItsTwoListenersAndAnswersWithItsOwnProblems(t *testing.T) {
 	h := start(t, minimal(writeTokenFile(t, t.TempDir()), ""))
 	waitReady(t, h)
 	ops, client := "http://"+h.srv.OpsAddr().String(), "http://"+h.srv.ClientAddr().String()
@@ -152,29 +157,46 @@ func TestR_BAS_001_TheRoleServesItsTwoListenersAndRefusesEveryClientRequest(t *t
 			t.Errorf("%s = %d %s", p, code, body)
 		}
 	}
-	for _, path := range []string{
-		"/api/v1/system/ping", "/ui/", "/auth/oidc/corp/start", "/", "/v2/", "/.well-known/x", "/api/npm/npm-all/lodash", "/files/raw/x",
+	for path, want := range map[string]struct {
+		status int
+		code   string
+	}{
+		"/api/v1/system/ping": {404, iface.CodeNotServed}, "/ui/": {404, iface.CodeNotServed}, "/auth/oidc/corp/start": {404, iface.CodeNotServed},
+		"/": {404, iface.CodeNotServed}, "/v2/": {404, iface.CodeNotServed}, "/.well-known/x": {404, iface.CodeNotServed},
+		"/api/npm/npm-all/lodash": {503, "main_unreachable"}, "/files/raw/x": {503, "main_unreachable"},
 	} {
 		code, header, body := get(t, client+path)
 		var p struct {
 			Code string `json:"code"`
 		}
 		_ = json.Unmarshal([]byte(body), &p)
-		if code != http.StatusNotFound || p.Code != iface.CodeNotServed || !strings.HasPrefix(header.Get("Content-Type"), "application/problem+json") {
+		if code != want.status || p.Code != want.code || !strings.HasPrefix(header.Get("Content-Type"), "application/problem+json") {
 			t.Errorf("GET %s = %d %s %s", path, code, header.Get("Content-Type"), body)
 		}
 		if header.Get("Cache-Control") != "no-store" {
 			t.Errorf("GET %s: Cache-Control %q", path, header.Get("Cache-Control"))
 		}
 	}
-	// A write is refused the same way until the engine routes it to the probe (R-BAS-014).
-	req, _ := http.NewRequest(http.MethodPut, client+"/api/npm/npm-all/x", strings.NewReader("{}"))
+	// Another host is not this Bastion's (R-BAS-018 step 1).
+	req, _ := http.NewRequest(http.MethodGet, client+"/api/npm/npm-all/lodash", nil)
+	req.Host = "other.example.com"
+	if resp, err := http.DefaultClient.Do(req); err != nil {
+		t.Fatal(err)
+	} else {
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusMisdirectedRequest {
+			t.Errorf("another host = %d", resp.StatusCode)
+		}
+	}
+	// A write goes to the probe, which needs the main installation (R-BAS-014).
+	req, _ = http.NewRequest(http.MethodPut, client+"/api/npm/npm-all/x", strings.NewReader("{}"))
+	req.Host = "packages.example.com"
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusNotFound {
+	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Errorf("PUT = %d", resp.StatusCode)
 	}
 }
