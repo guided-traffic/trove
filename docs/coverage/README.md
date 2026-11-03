@@ -187,8 +187,8 @@ table.
 <!-- coverage-gen:begin audiences -->
 | Audience | MVP entries | MVP and P1 entries | Implemented | Most open entries (MVP and P1) |
 |---|---|---|---:|---|
-| **npm-only team** | 211 of 211 specified, 0 open (100%) | 322 of 370 specified, 48 open (87.0%) | 178 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
-| **.NET team** | 209 of 209 specified, 0 open (100%) | 312 of 360 specified, 48 open (86.7%) | 179 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
+| **npm-only team** | 211 of 211 specified, 0 open (100%) | 322 of 370 specified, 48 open (87.0%) | 179 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
+| **.NET team** | 209 of 209 specified, 0 open (100%) | 312 of 360 specified, 48 open (86.7%) | 180 | Search and query language 21; Builds and CI integration 15; Repositories 9 |
 | **platform/ops team** | 269 of 269 specified, 0 open (100%) | 448 of 468 specified, 20 open (95.7%) | 198 | Repositories 9; Operations, monitoring and configuration 4; High availability and deployment 3 |
 
 Pages counted per audience:

@@ -9,7 +9,7 @@ the catalog or the spec, then regenerate this file whenever an ID, a title, a pr
 `Covers:` line changes. The rules and the headline numbers are in
 [README.md](README.md#how-the-numbers-are-produced).
 
-**Status.** 394 of 678 spec requirements are implemented: a passing test names them and no
+**Status.** 396 of 678 spec requirements are implemented: a passing test names them and no
 failing test does (the list is [implemented.txt](implemented.txt)). *implemented*: every requirement
 that lists the feature in its `Covers:` line is implemented. *specified*: at least one spec
 requirement lists the feature in its `Covers:` line and not all of them are implemented. *open*: no
@@ -27,7 +27,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | Catalog page | Prefix | Features | MVP specified | Specified | Open | Implemented |
 |---|---|---:|---:|---:|---:|---:|
 | [Repositories](#repositories-repo) | `REPO` | 68 | 24 of 24 | 41 | 27 | 28 |
-| [Remote repositories](#remote-repositories-rmt) | `RMT` | 49 | 18 of 18 | 31 | 18 | 22 |
+| [Remote repositories](#remote-repositories-rmt) | `RMT` | 49 | 18 of 18 | 31 | 18 | 23 |
 | [Replication, federation and multi-site topology](#replication-federation-and-multi-site-topology-repl) | `REPL` | 72 | – | 0 | 72 | 0 |
 | [Artifact management](#artifact-management-art) | `ART` | 53 | 10 of 10 | 32 | 21 | 12 |
 | [Search and query language](#search-and-query-language-srch) | `SRCH` | 64 | – | 3 | 61 | 0 |
@@ -38,7 +38,7 @@ end](#requirements-that-cover-no-catalog-feature)).
 | [OIDC federation for CI systems](#oidc-federation-for-ci-systems-cioidc) | `CIOIDC` | 40 | 20 of 20 | 31 | 9 | 14 |
 | [Storage and blob providers](#storage-and-blob-providers-stor) | `STOR` | 41 | 12 of 12 | 21 | 20 | 14 |
 | [Retention, cleanup and archiving](#retention-cleanup-and-archiving-ret) | `RET` | 42 | – | 26 | 16 | 0 |
-| [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 61 | 18 | 28 |
+| [High availability and deployment](#high-availability-and-deployment-ha) | `HA` | 79 | 49 of 49 | 61 | 18 | 27 |
 | [Operations, monitoring and configuration](#operations-monitoring-and-configuration-ops) | `OPS` | 100 | 17 of 17 | 43 | 57 | 20 |
 | [Events and extensibility](#events-and-extensibility-evt) | `EVT` | 82 | 1 of 1 | 26 | 56 | 2 |
 | [Distribution and release lifecycle](#distribution-and-release-lifecycle-dist) | `DIST` | 70 | 2 of 2 | 2 | 68 | 1 |
@@ -174,7 +174,7 @@ Catalog page: [repositories.md](../features/repositories.md) · specified by pri
 Catalog page: [remote-repositories.md](../features/remote-repositories.md) · specified by priority: MVP 18 of 18 · P1 13 of 14 · P2 0 of 17
 
 <details>
-<summary>49 features: 31 specified, 18 open, 22 implemented</summary>
+<summary>49 features: 31 specified, 18 open, 23 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
@@ -217,8 +217,8 @@ Catalog page: [remote-repositories.md](../features/remote-repositories.md) · sp
 | RMT-037 | Priority resolution | P1 | specified | [R-NPM-028](../spec/formats/npm.md), [R-REPO-022](../spec/repositories-and-proxy.md) (implemented) |
 | RMT-038 | Remote folder listing | P2 | open | – |
 | RMT-039 | Configuration sharing | P2 | open | – |
-| RMT-040 | Chained remote repository | MVP | specified | [R-BAS-008](../spec/bastion.md) (implemented), [R-BAS-010](../spec/bastion.md), [R-BAS-011](../spec/bastion.md) (implemented), [R-BAS-012](../spec/bastion.md) (implemented), [R-BAS-013](../spec/bastion.md) (implemented), [R-BAS-015](../spec/bastion.md) (implemented), [R-BAS-021](../spec/bastion.md), [R-BAS-022](../spec/bastion.md), [R-BAS-023](../spec/bastion.md) |
-| RMT-041 | Download statistics reporting | MVP | specified | [R-BAS-016](../spec/bastion.md), [R-BAS-039](../spec/bastion.md) (implemented) |
+| RMT-040 | Chained remote repository | MVP | specified | [R-BAS-008](../spec/bastion.md) (implemented), [R-BAS-010](../spec/bastion.md) (implemented), [R-BAS-011](../spec/bastion.md) (implemented), [R-BAS-012](../spec/bastion.md) (implemented), [R-BAS-013](../spec/bastion.md) (implemented), [R-BAS-015](../spec/bastion.md) (implemented), [R-BAS-021](../spec/bastion.md), [R-BAS-022](../spec/bastion.md), [R-BAS-023](../spec/bastion.md) |
+| RMT-041 | Download statistics reporting | MVP | implemented | [R-BAS-016](../spec/bastion.md) (implemented), [R-BAS-039](../spec/bastion.md) (implemented) |
 | RMT-042 | Property synchronization | P2 | open | – |
 | RMT-043 | Source absence detection | P2 | open | – |
 | RMT-044 | Uncached retrieval through a virtual repository for chained requests | MVP | specified | [R-BAS-013](../spec/bastion.md) (implemented), [R-BAS-021](../spec/bastion.md) |
@@ -877,17 +877,17 @@ Catalog page: [retention-and-cleanup.md](../features/retention-and-cleanup.md) �
 Catalog page: [ha-and-deployment.md](../features/ha-and-deployment.md) · specified by priority: MVP 49 of 49 · P1 11 of 14 · P2 1 of 10 · Later 0 of 3 · Out of scope 0 of 3
 
 <details>
-<summary>79 features: 61 specified, 18 open, 28 implemented</summary>
+<summary>79 features: 61 specified, 18 open, 27 implemented</summary>
 
 | ID | Feature | Priority | Status | Covered by |
 |---|---|---|---|---|
 | HA-001 | Active-active cluster of identical nodes | MVP | specified | [R-ARCH-001](../spec/architecture.md) (implemented), [R-ARCH-032](../spec/architecture.md) (implemented), [R-HA-001](../spec/ha-and-helm.md), [R-AUTH-042](../spec/identity-and-authentication.md) (implemented) |
-| HA-002 | Cluster-wide task execution without a primary node | MVP | specified | [R-ARCH-001](../spec/architecture.md) (implemented), [R-ARCH-016](../spec/architecture.md) (implemented), [R-ARCH-017](../spec/architecture.md) (implemented), [R-HA-001](../spec/ha-and-helm.md), [R-HA-005](../spec/ha-and-helm.md) (implemented) |
+| HA-002 | Cluster-wide task execution without a primary node | MVP | specified | [R-ARCH-001](../spec/architecture.md) (implemented), [R-ARCH-016](../spec/architecture.md) (implemented), [R-ARCH-017](../spec/architecture.md), [R-HA-001](../spec/ha-and-helm.md), [R-HA-005](../spec/ha-and-helm.md) (implemented) |
 | HA-003 | Shared metadata database as the cluster backbone | MVP | specified | [R-ARCH-002](../spec/architecture.md) (implemented), [R-HA-007](../spec/ha-and-helm.md), [R-HA-013](../spec/ha-and-helm.md) (implemented) |
 | HA-004 | Shared binary storage for all nodes | MVP | specified | [R-ARCH-002](../spec/architecture.md) (implemented), [R-HA-007](../spec/ha-and-helm.md), [R-HA-010](../spec/ha-and-helm.md) |
 | HA-005 | Node-local persistent volume for transient data | MVP | specified | [R-ARCH-014](../spec/architecture.md) (implemented), [R-HA-012](../spec/ha-and-helm.md), [R-HA-035](../spec/ha-and-helm.md) (implemented), [R-HA-061](../spec/ha-and-helm.md) (implemented) |
-| HA-006 | Cluster-wide synchronization of configuration and state | MVP | specified | [R-ARCH-002](../spec/architecture.md) (implemented), [R-ARCH-017](../spec/architecture.md) (implemented), [R-ARCH-018](../spec/architecture.md) (implemented), [R-ARCH-030](../spec/architecture.md) (implemented), [R-HA-003](../spec/ha-and-helm.md), [R-HA-004](../spec/ha-and-helm.md) (implemented) |
-| HA-007 | Distributed locking through the database | MVP | implemented | [R-ARCH-017](../spec/architecture.md) (implemented), [R-ARCH-030](../spec/architecture.md) (implemented), [R-ARCH-033](../spec/architecture.md) (implemented), [R-HA-005](../spec/ha-and-helm.md) (implemented), [R-HA-006](../spec/ha-and-helm.md) (implemented) |
+| HA-006 | Cluster-wide synchronization of configuration and state | MVP | specified | [R-ARCH-002](../spec/architecture.md) (implemented), [R-ARCH-017](../spec/architecture.md), [R-ARCH-018](../spec/architecture.md) (implemented), [R-ARCH-030](../spec/architecture.md) (implemented), [R-HA-003](../spec/ha-and-helm.md), [R-HA-004](../spec/ha-and-helm.md) (implemented) |
+| HA-007 | Distributed locking through the database | MVP | specified | [R-ARCH-017](../spec/architecture.md), [R-ARCH-030](../spec/architecture.md) (implemented), [R-ARCH-033](../spec/architecture.md) (implemented), [R-HA-005](../spec/ha-and-helm.md) (implemented), [R-HA-006](../spec/ha-and-helm.md) (implemented) |
 | HA-008 | Network locality of cluster components | MVP | specified | [R-HA-049](../spec/ha-and-helm.md) |
 | HA-009 | Horizontal scaling: adding and removing nodes | MVP | specified | [R-ARCH-001](../spec/architecture.md) (implemented), [R-ARCH-032](../spec/architecture.md) (implemented), [R-HA-003](../spec/ha-and-helm.md), [R-HA-059](../spec/ha-and-helm.md), [R-HA-032](../spec/ha-and-helm.md) (implemented), [R-AUTH-042](../spec/identity-and-authentication.md) (implemented) |
 | HA-010 | Deployment topology: single node or cluster | MVP | specified | [R-ARCH-001](../spec/architecture.md) (implemented), [R-HA-001](../spec/ha-and-helm.md) |
@@ -3021,7 +3021,7 @@ catalog feature measures. They count toward the requirement total, not toward an
 | R-BAS-007 (implemented) | Bastions in the main installation's screen, client setup and manual | MVP | [bastion.md](../spec/bastion.md) |
 | R-BAS-009 (implemented) | The interface version | MVP | [bastion.md](../spec/bastion.md) |
 | R-BAS-014 (implemented) | Writes through a Bastion are refused by the main installation | MVP | [bastion.md](../spec/bastion.md) |
-| R-BAS-017 | The real client and the Bastion's host at the main installation | MVP | [bastion.md](../spec/bastion.md) |
+| R-BAS-017 (implemented) | The real client and the Bastion's host at the main installation | MVP | [bastion.md](../spec/bastion.md) |
 | R-BAS-018 | Request classification at the Bastion | MVP | [bastion.md](../spec/bastion.md) |
 | R-BAS-019 (implemented) | Credentials at the Bastion | MVP | [bastion.md](../spec/bastion.md) |
 | R-BAS-020 (implemented) | Answers and their validity | MVP | [bastion.md](../spec/bastion.md) |
