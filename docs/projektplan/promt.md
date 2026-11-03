@@ -226,6 +226,12 @@ Found on 2026-11-03 while closing phase 5:
   2026-11-03 by the development agent that built the marking of phase 5b, while eight agents shared the integration stack; it
   passed alone (33 s), and the change under test does not touch collapsing. The failure is in the flight-lock timing. Done when
   a run under load (`-count` beside CPU load, as for F-35) reproduces it and the cause is fixed, or 200 runs under load pass.
+- **F-40 · The scheduled nightly run 41611487424 was red in `failover` and `ci-ha` on the runner's DNS, not on a test** (read).
+  Both jobs failed in their artifact upload step: `ci-ha` with `getaddrinfo EAI_AGAIN` for the artifact service after its test
+  step passed, `failover` in the step "Upload the go test -json report", whose log is no longer retrievable (`BlobNotFound`), so
+  its test result is unconfirmed. `npm-ha` in the same run is F-38. The same DNS error is part of F-37. Machine-level (the
+  self-hosted runners' resolver). Done when two scheduled nightly runs pass their upload steps, or the `failover` test is shown
+  red in a run whose log is kept, which makes it a test finding of its own.
 - **F-38 · `npm-ha` and `npm-ha-soak` were red in the nightly run 41575201390** (read). The npm load under drains and
   failovers is the phase 7 item "npm load in the drain and failover tests reliably green"; `npm-ha` passed in run 41568514247
   hours before. Done with that item.
