@@ -133,6 +133,9 @@ type Request struct {
 	// (R-VULN-015 "Remote miss").
 	Version string
 	Mode    Mode
+	// Addressed is the key of the repository the client addressed (formats.Request.Addressed): the one the text of a
+	// refusal may name (R-VULN-016); "" names the remote itself.
+	Addressed string
 	// Populate is the populate check; see [Populate].
 	Populate Populate
 	// Expected are the digests the upstream announced for an artifact.

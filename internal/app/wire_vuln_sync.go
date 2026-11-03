@@ -20,7 +20,7 @@ import (
 	vsync "github.com/guided-traffic/trove/internal/vuln/sync"
 )
 
-// The wiring of the advisory sync (work package A, docs/developer/vulnerabilities.md): the service over the database, the
+// The wiring of the advisory sync (docs/developer/vulnerabilities.md): the service over the database, the
 // change log, the cache registry, the outbound client of purpose vuln_source and the worker's spool; its kinds and tasks; and
 // the replica's copy of the state that vuln.States answers from. The marked blocks of wire_vuln.go call into this file.
 
@@ -89,7 +89,11 @@ func (a *App) newVulnSync(in infra, m *vmetrics.Metrics) (*vsync.Service, error)
 	return vsync.New(o)
 }
 
-// VulnSync returns the advisory sync; nil in the shell profile. The integration tests of the sync call it the way the jobs do.
+// VulnStates returns the replica's view of the advisory data state (the test override, when set); nil in the shell profile.
+// Every serving role has it.
+func (a *App) VulnStates() vuln.States { return part[vulnArea](a.parts).states }
+
+// VulnSync returns the advisory sync; nil in the shell profile and on a web replica, which has the states alone. The integration tests of the sync call it the way the jobs do.
 func (a *App) VulnSync() *vsync.Service { return part[vulnArea](a.parts).sync }
 
 // registerVulnSyncJobs registers the three kinds and tasks of the sync (R-VULN-004, R-VULN-008): queue maintenance, exclusive,

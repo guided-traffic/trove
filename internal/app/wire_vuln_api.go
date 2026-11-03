@@ -13,7 +13,7 @@ import (
 )
 
 // AreaVulnAPI is the services of the vulnerability scanning's operations of the management API (R-VULN-013, R-VULN-019 to
-// R-VULN-021, work package E): the report over the findings, the triage, and what the caller can read.
+// R-VULN-021): the report over the findings, the triage, and what the caller can read.
 const AreaVulnAPI Area = "vuln-api"
 
 // vulnAPIArea is the vulnerability operations' services of a replica with a client listener.
@@ -21,7 +21,7 @@ type vulnAPIArea struct{ services v1.VulnServices }
 
 // wireVulnAPI builds the report and the triage. The report reads what the caller can read through the decision point
 // (authz.ReadScoper) and the repositories' policy from the replica's snapshot; the triage writes the history row and the audit
-// event in the transaction of the change. The advisories port (work package D) is optional: without it every name of a local
+// event in the transaction of the change. The advisories port is optional: without it every name of a local
 // repository counts as public in the evaluation state of a version.
 func (a *App) wireVulnAPI(_ context.Context, in infra, az authzArea, repo repositoryArea, vz vulnArea) (vulnAPIArea, error) {
 	if err := requireInputs(AreaVulnAPI, given("database", in.db), given("decision point", az.engine), given("repository reader", repo.reader)); err != nil {

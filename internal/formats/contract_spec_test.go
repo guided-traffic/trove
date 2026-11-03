@@ -463,6 +463,18 @@ func surfaceOf(pkg string, d *decls) []string {
 	return out
 }
 
+// leafSurfaceOf writes the types a leaf package contributes to the contract (ADR-150): the types with their exported fields and
+// methods, and, when withConsts is set, the constants (the values of an enumeration). The leaf's functions are not part of
+// the contract: a format calls match.Affects, but its signature is the matcher's own.
+func leafSurfaceOf(pkg string, d *decls, withConsts bool) []string {
+	trimmed := newDecls()
+	trimmed.types, trimmed.methods = d.types, d.methods
+	if withConsts {
+		trimmed.consts, trimmed.values = d.consts, d.values
+	}
+	return surfaceOf(pkg, trimmed)
+}
+
 // TestR_ARCH_025_TheFrozenContractChangesOnlyWithItsSurfaceFile: the contract is frozen at version 1
 // since the end of M3, and from then on every change of it is an ADR (E3.3). The test cannot tell an
 // addition the rule of R-ARCH-025 allows from a breaking change; it makes every change visible in
@@ -472,6 +484,10 @@ func TestR_ARCH_025_TheFrozenContractChangesOnlyWithItsSurfaceFile(t *testing.T)
 	lines := []string{fmt.Sprintf("contract version %d", formats.ContractVersion)}
 	lines = append(lines, surfaceOf("formats", codeDecls(t))...)
 	lines = append(lines, surfaceOf("catalog", dirDecls(t, "catalog"))...)
+	// The leaves the contract speaks in (ADR-150): a field added to an advisory or to the matcher's result changes what a
+	// format reads, so it is a change of the contract too.
+	lines = append(lines, leafSurfaceOf("advisory", dirDecls(t, "../vuln/advisory"), true)...)
+	lines = append(lines, leafSurfaceOf("match", dirDecls(t, "../vuln/match"), false)...)
 	got := strings.Join(lines, "\n") + "\n"
 	if *updateContract {
 		if err := os.MkdirAll(filepath.Dir(surfacePath), 0o755); err != nil {

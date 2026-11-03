@@ -330,7 +330,7 @@ func TestR_VULN_011_ARaisedMatcherVersionRequestsTheFullEvaluation(t *testing.T)
 // with the epoch of the run, once the worker's run committed, and a changed run raises the epoch it sees.
 func TestR_VULN_027_AWebReplicaFollowsTheStateOfTheWorker(t *testing.T) {
 	e := newEnv(t, options{})
-	states := e.web.App.VulnSync().States()
+	states := e.web.App.VulnStates()
 	if s := states.State("npm"); s.Complete || s.Epoch != 0 || !s.SyncedAt.IsZero() {
 		t.Fatalf("state of an ecosystem never imported: %+v", s)
 	}

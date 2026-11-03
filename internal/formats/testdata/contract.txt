@@ -458,7 +458,6 @@ formats.VulnerabilityAdapter: method AdvisoryName(string) (string, bool)
 formats.VulnerabilityAdapter: method AdvisoryVersion(string) (string, bool)
 formats.VulnerabilityAdapter: method CompareVersions(string, string) (int, error)
 formats.VulnerabilityAdapter: method Ecosystem() string
-formats.VulnerabilityData: method Affects(VulnerabilityAdapter, advisory.Affected, string) match.Result
 formats.VulnerabilityData: method All(context.Context, string) ([]advisory.Advisory, error)
 formats.VulnerabilityData: method CountAudit(ID, string, string)
 formats.VulnerabilityData: method Enabled() bool
@@ -623,3 +622,81 @@ catalog.SettingNotApplicable: value = "not_applicable"
 catalog.SubjectName: value PatternSubject = "name"
 catalog.SubjectPath: value PatternSubject = "path"
 catalog.Virtual: value Class = "virtual"
+advisory.Advisory: field Affected []Affected
+advisory.Advisory: field Aliases []string
+advisory.Advisory: field CVSS CVSS
+advisory.Advisory: field CWEIDs []string
+advisory.Advisory: field CanonicalID string
+advisory.Advisory: field Details string
+advisory.Advisory: field Ecosystem string
+advisory.Advisory: field ID string
+advisory.Advisory: field KEVDateAdded time.Time
+advisory.Advisory: field Kind Kind
+advisory.Advisory: field KnownExploited bool
+advisory.Advisory: field Modified time.Time
+advisory.Advisory: field Published time.Time
+advisory.Advisory: field References []Reference
+advisory.Advisory: field Severity Severity
+advisory.Advisory: field SeveritySource SeveritySource
+advisory.Advisory: field Summary string
+advisory.Advisory: field Withdrawn time.Time
+advisory.Advisory: method IsWithdrawn() bool
+advisory.Affected: field EveryVersion bool
+advisory.Affected: field Fixed []string
+advisory.Affected: field Name string
+advisory.Affected: field Ranges []Range
+advisory.Affected: field Versions []string
+advisory.CVSS: field Score float64
+advisory.CVSS: field Vector string
+advisory.CVSS: field Version string
+advisory.CVSS: method Present() bool
+advisory.DataState: field Complete bool
+advisory.DataState: field Epoch int64
+advisory.DataState: field Stale bool
+advisory.DataState: field SyncedAt time.Time
+advisory.DataState: method Age(time.Time) time.Duration
+advisory.Event: field Kind EventKind
+advisory.Event: field Version string
+advisory.Event: method MarshalJSON() ([]byte, error)
+advisory.Event: method UnmarshalJSON([]byte) error
+advisory.EventKind: type string
+advisory.Kind: method Valid() bool
+advisory.Kind: type string
+advisory.Range: field Events []Event
+advisory.Range: field Type RangeType
+advisory.RangeType: type string
+advisory.Reference: field Type string
+advisory.Reference: field URL string
+advisory.Severity: method Higher(Severity) bool
+advisory.Severity: method Rank() int
+advisory.Severity: method Valid() bool
+advisory.Severity: type string
+advisory.SeveritySource: type string
+advisory.Source: field License string
+advisory.Source: field Name string
+advisory.Source: field URL string
+advisory.EventFixed: value EventKind = "fixed"
+advisory.EventIntroduced: value EventKind = "introduced"
+advisory.EventLastAffected: value EventKind = "last_affected"
+advisory.EventLimit: value EventKind = "limit"
+advisory.KindMalicious: value Kind = "malicious"
+advisory.KindVulnerability: value Kind = "vulnerability"
+advisory.RangeEcosystem: value RangeType = "ECOSYSTEM"
+advisory.RangeSemver: value RangeType = "SEMVER"
+advisory.SeverityCritical: value Severity = "critical"
+advisory.SeverityHigh: value Severity = "high"
+advisory.SeverityLow: value Severity = "low"
+advisory.SeverityMedium: value Severity = "medium"
+advisory.SeverityNone: value Severity = "none"
+advisory.SeverityUnknown: value Severity = "unknown"
+advisory.SourceAdvisory: value SeveritySource = "advisory"
+advisory.SourceCVSS: value SeveritySource = "cvss"
+advisory.SourceMalicious: value SeveritySource = "malicious"
+advisory.SourceNone: value SeveritySource = "none"
+match.Adapter: method AdvisoryName(string) (string, bool)
+match.Adapter: method AdvisoryVersion(string) (string, bool)
+match.Adapter: method CompareVersions(string, string) (int, error)
+match.Adapter: method Ecosystem() string
+match.Result: field Affected bool
+match.Result: field FixAvailable bool
+match.Result: field Unevaluable int

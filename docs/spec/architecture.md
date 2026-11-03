@@ -383,6 +383,7 @@ connection through an edge proxy that balances per request.
 | Per-replica state | Lifetime | Why it does not break INV-18 |
 |---|---|---|
 | Registered in-process caches (R-ARCH-018): the repository snapshot; the proxy's copies of the claims and pin-rule trie, gone packages, circuit state, global offline switch and cache invalidations ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-023, R-REPO-029, R-REPO-031, R-REPO-045); the grant index; the identity caches `auth_tokens`, `auth_sessions`, `auth_principals` and `auth_settings` ([identity-and-authentication.md](identity-and-authentication.md) R-AUTH-023); the rendition cache; the merged-metadata cache; the per-remote upstream HTTP clients with their connection pools (`proxy_upstream_clients`, [repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-049, Q-REPO-89); CI issuer keys; from M4b the advisory source state `vuln_source_state` and the rendered NuGet vulnerability page `vuln_nuget_page` ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-027) | Until evicted, invalidated or `SafetyTTL` | Each is a copy of PostgreSQL state. It is self-validating (`rev_seq`, epochs) or kept within the propagation bound of R-ARCH-018, and a fill never re-inserts a value that a change has already invalidated (R-ARCH-018), so another replica gives the same answer from PostgreSQL. An epoch that went backwards or was reused after a PostgreSQL failover flushes the area on every replica, for every change area (R-ARCH-018, change-area step 5). |
+| The last read advisory data state per ecosystem, kept beside the registered cache `vuln_source_state` ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-027, Q-VULN-72) | Replaced by every successful read of the state; kept while the read fails | The answer a caller gets when the refill is slow or failed, so that no download waits for the database. A copy of PostgreSQL state that only a repository with `onMissingData: block` reads, and only when no finding blocks already; its age shows through the state's synced time (`Stale`). It outlives the cache's `SafetyTTL` on purpose: a state read that fails says nothing about the data, and the download's own lookup reads PostgreSQL anyway. |
 | Metadata-bytes cache, keyed by blob digest ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-025) | Until evicted | Self-validating: which digest a request serves is always read from PostgreSQL, and the key is the content address, so every replica serves the same bytes. |
 | Negative cache of unknown repository keys (R-ARCH-011 step 2) | Until evicted, at most `SafetyTTL` | A copy of a PostgreSQL miss. Every `repo_config` change evicts it on every replica within the bound of R-ARCH-018, so a new repository answers `404` on a replica only if that replica missed the key shortly before the creation, and for at most that bound ([api-and-ui.md](api-and-ui.md) R-API-052). |
 | Negative-cache L1 (R-ARCH-030) | At most the checked lifetime of the Valkey entry it copies | A copy of an upstream `404` or `410`, not of PostgreSQL state. Any replica may answer from such an entry or ask the upstream within `notFoundTtlSeconds` ([repositories-and-proxy.md](repositories-and-proxy.md) R-REPO-028), so both answers are the same contract; an invalidation applies to the L1 as to Valkey. |
@@ -1354,7 +1355,8 @@ type VulnerabilityAdapter interface {
 }
 
 // VulnerabilityData is what a format's audit routes read of the scanning (R-VULN-017, R-VULN-018); Host.Vulnerabilities
-// returns it. Its types are those of the leaf packages internal/vuln/advisory and internal/vuln/match.
+// returns it. Its types are those of the leaf package internal/vuln/advisory; the matcher is the leaf package
+// internal/vuln/match, which a format imports and calls itself (match.Affects, ADR-150).
 type VulnerabilityData interface {
 	// State is the state of the ecosystem's advisory data from the replica's cache, no query; not complete when the
 	// scanning is not wired or the ecosystem was never imported.
@@ -1365,11 +1367,10 @@ type VulnerabilityData interface {
 	All(ctx context.Context, ecosystem string) ([]advisory.Advisory, error)
 	// InternalNames reports which names are internal names of the format (R-VULN-010), which an audit withholds.
 	InternalNames(ctx context.Context, format ID, names []string) (map[string]bool, error)
-	// Affects reports whether a stored version is affected by an affected entry (R-VULN-009).
-	Affects(a VulnerabilityAdapter, e advisory.Affected, version string) match.Result
 	// CountAudit counts one audit in trove_vuln_audit_requests_total (R-VULN-024), so that a format imports no metric package.
 	CountAudit(format ID, mode, outcome string)
 	// Enabled reports whether the installation's vulnerabilities.enabled is true, which an audit mode local needs (R-VULN-017).
+	// The composition root sets it explicitly (formathost.VulnPorts.Enabled); it is not derived from which ports are wired.
 	Enabled() bool
 	// LocalByDefault reports whether the audit mode of a repository whose document does not set one is local: Enabled and the
 	// OSV source is not off (R-VULN-017, R-VULN-018, Q-VULN-44).
@@ -1543,8 +1544,10 @@ the names a format spells; `TierLocal`, `TierRemoteCached` and `TierRemote` are 
 **The freeze.** The contract is frozen at `ContractVersion` 1 since the end of M3 (E3.3,
 [ADR-141](../decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)).
 `TestR_ARCH_025_TheFrozenContractChangesOnlyWithItsSurfaceFile` holds the exported surface of `internal/formats` and of
-`internal/formats/catalog` equal to [internal/formats/testdata/contract.txt](../../internal/formats/testdata/contract.txt);
-every change of it is an ADR, and R-ARCH-025 says which changes keep the version (Q-ARCH-280).
+`internal/formats/catalog`, and the types of the two leaf packages the contract speaks in (`internal/vuln/advisory` with its
+constants, `internal/vuln/match`; ADR-150, Q-VULN-73), equal to
+[internal/formats/testdata/contract.txt](../../internal/formats/testdata/contract.txt); every change of it is an ADR, and
+R-ARCH-025 says which changes keep the version (Q-ARCH-280).
 
 **Optional behaviour.** `Format` holds what every format answers. A behaviour that only some formats have, or that
 the core cannot call yet, is an optional interface of this package, found by `CapabilitiesOf` when the format registers
@@ -3932,7 +3935,9 @@ major, and a breaking change in 0.x is announced in the release notes with its m
 the core could use is not in it (Q-ARCH-256). From the freeze on:
 - *Every change is an ADR.* `TestR_ARCH_025_TheFrozenContractChangesOnlyWithItsSurfaceFile` holds the exported surface
   of `internal/formats` and of the catalog leaf `internal/formats/catalog` (every type with its exported fields,
-  interface methods and methods, every function, every constant and variable with its value) equal to
+  interface methods and methods, every function, every constant and variable with its value), and the types with their
+  fields and methods of the leaves the contract exposes (`internal/vuln/advisory`, with its constants, and
+  `internal/vuln/match`; their functions are not part of the contract), equal to
   [internal/formats/testdata/contract.txt](../../internal/formats/testdata/contract.txt), whose first line is
   `ContractVersion`. A change of the surface fails the test until the file is regenerated
   (`go test ./internal/formats -run TestR_ARCH_025 -update-contract`) in the change that carries its ADR. The test does

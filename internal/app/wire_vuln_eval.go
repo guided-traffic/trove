@@ -11,7 +11,7 @@ import (
 	"github.com/guided-traffic/trove/internal/vuln/evaluate"
 )
 
-// The wiring of the evaluation of the vulnerability scanning (work package B, docs/developer/vulnerabilities.md): the service
+// The wiring of the evaluation of the vulnerability scanning (docs/developer/vulnerabilities.md): the service
 // behind the Evaluator port, and the kinds vuln-evaluate, vuln-rescan and vuln-findings-retention.
 
 // vulnEcosystems lists the ecosystems of the registered formats that have the vulnerability adapter, each with the IDs of the
@@ -40,7 +40,7 @@ func vulnEcosystems() []evaluate.Ecosystem {
 }
 
 // wireVulnEvaluation builds the evaluation over the replica's repository snapshot and claim index and puts it in the area as
-// the Evaluator. The data state is the replica's cache (work package A's States); without it a commit only adds findings.
+// the Evaluator. The data state is the replica's cache (vuln.States); without it a commit only adds findings.
 func (a *App) wireVulnEvaluation(_ context.Context, in infra, rp repositoryArea, vr virtualArea, out *vulnArea) error {
 	if rp.reader == nil || vr.routing == nil {
 		return errors.New("vuln: the evaluation needs the repository snapshot and the claim index")

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/guided-traffic/trove/internal/items"
 	"github.com/guided-traffic/trove/internal/jobs"
@@ -14,21 +15,16 @@ import (
 	vsync "github.com/guided-traffic/trove/internal/vuln/sync"
 )
 
-// The wiring of the vulnerability scanning (docs/developer/vulnerabilities.md). The contract wave builds the area, the
-// metrics and the places where each work package registers its parts; it registers no kind, task or port itself: a kind
-// without a handler is a start-up error, and a port nobody implements is nil, which every consumer reads as "the scanning is
-// not wired" (the Host answers formats.NoVulnerabilityData, the commit hook skips the evaluation).
+// The wiring of the vulnerability scanning (docs/developer/vulnerabilities.md, section "Composition root"). This file is the
+// area: its ports and the order they are built in. The parts live in their own files:
 //
-// Each work package edits its own marked blocks, and only those:
+//	wire_vuln_sync.go    the advisory sync, the replica's view of the data state, the kinds vuln-sync-osv, vuln-sync-osv-full, vuln-sync-kev
+//	wire_vuln_eval.go    the Evaluator, the commit hook, the kinds vuln-evaluate, vuln-rescan, vuln-findings-retention
+//	wire_vuln_audits.go  the Advisories port, the cache vuln_nuget_page and the ports the Host hands to the formats
+//	wire_vuln_api.go     the services behind api/v1's vulnerability routes
 //
-//	>>> WP-A  advisory data: the source-state cache and States, the sync service, the kinds vuln-sync-osv, vuln-sync-osv-full and vuln-sync-kev
-//	>>> WP-B  matching and findings: the Evaluator, the commit hooks, the kinds vuln-evaluate, vuln-rescan and vuln-findings-retention, the repository hook of a settings change
-//	>>> WP-C  enforcement: the enforcer over the ports above (it follows the blocks of the ports); wireFiles, wireProxyEngine and wireFormatHost take it from the area
-//	>>> WP-D  client audits: the Advisories port and the cache vuln_nuget_page
-//	>>> WP-E  API and triage: the services behind api/v1's vuln_api.go
-//	>>> WP-G  operations: the database gauges of R-VULN-024 and the vulnerabilityData facts
-//
-// A block names the registrations it adds; the other blocks stay empty until their package is built.
+// A port nobody builds is nil, which every consumer reads as "the scanning is not wired": the Host answers
+// formats.NoVulnerabilityData, the commit hook skips the evaluation, the enforcer resolves every policy as disabled.
 
 // AreaVuln is the scanning's services. Every role builds it: a web replica reads the state, the advisories and the
 // evaluation, a worker replica runs the jobs.
@@ -36,29 +32,39 @@ const AreaVuln Area = "vuln"
 
 // vulnArea is the set of the scanning's ports and metrics of the replica. A nil port is a part that is not wired.
 type vulnArea struct {
-	// states answers the state of an ecosystem's advisory data from the replica's cache (work package A).
+	// states answers the state of an ecosystem's advisory data from the replica's cache. Every role builds it.
 	states vuln.States
-	// evaluator evaluates stored versions: the commit hook, the removal hook and the remote miss (work package B).
+	// sync is the advisory sync: the jobs' service. Only a role that runs jobs builds it; a web replica has the states alone.
+	sync *vsync.Service
+	// evaluator evaluates stored versions: the commit hook, the removal hook and the remote miss.
 	evaluator vuln.Evaluator
-	// advisories reads advisory data for the client audits (work package D); nil while vulnerabilities.enabled is false.
+	// enabled is vulnerabilities.enabled; the Host hands it to the formats' audits (R-VULN-017).
+	enabled bool
+	// advisories reads advisory data for the client audits; nil while vulnerabilities.enabled is false.
 	advisories vuln.Advisories
-	// pages is the cache vuln_nuget_page of the NuGet vulnerability page (work package D).
+	// pages is the cache vuln_nuget_page of the NuGet vulnerability page.
 	pages *store.Pages
 	// localAudits is whether the client-audit modes that a repository document leaves out default to local: the scanning is
-	// enabled and the OSV source is not off (work package D, Q-VULN-44).
+	// enabled and the OSV source is not off (Q-VULN-44).
 	localAudits bool
 	// metrics are the collectors of R-VULN-024.
 	metrics *vmetrics.Metrics
 	// enforcer applies the download policy: the policy of a repository for the item lookup, the verdict, the remote miss gate
-	// and the refusal (work package C). Nil is a replica without the area.
+	// and the refusal. Nil is a replica without the area.
 	enforcer *enforce.Enforcer
-	// >>> WP-A
-	// sync is the advisory sync: the jobs' service and the owner of the state cache (wire_vuln_sync.go).
-	sync *vsync.Service
-	// <<< WP-A
 }
 
-// wireVuln builds the area: the metrics today, and the ports as the work packages fill their blocks.
+// VulnOverride replaces ports of the scanning, for tests (Options.Vuln): the state of an ecosystem's advisory data and the
+// verdict of a remote miss. A nil member keeps the port the composition root built. The override applies before any part
+// takes the port, so the evaluation and the enforcer see the replacement.
+type VulnOverride struct {
+	States    vuln.States
+	Evaluator vuln.Evaluator
+}
+
+// wireVuln builds the area in dependency order: the metrics, the data state (and on a role that runs jobs the sync service), the
+// test override of the state, the evaluation over the state, the client audits, the database gauges and the enforcer over
+// the ports above.
 func (a *App) wireVuln(ctx context.Context, in infra, repo repositoryArea, vir virtualArea) (vulnArea, error) {
 	if err := requireInputs(AreaVuln, given("database", in.db), given("change log", in.changes), given("cache registry", in.caches),
 		given("audit recorder", in.rec), given("repository reader", repo.reader), given("claim routing", vir.routing)); err != nil {
@@ -68,64 +74,47 @@ func (a *App) wireVuln(ctx context.Context, in infra, repo repositoryArea, vir v
 	if err != nil {
 		return vulnArea{}, fmt.Errorf("vulnerability metrics: %w", err)
 	}
-	out := vulnArea{metrics: m}
+	vcfg := a.cfg.Vulnerabilities
+	out := vulnArea{metrics: m, enabled: vcfg.Enabled}
 
-	// >>> WP-A
-	// The source-state cache (vuln.CacheSourceState, area vuln_data) and the vuln.States over it: out.states.
-	sv, err := a.newVulnSync(in, m)
-	if err != nil {
-		return vulnArea{}, fmt.Errorf("vulnerability sync: %w", err)
+	// The data state: the sync service owns it on a role that runs jobs, a web replica builds the reader alone.
+	if a.sub.JobLoops {
+		sv, err := a.newVulnSync(in, m)
+		if err != nil {
+			return vulnArea{}, fmt.Errorf("vulnerability sync: %w", err)
+		}
+		out.sync, out.states = sv, sv.States()
+	} else {
+		out.states = vsync.NewStates(in.db, in.caches, vcfg.StaleAfter, time.Now, a.log.With("component", "vulnerabilities"))
 	}
-	out.sync, out.states = sv, sv.States()
-	// <<< WP-A
+	if o := a.o.Vuln; o != nil && o.States != nil {
+		out.states = o.States
+	}
 
-	// >>> WP-B
-	// The evaluator over the store, the repository snapshot and the claim index: out.evaluator.
 	if err := a.wireVulnEvaluation(ctx, in, repo, vir, &out); err != nil {
 		return vulnArea{}, err
 	}
-	// <<< WP-B
+	if o := a.o.Vuln; o != nil && o.Evaluator != nil {
+		out.evaluator = o.Evaluator
+	}
 
-	// >>> WP-D
-	// The advisories over the store, the claim index and the cache vuln_nuget_page: out.advisories, out.pages (wire_vuln_audits.go).
 	if err := a.wireAudits(in, repo, vir, &out); err != nil {
 		return vulnArea{}, err
 	}
-	// <<< WP-D
 
-	// >>> WP-G
 	// The database gauges of R-VULN-024, evaluated in the background once per metrics.db_gauge_interval (Q-OPS-18).
-	vcfg := a.cfg.Vulnerabilities
 	a.tele.metrics.DBGauges().Add(store.GaugeSource(in.db,
 		func() []store.ExpectedSource { return store.ExpectedSources(vcfg) },
 		func() []string { return vcfg.Sources.OSV.EffectiveEcosystems() }))
-	// <<< WP-G
-	// >>> WP-C
-	if o := a.o.Vuln; o != nil {
-		if o.States != nil {
-			out.states = o.States
-		}
-		if o.Evaluator != nil {
-			out.evaluator = o.Evaluator
-		}
-	}
-	// The enforcer takes the ports of the blocks above, so it is built after them: a port that is still nil is a part that is
-	// not wired, and the enforcer then resolves every policy as disabled.
+
+	// The enforcer takes the ports above, so it is built last: a port that is still nil is a part that is not wired, and the
+	// enforcer then resolves every policy as disabled.
 	out.enforcer = enforce.New(enforce.Options{
-		Enabled: a.cfg.Vulnerabilities.Enabled, Enforcement: vuln.Enforcement(a.cfg.Vulnerabilities.Enforcement),
+		Enabled: vcfg.Enabled, Enforcement: vuln.Enforcement(vcfg.Enforcement),
 		States: out.states, Evaluator: out.evaluator, Names: store.NewEnforce(in.db), Metrics: m, Audit: in.rec,
 		BaseURL: a.cfg.Server.BaseURL, Log: a.log.With("component", "vuln-enforce"),
 	})
-	// <<< WP-C
-
 	return out, nil
-}
-
-// VulnOverride replaces ports of the scanning, for tests (Options.Vuln): the state of an ecosystem's advisory data and the
-// verdict of a remote miss. A nil member keeps the port the work package built.
-type VulnOverride struct {
-	States    vuln.States
-	Evaluator vuln.Evaluator
 }
 
 // countAudit counts one client audit (trove_vuln_audit_requests_total); the Host hands it to the formats' audit routes.
@@ -135,15 +124,13 @@ func (v vulnArea) countAudit(format, mode, outcome string) {
 	}
 }
 
-// hooks returns the storage hooks the item store runs: inner, which calls the formats' hooks, wrapped by the evaluation
-// when work package B wired it (R-VULN-011: the version of a committed item is evaluated in the commit's transaction after
-// the format's OnCommit linked the item to it, and a removal resolves the version's findings in the removing transaction).
+// hooks returns the storage hooks the item store runs: inner, which calls the formats' hooks, wrapped by the evaluation when
+// it is wired (R-VULN-011: the version of a committed item is evaluated in the commit's transaction after the format's
+// OnCommit linked the item to it, and a removal resolves the version's findings in the removing transaction).
 func (v vulnArea) hooks(inner items.Hooks) items.Hooks {
-	// >>> WP-B
 	if v.evaluator != nil {
 		return evaluate.Hooks(inner, v.evaluator)
 	}
-	// <<< WP-B
 	return inner
 }
 
@@ -158,17 +145,9 @@ func (a *App) vulnTaskSpec(d vuln.TaskDefault) jobs.TaskSpec {
 }
 
 // registerVulnJobs registers the kinds and tasks of the scanning on the job registry, which every role builds and freezes
-// before the replica serves (a web replica must know a kind to enqueue it). A kind is registered with its handler by the work
-// package that owns it, with the queue, dedup mode and attempts of vuln/jobs.go; the handlers find their services at run time
-// through part[vulnArea](a.parts), as the CI tasks do. Nothing is registered until a package fills its block.
+// before the replica serves (a web replica must know a kind to enqueue it). The handlers find their services at run time
+// through part[vulnArea](a.parts), as the CI tasks do.
 func (a *App) registerVulnJobs(r *jobs.Registry) {
-	// >>> WP-A
-	// vuln-sync-osv and vuln-sync-osv-full (queue maintenance, key vuln.DedupSyncOSV, Exclusive, MaxAttempts 1) with their
-	// tasks, vuln-sync-kev (maintenance, Exclusive, MaxAttempts 1) with its task: a.vulnTaskSpec(td) per vuln.TaskDefaults().
 	a.registerVulnSyncJobs(r)
-	// <<< WP-A
-
-	// >>> WP-B
 	a.registerVulnEvaluationJobs(r)
-	// <<< WP-B
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/guided-traffic/trove/internal/formats/npm/name"
 	"github.com/guided-traffic/trove/internal/formats/npm/semver"
 	"github.com/guided-traffic/trove/internal/vuln/advisory"
+	"github.com/guided-traffic/trove/internal/vuln/match"
 )
 
 // The audit in mode local (R-VULN-017): trove answers the bulk endpoint from its own advisory data, on local, remote and
@@ -238,7 +239,7 @@ func versionLess(a, b requestedVersion) bool {
 
 // renderLocalAudit builds the answer: for each asked name the advisories that affect a requested version, with the ids of
 // one answer assigned together (Q-VULN-17). A name without an advisory is absent.
-func renderLocalAudit(data formats.VulnerabilityData, body map[string][]string, ask []string, found map[string][]advisory.Advisory) (map[string][]localAdvisory, error) {
+func renderLocalAudit(_ formats.VulnerabilityData, body map[string][]string, ask []string, found map[string][]advisory.Advisory) (map[string][]localAdvisory, error) {
 	type hit struct {
 		g        advisoryGroup
 		text     string
@@ -252,7 +253,7 @@ func renderLocalAudit(data formats.VulnerabilityData, body map[string][]string, 
 			var affected []requestedVersion
 			for _, v := range versions {
 				for _, e := range g.entries {
-					if data.Affects(vulnAdapter, e, v.canonical).Affected {
+					if match.Affects(vulnAdapter, e, v.canonical).Affected {
 						affected = append(affected, v)
 						break
 					}

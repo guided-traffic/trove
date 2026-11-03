@@ -8,7 +8,6 @@ import (
 
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/formats/catalog"
-	"github.com/guided-traffic/trove/internal/vuln/advisory"
 )
 
 // restorable is a format with the optional restore hook.
@@ -103,9 +102,5 @@ func TestNoVulnerabilityDataIsNotCompleteAndRefusesReads(t *testing.T) {
 		if e, ok := errs.As(err); !ok || e.Code != errs.CodeVulnerabilityDataUnavailable || e.Kind != errs.Unavailable {
 			t.Errorf("%s: %v", name, err)
 		}
-	}
-	e := advisory.Affected{Versions: []string{"1.0.0"}}
-	if r := d.Affects(scannable{}, e, "1.0.0"); !r.Affected {
-		t.Errorf("Affects = %+v", r)
 	}
 }

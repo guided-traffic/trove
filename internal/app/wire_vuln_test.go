@@ -9,7 +9,7 @@ import (
 	vmetrics "github.com/guided-traffic/trove/internal/vuln/metrics"
 )
 
-// R-VULN-025 (contract test): the task a work package registers takes the specification's schedule, replaced by
+// R-VULN-025 (contract test): the task a scanning part registers takes the specification's schedule, replaced by
 // maintenance.tasks.<name>, and its enabled switch.
 func TestVulnTaskSpecTakesTheConfiguration(t *testing.T) {
 	a := &App{cfg: &config.Config{}}
@@ -23,13 +23,13 @@ func TestVulnTaskSpecTakesTheConfiguration(t *testing.T) {
 	}
 }
 
-// Until the work packages fill their blocks the area wires nothing: the hooks are the inner ones, a nil port stays nil and
-// the audit count reaches the collector.
-func TestVulnAreaWiresNothingUntilTheBlocksAreFilled(t *testing.T) {
+// A vulnArea without ports wires nothing: the hooks are the inner ones, a nil port stays nil and the audit count reaches the
+// collector.
+func TestVulnAreaWithoutPortsWiresNothing(t *testing.T) {
 	var inner items.Hooks = items.NoHooks{}
 	var v vulnArea
 	if got := v.hooks(inner); got != inner {
-		t.Error("the area wrapped the hooks before work package B wired the evaluation")
+		t.Error("the area wrapped the hooks without an evaluation")
 	}
 	v.countAudit("npm", "local", "ok") // no metrics: counts nothing, does not panic
 	m, err := vmetrics.New(nil)

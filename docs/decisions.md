@@ -5374,7 +5374,15 @@ Q-ARCH-193, and the audit's data is the core's).
 
 **Revisit condition:** more optional interfaces accumulate (Q-VULN-15's condition), which would justify a contract version.
 
-**Spec:** [spec/vulnerability-scanning.md](spec/vulnerability-scanning.md) R-VULN-009, Q-VULN-15, Q-VULN-23;
+**Amendment (phase 6 fix wave, [Q-VULN-73](spec/vulnerability-scanning.md#q-vuln-73--the-frozen-contract-records-the-leaves-it-speaks-in-enabled-is-a-port-field-the-matcher-is-called-not-passed)).**
+`VulnerabilityData` also carries `CountAudit`, `Enabled`, `LocalByDefault`, `PageKey` and `Page` (the audits of R-VULN-017 and
+R-VULN-018: the metric, the two switches and the cache of the NuGet page), all additions in the sense of R-ARCH-025.
+`Enabled` is set explicitly by the composition root (`formathost.VulnPorts.Enabled`), not derived from the wired ports.
+`Affects` is removed from the interface: the matcher is a pure function of the leaf `internal/vuln/match`, which a format
+imports and calls itself. The surface file now also records the types of `internal/vuln/advisory` (with its constants) and
+`internal/vuln/match`, so a change of a type the contract returns fails `TestR_ARCH_025` like a change of the contract.
+
+**Spec:** [spec/vulnerability-scanning.md](spec/vulnerability-scanning.md) R-VULN-009, Q-VULN-15, Q-VULN-23, Q-VULN-73;
 [spec/architecture.md](spec/architecture.md) R-ARCH-008.
 
 ## trove Bastion

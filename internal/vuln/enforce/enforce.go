@@ -25,6 +25,7 @@ import (
 	"github.com/guided-traffic/trove/internal/errs"
 	"github.com/guided-traffic/trove/internal/repository"
 	"github.com/guided-traffic/trove/internal/vuln"
+	"github.com/guided-traffic/trove/internal/vuln/advisory"
 	"github.com/guided-traffic/trove/internal/vuln/metrics"
 )
 
@@ -106,6 +107,19 @@ func (e *Enforcer) PolicyOf(r repository.Repository) vuln.Policy {
 func (e *Enforcer) Decide(p vuln.Policy, row vuln.BlockRow, versionID int64) vuln.Block {
 	if e == nil || e.o.States == nil || !p.Enabled || versionID == 0 {
 		return vuln.Block{}
+	}
+	return e.verdict(p, row)
+}
+
+// verdict is [vuln.Verdict] that reads the state of the ecosystem's data only when it decides: the state matters only to a
+// repository whose onMissingData is block, and only when no finding blocks already, so the download of a version in a
+// repository that allows missing data never touches the state cache (R-VULN-015, R-ARCH-032).
+func (e *Enforcer) verdict(p vuln.Policy, row vuln.BlockRow) vuln.Block {
+	if p.OnMissingData != vuln.MissingBlock {
+		return vuln.Verdict(p, row, advisory.DataState{})
+	}
+	if b := vuln.Verdict(p, row, advisory.DataState{Complete: true}); b.Active() {
+		return b
 	}
 	return vuln.Verdict(p, row, e.o.States.State(p.Ecosystem))
 }
@@ -250,6 +264,9 @@ func (e *Enforcer) first(key string) bool {
 // Miss is a remote artifact that is about to be fetched.
 type Miss struct {
 	Repo repository.Repository
+	// Addressed is the key of the repository the client addressed, which the refusal names (R-VULN-016); empty means Repo
+	// itself.
+	Addressed string
 	// Package and Version are the normalized names of the format's classification; a miss without a version is no
 	// download of a version and is not gated.
 	Package, Version string
@@ -286,10 +303,14 @@ func (e *Enforcer) gate(ctx context.Context, p vuln.Policy, m Miss) error {
 		}
 	}
 	if !block.Active() {
-		block = vuln.Verdict(p, vuln.BlockRow{}, e.o.States.State(p.Ecosystem))
+		block = e.verdict(p, vuln.BlockRow{})
+	}
+	addressed := m.Addressed
+	if addressed == "" {
+		addressed = m.Repo.Key
 	}
 	return e.Refuse(ctx, Download{
-		Addressed: m.Repo.Key, Store: m.Repo.Key, RepoID: m.Repo.ID, Format: m.Repo.Format, Path: m.Path,
+		Addressed: addressed, Store: m.Repo.Key, RepoID: m.Repo.ID, Format: m.Repo.Format, Path: m.Path,
 		Package: m.Package, Version: m.Version, Ecosystem: p.Ecosystem, Stored: false, Block: block,
 		Actor: m.Actor, Source: m.Source, Endpoint: m.Endpoint,
 	})

@@ -84,7 +84,7 @@ func (e *Engine) Artifact(ctx context.Context, rq Request, w http.ResponseWriter
 	// The remote miss of the vulnerability scanning (R-VULN-015): the version the path maps to is evaluated before anything
 	// is fetched; a blocked version is not fetched, not stored and not served, and no upstream is contacted for it.
 	if err := e.o.Enforce.GateMiss(ctx, enforce.Miss{
-		Repo: rem.Repo, Package: rq.Package, Version: rq.Version, Path: rq.Path,
+		Repo: rem.Repo, Addressed: rq.Addressed, Package: rq.Package, Version: rq.Version, Path: rq.Path,
 		Actor: auditActor(rq.Caller), Source: rq.Caller.Source, Endpoint: rq.Caller.Endpoint,
 	}); err != nil {
 		return err

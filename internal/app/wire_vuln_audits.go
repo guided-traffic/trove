@@ -9,7 +9,7 @@ import (
 	"github.com/guided-traffic/trove/internal/vuln/store"
 )
 
-// The wiring of the client audits (work package D, R-VULN-017, R-VULN-018): the rule of the internal names over the claim
+// The wiring of the client audits (R-VULN-017, R-VULN-018): the rule of the internal names over the claim
 // index and the repository snapshot, and the ports the Host hands to the formats.
 
 // wireAudits builds the advisories behind the formats' audit routes and the cache of the NuGet page. The advisories are wired
@@ -43,7 +43,7 @@ func (a *App) wireAudits(in infra, repo repositoryArea, vir virtualArea, out *vu
 
 // hostPorts are the ports the Host hands to the formats' audit routes (R-VULN-017, R-VULN-018).
 func (v vulnArea) hostPorts() formathost.VulnPorts {
-	p := formathost.VulnPorts{States: v.states, Advisories: v.advisories, Audit: v.countAudit, LocalDefault: v.localAudits}
+	p := formathost.VulnPorts{Enabled: v.enabled, States: v.states, Advisories: v.advisories, Audit: v.countAudit, LocalDefault: v.localAudits}
 	if v.pages != nil {
 		p.Pages = v.pages
 	}
