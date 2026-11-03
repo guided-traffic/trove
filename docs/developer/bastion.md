@@ -37,7 +37,7 @@ parallel: it says which package owns which file, which seams join them, how a re
 | 5 | Cache backends, eviction, integrity (R-BAS-030 to R-BAS-032) | the two implementations of `cache.Backend` in `internal/bastion/cache/…`, the sweep | `cache.Backend` |
 | 6 | Valkey, rate limits, failed-auth timeout, blocking (R-BAS-034 to R-BAS-037) — **built** | the Valkey implementation of `shared.*` in `internal/bastion/shared/…`, `guard.New` and its `Instance`, the Valkey mechanism in `internal/cluster/valkey_bastion.go` | `shared.State`, `guard.Guard` |
 | 7 | Download buffer and metrics (R-BAS-039, R-BAS-040) | [internal/bastion/downloads](../../internal/bastion/downloads), the PrometheusRule's metric inputs (the names are defined) | `downloads.Buffer` |
-| 8 | UI, client setup, manual (R-BAS-007) | the Bastions screen, the `bastion=` parameter of `getClientSetup` ([packages_api.go](../../internal/api/v1/packages_api.go)), `docs/manual/admin/bastion.md` | none |
+| 8 | UI, client setup, manual (R-BAS-007) | the Bastions screen ([web-ui.md](web-ui.md#the-bastions-screen)), the `bastion=` parameter of `getClientSetup` ([packages_api.go](../../internal/api/v1/packages_api.go), [packages.md](packages.md#client-setup)), the **Install from** step of the setup page and the guides, [docs/manual/admin/bastion.md](../manual/admin/bastion.md) (built) | none; reads `BastionGet` and `BastionLastBaseURL` through `PackageServices.Bastions` |
 
 The contract work (this page's author) owns [internal/bastion/iface](../../internal/bastion/iface), the schema, the OpenAPI document,
 the configuration trees and the skeleton. A change to one of those in a work package is a contract change: say so in the review.

@@ -130,3 +130,19 @@ func TestR_NPM_041_PnpmCredentialsLiveInTheUserFile(t *testing.T) {
 		}
 	}
 }
+
+// TestR_BAS_007_OnlyNpmsConfigureSnippetForABastionSetsReplaceRegistryHost: a lockfile written
+// against another host resolves through a Bastion only when npm replaces the host; no other
+// snippet, and no snippet for a direct setup, carries the switch.
+func TestR_BAS_007_OnlyNpmsConfigureSnippetForABastionSetsReplaceRegistryHost(t *testing.T) {
+	for _, tpl := range New().SetupTemplates() {
+		for _, bastion := range []bool{false, true} {
+			d := setupData("", true)
+			d.Bastion = bastion
+			got := strings.Contains(renderSetup(t, tpl, d), "replace-registry-host=always\n")
+			if want := bastion && tpl.ID == "npm.npmrc.configure"; got != want {
+				t.Errorf("%s bastion=%v: switch present %v", tpl.ID, bastion, got)
+			}
+		}
+	}
+}

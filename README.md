@@ -1485,7 +1485,7 @@ A project's administrators (with `managePolicies`) manage the CI mappings of the
 | `GET /api/v1/packages/{packageId}/versions` | `listPackageVersions` | public; as above |
 | `GET /api/v1/packages/{packageId}/versions/{version}` | `getPackageVersion` | public; as above |
 | `GET /api/v1/packages/{packageId}/versions/{version}/readme` | `getPackageVersionReadme` | public; as above |
-| `GET /api/v1/repositories/{repoKey}/client-setup` | `getClientSetup` | action `read` on `path.repoKey`; the publish snippets need `deploy` on the publish target |
+| `GET /api/v1/repositories/{repoKey}/client-setup` | `getClientSetup` | action `read` on `path.repoKey`; the publish snippets need `deploy` on the publish target; `bastion=<name>` renders on the address of a [Bastion](docs/manual/admin/bastion.md) and has no publish snippets |
 
 **manual**
 

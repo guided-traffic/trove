@@ -12,7 +12,7 @@ with folding groups and an icon rail and a drawer below, breadcrumbs, banner are
 cross-cutting UI mechanism are in place, so the screens are content. Built: sign-in, signed out, the system status
 screen with its jobs screen, the repository list, wizard and edit form with the format settings rendered from the format's schema (see
 [The repository settings form](#the-repository-settings-form-rendered-from-the-formats-schema)), the file tree, the endpoint screens with the exposure rule editor and
-the audit log (see [Screens of the catalog area](#screens-of-the-catalog-area)), and the package screens: the list, the details with the install panel and the README, and the client setup page (see [Package screens and client setup](#package-screens-and-client-setup)), and the guides area with the How to use tab of the repository screen (see [Guides](#guides)), and the help area with the manual (see [manual.md](manual.md)); the other routed M1 screens are placeholders with their final
+the audit log (see [Screens of the catalog area](#screens-of-the-catalog-area)), and the package screens: the list, the details with the install panel and the README, and the client setup page (see [Package screens and client setup](#package-screens-and-client-setup)), and the guides area with the How to use tab of the repository screen (see [Guides](#guides)), the help area with the manual (see [manual.md](manual.md)), and the Bastions screen (see [The Bastions screen](#the-bastions-screen)); the other routed M1 screens are placeholders with their final
 path and title until their work package replaces them. Requirements: [R-UI-002 to R-UI-005](../spec/api-and-ui.md),
 [R-UI-010, R-UI-011](../spec/api-and-ui.md), [R-UI-020, R-UI-021](../spec/api-and-ui.md), [R-UI-037, R-UI-038](../spec/api-and-ui.md),
 [R-UI-042 to R-UI-047](../spec/api-and-ui.md), [R-EP-017](../spec/endpoints.md); decisions Q-UI-10 to Q-UI-19 and Q-UI-68 (shell and list layout) on the same page.
@@ -600,6 +600,47 @@ How the pieces fit:
   [ci-issuer-screens.spec.ts](../../web/src/app/features/ci/ci-issuer-screens.spec.ts) (list, issuer, keys, create, issuances), [ci-editor-screens.spec.ts](../../web/src/app/features/ci/ci-editor-screens.spec.ts)
   (editor, tester, project screens), [ci-routes.spec.ts](../../web/src/app/features/ci/ci-routes.spec.ts) (every route navigated with input binding, which catches a parameter named differently in the route and the screen).
   The browser journey is [13-ci.spec.ts](../../web/e2e/tests/13-ci.spec.ts), against the real backend and the issuer double ([e2e.md](e2e.md#the-ci-tests)).
+
+## The Bastions screen
+
+R-BAS-007 against the operations of R-BAS-004; decisions [Q-BAS-95](../spec/bastion.md#q-bas-95--the-bastions-screen-is-one-page-with-a-card-per-registration) to
+[Q-BAS-97](../spec/bastion.md#q-bas-97--the-reported-address-is-matched-against-the-listed-addresses-and-the-setup-needs-no-base-url-of-its-own). The manual page is
+[admin/bastion.md](../manual/admin/bastion.md), which the "?" of the screen opens.
+
+| Route or place | Component | Services | Notes |
+|---|---|---|---|
+| `/admin/bastions` | [bastion-list](../../web/src/app/features/bastions/bastion-list.ts) | `BastionsApi`, `SessionStore` | Header with **New Bastion** (`endpoints:write`, with the reason when missing); one page, no paging (at most `bastions.max_registrations` registrations); the list is read again after every change and the cards stay on screen meanwhile, so a card keeps the token it shows once |
+| (one per registration) | [bastion-card](../../web/src/app/features/bastions/bastion-card.ts) | `BastionsApi`, `Confirm`, `SessionStore` | Status, description, creation; **Issue token**, **Disable** or **Enable**, **Delete** (`endpoints:write`); the table of the last contact per replica (replica, time, client address, release, interface version, reported base URL); the table of the tokens (hint, creation, expiry with the mark, last use, **Revoke** with `endpoints:write` or `tokens:revoke`) |
+| (dialogs) | [bastion-dialogs](../../web/src/app/features/bastions/bastion-dialogs.ts) | `BastionsApi` | `BastionCreateDialog` (the name rule shown while typing, an idempotency key for the life of the dialog); `BastionTokenDialog` (description and a lifetime in days, empty for the default; the lost-answer retry of R-UI-042) |
+
+- *The token is shown once.* The dialog closes with the created token, the card keeps it in a signal and shows it through `trove-token-secret` (the component of the
+  token screens), and drops it when the panel is dismissed or the card is destroyed (R-UI-043). The spec scans both storage areas.
+- *The mark.* `tokenExpiry` marks a token that expires in less than `BASTION_TOKEN_WARN_DAYS` (30) days with text and an icon, never by colour alone, and an expired token with
+  **Expired**; the remaining time is formatted by `Intl` through `formatDuration`, rounded up.
+- *Disable and enable* read the registration for its `ETag` (the list carries none) and send the merge patch with it; the UI never sends `If-Match: *`.
+- *Capabilities decide what is shown* (R-UI-005): the entry of the sidebar and the screen need `endpoints:read`; the actions follow the table of R-BAS-004; the API decides in any case.
+- Files: [bastions-api.ts](../../web/src/app/api/bastions-api.ts) (`BastionsApi`, `HttpBastionsApi`, the generated types, `BASTION_NAME_PATTERN`),
+  [fakes-bastions.ts](../../web/src/app/api/testing/fakes-bastions.ts) (`FakeBastionsApi`: the `ETag` and its 412, the token limit, the secret returned once),
+  [problem-messages-bastion.ts](../../web/src/app/core/http/problem-messages-bastion.ts) (`bastion_base_url_unknown`), the route in
+  [bastions.routes.ts](../../web/src/app/features/bastions/bastions.routes.ts), the sidebar entry in [navigation.ts](../../web/src/app/core/navigation.ts) and the help topic in
+  [help-topics.ts](../../web/src/app/core/help-topics.ts). Specs: [bastions.spec.ts](../../web/src/app/features/bastions/bastions.spec.ts) (the list, the mark and its boundary, create,
+  issue and the once-only display, the lost-answer retry, disable and enable with the tag, a stale tag, delete with the typed name, revoke, the capabilities, the states, the entry and
+  the help topic), `/admin/bastions` in the route map of `app.routes.spec.ts`.
+- The browser journey is not written yet; see [e2e.md](e2e.md#browser-journeys) when it is. It should create `partners`, issue a token, copy it once, show the last contact after the
+  Bastion of the e2e cluster starts, and show the mark for a token that expires in 20 days.
+
+### Client setup and guides for a Bastion
+
+R-BAS-007 and R-UI-049, Q-BAS-96. The setup page and the guides area offer **Install from**: **This installation** and every registration that has reported a base URL
+(`reportedBastions` in [bastion-targets.ts](../../web/src/app/features/setup/bastion-targets.ts), which needs `endpoints:read` and returns nothing, without an error, for a caller who lacks
+it or a list that cannot be read). The query `?bastion=<name>` selects a Bastion for every caller, offered or not.
+
+- *Setup page.* The step is numbered 4 and the credentials step 5 while it is there. The answer is `GET …/client-setup?bastion=<name>` (`ClientSetupQuery.bastion`); the page shows the Bastion's
+  address, no publish snippets (the tab says why), and a sentence under the npm snippet that holds `replace-registry-host=always`. A `409 bastion_base_url_unknown` is explained
+  by `describeBastionProblem`; a `404` is the ordinary not-found notice.
+- *Guides.* With a Bastion as the target and a repository chosen, the page shows the Bastion's address and the configure and install snippets of the setup operation instead of the format's
+  guide, which describes the installation (publishing, tags, unpublishing); without a repository it asks for one and sends no request. The links between the two pages carry the choice.
+- Specs: [client-setup-bastion.spec.ts](../../web/src/app/features/setup/client-setup-bastion.spec.ts).
 
 ## How to add a feature area
 

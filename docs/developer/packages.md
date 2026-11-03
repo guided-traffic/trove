@@ -74,6 +74,13 @@ the format), a value above 256 bytes, with a control character or in the shape o
 normalized name, and `shellQuote` quotes any value that starts with `-`. It answers `503` without a configured base URL. The registry URL is
 the base URL plus the format's `protocolBasePath`; `endpointPath` is the same without its scheme.
 
+With `bastion=<name>` (R-BAS-007, Q-BAS-97) the base URL is the one the registration reported at its last handshake, read through `PackageServices.Bastions`
+(`bastionBaseURLs` in [bastion_baseurl.go](../../internal/app/bastion_baseurl.go): `BastionGet`, then `BastionLastBaseURL`), provided it is an entry of
+`PackageServices.AdditionalBaseURLs` (`server.additional_base_urls`; a trailing slash and the case of the host are ignored, and the listed entry is what the
+snippets carry); `bastionBase` answers `404` for a name that is no registration, `409 bastion_base_url_unknown` for no reported address or an address that is not listed, and `503`
+without the reader. The operation then needs no base URL of the endpoint. The publish templates are not rendered and `publishTarget` is `null`; `SetupData.Bastion` is true,
+which npm's `npm.npmrc.configure` template turns into `replace-registry-host=always`.
+
 ## Tests
 
 | Tier | Where | What |
@@ -82,6 +89,8 @@ the base URL plus the format's `protocolBasePath`; `endpointPath` is the same wi
 | Unit | [view_test.go](../../internal/packages/view/view_test.go), [visible_test.go](../../internal/authz/visible_test.go) | Ids, topology, latest version, cursors; the classification and its agreement with `DecideOn` over a matrix |
 | Unit | [setup_snippets_test.go](../../internal/api/v1/setup_snippets_test.go), [packages_api_test.go](../../internal/api/v1/packages_api_test.go) | Modes, quoting, ids, publish gate, token refusal, `503` without the read model or a base URL, tags |
 | Unit | [view_test.go](../../internal/formats/npm/view_test.go), [view_test.go](../../internal/formathost/view_test.go), [ui_test.go](../../internal/config/ui_test.go) | npm's metadata members, the bridge, the configuration |
+| Unit | [bastion_setup_test.go](../../internal/api/v1/bastion_setup_test.go), [setup_test.go](../../internal/formats/npm/setup_test.go) | `TestR_BAS_007_…`: the Bastion's address and no publish snippet, the switch for npm only, the `404`, `409` and `503` answers, a lookup that fails |
+| Integration | [test/integration/bastionsetup](../../test/integration/bastionsetup) | `TestR_BAS_007_ClientSetupForABastionThroughTheStack`: registrations and contacts in PostgreSQL, a replica with `server.additional_base_urls`, the four answers |
 | Integration | [test/integration/packages](../../test/integration/packages) | The in-process harness with npm publishes as data: list, filters, every sort walked by cursor, visibility for six callers, a repository with exclude patterns, versions, details, tags, README, setup, an endpoint with rules |
 | Web | `server-address.spec.ts`, `package-readme.spec.ts` | The base URL from the formats answer; the heading corpus |
 

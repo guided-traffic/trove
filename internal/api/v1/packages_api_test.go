@@ -98,6 +98,12 @@ func setupServer(t *testing.T, baseURL string, deploy bool) http.Handler {
 // setupServerAs is setupServer for a caller authn produces; nil is anonymous.
 func setupServerAs(t *testing.T, baseURL string, deploy bool, authn func(*http.Request) (httpserver.Principal, error)) http.Handler {
 	t.Helper()
+	return setupServerWith(t, baseURL, deploy, authn, nil)
+}
+
+// setupServerWith is setupServerAs with a change to the services before the server is built.
+func setupServerWith(t *testing.T, baseURL string, deploy bool, authn func(*http.Request) (httpserver.Principal, error), change func(*PackageServices)) http.Handler {
+	t.Helper()
 	guides, err := readme.New(readme.Options{MaxSourceBytes: 256 << 10})
 	if err != nil {
 		t.Fatal(err)
@@ -118,14 +124,18 @@ func setupServerAs(t *testing.T, baseURL string, deploy bool, authn func(*http.R
 		"npm-readonly": repository.Assemble(repository.Repository{Key: "npm-readonly", Class: repository.Virtual, Format: "npm"},
 			[]repository.Repository{remote}, nil, 0),
 	}}
+	services := PackageServices{
+		View: &view.Service{}, Decider: packagesDecider{deploy: deploy}, Scoper: packagesScoper{}, Reader: repos, Guides: guides,
+		TokenEnvVar: "MY_TOKEN", TokenTTL: 36 * 3600 * 1e9,
+	}
+	if change != nil {
+		change(&services)
+	}
 	router := httpserver.NewClientRouter()
 	New(Options{
 		Document: doc, Identity: Identity{Replica: "r", Role: "web"}, Ready: func() bool { return true },
 		Access: allowAll{}, Replicas: fakeReplicas{}, Facts: fakeFacts{},
-		Packages: PackageServices{
-			View: &view.Service{}, Decider: packagesDecider{deploy: deploy}, Scoper: packagesScoper{}, Reader: repos, Guides: guides,
-			TokenEnvVar: "MY_TOKEN", TokenTTL: 36 * 3600 * 1e9,
-		},
+		Packages: services,
 	}).Register(router)
 	res, err := httpserver.NewResolver(nil, baseURL, nil)
 	if err != nil {

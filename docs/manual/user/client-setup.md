@@ -206,6 +206,19 @@ trove_curl --fail --upload-file app-1.2.0.tar.gz "https://trove.example.com/file
 
 Downloading needs read, uploading to a free path deploy, replacing a file with other bytes overwrite as well, deleting delete. Add `--header "If-None-Match: *"` to an upload that must never replace a file: it then answers `412` when the path exists. [Browsing and transferring files](files.md) describes paths, digests and folders; the curl guide shows resuming, conditional downloads and uploads with a digest.
 
+## Install through a Bastion
+
+An administrator may run a Bastion for you: a read-only cache of this installation at its own address, for clients outside the network ([The trove Bastion](../admin/bastion.md) explains what it is). You sign in to it with the same personal, service-account or CI token, and you install the same packages from the same repository keys; only the address differs.
+
+When an administrator has registered a Bastion and it has reported its address, the Client setup page and the Guides area offer it under **Install from**, next to **This installation**. Choose it and the snippets use the Bastion's address, for example `https://packages.example.com/api/npm/npm-all/`. Without that permission the choice is not shown; an administrator can send you a link that already names the Bastion (`/setup?repository=npm-all&bastion=partners`, an example).
+
+- **Read only.** The **Publish** tab says that you cannot publish through a Bastion. Publish, change dist-tags and unpublish on this installation.
+- **npm** gets one more line in the configure snippet, `replace-registry-host=always`. It makes npm fetch every package from the address in `registry=`, also when a lockfile written against another host names that host, so one lockfile works through this installation and through the Bastion.
+- **The Guides area** shows the address and the configure and install snippets for the Bastion; the full guide describes this installation, so choose **This installation** to read it.
+- **A Bastion answers `409` on the page** (`bastion_base_url_unknown`) while it has not reported an address yet or the address is not listed in `server.additional_base_urls` of this installation; tell your administrator.
+
+A Bastion decides what you may read by asking this installation with your token, so permissions, revocations and exposure follow the main installation. A revoked token can keep reading cached content for a short time, and an installation that the Bastion cannot reach is served from its cache for a limited period only.
+
 ## What the in-app guide adds
 
 This page explains the concepts; the guide of your installation gives the exact text for your choice:

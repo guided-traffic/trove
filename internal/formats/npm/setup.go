@@ -23,6 +23,10 @@ func (f *Format) SetupTemplates() []formats.SetupTemplate {
 	const npmrc = `{{if .Variant}}@{{.Variant}}:registry={{else}}registry={{end}}{{.RegistryURL}}
 {{schemeless .RegistryURL}}:_authToken=${TROVE_TOKEN}
 `
+	// npm replaces the host of a lockfile's resolved URL only with replace-registry-host=always
+	// (R-BAS-007): a lockfile written against the installation itself then resolves through a Bastion.
+	const npm = npmrc + `{{if .Bastion}}replace-registry-host=always
+{{end}}`
 	const yarnClassic = npmrc + `{{if .RequiresAuth}}always-auth=true
 {{end}}`
 	const yarn = `{{if .Variant}}npmScopes:
@@ -34,7 +38,7 @@ func (f *Format) SetupTemplates() []formats.SetupTemplate {
 {{end}}npmAuthToken: "${TROVE_TOKEN}"
 {{end}}`
 	return []formats.SetupTemplate{
-		{ID: "npm.npmrc.configure", Client: "npm", Section: "configure", Lang: "ini", File: ".npmrc", Template: npmrc},
+		{ID: "npm.npmrc.configure", Client: "npm", Section: "configure", Lang: "ini", File: ".npmrc", Template: npm},
 		{ID: "pnpm.npmrc.configure", Client: "pnpm", Section: "configure", Lang: "ini", File: "~/.npmrc", Template: npmrc},
 		{ID: "yarn.yarnrc.configure", Client: "yarn", Section: "configure", Lang: "yaml", File: ".yarnrc.yml", Template: yarn},
 		{ID: "yarn-classic.npmrc.configure", Client: "yarn-classic", Section: "configure", Lang: "ini", File: ".npmrc", Template: yarnClassic},

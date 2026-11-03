@@ -14,6 +14,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatTabsModule } from '@angular/material/tabs';
 import { Router, RouterLink } from '@angular/router';
 import { newIdempotencyKey } from '../../api/client';
+import { Bastion, BastionsApi } from '../../api/bastions-api';
 import { ClientSetupApi, ClientSnippet } from '../../api/packages-api';
 import { ApiError } from '../../api/problem';
 import { RepositoriesApi, RepositorySummary } from '../../api/repositories-api';
@@ -22,6 +23,7 @@ import { SessionStore } from '../../core/session-store';
 import { CopyButton } from '../../shared/copy-button';
 import { ErrorNotice } from '../../shared/error-notice';
 import { asApiError, valueOf } from '../../shared/paged-resource';
+import { reportedBastions } from './bastion-targets';
 import { clientsOf, FORMAT_CLIENTS, snippetExplanation } from './clients';
 import { checkTokenShape, TokenShape } from './token-shape';
 
@@ -57,6 +59,7 @@ export class ClientSetupPage {
   private readonly setupApi = inject(ClientSetupApi);
   private readonly repositories = inject(RepositoriesApi);
   private readonly tokens = inject(TokensApi);
+  private readonly bastionsApi = inject(BastionsApi);
   private readonly router = inject(Router);
   private readonly document = inject(DOCUMENT);
   protected readonly session = inject(SessionStore);
@@ -65,6 +68,8 @@ export class ClientSetupPage {
   readonly format = input<string | undefined>();
   readonly client = input<string | undefined>();
   readonly repository = input<string | undefined>();
+  /** A Bastion registration to render the snippets for (R-BAS-007); a link from the Bastions screen or the guide sets it. */
+  readonly bastion = input<string | undefined>();
 
   protected readonly formats = resource({ loader: () => this.repositories.formats() });
   protected readonly allRepositories = resource({ loader: () => this.repositories.listAll() });
@@ -120,6 +125,14 @@ export class ClientSetupPage {
     },
   });
 
+  /** The registrations the target step offers (R-BAS-007, Q-BAS-96). */
+  protected readonly bastions = resource({ loader: () => reportedBastions(this.bastionsApi, this.session) });
+  protected readonly bastionOptions = computed<readonly Bastion[]>(() => valueOf(this.bastions) ?? []);
+  protected readonly activeBastion = computed<string | null>(() => this.bastion()?.trim() || null);
+  /** The target step is shown when there is a Bastion to choose or one is chosen. */
+  protected readonly showTarget = computed(() => this.bastionOptions().length > 0 || this.activeBastion() !== null);
+  protected readonly credentialsStep = computed(() => (this.showTarget() ? 5 : 4));
+
   protected readonly credentials = computed<'none' | 'env' | 'placeholder'>(() =>
     this.anonymous() ? 'none' : this.mode() === 'env' ? 'env' : 'placeholder',
   );
@@ -127,10 +140,16 @@ export class ClientSetupPage {
     params: () => {
       const repository = this.activeRepository();
       const client = this.activeClient();
-      return repository && client ? { repository, client, credentials: this.credentials() } : undefined;
+      return repository && client
+        ? { repository, client, credentials: this.credentials(), bastion: this.activeBastion() }
+        : undefined;
     },
     loader: ({ params }) =>
-      this.setupApi.get(params.repository, { client: params.client, credentials: params.credentials }),
+      this.setupApi.get(params.repository, {
+        client: params.client,
+        credentials: params.credentials,
+        ...(params.bastion ? { bastion: params.bastion } : {}),
+      }),
   });
   protected readonly setup = computed(() => valueOf(this.answer));
   protected readonly loadFailure = computed(() => {
@@ -208,10 +227,18 @@ export class ClientSetupPage {
       : $localize`:@@setup.publish.no:You cannot publish`;
   }
 
+  /** The sentence under a snippet that is for a Bastion and holds what only a Bastion needs (R-BAS-007). */
+  protected bastionNote(sn: ClientSnippet): string | null {
+    return this.activeBastion() !== null && sn.content.includes('replace-registry-host=always')
+      ? $localize`:@@setup.bastion.replace-host:replace-registry-host=always makes npm fetch every package from this address, also when a lockfile written against another host names that host.`
+      : null;
+  }
+
   protected pick(change: {
     format?: string | null;
     client?: string | null;
     repository?: string | null;
+    bastion?: string | null;
   }): void {
     void this.router.navigate([], { queryParams: change, queryParamsHandling: 'merge', replaceUrl: true });
   }

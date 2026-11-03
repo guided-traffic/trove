@@ -52,6 +52,7 @@ func (a *App) wirePackagesAPI(_ context.Context, in infra, az authzArea, repo re
 	return packagesAPIArea{services: v1.PackageServices{
 		View: svc, Decider: az.engine, Scoper: authz.ReadScoper(az.engine), Reader: repo.reader, Readme: rd, Guides: guides,
 		TokenEnvVar: a.cfg.UI.ClientSetup.TokenEnvVar, TokenTTL: a.cfg.UI.ClientSetup.TokenTTL,
+		Bastions: bastionBaseURLs{db: in.db}, AdditionalBaseURLs: a.cfg.Server.AdditionalBaseURLs,
 	}}, nil
 }
 

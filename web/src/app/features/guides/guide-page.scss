@@ -56,3 +56,22 @@
 .result-title {
   margin-block: 0 var(--trove-space-3);
 }
+
+.snippet {
+  margin-block: var(--trove-space-3);
+
+  .target {
+    margin-block: 0 var(--trove-space-2);
+  }
+}
+
+.command {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--trove-space-2);
+
+  pre {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
+}

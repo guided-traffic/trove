@@ -56,6 +56,9 @@ export const NAV_AREAS: readonly NavArea[] = [
       { kind: 'item', route: '/admin/projects', icon: 'folder_shared', label: $localize`:@@nav.projects:Projects`, capability: 'projects:read', projectAdmin: true },
       { kind: 'item', route: '/admin/repositories', icon: 'inventory_2', label: $localize`:@@nav.repositories:Repositories`, capability: 'repositories:read-config' },
       { kind: 'item', route: '/admin/endpoints', icon: 'router', label: $localize`:@@nav.endpoints:Endpoints`, capability: 'endpoints:read' },
+      // >>> M5b bastion
+      { kind: 'item', route: '/admin/bastions', icon: 'public', label: $localize`:@@nav.bastions:Bastions`, capability: 'endpoints:read' },
+      // <<< M5b bastion
       {
         kind: 'group',
         id: 'identity',

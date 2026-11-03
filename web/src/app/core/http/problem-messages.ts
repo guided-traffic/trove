@@ -5,6 +5,9 @@ import { describeAccessProblem } from './problem-messages-access';
 // >>> M4 ci
 import { describeCiProblem } from './problem-messages-ci';
 // <<< M4 ci
+// >>> M5b bastion
+import { describeBastionProblem } from './problem-messages-bastion';
+// <<< M5b bastion
 
 export interface ProblemText {
   /** The message to show. */
@@ -122,7 +125,7 @@ export function describeProblem(error: ApiError): ProblemText {
     // <<< M2 ownership
     default:
       // >>> M1 ui-b
-      return accessProblem(error) ?? ciProblem(error) ?? fallback(error);
+      return accessProblem(error) ?? ciProblem(error) ?? bastionProblem(error) ?? fallback(error);
       // <<< M1 ui-b
   }
 }
@@ -140,6 +143,13 @@ function ciProblem(error: ApiError): ProblemText | null {
   return text === null ? null : { text, known: true };
 }
 // <<< M4 ci
+
+// >>> M5b bastion
+function bastionProblem(error: ApiError): ProblemText | null {
+  const text = describeBastionProblem(error.code);
+  return text === null ? null : { text, known: true };
+}
+// <<< M5b bastion
 
 function rateLimited(seconds: number | null): string {
   return seconds === null

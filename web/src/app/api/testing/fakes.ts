@@ -27,6 +27,9 @@ import { provideManualFakes } from './fakes-manual';
 import { provideProjectFakes } from './fakes-projects';
 // >>> M4 ci
 import { provideCiFakes } from './fakes-ci';
+// >>> M5b bastion
+import { provideBastionFakes } from './fakes-bastions';
+// <<< M5b bastion
 // <<< M4 ci
 
 /*
@@ -286,5 +289,8 @@ export function provideFakeApis(): Provider[] {
     // >>> M4 ci
     ...provideCiFakes(),
     // <<< M4 ci
+    // >>> M5b bastion
+    ...provideBastionFakes(),
+    // <<< M5b bastion
   ];
 }

@@ -57,7 +57,33 @@
     </div>
   </fieldset>
 
-  @if (!activeRepository()) {
+  @if (showTarget()) {
+    <fieldset>
+      <legend i18n="@@guides.step.target">Install from</legend>
+      <div class="choices vertical">
+        <label class="choice">
+          <input type="radio" name="guide-target" value="" [checked]="activeBastion() === null" (change)="pick({ bastion: null })" />
+          <span i18n="@@guides.target.main">This installation</span>
+        </label>
+        @for (b of bastionOptions(); track b.name) {
+          <label class="choice">
+            <input type="radio" name="guide-target" [value]="b.name" [checked]="b.name === activeBastion()" (change)="pick({ bastion: b.name })" />
+            <span><ng-container i18n="@@guides.target.bastion">Bastion</ng-container>&ngsp;<strong translate="no">{{ b.name }}</strong></span>
+          </label>
+        }
+        @if (activeBastion(); as chosen) {
+          @if (!bastionOptions().some((b) => b.name === chosen)) {
+            <label class="choice">
+              <input type="radio" name="guide-target" [value]="chosen" checked />
+              <span><ng-container i18n="@@guides.target.bastion">Bastion</ng-container>&ngsp;<strong translate="no">{{ chosen }}</strong></span>
+            </label>
+          }
+        }
+      </div>
+    </fieldset>
+  }
+
+  @if (!activeRepository() && !activeBastion()) {
     <fieldset>
       <legend i18n="@@guides.step.class">Repository class</legend>
       <div class="choices">
@@ -76,7 +102,39 @@
   <a routerLink="/setup" [queryParams]="setupQuery()" i18n="@@guides.setup-link">Open the client setup for this choice</a>
 </p>
 
-@if (guide(); as g) {
+@if (activeBastion(); as chosen) {
+  <section class="result" aria-labelledby="guide-bastion">
+    <h2 id="guide-bastion" class="result-title">
+      <ng-container i18n="@@guides.bastion.title">Install through the Bastion</ng-container>&ngsp;<span translate="no">{{ chosen }}</span>
+    </h2>
+    <p i18n="@@guides.bastion.text">
+      A Bastion is a read-only cache of this installation for clients outside your network. You configure your client and install through it; publishing, tags and unpublishing are done on this installation.
+      The full guide describes this installation: choose it above to read it.
+    </p>
+    @if (!activeRepository()) {
+      <p class="hint" role="status" i18n="@@guides.bastion.choose">Choose a repository to see the addresses and the snippets for the Bastion.</p>
+    } @else if (bastionSetup.isLoading()) {
+      <p role="status" i18n="@@guides.loading">Loading the guide.</p>
+    } @else if (bastionSetup.hasValue()) {
+      <p>
+        <ng-container i18n="@@guides.bastion.registry">Address of the repository on the Bastion:</ng-container>&ngsp;<code translate="no">{{ bastionSetup.value().registryUrl }}</code>
+      </p>
+      @for (sn of bastionSnippets(); track sn.id) {
+        <div class="snippet" [attr.data-snippet]="sn.id">
+          @if (sn.fileName) {
+            <p class="target">
+              <span i18n="@@guide.target-file">File</span>: <code translate="no">{{ sn.fileName }}</code>
+            </p>
+          }
+          <div class="command">
+            <pre class="code-block" translate="no" tabindex="0">{{ sn.content }}</pre>
+            <trove-copy-button [value]="sn.content" [label]="copyLabel" />
+          </div>
+        </div>
+      }
+    }
+  </section>
+} @else if (guide(); as g) {
   <section class="result" aria-labelledby="guide-result">
     <h2 id="guide-result" class="result-title">
       @if (g.repository; as key) {

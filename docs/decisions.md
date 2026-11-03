@@ -210,6 +210,7 @@ checked every earlier decision against them:
 | [ADR-146](#adr-146--an-operation-admits-project-administrators-through-a-declaration-of-its-own) | An operation admits project administrators through a declaration of its own | Decided by the development agent — owner review at the walkthrough |
 | [ADR-147](#adr-147--a-ci-token-carries-its-frozen-grants-in-its-cache-entry-and-the-management-api-refuses-ci-tokens-by-default) | A CI token carries its frozen grants in its cache entry, and the management API refuses CI tokens by default | Decided by the development agent — owner review at the walkthrough |
 | [ADR-148](#adr-148--migrations-on-main-are-immutable-and-a-defect-is-fixed-forward) | Migrations on main are immutable, and a defect is fixed forward | Decided by the owner on 2026-11-02 (option (b)) |
+| [ADR-149](#adr-149--the-format-contract-gains-setupdatabastion-under-version-1) | The format contract gains `SetupData.Bastion` under version 1 | Decided by the development agent — owner review at the walkthrough |
 
 </details>
 
@@ -5303,6 +5304,30 @@ surface file gives way to a compatibility checker against the release, and the v
 
 **Spec:** [spec/architecture.md](spec/architecture.md) R-ARCH-008, R-ARCH-009, R-ARCH-010, R-ARCH-025;
 [coverage/roadmap.md](coverage/roadmap.md#m3--nuget) E3.3 and WP3.5.
+
+### ADR-149 · The format contract gains `SetupData.Bastion` under version 1
+
+**Status:** Decided by the development agent — owner review at the walkthrough.
+
+**Context.** The client setup of a repository for a Bastion (R-BAS-007, [Q-BAS-96](spec/bastion.md#q-bas-96--a-bastion-is-a-target-of-the-setup-page-and-of-the-guides-read-only-and-by-link-for-everyone))
+renders the snippets on the base URL the Bastion reported and offers no publish snippets; for npm the configure snippet sets
+`replace-registry-host=always`, so that a lockfile written against another host resolves through the Bastion. The format's setup
+renderer is the only place that knows its snippets, so it must learn that the target is a Bastion. The format contract is frozen at
+version 1 ([ADR-141](#adr-141--the-format-contract-is-frozen-at-version-1)), and every change of it is an ADR of its own.
+
+**Decision.** `formats.SetupData` gains the field `Bastion bool`, true when the setup is rendered for a Bastion. It is an addition: a
+format that does not read it renders exactly what it rendered before, so `ContractVersion` stays 1 and no format has to move. npm reads it
+for `replace-registry-host`; the core drops publish snippets for every format when it is set. The surface file
+`internal/formats/testdata/contract.txt` is regenerated in the same change.
+
+**Consequences.** A later format may read the field; a format that ignores it gives a Bastion its ordinary snippets on the Bastion's
+base URL, which is correct for every format whose clients do not pin hosts in their lockfiles.
+
+**Alternatives considered.** A second render entry point for Bastions (a changed interface, which would raise the version and move every
+format); rewriting npm's snippet in the core (format knowledge outside the format, against R-ARCH-008).
+
+**Revisit condition:** a format needs more about the Bastion than the flag (its name or its registration), which would be a field of its own
+and an ADR of its own.
 
 ## trove Bastion
 

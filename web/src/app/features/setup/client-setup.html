@@ -8,7 +8,7 @@
 <p class="intro">
   <a
     routerLink="/guides"
-    [queryParams]="{ format: activeFormat(), client: activeClient(), repository: activeRepository() }"
+    [queryParams]="{ format: activeFormat(), client: activeClient(), repository: activeRepository(), bastion: activeBastion() }"
     i18n="@@setup.guide-link"
     >Read the guide: what the repository is, publishing, lockfiles and troubleshooting</a
   >
@@ -94,9 +94,47 @@
     </fieldset>
   </li>
 
+  @if (showTarget()) {
+    <li>
+      <fieldset>
+        <legend><span class="step-no">4</span> <span i18n="@@setup.step.target">Install from</span></legend>
+        <div class="choices vertical">
+          <label class="choice">
+            <input type="radio" name="target" value="" [checked]="activeBastion() === null" (change)="pick({ bastion: null })" />
+            <span class="choice-text">
+              <span i18n="@@setup.target.main">This installation</span>
+              <span class="secondary" i18n="@@setup.target.main-hint">The address you are using now.</span>
+            </span>
+          </label>
+          @for (b of bastionOptions(); track b.name) {
+            <label class="choice">
+              <input type="radio" name="target" [value]="b.name" [checked]="b.name === activeBastion()" (change)="pick({ bastion: b.name })" />
+              <span class="choice-text">
+                <span><ng-container i18n="@@setup.target.bastion">Bastion</ng-container>&ngsp;<strong translate="no">{{ b.name }}</strong></span>
+                <span class="secondary" i18n="@@setup.target.bastion-hint">
+                  A read-only cache for clients outside the network. You can install through it; you cannot publish.
+                </span>
+              </span>
+            </label>
+          }
+          @if (activeBastion(); as chosen) {
+            @if (!bastionOptions().some((b) => b.name === chosen)) {
+              <label class="choice">
+                <input type="radio" name="target" [value]="chosen" checked />
+                <span class="choice-text">
+                  <span><ng-container i18n="@@setup.target.bastion">Bastion</ng-container>&ngsp;<strong translate="no">{{ chosen }}</strong></span>
+                </span>
+              </label>
+            }
+          }
+        </div>
+      </fieldset>
+    </li>
+  }
+
   @if (anonymous()) {
     <li>
-      <h2 class="step-title"><span class="step-no">4</span> <span i18n="@@setup.step.credentials">Credentials</span></h2>
+      <h2 class="step-title"><span class="step-no">{{ credentialsStep() }}</span> <span i18n="@@setup.step.credentials">Credentials</span></h2>
       <p i18n="@@setup.anonymous">
         You are not signed in. A repository that can be read without credentials needs none, so the snippets
         contain no authentication.
@@ -105,7 +143,7 @@
   } @else {
     <li>
       <fieldset>
-        <legend><span class="step-no">4</span> <span i18n="@@setup.step.credentials">Credentials</span></legend>
+        <legend><span class="step-no">{{ credentialsStep() }}</span> <span i18n="@@setup.step.credentials">Credentials</span></legend>
         <div class="choices vertical">
           <label class="choice">
             <input type="radio" name="credentials" value="env" [checked]="mode() === 'env'" (change)="setMode('env')" />
@@ -239,6 +277,14 @@
     <h2 id="setup-result">
       <ng-container i18n="@@setup.result">Snippets for</ng-container>&ngsp;<span translate="no">{{ s.repository }}</span>
     </h2>
+    @if (activeBastion(); as chosen) {
+      <p class="banner-warning" role="note">
+        <span class="material-icons inline" aria-hidden="true">public</span>
+        <span>
+          <ng-container i18n="@@setup.bastion.banner">These snippets point at the Bastion</ng-container>&ngsp;<strong translate="no">{{ chosen }}</strong>:&ngsp;<code translate="no">{{ s.registryUrl }}</code>.&ngsp;<ng-container i18n="@@setup.bastion.banner-text">A Bastion is read only, so there are no publish snippets. Sign-in works with the same token as for this installation.</ng-container>
+        </span>
+      </p>
+    }
     @if (needsToken()) {
       <p class="banner-warning" role="note">
         <span class="material-icons inline warn" aria-hidden="true">info</span>
@@ -265,7 +311,11 @@
       <mat-tab label="Publish" i18n-label="@@setup.tab.publish">
         <div class="tab">
           @if (byTab().publish.length === 0) {
-            @if (isVirtual()) {
+            @if (activeBastion() !== null) {
+              <p i18n="@@setup.publish.bastion">
+                A Bastion is read only: you cannot publish through it. Choose this installation as the place to install from, and the publish snippets appear.
+              </p>
+            } @else if (isVirtual()) {
               <p i18n="@@setup.publish.no-target">
                 This virtual repository has no default deployment target, so there is nothing to publish to through
                 it. Publish to one of its local repositories instead.
@@ -294,6 +344,9 @@
   <div class="snippet">
     @if (explanation(sn.id); as why) {
       <p class="why">{{ why }}</p>
+    }
+    @if (bastionNote(sn); as note) {
+      <p class="why">{{ note }}</p>
     }
     @if (sn.fileName) {
       <p class="target">

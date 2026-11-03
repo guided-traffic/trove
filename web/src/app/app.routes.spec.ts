@@ -38,6 +38,7 @@ const SCREENS: readonly (readonly [url: string, heading: string])[] = [
   ['/admin/roles', 'System roles'],
   ['/admin/tokens', 'Token administration'],
   ['/admin/endpoints', 'Endpoints'],
+  ['/admin/bastions', 'Bastions'],
   ['/admin/endpoints/main', 'Endpoint'],
   ['/admin/endpoints/main/rules/new', 'New exposure rule'],
   ['/admin/endpoints/main/rules/r1', 'Exposure rule'],

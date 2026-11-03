@@ -19,6 +19,9 @@ export const HELP_TOPICS: readonly (readonly [route: string, topic: HelpTopic])[
   ['/admin/projects', { section: 'admin', page: 'projects' }],
   ['/admin/repositories', { section: 'admin', page: 'repositories' }],
   ['/admin/endpoints', { section: 'admin', page: 'endpoints' }],
+  // >>> M5b bastion
+  ['/admin/bastions', { section: 'admin', page: 'bastion' }],
+  // <<< M5b bastion
   ['/admin/users', { section: 'admin', page: 'sign-in-and-identity' }],
   ['/admin/groups', { section: 'admin', page: 'sign-in-and-identity' }],
   ['/admin/service-accounts', { section: 'admin', page: 'sign-in-and-identity' }],

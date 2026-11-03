@@ -350,11 +350,15 @@ Priority: **MVP** · Covers: trove-only
 - **Screen.** Administration → Bastions in the main installation's UI (capabilities of R-BAS-004): the list of registrations
   with the last contact, the interface version and release each replica reported, the token expiries with a warning mark below
   30 days, and the actions create, disable, delete, issue token (the secret shown once, as for every token) and revoke token.
-  The screen uses only the operations of R-BAS-004 (INV-17).
+  The screen uses only the operations of R-BAS-004 (INV-17). It is one page with a card per registration, which shows the
+  registration's facts and actions, the last contact of every replica and its tokens ([Q-BAS-95](#q-bas-95--the-bastions-screen-is-one-page-with-a-card-per-registration)).
 - **Client setup.** `GET /api/v1/repositories/{repoKey}/client-setup` ([api-and-ui.md](api-and-ui.md) R-API-030) accepts
   `bastion=<name>`: the snippets are rendered on the base URL the Bastion reported at its last handshake, provided it is an
-  entry of `server.additional_base_urls` (else `409 bastion_base_url_unknown`), and carry no publish snippets, since the Bastion
-  is read-only. The guide of each format (R-UI-049) offers the Bastion as a target when a registration has reported a base URL.
+  entry of `server.additional_base_urls` (else `409 bastion_base_url_unknown`, also while it has reported none; a name that is no
+  registration answers `404`; [Q-BAS-97](#q-bas-97--the-reported-address-is-matched-against-the-listed-addresses-and-the-setup-needs-no-base-url-of-its-own)),
+  and carry no publish snippets, since the Bastion is read-only. The guide of each format (R-UI-049) and the setup page of
+  R-UI-016 offer the Bastion as a target when a registration has reported a base URL
+  ([Q-BAS-96](#q-bas-96--a-bastion-is-a-target-of-the-setup-page-and-of-the-guides-read-only-and-by-link-for-everyone)).
   For npm, the configure snippet sets `replace-registry-host=always`, so that a lockfile written against another host resolves
   through the Bastion.
 - **Manual.** The admin manual gains `docs/manual/admin/bastion.md`: register a Bastion, issue its token, the chart values of a
@@ -366,7 +370,9 @@ Acceptance criteria:
 - The browser test creates `partners`, issues a token, copies it once, and sees the last contact appear after the Bastion of
   the e2e cluster starts; a token expiring in 20 days shows the warning mark.
 - `client-setup?client=npm&bastion=partners` on `npm-all` returns a registry URL
-  `https://packages.example.com/api/npm/npm-all/`, `replace-registry-host=always`, and no `publish` tab.
+  `https://packages.example.com/api/npm/npm-all/`, `replace-registry-host=always`, and no `publish` tab
+  (`TestR_BAS_007_ClientSetupRendersOnTheBaseURLTheBastionReported`, and through the stack
+  `TestR_BAS_007_ClientSetupForABastionThroughTheStack`).
 
 ## The Bastion interface of the main installation
 
@@ -3465,6 +3471,67 @@ defect of the state were found to hide a missing limit for long: the guard would
 
 **Applied in the spec:** R-BAS-037, H-429; [bastion.md](../developer/bastion.md#shared-state-and-the-guard).
 
+### Q-BAS-95 · The Bastions screen is one page with a card per registration
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A list and a detail page, as the service accounts have | `/admin/bastions` lists name and status, `/admin/bastions/:name` holds the contacts and the tokens | The pattern of the other identity screens; a registration's page can be linked | R-BAS-007 describes the list with the last contact; two pages for at most `bastions.max_registrations` (16) rows; a renewal watches two tokens and every replica, which one page shows at once |
+| (b) One page, a card per registration (chosen) | Each card shows the status, the description, the actions, the table of the replicas' last contact and the table of the tokens | The renewal of R-BAS-006 (issue, copy, wait for **Last used**, revoke) happens in one place; the list is one page by the API's own bound, so no paging | A long page at the upper bound |
+| (c) A table with a row per registration and expandable rows | Contacts and tokens expand under the row | Compact | Nested tables in a table are hard to use with a keyboard and a screen reader |
+
+**Choice:** (b).
+
+**Rationale:** `GET /api/v1/bastions` answers every registration with its tokens and contacts in one document, at most 16 of
+them, and the renewal needs the contacts and the tokens side by side. The change of `enabled` needs the registration's `ETag`
+(R-API-012), which the list does not carry, so the card reads the registration for it and then sends the merge patch; it never
+sends `If-Match: *`. A token's value stays in the card that issued it and is dropped with the card (R-UI-043). The development
+agent would revisit (a) if the bound grows well beyond 16.
+
+**Applied in the spec:** R-BAS-007. Implementation: [web-ui.md](../developer/web-ui.md#the-bastions-screen).
+
+### Q-BAS-96 · A Bastion is a target of the setup page and of the guides, read only, and by link for everyone
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Only the client setup page offers it | The guides link to it | The setup operation already takes `bastion=` | R-BAS-007 says the guide of each format offers it |
+| (b) Both pages offer it; a guide for a Bastion shows the Bastion's address and the configure and install snippets of the setup operation, not the format's text (chosen) | A fieldset **Install from** with **This installation** and each registration that has reported a base URL | No format knowledge in the UI; no guide text that names the main installation's address next to the Bastion's; the full guide stays one click away | The guide for a Bastion is shorter than the guide of the installation |
+| (c) Render the format's guide for a Bastion | `bastion=` on the two guide operations | The full text for the Bastion | Changes two operations of the API and every format's guide template; most sections (publishing, tags, unpublishing) do not hold through a read-only cache |
+
+**Choice:** (b).
+
+**Rationale:** the choice is built from `GET /api/v1/bastions`, which needs `endpoints:read` (R-BAS-004), so a caller without it
+is not offered a Bastion; a Bastion named in the query (`?bastion=partners`) works for every caller, because the setup operation
+needs only `read` on the repository, so an administrator can hand a link to a developer ([H-457](#h-457--a-reader-without-endpointsread-is-not-offered-the-bastion-as-a-target)).
+The page numbers its steps again when the target step is there. The development agent would revisit (c) when a format's guide
+gains Bastion-specific text.
+
+**Applied in the spec:** R-BAS-007, R-UI-049 (through R-BAS-007). Implementation: [web-ui.md](../developer/web-ui.md#client-setup-and-guides-for-a-bastion).
+
+### Q-BAS-97 · The reported address is matched against the listed addresses, and the setup needs no base URL of its own
+
+Status: Decided by the development agent — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Exact string comparison | The reported value must equal an entry byte for byte | Simplest | A trailing slash or the case of the host in a configured entry makes a working Bastion answer 409 |
+| (b) Comparison of the origin, ignoring a trailing slash and the case (chosen) | `strings.EqualFold` over both values without a trailing `/`; the snippets use the listed entry, not the reported value | A harmless spelling difference does not hide the instructions; only a listed address ever reaches a snippet | Two spellings of one origin are the same entry |
+| (c) Also accept the base URLs of the further endpoints | Every configured base URL | More addresses | R-BAS-017 and R-BAS-010 name `server.additional_base_urls`; an endpoint is another listener, not a Bastion |
+
+**Choice:** (b).
+
+**Rationale:** the answers are `404` for a name that is no registration (the name rule of R-BAS-004 is checked first, so a malformed
+name answers the same), `409 bastion_base_url_unknown` for a registration that has not reported an address and for one whose address
+is not listed, and `503` on a replica that cannot read the registrations. The address does not come from `server.base_url`, so the
+operation does not need the endpoint's base URL: it answers a Bastion's snippets even where the direct operation answers 503. The
+OpenAPI document lists `409` on the operation. Whether a name is a registration is visible to every caller who may read the
+repository ([H-458](#h-458--the-address-a-registration-reports-chooses-among-the-listed-addresses-and-the-name-is-testable)). The
+development agent would revisit (c) when a Bastion needs an address of an endpoint.
+
+**Applied in the spec:** R-BAS-007. Implementation: `bastionBase` in [packages_api.go](../../internal/api/v1/packages_api.go).
 
 ## What this does not cover
 
@@ -3689,3 +3756,28 @@ Live on every Bastion without Valkey, and for blocks set while its Valkey is una
 duration and the counters of such a replica are in its memory; a restart (a rollout, a crash, an eviction) empties them, so an address
 blocked at level 4 for 2 hours returns at once and its next block lasts 15 minutes. A block set while Valkey is unavailable is not written
 to Valkey when it returns. What makes it real: an attacker who outlasts one replica's lifetime; Valkey closes it.
+### H-457 · A reader without endpoints:read is not offered the Bastion as a target
+
+Stage: R-BAS-007, the **Install from** step of the setup page and of the guides. Subject: a developer who may read a repository and
+should install through a Bastion.
+
+Live on every installation with a registered Bastion. The offer is built from `GET /api/v1/bastions`, which needs `endpoints:read`
+(administrators, security administrators, auditors and repository administrators); a developer does not see the choice, and learns
+of the Bastion from the documentation of the team or from a link with `?bastion=<name>` that an administrator sends, which works for
+every caller. Nothing is exposed by this, and nothing is hidden by it either: the operation behind the link needs only `read`. What
+makes it real: a team that expects the page to show the Bastion to everyone; a list of Bastions for every caller would need an
+operation that discloses registration names and addresses to every caller, which this design does not add.
+
+### H-458 · The address a registration reports chooses among the listed addresses, and the name is testable
+
+Stage: R-BAS-007, `client-setup` with `bastion=<name>`. Subject: the address in the snippets a reader copies, and the names of the
+registrations.
+
+Live on every installation with a registered Bastion. The address comes from the registration's last handshake, which the holder of
+the Bastion token controls (H-386), and it is rendered only when it is an entry of `server.additional_base_urls`. A holder of a token
+can therefore make the snippets of that registration name any listed address, for example the address of another Bastion or of an
+alias of the main installation, so a reader who chose that registration is sent to a listed address that is not the Bastion they
+meant; no other address can reach a snippet. Separately, the answers `404`, `409` and `200` tell any caller who may read a repository
+whether a registration of that name exists. What makes it real: a stolen Bastion token and a listed address that a reader trusts for a
+different purpose; an attacker who guesses names (at most 16 registrations, each name matching `^[a-z][a-z0-9-]{0,19}$`) learns only
+that a name exists, never a token or a contact.

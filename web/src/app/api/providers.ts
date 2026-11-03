@@ -27,6 +27,9 @@ import { HttpManualApi, ManualApi } from './manual-api';
 // >>> M4 ci
 import { CiApi, HttpCiApi } from './ci-api';
 // <<< M4 ci
+// >>> M5b bastion
+import { BastionsApi, HttpBastionsApi } from './bastions-api';
+// <<< M5b bastion
 
 /**
  * Binds every service interface of `api/` to its HTTP implementation. Specs and component tests
@@ -65,5 +68,8 @@ export function provideApiServices(): Provider[] {
     // >>> M4 ci
     { provide: CiApi, useClass: HttpCiApi },
     // <<< M4 ci
+    // >>> M5b bastion
+    { provide: BastionsApi, useClass: HttpBastionsApi },
+    // <<< M5b bastion
   ];
 }

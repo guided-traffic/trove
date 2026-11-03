@@ -1,9 +1,14 @@
 import { Component, computed, inject, input, resource } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
+import { Bastion, BastionsApi } from '../../api/bastions-api';
 import { GuidesApi } from '../../api/guides-api';
+import { ClientSetupApi } from '../../api/packages-api';
 import { FormatDescriptor, RepositoriesApi, RepositorySummary } from '../../api/repositories-api';
+import { SessionStore } from '../../core/session-store';
+import { CopyButton } from '../../shared/copy-button';
 import { ErrorNotice } from '../../shared/error-notice';
 import { asApiError, valueOf } from '../../shared/paged-resource';
+import { reportedBastions } from '../setup/bastion-targets';
 import { GuideView } from './guide-view';
 
 /**
@@ -14,7 +19,7 @@ import { GuideView } from './guide-view';
  */
 @Component({
   selector: 'trove-guide-page',
-  imports: [RouterLink, ErrorNotice, GuideView],
+  imports: [RouterLink, CopyButton, ErrorNotice, GuideView],
   templateUrl: './guide-page.html',
   styleUrl: './guide-page.scss',
 })
@@ -22,12 +27,17 @@ export class GuidePage {
   private readonly api = inject(GuidesApi);
   private readonly repositories = inject(RepositoriesApi);
   private readonly router = inject(Router);
+  private readonly setupApi = inject(ClientSetupApi);
+  private readonly bastionsApi = inject(BastionsApi);
+  private readonly session = inject(SessionStore);
 
   /** Query parameters, bound by the router's component input binding. */
   readonly format = input<string | undefined>();
   readonly client = input<string | undefined>();
   readonly repository = input<string | undefined>();
   readonly class = input<string | undefined>();
+  /** A Bastion registration to read the guide for (R-BAS-007, R-UI-049); the client setup page links here with it. */
+  readonly bastion = input<string | undefined>();
 
   protected readonly formats = resource({ loader: () => this.repositories.formats() });
   protected readonly allRepositories = resource({ loader: () => this.repositories.listAll() });
@@ -64,8 +74,36 @@ export class GuidePage {
     return classes.includes('virtual') ? 'virtual' : (classes[0] ?? null);
   });
 
+  /** The registrations that have reported a base URL; none for a caller who cannot read them (Q-BAS-96). */
+  protected readonly bastions = resource({ loader: () => reportedBastions(this.bastionsApi, this.session) });
+  protected readonly bastionOptions = computed<readonly Bastion[]>(() => valueOf(this.bastions) ?? []);
+  protected readonly activeBastion = computed<string | null>(() => this.bastion()?.trim() || null);
+  protected readonly showTarget = computed(() => this.bastionOptions().length > 0 || this.activeBastion() !== null);
+  /**
+   * What a Bastion target shows (Q-BAS-96): the configure and install snippets of the client setup for the
+   * repository on the Bastion's address. The format's guide describes this installation, its publishing and
+   * its tags, so it is not shown for a target that is read only.
+   */
+  protected readonly bastionSetup = resource({
+    params: () => {
+      const bastion = this.activeBastion();
+      const repository = this.activeRepository()?.key;
+      const client = this.activeClient();
+      if (!bastion || !repository || !client) return undefined;
+      return { bastion, repository, client, credentials: this.session.state() === 'anonymous' ? 'none' : 'env' } as const;
+    },
+    loader: ({ params }) =>
+      this.setupApi.get(params.repository, { client: params.client, credentials: params.credentials, bastion: params.bastion }),
+  });
+  protected readonly bastionSnippets = computed(() => {
+    const s = valueOf(this.bastionSetup);
+    return s ? s.snippets.filter((sn) => sn.tab !== 'publish') : [];
+  });
+  protected readonly copyLabel = $localize`:@@guide.copy:Copy snippet`;
+
   protected readonly answer = resource({
     params: () => {
+      if (this.activeBastion()) return undefined;
       const format = this.activeFormat()?.name;
       const client = this.activeClient();
       const cls = this.activeClass();
@@ -79,13 +117,14 @@ export class GuidePage {
   });
   protected readonly guide = computed(() => valueOf(this.answer));
   protected readonly loadFailure = computed(() => {
-    const e = this.answer.error() ?? this.formats.error() ?? this.allRepositories.error();
+    const e = this.answer.error() ?? this.bastionSetup.error() ?? this.formats.error() ?? this.allRepositories.error();
     return e ? asApiError(e) : null;
   });
   protected readonly setupQuery = computed(() => ({
     format: this.activeFormat()?.name ?? null,
     client: this.activeClient(),
     repository: this.activeRepository()?.key ?? null,
+    bastion: this.activeBastion(),
   }));
 
   protected classText(cls: string): string {

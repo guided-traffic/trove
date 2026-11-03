@@ -333,6 +333,11 @@ export class FakeClientSetupApi extends ClientSetupApi {
   /** Repositories the caller may read but not publish to. */
   readOnly = new Set<string>(['npm-remote']);
   ttl = 2_592_000;
+  /**
+   * The base URL each Bastion registration reported and the installation lists (R-BAS-007); `null` is a
+   * registration whose address is not listed (409), a name that is not here is no registration (404).
+   */
+  bastionBases: Record<string, string | null> = { partners: 'https://packages.example.com', unlisted: null };
 
   override async get(repository: string, query: ClientSetupQuery): Promise<ClientSetup> {
     this.calls.push({ repository, query });
@@ -352,10 +357,17 @@ export class FakeClientSetupApi extends ClientSetupApi {
     const repo = NPM_REPOSITORIES.find((r) => r.key === repository);
     if (!repo) throw notFound();
     const credentials = query.credentials ?? 'placeholder';
-    const registryUrl = `${BASE}/api/npm/${repository}/`;
+    let base = BASE;
+    if (query.bastion) {
+      const reported = this.bastionBases[query.bastion];
+      if (reported === undefined) throw notFound();
+      if (reported === null) throw new ApiError(409, { code: 'bastion_base_url_unknown' }, null);
+      base = reported;
+    }
+    const registryUrl = `${base}/api/npm/${repository}/`;
     const endpointPath = registryUrl.replace(/^https?:/, '');
     const target =
-      this.readOnly.has(repository) || this.noTarget.has(repository)
+      query.bastion || this.readOnly.has(repository) || this.noTarget.has(repository)
         ? null
         : repo.class === 'virtual'
           ? 'npm-local'
@@ -384,7 +396,10 @@ export class FakeClientSetupApi extends ClientSetupApi {
         tab: 'configure',
         fileName: '.npmrc',
         language: 'ini',
-        content: `registry=${registryUrl}\n` + auth(`${endpointPath}:_authToken=TOKEN\n`),
+        content:
+          `registry=${registryUrl}\n` +
+          auth(`${endpointPath}:_authToken=TOKEN\n`) +
+          (query.bastion && client === 'npm' ? 'replace-registry-host=always\n' : ''),
       });
       if (query.scope) {
         snippets.push({

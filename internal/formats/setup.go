@@ -94,4 +94,8 @@ type SetupData struct {
 	// snippet then makes the client send its credential without waiting for a
 	// challenge (always-auth, npmAlwaysAuth).
 	RequiresAuth bool
+	// Bastion is true when the snippets are for a trove Bastion (R-BAS-007): a read-only
+	// cache in front of the installation, which a lockfile written against another host
+	// must resolve through. A configure template may add what the client needs for that.
+	Bastion bool
 }

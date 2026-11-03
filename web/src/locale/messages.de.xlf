@@ -20199,5 +20199,809 @@
         <target>Ansicht</target>
       </segment>
     </unit>
+    <unit id="route.bastions.title">
+      <notes>
+        <note category="location">src/app/app.routes.ts:142</note>
+        <note category="location">src/app/features/bastions/bastions.routes.ts:7</note>
+      </notes>
+      <segment>
+        <source>Bastions</source>
+        <target>Bastionen</target>
+      </segment>
+    </unit>
+    <unit id="problem.bastion.base-url-unknown">
+      <notes>
+        <note category="location">src/app/core/http/problem-messages-bastion.ts:10</note>
+      </notes>
+      <segment>
+        <source>This Bastion has not reported a base URL yet, or the one it reported is not an entry of server.additional_base_urls. Add it to that setting on the main installation, and the instructions appear.</source>
+        <target>Diese Bastion hat noch keine Basis-URL gemeldet, oder die gemeldete ist kein Eintrag von server.additional_base_urls. Trage sie dort auf der Hauptinstallation ein, dann erscheinen die Anleitungen.</target>
+      </segment>
+    </unit>
+    <unit id="nav.bastions">
+      <notes>
+        <note category="location">src/app/core/navigation.ts:60</note>
+      </notes>
+      <segment>
+        <source>Bastions</source>
+        <target>Bastionen</target>
+      </segment>
+    </unit>
+    <unit id="bastion.status">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:44,46</note>
+      </notes>
+      <segment>
+        <source>Status</source>
+        <target>Status</target>
+      </segment>
+    </unit>
+    <unit id="bastion.enabled">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:47,48</note>
+      </notes>
+      <segment>
+        <source>Enabled</source>
+        <target>Aktiviert</target>
+      </segment>
+    </unit>
+    <unit id="bastion.disabled">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:49,50</note>
+      </notes>
+      <segment>
+        <source>Disabled</source>
+        <target>Deaktiviert</target>
+      </segment>
+    </unit>
+    <unit id="bastion.description">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:53,54</note>
+      </notes>
+      <segment>
+        <source>Description</source>
+        <target>Beschreibung</target>
+      </segment>
+    </unit>
+    <unit id="bastion.created">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:56,57</note>
+      </notes>
+      <segment>
+        <source>Created</source>
+        <target>Erstellt</target>
+      </segment>
+    </unit>
+    <unit id="bastion.issue">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:63,64</note>
+      </notes>
+      <segment>
+        <source>Issue token</source>
+        <target>Token ausstellen</target>
+      </segment>
+    </unit>
+    <unit id="bastion.disable">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:68,69</note>
+      </notes>
+      <segment>
+        <source>Disable</source>
+        <target>Deaktivieren</target>
+      </segment>
+    </unit>
+    <unit id="bastion.enable">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:73,74</note>
+      </notes>
+      <segment>
+        <source>Enable</source>
+        <target>Aktivieren</target>
+      </segment>
+    </unit>
+    <unit id="bastion.delete">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:78,79</note>
+      </notes>
+      <segment>
+        <source>Delete</source>
+        <target>Löschen</target>
+      </segment>
+    </unit>
+    <unit id="bastion.contacts">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:91,93</note>
+      </notes>
+      <segment>
+        <source>Last contact</source>
+        <target>Letzter Kontakt</target>
+      </segment>
+    </unit>
+    <unit id="bastion.contacts-empty">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:97,99</note>
+      </notes>
+      <segment>
+        <source>No replica has contacted the main installation with a token of this registration yet. Its replicas appear here after their first handshake.</source>
+        <target>Noch kein Replikat hat die Hauptinstallation mit einem Token dieser Registrierung kontaktiert. Die Replikate erscheinen hier nach ihrem ersten Handshake.</target>
+      </segment>
+    </unit>
+    <unit id="bastion.tokens">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:111,112</note>
+      </notes>
+      <segment>
+        <source>Tokens</source>
+        <target>Token</target>
+      </segment>
+    </unit>
+    <unit id="bastion.tokens-empty">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:117,119</note>
+      </notes>
+      <segment>
+        <source>This registration has no token. Issue one to connect a Bastion.</source>
+        <target>Diese Registrierung hat kein Token. Stelle eines aus, um eine Bastion anzubinden.</target>
+      </segment>
+    </unit>
+    <unit id="bastion.token.expired">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:130,131</note>
+      </notes>
+      <segment>
+        <source>Expired</source>
+        <target>Abgelaufen</target>
+      </segment>
+    </unit>
+    <unit id="bastion.token.soon">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:133</note>
+      </notes>
+      <segment>
+        <source>Expires in</source>
+        <target>Läuft ab in</target>
+      </segment>
+    </unit>
+    <unit id="bastion.token.unused">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:141,143</note>
+      </notes>
+      <segment>
+        <source>Not used yet</source>
+        <target>Noch nicht benutzt</target>
+      </segment>
+    </unit>
+    <unit id="bastion.token.revoke">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:147,148</note>
+      </notes>
+      <segment>
+        <source>Revoke</source>
+        <target>Widerrufen</target>
+      </segment>
+    </unit>
+    <unit id="bastion.contacts-caption">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:179</note>
+      </notes>
+      <segment>
+        <source>Last contact of the replicas of <ph id="0" equiv="name" disp="this.bastion().name"/></source>
+        <target>Letzter Kontakt der Replikate von <ph id="0" equiv="name" disp="this.bastion().name"/></target>
+      </segment>
+    </unit>
+    <unit id="bastion.tokens-caption">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:180</note>
+      </notes>
+      <segment>
+        <source>Tokens of <ph id="0" equiv="name" disp="this.bastion().name"/></source>
+        <target>Token von <ph id="0" equiv="name" disp="this.bastion().name"/></target>
+      </segment>
+    </unit>
+    <unit id="bastion.col.replica">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:183</note>
+      </notes>
+      <segment>
+        <source>Replica</source>
+        <target>Replikat</target>
+      </segment>
+    </unit>
+    <unit id="bastion.col.time">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:184</note>
+      </notes>
+      <segment>
+        <source>Time</source>
+        <target>Zeit</target>
+      </segment>
+    </unit>
+    <unit id="bastion.col.address">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:187</note>
+      </notes>
+      <segment>
+        <source>Client address</source>
+        <target>Client-Adresse</target>
+      </segment>
+    </unit>
+    <unit id="bastion.help.address">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:188</note>
+      </notes>
+      <segment>
+        <source>The address the main installation saw the replica connect from.</source>
+        <target>Die Adresse, von der die Hauptinstallation das Replikat hat zugreifen sehen.</target>
+      </segment>
+    </unit>
+    <unit id="bastion.col.release">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:190</note>
+      </notes>
+      <segment>
+        <source>Release</source>
+        <target>Version</target>
+      </segment>
+    </unit>
+    <unit id="bastion.col.interface">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:193</note>
+      </notes>
+      <segment>
+        <source>Interface version</source>
+        <target>Schnittstellenversion</target>
+      </segment>
+    </unit>
+    <unit id="bastion.help.interface">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:194</note>
+      </notes>
+      <segment>
+        <source>The version of the interface between the Bastion and this installation. Both sides must agree.</source>
+        <target>Die Version der Schnittstelle zwischen der Bastion und dieser Installation. Beide Seiten müssen übereinstimmen.</target>
+      </segment>
+    </unit>
+    <unit id="bastion.col.base">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:198</note>
+      </notes>
+      <segment>
+        <source>Reported base URL</source>
+        <target>Gemeldete Basis-URL</target>
+      </segment>
+    </unit>
+    <unit id="bastion.help.base">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:199</note>
+      </notes>
+      <segment>
+        <source>The address the Bastion says clients reach it on. Client setup uses it when it is listed in server.additional_base_urls.</source>
+        <target>Die Adresse, unter der die Bastion nach eigener Angabe für Clients erreichbar ist. Die Client-Einrichtung nutzt sie, wenn sie in server.additional_base_urls eingetragen ist.</target>
+      </segment>
+    </unit>
+    <unit id="bastion.col.token">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:203</note>
+      </notes>
+      <segment>
+        <source>Token</source>
+        <target>Token</target>
+      </segment>
+    </unit>
+    <unit id="bastion.col.token-created">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:204</note>
+      </notes>
+      <segment>
+        <source>Created</source>
+        <target>Erstellt</target>
+      </segment>
+    </unit>
+    <unit id="bastion.col.expires">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:205</note>
+      </notes>
+      <segment>
+        <source>Expires</source>
+        <target>Läuft ab</target>
+      </segment>
+    </unit>
+    <unit id="bastion.col.last-used">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:208</note>
+      </notes>
+      <segment>
+        <source>Last used</source>
+        <target>Zuletzt benutzt</target>
+      </segment>
+    </unit>
+    <unit id="bastion.help.last-used">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:209</note>
+      </notes>
+      <segment>
+        <source>The last time the token authenticated a request. When you renew, revoke the old token once the new one shows a recent time.</source>
+        <target>Der Zeitpunkt, zu dem das Token zuletzt eine Anfrage authentifiziert hat. Wenn du erneuerst, widerrufe das alte Token erst, wenn das neue eine aktuelle Zeit zeigt.</target>
+      </segment>
+    </unit>
+    <unit id="bastion.col.actions">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:211</note>
+      </notes>
+      <segment>
+        <source>Actions</source>
+        <target>Aktionen</target>
+      </segment>
+    </unit>
+    <unit id="bastion.secret-note">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:234</note>
+      </notes>
+      <segment>
+        <source>For <ph id="0" equiv="name" disp="this.bastion().name"/>: <ph id="1" equiv="description" disp="s.description"/></source>
+        <target>Für <ph id="0" equiv="name" disp="this.bastion().name"/>: <ph id="1" equiv="description" disp="s.description"/></target>
+      </segment>
+    </unit>
+    <unit id="bastion.disable-title">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:250</note>
+      </notes>
+      <segment>
+        <source>Disable this Bastion?</source>
+        <target>Diese Bastion deaktivieren?</target>
+      </segment>
+    </unit>
+    <unit id="bastion.disable-text">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:252</note>
+      </notes>
+      <segment>
+        <source>The tokens of <ph id="0" equiv="name" disp="this.bastion().name"/> are refused until you enable it again. Its replicas treat the main installation as unreachable and serve from their cache within the grace period.</source>
+        <target>Die Token von <ph id="0" equiv="name" disp="this.bastion().name"/> werden abgewiesen, bis du sie wieder aktivierst. Ihre Replikate behandeln die Hauptinstallation als nicht erreichbar und liefern innerhalb der Karenzzeit aus ihrem Cache.</target>
+      </segment>
+    </unit>
+    <unit id="bastion.disable-confirm">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:254</note>
+      </notes>
+      <segment>
+        <source>Disable</source>
+        <target>Deaktivieren</target>
+      </segment>
+    </unit>
+    <unit id="bastion.disabled-done">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:257</note>
+      </notes>
+      <segment>
+        <source>Bastion disabled.</source>
+        <target>Bastion deaktiviert.</target>
+      </segment>
+    </unit>
+    <unit id="bastion.enabled-done">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:261</note>
+      </notes>
+      <segment>
+        <source>Bastion enabled.</source>
+        <target>Bastion aktiviert.</target>
+      </segment>
+    </unit>
+    <unit id="bastion.delete-title">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:274</note>
+      </notes>
+      <segment>
+        <source>Delete this Bastion?</source>
+        <target>Diese Bastion löschen?</target>
+      </segment>
+    </unit>
+    <unit id="bastion.delete-text">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:275</note>
+      </notes>
+      <segment>
+        <source><ph id="0" equiv="name" disp="name"/> and its tokens are removed; the tokens stop working at once. This cannot be undone.</source>
+        <target><ph id="0" equiv="name" disp="name"/> und ihre Token werden entfernt; die Token funktionieren sofort nicht mehr. Das lässt sich nicht rückgängig machen.</target>
+      </segment>
+    </unit>
+    <unit id="bastion.delete-confirm">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:276</note>
+      </notes>
+      <segment>
+        <source>Delete</source>
+        <target>Löschen</target>
+      </segment>
+    </unit>
+    <unit id="bastion.deleted">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:280</note>
+      </notes>
+      <segment>
+        <source>Bastion deleted.</source>
+        <target>Bastion gelöscht.</target>
+      </segment>
+    </unit>
+    <unit id="bastion.revoke-title">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:285</note>
+      </notes>
+      <segment>
+        <source>Revoke this token?</source>
+        <target>Dieses Token widerrufen?</target>
+      </segment>
+    </unit>
+    <unit id="bastion.revoke-text">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:287</note>
+      </notes>
+      <segment>
+        <source>“<ph id="0" equiv="description" disp="t.description"/>” stops working at once on every replica. A replica that still uses it treats the main installation as unreachable. When you renew, revoke the old token only after the new one shows a recent time in Last used. This cannot be undone.</source>
+        <target>„<ph id="0" equiv="description" disp="t.description"/>“ funktioniert sofort nicht mehr, auf jedem Replikat. Ein Replikat, das es noch benutzt, behandelt die Hauptinstallation als nicht erreichbar. Wenn du erneuerst, widerrufe das alte Token erst, nachdem das neue unter Zuletzt benutzt eine aktuelle Zeit zeigt. Das lässt sich nicht rückgängig machen.</target>
+      </segment>
+    </unit>
+    <unit id="bastion.revoke-confirm">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:289</note>
+      </notes>
+      <segment>
+        <source>Revoke</source>
+        <target>Widerrufen</target>
+      </segment>
+    </unit>
+    <unit id="bastion.revoked">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-card.ts:292</note>
+      </notes>
+      <segment>
+        <source>Token revoked.</source>
+        <target>Token widerrufen.</target>
+      </segment>
+    </unit>
+    <unit id="bastion-create.title">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-dialogs.ts:22,23</note>
+      </notes>
+      <segment>
+        <source>New Bastion</source>
+        <target>Neue Bastion</target>
+      </segment>
+    </unit>
+    <unit id="bastion-create.name">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-dialogs.ts:31,32</note>
+      </notes>
+      <segment>
+        <source>Name</source>
+        <target>Name</target>
+      </segment>
+    </unit>
+    <unit id="bastion-create.description">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-dialogs.ts:39,41</note>
+      </notes>
+      <segment>
+        <source>Description</source>
+        <target>Beschreibung</target>
+      </segment>
+    </unit>
+    <unit id="bastion-create.cancel">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-dialogs.ts:46,47</note>
+      </notes>
+      <segment>
+        <source>Cancel</source>
+        <target>Abbrechen</target>
+      </segment>
+    </unit>
+    <unit id="bastion-create.submit">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-dialogs.ts:47,48</note>
+      </notes>
+      <segment>
+        <source>Create Bastion</source>
+        <target>Bastion anlegen</target>
+      </segment>
+    </unit>
+    <unit id="bastion-create.name-hint">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-dialogs.ts:59</note>
+      </notes>
+      <segment>
+        <source>Lower-case letters, digits and -, starting with a letter, one to 20 characters. It cannot be changed later.</source>
+        <target>Kleinbuchstaben, Ziffern und -, beginnend mit einem Buchstaben, ein bis 20 Zeichen. Der Name lässt sich später nicht ändern.</target>
+      </segment>
+    </unit>
+    <unit id="bastion-create.name-invalid">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-dialogs.ts:68</note>
+      </notes>
+      <segment>
+        <source>The name must start with a lower-case letter and hold lower-case letters, digits and - only, at most 20 characters.</source>
+        <target>Der Name muss mit einem Kleinbuchstaben beginnen und darf nur Kleinbuchstaben, Ziffern und - enthalten, höchstens 20 Zeichen.</target>
+      </segment>
+    </unit>
+    <unit id="bastion-create.created">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-dialogs.ts:84</note>
+      </notes>
+      <segment>
+        <source>Bastion created. Issue a token for it next.</source>
+        <target>Bastion angelegt. Stelle als Nächstes ein Token für sie aus.</target>
+      </segment>
+    </unit>
+    <unit id="bastion-token.title">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-dialogs.ts:110,111</note>
+      </notes>
+      <segment>
+        <source>Issue a token for the Bastion</source>
+        <target>Token für die Bastion ausstellen</target>
+      </segment>
+    </unit>
+    <unit id="bastion-token.text">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-dialogs.ts:115,117</note>
+      </notes>
+      <segment>
+        <source> The token goes into the Secret of the Bastion&apos;s chart. It is shown once, when you create it. </source>
+        <target>Das Token kommt in das Secret des Charts der Bastion. Es wird einmal angezeigt, wenn du es erstellst.</target>
+      </segment>
+    </unit>
+    <unit id="bastion-token.description">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-dialogs.ts:122,124</note>
+      </notes>
+      <segment>
+        <source>Description</source>
+        <target>Beschreibung</target>
+      </segment>
+    </unit>
+    <unit id="bastion-token.days">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-dialogs.ts:130,132</note>
+      </notes>
+      <segment>
+        <source>Lifetime in days</source>
+        <target>Lebensdauer in Tagen</target>
+      </segment>
+    </unit>
+    <unit id="bastion-token.cancel">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-dialogs.ts:139,140</note>
+      </notes>
+      <segment>
+        <source>Cancel</source>
+        <target>Abbrechen</target>
+      </segment>
+    </unit>
+    <unit id="bastion-token.submit">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-dialogs.ts:140,141</note>
+      </notes>
+      <segment>
+        <source>Issue token</source>
+        <target>Token ausstellen</target>
+      </segment>
+    </unit>
+    <unit id="bastion-token.description-hint">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-dialogs.ts:152</note>
+      </notes>
+      <segment>
+        <source>For the renewal: say which year or rollout the token is for.</source>
+        <target>Für die Erneuerung: Nenne das Jahr oder den Rollout, für den das Token gilt.</target>
+      </segment>
+    </unit>
+    <unit id="bastion-token.days-hint">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-dialogs.ts:153</note>
+      </notes>
+      <segment>
+        <source>Leave empty for the installation&apos;s default. A token always expires.</source>
+        <target>Leer lassen für den Standard der Installation. Ein Token läuft immer ab.</target>
+      </segment>
+    </unit>
+    <unit id="bastion-token.days-invalid">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-dialogs.ts:174</note>
+      </notes>
+      <segment>
+        <source>Enter a number of days greater than zero.</source>
+        <target>Gib eine Anzahl Tage größer als null ein.</target>
+      </segment>
+    </unit>
+    <unit id="bastions.heading">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-list.ts:26,27</note>
+      </notes>
+      <segment>
+        <source>Bastions</source>
+        <target>Bastionen</target>
+      </segment>
+    </unit>
+    <unit id="bastions.add">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-list.ts:27,29</note>
+      </notes>
+      <segment>
+        <source>New Bastion</source>
+        <target>Neue Bastion</target>
+      </segment>
+    </unit>
+    <unit id="bastions.hint">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-list.ts:31,34</note>
+      </notes>
+      <segment>
+        <source> A Bastion is a read-only cache of this installation for clients outside your network. Register it here, issue the token its chart reads, and check that every replica has made contact. </source>
+        <target>Eine Bastion ist ein schreibgeschützter Cache dieser Installation für Clients außerhalb deines Netzwerks. Registriere sie hier, stelle das Token aus, das ihr Chart liest, und prüfe, dass jedes Replikat Kontakt hatte.</target>
+      </segment>
+    </unit>
+    <unit id="bastions.loading">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-list.ts:39,41</note>
+      </notes>
+      <segment>
+        <source>Loading Bastions.</source>
+        <target>Bastionen werden geladen.</target>
+      </segment>
+    </unit>
+    <unit id="bastions.empty">
+      <notes>
+        <note category="location">src/app/features/bastions/bastion-list.ts:42,44</note>
+      </notes>
+      <segment>
+        <source>No Bastion is registered.</source>
+        <target>Es ist keine Bastion registriert.</target>
+      </segment>
+    </unit>
+    <unit id="guides.step.target">
+      <notes>
+        <note category="location">src/app/features/guides/guide-page.html:62,63</note>
+      </notes>
+      <segment>
+        <source>Install from</source>
+        <target>Installieren von</target>
+      </segment>
+    </unit>
+    <unit id="guides.target.main">
+      <notes>
+        <note category="location">src/app/features/guides/guide-page.html:66,68</note>
+      </notes>
+      <segment>
+        <source>This installation</source>
+        <target>Diese Installation</target>
+      </segment>
+    </unit>
+    <unit id="guides.target.bastion">
+      <notes>
+        <note category="location">src/app/features/guides/guide-page.html:71</note>
+        <note category="location">src/app/features/guides/guide-page.html:78</note>
+      </notes>
+      <segment>
+        <source>Bastion</source>
+        <target>Bastion</target>
+      </segment>
+    </unit>
+    <unit id="guides.bastion.title">
+      <notes>
+        <note category="location">src/app/features/guides/guide-page.html:108</note>
+      </notes>
+      <segment>
+        <source>Install through the Bastion</source>
+        <target>Über die Bastion installieren</target>
+      </segment>
+    </unit>
+    <unit id="guides.bastion.text">
+      <notes>
+        <note category="location">src/app/features/guides/guide-page.html:111,114</note>
+      </notes>
+      <segment>
+        <source> A Bastion is a read-only cache of this installation for clients outside your network. You configure your client and install through it; publishing, tags and unpublishing are done on this installation. The full guide describes this installation: choose it above to read it. </source>
+        <target>Eine Bastion ist ein schreibgeschützter Cache dieser Installation für Clients außerhalb deines Netzwerks. Du konfigurierst deinen Client und installierst darüber; Veröffentlichen, Tags und Zurückziehen erledigst du auf dieser Installation. Die vollständige Anleitung beschreibt diese Installation: Wähle sie oben aus, um sie zu lesen.</target>
+      </segment>
+    </unit>
+    <unit id="guides.bastion.choose">
+      <notes>
+        <note category="location">src/app/features/guides/guide-page.html:115,116</note>
+      </notes>
+      <segment>
+        <source>Choose a repository to see the addresses and the snippets for the Bastion.</source>
+        <target>Wähle ein Repository, um die Adressen und die Snippets für die Bastion zu sehen.</target>
+      </segment>
+    </unit>
+    <unit id="guides.bastion.registry">
+      <notes>
+        <note category="location">src/app/features/guides/guide-page.html:120</note>
+      </notes>
+      <segment>
+        <source>Address of the repository on the Bastion:</source>
+        <target>Adresse des Repositorys auf der Bastion:</target>
+      </segment>
+    </unit>
+    <unit id="setup.step.target">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:100,101</note>
+      </notes>
+      <segment>
+        <source>Install from</source>
+        <target>Installieren von</target>
+      </segment>
+    </unit>
+    <unit id="setup.target.main">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:105,106</note>
+      </notes>
+      <segment>
+        <source>This installation</source>
+        <target>Diese Installation</target>
+      </segment>
+    </unit>
+    <unit id="setup.target.main-hint">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:106,108</note>
+      </notes>
+      <segment>
+        <source>The address you are using now.</source>
+        <target>Die Adresse, die du gerade nutzt.</target>
+      </segment>
+    </unit>
+    <unit id="setup.target.bastion">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:113</note>
+        <note category="location">src/app/features/setup/client-setup.html:125</note>
+      </notes>
+      <segment>
+        <source>Bastion</source>
+        <target>Bastion</target>
+      </segment>
+    </unit>
+    <unit id="setup.target.bastion-hint">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:115,116</note>
+      </notes>
+      <segment>
+        <source> A read-only cache for clients outside the network. You can install through it; you cannot publish. </source>
+        <target>Ein schreibgeschützter Cache für Clients außerhalb des Netzwerks. Du kannst darüber installieren, aber nicht veröffentlichen.</target>
+      </segment>
+    </unit>
+    <unit id="setup.bastion.banner">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:284</note>
+      </notes>
+      <segment>
+        <source>These snippets point at the Bastion</source>
+        <target>Diese Snippets zeigen auf die Bastion</target>
+      </segment>
+    </unit>
+    <unit id="setup.bastion.banner-text">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:284,286</note>
+      </notes>
+      <segment>
+        <source>A Bastion is read only, so there are no publish snippets. Sign-in works with the same token as for this installation.</source>
+        <target>Eine Bastion ist schreibgeschützt, deshalb gibt es keine Snippets zum Veröffentlichen. Die Anmeldung funktioniert mit demselben Token wie bei dieser Installation.</target>
+      </segment>
+    </unit>
+    <unit id="setup.publish.bastion">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.html:316,318</note>
+      </notes>
+      <segment>
+        <source> A Bastion is read only: you cannot publish through it. Choose this installation as the place to install from, and the publish snippets appear. </source>
+        <target>Eine Bastion ist schreibgeschützt: Du kannst nicht darüber veröffentlichen. Wähle diese Installation als Quelle zum Installieren, dann erscheinen die Snippets zum Veröffentlichen.</target>
+      </segment>
+    </unit>
+    <unit id="setup.bastion.replace-host">
+      <notes>
+        <note category="location">src/app/features/setup/client-setup.ts:233</note>
+      </notes>
+      <segment>
+        <source>replace-registry-host=always makes npm fetch every package from this address, also when a lockfile written against another host names that host.</source>
+        <target>replace-registry-host=always lässt npm jedes Paket von dieser Adresse laden, auch wenn eine Lockfile, die gegen einen anderen Host geschrieben wurde, diesen Host nennt.</target>
+      </segment>
+    </unit>
 </file>
 </xliff>

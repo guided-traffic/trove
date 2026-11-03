@@ -66,3 +66,4 @@ before using a new term in a German text.
 | claim, claim tester, dry run | Claim, Claim-Tester, Testlauf |
 | ID token, exchange (of an ID token for a token) | ID-Token, Austausch |
 | inline grant, signing key, issuance (of a token) | Inline-Berechtigung, Signaturschlüssel, Ausstellung |
+| Bastion (the read-only cache instance), registration (of a Bastion), handshake, grace period | Bastion (plural Bastionen), Registrierung, Handshake, Karenzzeit |

@@ -376,6 +376,7 @@ formats.RouteKind: method Valid() bool
 formats.RouteKind: method WrapsContent() bool
 formats.RouteKind: type uint8
 formats.ServeMode: type uint8
+formats.SetupData: field Bastion bool
 formats.SetupData: field Endpoint string
 formats.SetupData: field RegistryURL string
 formats.SetupData: field Repository string

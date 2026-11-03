@@ -43,6 +43,8 @@ export interface ClientSetupQuery {
   readonly package?: string;
   readonly version?: string;
   readonly scope?: string;
+  /** The name of a Bastion registration: the snippets are for that Bastion (R-BAS-007). */
+  readonly bastion?: string;
 }
 
 export function packageUrl(id: string): string {

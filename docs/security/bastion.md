@@ -155,12 +155,6 @@ The gaps of the Bastion's mechanisms are recorded on the spec page, where the me
   timing of a hit tells;
 - [H-391](../spec/bastion.md#h-391--download-events-lost-to-a-full-buffer-a-crash-or-an-ephemeral-spool-are-missing-from-the-audit)
   — download events lost before they reach the audit;
-- [H-454](../spec/bastion.md#h-454--the-gauge-of-blocked-addresses-counts-the-blocks-a-replica-knows) — the gauge of blocked addresses
-  is per replica;
-- [H-455](../spec/bastion.md#h-455--every-request-costs-the-bastions-valkey-round-trips-and-an-unblocked-flood-from-many-addresses-costs-it-per-request)
-  — the load a flood from many addresses puts on the Bastion's Valkey;
-- [H-456](../spec/bastion.md#h-456--a-block-or-a-timeout-set-without-valkey-or-while-it-is-unavailable-is-forgotten-when-the-replica-restarts)
-  — blocks set without Valkey are forgotten at a restart;
 - [H-428](../spec/bastion.md#h-428--the-ops-listener-of-a-bastion-serves-its-metrics-without-authentication) — the ops listener's
   metrics carry no authentication;
 - [H-429](../spec/bastion.md#h-429--until-the-engine-and-the-guard-are-built-a-bastion-refuses-every-read-and-limits-nothing) — a
@@ -176,7 +170,17 @@ The gaps of the Bastion's mechanisms are recorded on the spec page, where the me
 - [H-452](../spec/bastion.md#h-452--the-entries-of-evicted-bytes-stay-until-they-are-read-and-are-not-counted-in-the-cache-size) —
   entries of evicted bytes stay until read and are not counted in the size;
 - [H-453](../spec/bastion.md#h-453--objects-and-markers-are-not-signed-a-replaced-object-is-found-only-when-it-is-read-and-markers-steer-eviction)
-  — objects and markers are not signed.
+  — objects and markers are not signed;
+- [H-454](../spec/bastion.md#h-454--the-gauge-of-blocked-addresses-counts-the-blocks-a-replica-knows) — the gauge of blocked addresses
+  is per replica;
+- [H-455](../spec/bastion.md#h-455--every-request-costs-the-bastions-valkey-round-trips-and-an-unblocked-flood-from-many-addresses-costs-it-per-request)
+  — the load a flood from many addresses puts on the Bastion's Valkey;
+- [H-456](../spec/bastion.md#h-456--a-block-or-a-timeout-set-without-valkey-or-while-it-is-unavailable-is-forgotten-when-the-replica-restarts)
+  — blocks set without Valkey are forgotten at a restart;
+- [H-457](../spec/bastion.md#h-457--a-reader-without-endpointsread-is-not-offered-the-bastion-as-a-target) — a reader without
+  `endpoints:read` is not offered the Bastion as a target;
+- [H-458](../spec/bastion.md#h-458--the-address-a-registration-reports-chooses-among-the-listed-addresses-and-the-name-is-testable) —
+  the reported address chooses among the listed addresses, and the name is testable.
 
 This page does not describe the main installation's own mechanisms that the Bastion relies on (the decision point, token
 validation, the revocation journal); their pages and gaps are linked above. It records no gap of its own.

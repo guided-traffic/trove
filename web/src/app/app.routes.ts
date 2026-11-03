@@ -136,6 +136,13 @@ export const routes: Routes = [
             loadChildren: () => import('./features/ci/ci.routes').then((m) => m.CI_ROUTES),
           },
           // <<< M4 ci
+          // >>> M5b bastion
+          {
+            path: 'bastions',
+            data: wrapper($localize`:@@route.bastions.title:Bastions`),
+            loadChildren: () => import('./features/bastions/bastions.routes').then((m) => m.BASTIONS_ROUTES),
+          },
+          // <<< M5b bastion
           {
             path: 'endpoints',
             data: wrapper($localize`:@@route.endpoints.title:Endpoints`),
