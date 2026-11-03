@@ -1,3 +1,4 @@
 user default off
 user ops on >ops-valkey-it ~* &* +@all
 user trove on >trove-valkey-it resetkeys ~trove:* resetchannels &trove:* -@all +get +set +delifeq +incr +expire +multi +exec +publish +subscribe +unsubscribe +sunsubscribe +punsubscribe +discard +ping +hello +role +client|setname +client|setinfo
+user bastion on >bastion-valkey-it resetkeys ~trove-bastion:* resetchannels &trove-bastion:* -@all +get +set +delifeq +incr +expire +multi +exec +publish +subscribe +unsubscribe +sunsubscribe +punsubscribe +discard +ping +hello +role +client|setname +client|setinfo

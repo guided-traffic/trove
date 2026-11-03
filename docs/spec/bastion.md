@@ -1297,7 +1297,15 @@ it, the replicas share:
   answer is asked again per replica, blocks and counters work per replica at the divided values, and collapsing is per replica.
 - Connection, Sentinel discovery, TLS and degradation follow R-ARCH-031 with the Bastion's own `valkey` section;
   `valkey.mode: none`, the default, means no Valkey. Valkey being unavailable never makes a replica unready;
-  `trove_valkey_available` is 0 and `TroveBastionValkeyUnavailable` fires (R-BAS-041).
+  `trove_valkey_available` is 0 and `TroveBastionValkeyUnavailable` fires (R-BAS-041). The shared metrics are
+  `trove_valkey_available` and `trove_ratelimit_fallback{limiter}` (1 for a limiter that answers from its share).
+- **The keys as formed** ([Q-BAS-91](#q-bas-91--the-bastions-keys-are-formed-by-the-cluster-package-without-a-keyspace-and-reuse-the-fetch-lock)):
+  `trove-bastion:<valkey.key_prefix>:<mechanism>:v1:<parts>`: `block:v1:<address>`, `block:level:v1:<address>`,
+  `timeout:v1:<address>`, `ans:v1:<kind>:<sha256>`, `lock:fetch:v1:<sha256>`, `sweep:v1`, and the counters `rl:v1:…` of R-ARCH-034.
+  The table above names the families; the version segment, the encoding of an address and the reuse of the fetch lock are decided
+  in Q-BAS-91.
+- **Signed answers** ([Q-BAS-93](#q-bas-93--the-store-signs-and-verifies-the-answer-records)): the store signs a record on `Put` and verifies it on `Get`; a
+  record that fails is not returned, is deleted (only if it still holds the failed value) and counts as `bad_signature`.
 
 Acceptance criteria:
 
@@ -1321,6 +1329,9 @@ trove's knowledge of credentials and misses:
   `bastion.limits.misses.authenticated_per_minute` and `anonymous_per_minute`. A refused miss answers `429 rate_limited`; hits
   of the same address keep being served.
 - Addresses in `bastion.blocking.exempt_cidrs` are not limited.
+- The request limits are the token bucket (without Valkey) or the sliding window (with Valkey) of R-ARCH-034; the miss limits
+  are counts of the sliding minute in both forms, refused misses included, so a client that keeps asking stays refused
+  ([Q-BAS-92](#q-bas-92--the-counters-are-sliding-windows-and-the-timeout-starts-at-the-last-allowed-failure)).
 
 ```yaml
 bastion:
@@ -1351,6 +1362,8 @@ Priority: **MVP** · Covers: trove-only
   anonymous requests stay anonymous requests.
 - The counter is a count-only limiter of R-ARCH-034 (`bastion.failed_auth`). The Bastion's limit is stricter than the main
   installation's R-AUTH-038, which still applies to the real client behind it (R-BAS-017).
+- The failure that brings the count of the window to `max_failures` starts the timeout, so the next credential without a usable
+  answer is the first one refused (Q-BAS-92); the acceptance below is that reading.
 
 ```yaml
 bastion:
@@ -1376,7 +1389,8 @@ Priority: **MVP** · Covers: trove-only
 - With Valkey the block list is shared: a block set by one replica holds on every replica at its next request. Without Valkey
   each replica blocks by its own count (H-389).
 - `trove_bastion_blocks_total{reason}`, `trove_bastion_blocked_addresses`, and the log line `bastion address blocked` with the
-  address, the reason, the duration and the count.
+  address, the reason, the duration and the count: the number of blocks of the address within 24 h, this one included
+  (Q-BAS-92). The reason of the metric is `refusals`; the log line names the kind of refusal that crossed the threshold.
 
 ```yaml
 bastion:
@@ -3360,6 +3374,98 @@ H-451). The development agent would revisit it if a third consumer needed the ra
 
 **Applied in the spec:** nothing beyond what R-BAS-021, R-BAS-030 and R-BAS-032 state; the interface is on [docs/developer/bastion.md](../developer/bastion.md).
 
+### Q-BAS-91 · The Bastion's keys are formed by the cluster package without a keyspace, and reuse the fetch lock
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Typed mechanisms in `internal/cluster`, no keyspace segment, the families `block`, `block:level`, `timeout`, `ans`, `sweep`, the fetch lock reused (chosen) | Every key is `trove-bastion:<key_prefix>:<mechanism>:v1:<parts>`; `internal/bastion/shared` calls typed methods and sees no key | Q-ARCH-16 holds (no code outside `cluster` reads or writes a key); the key registry, the TTL rule and the part pattern apply; the fetch lock keeps its extension, its release order and its metric | The names differ from the spec's table by the version segment (`block:v1:…`) and the fetch lock is `lock:fetch:v1:…`, not `flight:…` |
+| (b) A second Valkey client in `shared` with its own key forming | `shared` writes `trove-bastion:<prefix>:block:<address>` literally | The names as in the table | A second client and a second set of commands; Q-ARCH-16 and the ACL rule are bypassed; no registry |
+| (c) The main installation's keyspace ID | A Bastion reads a keyspace ID like the others | No new option | The Bastion has no PostgreSQL and no `system_state.keyspace_id` |
+
+**Choice:** (a).
+
+**Rationale:** the keys are `<key_prefix><mechanism>:v1:<part>` and the client of the role is made with `WithoutKeyspace`, so the whole
+separation between installations is the `trove-bastion:<valkey.key_prefix>:` prefix of R-BAS-034. A part may hold identifiers and
+hashes only; an address is written with `:` as `_` and `.` and `/` as `-` (`203.0.113.7` is `203-0-113-7`, the /64 `2001:db8:1:2::/64` is
+`2001_db8_1_2__-64`), which is injective for the keys the guard forms and keeps the key readable at the console. The fetch lock is the
+`FlightLock` of R-ARCH-033 over the hex SHA-256 of the cache key (`FlightKeyFromHash`). The ACL rule of the Bastion's user is the rule of the
+chart `trove` with the key pattern `~trove-bastion:*` and the channel pattern `&trove-bastion:*`, and `test/integration/conf/users.acl` carries
+it. A key whose block lasts longer than 24 h is allowed up to the 720 h that `bastion.blocking.max_duration` admits. The development agent
+would revisit this if the Bastion ever shares a Valkey database with another installation under a prefix that cannot be told apart.
+
+**Applied in the spec:** R-BAS-034 (the keys as formed); [valkey.md](../developer/valkey.md#the-bastions-keys).
+
+### Q-BAS-92 · The counters are sliding windows, and the timeout starts at the last allowed failure
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) One counting form: a sliding window per key, a refused event counts, a local form with the same estimate scaled by the replicas (chosen) | Misses, failures and refusals are `previous x (1 - elapsed) + current` in Valkey and in memory; a caller compares the count with the configured value; the failure that reaches `max_failures` starts the timeout | The acceptance numbers hold in both forms (at most 30 misses in any minute, the 21st token refused); the memory is two integers per key; with Valkey the form is the one of R-ARCH-034 | A client that keeps sending at ten times its rate is refused until it stops: it gets its burst and nothing more |
+| (b) A token bucket for the misses | Burst equal to the minute's budget, refilled per second | Familiar | Admits twice the budget in the first minute: 30 plus 0.5 per second |
+| (c) Timestamps in memory | Exact windows | Exact | Memory grows with the rate of a flood |
+
+**Choice:** (a).
+
+**Rationale:** R-BAS-035 states the miss limits per minute and the acceptance criterion bounds them at 30 per minute; a token bucket
+that refills at 0.5 per second admits 60 in the first minute. The local counters scale their count by `bastion.replicas`
+(`shared.Limiter.Add` returns the count in the units of the configured value), so the guard has one comparison for every form. The request
+limits stay a token bucket without Valkey (burst plus rate times the time is the bound the acceptance criterion names: 40 plus 10 per
+second is 140 in 10 s) and the sliding window with Valkey. R-BAS-036's acceptance criterion refuses the 21st token with `max_failures`
+at 20: the failure that brings the count to `max_failures` starts the timeout. A window is held to 1 s to 12 h, the range of the limiters of
+R-ARCH-034, so `bastion.failed_auth.window` above 12 h counts 12 h. The log line's `count` is the number of blocks of the address within 24 h
+(the level that sets the duration); the refusals that crossed the threshold are logged as `refusals`. The retry delay of a refused miss is a
+quarter of the minute. The development agent would revisit this if clients with a legitimate cold start (a CI job with several hundred new
+dependencies) trip the miss limit repeatedly: the first answer is the authenticated class, whose default is 300.
+
+**Applied in the spec:** R-BAS-035, R-BAS-036, R-BAS-037.
+
+### Q-BAS-93 · The store signs and verifies the answer records
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The Valkey form of `shared.AnswerStore` signs on `Put` and verifies on `Get` (chosen) | The engine hands over the record; a record that fails is not returned, is deleted and is counted | One place that trusts Valkey, and it trusts only a signature; the engine cannot forget to verify | The record is signed by the store under `kind:key`, so the engine does not choose the domain |
+| (b) The engine signs and verifies | The store is opaque | The engine knows the domain | Every caller must verify; a forgotten check is an unsigned answer in use |
+
+**Choice:** (a).
+
+**Rationale:** R-BAS-034 says that a record failing its signature is ignored and deleted and that nothing Valkey returns is trusted
+beyond the signature. The signature covers the domain `answer`, the kind, the key hash and the payload (`cache.Signer`), so a record moved to
+another key or kind fails, as does one signed with another key or without a signature. The delete is `DELIFEQ` with the failed value: a
+record replaced meanwhile by a good one stays. The signed record is 65 bytes larger than the payload and the 1 KiB limit of R-ARCH-030 applies;
+a record that does not fit is not stored (the replica keeps it in its memory). `trove_bastion_answers_total{result="bad_signature"}`
+counts the failures for the kinds of that metric. The content is still judged by the validity rules of R-BAS-020. The development agent would
+revisit this if the answers of a large `shape` do not fit 1 KiB in practice.
+
+**Applied in the spec:** R-BAS-034.
+
+### Q-BAS-94 · The guard decides, the engine renders and counts; a failure of the shared state admits
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Verdicts with a reason; the engine counts `trove_bastion_refused_total` and renders the problem; the guard counts the blocks; an error of the shared state admits (chosen) | `Verdict` gains `Quiet`; the state gains `Timeouts`; `guard.Stub` is gone | One place counts a refusal; the guard never refuses on its own fault; losing Valkey costs performance, never correctness | A defect in the shared state shows as a missing limit, not as an outage |
+| (b) The guard counts every refusal and renders | The guard owns the metric and the answer | Fewer engine lines | Two packages render 429; the engine must still count its own refusals |
+| (c) An error of the shared state refuses | Fail closed | Strict | An unavailable Valkey would cut every client off |
+
+**Choice:** (a).
+
+**Rationale:** the engine already counts its own refusals by reason and renders the problem details of R-BAS-029, so the guard returns
+what it decided. Two additions to the contract: `Verdict.Quiet` (a blocked address is not logged request by request, R-BAS-037; the
+engine keeps such a request out of the request log), and `shared.State.Timeouts`, the failed-authentication timeouts, a list of the kind of
+the block list in a family of its own. `trove_bastion_blocked_addresses` is the number of blocks the replica set or served (Valkey has
+no command for the size of a family that the ACL user may run), refreshed every 5 s and after a block (H-454). The placeholder `guard.Stub` and
+`guard.IsStub` are removed and `engine.Deps.Stubbed` no longer names a guard. The development agent would revisit the fail-open rule if a
+defect of the state were found to hide a missing limit for long: the guard would then count the errors in a metric.
+
+**Applied in the spec:** R-BAS-037, H-429; [bastion.md](../developer/bastion.md#shared-state-and-the-guard).
+
+
 ## What this does not cover
 
 ### H-382 · A volumetric attack on bandwidth is not absorbed by the Bastion
@@ -3480,13 +3586,13 @@ it real: a pod in the allowed namespace that is not the monitoring stack, or a c
 
 ### H-429 · Until the engine and the guard are built, a Bastion refuses every read and limits nothing
 
-Stage: the contract work of phase 5b (`internal/bastion/engine`, `internal/bastion/guard`). Subject: a build of the role that has the
-skeleton and not yet the work packages 4 and 6.
+Stage: the contract work of phase 5b (`internal/bastion/engine`, `internal/bastion/cache`). Subject: a build of the role that has the
+skeleton and not yet the work packages 4 and 5.
 
-Dormant once phase 5b is complete. The skeleton serves `404 bastion_not_served` to every client request, which is safe; its guard is a
-placeholder that admits every request and every credential attempt, which is safe only because no request reaches a read. The server
-logs the placeholders at start. What makes it real: a release cut between the work packages in which the engine is built before the
-guard; the engine's constructor must refuse a placeholder guard and a placeholder cache once it serves reads.
+Dormant once phase 5b is complete. The skeleton serves `404 bastion_not_served` to every client request, which is safe. The guard is
+built (it is no placeholder any more, Q-BAS-94); the cache backend is a placeholder until package 5, which is safe only because no
+request reaches a read. The server logs the placeholders at start. What makes it real: a release cut between the work packages in
+which the engine is built before the cache backend; the engine's constructor must refuse a placeholder cache once it serves reads.
 
 ### H-432 · The edge limit counts per TCP peer address and has no burst
 
@@ -3552,3 +3658,34 @@ are served, and the access markers and modification times that order a sweep car
 bucket (or of a replica's volume) who replaces an object leaves it until the next read, which aborts and deletes it; one who
 refreshes the markers of worthless objects makes a sweep evict the useful ones instead. Neither lets the Bastion serve other bytes;
 both cost a refill. What makes it real: the compromise of the Bastion's bucket credential (H-387's setting, without the key).
+
+### H-454 · The gauge of blocked addresses counts the blocks a replica knows
+
+Stage: R-BAS-037, `trove_bastion_blocked_addresses`. Subject: the number an operator reads.
+
+Live on every Bastion with the guard. The gauge is the number of blocks that the replica set or served; with Valkey a block set by
+another replica enters the count of this one when a request from the address reaches it. A replica that has not seen the address does
+not count it, and the sum over the replicas counts a block once per replica that knows it. The block itself is not affected. What
+makes it real: reading the sum or the maximum of the gauge as the number of blocked addresses; Valkey has no command for the size of
+the family that the Bastion's ACL user may run.
+
+### H-455 · Every request costs the Bastion's Valkey round trips, and an unblocked flood from many addresses costs it per request
+
+Stage: R-BAS-034 to R-BAS-037. Subject: the load a request flood puts on the Bastion's Valkey.
+
+Live on every Bastion with Valkey. A request of an address that is not blocked asks Valkey for the block (one `GET`) and for the limiter
+(one `MULTI`/`EXEC`), a miss one more, a refusal two more; a blocked address costs none, the block is held in the replica's memory. A flood
+from many addresses, each below its limits, costs Valkey two round trips per request. The breaker of R-ARCH-031 opens after repeated
+failures and the guard runs from memory until it closes, so a Valkey that cannot keep up costs the shared counters, not the service; the
+coarse limit at the ingress (R-BAS-038) bounds the request rate before the pods. What makes it real: a flood of the size of the edge limit
+from thousands of addresses against a Valkey sized for the main installation's load; the first answer is the ingress limit and a Valkey of
+the Bastion's own.
+
+### H-456 · A block or a timeout set without Valkey, or while it is unavailable, is forgotten when the replica restarts
+
+Stage: R-BAS-034 and R-BAS-037. Subject: how long a block lasts.
+
+Live on every Bastion without Valkey, and for blocks set while its Valkey is unavailable. The block list, the level that doubles the
+duration and the counters of such a replica are in its memory; a restart (a rollout, a crash, an eviction) empties them, so an address
+blocked at level 4 for 2 hours returns at once and its next block lasts 15 minutes. A block set while Valkey is unavailable is not written
+to Valkey when it returns. What makes it real: an attacker who outlasts one replica's lifetime; Valkey closes it.

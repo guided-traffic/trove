@@ -238,6 +238,10 @@ The canonical paths under which a NuGet remote repository stores what it fetched
 | Rate limits | `<key_prefix><keyspace>:rl:v1:<…>`, family `rl` with a 24 h expiry (`internal/cluster/valkey_keys.go`, `valkey_ratelimit.go`) | yes |
 | Token-seen markers | `<key_prefix><keyspace>:tokseen:v1:<…>`, family `tokseen`, expiry bounded by `MaxTokenSeenWindow` (`valkey_keys.go`) | yes |
 | Negative cache, flight locks, fill channel | `…:neg:v1:…`, `…:lock:fetch:v1:…`, the `fill` channel | yes ([valkey_keys.go](internal/cluster/valkey_keys.go)) |
+| Bastion key prefix | `trove-bastion:<valkey.key_prefix>:` (the Bastion's own `valkey` section; empty means the host of `server.base_url`); the Bastion's client has no keyspace segment | yes ([bastion_role.go](internal/config/bastion_role.go), `WithoutKeyspace`) |
+| Bastion block list, level, timeout | `<bastion prefix>block:v1:<address>`, `block:level:v1:<address>`, `timeout:v1:<address>`; the address is an IPv4 address or an IPv6 `/64`, written with `:` as `_` and `.` and `/` as `-` (`203-0-113-7`, `2001_db8_1_2__-64`) | yes ([valkey_bastion.go](internal/cluster/valkey_bastion.go)) |
+| Bastion answers, sweep lease, fetch lock | `<bastion prefix>ans:v1:<kind>:<sha256>` (signed), `sweep:v1`, `lock:fetch:v1:<sha256 of the cache key>` | yes (same file, [valkey_flight.go](internal/cluster/valkey_flight.go)) |
+| Bastion limiters | `bastion.requests_authenticated`, `bastion.requests_anonymous`, `bastion.misses_authenticated`, `bastion.misses_anonymous`, `bastion.failed_auth`, `bastion.refusals` (the `limiter` label of `trove_ratelimit_*`; counters under `rl:v1:bastion-<name>:…`) | yes ([guard/instance.go](internal/bastion/guard/instance.go)) |
 
 ### Object storage
 

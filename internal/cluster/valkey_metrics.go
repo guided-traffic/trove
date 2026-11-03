@@ -15,11 +15,14 @@ const (
 	MechanismChangeMessage = "change_message"
 	MechanismSignal        = "signal"
 	MechanismProbe         = "probe"
+	// MechanismBastionState is the state a Bastion shares through Valkey: block list, timeouts, answers and
+	// the sweep lease (R-BAS-034).
+	MechanismBastionState = "bastion_state"
 )
 
 var mechanisms = map[string]bool{
 	MechanismFlightLock: true, MechanismNegativeCache: true, MechanismRateLimit: true,
-	MechanismChangeMessage: true, MechanismSignal: true, MechanismProbe: true,
+	MechanismChangeMessage: true, MechanismSignal: true, MechanismProbe: true, MechanismBastionState: true,
 }
 
 // valkeyMetrics are the trove_valkey_* families of R-HA-057 and R-ARCH-031.

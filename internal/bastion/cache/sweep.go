@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/bastion/metrics"
-	"github.com/guided-traffic/trove/internal/bastion/shared"
 )
 
 // The thresholds of R-BAS-031: a sweep acts above 95 % of a limit and deletes until 85 % remain.
@@ -19,16 +18,37 @@ const (
 // sweepJitter is the spread of the randomized interval of a bucket without Valkey: sweep_interval +- 20 %.
 const sweepJitter = 0.2
 
+// SweepLease is the lease of the one replica that sweeps a shared bucket (R-BAS-031): `sweep` in Valkey, for
+// 2 × sweep_interval.
+type SweepLease interface {
+	TryAcquire(ctx context.Context, ttl time.Duration) (held bool, release func(), err error)
+}
+
+// LeaseSource is what the sweep asks before each cycle: the sweep lease while the replicas share state, nil
+// otherwise. shared.State is the source in a replica; the interface keeps the cache below the shared state, which
+// signs its answer records with this package's Signer.
+type LeaseSource interface {
+	SweepLease() SweepLease
+}
+
+// sweepLease returns the lease of src, nil for a nil source or one that shares no state.
+func sweepLease(src LeaseSource) SweepLease {
+	if src == nil {
+		return nil
+	}
+	return src.SweepLease()
+}
+
 func percent(limit, p int64) int64 { return limit * p / 100 }
 
 // SweepOnce is one cycle of R-BAS-031 for this replica: it measures what the backend holds, publishes
 // trove_bastion_cache_bytes, and evicts by last access in each area above 95 % of its limit down to 85 %. With
 // the bucket backend and Valkey only the replica that holds the sweep lease runs it; without Valkey every
 // replica does, which is safe because a sweep only deletes. With the volume backend each replica sweeps its own
-// volume. st may be nil, which is a replica without shared state.
-func (c *Cache) SweepOnce(ctx context.Context, st *shared.State) error {
-	if c.cfg.Backend == "bucket" && st != nil && st.Shared != nil && st.Shared() && st.Sweep != nil {
-		held, release, err := st.Sweep.TryAcquire(ctx, 2*c.cfg.SweepInterval)
+// volume. src may be nil, which is a replica without shared state.
+func (c *Cache) SweepOnce(ctx context.Context, src LeaseSource) error {
+	if lease := sweepLease(src); c.cfg.Backend == "bucket" && lease != nil {
+		held, release, err := lease.TryAcquire(ctx, 2*c.cfg.SweepInterval)
 		if err != nil {
 			c.log.Warn("the sweep lease could not be taken; sweeping without it, which is safe", "error", err)
 		} else {
@@ -84,7 +104,7 @@ func (c *Cache) interval() time.Duration {
 
 // RunSweeper sweeps every sweep_interval until ctx ends. A failed cycle is logged and counted by the backend; the
 // next one runs on schedule.
-func (c *Cache) RunSweeper(ctx context.Context, st *shared.State) {
+func (c *Cache) RunSweeper(ctx context.Context, src LeaseSource) {
 	if u, err := c.back.Usage(ctx); err == nil {
 		c.publish(u)
 	}
@@ -96,7 +116,7 @@ func (c *Cache) RunSweeper(ctx context.Context, st *shared.State) {
 			return
 		case <-t.C:
 		}
-		if err := c.SweepOnce(ctx, st); err != nil && ctx.Err() == nil {
+		if err := c.SweepOnce(ctx, src); err != nil && ctx.Err() == nil {
 			c.log.Warn("cache sweep failed", "error", err)
 		}
 		t.Reset(c.interval())

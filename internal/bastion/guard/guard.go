@@ -2,10 +2,11 @@
 // per-address request and miss limits, the failed-authentication timeout and the blocking of addresses that
 // keep being refused. It is the Bastion's own stage; the coarse one is the ingress's (R-BAS-038).
 //
-// Work package 6 implements [Guard] over internal/bastion/shared (local, or Valkey when configured); the
-// engine (work package 4) asks it at the steps of R-BAS-018 and reports what it observes. The guard counts and
-// decides; it never answers a request itself: the engine renders the refusal ([Verdict]) as the problem
-// details of R-BAS-029 with Retry-After and the RateLimit fields.
+// [New] implements [Guard] over internal/bastion/shared (local, or Valkey when configured); the engine asks it
+// at the steps of R-BAS-018 and reports what it observes. The guard counts and decides; it never answers a
+// request itself: the engine renders the refusal ([Verdict]) as the problem details of R-BAS-029 with
+// Retry-After and the RateLimit fields, and counts it in trove_bastion_refused_total under Verdict.Reason.
+// The guard counts the blocks it sets (trove_bastion_blocks_total, trove_bastion_blocked_addresses).
 package guard
 
 import (
@@ -31,8 +32,11 @@ type Verdict struct {
 	Code   string
 	// RetryAfter is the Retry-After of the refusal.
 	RetryAfter time.Duration
-	// Reason is the label of trove_bastion_refused_total (metrics.Refused*).
+	// Reason is the label of trove_bastion_refused_total (metrics.Refused*); the engine counts the refusal.
 	Reason string
+	// Quiet says the request is not logged one by one: a blocked address answers many requests, and the guard
+	// logs one line per block instead (R-BAS-037). The engine keeps it out of the request log.
+	Quiet bool
 }
 
 // Allow is the verdict that admits.
@@ -50,7 +54,8 @@ type Guard interface {
 	// probe): the per-address miss limit of the class (R-BAS-035). Hits of the same address keep being served.
 	Miss(ctx context.Context, addr string, c Credentialed) Verdict
 	// AuthTimeout reports whether the address is in the failed-authentication timeout (R-BAS-036); the engine
-	// consults it only for a credential it holds no usable answer for.
+	// consults it only for a credential it holds no usable answer for, before it sends anything to the main
+	// installation. A refusal counts toward the block threshold.
 	AuthTimeout(ctx context.Context, addr string) Verdict
 	// FailedAuth records a failed authentication: a credential the Bastion refuses itself or one the main
 	// installation called invalid (R-BAS-036). More than bastion.failed_auth.max_failures within the window
@@ -82,32 +87,6 @@ func ParseAddressKey(s string) (string, error) {
 	}
 	return AddressKey(a), nil
 }
-
-// Stub is the placeholder guard of the contract work. It admits every request, which is safe only because
-// nothing serves a request through it yet: the engine placeholder answers bastion_not_served to everything.
-// Work package 6 replaces it; a Bastion must never run with the stub once the engine serves reads, which the
-// engine's constructor checks (engine.Deps.Validate).
-type Stub struct{}
-
-var _ Guard = Stub{}
-
-// Blocked implements [Guard].
-func (Stub) Blocked(context.Context, string) Verdict { return Allow() }
-
-// Request implements [Guard].
-func (Stub) Request(context.Context, string, Credentialed) Verdict { return Allow() }
-
-// Miss implements [Guard].
-func (Stub) Miss(context.Context, string, Credentialed) Verdict { return Allow() }
-
-// AuthTimeout implements [Guard].
-func (Stub) AuthTimeout(context.Context, string) Verdict { return Allow() }
-
-// FailedAuth implements [Guard].
-func (Stub) FailedAuth(context.Context, string) {}
-
-// IsStub reports whether g is the placeholder.
-func IsStub(g Guard) bool { _, ok := g.(Stub); return ok }
 
 // Codes the guard's refusals carry, from the interface package so the engine renders one set.
 const (

@@ -2,6 +2,7 @@ package shared
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -60,7 +61,7 @@ func TestR_BAS_034_WithoutValkeyTheRateIsDividedByTheReplicas(t *testing.T) {
 }
 
 func TestR_BAS_036_AWindowCountsOnlyWithinItsPeriod(t *testing.T) {
-	c := newClock()
+	c := newClock() // 10:00:00, the start of a 10-minute window
 	s := NewLocal(1, c.now)
 	ctx := context.Background()
 	for i := 1; i <= 3; i++ {
@@ -70,9 +71,74 @@ func TestR_BAS_036_AWindowCountsOnlyWithinItsPeriod(t *testing.T) {
 		}
 		c.advance(time.Minute)
 	}
-	c.advance(8 * time.Minute) // the first event is 11 minutes old, the others 10 and 9
-	if n, _ := s.Limiter.Count(ctx, "bastion.failed_auth", "a", 10*time.Minute); n != 1 {
-		t.Fatalf("count = %d, want 1", n)
+	if n, _ := s.Limiter.Count(ctx, "bastion.failed_auth", "a", 10*time.Minute); n != 3 {
+		t.Fatalf("count inside the window = %d, want 3", n)
+	}
+	// Two windows later nothing counts: the sliding estimate has decayed to zero.
+	c.advance(20 * time.Minute)
+	if n, _ := s.Limiter.Count(ctx, "bastion.failed_auth", "a", 10*time.Minute); n != 0 {
+		t.Fatalf("count = %d, want 0", n)
+	}
+	// Half a window into the next one the previous window still counts by half.
+	s = NewLocal(1, c.now)
+	c.t = time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC)
+	for i := 0; i < 10; i++ {
+		_, _ = s.Limiter.Add(ctx, "bastion.failed_auth", "b", 10*time.Minute)
+	}
+	c.advance(15 * time.Minute)
+	if n, _ := s.Limiter.Count(ctx, "bastion.failed_auth", "b", 10*time.Minute); n != 5 {
+		t.Fatalf("count = %d, want 5 (10 events, half a window past)", n)
+	}
+}
+
+func TestR_BAS_034_WithoutValkeyACountIsScaledByTheReplicas(t *testing.T) {
+	c := newClock()
+	s := NewLocal(3, c.now)
+	ctx := context.Background()
+	n, _ := s.Limiter.Add(ctx, "bastion.failed_auth", "a", time.Minute)
+	if n != 3 {
+		t.Fatalf("one event counted as %d on a replica of three, want 3: the caller compares with the configured value", n)
+	}
+	n, _ = s.Limiter.Add(ctx, "bastion.failed_auth", "a", time.Minute)
+	if n != 6 {
+		t.Fatalf("two events counted as %d, want 6", n)
+	}
+	if n, _ = s.Limiter.Count(ctx, "bastion.failed_auth", "other", time.Minute); n != 0 {
+		t.Fatalf("an unseen key counts %d", n)
+	}
+}
+
+func TestR_BAS_035_ALimiterKeepsItsMapsBounded(t *testing.T) {
+	c := newClock()
+	l := newLocal(1, c.now)
+	ctx := context.Background()
+	for i := 0; i < maxLocalKeys+50; i++ {
+		_, _, _ = l.Allow(ctx, "bastion.anonymous", fmt.Sprintf("k%d", i), Rate{PerSecond: 1, Burst: 1})
+		_, _ = l.Add(ctx, "bastion.refusals", fmt.Sprintf("k%d", i), time.Minute)
+	}
+	if len(l.buckets) > maxLocalKeys || len(l.windows) > maxLocalKeys {
+		t.Fatalf("%d buckets and %d counters held, the bound is %d", len(l.buckets), len(l.windows), maxLocalKeys)
+	}
+}
+
+func TestR_BAS_036_ATimeoutListIsSeparateFromTheBlockList(t *testing.T) {
+	s := NewLocal(1, newClock().now)
+	ctx := context.Background()
+	_ = s.Timeouts.Set(ctx, "198.51.100.9", time.Minute, 1)
+	if _, ok, _ := s.Timeouts.Blocked(ctx, "198.51.100.9"); !ok {
+		t.Fatal("the timeout is not listed")
+	}
+	if _, ok, _ := s.Blocks.Blocked(ctx, "198.51.100.9"); ok {
+		t.Fatal("a timeout blocked the address")
+	}
+}
+
+func TestR_BAS_031_WithoutValkeyEveryReplicaHoldsTheSweepLease(t *testing.T) {
+	s := NewLocal(2, nil)
+	for i := 0; i < 2; i++ {
+		if held, _, err := s.Sweep.TryAcquire(context.Background(), time.Minute); !held || err != nil {
+			t.Fatalf("lease = %v, %v", held, err)
+		}
 	}
 }
 

@@ -17,6 +17,7 @@ Nothing outside `internal/cluster` reads or writes a Valkey key (Q-ARCH-16: noth
 | [`valkey_ratelimit.go`](../../internal/cluster/valkey_ratelimit.go), [`limiter.go`](../../internal/cluster/limiter.go) | The rate-limit counters (key family `rl`) and the limiter with its per-replica fallback, see [Rate-limit counters](#rate-limit-counters) |
 | [`valkey_flight.go`](../../internal/cluster/valkey_flight.go) | `FlightKey`, `FlightLock` (`Acquire`, `Wait`), `FlightHold` (extension, `Release`, `Lost`), the shared flight subscriptions, see [FlightLock](#flightlock) |
 | [`valkey_negative.go`](../../internal/cluster/valkey_negative.go) | `NegativeStore` (`Lookup`, `Record`): the entries of the negative cache in Valkey, see [Negative store](#negative-store) |
+| [`valkey_bastion.go`](../../internal/cluster/valkey_bastion.go), [`limiter_estimate.go`](../../internal/cluster/limiter_estimate.go) | The trove Bastion's state: `BastionStore` (marks, answer records, sweep lease), `FlightKeyFromHash`, `Limiter.Estimate`, see [The Bastion's keys](#the-bastions-keys) |
 | [`valkey_pubsub.go`](../../internal/cluster/valkey_pubsub.go) | `subscribe`, the one Pub/Sub connection and its resubscription |
 | [`valkey_reason.go`](../../internal/cluster/valkey_reason.go) | `ReasonCode`, the fixed vocabulary of `ValkeyStatus.ReasonCode` |
 | [`valkey_integration.go`](../../internal/cluster/valkey_integration.go) | Compiled only with the `integration` build tag: `cluster.Raw(v)` and `RegisterTestKeyFamily`/`RegisterTestChannelFamily` for `test/integration/valkey`; no build of the binary has it |
@@ -66,7 +67,7 @@ The client keeps retrying with `reconnect.*` backoff; `StartupError` clears when
 
 ## Key registry
 
-Every key is `<key_prefix><keyspace>:<mechanism>:v<version>[:<part>...]`; channels the same. The keyspace is the first 12 hex digits of `system_state.keyspace_id` (`WithKeyspaceID` or `SetKeyspaceID`, set once).
+Every key is `<key_prefix><keyspace>:<mechanism>:v<version>[:<part>...]`; channels the same. The keyspace is the first 12 hex digits of `system_state.keyspace_id` (`WithKeyspaceID` or `SetKeyspaceID`, set once). The trove Bastion has no PostgreSQL and so no keyspace: its client is made with `WithoutKeyspace` and a key is `<key_prefix><mechanism>:v<version>[:<part>...]` with the key prefix `trove-bastion:<valkey.key_prefix>:` (see [The Bastion's keys](#the-bastions-keys)).
 
 - A `Key` can only be created by `v.formKey(family, parts...)` or `v.formKeyTTL(family, ttl, parts...)`. A family exists only with a positive maximum TTL (`registerKeyFamily` panics otherwise), and the key carries its TTL. The write methods take a `Key` and set the expiry themselves, so a write without a TTL cannot be expressed. The zero `Key` and a zero family are rejected. `incr` sets the expiry once (`EXPIRE ... NX` in the same `MULTI`).
 - Parts must match `[A-Za-z0-9_-]{1,128}`: identifiers and hashes, never raw names.
@@ -183,6 +184,46 @@ e, found, err := store.Lookup(ctx, repoID, f)  // found == false: none, or a mal
 - **Metrics.** `trove_valkey_cache_lookups_total{cache="negative",result}` with `hit` (a well-formed entry was returned), `miss`, `rejected` (malformed) and `unavailable`; `trove_valkey_degraded_total{mechanism="negative_cache"}` for every call that met an unavailable Valkey. An entry that the proxy refuses after the lookup is counted by the proxy as a further `rejected` through `Valkey.CountCacheLookup`.
 - **Errors** as for the flight lock: they wrap `ErrUnavailable`, and the caller answers from its L1.
 
+## The Bastion's keys
+
+The trove Bastion (`trove serve --role bastion`, [bastion.md](bastion.md)) has an optional Valkey of its own (R-BAS-034). Its configuration
+section `valkey` is the main installation's, and `BastionValkey.Valkey()` turns it into the client's configuration with the key prefix
+`trove-bastion:<valkey.key_prefix>:` (the host of `server.base_url` when empty). Only `internal/bastion/shared` imports `internal/cluster` for
+it, and what it calls are typed methods; nothing outside this package forms a key (Q-ARCH-16).
+
+| Family (version 1) | Key below the prefix | Value | Longest expiry | Mechanism |
+|---|---|---|---|---|
+| `block` | `block:v1:<address>` | `<level>:<until in Unix ms>` | 720 h | `BastionStore.Mark/Marked` (`MarkBlock`) |
+| `block:level` | `block:level:v1:<address>` | `<level>:<time of the block in Unix ms>` | 24 h | the same (`MarkLevel`) |
+| `timeout` | `timeout:v1:<address>` | `1:<until in Unix ms>` | 24 h | the same (`MarkTimeout`) |
+| `ans` | `ans:v1:<kind>:<sha256 hex of the key>` | the record and its HMAC-SHA-256 | 48 h, the answer's remaining validity | `PutAnswer/GetAnswer/DeleteAnswer` |
+| `sweep` | `sweep:v1` | the holder's token | 48 h, two sweep intervals | `AcquireSweep` |
+| `lock:fetch` | `lock:fetch:v1:<sha256 hex of the cache key>` | the holder's token | `cluster.flight_lock_ttl`, 30 s | `NewFlightLock` over `FlightKeyFromHash` |
+| `rl` | `rl:v1:bastion-<name>:<hash>:<window>` | a counter | two windows | `LimiterSet.NewLimiter`, `Limiter.Take`, `Limiter.Estimate` |
+
+- **Addresses.** The guard's address key is an IPv4 address or the /64 of an IPv6 address. A key part may hold identifiers and hashes only,
+  so `AddressPart` writes `:` as `_` and `.` and `/` as `-`: `203.0.113.7` is `203-0-113-7`, `2001:db8:1:2::/64` is `2001_db8_1_2__-64`. The
+  mapping is injective for these keys and the key stays readable at the console (Q-BAS-91).
+- **The records carry their own time.** A block's expiry is the Valkey TTL and the `until` in the value; the guard decides by the value and
+  its own clock, so a test with an injected clock does not wait for a quarter of an hour. The level of the last block is kept for 24 h in
+  its own key, and each further block within that time doubles the duration.
+- **Signed answers.** `shared`'s answer store signs the record before `PutAnswer` and verifies it after `GetAnswer` (`cache.Signer`, domain
+  `answer`, covering the kind and the key hash). A record that fails is removed with `DeleteAnswer`, which is `DELIFEQ` with the failed value.
+  A record, signature included, above `MaxValueSize` (1 KiB) is refused with `ErrValueTooLarge`.
+- **Counters.** `Limiter.Estimate` is the counting form that returns the number (the sliding-window estimate, rounded up) for the failed
+  authentications, the refusals and the misses. It never falls back; while Valkey is unusable it returns `ErrUnavailable` and sets the
+  limiter's fallback flag (`trove_ratelimit_fallback{limiter}`), and `shared` counts in memory, scaled by `bastion.replicas`. The request limits
+  use `Take`, whose own fallback divides the rate and the burst by the live replicas, which the Bastion sets to `bastion.replicas`.
+- **Degraded mode.** Every failed call counts `trove_valkey_degraded_total{mechanism="bastion_state"}`. A Valkey that cannot be reached never
+  stops the replica or makes it unready: the state runs from memory.
+- **The ACL user.** The Bastion's user has the commands of the main installation's rule and the patterns `~trove-bastion:*` and
+  `&trove-bastion:*` ([users.acl](../../test/integration/conf/users.acl), the user `bastion`). A stack that was started before that line existed
+  gets the user from the tests (`ACL SETUSER` with the same rules on both nodes, idempotent).
+
+Tests: [valkey_bastion_test.go](../../internal/cluster/valkey_bastion_test.go) (the keys against `memServer`, the address mapping, the answer
+records, the lease, the flight key, `Estimate` against the in-memory counters) and
+[test/integration/bastionshared](../../test/integration/bastionshared) (two replicas against the stack, see [bastion.md](bastion.md#tests)).
+
 ## Breaker and degraded mode
 
 After `circuit_breaker.failure_threshold` consecutive failures the breaker refuses calls (`ErrUnavailable`, no I/O) for `open_duration`, then lets one probe through. Failures are timeouts, connection errors, `LOADING`-class replies, `OOM`. Not counted: caller cancellation, other server replies, and `READONLY` (the node was demoted; the refresh moves the client on, and opening the circuit would add `open_duration` to the failover bound). The health probe (`SET` of `probe:v1:<instance>`, 30 s TTL; `PING` while no keyspace is set) runs every `health_check_interval` through the breaker and is what closes it again without traffic.
@@ -195,7 +236,7 @@ After `circuit_breaker.failure_threshold` consecutive failures the breaker refus
 
 ## Metrics
 
-`trove_valkey_available`, `_circuit_open`, `_sentinels_reachable`, `_pubsub_subscribed`, `_primary_changes_total`, `_errors_total{kind}`, `_command_duration_seconds{command}`, `_degraded_total{mechanism}` (`CountDegraded`), `_cache_lookups_total{cache,result}` (`CountCacheLookup`). Also `trove_flight_lock_lost_total`, registered on the `Registerer` of `FlightLockOptions` and not in the client's own registry.
+`trove_valkey_available`, `_circuit_open`, `_sentinels_reachable`, `_pubsub_subscribed`, `_primary_changes_total`, `_errors_total{kind}`, `_command_duration_seconds{command}`, `_degraded_total{mechanism}` (`CountDegraded`; `flight_lock`, `negative_cache`, `rate_limit`, `change_message`, `signal`, `probe` and, for the Bastion, `bastion_state`), `_cache_lookups_total{cache,result}` (`CountCacheLookup`). Also `trove_flight_lock_lost_total`, registered on the `Registerer` of `FlightLockOptions` and not in the client's own registry.
 
 ## Tests
 

@@ -8,7 +8,6 @@ import (
 
 	"github.com/guided-traffic/trove/internal/bastion/cache"
 	"github.com/guided-traffic/trove/internal/bastion/downloads"
-	"github.com/guided-traffic/trove/internal/bastion/guard"
 	"github.com/guided-traffic/trove/internal/bastion/mainclient"
 	"github.com/guided-traffic/trove/internal/bastion/metrics"
 	"github.com/guided-traffic/trove/internal/config"
@@ -21,7 +20,7 @@ func deps(t *testing.T) Deps {
 		t.Fatal(err)
 	}
 	return Deps{
-		Config: &config.BastionConfig{}, Metrics: m, Main: mainclient.Stub{}, Cache: cache.Stub{}, Guard: guard.Stub{}, Downloads: downloads.Stub{},
+		Config: &config.BastionConfig{}, Metrics: m, Main: mainclient.Stub{}, Cache: cache.Stub{}, Downloads: downloads.Stub{},
 	}
 }
 
@@ -39,8 +38,8 @@ func TestR_BAS_001_ThePlaceholderRefusesEveryRequest(t *testing.T) {
 			t.Errorf("%s: %d %q %q", method, rec.Code, rec.Header().Get("Cache-Control"), rec.Body.String())
 		}
 	}
-	if got := d.Stubbed(); len(got) != 4 {
-		t.Errorf("Stubbed() = %v, want the four placeholders", got)
+	if got := d.Stubbed(); len(got) != 3 {
+		t.Errorf("Stubbed() = %v, want the three placeholders (the guard is built)", got)
 	}
 	if _, err := New(Deps{}); err == nil {
 		t.Error("New accepted empty dependencies")

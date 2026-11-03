@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/bastion/metrics"
-	"github.com/guided-traffic/trove/internal/bastion/shared"
 	"github.com/guided-traffic/trove/internal/config"
 )
 
@@ -203,9 +202,8 @@ func TestR_BAS_031_OnlyTheReplicaWithTheSweepLeaseSweepsABucket(t *testing.T) {
 	r := newRig(t, func(c *config.BastionCache) { c.Backend = "bucket" }) // the lease is the bucket's; the store is a volume
 	ctx := context.Background()
 	es := r.fillTwelve()
-	st := shared.NewLocal(1, nil)
 	lease := &fakeLease{}
-	st.Sweep, st.Shared = lease, func() bool { return true }
+	st := leaseSource{lease: lease, shared: true}
 
 	if err := r.SweepOnce(ctx, st); err != nil {
 		t.Fatal(err)
@@ -228,8 +226,7 @@ func TestR_BAS_031_OnlyTheReplicaWithTheSweepLeaseSweepsABucket(t *testing.T) {
 
 	// Without Valkey no lease is asked for.
 	lease2 := &fakeLease{}
-	st2 := shared.NewLocal(2, nil)
-	st2.Sweep = lease2
+	st2 := leaseSource{lease: lease2}
 	if err := r.SweepOnce(ctx, st2); err != nil || lease2.calls != 0 {
 		t.Fatalf("lease asked for without Valkey: %d %v", lease2.calls, err)
 	}
@@ -239,8 +236,7 @@ func TestR_BAS_031_AVolumeIsSweptByItsOwnReplicaWithoutALease(t *testing.T) {
 	r := newRig(t)
 	es := r.fillTwelve()
 	lease := &fakeLease{}
-	st := shared.NewLocal(3, nil)
-	st.Sweep, st.Shared = lease, func() bool { return true }
+	st := leaseSource{lease: lease, shared: true}
 	if err := r.SweepOnce(context.Background(), st); err != nil {
 		t.Fatal(err)
 	}
@@ -279,4 +275,17 @@ func (l *fakeLease) TryAcquire(_ context.Context, ttl time.Duration) (bool, func
 	l.calls++
 	l.ttl = ttl
 	return l.held, func() { l.released = true }, nil
+}
+
+// leaseSource is a LeaseSource that offers its lease only while the replicas share state, as shared.State does.
+type leaseSource struct {
+	lease  SweepLease
+	shared bool
+}
+
+func (s leaseSource) SweepLease() SweepLease {
+	if !s.shared {
+		return nil
+	}
+	return s.lease
 }

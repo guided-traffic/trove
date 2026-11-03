@@ -173,7 +173,9 @@ There is no name resolution to configure. A process can still be stopped on its 
 takes all five down.
 
 **Valkey users** (test constants, in [conf/users.acl](../../test/integration/conf/users.acl)):
-`trove` is the least-privilege user of R-ARCH-031's example rule; `ops` may do everything and serves
+`trove` is the least-privilege user of R-ARCH-031's example rule; `bastion` is the same rule on the keys and channels below
+`trove-bastion:` (the Bastion's own Valkey, R-BAS-034; a stack started before that line existed gets the user from
+`test/integration/bastionshared`, which runs `ACL SETUSER` with the same rules on both nodes); `ops` may do everything and serves
 replication, Sentinel monitoring and the tests' inspection; the `default` user is off. The Sentinels
 carry the password from `.dev/integration/env`.
 

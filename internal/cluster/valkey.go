@@ -45,6 +45,8 @@ type Valkey struct {
 	sentinelResolver *net.Resolver
 
 	keyspace atomic.Pointer[string]
+	// noKeyspace is set by WithoutKeyspace: keys carry no keyspace segment.
+	noKeyspace bool
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -110,6 +112,7 @@ type ValkeyOption func(*valkeyOptions)
 
 type valkeyOptions struct {
 	keyspace   string
+	noKeyspace bool
 	tlsMetrics *tlsfiles.Metrics
 }
 
@@ -117,6 +120,11 @@ type valkeyOptions struct {
 // (R-ARCH-030), which the caller reads from PostgreSQL. Without it, keys cannot
 // be formed until [Valkey.SetKeyspaceID] is called.
 func WithKeyspaceID(id string) ValkeyOption { return func(o *valkeyOptions) { o.keyspace = id } }
+
+// WithoutKeyspace forms keys without a keyspace segment: <key_prefix><mechanism>:v<version>[:<part>...]. The
+// trove Bastion has no PostgreSQL and so no system_state.keyspace_id; its key_prefix
+// (trove-bastion:<valkey.key_prefix>:) is the whole separation between installations (R-BAS-034).
+func WithoutKeyspace() ValkeyOption { return func(o *valkeyOptions) { o.noKeyspace = true } }
 
 // NewValkey creates the client. It returns an error only for a configuration
 // the process cannot run with: an invalid setting, an unreadable credential,
@@ -177,6 +185,9 @@ func NewValkey(ctx context.Context, cfg config.Valkey, instance, role string, lo
 		}
 		v.reevaluate()
 	})
+	if o.noKeyspace {
+		v.noKeyspace = true
+	}
 	if o.keyspace != "" {
 		if err := v.SetKeyspaceID(o.keyspace); err != nil {
 			return nil, fmt.Errorf("valkey: %w", err)

@@ -54,7 +54,7 @@ type Deps struct {
 	Signer *cache.Signer
 	// Shared is the state the replicas share, or the local one (work package 6).
 	Shared *shared.State
-	// Guard is the abuse protection (work package 6).
+	// Guard is the abuse protection (guard.New, package 6); the server builds it with the shared state.
 	Guard guard.Guard
 	// Downloads is the download event buffer (work package 7).
 	Downloads downloads.Buffer
@@ -63,7 +63,7 @@ type Deps struct {
 }
 
 // Stubbed names the dependencies that are still the placeholders of the contract work. The server logs them
-// at start; a Bastion with a stubbed guard or cache must not serve a read, which engine.New of work package 4
+// at start; a Bastion with a stubbed cache must not serve a read, which engine.New of work package 4
 // checks.
 func (d Deps) Stubbed() []string {
 	var out []string
@@ -72,9 +72,6 @@ func (d Deps) Stubbed() []string {
 	}
 	if _, ok := d.Cache.(cache.Stub); ok {
 		out = append(out, "cache")
-	}
-	if guard.IsStub(d.Guard) {
-		out = append(out, "guard")
 	}
 	if _, ok := d.Downloads.(downloads.Stub); ok {
 		out = append(out, "downloads")

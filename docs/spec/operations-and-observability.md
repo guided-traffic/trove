@@ -826,7 +826,7 @@ Rules for every metric family, including families that format pages and other sp
   | `area` | Change and signal areas registered in `internal/cluster/areas.go` ([architecture.md](architecture.md) R-ARCH-018) |
   | `db_pool` | `request`, `control`, `lease`; `backup` on backup pods ([architecture.md](architecture.md) R-ARCH-019) |
   | `command` | Valkey commands of the allowed command list ([architecture.md](architecture.md) R-ARCH-031) |
-  | `mechanism` | Valkey uses of [architecture.md](architecture.md) R-ARCH-030 (`flight_lock`, `negative_cache`, `rate_limit`, `change_message`, `signal`, `probe`) |
+  | `mechanism` | Valkey uses of [architecture.md](architecture.md) R-ARCH-030 (`flight_lock`, `negative_cache`, `rate_limit`, `change_message`, `signal`, `probe`, and `bastion_state` for the Bastion's block list, timeouts, answers and sweep lease, R-BAS-034) |
   | `limiter` | Registered rate limiters ([architecture.md](architecture.md) R-ARCH-034) |
   | `key_id` | Key IDs of the stored-secret key ring and key IDs that sealed values still reference ([architecture.md](architecture.md) R-ARCH-021); bounded by configuration |
   | `ecosystem`, `severity` | From M4b ([vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-024): the OSV ecosystem names of the formats with the vulnerability adapter (`npm`, `NuGet`), `""` for a source without ecosystems; the severity levels `critical`, `high`, `medium`, `low`, `none`, `unknown` |

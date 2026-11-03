@@ -172,6 +172,9 @@ func (v *Valkey) SetKeyspaceID(id string) error {
 }
 
 func (v *Valkey) prefix() (string, error) {
+	if v.noKeyspace {
+		return v.cfg.KeyPrefix, nil
+	}
 	ks := v.keyspace.Load()
 	if ks == nil {
 		return "", ErrNoKeyspace
@@ -283,3 +286,17 @@ var flightFillChannel = registerChannelFamily("fill", 1)
 var negFamily = registerKeyFamily("neg", 1, MaxNegativeTTL)
 
 // <<< M2 proxy
+
+// >>> M5b bastion
+
+// The state a trove Bastion shares through its Valkey (R-BAS-034, mechanism in valkey_bastion.go). Its client
+// has no keyspace (WithoutKeyspace); the key_prefix is trove-bastion:<valkey.key_prefix>:.
+var (
+	blockFamily      = registerKeyFamily("block", 1, MaxBlockTTL)
+	blockLevelFamily = registerKeyFamily("block:level", 1, MaxBlockLevelTTL)
+	timeoutFamily    = registerKeyFamily("timeout", 1, MaxTimeoutTTL)
+	answerFamily     = registerKeyFamily("ans", 1, MaxAnswerTTL)
+	sweepFamily      = registerKeyFamily("sweep", 1, MaxSweepLeaseTTL)
+)
+
+// <<< M5b bastion

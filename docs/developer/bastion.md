@@ -1,7 +1,7 @@
 # The trove Bastion: contracts
 
 Status: the contracts of phase 5b are laid (the shared types, interfaces, schema, routes, configuration and the skeleton of the
-role); the logic of the eight work packages is not built. The specification is [spec/bastion.md](../spec/bastion.md)
+role); the logic of the work packages is built package by package. Built: package 6 ([shared state and guard](#shared-state-and-the-guard)). The specification is [spec/bastion.md](../spec/bastion.md)
 (R-BAS-001 to R-BAS-049, decisions Q-BAS-1 to Q-BAS-54), its security perspective [security/bastion.md](../security/bastion.md), the plan
 [projektplan/BETA.md](../projektplan/BETA.md#phase-5b--trove-bastion-m13).
 
@@ -18,7 +18,7 @@ parallel: it says which package owns which file, which seams join them, how a re
 - **The Bastion imports no subsystem of the main installation.** An allow-list rule of the archtest ([bastion.go](../../internal/archtest/bastion.go),
   R-BAS-001) holds `internal/bastion/**` to the platform packages. `internal/cluster` (the Valkey client) is allowed for `shared`
   only and `internal/blob/s3` for `cache` only.
-- **Stubs are obviously stubs.** `mainclient.Stub`, `cache.Stub`, `guard.Stub`, `downloads.Stub` and the placeholder engine answer
+- **Stubs are obviously stubs.** `mainclient.Stub`, `cache.Stub`, `downloads.Stub` and the placeholder engine answer
   [ErrNotBuilt](../../internal/bastion/mainclient/mainclient.go) or `404 bastion_not_served`; the operations of the management API
   answer `501 bastion_not_implemented` ([bastion_stub.go](../../internal/api/v1/bastion_stub.go)). `server` logs the placeholders at
   start. Replace a stub, never wrap it.
@@ -35,7 +35,7 @@ parallel: it says which package owns which file, which seams join them, how a re
 | 3 | Marking and the write probe (R-BAS-013, R-BAS-014) | the Mark stage and the `RouteObserver`, the `ShapeResolver` (R-BAS-012), the calls in `internal/api/rawfiles`, the conformance-kit check for shared documents | `Stages.Mark`, `RouteObserver`, `ShapeResolver` |
 | 4 | The engine (R-BAS-006, R-BAS-018 to R-BAS-029, R-BAS-042 to R-BAS-044) | [internal/bastion/engine](../../internal/bastion/engine) (replace `New`), the body of `mainclient.Client`, the token reloader, the feed application over `answers.FeedLog` | `engine.Engine`, `mainclient.Client`, `mainclient.Budget` |
 | 5 | Cache backends, eviction, integrity (R-BAS-030 to R-BAS-032) | the two implementations of `cache.Backend` in `internal/bastion/cache/…`, the sweep | `cache.Backend` |
-| 6 | Valkey, rate limits, failed-auth timeout, blocking (R-BAS-034 to R-BAS-037) | the Valkey implementation of `shared.*` in `internal/bastion/shared/…`, the body of `guard.Guard` | `shared.State`, `guard.Guard` |
+| 6 | Valkey, rate limits, failed-auth timeout, blocking (R-BAS-034 to R-BAS-037) — **built** | the Valkey implementation of `shared.*` in `internal/bastion/shared/…`, `guard.New` and its `Instance`, the Valkey mechanism in `internal/cluster/valkey_bastion.go` | `shared.State`, `guard.Guard` |
 | 7 | Download buffer and metrics (R-BAS-039, R-BAS-040) | [internal/bastion/downloads](../../internal/bastion/downloads), the PrometheusRule's metric inputs (the names are defined) | `downloads.Buffer` |
 | 8 | UI, client setup, manual (R-BAS-007) | the Bastions screen, the `bastion=` parameter of `getClientSetup` ([packages_api.go](../../internal/api/v1/packages_api.go)), `docs/manual/admin/bastion.md` | none |
 
@@ -51,8 +51,8 @@ internal/bastion/
 ├── metrics/          every metric of R-BAS-040, defined once; a leaf
 ├── mainclient/       the client of the main installation: Client, Budget, TokenSource, errors; token file and holder
 ├── cache/            Backend, Entry, the HMAC Signer; the volume and bucket backends, Cache, Fill, the sweep
-├── shared/           the shared state (limiters, block list, flight lock, sweep lease, answer records) and its local form
-├── guard/            Guard (R-BAS-035 to R-BAS-037) and the address key (an IPv6 address counts as its /64)
+├── shared/           the shared state (limiters, block list, timeouts, flight lock, sweep lease, answer records): the local form and the Valkey form
+├── guard/            Guard (R-BAS-035 to R-BAS-037): Instance, the verdicts, and the address key (an IPv6 address counts as its /64)
 ├── downloads/        Buffer of download events (R-BAS-039)
 ├── engine/           Deps, Engine; New returns the placeholder that answers bastion_not_served
 └── server/           the process of the role: telemetry, token, TLS, listeners, health, drain
@@ -84,7 +84,11 @@ internal/bastionmain/ the main installation's seams (a domain package)
 | [cache/verify.go](../../internal/bastion/cache/verify.go), [cache/fill.go](../../internal/bastion/cache/fill.go) | the verifying reader with its hold-back, the `Fill` spool |
 | [cache/store.go](../../internal/bastion/cache/store.go), [cache/sweep.go](../../internal/bastion/cache/sweep.go) | `Cache` (what the engine uses), `New`, `NewVolume`, `NewBucket`, `Options`; `SweepOnce`, `RunSweeper` |
 | [shared/shared.go](../../internal/bastion/shared/shared.go) | `Limiter`, `BlockList`, `FlightLock`, `SweepLease`, `AnswerStore`, `State`, `NewLocal` |
-| [guard/guard.go](../../internal/bastion/guard/guard.go) | `Guard`, `Verdict`, `AddressKey`, `Stub` |
+| [shared/local.go](../../internal/bastion/shared/local.go) | the local forms: token buckets, sliding-window counters, block list, flights, answers in memory, all bounded |
+| [shared/valkey.go](../../internal/bastion/shared/valkey.go) | `Open`, `New`, `Options`: the Valkey forms over `cluster.BastionStore`, the limiters of R-ARCH-034 and the FlightLock, with the local forms as the fallback; the signing of answer records |
+| [guard/guard.go](../../internal/bastion/guard/guard.go) | `Guard`, `Verdict`, `AddressKey` |
+| [guard/instance.go](../../internal/bastion/guard/instance.go) | `New`, `Options`, `Instance`: the limits, the miss limits, the timeout, the blocking |
+| [server/shared.go](../../internal/bastion/server/shared.go) | `openShared`: builds the state and the guard from the configuration and closes them |
 | [downloads/downloads.go](../../internal/bastion/downloads/downloads.go) | `Buffer`, `Stub` |
 | [engine/engine.go](../../internal/bastion/engine/engine.go) | `Deps`, `Engine`, `New` (placeholder) |
 | [server/server.go](../../internal/bastion/server/server.go) | `Run`, `New`, `Start`, `Shutdown` |
@@ -113,7 +117,7 @@ internal/bastionmain/ the main installation's seams (a domain package)
 | Feed inputs | [bastion_feed.sql](../../internal/meta/postgres/queries/bastion_feed.sql) | contract work | package 2 |
 | `mainclient.Client`, `Budget`, `TokenSource` | [mainclient.go](../../internal/bastion/mainclient/mainclient.go) | package 4 | package 4, 7 (sends batches) |
 | `cache.Backend` | [cache.go](../../internal/bastion/cache/cache.go) | package 5 | packages 4, 7 |
-| `shared.State`, `guard.Guard` | [shared.go](../../internal/bastion/shared/shared.go), [guard.go](../../internal/bastion/guard/guard.go) | package 6 (local forms are built) | package 4 |
+| `shared.State`, `guard.Guard` | [shared.go](../../internal/bastion/shared/shared.go), [guard.go](../../internal/bastion/guard/guard.go) | package 6 (built: [Shared state and the guard](#shared-state-and-the-guard)) | package 4, package 5 (`Sweep`) |
 | `downloads.Buffer` | [downloads.go](../../internal/bastion/downloads/downloads.go) | package 7 | package 4 |
 | Metrics | [metrics.go](../../internal/bastion/metrics/metrics.go) | contract work | everyone; add no metric elsewhere |
 | Problem codes | [iface/problems.go](../../internal/bastion/iface/problems.go), [errs/codes.go](../../internal/errs/codes.go) | contract work | everyone |
@@ -126,6 +130,66 @@ first line. `TestR_BAS_009_TheInterfaceChangesOnlyWithItsVersion` fails when the
 raise `InterfaceVersion`, then `go test ./internal/bastion/iface -run TestR_BAS_009 -update-interface`; the regeneration refuses to write
 a changed surface under an unchanged version. The OpenAPI document must name the new version in `x-trove-bastion-interface`
 (`LoadDocument` checks it), and the release notes announce it.
+
+## Shared state and the guard
+
+Package 6 built both. The server makes them in [server/shared.go](../../internal/bastion/server/shared.go) from the configuration and
+hands `engine.Deps.Shared` and `engine.Deps.Guard` over; it closes them (the Valkey client, the guard's gauge loop) at the end of the drain.
+
+**What changed in the committed interfaces (a contract change, said here on purpose).** Package 4 reads this before it calls the guard.
+
+| Where | Change | Why |
+|---|---|---|
+| `guard.Stub`, `guard.IsStub` | removed; `engine.Deps.Stubbed` no longer names a guard | the stub is replaced (Q-BAS-94) |
+| `guard.Verdict` | new field `Quiet`: the request is not to be logged one by one | a blocked address answers many requests, the guard logs one line per block (R-BAS-037); the engine keeps such a request out of the request log |
+| `shared.State` | new field `Timeouts` (a `BlockList` for the failed-authentication timeouts) | R-BAS-036 needs a timeout that outlives the counting window |
+| `shared.Limiter` | `Add` and `Count` return the count **in the units of the configured value**: a local form multiplies its count by `bastion.replicas`; `Replicas()` stays but a caller need not use it | one comparison for every form (Q-BAS-92) |
+| `shared.FlightLock` | on an error `held` is **true**: the replica fetches itself | the lock is an optimization (R-BAS-034) |
+| `shared.SweepLease` | with Valkey unavailable the lease is held and `err` is nil | a sweep only deletes (R-BAS-031) |
+| `shared.AnswerStore` | the Valkey form signs on `Put` and verifies on `Get`; the engine hands over the record and **does not sign** | Q-BAS-93; a record above 1 KiB (signature included) is refused with an error and kept in memory by the engine only |
+| `cluster.WithoutKeyspace`, `cluster.BastionStore`, `cluster.FlightKeyFromHash`, `cluster.Limiter.Estimate` | new in `internal/cluster` | the typed mechanisms behind the Valkey form ([valkey.md](valkey.md#the-bastions-keys)) |
+
+**Where the engine calls the guard** (R-BAS-018). Every method takes the address as `guard.AddressKey` returns it.
+
+| Step | Call | A refusal |
+|---|---|---|
+| 2, block list | `Blocked(addr)` | `429 address_blocked`, `Quiet`, `Retry-After` |
+| 4, limits | `Request(addr, credentialed)` | `429 rate_limited` |
+| a credential the Bastion refuses itself (R-BAS-019) | `FailedAuth(addr)` | none, the answer is the `401` |
+| before a check or a forward for a credential with no usable answer | `AuthTimeout(addr)` | `429 auth_timeout`; nothing is sent to the main installation |
+| before every request to the main installation (forward, check, conditional, probe) | `Miss(addr, credentialed)` | `429 rate_limited` while hits keep being served |
+| the main installation called the credential invalid | `FailedAuth(addr)` | none |
+
+The guard decides and returns a `Verdict` (`Status`, `Code`, `RetryAfter`, `Reason`, `Quiet`); the engine renders the problem details of R-BAS-029,
+sets `Retry-After` and the `RateLimit` fields, and counts `trove_bastion_refused_total{reason=Verdict.Reason}`. The guard counts the blocks it sets
+(`trove_bastion_blocks_total`, `trove_bastion_blocked_addresses`) and logs `bastion address blocked` once per block. An error of the shared state
+admits the request (Q-BAS-94). `exempt_cidrs` are parsed at `guard.New`; a bad entry stops the start.
+
+**The rules in one place.**
+
+- Request limits: a token bucket without Valkey, the sliding window of R-ARCH-034 with it (limiters `bastion.requests_authenticated`,
+  `bastion.requests_anonymous`); the local rate and burst are divided by `bastion.replicas`.
+- Miss limits: the count of the sliding minute (limiters `bastion.misses_authenticated`, `bastion.misses_anonymous`), refused misses included; the
+  retry delay is 15 s.
+- Failed authentication (`bastion.failed_auth`): the failure that brings the count of the window to `max_failures` puts the address into the timeout
+  (`Timeouts`, `failed_auth.timeout`); the next credential without a usable answer is refused. Anonymous requests and credentials with a usable answer
+  are not the guard's to refuse.
+- Blocking (`bastion.refusals`): every refusal of a request limit, a miss limit or the timeout counts; more than `threshold` within `window` blocks the
+  address for `duration`, doubled for each earlier block within 24 h, up to `max_duration`. The decision is serialized in the process; across replicas
+  two blocks can race, and the later one raises the level.
+- IPv6 counts as its /64, an IPv4-mapped address as the IPv4 address (`AddressKey`).
+
+**Valkey and its absence.** `shared.Open(ctx, shared.Options{...})` returns the local state for `valkey.mode: none` and the Valkey state otherwise,
+with a closer. The Valkey form runs on `cluster.NewValkey(..., cluster.WithoutKeyspace())` and keeps a memory next to every mechanism: the block list
+writes to both, reads memory first (a blocked address costs no round trip) and then Valkey; the limiters are the cluster limiters whose fallback is
+the replica's share; the answers are Valkey only (the engine has its own memory). A Valkey that is down, refuses the credential or is slow makes
+the state run from memory and never the replica unready; `trove_valkey_available` and `trove_ratelimit_fallback{limiter}` show it. Losing Valkey
+costs the sharing, not correctness. The keys are in [valkey.md](valkey.md#the-bastions-keys).
+
+**Add a limit.** A new limiter is a name `bastion.<name>` in [guard/instance.go](../../internal/bastion/guard/instance.go), a call to
+`State.Limiter.Allow` (bucket) or `Add` (count), and a row in R-BAS-035 to R-BAS-037; the name is a metric label, so it carries no address. A new
+shared mechanism is a typed method in `internal/cluster/valkey_bastion.go` first, then the interface in `shared.go`, its local form in `local.go` and its
+Valkey form in `valkey.go`.
 
 ## Request flows
 
@@ -184,7 +248,7 @@ and `DeleteObject`; the default is the artifact area, and the wrong area is a mi
 | `Open(ctx, cacheKey, entry)` | full read through the verifying reader; the last 64 KiB are released only after the SHA-256 and size matched; a mismatch returns `ErrCorrupt` from `Read`, deletes the object and the entry of the key, counts `trove_bastion_cache_corrupt_total`; a body longer than the entry is refused at once |
 | `OpenRange` | a range, not verified (H-451) |
 | `Touch(ctx, entry)` | the access marker, at most once per `access_resolution` per replica and content address; best effort |
-| `SweepOnce(ctx, state)`, `RunSweeper(ctx, state)` | the sweep of R-BAS-031 and its loop; publish `cache_bytes`, count `evictions{size}` |
+| `SweepOnce(ctx, src)`, `RunSweeper(ctx, src)` | the sweep of R-BAS-031 and its loop; publish `cache_bytes`, count `evictions{size}`; `src` is a `LeaseSource` (`shared.State` is one), which offers the sweep lease only while the replicas share state, so the cache does not import `shared` |
 
 **The sweep.** The limits are `max_bytes − documents_max_bytes` for artifacts and `documents_max_bytes` for documents
 ([Q-BAS-88](../spec/bastion.md#q-bas-88--documents-have-a-reserved-share-and-entries-are-removed-when-read)); `trove_bastion_cache_capacity_bytes{area}`
@@ -250,7 +314,7 @@ add `database: {host: x}` to the file and the start names `database.host` and th
 
 | Where | What |
 |---|---|
-| `go test ./internal/bastion/...` | the guard of the interface, the validity rules, the metrics table against the specification, the signer, the token syntax against `internal/auth/token`, the local shared state, the server skeleton (listeners, readiness, TLS reload, token and key refusals) |
+| `go test ./internal/bastion/...` | the guard of the interface, the validity rules, the metrics table against the specification, the signer, the token syntax against `internal/auth/token`, the local shared state, the guard with an injected clock (limits, misses, timeout, blocking, exempt networks, IPv6), the server skeleton (listeners, readiness, TLS reload, token and key refusals) |
 | `go test ./internal/config` | the role's defaults, the refusal of another section's keys, the ranges, the chart-managed marking, the committed schema |
 | `go test ./internal/api/v1` | the document's interface operations, the `{bastion: true}` form, the stubs |
 | `go test ./internal/archtest/...` | R-BAS-001's import rule and the layers of the Bastion's packages |
@@ -258,6 +322,8 @@ add `database: {host: x}` to the file and the start names `database.host` and th
 | `go test -race ./internal/bastion/cache` | the volume backend on a temporary directory, the fill, the sweep and its order, the audit spool, the verifying reader, the signed entries, the first-readiness gate and counted errors |
 | `make test-integration` (`test/integration/bastioncache`) | the bucket backend on the stack's SeaweedFS (S3, TLS), under a prefix of its own in `trove-backups`: two replicas on one bucket, the five operations asserted through a counting transport, eviction of 300 MiB to a 100 MiB limit, two sweepers, a replaced object, a rewritten entry |
 | `make test-integration` (`test/integration/postgres`) | `TestBastionMigration`: the three migrations, the constraints, the guards and every query of the Bastion files |
+| `make test-integration` ([test/integration/bastionshared](../../test/integration/bastionshared)) | two replicas against the stack's Valkey with Sentinel and TLS, each test on a key prefix of its own and an injected clock: an answer stored by replica A is found by B and a forged or altered record is ignored (`TestR_BAS_034_…`); the anonymous limit in total over two replicas without Valkey, 1,000 requests in 10 s admitted at most 140 times, 100 misses a minute at most 30 (`TestR_BAS_035_…`); 21 tokens (`TestR_BAS_036_…`); a flood blocked on both replicas for 15 and then 30 minutes (`TestR_BAS_037_…`); the fetch lock and the sweep lease. Valkey unavailable is an address nothing listens on: the tests never stop Valkey or trigger a failover |
+| `go test ./internal/cluster` | `valkey_bastion_test.go`: the Bastion's keys against the in-memory server, the address mapping, `Limiter.Estimate` |
 
 ## Extension checklist
 

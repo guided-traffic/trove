@@ -32,11 +32,9 @@ import (
 	"github.com/guided-traffic/trove/internal/bastion/cache"
 	"github.com/guided-traffic/trove/internal/bastion/downloads"
 	"github.com/guided-traffic/trove/internal/bastion/engine"
-	"github.com/guided-traffic/trove/internal/bastion/guard"
 	"github.com/guided-traffic/trove/internal/bastion/iface"
 	"github.com/guided-traffic/trove/internal/bastion/mainclient"
 	bmetrics "github.com/guided-traffic/trove/internal/bastion/metrics"
-	"github.com/guided-traffic/trove/internal/bastion/shared"
 	"github.com/guided-traffic/trove/internal/buildinfo"
 	"github.com/guided-traffic/trove/internal/config"
 	"github.com/guided-traffic/trove/internal/httpserver"
@@ -85,6 +83,8 @@ type Server struct {
 	engineStop context.CancelFunc
 	bg         sync.WaitGroup
 	fatal      chan error
+	// closers are released at the end: the Valkey client and the guard's loop.
+	closers []io.Closer
 }
 
 var errStarting = errors.New("starting")
@@ -139,12 +139,15 @@ func New(o Options) (*Server, error) {
 	s.health = health.New(cfg.HealthSection(), health.WithLogger(s.log.With("component", "health")),
 		health.WithIdentity(s.instance, config.BastionRole), health.WithObserver(s.checkObserver()))
 	if s.deps, err = s.buildDeps(); err != nil {
+		s.closeAll()
 		return nil, err
 	}
 	if s.engine, err = engine.New(s.deps); err != nil {
+		s.closeAll()
 		return nil, err
 	}
 	if err := s.startTLS(); err != nil {
+		s.closeAll()
 		return nil, err
 	}
 	return s, nil
@@ -202,10 +205,14 @@ func (s *Server) buildDeps() (engine.Deps, error) {
 		}
 	}
 	s.exportConstants()
+	st, g, err := s.openShared(signer)
+	if err != nil {
+		return engine.Deps{}, err
+	}
 	d := engine.Deps{
 		Config: s.cfg, Log: s.log.With("component", "engine"), Metrics: s.bm, Replica: s.instance, Release: buildinfo.Get().Version,
 		Main: mainclient.Stub{}, Tokens: mainclient.NewHolder(tok), Cache: cache.Stub{}, Signer: signer,
-		Shared: shared.NewLocal(b.Replicas, nil), Guard: guard.Stub{}, Downloads: downloads.Stub{}, Feed: answers.NewFeedLog(),
+		Shared: st, Guard: g, Downloads: downloads.Stub{}, Feed: answers.NewFeedLog(),
 	}
 	if s.o.Deps != nil {
 		s.o.Deps(&d)
@@ -422,6 +429,7 @@ func (s *Server) abort() {
 		}
 	}
 	s.bg.Wait()
+	s.closeAll()
 }
 
 // Shutdown is the drain of R-BAS-043 and R-ARCH-024: readiness off, the drain delay, the client listener shuts
@@ -463,6 +471,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.healthStop()
 	}
 	s.bg.Wait()
+	s.closeAll()
 	_ = s.tracer.Shutdown(ctx)
 	s.log.Info("stopped", "took", time.Since(start).Round(time.Millisecond).String())
 	return errors.Join(errsOut...)

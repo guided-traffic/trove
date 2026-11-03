@@ -88,6 +88,25 @@ overlap (R-BAS-006); the Bastion warns 30 days before it expires and alerts when
 
 Without Valkey every counter and block holds per replica at the configured value divided by the chart's replica count (H-389).
 
+**What the guard does with an address** ([guard](../../internal/bastion/guard/instance.go), R-BAS-035 to R-BAS-037):
+
+- The address is the one R-ARCH-006 yields with the Bastion's own `server.trusted_proxies`; an IPv6 address counts as its `/64`, so one
+  host that owns a whole prefix is one address. `exempt_cidrs` are never limited, timed out or blocked: an entry is a promise that nothing
+  behind that network abuses the Bastion.
+- Each refusal of a request limit, a miss limit or a timeout counts toward one threshold. Above it the address is blocked, for 15 minutes
+  and twice as long for each further block within 24 h, up to `max_duration`. A blocked address costs the Bastion one comparison in memory
+  and is answered `429 address_blocked`; its requests are not logged one by one, the block is, once.
+- The failed-authentication timeout refuses only a credential for which the Bastion holds no usable answer; a partner's known token
+  behind the same address keeps working, and the guesser keeps anonymous access (Q-BAS-36). It cannot be used to cut a colleague off: the
+  count is of the unverified credentials the address sent.
+- The guard never refuses on its own fault. If the shared state fails, the request is admitted; with Valkey unavailable the
+  counters and blocks work from memory at the configured value divided by `bastion.replicas`, and `trove_ratelimit_fallback` and
+  `trove_valkey_available` say so (Q-BAS-94).
+- With Valkey the block list, the timeouts and the counters are shared: a block set by one replica holds on every replica at its next
+  request. What Valkey holds is chosen by whoever can write to it; the answers are signed (below), the blocks and counters are not.
+  Write access to the Bastion's Valkey therefore lets its holder block an address or reset a counter, which is a denial or a missing limit
+  and no grant of access; the ACL rule of the Bastion's user confines it to `trove-bastion:*`.
+
 ## Integrity of what it serves
 
 Artifacts are stored under their SHA-256, verified when they are filled (the withheld tail of R-REPO-041) and again while they are
@@ -108,6 +127,9 @@ A fill is spooled to a temporary directory of the volume or the pod's `tmp` and 
 was checked, so a reader never sees a partial object; the backend checks the digest and size of every `PutObject` once more. Every
 name that becomes a path or a key (content address, key hash, replica, spool file) is validated as hex or a fixed form before use.
 The bucket is reached over `https` with the trust bundle of the chart, and its credential is a file the replica re-reads.
+An answer record that Valkey returns is verified against its kind and key before anything else sees it: a record that is altered,
+unsigned, signed with another key or moved to another key is not returned, is deleted and is counted as `bad_signature` (Q-BAS-93). The
+engine still judges the content with the validity rules of R-BAS-020, so a valid old record cannot outlive the revocations received after it.
 
 ## What this does not cover
 
@@ -133,6 +155,12 @@ The gaps of the Bastion's mechanisms are recorded on the spec page, where the me
   timing of a hit tells;
 - [H-391](../spec/bastion.md#h-391--download-events-lost-to-a-full-buffer-a-crash-or-an-ephemeral-spool-are-missing-from-the-audit)
   — download events lost before they reach the audit;
+- [H-454](../spec/bastion.md#h-454--the-gauge-of-blocked-addresses-counts-the-blocks-a-replica-knows) — the gauge of blocked addresses
+  is per replica;
+- [H-455](../spec/bastion.md#h-455--every-request-costs-the-bastions-valkey-round-trips-and-an-unblocked-flood-from-many-addresses-costs-it-per-request)
+  — the load a flood from many addresses puts on the Bastion's Valkey;
+- [H-456](../spec/bastion.md#h-456--a-block-or-a-timeout-set-without-valkey-or-while-it-is-unavailable-is-forgotten-when-the-replica-restarts)
+  — blocks set without Valkey are forgotten at a restart;
 - [H-428](../spec/bastion.md#h-428--the-ops-listener-of-a-bastion-serves-its-metrics-without-authentication) — the ops listener's
   metrics carry no authentication;
 - [H-429](../spec/bastion.md#h-429--until-the-engine-and-the-guard-are-built-a-bastion-refuses-every-read-and-limits-nothing) — a
