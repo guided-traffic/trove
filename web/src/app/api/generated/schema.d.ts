@@ -5602,26 +5602,29 @@ export interface components {
              */
             distTagStrategy: "member-order" | "highest-semver" | "newest-published";
             /**
-             * @description Remote repositories (R-NPM-038). The security audit endpoint: forward the names this remote has fetched,
-             *     and that nothing marks internal, to an advisory provider.
+             * @description Every class (R-NPM-038, R-VULN-017). The security audit endpoint: answer from trove's own advisory data, or
+             *     forward the names this remote has fetched, and that nothing marks internal, to an advisory provider.
              */
             audit?: {
                 /**
-                 * @description `forward` answers audits through this remote; `disabled` answers 501 `npm_audit_unavailable`.
-                 * @default forward
+                 * @description `local` answers from trove's own advisory data and sends nothing out (every class; `503 vulnerability_data_unavailable`
+                 *     until the npm data is complete; answers like `disabled` while `vulnerabilities.enabled` is false); `forward` answers
+                 *     through the first remote that forwards (remote and virtual repositories; a local repository answers like `disabled`);
+                 *     `disabled` answers 501 `npm_audit_unavailable`. Left out, the mode is `local` while `vulnerabilities.enabled` is true and
+                 *     the OSV source is not off, else `forward` on remote and virtual repositories and `disabled` on local ones.
                  * @enum {string}
                  */
-                mode: "forward" | "disabled";
+                mode?: "local" | "forward" | "disabled";
                 /**
                  * Format: uri
-                 * @description The https registry URL of the advisory provider, without user info, query or fragment; null is the remote's
+                 * @description Mode `forward` only. The https registry URL of the advisory provider, without user info, query or fragment; null is the remote's
                  *     upstream URL. The provider gets the repository's sealed upstream credentials only when it is the upstream's
                  *     origin or an `extraHosts` entry with `sendCredentials` (R-REPO-033), never through the URL.
                  * @default null
                  */
                 providerURL: string | null;
                 /**
-                 * @description The longest a forward may take, `1s` to `300s`; never longer than `server.shutdown_timeout` minus one second.
+                 * @description Mode `forward` only. The longest a forward may take, `1s` to `300s`; never longer than `server.shutdown_timeout` minus one second.
                  * @default 30s
                  */
                 timeout: string;
@@ -5653,6 +5656,14 @@ export interface components {
              * @default true
              */
             forwardSearch: boolean;
+            /**
+             * @description The vulnerability information of the service index (R-VULN-018): `local` lists VulnerabilityInfo/6.7.0 and serves trove's
+             *     own NuGet advisory data while that data is complete (every class; answers like `off` while `vulnerabilities.enabled` is
+             *     false); `off` lists nothing. Left out, the mode is `local` while `vulnerabilities.enabled` is true and the OSV source is not
+             *     off, else `off`. The pass-through of the upstream's information, `upstream`, is refused until R-NUGET-023 is built.
+             * @enum {string}
+             */
+            vulnerabilityInfo?: "local" | "off";
         };
         /** @description What a caller sees who may read a repository but not its configuration (R-REPO-010). */
         RepositoryConsumerView: {
@@ -15039,6 +15050,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
             500: components["responses"]["Internal"];
             503: components["responses"]["Unavailable"];
