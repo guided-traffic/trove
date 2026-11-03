@@ -330,6 +330,8 @@ func TestFlightLockWait(t *testing.T) {
 		h, _, _ := fx.lock.Acquire(t.Context(), testFlight)
 		res := startWait(t.Context(), fx.lock, testFlight)
 		eventually(t, "the subscription", 5*time.Second, func() bool { return fx.srv.subscribers(fillChannel(testFlight)) == 1 })
+		// A Release before the waiter's first GET would show it a missing key: gone, not stored.
+		eventually(t, "the first look at the key", 5*time.Second, func() bool { return fx.srv.count("GET") == 1 })
 		select {
 		case r := <-res:
 			t.Fatalf("Wait returned %+v while the lock is held", r)
@@ -423,7 +425,12 @@ func TestFlightLockSubscriptions(t *testing.T) {
 			results[i] = startWait(t.Context(), fx.lock, testFlight)
 		}
 		eventually(t, "the subscription", 5*time.Second, func() bool { return fx.srv.subscribers(fillChannel(testFlight)) == 1 })
-		time.Sleep(100 * time.Millisecond)
+		// Every waiter has seen the key held: a waiter whose first GET came after
+		// the release's DELIFEQ would see a missing key and no outcome and get gone,
+		// which Wait documents (OutcomeGone). A goroutine that a loaded runner has not
+		// scheduled for 100 ms is such a waiter, so the count of first looks replaces
+		// a fixed sleep. A counted GET has taken effect (memServer.handle).
+		eventually(t, "the first look of every waiter at the key", 10*time.Second, func() bool { return fx.srv.count("GET") == n })
 		var subscribes int
 		for _, c := range fx.srv.commands("SUBSCRIBE") {
 			if c[1] == fillChannel(testFlight) {
@@ -451,6 +458,8 @@ func TestFlightLockSubscriptions(t *testing.T) {
 		eventually(t, "both subscriptions", 5*time.Second, func() bool {
 			return fx.srv.subscribers(fillChannel(testFlight)) == 1 && fx.srv.subscribers(fillChannel(other)) == 1
 		})
+		// Both waiters have seen their key held; a Release before a first GET shows a missing key (gone).
+		eventually(t, "the first look of both waiters", 5*time.Second, func() bool { return fx.srv.count("GET") == 2 })
 		_ = ha.Release(t.Context(), OutcomeStored, "")
 		if r := expect(t, ra, 2*time.Second, "flight a"); r.o != OutcomeStored {
 			t.Fatalf("a: %+v", r)

@@ -468,9 +468,11 @@ Details: [roadmap M4](../coverage/roadmap.md#m4--gitlab-ci-oidc) · spec: [gitla
 - 🟢 Test and Release run 41549404703 failed in `compat`: W4 typed the exchange's `ttl` as a string with a pattern, a breaking
   change against v0.13.0 (R-ARCH-025), which the local check missed because the tag `v0.13.0` was not fetched; `ttl` keeps the
   released `integer`, and the handler takes a JSON number or a string of digits as before
-- 🟡 Test and Release run 41549404703 failed in `unit tests` at `TestFlightLockSubscriptions` ("fifty waiters of one flight
-  cost one SUBSCRIBE", R-ARCH-033): a waiter saw the flight `gone` without its outcome; the flight code is unchanged in this
-  phase, so the flake predates it; cause not known yet
+- 🟢 Test and Release run 41549404703 failed in `unit tests` at `TestFlightLockSubscriptions` ("fifty waiters of one flight
+  cost one SUBSCRIBE", R-ARCH-033): the test released the flight after a fixed 100 ms sleep, and a waiter goroutine that a
+  loaded runner had not yet scheduled made its first `GET` after the `DELIFEQ`, which `Wait` documents as `gone` (the flight
+  code keeps its promise). The test, and its two siblings with the same shape, now wait until every waiter's first `GET` has
+  been counted before they release
 - 🟢 Test and Release run 41553486196 failed in `unit tests` at `TestStallTimeout` ("every successful chunk moves the deadline,
   so a slow but steady transfer completes", R-ARCH-005: the body arrived cut at 70 bytes); the server keeps its promise, the
   test left no margin: net deadlines are absolute and a read whose goroutine is not scheduled before the deadline fails even with
