@@ -477,8 +477,13 @@ func TestR_BAS_002_ConfigurationOnlyThroughTheChart(t *testing.T) {
 		} {
 			t.Run(p, func(t *testing.T) {
 				value := "x"
-				if p == "bastion.replicas" {
+				switch p {
+				case "bastion.replicas":
 					value = "9"
+				case "server.tls", "server.ops_tls":
+					// An object: the schema rejects a string, so the test sets a key inside it.
+					p += ".min_version"
+					value = "1.3"
 				}
 				bstFails(t, bstRequired(), []string{"config." + p + "=" + value}, "config."+p, "managed by the chart")
 			})

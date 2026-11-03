@@ -161,7 +161,8 @@ The main installation's keys ([bastions.go](../../internal/config/bastions.go), 
 [bastion_role.go](../../internal/config/bastion_role.go) (`BastionConfig`, `LoadBastion`); its JSON Schema is the committed, generated
 file [internal/config/bastion.schema.json](../../internal/config/bastion.schema.json), which the chart `trove-bastion` includes as the
 schema of its `config` value. Keys the chart renders carry `x-trove-chart-managed: true`; the chart refuses a value for them.
-`go generate ./internal/config` writes both schema files.
+`go generate ./internal/config` writes both schema files and the generated files of the chart (`values.schema.json` `config`
+property, `chart-managed-keys.yaml`; [helm-chart.md](helm-chart.md#the-bastion-chart)).
 
 ## Run the role locally
 

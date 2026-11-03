@@ -469,7 +469,8 @@ validation, restricted pod security, probes on the ops port, `extraObjects` thro
 deploy/helm/trove-bastion/
 ├── Chart.yaml              version = appVersion = 0.0.0-dev (build.yml rewrites both with the release version)
 ├── values.yaml             the block of R-BAS-046, every value "default (proposed)" or "example"
-├── values.schema.json      draft-07, additionalProperties false outside config; config is the hook (below)
+├── values.schema.json      draft-07, additionalProperties false outside config; config = the generated role schema (below)
+├── chart-managed-keys.yaml generated: the config paths the chart renders and refuses (below)
 ├── ci/                     value sets the tests render (not packaged, see .helmignore)
 │   ├── required-only.yaml      the five values a render needs (Q-BAS-55)
 │   ├── bucket-valkey.yaml      bucket backend, Sentinel Valkey, trust bundle, tracing, ServiceMonitor, PrometheusRule
@@ -526,15 +527,27 @@ with the bucket backend or Valkey, the bucket and its credentials Secret, `cache
 is no alert, autoscaling bounds and metric, `highAvailability.enforce` (two replicas, a PDB, host spreading `DoNotSchedule` with
 `nodeTaintsPolicy: Honor`, no standalone Valkey, three Sentinels), and the managed keys.
 
-**Schema and the `config` hook.** [values.schema.json](../../deploy/helm/trove-bastion/values.schema.json) is generated once from
-the key set of `values.yaml` and edited by hand afterwards (like the one of the chart `trove`); everything outside `config` is
-`additionalProperties: false`. The `config` property is a free-form object with a description and the few keys the templates read
-typed. R-BAS-046 wants it validated against the schema the binary emits for the role `bastion` (R-HA-029's mechanism), which another
-work package produces as a generated file in `internal/config`; until it is wired, a typo under `config` fails in the binary, not at
-`helm install`. The wiring is one step: replace the value of `properties.config` in `values.schema.json` with the generated role schema
-(without its `$schema` and `$id`, as the root is draft-07), and make sure the schema lists the chart-managed keys of the paragraph
-above, because the binary reads them. Then add a subtest to `TestR_BAS_046_ValuesReferenceIsTheSpecBlock` that a typo under
-`config.bastion` fails `helm template`, and a check in `make generate-check` that the embedded copy equals the generated file.
+**Schema and the `config` subtree.** [values.schema.json](../../deploy/helm/trove-bastion/values.schema.json) is generated once from
+the key set of `values.yaml` and edited by hand afterwards (like the one of the chart `trove`) for everything outside `config`, which
+is `additionalProperties: false`. The `config` property is not hand-written: it is the schema the binary emits for the role `bastion`,
+[internal/config/bastion.schema.json](../../internal/config/bastion.schema.json) without `$schema` and `$id` (the root is draft-07),
+spliced in by `go generate ./internal/config` ([schemagen](../../internal/config/schemagen/main.go), flag `-bastion-chart`). So
+`make generate` regenerates it after a change of [bastion_role.go](../../internal/config/bastion_role.go), and `make generate-check`
+(CI) fails when the committed file differs. A typo, a wrong type or an out-of-range value under `config` fails `helm template`,
+`helm lint` and `helm install` with the path of the key. Never edit the `config` property or `chart-managed-keys.yaml` by hand.
+
+The keys the chart renders itself are tagged `chart:"managed"` in `bastion_role.go` and carry `x-trove-chart-managed` in the role
+schema (the binary reads them, so the schema has them). The same run writes the topmost managed paths to
+[chart-managed-keys.yaml](../../deploy/helm/trove-bastion/chart-managed-keys.yaml), which `templates/_validate.tpl` reads with
+`.Files.Get` and refuses with a message naming the key set (`config.<path> is managed by the chart`); the `server.*` paths only while
+`tls.enabled`. Adding a key the chart renders into `/etc/trove/trove.yaml`: tag the field, run `make generate`, render it in
+`trove-bastion.config` in `_helpers.tpl`; `TestR_BAS_046_EveryRenderedKeyIsInTheRoleSchemaAndManaged` fails for a rendered key that
+is missing in the schema or not tagged. `bastion.cache.bucket.credentials.web_identity_token_file` is deliberately not managed: the
+chart mounts no token for it, the operator sets the path of the workload identity's token.
+
+Tests: [bastion_schema_test.go](../../test/chart/bastion_schema_test.go) (`TestR_BAS_046_ConfigIsTheGeneratedRoleSchema`,
+`TestR_BAS_046_ATypoUnderConfigFailsAtHelm`, `TestR_BAS_002_ChartManagedKeysAreRefusedUnderConfig`,
+`TestR_BAS_046_EveryRenderedKeyIsInTheRoleSchemaAndManaged`).
 
 **PrometheusRule and its tests (R-BAS-041).** `_rules.tpl` holds the alerts as a YAML list; `prometheusrule.yaml` drops the names
 of `disabledAlerts` and appends `extraRules`. The Valkey alert exists only while `config.valkey.mode` is not `none`, and the replica

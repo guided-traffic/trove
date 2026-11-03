@@ -128,14 +128,14 @@ type BastionCacheBucket struct {
 	Credentials    BastionBucketCredentials `yaml:"credentials"`
 }
 
-// BastionBucketCredentials selects where the bucket credential comes from (R-BAS-030). The files are rendered
-// by the chart from secrets.cacheBucket or the workload identity.
+// BastionBucketCredentials selects where the bucket credential comes from (R-BAS-030). The static files are
+// rendered by the chart from secrets.cacheBucket; the token file of the workload identity is the operator's.
 type BastionBucketCredentials struct {
 	Source               string `yaml:"source" default:"static" validate:"oneof=static|webIdentity|default"`
 	RoleARN              string `yaml:"role_arn" default:""`
 	AccessKeyIDFile      string `yaml:"access_key_id_file" default:"" secret:"file" chart:"managed"`
 	SecretAccessKeyFile  string `yaml:"secret_access_key_file" default:"" secret:"file" chart:"managed"`
-	WebIdentityTokenFile string `yaml:"web_identity_token_file" default:"" secret:"file" chart:"managed"`
+	WebIdentityTokenFile string `yaml:"web_identity_token_file" default:"" secret:"file" doc:"The projected service account token of the workload identity; set by the operator (the chart renders no volume for it)."`
 }
 
 // BastionLimits are the per-address request limits (R-BAS-035).
@@ -196,22 +196,33 @@ type BastionToken struct {
 // BastionValkey is the optional Valkey of the Bastion (R-BAS-034): the keys of the chart trove (R-HA-056) with
 // the mode none as the default. The credentials are chart-managed files.
 type BastionValkey struct {
-	Mode                 string          `yaml:"mode" default:"none" validate:"oneof=none|sentinel|standalone" doc:"none: no Valkey (the default); sentinel; standalone is for development only."`
-	Sentinel             ValkeySentinel  `yaml:"sentinel"`
-	Address              string          `yaml:"address" default:"" doc:"Standalone mode only."`
-	Database             int             `yaml:"database" default:"0" validate:"min=0"`
-	KeyPrefix            string          `yaml:"key_prefix" default:"" doc:"Part of every key, trove-bastion:<key_prefix>:…; empty means the host of server.base_url (R-BAS-034)."`
-	UsernameFile         string          `yaml:"username_file" default:"" chart:"managed" doc:"Empty means the default user; rendered by the chart from secrets.valkey."`
-	PasswordFile         string          `yaml:"password_file" default:"" secret:"file" chart:"managed"`
-	TLS                  ValkeyTLS       `yaml:"tls"`
-	AllowInsecure        bool            `yaml:"allow_insecure" default:"false" doc:"Required for tls.mode disable."`
-	ConnectTimeout       time.Duration   `yaml:"connect_timeout" default:"2s" validate:"min=10ms"`
-	CommandTimeout       time.Duration   `yaml:"command_timeout" default:"500ms" validate:"min=10ms"`
-	SentinelQueryTimeout time.Duration   `yaml:"sentinel_query_timeout" default:"300ms" validate:"min=10ms" doc:"Per Sentinel tried."`
-	MaxConnLifetime      time.Duration   `yaml:"max_conn_lifetime" default:"30m" validate:"min=1s"`
-	HealthCheckInterval  time.Duration   `yaml:"health_check_interval" default:"5s" validate:"min=100ms"`
-	Reconnect            ValkeyReconnect `yaml:"reconnect"`
-	CircuitBreaker       ValkeyBreaker   `yaml:"circuit_breaker"`
+	Mode                 string           `yaml:"mode" default:"none" validate:"oneof=none|sentinel|standalone" doc:"none: no Valkey (the default); sentinel; standalone is for development only."`
+	Sentinel             ValkeySentinel   `yaml:"sentinel"`
+	Address              string           `yaml:"address" default:"" doc:"Standalone mode only."`
+	Database             int              `yaml:"database" default:"0" validate:"min=0"`
+	KeyPrefix            string           `yaml:"key_prefix" default:"" doc:"Part of every key, trove-bastion:<key_prefix>:…; empty means the host of server.base_url (R-BAS-034)."`
+	UsernameFile         string           `yaml:"username_file" default:"" chart:"managed" doc:"Empty means the default user; rendered by the chart from secrets.valkey."`
+	PasswordFile         string           `yaml:"password_file" default:"" secret:"file" chart:"managed"`
+	TLS                  BastionValkeyTLS `yaml:"tls"`
+	AllowInsecure        bool             `yaml:"allow_insecure" default:"false" doc:"Required for tls.mode disable."`
+	ConnectTimeout       time.Duration    `yaml:"connect_timeout" default:"2s" validate:"min=10ms"`
+	CommandTimeout       time.Duration    `yaml:"command_timeout" default:"500ms" validate:"min=10ms"`
+	SentinelQueryTimeout time.Duration    `yaml:"sentinel_query_timeout" default:"300ms" validate:"min=10ms" doc:"Per Sentinel tried."`
+	MaxConnLifetime      time.Duration    `yaml:"max_conn_lifetime" default:"30m" validate:"min=1s"`
+	HealthCheckInterval  time.Duration    `yaml:"health_check_interval" default:"5s" validate:"min=100ms"`
+	Reconnect            ValkeyReconnect  `yaml:"reconnect"`
+	CircuitBreaker       ValkeyBreaker    `yaml:"circuit_breaker"`
+}
+
+// BastionValkeyTLS is ValkeyTLS with ca_file rendered by the chart (R-BAS-046): from secrets.valkeyCA or, without
+// it, from the trust bundle trustedCA. The other keys are the operator's. The fields equal ValkeyTLS, so the
+// Valkey client reads the section by conversion.
+type BastionValkeyTLS struct {
+	Mode       string `yaml:"mode" default:"verify-full" validate:"oneof=verify-full|verify-ca|disable"`
+	CAFile     string `yaml:"ca_file" default:"" chart:"managed" doc:"CA bundle that verifies Valkey and the Sentinels, added to the system roots; rendered by the chart from secrets.valkeyCA or trustedCA."`
+	CertFile   string `yaml:"cert_file" default:""`
+	KeyFile    string `yaml:"key_file" default:"" secret:"file"`
+	ServerName string `yaml:"server_name" default:"" doc:"Empty means the host name of each address."`
 }
 
 // BastionTracing is the tracing section of the role (R-BAS-042): the keys of the main installation's section
@@ -364,7 +375,7 @@ func (v BastionValkey) Valkey() Valkey {
 	return Valkey{
 		Mode: v.Mode, Sentinel: v.Sentinel, Address: v.Address, Database: v.Database,
 		KeyPrefix:    BastionKeyspace + strings.TrimSuffix(v.KeyPrefix, ":") + ":",
-		UsernameFile: v.UsernameFile, PasswordFile: v.PasswordFile, TLS: v.TLS, AllowInsecure: v.AllowInsecure,
+		UsernameFile: v.UsernameFile, PasswordFile: v.PasswordFile, TLS: ValkeyTLS(v.TLS), AllowInsecure: v.AllowInsecure,
 		ConnectTimeout: v.ConnectTimeout, CommandTimeout: v.CommandTimeout, SentinelQueryTimeout: v.SentinelQueryTimeout,
 		MaxConnLifetime: v.MaxConnLifetime, HealthCheckInterval: v.HealthCheckInterval,
 		Reconnect: v.Reconnect, CircuitBreaker: v.CircuitBreaker,

@@ -103,13 +103,13 @@ image: ## Build the release image (IMAGE, VERSION, IMAGE_ARCH) for linux/IMAGE_A
 ##@ Code generation
 
 .PHONY: generate
-generate: ## Run every go:generate directive (config schema, sqlc, oapi-codegen)
+generate: ## Run every go:generate directive (config schemas and the Bastion chart files derived from them, sqlc, oapi-codegen)
 	go generate $(PKGS)
 
 .PHONY: generate-check
 generate-check: generate ## Generate, then fail when the tree differs from the committed files (CI: E0.1)
 	git diff --exit-code
-	@untracked="$$(git ls-files --others --exclude-standard | grep -E '(^|/)(gen|q)/|schema\.json$$' || true)"; \
+	@untracked="$$(git ls-files --others --exclude-standard | grep -E '(^|/)(gen|q)/|schema\.json$$|chart-managed-keys\.yaml$$' || true)"; \
 	  if [ -n "$$untracked" ]; then echo "generated files are not committed:"; echo "$$untracked"; exit 1; fi
 
 ##@ Quality

@@ -186,6 +186,10 @@ Secret rolls nothing.
 {{- end -}}
 {{- $_ := set $managed "valkey" $vk -}}
 {{- end -}}
+{{- /* The trust bundle also verifies the collector (tracing.ca_file is chart-managed, R-BAS-046). */ -}}
+{{- if and $trust (dig "tracing" "enabled" false $cfg) -}}
+{{- $_ := set $managed "tracing" (dict "ca_file" $trust) -}}
+{{- end -}}
 {{- /* TLS (R-BAS-044): server.tls for the client listener; server.ops_tls keeps its default (inherit: true). */ -}}
 {{- if .Values.tls.enabled -}}
 {{- $_ := set $managed "server" (dict "tls" (dict "certificates" (list (dict "cert_file" "/var/run/secrets/trove/tls/tls.crt" "key_file" "/var/run/secrets/trove/tls/tls.key")))) -}}

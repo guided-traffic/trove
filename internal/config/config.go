@@ -56,4 +56,4 @@ type Config struct {
 	ConfigAsCode AsCode `yaml:"config_as_code"`
 }
 
-//go:generate go run ./schemagen -out schema.json -bastion-out bastion.schema.json
+//go:generate go run ./schemagen -out schema.json -bastion-out bastion.schema.json -bastion-chart ../../deploy/helm/trove-bastion

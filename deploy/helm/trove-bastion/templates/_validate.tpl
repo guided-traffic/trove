@@ -1,7 +1,7 @@
 {{/*
 Fail-fast validation (R-BAS-045). Every failure names the offending value. The keys of config that the
-binary's role schema does not know are refused by values.schema.json once the generated schema of the
-role bastion is wired in (docs/developer/helm-chart.md, Bastion chart).
+binary's role schema does not know are refused by values.schema.json, whose config property is the
+generated schema of the role bastion (docs/developer/helm-chart.md, Bastion chart).
 */}}
 {{- define "trove-bastion.validate" -}}
 {{- $v := .Values -}}
@@ -210,12 +210,13 @@ role bastion is wired in (docs/developer/helm-chart.md, Bastion chart).
 {{- end -}}
 {{- end -}}
 
-{{- /* Keys the chart manages (R-BAS-002, R-BAS-046): setting one inside config is refused. */ -}}
-{{- $managedPaths := list "bastion.main.token_file" "bastion.main.ca_file" "bastion.signing_key_file" "bastion.cache.volume.dir" "bastion.cache.bucket.ca_file" "bastion.cache.bucket.credentials.access_key_id_file" "bastion.cache.bucket.credentials.secret_access_key_file" "bastion.replicas" "valkey.username_file" "valkey.password_file" "valkey.tls.ca_file" -}}
-{{- if $v.tls.enabled -}}
-{{- $managedPaths = concat $managedPaths (list "server.tls" "server.ops_tls") -}}
+{{- /* Keys the chart manages (R-BAS-002, R-BAS-046): setting one inside config is refused. The list is chart-managed-keys.yaml, generated from the x-trove-chart-managed keys of the role schema (go generate ./internal/config). */ -}}
+{{- $managedPaths := .Files.Get "chart-managed-keys.yaml" | fromYamlArray -}}
+{{- if not $managedPaths -}}
+{{- fail "trove-bastion: chart-managed-keys.yaml is missing or empty in the chart; regenerate it with make generate" -}}
 {{- end -}}
 {{- range $path := $managedPaths -}}
+{{- if or $v.tls.enabled (not (hasPrefix "server." $path)) -}}
 {{- $cur := $cfg -}}
 {{- $found := true -}}
 {{- range splitList "." $path -}}
@@ -226,7 +227,17 @@ role bastion is wired in (docs/developer/helm-chart.md, Bastion chart).
 {{- end -}}
 {{- end -}}
 {{- if $found -}}
-{{- fail (printf "trove-bastion: config.%s is managed by the chart and must not be set (secret file paths come from the secrets values, TLS from the tls values, the replica count from replicaCount or autoscaling.maxReplicas, the cache directory is fixed)" $path) -}}
+{{- /* A managed subtree (server.tls) is refused at its first key, so the message names the key that was set. */ -}}
+{{- $named := $path -}}
+{{- range until 8 -}}
+{{- if and (kindIs "map" $cur) $cur -}}
+{{- $first := $cur | keys | sortAlpha | first -}}
+{{- $named = printf "%s.%s" $named $first -}}
+{{- $cur = index $cur $first -}}
+{{- end -}}
+{{- end -}}
+{{- fail (printf "trove-bastion: config.%s is managed by the chart and must not be set (secret file paths come from the secrets values, TLS from the tls values, the replica count from replicaCount or autoscaling.maxReplicas, the cache directory is fixed)" $named) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

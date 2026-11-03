@@ -193,8 +193,8 @@
                     },
                     "web_identity_token_file": {
                       "default": "",
+                      "description": "The projected service account token of the workload identity; set by the operator (the chart renders no volume for it).",
                       "type": "string",
-                      "x-trove-chart-managed": true,
                       "x-trove-env": "TROVE_BASTION_CACHE_BUCKET_CREDENTIALS_WEB_IDENTITY_TOKEN_FILE",
                       "x-trove-secret": "file-only"
                     }
@@ -1126,8 +1126,9 @@
           "properties": {
             "ca_file": {
               "default": "",
-              "description": "Empty means the system roots (verify-full only); required with verify-ca.",
+              "description": "CA bundle that verifies Valkey and the Sentinels, added to the system roots; rendered by the chart from secrets.valkeyCA or trustedCA.",
               "type": "string",
+              "x-trove-chart-managed": true,
               "x-trove-env": "TROVE_VALKEY_TLS_CA_FILE"
             },
             "cert_file": {

@@ -3253,6 +3253,14 @@ when the generated file lands.
 
 **Applied in the spec:** R-BAS-046 (acceptance criteria stay; the mechanism is staged).
 
+**Completed:** the staged mechanism is complete. `go generate ./internal/config` (so `make generate` and `make generate-check`)
+writes the generated role schema as the `config` property of `deploy/helm/trove-bastion/values.schema.json` and the managed
+subtrees as `deploy/helm/trove-bastion/chart-managed-keys.yaml`, which `templates/_validate.tpl` reads to refuse a managed key with a
+message naming it. A typo under `config` now fails `helm template` and `helm lint`. Reconciliation of the chart and the role
+schema: `valkey.tls.ca_file` is marked chart-managed (own type `BastionValkeyTLS`); `bastion.cache.bucket.credentials.web_identity_token_file`
+is not, because the chart renders no volume for it and the binary requires it with `source: webIdentity`; the chart now renders
+`tracing.ca_file` from the trust bundle while tracing is enabled, because the role schema marks it managed.
+
 ### Q-BAS-59 · One release job publishes both charts
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
