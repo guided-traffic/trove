@@ -186,6 +186,10 @@ Tests: `TestR_VULN_013_*`, `TestR_VULN_019_*`, `TestR_VULN_020_*`, `TestR_VULN_0
 export, the auditor, the scoped service-account token, 412, the bulk results, the scatter paging with three replicas, the journal row). Not reached at this tier: the
 `403` of an auditor on the download (the file service's), the rescan's `202` and `409` (the kind is B's), and the criteria that need the evaluation to write findings.
 
+#### WP-A · Advisory data (R-VULN-003 to R-VULN-008, the sync half of R-VULN-024, R-VULN-026 and R-VULN-027)
+The decisions are [Q-VULN-30 to Q-VULN-34](../spec/vulnerability-scanning.md#q-vuln-30--a-full-sync-validates-before-it-writes-in-two-passes), the gaps
+[H-477 to H-479](../security/vulnerability-scanning.md#what-this-does-not-cover), the operator's page is [the manual](../manual/admin/vulnerability-sources.md).
+
 ### F · The UI (R-VULN-022, R-VULN-023)
 
 Q-VULN-52 to Q-VULN-54, H-490. The description of the screens, their files and specs is in [web-ui.md](web-ui.md#the-vulnerability-screens); the manual page is
@@ -307,6 +311,50 @@ R-EP-012, the scanning switched off; R-VULN-018: the listing on every class, the
 503). Not reached at this tier, and why: the client runs (`npm audit`, `pnpm audit`, `yarn npm audit`, `dotnet restore`, NU1903, NU1904,
 `NuGetAuditSuppress`, the reference lockfile's identity with the public registry's answer) are the end-to-end tier's; the propagation bound of the page's ETag
 "with Valkey stopped" is shown here with the stack's Valkey unreachable (the replicas of the tests run without it) and a poll, not with a timed bound.
+
+| [osv/record.go](../../internal/vuln/osv/record.go) | `Decode`: one OSV record to a `Record` (R-VULN-006): the identifier, `modified` and schema rules, the cut and cleaned texts, the reference filter, aliases, kind, the affected entries normalized by the format's `match.Adapter` (a refused name dropped and counted, a range the format cannot parse stored and counted `Unevaluable`), `every_version`, `fixed`, the digest of the bytes; every failure wraps `ErrRejected` |
+| [osv/severity.go](../../internal/vuln/osv/severity.go) | `ScoreVector` over `github.com/pandatix/go-cvss` (2.0, 3.0, 3.1, 4.0, the rating scale of the vector's version), `DecideOwn` (rules 1, 2, 4, 5 of R-VULN-007), `Decide` (rule 3, the alias records) |
+| [osv/kev.go](../../internal/vuln/osv/kev.go) | `DecodeKEV`: the catalog (R-VULN-008), refused whole when a rule fails |
+| [store/sync.go](../../internal/vuln/store/sync.go) | the wrappers of [queries/vuln_sync.sql](../../internal/meta/postgres/queries/vuln_sync.sql): the state row (`Ensure`, `Get`, `Lock`, `Save`, `Failure`, `BumpEpoch`), a batch (`Stored`, `Upsert` as two jsonb documents, `AddPending`, `Delete`), the alias groups (`GroupRows`, `SetCanonical`, `SetSeverity`), the catalog (`ReplaceKEV`, `KEVCandidates`, `ApplyKEV`) |
+| [sync/service.go](../../internal/vuln/sync/service.go) | `Service` and its `Options` (database, change log, cache registry, outbound client, spool, job queue, recorder, `Mirror`, adapters read at run time), `Params` (`acceptShrink`, the principal), the `Run` interface (`*jobs.Run` satisfies it), `Result` |
+| [sync/run.go](../../internal/vuln/sync/run.go) | `RunOSV`: every ecosystem in turn, a failing one not stopping the others; `syncOne` picks the mode and full or incremental; `incremental` |
+| [sync/fetch.go](../../internal/vuln/sync/fetch.go) | the requests: the conditional archive download through the spool, `googMD5` over every `x-goog-hash` line, the change file in ranges of 64 KiB (a `200` read from its start), a record, a document; the mapping of a transport error to `egress_denied`, `upstream_timeout`, `upstream_unreachable` |
+| [sync/archive.go](../../internal/vuln/sync/archive.go) | the two passes of a full sync (`scanArchive`, `applyArchive`), the guards, the checkpoint, `writeChunk`, the deletion, `finishGroups` |
+| [sync/records.go](../../internal/vuln/sync/records.go) | `fetchApply`: eight parallel record fetches, validation, the skip of an unchanged record, one transaction |
+| [sync/group.go](../../internal/vuln/sync/group.go) | alias groups: the closure over `aliases`, union-find, `canonicalOf`, the severity of the canonical row, the known-exploited flags |
+| [sync/finish.go](../../internal/vuln/sync/finish.go) | the final transaction of a run (`finishFull`, `finishIncremental`, `finishUnchanged`): state, watermark, epoch, `vuln_data` notification, the request of the full evaluation, `vuln-evaluate`, the import event |
+| [sync/failure.go](../../internal/vuln/sync/failure.go) | the failure record (`last_error`, the hourly `vulnerability.source.failed`) |
+| [sync/kev.go](../../internal/vuln/sync/kev.go), [sync/mirror.go](../../internal/vuln/sync/mirror.go) | `RunKEV`; mode `repository` (`Mirror`, `RepositoryMirror` over the repository reader and the item store, `fullMirror`) |
+| [sync/states.go](../../internal/vuln/sync/states.go) | `States`: the cache `vuln_source_state` on the area `vuln_data` (safety TTL 60 s), read once per change, the last state kept when the database cannot be read, `Stale` from `stale_after` at call time |
+| [app/wire_vuln_sync.go](../../internal/app/wire_vuln_sync.go) | the wiring: the outbound client of purpose `vuln_source`, the adapters from the catalog, the ecosystem check, the three kinds and tasks, `App.VulnSync()` |
+**What the others rely on**
+- `vuln.States` answers from the replica's cache, with no query per call. `Complete` is the state `complete` of a finished full import; `Epoch` is `vuln_source_state.data_epoch`, raised by every run that wrote
+  or deleted records, by the first complete import and by a known-exploited change.
+- `vuln_advisory` holds one row per published identifier; `canonical_id` is the alias group's canonical identifier (R-VULN-006) and is the identifier a finding carries; the canonical row carries the group's decided
+  severity and its known-exploited flag and date. `vuln_affected` has one row per surviving affected entry, `ord` its position among them, `ranges` as published (the matcher normalizes event versions),
+  `versions` and `fixed` normalized by the format.
+- `vuln_pending_evaluation` holds every record a run wrote, every record a full sync deleted, every record whose known-exploited flag changed, and, when a group's canonical identifier or severity changed, the
+  identifiers of the group and the old canonical identifier. The evaluation reads advisory rows for the identifiers it finds there; a deleted record has no row left, its findings are the way to its versions.
+- `vuln_source_state.full_evaluation_requested_at` is set in the transaction of the first complete import and of a raised `match.MatcherVersion`, and `vuln-evaluate` is enqueued in the same transaction; the
+  sync never clears it. The enqueue skips an unregistered `vuln-evaluate` kind with a warning (a build without the evaluation), so the sync works before it exists.
+- A run that fails leaves the data as it was: `last_error` is a problem object with `at` and `eventAt`, `failures` counts consecutive failures. The metrics are `trove_vuln_sync_runs_total` and
+  `trove_vuln_sync_records_total`; the gauges of R-VULN-024 are work package G's and read the same columns.
+- The package's goroutines: the eight record fetches of an incremental run end with the batch; nothing outlives a run.
+| File | Change |
+| [formats/untrusted/zip.go](../../internal/formats/untrusted/zip.go) | `NewZipDeclared`: `NewZip` with limits used as given instead of tightened against the defaults (R-ARCH-028 asks a pass outside `Inspect` to declare its own finite bounds; the advisory archive needs 1,000,000 entries and 4 GiB), every bound required to be set; `NewZip` is unchanged |
+| [app/app.go](../../internal/app/app.go), [testenv/replica.go](../../test/integration/testenv/replica.go) | `app.Options.VulnAdapters` and `testenv.ReplicaOptions.VulnAdapters`: replace the adapters of the format registry; production passes nil. The tests of the sync run with adapters of their own, so they need no format |
+| [app/wire_vuln.go](../../internal/app/wire_vuln.go) | the field `sync *vsync.Service` of `vulnArea` (inside a `WP-A` marker), the blocks of `wireVuln` and `registerVulnJobs`; the logic is in `wire_vuln_sync.go` |
+| [config/vulnerabilities.go](../../internal/config/vulnerabilities.go) | not changed: the fixed list stays (Q-VULN-34), the registry check is the composition root's, and a test of the composition root fails when a registered ecosystem is not in the list |
+| [manual](../manual/admin/vulnerability-sources.md) | the page `vulnerability-sources`, in `internal/manual` and `docs/manual/README.md` |
+**Tests**
+| Test | What it pins |
+| [osv_test.go](../../internal/vuln/osv/osv_test.go) | the example vectors of the CVSS 3.1 and 4.0 specifications and their scores (R-VULN-007), the severity rules and the alias rule, every rule of R-VULN-006 (identifier, times, schema version, cut and cleaned texts, references, aliases, affected entries, the unevaluable ranges, limits), the catalog (R-VULN-008) |
+| [sync_test.go](../../internal/vuln/sync/sync_test.go) | the canonical identifier, alias groups, `googMD5` over two lines, `Content-Range`, the change file's rows and parts, the state cache (one read per change, stale, last state kept), the problem object |
+| [vulnsync](../../test/integration/vulnsync) | every criterion of R-VULN-003 to R-VULN-008 that the integration tier reaches, against [test/osvstub](../../test/osvstub) with a worker and a web replica: the requests of the first and the second run, three changed records, the source without `Range`, the change file in parts, the turn to a full sync, the guards and the override, the digest mismatch, the archive too large, `egress_denied` and the failure record, one OSV sync at a time, the sources off, mode `repository` (the upload, the same bytes again, the shrunken archive, the catalog, the repository that is not generic), the records of R-VULN-006, the severities of R-VULN-007, the catalog flag of R-VULN-008, the matcher version of R-VULN-011, a web replica following the worker (R-VULN-027), the release of a job and its resumption |
+Not reachable in the integration tier, and why: the drain of a node ("`queued` again with `attempt` unchanged, another worker completes it", R-VULN-004) is the e2e wave's; the test releases the job with
+`jobs.ErrReleased` and resumes it with a run handle that keeps the checkpoint, which is what the job table does, and `Service.SetBatchHook` is the seam. The advisory detail naming
+"OpenSSF malicious-packages, Apache-2.0" (R-VULN-003) is the API's of work package E; `advisory.SourceOf` is pinned by the contract tests. The finding that returns to `needs_triage` with the event `reopened`
+(R-VULN-008) is the evaluation's of work package B. The alert `TroveVulnerabilitySyncFailing` and the readiness of the replicas (R-VULN-024) are work package G's.
 
 ### WP-C · Enforcement
 

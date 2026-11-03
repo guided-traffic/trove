@@ -62,7 +62,22 @@ type ZipReader struct {
 // and checked before the standard library parses it, so an archive with millions
 // of entries costs one bounded scan, not their memory.
 func NewZip(ctx context.Context, ra io.ReaderAt, size int64, l Limits) (*ZipReader, error) {
-	l = effective(l)
+	return newZip(ctx, ra, size, effective(l))
+}
+
+// NewZipDeclared is NewZip for a pass outside Inspect that declares limits of its own (R-ARCH-028: a pass that is
+// not a format's Inspect states its finite bounds), such as the advisory archive of the vulnerability scanning,
+// which is far larger than a package. The limits are used as given, not tightened against the defaults, and every
+// bound the reader checks (Entries, UncompressedBytes, Ratio, StreamBytes, ManifestEntryBytes) must be set: an
+// unset one would be no limit, and is refused.
+func NewZipDeclared(ctx context.Context, ra io.ReaderAt, size int64, l Limits) (*ZipReader, error) {
+	if l.Entries <= 0 || l.UncompressedBytes <= 0 || l.Ratio <= 0 || l.StreamBytes <= 0 || l.ManifestEntryBytes <= 0 {
+		return nil, errs.E(errs.Internal, errs.CodeInternal, "untrusted: a declared zip limit is not finite")
+	}
+	return newZip(ctx, ra, size, l)
+}
+
+func newZip(ctx context.Context, ra io.ReaderAt, size int64, l Limits) (*ZipReader, error) {
 	recs, err := scanCentral(ctx, ra, size, l)
 	if err != nil {
 		return nil, err

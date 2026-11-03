@@ -18,6 +18,7 @@ require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/oapi-codegen/runtime v1.8.0
+	github.com/pandatix/go-cvss v0.6.4
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3

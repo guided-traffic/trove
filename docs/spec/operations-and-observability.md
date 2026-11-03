@@ -1323,7 +1323,7 @@ completes or fails. The same conventions as R-OPS-010 apply.
 | Field | Content |
 |---|---|
 | `time`, `trace_id` | Completion time; trace of the request or job that caused the call |
-| `purpose` | `remote` (pull-through fetch, or the probe of a shadowing check), `webhook`, `oidc_discovery`, `jwks`, `mail` |
+| `purpose` | `remote` (pull-through fetch, or the probe of a shadowing check), `webhook`, `oidc_discovery`, `jwks`, `mail`, `vuln_source` (the advisory sources of the vulnerability scanning, [vulnerability-scanning.md](vulnerability-scanning.md) R-VULN-004; a purpose the sync declares, Q-VULN-32) |
 | `repo` | Remote repository key (`remote`), else `null` |
 | `subscription` | Webhook subscription key (`webhook`), else `null` |
 | `method` | HTTP method |

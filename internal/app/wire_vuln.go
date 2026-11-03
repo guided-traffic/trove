@@ -10,6 +10,7 @@ import (
 	"github.com/guided-traffic/trove/internal/vuln/enforce"
 	vmetrics "github.com/guided-traffic/trove/internal/vuln/metrics"
 	"github.com/guided-traffic/trove/internal/vuln/store"
+	vsync "github.com/guided-traffic/trove/internal/vuln/sync"
 )
 
 // The wiring of the vulnerability scanning (docs/developer/vulnerabilities.md). The contract wave builds the area, the
@@ -50,6 +51,10 @@ type vulnArea struct {
 	// enforcer applies the download policy: the policy of a repository for the item lookup, the verdict, the remote miss gate
 	// and the refusal (work package C). Nil is a replica without the area.
 	enforcer *enforce.Enforcer
+	// >>> WP-A
+	// sync is the advisory sync: the jobs' service and the owner of the state cache (wire_vuln_sync.go).
+	sync *vsync.Service
+	// <<< WP-A
 }
 
 // wireVuln builds the area: the metrics today, and the ports as the work packages fill their blocks.
@@ -66,6 +71,11 @@ func (a *App) wireVuln(_ context.Context, in infra, repo repositoryArea, vir vir
 
 	// >>> WP-A
 	// The source-state cache (vuln.CacheSourceState, area vuln_data) and the vuln.States over it: out.states.
+	sv, err := a.newVulnSync(in, m)
+	if err != nil {
+		return vulnArea{}, fmt.Errorf("vulnerability sync: %w", err)
+	}
+	out.sync, out.states = sv, sv.States()
 	// <<< WP-A
 
 	// >>> WP-B
@@ -145,10 +155,11 @@ func (a *App) vulnTaskSpec(d vuln.TaskDefault) jobs.TaskSpec {
 // before the replica serves (a web replica must know a kind to enqueue it). A kind is registered with its handler by the work
 // package that owns it, with the queue, dedup mode and attempts of vuln/jobs.go; the handlers find their services at run time
 // through part[vulnArea](a.parts), as the CI tasks do. Nothing is registered until a package fills its block.
-func (a *App) registerVulnJobs(_ *jobs.Registry) {
+func (a *App) registerVulnJobs(r *jobs.Registry) {
 	// >>> WP-A
 	// vuln-sync-osv and vuln-sync-osv-full (queue maintenance, key vuln.DedupSyncOSV, Exclusive, MaxAttempts 1) with their
 	// tasks, vuln-sync-kev (maintenance, Exclusive, MaxAttempts 1) with its task: a.vulnTaskSpec(td) per vuln.TaskDefaults().
+	a.registerVulnSyncJobs(r)
 	// <<< WP-A
 
 	// >>> WP-B
