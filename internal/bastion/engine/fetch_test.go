@@ -139,12 +139,14 @@ func TestR_BAS_021_ABodyThatDoesNotMatchItsContentAddressIsAbortedBeforeItsLast6
 	for round := 1; round <= 2; round++ {
 		req, _ := http.NewRequest(http.MethodGet, srv.URL+tgz, nil)
 		req.Header.Set("Authorization", bearer(s.full))
-		resp, err := srv.Client().Do(req)
-		if err != nil {
-			t.Fatal(err)
+		// The abort may come before the status line reached the client (the fill verified the bytes first) or
+		// during the body: either way the transfer never completes.
+		var got []byte
+		resp, rerr := srv.Client().Do(req)
+		if rerr == nil {
+			got, rerr = io.ReadAll(resp.Body)
+			resp.Body.Close()
 		}
-		got, rerr := io.ReadAll(resp.Body)
-		resp.Body.Close()
 		if rerr == nil {
 			t.Fatalf("round %d: the corrupt transfer ended as a complete one (%d bytes)", round, len(got))
 		}
@@ -697,12 +699,13 @@ func TestR_BAS_032_AnObjectThatChangedInTheBackendAbortsTheTransferAndTheNextOne
 	srv := serve(t, s.harness)
 	req, _ := http.NewRequest(http.MethodGet, srv.URL+tgz, nil)
 	req.Header.Set("Authorization", bearer(s.full))
-	resp, err := srv.Client().Do(req)
-	if err != nil {
-		t.Fatal(err)
+	// The abort may come before the status line reached the client or during the body (R-BAS-032).
+	var got []byte
+	resp, rerr := srv.Client().Do(req)
+	if rerr == nil {
+		got, rerr = io.ReadAll(resp.Body)
+		resp.Body.Close()
 	}
-	got, rerr := io.ReadAll(resp.Body)
-	resp.Body.Close()
 	if rerr == nil || len(got) > len(body)-withheldTail {
 		t.Fatalf("the tampered object was served: %d bytes, %v", len(got), rerr)
 	}
