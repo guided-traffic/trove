@@ -208,9 +208,6 @@ Found on 2026-11-03 while closing phase 5:
 
 ### Tests and tools
 
-- **F-35 · `TestR_CI_003_StaleAndUnreachable` failed once** (read). In one full run of `test/integration/ci` while three
-  development agents shared the integration stack it failed, and it passed alone and in every later run; not reproduced.
-  Done when a run under load (`-count` with CPU load) reproduces it and the cause is fixed, or 200 runs under load pass.
 - **F-37 · `TestE14Drain` refused a request with `database_unavailable` during the drain** (read). In Test and Release
   run 41575195688 (job `e2e on kind (push)`) the driver's probe during the drain of a node with a web and a worker pod got
   `database_unavailable`, while the dispatched nightly run 41575201390 used the same self-hosted runners; every other run of

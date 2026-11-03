@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/guided-traffic/trove/internal/ci/subject"
+	"github.com/guided-traffic/trove/test/integration/testenv"
 	"github.com/guided-traffic/trove/test/oidcstub"
 )
 
@@ -245,6 +246,14 @@ func TestR_CI_003_StaleAndUnreachable(t *testing.T) {
 	age := func(secs int) {
 		e.exec("UPDATE ci_issuer_keys SET fetched_at = now() - make_interval(secs => $1) WHERE issuer_id = $2::uuid", secs, id)
 		e.bump("ci_issuer_keys", map[string]string{"issuer": id}) // the copies are dropped, as a change message does
+		// Without Valkey the change-log poll carries the change (R-ARCH-018). Waiting for one poll of each replica
+		// instead of a fixed time makes the state of both copies certain before the lookups below, however long a
+		// poll takes on a loaded machine.
+		for _, r := range []*testenv.Replica{a, b} {
+			if err := r.App.Changes().PollNow(t.Context()); err != nil {
+				t.Fatalf("%s: change-log poll: %v", r.Name, err)
+			}
+		}
 	}
 
 	t.Run("R-CI-003 a refresh that stores an unchanged set keeps every replica succeeding past max_stale", func(t *testing.T) {
