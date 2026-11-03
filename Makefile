@@ -246,6 +246,9 @@ test: ## Unit tests with the race detector; .out/test-unit.json for the coverage
 	@mkdir -p .out $(COVERAGE_DIR)
 	@set -o pipefail; go test -race -count=1 -covermode=atomic -coverpkg=./... \
 	  -coverprofile=$(COVERAGE_DIR)/unit.out -json $(PKGS) | tee .out/test-unit.json | $(TESTLOG)
+	@# The time bounds of the conformance kit (R-ARCH-028: a crafted input is rejected within 5 s) hold for the code as it
+	@# ships: the race run above stretches them, this plain run of the kit holds them as specified.
+	go test -count=1 -run 'TestR_ARCH_010' ./internal/formats/...
 
 .PHONY: integration-up
 integration-up: ## Start PostgreSQL, PgBouncer, Valkey with Sentinel (TLS) and SeaweedFS; write .dev/integration/env

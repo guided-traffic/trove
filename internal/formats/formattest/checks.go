@@ -31,7 +31,20 @@ import (
 const (
 	inspectDeadline = 5 * time.Second
 	heapBudget      = 512 << 20
+	// raceSlowdown stretches inspectDeadline in a build under the race detector, which with the atomic coverage of
+	// make test makes the kit's inspections about ten times slower (TestR_ARCH_010_Defects: 3.8 s plain, 39 s
+	// instrumented). The instrumented bound still catches an inspection that runs unbounded; the bound of R-ARCH-028
+	// itself is held by the plain run of the kit that make test adds.
+	raceSlowdown = 10
 )
+
+// timeBound is the time an inspection may take in this build: inspectDeadline, stretched under the race detector.
+func timeBound() time.Duration {
+	if raceDetector {
+		return inspectDeadline * raceSlowdown
+	}
+	return inspectDeadline
+}
 
 // ambiguity is check 1: every route matches its examples and no other route of
 // its method does. formats.Validate is the check Register runs; the kit adds the
@@ -355,8 +368,8 @@ func (r *run) inspect() {
 			return e
 		}, lim)
 		switch e, ok := errs.As(m.err); {
-		case m.elapsed > inspectDeadline:
-			r.failf("inspect case %q: Inspect took %v, the bound is %v", c.Name, m.elapsed.Round(time.Millisecond), inspectDeadline)
+		case m.elapsed > timeBound():
+			r.failf("inspect case %q: Inspect took %v, the bound is %v", c.Name, m.elapsed.Round(time.Millisecond), timeBound())
 		case m.err == nil:
 			r.failf("inspect case %q: Inspect accepted the input", c.Name)
 		case !ok || (e.Kind != errs.TooLarge && e.Kind != errs.Unprocessable):
@@ -386,8 +399,8 @@ func (r *run) inspectFill(fill formats.FillInspector, name string, in formats.In
 		return e
 	}, lim)
 	switch {
-	case m.elapsed > inspectDeadline:
-		r.failf("inspect case %q: InspectFill took %v, the bound is %v", name, m.elapsed.Round(time.Millisecond), inspectDeadline)
+	case m.elapsed > timeBound():
+		r.failf("inspect case %q: InspectFill took %v, the bound is %v", name, m.elapsed.Round(time.Millisecond), timeBound())
 	case errors.Is(m.err, errPanicked):
 		r.failf("inspect case %q: InspectFill %s", name, strings.TrimPrefix(m.err.Error(), "inspect "))
 	}
@@ -447,7 +460,7 @@ func measure(call func(ctx context.Context) error, lim untrusted.Limits) measure
 	var m measurement
 	select {
 	case m.err = <-done:
-	case <-time.After(inspectDeadline):
+	case <-time.After(timeBound()):
 		cancel()
 		select {
 		case m.err = <-done:
