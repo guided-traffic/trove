@@ -93,7 +93,17 @@ export async function expectAccessible(page: Page, screen: string): Promise<void
   const result = await new AxeBuilder({ page }).analyze();
   const bad = result.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
   expect(
-    bad.map((v) => `${v.impact} ${v.id}: ${v.help} (${v.nodes.length}) ${v.nodes.map((n) => n.target.join(' ')).slice(0, 3).join(' | ')}`),
+    bad.map(
+      (v) =>
+        `${v.impact} ${v.id}: ${v.help} (${v.nodes.length}) ${v.nodes
+          .map((n) => {
+            // a contrast violation names the colours axe measured
+            const data = n.any.find((c) => c.id === 'color-contrast')?.data as { fgColor?: string; bgColor?: string; contrastRatio?: number } | undefined;
+            return n.target.join(' ') + (data ? ` [${data.fgColor} on ${data.bgColor}, ${data.contrastRatio}]` : '');
+          })
+          .slice(0, 3)
+          .join(' | ')}`,
+    ),
     `axe on ${screen}`,
   ).toEqual([]);
 }

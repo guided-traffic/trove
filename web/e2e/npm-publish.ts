@@ -49,9 +49,13 @@ export function npmPublishBody(repoKey: string, name: string, version: string): 
   };
 }
 
-/** Creates a local npm repository and publishes the given `name@version` pairs into it, through the API (INV-17). */
+/**
+ * Creates a local npm repository and publishes the given `name@version` pairs into it, through the API (INV-17). The repository
+ * declares that it holds public packages (`matchPublicAdvisories: always`, R-VULN-010): the first publish of a name makes an
+ * automatic claim, and a claimed name of a repository without the setting is an internal name, which no public advisory applies to.
+ */
 export async function localNpmRepository(admin: APIRequestContext, key: string, packages: readonly (readonly [string, string])[]): Promise<void> {
-  const created = await admin.post('/api/v1/repositories', { data: { key, class: 'local', format: 'npm' } });
+  const created = await admin.post('/api/v1/repositories', { data: { key, class: 'local', format: 'npm', vulnerabilities: { matchPublicAdvisories: 'always' } } });
   expect(created.status(), await created.text()).toBe(201);
   for (const [name, version] of packages) {
     const published = await admin.put(`/api/npm/${key}/${name}`, { data: npmPublishBody(key, name, version) });

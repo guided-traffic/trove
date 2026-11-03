@@ -62,6 +62,15 @@ config:
       anonymous:
         requests_per_second: 1000
         burst: 10000
+  # No test cluster reaches the public advisory hosts: the scanning's sources are off in every profile but `vuln` (values-vuln.yaml, which
+  # points them at the test advisory source). With the OSV source off the audit default of an npm repository is the one of R-NPM-038
+  # again (`forward` on remote and virtual repositories, R-VULN-017), which the npm matrix expects.
+  vulnerabilities:
+    sources:
+      osv:
+        mode: "off"
+      kev:
+        mode: "off"
   system:
     bootstrap_anonymous_read: true         # until authentication ships nobody holds system.read; the E0.13 load reads /system/replicas
   # Login against the test IdP (E1.1, deploy/dev/keycloak.yaml) and the break-glass account (R-AUTH-014). The client

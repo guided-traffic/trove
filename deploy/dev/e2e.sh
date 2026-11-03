@@ -43,6 +43,12 @@
 #                       front of the main installation, npm, pnpm, Yarn 4 and dotnet restore from the client pods; CI: job
 #                       e2e-bastion (a change to the Bastion) and the nightly HA and Performance workflow
 #   e2e.sh bastion-long the long scenarios of R-BAS-049: the drain, the flood and the anonymous flood (nightly, dispatch, locally)
+#   e2e.sh vuln         the short scenarios of R-VULN-029: the chart in the `vuln` profile (three web and two worker replicas, the scatter
+#                       edge, the scanning reading the test advisory source) with the npm, pnpm, Yarn 4 and dotnet clients, the audits,
+#                       the blocked installs and restores, the replicas with Valkey stopped and the browser journeys; CI: job e2e-vuln
+#                       (a change to the scanning) and the nightly HA and Performance workflow
+#   e2e.sh vuln-long    the long scenarios of R-VULN-029: a full synchronization drained mid-run, and the client tests once more with
+#                       Valkey stopped (nightly, dispatch, locally)
 #   e2e.sh <regex>      any other argument is a `go test -run` expression
 #
 # Environment: TROVE_DEV_HTTP_PORT (the port the cluster was created with; read back from the node),
@@ -52,6 +58,7 @@
 # The npm client pods (set clients): TROVE_E2E_NPM_CLIENTS_PODS (how many, default 1), TROVE_E2E_NPM_CLIENTS_TARGET
 # (host:port the forwarder in each pod relays to, default the in-cluster HAProxy Ingress HTTPS port),
 # TROVE_E2E_NPM_CLIENTS_IMAGE_BUILD=0 (use the image already built locally instead of rebuilding it).
+# TROVE_E2E_REUSE_CLIENTS=1 keeps client pods that are already running in the right number (a test under development).
 # The NuGet client pods (sets nuget*): TROVE_E2E_NUGET_CLIENTS_PODS, TROVE_E2E_NUGET_CLIENTS_TARGET and
 # TROVE_E2E_NUGET_CLIENTS_IMAGE_BUILD=0 as for npm; TROVE_E2E_NUGETSTUB=1 deploys the counting NuGet test upstream.
 set -euo pipefail
@@ -118,6 +125,14 @@ case "$set_name" in
   bastion) run='^TestBastion_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=2; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=2 ;;
   bastion-long) run='^TestBastionLong_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=2; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=2 ;;
   # <<< M5b bastion
+  # >>> M4b vuln
+  # The vulnerability scanning (R-VULN-029, docs/developer/e2e.md#the-vulnerability-tests): the `vuln` profile (up.sh, values-vuln.yaml),
+  # the three test upstreams (npm, NuGet, advisory source) and three client pods of each kind. `vuln` is the short scenarios
+  # (CI: job e2e-vuln on a change to the scanning, and nightly); `vuln-long` the drain of a full synchronization and the client tests
+  # with Valkey stopped (nightly, on dispatch, locally: a red long leg is a finding, not a blocker, owner 2026-11-01).
+  vuln) run='^TestVuln_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 TROVE_E2E_OSVSTUB=1 ;;
+  vuln-long) run='^TestVulnLong_'; NPM_CLIENTS=1; NPM_CLIENTS_DEFAULT_PODS=3; NUGET_CLIENTS=1; NUGET_CLIENTS_DEFAULT_PODS=3; export TROVE_E2E_NPMSTUB=1 TROVE_E2E_NUGETSTUB=1 TROVE_E2E_OSVSTUB=1 ;;
+  # <<< M4b vuln
   *) run="$set_name" ;;
 esac
 
@@ -331,6 +346,12 @@ npm_clients_exec() {
 }
 
 npm_clients_up() {
+  # TROVE_E2E_REUSE_CLIENTS=1 keeps client pods that are already there (the right number, all ready): loading the images into
+  # the cluster takes minutes, and a test written against the same image needs no new pods.
+  if [ "${TROVE_E2E_REUSE_CLIENTS:-0}" = 1 ] && [ "$(kn get pods -l "$NPM_CLIENTS_LABEL" --field-selector=status.phase=Running -o name 2>/dev/null | wc -l | tr -d ' ')" = "$NPM_CLIENTS_COUNT" ]; then
+    log "reusing the $NPM_CLIENTS_COUNT npm client pod(s) (TROVE_E2E_REUSE_CLIENTS=1)"
+    return 0
+  fi
   local target="${TROVE_E2E_NPM_CLIENTS_TARGET:-haproxy-ingress.ingress-controller.svc.cluster.local:443}" i
   [ -n "${CA_FILE:-}" ] && [ -s "$CA_FILE" ] || die "the client pods verify the edge against the dev CA, which is missing (TROVE_DEV_CA_FILE, TROVE_DEV_SCHEME=https; run make dev-up)"
   if [ "${TROVE_E2E_NPM_CLIENTS_IMAGE_BUILD:-1}" != 0 ]; then
@@ -395,6 +416,10 @@ nuget_clients_down() {
 }
 
 nuget_clients_up() {
+  if [ "${TROVE_E2E_REUSE_CLIENTS:-0}" = 1 ] && [ "$(kn get pods -l "$NUGET_CLIENTS_LABEL" --field-selector=status.phase=Running -o name 2>/dev/null | wc -l | tr -d ' ')" = "$NUGET_CLIENTS_COUNT" ]; then
+    log "reusing the $NUGET_CLIENTS_COUNT NuGet client pod(s) (TROVE_E2E_REUSE_CLIENTS=1)"
+    return 0
+  fi
   local target="${TROVE_E2E_NUGET_CLIENTS_TARGET:-haproxy-ingress.ingress-controller.svc.cluster.local:443}" i
   [ -n "${CA_FILE:-}" ] && [ -s "$CA_FILE" ] || die "the client pods verify the edge against the dev CA, which is missing (TROVE_DEV_CA_FILE, TROVE_DEV_SCHEME=https; run make dev-up)"
   if [ "${TROVE_E2E_NUGET_CLIENTS_IMAGE_BUILD:-1}" != 0 ]; then

@@ -100,6 +100,9 @@ spec:
         app.kubernetes.io/part-of: trove-dev
     spec:
       automountServiceAccountToken: false
+      # The stub keeps its dataset in memory, and the drain tests evict a worker node: it runs on the control-plane node, as the client pods do.
+      nodeSelector: { node-role.kubernetes.io/control-plane: "" }
+      tolerations: [{ key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule }]
       enableServiceLinks: false
       securityContext:
         runAsNonRoot: true

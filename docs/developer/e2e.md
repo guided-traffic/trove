@@ -3,7 +3,8 @@
 The suite proves the exit criteria of M0 that need Kubernetes: E0.3, E0.4 (chart part), E0.6, E0.7,
 E0.11, E0.12 (dev-profile parts), E0.13, E0.14, E0.15 and E0.16 of the [roadmap](../coverage/roadmap.md), and the
 end-to-end criteria of the access core of M1: E1.1, E1.8, E1.11 (the API part and the browser journeys), E1.13 and E1.14, and of
-npm in M2: E2.1 to E2.12 and E2.11's drain and failovers under npm load. It runs
+npm in M2: E2.1 to E2.12 and E2.11's drain and failovers under npm load, and of the vulnerability scanning in M4b: E4b.1's drain, E4b.4 to E4b.6 and E4b.8
+([the vulnerability tests](#the-vulnerability-tests)). It runs
 the real release image on the [dev profile](local-profile.md), over TLS on every connection, and injects the failures of
 [R-HA-051 and R-HA-052](../spec/ha-and-helm.md). This is work package WP0.11 (and its TLS part, WP0.12); the M1 tests are
 [described below](#m1-tests), the npm tests [further down](#the-npm-tests), and WP2.8's harness, which runs the drain and the
@@ -1887,10 +1888,12 @@ bytes. `Counts` has `total`, `kinds` (`"npm/record"`, `"NuGet/archive"`, `"kev"`
 the control token in Secret `trove-osvstub` (key `control-token`), TCP probes (an HTTP probe would be counted). [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh) (marker `M4b osv-stub`) builds
 the image (`make osv-stub-image`), loads it into kind, applies the manifest and restarts the Deployment when `TROVE_E2E_OSVSTUB=1`, and exports `TROVE_E2E_OSVSTUB_HOST`
 (`osvstub.<ns>.svc`). The base URL of the source is `https://$TROVE_E2E_OSVSTUB_HOST/`; trove trusts the dev CA for upstreams through `proxy.outbound.tls.ca_files`
-([values-dev.yaml](../../deploy/dev/values-dev.yaml)). No test set exports the switch yet; the vulnerability tests of the e2e tier add it with their set.
+([values-dev.yaml](../../deploy/dev/values-dev.yaml)). The sets `vuln` and `vuln-long` export the switch ([the vulnerability tests](#the-vulnerability-tests)); their profile points
+the installation at the Service (`values-vuln.yaml`).
 
-Verified: the unit tests (`go test -race ./test/osvstub/...`), the rendered manifest parses (`render` of [lib.sh](../../deploy/dev/lib.sh) and `kubectl create --dry-run=client`), and the image
-built by `make osv-stub-image` starts, serves over TLS and refuses plain HTTP. Not verified: a deployment on kind (the cluster is shared) and a fetch by a trove `worker`.
+Verified: the unit tests (`go test -race ./test/osvstub/...`), the rendered manifest parses (`render` of [lib.sh](../../deploy/dev/lib.sh) and `kubectl create --dry-run=client`), the image
+built by `make osv-stub-image` starts, serves over TLS and refuses plain HTTP, and on kind the `workers` of the `vuln` profile synchronize both ecosystems from it (a full run with 100,000 filler records
+included) and the clients' audits read what they wrote.
 
 ## The CI tests
 
@@ -2156,6 +2159,128 @@ Measured on the dev cluster: the first token loop was refused 54 ms after the re
 - The second flood after a block, which yields 30 minutes (R-BAS-037), needs the first block to expire: 15 minutes. The integration tier covers the doubling.
 - The exposure rules of an endpoint (Q-BAS-114).
 - The Bastion in front of the main installation's own Ingress: the Bastion calls the Service of the main installation inside the cluster, so the TLS-terminating reverse proxy that Q-BAS-3 mentions is not in the path.
+
+## The vulnerability tests
+
+Work package WP-H of phase 6: the e2e tier of [R-VULN-029](../spec/vulnerability-scanning.md#r-vuln-029--acceptance-suite) on the dev cluster, with the real clients: exit
+criteria E4b.1 (the drain of a full synchronization), E4b.4 to E4b.6 and E4b.8 of the [roadmap](../coverage/roadmap.md#m4b--vulnerability-scanning). The scanning is described in
+[vulnerabilities.md](vulnerabilities.md), the test advisory source in [The test advisory source](#the-test-advisory-source). Decisions: Q-VULN-59 and Q-VULN-60 in the
+[specification](../spec/vulnerability-scanning.md#q-vuln-59--the-e2e-tier-runs-in-a-vuln-profile-of-its-own-and-every-package-a-test-changes-belongs-to-one-row); the gap, H-494, in
+[the security page](../security/vulnerability-scanning.md#h-494--the-e2e-tier-reads-synthetic-advisories-and-never-the-public-registrys-answer).
+
+```mermaid
+flowchart LR
+  subgraph trove["namespace trove"]
+    c["client pods x3<br/>npm 10-12, pnpm 10-12, Yarn 1 and 4<br/>dotnet 8, 9, 10<br/>(trove-e2e-npm-i, trove-e2e-nuget-i)"]
+    w["web x3 (scatter)<br/>worker x2"]
+    pg[("PostgreSQL")]
+    osv["osvstub<br/>advisories, KEV"]
+    ns["npmstub"]
+    gs["nugetstub"]
+  end
+  c -- "https, localhost:edge port" --> h["HAProxy Ingress<br/>round robin per request"]
+  h --> w
+  w --> pg
+  w -- "vuln-sync-osv, vuln-sync-kev (workers)" --> osv
+  w -- "remote fills (npm-remote, nuget-remote)" --> ns
+  w --> gs
+```
+
+### What is deployed
+
+`make e2e SET=vuln` (and `vuln-long`) starts the three test upstreams (`TROVE_E2E_NPMSTUB=1`, `TROVE_E2E_NUGETSTUB=1`, `TROVE_E2E_OSVSTUB=1`), three npm and three NuGet client pods, and the first
+test calls `vulnFx` ([vuln_env_test.go](../../test/e2e/vuln_env_test.go)), which does, once per run:
+
+1. `up.sh` with `TROVE_PROFILE=vuln`: the chart with [values-scatter.yaml](../../deploy/dev/values-scatter.yaml) (three `web` replicas, the edge balancing every request on its own) and
+   [values-vuln.yaml](../../deploy/dev/values-vuln.yaml) (`vulnerabilities.sources.osv.base_url` and `kev.url` at the Service `osvstub`, `public_upstreams` with `npmstub.trove.svc` and
+   `nugetstub.trove.svc` next to the public hosts); two `worker` replicas come from [values-dev.yaml](../../deploy/dev/values-dev.yaml), which switches both advisory sources off (`vulnerabilities.sources.osv.mode` and `kev.mode`: no test cluster reaches the public hosts, and the npm audit default is `forward` again, which the npm matrix expects); `values-vuln.yaml` turns them back on at the stub. The profile is returned to `default` at the end of the run.
+2. The three upstreams are reset (the source's dataset back to its fixture, the counters and modes of the npm and NuGet upstreams).
+3. The repositories (`ensureRepo` creates them or brings them to the settings; keys another suite defines differently, `npm-all` and `nuget-all` of the CI tests, get their members again):
+
+   | Repository | Class | Setting that matters |
+   |---|---|---|
+   | `npm-local` | local | `vulnerabilities.matchPublicAdvisories: always` (it holds public packages: its claims serve routing only) |
+   | `npm-vuln-internal` | local | the default (`auto`); holds the manual claim `@acme/*` (scope `global`), so `@acme/ui` is an internal name |
+   | `npm-remote` | remote, over `npmstub` | the defaults; its host is in `public_upstreams` (R-VULN-010) |
+   | `npm-all` | virtual | `npm-local`, `npm-remote`, deployment target `npm-local` |
+   | `nuget-local` | local | `matchPublicAdvisories: always` |
+   | `nuget-remote` | remote, over `nugetstub` | `nuget.vulnerabilityInfo: off`: its data comes from `nuget-local` (R-VULN-018) |
+   | `nuget-remote-open` | remote, over `nugetstub` | `vulnerabilities.blockMalicious: false`: a malicious version restores, so the audit has a version to warn about |
+   | `nuget-all` | virtual | `nuget-local`, `nuget-remote` |
+
+4. One package per client row and per SDK for everything a test changes (Q-VULN-59): `e2e-vtri-<run>-<row>` for the eight npm rows, `E2e.Vtri<run>.L8|L9|L10` for the three SDKs,
+   `…-replicas` and `…-valkey` for the replica tests, `e2e-vmal-<run>-mal` and `-malv` with a `MAL-` record for the switch of `blockMalicious`, and `…-pub` for the publish test. The package
+   goes to the upstream (`/-/stub/publish`) and its record to the source (`POST /-/stub/records`: `GHSA-e2e-<run>-<label>`, version 1.0.0 affected, 1.0.1 fixed, CVSS 3.1 high). The
+   fixed names of the source (`trove-test-vuln`, `trove-test-mal`, `trove-test-alias`, `Newtonsoft.Json`, `Contoso.Json.Codecs`) are only read.
+5. A full synchronization (`vuln-sync-osv-full` with `acceptShrink`: a drain run of the long set leaves 100,000 records behind) through the task API, waited for with the job table and the
+   evaluation (`vuln_pending_evaluation` empty, no `vuln-evaluate` queued or running).
+
+The npm client of a row is the one of the [matrix](#the-npm-client-matrix) (`npmClient`), the NuGet client the one of [The NuGet tests](#the-nuget-tests) (`nugetClient`), so the clients are
+configured by the snippets of the setup API and the counting is the upstreams'.
+
+The `.NET 8` and `.NET 9` SDKs are in the [NuGet clients image](#the-nuget-clients) next to `.NET 10` (`E2E_NUGETCLIENTS_SDK8_IMAGE`, `E2E_NUGETCLIENTS_SDK9_IMAGE` of
+[tools/versions.env](../../tools/versions.env): the Dockerfile copies the SDK, its runtime and its host resolver from the pinned images). A project picks one with a `global.json`
+(`rollForward: latestFeature` of `<major>.0.100`) and sets `DisableImplicitFrameworkReferences`, so the restore needs no targeting pack and no package outside the repositories under test.
+
+### The tests
+
+Every test runs against the one environment; the npm rows and the SDKs run side by side (`t.Parallel` per row, the group of a phase ends when every row has).
+
+| Test | Criterion | What it does |
+|---|---|---|
+| `TestVuln_R_VULN_017_NPMAuditThroughEveryRepository` | R-VULN-017, E4b.5 | each row installs `trove-test-vuln@1.0.0` (through `npm-all`, cached in `npm-remote`) and `trove-test-alias@2.0.0` (`npm-local`), then `npm audit`, `pnpm audit` or `yarn npm audit` through `npm-local`, `npm-remote` and `npm-all`: exit non-zero, both advisories reported (Yarn 4 audits a tree per repository, below); pnpm 10 and Yarn 1 are `not applicable` with the reasons of Q-NPM-65; the npm upstream and the source saw no request during the audits |
+| `TestVuln_R_VULN_017_NPMAuditBody` | R-VULN-017 | the wire: a tree with `@acme/ui` (claimed), `trove-test-mal`, `trove-test-vuln`, `trove-test-alias`, through every repository and two replicas: the malicious advisory is `critical` with `CWE-506`, `@acme/ui` is withheld and the `npm-notice` says `1 internal name`, both replicas answer the same bytes, the legacy endpoints answer `501`, no request upstream |
+| `TestVuln_R_VULN_015_NPMBlockedInstallMalicious` | R-VULN-015, R-VULN-016, E4b.4 | every row: `install trove-test-mal@1.0.0` through `npm-all` fails with `403` (npm: `E403` and the text `trove blocked … malicious package (MAL-2026-1234)`), nothing in `node_modules`; then on the wire `403`, `no-store`, `vulnerability_blocked` and the text, no tarball request at the npm upstream, no item stored |
+| `TestVuln_R_VULN_015_NPMBlockedInstallInTriage` | R-VULN-015, R-VULN-016, E4b.4 | every row: install a package of its own (finding `needs_triage`), confirm and block the finding through the API, wipe the client's installed packages and caches (pnpm's store below `$HOME/.local` too), `install` and the lockfile install (`npm ci`, `--frozen-lockfile`, `--immutable`) fail with `403` and no retry; lift the block (`blocked` to `confirmed`): the install succeeds; the upstream served the tarball once |
+| `TestVuln_R_VULN_018_NuGetRestoreAudit` | R-VULN-018, E4b.5 | each SDK: `dotnet restore` of `Newtonsoft.Json 13.0.1` reports `NU1903` with `https://github.com/advisories/GHSA-aaaa-aaaa-0101` through `nuget-all`, and through `nuget-remote` with `nuget-local` as a second source; through `nuget-remote` alone it reports nothing; the malicious `Contoso.Json.Codecs 1.0.0` through `nuget-remote-open` reports `NU1904`; `<NuGetAuditSuppress Include="<url>" />` removes the warning |
+| `TestVuln_R_VULN_015_NuGetBlockedRestoreInTriage` | R-VULN-015, R-VULN-016, E4b.4 | each SDK: restore of a package of its own through `nuget-remote`, confirm and block the finding, restore with the packages folder and the HTTP cache removed fails with the `403`, lift, restore succeeds; and on the wire the refusal is one line `vulnerability_blocked: trove blocked …` as `text/plain`, `no-store` |
+| `TestVuln_R_VULN_018_NuGetVulnerabilityInfoOnTheWire` | R-VULN-018 | on every replica: `nuget-remote` (off) lists no resource and answers `404`, `nuget-local` and `nuget-all` list `VulnerabilityInfo/6.7.0` with the one entry `trove`; the page is keyed by lowercased IDs with the severity, url and interval of the rule, has the same `ETag` on every replica and answers `304` |
+| `TestVuln_R_VULN_027_AcrossReplicasAndWithoutValkey` | R-VULN-027, R-VULN-002, E4b.8 | clients dialing a replica each: a block set through A refuses B on GET, HEAD, a conditional request and a Range request; a dismissal through A lifts it at B's next request; `blockMalicious` through A is in force on B within 2 s both ways; the same with Valkey stopped, and a sync triggered through the task API starts within `jobs.poll_interval` plus 1 s |
+| `TestVuln_R_VULN_011_PublishEvaluatesInTheCommit` | R-VULN-011, R-VULN-001 | `npm publish` to `npm-local` through `npm-all`: the finding is there at the first read, through six requests on several replicas |
+| `TestVuln_R_VULN_010_ClaimedNamesAreInternal` | R-VULN-010 | `@acme/ui` in `npm-vuln-internal` has no finding although the source holds a `MAL-` record for it, is listed as a claimed-name match and downloads |
+| `TestVuln_R_VULN_011_R_VULN_018_AnAdvisoryAppearsLate` | R-VULN-011, R-VULN-018 | `trove-test-late@2.0.0` cached in `npm-remote`; the `late` toggle of the source and one sync: the finding exists, and the page of the NuGet clients has a new `ETag` on every replica; again with Valkey stopped for a new NuGet advisory |
+| `TestVuln_R_VULN_022_Journeys` | R-VULN-022, R-VULN-023, E4b.6 | [web/e2e/vuln](../../web/e2e/vuln) with axe: the report with its filters and the dismissal, the bulk triage, the CSV, 390 px, a reader without selection, the package page with its tab, the block and the lift, the sources screen and the advisory page |
+| `TestVulnLong_R_VULN_004_FullSyncDrainedMidRun` | R-VULN-004, E4b.1 | the source holds 100,000 filler records; `vuln-sync-osv-full` runs on a worker; once it has committed batches the node is drained (the PostgreSQL primary is moved away first): the job runs on a second worker (so it was released and queued again; the queued state is logged when the one-second sampling sees it), its attempt is unchanged (a queued job shows one less), the second run starts at or after the checkpoint, the ecosystem holds every record |
+| `TestVulnLong_R_VULN_027_ClientsWithValkeyStopped` | R-VULN-027, E4b.8 | the tests above that drive clients (audits, the endpoint's body, the blocked installs and restores, the NuGet resource) once more with Valkey stopped |
+
+Yarn 4 fetches the package document of every package it audits from the registry it audits through (`YN0035`, a `404` of `npm-local` for a package only `npm-remote` holds), so its trees are per repository, each of what that repository
+holds; npm and pnpm audit one tree through all three.
+
+### Running it
+
+```shell
+make image VERSION=dev && make dev-up
+make e2e SET=vuln          # the short set: the profile, the upstreams, the clients and the tests (about 20 minutes)
+make e2e SET=vuln-long     # the drain of a full sync, and the client tests with Valkey stopped
+TROVE_E2E_REUSE_CLIENTS=1 make e2e SET=vuln TROVE_E2E_RUN='^TestVuln_R_VULN_017_'   # one test; client pods that are running stay
+```
+
+The journeys need `npm ci` in `web/` and `npx playwright install chromium` (CI: `--with-deps`), like the journeys of E1.11; `TROVE_E2E_PLAYWRIGHT_ARGS` narrows them (`-g <title>`). The
+node of `vuln-long` that is drained must not host the PostgreSQL primary: the test moves it first. CI: job `e2e-vuln` of Test and Release runs the set `vuln` when the change touches
+the scanning ([releasing.md](releasing.md#ci)), job `e2e-vuln` of HA and Performance (nightly) runs both sets.
+
+### Findings of the vulnerability tests
+
+| Finding | Cause | Fix |
+|---|---|---|
+| The drain of the long set made the next tests fail: the full sync ended `shrink_refused`, the packages of the run were gone | the drained node hosted a stub pod; the stubs keep their dataset in memory, so the restart brought the fixture back | the three stub Deployments run on the control-plane node, like the client pods |
+| The tests after the drain found no findings | the source's reset after the drain removed the records of this run's packages | the run remembers its records and adds them again before the synchronization that follows the reset |
+| The audit saw a request at the npm upstream | npm fetches the document of every flagged package; a replica that has not cached the (negative) answer asks the upstream | the audit test warms the documents through every replica first and then asserts no request of any kind; the long run needs the same |
+| The bulk dialog of the report failed axe: `color-contrast`, `#5b6270 on #d4d7dd, 4.25` | the first field of the dialog opens under the pointer that clicked "Change status"; the hover layer darkens the filled field and the label in `on-surface-variant` falls under 4.5:1 (the dark scheme measures 4.47) | `--mat-form-field-filled-hover-label-text-color: var(--mat-sys-on-surface)` in [main.scss](../../web/src/styles/main.scss); `expectAccessible` names the colours it measured |
+| The package journey of the UI package waited for `Vulnerabilities (1)` and found 2 | the tab counts the repositories: `trove-test-vuln` is cached in `npm-remote` by the client tests of the same cluster | the journey uses `trove-test-cvss`, which no other test touches; the local repositories of the journeys declare `matchPublicAdvisories: always`, because the first publish of a name makes an automatic claim and a claimed name of a repository without the setting is internal (R-VULN-010) |
+| The dismissal step of the first journey found two elements for `Not exploitable` | the detail's `dd` and the history row | the locator is the definition |
+| `dotnet restore` of the .NET 8 SDK failed with an IOException on `NuGet-Migrations` | NuGet runs its migrations once per HOME under a named mutex, and the runtime of .NET 8 cannot create one in the pod (the cause was not investigated; the directories the .NET 10 runtime makes for its shared memory do not help); .NET 9 and 10 can, and a restore that finds the marker `$HOME/.local/share/NuGet/Migrations/1` takes no mutex | the entrypoint of the clients image writes the marker (an empty file) |
+| A virtual repository of another suite had other members | `npm-all` and `nuget-all` are keys of the CI tests (`npm-internal`, `nuget-internal` as members); a create that answers 409 changes nothing | `ensureRepo` sets the members again; the claimed scope lives in `npm-vuln-internal`, not `npm-internal` |
+| A blocked restore and a blocked `pnpm add` succeeded | the SDK's global packages folder and pnpm 11's store below `$HOME/.local` still held the version | the scenarios remove them (`rm -rf packages obj httpcache`, `wipeAll`) |
+| The findings filter `package` found nothing for a NuGet ID with capitals | the findings carry the normalized (lowercase) name and the filter compares it as it is | the tests filter with the lowercase ID; reported as a product observation |
+
+### Not covered by the vulnerability tests
+
+- The reference lockfile's recorded public answer (R-VULN-017's first criterion, E4b.5): no recorded answer exists in the repository (H-494).
+- Mode `repository` and the offline import (R-VULN-005), the fault cases of R-VULN-004, the matching corpus and the lifecycle's re-detection are the integration tier's.
+- `pg_stat_statements` over 10,000 cached downloads (R-VULN-015) and the object-store GET counters of a late advisory (R-VULN-011): the e2e profile has neither.
+- Restore of a backup (E4b.7): phase 7.
+- A Windows row and Visual Studio: the NuGet clients image is Linux.
 
 ## Extension checklist
 

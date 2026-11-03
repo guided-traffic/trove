@@ -284,6 +284,32 @@
       "groupSlug": "dotnet-sdk"
     },
     {
+      "description": "The .NET 8 and .NET 9 SDKs of the NuGet clients image (E2E_NUGETCLIENTS_SDK8_IMAGE, E2E_NUGETCLIENTS_SDK9_IMAGE) stay on their major; make versions-check (test/e2e/nugetclients/check-pins.mjs) fails when a tag leaves it",
+      "matchFileNames": [
+        "tools/versions.env"
+      ],
+      "matchDepNames": [
+        "mcr.microsoft.com/dotnet/sdk"
+      ],
+      "matchCurrentVersion": "/^8\\./",
+      "allowedVersions": "/^8\\./",
+      "groupName": ".NET 8 SDK (NuGet tests)",
+      "groupSlug": "dotnet-sdk-8"
+    },
+    {
+      "description": "The .NET 9 SDK of the NuGet clients image stays on its major",
+      "matchFileNames": [
+        "tools/versions.env"
+      ],
+      "matchDepNames": [
+        "mcr.microsoft.com/dotnet/sdk"
+      ],
+      "matchCurrentVersion": "/^9\\./",
+      "allowedVersions": "/^9\\./",
+      "groupName": ".NET 9 SDK (NuGet tests)",
+      "groupSlug": "dotnet-sdk-9"
+    },
+    {
       "description": "npm client matrix (test/e2e/clients/package.json, R-NPM-045): the eight gate rows are npm aliases that move within their major, in one pull request, because the e2e matrix runs all of them. A new major is a change of the gate rows themselves, decided by the rule of R-NPM-045 and made by hand, so Renovate does not open it. No automerge: the matrix is reviewed.",
       "matchFileNames": [
         "test/e2e/clients/package.json"

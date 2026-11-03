@@ -524,6 +524,14 @@ Not reachable in the integration tier, and why: the drain of a node ("`queued` a
 (R-VULN-008) is the evaluation's (work package B, tested in vulnfindings). The alert `TroveVulnerabilitySyncFailing` and the readiness of the replicas (R-VULN-024) are work package G's, in the chart tests.
 The worker of the package's tests has no worker on the default queue (`TROVE_JOBS_WORKERS_DEFAULT=0`): the `vuln-evaluate` job stays queued, which is what the tests read; the evaluation that consumes it is run by vulnfindings, vulnrestore and vulnflow.
 
+### H · End to end (R-VULN-029)
+
+The e2e tier is [test/e2e/vuln_*_test.go](../../test/e2e), the sets `vuln` and `vuln-long` of [deploy/dev/e2e.sh](../../deploy/dev/e2e.sh), the profile `vuln` of
+[up.sh](../../deploy/dev/up.sh) with [values-vuln.yaml](../../deploy/dev/values-vuln.yaml), the browser journeys of [web/e2e/vuln](../../web/e2e/vuln) and the jobs `e2e-vuln` of Test and
+Release and of the nightly workflow; [e2e.md](e2e.md#the-vulnerability-tests) describes what it deploys, every test, how to run it and what it found. Decisions Q-VULN-59 and Q-VULN-60,
+gap H-494. Nothing in `internal` changed for it; what it found about the product (a UI contrast defect, fixed, and the case of the findings filter `package` for NuGet IDs) is in [e2e.md](e2e.md#findings-of-the-vulnerability-tests).
+
+
 ## Tests that pass now
 
 These contract tests carry their requirement IDs in comments or in names that say what they pin; the evidence of a requirement comes from the tests of its work package (Q-ROAD-5).

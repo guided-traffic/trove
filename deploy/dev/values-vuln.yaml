@@ -1,0 +1,21 @@
+# The `vuln` e2e profile (R-VULN-029, docs/developer/e2e.md#the-vulnerability-tests), layered after values-dev.yaml and
+# values-scatter.yaml (three web replicas, every request to another one; two worker replicas from values-dev.yaml) by
+# up.sh when TROVE_PROFILE=vuln: the scanning reads the test advisory source (deploy/dev/osvstub.yaml, started by
+# e2e.sh with TROVE_E2E_OSVSTUB=1) instead of osv.dev and CISA, and the hosts of the two test upstreams count as public
+# registries (R-VULN-010), so a remote repository over them is matched with matchPublicAdvisories auto.
+#
+# The stub's certificate is signed by the dev CA, which trove trusts for upstreams through proxy.outbound.tls.ca_files
+# (values-dev.yaml). The namespace is the one of the dev cluster, as everywhere in values-dev.yaml.
+config:
+  vulnerabilities:
+    sources:
+      osv:
+        mode: online            # values-dev.yaml switches the sources off
+        base_url: https://osvstub.trove.svc/
+      kev:
+        mode: online
+        url: https://osvstub.trove.svc/sites/default/files/feeds/known_exploited_vulnerabilities.json
+    matching:
+      public_upstreams:
+        npm: [registry.npmjs.org, npmstub.trove.svc]
+        nuget: [api.nuget.org, www.nuget.org, nugetstub.trove.svc]

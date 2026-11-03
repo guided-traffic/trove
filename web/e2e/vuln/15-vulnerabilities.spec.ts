@@ -90,7 +90,7 @@ test('R-VULN-022 the Critical-style count filters the list, the sort and the fin
       await dialog.getByLabel('Comment').fill('The vulnerable function is not reachable from our code.');
       await expectAccessible(page, 'the dismiss dialog');
       await dialog.getByRole('button', { name: 'Dismiss', exact: true }).click();
-      await expect(page.getByText('Not exploitable')).toBeVisible();
+      await expect(page.getByRole('definition').filter({ hasText: 'Not exploitable' })).toBeVisible();
       await expect(page.getByRole('cell', { name: 'Dismissed' }).first()).toBeVisible();
     });
 
@@ -188,17 +188,18 @@ test('R-VULN-023 R-VULN-022 the package page shows the finding on the affected v
   page,
   admin,
 }) => {
+  // trove-test-cvss: the other journeys and the client tests cache trove-test-vuln in npm-remote, which would be a second repository here
   const repo = unique('vuln-c');
   await localNpmRepository(admin, repo, [
-    ['trove-test-vuln', '1.0.0'],
-    ['trove-test-vuln', '1.0.1'],
+    ['trove-test-cvss', '1.0.0'],
+    ['trove-test-cvss', '1.0.1'],
   ]);
-  const tarball = `/api/npm/${repo}/trove-test-vuln/-/trove-test-vuln-1.0.0.tgz`;
+  const tarball = `/api/npm/${repo}/trove-test-cvss/-/trove-test-cvss-1.0.0.tgz`;
   try {
     const [finding] = await findingsOf(admin, repo, 1);
     expect((await admin.get(tarball)).status(), 'download before the block').toBe(200);
     await signInLocal(page);
-    const packagePage = (version: string, tab: string) => `/ui/en/packages/npm/trove-test-vuln?version=${version}&tab=${tab}`;
+    const packagePage = (version: string, tab: string) => `/ui/en/packages/npm/trove-test-cvss?version=${version}&tab=${tab}`;
 
     await test.step('the tab shows one finding on 1.0.0 and none on 1.0.1', async () => {
       await page.goto(packagePage('1.0.0', 'vulnerabilities'));
@@ -228,7 +229,7 @@ test('R-VULN-023 R-VULN-022 the package page shows the finding on the affected v
       await expect(dialog).toContainText(`Every client of ${repo}`);
       await expectAccessible(page, 'the block dialog');
       await dialog.getByRole('button', { name: 'Block downloads' }).click();
-      await expect(page.locator('.vuln-blocked')).toContainText(`Downloads of trove-test-vuln@1.0.0 are blocked in ${repo}.`);
+      await expect(page.locator('.vuln-blocked')).toContainText(`Downloads of trove-test-cvss@1.0.0 are blocked in ${repo}.`);
       await expect(page.locator('.vuln-blocked')).toContainText('blocked in triage');
     });
 
@@ -260,7 +261,7 @@ test('R-VULN-023 R-VULN-022 the package page shows the finding on the affected v
 
 test('R-VULN-022 the sources screen shows the state of the test source, and the advisory page lists where an advisory is used', async ({ page, admin }) => {
   const repo = unique('vuln-d');
-  await localNpmRepository(admin, repo, [['trove-test-vuln', '1.0.0']]);
+  await localNpmRepository(admin, repo, [['trove-test-cvss', '1.0.0']]);
   try {
     const [finding] = await findingsOf(admin, repo, 1);
     await signInLocal(page);
@@ -271,7 +272,7 @@ test('R-VULN-022 the sources screen shows the state of the test source, and the 
 
     await page.goto(`/ui/en/vulnerabilities/advisories/npm/${finding!.advisory}`);
     await expect(page.getByRole('heading', { name: 'Advisory', level: 1 })).toBeVisible();
-    await expect(page.getByRole('row', { name: new RegExp(repo) }).or(page.getByRole('row', { name: /trove-test-vuln/ })).first()).toBeVisible();
+    await expect(page.getByRole('row', { name: new RegExp(repo) }).or(page.getByRole('row', { name: /trove-test-cvss/ })).first()).toBeVisible();
     await expectAccessible(page, 'an advisory');
   } finally {
     await admin.delete(`/api/v1/repositories/${repo}`);

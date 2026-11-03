@@ -5,12 +5,19 @@
 # any credential.
 #
 #   SDK_IMAGE        E2E_NUGETCLIENTS_SDK_IMAGE of tools/versions.env (the .NET SDK image, pinned by digest)
+#   SDK8_IMAGE, SDK9_IMAGE   E2E_NUGETCLIENTS_SDK8_IMAGE and _SDK9_IMAGE: the .NET 8 and 9 SDKs of the audit scenarios of R-VULN-018. Only
+#                    the SDK, its runtime and its host resolver are copied next to the .NET 10 SDK; a project picks one with a global.json
 #   MONO_VERSION     E2E_NUGETCLIENTS_MONO_VERSION: the apt version of the Mono packages of the SDK image's Ubuntu
 #   JQ_VERSION       E2E_NUGETCLIENTS_JQ_VERSION: the exact apt version of jq, which the exchange step of the reference pipeline
 #                    (R-CI-028) runs next to the curl of the SDK image
 #   NUGET_EXE_VERSION, NUGET_EXE_SHA256   E2E_NUGETCLIENTS_NUGET_EXE_*: the nuget.exe on dist.nuget.org and its digest
 #   --build-context fwd=<dir>   a directory with the static forwarder fwd-linux-<arch> (build.sh builds it)
 ARG SDK_IMAGE
+ARG SDK8_IMAGE
+ARG SDK9_IMAGE
+
+FROM ${SDK8_IMAGE} AS sdk8
+FROM ${SDK9_IMAGE} AS sdk9
 
 FROM ${SDK_IMAGE} AS nugetexe
 ARG NUGET_EXE_VERSION
@@ -32,6 +39,15 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && mkdir /work && chown 1000:1000 /work
 COPY --from=nugetexe /nuget.exe /opt/nuget/nuget.exe
+# The .NET 8 and 9 SDKs next to the .NET 10 one: the SDK directory, the runtime each of them runs on and the host resolver
+# of that runtime. `dotnet` of the .NET 10 SDK is the muxer; global.json chooses the SDK, and a restore of a project that
+# sets DisableImplicitFrameworkReferences needs no targeting pack.
+COPY --from=sdk8 /usr/share/dotnet/sdk/ /usr/share/dotnet/sdk/
+COPY --from=sdk8 /usr/share/dotnet/shared/Microsoft.NETCore.App/ /usr/share/dotnet/shared/Microsoft.NETCore.App/
+COPY --from=sdk8 /usr/share/dotnet/host/fxr/ /usr/share/dotnet/host/fxr/
+COPY --from=sdk9 /usr/share/dotnet/sdk/ /usr/share/dotnet/sdk/
+COPY --from=sdk9 /usr/share/dotnet/shared/Microsoft.NETCore.App/ /usr/share/dotnet/shared/Microsoft.NETCore.App/
+COPY --from=sdk9 /usr/share/dotnet/host/fxr/ /usr/share/dotnet/host/fxr/
 COPY bin/ /usr/local/bin/
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY --from=fwd fwd-linux-${TARGETARCH} /usr/local/bin/fwd

@@ -83,6 +83,10 @@ html {
   // The density of -2 sets the label of a filled field to `display: none`, which leaves the input without a
   // visible or an accessible label (found by axe in the browser tier, R-UI-047). The label stays.
   --mat-form-field-filled-label-display: block;
+  // A filled field under the pointer gets the hover layer (8 % of on-surface), and the label in on-surface-variant on that
+  // container measures 4.25:1 in the light scheme and 4.47:1 in the dark one, under the 4.5:1 of WCAG 2.2 AA (axe in the
+  // vulnerability journeys: the first field of the bulk dialog opens under the pointer that clicked "Change status").
+  --mat-form-field-filled-hover-label-text-color: var(--mat-sys-on-surface);
 }
 
 html,
