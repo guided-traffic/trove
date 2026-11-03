@@ -13,8 +13,13 @@
 > The NuGet registry: local, remote and virtual repositories, symbol package push, the package screens, client setup and guides,
 > NuGet on customer endpoints, the forwarded search, and the format contract frozen at version 1; the findings of its reviews and
 > security audits are fixed but for the open ones ([open findings](docs/projektplan/promt.md#8--open-findings)).
-> GitLab CI OIDC federation (M4) is built; its end-to-end tests run in the `ci` set. Not built yet: vulnerability scanning, backup and restore, and the HA hardening of
-> phase 7. Everything else is the target design in [docs/spec/](docs/spec/README.md). `v0.1.0` is the
+> GitLab CI OIDC federation (M4) is built; its end-to-end tests run in the `ci` set. Vulnerability scanning (M4b, beta phase 6) is
+> built: trove's own advisory mirror (the OSV archives of npm and NuGet, which carry the GitHub Advisory Database and the OpenSSF
+> malicious packages, and the CISA KEV catalog), findings with triage, download blocking (malicious versions by default, any other
+> version when a triager blocks its finding), `npm audit`, `pnpm audit`, `yarn npm audit` and NuGet's `VulnerabilityInfo` answered
+> from trove's data, and the report in the API and the UI; the client runs and the browser journeys run in the end-to-end sets `vuln` and
+> `vuln-long` ([vulnerability scanning](docs/developer/vulnerabilities.md)). Not built yet: backup and restore, and the HA
+> hardening of phase 7. Everything else is the target design in [docs/spec/](docs/spec/README.md). `v0.1.0` is the
 > last release made before the switch to the organisation's CI and release standard; it was published to `ghcr.io`. Releases
 > from now on are cut by Semantic Release from the conventional commits on `main`, and published to Docker Hub and to the chart
 > repository ([releasing](docs/developer/releasing.md)).
@@ -94,7 +99,7 @@ Built (M2, npm registry):
 - 📦 **npm local repositories.** Publish, package documents, dist-tags, unpublish, `whoami` and `ping`, for npm, pnpm, Yarn Classic and Yarn Berry. See [npm](docs/developer/npm.md).
 - 🔁 **npm remote repositories.** A pull-through proxy of the public npm registry, with tarball URL rewriting, request collapsing through Valkey, metadata and negative caches, and stale metadata while the upstream is down. See [proxy](docs/developer/proxy.md).
 - 🧩 **npm virtual repositories.** Merged package documents and dist-tags over several members, writes through one deployment target, namespace claims against dependency confusion. See [virtual](docs/developer/virtual.md).
-- 🛡️ **npm security audit.** `npm audit`, `pnpm audit` and `yarn npm audit` through remote and virtual repositories. The audit request is forwarded to the provider (the upstream by default) and never cached. See [npm](docs/developer/npm.md).
+- 🛡️ **npm security audit.** `npm audit`, `pnpm audit` and `yarn npm audit` on every class. While vulnerability scanning is on and the OSV source is not `off`, a repository that sets neither `npm.audit.local` nor `npm.audit.mode` answers from trove's own advisory data and sends nothing out (M4b); `npm.audit.local: false` or a stored `npm.audit.mode: forward` keeps the forward of remote and virtual repositories to the provider (the upstream by default), never cached ([Q-VULN-74](docs/spec/vulnerability-scanning.md#q-vuln-74--the-audit-answers-from-troves-data-through-a-new-boolean-because-npmauditmode-is-a-frozen-enum)). See [npm](docs/developer/npm.md) and [client audits](docs/security/vulnerability-scanning.md#client-audits).
 - 🌐 **npm on customer endpoints.** Package documents and dist-tags list only the versions an endpoint exposes; a hidden version answers `404`. See [endpoints](docs/developer/endpoints.md).
 - 🖼️ **Package screens and client setup.** The package list and detail with the README, an install panel, client setup snippets, and repository settings rendered from the format's schema. See [packages](docs/developer/packages.md) and [web UI](docs/developer/web-ui.md).
 - 📖 **In-app guides.** A guide for every npm variant (local, remote and virtual) with npm, pnpm, Yarn Berry and Yarn Classic, in the UI's guides area. See [npm](docs/developer/npm.md) and [web UI](docs/developer/web-ui.md).
@@ -112,9 +117,19 @@ Built (M3, NuGet; the phase is open for its [remaining findings](docs/projektpla
 - 🪪 **GitLab CI OIDC federation (M4).** A GitLab job exchanges its ID token for a `trv_cit_` token that lives minutes: issuers with discovery and rotating signing keys, ordered mappings with claim conditions, templated grants and ownership binding, replay protection, issuance records, revocation (also by the job itself as its last step), the dry run and the claim tester, and the admin screens. The reference pipeline runs with the real npm and .NET clients against an issuer double on kind. See [GitLab CI pipelines](docs/manual/user/gitlab-ci-pipelines.md), [GitLab CI federation](docs/manual/admin/gitlab-ci.md) and [ci-oidc.md](docs/developer/ci-oidc.md).
 - 🔒 **Format contract frozen.** The contract between the core and a format is at version 1, its surface is recorded and checked, and npm and NuGet pass all eleven conformance checks; every later change is an ADR ([ADR-141](docs/decisions.md#adr-141--the-format-contract-is-frozen-at-version-1)). See [formats](docs/developer/formats.md).
 
-Not built yet (see the [roadmap](docs/coverage/roadmap.md)): the symbol server of NuGet;
-vulnerability scanning; backup and restore and the HA hardening of phase 7; remote and virtual repositories for the generic format; the UI
-screens of search, trash, builds and webhooks.
+Built (M4b, vulnerability scanning, beta phase 6; [spec](docs/spec/vulnerability-scanning.md), [contracts](docs/developer/vulnerabilities.md), [security](docs/security/vulnerability-scanning.md)):
+
+- 🗄️ **Own advisory mirror and offline import.** The `worker` role copies the OSV archives of npm and NuGet (GitHub Advisory Database, OpenSSF malicious packages) and the CISA KEV catalog into PostgreSQL, incrementally every 15 minutes and in full weekly, behind guards for digest, size, shrink and invalid records; an installation without internet access imports the same files from a generic local repository (`mode: repository`). See [advisory sources](docs/manual/admin/vulnerability-sources.md).
+- 🔍 **Matching and findings with triage.** A stored version is matched by name and version, never by its bytes, in its commit and again when the data changes; public advisories never apply to a claimed internal name. A finding is `needs_triage`, `confirmed`, `blocked`, `dismissed` or `resolved`, changed one by one or in bulk by holders of `vulnerabilities:triage`, with history and audit. See [vulnerabilities](docs/manual/user/vulnerabilities.md).
+- ⛔ **Download blocking.** An open malicious finding blocks its version (`blockMalicious`, on by default); any other finding blocks only when a triager blocks it, and `onMissingData: block` refuses what cannot be evaluated yet (`vulnerability_data_missing`); `403 vulnerability_blocked` on the format routes, `/files/`, the cache view and every virtual tier, and a blocked remote miss is never fetched. `vulnerabilities.enforcement: report` only counts. See [download block](docs/security/vulnerability-scanning.md#download-block).
+- 🧾 **NuGet audit warnings from trove's data.** `nuget.vulnerabilityInfo` (local by default while scanning is on) lists `VulnerabilityInfo/6.7.0` in the service index and serves `vulnerabilities/index.json` and `trove.json`, so `dotnet restore` reports NU1901 to NU1904; internal names are left out. See [client audits](docs/security/vulnerability-scanning.md#client-audits).
+- 📊 **Vulnerability report and package-page tab.** The Vulnerabilities screen (counts, trend, filters, CSV export, finding, advisory and advisory-source pages), the API under `/api/v1/vulnerabilities/`, and a Vulnerabilities tab on the package page, each narrowed to the findings the caller can read. See [vulnerabilities](docs/manual/user/vulnerabilities.md).
+- 🚨 **Alerts.** Twelve `trove_vuln_*` metric families and the chart's PrometheusRule (`metrics.prometheusRule.enabled`) with `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing` and `TroveVulnerabilityClaimedNameMalicious`, the last for a malicious advisory that names a claimed internal name. See [operations](docs/security/vulnerability-scanning.md#operations-what-an-operator-sees-and-what-a-restore-leaves).
+
+Not built yet (see the [roadmap](docs/coverage/roadmap.md)): the symbol server of NuGet; the P1 parts of vulnerability scanning
+(exploit-probability enrichment, time-limited dismissals, vulnerabilities in NuGet registrations: R-VULN-030 to R-VULN-032) and the
+pass-through of an upstream's NuGet vulnerability information (`vulnerabilityInfo: upstream`, R-NUGET-023); backup and restore and
+the HA hardening of phase 7; remote and virtual repositories for the generic format; the UI screens of search, trash, builds and webhooks.
 
 ## 📛 Naming conventions
 
@@ -154,8 +169,13 @@ Built names are the ones the code produces. *Planned* marks a name the spec fixe
 | `/api/nuget/<repoKey>/v3/symbolpackage` | PUT | yes, the push of a `.snupkg` to a local repository after its package (R-NUGET-020); `201` (also for the identical package again), `400`, `403`, `404` (no such package), `409` `nuget_symbol_package_exists`; one `nuget-symbol-index` job per symbol package ([NuGet](docs/developer/nuget.md#symbol-packages)) |
 | `/api/nuget/<repoKey>/v3/package/{id}/{version}` | DELETE, POST | yes, DELETE unlists (or removes, with `deleteMode: delete`) and answers `204`, POST lists again and answers `200` |
 | `/api/nuget/<repoKey>/v3/…` of a remote repository (and `<repoKey>~cache`, the cache view) | GET, HEAD | yes, the service index, version list, registrations and package files of a cached NuGet feed; a push, unlist or delete answers `405` ([NuGet](docs/developer/nuget.md#the-remote-class)) |
+| `/api/nuget/<repoKey>/v3/vulnerabilities/index.json`, `…/v3/vulnerabilities/trove.json` | GET, HEAD | yes (M4b), every class: the index of the `VulnerabilityInfo/6.7.0` resource and its one page, trove's NuGet advisory data keyed by the lower-case ID, `Cache-Control: private, max-age=1800`; listed in the service index while `nuget.vulnerabilityInfo` is `local` and the NuGet data is complete; a request answers `404` when the mode is not `local`, on the cache view and on an endpoint with exposure rules, and `503 vulnerability_data_unavailable` before the data is complete ([vuln_documents.go](internal/formats/nuget/vuln_documents.go)) |
 | any other path below `/api/nuget/<repoKey>/` (every NuGet v2 shape) | any | `404 nuget_v2_unsupported`, the message names `…/v3/index.json` of the repository |
+| `/api/npm/<repoKey>/-/npm/v1/security/advisories/bulk` | POST | yes: the bulk audit, answered from trove's data (mode `local`, M4b) or forwarded (`npm.audit.mode: forward`, M2); `…/-/npm/v1/security/audits` and `…/audits/quick` answer `501 npm_audit_unavailable` in every mode ([routes.go](internal/formats/npm/routes.go)) |
+| `/api/v1/vulnerabilities/findings`, `…/findings/export`, `…/findings/{id}`, `…/findings/set-status`, `…/advisories/{ecosystem}/{id}`, `…/summary`, `…/trend`, `…/sources`, `…/claimed-name-matches` | GET; PATCH on `…/findings/{id}`, POST on `…/set-status` | yes (M4b; [the operations](#management-api)) |
+| `/api/v1/packages/{packageId}/vulnerabilities`, `/api/v1/packages/{packageId}/versions/{version}/vulnerabilities`, `/api/v1/repositories/{key}/vulnerabilities/rescan` | GET; POST for the rescan | yes (M4b) |
 | `/ui/{locale}/…` | GET, HEAD | yes, locales `en` and `de` ([webui](internal/webui/webui.go)) |
+| `/ui/{locale}/vulnerabilities`, `…/vulnerabilities/findings/{id}`, `…/vulnerabilities/advisories/{ecosystem}/{id}`, `…/vulnerabilities/sources` | GET, HEAD | yes (M4b): the report, a finding, an advisory and the advisory sources ([vulnerabilities.routes.ts](web/src/app/features/vulnerabilities/vulnerabilities.routes.ts)) |
 
 ### NuGet remote cache paths
 
@@ -258,7 +278,7 @@ The canonical paths under which a NuGet remote repository stores what it fetched
 |---|---|---|
 | Schema | `trove` (`database.schema`) | yes |
 | Migration records | `schema_migration`, `schema_state` (the runtime login may only read them) | yes (`internal/meta/postgres/migrations/`) |
-| Job kinds | `gc`, `gc-full`, `repository-delete`, `items-delete` (one job per deletion), `token-cleanup`, `token-expiry-notice`, `session-cleanup`, `audit-retention`, `idempotency-cleanup`, `secrets-reencrypt` (manual only), `nuget-symbol-index` (one job per symbol package), `data_migration_nuget_semver2` (a background data migration, once per installation), `cluster-change-prune`, `replica-registry-prune`, `system.probe`. The list of the registrations is in the [job kinds](#job-kinds-and-tasks) reference | yes (`internal/app/wire_*.go`, `internal/jobs`) |
+| Job kinds | `gc`, `gc-full`, `repository-delete`, `items-delete` (one job per deletion), `token-cleanup`, `token-expiry-notice`, `session-cleanup`, `audit-retention`, `idempotency-cleanup`, `secrets-reencrypt` (manual only), `nuget-symbol-index` (one job per symbol package), `data_migration_nuget_semver2` (a background data migration, once per installation), `vuln-sync-osv`, `vuln-sync-osv-full`, `vuln-sync-kev`, `vuln-evaluate`, `vuln-rescan` (one job per repository), `vuln-findings-retention`, `cluster-change-prune`, `replica-registry-prune`, `system.probe`. The list of the registrations is in the [job kinds](#job-kinds-and-tasks) reference | yes (`internal/app/wire_*.go`, `internal/jobs`) |
 | `system_state` keys | `installation_id`, `keyspace_id`, `incarnation` (the first migration writes them); `nuget_semver2_recomputed`, the completion of `data_migration_nuget_semver2`. `restore_in_progress`, `restored_at` and `deletions_paused_at` are read; nothing in this build writes them | yes (`internal/meta/postgres/migrations/00001_foundation.sql`, `internal/formatdata/nuget/semver2.go`) |
 | Advisory-lock categories | two-`int4` form: `1` lease, `2` fetch (retired, never reused), `3` migration, `4` configuration | yes (`internal/cluster/locks.go`) |
 | Roles and `application_name` | `trove_owner`, `trove_app`, `trove:<replica>:<class>` | planned ([R-HA-014](docs/spec/ha-and-helm.md)) for the role names; the `application_name` is built |
@@ -275,6 +295,7 @@ Names of the areas of the PostgreSQL change log ([internal/cluster/areas.go](int
 | `jobs`, `cache` | the job queue and the in-process caches of M0 | yes |
 | `ci_mappings` | the in-process copies of the CI issuers and their mappings ([R-CI-002](docs/spec/gitlab-ci-oidc.md), R-CI-009; the exchange compares versions in its transaction and does not wait for it) | yes: every issuer and mapping write notifies it |
 | `ci_issuer_keys` | the in-process copy of a CI issuer's signing key set ([R-CI-003](docs/spec/gitlab-ci-oidc.md)); notified only when the content changed | contract: the area and its epoch row exist, no producer yet |
+| `vuln_data` | the per-replica copy of `vuln_source_state` (cache `vuln_source_state`, safety TTL 60 s) and the rendered NuGet vulnerability page (cache `vuln_nuget_page`); payload `{"ecosystem": "npm", "epoch": 42}`, written once per sync run that changed records or the state, never per request (R-VULN-027) | yes (M4b; epoch row from migration 00035) |
 
 ### Metrics
 
@@ -296,7 +317,7 @@ Built families, all with the `trove_` prefix:
 | `trove_cluster_signals_published_total`, `trove_cluster_signals_dropped_total` | `area` |
 | `trove_cache_flushes_total` | `cache`, `reason` |
 | `trove_valkey_pubsub_subscribed` | gauge |
-| `trove_outbound_requests_total`, `trove_outbound_request_duration_seconds`, `trove_outbound_egress_denied_total` | `kind` (the purpose of the outbound client) |
+| `trove_outbound_requests_total`, `trove_outbound_request_duration_seconds`, `trove_outbound_egress_denied_total` | `kind` (the purpose of the outbound client; `vuln_source` for the advisory sources, [sync/service.go](internal/vuln/sync/service.go)) |
 | `trove_storage_s3_requests_total`, `trove_storage_s3_request_duration_seconds` | `operation`, `outcome` |
 | `trove_metrics_label_overflow_total` | `family`, `label` |
 | `trove_tracing_spans_dropped_total` | none |
@@ -316,6 +337,20 @@ Built families, all with the `trove_` prefix:
 | `trove_lease_held`, `trove_lease_lost_total` | the labels of `internal/cluster/lease_manager.go` | yes |
 | `trove_bastion_interface_requests_total`, `trove_bastion_forwarded_requests_total` | `bastion` (the registration name), and `operation` (`handshake`, `check`, `feed`, `downloads`) with `outcome` (`ok`, `invalid_token`, `interface_mismatch`, `refused`, `error`, `not_implemented`), or `class` (`artifact`, `shared`, `private`, `absent`, `pass`, `probe`): the main installation's side of the Bastion, [internal/bastionmain/metrics.go](internal/bastionmain/metrics.go) (R-BAS-008); a request whose token names no registration counts under `unknown`; the forwarded counter is filled by the marking (R-BAS-013) | `trove_bastion_interface_requests_total` yes |
 
+The families of the vulnerability scanning (M4b), defined once in [internal/vuln/metrics](internal/vuln/metrics/metrics.go) (R-VULN-024); no label carries a package name, an advisory identifier or a repository key. The five gauges are read from PostgreSQL once per `metrics.db_gauge_interval`; aggregate them with `max`, not `sum`, across replicas:
+
+| Family | Labels |
+|---|---|
+| `trove_vuln_source_last_success_timestamp_seconds`, `trove_vuln_source_records`, `trove_vuln_source_consecutive_failures` | `source` (`osv`, `kev`), `ecosystem`; gauges: the last run that ended changed or unchanged, the stored records, the failed runs in a row |
+| `trove_vuln_sync_runs_total` | `source`, `ecosystem`, `kind` (`full`, `incremental`), `outcome` (`changed`, `unchanged`, `failed`) |
+| `trove_vuln_sync_records_total` | `source`, `ecosystem`, `result` (`written`, `skipped`, `rejected`, `deleted`) |
+| `trove_vuln_unevaluable_ranges_total` | `ecosystem`: advisory ranges the format's version order cannot evaluate |
+| `trove_vuln_evaluations_total`, `trove_vuln_evaluation_duration_seconds` | `trigger` (`publish`, `fill`, `miss`, `advisory`, `full`, `rescan`) |
+| `trove_vuln_findings` | `severity`, `status`, `kind`; gauge |
+| `trove_vuln_downloads_blocked_total` | `format`, `reason` (`malicious`, `triage`, `missing_data`), `mode` (`enforce`, `report`: the would-be refusals of `vulnerabilities.enforcement: report`) |
+| `trove_vuln_audit_requests_total` | `format`, `mode` (`local`, `forward`, `disabled`), `outcome` (`ok`, `refused`, `unavailable`, `error`): the npm bulk audits of every mode ([handlers_audit.go](internal/formats/npm/handlers_audit.go)); the NuGet vulnerability documents are not counted |
+| `trove_vuln_claimed_name_matches` | `ecosystem`, `kind` (`vulnerability`, `malicious`); gauge: public advisories that name a claimed internal name |
+
 The label sets of the M1 families are not restated per family in this pass; read the file named in each row.
 
 ### Kubernetes and Helm
@@ -332,6 +367,7 @@ The label sets of the M1 families are not restated per family in this pass; read
 | ConfigMap | `<fullname>-config`, holding `trove.yaml` | yes |
 | Services | `<fullname>` (client port), `<fullname>-ops` (ops port) | yes |
 | Network policies | `<fullname>-web`, `<fullname>-worker`, `<fullname>-migrate` | yes |
+| PrometheusRule | `<fullname>`, group `<fullname>`, with `metrics.prometheusRule.enabled` (needs the Prometheus operator's CRDs); alerts `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing`, `TroveVulnerabilityClaimedNameMalicious`, every selector scoped to the release namespace | yes (M4b; [prometheusrule.yaml](deploy/helm/trove/templates/prometheusrule.yaml), [_rules.tpl](deploy/helm/trove/templates/_rules.tpl)) |
 | Backup CronJob, restore Job | `<fullname>-backup`, `<fullname>-restore` | planned (M5) |
 | Bastion chart | `deploy/helm/trove-bastion`, released with the chart `trove` at the same version; its own `<fullname>` (release name, or `<release>-trove-bastion`) | yes (phase 5b) |
 | Bastion workload | `<fullname>` (Deployment, or StatefulSet with `cacheVolume.type: persistent`), `--role bastion`, ports `https` 8443 and `ops` 8081 | yes |
@@ -373,6 +409,23 @@ The label sets of the M1 families are not restated per family in this pass; read
 | Source of a project administrator's `manage` in a decision | `project:<key>` | `manage` on every repository of the project; decided from the administration of the project, not stored as a grant |
 | Database guards | SQLSTATE `AI002`, `AI003`, `AI004`, `AI005` | project service account in a group; name prefix and project of a service account; entry of a project policy in the table of global grants; project service account in a role binding or an entry of a global policy (the writes map it to 422 `role_not_allowed` and `principal_outside_project`) |
 
+### Vulnerability scanning
+
+| Name | Value | Rule |
+|---|---|---|
+| Capability | `vulnerabilities:triage` | held by the roles `admin`, `security-admin` and `auditor`; no repository action grants it; a system scope item, so a token's scope can carry it; effective only with `read` on the finding's repository ([authz.go](internal/authz/authz.go), [roles.go](internal/authz/roles.go)) |
+| Repository member | `vulnerabilities` (`enabled`, `matchPublicAdvisories`, `blockMalicious`, `onMissingData`) | local and remote npm and NuGet repositories; a virtual repository or another format answers `422 not_applicable` at `/vulnerabilities` ([settings.go](internal/vuln/settings.go)) |
+| Finding statuses | `needs_triage`, `confirmed`, `blocked`, `dismissed`, `resolved` | `resolved` is set by trove only (`422 status_not_settable`) |
+| Advisory sources | `osv` (ecosystems `npm`, `NuGet`, as OSV spells them), `kev` | the `source` and `ecosystem` labels, the rows of `GET /api/v1/vulnerabilities/sources` |
+| Mirror repository paths (`mode: repository`) | `osv/<ecosystem>/all.zip`, `kev/known_exploited_vulnerabilities.json` | in a generic local repository named by `vulnerabilities.sources.<source>.repository` |
+| Tasks | `vuln-sync-osv` (`*/15 * * * *`), `vuln-sync-osv-full` (`17 3 * * 0`), `vuln-sync-kev` (`41 */6 * * *`), `vuln-findings-retention` (`50 3 * * *`) | `maintenance.tasks.<name>`; the defaults are in [internal/vuln/jobs.go](internal/vuln/jobs.go) and the default of `maintenance.tasks` |
+| Rescan dedup key | `vuln-rescan:<repository id>` | one rescan per repository queued or running |
+| Outbound purpose | `vuln_source` | the `kind` label of `trove_outbound_*` and the purpose of the upstream log |
+| Caches | `vuln_source_state` (safety TTL 60 s), `vuln_nuget_page` (the rendered NuGet page, at most four entries, safety TTL 15 min) | per replica; the change area `vuln_data` empties both, `claims` and `repo_config` the page too ([coordination.go](internal/vuln/coordination.go), [audits_pages.go](internal/vuln/store/audits_pages.go)) |
+| NuGet page | `@name` `trove`, at `<feed>/vulnerabilities/trove.json` | the one entry of `<feed>/vulnerabilities/index.json` |
+| Alerts | `TroveVulnerabilityDataStale`, `TroveVulnerabilitySyncFailing`, `TroveVulnerabilityClaimedNameMalicious` | the names `metrics.prometheusRule.disabledAlerts` accepts |
+| Tables | `vuln_source_state`, `vuln_advisory`, `vuln_affected`, `vuln_pending_evaluation`, `vuln_kev`, `vuln_claimed_match`, `vuln_finding`, `vuln_finding_event`, `vuln_sync_touched` | migrations 00035 to 00039; `vuln_finding` and `vuln_finding_event` are data in an export, the others transient ([tables_vuln.go](internal/meta/postgres/tables_vuln.go)) |
+
 ### Audit event types
 
 The names of the event registry ([internal/audit](internal/audit/)). Each event carries an actor and a source; the registry says which types the journal always keeps. The list is read from the `events_*.go` files, not from the running system.
@@ -395,6 +448,7 @@ The names of the event registry ([internal/audit](internal/audit/)). Each event 
 | Packages (NuGet) | `package.published`, `package.deleted`, `package.metadata_changed`; `package.published` and `package.deleted` carry the journal entry `{"repository", "id", "version", "sha512"}` of a local NuGet repository |
 | System and audit | `system.task_triggered`, `system.job.cancelled`, `audit.exported` |
 | Bastion interface | `bastion.contact` (a Bastion replica reported for the first time or a reported value changed, R-BAS-010), `bastion.downloads.dropped` (a batch of download events reported or lost events, R-BAS-016); `artifact.downloaded` carries `origin: bastion`, `bastion` and `replica` for a download a Bastion served from its cache |
+| Vulnerability scanning | `vulnerability.finding.status_changed` (a triager's change, each change of a bulk `set-status` with one `bulk` identifier), `vulnerability.finding.reopened` (trove reopens a dismissed finding), both transactional and carrying the journal entry when the change sets a download block; `vulnerability.download_blocked` (asynchronous, at most once a minute per repository, version and client address on each replica, `enforced: false` in mode `report`), `vulnerability.claimed_name_match` (asynchronous, once per advisory and name), `vulnerability.source.failed` (asynchronous, at most once an hour per source and ecosystem), `vulnerability.source.imported` (an import of mode `repository`, with the digest and `deployedBy`, or a run with `acceptShrink`), `vulnerability.advisory.kind_changed` (an alias group's canonical record changed kind) ([internal/audit/events_vuln.go](internal/audit/events_vuln.go)); `repository.updated` of a write that weakens the member `vulnerabilities` carries `block: lifted` and the members in `weakened` |
 
 </details>
 
@@ -403,8 +457,9 @@ The names of the event registry ([internal/audit](internal/audit/)). Each event 
 The code registry is [internal/errs/codes.go](internal/errs/codes.go). Every problem answer carries one of these values as `code`. The HTTP status of each code is in the registry.
 
 <details>
-<summary>Error codes (191 codes in the registry, grouped as the file groups them)</summary>
+<summary>Error codes (222 codes in the registry, grouped as the file groups them)</summary>
 
+- Audit (M1): `invalid_audit_range`
 - General: `internal`, `malformed_request`, `validation_failed`, `unauthenticated`, `forbidden`, `not_found`, `method_not_allowed`, `conflict`, `precondition_failed`, `payload_too_large`, `unsupported_media_type`, `rate_limited`, `insufficient_storage`, `unavailable`, `upstream_failed`, `upstream_timeout`, `repository_not_found`, `database_unavailable`, `egress_denied`, `key_ring_incompatible`, `object_store_unavailable`, `shutting_down`, `server_busy`, `database_timeout`, `misdirected_request`, `invalid_cursor`, `invalid_header`, `already_exists`, `idempotency_in_progress`, `idempotency_key_reused`, `precondition_required`, `reserved_name`, `managed_by_config`
 - Tokens: `invalid_token`, `credentials_required`, `invalid_credentials`, `principal_disabled`, `invalid_scope`, `invalid_ttl`, `ttl_exceeds_maximum`, `default_above_maximum`, `exceeds_ceiling`, `non_expiring_not_allowed`, `non_expiring_restricted`, `pat_not_allowed`, `ci_token_restricted`, `token_already_issued`, `token_limit_reached`, `derivation_exceeds_parent`, `description_required`, `not_a_token`
 - Identities and login: `managed_by_scim`, `last_admin`, `anonymous_not_allowed`, `auto_join_admin_conflict`, `username_invalid`, `session_expired`, `reauthentication_required`, `csrf_failed`, `browser_mismatch`, `flow_expired`, `provider_unavailable`, `break_glass_restricted`, `break_glass_immutable`, `break_glass_rotating`, `local_login_disabled`, `break_glass_locked`, `too_many_pending_logins`
@@ -415,10 +470,12 @@ The code registry is [internal/errs/codes.go](internal/errs/codes.go). Every pro
 - Package ownership and populating (M2): `package_owned_by_other_owner`, `last_owner`, `populate_not_permitted`
 - npm (M2): `npm_invalid_name`, `npm_invalid_version`, `npm_invalid_range`, `npm_invalid_tag`, `npm_bad_publish`, `npm_manifest_mismatch`, `npm_too_large`, `npm_class_not_writable`, `npm_version_exists`, `npm_version_unpublished`, `npm_stale_rev`, `npm_not_implemented`, `npm_audit_unavailable`, `npm_invalid_upstream_document`
 - NuGet (M3): `nuget_invalid_package`, `nuget_invalid_version`, `nuget_invalid_version_range`, `nuget_invalid_id`, `nuget_version_exists`, `nuget_version_deleted`, `nuget_version_reserved`, `nuget_symbol_package_exists`, `nuget_v2_unsupported`, `nuget_not_implemented`, `upstream_package_mismatch`, `nuget_invalid_upstream_document`
-- Remote repositories (M2): `upstream_secret_unavailable`, `source_network_unavailable`, `foreign_host_denied`
+- Remote repositories (M2): `upstream_secret_unavailable`, `source_network_unavailable`, `foreign_host_denied`; the proxy's `not_cached_offline`, `upstream_assumed_offline`, `upstream_auth_failed`, `upstream_error`, `upstream_unreachable`, `upstream_unexpected_status`, `upstream_item_too_large`, `upstream_integrity_mismatch`, `upstream_digest_missing`, `upstream_content_type_blocked`, `tls_untrusted`, `too_many_redirects`, `insecure_redirect`, `fetch_queue_timeout`, `not_cached_only_if_cached`
+- Virtual repositories (M2): `shadows_remote_package`, `shadow_check_unavailable`
 - Package content (M2): `content_refused`
-- Bastion interface (phase 5b): `bastion_token_invalid` (`401`, the Bastion token of a request is invalid, on every path as problem details), `bastion_interface_mismatch` (`400`, with the member `interfaceVersion`), `invalid_cursor` (`400`, a feed cursor that does not parse), `rate_limited` (`429`, an address with too many rejected Bastion tokens, or a batch of download events beyond the registration's budget) and `not_found` (`404`, a forward of a path outside `/api/<format>/` and `/files/`); the registry also holds `bastion_read_only`, `bastion_not_served`, `bastion_base_url_unknown`, `bastion_not_implemented` and `principal_not_allowed`, and the Bastion's own refusals of R-BAS-029
-- GitLab CI OIDC (M4): `ci_not_implemented`, `pin_required`, `pin_claim_not_immutable`, `public_issuer_required`, `kind_not_available`, `issuer_managed_by_configuration`, `discovery_unreachable`, `issuer_mismatch`, `no_usable_keys`, `algorithms_not_offered`, `condition_invalid`, `catch_all_condition`, `unprotected_write`, `unpinned_write`, `empty_grant`, `template_invalid`, `template_unanchored`, `unknown_policy`, `unknown_group`, `mapping_limit_reached`, `priority_taken`, `job_token_fallback_not_available`; the exchange's own `reason` values are in [internal/ci/reason](internal/ci/reason/reason.go) and answer in the OAuth error shape (R-CI-008): `malformed_request`, `unsupported_content_type`, `unsupported_subject_token_type`, `unsupported_requested_token_type`, `actor_token_not_supported`, `subject_token_malformed`, `wrong_subject_token_type`, `unknown_issuer`, `issuer_disabled`, `issuer_mismatch`, `algorithm_not_allowed`, `token_type_not_allowed`, `unknown_signing_key`, `signature_invalid`, `audience_invalid`, `audience_not_exclusive`, `token_expired`, `token_not_yet_valid`, `issued_in_future`, `required_claim_missing`, `subject_token_replayed`, `subject_token_predates_restore`, `cross_project_source_denied`, `no_matching_mapping`, `grant_render_failed`, `subject_token_expires_too_soon`, `ttl_below_minimum`, `job_token_rejected` (P2), `job_not_running` (P2) (all `400 invalid_request`); `grant_type_unsupported` (`unsupported_grant_type`); `scope_malformed`, `scope_not_granted` (`invalid_scope`); `audience_not_this_server` (`invalid_target`); `rate_limited` (`429 slow_down`); `signing_keys_unavailable`, `gitlab_unreachable` (P2), `database_unavailable`, `configuration_changed` (`503 temporarily_unavailable`); `internal` (`500 server_error`)
+- Bastion interface (phase 5b): `bastion_token_invalid` (`401`, the Bastion token of a request is invalid, on every path as problem details), `bastion_interface_mismatch` (`400`, with the member `interfaceVersion`), `invalid_cursor` (`400`, a feed cursor that does not parse), `rate_limited` (`429`, an address with too many rejected Bastion tokens, or a batch of download events beyond the registration's budget) and `not_found` (`404`, a forward of a path outside `/api/<format>/` and `/files/`); the registry also holds `bastion_read_only`, `bastion_not_served`, `bastion_base_url_unknown`, `bastion_not_implemented` and `principal_not_allowed`, and the Bastion's own refusals of R-BAS-029 (`main_failed`, `main_unreachable`, `bastion_busy`, `main_timeout`, `auth_timeout`, `address_blocked`)
+- Vulnerability scanning (M4b): `vulnerability_blocked` (`403`, a finding blocks the version), `vulnerability_data_missing` (`403`, the repository sets `onMissingData: block` and the ecosystem's data was never imported completely), `vulnerability_data_unavailable` (`503`, the npm audit or the NuGet vulnerability documents before the data is complete), `vulnerability_weakening_refused` (`403`, a project administrator's write that weakens the member `vulnerabilities`), `finding_not_confirmed` (`409`, `blocked` on a finding that is not confirmed), `finding_resolved` (`409`), `status_not_settable` (`422`, a person sets `resolved`), `export_too_large` (`422`, above `vulnerabilities.export.max_rows`); the codes of a failed sync run, recorded in `vuln_source_state.last_error` and never an answer to a request: `archive_too_large`, `archive_digest_mismatch`, `archive_limit`, `too_many_invalid_records`, `shrink_refused`, `mirror_repository_invalid`
+- GitLab CI OIDC (M4): `ci_not_implemented`, `pin_required`, `pin_claim_not_immutable`, `public_issuer_required`, `kind_not_available`, `issuer_managed_by_configuration`, `discovery_unreachable`, `issuer_mismatch`, `no_usable_keys`, `algorithms_not_offered`, `condition_invalid`, `catch_all_condition`, `unprotected_write`, `unpinned_write`, `empty_grant`, `template_invalid`, `template_unanchored`, `unknown_policy`, `unknown_group`, `mapping_limit_reached`, `priority_taken`, `job_token_fallback_not_available`, `groups_not_allowed_in_project`, `policy_outside_project`, `mappings_unpinned`; the exchange's own `reason` values are in [internal/ci/reason](internal/ci/reason/reason.go) and answer in the OAuth error shape (R-CI-008): `malformed_request`, `unsupported_content_type`, `unsupported_subject_token_type`, `unsupported_requested_token_type`, `actor_token_not_supported`, `subject_token_malformed`, `wrong_subject_token_type`, `unknown_issuer`, `issuer_disabled`, `issuer_mismatch`, `algorithm_not_allowed`, `token_type_not_allowed`, `unknown_signing_key`, `signature_invalid`, `audience_invalid`, `audience_not_exclusive`, `token_expired`, `token_not_yet_valid`, `issued_in_future`, `required_claim_missing`, `subject_token_replayed`, `subject_token_predates_restore`, `cross_project_source_denied`, `no_matching_mapping`, `grant_render_failed`, `subject_token_expires_too_soon`, `ttl_below_minimum`, `job_token_rejected` (P2), `job_not_running` (P2) (all `400 invalid_request`); `grant_type_unsupported` (`unsupported_grant_type`); `scope_malformed`, `scope_not_granted` (`invalid_scope`); `audience_not_this_server` (`invalid_target`); `rate_limited` (`429 slow_down`); `signing_keys_unavailable`, `gitlab_unreachable` (P2), `database_unavailable`, `configuration_changed` (`503 temporarily_unavailable`); `internal` (`500 server_error`)
 
 </details>
 
@@ -438,6 +495,10 @@ Registrations at start-up, in `internal/app/wire_*.go` and in the packages that 
 | `data_migration_nuget_semver2` | `internal/app/wire_formats.go`, `internal/formatdata/nuget/semver2.go` | queued by a `worker` or `all` replica at start-up until its completion is recorded, queue `maintenance`, coalesce; recomputes `is_semver2` of the NuGet versions stored by 0.9.0 and older ([Q-NUGET-93](docs/spec/formats/nuget.md#q-nuget-93--the-versions-stored-before-the-semver-2-classification-counted-dependency-ranges-are-recomputed-once-by-a-background-job-in-go)) |
 | `token-cleanup`, `token-expiry-notice` | `internal/app/wire_identity.go`, `internal/auth/token/tasks.go` | tasks (`maintenance` queue, 3 attempts) |
 | `ci-keys-refresh`, `ci-replay-cleanup`, `ci-issuance-retention` | `internal/app/wire_ci.go` | tasks (`maintenance` queue, exclusive, 3 attempts): `*/5 * * * *`, `7 * * * *`, `40 3 * * *`; `ci-keys-refresh` fetches the due issuers, the other two succeed and do nothing until their services are built ([R-CI-030](docs/spec/gitlab-ci-oidc.md)) |
+| `vuln-sync-osv`, `vuln-sync-osv-full`, `vuln-sync-kev` | `internal/app/wire_vuln_sync.go` | tasks (`maintenance` queue, exclusive, 1 attempt): `*/15 * * * *`, `17 3 * * 0`, `41 */6 * * *`; the two OSV tasks share the dedup key `vuln-sync-osv`, so one OSV sync runs at a time and a colliding slot is postponed; a failed run waits for the next slot. A manual run of an OSV task takes `{"acceptShrink": true}` ([advisory sources](docs/manual/admin/vulnerability-sources.md#the-tasks)) |
+| `vuln-evaluate` | `internal/app/wire_vuln_eval.go` | queue `default`, coalesce; enqueued by a sync run that changed data; reads its work from tables, not from its arguments |
+| `vuln-rescan` | `internal/app/wire_vuln_eval.go` | queue `default`, exclusive per repository (`vuln-rescan:<repository id>`); enqueued in the transaction of a change of the repository's `vulnerabilities.enabled`, `matchPublicAdvisories` or upstream URL, and by `POST /api/v1/repositories/{key}/vulnerabilities/rescan` |
+| `vuln-findings-retention` | `internal/app/wire_vuln_eval.go` | task (`maintenance` queue, exclusive, 3 attempts), `50 3 * * *`: deletes the resolved findings older than `vulnerabilities.findings.resolved_retention` |
 | `session-cleanup` | `internal/auth/session/cleanup.go` | task |
 | `audit-retention` | `internal/app/wire_audit.go` | task |
 | `idempotency-cleanup` | `internal/api/v1/cleanup.go` | task, `13 * * * *` |
@@ -454,7 +515,12 @@ Registrations at start-up, in `internal/app/wire_*.go` and in the packages that 
 | [docs/manual/](docs/manual/README.md) | The user and administrator manual; the binary embeds it and the UI shows it behind the "?" of the top bar |
 | [docs/developer/](docs/developer/README.md) | Contributor entry point; the M1 pages: [login](docs/developer/login.md), [identity](docs/developer/identity.md), [authorization](docs/developer/authorization.md), [files](docs/developer/files.md), [m1-contracts](docs/developer/m1-contracts.md), [audit](docs/developer/audit.md), [repositories](docs/developer/repositories.md); the package screens: [packages](docs/developer/packages.md); projects: [projects](docs/developer/projects.md) |
 | [docs/developer/ci-oidc.md](docs/developer/ci-oidc.md) | GitLab CI OIDC: the contracts laid for beta phase 5 (schema, packages, the token and evaluation seam, API, configuration, events), the work packages and their files |
-| [docs/security/](docs/security/README.md) | Security architecture, one page per perspective, with the open gaps of each page: trust boundaries, transport encryption, data and secret flow, privilege footprint, isolation and coordination, egress, login and sessions, tokens and credentials, permissions, delegated administration, endpoints and exposure, repository model, file transfer, audit |
+| [docs/developer/vulnerabilities.md](docs/developer/vulnerabilities.md) | Vulnerability scanning (M4b): the packages and layers, the ports, the download policy, the format contract's addition, the schema, the API, the configuration and the work packages with their files |
+| [docs/security/](docs/security/README.md) | Security architecture, one page per perspective, with the open gaps of each page: trust boundaries, transport encryption, data and secret flow, privilege footprint, isolation and coordination, egress, login and sessions, tokens and credentials, permissions, delegated administration, endpoints and exposure, repository model, file transfer, audit, vulnerability scanning |
+| [docs/security/vulnerability-scanning.md](docs/security/vulnerability-scanning.md) | The download block, the client audits and what they reveal, who reads and triages findings, the advisory data as untrusted input, who decides the data in mode `repository`, and the open gaps of the scanning |
+| [docs/manual/admin/vulnerability-sources.md](docs/manual/admin/vulnerability-sources.md) | Administrator manual: the advisory sources, their tasks, refused archives, the import for installations without internet access, the settings and the checks |
+| [docs/manual/user/vulnerabilities.md](docs/manual/user/vulnerabilities.md) | User manual: the vulnerability report, a finding, triage and the package page's tab |
+| [docs/spec/vulnerability-scanning.md](docs/spec/vulnerability-scanning.md) | Target design of the scanning: R-VULN-001 to R-VULN-032 (R-VULN-030 to R-VULN-032 are P1 and not built) and the decisions `Q-VULN-<n>` |
 | [SECURITY.md](SECURITY.md) | How to report a vulnerability, the supported versions and the pointer to the known gaps |
 | [docs/spec/](docs/spec/README.md) | Target design: owner constraints, invariants `INV-1` to `INV-20`, requirements `R-<AREA>-nnn`, open gaps `H-<n>` |
 | [docs/coverage/](docs/coverage/README.md) | Which catalog entries the spec covers, and which requirements have passing tests |
@@ -599,6 +665,18 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/js
 Verify with the claim tester (**Administration › CI identity**, the issuer, **Test with claims**) before the first pipeline runs, and with
 `GET /api/v1/ci/issuances?jobId=<CI_JOB_ID>` afterwards.
 
+**5. Check the vulnerability scanning.** It is on by default; the `worker` fetches the advisory data on its first slot (every 15
+minutes), or at once through the task API. The source list needs `settings:read`, the findings list returns what the caller can read:
+
+```shell
+curl -s -X POST -H "Authorization: Bearer $ADMIN_TOKEN" https://trove.example.com/api/v1/system/tasks/vuln-sync-osv/run    # example: 202 with the job
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" https://trove.example.com/api/v1/vulnerabilities/sources                  # example: state "complete" per source and ecosystem
+curl -s -H "Authorization: Bearer $TOKEN" 'https://trove.example.com/api/v1/vulnerabilities/findings?severity=critical'   # example
+```
+
+An installation without internet access sets `vulnerabilities.sources.osv.mode: repository` and uploads the archives instead
+([advisory sources](docs/manual/admin/vulnerability-sources.md#installations-without-internet-access)).
+
 <details>
 <summary>Upgrade, uninstall and the failure scripts</summary>
 
@@ -616,7 +694,7 @@ Verify with the claim tester (**Administration › CI identity**, the issuer, **
 Every public interface of M0 and M1 is listed once here: the command line, every configuration key of `internal/config`, the
 management API by family, the system API and the ops endpoints, and the Helm values. The configuration keys are generated from the struct tags in
 [internal/config](internal/config/); [schema.json](internal/config/schema.json) is the generated JSON Schema. A value marked
-`# default` is the default of its struct tag or of the code path that applies it; a value marked `# example` is illustrative. The M2 keys of the remote engine, the virtual engine and npm are in [configuration.md](docs/developer/configuration.md#m2-keys), and the npm routes in [npm.md](docs/developer/npm.md).
+`# default` is the default of its struct tag or of the code path that applies it; a value marked `# example` is illustrative. The vulnerability scanning of M4b is listed here in full: its configuration section and repository members, its operations and its chart values. The M2 keys of the remote engine, the virtual engine and npm are in [configuration.md](docs/developer/configuration.md#m2-keys), and the npm routes in [npm.md](docs/developer/npm.md).
 
 ### Command line
 
@@ -1049,6 +1127,10 @@ maintenance:
     scrub:            {enabled: true, schedule: "0 4 * * *"}
     storage-summary:  {enabled: true, schedule: "17 * * * *"}
     remote-cache-cleanup: {enabled: true, schedule: "0 3 * * *"}
+    vuln-sync-osv:        {enabled: true, schedule: "*/15 * * * *"}   # incremental OSV sync (M4b)
+    vuln-sync-osv-full:   {enabled: true, schedule: "17 3 * * 0"}     # full OSV sync
+    vuln-sync-kev:        {enabled: true, schedule: "41 */6 * * *"}   # CISA KEV catalog
+    vuln-findings-retention: {enabled: true, schedule: "50 3 * * *"}
 proxy:
   outbound:
     proxy_from_environment: false       # default
@@ -1242,6 +1324,104 @@ ui:
 
 </details>
 
+<details>
+<summary>Vulnerability scanning: the vulnerabilities section (M4b)</summary>
+
+The keys come from the struct tags of [internal/config/vulnerabilities.go](internal/config/vulnerabilities.go) (R-VULN-025); the
+four tasks are keys of `maintenance.tasks` (above). The behaviour is in [advisory sources](docs/manual/admin/vulnerability-sources.md)
+and [vulnerabilities.md](docs/developer/vulnerabilities.md).
+
+```yaml
+vulnerabilities:
+  enabled: true                         # default; false: no sync, no evaluation, no block, and no client-audit mode local; the stored findings stay as they are
+  enforcement: enforce                  # default: enforce | report; report blocks nothing anywhere and counts the would-be blocks (mode="report")
+  stale_after: 24h                      # default; 1m to 8760h: older data shows a banner and fires TroveVulnerabilityDataStale; never affects readiness
+  sources:
+    osv:
+      mode: online                      # default: online | repository | off; only the worker role fetches; off keeps the stored data, which ages
+      base_url: https://osv-vulnerabilities.storage.googleapis.com/   # default; https only; the sync requests <ecosystem>/all.zip, <ecosystem>/modified_id.csv and <ecosystem>/<id>.json below it
+      ecosystems: []                    # default: every ecosystem with a vulnerability adapter (npm, NuGet); may only narrow; another name stops the start-up
+      repository: ""                    # default; required with mode repository; example: vuln-mirror (a generic local repository holding osv/<ecosystem>/all.zip)
+      full_resync_threshold: 2000       # default; at least 1: changed records above which an incremental run turns into a full one
+      overlap: 1h                       # default; 0 to 168h: subtracted from the download start to set the watermark
+      max_shrink: 0.2                   # default; 0 to 1: the share of stored records a full sync may delete; above it the run fails with shrink_refused
+      timeout: 10m                      # default; 10s to 24h: one archive download; a record or a part of the change file has 30s
+      max_archive_size: 1GiB            # default; at least 1MiB; the worker's spool budget must hold it (the chart refuses a smaller one)
+      max_record_size: 1MiB             # default; 1KiB to 64MiB: in the archive uncompressed and as a single record
+    kev:
+      mode: online                      # default: online | repository | off; off keeps every known-exploited flag as last computed
+      url: https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json   # default; https only
+      repository: ""                    # default; required with mode repository (kev/known_exploited_vulnerabilities.json)
+    epss:
+      mode: "off"                       # default; only off is accepted in this build (R-VULN-030, P1); see the terms note below
+      url: https://epss.empiricalsecurity.com/epss_scores-current.csv.gz   # default; https only; not fetched while off
+      repository: ""                    # default
+  matching:
+    public_upstreams:                   # default; per format ID, the hosts of the public registries; setting it replaces the whole map
+      npm: [registry.npmjs.org]
+      nuget: [api.nuget.org, www.nuget.org]
+  findings:
+    resolved_retention: 9600h           # default (400 days); 1h to 87600h: vuln-findings-retention deletes older resolved findings and their events
+  export:
+    max_rows: 100000                    # default; at least 1: a larger export answers 422 export_too_large before anything is streamed
+```
+
+Security notes:
+
+- `enforcement: report` turns every block off for the whole installation, malicious versions included; the would-be refusals are
+  counted in `trove_vuln_downloads_blocked_total{mode="report"}` and recorded as `vulnerability.download_blocked` with
+  `enforced: false`. It is the switch for an emergency and for measuring a policy before enforcing it.
+- `enabled: false` also drops the default of the npm audit to the mode of a repository without the scanning: a remote or virtual
+  npm repository that sets neither `npm.audit.local` nor `npm.audit.mode` then forwards the audited names to its upstream.
+- `sources.*.mode: repository`: whoever holds `deploy` on the named repository decides the advisory data of the installation
+  (what is reported, and which malicious versions are blocked). Every import is audited with its digest and `deployedBy`.
+- `base_url`, `url`: `https` only, also for a source whose mode is not `online` when the URL is set; the refusal names the key. The
+  requests go through the outbound client with the purpose `vuln_source`, under `proxy.outbound.address_policy`.
+- `matching.public_upstreams`: a remote whose upstream host is listed gets public advisories with `matchPublicAdvisories: auto`.
+  Listing the host of a private feed applies public advisories, and the malicious block, to its packages.
+- `epss`: the operator who switches it on decides whether the data's terms permit the installation's use. FIRST publishes the EPSS
+  scores without a stated licence, its site reads "All Rights Reserved", and it asks for attribution in products that use the
+  scores; trove makes no statement about what that permits ([Q-VULN-21](docs/spec/vulnerability-scanning.md#q-vuln-21--epss-is-an-operator-option-whose-terms-the-operator-decides)).
+
+</details>
+
+<details>
+<summary>Vulnerability scanning: the repository document members (M4b)</summary>
+
+Members of the repository document of `POST`, `PUT` and `PATCH /api/v1/repositories` (JSON, shown as YAML), not keys of
+`trove.yaml`. Sources: [internal/vuln/settings.go](internal/vuln/settings.go), the schemas
+[npm/settings.schema.json](internal/formats/npm/settings.schema.json) and
+[nuget/settings.schema.json](internal/formats/nuget/settings.schema.json). A member that sets some fields takes the defaults of the
+others.
+
+```yaml
+vulnerabilities:                        # local and remote npm and NuGet repositories; a virtual repository or another format answers 422 not_applicable
+  enabled: true                         # default; false: neither evaluated nor blocked; the open findings resolve, and return with their statuses when it is on again
+  matchPublicAdvisories: auto           # default: auto | always | never (R-VULN-010)
+  blockMalicious: true                  # default: refuse the versions an open malicious finding names
+  onMissingData: allow                  # default: allow | block; block refuses a version of an ecosystem whose data was never imported completely
+npm:
+  audit:                                # every class (R-NPM-038, R-VULN-017)
+    local: true                         # example; left out (the default): local while vulnerabilities.enabled is true, the OSV source is not off and mode is not set
+    mode: forward                       # example: forward | disabled, used while local is not true; left out: forward on remote and virtual, disabled on local repositories
+    providerURL: null                   # default: the remote's upstream URL; mode forward only; https, no user info, query or fragment
+    timeout: 30s                        # default; 1s to 300s; mode forward only
+    maxBodySize: 1MiB                   # default; 1KiB to 10MiB as sent, ten times that decompressed; larger bodies answer 413
+nuget:
+  vulnerabilityInfo: local              # example: local | off (upstream is refused, R-NUGET-023); left out (the default): local while vulnerabilities.enabled is true and the OSV source is not off, else off
+```
+
+| `matchPublicAdvisories` | remote repository | local repository |
+|---|---|---|
+| `auto` | matched when the upstream host is in `vulnerabilities.matching.public_upstreams` | matched unless a namespace claim of a local repository of the format without `always` covers the name (an internal name) |
+| `always` | matched | matched, claimed names included |
+| `never` | not covered | internal |
+
+A change of `enabled`, `matchPublicAdvisories` or the upstream URL enqueues a `vuln-rescan` of the repository in the same
+transaction; `blockMalicious` and `onMissingData` act from the repository snapshot without a job.
+
+</details>
+
 ### Security-relevant settings
 
 | Setting | Default | What changes | Decision |
@@ -1267,6 +1447,16 @@ ui:
 | `authz.hide_existence` | `true` | A refused read answers 404, indistinguishable from a missing resource. `false` answers 403 for a resource that exists, for troubleshooting only. A repository's `hideExistence` overrides it. | [permissions](docs/security/permissions.md) |
 | `api.rate_limits.exempt_admins` | `false` | Callers who hold the admin capability bypass the rate limits. | [API edge](docs/security/api-edge.md) |
 | `server.endpoints.<name>.auth`, `…exposure` | further endpoints: `token_types: [sat]`, `bound_tokens_only: true`, `anonymous: false`; `exposure: rules` | Which credentials an endpoint accepts, and the ceiling on what it serves (exposure rules are a ceiling, never a grant). | [endpoints and exposure](docs/security/endpoints-and-exposure.md), [ADR-128](docs/decisions.md#adr-128--endpoints-one-listener-each-identified-by-the-listener-with-exposure-rules-as-a-ceiling) |
+| `vulnerabilities.enforcement` | `enforce` | `enforce` refuses the downloads the findings block (`403`, `Cache-Control: no-store`). `report` refuses nothing anywhere, malicious versions included; each would-be refusal is counted with `mode="report"` and recorded with `enforced: false`. | [download block](docs/security/vulnerability-scanning.md#download-block), [R-VULN-015](docs/spec/vulnerability-scanning.md#r-vuln-015--download-blocking) |
+| `vulnerabilities.enabled` | `true` | `false` stops sync, evaluation and every block, and an npm repository without an explicit audit setting falls back to the forward of its remote and virtual class, which sends the audited names to the upstream. | [client audits](docs/security/vulnerability-scanning.md#client-audits) |
+| `vulnerabilities.sources.osv.mode`, `…kev.mode`, `….repository` | `online`, empty | `online`: the `worker` fetches over the outbound client (`vuln_source`). `repository`: the files come from a generic local repository, and whoever holds `deploy` on it decides the installation's advisory data, so what is reported and which malicious versions are blocked; each import is audited with its digest and deployer. `off`: the stored data stays and ages. | [who decides the data](docs/security/vulnerability-scanning.md#who-decides-the-data-in-mode-repository), [H-309](docs/spec/vulnerability-scanning.md#h-309--advisory-data-is-not-signed) |
+| `vulnerabilities.sources.osv.base_url`, `…kev.url`, `…epss.url` | the public sources | `https` only; a refusal at start-up names the key. The address policy of `proxy.outbound` applies when the worker connects; the guards (digest, `max_shrink`, the 1 % invalid share, `max_archive_size`) bound a damaged source, not a malicious one. | [who fetches it](docs/security/vulnerability-scanning.md#who-fetches-it-and-over-what), [H-478](docs/security/vulnerability-scanning.md#h-478--the-integrity-guards-bound-a-damaged-source-not-a-malicious-one) |
+| `vulnerabilities.sources.epss.mode` | `off` | Only `off` is accepted in this build. The operator who switches it on later decides whether the data's terms permit the use. | [Q-VULN-21](docs/spec/vulnerability-scanning.md#q-vuln-21--epss-is-an-operator-option-whose-terms-the-operator-decides) |
+| Repository member `vulnerabilities.blockMalicious` | `true` | `false` serves a version with an open malicious finding. A write that weakens the member (`enabled` off, a `matchPublicAdvisories` that matches fewer advisories, `blockMalicious` off, `onMissingData` from `block` to `allow`) needs `repositories:write-config` or `vulnerabilities:triage`: a project administrator's `manageRepositories` alone answers `403 vulnerability_weakening_refused`. Its `repository.updated` event carries `block: lifted` and `weakened`. | [Q-VULN-69](docs/spec/vulnerability-scanning.md#q-vuln-69--weakening-the-vulnerabilities-member-needs-the-triage-capability-or-repositorieswrite-config) |
+| Repository member `vulnerabilities.onMissingData` | `allow` | `allow` serves versions of an ecosystem whose data was never imported completely, unevaluated. `block` refuses them with `403 vulnerability_data_missing` until the first complete import, claimed names of a local repository included (H-502). | [R-VULN-015](docs/spec/vulnerability-scanning.md#r-vuln-015--download-blocking), [H-502](docs/security/vulnerability-scanning.md#h-502--a-claimed-name-in-a-local-repository-that-blocks-missing-data-is-refused-until-the-first-import-completes) |
+| Repository member `vulnerabilities.matchPublicAdvisories` | `auto` | `always` on a local repository applies public advisories to its claimed names: a public package published under an internal name can then make trove report, and with `blockMalicious` block, the internal package, and the name is no longer withheld from the audits. | [R-VULN-010](docs/spec/vulnerability-scanning.md#r-vuln-010--which-stored-versions-public-advisories-apply-to) |
+| Repository member `npm.audit.local`, `npm.audit.mode` | left out: local while scanning is on | Local answers from trove's data and sends nothing out; withheld internal names are counted in `npm-notice`, so a reader can tell them apart (H-486). `local: false` or a stored `mode: forward` sends the audited names that nothing marks internal to the provider. | [client audits](docs/security/vulnerability-scanning.md#client-audits), [H-486](docs/security/vulnerability-scanning.md#h-486--a-reader-of-an-npm-repository-can-tell-internal-names-from-the-audit) |
+| Repository member `nuget.vulnerabilityInfo` | left out: local while scanning is on | `local` serves the public NuGet advisory set, without internal names, to every reader of a NuGet repository; the absences tell internal names apart (H-487). `off` lists nothing. | [H-487](docs/security/vulnerability-scanning.md#h-487--the-nuget-pages-absences-tell-internal-names-apart) |
 
 ### Management API
 
@@ -1314,7 +1504,7 @@ document is the source: `GET /api/v1/openapi.json` serves it, and the operations
 | `GET /api/v1/system/jobs/{id}` | `getJob` | authenticated |
 | `POST /api/v1/system/jobs/{id}/cancel` | `cancelJob` | authenticated |
 | `GET /api/v1/system/tasks` | `listTasks` | `settings:read` |
-| `POST /api/v1/system/tasks/{name}/run` | `runTask` | `settings:write` |
+| `POST /api/v1/system/tasks/{name}/run` | `runTask` | `settings:write`; the body `{"acceptShrink": true}` overrides the shrink guard of `vuln-sync-osv` and `vuln-sync-osv-full` once |
 
 **users**
 
@@ -1559,6 +1749,26 @@ A project's administrators (with `managePolicies`) manage the CI mappings of the
 | `DELETE /api/v1/repositories/{repoKey}/packages/{packageName}/owners/{owner}` | `removePackageOwner` | authenticated; as adding, `release=true` needs `manage` · recent sign-in |
 | `GET /api/v1/package-owners` | `listOwnedPackages` | authenticated; `policies:read`, or the caller's own identity or group |
 
+**vulnerabilities**
+
+The operations of the vulnerability scanning ([docs/developer/vulnerabilities.md](docs/developer/vulnerabilities.md#api), [who reads and who triages](docs/security/vulnerability-scanning.md#who-reads-and-who-triages-findings)). "Readable" means the findings of the repositories the caller holds `read` on, narrowed by the package patterns of the grant, in SQL; a cursor grants nothing.
+
+| Method and path | Operation | Permission |
+|---|---|---|
+| `GET /api/v1/vulnerabilities/findings` | `listVulnerabilityFindings` | authenticated; the readable findings; without a `status` filter the resolved ones are left out |
+| `GET /api/v1/vulnerabilities/findings/export` | `exportVulnerabilityFindings` | authenticated; the list's filters as CSV; above `vulnerabilities.export.max_rows` `422 export_too_large` |
+| `GET /api/v1/vulnerabilities/findings/{id}` | `getVulnerabilityFinding` | authenticated; `404` for a finding the caller cannot read |
+| `PATCH /api/v1/vulnerabilities/findings/{id}` | `updateVulnerabilityFinding` | `vulnerabilities:triage` and `read` on the finding · `If-Match`; a JSON merge patch with `status`, `dismissalReason`, `comment` |
+| `POST /api/v1/vulnerabilities/findings/set-status` | `setVulnerabilityFindingsStatus` | `vulnerabilities:triage` and `read` on each finding · idempotent; up to 500 ids in one transaction, one result per id |
+| `GET /api/v1/vulnerabilities/advisories/{ecosystem}/{id}` | `getVulnerabilityAdvisory` | authenticated; the advisory is public data, its findings are the readable ones |
+| `GET /api/v1/vulnerabilities/summary` | `getVulnerabilitySummary` | authenticated; counted over the readable findings |
+| `GET /api/v1/vulnerabilities/trend` | `getVulnerabilityTrend` | authenticated; as above, at most 400 days |
+| `GET /api/v1/vulnerabilities/sources` | `listVulnerabilitySources` | `settings:read` |
+| `GET /api/v1/vulnerabilities/claimed-name-matches` | `listClaimedNameMatches` | `repositories:read-config` |
+| `GET /api/v1/packages/{packageId}/vulnerabilities` | `getPackageVulnerabilities` | authenticated; the readable open findings per version |
+| `GET /api/v1/packages/{packageId}/versions/{version}/vulnerabilities` | `getPackageVersionVulnerabilities` | authenticated; per readable repository that holds the version: evaluation, block and findings |
+| `POST /api/v1/repositories/{key}/vulnerabilities/rescan` | `rescanRepositoryVulnerabilities` | action `manage` on `path.key` · idempotent; `202` with the `vuln-rescan` job, `409` while one is queued or running |
+
 </details>
 
 ### System API
@@ -1570,7 +1780,7 @@ The OpenAPI 3.1 document is [api/openapi.yaml](api/openapi.yaml); the binary ser
 |---|---|---|
 | `GET /api/v1/system/ping` | Answers on the client port | as declared in [api/openapi.yaml](api/openapi.yaml) |
 | `GET /api/v1/system/version` | Version and revision | public only with `system.public_version: true`, otherwise as declared |
-| `GET /api/v1/system/info` | Installation facts: version, base URL, replicas per role, database and schema versions, Valkey facts | the capability `settings:read` ([R-AUTHZ-010](docs/spec/authorization.md)); anonymous on the default endpoint only with `system.bootstrap_anonymous_read` |
+| `GET /api/v1/system/info` | Installation facts: version, base URL, replicas per role, database and schema versions, Valkey facts, and `vulnerabilityData` (the enforcement mode and the state of each advisory source; never affects readiness) | the capability `settings:read` ([R-AUTHZ-010](docs/spec/authorization.md)); anonymous on the default endpoint only with `system.bootstrap_anonymous_read` |
 | `GET /api/v1/system/replicas` | Replica registry: name, instance, node, version, revision, roles, state, checks, degraded checks, leases and the Valkey view of each replica | the same as `info` |
 | `GET /api/v1/problems/{code}` | Description of a problem code | as declared |
 
@@ -1917,6 +2127,40 @@ commonAnnotations: {}                   # default
 
 </details>
 
+<details>
+<summary>Monitoring and the chart's checks of the vulnerability scanning (M4b)</summary>
+
+```yaml
+metrics:
+  prometheusRule:                       # R-HA-045; only the alerts of the vulnerability scanning so far
+    enabled: false                      # default; true renders the PrometheusRule <fullname>; needs the Prometheus operator's CRDs
+    labels: {}                          # default; example: {release: kube-prometheus-stack}
+    disabledAlerts: []                  # default; example: [TroveVulnerabilitySyncFailing]; a name that is no alert of the chart fails the render
+    extraRules: []                      # default; rules appended after the chart's alerts
+config:
+  vulnerabilities:
+    stale_after: 24h                    # default; also the threshold of TroveVulnerabilityDataStale, so the alert and the report's banner agree
+    sources:
+      osv:
+        max_archive_size: 1GiB          # default; must fit the worker spool budget (worker.spool.sizeLimit minus spool.headroom)
+```
+
+| Alert | Expression | Severity |
+|---|---|---|
+| `TroveVulnerabilityDataStale` | `time() - max by (source, ecosystem) (trove_vuln_source_last_success_timestamp_seconds) > stale_after` for 15m; a source that never synced fires too | warning |
+| `TroveVulnerabilitySyncFailing` | `max by (source, ecosystem) (trove_vuln_source_consecutive_failures) >= 3` | warning |
+| `TroveVulnerabilityClaimedNameMalicious` | `max(trove_vuln_claimed_name_matches{kind="malicious"}) > 0` | critical |
+
+Every selector carries `namespace="<release namespace>"`, so one Prometheus that scrapes several installations does not blend them.
+The chart renders no ServiceMonitor; the scrape is the operator's.
+
+The render fails while `config.vulnerabilities.enabled` is `true` (the default) and `sources.osv.mode` is not `off`, when
+`max_archive_size` is larger than the worker's spool budget: the default `worker.spool.sizeLimit: 5Gi` minus `spool.headroom: 2GiB`
+holds the default 1 GiB ([_validate.tpl](deploy/helm/trove/templates/_validate.tpl), [the chart check](docs/security/vulnerability-scanning.md#the-chart-refuses-a-spool-that-cannot-hold-the-archive)).
+The `worker` pods need egress on port 443 to the hosts of the sources in mode `online`; the chart renders no egress policy.
+
+</details>
+
 The chart's values are checked by [values.schema.json](deploy/helm/trove/values.schema.json) and by `make chart-lint`. The
 requirement of the chart is [HA and Helm](docs/spec/ha-and-helm.md).
 
@@ -1940,6 +2184,8 @@ requirement of the chart is [HA and Helm](docs/spec/ha-and-helm.md).
 | `make coverage` | Regenerates the requirement checklist in `docs/coverage/` |
 | `make dev-up`, `make dev-down`, `make e2e` | Local profile, its teardown, and the end-to-end suite (`e2e` build tag; `SET=access` runs the access-core tests, `SET=ci` the GitLab CI reference pipeline, `SET=ci-ha` its long legs). A second `dev-up` rolls the pods when the loaded image changed |
 | `make dev-valkey-stop`, `make dev-valkey-start` | Stops Valkey and the Sentinels until the start target; the test holds the outage for a criterion of unknown length |
+| `make osv-stub-image` | The image of the test advisory source of the vulnerability-scanning tests (`test/osvstub`, `OSV_STUB_IMAGE`) |
+| `make osv-expected`, `make osv-real-refresh`, `make osv-reference-refresh` | Freeze the results of the pinned osv-scanner over the real OSV records of `internal/vuln/match/testdata`; fetch those records again; record the public npm bulk answer for the reference lock file again (the last two need network) |
 
 ## 🛠 Development
 
