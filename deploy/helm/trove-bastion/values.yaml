@@ -79,7 +79,7 @@ config:
     listen: ":8443"                     # default (proposed)
     ops_listen: ":8081"                 # default (proposed)
     base_url: ""                        # required; example: https://packages.example.com
-    trusted_proxies: []                 # default (proposed); example: ["10.244.0.0/16"] (the Bastion's HAProxy Ingress pods)
+    trusted_proxies: []                 # default (proposed); REQUIRED while ingress.enabled: the CIDRs of the ingress controller's pods, example: ["10.244.0.0/16"] (Q-BAS-130)
     forwarded_header: x-forwarded-for   # default (proposed): x-forwarded-for | forwarded
     max_in_flight: 1024                 # default (proposed), per replica
   bastion:
@@ -104,6 +104,7 @@ config:
       backend: volume                   # default (proposed): volume | bucket
       max_bytes: 20GiB                  # default (proposed)
       max_object_bytes: 2GiB            # default (proposed)
+      spool_max_bytes: 2GiB             # default (proposed): the fills in progress of a replica hold at most this in temporary storage; at least max_object_bytes (Q-BAS-131)
       documents_max_bytes: 2GiB         # default (proposed)
       private_documents_max_bytes: 256MiB  # default (proposed), per replica, memory
       metadata_revalidate_after: 1m     # default (proposed)
@@ -237,7 +238,7 @@ securityContext:
     type: RuntimeDefault                # default (proposed)
 
 tmp:
-  sizeLimit: 1Gi                        # default (proposed); /tmp, and the spool of fills with the bucket backend
+  sizeLimit: ""                         # default (proposed): empty = 1Gi with the volume backend; with the bucket backend (whose fills are spooled here) config.bastion.cache.spool_max_bytes plus 256Mi; example: 3Gi
 
 # ── Probes (paths from R-OPS-001) ──────────────────────────────────────────
 probes:
@@ -319,7 +320,7 @@ networkPolicy:
       to: []                            # default (proposed); example: [{podSelector: {matchLabels: {app.kubernetes.io/name: trove-bastion-valkey}}}]
       ports: [6379, 26379]              # default (proposed)
     cacheBucket:
-      to: []                            # default (proposed); required with the bucket backend; example: [{ipBlock: {cidr: 0.0.0.0/0}}]
+      to: []                            # default (proposed); required with the bucket backend; example: [{ipBlock: {cidr: 203.0.113.0/24}}] (the object store's addresses; a wide range such as 0.0.0.0/0 undoes the egress promise of R-BAS-047)
       ports: [443]                      # default (proposed)
     tracing:
       to: []                            # default (proposed)

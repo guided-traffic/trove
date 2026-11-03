@@ -522,10 +522,21 @@ then move the constant. That the controller refuses a flood and pins a path is t
 **Validation.** Every row fails `helm template` and names the values: the two URLs (set, `https`), the token Secret, the signing key
 with the bucket backend or Valkey, the bucket and its credentials Secret, `cacheVolume.type: persistent` with the bucket backend,
 `routeByPath` without the volume backend or without `ingress.enabled`, `edgeLimit.requestsPerSecond` not above
-`config.bastion.limits.authenticated.requests_per_second`, a certificate source, the egress targets and the https ingress peer
-(an empty list means "anywhere"), one trust bundle key, an `ingress.annotations` key the chart renders, a name in `disabledAlerts` that
+`config.bastion.limits.authenticated.requests_per_second`, `config.server.trusted_proxies` while `ingress.enabled` (behind the Ingress every
+request comes from the controller's pods, so without it all callers count as one address, [Q-BAS-130](../spec/bastion.md#q-bas-130--behind-the-ingress-the-chart-requires-the-trusted-proxies);
+the message names the value and says to list the controller's pod CIDRs), the spool and the volumes it lives in (below), a certificate source, the
+egress targets and the https ingress peer (an empty list means "anywhere"), one trust bundle key, an `ingress.annotations` key the chart renders, a name in `disabledAlerts` that
 is no alert, autoscaling bounds and metric, `highAvailability.enforce` (two replicas, a PDB, host spreading `DoNotSchedule` with
 `nodeTaintsPolicy: Honor`, no standalone Valkey, three Sentinels), and the managed keys.
+
+**The spool and the volumes** ([Q-BAS-131](../spec/bastion.md#q-bas-131--the-bytes-of-the-fills-in-progress-are-bounded-and-the-chart-sizes-the-volumes-from-the-bound)).
+The binary bounds the bytes of the fills in progress at `config.bastion.cache.spool_max_bytes` (2 GiB); the chart makes the volumes agree.
+`trove-bastion.bytes` reads a size in the forms of both the role (`2GiB`) and Kubernetes (`2Gi`). With the bucket backend the fills are spooled
+into the `tmp` emptyDir: `tmp.sizeLimit` is empty by default and then `spool_max_bytes` plus 256 MiB (`2304Mi`, `trove-bastion.tmpSizeLimit`), and a
+`tmp.sizeLimit` below that fails the render ("evicted" is in the message: an emptyDir over its limit evicts the pod). With the volume backend the
+fills go below `<cache dir>/tmp`, and `cacheVolume.size` must hold `max_bytes` plus the spool; `tmp` stays 1 Gi. `spool_max_bytes` below
+`max_object_bytes` fails as well. The values `tmp.sizeLimit` and `config.bastion.cache.spool_max_bytes` are in the values block of
+R-BAS-046; change both places.
 
 **Schema and the `config` subtree.** [values.schema.json](../../deploy/helm/trove-bastion/values.schema.json) is generated once from
 the key set of `values.yaml` and edited by hand afterwards (like the one of the chart `trove`) for everything outside `config`, which
@@ -570,6 +581,9 @@ other chart tests:
 | `TestR_BAS_046_ValuesReferenceIsTheSpecBlock` | the key set of `helm show values` equals the block parsed from `docs/spec/bastion.md`; every value is marked `default` or `example` |
 | `TestR_BAS_002_ConfigurationOnlyThroughTheChart` | the ConfigMap and its mount, every `config` value in the file, the managed keys, Secret mounts without `subPath`, no Secret in the environment, managed keys refused, the checksum changes with a `config` value and not with the token Secret |
 | `TestR_BAS_025_ReplicasAreRenderedIntoTheConfiguration` | `bastion.replicas` is `replicaCount`, or `autoscaling.maxReplicas` with an HPA and no `replicas` field |
+| `TestR_BAS_045_TheClientAddressNeedsTheTrustedProxiesBehindTheIngress` | the render fails without `config.server.trusted_proxies` while the Ingress is on, names the value, passes with the Ingress off and with a list |
+| `TestR_BAS_030_TheSpoolFitsTheTemporaryVolume` | the derived `tmp.sizeLimit` (`2304Mi`), a set one used as written, a volume too small for the spool or the cache refused, a spool below `max_object_bytes` refused |
+| `TestR_BAS_047_TheValuesDoNotSuggestAnAnywhereEgress` | no `0.0.0.0/0` example for the cache bucket's egress in the values or the CI sets, and the comment saying why |
 | `TestR_BAS_030_CacheVolumeKinds` | persistent gives a StatefulSet with a claim template, ephemeral and `emptyDir`, the bucket backend no volume |
 | `TestR_BAS_033_RouteByPath`, `TestR_BAS_038_EdgeLimitIsWiderThanTheBastionsOwn` | the annotations, the refusals naming both values, a user annotation that collides |
 | `TestR_BAS_047_NetworkPolicy` | ingress peers and ports, egress on by default, the targets added while used, no empty peer list |

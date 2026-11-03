@@ -70,12 +70,13 @@ The chart `trove-bastion` is published with the chart `trove`, with the same ver
 
 ### A minimal install
 
-The values a render needs: the Bastion's own URL, the main installation's URL, the Secret of the token, a certificate source for the listener, and the address of the main installation for the network policy.
+The values a render needs: the Bastion's own URL, the pods of its ingress controller, the main installation's URL, the Secret of the token, a certificate source for the listener, and the address of the main installation for the network policy.
 
 ```yaml
 config:
   server:
     base_url: https://packages.example.com          # example: the public address of the Bastion
+    trusted_proxies: ["10.244.0.0/16"]              # example: the pods of the ingress controller in front of the Bastion
   bastion:
     main:
       url: https://trove.example.com                # example: the main endpoint of the main installation
@@ -99,6 +100,8 @@ helm install trove-bastion trove/trove-bastion -n trove-bastion -f values.yaml -
 ```
 
 This gives two replicas (the default, and the minimum while `highAvailability.enforce` is on) that spread across nodes behind a PodDisruptionBudget, a cache on an ephemeral volume of each pod, no Valkey, an Ingress for HAProxy Ingress and a NetworkPolicy that lets the pods reach the main installation, DNS and nothing else. Each replica fills its own cache, so a package is fetched once per replica, and the cache is empty after a restart. The rate limits, counters and blocked addresses work per replica, at the configured value divided by the number of replicas.
+
+`config.server.trusted_proxies` is required while `ingress.enabled` is on (it is by default), and the render fails without it. Behind the Ingress every request reaches the Bastion from a pod of the ingress controller; the Bastion takes the client's address from `X-Forwarded-For` only when the peer is in this list. Without it every caller has the controller's address, so one client's wrong tokens put every unverified credential of every partner into the timeout, a flood blocks the Bastion for everyone, and the anonymous limits apply to the whole internet together. List the address range of the controller's pods as narrowly as you can; the Bastion refuses a list entry that covers every address. With `ingress.enabled: false`, list the addresses of whatever sits in front instead. This setting is the Bastion's own and is not the main installation's `server.trusted_proxies` of the section above.
 
 Both URLs must be `https`. The Bastion refuses to start with a plain `http` URL for the main installation. If the main installation's certificate comes from a private CA, give the Bastion the bundle with `trustedCA.existingConfigMap` or `trustedCA.existingSecret` (one key holding the whole bundle).
 
@@ -161,12 +164,13 @@ networkPolicy:
     cacheBucket:
       to:
         - ipBlock:
-            cidr: 0.0.0.0/0                         # example: narrow it to the object store
+            cidr: 203.0.113.0/24                    # example: the addresses of the object store; a wide range such as 0.0.0.0/0 would let a compromised pod reach anything
 ```
 
 | Choice | What it changes |
 |---|---|
 | `config.bastion.cache.backend: bucket` | The cache lives in an object-store bucket that every replica reads and fills. The bucket and its credentials Secret are yours; the chart creates neither |
+| `tmp.sizeLimit` and `config.bastion.cache.spool_max_bytes` | A fill is written to temporary storage while it streams, and each replica holds at most `spool_max_bytes` (default `2GiB`, at least `bastion.cache.max_object_bytes`) of them at once; a fill that would pass it is passed through and not cached. With the bucket backend the chart sizes the pod's `/tmp` from it, `spool_max_bytes` plus 256 MiB (2304 MiB by default), and refuses a smaller `tmp.sizeLimit`, because a pod whose temporary volume passes its limit is evicted. With the volume backend `cacheVolume.size` must hold `bastion.cache.max_bytes` plus the spool. Raise the spool, and `max_object_bytes` with it, if you want artifacts of several GiB cached, and give the nodes the storage |
 | `config.valkey.mode: sentinel` | Valkey holds the shared limits, the block list, the fetch coordination and the main installation's answers. It is optional: losing it costs speed, never correctness (the replicas fall back to their own state). Standalone Valkey is for development and refused while `highAvailability.enforce` is on |
 | `secrets.signingKey` | Required with the bucket backend or Valkey. Records in the bucket and in Valkey are signed with it, so whoever can write there without the key cannot make the Bastion serve other bytes. Replacing the Secret makes every record unverifiable and costs one refill |
 | `cacheVolume.type: persistent` with `cacheVolume.routeByPath: true` | The alternative without a bucket: a persistent volume per pod (a StatefulSet), and HAProxy Ingress routes a path to the same replica so that the volumes together hold more than one. It needs HAProxy Ingress to accept the chart's backend snippet, and the chart refuses it together with the bucket backend |

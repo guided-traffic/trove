@@ -37,6 +37,9 @@ var (
 	ErrCorrupt = errors.New("cache: stored bytes failed verification")
 	// ErrTooLarge: a fill grew past the limit of its kind (bastion.cache.max_object_bytes, documents_max_bytes).
 	ErrTooLarge = errors.New("cache: the object is larger than the cache keeps")
+	// ErrSpoolFull: the fills in progress hold bastion.cache.spool_max_bytes together and this one would pass it
+	// (Q-BAS-131); the caller passes the answer through and keeps nothing, like for [ErrTooLarge].
+	ErrSpoolFull = errors.New("cache: the fills in progress hold the temporary storage the cache may use")
 	// ErrInvalid: a content address, key hash or replica name that is not of the layout's form.
 	ErrInvalid = errors.New("cache: invalid name")
 )

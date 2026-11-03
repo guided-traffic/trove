@@ -52,6 +52,26 @@ generated schema of the role bastion (docs/developer/helm-chart.md, Bastion char
 {{- fail "trove-bastion: cacheVolume.type: persistent needs config.bastion.cache.backend: volume; the bucket backend keeps nothing on a volume" -}}
 {{- end -}}
 
+{{- /* The spool of fills and the volumes it lives in (Q-BAS-131): a fill is written to temporary storage while it streams, and an emptyDir over its sizeLimit evicts the pod. */ -}}
+{{- $spool := include "trove-bastion.spoolBytes" . | int64 -}}
+{{- $maxObject := include "trove-bastion.bytes" (dig "bastion" "cache" "max_object_bytes" "2GiB" $cfg) | int64 -}}
+{{- if lt $spool $maxObject -}}
+{{- fail (printf "trove-bastion: config.bastion.cache.spool_max_bytes (%v bytes) must be at least config.bastion.cache.max_object_bytes (%v bytes): an object up to that size is spooled whole before it is kept; lower max_object_bytes or raise spool_max_bytes" $spool $maxObject) -}}
+{{- end -}}
+{{- if eq $backend "bucket" -}}
+{{- $tmp := include "trove-bastion.tmpSizeLimit" . | include "trove-bastion.bytes" | int64 -}}
+{{- $need := add $spool (include "trove-bastion.tmpHeadroomBytes" . | int64) -}}
+{{- if lt $tmp $need -}}
+{{- fail (printf "trove-bastion: tmp.sizeLimit (%v bytes) must hold config.bastion.cache.spool_max_bytes (%v bytes) plus 256Mi for the rest of /tmp: the bucket backend spools its fills there, and a pod whose emptyDir passes its sizeLimit is evicted. Raise tmp.sizeLimit to at least %vMi (or leave it empty), or lower config.bastion.cache.spool_max_bytes" $tmp $spool (div (add $need 1048575) 1048576)) -}}
+{{- end -}}
+{{- else if has $v.cacheVolume.type (list "ephemeral" "persistent" "emptyDir") -}}
+{{- $vol := include "trove-bastion.bytes" $v.cacheVolume.size | int64 -}}
+{{- $cacheMax := include "trove-bastion.bytes" (dig "bastion" "cache" "max_bytes" "20GiB" $cfg) | int64 -}}
+{{- if lt $vol (add $cacheMax $spool) -}}
+{{- fail (printf "trove-bastion: cacheVolume.size (%v bytes) must hold config.bastion.cache.max_bytes (%v bytes) plus the spool config.bastion.cache.spool_max_bytes (%v bytes): with the volume backend the fills in progress are written next to the cache, and a full emptyDir evicts the pod. Raise cacheVolume.size or lower either value" $vol $cacheMax $spool) -}}
+{{- end -}}
+{{- end -}}
+
 {{- /* Valkey (R-BAS-034). */ -}}
 {{- if not (has $valkey (list "none" "sentinel" "standalone")) -}}
 {{- fail (printf "trove-bastion: config.valkey.mode %q is not supported; use none, sentinel or standalone (development only)" $valkey) -}}
@@ -98,6 +118,11 @@ generated schema of the role bastion (docs/developer/helm-chart.md, Bastion char
 {{- if and $v.metrics.serviceMonitor.enabled $v.metrics.serviceMonitor.namespace (ne $v.metrics.serviceMonitor.namespace .Release.Namespace) -}}
 {{- fail (printf "trove-bastion: metrics.serviceMonitor.namespace %q differs from the release namespace %q while tls.enabled is true; the ServiceMonitor reads the CA from a Secret in its own namespace. Leave it empty, or set tls.enabled: false" $v.metrics.serviceMonitor.namespace .Release.Namespace) -}}
 {{- end -}}
+{{- end -}}
+
+{{- /* The client address (R-BAS-019, Q-BAS-130): behind the Ingress every request arrives from the controller's pods. */ -}}
+{{- if and $v.ingress.enabled (not (dig "server" "trusted_proxies" (list) $cfg)) -}}
+{{- fail "trove-bastion: config.server.trusted_proxies is required while ingress.enabled is true: list the CIDRs of the ingress controller's pods (example: [10.244.0.0/16]). Without it every caller's address is the controller pod's, so one client's bad tokens put every unverified credential into the timeout, a flood blocks the Bastion for everyone, and the anonymous limits apply to the whole internet together. With ingress.enabled: false (a load balancer or mesh in front) set it to what that front's addresses are, or leave it empty only if nothing sits in front" -}}
 {{- end -}}
 
 {{- /* Ingress annotations (R-BAS-033, R-BAS-038): the chart's own keys cannot be overridden. */ -}}
@@ -194,7 +219,7 @@ generated schema of the role bastion (docs/developer/helm-chart.md, Bastion char
 {{- fail "trove-bastion: networkPolicy.egress.valkey.to is required while config.valkey.mode is not none (example: [{podSelector: {matchLabels: {app.kubernetes.io/name: trove-bastion-valkey}}}])" -}}
 {{- end -}}
 {{- if and (eq $backend "bucket") (not $v.networkPolicy.egress.cacheBucket.to) -}}
-{{- fail "trove-bastion: networkPolicy.egress.cacheBucket.to is required with config.bastion.cache.backend: bucket (example: [{ipBlock: {cidr: 0.0.0.0/0}}])" -}}
+{{- fail "trove-bastion: networkPolicy.egress.cacheBucket.to is required with config.bastion.cache.backend: bucket (example: [{ipBlock: {cidr: 203.0.113.0/24}}], the object store's addresses; a wide range such as 0.0.0.0/0 undoes the egress promise of R-BAS-047)" -}}
 {{- end -}}
 {{- if and (dig "tracing" "enabled" false $cfg) (not $v.networkPolicy.egress.tracing.to) -}}
 {{- fail "trove-bastion: networkPolicy.egress.tracing.to is required while config.tracing.enabled is true" -}}

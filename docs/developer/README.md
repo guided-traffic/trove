@@ -148,7 +148,7 @@ trove/
 │   │                         # session/ (UI sessions, CSRF, the session cache), oidc/ (providers, login flow, callback, break-glass),
 │   │                         # jws/ (compact JWS and JWK sets, a leaf the login and the CI validation share)
 │   ├── authz/                # decision point: engine, compiled grant index, epochs, policy and role service, decision audit
-│   ├── bastion/              # the trove Bastion's own code (R-BAS-001, bastion.md): iface (the wire contract), answers, metrics, mainclient, cache, shared, guard, downloads, engine, server; imports no subsystem of the main installation (archtest)
+│   ├── bastion/              # the trove Bastion's own code (R-BAS-001, bastion.md): iface (the wire contract), answers, metrics, mainclient, cache, shared, guard, downloads, engine, server; its own packages import no subsystem of the main installation and the role enables none (archtest, transitive, with the listed exceptions of its dependency closure)
 │   ├── bastionmain/          # the main installation's side of the Bastion: the seams of the work packages (recognition, token authenticator, read-shape resolver, route observer, chain stages)
 │   ├── backup/tables/        # table registry: the export class of every table (leaf layer)
 │   ├── blob/                 # store, spool, digests, commit, download, GC; s3/ is the S3 client; blobtest/ fixtures

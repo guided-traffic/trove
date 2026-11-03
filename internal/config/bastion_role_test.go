@@ -167,6 +167,8 @@ func TestR_BAS_046_TheRangesOfTheSpecificationAreEnforced(t *testing.T) {
 		{"the bucket backend without a bucket", "cache:\n    backend: bucket\n", "bastion.cache.bucket.bucket"},
 		{"a plain http bucket endpoint", "cache:\n    backend: bucket\n    bucket:\n      bucket: b\n      endpoint: http://s3.example.com\n", "bastion.cache.bucket.endpoint"},
 		{"anonymous limit above the authenticated one", "limits:\n    anonymous:\n      requests_per_second: 80\n", "bastion.limits.anonymous.requests_per_second"},
+		{"failed_auth.window above the limiters' 12h", "failed_auth:\n    window: 13h\n", "bastion.failed_auth.window"},
+		{"failed_auth.window below 1s", "failed_auth:\n    window: 500ms\n", "bastion.failed_auth.window"},
 		{"an exempt entry that is no address", "blocking:\n    exempt_cidrs: [nope]\n", "bastion.blocking.exempt_cidrs"},
 		{"a batch above the buffer", "audit:\n    buffer_events: 100\n", "bastion.audit.batch_size"},
 	}
@@ -323,5 +325,14 @@ func TestR_BAS_005_ABastionTokenIsNoEndpointCredential(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "server.endpoints.default.auth.token_types") || !strings.Contains(err.Error(), "bst") {
 		t.Fatalf("error: %v", err)
+	}
+}
+
+// TestR_BAS_036_TheLongestFailedAuthWindowIsTheLongestWindowOfTheLimiter: the configuration accepts the window the
+// limiter counts and nothing beyond it, so a configured value is never counted shorter than written (Q-BAS-128).
+func TestR_BAS_036_TheLongestFailedAuthWindowIsTheLongestWindowOfTheLimiter(t *testing.T) {
+	file := strings.Replace(bastionMinimal, "bastion:\n", "bastion:\n  failed_auth:\n    window: 12h\n", 1)
+	if got := mustLoadBastion(t, file).Bastion.FailedAuth.Window; got != 12*time.Hour {
+		t.Fatalf("failed_auth.window = %s, want 12h", got)
 	}
 }

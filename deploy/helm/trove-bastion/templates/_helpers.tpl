@@ -95,6 +95,45 @@ Deployment
 {{- end -}}
 {{- end -}}
 
+{{/*
+trove-bastion.bytes: a size as a number of bytes. It reads what the role's byte sizes and a Kubernetes quantity read:
+a plain number, KiB MiB GiB TiB, KB MB GB TB, B, and Ki Mi Gi Ti, K M G T. Anything else fails the render.
+*/}}
+{{- define "trove-bastion.bytes" -}}
+{{- $s := toString (kindIs "float64" . | ternary (int64 .) .) | trim -}}
+{{- $n := regexFind "^[0-9]+" $s -}}
+{{- $u := regexReplaceAll "^[0-9]+" $s "" | trim -}}
+{{- $units := dict "" 1 "B" 1 "Ki" 1024 "KiB" 1024 "Mi" 1048576 "MiB" 1048576 "Gi" 1073741824 "GiB" 1073741824 "Ti" 1099511627776 "TiB" 1099511627776 "K" 1000 "KB" 1000 "M" 1000000 "MB" 1000000 "G" 1000000000 "GB" 1000000000 "T" 1000000000000 "TB" 1000000000000 -}}
+{{- if or (not $n) (not (hasKey $units $u)) -}}
+{{- fail (printf "trove-bastion: %q is not a size (examples: 2GiB, 512Mi, 1073741824)" $s) -}}
+{{- end -}}
+{{- mul (int64 $n) (index $units $u) -}}
+{{- end -}}
+
+{{/* The room next to the spool in the tmp volume: /tmp holds a little more than fills (Q-BAS-131). */}}
+{{- define "trove-bastion.tmpHeadroomBytes" -}}268435456{{- end -}}
+
+{{/* The spool of fills in bytes: config.bastion.cache.spool_max_bytes, 2GiB as the role's default. */}}
+{{- define "trove-bastion.spoolBytes" -}}
+{{- include "trove-bastion.bytes" (dig "bastion" "cache" "spool_max_bytes" "2GiB" .Values.config) -}}
+{{- end -}}
+
+{{/*
+trove-bastion.tmpSizeLimit: the sizeLimit of the tmp emptyDir (Q-BAS-131). A set tmp.sizeLimit is used as written; the
+default is 1Gi with the volume backend and, with the bucket backend, which spools its fills into tmp, the spool plus the
+headroom, in whole MiB.
+*/}}
+{{- define "trove-bastion.tmpSizeLimit" -}}
+{{- if .Values.tmp.sizeLimit -}}
+{{- .Values.tmp.sizeLimit -}}
+{{- else if eq (dig "bastion" "cache" "backend" "volume" .Values.config) "bucket" -}}
+{{- $total := add (include "trove-bastion.spoolBytes" . | int64) (include "trove-bastion.tmpHeadroomBytes" . | int64) -}}
+{{- printf "%dMi" (div (add $total 1048575) 1048576) -}}
+{{- else -}}
+1Gi
+{{- end -}}
+{{- end -}}
+
 {{/* bastion.replicas (R-BAS-025): replicaCount, or autoscaling.maxReplicas with autoscaling. */}}
 {{- define "trove-bastion.replicas" -}}
 {{- if .Values.autoscaling.enabled -}}

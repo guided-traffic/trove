@@ -116,8 +116,8 @@ func TestR_BAS_035_ALimiterKeepsItsMapsBounded(t *testing.T) {
 		_, _, _ = l.Allow(ctx, "bastion.anonymous", fmt.Sprintf("k%d", i), Rate{PerSecond: 1, Burst: 1})
 		_, _ = l.Add(ctx, "bastion.refusals", fmt.Sprintf("k%d", i), time.Minute)
 	}
-	if len(l.buckets) > maxLocalKeys || len(l.windows) > maxLocalKeys {
-		t.Fatalf("%d buckets and %d counters held, the bound is %d", len(l.buckets), len(l.windows), maxLocalKeys)
+	if b, w := l.buckets.total(), l.windows.total(); b > maxLocalKeys || w > maxLocalKeys {
+		t.Fatalf("%d buckets and %d counters held, the bound is %d", b, w, maxLocalKeys)
 	}
 }
 

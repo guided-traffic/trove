@@ -318,8 +318,8 @@ func TestR_BAS_035_WithValkeyAnonymousRequestsAreBoundedAcrossReplicas(t *testin
 	if admitted > 140 {
 		t.Fatalf("%d admitted from one address within 10 s, the bound is 140 (burst 40 plus 10 per second)", admitted)
 	}
-	// The sliding window counts a refused request like an admitted one, so a client that keeps sending at ten
-	// times the rate stays refused after its burst: the burst is what it gets.
+	// The burst is admitted; what a client slightly over its rate gets afterwards is the question of
+	// slight_over_test.go.
 	if admitted < 40 {
 		t.Fatalf("%d admitted: the burst of 40 was not admitted", admitted)
 	}

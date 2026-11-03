@@ -100,6 +100,7 @@ type BastionCache struct {
 	Backend                  string             `yaml:"backend" default:"volume" validate:"oneof=volume|bucket" doc:"Where the cache lives: a local volume per replica, or a bucket of the Bastion's own shared by its replicas (R-BAS-030)."`
 	MaxBytes                 ByteSize           `yaml:"max_bytes" default:"20GiB" validate:"min=1MiB" doc:"Bytes plus documents stay below this; a sweep evicts by last access (R-BAS-031)."`
 	MaxObjectBytes           ByteSize           `yaml:"max_object_bytes" default:"2GiB" validate:"min=1KiB" doc:"Larger answers are passed through and not kept (R-BAS-021)."`
+	SpoolMaxBytes            ByteSize           `yaml:"spool_max_bytes" default:"2GiB" validate:"min=1MiB" doc:"The bytes all fills in progress of a replica may hold in temporary storage together; a fill that would pass it is passed through and not kept (Q-BAS-131). At least max_object_bytes. With the bucket backend the chart sizes the pod's tmp volume from it."`
 	DocumentsMaxBytes        ByteSize           `yaml:"documents_max_bytes" default:"2GiB" validate:"min=1MiB" doc:"A share of max_bytes for shared documents, so that documents never evict artifacts (R-BAS-023)."`
 	PrivateDocumentsMaxBytes ByteSize           `yaml:"private_documents_max_bytes" default:"256MiB" validate:"min=0" doc:"Memory per replica for the callers' private document copies (R-BAS-023)."`
 	MetadataRevalidateAfter  time.Duration      `yaml:"metadata_revalidate_after" default:"1m" validate:"min=1s,max=24h" doc:"A shared document is asked about again after this period (R-BAS-023)."`
@@ -167,7 +168,7 @@ type BastionMisses struct {
 // BastionFailedAuth is the failed-authentication timeout (R-BAS-036).
 type BastionFailedAuth struct {
 	MaxFailures int           `yaml:"max_failures" default:"20" validate:"min=1" doc:"More failed authentications than this from one address within the window start the timeout."`
-	Window      time.Duration `yaml:"window" default:"10m" validate:"min=1s,max=24h"`
+	Window      time.Duration `yaml:"window" default:"10m" validate:"min=1s,max=12h" doc:"The sliding window the failures are counted in; 1s to 12h, the range of the limiters of R-ARCH-034 (Q-BAS-128)."`
 	Timeout     time.Duration `yaml:"timeout" default:"15m" validate:"min=1s,max=24h"`
 }
 
@@ -288,6 +289,9 @@ func (b *BastionSettings) Validate(r *Report) {
 	}
 	if c.MaxObjectBytes > c.MaxBytes {
 		r.Add("cache.max_object_bytes", "(%s) must not exceed cache.max_bytes (%s)", c.MaxObjectBytes, c.MaxBytes)
+	}
+	if c.SpoolMaxBytes < c.MaxObjectBytes {
+		r.Add("cache.spool_max_bytes", "(%s) must be at least cache.max_object_bytes (%s): an object up to that size is spooled whole before it is kept, so a smaller spool would never keep one of the sizes the limit allows (Q-BAS-131); lower max_object_bytes or raise spool_max_bytes", c.SpoolMaxBytes, c.MaxObjectBytes)
 	}
 	if c.Backend == "bucket" {
 		c.validateBucket(r)

@@ -112,6 +112,8 @@ type Cache struct {
 	log    *slog.Logger
 	now    func() time.Time
 	hold   int
+	// spool bounds the bytes of the fills in progress (bastion.cache.spool_max_bytes, Q-BAS-131).
+	spool *spoolBudget
 
 	ready atomic.Bool
 
@@ -146,7 +148,10 @@ func New(ctx context.Context, cfg config.BastionCache, signer *Signer, o Options
 
 // build assembles the cache around a backend and publishes the capacity gauges.
 func build(b *backend, signer *Signer, cfg config.BastionCache, o Options) *Cache {
-	c := &Cache{back: b, signer: signer, cfg: cfg, m: o.Metrics, log: o.Logger, now: o.Now, hold: o.HoldBack, touched: map[string]time.Time{}}
+	c := &Cache{
+		back: b, signer: signer, cfg: cfg, m: o.Metrics, log: o.Logger, now: o.Now, hold: o.HoldBack, touched: map[string]time.Time{},
+		spool: newSpoolBudget(int64(cfg.SpoolMaxBytes)),
+	}
 	arts, docs := c.limits()
 	c.m.CacheCapacity.WithLabelValues(metrics.AreaArtifacts).Set(float64(arts))
 	c.m.CacheCapacity.WithLabelValues(metrics.AreaDocuments).Set(float64(docs))

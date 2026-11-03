@@ -594,6 +594,16 @@
                   "x-trove-env": "TROVE_BASTION_CACHE_PRIVATE_DOCUMENTS_MAX_BYTES",
                   "x-trove-type": "bytes"
                 },
+                "spool_max_bytes": {
+                  "default": "2GiB",
+                  "description": "The bytes all fills in progress of a replica may hold in temporary storage together; a fill that would pass it is passed through and not kept (Q-BAS-131). At least max_object_bytes. With the bucket backend the chart sizes the pod's tmp volume from it.",
+                  "type": [
+                    "string",
+                    "integer"
+                  ],
+                  "x-trove-env": "TROVE_BASTION_CACHE_SPOOL_MAX_BYTES",
+                  "x-trove-type": "bytes"
+                },
                 "sweep_interval": {
                   "default": "5m",
                   "description": "How often the eviction sweep runs (R-BAS-031).",
@@ -637,6 +647,7 @@
                 },
                 "window": {
                   "default": "10m",
+                  "description": "The sliding window the failures are counted in; 1s to 12h, the range of the limiters of R-ARCH-034 (Q-BAS-128).",
                   "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$|^0$",
                   "type": "string",
                   "x-trove-env": "TROVE_BASTION_FAILED_AUTH_WINDOW",
@@ -1648,8 +1659,7 @@
       "type": "object",
       "properties": {
         "sizeLimit": {
-          "type": "string",
-          "minLength": 1
+          "type": "string"
         }
       },
       "additionalProperties": false

@@ -199,7 +199,8 @@ it, and what it calls are typed methods; nothing outside this package forms a ke
 | `ans` | `ans:v1:<kind>:<sha256 hex of the key>` | the record and its HMAC-SHA-256 | 48 h, the answer's remaining validity | `PutAnswer/GetAnswer/DeleteAnswer` |
 | `sweep` | `sweep:v1` | the holder's token | 48 h, two sweep intervals | `AcquireSweep` |
 | `lock:fetch` | `lock:fetch:v1:<sha256 hex of the cache key>` | the holder's token | `cluster.flight_lock_ttl`, 30 s | `NewFlightLock` over `FlightKeyFromHash` |
-| `rl` | `rl:v1:bastion-<name>:<hash>:<window>` | a counter | two windows | `LimiterSet.NewLimiter`, `Limiter.Take`, `Limiter.Estimate` |
+| `rl` | `rl:v1:bastion-<name>:<hash>:<window>` | a counter | two windows | `LimiterSet.NewLimiter`, `Limiter.TakeUncharged`, `Limiter.Estimate`, `Limiter.EstimateWithin` |
+| `rl` | `rl:v1:bastion-<name>-refused:<hash>:<window>` | a counter of the refusals of the limiter above | two windows | `Limiter.TakeUncharged`, `Limiter.EstimateWithin` (Q-BAS-127) |
 
 - **Addresses.** The guard's address key is an IPv4 address or the /64 of an IPv6 address. A key part may hold identifiers and hashes only,
   so `AddressPart` writes `:` as `_` and `.` and `/` as `-`: `203.0.113.7` is `203-0-113-7`, `2001:db8:1:2::/64` is `2001_db8_1_2__-64`. The
@@ -211,9 +212,15 @@ it, and what it calls are typed methods; nothing outside this package forms a ke
   `answer`, covering the kind and the key hash). A record that fails is removed with `DeleteAnswer`, which is `DELIFEQ` with the failed value.
   A record, signature included, above `MaxValueSize` (1 KiB) is refused with `ErrValueTooLarge`.
 - **Counters.** `Limiter.Estimate` is the counting form that returns the number (the sliding-window estimate, rounded up) for the failed
-  authentications, the refusals and the misses. It never falls back; while Valkey is unusable it returns `ErrUnavailable` and sets the
-  limiter's fallback flag (`trove_ratelimit_fallback{limiter}`), and `shared` counts in memory, scaled by `bastion.replicas`. The request limits
-  use `Take`, whose own fallback divides the rate and the burst by the live replicas, which the Bastion sets to `bastion.replicas`.
+  authentications and the refusals that lead to a block. It never falls back; while Valkey is unusable it returns `ErrUnavailable` and sets the
+  limiter's fallback flag (`trove_ratelimit_fallback{limiter}`), and `shared` counts in memory, scaled by `bastion.replicas`.
+- **Limits do not charge what they refuse** ([limiter_uncharged.go](../../internal/cluster/limiter_uncharged.go), Q-BAS-127). The request limits use
+  `TakeUncharged` and the miss limits `EstimateWithin`: the same one round trip as `hit` (`MULTI`, `INCR`, `EXPIRE NX`, `GET` of the previous
+  window, and `GET` of the two windows of the refusal counter, `EXEC`), and a refusal then counts itself with `INCR` in the counter
+  `<limiter>-refused` of the same window and expiry. The estimate is the counter minus the refusals. `DECR` is not used: the Bastion's ACL user
+  has no such command. `Take`, which charges refused requests (R-ARCH-034, right for logins), is unchanged and stays the main installation's.
+  The fallback of `TakeUncharged` is `Take`'s token bucket, which takes nothing when it refuses; the rate and the burst are divided by the live
+  replicas, which the Bastion sets to `bastion.replicas`.
 - **Degraded mode.** Every failed call counts `trove_valkey_degraded_total{mechanism="bastion_state"}`. A Valkey that cannot be reached never
   stops the replica or makes it unready: the state runs from memory.
 - **The ACL user.** The Bastion's user has the commands of the main installation's rule and the patterns `~trove-bastion:*` and

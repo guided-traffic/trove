@@ -153,8 +153,10 @@ func (v *valkeyLimiter) entry(name string, window time.Duration, rate Rate) (*cl
 	}
 	var l *cluster.Limiter
 	if window > 0 {
-		// Only the window matters to a counter: burst over rate is the window.
-		l = v.set.NewLimiter(name, cluster.ScopeCluster, 1000/window.Seconds(), 1000)
+		// Only the window matters to a counter: burst over rate is the window. A burst of the window's
+		// milliseconds at a rate of 1,000 a second makes it exactly the window (a quotient of 1000 and the
+		// seconds would lose a millisecond to the rounding and misalign the windows with the clock).
+		l = v.set.NewLimiter(name, cluster.ScopeCluster, 1000, int(window.Milliseconds()))
 	} else {
 		l = v.set.NewLimiter(name, cluster.ScopeCluster, rate.PerSecond, rate.Burst)
 	}
@@ -176,7 +178,7 @@ func (v *valkeyLimiter) Allow(ctx context.Context, name, key string, rate Rate) 
 	if err != nil {
 		return false, 0, err
 	}
-	verdict := l.Take(ctx, key)
+	verdict := l.TakeUncharged(ctx, key)
 	return verdict.Allowed, verdict.RetryAfter, nil
 }
 
@@ -193,12 +195,30 @@ func (v *valkeyLimiter) count(ctx context.Context, name, key string, window time
 	if err == nil {
 		return n, nil
 	}
-	return v.local.count(name, key, window, add), nil
+	n, _ = v.local.count(name, key, window, add, noLimit)
+	return n, nil
 }
 
 // Add implements [Limiter].
 func (v *valkeyLimiter) Add(ctx context.Context, name, key string, window time.Duration) (int, error) {
 	return v.count(ctx, name, key, window, true)
+}
+
+// AddIfWithin implements [Limiter]. With Valkey the count is the shared one and limit its value; while Valkey
+// cannot be used the replica counts in memory, scaled by the replicas.
+func (v *valkeyLimiter) AddIfWithin(ctx context.Context, name, key string, window time.Duration, limit int) (bool, int, error) {
+	if !validName(name) {
+		return false, 0, fmt.Errorf("shared: limiter %q must be named bastion.<name> (R-BAS-034)", name)
+	}
+	window = ClampWindow(window)
+	l, err := v.entry(name, window, Rate{})
+	if err != nil {
+		return false, 0, err
+	}
+	if ok, n, err := l.EstimateWithin(ctx, key, limit); err == nil {
+		return ok, n, nil
+	}
+	return v.local.AddIfWithin(ctx, name, key, window, limit)
 }
 
 // Count implements [Limiter].
@@ -255,9 +275,7 @@ func (b *valkeyBlocks) Blocked(ctx context.Context, addr string) (Block, bool, e
 		return Block{}, false, nil
 	}
 	blk := Block{Until: until, Level: level}
-	b.mem.mu.Lock()
-	b.mem.put(addr, blk)
-	b.mem.mu.Unlock()
+	b.mem.remember(addr, blk)
 	return blk, true, nil
 }
 

@@ -156,7 +156,7 @@ spec:
             name: {{ include "trove-bastion.fullname" . }}-config
         - name: tmp
           emptyDir:
-            sizeLimit: {{ .Values.tmp.sizeLimit }}
+            sizeLimit: {{ include "trove-bastion.tmpSizeLimit" . }}
         {{- if and $volume (eq .Values.cacheVolume.type "ephemeral") }}
         - name: cache
           ephemeral:

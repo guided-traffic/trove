@@ -142,6 +142,16 @@ Without Valkey every counter and block holds per replica at the configured value
 - The failed-authentication timeout refuses only a credential for which the Bastion holds no usable answer; a partner's known token
   behind the same address keeps working, and the guesser keeps anonymous access (Q-BAS-36). It cannot be used to cut a colleague off: the
   count is of the unverified credentials the address sent.
+- A limit admits up to its rate and a refused request or miss consumes nothing, so a client slightly over its limit is not starved and does not
+  collect the refusals that block (Q-BAS-127; before, at 330 misses a minute against 300 no miss was admitted from the second minute and the
+  address was blocked for 15 minutes, doubling to 24 hours, with its hits, which cut off every partner behind a shared address). A flood of several
+  times the limit still reaches the threshold.
+- The address the guard counts is only the client's when the chart's `config.server.trusted_proxies` names the ingress controller's pods; the
+  chart refuses a render without it while its Ingress is on (Q-BAS-130). Before, every caller shared the controller's address by default: one
+  client's bad tokens put every unverified credential into the timeout and a flood blocked the Bastion for everyone.
+- Without Valkey the maps of the counters, buckets and blocks are bounded at 100,000 keys each, sharded, and evict the least recently used entry in
+  constant time; a flood of addresses from an IPv6 /47 neither scans a map under a lock every request takes nor holds a lock across Valkey round
+  trips (Q-BAS-128).
 - The guard never refuses on its own fault. If the shared state fails, the request is admitted; with Valkey unavailable the
   counters and blocks work from memory at the configured value divided by `bastion.replicas`, and `trove_ratelimit_fallback` and
   `trove_valkey_available` say so (Q-BAS-94).
@@ -296,8 +306,8 @@ The gaps of the Bastion's mechanisms are recorded on the spec page, where the me
   route that takes a body is held in memory;
 - [H-449](../spec/bastion.md#h-449--a-range-request-costs-a-read-of-the-whole-object) — a range request costs a read of the whole
   object;
-- [H-450](../spec/bastion.md#h-450--concurrent-fills-spool-up-to-max_object_bytes-each-to-temporary-storage) — concurrent fills spool
-  up to `max_object_bytes` each to temporary storage;
+- [H-450](../spec/bastion.md#h-450--a-fill-that-does-not-fit-the-spool-is-passed-through-unkept-and-a-request-answered-from-the-spool-fails) —
+  a fill that does not fit the spool is passed through unkept, and a request answered from the spool fails;
 - [H-451](../spec/bastion.md#h-451--a-ranged-read-of-a-cached-artifact-is-not-verified) — a ranged read of a cached artifact is not
   verified;
 - [H-452](../spec/bastion.md#h-452--the-entries-of-evicted-bytes-stay-until-they-are-read-and-are-not-counted-in-the-cache-size) —
@@ -317,7 +327,11 @@ The gaps of the Bastion's mechanisms are recorded on the spec page, where the me
 - [H-459](../spec/bastion.md#h-459--an-artifact-whose-spool-fails-during-the-transfer-reaches-the-caller-unverified-and-a-range-request-on-it-fails) —
   an artifact whose spool fails during the transfer reaches the caller unverified;
 - [H-460](../spec/bastion.md#h-460--without-a-signing-key-the-entries-on-the-volume-are-not-authenticated) — without a signing key the entries on the
-  volume are not authenticated.
+  volume are not authenticated;
+- [H-473](../spec/bastion.md#h-473--the-roles-binary-contains-packages-of-the-main-installation-it-never-starts) — the role's binary contains
+  packages of the main installation it never starts;
+- [H-474](../spec/bastion.md#h-474--the-sliding-estimate-of-a-limit-admits-more-than-the-limit-in-a-minute-that-spans-a-boundary) — the sliding
+  estimate of a limit admits more than the limit in a minute that spans a boundary.
 
 This page does not describe the main installation's own mechanisms that the Bastion relies on (the decision point, token
 validation, the revocation journal); their pages and gaps are linked above. It records no gap of its own.

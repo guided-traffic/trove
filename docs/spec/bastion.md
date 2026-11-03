@@ -150,7 +150,13 @@ Priority: **MVP** · Covers: DIST-024
   ([Q-BAS-22](#q-bas-22--the-bastion-is-a-role-of-the-trove-image)). The role enables the Bastion's client listener, its ops
   listener, the Bastion engine of this page and, when configured, the Valkey client. It enables no other subsystem: no
   PostgreSQL pool, no object-store client for the main installation's blobs, no job runner, no format plug-in route table, no
-  management API, no UI, no login, no session, no remote repository.
+  management API, no UI, no login, no session, no remote repository. "Enables" is the operative word: the platform packages the
+  role shares (the Valkey client in `internal/cluster`, the listeners in `internal/httpserver`, the S3 client in
+  `internal/blob/s3`) import packages of the main installation (the PostgreSQL store, the audit types, the scope and CI claim
+  types, the blob store interface, the format areas), which are in the role's binary and never started. The import rule of the
+  role is transitive and lists those packages with their reason ([Q-BAS-129](#q-bas-129--the-import-rule-follows-the-dependency-closure-and-lists-what-it-cannot-narrow),
+  [H-473](#h-473--the-roles-binary-contains-packages-of-the-main-installation-it-never-starts)); a test of the role proves that it
+  opens no connection to a PostgreSQL address.
 - The role is deployed only by the chart `trove-bastion` in `deploy/helm/trove-bastion` (R-BAS-045), never by the chart
   `trove`, and the chart `trove-bastion` renders no other role. Several Bastions in front of one main installation are several
   releases of that chart, each with a registration of its own (R-BAS-004).
@@ -170,7 +176,7 @@ server:
   listen: ":8443"                       # default (proposed) for the role bastion
   ops_listen: ":8081"                   # default (proposed)
   base_url: ""                          # required; example: https://packages.example.com
-  trusted_proxies: []                   # default (proposed); example: ["10.244.0.0/16"] (the Bastion's ingress pods)
+  trusted_proxies: []                   # default (proposed); the chart requires it while its Ingress is on (Q-BAS-130); example: ["10.244.0.0/16"] (the Bastion's ingress pods)
   forwarded_header: x-forwarded-for     # default (proposed): x-forwarded-for | forwarded (R-ARCH-006)
   max_in_flight: 1024                   # default (proposed), per replica
 ```
@@ -181,7 +187,11 @@ Acceptance criteria:
   `bastion`; with the keys above, `bastion.main.url` and the token file it starts, and `ss -ltn` in its pod shows `:8443` and
   `:8081` only.
 - A Bastion pod opens no connection to any PostgreSQL port and makes no request to the main installation's bucket during the
-  whole e2e suite (NetworkPolicy log and the object store's access log).
+  whole e2e suite (NetworkPolicy log and the object store's access log). The role started with a trap listening where a
+  PostgreSQL client of the process would look sees no connection and exports no database metric
+  (`TestR_BAS_001_TheRoleOpensNoConnectionToPostgreSQL`).
+- The import rule names every package of the main installation in the role's dependency closure, with the platform package that
+  pulls it in; a new one fails `go test ./internal/archtest/...` with the chain.
 - `GET /api/v1/system/ping`, `GET /ui/` and `GET /auth/oidc/corp/start` on the Bastion answer `404` without a request to the
   main installation (R-BAS-018).
 
@@ -1258,7 +1268,12 @@ chooses the backend (`bastion.cache.backend`):
   (`ReadWriteOnce`, deleted with the pod, the default) or persistent per pod (a StatefulSet with a claim template). No volume is
   shared (INV-13). Without routing by path (R-BAS-033) each replica fills its own copy.
 - A fill is spooled to the pod's temporary volume (`tmp`, bucket backend) or to a temporary directory of the cache volume, and
-  is written or renamed to its content address only after verification (R-BAS-021).
+  is written or renamed to its content address only after verification (R-BAS-021). The fills in progress of a replica hold
+  together at most `bastion.cache.spool_max_bytes`; a write that would pass it makes that fill unkept (the answer is passed
+  through, `trove_bastion_cache_errors_total{op="spool"}`) and gives its bytes back at once. The chart sizes the `tmp` volume from
+  the spool and refuses a volume the spool does not fit
+  ([Q-BAS-131](#q-bas-131--the-bytes-of-the-fills-in-progress-are-bounded-and-the-chart-sizes-the-volumes-from-the-bound),
+  [H-450](#h-450--a-fill-that-does-not-fit-the-spool-is-passed-through-unkept-and-a-request-answered-from-the-spool-fails)).
 - The bucket's client fails fast: three attempts and at most 2 s of backoff, not the object store's five attempts and 20 s, so a
   failing bucket is a miss within seconds ([Q-BAS-89](#q-bas-89--the-bucket-backend-reaches-s3-through-a-plain-adapter-and-fails-fast)).
 - The backend is gated at the first readiness only (R-STOR-035's pattern); a failing backend afterwards turns hits into misses
@@ -1270,6 +1285,7 @@ bastion:
     backend: volume                     # default (proposed): volume | bucket
     max_bytes: 20GiB                    # default (proposed)
     max_object_bytes: 2GiB              # default (proposed); larger answers are passed through
+    spool_max_bytes: 2GiB               # default (proposed); the fills in progress of a replica together; at least max_object_bytes
     volume:
       dir: /var/cache/trove-bastion     # chart-managed
     bucket:
@@ -1412,8 +1428,12 @@ trove's knowledge of credentials and misses:
   of the same address keep being served.
 - Addresses in `bastion.blocking.exempt_cidrs` are not limited.
 - The request limits are the token bucket (without Valkey) or the sliding window (with Valkey) of R-ARCH-034; the miss limits
-  are counts of the sliding minute in both forms, refused misses included, so a client that keeps asking stays refused
-  ([Q-BAS-92](#q-bas-92--the-counters-are-sliding-windows-and-the-timeout-starts-at-the-last-allowed-failure)).
+  are counts of the sliding minute in both forms
+  ([Q-BAS-92](#q-bas-92--the-counters-are-sliding-windows-and-the-timeout-starts-at-the-last-allowed-failure)). A limit admits up
+  to its rate: a refused request or miss does not consume the budget of its address, so a client slightly over its limit is
+  admitted at the limit and not starved, and the refusals it collects stay far below the threshold that blocks
+  ([Q-BAS-127](#q-bas-127--a-refused-request-or-miss-does-not-consume-the-limit-it-was-refused-by)). The sliding estimate is
+  approximate around a window boundary ([H-474](#h-474--the-sliding-estimate-of-a-limit-admits-more-than-the-limit-in-a-minute-that-spans-a-boundary)).
 
 ```yaml
 bastion:
@@ -1431,6 +1451,9 @@ Acceptance criteria:
   address is not slowed down.
 - An address that requests 100 random missing names per minute anonymously sends at most 30 requests to the main installation
   per minute, while its hits are served.
+- An address that asks for 330 misses a minute with a credential (limit 300) is admitted about 300 a minute from the second
+  minute on, answers `rate_limited` for the rest, and is not blocked; the same holds for an anonymous client at 11 requests a
+  second against 10, with and without Valkey.
 
 ### R-BAS-036 · Failed-authentication timeout
 Priority: **MVP** · Covers: trove-only
@@ -1442,7 +1465,9 @@ Priority: **MVP** · Covers: trove-only
   `Retry-After` and is not sent to the main installation; a credential with a usable answer keeps working, so colleagues behind
   one address are not cut off ([Q-BAS-36](#q-bas-36--a-failed-authentication-timeout-refuses-unverified-credentials-only));
   anonymous requests stay anonymous requests.
-- The counter is a count-only limiter of R-ARCH-034 (`bastion.failed_auth`). The Bastion's limit is stricter than the main
+- The counter is a count-only limiter of R-ARCH-034 (`bastion.failed_auth`). Its `window` is 1 s to 12 h, the range of the
+  limiters of R-ARCH-034; the configuration refuses a longer one, so a configured window is never counted shorter than written
+  ([Q-BAS-128](#q-bas-128--the-local-forms-evict-in-constant-time-the-block-decision-locks-per-address-and-the-window-range-is-the-limiters)). The Bastion's limit is stricter than the main
   installation's R-AUTH-038, which still applies to the real client behind it (R-BAS-017).
 - The failure that brings the count of the window to `max_failures` starts the timeout, so the next credential without a usable
   answer is the first one refused (Q-BAS-92); the acceptance below is that reading.
@@ -1466,6 +1491,9 @@ Priority: **MVP** · Covers: trove-only
 - An address that collects more than `bastion.blocking.threshold` refusals of R-BAS-035 and R-BAS-036 within
   `bastion.blocking.window` is blocked for `bastion.blocking.duration`; each further block within 24 h doubles the duration, up
   to `bastion.blocking.max_duration` ([Q-BAS-37](#q-bas-37--one-refusal-threshold-blocks-an-address-with-doubling-durations)).
+- Blocking is the answer to a flood and not to a client slightly over its limit: only a request or miss beyond the limit is a
+  refusal and a refusal consumes nothing (Q-BAS-127), so a client at 110 % of its limit collects a tenth of its requests as
+  refusals, and the default threshold of 300 a minute is reached by an address that sends several times its limit.
 - A blocked address answers `429 address_blocked` with `Retry-After` at step 2 of R-BAS-018, before any further work, and its
   requests are not logged one by one (a counter and one log line per block).
 - With Valkey the block list is shared: a block set by one replica holds on every replica at its next request. Without Valkey
@@ -1488,6 +1516,8 @@ Acceptance criteria:
 
 - An address sending 2,000 anonymous requests within a minute is blocked on every replica (with Valkey) within the minute,
   answers `429 address_blocked` for 15 minutes, and a second flood after the block yields 30 minutes.
+- An address that sends 3,000 anonymous misses in 30 seconds is blocked, whereas an address that sends 330 misses a minute
+  with a credential is not (Q-BAS-127).
 
 ### R-BAS-038 · The coarse per-address limit at HAProxy Ingress
 Priority: **MVP** · Covers: trove-only
@@ -1718,7 +1748,12 @@ A second Helm chart for this instance type (owner, [Q-BAS-5](#q-bas-5--a-second-
 - **Validation** (fail at `helm template`): `config.server.base_url` and `config.bastion.main.url` set and `https`;
   `secrets.mainToken.existingSecret` set; `secrets.signingKey.existingSecret` set with the bucket backend or Valkey;
   `config.bastion.cache.bucket.bucket` with the bucket backend; `routeByPath` only with the volume backend and `ingress.enabled`;
-  `edgeLimit` wider than the Bastion's limits (R-BAS-038); with `highAvailability.enforce` at least two replicas, a PDB and
+  `edgeLimit` wider than the Bastion's limits (R-BAS-038); `config.server.trusted_proxies` while `ingress.enabled`, because behind
+  the Ingress every request arrives from the controller's pods
+  ([Q-BAS-130](#q-bas-130--behind-the-ingress-the-chart-requires-the-trusted-proxies)); the spool of fills
+  (`config.bastion.cache.spool_max_bytes`) at least `max_object_bytes`, and a `tmp.sizeLimit` (bucket backend) or
+  `cacheVolume.size` (volume backend) that holds it ([Q-BAS-131](#q-bas-131--the-bytes-of-the-fills-in-progress-are-bounded-and-the-chart-sizes-the-volumes-from-the-bound));
+  with `highAvailability.enforce` at least two replicas, a PDB and
   host spreading; a value under `config` that is chart-managed or not in the role's schema; a certificate source for the
   listener while `tls.enabled` (`tls.existingSecret`, or `tls.certManager.issuerRef.name`); an egress target
   (`networkPolicy.egress.main.to`, and `valkey`, `cacheBucket` or `tracing` while they are used) and an ingress peer for the
@@ -1741,9 +1776,9 @@ A second Helm chart for this instance type (owner, [Q-BAS-5](#q-bas-5--a-second-
 
 Acceptance criteria:
 
-- `helm template` with only the required values (`config.server.base_url`, `config.bastion.main.url`,
-  `secrets.mainToken.existingSecret`, a certificate source `tls.certManager.issuerRef.name` and the egress target
-  `networkPolicy.egress.main.to`, [Q-BAS-55](#q-bas-55--what-a-render-needs-and-what-the-values-file-left-open)) renders a
+- `helm template` with only the required values (`config.server.base_url`, `config.server.trusted_proxies`,
+  `config.bastion.main.url`, `secrets.mainToken.existingSecret`, a certificate source `tls.certManager.issuerRef.name` and the
+  egress target `networkPolicy.egress.main.to`, [Q-BAS-55](#q-bas-55--what-a-render-needs-and-what-the-values-file-left-open)) renders a
   Deployment with two replicas, a PDB, the Ingress with the edge-limit annotations, a NetworkPolicy, and no Secret, no Role and no
   PersistentVolumeClaim.
 - The chart test pins the annotation names to the controller version of the local profile: a change of
@@ -1847,7 +1882,7 @@ config:
     listen: ":8443"                     # default (proposed)
     ops_listen: ":8081"                 # default (proposed)
     base_url: ""                        # required; example: https://packages.example.com
-    trusted_proxies: []                 # default (proposed); example: ["10.244.0.0/16"] (the Bastion's HAProxy Ingress pods)
+    trusted_proxies: []                 # default (proposed); REQUIRED while ingress.enabled: the CIDRs of the ingress controller's pods, example: ["10.244.0.0/16"] (Q-BAS-130)
     forwarded_header: x-forwarded-for   # default (proposed): x-forwarded-for | forwarded
     max_in_flight: 1024                 # default (proposed), per replica
   bastion:
@@ -1872,6 +1907,7 @@ config:
       backend: volume                   # default (proposed): volume | bucket
       max_bytes: 20GiB                  # default (proposed)
       max_object_bytes: 2GiB            # default (proposed)
+      spool_max_bytes: 2GiB             # default (proposed): the fills in progress of a replica hold at most this in temporary storage; at least max_object_bytes (Q-BAS-131)
       documents_max_bytes: 2GiB         # default (proposed)
       private_documents_max_bytes: 256MiB  # default (proposed), per replica, memory
       metadata_revalidate_after: 1m     # default (proposed)
@@ -2005,7 +2041,7 @@ securityContext:
     type: RuntimeDefault                # default (proposed)
 
 tmp:
-  sizeLimit: 1Gi                        # default (proposed); /tmp, and the spool of fills with the bucket backend
+  sizeLimit: ""                         # default (proposed): empty = 1Gi with the volume backend; with the bucket backend (whose fills are spooled here) config.bastion.cache.spool_max_bytes plus 256Mi; example: 3Gi
 
 # ── Probes (paths from R-OPS-001) ──────────────────────────────────────────
 probes:
@@ -2087,7 +2123,7 @@ networkPolicy:
       to: []                            # default (proposed); example: [{podSelector: {matchLabels: {app.kubernetes.io/name: trove-bastion-valkey}}}]
       ports: [6379, 26379]              # default (proposed)
     cacheBucket:
-      to: []                            # default (proposed); required with the bucket backend; example: [{ipBlock: {cidr: 0.0.0.0/0}}]
+      to: []                            # default (proposed); required with the bucket backend; example: [{ipBlock: {cidr: 203.0.113.0/24}}] (the object store's addresses; a wide range such as 0.0.0.0/0 undoes the egress promise of R-BAS-047)
       ports: [443]                      # default (proposed)
     tracing:
       to: []                            # default (proposed)
@@ -4097,6 +4133,10 @@ would revisit this if the Bastion ever shares a Valkey database with another ins
 
 Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
 
+Amended by [Q-BAS-127](#q-bas-127--a-refused-request-or-miss-does-not-consume-the-limit-it-was-refused-by): a refused miss or
+request is no longer counted ("a refused event counts" below holds for the failures and the refusals that lead to a block only), and the window of `bastion.failed_auth` is held to 1 s to 12 h by
+the configuration ([Q-BAS-128](#q-bas-128--the-local-forms-evict-in-constant-time-the-block-decision-locks-per-address-and-the-window-range-is-the-limiters)).
+
 | Option | What it means | For | Against |
 |---|---|---|---|
 | (a) One counting form: a sliding window per key, a refused event counts, a local form with the same estimate scaled by the replicas (chosen) | Misses, failures and refusals are `previous x (1 - elapsed) + current` in Valkey and in memory; a caller compares the count with the configured value; the failure that reaches `max_failures` starts the timeout | The acceptance numbers hold in both forms (at most 30 misses in any minute, the 21st token refused); the memory is two integers per key; with Valkey the form is the one of R-ARCH-034 | A client that keeps sending at ten times its rate is refused until it stops: it gets its burst and nothing more |
@@ -4446,6 +4486,110 @@ engine looked for the route in the stripped header, so it never saw it: the Bast
 **Applied in the spec:** R-BAS-014; code: `internal/bastion/mainclient/client.go`, `internal/bastion/engine/probe.go`, `TestR_BAS_014_TheRouteOfAProbeAnswerSurvivesTheStrippedMarking`,
 `TestR_BAS_014_WritesAreRefusedInTheFormatsShape`.
 
+### Q-BAS-127 · A refused request or miss does not consume the limit it was refused by
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the review of the guard (a proof of concept at 330 misses a minute against a limit of 300) found that a refused miss was counted like an admitted one (Q-BAS-92), and that every refusal counted toward the
+block threshold. From the second minute on no miss was admitted, then the address was blocked for 15 minutes, doubling to 24 hours, with its hits: one client behind a shared NAT blocked every partner there. The request limits
+had the same shape with Valkey, where R-ARCH-034's `Take` counts a refused request ("a caller that keeps sending while refused stays refused until its rate falls below the limit").
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A limit admits up to its rate; a refusal consumes nothing; blocking stays the answer to a flood (chosen) | The miss count and the request window are counts of the admitted events; a refused one is given back. The block threshold is unchanged: only events beyond the limit are refusals, so 110 % of a limit yields 10 % refusals | A client slightly over its limit gets the limit and is not blocked; R-BAS-035 to R-BAS-037's acceptance numbers hold; a flood (several times the limit) still reaches the threshold | A client that keeps hammering gets no longer a penalty by the limit itself, only by the block |
+| (b) Keep counting refusals, raise the default threshold | The starvation stays; only the block moves away | No code change | The client still starves at the limit, and every limit tuned for it has to be wider than the real need |
+| (c) Count refusals with a decay | Refusals count a fraction | Fewer refusals count | Another parameter, an estimate nobody can state in a sentence |
+
+**Choice:** (a). With Valkey the counter is incremented before the decision, in one round trip and without a script, as R-ARCH-034 has it, and a refusal counts itself a second time in a counter of refusals of its own
+(same window, same expiry); the estimate is the counter minus the refusals (`Limiter.TakeUncharged` for the request limits, `Limiter.EstimateWithin` for the miss limits, [internal/cluster/limiter_uncharged.go](../../internal/cluster/limiter_uncharged.go)).
+The Bastion's Valkey user has no `DECR` (its ACL lists `INCR`, `EXPIRE`, `GET`, `MULTI`, `EXEC`), so a refund by decrement was not available. Without Valkey the request limit was a token bucket, which takes nothing when it refuses,
+and the miss count is undone in the same lock (`shared.Limiter.AddIfWithin`). The failure counter of R-BAS-036 and the counter of refusals keep counting every event: they count what happened, not what is admitted.
+
+**Rationale:** R-ARCH-034's semantics ("refused requests use up budget") serve the main installation's logins and API, where a caller that is refused should stop; the Bastion's guard protects partners that share an address, and a limit that
+starves a client slightly over it, and then blocks the address, turns the guard into the denial of service it exists to stop. R-ARCH-034 itself is unchanged: the Bastion's limiters are the other reading of the same window counter.
+The development agent would revisit this if a client that stays at exactly the limit for long must be told apart from a flood by the Bastion (a lower threshold or a rate of refusals would then be the lever), or if the Bastion's Valkey user
+gains `DECR`, which would save the second counter.
+
+**Applied in the spec:** R-BAS-035, R-BAS-036, R-BAS-037, Q-BAS-92 (amended), H-474; code: [guard](../../internal/bastion/guard/instance.go), [shared](../../internal/bastion/shared/local.go), [cluster](../../internal/cluster/limiter_uncharged.go),
+`TestR_BAS_035_R_BAS_037_AClientSlightlyOverTheMissLimitKeepsItsBudgetAndIsNotBlocked`, `TestR_BAS_035_R_BAS_037_AClientSlightlyOverTheRequestRateKeepsItsRateAndIsNotBlocked`, `TestR_BAS_037_AFloodOfMissesStillBlocks`,
+`TestR_BAS_035_R_BAS_037_WithValkeyAClientSlightlyOverItsLimitsKeepsItsRateAndIsNotBlocked`.
+
+### Q-BAS-128 · The local forms evict in constant time, the block decision locks per address, and the window range is the limiters'
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: three findings of the review of the shared state. (1) Without Valkey (`valkey.mode: none`, the default) each map of the local forms held at most 100,000 keys, and a new key arriving at a full map scanned all of it under the one mutex
+every request takes; an IPv6 /47 has enough /64 prefixes to keep every request on that path. (2) The decision to block an address was serialized by one process-wide mutex held across three or four Valkey round trips. (3)
+`bastion.failed_auth.window` accepted up to 24 h and the limiter silently counted at most 12 h.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) Sharded maps with a least-recently-used list per shard; a lock per address for the block decision; the configuration refuses a window above 12 h (chosen) | 64 shards, each with its own mutex and a list: a new key at a full shard evicts the oldest one in constant time. The block decision takes a lock keyed by the address, which exists only while somebody holds or waits for it. `failed_auth.window` is limited to 1 s to 12 h by the schema | Constant time per request; unrelated addresses never wait for one another; the configured value is the counted value | An address evicted while it still counts starts again (as before); a shard evicts at its share of the bound, so a skewed hash can evict a little before the whole map is full |
+| (b) Keep one lock, evict a random entry | Delete the first key a range finds | Smaller change | The bound is arbitrary and the lock stays global |
+| (c) Support windows up to 24 h in the limiters | Raise `MaxWindow` | The configuration stays as it is | The limiters of R-ARCH-034 are specified to 12 h, and the Valkey counters expire at twice the window |
+
+**Choice:** (a). The least recently used entry is the one that most likely no longer counts (a counter two windows old, a bucket that is full again, a block that ended), so the order is a better preference than the arbitrary one it replaces.
+**Rationale:** the Bastion is exposed to exactly the many-address flood the old scan rewarded. The development agent would revisit it if the evicted-but-still-counting case shows in the metrics of a real deployment (the bound would then be raised or
+the shards enlarged), or if a longer failed-authentication window is wanted (the limiters would have to support it first).
+
+**Applied in the spec:** R-BAS-036; code: [shared/lru.go](../../internal/bastion/shared/lru.go), [shared/local.go](../../internal/bastion/shared/local.go), [guard/keyedlock.go](../../internal/bastion/guard/keyedlock.go),
+[config](../../internal/config/bastion_role.go), `TestR_BAS_035_AFullMapEvictsInConstantTime`, `TestR_BAS_035_AnActiveKeySurvivesAFloodOfNewKeys`, `TestR_BAS_037_ABlockInFlightForOneAddressDoesNotHoldAnotherBack`,
+`TestR_BAS_036_TheConfigurationAcceptsExactlyTheWindowsTheLimiterCounts`.
+
+### Q-BAS-129 · The import rule follows the dependency closure and lists what it cannot narrow
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the rule of R-BAS-001 checked the direct imports of the Bastion's packages. The role's dependency closure is larger: `internal/cluster` imports the PostgreSQL store, the change log's table registry and the format areas, `internal/httpserver`
+imports the audit types, the scope type and the CI claims, and `internal/blob/s3` imports the blob store interface. "Imports no subsystem" was not true of the closure.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The rule is transitive; the packages it cannot narrow are listed with their importer and reason (chosen) | `CheckBastionImports` walks the closure from the allowed platform packages; a package that enters it and is not allowed or listed is a violation that names the chain. A runtime test proves the operative claim: no connection attempt to a PostgreSQL address | Honest and enforced; a new edge fails the build with its chain | The binary still contains the listed packages (H-473) |
+| (b) Split `internal/cluster`, `internal/httpserver` and `internal/blob/s3` now | A Valkey-only package, a request-context package without audit and principal types, the S3 client without the interface | The closure is really narrow | `cluster.NewValkey`, `httpserver.SourceFrom` and `httpserver.Principal` have dozens of callers in the packages the other developers of this wave are changing; the split belongs to a wave of its own |
+| (c) Keep the direct rule and correct the sentence | Smaller | Nothing is enforced for the closure | A new transitive subsystem enters unseen |
+
+**Choice:** (a). **Rationale:** R-BAS-001's operative claim is that the role enables no other subsystem; the test of the process proves it, and the rule makes the compile-time closure a reviewed list instead of an accident. The development agent would revisit it when
+a platform package is split anyway (the exceptions it removes are deleted from [bastionTransitive](../../internal/archtest/bastion.go)).
+
+**Applied in the spec:** R-BAS-001, H-473; code: [archtest/bastion.go](../../internal/archtest/bastion.go), `TestR_BAS_001_TheRoleOpensNoConnectionToPostgreSQL`, [developer page](../developer/bastion.md).
+
+### Q-BAS-130 · Behind the Ingress the chart requires the trusted proxies
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: with the chart's defaults (`config.server.trusted_proxies: []`, the Ingress on, the https port admitted from the ingress namespace only) every request reaches the pods from the ingress controller, so every caller's address is the controller's pod:
+one client's bad tokens put every unverified credential into the timeout, a flood blocks the Bastion for everyone, and the anonymous limits apply to the whole internet together.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) `config.server.trusted_proxies` is required while `ingress.enabled`; the render fails naming the value and what to list (chosen) | The operator lists the CIDRs of the controller's pods; the message says why | Explicit; the value is in the operator's hands, where the knowledge is | One more required value |
+| (b) Derive it from `networkPolicy.ingress.https.from` | A peer that is an `ipBlock` yields its CIDR | No extra value for operators who use `ipBlock` | The default peer is a `namespaceSelector`, which has no CIDR; the pod CIDR cannot be read at render time, so the derivation covers the rare case only and invites a wide range |
+| (c) Default to a private range | `10.0.0.0/8` or the like | Renders out of the box | Trusts the forwarded address of any pod in the range, and a wrong default is worse than a refused render |
+
+**Choice:** (a). **Rationale:** the failure of leaving it empty is silent and total, the fix needs a fact only the operator has, and a render that fails costs a minute. The load refuses a prefix of length 0, so the widest value is still bounded by the
+role. The development agent would revisit it if a controller that terminates the connection can be asked for its own address range (an ingress class parameter).
+
+**Applied in the spec:** R-BAS-001, R-BAS-045, R-BAS-046; code: [chart validation](../../deploy/helm/trove-bastion/templates/_validate.tpl), `TestR_BAS_045_TheClientAddressNeedsTheTrustedProxiesBehindTheIngress`; [values](../../deploy/helm/trove-bastion/values.yaml), [chart page](../developer/helm-chart.md), [admin manual](../manual/admin/bastion.md).
+
+### Q-BAS-131 · The bytes of the fills in progress are bounded, and the chart sizes the volumes from the bound
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the bucket backend spools fills into `/tmp`, an `emptyDir` of 1 GiB, while `max_object_bytes` defaults to 2 GiB and the concurrent fills are bounded only by the miss budget. An `emptyDir` over its `sizeLimit` evicts the pod, which is worse than a miss.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A run-time bound on the bytes of all fills in progress, a chart that sizes `tmp` from it and refuses a volume that cannot hold it (chosen) | `bastion.cache.spool_max_bytes` (2 GiB, at least `max_object_bytes`); a fill that would pass it is passed through unkept and gives its bytes back; the default `tmp.sizeLimit` is the spool plus 256 MiB with the bucket backend; the volume backend's `cacheVolume.size` must hold `max_bytes` plus the spool | The pod can no longer fill the volume with fills, whatever the traffic | A burst of large cold artifacts keeps fewer of them |
+| (b) Only the chart validation (`tmp.sizeLimit` ≥ `max_object_bytes` × concurrent fills) | A volume of 64 GiB and more | No code | A volume sized for the worst case of a rare burst, and nothing holds if the budget or the traffic changes |
+| (c) Only the run-time bound | No chart change | Small | The chart default still evicts at its first large object |
+
+**Choice:** (a). **Rationale:** the run-time bound is the only thing that keeps the promise whatever the configuration; the chart makes the numbers agree so that the bound is a rare event and not the normal one. The development agent would revisit it if
+fills of objects near `max_object_bytes` are common (the bound would be raised, or a fill would reserve its announced size up front, which the engine's call does not give the cache yet).
+
+**Applied in the spec:** R-BAS-030, R-BAS-045, R-BAS-046, H-450; code: [cache/spool.go](../../internal/bastion/cache/spool.go), [cache/fill.go](../../internal/bastion/cache/fill.go), [chart helpers](../../deploy/helm/trove-bastion/templates/_helpers.tpl),
+`TestR_BAS_021_R_BAS_030_TheFillsInProgressNeverHoldMoreThanTheSpoolBudget`, `TestR_BAS_030_TheSpoolFitsTheTemporaryVolume`.
+
 ## What this does not cover
 
 ### H-382 · A volumetric attack on bandwidth is not absorbed by the Bastion
@@ -4764,17 +4908,20 @@ end for any range. A caller who may read a large cached artifact can ask for man
 each time; with the bucket backend that is egress from the bucket. The per-address limits (R-BAS-035) bound the rate, not the volume.
 What makes it real: a reader of a large object and a client that ranges through it; `bastion.cache.max_object_bytes` bounds the object.
 
-### H-450 · Concurrent fills spool up to `max_object_bytes` each to temporary storage
+### H-450 · A fill that does not fit the spool is passed through unkept, and a request answered from the spool fails
 
-Stage: R-BAS-021 and R-BAS-030 (the spool of a fill). Subject: the temporary storage of a replica.
+Stage: R-BAS-021 and R-BAS-030 (the spool of a fill, [Q-BAS-131](#q-bas-131--the-bytes-of-the-fills-in-progress-are-bounded-and-the-chart-sizes-the-volumes-from-the-bound)). Subject: the large artifacts a replica keeps, and
+the callers that ask for them with `Range` or a conditional header.
 
-Live on every Bastion. A fill spools the artifact to a temporary file while it streams (below `bastion.cache.volume.dir`/tmp with the volume
-backend, in the pod's `tmp` volume with the bucket backend), and the file is removed when the fill ends. The files together are bounded by
-the number of concurrent fills, which the budget bounds (`bastion.main.max_concurrent` ÷ `bastion.replicas`, R-BAS-025), times
-`bastion.cache.max_object_bytes`: 32 × 2 GiB with the defaults and two replicas. A pod whose storage is smaller cannot spool what it
-receives: a plain fill is passed through unkept and counted in `trove_bastion_cache_errors_total{op="spool"}`, and a request with `Range`
-or a conditional header, which is answered from the spool, answers `502 main_failed`. What makes it real: a burst of cold requests for
-large artifacts and a pod with a small `tmp` volume (the chart default is 1 Gi, `tmp.sizeLimit`); the engine does not check it.
+Live on every Bastion. The fills in progress of a replica hold together at most `bastion.cache.spool_max_bytes` (2 GiB by default) in
+temporary storage, and the chart sizes the volume from it, so the pod is not evicted for a burst of cold requests for large artifacts. What
+the bound costs: a fill that would pass it is passed through unkept and counted in `trove_bastion_cache_errors_total{op="spool"}`, so
+under a burst of large cold artifacts the cache keeps fewer of them (a client retrying later finds the spool free); and a request with
+`Range` or a conditional header, which is answered from the spool, answers `502 main_failed` ([H-459](#h-459--an-artifact-whose-spool-fails-during-the-transfer-reaches-the-caller-unverified-and-a-range-request-on-it-fails)).
+With the volume backend the spool is a directory of the cache volume: the chart checks that `cacheVolume.size` holds `max_bytes` plus
+the spool, but nothing watches what else a volume holds, and a volume (`emptyDir`) filled by something else is still evicted. What makes
+it real: several concurrent fills of objects near `max_object_bytes` (two of 1.5 GiB pass 2 GiB), or `spool_max_bytes` set to the
+size of `max_object_bytes` while artifacts of that size are common.
 
 ### H-451 · A ranged read of a cached artifact is not verified
 
@@ -4908,3 +5055,22 @@ Stage: R-BAS-014. Subject: how much of an upload body the Bastion consumes befor
 Live in the suite. The Bastion has no counter of request-body bytes, so the test announces 4 MiB, sends 1 KiB, and requires the refusal to arrive before the rest is sent; it proves the refusal does
 not wait for the body, and bounds what was read by what was sent (1 KiB), not by what the Bastion's socket buffers took in a long upload. What makes it real: a change that reads the body after
 answering, which this test would not see.
+
+### H-473 · The role's binary contains packages of the main installation it never starts
+
+Stage: R-BAS-001 (the dependency closure of the role, [Q-BAS-129](#q-bas-129--the-import-rule-follows-the-dependency-closure-and-lists-what-it-cannot-narrow)). Subject: the code in the Bastion's image.
+
+Live on every Bastion. Through `internal/cluster` (the Valkey client shares a package with the change log and the locks), `internal/httpserver` (the request context carries the audit source and the principal's scope and CI claims) and
+`internal/blob/s3` (the S3 client implements the blob store interface) the binary contains the PostgreSQL store (`internal/meta`, `meta/postgres`, `meta/postgres/q`, `backup/tables`), `internal/formats/catalog`, `internal/audit`, `internal/auth/scope`,
+`internal/ci/claims`, `internal/ci/reason` and `internal/blob`. The role opens no pool, no object store of the main installation and builds no authorization engine, and a test starts it with a trap where PostgreSQL would be. The archtest rule lists these packages with their
+importer and fails on any other. What makes it real: a change that calls into one of them from a path the Bastion runs (the rule would not see a call inside an allowed package), and the size of the attack surface that code is: a flaw in a package the role never
+starts is still in the image. The fix is to split the three platform packages so that the Bastion imports their narrow halves; the exceptions leave the list as it happens.
+
+### H-474 · The sliding estimate of a limit admits more than the limit in a minute that spans a boundary
+
+Stage: R-BAS-035 (the miss limits, and the request limits with Valkey, [Q-BAS-127](#q-bas-127--a-refused-request-or-miss-does-not-consume-the-limit-it-was-refused-by)). Subject: the number of requests to the main installation per address and minute.
+
+Live on every Bastion. The estimate is `previous x (1 - elapsed) + current` over the admitted events of the window pair, the form of R-ARCH-034. An address that sends its whole budget just before a window boundary and continues after it is admitted
+`current <= limit x elapsed` more events in the next window, so a true sliding minute that spans the boundary can hold up to twice the limit (a measured cold start with a 30-a-minute limit: 37 in 60 s). The counted-in-fixed-window bound of the acceptance holds (at most the limit
+per window), and the concurrency budget (R-BAS-025) bounds what reaches the main installation either way. Before Q-BAS-127 the refusals also counted, which hid the effect behind starvation. What makes it real: an attacker who times its bursts to the boundary
+(window = one minute for the misses; `burst / rate` for the request limits), gaining at most one more budget per boundary; a smaller error needs more counters per key.

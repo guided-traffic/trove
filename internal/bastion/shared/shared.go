@@ -30,14 +30,20 @@ type Rate struct {
 // refusals that lead to a block. The key is the client address (an IPv6 address counted as its /64, R-BAS-019).
 type Limiter interface {
 	// Allow takes one token of the bucket (name, key). It returns whether the request is admitted and, when
-	// not, how long until a token is available.
+	// not, how long until a token is available. A refused request takes nothing (Q-BAS-127).
 	Allow(ctx context.Context, name, key string, rate Rate) (ok bool, retryAfter time.Duration, err error)
 	// Add counts one event in the sliding window of (name, key) and returns the number of events inside it,
 	// this one included, in the units of the configured threshold: while the counters are per replica (no
 	// Valkey, or Valkey unavailable) the replica's count is multiplied by [Limiter.Replicas], so a caller
 	// compares the number with the configured value and the total over the replicas stays near it (Q-BAS-34).
-	// The window is between one second and twelve hours; a shorter or longer one is held to that range.
+	// The window is between one second and twelve hours; a shorter or longer one is held to that range
+	// (the configuration refuses a longer one, Q-BAS-128).
 	Add(ctx context.Context, name, key string, window time.Duration) (count int, err error)
+	// AddIfWithin is Add for a limit: the event is counted only if the count, this event included, stays within
+	// limit. A refused event takes nothing from the budget of the key, so a client slightly over its limit is
+	// admitted up to the limit and not starved (Q-BAS-127). It returns whether the event was admitted and the
+	// count with it, in the units of Add.
+	AddIfWithin(ctx context.Context, name, key string, window time.Duration, limit int) (admitted bool, count int, err error)
 	// Count returns the number of events inside the window without adding one, in the same units.
 	Count(ctx context.Context, name, key string, window time.Duration) (count int, err error)
 	// Replicas is bastion.replicas: the divisor the local forms apply (Q-BAS-34). The callers need not use

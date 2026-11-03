@@ -60,7 +60,7 @@ networkPolicy:
     cacheBucket:
       to:
         - ipBlock:
-            cidr: 0.0.0.0/0                           # example
+            cidr: 203.0.113.0/24                      # example: the object store's addresses
     tracing:
       to:
         - namespaceSelector:

@@ -29,11 +29,17 @@ type Fill struct {
 	h    hash.Hash
 	n    int64
 	done bool
+	// reserved is what the fill holds of the spool budget; the file's removal gives it back.
+	reserved int64
+	// refused is set when the spool budget refused a write: the fill gave its bytes back at once, so that the
+	// fills that still fit are not held back by one that cannot finish, and it can no longer be committed.
+	refused bool
 }
 
 // NewFill starts a fill for the bytes of an artifact or a shared document. The fill refuses bytes past
 // bastion.cache.max_object_bytes (artifact) or bastion.cache.documents_max_bytes (document) with
-// [ErrTooLarge]; the caller then passes the answer through and keeps nothing.
+// [ErrTooLarge]; the bytes of all fills in progress together may not pass bastion.cache.spool_max_bytes, and a
+// write that would is refused with [ErrSpoolFull]. The caller then passes the answer through and keeps nothing.
 func (c *Cache) NewFill(kind EntryKind) (*Fill, error) {
 	limit := int64(c.cfg.MaxObjectBytes)
 	if kind == EntryDocument {
@@ -73,7 +79,21 @@ func (f *Fill) Write(p []byte) (int, error) {
 	if f.n+int64(len(p)) > f.limit {
 		return 0, ErrTooLarge
 	}
+	if f.refused || !f.c.spool.reserve(int64(len(p))) {
+		if !f.refused {
+			f.refused = true
+			f.c.m.CacheErrors.WithLabelValues(metrics.OpSpool).Inc()
+			_ = f.f.Truncate(0)
+			f.giveBack()
+		}
+		return 0, ErrSpoolFull
+	}
+	f.reserved += int64(len(p))
 	n, err := f.f.Write(p)
+	if short := int64(len(p) - n); short > 0 {
+		f.c.spool.release(short)
+		f.reserved -= short
+	}
 	f.h.Write(p[:n])
 	f.n += int64(n)
 	if err != nil {
@@ -105,9 +125,12 @@ func (f *Fill) Commit(ctx context.Context, sha string) error {
 	if f.done {
 		return os.ErrClosed
 	}
+	if f.refused {
+		return ErrSpoolFull
+	}
 	f.done = true
 	if !f.keep {
-		defer func() { _ = os.Remove(f.name) }()
+		defer func() { _ = os.Remove(f.name); f.giveBack() }()
 		if err := f.f.Close(); err != nil {
 			return f.c.back.fail(metrics.OpPut, err)
 		}
@@ -129,4 +152,11 @@ func (f *Fill) Abort() {
 	f.done = true
 	_ = f.f.Close()
 	_ = os.Remove(f.name)
+	f.giveBack()
+}
+
+// giveBack returns the fill's reservation to the spool budget; the caller holds f.mu and has removed the file.
+func (f *Fill) giveBack() {
+	f.c.spool.release(f.reserved)
+	f.reserved = 0
 }

@@ -8,6 +8,7 @@ image:
 config:
   server:
     base_url: https://packages.example.com            # example
+    trusted_proxies: ["10.244.0.0/16"]                # example: the ingress controller's pods
   bastion:
     main:
       url: https://trove.example.com                  # example

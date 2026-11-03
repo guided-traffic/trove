@@ -19,9 +19,18 @@ parallel: it says which package owns which file, which seams join them, how a re
   [internal/bastionmain](../../internal/bastionmain) (seams), [internal/api/v1](../../internal/api/v1) (the operations) and the chain stage.
   The wire contract both import is [internal/bastion/iface](../../internal/bastion/iface); it changes only with `InterfaceVersion`
   ([the guard](#the-interface-guard)).
-- **The Bastion imports no subsystem of the main installation.** An allow-list rule of the archtest ([bastion.go](../../internal/archtest/bastion.go),
-  R-BAS-001) holds `internal/bastion/**` to the platform packages. `internal/cluster` (the Valkey client) is allowed for `shared`
-  only and `internal/blob/s3` for `cache` only.
+- **The Bastion's code imports no subsystem of the main installation, and the role enables none.** An allow-list rule of the archtest
+  ([bastion.go](../../internal/archtest/bastion.go), R-BAS-001) holds `internal/bastion/**` to the platform packages; `internal/cluster` (the
+  Valkey client) is allowed for `shared` only and `internal/blob/s3` for `cache` only. The rule is transitive
+  ([Q-BAS-129](../spec/bastion.md#q-bas-129--the-import-rule-follows-the-dependency-closure-and-lists-what-it-cannot-narrow)), and what
+  is true of the closure is: `go list -deps ./internal/bastion/server` also holds `internal/meta`, `meta/postgres`, `meta/postgres/q`,
+  `backup/tables`, `formats/catalog` (through `internal/cluster`, whose change log and locks share its package with the Valkey client),
+  `internal/audit`, `auth/scope`, `ci/claims`, `ci/reason` (through `internal/httpserver`'s request context) and `internal/blob` (through
+  `blob/s3`). They are compiled in and never started; `bastionTransitive()` lists each with its importer and reason, any other package that
+  enters the closure fails the rule with the chain, and `TestR_BAS_001_TheRoleOpensNoConnectionToPostgreSQL`
+  ([server](../../internal/bastion/server/nopostgres_test.go)) starts the role with a trap where PostgreSQL would be. Narrowing them means
+  splitting those three platform packages ([H-473](../spec/bastion.md#h-473--the-roles-binary-contains-packages-of-the-main-installation-it-never-starts));
+  when you do, delete the entries it makes unnecessary.
 - **The role builds real components only.** There is no placeholder client, cache, download buffer, guard or engine, and `engine.Deps` has no
   `Stubbed`: `server.New` fails when a component cannot be built, and `engine.New` refuses a missing dependency. The operations of the
   management API are built; no `501 bastion_not_implemented` stub is left.
@@ -201,6 +210,8 @@ hands `engine.Deps.Shared` and `engine.Deps.Guard` over; it closes them (the Val
 | `guard.Verdict` | new field `Quiet`: the request is not to be logged one by one | a blocked address answers many requests, the guard logs one line per block (R-BAS-037); the server keeps such a request out of the request log ([how](#how-the-role-is-wired-package-4c)) |
 | `shared.State` | new field `Timeouts` (a `BlockList` for the failed-authentication timeouts) | R-BAS-036 needs a timeout that outlives the counting window |
 | `shared.Limiter` | `Add` and `Count` return the count **in the units of the configured value**: a local form multiplies its count by `bastion.replicas`; `Replicas()` stays but a caller need not use it | one comparison for every form (Q-BAS-92) |
+| `shared.Limiter` | new `AddIfWithin(name, key, window, limit)`: counts the event only if the count with it stays within `limit` | a refused miss consumes nothing (Q-BAS-127); the miss limits use it, the failure and refusal counters keep `Add` |
+| `cluster.Limiter` | new `TakeUncharged` and `EstimateWithin` ([limiter_uncharged.go](../../internal/cluster/limiter_uncharged.go)) | the Valkey forms of the same: a refusal counts itself in a counter of refusals (`<limiter>-refused`) that the estimate subtracts; no `DECR`, the Bastion's ACL has none |
 | `shared.FlightLock` | on an error `held` is **true**: the replica fetches itself | the lock is an optimization (R-BAS-034) |
 | `shared.SweepLease` | with Valkey unavailable the lease is held and `err` is nil | a sweep only deletes (R-BAS-031) |
 | `shared.AnswerStore` | the Valkey form signs on `Put` and verifies on `Get`; the engine hands over the record and **does not sign** | Q-BAS-93; a record above 1 KiB (signature included) is refused with an error and kept in memory by the engine only |
@@ -224,17 +235,32 @@ admits the request (Q-BAS-94). `exempt_cidrs` are parsed at `guard.New`; a bad e
 
 **The rules in one place.**
 
-- Request limits: a token bucket without Valkey, the sliding window of R-ARCH-034 with it (limiters `bastion.requests_authenticated`,
+- **A limit admits up to its rate; a refusal consumes nothing** ([Q-BAS-127](../spec/bastion.md#q-bas-127--a-refused-request-or-miss-does-not-consume-the-limit-it-was-refused-by)).
+  A client at 110 % of its limit is admitted at the limit, collects refusals at a tenth of its requests, and is far below the block threshold;
+  a flood of several times the limit still reaches it. This is the other reading of R-ARCH-034's window: its `Take` charges refused requests
+  (right for the main installation's logins), the Bastion's `TakeUncharged` does not.
+- Request limits: a token bucket without Valkey, the sliding window of the admitted requests with it (limiters `bastion.requests_authenticated`,
   `bastion.requests_anonymous`); the local rate and burst are divided by `bastion.replicas`.
-- Miss limits: the count of the sliding minute (limiters `bastion.misses_authenticated`, `bastion.misses_anonymous`), refused misses included; the
-  retry delay is 15 s.
+- Miss limits: the count of the admitted misses of the sliding minute (limiters `bastion.misses_authenticated`, `bastion.misses_anonymous`);
+  the retry delay is 15 s. The sliding estimate can admit more than the limit around a window boundary
+  ([H-474](../spec/bastion.md#h-474--the-sliding-estimate-of-a-limit-admits-more-than-the-limit-in-a-minute-that-spans-a-boundary)).
 - Failed authentication (`bastion.failed_auth`): the failure that brings the count of the window to `max_failures` puts the address into the timeout
   (`Timeouts`, `failed_auth.timeout`); the next credential without a usable answer is refused. Anonymous requests and credentials with a usable answer
   are not the guard's to refuse.
 - Blocking (`bastion.refusals`): every refusal of a request limit, a miss limit or the timeout counts; more than `threshold` within `window` blocks the
-  address for `duration`, doubled for each earlier block within 24 h, up to `max_duration`. The decision is serialized in the process; across replicas
-  two blocks can race, and the later one raises the level.
+  address for `duration`, doubled for each earlier block within 24 h, up to `max_duration`. The decision is serialized in the process **per address**
+  ([keyedlock.go](../../internal/bastion/guard/keyedlock.go): a lock that exists only while somebody holds or waits for it, so the Valkey round
+  trips of one address's decision hold no other address back, Q-BAS-128); across replicas two blocks can race, and the later one raises the level.
+- `failed_auth.window` is 1 s to 12 h, the range of the limiters; the configuration refuses a longer one (`shared.MaxWindow` and the `max=12h` of
+  [bastion_role.go](../../internal/config/bastion_role.go) are the same number, and `TestR_BAS_036_TheConfigurationAcceptsExactlyTheWindowsTheLimiterCounts` ties them).
 - IPv6 counts as its /64, an IPv4-mapped address as the IPv4 address (`AddressKey`).
+
+**The local forms** ([local.go](../../internal/bastion/shared/local.go), [lru.go](../../internal/bastion/shared/lru.go)) are what runs without
+Valkey (the default) and the fallback with it. Every map is a `shardMap`: 64 shards, each with its own mutex and a list in order of use. A key that
+arrives at a full shard evicts the least recently used entry of that shard in constant time, so no request scans a map and no lock is shared by all
+requests (an IPv6 /47 supplies enough /64 keys to have kept every request on a 100,000-key scan under one mutex before, Q-BAS-128). The bound is 100,000
+entries per map; an entry evicted while it still counts starts again, which admits at most one extra budget of its address. `memBlocks.Size` (the gauge)
+visits the blocks shard by shard.
 
 **Valkey and its absence.** `shared.Open(ctx, shared.Options{...})` returns the local state for `valkey.mode: none` and the Valkey state otherwise,
 with a closer. The Valkey form runs on `cluster.NewValkey(..., cluster.WithoutKeyspace())` and keeps a memory next to every mechanism: the block list
@@ -484,18 +510,25 @@ Only the `static` source is exercised by the tests; the other two are the client
 selects the area of the bytes (`sha256/` for artifacts, `documents/` for shared documents) on `PutObject`, `GetObject`, `HeadObject`
 and `DeleteObject`; the default is the artifact area, and the wrong area is a miss ([Q-BAS-87](../spec/bastion.md#q-bas-87--the-bytes-of-documents-have-a-tree-of-their-own)).
 `ObjectInfo.LastAccess` is the object's own time (a head does not read the marker). New errors: `ErrMismatch`, `ErrCorrupt`,
-`ErrTooLarge`, `ErrInvalid`. Beyond the interface, `cache.Cache` ([Q-BAS-90](../spec/bastion.md#q-bas-90--the-cache-package-offers-a-fill-a-verified-read-and-the-first-readiness-gate-beyond-backend)):
+`ErrTooLarge`, `ErrSpoolFull`, `ErrInvalid`. Beyond the interface, `cache.Cache` ([Q-BAS-90](../spec/bastion.md#q-bas-90--the-cache-package-offers-a-fill-a-verified-read-and-the-first-readiness-gate-beyond-backend)):
 
 | Call | What it does |
 |---|---|
 | `Ready(ctx)` | checks the backend (write, read, delete a probe) until one check succeeds, then answers nil without a request: the gate of the first readiness only |
-| `NewFill(kind)` → `Fill` | spools a response while it is streamed (`Write`, running `SHA256`, `Size`); `Commit(ctx, sha)` verifies, commits under the address and removes the spool, `Abort()` discards; refuses bytes past `max_object_bytes` (artifact) or `documents_max_bytes` (document) with `ErrTooLarge` |
+| `NewFill(kind)` → `Fill` | spools a response while it is streamed (`Write`, running `SHA256`, `Size`); `Commit(ctx, sha)` verifies, commits under the address and removes the spool, `Abort()` discards; refuses bytes past `max_object_bytes` (artifact) or `documents_max_bytes` (document) with `ErrTooLarge`, and a write that would take the fills in progress of the replica past `spool_max_bytes` with `ErrSpoolFull` (the fill gives its bytes back at once and cannot be committed; the engine passes the answer through unkept) |
 | `StoreEntry(ctx, cacheKey, entry)` | signs (HMAC over every field and the cache key) and stores; write the entry after `Commit` |
 | `LookupEntry(ctx, cacheKey)` | `ErrNotFound` is a miss: no entry, a failed signature (entry deleted, `evictions{stale}`), bytes gone (entry deleted, `evictions{missing}`), a size that differs from the entry's (counted corrupt, object deleted); any other error is the backend's: serve a miss |
 | `Open(ctx, cacheKey, entry)` | full read through the verifying reader; the last 64 KiB are released only after the SHA-256 and size matched; a mismatch returns `ErrCorrupt` from `Read`, deletes the object and the entry of the key, counts `trove_bastion_cache_corrupt_total`; a body longer than the entry is refused at once |
 | `OpenRange` | a range, not verified (H-451) |
 | `Touch(ctx, entry)` | the access marker, at most once per `access_resolution` per replica and content address; best effort |
 | `SweepOnce(ctx, src)`, `RunSweeper(ctx, src)` | the sweep of R-BAS-031 and its loop; publish `cache_bytes`, count `evictions{size}`; `src` is a `LeaseSource` (`shared.State` is one), which offers the sweep lease only while the replicas share state, so the cache does not import `shared` |
+
+**The spool budget** ([spool.go](../../internal/bastion/cache/spool.go), [Q-BAS-131](../spec/bastion.md#q-bas-131--the-bytes-of-the-fills-in-progress-are-bounded-and-the-chart-sizes-the-volumes-from-the-bound)).
+`bastion.cache.spool_max_bytes` (2 GiB, at least `max_object_bytes`) bounds the bytes that all fills in progress of a replica hold in temporary storage:
+the bucket backend's `tmp` volume, or the `tmp` directory of the cache volume. A fill reserves before it writes and gives back when its file is removed
+(`Commit`, `Abort`); a refusal counts in `trove_bastion_cache_errors_total{op="spool"}`. The chart sizes `tmp.sizeLimit` from it (spool plus 256 MiB with the bucket
+backend) and refuses a volume that cannot hold it ([helm-chart.md](helm-chart.md#the-bastion-chart)); what is left open is
+[H-450](../spec/bastion.md#h-450--a-fill-that-does-not-fit-the-spool-is-passed-through-unkept-and-a-request-answered-from-the-spool-fails).
 
 **The sweep.** The limits are `max_bytes − documents_max_bytes` for artifacts and `documents_max_bytes` for documents
 ([Q-BAS-88](../spec/bastion.md#q-bas-88--documents-have-a-reserved-share-and-entries-are-removed-when-read)); `trove_bastion_cache_capacity_bytes{area}`
@@ -618,7 +651,7 @@ fails and the role stays unreachable.
 | `go test ./internal/api/v1` | the document's interface operations, the `{bastion: true}` form, the stubs, the check against a fake stage and resolver, the intake's HTTP side, the read class of a Bastion |
 | `go test ./internal/bastionmain ./internal/httpserver ./internal/observability` | the Recognize stage and its throttle, the feed's mapping table, the intake and the contact helpers; the forwarded headers of a Bastion (`bastion_forwarded_test.go`); the redaction of `Trove-Bastion-Authorization` |
 | `make test-integration` (`test/integration/bastioniface`) | the Recognize stage and the four operations behind the real chain, stage, token service, decision point and audit writer on PostgreSQL, with fakes for the two seams of packages 1 and 3 |
-| `go test ./internal/archtest/...` | R-BAS-001's import rule and the layers of the Bastion's packages |
+| `go test ./internal/archtest/...` | R-BAS-001's import rule (direct, and transitive over the dependency closure with the listed exceptions) and the layers of the Bastion's packages |
 | `go test ./internal/authz -run R_BAS_012` | the shape against the decision point ([authorization.md](authorization.md#read-shapes)) |
 | `go test ./internal/api/bastionmark ./internal/api/rawfiles ./internal/bastionmain ./internal/formathost` | the marking: class by kind, status and shape, the subject, the strip over the route table of npm and NuGet, the write probe in npm's and NuGet's shape, the notes of the lookups |
 | `go test ./internal/formats/...` | kit check 12 on npm and NuGet, the defect `varies-by-caller` |

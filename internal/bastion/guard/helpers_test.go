@@ -57,6 +57,10 @@ func (failing) Allow(context.Context, string, string, shared.Rate) (bool, time.D
 
 func (failing) Add(context.Context, string, string, time.Duration) (int, error) { return 0, errBoom }
 
+func (failing) AddIfWithin(context.Context, string, string, time.Duration, int) (bool, int, error) {
+	return false, 0, errBoom
+}
+
 func (failing) Count(context.Context, string, string, time.Duration) (int, error) { return 0, errBoom }
 
 func (failing) Replicas() int { return 1 }

@@ -30,9 +30,9 @@ const (
 // missWindow is the period of the miss limits: they are per minute (R-BAS-035).
 const missWindow = time.Minute
 
-// missRetryAfter is the Retry-After of a refused miss. A miss counts when it is asked for, refused or not,
-// so a client that retries at once keeps itself refused; a quarter of the window lets the estimate fall by a
-// quarter, which a client that waits sees.
+// missRetryAfter is the Retry-After of a refused miss: a quarter of the window lets the estimate of the
+// admitted misses fall by a quarter, which a client that waits sees. A refused miss takes nothing from the
+// budget (Q-BAS-127), so a retry that comes too early costs the client nothing but the refusal.
 const missRetryAfter = missWindow / 4
 
 // gaugeInterval is how often the number of blocked addresses is read again, so that a block that ends
@@ -60,9 +60,10 @@ type Instance struct {
 	now    func() time.Time
 	exempt []netip.Prefix
 
-	// blockMu serializes the decision to block an address within the process, so that the refusals of a
-	// burst that cross the threshold together set one block and not several levels at once.
-	blockMu sync.Mutex
+	// blocking serializes the decision to block an address within the process, per address, so that the
+	// refusals of a burst that cross the threshold together set one block and not several levels at once, and
+	// the round trips of one address's decision hold no other address back (Q-BAS-128).
+	blocking keyedLock
 
 	stop chan struct{}
 	done chan struct{}
@@ -198,8 +199,8 @@ func rateOf(perSecond, burst int) shared.Rate {
 	return shared.Rate{PerSecond: float64(perSecond), Burst: burst}
 }
 
-// Miss implements [Guard]. The limit is a count per minute: the events of the address inside the sliding
-// minute, this one and the refused ones included, may not exceed it.
+// Miss implements [Guard]. The limit is a count per minute: the admitted events of the address inside the
+// sliding minute, this one included, may not exceed it. A refused miss is not counted (Q-BAS-127).
 func (g *Instance) Miss(ctx context.Context, addr string, c Credentialed) Verdict {
 	if g.isExempt(addr) {
 		return Allow()
@@ -208,8 +209,8 @@ func (g *Instance) Miss(ctx context.Context, addr string, c Credentialed) Verdic
 	if c {
 		name, limit = limiterMissesAuthenticated, g.o.Limits.Misses.AuthenticatedPerMinute
 	}
-	n, err := g.o.State.Limiter.Add(ctx, name, addr, missWindow)
-	if err != nil || n <= limit {
+	ok, _, err := g.o.State.Limiter.AddIfWithin(ctx, name, addr, missWindow, limit)
+	if err != nil || ok {
 		return Allow()
 	}
 	g.refused(ctx, addr, metrics.RefusedMissLimited)
@@ -256,8 +257,8 @@ func (g *Instance) refused(ctx context.Context, addr, reason string) {
 	if err != nil || n <= b.Threshold {
 		return
 	}
-	g.blockMu.Lock()
-	defer g.blockMu.Unlock()
+	unlock := g.blocking.lock(addr)
+	defer unlock()
 	if _, already, _ := g.o.State.Blocks.Blocked(ctx, addr); already {
 		return
 	}
