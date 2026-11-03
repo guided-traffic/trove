@@ -114,7 +114,19 @@ func newFront(t *testing.T, dir, target string) *front {
 		if delay > 0 {
 			time.Sleep(delay)
 		}
+		// The record is made when the answer's status line is about to go to the Bastion, so that a test that has seen
+		// the Bastion's answer finds the request in Since: a record made after the proxy returned would race with
+		// the Bastion answering its caller as soon as it has read the last byte.
 		rw := &recorder{ResponseWriter: w, status: http.StatusOK}
+		rw.record = func() {
+			f.mu.Lock()
+			f.recs = append(f.recs, rec{
+				Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Header: r.Header.Clone(), Status: rw.status,
+				Kind: kindOf(r), Probe: r.Header.Get(iface.HeaderProbe) != "", At: time.Now(),
+			})
+			rw.idx = len(f.recs) - 1
+			f.mu.Unlock()
+		}
 		if kindOf(r) == "forward" {
 			n := f.cur.Add(1)
 			for {
@@ -126,11 +138,9 @@ func newFront(t *testing.T, dir, target string) *front {
 			defer f.cur.Add(-1)
 		}
 		proxy.ServeHTTP(rw, r)
+		rw.once.Do(rw.record)
 		f.mu.Lock()
-		f.recs = append(f.recs, rec{
-			Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Header: r.Header.Clone(), Status: rw.status, Bytes: rw.n,
-			Kind: kindOf(r), Probe: r.Header.Get(iface.HeaderProbe) != "", At: time.Now(),
-		})
+		f.recs[rw.idx].Bytes = rw.n
 		f.mu.Unlock()
 	}))
 	f.srv.TLS = nil
@@ -274,11 +284,19 @@ type recorder struct {
 	http.ResponseWriter
 	status int
 	n      int64
+	idx    int
+	once   sync.Once
+	record func()
 }
 
-func (r *recorder) WriteHeader(code int) { r.status = code; r.ResponseWriter.WriteHeader(code) }
+func (r *recorder) WriteHeader(code int) {
+	r.status = code
+	r.once.Do(r.record)
+	r.ResponseWriter.WriteHeader(code)
+}
 
 func (r *recorder) Write(b []byte) (int, error) {
+	r.once.Do(r.record)
 	n, err := r.ResponseWriter.Write(b)
 	r.n += int64(n)
 	return n, err
