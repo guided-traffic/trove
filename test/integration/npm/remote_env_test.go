@@ -100,6 +100,10 @@ func newRemoteEnv(t *testing.T, o remoteOptions) *renv {
 		"TROVE_PROXY_OUTBOUND_TLS_CA_FILES=[" + strconv.Quote(ca) + "]",
 		`TROVE_PROXY_OUTBOUND_ADDRESS_POLICY_ALLOW_CIDRS=["127.0.0.1/32"]`,
 		"TROVE_PROXY_LOCK_POLL_INTERVAL_MS=50",
+		// The default of npm.audit.mode is local while the installation scans and its OSV source is not off, and the mode of R-NPM-038
+		// (forward on a remote and a virtual repository) otherwise (R-VULN-017, Q-VULN-44). The tests of this package that audit
+		// are R-NPM-038's, the forwarding; the local mode is tested in test/integration/vulnaudit.
+		"TROVE_VULNERABILITIES_SOURCES_OSV_MODE=off",
 	}, o.Env...)})
 	e := &env{t: t, st: st}
 	e.alice, e.bob, e.carol = st.User("alice"), st.User("bob"), st.User("carol")

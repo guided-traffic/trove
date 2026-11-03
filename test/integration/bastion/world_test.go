@@ -135,6 +135,9 @@ func newWorld(t *testing.T, o worldOptions) *world {
 		// The Bastion's egress address and its host (R-BAS-017).
 		`TROVE_SERVER_TRUSTED_PROXIES=["127.0.0.1/32"]`,
 		`TROVE_SERVER_ADDITIONAL_BASE_URLS=["` + baseURL + `"]`,
+		// The audit of a read route with a body is the forward mode of R-NPM-038 here; with the OSV source on the default is the
+		// local mode, answered from trove's own data (R-VULN-017, Q-VULN-44), which test/integration/vulnaudit tests.
+		"TROVE_VULNERABILITIES_SOURCES_OSV_MODE=off",
 	}
 	if !o.NoRecordDownloads {
 		env = append(env, "TROVE_AUDIT_RECORD_DOWNLOADS=true")

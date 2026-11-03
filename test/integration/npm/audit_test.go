@@ -435,10 +435,15 @@ func TestR_NPM_038_TheAuditSettingsThroughTheAPI(t *testing.T) {
 		}
 	})
 
-	t.Run("the member applies to remote repositories only", func(t *testing.T) {
-		a := create("npm-audit-local", "local", map[string]any{"audit": map[string]any{"mode": "disabled"}})
-		if a.Status != 422 || settingsErrors(t, a)["/npm/audit"] != "not_applicable" {
-			t.Fatalf("%d %s", a.Status, a.Body)
+	t.Run("the member is a member of every class: a local repository takes local or disabled (R-VULN-017)", func(t *testing.T) {
+		for i, mode := range []string{"disabled", "local"} {
+			a := create("npm-audit-local-"+strconv.Itoa(i), "local", map[string]any{"audit": map[string]any{"mode": mode}})
+			if a.Status != 201 {
+				t.Fatalf("mode %s: %d %s", mode, a.Status, a.Body)
+			}
+			if got, _ := json.Marshal(a.JSON(t)["npm"]); !strings.Contains(string(got), `"mode":"`+mode+`"`) {
+				t.Errorf("read back %s, want mode %s", got, mode)
+			}
 		}
 	})
 }
