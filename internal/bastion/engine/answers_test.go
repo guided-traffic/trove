@@ -99,15 +99,18 @@ func TestR_BAS_020_AnAnswerIsUsableForThePeriodAndThenAskedAgain(t *testing.T) {
 	s := newSiteHarness(t, options{})
 	warm(t, s)
 	before := s.main.count()
-	s.clock.advance(s.cfg.Bastion.Answers.Period - time.Second)
+	// Just before the last fifth of the period: a read in the last fifth renews the answer in the background
+	// (R-BAS-020), and that renewal is a request to the main installation whenever its goroutine runs, so a read
+	// there cannot tell a dropped answer from a renewal. Here no request at all is allowed, in the foreground or
+	// behind it.
+	s.clock.advance(s.cfg.Bastion.Answers.Period*4/5 - time.Second)
 	s.cfg.Bastion.Cache.ArtifactRevalidateAfter = time.Hour
 	s.get(tgz, "Authorization", bearer(s.full))
+	s.e.wg.Wait()
 	if s.main.count() != before {
 		t.Fatal("the answer was dropped inside its period")
 	}
-	// A read in the last fifth of the period renews the answer in the background (R-BAS-020); let that end, so
-	// that the test does not depend on how fast the goroutine runs, and then let a whole period pass again.
-	s.e.wg.Wait()
+	// Then let a whole period pass again.
 	before = s.main.count()
 	s.clock.advance(s.cfg.Bastion.Answers.Period + time.Second)
 	if w := s.get(tgz, "Authorization", bearer(s.full)); w.Code != 200 {
