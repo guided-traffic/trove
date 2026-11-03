@@ -28,11 +28,14 @@ type flightFixture struct {
 	lock FlightLock
 }
 
+// fixtureCommandTimeout is the command timeout of the fixture's client: what one call to the server may take.
+const fixtureCommandTimeout = time.Second
+
 func newFlightFixture(t *testing.T, ttl, poll time.Duration) *flightFixture {
 	t.Helper()
 	srv := newMemServer(t)
 	cfg := standaloneCfg(srv.addr())
-	cfg.CommandTimeout = time.Second
+	cfg.CommandTimeout = fixtureCommandTimeout
 	v, _ := newTestValkey(t, cfg)
 	eventually(t, "availability", 5*time.Second, v.Available)
 	eventually(t, "the Pub/Sub connection", 5*time.Second, func() bool { return v.Status().Subscribed })
@@ -532,8 +535,10 @@ func TestFlightLockUnavailable(t *testing.T) {
 		if _, err := fx.lock.Wait(t.Context(), testFlight); !errors.Is(err, ErrUnavailable) {
 			t.Fatalf("Wait = %v", err)
 		}
-		if took := time.Since(start); took > 50*time.Millisecond {
-			t.Fatalf("the calls took %s with the breaker open", took)
+		// "At once" means no call waits for the server: a call would take up to the command timeout (1 s here). The
+		// bound is well below that and above the stalls of a CPU-limited runner; touching() proves that no call was made.
+		if took := time.Since(start); took > fixtureCommandTimeout/4 {
+			t.Fatalf("the calls took %s with the breaker open (a call waits up to %s)", took, fixtureCommandTimeout)
 		}
 		if after := touching(); after != before {
 			t.Fatal("a call reached the server while the breaker was open")

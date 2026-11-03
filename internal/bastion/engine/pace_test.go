@@ -111,7 +111,11 @@ func TestR_BAS_025_APassThroughBodyDoesNotHoldItsSlotForAClientThatDoesNotTakeIt
 		}
 	})
 	t.Run("a client that keeps up", func(t *testing.T) {
+		// A client that takes every byte as fast as it arrives is never cut, however fast the machine moves them:
+		// the floor and the chunk bound are set far below what any runner delivers, so the case does not measure
+		// the machine (a CPU-limited runner moved this body at well under 1 MiB/s).
 		s, addr, body, returned := newSite(t, 8<<20)
+		s.e.paceChunk, s.e.paceGrace, s.e.paceMinRate = 10*time.Second, 400*time.Millisecond, 1<<10
 		c := paceRequest(t, s, addr)
 		n, err := io.Copy(io.Discard, bufio.NewReader(c))
 		if n < 8<<20 {
