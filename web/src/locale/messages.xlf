@@ -14705,14 +14705,6 @@
         <source>CI identity</source>
       </segment>
     </unit>
-    <unit id="problem.ci.not-implemented">
-      <notes>
-        <note category="location">src/app/core/http/problem-messages-ci.ts:12</note>
-      </notes>
-      <segment>
-        <source>CI identity is not available yet on this server. Nothing is wrong with your session; the feature is still being switched on.</source>
-      </segment>
-    </unit>
     <unit id="problem.ci.discovery-unreachable">
       <notes>
         <note category="location">src/app/core/http/problem-messages-ci.ts:14</note>
@@ -14919,22 +14911,6 @@
       </notes>
       <segment>
         <source>CI identity</source>
-      </segment>
-    </unit>
-    <unit id="ci.unavailable.title">
-      <notes>
-        <note category="location">src/app/features/ci/ci-common.ts:25,26</note>
-      </notes>
-      <segment>
-        <source>Not available yet</source>
-      </segment>
-    </unit>
-    <unit id="ci.unavailable.text">
-      <notes>
-        <note category="location">src/app/features/ci/ci-common.ts:27,29</note>
-      </notes>
-      <segment>
-        <source> CI identity is not switched on for this server yet. The screens work as soon as it is; nothing is broken and nothing needs to be done here. </source>
       </segment>
     </unit>
     <unit id="ci.warnings.title">
@@ -17919,6 +17895,110 @@
       </notes>
       <segment>
         <source>Open CI identity</source>
+      </segment>
+    </unit>
+    <unit id="ci.editor.draft-restored">
+      <notes>
+        <note category="location">src/app/features/ci/mapping-editor.ts:280</note>
+      </notes>
+      <segment>
+        <source>Your entries were restored. Save the mapping again.</source>
+      </segment>
+    </unit>
+    <unit id="ci.form.draft-restored">
+      <notes>
+        <note category="location">src/app/features/ci/issuer-form.ts:319</note>
+      </notes>
+      <segment>
+        <source>Your entries were restored. Save the issuer again.</source>
+      </segment>
+    </unit>
+    <unit id="ci.issuances.revoke-unsupported">
+      <notes>
+        <note category="location">src/app/features/ci/issuance-list.ts:166,167</note>
+      </notes>
+      <segment>
+        <source>The bulk revoke acts on the issuer, project ID, pipeline ID, job ID and mapping only. It would revoke more than the list shows while these filters are applied:</source>
+      </segment>
+    </unit>
+    <unit id="ci.test.add-claim">
+      <notes>
+        <note category="location">src/app/features/ci/claim-tester.ts:101,103</note>
+      </notes>
+      <segment>
+        <source>Add claim</source>
+      </segment>
+    </unit>
+    <unit id="ci.test.claim-name">
+      <notes>
+        <note category="location">src/app/features/ci/claim-tester.ts:493</note>
+      </notes>
+      <segment>
+        <source>Claim name <ph id="0" equiv="number" disp="i + 1"/></source>
+      </segment>
+    </unit>
+    <unit id="ci.test.claim-remove">
+      <notes>
+        <note category="location">src/app/features/ci/claim-tester.ts:495</note>
+      </notes>
+      <segment>
+        <source>Remove claim <ph id="0" equiv="number" disp="i + 1"/></source>
+      </segment>
+    </unit>
+    <unit id="ci.test.claim-value">
+      <notes>
+        <note category="location">src/app/features/ci/claim-tester.ts:494</note>
+      </notes>
+      <segment>
+        <source>Claim value <ph id="0" equiv="number" disp="i + 1"/></source>
+      </segment>
+    </unit>
+    <unit id="ci.test.err.fix-json">
+      <notes>
+        <note category="location">src/app/features/ci/claim-tester.ts:464</note>
+      </notes>
+      <segment>
+        <source>Fix the JSON first: the form view shows an object of claims.</source>
+      </segment>
+    </unit>
+    <unit id="ci.test.form-hint">
+      <notes>
+        <note category="location">src/app/features/ci/claim-tester.ts:86,88</note>
+      </notes>
+      <segment>
+        <source> The top-level claims, one per row. A value keeps the type it has (a number stays a number, an object stays an object); a new claim is text. </source>
+      </segment>
+    </unit>
+    <unit id="ci.test.remove-claim">
+      <notes>
+        <note category="location">src/app/features/ci/claim-tester.ts:97,99</note>
+      </notes>
+      <segment>
+        <source>Remove</source>
+      </segment>
+    </unit>
+    <unit id="ci.test.view-form">
+      <notes>
+        <note category="location">src/app/features/ci/claim-tester.ts:69,71</note>
+      </notes>
+      <segment>
+        <source>Form</source>
+      </segment>
+    </unit>
+    <unit id="ci.test.view-json">
+      <notes>
+        <note category="location">src/app/features/ci/claim-tester.ts:68,69</note>
+      </notes>
+      <segment>
+        <source>JSON</source>
+      </segment>
+    </unit>
+    <unit id="ci.test.view">
+      <notes>
+        <note category="location">src/app/features/ci/claim-tester.ts:67</note>
+      </notes>
+      <segment>
+        <source>View</source>
       </segment>
     </unit>
   </file>

@@ -3663,14 +3663,16 @@ Priority: **MVP** · Covers: UI-049, CIOIDC-024
   `user_login`, …); grants; options; "Test with claims" opens the claim tester prefilled. Warnings
   returned on save are shown.
 - Per mapping, "CI snippet" shows the text of `GET /api/v1/ci/issuers/{issuer}/snippets/gitlab-ci`
-  for the chosen format (npm or NuGet) with a copy button. This covers the GitLab counterpart of
+  (for a project's mapping `GET /api/v1/projects/{key}/ci/issuers/{issuer}/snippets/gitlab-ci`, which a project administrator
+  with the `managePolicies` switch on may read) for the chosen format (npm or NuGet) with a copy button. This covers the GitLab counterpart of
   CIOIDC-024 ([GitLab ID tokens](https://docs.gitlab.com/ci/secrets/id_token_authentication/)).
 - Delegations (P1) and issuances (R-UI-030) are tabs of the issuer.
 - A project administrator reaches the project's CI mappings from the project (the project route family of
   R-API-035): the mapping list and editor, the claim tester over the project's tier and the issuances of its mappings, with
   the issuers as a read-only choice (Q-CI-26). The editor offers the project's repositories and policies and no groups. The
   screens and routes are those of [Q-UI-99](#q-ui-99--the-ci-screens-sit-under-identity-and-a-projects-ci-screens-are-the-same-components-under-the-project);
-  the bulk revoke and the detail of an issuance are Q-UI-100.
+  the bulk revoke and the detail of an issuance are Q-UI-100; the bulk revoke is offered only while every applied filter is one
+  the request carries, and the day filters are the local day (Q-UI-102).
 
 Acceptance criteria:
 
@@ -5966,6 +5968,85 @@ where `tokens:read` allows it).
 when the API offers a count or when issuances need a linkable address (the audit log linking to one token).
 
 **Applied in the spec:** R-UI-035; [web-ui.md](../developer/web-ui.md#ci-identity).
+
+### Q-UI-101 · "Overwrite" of a whole-body replace re-sends the stored record with only the user's changed members
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the mapping editor and the issuer form replace the whole record (`PUT`) with the loaded `ETag`. The shared
+conflict resolver was written for merge patches: after a `412` it re-reads the record, compares only the members the user
+changed, and "Overwrite" sent the same request again with the new `ETag`. For a `PUT` that request carries the whole stale
+form, so a narrowing another administrator made in between (a removed `deploy`, a removed audience, `singleUseSubjectTokens`
+switched on) was undone without the dialog ever showing it. R-UI-042 requires that "Overwrite" re-sends only after the
+difference was shown; R-CI-002 and R-CI-011 make such a narrowing the thing that must not be lost silently.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The `PUT` body after "Overwrite" is the stored record as read now, with only the members the user changed taken from the form | `overwriteBody` in [ci-common.ts](../../web/src/app/features/ci/ci-common.ts); the resolver hands the stored record to `send(etag, current)` | What the dialog shows (the members the user changed, stored now against yours) is exactly what is replaced; every other member keeps the other administrator's value; no extra screen | A member the user changed that the other administrator also changed is replaced by the user's whole member (a grant list is one member), which the dialog showed as one row |
+| (b) Show every member of the full body in the dialog and send the stale form | The diff covers all members | Nothing is hidden | The user is asked to judge members they never touched; "Overwrite" still writes the stale value over the other administrator's narrowing, which is the harm |
+| (c) Refuse "Overwrite" for a `PUT` and offer only "Reload" | One button less | Cannot lose a change | The user's edits are lost or copied by hand; the dialog's purpose (R-UI-042) is a choice |
+
+**Choice:** (a). The resolver's `send` takes the stored record as a second argument (`null` on the first attempt); a
+merge-patch caller ignores it, a `PUT` caller builds its body from it. The mapping editor builds the stored body through
+the form model (`inputFromForm(formFromMapping(current))`); the issuer form takes the members of the stored record and keeps
+the list members it leaves out when empty (`allowedAudiences`, `requiredClaims`, `pinClaims`) from the stored record unless
+the user had emptied them.
+
+**Rationale:** the safe default for a security-relevant record is that an overwrite replaces what was shown and nothing else.
+Revisit when a record gets a `PATCH` (merge patch) operation, which makes the body construction unnecessary, or when the
+dialog should compare inside a member (the individual grants of an inline list).
+
+**Applied in the spec:** R-UI-042 (the dialog's "Overwrite" text already says "after showing the diff"; this decision fixes
+what is re-sent); [web-ui.md](../developer/web-ui.md#ci-identity); tests `ci-editor-screens.spec.ts` and
+`ci-issuer-screens.spec.ts` ("Overwrite" keeps the narrowing).
+
+### Q-UI-102 · The bulk revoke is offered only for filters it carries, and the day filters are the local day
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the issuance list filters by issuer, project ID, project path, pipeline, job, mapping, state and a time range, but
+the revoke operation (R-CI-020) understands the issuer, the project ID, the pipeline ID, the job ID and the mapping only. The
+confirmation counted the tokens of all applied filters, and the request sent a subset: with a project path or a time range
+applied it revoked more than it said (Q-UI-100 promises the count is what the request revokes). Separately, the date inputs
+were sent as UTC day bounds while the table shows local times.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) "Revoke matching tokens" is disabled while a filter the request cannot carry is applied (project path, issued from or until, state "expired or revoked"), and the note names those filters; count and request use the same members | `unsupported` in [issuance-list.ts](../../web/src/app/features/ci/issuance-list.ts) | The number in the confirmation is the number revoked; the user sees which filter to clear | A time-bounded bulk revoke is not possible from the screen |
+| (b) Keep the button, show what will be revoked (the supported filters only) in the confirmation | The text names the ignored filters | The action stays available | The list the user looked at and the set revoked differ; a click-through confirmation revokes tokens the user did not see |
+| (c) Add the missing filters to the revoke operation | An API change | Complete | Beyond this fix: the contract and the work packages are fixed |
+
+**Choice:** (a). The day filters become the bounds of the **local** day: `from` is the start of the chosen day in the
+browser's time zone and `to` is the start of the day after the chosen one (the API's `to` is exclusive: "issued before"),
+both sent as UTC instants.
+
+**Rationale:** a revoke that cannot be undone must act on exactly what it names. Revisit when the revoke operation accepts
+the other filters (option c), at which point the note and the `unsupported` list shrink.
+
+**Applied in the spec:** R-UI-035 (bulk revoke); [web-ui.md](../developer/web-ui.md#ci-identity).
+
+### Q-UI-103 · The claim tester's form view edits the top-level claims as rows and the JSON text is the one source
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-036 says the sample is edited "as JSON or in a form view"; the tester had the JSON text area only.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A JSON / Form switch; the form view lists the top-level claims as name and value rows with add and remove; every change writes the pretty-printed JSON, switching back shows it | The text signal stays the only state; the rows are derived when the form view opens | The two views cannot disagree; the evaluate request and the token handling (R-UI-036) are unchanged; a claim is added or removed without touching braces | Nested values are edited as JSON text inside their row |
+| (b) A form with one field per sample claim | Fixed fields | Simple to read | Real tokens carry other claims; the sample's claims would be the only ones editable |
+| (c) The JSON editor alone | No change | Nothing to build | R-UI-036 names the form view |
+
+**Choice:** (a). A value keeps the JSON type it had: a number typed over stays a number when the text parses as one, an
+object or array stays that type, a string stays a string; a row added in the form view is text. JSON that is not an object
+(or a token that does not decode) keeps the user in the JSON view with the reason. A pasted compact token is decoded before
+the rows are built, so the form view never holds a token either.
+
+**Rationale:** GitLab claims are almost all strings, and the mapping leaves compare text, so a "type" selector per row would
+be noise; keeping the type a claim arrived with avoids turning `iat` into a string by an edit of its neighbour. Revisit when
+the tester should edit nested claims (a `path` leaf) in rows of their own.
+
+**Applied in the spec:** R-UI-036 (already names the form view); [web-ui.md](../developer/web-ui.md#ci-identity).
 
 ### Q-API-16 · A `limit` above the maximum is clamped
 

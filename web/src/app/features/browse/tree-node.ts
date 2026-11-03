@@ -40,6 +40,8 @@ export class TreeNode {
   readonly error = signal<ApiError | null>(null);
   /** The cursor of the next page of children, null when the last page was read. */
   cursor: string | null = null;
+  /** The load of children that is in flight; a second request awaits it instead of starting another. */
+  pending: Promise<void> | null = null;
 
   /** Class, format and flags of a repository node; absent until the list or the repository read says them. */
   readonly meta: WritableSignal<NodeMeta>;

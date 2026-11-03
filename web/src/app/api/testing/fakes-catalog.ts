@@ -395,6 +395,8 @@ export class FakeFilesApi extends FilesApi {
   uploadError: ApiError | null = null;
   countResult: { count: number; capped: boolean } | null = null;
   childCalls: { path: string; cursor: string | null; limit: number }[] = [];
+  /** While set, every children read waits for it: a load that stays in flight. */
+  childGate: Promise<void> | null = null;
 
   private nodes(repository: string): FakeNode[] {
     const nodes = this.tree.get(repository);
@@ -454,8 +456,9 @@ export class FakeFilesApi extends FilesApi {
         ...(n.kind === 'file' ? { sha256: 'a'.repeat(64) } : {}),
       }));
     const inner = paged(all);
-    return (cursor) => {
+    return async (cursor) => {
       this.childCalls.push({ path, cursor, limit });
+      await this.childGate;
       return inner(cursor, limit);
     };
   }

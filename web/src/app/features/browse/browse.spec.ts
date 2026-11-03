@@ -508,3 +508,52 @@ describe('Browser empty states and actions', () => {
   });
 });
 
+
+describe('Browser tree nodes', () => {
+  const big = (f: FakeFilesApi): void => {
+    f.tree.set(
+      'big',
+      Array.from({ length: 450 }, (_, i) => ({ path: `f${String(i).padStart(3, '0')}.bin`, kind: 'file' as const, size: 1 })),
+    );
+  };
+  interface Internals {
+    reload(node: unknown): void;
+    nodes: Map<string, { kind: string; meta(): { size?: number } }>;
+  }
+
+  it('R-UI-010 a selection revealed while "Load more" of the same folder is in flight waits for that load instead of looping', async () => {
+    const { root, fixture, files } = await open({ repo: 'big', path: '' }, big);
+    let release!: () => void;
+    files.childGate = new Promise<void>((r) => (release = r));
+    items(root).find((i) => labelOf(i) === 'Load more')!.click();
+    await settle(fixture);
+    // The deep link points past the first page while the second page is still on its way.
+    fixture.componentRef.setInput('path', 'f300.bin');
+    await settle(fixture);
+    release();
+    files.childGate = null;
+    await sleep(fixture, 100);
+    expect(items(root).some((i) => labelOf(i).includes('f300.bin') && i.getAttribute('aria-selected') === 'true')).toBe(true);
+    expect(files.childCalls.filter((c) => c.path === '' && c.cursor === '200')).toHaveLength(1);
+  });
+
+  it('R-UI-010 a reloaded folder shows the new size of a file and a file that became a folder is a folder', async () => {
+    const { fixture, files } = await open({ repo: 'generic-local', path: 'releases/1.0/app.zip' });
+    const view = fixture.componentInstance as unknown as Internals;
+    expect(view.nodes.get('generic-local/readme.txt')?.meta().size).toBe(120);
+    expect(view.nodes.has('generic-local/releases/1.0/app.zip')).toBe(true);
+    const nodes = files.tree.get('generic-local')!;
+    const replace = (path: string, node: FakeNode): void => void nodes.splice(nodes.findIndex((n) => n.path === path), 1, node);
+    replace('readme.txt', { path: 'readme.txt', kind: 'file', size: 999 });
+    view.reload(view.nodes.get('generic-local')!);
+    await sleep(fixture, 60);
+    expect(view.nodes.get('generic-local/readme.txt')!.meta().size).toBe(999);
+    replace('releases/1.0', { path: 'releases/1.0', kind: 'file', size: 7 });
+    view.reload(view.nodes.get('generic-local/releases')!);
+    await sleep(fixture, 60);
+    expect(view.nodes.get('generic-local/releases/1.0')!.kind).toBe('file');
+    expect(view.nodes.get('generic-local/releases/1.0')!.meta().size).toBe(7);
+    // The vanished subtree does not stay in the map for the life of the screen.
+    expect(view.nodes.has('generic-local/releases/1.0/app.zip')).toBe(false);
+  });
+});

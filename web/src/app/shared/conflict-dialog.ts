@@ -119,8 +119,13 @@ export interface GuardedPatch<T> {
   readonly etag: string;
   /** The members the user changed (the merge patch); only these are compared in the dialog. */
   readonly patch: Readonly<Record<string, unknown>>;
-  /** Sends the patch with the given `ETag`. */
-  send(etag: string): Promise<Versioned<T>>;
+  /**
+   * Sends the write with the given `ETag`. `current` is null on the first attempt. After "Overwrite" it is
+   * the stored resource read now: a write that replaces the whole resource (PUT) must build its body from
+   * `current` plus the members of `patch`, so that a change another administrator made to a member the
+   * user did not touch is kept and not undone unseen (R-UI-042, R-CI-002). A merge-patch write ignores it.
+   */
+  send(etag: string, current: T | null): Promise<Versioned<T>>;
   /** Reads the stored resource again. */
   reload(): Promise<Versioned<T>>;
 }
@@ -149,12 +154,12 @@ export class ConflictResolver {
 
   /**
    * Sends a merge patch with the loaded `ETag` (R-API-012). A 412 reads the stored resource and
-   * opens the dialog (R-UI-042): "Overwrite" sends the same patch with the tag read now. Every
+   * opens the dialog (R-UI-042): "Overwrite" sends again with the tag read now and the stored resource. Every
    * other failure is thrown for the caller's error notice.
    */
   async save<T>(write: GuardedPatch<T>): Promise<GuardedOutcome<T>> {
     try {
-      return { outcome: 'saved', current: await write.send(write.etag) };
+      return { outcome: 'saved', current: await write.send(write.etag, null) };
     } catch (e) {
       if (!(e instanceof ApiError) || e.status !== 412) throw e;
       const theirs = await write.reload();
@@ -166,7 +171,7 @@ export class ConflictResolver {
         return { outcome: 'saved', current: theirs };
       }
       const decision = await this.resolve({ mine, theirs: theirPart });
-      if (decision === 'overwrite') return { outcome: 'saved', current: await write.send(theirs.etag) };
+      if (decision === 'overwrite') return { outcome: 'saved', current: await write.send(theirs.etag, theirs.value) };
       if (decision === 'reload') return { outcome: 'reloaded', current: theirs };
       return { outcome: 'dismissed' };
     }

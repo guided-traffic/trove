@@ -8,11 +8,12 @@ import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
 import { Confirm } from '../../shared/confirm-dialog';
 import { asApiError } from '../../shared/paged-resource';
-import { CiError, ciRoutes } from './ci-common';
+import { ciRoutes } from './ci-common';
 import { IssuanceList } from './issuance-list';
 import { IssuerForm } from './issuer-form';
 import { IssuerKeys } from './issuer-keys';
 import { MappingList } from './mapping-list';
+import { ErrorNotice } from '../../shared/error-notice';
 
 /** The tabs of the issuer page, in this order; the query parameter `tab` names the open one. */
 export const ISSUER_TABS = ['settings', 'keys', 'mappings', 'issuances'] as const;
@@ -26,7 +27,7 @@ export type IssuerTab = (typeof ISSUER_TABS)[number];
  */
 @Component({
   selector: 'trove-ci-issuer-detail',
-  imports: [MatButtonModule, MatTabsModule, RouterLink, CiError, IssuanceList, IssuerForm, IssuerKeys, MappingList],
+  imports: [MatButtonModule, MatTabsModule, RouterLink, ErrorNotice, IssuanceList, IssuerForm, IssuerKeys, MappingList],
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@ci.issuer.heading">CI issuer</h1>
@@ -39,7 +40,7 @@ export type IssuerTab = (typeof ISSUER_TABS)[number];
     <p class="subject" translate="no">{{ issuer() }}</p>
 
     @if (error(); as e) {
-      <trove-ci-error [error]="e" (retry)="load()" />
+      <trove-error-notice [error]="e" (retry)="load()" />
     }
     @if (current(); as i) {
       <p class="muted" translate="no">{{ i.issuer }}</p>

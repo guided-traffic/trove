@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
+import { Component, DestroyRef, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { CI_NAME_PATTERN, CiApi, CiIssuer, CiIssuerCreate, CiIssuerInput } from '../../api/ci-api';
@@ -8,10 +8,11 @@ import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
 import { TextField } from '../../shared/access/fields';
 import { ConflictResolver } from '../../shared/conflict-dialog';
+import { DraftStore } from '../../shared/drafts';
 import { ErrorNotice } from '../../shared/error-notice';
 import { fieldErrorAt } from '../../shared/field-errors';
 import { asApiError } from '../../shared/paged-resource';
-import { changedMembers } from './ci-common';
+import { changedMembers, overwriteBody } from './ci-common';
 import { splitValues } from './ci-model';
 
 const ALGORITHMS = ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512', 'ES256', 'ES384', 'EdDSA'] as const;
@@ -226,6 +227,7 @@ export class IssuerForm {
 
   private readonly api = inject(CiApi);
   private readonly conflicts = inject(ConflictResolver);
+  private readonly drafts = inject(DraftStore);
   private readonly notifier = inject(Notifier);
   private readonly session = inject(SessionStore);
 
@@ -271,11 +273,50 @@ export class IssuerForm {
       : null,
   );
 
+  /** True when the form holds entries that are not stored yet. */
+  private dirty(): boolean {
+    if (this.readonly()) return false;
+    const stored = this.issuer();
+    if (stored === null) return this.name() !== '' || this.description() !== '' || this.url() !== 'https://';
+    return Object.keys(changedMembers(this.body(), stored)).length > 0;
+  }
+
   constructor() {
+    // The entries of an open, changed form: kept across a re-authentication and offered as "Copy draft as JSON" (R-UI-042).
+    this.drafts.track(() => (this.dirty() ? { ...this.body(), validate: this.validate() } : null), inject(DestroyRef));
     effect(() => {
       const i = this.issuer();
-      if (i) untracked(() => this.load(i));
+      untracked(() => {
+        if (i) this.load(i);
+        this.restoreDraft();
+      });
     });
+  }
+
+  /** The entries kept across a re-authentication (R-UI-042) fill the form again. */
+  private restoreDraft(): void {
+    if (this.readonly()) return;
+    const d = this.drafts.take<CiIssuerInput & { validate?: boolean }>();
+    if (!d || typeof d !== 'object') return;
+    this.name.set(d.name);
+    this.url.set(d.issuer);
+    this.description.set(d.description ?? '');
+    this.enabled.set(d.enabled ?? true);
+    this.audiences.set((d.allowedAudiences ?? []).join('\n'));
+    this.exclusiveAudience.set(d.exclusiveAudience ?? true);
+    this.publicIssuer.set(d.publicIssuer ?? true);
+    this.pinClaims.set((d.pinClaims ?? []).join('\n'));
+    this.requiredClaims.set((d.requiredClaims ?? []).join('\n'));
+    this.algorithmSet.set(d.allowedAlgorithms ?? ['RS256']);
+    this.discoveryUrl.set(d.discoveryUrl ?? '');
+    this.jwksUri.set(d.jwksUri ?? '');
+    this.clockSkew.set(String(d.clockSkewSeconds ?? 60));
+    this.maxTtl.set(d.maxTtlSeconds ? String(d.maxTtlSeconds) : '');
+    this.singleUse.set(d.singleUseSubjectTokens ?? false);
+    this.useOutboundProxy.set(d.useOutboundProxy ?? false);
+    this.caBundleRef.set(d.caBundleRef ?? '');
+    this.validate.set(d.validate ?? true);
+    this.notifier.status($localize`:@@ci.form.draft-restored:Your entries were restored. Save the issuer again.`);
   }
 
   private load(i: CiIssuer): void {
@@ -358,14 +399,21 @@ export class IssuerForm {
       const result = await this.conflicts.save<CiIssuer>({
         etag: this.etag(),
         patch,
-        send: (etag) => this.api.replaceIssuer(stored.name, body, etag),
+        send: (etag, current) =>
+          this.api.replaceIssuer(
+            stored.name,
+            current === null ? body : overwriteBody(body, patch, current, stored, ['allowedAudiences', 'requiredClaims', 'pinClaims']),
+            etag,
+          ),
         reload: () => this.api.getIssuer(stored.name),
       });
       if (result.outcome === 'dismissed') return;
       if (result.outcome === 'saved') this.notifier.status($localize`:@@ci.form.saved:CI issuer saved.`);
       this.saved.emit(result.current);
     } catch (e) {
-      this.error.set(asApiError(e));
+      const error = asApiError(e);
+      if (error.code === 'reauthentication_required') this.drafts.keep({ ...this.body(), validate: this.validate() });
+      this.error.set(error);
     } finally {
       this.busy.set(false);
     }

@@ -5,9 +5,10 @@ import { CiApi, CiIssuerChoice } from '../../api/ci-api';
 import { ApiError } from '../../api/problem';
 import { asApiError } from '../../shared/paged-resource';
 import { DataTable, TableColumn } from '../../shared/ui/data-table';
-import { CiError, ciRoutes } from './ci-common';
+import { ciRoutes } from './ci-common';
 import { IssuanceList } from './issuance-list';
 import { MappingList } from './mapping-list';
+import { ErrorNotice } from '../../shared/error-notice';
 
 /**
  * The CI identity of one project (R-UI-035, Q-CI-26): for an administrator of the project with the
@@ -18,7 +19,7 @@ import { MappingList } from './mapping-list';
  */
 @Component({
   selector: 'trove-project-ci',
-  imports: [MatButtonModule, RouterLink, CiError, DataTable, IssuanceList, MappingList],
+  imports: [MatButtonModule, RouterLink, ErrorNotice, DataTable, IssuanceList, MappingList],
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@ci.project.heading">CI identity</h1>
@@ -31,7 +32,7 @@ import { MappingList } from './mapping-list';
     </p>
 
     @if (error(); as e) {
-      <trove-ci-error [error]="e" (retry)="load()" />
+      <trove-error-notice [error]="e" (retry)="load()" />
     } @else {
       <section class="card" aria-labelledby="ci-p-issuers">
         <h2 id="ci-p-issuers" i18n="@@ci.project.issuers">Issuers you can use</h2>

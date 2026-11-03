@@ -419,14 +419,38 @@ export class Browse {
     kind: TreeNode['kind'],
     label: string,
     meta: NodeMeta = {},
+    /** True when a read of the folder made the node: only then may it write the signals of a node it reuses. */
+    refresh = false,
   ): TreeNode {
     const id = nodeId(repository, path, meta.via);
     let node = this.nodes.get(id);
+    if (node && node.kind !== kind) {
+      // The entry is a different kind now (a file replaced by a folder): its old subtree is not valid.
+      this.forget(node);
+      node = undefined;
+    }
     if (!node) {
       node = new TreeNode(repository, path, kind, label, meta);
       this.nodes.set(id, node);
+    } else if (refresh) {
+      // A node read again learns what the new read says (size, time, class), keeping what it did not say.
+      const fresh = Object.fromEntries(Object.entries(meta).filter(([, v]) => v !== undefined));
+      if (Object.keys(fresh).length > 0) node.meta.update((old) => ({ ...old, ...fresh }));
     }
     return node;
+  }
+
+  /** Drops a node and everything below it from the map, so that the map holds what the tree can still show. */
+  private forget(node: TreeNode): void {
+    if (this.nodes.get(node.id) === node) this.nodes.delete(node.id);
+    for (const child of node.children()) this.forget(child);
+  }
+
+  /** Replaces the children of a node; the old children that are gone from the new list leave the map. */
+  private setChildren(node: TreeNode, kids: readonly TreeNode[]): void {
+    const keep = new Set(kids);
+    for (const old of node.children()) if (!keep.has(old)) this.forget(old);
+    node.children.set(kids);
   }
 
   /** The root node of a repository named by a deep link, even when the list has not shown it. */
@@ -441,8 +465,18 @@ export class Browse {
     if (expanded && !node.loaded()) await this.loadChildren(node, false);
   }
 
-  protected async loadChildren(node: TreeNode, more: boolean): Promise<void> {
-    if (node.loading()) return;
+  /**
+   * Loads the children of a node. A request made while a load of the same node is in flight returns that
+   * load's promise, so a caller that needs the page (the reveal of a selection) waits for it.
+   */
+  protected loadChildren(node: TreeNode, more: boolean): Promise<void> {
+    if (node.pending) return node.pending;
+    const run = this.fetchChildren(node, more).finally(() => (node.pending = null));
+    node.pending = run;
+    return run;
+  }
+
+  private async fetchChildren(node: TreeNode, more: boolean): Promise<void> {
     node.loading.set(true);
     node.error.set(null);
     try {
@@ -459,9 +493,11 @@ export class Browse {
           c.kind,
           nameOf(c.path),
           { size: c.size, modifiedAt: c.modifiedAt },
+          true,
         ),
       );
-      node.children.update((list) => (more ? [...list, ...kids] : kids));
+      if (more) node.children.update((list) => [...list, ...kids]);
+      else this.setChildren(node, kids);
       node.cursor = page.nextCursor;
       node.hasMore.set(page.nextCursor !== null);
       node.loaded.set(true);
@@ -478,7 +514,8 @@ export class Browse {
     const keys = isConsumerView(read) ? [] : (read.virtual?.members ?? []);
     node.membersHidden.set(isConsumerView(read));
     const known = new Map(this.list.items().map((r) => [r.key, r]));
-    node.children.set(
+    this.setChildren(
+      node,
       keys.map((key, i) => {
         const r = known.get(key);
         return this.nodeFor(key, '', 'member', key, {
@@ -486,7 +523,7 @@ export class Browse {
           position: i + 1,
           cls: r?.class,
           format: r?.format,
-        });
+        }, true);
       }),
     );
     node.cursor = null;
@@ -534,16 +571,28 @@ export class Browse {
       const found = parent.children().find((c) => c.path === path);
       if (found) return found;
       if (!parent.hasMore() || parent.error()) return undefined;
+      // Awaits a load of this folder that is already in flight, or starts the next page.
       await this.loadChildren(parent, true);
     }
   }
 
   protected reload(node: TreeNode): void {
+    const old = node.children();
     node.children.set([]);
     node.cursor = null;
     node.loaded.set(false);
     node.hasMore.set(false);
-    if (node.expanded()) void this.loadChildren(node, false);
+    if (!node.expanded()) {
+      for (const o of old) this.forget(o);
+      return;
+    }
+    // A load in flight read the folder before this change: read again once it is done, then drop what is gone.
+    void (node.pending ?? Promise.resolve())
+      .then(() => this.loadChildren(node, false))
+      .then(() => {
+        const now = new Set(node.children());
+        for (const o of old) if (!now.has(o)) this.forget(o);
+      });
   }
 
   /** The tree reports a selection: navigate to it, or load more when "Load more" was chosen. */

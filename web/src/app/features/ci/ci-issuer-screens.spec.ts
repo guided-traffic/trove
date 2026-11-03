@@ -6,6 +6,7 @@ import { ApiError } from '../../api/problem';
 import { FakeCiApi, sampleIssuance } from '../../api/testing/fakes-ci';
 import { helpFor } from '../../core/help-topics';
 import { Navigation } from '../../core/navigation';
+import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
 import { buttonByText, expectAccessible, openFilters, renderScreen, settle, sleep, text, type, typeInto } from '../../testing/screen';
 import { ClaimTester } from './claim-tester';
@@ -36,14 +37,6 @@ describe('The CI issuer list (R-UI-035)', () => {
     expect(corp).toContain('Fetch failed');
     expect(corp).toContain('HTTP 502 from git.corp.example.com');
     expect(root.querySelector('a[href="/admin/ci/gitlab-com"]')).toBeTruthy();
-    await expectAccessible(root);
-  });
-
-  it('R-UI-035 a server whose federation is not built answers 501 and the screen says "not available yet" instead of failing', async () => {
-    const { root } = await renderScreen(IssuerList, { setup: (get) => (ci(get).notImplemented = true) });
-    expect(text(root)).toContain('Not available yet');
-    expect(root.querySelector('[role="alert"]')).toBeNull();
-    expect(root.querySelector('table')).toBeNull();
     await expectAccessible(root);
   });
 
@@ -120,6 +113,42 @@ describe('A CI issuer (R-UI-035, R-CI-001, R-CI-002, Q-CI-16)', () => {
     expect(text(root)).not.toContain('Changed by someone else');
   });
 
+  it('R-CI-002 R-UI-042 "Overwrite" keeps the audience removed and the single-use switch set by another administrator', async () => {
+    const { root, fixture, get } = await renderScreen(IssuerDetail, { inputs: { issuer: 'gitlab-com', tab: 'settings' } });
+    await settle(fixture);
+    ci(get).issuers = ci(get).issuers.map((i) =>
+      i.name === 'gitlab-com' ? { ...i, version: 2, allowedAudiences: ['https://trove.example.com'], singleUseSubjectTokens: true } : i,
+    );
+    typeInto(root, 'Description', 'mine');
+    buttonByText(root, 'Save settings').click();
+    await sleep(fixture, 150);
+    expect(document.querySelector('trove-conflict-dialog')).toBeTruthy();
+    (buttonByText(document.body, 'Overwrite') as HTMLButtonElement).click();
+    await sleep(fixture, 150);
+    const stored = ci(get).issuers.find((i) => i.name === 'gitlab-com')!;
+    expect(stored.description).toBe('mine');
+    expect(stored.allowedAudiences).toEqual(['https://trove.example.com']);
+    expect(stored.singleUseSubjectTokens).toBe(true);
+    expect(ci(get).ifMatch).toEqual(['"1"', '"2"']);
+  });
+
+  it('R-UI-042 a save that needs a recent sign-in keeps the entries of the issuer form, and the form opened again shows them', async () => {
+    const { root, fixture, get } = await renderScreen(IssuerDetail, { inputs: { issuer: 'gitlab-com', tab: 'settings' } });
+    await settle(fixture);
+    typeInto(root, 'Description', 'drafted');
+    ci(get).failure = new ApiError(401, { code: 'reauthentication_required' }, 'r');
+    buttonByText(root, 'Save settings').click();
+    await sleep(fixture, 100);
+    fixture.destroy();
+    const again = TestBed.createComponent(IssuerDetail);
+    again.componentRef.setInput('issuer', 'gitlab-com');
+    again.componentRef.setInput('tab', 'settings');
+    await sleep(again, 100);
+    const root2 = again.nativeElement as HTMLElement;
+    expect(root2.querySelector<HTMLInputElement>('input[name="description"]')!.value).toBe('drafted');
+    expect(TestBed.inject(Notifier).notices().map((n) => n.text)).toContain('Your entries were restored. Save the issuer again.');
+  });
+
   it('R-UI-035 the keys tab shows the key status and "Refresh keys" fetches again', async () => {
     const { root, fixture, get } = await renderScreen(IssuerDetail, {
       inputs: { issuer: 'corp-gitlab', tab: 'keys' },
@@ -157,11 +186,9 @@ describe('A CI issuer (R-UI-035, R-CI-001, R-CI-002, Q-CI-16)', () => {
     expect(ci(get).calls).toContain('deleteIssuer gitlab-com cascade');
   });
 
-  it('R-CI-002 a missing issuer and a 501 show their states', async () => {
+  it('R-CI-002 a missing issuer shows its state', async () => {
     const missing = await renderScreen(IssuerDetail, { inputs: { issuer: 'nope' } });
     expect(text(missing.root)).toContain('does not exist');
-    const off = await renderScreen(IssuerDetail, { inputs: { issuer: 'gitlab-com' }, setup: (get) => (ci(get).notImplemented = true) });
-    expect(text(off.root)).toContain('Not available yet');
   });
 });
 
@@ -285,6 +312,38 @@ describe('The issued CI tokens (R-UI-035, R-CI-020)', () => {
     expect(ci(get).issuances.filter((i) => i.active)).toHaveLength(0);
   });
 
+  it('R-CI-020 a filter the revoke does not understand (project path, issued from or until, state) disables the bulk revoke and says why', async () => {
+    const { root, fixture } = await renderScreen(IssuancesPage, {});
+    for (const [label, value] of [['Project path', 'team-a/app'], ['Issued from', '2026-11-02'], ['Issued until', '2026-11-03']] as const) {
+      await openFilters(fixture, root);
+      typeInto(root, 'Issuer', 'gitlab-com');
+      typeInto(root, 'Job ID', '98765');
+      typeInto(root, label, value);
+      (root.querySelector('trove-filter-panel button[type="submit"]') as HTMLButtonElement).click();
+      await sleep(fixture, 80);
+      expect((buttonByText(root, 'Revoke matching tokens') as HTMLButtonElement).disabled, label).toBe(true);
+      expect(text(root.querySelector('#ci-revoke-note')!), label).toContain(label);
+      typeInto(root, label, '');
+    }
+    typeInto(root, 'Issuer', 'gitlab-com');
+    typeInto(root, 'Job ID', '98765');
+    (root.querySelector('trove-filter-panel button[type="submit"]') as HTMLButtonElement).click();
+    await sleep(fixture, 80);
+    expect((buttonByText(root, 'Revoke matching tokens') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('R-CI-020 the day filters are the bounds of the local day the table shows, the end exclusive', async () => {
+    const { root, fixture, get } = await renderScreen(IssuancesPage, {});
+    await openFilters(fixture, root);
+    typeInto(root, 'Issued from', '2026-11-02');
+    typeInto(root, 'Issued until', '2026-11-03');
+    (root.querySelector('trove-filter-panel button[type="submit"]') as HTMLButtonElement).click();
+    await sleep(fixture, 80);
+    const last = ci(get).listFilters.at(-1)!;
+    expect(last.from).toBe(new Date(2026, 10, 2).toISOString());
+    expect(last.to).toBe(new Date(2026, 10, 4).toISOString());
+  });
+
   it('R-CI-020 without a matching active token nothing is asked and nothing is revoked', async () => {
     const { root, fixture, get } = await renderScreen(IssuancesPage, { setup: (g) => (ci(g).issuances = [sampleIssuance({ active: false })]) });
     await openFilters(fixture, root);
@@ -303,10 +362,6 @@ describe('The issued CI tokens (R-UI-035, R-CI-020)', () => {
     expect(root.textContent).not.toContain('Revoke matching tokens');
   });
 
-  it('R-UI-035 the screen shows "not available yet" while the backend answers 501', async () => {
-    const { root } = await renderScreen(IssuancesPage, { setup: (g) => (ci(g).notImplemented = true) });
-    expect(text(root)).toContain('Not available yet');
-  });
 });
 
 describe('The claim tester route is reachable from the issuer (R-UI-036)', () => {

@@ -8,8 +8,6 @@
  */
 export function describeCiProblem(code: string | null): string | null {
   switch (code) {
-    case 'ci_not_implemented':
-      return $localize`:@@problem.ci.not-implemented:CI identity is not available yet on this server. Nothing is wrong with your session; the feature is still being switched on.`;
     case 'discovery_unreachable':
       return $localize`:@@problem.ci.discovery-unreachable:The issuer's discovery document or key set could not be fetched. Check the issuer URL, that the server can reach it, and the outbound proxy setting.`;
     case 'issuer_mismatch':

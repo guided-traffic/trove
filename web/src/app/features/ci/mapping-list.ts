@@ -11,8 +11,9 @@ import { Confirm } from '../../shared/confirm-dialog';
 import { asApiError } from '../../shared/paged-resource';
 import { DataTable, TableColumn } from '../../shared/ui/data-table';
 import { ProjectNeeds, createState } from '../projects/project-access';
-import { CiError, ciRoutes } from './ci-common';
+import { ciRoutes } from './ci-common';
 import { summarizeCondition, summarizeGrants, tierLabel } from './ci-model';
+import { ErrorNotice } from '../../shared/error-notice';
 
 /**
  * The mappings of an issuer in evaluation order (R-UI-035, R-CI-009, R-CI-019): tier, then priority,
@@ -22,7 +23,7 @@ import { summarizeCondition, summarizeGrants, tierLabel } from './ci-model';
  */
 @Component({
   selector: 'trove-ci-mapping-list',
-  imports: [MatButtonModule, RouterLink, CiError, DataTable, Needs, ProjectNeeds],
+  imports: [MatButtonModule, RouterLink, ErrorNotice, DataTable, Needs, ProjectNeeds],
   template: `
     <div class="toolbar">
       @if (writable()) {
@@ -44,7 +45,7 @@ import { summarizeCondition, summarizeGrants, tierLabel } from './ci-model';
     </p>
 
     @if (error(); as e) {
-      <trove-ci-error [error]="e" (retry)="load()" />
+      <trove-error-notice [error]="e" (retry)="load()" />
     }
     @if (error()?.status !== 501) {
       <trove-data-table

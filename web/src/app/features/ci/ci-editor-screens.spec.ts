@@ -6,6 +6,7 @@ import { ApiError } from '../../api/problem';
 import { SessionApi } from '../../api/session-api';
 import { FakeSessionApi } from '../../api/testing/fakes';
 import { FakeCiApi, sampleIssuance, sampleMapping } from '../../api/testing/fakes-ci';
+import { Notifier } from '../../core/notifier';
 import { RepositoriesApi } from '../../api/repositories-api';
 import { FakeRepositoriesApi } from '../../api/testing/fakes-catalog';
 import { storedText, buttonByText, expectAccessible, renderScreen, settle, sleep, text, type, typeInto } from '../../testing/screen';
@@ -269,6 +270,57 @@ describe('The mapping editor (R-UI-035, R-CI-009 to R-CI-013)', () => {
     await sleep(fixture, 150);
     expect(document.querySelector('trove-conflict-dialog')).toBeTruthy();
   });
+
+  it('R-CI-002 R-UI-042 "Overwrite" keeps the narrowing another administrator made in between and replaces only what the user changed', async () => {
+    const { root, fixture, get } = await renderScreen(MappingEditor, { inputs: { issuer: 'gitlab-com', mapping: 'team-a-release' } });
+    // Another administrator removes the write action `deploy` and moves the priority after the form was opened.
+    ci(get).mappings = ci(get).mappings.map((m) => ({
+      ...m,
+      version: 2,
+      priority: 150,
+      grants: { ...m.grants, inline: [{ ...m.grants.inline![0]!, actions: ['read' as const] }] },
+    }));
+    typeInto(root, 'Description', 'mine');
+    buttonByText(root, 'Save mapping').click();
+    await sleep(fixture, 150);
+    expect(document.querySelector('trove-conflict-dialog')).toBeTruthy();
+    (buttonByText(document.body, 'Overwrite') as HTMLButtonElement).click();
+    await sleep(fixture, 150);
+    const stored = ci(get).mappings[0]!;
+    expect(stored.description).toBe('mine');
+    expect(stored.grants.inline![0]!.actions).toEqual(['read']);
+    expect(stored.priority).toBe(150);
+    expect(ci(get).ifMatch).toEqual(['"1"', '"2"']);
+  });
+});
+
+describe('The mapping editor keeps a draft across a re-authentication (R-UI-042)', () => {
+  const reauth = (): ApiError => new ApiError(401, { code: 'reauthentication_required' }, 'r');
+
+  it('R-UI-042 a save that needs a recent sign-in keeps the entries, and the editor opened again after it shows them', async () => {
+    const { root, fixture, get } = await renderScreen(MappingEditor, { inputs: { issuer: 'gitlab-com', mapping: 'team-a-release' } });
+    typeInto(root, 'Description', 'drafted');
+    await settle(fixture);
+    ci(get).failure = reauth();
+    buttonByText(root, 'Save mapping').click();
+    await sleep(fixture, 100);
+    expect(ci(get).ifMatch).toEqual([]);
+    fixture.destroy();
+    const again = TestBed.createComponent(MappingEditor);
+    again.componentRef.setInput('issuer', 'gitlab-com');
+    again.componentRef.setInput('mapping', 'team-a-release');
+    await settle(again);
+    const root2 = again.nativeElement as HTMLElement;
+    expect(root2.querySelector<HTMLInputElement>('input[name="description"]')!.value).toBe('drafted');
+    expect(TestBed.inject(Notifier).notices().map((n) => n.text)).toContain('Your entries were restored. Save the mapping again.');
+    // The draft is taken once: a third opening shows the stored mapping.
+    again.destroy();
+    const third = TestBed.createComponent(MappingEditor);
+    third.componentRef.setInput('issuer', 'gitlab-com');
+    third.componentRef.setInput('mapping', 'team-a-release');
+    await settle(third);
+    expect((third.nativeElement as HTMLElement).querySelector<HTMLInputElement>('input[name="description"]')!.value).toBe('Protected tags of team-a publish');
+  });
 });
 
 describe('The mapping editor of a project (Q-CI-26, R-CI-019)', () => {
@@ -339,8 +391,24 @@ describe('The mapping editor of a project (Q-CI-26, R-CI-019)', () => {
     });
     expect(text(root)).toContain('Switched off for this project: managePolicies');
     expect(root.querySelector('button[type="submit"]')).toBeNull();
-    // The snippet is the system administrators' operation: a project administrator is not offered it.
+    // The project route of the snippet needs the switch: an administrator whose switch is off is not offered it.
     expect(root.textContent).not.toContain('CI snippet');
+  });
+
+  it('R-UI-035 Q-CI-26 a project administrator is offered the CI snippet and reads it through the project route', async () => {
+    const { root, fixture, get } = await renderScreen(MappingEditor, {
+      inputs: { key: 'web', issuer: 'gitlab-com', mapping: 'web-x' },
+      capabilities: [],
+      setup: (g) => {
+        projectAdmin()(g);
+        ci(g).mappings = [sampleMapping({ name: 'web-x', tier: 'project:web' })];
+        ci(g).snippets.set('gitlab-com/web-x/npm', 'project-npm-line');
+      },
+    });
+    buttonByText(root, 'CI snippet').click();
+    await sleep(fixture, 80);
+    expect(root.querySelector('pre.snippet')!.textContent).toContain('project-npm-line');
+    expect(ci(get).calls).toContain('snippet web gitlab-com/web-x');
   });
 });
 
@@ -397,6 +465,57 @@ describe('The claim tester (R-UI-036, R-CI-019)', () => {
     await settle(fixture);
     expect(text(root.querySelector('#ci-t-error')!)).toContain('Enter the claims');
     expect(ci(get).evaluations).toEqual([]);
+  });
+
+  it('R-UI-036 the sample can be edited in a form view of the top-level claims, and the JSON stays in step in both directions', async () => {
+    const { root, fixture, get } = await renderScreen(ClaimTester, { inputs: { issuer: 'gitlab-com' } });
+    type(claimsArea(root), '{"ref":"main","ref_protected":"true","iat":1700000000,"extra":{"a":1}}');
+    await settle(fixture);
+    buttonByText(root, 'Form').click();
+    await settle(fixture);
+    expect(root.querySelector('#ci-t-claims')).toBeNull();
+    const keys = (): string[] => [...root.querySelectorAll<HTMLInputElement>('input[name^="claim-key-"]')].map((i) => i.value);
+    expect(keys()).toEqual(['ref', 'ref_protected', 'iat', 'extra']);
+    const valueOf = (key: string): HTMLInputElement =>
+      root.querySelectorAll<HTMLInputElement>('input[name^="claim-value-"]')[keys().indexOf(key)]!;
+    expect(valueOf('iat').value).toBe('1700000000');
+    expect(valueOf('extra').value).toBe('{"a":1}');
+    type(valueOf('ref'), 'release');
+    type(valueOf('iat'), '1700000500');
+    await settle(fixture);
+    buttonByText(root, 'Add claim').click();
+    await settle(fixture);
+    const rows = root.querySelectorAll<HTMLInputElement>('input[name^="claim-key-"]');
+    type(rows[rows.length - 1]!, 'environment');
+    type(root.querySelectorAll<HTMLInputElement>('input[name^="claim-value-"]')[rows.length - 1]!, 'production');
+    await settle(fixture);
+    buttonByText(root, 'JSON').click();
+    await settle(fixture);
+    // A value keeps the type it had: the number stays a number, the object an object, the new claim is text.
+    expect(JSON.parse(claimsArea(root).value)).toEqual({
+      ref: 'release',
+      ref_protected: 'true',
+      iat: 1700000500,
+      extra: { a: 1 },
+      environment: 'production',
+    });
+    // Evaluating from the form view sends the same claims.
+    buttonByText(root, 'Form').click();
+    await settle(fixture);
+    type(valueOf('ref'), 'v2');
+    buttonByText(root, 'Evaluate').click();
+    await sleep(fixture, 80);
+    expect(ci(get).evaluations.at(-1)!.request.claims['ref']).toBe('v2');
+    await expectAccessible(root);
+  });
+
+  it('R-UI-036 the form view is not offered over JSON that is not an object, and says what to fix', async () => {
+    const { root, fixture } = await renderScreen(ClaimTester, { inputs: { issuer: 'gitlab-com' } });
+    type(claimsArea(root), '{"ref": ');
+    buttonByText(root, 'Form').click();
+    await settle(fixture);
+    expect(claimsArea(root)).toBeTruthy();
+    expect(text(root)).toContain('Fix the JSON first');
   });
 
   it('R-UI-036 "Insert sample GitLab claims" fills a realistic payload with the issuer and audience of the issuer', async () => {
@@ -509,14 +628,6 @@ describe('The claim tester (R-UI-036, R-CI-019)', () => {
     expect(names).toEqual(['web-x']);
   });
 
-  it('R-UI-036 a server without the federation shows "not available yet" when the tester evaluates', async () => {
-    const { root, fixture, get } = await renderScreen(ClaimTester, { inputs: { issuer: 'gitlab-com' } });
-    ci(get).notImplemented = true;
-    type(claimsArea(root), '{"ref":"main"}');
-    buttonByText(root, 'Evaluate').click();
-    await sleep(fixture, 100);
-    expect(text(root)).toContain('Not available yet');
-  });
 });
 
 describe('The CI identity of a project (R-UI-035, Q-CI-26)', () => {
@@ -562,11 +673,6 @@ describe('The CI identity of a project (R-UI-035, Q-CI-26)', () => {
     expect(root.querySelectorAll('section.card')).toHaveLength(0);
   });
 
-  it('R-UI-035 a server whose federation is not built shows one "not available yet" card, not three errors', async () => {
-    const { root } = await renderScreen(ProjectCi, { inputs: { key: 'web' }, capabilities: [], setup: (g) => { projectAdmin()(g); ci(g).notImplemented = true; } });
-    expect(root.querySelectorAll('.unavailable')).toHaveLength(1);
-    expect(root.querySelector('[role="alert"]')).toBeNull();
-  });
 });
 
 describe('The project page links to the CI identity (Q-CI-26)', () => {

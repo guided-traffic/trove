@@ -21,7 +21,7 @@
 }
 
 @if (loadError(); as e) {
-  <trove-ci-error [error]="e" (retry)="load()" />
+  <trove-error-notice [error]="e" (retry)="load()" />
 }
 @if (saveError(); as e) {
   @if (summaryItems().length > 0) {
@@ -309,7 +309,7 @@
       </p>
       <trove-select-field i18n-label="@@ci.editor.snippet-format" label="Package client" name="snippetFormat" [options]="formatOptions" [value]="snippetFormat()" (valueChange)="setFormat($event)" />
       @if (snippetError(); as e) {
-        <trove-ci-error [error]="e" />
+        <trove-error-notice [error]="e" />
       }
       @if (snippet(); as text) {
         <div class="snippet-head">

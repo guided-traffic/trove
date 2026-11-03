@@ -69,7 +69,7 @@ describe('The CI service (R-API-035, R-UI-036)', () => {
 
   it('R-UI-035 the snippet is read as text with the mapping and the format', async () => {
     const { api, http } = setup();
-    const pending = api.snippet('gitlab-com', 'team-a-release', 'nuget');
+    const pending = api.snippet('gitlab-com', 'team-a-release', 'nuget', null);
     const req = http.expectOne((r) => r.url === '/api/v1/ci/issuers/gitlab-com/snippets/gitlab-ci');
     expect(req.request.params.get('mapping')).toBe('team-a-release');
     expect(req.request.params.get('format')).toBe('nuget');
@@ -78,16 +78,25 @@ describe('The CI service (R-API-035, R-UI-036)', () => {
     expect(await pending).toContain('id_tokens:');
   });
 
+  it('R-UI-035 Q-CI-26 a project reads the snippet through its own route', async () => {
+    const { api, http } = setup();
+    const pending = api.snippet('gitlab-com', 'web-publish', 'npm', 'web');
+    const req = http.expectOne((r) => r.url === '/api/v1/projects/web/ci/issuers/gitlab-com/snippets/gitlab-ci');
+    expect(req.request.params.get('mapping')).toBe('web-publish');
+    req.flush('id_tokens:\n');
+    expect(await pending).toContain('id_tokens');
+  });
+
   it('R-UI-035 a problem answer to the text read is still an ApiError with its code', async () => {
     const { api, http } = setup();
-    const pending = api.snippet('gitlab-com', 'm', 'npm');
+    const pending = api.snippet('gitlab-com', 'm', 'npm', null);
     http
       .expectOne((r) => r.url.endsWith('/snippets/gitlab-ci'))
-      .flush(JSON.stringify({ code: 'ci_not_implemented', title: 'Not implemented', status: 501 }), { status: 501, statusText: 'Not Implemented' });
+      .flush(JSON.stringify({ code: 'not_found', title: 'Not found', status: 404 }), { status: 404, statusText: 'Not Found' });
     const error = await pending.catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ApiError);
-    expect((error as ApiError).code).toBe('ci_not_implemented');
-    expect((error as ApiError).status).toBe(501);
+    expect((error as ApiError).code).toBe('not_found');
+    expect((error as ApiError).status).toBe(404);
   });
 
   it('R-CI-020 the bulk revoke sends the filters and returns the count', async () => {

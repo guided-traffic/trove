@@ -8,7 +8,7 @@ import { SessionStore } from '../../core/session-store';
 import { Needs } from '../../shared/access/needs';
 import { asApiError } from '../../shared/paged-resource';
 import { DataTable, TableColumn } from '../../shared/ui/data-table';
-import { CiError } from './ci-common';
+import { ErrorNotice } from '../../shared/error-notice';
 
 /**
  * The signing keys of an issuer (R-UI-035, R-CI-002, R-CI-003): the cached key set with its fetch time,
@@ -18,7 +18,7 @@ import { CiError } from './ci-common';
  */
 @Component({
   selector: 'trove-ci-issuer-keys',
-  imports: [DatePipe, MatButtonModule, CiError, DataTable, Needs],
+  imports: [DatePipe, MatButtonModule, ErrorNotice, DataTable, Needs],
   template: `
     <div class="toolbar">
       <button mat-flat-button type="button" [disabled]="busy() || !session.has('ci:write')" aria-describedby="needs-ci-keys" (click)="refresh()" i18n="@@ci.keys.refresh">
@@ -27,7 +27,7 @@ import { CiError } from './ci-common';
     </div>
     <trove-needs id="needs-ci-keys" capability="ci:write" />
     @if (error(); as e) {
-      <trove-ci-error [error]="e" (retry)="load()" />
+      <trove-error-notice [error]="e" (retry)="load()" />
     }
     @if (status(); as s) {
       <dl class="facts">

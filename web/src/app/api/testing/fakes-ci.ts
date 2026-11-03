@@ -28,13 +28,12 @@ import { Versioned } from '../repositories-api';
 
 /*
  * In-memory fake of the CI service (R-UI-035, R-UI-036, R-UI-047 component tier), written against the
- * contract of docs/developer/ci-oidc.md while the backend answers 501. It models what the screens
+ * contract of docs/developer/ci-oidc.md. It models what the screens
  * depend on: the `ETag` of a replace (412), a configuration issuer that refuses writes, the
  * validation codes of an issuer, the save-time rules and warnings of a mapping, a priority that is
  * taken (409), the bounds of a project's mapping, a dry run that evaluates the stored mappings in
  * tier and priority order with the leaves of each, the issuances with their filters and the bulk
- * revoke. `notImplemented` makes every call answer `501 ci_not_implemented` as the real server does
- * until its work packages land.
+ * revoke.
  */
 
 const problem = (status: number, code: string, extra: Record<string, unknown> = {}): ApiError =>
@@ -226,10 +225,10 @@ export class FakeCiApi extends CiApi {
   readonly calls: string[] = [];
   /** The body of every dry run, to prove what leaves the browser (R-UI-036). */
   readonly evaluations: { issuer: string; project: string | null; request: CiEvaluateRequest }[] = [];
+  /** The filters of every issuance list read, in order. */
+  readonly listFilters: IssuanceFilters[] = [];
   /** `ETag` of every replace, in order. */
   readonly ifMatch: string[] = [];
-  /** Makes every call answer `501 ci_not_implemented` (the state until the backend exists). */
-  notImplemented = false;
   /** Rejects the next call once. */
   failure: ApiError | null = null;
   issuers: CiIssuer[] = [
@@ -255,7 +254,6 @@ export class FakeCiApi extends CiApi {
   usage: CiIssuanceDetail['usage'] = { requests: 12, lastUsedAt: '2026-11-02T08:10:00Z', packagesDeployed: ['@team-a/ui@1.0.0'] };
 
   private gate(): void {
-    if (this.notImplemented) throw problem(501, 'ci_not_implemented');
     if (this.failure) {
       const e = this.failure;
       this.failure = null;
@@ -520,9 +518,12 @@ export class FakeCiApi extends CiApi {
     };
   }
 
-  override async snippet(issuer: string, mapping: string, format: SnippetFormat): Promise<string> {
+  override async snippet(issuer: string, mapping: string, format: SnippetFormat, project: string | null): Promise<string> {
     this.gate();
+    this.calls.push(`snippet ${project ?? 'system'} ${issuer}/${mapping}`);
     this.issuer(issuer);
+    const m = this.mappings.find((x) => x.issuer === issuer && x.name === mapping);
+    if (!m || m.tier !== this.tierOf(project)) throw problem(404, 'not_found');
     return (
       this.snippets.get(`${issuer}/${mapping}/${format}`) ??
       `# ${format} snippet for ${issuer}/${mapping}\nid_tokens:\n  TROVE_ID_TOKEN:\n    aud: https://trove.example.com\n`
@@ -532,6 +533,7 @@ export class FakeCiApi extends CiApi {
   override listIssuances(filters: IssuanceFilters, project: string | null): PageFetcher<CiIssuance> {
     return async (cursor, limit): Promise<Page<CiIssuance>> => {
       this.gate();
+      this.listFilters.push(filters);
       const mine = (i: CiIssuance): boolean => !project || i.mappingNames.some((n) => this.mappings.some((m) => m.name === n && m.tier === `project:${project}`));
       const all = this.issuances.filter(
         (i) =>

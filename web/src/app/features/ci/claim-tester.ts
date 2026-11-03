@@ -6,10 +6,32 @@ import { ApiError } from '../../api/problem';
 import { formatDuration } from '../../shared/access/duration';
 import { SelectField, SelectOption } from '../../shared/access/fields';
 import { asApiError } from '../../shared/paged-resource';
-import { CiError, CiWarnings, ciRoutes } from './ci-common';
-import { claimsSatisfying, parseClaimsInput, sampleClaims, summarizeGrants, tierLabel } from './ci-model';
+import { CiWarnings, ciRoutes } from './ci-common';
+import { claimsSatisfying, newId, parseClaimsInput, sampleClaims, summarizeGrants, tierLabel } from './ci-model';
+import { ErrorNotice } from '../../shared/error-notice';
 
 const pretty = (v: unknown): string => JSON.stringify(v, null, 2);
+
+/** One top-level claim in the form view: the value keeps the JSON type it had; `text` is what the field shows. */
+interface ClaimRow {
+  readonly id: number;
+  readonly key: string;
+  readonly value: unknown;
+  readonly text: string;
+}
+
+const textOf = (v: unknown): string => (typeof v === 'string' ? v : JSON.stringify(v));
+
+/** A typed text becomes the value of the type the claim had; a string stays a string, and anything that does not parse as that type is text. */
+function valueFor(previous: unknown, text: string): unknown {
+  if (typeof previous === 'string' || previous === undefined) return text;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return typeof parsed === typeof previous || (parsed !== null && typeof previous === 'object' && typeof parsed === 'object') ? parsed : text;
+  } catch {
+    return text;
+  }
+}
 
 /**
  * The claim tester (R-UI-036, R-CI-019): paste the claims of a job as JSON, or a compact ID token, and
@@ -22,7 +44,7 @@ const pretty = (v: unknown): string => JSON.stringify(v, null, 2);
  */
 @Component({
   selector: 'trove-ci-claim-tester',
-  imports: [MatButtonModule, RouterLink, CiError, CiWarnings, SelectField],
+  imports: [MatButtonModule, RouterLink, ErrorNotice, CiWarnings, SelectField],
   template: `
     <header class="page-header">
       <h1 tabindex="-1" i18n="@@ci.test.heading">Claim tester</h1>
@@ -37,23 +59,47 @@ const pretty = (v: unknown): string => JSON.stringify(v, null, 2);
       <trove-select-field i18n-label="@@ci.test.issuer" label="Issuer" name="issuer" [options]="issuerOptions()" [value]="issuerChoice()" (valueChange)="issuerChoice.set($event)" />
     }
     @if (loadError(); as e) {
-      <trove-ci-error [error]="e" />
+      <trove-error-notice [error]="e" />
     }
 
     <section class="card" aria-labelledby="ci-t-input">
       <h2 id="ci-t-input" i18n="@@ci.test.input">Claims</h2>
-      <label class="block-label" for="ci-t-claims" i18n="@@ci.test.label">Claims as JSON, or paste an ID token</label>
-      <textarea
-        id="ci-t-claims"
-        class="claims-input"
-        rows="16"
-        spellcheck="false"
-        autocomplete="off"
-        [value]="text()"
-        [attr.aria-invalid]="inputError() ? 'true' : null"
-        [attr.aria-describedby]="describedBy()"
-        (input)="edit($any($event.target).value)"
-      ></textarea>
+      <div class="view-switch" role="group" aria-label="View" i18n-aria-label="@@ci.test.view">
+        <button mat-stroked-button type="button" class="switch" [attr.aria-pressed]="view() === 'json'" (click)="showJson()" i18n="@@ci.test.view-json">JSON</button>
+        <button mat-stroked-button type="button" class="switch" [attr.aria-pressed]="view() === 'form'" (click)="showForm()" i18n="@@ci.test.view-form">Form</button>
+      </div>
+      @if (view() === 'json') {
+        <label class="block-label" for="ci-t-claims" i18n="@@ci.test.label">Claims as JSON, or paste an ID token</label>
+        <textarea
+          id="ci-t-claims"
+          class="claims-input"
+          rows="16"
+          spellcheck="false"
+          autocomplete="off"
+          [value]="text()"
+          [attr.aria-invalid]="inputError() ? 'true' : null"
+          [attr.aria-describedby]="describedBy()"
+          (input)="edit($any($event.target).value)"
+        ></textarea>
+      } @else {
+        <p class="muted" id="ci-t-form-hint" i18n="@@ci.test.form-hint">
+          The top-level claims, one per row. A value keeps the type it has (a number stays a number, an object stays an object); a new claim is text.
+        </p>
+        <div class="claim-rows" role="group" aria-labelledby="ci-t-input" aria-describedby="ci-t-form-hint">
+          @for (row of rows(); track row.id; let i = $index) {
+            <div class="claim-row">
+              <div class="claim-field">
+                <input class="claim-input" type="text" [name]="'claim-key-' + row.id" [value]="row.key" spellcheck="false" autocomplete="off" [attr.aria-label]="keyLabel(i)" (input)="setKey(row.id, $any($event.target).value)" />
+              </div>
+              <div class="claim-field">
+                <input class="claim-input" type="text" [name]="'claim-value-' + row.id" [value]="row.text" spellcheck="false" autocomplete="off" [attr.aria-label]="valueLabel(i)" (input)="setValue(row.id, $any($event.target).value)" />
+              </div>
+              <button mat-button type="button" [attr.aria-label]="removeLabel(i)" (click)="removeRow(row.id)" i18n="@@ci.test.remove-claim">Remove</button>
+            </div>
+          }
+        </div>
+        <button mat-stroked-button type="button" (click)="addRow()" i18n="@@ci.test.add-claim">Add claim</button>
+      }
       @if (inputError(); as message) {
         <p class="field-error" id="ci-t-error">{{ message }}</p>
       }
@@ -76,7 +122,7 @@ const pretty = (v: unknown): string => JSON.stringify(v, null, 2);
     </section>
 
     @if (error(); as e) {
-      <trove-ci-error [error]="e" />
+      <trove-error-notice [error]="e" />
     }
 
     @if (result(); as r) {
@@ -202,6 +248,42 @@ const pretty = (v: unknown): string => JSON.stringify(v, null, 2);
       font-family: var(--trove-font-mono);
       font-size: 0.8125rem;
     }
+    .view-switch {
+      display: inline-flex;
+      gap: var(--trove-space-1);
+      margin-block-end: var(--trove-space-2);
+    }
+    .view-switch .switch[aria-pressed='true'] {
+      background: var(--trove-accent-container);
+      color: var(--trove-on-accent-container);
+      font-weight: 600;
+    }
+    .claim-rows {
+      display: flex;
+      flex-direction: column;
+      gap: var(--trove-space-2);
+      margin-block-end: var(--trove-space-2);
+    }
+    .claim-row {
+      display: grid;
+      grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 2fr) auto;
+      gap: var(--trove-space-2);
+      align-items: center;
+    }
+    .claim-field {
+      display: block;
+    }
+    .claim-input {
+      box-sizing: border-box;
+      inline-size: 100%;
+      padding: var(--trove-space-2);
+      border: 1px solid var(--trove-border-strong);
+      border-radius: var(--trove-radius-s);
+      background: var(--trove-surface-raised);
+      color: var(--mat-sys-on-surface);
+      font-family: var(--trove-font-mono);
+      font-size: 0.8125rem;
+    }
     .hint {
       display: flex;
       gap: var(--trove-space-2);
@@ -269,6 +351,10 @@ export class ClaimTester {
   private issuerUrl = '';
   private audience = '';
 
+  /** Which view edits the claims; the JSON text is the one source and the form view writes into it on every change. */
+  protected readonly view = signal<'json' | 'form'>('json');
+  protected readonly rows = signal<readonly ClaimRow[]>([]);
+
   /** The claims text. It is a signal of this component only: no store, no browser storage (R-UI-036). */
   protected readonly text = signal('');
   protected readonly fromToken = signal(false);
@@ -329,6 +415,7 @@ export class ClaimTester {
       if (this.mapping() && this.issuerName() && this.text() === '') {
         const m: CiMapping = (await this.api.getMapping(this.issuerName(), this.mapping()!, project)).value;
         this.text.set(pretty(claimsSatisfying(this.sample(), m.match)));
+        if (this.view() === 'form') this.showForm();
       }
     } catch (e) {
       this.loadError.set(asApiError(e));
@@ -344,6 +431,7 @@ export class ClaimTester {
     this.stillValid.set(false);
     this.inputError.set(null);
     this.text.set(pretty(this.sample()));
+    if (this.view() === 'form') this.showForm();
   }
 
   /**
@@ -364,6 +452,47 @@ export class ClaimTester {
     this.stillValid.set(false);
     this.inputError.set(null);
   }
+
+  protected showJson(): void {
+    this.view.set('json');
+  }
+
+  /** Shows the top-level claims as rows; JSON that is not an object stays in the JSON view until it is fixed. */
+  protected showForm(): void {
+    const parsed = parseClaimsInput(this.text(), Math.floor(Date.now() / 1000));
+    if (parsed.kind === 'error') {
+      this.inputError.set($localize`:@@ci.test.err.fix-json:Fix the JSON first: the form view shows an object of claims.`);
+      return;
+    }
+    if (parsed.kind === 'jwt') this.edit(this.text());
+    this.inputError.set(null);
+    this.rows.set(Object.entries(parsed.claims).map(([key, value]) => ({ id: newId(), key, value, text: textOf(value) })));
+    this.view.set('form');
+  }
+
+  /** Writes the rows into the JSON text, so the two views are always the same claims. */
+  private writeRows(rows: readonly ClaimRow[]): void {
+    this.rows.set(rows);
+    this.fromToken.set(false);
+    this.stillValid.set(false);
+    this.text.set(pretty(Object.fromEntries(rows.filter((r) => r.key.trim() !== '').map((r) => [r.key.trim(), r.value]))));
+  }
+
+  protected setKey(id: number, key: string): void {
+    this.writeRows(this.rows().map((r) => (r.id === id ? { ...r, key } : r)));
+  }
+  protected setValue(id: number, text: string): void {
+    this.writeRows(this.rows().map((r) => (r.id === id ? { ...r, text, value: valueFor(r.value, text) } : r)));
+  }
+  protected addRow(): void {
+    this.rows.update((rows) => [...rows, { id: newId(), key: '', value: '', text: '' }]);
+  }
+  protected removeRow(id: number): void {
+    this.writeRows(this.rows().filter((r) => r.id !== id));
+  }
+  protected keyLabel = (i: number): string => $localize`:@@ci.test.claim-name:Claim name ${i + 1}:number:`;
+  protected valueLabel = (i: number): string => $localize`:@@ci.test.claim-value:Claim value ${i + 1}:number:`;
+  protected removeLabel = (i: number): string => $localize`:@@ci.test.claim-remove:Remove claim ${i + 1}:number:`;
 
   private problemText(reason: 'empty' | 'not-json' | 'not-object' | 'bad-token'): string {
     switch (reason) {

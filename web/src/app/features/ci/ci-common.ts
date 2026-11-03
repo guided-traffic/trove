@@ -1,65 +1,5 @@
-import { Component, input, output } from '@angular/core';
-import { ApiError } from '../../api/problem';
+import { Component, input } from '@angular/core';
 import { CiWarning } from '../../api/ci-api';
-import { ErrorNotice } from '../../shared/error-notice';
-
-/** True for the answer of an operation whose work package is not built yet (`501 ci_not_implemented`). */
-export function isNotImplemented(e: ApiError | null): boolean {
-  return e !== null && (e.status === 501 || e.code === 'ci_not_implemented');
-}
-
-/**
- * The failure of a CI call. `501 ci_not_implemented` is the state of a server whose federation is not
- * switched on yet: a calm "not available yet" card, not an error alert (R-UI-035). Every other failure
- * is the shared error notice, which also covers `403 project_switch_off` the way the project screens
- * show it.
- */
-@Component({
-  selector: 'trove-ci-error',
-  imports: [ErrorNotice],
-  template: `
-    @if (unavailable()) {
-      <section class="unavailable" role="status">
-        <span class="material-icons" aria-hidden="true">hourglass_empty</span>
-        <div>
-          <h2 i18n="@@ci.unavailable.title">Not available yet</h2>
-          <p i18n="@@ci.unavailable.text">
-            CI identity is not switched on for this server yet. The screens work as soon as it is; nothing is broken and nothing needs to be done here.
-          </p>
-        </div>
-      </section>
-    } @else {
-      <trove-error-notice [error]="error()" (retry)="retry.emit()" />
-    }
-  `,
-  styles: `
-    .unavailable {
-      display: flex;
-      gap: var(--trove-space-3);
-      align-items: flex-start;
-      margin-block: var(--trove-space-3);
-      padding: var(--trove-space-4);
-      border: 1px solid var(--trove-border);
-      border-radius: var(--trove-radius-m);
-      background: var(--trove-surface-raised);
-    }
-    h2 {
-      margin: 0 0 var(--trove-space-1);
-      font: var(--mat-sys-title-medium);
-    }
-    p {
-      margin: 0;
-      color: var(--trove-text-muted);
-    }
-  `,
-})
-export class CiError {
-  readonly error = input.required<ApiError>();
-  readonly retry = output<void>();
-  protected unavailable(): boolean {
-    return isNotImplemented(this.error());
-  }
-}
 
 /** The warnings a save returned (R-CI-010, R-CI-011): each with an icon, its detail and the member it concerns. */
 @Component({
@@ -144,4 +84,30 @@ export function changedMembers(input: object, stored: object): Record<string, un
     if (JSON.stringify(a[k]) !== JSON.stringify(b[k] ?? null) && !(a[k] === undefined && b[k] === undefined)) out[k] = a[k];
   }
   return out;
+}
+
+/**
+ * The body of a full replace (PUT) after "Overwrite": the stored record as it is now, with only the members
+ * the user changed taken from the form. A member the user did not touch keeps the value another administrator
+ * gave it in between (a removed `deploy`, a removed audience, a switch turned on), so the overwrite replaces
+ * exactly what the dialog showed (R-UI-042, R-CI-002). `omittedWhenEmpty` names list members the form leaves
+ * out when empty; one the user did not empty is taken from the stored record as well.
+ */
+export function overwriteBody<B extends object>(
+  body: B,
+  patch: Readonly<Record<string, unknown>>,
+  current: object,
+  loaded: object,
+  omittedWhenEmpty: readonly string[] = [],
+): B {
+  const now = current as Record<string, unknown>;
+  const before = loaded as Record<string, unknown>;
+  const mine = body as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(mine)) out[k] = k in patch ? patch[k] : k in now ? now[k] : mine[k];
+  for (const k of omittedWhenEmpty) {
+    const userEmptied = Array.isArray(before[k]) && before[k].length > 0;
+    if (!(k in mine) && !userEmptied && Array.isArray(now[k]) && now[k].length > 0) out[k] = now[k];
+  }
+  return out as B;
 }

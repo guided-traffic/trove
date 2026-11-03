@@ -77,8 +77,11 @@ export abstract class CiApi {
   ): Promise<Versioned<CiMapping>>;
   abstract deleteMapping(issuer: string, name: string, project: string | null): Promise<void>;
   abstract evaluate(issuer: string, request: CiEvaluateRequest, project: string | null): Promise<CiEvaluateResult>;
-  /** The text of the snippet of `mapping` (R-UI-035); the route is the system administrators'. */
-  abstract snippet(issuer: string, mapping: string, format: SnippetFormat): Promise<string>;
+  /**
+   * The text of the snippet of `mapping` (R-UI-035): the system route for the system tier, the project's
+   * route (`getProjectCiSnippet`, readable by the project's administrators) with a project key.
+   */
+  abstract snippet(issuer: string, mapping: string, format: SnippetFormat, project: string | null): Promise<string>;
 
   abstract listIssuances(filters: IssuanceFilters, project: string | null): PageFetcher<CiIssuance>;
   abstract getIssuance(tokenId: string): Promise<CiIssuanceDetail>;
@@ -168,9 +171,10 @@ export class HttpCiApi extends CiApi {
     return (await this.client.post<CiEvaluateResult>(url, request)).body;
   }
 
-  override async snippet(issuer: string, mapping: string, format: SnippetFormat): Promise<string> {
+  override async snippet(issuer: string, mapping: string, format: SnippetFormat, project: string | null): Promise<string> {
+    const base = project ? `/api/v1/projects/${seg(project)}/ci/issuers` : '/api/v1/ci/issuers';
     return (
-      await this.client.getText(`/api/v1/ci/issuers/${seg(issuer)}/snippets/gitlab-ci`, {
+      await this.client.getText(`${base}/${seg(issuer)}/snippets/gitlab-ci`, {
         params: { mapping, format },
       })
     ).body;

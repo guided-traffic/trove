@@ -1,8 +1,8 @@
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Component, DestroyRef, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { Router, RouterLink } from '@angular/router';
-import { CiApi, CiMapping, CiWarning, SnippetFormat } from '../../api/ci-api';
+import { CiApi, CiMapping, CiMappingInput, CiWarning, SnippetFormat } from '../../api/ci-api';
 import { PolicyApi } from '../../api/authz-api';
 import { IdentityApi } from '../../api/identity-api';
 import { collectAll } from '../../api/pagination';
@@ -12,6 +12,7 @@ import { Notifier } from '../../core/notifier';
 import { SessionStore } from '../../core/session-store';
 import { SelectField, SelectOption, TextField } from '../../shared/access/fields';
 import { ConflictResolver } from '../../shared/conflict-dialog';
+import { DraftStore } from '../../shared/drafts';
 import { CopyButton } from '../../shared/copy-button';
 import { ErrorNotice } from '../../shared/error-notice';
 import { ErrorSummary, SummaryItem, fieldErrorAt, fieldMessage, problemsAt } from '../../shared/field-errors';
@@ -19,7 +20,7 @@ import { asApiError } from '../../shared/paged-resource';
 import { HasUnsavedChanges } from '../../shared/unsaved-guard';
 import { ProjectNeeds, createState } from '../projects/project-access';
 import { Needs } from '../../shared/access/needs';
-import { CiError, CiWarnings, changedMembers, ciRoutes } from './ci-common';
+import { CiWarnings, changedMembers, ciRoutes, overwriteBody } from './ci-common';
 import {
   INLINE_ACTIONS,
   InlineRow,
@@ -58,7 +59,6 @@ import { NamePicker } from './name-picker';
     MatButtonModule,
     MatCheckboxModule,
     RouterLink,
-    CiError,
     CiWarnings,
     ConditionBuilder,
     CopyButton,
@@ -86,6 +86,7 @@ export class MappingEditor implements HasUnsavedChanges {
   private readonly identityApi = inject(IdentityApi);
   private readonly repositoriesApi = inject(RepositoriesApi);
   private readonly conflicts = inject(ConflictResolver);
+  private readonly drafts = inject(DraftStore);
   private readonly notifier = inject(Notifier);
   private readonly router = inject(Router);
   protected readonly session = inject(SessionStore);
@@ -136,7 +137,10 @@ export class MappingEditor implements HasUnsavedChanges {
   /** The bounds of the screen: the system administrators', or the project's administrators' with the switch on. */
   protected readonly state = computed(() => createState(this.session, this.project() ?? '', 'managePolicies', 'ci:write'));
   protected readonly writable = computed(() => (this.project() ? this.state() === 'enabled' : this.session.has('ci:write')));
-  protected readonly canSnippet = computed(() => !this.isNew() && this.session.has('ci:read'));
+  /** The snippet is read by ci:read or, in a project, by its administrator whose managePolicies switch is on (`getProjectCiSnippet`). */
+  protected readonly canSnippet = computed(
+    () => !this.isNew() && (this.session.has('ci:read') || (this.project() !== null && this.state() === 'enabled')),
+  );
 
   protected readonly dirty = computed(() => this.writable() && JSON.stringify(inputFromForm(this.form(), this.project())) !== this.baseline);
   protected readonly unprotected = computed(() => unprotectedWrite(this.form()));
@@ -152,6 +156,8 @@ export class MappingEditor implements HasUnsavedChanges {
   }));
 
   constructor() {
+    // The write body of an open, changed editor: kept across a re-authentication and offered as "Copy draft as JSON" (R-UI-042).
+    this.drafts.track(() => (this.dirty() ? inputFromForm(this.form(), this.project()) : null), inject(DestroyRef));
     // A create answers with the warnings of the save and opens the stored mapping; they travel with the navigation.
     const state = this.router.getCurrentNavigation()?.extras.state as { warnings?: CiWarning[] } | undefined;
     if (Array.isArray(state?.warnings)) this.warnings.set(state.warnings);
@@ -257,10 +263,21 @@ export class MappingEditor implements HasUnsavedChanges {
       this.baseline = JSON.stringify(inputFromForm(this.form(), project));
       this.jsonText.set(JSON.stringify(conditionFromNode(this.form().match), null, 2));
       this.jsonError.set(null);
+      this.restoreDraft();
     } catch (e) {
       this.loaded.set(null);
       this.loadError.set(asApiError(e));
     }
+  }
+
+  /** The entries kept across a re-authentication (R-UI-042) fill the form again; the baseline stays the stored mapping. */
+  private restoreDraft(): void {
+    if (!this.writable()) return;
+    const draft = this.drafts.take<CiMappingInput>();
+    if (!draft || typeof draft !== 'object') return;
+    this.form.set(formFromMapping({ ...draft, description: draft.description ?? '', maxTtlSeconds: draft.maxTtlSeconds ?? null, options: draft.options ?? {} } as unknown as CiMapping));
+    this.jsonText.set(JSON.stringify(conditionFromNode(this.form().match), null, 2));
+    this.notifier.status($localize`:@@ci.editor.draft-restored:Your entries were restored. Save the mapping again.`);
   }
 
   /** The choices the editor offers: policies, groups, the project's repositories and the issuer's kind of audience. Failures leave a plain text entry. */
@@ -373,7 +390,7 @@ export class MappingEditor implements HasUnsavedChanges {
   private async loadSnippet(): Promise<void> {
     this.snippetError.set(null);
     try {
-      this.snippet.set(await this.api.snippet(this.issuerName(), this.mapping() ?? '', this.snippetFormat()));
+      this.snippet.set(await this.api.snippet(this.issuerName(), this.mapping() ?? '', this.snippetFormat(), this.project()));
     } catch (e) {
       this.snippet.set(null);
       this.snippetError.set(asApiError(e));
@@ -418,7 +435,14 @@ export class MappingEditor implements HasUnsavedChanges {
       const result = await this.conflicts.save<CiMapping>({
         etag: stored.etag,
         patch,
-        send: (etag) => this.api.replaceMapping(issuer, stored.value.name, body, etag, project),
+        send: (etag, current) =>
+          this.api.replaceMapping(
+            issuer,
+            stored.value.name,
+            current === null ? body : overwriteBody(body, patch, inputFromForm(formFromMapping(current), project), stored.value),
+            etag,
+            project,
+          ),
         reload: () => this.api.getMapping(issuer, stored.value.name, project),
       });
       if (result.outcome === 'dismissed') return;
@@ -431,7 +455,9 @@ export class MappingEditor implements HasUnsavedChanges {
         this.notifier.status($localize`:@@ci.editor.saved:Mapping saved.`);
       }
     } catch (e) {
-      this.saveError.set(asApiError(e));
+      const error = asApiError(e);
+      if (error.code === 'reauthentication_required') this.drafts.keep(body);
+      this.saveError.set(error);
     } finally {
       this.busy.set(false);
     }

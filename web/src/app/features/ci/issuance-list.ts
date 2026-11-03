@@ -12,7 +12,7 @@ import { Confirm } from '../../shared/confirm-dialog';
 import { PagedResource, asApiError } from '../../shared/paged-resource';
 import { DataTable, TableColumn } from '../../shared/ui/data-table';
 import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
-import { CiError } from './ci-common';
+import { ErrorNotice } from '../../shared/error-notice';
 
 const pretty = (v: unknown): string => JSON.stringify(v, null, 2);
 
@@ -30,12 +30,12 @@ export interface IssuanceDetailData {
  */
 @Component({
   selector: 'trove-ci-issuance-detail',
-  imports: [DatePipe, MatButtonModule, MatDialogModule, CiError],
+  imports: [DatePipe, MatButtonModule, MatDialogModule, ErrorNotice],
   template: `
     <h2 mat-dialog-title i18n="@@ci.issuance.title">Issued token</h2>
     <mat-dialog-content>
       @if (error(); as e) {
-        <trove-ci-error [error]="e" />
+        <trove-error-notice [error]="e" />
       }
       <dl class="facts">
         <dt i18n="@@ci.issuance.state">State</dt>
@@ -130,6 +130,16 @@ export class IssuanceDetailDialog {
 }
 
 /**
+ * The start of the local day of a `yyyy-mm-dd` date input as an instant, `plusDays` later: the table shows
+ * local times, so the day filters are the bounds of the local day (the API's `to` is exclusive).
+ */
+function dayStart(value: string, plusDays = 0): string | undefined {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!m) return undefined;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + plusDays).toISOString();
+}
+
+/**
  * The issued CI tokens (R-UI-035, R-CI-020), of one issuer, of all, or of a project's mappings (Q-CI-26),
  * with the filters of the API in the filter panel, the detail of one record and, for the holder of
  * `tokens:revoke`, the bulk revoke of the tokens that match the applied filters: the confirmation counts
@@ -138,7 +148,7 @@ export class IssuanceDetailDialog {
  */
 @Component({
   selector: 'trove-ci-issuance-list',
-  imports: [DatePipe, MatButtonModule, CiError, DataTable, FilterCategory, FilterPanel, FilterToggle, SelectField, TextField],
+  imports: [DatePipe, MatButtonModule, ErrorNotice, DataTable, FilterCategory, FilterPanel, FilterToggle, SelectField, TextField],
   template: `
     <div class="list-layout" [class.panel-open]="panelOpen()">
       <div class="list-main">
@@ -151,15 +161,22 @@ export class IssuanceDetailDialog {
           }
         </div>
         @if (canRevoke() && !revocable()) {
-          <p id="ci-revoke-note" class="muted" role="note" i18n="@@ci.issuances.revoke-note">
-            To revoke in bulk, filter by one issuer and by a project ID, a pipeline ID, a job ID or a mapping, then apply the filters.
-          </p>
+          @if (unsupported().length > 0) {
+            <p id="ci-revoke-note" class="muted" role="note">
+              <ng-container i18n="@@ci.issuances.revoke-unsupported">The bulk revoke acts on the issuer, project ID, pipeline ID, job ID and mapping only. It would revoke more than the list shows while these filters are applied:</ng-container>
+              {{ ' ' + unsupported().join(', ') }}.
+            </p>
+          } @else {
+            <p id="ci-revoke-note" class="muted" role="note" i18n="@@ci.issuances.revoke-note">
+              To revoke in bulk, filter by one issuer and by a project ID, a pipeline ID, a job ID or a mapping, then apply the filters.
+            </p>
+          }
         }
         @if (actionError(); as e) {
-          <trove-ci-error [error]="e" />
+          <trove-error-notice [error]="e" />
         }
         @if (list.error(); as e) {
-          <trove-ci-error [error]="e" (retry)="list.reload()" />
+          <trove-error-notice [error]="e" (retry)="list.reload()" />
         }
         @if (list.error()?.status !== 501) {
           <trove-data-table
@@ -296,8 +313,10 @@ export class IssuanceList {
     { id: 'actions', label: $localize`:@@ci.issuances.col.actions:Actions`, hideLabel: true },
   ]);
 
-  /** The bulk revoke needs an issuer and one narrowing filter, as the API does (R-CI-020). */
+  /** The bulk revoke needs an issuer and one narrowing filter, as the API does, and no filter it cannot send (R-CI-020). */
   protected readonly revocable = signal(false);
+  /** The applied filters the bulk revoke does not understand: it would revoke more than the list shows. */
+  protected readonly unsupported = signal<readonly string[]>([]);
 
   constructor() {
     effect(() => {
@@ -320,8 +339,8 @@ export class IssuanceList {
       jobId: t(this.jobId()),
       mapping: t(this.mapping()),
       active,
-      from: this.from() ? `${this.from()}T00:00:00Z` : undefined,
-      to: this.to() ? `${this.to()}T23:59:59Z` : undefined,
+      from: dayStart(this.from()),
+      to: dayStart(this.to(), 1),
     };
   }
 
@@ -330,7 +349,14 @@ export class IssuanceList {
     this.applied = f;
     const own = { ...f, issuer: this.fixedIssuer() ? undefined : f.issuer };
     this.activeCount.set(Object.values(own).filter((v) => v !== undefined).length);
-    this.revocable.set(!!f.issuer && !!(f.projectId || f.pipelineId || f.jobId || f.mapping));
+    const blocked = [
+      ...(f.projectPath ? [$localize`:@@ci.issuances.f.project-path:Project path`] : []),
+      ...(f.active === false ? [$localize`:@@ci.issuances.f.state:State`] : []),
+      ...(f.from ? [$localize`:@@ci.issuances.f.from:Issued from`] : []),
+      ...(f.to ? [$localize`:@@ci.issuances.f.to:Issued until`] : []),
+    ];
+    this.unsupported.set(blocked);
+    this.revocable.set(blocked.length === 0 && !!f.issuer && !!(f.projectId || f.pipelineId || f.jobId || f.mapping));
     await this.list.start(this.api.listIssuances(f, this.project()));
   }
 
@@ -353,11 +379,19 @@ export class IssuanceList {
    */
   protected async revokeMatching(): Promise<void> {
     const f = this.applied;
-    if (!f.issuer) return;
+    if (!f.issuer || !this.revocable()) return;
+    // Exactly what the API understands: the count above and the request below carry the same members.
+    const request: CiRevokeRequest = {
+      issuer: f.issuer,
+      ...(f.projectId ? { projectId: f.projectId } : {}),
+      ...(f.pipelineId ? { pipelineId: f.pipelineId } : {}),
+      ...(f.jobId ? { jobId: f.jobId } : {}),
+      ...(f.mapping ? { mapping: f.mapping } : {}),
+    };
     this.busy.set(true);
     this.actionError.set(null);
     try {
-      const count = (await collectAll(this.api.listIssuances({ ...f, active: true }, null))).length;
+      const count = (await collectAll(this.api.listIssuances({ ...request, active: true }, null))).length;
       if (count === 0) {
         this.notifier.status($localize`:@@ci.issuances.none-to-revoke:No active token matches the filters.`);
         return;
@@ -370,13 +404,6 @@ export class IssuanceList {
         confirmLabel: $localize`:@@ci.issuances.revoke-confirm:Revoke ${count}:count: tokens`,
       });
       if (answer === null) return;
-      const request: CiRevokeRequest = {
-        issuer: f.issuer,
-        ...(f.projectId ? { projectId: f.projectId } : {}),
-        ...(f.pipelineId ? { pipelineId: f.pipelineId } : {}),
-        ...(f.jobId ? { jobId: f.jobId } : {}),
-        ...(f.mapping ? { mapping: f.mapping } : {}),
-      };
       const revoked = await this.api.revokeIssuances(request);
       this.notifier.status($localize`:@@ci.issuances.revoked:${revoked}:count: tokens revoked.`);
       await this.apply();
