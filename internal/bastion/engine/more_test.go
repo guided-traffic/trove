@@ -234,6 +234,9 @@ func TestR_BAS_030_AFillLeavesNoSpoolFileBehind(t *testing.T) {
 	if w := s.get(third, "Authorization", bearer(s.full), "Range", "bytes=10-99"); w.Code != http.StatusPartialContent {
 		t.Fatalf("a Range request while the backend refuses writes: %d", w.Code)
 	}
+	// A fill runs on beyond its client's response (fills are decoupled from clients, R-BAS-025): the spool is removed
+	// when the fill ends, so the check waits for the engine's background work first.
+	s.e.wg.Wait()
 	if left := s.cache.files("tmp"); len(left) != 0 {
 		t.Fatalf("%d spool files left: %v", len(left), left)
 	}
